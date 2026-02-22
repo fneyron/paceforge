@@ -18,6 +18,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Push DB schema (creates sqlite.db) then build
 RUN pnpm db:push && pnpm build
 
+# Prepare a minimal node_modules with only better-sqlite3 (serverExternalPackage)
+RUN mkdir -p /tmp/native_modules && \
+    cp -rL node_modules/better-sqlite3 /tmp/native_modules/better-sqlite3
+
 # ---- Runner ----
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -25,14 +29,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy standalone build (includes all server deps)
+# Copy standalone build (includes all server deps except serverExternalPackages)
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/sqlite.db ./sqlite.db
 
-# better-sqlite3 is a serverExternalPackage — copy entire node_modules for it
-COPY --from=builder /app/node_modules ./node_modules
+# Copy better-sqlite3 native module (resolved from pnpm symlinks)
+COPY --from=builder /tmp/native_modules/better-sqlite3 ./node_modules/better-sqlite3
 
 EXPOSE 3000
 ENV HOSTNAME="0.0.0.0"
