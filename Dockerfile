@@ -25,25 +25,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy standalone build
+# Copy standalone build (includes all server deps)
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-
-# Copy better-sqlite3 native addon (serverExternalPackages)
-COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-COPY --from=builder /app/node_modules/bindings ./node_modules/bindings
-COPY --from=builder /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
-COPY --from=builder /app/node_modules/prebuild-install ./node_modules/prebuild-install
-
-# Copy drizzle-kit for db:push at startup
-COPY --from=builder /app/node_modules/drizzle-kit ./node_modules/drizzle-kit
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=builder /app/src/lib/db ./src/lib/db
-
-# Create empty DB (will be pushed at startup)
 COPY --from=builder /app/sqlite.db ./sqlite.db
+
+# better-sqlite3 is a serverExternalPackage — copy entire node_modules for it
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
 ENV HOSTNAME="0.0.0.0"
