@@ -29,4 +29,8 @@ export const DEFAULT_FATIGUE: Record<string, FatigueConfig> = {
   road_running: { halfLife: 4, minFactor: 0.75 },
   swimming: { halfLife: 3, minFactor: 0.8 },
   triathlon: { halfLife: 8, minFactor: 0.6 },
+  cross_country_skiing: { halfLife: 4, minFactor: 0.65 },
+  rowing: { halfLife: 3, minFactor: 0.7 },
+  duathlon: { halfLife: 6, minFactor: 0.65 },
+  swimrun: { halfLife: 8, minFactor: 0.6 },
 };

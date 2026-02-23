@@ -37,6 +37,12 @@ export const athletes = sqliteTable("athletes", {
   t1Time: real("t1_time").default(120), // seconds (swim → bike)
   t2Time: real("t2_time").default(60), // seconds (bike → run)
 
+  // Critical Power model
+  cp: real("cp"), // Critical Power (watts)
+  wPrime: real("w_prime"), // W' anaerobic capacity (joules)
+  referenceRaceDistance: real("ref_race_distance"), // meters (for Riegel model)
+  referenceRaceTime: real("ref_race_time"), // seconds (for Riegel model)
+
   // Strava auto-detected values
   stravaFtp: real("strava_ftp"),
   stravaVdot: real("strava_vdot"),

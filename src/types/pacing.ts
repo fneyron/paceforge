@@ -2,7 +2,8 @@ export type PacingStrategyType =
   | "even_effort"
   | "negative_split"
   | "positive_split"
-  | "race_strategy";
+  | "race_strategy"
+  | "optimal";
 
 export interface EvenEffortStrategy {
   type: "even_effort";
@@ -29,11 +30,18 @@ export interface RaceStrategyConfig {
   descentFactor: number; // 0.9 - 1.1
 }
 
+export interface OptimalPacingStrategy {
+  type: "optimal";
+  maxEffort: number; // 1.0 - 1.15
+  minEffort: number; // 0.80 - 0.95
+}
+
 export type PacingStrategy =
   | EvenEffortStrategy
   | NegativeSplitStrategy
   | PositiveSplitStrategy
-  | RaceStrategyConfig;
+  | RaceStrategyConfig
+  | OptimalPacingStrategy;
 
 export interface SegmentEffortModifier {
   segmentId: string;

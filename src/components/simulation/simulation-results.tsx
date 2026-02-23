@@ -99,6 +99,20 @@ export function SimulationResults({ results, sport, athleteVdot }: Props) {
         </CardContent>
       </Card>
 
+      {/* ITRA Badge (trail sports only) */}
+      {results.itraPoints && (
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+          <Badge variant="secondary" className="text-xs font-bold">
+            ITRA {results.itraCategory}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {results.itraPoints} pts
+            {results.itraStars ? ` — ${"★".repeat(results.itraStars)}` : ""}
+            {results.itraPerformanceIndex ? ` — PI: ${results.itraPerformanceIndex}` : ""}
+          </span>
+        </div>
+      )}
+
       {/* Pace/Power Graph */}
       {results.splits.length > 1 && (
         <Card>

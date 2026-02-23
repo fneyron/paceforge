@@ -23,6 +23,8 @@ export const stravaActivities = sqliteTable("strava_activities", {
   maxSpeed: real("max_speed"), // m/s
   averageCadence: real("average_cadence"),
   rawData: text("raw_data"), // full JSON from Strava
+  tss: real("tss"), // Training Stress Score
+  intensityFactor: real("intensity_factor"), // Intensity Factor (0-2)
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

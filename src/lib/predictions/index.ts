@@ -93,7 +93,7 @@ export function runningPredictions(vdot: number): Prediction[] {
 
 // ── Cycling Predictions (FTP-based) ──
 
-interface CyclingPredictionInput {
+export interface CyclingPredictionInput {
   ftp: number;
   weight: number;
   bikeWeight: number;

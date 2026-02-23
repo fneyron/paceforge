@@ -6,6 +6,10 @@ import type {
   SwimmingConfig,
   RoadRunningConfig,
   TriathlonConfig,
+  DuathlonConfig,
+  SwimRunConfig,
+  CrossCountrySkiingConfig,
+  RowingConfig,
   FatigueConfig,
   SimulationResult,
   SplitResult,
@@ -18,16 +22,28 @@ import { computeTrailSegmentTime, computeTrailSpeed } from "./trail";
 import { computeSwimmingSegmentTime } from "./swimming";
 import { computeRoadRunningSegmentTime } from "./road-running";
 import { simulateTriathlon } from "./triathlon";
+import { simulateDuathlon } from "./duathlon";
+import { simulateSwimRun } from "./swimrun";
+import { computeXCSkiSegmentTime } from "./cross-country-skiing";
+import { computeRowingSegmentTime } from "./rowing";
 import { fatigueFactor, DEFAULT_FATIGUE } from "./fatigue";
 import { resolveStrategy } from "./pacing";
+import { altitudePerformanceFactor } from "./altitude";
+import { heatPerformanceFactor } from "./heat-stress";
+import { computeITRAPoints, classifyITRA, computePerformanceIndex } from "./itra";
 import { classifyPowerZone, classifyPaceZone, classifySwimZone } from "@/lib/zones";
+import { solveOptimalPacing } from "./optimal-pacing";
 
 type SportConfig =
   | CyclingConfig
   | TrailConfig
   | SwimmingConfig
   | RoadRunningConfig
-  | TriathlonConfig;
+  | TriathlonConfig
+  | DuathlonConfig
+  | SwimRunConfig
+  | CrossCountrySkiingConfig
+  | RowingConfig;
 
 interface SimulateInput {
   sport: SportType;
@@ -101,13 +117,37 @@ export function simulate(input: SimulateInput): SimulationResult {
   // Triathlon has its own orchestrator
   if (sport === "triathlon") {
     const triConfig = config as TriathlonConfig;
-    // For triathlon with a single route, treat all segments as bike leg
-    // (proper triathlon needs multi-leg routing)
     return simulateTriathlon({
       legs: [
         { discipline: "bike", segments, points },
       ],
       config: triConfig,
+      fatigueConfig,
+    });
+  }
+
+  // Duathlon has its own orchestrator
+  if (sport === "duathlon") {
+    const duaConfig = config as DuathlonConfig;
+    return simulateDuathlon({
+      legs: [
+        { discipline: "run1", segments: segments.slice(0, Math.floor(segments.length / 3)), points },
+        { discipline: "bike", segments: segments.slice(Math.floor(segments.length / 3), Math.floor(2 * segments.length / 3)), points },
+        { discipline: "run2", segments: segments.slice(Math.floor(2 * segments.length / 3)), points },
+      ],
+      config: duaConfig,
+      fatigueConfig,
+    });
+  }
+
+  // SwimRun has its own orchestrator
+  if (sport === "swimrun") {
+    const srConfig = config as SwimRunConfig;
+    return simulateSwimRun({
+      legs: [
+        { discipline: "run", segments, points },
+      ],
+      config: srConfig,
       fatigueConfig,
     });
   }
@@ -140,21 +180,65 @@ export function simulate(input: SimulateInput): SimulationResult {
     };
   }
 
+  // Rowing: flat water (no elevation profile)
+  if (sport === "rowing") {
+    const rowingConfig = config as RowingConfig;
+    const totalDist = segments.reduce((sum, s) => sum + s.length, 0);
+    const fatigue = fatigueConfig || DEFAULT_FATIGUE.rowing;
+
+    const splits: SplitResult[] = [];
+    let cumulativeTime = 0;
+
+    for (const segment of segments) {
+      const elapsedHours = cumulativeTime / 3600;
+      const ff = fatigueFactor(elapsedHours, fatigue);
+      const effectiveConfig: RowingConfig = {
+        ...rowingConfig,
+        power: rowingConfig.power * ff,
+      };
+      const time = computeRowingSegmentTime(segment.length, effectiveConfig);
+      const speed = segment.length / time;
+
+      splits.push({
+        segmentId: segment.id || `seg-${splits.length}`,
+        distance: segment.length,
+        elevationGain: segment.elevationGain,
+        elevationLoss: segment.elevationLoss,
+        time,
+        speed,
+        pace: speed > 0 ? 1000 / speed / 60 : 999,
+        power: effectiveConfig.power,
+      });
+      cumulativeTime += time;
+    }
+
+    return { splits, totalTime: cumulativeTime, movingTime: cumulativeTime };
+  }
+
   const fatigue =
     fatigueConfig || DEFAULT_FATIGUE[sport] || DEFAULT_FATIGUE.cycling;
 
   // Resolve pacing strategy into per-segment effort modifiers
   const totalDistance = segments.reduce((sum, s) => sum + s.length, 0);
-  const effortModifiers = pacingStrategy
+  let effortModifiers = pacingStrategy
     ? resolveStrategy(pacingStrategy, segments, totalDistance)
     : [];
+
+  // For optimal pacing, use the solver to compute effort modifiers
+  if (pacingStrategy?.type === "optimal") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    effortModifiers = solveOptimalPacing(segments, sport, config as any, {
+      maxEffort: pacingStrategy.maxEffort,
+      minEffort: pacingStrategy.minEffort,
+    });
+  }
 
   const splits: SplitResult[] = [];
   let cumulativeTime = 0;
 
   for (const segment of segments) {
     const elapsedHours = cumulativeTime / 3600;
-    const ff = fatigueFactor(elapsedHours, fatigue);
+    const baseFf = fatigueFactor(elapsedHours, fatigue);
     const effortMod =
       effortModifiers.find((m) => m.segmentId === (segment.id || `seg-${splits.length}`))
         ?.effortFactor ?? 1.0;
@@ -164,9 +248,21 @@ export function simulate(input: SimulateInput): SimulationResult {
     const avgAltitude =
       segPoints.reduce((s, p) => s + p.ele, 0) / segPoints.length;
 
+    // Altitude performance correction (affects all aerobic sports)
+    const altFactor = altitudePerformanceFactor(avgAltitude);
+
     // Weather at segment midpoint
     const segMidDist = (segment.startDistance + segment.endDistance) / 2;
     const wx = findWeatherAtDistance(weather, segMidDist);
+
+    // Heat stress correction (WBGT model)
+    let heatFactor = 1.0;
+    if (wx && (sport === "road_running" || sport === "trail" || sport === "ultra_trail" || sport === "cross_country_skiing")) {
+      heatFactor = heatPerformanceFactor(wx.temperature, wx.humidity);
+    }
+
+    // Combined fatigue factor
+    const ff = baseFf * altFactor * heatFactor;
 
     let time: number;
     let speed: number;
@@ -178,7 +274,8 @@ export function simulate(input: SimulateInput): SimulationResult {
         cyclingCfg.powerTargets?.find((pt) => pt.segmentId === segment.id)
           ?.power || cyclingCfg.ftp;
 
-      const effectivePower = powerTarget * ff * effortMod;
+      // For cycling, altitude affects air density (already in solveSpeed) but also reduces sustainable power
+      const effectivePower = powerTarget * baseFf * altFactor * effortMod;
       power = effectivePower;
 
       // Compute headwind from weather
@@ -203,7 +300,7 @@ export function simulate(input: SimulateInput): SimulationResult {
         vdot: runCfg.vdot * ff * effortMod,
       };
 
-      // Add weather temperature correction
+      // Add weather temperature correction (legacy, now supplemented by WBGT)
       if (wx) {
         effectiveConfig.temperature = wx.temperature;
         effectiveConfig.humidity = wx.humidity;
@@ -213,6 +310,20 @@ export function simulate(input: SimulateInput): SimulationResult {
         segment.length,
         segment.averageGrade,
         effectiveConfig
+      );
+      speed = segment.length / time;
+    } else if (sport === "cross_country_skiing") {
+      const xcConfig = config as CrossCountrySkiingConfig;
+      // Apply fatigue and altitude to VO2max
+      const effectiveConfig: CrossCountrySkiingConfig = {
+        ...xcConfig,
+        vo2max: xcConfig.vo2max * ff * effortMod,
+      };
+      time = computeXCSkiSegmentTime(
+        segment.length,
+        segment.averageGrade,
+        effectiveConfig,
+        elapsedHours
       );
       speed = segment.length / time;
     } else {
@@ -262,11 +373,27 @@ export function simulate(input: SimulateInput): SimulationResult {
     cumulativeTime += time;
   }
 
-  return {
+  const result: SimulationResult = {
     splits,
     totalTime: cumulativeTime,
     movingTime: cumulativeTime,
   };
+
+  // Compute ITRA points for trail sports
+  if (sport === "trail" || sport === "ultra_trail") {
+    const totalDistKm = totalDistance / 1000;
+    const totalElevGain = segments.reduce((sum, s) => sum + s.elevationGain, 0);
+    const itraPoints = computeITRAPoints(totalDistKm, totalElevGain);
+    const classification = classifyITRA(itraPoints);
+    const timeHours = cumulativeTime / 3600;
+
+    result.itraPoints = Math.round(itraPoints * 10) / 10;
+    result.itraCategory = classification.category;
+    result.itraStars = classification.stars;
+    result.itraPerformanceIndex = computePerformanceIndex(itraPoints, timeHours);
+  }
+
+  return result;
 }
 
 /**

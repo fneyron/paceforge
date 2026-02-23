@@ -4,7 +4,7 @@ export const routes = sqliteTable("routes", {
   id: text("id").primaryKey(),
   userId: text("user_id"), // nullable for backward compat
   name: text("name").notNull(),
-  sport: text("sport", { enum: ["cycling", "gravel", "trail", "ultra_trail", "road_running", "swimming", "triathlon"] })
+  sport: text("sport", { enum: ["cycling", "gravel", "trail", "ultra_trail", "road_running", "swimming", "triathlon", "cross_country_skiing", "rowing", "duathlon", "swimrun"] })
     .notNull()
     .default("cycling"),
   gpxRaw: text("gpx_raw").notNull(),

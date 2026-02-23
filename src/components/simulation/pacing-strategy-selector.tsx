@@ -21,6 +21,7 @@ const STRATEGY_LABELS: Record<PacingStrategyType, string> = {
   negative_split: "Negative Split",
   positive_split: "Positive Split",
   race_strategy: "Race Strategy (terrain-based)",
+  optimal: "Optimal (auto-computed)",
 };
 
 export function PacingStrategySelector({ onChange }: Props) {
@@ -35,6 +36,10 @@ export function PacingStrategySelector({ onChange }: Props) {
   const [climbFactor, setClimbFactor] = useState(0.92);
   const [flatFactor, setFlatFactor] = useState(1.0);
   const [descentFactor, setDescentFactor] = useState(1.0);
+
+  // Optimal pacing params
+  const [maxEffort, setMaxEffort] = useState(1.1);
+  const [minEffort, setMinEffort] = useState(0.85);
 
   const handleTypeChange = (value: string) => {
     const t = value as PacingStrategyType | "none";
@@ -72,6 +77,13 @@ export function PacingStrategySelector({ onChange }: Props) {
           climbFactor,
           flatFactor,
           descentFactor,
+        });
+        break;
+      case "optimal":
+        onChange({
+          type: "optimal",
+          maxEffort,
+          minEffort,
         });
         break;
     }
@@ -178,6 +190,38 @@ export function PacingStrategySelector({ onChange }: Props) {
               onValueChange={([v]) => updateAndEmit(setDescentFactor, v)}
               min={0.85}
               max={1.15}
+              step={0.01}
+            />
+          </div>
+        </div>
+      )}
+
+      {type === "optimal" && (
+        <div className="space-y-3 pt-1">
+          <p className="text-xs text-muted-foreground">
+            Auto-computes the fastest pacing by redistributing effort across segments.
+          </p>
+          <div className="space-y-1">
+            <Label className="text-xs">
+              Max effort: {(maxEffort * 100).toFixed(0)}%
+            </Label>
+            <Slider
+              value={[maxEffort]}
+              onValueChange={([v]) => updateAndEmit(setMaxEffort, v)}
+              min={1.0}
+              max={1.2}
+              step={0.01}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">
+              Min effort: {(minEffort * 100).toFixed(0)}%
+            </Label>
+            <Slider
+              value={[minEffort]}
+              onValueChange={([v]) => updateAndEmit(setMinEffort, v)}
+              min={0.7}
+              max={0.95}
               step={0.01}
             />
           </div>

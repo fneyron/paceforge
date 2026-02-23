@@ -13,6 +13,9 @@ import { ZoneDisplay } from "@/components/zones/zone-display";
 import { RacePredictions } from "@/components/predictions/race-predictions";
 import { LactateHistory } from "@/components/lactate/lactate-history";
 import { LactateProtocolWizard } from "@/components/lactate/lactate-protocol-wizard";
+import { PMCChart } from "@/components/training/pmc-chart";
+import { TrainingSummary } from "@/components/training/training-summary";
+import { PersonalRecordsTable } from "@/components/training/personal-records";
 
 interface AthleteData {
   name: string;
@@ -95,6 +98,8 @@ export default function AthletePage() {
   const [saving, setSaving] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [lactateWizardOpen, setLactateWizardOpen] = useState(false);
+  const [pmcData, setPmcData] = useState<Array<{ date: string; tss: number; ctl: number; atl: number; tsb: number }>>([]);
+  const [records, setRecords] = useState<Array<{ sport: string; category: string; value: number; date: Date }>>([]);
 
   useEffect(() => {
     // Load athlete profile
@@ -102,6 +107,25 @@ export default function AthletePage() {
       .then((r) => r.json())
       .then(setAthlete)
       .catch(() => toast.error("Failed to load athlete profile"));
+
+    // Load PMC data
+    fetch("/api/athlete/pmc")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => { if (Array.isArray(data)) setPmcData(data); })
+      .catch(() => {});
+
+    // Load personal records
+    fetch("/api/athlete/records")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setRecords(data.map((r: { sport: string; category: string; value: number; date: string }) => ({
+            ...r,
+            date: new Date(r.date),
+          })));
+        }
+      })
+      .catch(() => {});
 
     // Load Strava user info (avatar, name) + auto-sync estimates
     fetch("/api/strava/profile")
@@ -282,6 +306,7 @@ export default function AthletePage() {
               <TabsTrigger value="running" className="flex-1">Running</TabsTrigger>
               <TabsTrigger value="swimming" className="flex-1">Swimming</TabsTrigger>
               <TabsTrigger value="triathlon" className="flex-1">Triathlon</TabsTrigger>
+              <TabsTrigger value="training" className="flex-1">Training</TabsTrigger>
             </TabsList>
 
             <TabsContent value="cycling">
@@ -475,6 +500,21 @@ export default function AthletePage() {
                   </p>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="training">
+              <div className="space-y-4">
+                <TrainingSummary data={pmcData} />
+                {pmcData.length > 0 && <PMCChart data={pmcData} />}
+                {records.length > 0 && <PersonalRecordsTable records={records} />}
+                {pmcData.length === 0 && records.length === 0 && (
+                  <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      <p>No training data yet. Sync your Strava activities to see your fitness metrics, fatigue, and personal records.</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
 

@@ -24,6 +24,14 @@ export function resolveStrategy(
 
     case "race_strategy":
       return resolveRaceStrategy(strategy, segments);
+
+    case "optimal":
+      // Optimal pacing is resolved by the solver in simulate.ts
+      // Return even effort as placeholder — simulate.ts will override
+      return segments.map((seg) => ({
+        segmentId: seg.id || "",
+        effortFactor: 1.0,
+      }));
   }
 }
 

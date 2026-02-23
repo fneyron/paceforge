@@ -12,3 +12,4 @@ export { nutritionProducts } from "./nutrition-products";
 export { nutritionPlans } from "./nutrition-plans";
 export { equipment } from "./equipment";
 export { lactateTests } from "./lactate-tests";
+export { personalRecords } from "./personal-records";

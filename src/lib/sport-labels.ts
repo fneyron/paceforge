@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bike, Mountain, Footprints, Waves, Trophy, Route } from "lucide-react";
+import { Bike, Mountain, Footprints, Waves, Trophy, Route, Snowflake, Ship, Repeat, Shuffle } from "lucide-react";
 
 const SPORT_LABELS: Record<string, string> = {
   cycling: "Cycling",
@@ -9,6 +9,10 @@ const SPORT_LABELS: Record<string, string> = {
   road_running: "Road Running",
   swimming: "Swimming",
   triathlon: "Triathlon",
+  cross_country_skiing: "Cross-Country Skiing",
+  rowing: "Rowing",
+  duathlon: "Duathlon",
+  swimrun: "SwimRun",
 };
 
 const SPORT_ICONS: Record<string, LucideIcon> = {
@@ -19,6 +23,10 @@ const SPORT_ICONS: Record<string, LucideIcon> = {
   road_running: Footprints,
   swimming: Waves,
   triathlon: Trophy,
+  cross_country_skiing: Snowflake,
+  rowing: Ship,
+  duathlon: Repeat,
+  swimrun: Shuffle,
 };
 
 export function sportLabel(sport: string): string {

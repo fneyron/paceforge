@@ -17,6 +17,10 @@ import { TrailConfigForm } from "./trail-config";
 import { SwimmingConfigForm } from "./swimming-config";
 import { RoadRunningConfigForm } from "./road-running-config";
 import { TriathlonConfigForm } from "./triathlon-config";
+import { XCSkiingConfigForm } from "./xc-skiing-config";
+import { RowingConfigForm } from "./rowing-config";
+import { DuathlonConfigForm } from "./duathlon-config";
+import { SwimRunConfigForm } from "./swimrun-config";
 import { SimulationResults } from "./simulation-results";
 import { PacingStrategySelector } from "./pacing-strategy-selector";
 import { SimulationHistory } from "./simulation-history";
@@ -32,6 +36,10 @@ import type {
   SwimmingConfig,
   RoadRunningConfig,
   TriathlonConfig,
+  CrossCountrySkiingConfig,
+  RowingConfig,
+  DuathlonConfig,
+  SwimRunConfig,
   FatigueConfig,
 } from "@/types/route";
 import type { PacingStrategy } from "@/types/pacing";
@@ -44,7 +52,11 @@ type AnyConfig =
   | TrailConfig
   | SwimmingConfig
   | RoadRunningConfig
-  | TriathlonConfig;
+  | TriathlonConfig
+  | CrossCountrySkiingConfig
+  | RowingConfig
+  | DuathlonConfig
+  | SwimRunConfig;
 
 function sportToDefaultTab(sport: string): string {
   switch (sport) {
@@ -60,6 +72,14 @@ function sportToDefaultTab(sport: string): string {
       return "swimming";
     case "triathlon":
       return "triathlon";
+    case "cross_country_skiing":
+      return "xcski";
+    case "rowing":
+      return "rowing";
+    case "duathlon":
+      return "duathlon";
+    case "swimrun":
+      return "swimrun";
     default:
       return "cycling";
   }
@@ -209,6 +229,10 @@ export function SimulationPanel() {
                     <TabsTrigger value="running" className="flex-1 text-xs">Running</TabsTrigger>
                     <TabsTrigger value="swimming" className="flex-1 text-xs">Swim</TabsTrigger>
                     <TabsTrigger value="triathlon" className="flex-1 text-xs">Tri</TabsTrigger>
+                    <TabsTrigger value="xcski" className="flex-1 text-xs">XC Ski</TabsTrigger>
+                    <TabsTrigger value="rowing" className="flex-1 text-xs">Row</TabsTrigger>
+                    <TabsTrigger value="duathlon" className="flex-1 text-xs">Dua</TabsTrigger>
+                    <TabsTrigger value="swimrun" className="flex-1 text-xs">SR</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="cycling">
@@ -238,6 +262,30 @@ export function SimulationPanel() {
                   <TabsContent value="triathlon">
                     <TriathlonConfigForm
                       onSimulate={(config, fatigue) => runSimulation(config, "triathlon", fatigue)}
+                      running={running}
+                    />
+                  </TabsContent>
+                  <TabsContent value="xcski">
+                    <XCSkiingConfigForm
+                      onSimulate={(config, fatigue) => runSimulation(config, "cross_country_skiing", fatigue)}
+                      running={running}
+                    />
+                  </TabsContent>
+                  <TabsContent value="rowing">
+                    <RowingConfigForm
+                      onSimulate={(config, fatigue) => runSimulation(config, "rowing", fatigue)}
+                      running={running}
+                    />
+                  </TabsContent>
+                  <TabsContent value="duathlon">
+                    <DuathlonConfigForm
+                      onSimulate={(config, fatigue) => runSimulation(config, "duathlon", fatigue)}
+                      running={running}
+                    />
+                  </TabsContent>
+                  <TabsContent value="swimrun">
+                    <SwimRunConfigForm
+                      onSimulate={(config, fatigue) => runSimulation(config, "swimrun", fatigue)}
                       running={running}
                     />
                   </TabsContent>

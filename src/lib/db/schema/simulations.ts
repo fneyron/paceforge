@@ -8,7 +8,7 @@ export const simulations = sqliteTable("simulations", {
     .notNull()
     .references(() => routes.id, { onDelete: "cascade" }),
   name: text("name"), // optional name for the simulation
-  sport: text("sport", { enum: ["cycling", "gravel", "trail", "ultra_trail", "road_running", "swimming", "triathlon"] }).notNull(),
+  sport: text("sport", { enum: ["cycling", "gravel", "trail", "ultra_trail", "road_running", "swimming", "triathlon", "cross_country_skiing", "rowing", "duathlon", "swimrun"] }).notNull(),
   config: text("config").notNull(), // JSON string of sport-specific config
   fatigueConfig: text("fatigue_config").notNull(), // JSON string
   weatherConfig: text("weather_config"), // JSON string of WeatherCondition[]
