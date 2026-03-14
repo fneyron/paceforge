@@ -3,12 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Strava
-    STRAVA_CLIENT_ID: str
-    STRAVA_CLIENT_SECRET: str
+    STRAVA_CLIENT_ID: str = ""
+    STRAVA_CLIENT_SECRET: str = ""
     STRAVA_WEBHOOK_VERIFY_TOKEN: str = "paceforge-verify"
 
     # Anthropic
-    ANTHROPIC_API_KEY: str
+    ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
 
     # Database
