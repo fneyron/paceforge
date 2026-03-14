@@ -1,7 +1,9 @@
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,7 @@ from app.services.strava import StravaService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
 @router.get("/auth/strava")
@@ -19,17 +22,6 @@ async def strava_login(db: AsyncSession = Depends(get_db)):
     strava = StravaService(db)
     return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
 
-
-@router.get("/auth/login")
-async def direct_login(request: Request, db: AsyncSession = Depends(get_db)):
-    """Direct login for existing users (bypasses OAuth redirect)."""
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    if len(users) == 1:
-        request.session["user_id"] = users[0].id
-        logger.info("User %d authenticated via direct login", users[0].id)
-        return RedirectResponse(url="/dashboard", status_code=302)
-    return RedirectResponse(url="/?error=auth_failed", status_code=302)
 
 
 @router.get("/auth/strava/callback")
@@ -87,3 +79,8 @@ async def strava_callback(
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=302)
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+async def privacy(request: Request):
+    return templates.TemplateResponse("privacy.html", {"request": request})

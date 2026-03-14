@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}PaceForge — Politique de confidentialité{% endblock title %}
+
+{% block content_public %}
+<div class="min-h-screen bg-white py-12 px-4">
+    <div class="mx-auto max-w-2xl space-y-8">
+        <div>
+            <a href="/" class="text-sm text-gray-500 hover:text-gray-700">&larr; Retour</a>
+            <h1 class="mt-4 text-3xl font-bold tracking-tight">Politique de confidentialité</h1>
+            <p class="mt-2 text-sm text-gray-500">Dernière mise à jour : mars 2026</p>
+        </div>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">1. Qui sommes-nous</h2>
+            <p class="text-gray-600 leading-relaxed">
+                PaceForge est un service de coaching sportif propulsé par l'intelligence artificielle, conçu pour les athlètes d'endurance (course à pied, trail, cyclisme, natation, triathlon). Le service est opéré par Florent Neyron.
+            </p>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">2. Données collectées</h2>
+            <p class="text-gray-600 leading-relaxed">Lorsque vous connectez votre compte Strava, nous collectons :</p>
+            <ul class="list-disc pl-6 text-gray-600 space-y-1">
+                <li><strong>Profil Strava</strong> : prénom, nom, photo de profil, identifiant athlète</li>
+                <li><strong>Activités sportives</strong> : nom, date, distance, durée, vitesse, fréquence cardiaque, cadence, dénivelé, splits, best efforts</li>
+                <li><strong>Tokens d'authentification</strong> : pour accéder à vos données Strava en votre nom</li>
+            </ul>
+            <p class="text-gray-600 leading-relaxed">
+                Nous ne collectons <strong>pas</strong> votre adresse e-mail, votre position GPS détaillée, ni vos données de paiement.
+            </p>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">3. Utilisation des données</h2>
+            <p class="text-gray-600 leading-relaxed">Vos données sont utilisées exclusivement pour :</p>
+            <ul class="list-disc pl-6 text-gray-600 space-y-1">
+                <li>Générer des analyses coaching personnalisées via IA (Claude, Anthropic)</li>
+                <li>Calculer vos tendances d'entraînement et records personnels</li>
+                <li>Produire des bilans hebdomadaires</li>
+                <li>Générer des séances d'entraînement adaptées</li>
+                <li>Publier des commentaires coaching sur vos activités Strava (si activé)</li>
+            </ul>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">4. Partage des données</h2>
+            <p class="text-gray-600 leading-relaxed">
+                Vos données d'activité sont transmises à <strong>Anthropic</strong> (API Claude) pour générer les analyses coaching. Ces données sont envoyées sous forme de texte agrégé (pas de données GPS brutes). Anthropic ne conserve pas les données transmises via l'API au-delà du traitement de la requête.
+            </p>
+            <p class="text-gray-600 leading-relaxed">
+                Nous ne vendons, ne louons et ne partageons vos données avec aucun autre tiers.
+            </p>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">5. Stockage et sécurité</h2>
+            <p class="text-gray-600 leading-relaxed">
+                Vos données sont stockées dans une base de données PostgreSQL hébergée sur un serveur sécurisé en Europe. Les tokens Strava sont stockés de manière chiffrée. Les communications sont protégées par HTTPS (TLS 1.3).
+            </p>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">6. Vos droits</h2>
+            <p class="text-gray-600 leading-relaxed">Conformément au RGPD, vous pouvez à tout moment :</p>
+            <ul class="list-disc pl-6 text-gray-600 space-y-1">
+                <li><strong>Accéder</strong> à vos données depuis votre tableau de bord PaceForge</li>
+                <li><strong>Révoquer l'accès</strong> Strava depuis <a href="https://www.strava.com/settings/apps" class="text-strava hover:underline" target="_blank">les paramètres Strava</a></li>
+                <li><strong>Demander la suppression</strong> de votre compte et de toutes vos données en nous contactant</li>
+            </ul>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">7. Cookies</h2>
+            <p class="text-gray-600 leading-relaxed">
+                PaceForge utilise un unique cookie de session (<code class="bg-gray-100 px-1 rounded">paceforge_session</code>) nécessaire au fonctionnement de l'authentification. Aucun cookie de tracking ou publicitaire n'est utilisé.
+            </p>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-xl font-semibold">8. Contact</h2>
+            <p class="text-gray-600 leading-relaxed">
+                Pour toute question relative à vos données personnelles, contactez-nous à
+                <a href="mailto:florent.neyron@gmail.com" class="text-strava hover:underline">florent.neyron@gmail.com</a>.
+            </p>
+        </section>
+
+        <div class="border-t pt-6 text-center">
+            <a href="/" class="text-sm text-gray-500 hover:text-gray-700">&larr; Retour à l'accueil</a>
+        </div>
+    </div>
+</div>
+{% endblock content_public %}
