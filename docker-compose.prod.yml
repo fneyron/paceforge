@@ -1,8 +1,6 @@
 services:
   app:
     build: .
-    ports:
-      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD}@db:5432/paceforge
       - REDIS_URL=redis://redis:6379/0
@@ -26,6 +24,16 @@ services:
       timeout: 10s
       start_period: 15s
       retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.paceforge.rule=Host(`paceforge.dataik.com`)
+      - traefik.http.routers.paceforge.entrypoints=https
+      - traefik.http.routers.paceforge.tls=true
+      - traefik.http.routers.paceforge.tls.certresolver=letsencrypt
+      - traefik.http.services.paceforge.loadbalancer.server.port=8000
+    networks:
+      - coolify
+      - default
 
   celery-worker:
     build: .
@@ -78,3 +86,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+
+networks:
+  coolify:
+    external: true
