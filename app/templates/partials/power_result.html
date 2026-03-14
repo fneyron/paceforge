@@ -1,0 +1,47 @@
+<div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Résultat</h3>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <div>
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Puissance</p>
+            <p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(result.power_watts) }} <span class="text-xs font-normal text-gray-400">W</span></p>
+        </div>
+        <div>
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps</p>
+            <p class="text-2xl font-bold tabular-nums">{{ result.time_formatted }}</p>
+        </div>
+        <div>
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Vitesse</p>
+            <p class="text-2xl font-bold tabular-nums">{{ result.speed_kmh }} <span class="text-xs font-normal text-gray-400">km/h</span></p>
+        </div>
+        <div>
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">W/kg</p>
+            <p class="text-2xl font-bold tabular-nums">{{ result.watts_per_kg }}</p>
+        </div>
+    </div>
+
+    {% if result.vam > 0 %}
+    <div class="border-t border-gray-100 pt-3">
+        <div class="flex items-center gap-3">
+            <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">VAM</p>
+                <p class="text-sm font-semibold tabular-nums">{{ "%.0f"|format(result.vam) }} <span class="text-xs font-normal text-gray-400">m/h</span></p>
+            </div>
+            <div class="text-xs text-gray-400">
+                {% if result.vam > 1500 %}Niveau pro
+                {% elif result.vam > 1200 %}Excellent
+                {% elif result.vam > 1000 %}Très bon
+                {% elif result.vam > 800 %}Bon
+                {% elif result.vam > 600 %}Correct
+                {% else %}Accessible{% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-3 pt-3 border-t border-gray-100">
+        <p class="text-[10px] text-gray-400">
+            {{ result.gradient_pct }}% · {{ result.length_km }} km · {{ result.total_weight_kg }} kg (cycliste + vélo)
+        </p>
+    </div>
+</div>

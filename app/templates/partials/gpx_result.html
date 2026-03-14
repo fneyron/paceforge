@@ -1,0 +1,204 @@
+<div class="space-y-4">
+    <!-- Course Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Distance</p>
+            <p class="text-xl font-bold tabular-nums">{{ course.total_distance_km }} <span class="text-xs font-normal text-gray-400">km</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D+</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(course.total_elevation_gain) }} <span class="text-xs font-normal text-gray-400">m</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D-</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(course.total_elevation_loss) }} <span class="text-xs font-normal text-gray-400">m</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps estimé</p>
+            <p class="text-xl font-bold tabular-nums">{{ course.predicted_total_time_formatted }}</p>
+        </div>
+    </div>
+
+    <!-- Elevation Profile Chart -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Profil altimétrique</h3>
+        <div class="h-56">
+            <canvas id="elevationChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Athlete profile info -->
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm font-medium">Votre profil athlète</p>
+                    {% set p_min = (profile.flat_pace_s_per_km // 60) | int %}
+                    {% set p_sec = (profile.flat_pace_s_per_km % 60) | int %}
+                    <p class="text-xs text-gray-400">Allure sur plat : {{ p_min }}:{{ '%02d'|format(p_sec) }}/km · {{ profile.data_points }} splits analysés</p>
+                </div>
+            </div>
+            {% if profile.data_points == 0 %}
+            <span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Estimé (pas de splits)</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Split Table -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Temps de passage prédits</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider">
+                        <th class="text-left py-2 pr-3 font-medium">Km</th>
+                        <th class="text-right py-2 px-3 font-medium">D+</th>
+                        <th class="text-right py-2 px-3 font-medium">D-</th>
+                        <th class="text-right py-2 px-3 font-medium">Pente</th>
+                        <th class="text-right py-2 px-3 font-medium">Allure</th>
+                        <th class="text-right py-2 px-3 font-medium">Temps</th>
+                        <th class="text-right py-2 pl-3 font-medium">Cumul</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for seg in course.segments %}
+                    {% set pace_min = (seg.predicted_pace_s_per_km // 60) | int %}
+                    {% set pace_sec = (seg.predicted_pace_s_per_km % 60) | int %}
+                    {% set time_min = (seg.predicted_time_s // 60) | int %}
+                    {% set time_sec = (seg.predicted_time_s % 60) | int %}
+                    {% set cum_h = (seg.cumulative_time_s // 3600) | int %}
+                    {% set cum_m = ((seg.cumulative_time_s % 3600) // 60) | int %}
+                    {% set cum_s = (seg.cumulative_time_s % 60) | int %}
+                    <tr class="hover:bg-gray-50/50
+                        {% if seg.avg_gradient_pct > 10 %}bg-red-50/30
+                        {% elif seg.avg_gradient_pct > 5 %}bg-amber-50/30
+                        {% elif seg.avg_gradient_pct < -5 %}bg-blue-50/30
+                        {% endif %}">
+                        <td class="py-2 pr-3 font-medium tabular-nums">{{ seg.start_km | int }}-{{ seg.end_km | int }}</td>
+                        <td class="text-right py-2 px-3 tabular-nums text-green-600">{% if seg.elevation_gain > 0 %}+{{ "%.0f"|format(seg.elevation_gain) }}{% else %}-{% endif %}</td>
+                        <td class="text-right py-2 px-3 tabular-nums text-red-500">{% if seg.elevation_loss > 0 %}-{{ "%.0f"|format(seg.elevation_loss) }}{% else %}-{% endif %}</td>
+                        <td class="text-right py-2 px-3 tabular-nums
+                            {% if seg.avg_gradient_pct > 10 %}text-red-600 font-semibold
+                            {% elif seg.avg_gradient_pct > 5 %}text-amber-600
+                            {% elif seg.avg_gradient_pct < -5 %}text-blue-600
+                            {% else %}text-gray-500{% endif %}">
+                            {{ "%+.1f"|format(seg.avg_gradient_pct) }}%
+                        </td>
+                        <td class="text-right py-2 px-3 tabular-nums">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
+                        <td class="text-right py-2 px-3 tabular-nums text-gray-500">{{ time_min }}'{{ '%02d'|format(time_sec) }}"</td>
+                        <td class="text-right py-2 pl-3 tabular-nums font-medium">
+                            {% if cum_h > 0 %}{{ cum_h }}h{{ '%02d'|format(cum_m) }}{% else %}{{ cum_m }}'{{ '%02d'|format(cum_s) }}"{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="border-t-2 border-gray-200">
+                        <td class="py-3 pr-3 font-bold">Total</td>
+                        <td class="text-right py-3 px-3 tabular-nums text-green-600 font-medium">+{{ "%.0f"|format(course.total_elevation_gain) }}</td>
+                        <td class="text-right py-3 px-3 tabular-nums text-red-500 font-medium">-{{ "%.0f"|format(course.total_elevation_loss) }}</td>
+                        <td colspan="3"></td>
+                        <td class="text-right py-3 pl-3 tabular-nums font-bold text-lg">{{ course.predicted_total_time_formatted }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Generate Strategy Button -->
+        <div class="mt-4 pt-4 border-t border-gray-100">
+            <form hx-post="/partials/simulator/race-strategy"
+                  hx-target="#strategy-result"
+                  hx-swap="innerHTML"
+                  hx-indicator="#strategy-loading">
+                <input type="hidden" name="course_json" value='{{ course_json }}'>
+                <button type="submit"
+                        class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm">
+                    Générer la stratégie de course (IA)
+                    <span id="strategy-loading" class="htmx-indicator ml-1.5">
+                        <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                    </span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Strategy Result Container -->
+    <div id="strategy-result"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    const elevData = {{ course.elevation_points | tojson }};
+    const labels = elevData.map(p => p.distance_km.toFixed(1));
+    const elevations = elevData.map(p => p.elevation);
+
+    const ctx = document.getElementById('elevationChart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 220);
+    gradient.addColorStop(0, 'rgba(31, 41, 55, 0.25)');
+    gradient.addColorStop(1, 'rgba(31, 41, 55, 0.02)');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: elevations,
+                borderColor: '#1f2937',
+                backgroundColor: gradient,
+                borderWidth: 1.5,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 0,
+                pointHitRadius: 8,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1f2937',
+                    titleFont: { size: 11, family: 'Inter' },
+                    bodyFont: { size: 11, family: 'Inter' },
+                    padding: 10,
+                    cornerRadius: 8,
+                    callbacks: {
+                        title: ctx => 'Km ' + ctx[0].label,
+                        label: ctx => ctx.parsed.y.toFixed(0) + ' m',
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 9, family: 'Inter' },
+                        maxTicksLimit: 20,
+                        callback: function(val, idx) {
+                            const km = parseFloat(labels[idx]);
+                            return km % 5 === 0 ? km + ' km' : '';
+                        },
+                    },
+                },
+                y: {
+                    grid: { color: '#f3f4f6', drawBorder: false },
+                    ticks: {
+                        font: { size: 9, family: 'Inter' },
+                        callback: v => v + ' m',
+                    },
+                },
+            },
+        },
+    });
+})();
+</script>

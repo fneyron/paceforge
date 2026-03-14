@@ -18,6 +18,7 @@ dependencies = [
     "itsdangerous>=2.2",
     "jinja2>=3.1",
     "python-multipart>=0.0.12",
+    "gpxpy>=1.6",
 ]
 
 [project.optional-dependencies]

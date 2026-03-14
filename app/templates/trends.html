@@ -9,11 +9,49 @@
         <p class="text-sm text-gray-500 mt-0.5">Évolution sur les 12 dernières semaines</p>
     </div>
 
+    <!-- Summary Stats -->
+    {% if volumes %}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {% set total_km = volumes | sum(attribute='distance_km') %}
+        {% set total_hours = volumes | sum(attribute='duration_hours') %}
+        {% set total_count = volumes | sum(attribute='count') %}
+        {% set avg_km = (total_km / (volumes | length)) if volumes else 0 %}
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Volume total</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(total_km) }} <span class="text-xs font-normal text-gray-400">km</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps total</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(total_hours) }} <span class="text-xs font-normal text-gray-400">h</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Séances</p>
+            <p class="text-xl font-bold tabular-nums">{{ total_count }}</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Moy. / semaine</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(avg_km) }} <span class="text-xs font-normal text-gray-400">km</span></p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Volume Chart -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Volume hebdomadaire</h3>
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Volume hebdomadaire</h3>
+            {% if volumes %}
+            <div class="flex items-center gap-3">
+                {% for sport, color in sport_colors.items() %}
+                <div class="flex items-center gap-1.5">
+                    <div class="w-2.5 h-2.5 rounded-sm" style="background-color: {{ color }}"></div>
+                    <span class="text-[10px] text-gray-400">{{ sport_labels.get(sport, sport) }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
         {% if volume_labels %}
-        <div class="h-64">
+        <div class="h-72">
             <canvas id="volumeChart"></canvas>
         </div>
         {% else %}
@@ -21,24 +59,40 @@
         {% endif %}
     </div>
 
-    <!-- Pace Chart -->
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Allure moyenne</h3>
-            <select id="pace-sport-selector"
-                    hx-get="/partials/trends/pace"
-                    hx-target="#pace-chart-container"
-                    hx-swap="innerHTML"
-                    hx-include="this"
-                    name="sport"
-                    class="h-8 px-2 rounded-lg border border-gray-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-gray-900">
-                <option value="Run" selected>Course</option>
-                <option value="Ride">Vélo</option>
-                <option value="Swim">Natation</option>
-            </select>
+    <!-- Pace + Duration Charts side by side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Pace Chart -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Allure moyenne</h3>
+                <select id="pace-sport-selector"
+                        hx-get="/partials/trends/pace"
+                        hx-target="#pace-chart-container"
+                        hx-swap="innerHTML"
+                        hx-include="this"
+                        name="sport"
+                        class="h-7 px-2 rounded-lg border border-gray-200 bg-white text-[11px] focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <option value="Run" selected>Course</option>
+                    <option value="TrailRun">Trail</option>
+                    <option value="Ride">Vélo</option>
+                    <option value="Swim">Natation</option>
+                </select>
+            </div>
+            <div id="pace-chart-container">
+                {% include "partials/trends_pace.html" %}
+            </div>
         </div>
-        <div id="pace-chart-container">
-            {% include "partials/trends_pace.html" %}
+
+        <!-- Duration per week -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Durée hebdomadaire</h3>
+            {% if volume_labels %}
+            <div class="h-48">
+                <canvas id="durationChart"></canvas>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400 py-8 text-center">Pas assez de données.</p>
+            {% endif %}
         </div>
     </div>
 
@@ -46,37 +100,26 @@
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Records personnels</h3>
         {% if records %}
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-gray-400 text-xs uppercase tracking-wider">
-                        <th class="text-left py-2 pr-4 font-medium">Distance</th>
-                        <th class="text-right py-2 px-4 font-medium">Temps</th>
-                        <th class="text-right py-2 px-4 font-medium">Allure</th>
-                        <th class="text-left py-2 pl-4 font-medium">Activité</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">
-                    {% for pr in records %}
-                    <tr class="hover:bg-gray-50/50">
-                        <td class="py-2 pr-4 font-medium">{{ pr.distance_label }}</td>
-                        <td class="text-right py-2 px-4 tabular-nums">
-                            {% set hours = pr.elapsed_time // 3600 %}
-                            {% set mins = (pr.elapsed_time % 3600) // 60 %}
-                            {% set secs = pr.elapsed_time % 60 %}
-                            {% if hours > 0 %}{{ hours }}h{{ '%02d'|format(mins) }}'{{ '%02d'|format(secs) }}"
-                            {% else %}{{ mins }}'{{ '%02d'|format(secs) }}"{% endif %}
-                        </td>
-                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ pr.pace_formatted }}</td>
-                        <td class="text-left py-2 pl-4">
-                            <a href="/activity/{{ pr.activity_id }}" class="text-gray-500 hover:text-gray-900 transition-colors">
-                                {{ pr.activity_name }}
-                            </a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {% for pr in records %}
+            <a href="/activity/{{ pr.activity_id }}" class="group rounded-lg border border-gray-100 bg-gray-50/50 p-4 hover:border-gray-300 hover:bg-white transition-all">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-semibold text-gray-900 uppercase tracking-wider">{{ pr.distance_label }}</span>
+                    <span class="text-[10px] text-gray-400">{{ pr.date.strftime('%d/%m/%Y') if pr.date else '' }}</span>
+                </div>
+                <div class="flex items-baseline gap-3">
+                    <span class="text-lg font-bold tabular-nums">
+                        {% set hours = pr.elapsed_time // 3600 %}
+                        {% set mins = (pr.elapsed_time % 3600) // 60 %}
+                        {% set secs = pr.elapsed_time % 60 %}
+                        {% if hours > 0 %}{{ hours }}h{{ '%02d'|format(mins) }}'{{ '%02d'|format(secs) }}"
+                        {% else %}{{ mins }}'{{ '%02d'|format(secs) }}"{% endif %}
+                    </span>
+                    <span class="text-sm text-gray-400 tabular-nums">{{ pr.pace_formatted }}</span>
+                </div>
+                <p class="text-xs text-gray-400 mt-1 truncate group-hover:text-gray-600 transition-colors">{{ pr.activity_name }}</p>
+            </a>
+            {% endfor %}
         </div>
         {% else %}
         <p class="text-sm text-gray-400 py-4 text-center">Aucun record personnel enregistré.</p>
@@ -88,29 +131,40 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
-{% if volume_labels %}
-// Sport colors
-const sportColors = {
-    'Run': '#374151',
+const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' } } },
+        y: { grid: { color: '#f3f4f6', drawBorder: false }, ticks: { font: { size: 10, family: 'Inter' } }, beginAtZero: true },
+    },
+};
+
+const sportColorMap = {
+    'Run': '#1f2937',
     'TrailRun': '#92400e',
-    'Ride': '#1d4ed8',
-    'VirtualRide': '#3b82f6',
+    'Ride': '#2563eb',
+    'VirtualRide': '#60a5fa',
+    'GravelRide': '#1e40af',
     'Swim': '#0891b2',
     'Walk': '#65a30d',
     'Hike': '#16a34a',
+    'Yoga': '#a855f7',
+    'EBikeRide': '#3b82f6',
 };
 
-const defaultColor = '#9ca3af';
-
+{% if volume_labels %}
 // Volume Chart (stacked bar)
 const volumeCtx = document.getElementById('volumeChart').getContext('2d');
 const sportDatasets = {{ sport_datasets | tojson }};
 const datasets = Object.entries(sportDatasets).map(([sport, data]) => ({
     label: sport,
     data: data,
-    backgroundColor: sportColors[sport] || defaultColor,
-    borderRadius: 4,
-    barPercentage: 0.7,
+    backgroundColor: sportColorMap[sport] || '#d1d5db',
+    borderRadius: { topLeft: 3, topRight: 3 },
+    barPercentage: 0.65,
+    categoryPercentage: 0.8,
 }));
 
 new Chart(volumeCtx, {
@@ -120,22 +174,22 @@ new Chart(volumeCtx, {
         datasets: datasets.length > 0 ? datasets : [{
             label: 'Distance',
             data: {{ volume_data | tojson }},
-            backgroundColor: '#374151',
-            borderRadius: 4,
-            barPercentage: 0.7,
+            backgroundColor: '#1f2937',
+            borderRadius: 3,
+            barPercentage: 0.65,
         }],
     },
     options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        ...chartDefaults,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-            legend: {
-                display: datasets.length > 1,
-                position: 'bottom',
-                labels: { boxWidth: 12, padding: 16, font: { size: 11 } },
-            },
+            legend: { display: false },
             tooltip: {
+                backgroundColor: '#1f2937',
+                titleFont: { size: 11, family: 'Inter' },
+                bodyFont: { size: 11, family: 'Inter' },
+                padding: 10,
+                cornerRadius: 8,
                 callbacks: {
                     afterBody: function(tooltipItems) {
                         const idx = tooltipItems[0].dataIndex;
@@ -150,15 +204,69 @@ new Chart(volumeCtx, {
             x: {
                 stacked: true,
                 grid: { display: false },
-                ticks: { font: { size: 11 } },
+                ticks: { font: { size: 10, family: 'Inter' } },
             },
             y: {
                 stacked: true,
                 beginAtZero: true,
-                grid: { color: '#f3f4f6' },
+                grid: { color: '#f3f4f6', drawBorder: false },
                 ticks: {
-                    font: { size: 11 },
+                    font: { size: 10, family: 'Inter' },
                     callback: v => v + ' km',
+                },
+            },
+        },
+    },
+});
+
+// Duration Chart
+const durationCtx = document.getElementById('durationChart').getContext('2d');
+const gradient = durationCtx.createLinearGradient(0, 0, 0, 200);
+gradient.addColorStop(0, 'rgba(37, 99, 235, 0.15)');
+gradient.addColorStop(1, 'rgba(37, 99, 235, 0.01)');
+
+new Chart(durationCtx, {
+    type: 'line',
+    data: {
+        labels: {{ volume_labels | tojson }},
+        datasets: [{
+            label: 'Durée',
+            data: {{ volume_hours | tojson }},
+            borderColor: '#2563eb',
+            backgroundColor: gradient,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3,
+            pointBackgroundColor: '#2563eb',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            pointHoverRadius: 5,
+        }],
+    },
+    options: {
+        ...chartDefaults,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: '#1f2937',
+                titleFont: { size: 11, family: 'Inter' },
+                bodyFont: { size: 11, family: 'Inter' },
+                padding: 10,
+                cornerRadius: 8,
+                callbacks: {
+                    label: ctx => ctx.parsed.y.toFixed(1) + ' h',
+                },
+            },
+        },
+        scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' } } },
+            y: {
+                beginAtZero: true,
+                grid: { color: '#f3f4f6', drawBorder: false },
+                ticks: {
+                    font: { size: 10, family: 'Inter' },
+                    callback: v => v + 'h',
                 },
             },
         },
@@ -166,35 +274,46 @@ new Chart(volumeCtx, {
 });
 {% endif %}
 
-// Pace chart init (will be re-created by HTMX partials)
+// Pace chart
 function initPaceChart(labels, data, isCycling) {
     const container = document.getElementById('paceCanvas');
     if (!container || !labels.length) return;
-
     if (window._paceChart) window._paceChart.destroy();
 
-    window._paceChart = new Chart(container.getContext('2d'), {
+    const ctx = container.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 180);
+    grad.addColorStop(0, 'rgba(31, 41, 55, 0.12)');
+    grad.addColorStop(1, 'rgba(31, 41, 55, 0.01)');
+
+    window._paceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
             datasets: [{
                 label: isCycling ? 'Vitesse' : 'Allure',
                 data: data,
-                borderColor: '#374151',
-                backgroundColor: 'rgba(55, 65, 81, 0.05)',
+                borderColor: '#1f2937',
+                backgroundColor: grad,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.3,
-                pointRadius: 4,
-                pointBackgroundColor: '#374151',
+                tension: 0.35,
+                pointRadius: 3,
+                pointBackgroundColor: '#1f2937',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 1.5,
+                pointHoverRadius: 5,
             }],
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            ...chartDefaults,
             plugins: {
                 legend: { display: false },
                 tooltip: {
+                    backgroundColor: '#1f2937',
+                    titleFont: { size: 11, family: 'Inter' },
+                    bodyFont: { size: 11, family: 'Inter' },
+                    padding: 10,
+                    cornerRadius: 8,
                     callbacks: {
                         label: function(ctx) {
                             if (isCycling) return ctx.parsed.y.toFixed(1) + ' km/h';
@@ -207,12 +326,12 @@ function initPaceChart(labels, data, isCycling) {
                 },
             },
             scales: {
-                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' } } },
                 y: {
                     reverse: !isCycling,
-                    grid: { color: '#f3f4f6' },
+                    grid: { color: '#f3f4f6', drawBorder: false },
                     ticks: {
-                        font: { size: 11 },
+                        font: { size: 10, family: 'Inter' },
                         callback: function(v) {
                             if (isCycling) return v.toFixed(0) + ' km/h';
                             const min = Math.floor(v);
@@ -226,7 +345,6 @@ function initPaceChart(labels, data, isCycling) {
     });
 }
 
-// Init pace chart on page load
 document.addEventListener('DOMContentLoaded', function() {
     initPaceChart(
         {{ pace_labels | tojson }},
@@ -235,7 +353,6 @@ document.addEventListener('DOMContentLoaded', function() {
     );
 });
 
-// Re-init pace chart after HTMX swap
 document.addEventListener('htmx:afterSwap', function(event) {
     if (event.detail.target.id === 'pace-chart-container') {
         const el = event.detail.target;

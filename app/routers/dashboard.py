@@ -42,15 +42,19 @@ async def dashboard(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Sync recent activities from Strava on first load
-    await _sync_recent_activities(user, db)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Only sync from Strava if last sync was > 5 minutes ago
+    last_sync = request.session.get("last_strava_sync")
+    if not last_sync or (now.timestamp() - last_sync) > 300:
+        await _sync_recent_activities(user, db)
+        request.session["last_strava_sync"] = now.timestamp()
 
     # Get activities with analysis status
     activities = await _get_activities_page(db, user.id, page=1)
 
     # Training load
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
     training_load = await calculate_training_load(db, user.id, now)
 
     # Race readiness (if goal is set)
@@ -129,7 +133,9 @@ async def activity_row_partial(
 async def _get_activities_page(
     db: AsyncSession, user_id: int, page: int = 1, sport_type: str | None = None
 ) -> list[ActivitySummary]:
-    query = select(Activity).where(Activity.user_id == user_id)
+    from sqlalchemy.orm import selectinload
+
+    query = select(Activity).options(selectinload(Activity.analysis)).where(Activity.user_id == user_id)
 
     if sport_type:
         query = query.where(Activity.sport_type == sport_type)

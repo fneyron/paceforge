@@ -14,6 +14,32 @@ templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["trends"])
 
+SPORT_COLORS = {
+    "Run": "#1f2937",
+    "TrailRun": "#92400e",
+    "Ride": "#2563eb",
+    "VirtualRide": "#60a5fa",
+    "GravelRide": "#1e40af",
+    "Swim": "#0891b2",
+    "Walk": "#65a30d",
+    "Hike": "#16a34a",
+    "Yoga": "#a855f7",
+    "EBikeRide": "#3b82f6",
+}
+
+SPORT_LABELS = {
+    "Run": "Course",
+    "TrailRun": "Trail",
+    "Ride": "Vélo",
+    "VirtualRide": "Vélo virtuel",
+    "GravelRide": "Gravel",
+    "Swim": "Natation",
+    "Walk": "Marche",
+    "Hike": "Rando",
+    "Yoga": "Yoga",
+    "EBikeRide": "VAE",
+}
+
 
 @router.get("/trends", response_class=HTMLResponse)
 async def trends_page(
@@ -44,6 +70,9 @@ async def trends_page(
     pace_labels = [p.week_start.strftime("%d/%m") for p in paces]
     pace_data = [p.avg_pace_min_per_km for p in paces]
 
+    # Build legend colors for displayed sports only
+    sport_colors = {s: SPORT_COLORS.get(s, "#d1d5db") for s in sorted(all_sports)}
+
     return templates.TemplateResponse(
         request,
         "trends.html",
@@ -55,6 +84,8 @@ async def trends_page(
             "volume_hours": volume_hours,
             "volume_counts": volume_counts,
             "sport_datasets": sport_datasets,
+            "sport_colors": sport_colors,
+            "sport_labels": SPORT_LABELS,
             "pace_labels": pace_labels,
             "pace_data": pace_data,
             "records": records,

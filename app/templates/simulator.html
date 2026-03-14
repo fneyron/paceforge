@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Simulateur — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Simulateur de course</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Prédiction de temps et calcul de puissance</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button id="tab-trail" onclick="switchTab('trail')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">
+            Trail / Course à pied
+        </button>
+        <button id="tab-power" onclick="switchTab('power')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">
+            Puissance vélo
+        </button>
+    </div>
+
+    <!-- Trail Tab -->
+    <div id="panel-trail">
+        <!-- GPX Upload -->
+        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX</h3>
+
+            <form hx-post="/partials/simulator/gpx-upload"
+                  hx-target="#gpx-result"
+                  hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data"
+                  hx-indicator="#gpx-loading">
+
+                <div id="gpx-drop-zone"
+                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
+                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
+                     ondrop="handleDrop(event)">
+
+                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                    </svg>
+
+                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX ici</p>
+                    <p class="text-xs text-gray-400 mb-3">ou</p>
+
+                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this)">
+                        Choisir un fichier
+                    </label>
+
+                    <p id="file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
+                </div>
+
+                <div class="flex items-center justify-between mt-4">
+                    <button type="submit"
+                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
+                            id="gpx-submit-btn" disabled>
+                        Analyser le parcours
+                        <span id="gpx-loading" class="htmx-indicator ml-1.5">
+                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- GPX Result Container -->
+        <div id="gpx-result" class="mt-4"></div>
+    </div>
+
+    <!-- Power Tab -->
+    <div id="panel-power" class="hidden">
+        <!-- FTP Estimate -->
+        {% if ftp %}
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm mb-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">FTP estimée</h3>
+                    <p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(ftp.estimated_ftp) }} <span class="text-sm font-normal text-gray-400">W</span></p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-gray-400">{{ ftp.confidence }}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">Basée sur : {{ ftp.activity_name }}</p>
+                    {% if ftp.activity_date %}
+                    <p class="text-[10px] text-gray-300">{{ ftp.activity_date.strftime('%d/%m/%Y') }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Power Calculator Form -->
+        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Calculateur de puissance</h3>
+
+            <form hx-post="/partials/simulator/power-calc"
+                  hx-target="#power-result"
+                  hx-swap="innerHTML"
+                  hx-indicator="#power-loading">
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Pente (%)</label>
+                        <input type="number" name="gradient_pct" value="7" step="0.1"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Longueur (km)</label>
+                        <input type="number" name="length_km" value="10" step="0.1" min="0.1"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Poids cycliste (kg)</label>
+                        <input type="number" name="rider_weight_kg" value="{{ rider_weight }}" step="0.5" min="30"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Poids vélo (kg)</label>
+                        <input type="number" name="bike_weight_kg" value="9" step="0.1" min="3"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                </div>
+
+                <!-- Mode toggle -->
+                <div class="mb-4">
+                    <p class="text-xs text-gray-500 mb-2">Mode de calcul</p>
+                    <div class="flex gap-2">
+                        <label class="flex-1">
+                            <input type="radio" name="calc_mode" value="time" class="sr-only peer" checked onchange="toggleCalcMode('time')">
+                            <div class="peer-checked:bg-gray-900 peer-checked:text-white px-3 py-2 rounded-lg border border-gray-200 text-sm text-center cursor-pointer text-gray-600 hover:bg-gray-50 transition-colors">
+                                Temps cible → Watts
+                            </div>
+                        </label>
+                        <label class="flex-1">
+                            <input type="radio" name="calc_mode" value="watts" class="sr-only peer" onchange="toggleCalcMode('watts')">
+                            <div class="peer-checked:bg-gray-900 peer-checked:text-white px-3 py-2 rounded-lg border border-gray-200 text-sm text-center cursor-pointer text-gray-600 hover:bg-gray-50 transition-colors">
+                                Watts cible → Temps
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div id="time-input-group">
+                        <label class="block text-xs text-gray-500 mb-1">Temps cible (minutes)</label>
+                        <input type="number" name="target_time_min" value="30" step="0.5" min="1"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                    <div id="watts-input-group" class="hidden">
+                        <label class="block text-xs text-gray-500 mb-1">Puissance cible (W)</label>
+                        <input type="number" name="target_watts" value="{{ '%.0f'|format(ftp.estimated_ftp) if ftp else 250 }}" step="5" min="50"
+                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                               disabled>
+                    </div>
+                </div>
+
+                <button type="submit"
+                        class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm">
+                    Calculer
+                    <span id="power-loading" class="htmx-indicator ml-1.5">
+                        <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                    </span>
+                </button>
+            </form>
+        </div>
+
+        <!-- Power Result -->
+        <div id="power-result" class="mt-4"></div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+<script>
+function switchTab(tab) {
+    document.getElementById('panel-trail').classList.toggle('hidden', tab !== 'trail');
+    document.getElementById('panel-power').classList.toggle('hidden', tab !== 'power');
+    document.getElementById('tab-trail').classList.toggle('bg-white', tab === 'trail');
+    document.getElementById('tab-trail').classList.toggle('text-gray-900', tab === 'trail');
+    document.getElementById('tab-trail').classList.toggle('shadow-sm', tab === 'trail');
+    document.getElementById('tab-trail').classList.toggle('text-gray-500', tab !== 'trail');
+    document.getElementById('tab-power').classList.toggle('bg-white', tab === 'power');
+    document.getElementById('tab-power').classList.toggle('text-gray-900', tab === 'power');
+    document.getElementById('tab-power').classList.toggle('shadow-sm', tab === 'power');
+    document.getElementById('tab-power').classList.toggle('text-gray-500', tab !== 'power');
+}
+
+function updateFileName(input) {
+    const name = input.files[0]?.name;
+    const el = document.getElementById('file-name');
+    const btn = document.getElementById('gpx-submit-btn');
+    if (name) {
+        el.textContent = name;
+        el.classList.remove('hidden');
+        btn.disabled = false;
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    e.target.classList.remove('border-gray-400', 'bg-gray-50');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.gpx')) {
+        const input = document.querySelector('input[name="gpx_file"]');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        updateFileName(input);
+    }
+}
+
+function toggleCalcMode(mode) {
+    const timeGroup = document.getElementById('time-input-group');
+    const wattsGroup = document.getElementById('watts-input-group');
+    const timeInput = timeGroup.querySelector('input');
+    const wattsInput = wattsGroup.querySelector('input');
+
+    if (mode === 'time') {
+        timeGroup.classList.remove('hidden');
+        wattsGroup.classList.add('hidden');
+        timeInput.disabled = false;
+        wattsInput.disabled = true;
+    } else {
+        timeGroup.classList.add('hidden');
+        wattsGroup.classList.remove('hidden');
+        timeInput.disabled = true;
+        wattsInput.disabled = false;
+    }
+}
+</script>
+{% endblock scripts %}

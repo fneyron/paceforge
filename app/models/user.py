@@ -43,7 +43,7 @@ class User(Base):
         DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 
-    activities = relationship("Activity", back_populates="user", lazy="selectin")
+    activities = relationship("Activity", back_populates="user", lazy="noload")
 
     def __repr__(self) -> str:
         return f"<User {self.id} strava={self.strava_athlete_id}>"
