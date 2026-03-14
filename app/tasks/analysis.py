@@ -56,11 +56,11 @@ def process_new_activity(
 
 
 async def _run_analysis(owner_strava_id: int, strava_activity_id: int) -> dict:
-    from app.database import async_session_factory
+    from app.database import get_task_session
     from app.services.analysis import AnalysisOrchestrator
     from app.services.strava import StravaService
 
-    async with async_session_factory() as db:
+    async with get_task_session() as db:
         try:
             orchestrator = AnalysisOrchestrator(db)
             analysis = await orchestrator.process_activity(

@@ -30,7 +30,7 @@ def generate_weekly_digests(self: Task) -> dict:
 
 
 async def _generate_all_digests() -> dict:
-    from app.database import async_session_factory
+    from app.database import get_task_session
     from app.models.activity import Activity
     from app.models.user import User
     from app.models.weekly_digest import WeeklyDigest
@@ -48,7 +48,7 @@ async def _generate_all_digests() -> dict:
     skipped = 0
     errors = 0
 
-    async with async_session_factory() as db:
+    async with get_task_session() as db:
         # Get all users
         users_result = await db.execute(select(User))
         users = users_result.scalars().all()

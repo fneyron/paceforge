@@ -47,6 +47,12 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping --timeout 10 2>/dev/null | grep -q pong || exit 1"]
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
 
   db:
     image: postgres:16-alpine
