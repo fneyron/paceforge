@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Tendances — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Tendances</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Évolution sur les 12 dernières semaines</p>
+    </div>
+
+    <!-- Volume Chart -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Volume hebdomadaire</h3>
+        {% if volume_labels %}
+        <div class="h-64">
+            <canvas id="volumeChart"></canvas>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 py-8 text-center">Pas assez de données pour afficher les tendances.</p>
+        {% endif %}
+    </div>
+
+    <!-- Pace Chart -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Allure moyenne</h3>
+            <select id="pace-sport-selector"
+                    hx-get="/partials/trends/pace"
+                    hx-target="#pace-chart-container"
+                    hx-swap="innerHTML"
+                    hx-include="this"
+                    name="sport"
+                    class="h-8 px-2 rounded-lg border border-gray-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <option value="Run" selected>Course</option>
+                <option value="Ride">Vélo</option>
+                <option value="Swim">Natation</option>
+            </select>
+        </div>
+        <div id="pace-chart-container">
+            {% include "partials/trends_pace.html" %}
+        </div>
+    </div>
+
+    <!-- Personal Records -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Records personnels</h3>
+        {% if records %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-400 text-xs uppercase tracking-wider">
+                        <th class="text-left py-2 pr-4 font-medium">Distance</th>
+                        <th class="text-right py-2 px-4 font-medium">Temps</th>
+                        <th class="text-right py-2 px-4 font-medium">Allure</th>
+                        <th class="text-left py-2 pl-4 font-medium">Activité</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for pr in records %}
+                    <tr class="hover:bg-gray-50/50">
+                        <td class="py-2 pr-4 font-medium">{{ pr.distance_label }}</td>
+                        <td class="text-right py-2 px-4 tabular-nums">
+                            {% set hours = pr.elapsed_time // 3600 %}
+                            {% set mins = (pr.elapsed_time % 3600) // 60 %}
+                            {% set secs = pr.elapsed_time % 60 %}
+                            {% if hours > 0 %}{{ hours }}h{{ '%02d'|format(mins) }}'{{ '%02d'|format(secs) }}"
+                            {% else %}{{ mins }}'{{ '%02d'|format(secs) }}"{% endif %}
+                        </td>
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ pr.pace_formatted }}</td>
+                        <td class="text-left py-2 pl-4">
+                            <a href="/activity/{{ pr.activity_id }}" class="text-gray-500 hover:text-gray-900 transition-colors">
+                                {{ pr.activity_name }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 py-4 text-center">Aucun record personnel enregistré.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+{% if volume_labels %}
+// Sport colors
+const sportColors = {
+    'Run': '#374151',
+    'TrailRun': '#92400e',
+    'Ride': '#1d4ed8',
+    'VirtualRide': '#3b82f6',
+    'Swim': '#0891b2',
+    'Walk': '#65a30d',
+    'Hike': '#16a34a',
+};
+
+const defaultColor = '#9ca3af';
+
+// Volume Chart (stacked bar)
+const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+const sportDatasets = {{ sport_datasets | tojson }};
+const datasets = Object.entries(sportDatasets).map(([sport, data]) => ({
+    label: sport,
+    data: data,
+    backgroundColor: sportColors[sport] || defaultColor,
+    borderRadius: 4,
+    barPercentage: 0.7,
+}));
+
+new Chart(volumeCtx, {
+    type: 'bar',
+    data: {
+        labels: {{ volume_labels | tojson }},
+        datasets: datasets.length > 0 ? datasets : [{
+            label: 'Distance',
+            data: {{ volume_data | tojson }},
+            backgroundColor: '#374151',
+            borderRadius: 4,
+            barPercentage: 0.7,
+        }],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: {
+                display: datasets.length > 1,
+                position: 'bottom',
+                labels: { boxWidth: 12, padding: 16, font: { size: 11 } },
+            },
+            tooltip: {
+                callbacks: {
+                    afterBody: function(tooltipItems) {
+                        const idx = tooltipItems[0].dataIndex;
+                        const hours = {{ volume_hours | tojson }}[idx];
+                        const count = {{ volume_counts | tojson }}[idx];
+                        return `${hours}h · ${count} séance${count > 1 ? 's' : ''}`;
+                    },
+                },
+            },
+        },
+        scales: {
+            x: {
+                stacked: true,
+                grid: { display: false },
+                ticks: { font: { size: 11 } },
+            },
+            y: {
+                stacked: true,
+                beginAtZero: true,
+                grid: { color: '#f3f4f6' },
+                ticks: {
+                    font: { size: 11 },
+                    callback: v => v + ' km',
+                },
+            },
+        },
+    },
+});
+{% endif %}
+
+// Pace chart init (will be re-created by HTMX partials)
+function initPaceChart(labels, data, isCycling) {
+    const container = document.getElementById('paceCanvas');
+    if (!container || !labels.length) return;
+
+    if (window._paceChart) window._paceChart.destroy();
+
+    window._paceChart = new Chart(container.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: isCycling ? 'Vitesse' : 'Allure',
+                data: data,
+                borderColor: '#374151',
+                backgroundColor: 'rgba(55, 65, 81, 0.05)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: '#374151',
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            if (isCycling) return ctx.parsed.y.toFixed(1) + ' km/h';
+                            const total = ctx.parsed.y;
+                            const min = Math.floor(total);
+                            const sec = Math.round((total - min) * 60);
+                            return `${min}:${sec.toString().padStart(2, '0')}/km`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                y: {
+                    reverse: !isCycling,
+                    grid: { color: '#f3f4f6' },
+                    ticks: {
+                        font: { size: 11 },
+                        callback: function(v) {
+                            if (isCycling) return v.toFixed(0) + ' km/h';
+                            const min = Math.floor(v);
+                            const sec = Math.round((v - min) * 60);
+                            return `${min}:${sec.toString().padStart(2, '0')}`;
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
+// Init pace chart on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initPaceChart(
+        {{ pace_labels | tojson }},
+        {{ pace_data | tojson }},
+        false
+    );
+});
+
+// Re-init pace chart after HTMX swap
+document.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target.id === 'pace-chart-container') {
+        const el = event.detail.target;
+        const labels = JSON.parse(el.querySelector('[data-pace-labels]')?.dataset.paceLabels || '[]');
+        const data = JSON.parse(el.querySelector('[data-pace-data]')?.dataset.paceData || '[]');
+        const isCycling = el.querySelector('[data-is-cycling]')?.dataset.isCycling === 'true';
+        initPaceChart(labels, data, isCycling);
+    }
+});
+</script>
+{% endblock scripts %}

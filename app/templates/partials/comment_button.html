@@ -1,0 +1,33 @@
+{% if analysis.comment_posted %}
+<div class="flex items-center gap-1.5 text-xs text-gray-500">
+    <svg class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    Posté sur Strava
+    {% if analysis.comment_posted_at %}
+    <span class="text-gray-400">· {{ analysis.comment_posted_at.strftime('%d/%m à %H:%M') }}</span>
+    {% endif %}
+</div>
+{% elif error is defined and error %}
+<div class="space-y-2">
+    <p class="text-xs text-red-500">{{ error }}</p>
+    <button
+        hx-post="/partials/activity/{{ activity.id }}/post-comment"
+        hx-swap="outerHTML"
+        hx-confirm="Poster ce commentaire coaching sur Strava ?"
+        class="h-8 px-3 rounded-lg bg-strava text-white text-xs font-medium hover:bg-strava-hover transition-colors">
+        Réessayer
+    </button>
+</div>
+{% else %}
+<button
+    hx-post="/partials/activity/{{ activity.id }}/post-comment"
+    hx-swap="outerHTML"
+    hx-confirm="Poster ce commentaire coaching sur Strava ?"
+    class="inline-flex items-center h-8 px-3 rounded-lg bg-strava text-white text-xs font-medium hover:bg-strava-hover transition-colors">
+    <svg class="w-3.5 h-3.5 mr-1.5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>
+    </svg>
+    Poster sur Strava
+</button>
+{% endif %}

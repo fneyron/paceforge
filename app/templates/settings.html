@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Réglages — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Réglages</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Préférences et objectifs</p>
+    </div>
+
+    {% if saved is defined and saved %}
+    <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        Réglages sauvegardés avec succès.
+    </div>
+    {% endif %}
+
+    <form method="post" action="/settings" class="space-y-6">
+
+        <!-- Auto-post -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+            <h2 class="text-sm font-semibold tracking-tight">Commentaires Strava</h2>
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" name="auto_post_comments" value="on"
+                       {% if user.auto_post_comments %}checked{% endif %}
+                       class="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900">
+                <div>
+                    <p class="text-sm font-medium">Poster automatiquement les analyses</p>
+                    <p class="text-xs text-gray-400">Chaque nouvelle activité recevra un commentaire coaching automatique sur Strava</p>
+                </div>
+            </label>
+        </div>
+
+        <!-- Preferred sports -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+            <h2 class="text-sm font-semibold tracking-tight">Sports préférés</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {% for value, label in sport_options %}
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="preferred_sports" value="{{ value }}"
+                           {% if user.preferred_sports and value in user.preferred_sports %}checked{% endif %}
+                           class="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900">
+                    <span class="text-sm">{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Weekly volume target -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+            <h2 class="text-sm font-semibold tracking-tight">Objectif hebdomadaire</h2>
+            <div class="max-w-xs">
+                <label for="weekly_volume_target_km" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Volume cible</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="weekly_volume_target_km" name="weekly_volume_target_km"
+                           value="{{ user.weekly_volume_target_km or '' }}"
+                           placeholder="Ex: 50"
+                           step="0.1" min="0"
+                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm tabular-nums placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                    <span class="text-sm text-gray-400 shrink-0">km / semaine</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Race goal -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+            <h2 class="text-sm font-semibold tracking-tight">Objectif course</h2>
+            <p class="text-xs text-gray-400">Définissez votre prochaine course pour suivre votre progression</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label for="race_name" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Nom de la course</label>
+                    <input type="text" id="race_name" name="race_name"
+                           value="{{ user.race_name or '' }}"
+                           placeholder="Ex: Marathon de Paris"
+                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="race_date" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Date</label>
+                    <input type="date" id="race_date" name="race_date"
+                           value="{{ user.race_date.strftime('%Y-%m-%d') if user.race_date else '' }}"
+                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="race_distance_km" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Distance</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="race_distance_km" name="race_distance_km"
+                               value="{{ user.race_distance_km or '' }}"
+                               placeholder="42.195"
+                               step="0.1" min="0"
+                               class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm tabular-nums placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                        <span class="text-sm text-gray-400 shrink-0">km</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div>
+            <button type="submit"
+                    class="inline-flex items-center h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
+                Sauvegarder
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock content %}

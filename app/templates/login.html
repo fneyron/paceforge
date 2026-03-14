@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}PaceForge — Connexion{% endblock title %}
+
+{% block content_public %}
+<div class="flex min-h-screen items-center justify-center bg-white">
+    <div class="mx-auto flex w-full max-w-sm flex-col items-center space-y-6 p-6">
+        <div class="space-y-2 text-center">
+            <h1 class="text-3xl font-bold tracking-tight">PaceForge</h1>
+            <p class="text-gray-500">
+                Coaching IA pour les athlètes d'endurance
+            </p>
+        </div>
+
+        <div class="w-full space-y-3">
+            <a href="/auth/strava"
+               class="w-full h-10 px-6 rounded-lg inline-flex items-center justify-center bg-strava hover:bg-strava-hover text-white font-medium text-sm transition-colors">
+                <svg class="mr-2 h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>
+                </svg>
+                Se connecter avec Strava
+            </a>
+        </div>
+
+        {% if error %}
+        <div class="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            La connexion a échoué. Veuillez réessayer.
+        </div>
+        {% endif %}
+
+        <p class="text-xs text-gray-400 text-center">
+            Connectez votre compte Strava pour recevoir des analyses coaching IA personnalisées sur vos activités.
+        </p>
+    </div>
+</div>
+{% endblock content_public %}

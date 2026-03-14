@@ -1,0 +1,95 @@
+{% if error is defined and error %}
+<div class="rounded-xl border border-red-200 bg-red-50 p-5">
+    <p class="text-sm text-red-600">{{ error }}</p>
+</div>
+{% elif workout is defined and workout %}
+<div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h3 class="text-base font-semibold tracking-tight">{{ workout.session_title }}</h3>
+            <p class="text-xs text-gray-400 mt-0.5">{{ workout.sport }} · {{ workout.estimated_duration }}</p>
+        </div>
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
+            {{ workout.sport }}
+        </span>
+    </div>
+
+    <!-- Goal -->
+    <div class="border-l-2 border-gray-900 pl-4">
+        <p class="text-sm text-gray-700 leading-relaxed">{{ workout.goal }}</p>
+    </div>
+
+    <!-- Warmup -->
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Échauffement</h4>
+        <ul class="space-y-1.5">
+            {% for step in workout.warmup %}
+            <li class="flex items-start gap-2 text-sm">
+                <svg class="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-gray-700">{{ step }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <!-- Main Set -->
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Bloc principal</h4>
+        <div class="rounded-lg bg-gray-50 border border-gray-100 p-4">
+            <ul class="space-y-2">
+                {% for block in workout.main_set %}
+                <li class="flex items-start gap-2 text-sm">
+                    <svg class="w-4 h-4 text-strava flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <span class="text-gray-700 font-medium">{{ block }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Cooldown -->
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Retour au calme</h4>
+        <ul class="space-y-1.5">
+            {% for step in workout.cooldown %}
+            <li class="flex items-start gap-2 text-sm">
+                <svg class="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+                <span class="text-gray-700">{{ step }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <!-- Execution Tips -->
+    {% if workout.execution_tips %}
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Conseils d'exécution</h4>
+        <ul class="space-y-1.5">
+            {% for tip in workout.execution_tips %}
+            <li class="flex items-start gap-2 text-sm">
+                <svg class="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-gray-700">{{ tip }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Coach Note -->
+    {% if workout.coach_note %}
+    <div class="rounded-lg bg-gray-50 border border-gray-100 p-4">
+        <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Note du coach</h4>
+        <p class="text-sm text-gray-700 italic">{{ workout.coach_note }}</p>
+    </div>
+    {% endif %}
+</div>
+{% endif %}

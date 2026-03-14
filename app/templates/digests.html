@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Bilans hebdomadaires — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Bilans hebdomadaires</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Résumé IA de vos semaines d'entraînement</p>
+    </div>
+
+    {% if digests %}
+    <div class="space-y-3">
+        {% for digest in digests %}
+        <a href="/digest/{{ digest.id }}" class="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:border-gray-300 transition-colors">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium">Semaine du {{ digest.week_start.strftime('%d/%m') }} au {{ digest.week_end.strftime('%d/%m/%Y') }}</span>
+                <span class="text-[10px] text-gray-400 font-mono">{{ digest.model_used }}</span>
+            </div>
+            <p class="text-sm text-gray-600 line-clamp-2">{{ digest.summary }}</p>
+            {% if digest.volume_assessment %}
+            <p class="text-xs text-gray-400 mt-2">{{ digest.volume_assessment }}</p>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm">
+        <p class="text-gray-500">Aucun bilan hebdomadaire pour le moment.</p>
+        <p class="text-gray-400 text-sm mt-1">Les bilans sont générés automatiquement chaque lundi matin.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock content %}

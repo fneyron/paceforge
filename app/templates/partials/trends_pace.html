@@ -1,0 +1,20 @@
+{% if pace_labels %}
+<div data-pace-labels="{{ pace_labels | tojson }}"
+     data-pace-data="{{ pace_data | tojson }}"
+     data-is-cycling="{{ 'true' if is_cycling is defined and is_cycling else 'false' }}">
+    <div class="h-48">
+        <canvas id="paceCanvas"></canvas>
+    </div>
+</div>
+<script>
+if (typeof initPaceChart === 'function') {
+    initPaceChart(
+        {{ pace_labels | tojson }},
+        {{ pace_data | tojson }},
+        {{ 'true' if is_cycling is defined and is_cycling else 'false' }}
+    );
+}
+</script>
+{% else %}
+<p class="text-sm text-gray-400 py-8 text-center">Pas assez de données pour ce sport.</p>
+{% endif %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight">Activités</h1>
+        <p class="text-gray-500 text-sm">Vos dernières séances et leur analyse coaching</p>
+    </div>
+
+    <!-- Race Countdown (if goal set) -->
+    {% if readiness %}
+    {% include "partials/race_countdown.html" %}
+    {% endif %}
+
+    <!-- Weekly Digest (if available) -->
+    {% if latest_digest %}
+    {% include "partials/digest_card.html" %}
+    {% endif %}
+
+    <!-- Training Load Widget -->
+    {% include "partials/training_load.html" %}
+
+    <!-- Activities -->
+    {% if activities %}
+    <div id="activity-list" class="space-y-2">
+        {% for activity in activities %}
+            {% include "partials/activity_row.html" %}
+        {% endfor %}
+    </div>
+
+    {% if has_more %}
+    <div id="load-more" class="text-center pt-2">
+        <button
+            hx-get="/partials/activities?page={{ page + 1 }}"
+            hx-target="#activity-list"
+            hx-swap="beforeend"
+            hx-indicator="#load-spinner"
+            class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+            Charger plus
+            <span id="load-spinner" class="htmx-indicator ml-1.5">
+                <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                </svg>
+            </span>
+        </button>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm">
+        <p class="text-gray-500">Aucune activité pour le moment.</p>
+        <p class="text-gray-400 text-sm mt-1">Vos activités Strava apparaîtront ici automatiquement.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock content %}
