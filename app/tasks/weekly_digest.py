@@ -200,6 +200,7 @@ async def _generate_all_digests() -> dict:
             except Exception:
                 errors += 1
                 logger.exception("Failed to generate digest for user %d", user.id)
+                await db.rollback()
 
         await db.commit()
 
