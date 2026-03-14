@@ -10,14 +10,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy all source first (needed for hatchling build)
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
-
-# Copy application
+COPY app/ ./app/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
-COPY app/ ./app/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
 
