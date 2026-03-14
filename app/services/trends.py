@@ -34,7 +34,7 @@ async def get_weekly_volume_trends(
         )
         .where(
             Activity.user_id == user_id,
-            cast(Activity.start_date, Float) >= cast(func.cast(cutoff, Float), Float) if False else Activity.start_date >= cutoff,
+            Activity.start_date >= cutoff,
         )
         .group_by(func.date_trunc("week", Activity.start_date))
         .order_by(func.date_trunc("week", Activity.start_date))
