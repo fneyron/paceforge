@@ -20,6 +20,18 @@ async def strava_login(db: AsyncSession = Depends(get_db)):
     return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
 
 
+@router.get("/auth/login")
+async def direct_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """Direct login for existing users (bypasses OAuth redirect)."""
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    if len(users) == 1:
+        request.session["user_id"] = users[0].id
+        logger.info("User %d authenticated via direct login", users[0].id)
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url="/?error=auth_failed", status_code=302)
+
+
 @router.get("/auth/strava/callback")
 async def strava_callback(
     request: Request,
