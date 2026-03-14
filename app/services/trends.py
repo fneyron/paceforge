@@ -1,7 +1,7 @@
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
-from sqlalchemy import Float, case, cast, extract, func, select
+from sqlalchemy import case, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -15,6 +15,12 @@ BEST_EFFORT_LABELS = [
     "5k", "10k", "15k", "20k", "Half-Marathon", "Marathon",
 ]
 
+_WEEK = literal_column("'week'")
+
+
+def _week_trunc():
+    return func.date_trunc(_WEEK, Activity.start_date)
+
 
 async def get_weekly_volume_trends(
     db: AsyncSession,
@@ -23,39 +29,30 @@ async def get_weekly_volume_trends(
 ) -> list[WeeklyVolume]:
     """Get weekly volume aggregated by ISO week."""
     cutoff = datetime.now().date() - timedelta(weeks=weeks)
+    week_col = _week_trunc()
 
-    # Main aggregation per week
     result = await db.execute(
         select(
-            func.date_trunc("week", Activity.start_date).label("week_start"),
+            week_col.label("week_start"),
             func.coalesce(func.sum(Activity.distance), 0).label("total_distance"),
             func.coalesce(func.sum(Activity.moving_time), 0).label("total_time"),
             func.count(Activity.id).label("count"),
         )
-        .where(
-            Activity.user_id == user_id,
-            Activity.start_date >= cutoff,
-        )
-        .group_by(func.date_trunc("week", Activity.start_date))
-        .order_by(func.date_trunc("week", Activity.start_date))
+        .where(Activity.user_id == user_id, Activity.start_date >= cutoff)
+        .group_by(week_col)
+        .order_by(week_col)
     )
     weeks_data = result.all()
 
     # Sport breakdown per week
     sport_result = await db.execute(
         select(
-            func.date_trunc("week", Activity.start_date).label("week_start"),
+            week_col.label("week_start"),
             Activity.sport_type,
             func.sum(Activity.distance).label("total_distance"),
         )
-        .where(
-            Activity.user_id == user_id,
-            Activity.start_date >= cutoff,
-        )
-        .group_by(
-            func.date_trunc("week", Activity.start_date),
-            Activity.sport_type,
-        )
+        .where(Activity.user_id == user_id, Activity.start_date >= cutoff)
+        .group_by(week_col, Activity.sport_type)
     )
     sport_rows = sport_result.all()
 
@@ -94,8 +91,8 @@ async def get_pace_trends(
 ) -> list[PaceTrend]:
     """Get average pace per week for a given sport."""
     cutoff = datetime.now().date() - timedelta(weeks=weeks)
+    week_col = _week_trunc()
 
-    # Match sport types for running
     run_types = ["Run", "TrailRun", "VirtualRun"]
     ride_types = ["Ride", "VirtualRide", "EBikeRide", "GravelRide"]
 
@@ -108,7 +105,7 @@ async def get_pace_trends(
 
     result = await db.execute(
         select(
-            func.date_trunc("week", Activity.start_date).label("week_start"),
+            week_col.label("week_start"),
             func.avg(
                 case(
                     (Activity.average_speed > 0, Activity.average_speed),
@@ -123,8 +120,8 @@ async def get_pace_trends(
             Activity.average_speed.is_not(None),
             Activity.average_speed > 0,
         )
-        .group_by(func.date_trunc("week", Activity.start_date))
-        .order_by(func.date_trunc("week", Activity.start_date))
+        .group_by(week_col)
+        .order_by(week_col)
     )
 
     paces = []
@@ -134,10 +131,8 @@ async def get_pace_trends(
             if hasattr(ws, "date"):
                 ws = ws.date()
             if sport_type in ride_types:
-                # For cycling, store speed in km/h instead of pace
                 pace_value = round(row.avg_speed * 3.6, 2)
             else:
-                # pace in min/km
                 pace_value = round(1000 / row.avg_speed / 60, 2)
             paces.append(
                 PaceTrend(
@@ -165,7 +160,6 @@ async def get_personal_records(
     )
     activities = result.scalars().all()
 
-    # Collect best times per distance
     best: dict[str, dict] = {}
 
     for activity in activities:
@@ -180,7 +174,6 @@ async def get_personal_records(
                 continue
 
             if name not in best or elapsed < best[name]["elapsed_time"]:
-                # Calculate pace
                 pace_sec = elapsed / (distance / 1000)
                 p_min, p_sec = divmod(int(pace_sec), 60)
                 best[name] = {
@@ -192,13 +185,11 @@ async def get_personal_records(
                     "date": activity.start_date,
                 }
 
-    # Order by standard distance order
     records = []
     for label in BEST_EFFORT_LABELS:
         if label in best:
             records.append(PersonalRecord(**best[label]))
 
-    # Add any non-standard ones at the end
     for label, data in best.items():
         if label not in BEST_EFFORT_LABELS:
             records.append(PersonalRecord(**data))
