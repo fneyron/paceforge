@@ -45,6 +45,12 @@ async def dashboard(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
+    # Trigger initial sync for existing users who haven't done it
+    if not user.initial_sync_done:
+        from app.tasks.initial_sync import initial_sync
+        initial_sync.delay(user.id)
+        logger.info("Triggered initial sync for existing user %d", user.id)
+
     # Only sync from Strava if last sync was > 5 minutes ago
     last_sync = request.session.get("last_strava_sync")
     if not last_sync or (now.timestamp() - last_sync) > 300:
@@ -169,51 +175,73 @@ def _activity_to_summary(activity: Activity) -> ActivitySummary:
 
 
 async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
-    """Sync recent activities from Strava (fetch latest page)."""
+    """Sync recent activities from Strava. Paginates until we find existing ones."""
     try:
         strava = StravaService(db)
-        strava_activities = await strava.get_recent_activities(user, per_page=30)
+        page = 1
+        total_synced = 0
 
-        for data in strava_activities:
-            strava_id = data.get("id")
-            if not strava_id:
-                continue
+        while page <= 5:  # Max 5 pages (150 activities) per sync
+            strava_activities = await strava.get_recent_activities(
+                user, per_page=30, page=page
+            )
+            if not strava_activities:
+                break
 
-            # Check if already exists
-            result = await db.execute(
-                select(func.count(Activity.id)).where(
-                    Activity.strava_activity_id == strava_id
+            all_known = True
+            for data in strava_activities:
+                strava_id = data.get("id")
+                if not strava_id:
+                    continue
+
+                # Check if already exists
+                result = await db.execute(
+                    select(func.count(Activity.id)).where(
+                        Activity.strava_activity_id == strava_id
+                    )
                 )
-            )
-            if result.scalar() > 0:
-                continue
+                if result.scalar() > 0:
+                    continue
 
-            from datetime import datetime
-            start_date = data.get("start_date")
-            if isinstance(start_date, str):
-                start_date = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                all_known = False
+                from datetime import datetime
+                start_date = data.get("start_date")
+                if isinstance(start_date, str):
+                    start_date = datetime.fromisoformat(
+                        start_date.replace("Z", "+00:00")
+                    )
 
-            activity = Activity(
-                strava_activity_id=strava_id,
-                user_id=user.id,
-                sport_type=data.get("sport_type", data.get("type", "Unknown")),
-                name=data.get("name", "Untitled"),
-                start_date=start_date,
-                distance=data.get("distance", 0),
-                moving_time=data.get("moving_time", 0),
-                elapsed_time=data.get("elapsed_time", 0),
-                total_elevation_gain=data.get("total_elevation_gain", 0),
-                average_speed=data.get("average_speed"),
-                max_speed=data.get("max_speed"),
-                average_heartrate=data.get("average_heartrate"),
-                max_heartrate=data.get("max_heartrate"),
-                average_cadence=data.get("average_cadence"),
-                average_watts=data.get("average_watts"),
-                raw_data=data,
-            )
-            db.add(activity)
+                activity = Activity(
+                    strava_activity_id=strava_id,
+                    user_id=user.id,
+                    sport_type=data.get("sport_type", data.get("type", "Unknown")),
+                    name=data.get("name", "Untitled"),
+                    start_date=start_date,
+                    distance=data.get("distance", 0),
+                    moving_time=data.get("moving_time", 0),
+                    elapsed_time=data.get("elapsed_time", 0),
+                    total_elevation_gain=data.get("total_elevation_gain", 0),
+                    average_speed=data.get("average_speed"),
+                    max_speed=data.get("max_speed"),
+                    average_heartrate=data.get("average_heartrate"),
+                    max_heartrate=data.get("max_heartrate"),
+                    average_cadence=data.get("average_cadence"),
+                    average_watts=data.get("average_watts"),
+                    raw_data=data,
+                )
+                db.add(activity)
+                total_synced += 1
+
+            # If all activities on this page were already known, stop paginating
+            if all_known:
+                break
+            page += 1
 
         await db.flush()
-        logger.info("Synced activities from Strava for user %d", user.id)
+        if total_synced:
+            logger.info(
+                "Synced %d new activities from Strava for user %d",
+                total_synced, user.id,
+            )
     except Exception:
         logger.exception("Failed to sync activities from Strava")

@@ -131,6 +131,32 @@ class StravaService:
         )
         return response.json()
 
+    async def get_all_activities_since(
+        self, user: User, after_epoch: int, per_page: int = 100
+    ) -> list[dict]:
+        """Fetch all activities since a given epoch timestamp, paginating automatically."""
+        all_activities = []
+        page = 1
+        while True:
+            response = await self._make_request(
+                user,
+                "GET",
+                "/athlete/activities",
+                params={"after": after_epoch, "per_page": per_page, "page": page},
+            )
+            batch = response.json()
+            if not batch:
+                break
+            all_activities.extend(batch)
+            logger.info(
+                "Fetched page %d (%d activities) for user %d",
+                page, len(batch), user.id,
+            )
+            if len(batch) < per_page:
+                break
+            page += 1
+        return all_activities
+
     async def post_comment(
         self, user: User, strava_activity_id: int, text: str
     ) -> dict:

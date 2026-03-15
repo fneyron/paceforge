@@ -7,7 +7,7 @@ celery_app = Celery(
     "paceforge",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.analysis", "app.tasks.weekly_digest"],
+    include=["app.tasks.analysis", "app.tasks.weekly_digest", "app.tasks.initial_sync"],
 )
 
 celery_app.conf.update(

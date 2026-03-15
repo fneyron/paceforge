@@ -22,6 +22,11 @@ class User(Base):
     lastname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     profile_picture_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Sync
+    initial_sync_done: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
     # Settings
     auto_post_comments: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False

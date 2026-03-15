@@ -72,6 +72,12 @@ async def strava_callback(
     request.session["user_id"] = user.id
     logger.info("User %d authenticated via Strava", user.id)
 
+    # Trigger initial sync if not done yet
+    if not user.initial_sync_done:
+        from app.tasks.initial_sync import initial_sync
+        initial_sync.delay(user.id)
+        logger.info("Triggered initial sync for user %d", user.id)
+
     return RedirectResponse(url="/dashboard", status_code=302)
 
 
