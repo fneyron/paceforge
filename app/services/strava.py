@@ -25,7 +25,7 @@ class StravaService:
             "redirect_uri": f"{settings.BASE_URL}/auth/strava/callback",
             "response_type": "code",
             "scope": "read,activity:read_all,activity:write",
-            "approval_prompt": "auto",
+            "approval_prompt": "force",
         }
         query = "&".join(f"{k}={v}" for k, v in params.items())
         return f"{STRAVA_OAUTH_URL}/authorize?{query}"
