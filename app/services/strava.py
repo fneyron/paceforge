@@ -157,14 +157,14 @@ class StravaService:
             page += 1
         return all_activities
 
-    async def post_comment(
-        self, user: User, strava_activity_id: int, text: str
+    async def update_activity_description(
+        self, user: User, strava_activity_id: int, description: str
     ) -> dict:
         response = await self._make_request(
             user,
-            "POST",
-            f"/activities/{strava_activity_id}/comments",
-            data={"text": text},
+            "PUT",
+            f"/activities/{strava_activity_id}",
+            json={"description": description},
         )
         return response.json()
 

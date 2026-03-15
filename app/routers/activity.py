@@ -93,15 +93,15 @@ async def post_strava_comment(
 
     try:
         strava = StravaService(db)
-        await strava.post_comment(
+        await strava.update_activity_description(
             user, activity.strava_activity_id, analysis.strava_comment
         )
         analysis.comment_posted = True
         analysis.comment_posted_at = datetime.now(timezone.utc)
         await db.flush()
-        logger.info("Comment posted on Strava activity %d", activity.strava_activity_id)
+        logger.info("Description updated on Strava activity %d", activity.strava_activity_id)
     except Exception as e:
-        logger.exception("Failed to post comment on Strava")
+        logger.exception("Failed to update description on Strava")
         error = str(e)
 
     return templates.TemplateResponse(

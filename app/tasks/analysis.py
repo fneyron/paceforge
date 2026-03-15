@@ -78,14 +78,14 @@ async def _run_analysis(owner_strava_id: int, strava_activity_id: int) -> dict:
             if user and user.auto_post_comments:
                 try:
                     strava = StravaService(db)
-                    await strava.post_comment(
+                    await strava.update_activity_description(
                         user, strava_activity_id, analysis.strava_comment
                     )
                     analysis.comment_posted = True
                     analysis.comment_posted_at = datetime.now(timezone.utc)
                     comment_posted = True
                     logger.info(
-                        "Auto-posted comment for activity %d", strava_activity_id
+                        "Auto-posted description for activity %d", strava_activity_id
                     )
                 except Exception:
                     logger.exception(
