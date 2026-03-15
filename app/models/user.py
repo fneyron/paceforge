@@ -29,6 +29,9 @@ class User(Base):
     preferred_sports: Mapped[list | None] = mapped_column(JSONType, nullable=True)
     weekly_volume_target_km: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Physical
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # Race goal
     race_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     race_date: Mapped[datetime | None] = mapped_column(

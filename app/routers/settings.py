@@ -45,6 +45,7 @@ async def save_settings(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    weight_kg: str = Form(default=""),
     auto_post_comments: str = Form(default="off"),
     preferred_sports: list[str] = Form(default=[]),
     weekly_volume_target_km: str = Form(default=""),
@@ -52,6 +53,14 @@ async def save_settings(
     race_date: str = Form(default=""),
     race_distance_km: str = Form(default=""),
 ):
+    if weight_kg.strip():
+        try:
+            user.weight_kg = float(weight_kg)
+        except ValueError:
+            user.weight_kg = None
+    else:
+        user.weight_kg = None
+
     user.auto_post_comments = auto_post_comments == "on"
     user.preferred_sports = preferred_sports if preferred_sports else None
 

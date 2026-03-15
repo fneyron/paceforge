@@ -32,7 +32,7 @@ async def simulator_page(
         context={
             "user": user,
             "ftp": ftp,
-            "rider_weight": 75,  # Default, could be stored in user profile
+            "rider_weight": user.weight_kg or 75,
         },
     )
 

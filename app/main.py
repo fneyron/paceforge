@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import activity, api, auth, dashboard, digest, simulator, trends, webhook, workout
+    from app.routers import activity, api, auth, coach, dashboard, digest, simulator, trends, webhook, workout
     from app.routers import settings as settings_router
 
     app.include_router(auth.router)
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(workout.router)
     app.include_router(trends.router)
     app.include_router(digest.router)
+    app.include_router(coach.router)
     app.include_router(settings_router.router)
     app.include_router(simulator.router)
     app.include_router(webhook.router)

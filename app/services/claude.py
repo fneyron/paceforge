@@ -5,6 +5,7 @@ import anthropic
 
 from app.config import settings
 from app.exceptions import ClaudeAPIError
+from app.prompts.coach_chat import COACH_CHAT_SYSTEM_PROMPT, build_coach_context
 from app.prompts.coaching import COACHING_SYSTEM_PROMPT, build_activity_prompt
 from app.prompts.race_strategy import RACE_STRATEGY_SYSTEM_PROMPT, build_race_strategy_prompt
 from app.prompts.weekly_digest import WEEKLY_DIGEST_SYSTEM_PROMPT, build_weekly_digest_prompt
@@ -108,6 +109,51 @@ class ClaudeService:
         )
         output = self._parse_digest_response(raw_response)
         return output, raw_response
+
+    async def chat(
+        self,
+        messages: list[dict],
+        athlete_context: str,
+    ) -> str:
+        """Chat with the coach. Returns the assistant's reply text."""
+        system = COACH_CHAT_SYSTEM_PROMPT + "\n\n" + athlete_context
+
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    temperature=0.7,
+                    system=system,
+                    messages=messages,
+                )
+                if not response.content:
+                    raise ClaudeAPIError("Empty response from Claude")
+
+                text = response.content[0].text
+                logger.info(
+                    "Coach chat response: %d chars, %d input tokens, %d output tokens",
+                    len(text),
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
+                )
+                return text
+
+            except anthropic.RateLimitError as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    import asyncio
+                    await asyncio.sleep(RETRY_DELAYS[attempt])
+            except anthropic.APIError as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1 and e.status_code and e.status_code >= 500:
+                    import asyncio
+                    await asyncio.sleep(RETRY_DELAYS[attempt])
+                else:
+                    raise ClaudeAPIError(f"Claude API error: {e}") from e
+
+        raise ClaudeAPIError(f"Claude API failed after {MAX_RETRIES} attempts: {last_error}")
 
     async def generate_race_strategy(
         self,
