@@ -8,7 +8,11 @@
     </div>
     {% endif %}
     <div class="max-w-[80%] rounded-xl px-4 py-3 {% if msg.role == 'user' %}msg-user{% else %}msg-assistant{% endif %}">
+        {% if msg.role == 'assistant' %}
+        <div class="text-sm leading-relaxed md-content" data-md>{{ msg.content }}</div>
+        {% else %}
         <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
+        {% endif %}
         <p class="text-[10px] text-gray-300 mt-1">{{ msg.created_at.strftime('%H:%M') }}</p>
     </div>
     {% if msg.role == 'user' %}

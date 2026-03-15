@@ -10,6 +10,7 @@ from starlette.templating import Jinja2Templates
 from app.dependencies import get_current_user, get_db
 from app.models.activity import Activity
 from app.models.user import User
+from app.schemas.activity import ActivitySummary
 from app.services.claude import ClaudeService
 from app.services.training_load import calculate_training_load
 
@@ -108,4 +109,78 @@ async def generate_workout(
                 "error": "La génération a échoué. Veuillez réessayer.",
                 "sport_labels": SPORT_LABELS,
             },
+        )
+
+
+@router.post("/partials/workout/plan", response_class=HTMLResponse)
+async def generate_plan(
+    request: Request,
+    sport: str = Form(...),
+    duration_weeks: int = Form(default=8),
+    goal: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.training_zones import estimate_training_zones
+
+    now = datetime.now(timezone.utc)
+    training_load = await calculate_training_load(db, user.id, now)
+    zones = await estimate_training_zones(db, user.id)
+
+    # Recent activities
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.user_id == user.id)
+        .order_by(Activity.start_date.desc())
+        .limit(10)
+    )
+    recent = result.scalars().all()
+    recent_data = []
+    for a in recent:
+        summary = ActivitySummary(
+            id=a.id, strava_activity_id=a.strava_activity_id,
+            sport_type=a.sport_type, name=a.name, start_date=a.start_date,
+            distance=a.distance, moving_time=a.moving_time,
+            average_speed=a.average_speed, average_heartrate=a.average_heartrate,
+            total_elevation_gain=a.total_elevation_gain,
+        )
+        recent_data.append({
+            "name": a.name, "sport_type": a.sport_type,
+            "distance_km": summary.distance_km,
+            "pace_formatted": summary.pace_formatted,
+            "average_heartrate": a.average_heartrate,
+        })
+
+    # Race goal
+    race_goal = None
+    if user.race_name and user.race_date and user.race_date > now:
+        race_goal = {
+            "name": user.race_name,
+            "date": user.race_date.strftime("%d/%m/%Y"),
+            "distance_km": user.race_distance_km,
+            "days_remaining": (user.race_date - now).days,
+        }
+
+    try:
+        claude = ClaudeService()
+        plan = await claude.generate_training_plan(
+            sport=sport,
+            duration_weeks=duration_weeks,
+            goal=goal.strip() or None,
+            training_load=training_load.model_dump(),
+            recent_activities=recent_data,
+            race_goal=race_goal,
+            zones=zones,
+        )
+
+        return templates.TemplateResponse(
+            request,
+            "partials/training_plan_card.html",
+            context={"plan": plan},
+        )
+    except Exception:
+        logger.exception("Failed to generate training plan")
+        return HTMLResponse(
+            '<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">'
+            'La génération du plan a échoué. Veuillez réessayer.</div>'
         )

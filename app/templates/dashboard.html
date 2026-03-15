@@ -10,6 +10,11 @@
         <p class="text-gray-500 text-sm">Vos dernières séances et leur analyse coaching</p>
     </div>
 
+    <!-- Sync status -->
+    {% if sync_in_progress %}
+    {% include "partials/sync_banner.html" %}
+    {% endif %}
+
     <!-- Race Countdown (if goal set) -->
     {% if readiness %}
     {% include "partials/race_countdown.html" %}

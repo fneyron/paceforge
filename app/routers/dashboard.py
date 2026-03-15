@@ -57,6 +57,9 @@ async def dashboard(
         await _sync_recent_activities(user, db)
         request.session["last_strava_sync"] = now.timestamp()
 
+    # Check if initial sync is in progress
+    sync_in_progress = not user.initial_sync_done
+
     # Get activities with analysis status
     activities = await _get_activities_page(db, user.id, page=1)
 
@@ -89,9 +92,32 @@ async def dashboard(
             "training_load": training_load,
             "readiness": readiness,
             "latest_digest": latest_digest,
+            "sync_in_progress": sync_in_progress,
             "page": 1,
             "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
         },
+    )
+
+
+@router.get("/partials/sync-status", response_class=HTMLResponse)
+async def sync_status(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns empty HTML when sync is done (removes the banner)."""
+    # Refresh user from DB
+    await db.refresh(user)
+    if user.initial_sync_done:
+        # Sync complete — return a script that reloads the page to show new data
+        return HTMLResponse(
+            '<script>window.location.reload();</script>'
+        )
+    # Still syncing — keep the banner with polling
+    return templates.TemplateResponse(
+        request,
+        "partials/sync_banner.html",
+        context={"sync_in_progress": True},
     )
 
 

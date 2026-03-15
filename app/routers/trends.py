@@ -51,6 +51,26 @@ async def trends_page(
     paces = await get_pace_trends(db, user.id, sport_type="Run", weeks=12)
     records = await get_personal_records(db, user.id)
 
+    # Period comparison: last 4 weeks vs previous 4 weeks
+    comparison = None
+    if len(volumes) >= 5:
+        recent_4 = volumes[-4:]
+        prev_4 = volumes[-8:-4] if len(volumes) >= 8 else volumes[:max(1, len(volumes)-4)]
+        r_km = sum(v.distance_km for v in recent_4)
+        r_hrs = sum(v.duration_hours for v in recent_4)
+        r_cnt = sum(v.count for v in recent_4)
+        p_km = sum(v.distance_km for v in prev_4)
+        p_hrs = sum(v.duration_hours for v in prev_4)
+        p_cnt = sum(v.count for v in prev_4)
+        comparison = {
+            "recent_km": r_km, "prev_km": p_km,
+            "recent_hrs": r_hrs, "prev_hrs": p_hrs,
+            "recent_cnt": r_cnt, "prev_cnt": p_cnt,
+            "km_delta": ((r_km - p_km) / p_km * 100) if p_km > 0 else 0,
+            "hrs_delta": ((r_hrs - p_hrs) / p_hrs * 100) if p_hrs > 0 else 0,
+            "cnt_delta": ((r_cnt - p_cnt) / p_cnt * 100) if p_cnt > 0 else 0,
+        }
+
     # Prepare chart data
     volume_labels = [v.week_start.strftime("%d/%m") for v in volumes]
     volume_data = [v.distance_km for v in volumes]
@@ -89,6 +109,7 @@ async def trends_page(
             "pace_labels": pace_labels,
             "pace_data": pace_data,
             "records": records,
+            "comparison": comparison,
         },
     )
 

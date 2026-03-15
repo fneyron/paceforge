@@ -8,10 +8,12 @@ from app.exceptions import ClaudeAPIError
 from app.prompts.coach_chat import COACH_CHAT_SYSTEM_PROMPT, build_coach_context
 from app.prompts.coaching import COACHING_SYSTEM_PROMPT, build_activity_prompt
 from app.prompts.race_strategy import RACE_STRATEGY_SYSTEM_PROMPT, build_race_strategy_prompt
+from app.prompts.training_plan import TRAINING_PLAN_SYSTEM_PROMPT, build_training_plan_prompt
 from app.prompts.weekly_digest import WEEKLY_DIGEST_SYSTEM_PROMPT, build_weekly_digest_prompt
 from app.prompts.workout import WORKOUT_SYSTEM_PROMPT, build_workout_prompt
 from app.schemas.analysis import ClaudeCoachingOutput
 from app.schemas.simulator import ClaudeRaceStrategyOutput
+from app.schemas.training_plan import ClaudeTrainingPlanOutput
 from app.schemas.weekly_digest import ClaudeWeeklyDigestOutput
 from app.schemas.workout import ClaudeWorkoutOutput
 
@@ -80,6 +82,40 @@ class ClaudeService:
             user_message, system_prompt=WORKOUT_SYSTEM_PROMPT
         )
         return self._parse_workout_response(raw_response)
+
+    async def generate_training_plan(
+        self,
+        sport: str,
+        duration_weeks: int,
+        goal: str | None,
+        training_load: dict,
+        recent_activities: list[dict],
+        race_goal: dict | None = None,
+        zones: dict | None = None,
+    ) -> ClaudeTrainingPlanOutput:
+        """Generate a multi-week training plan using Claude."""
+        user_message = build_training_plan_prompt(
+            sport=sport,
+            duration_weeks=duration_weeks,
+            goal=goal,
+            training_load=training_load,
+            recent_activities=recent_activities,
+            race_goal=race_goal,
+            zones=zones,
+        )
+
+        logger.info(
+            "Calling Claude (%s) for training plan (%d chars prompt)",
+            self.model,
+            len(user_message),
+        )
+
+        raw_response = await self._call_claude(
+            user_message,
+            system_prompt=TRAINING_PLAN_SYSTEM_PROMPT,
+            max_tokens=4096,
+        )
+        return self._parse_training_plan_response(raw_response)
 
     async def generate_weekly_digest(
         self,
@@ -293,6 +329,20 @@ class ClaudeService:
         except Exception as e:
             logger.error("Failed to validate race strategy response: %s", data)
             raise ClaudeAPIError(f"Invalid race strategy output: {e}") from e
+
+    def _parse_training_plan_response(self, raw_response: str) -> ClaudeTrainingPlanOutput:
+        """Parse Claude's JSON response into a training plan output."""
+        text = self._strip_code_fences(raw_response)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse training plan response as JSON: %s", raw_response[:200])
+            raise ClaudeAPIError(f"Invalid JSON from Claude: {e}") from e
+        try:
+            return ClaudeTrainingPlanOutput(**data)
+        except Exception as e:
+            logger.error("Failed to validate training plan response: %s", data)
+            raise ClaudeAPIError(f"Invalid training plan output: {e}") from e
 
     def _parse_response(self, raw_response: str) -> ClaudeCoachingOutput:
         """Parse Claude's JSON response into structured output."""

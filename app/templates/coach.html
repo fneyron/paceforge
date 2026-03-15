@@ -11,6 +11,19 @@
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
     @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+    /* Markdown in chat */
+    .md-content p { margin-bottom: 0.5em; }
+    .md-content p:last-child { margin-bottom: 0; }
+    .md-content ul, .md-content ol { margin: 0.4em 0; padding-left: 1.4em; }
+    .md-content li { margin-bottom: 0.15em; }
+    .md-content strong { font-weight: 600; }
+    .md-content em { font-style: italic; }
+    .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; margin: 0.6em 0 0.3em; }
+    .md-content h1 { font-size: 1.1em; }
+    .md-content h2 { font-size: 1.05em; }
+    .md-content h3 { font-size: 1em; }
+    .md-content code { background: #f3f4f6; padding: 0.15em 0.35em; border-radius: 0.25em; font-size: 0.9em; }
+    .md-content hr { border: none; border-top: 1px solid #e5e7eb; margin: 0.6em 0; }
 </style>
 {% endblock head %}
 
@@ -47,7 +60,11 @@
                 </div>
                 {% endif %}
                 <div class="max-w-[80%] rounded-xl px-4 py-3 {% if msg.role == 'user' %}msg-user{% else %}msg-assistant{% endif %}">
+                    {% if msg.role == 'assistant' %}
+                    <div class="text-sm leading-relaxed md-content" data-md>{{ msg.content }}</div>
+                    {% else %}
                     <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
+                    {% endif %}
                     <p class="text-[10px] text-gray-300 mt-1">{{ msg.created_at.strftime('%H:%M') }}</p>
                 </div>
                 {% if msg.role == 'user' %}
@@ -129,6 +146,7 @@
 {% endblock content %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script>
 function scrollToBottom() {
     const container = document.getElementById('chat-container');
@@ -156,6 +174,7 @@ function onChatReceive() {
     typing.classList.add('hidden');
     btn.disabled = false;
     input.focus();
+    renderMarkdown();
     scrollToBottom();
 }
 
@@ -165,8 +184,21 @@ function askSuggestion(btn) {
     document.getElementById('chat-form').requestSubmit();
 }
 
+// Render markdown in assistant messages
+function renderMarkdown() {
+    if (typeof marked === 'undefined') return;
+    document.querySelectorAll('[data-md]').forEach(el => {
+        if (el.dataset.rendered) return;
+        el.innerHTML = marked.parse(el.textContent);
+        el.dataset.rendered = '1';
+    });
+}
+
 // Scroll to bottom on load
-document.addEventListener('DOMContentLoaded', scrollToBottom);
+document.addEventListener('DOMContentLoaded', function() {
+    renderMarkdown();
+    scrollToBottom();
+});
 
 // Submit on Enter
 document.getElementById('chat-input').addEventListener('keydown', function(e) {
