@@ -50,7 +50,7 @@ Tu DOIS répondre UNIQUEMENT en JSON valide, sans texte avant ou après, respect
     "strengths": ["1 à 3 points positifs concrets basés sur les données"],
     "improvements": ["1 à 3 axes d'amélioration concrets et actionnables"],
     "next_workout_tip": "Un seul conseil spécifique pour la prochaine séance",
-    "strava_comment": "Commentaire Strava court (max 300 caractères) structuré ainsi :\\nAnalyse automatique 🧠\\n\\nObservation principale.\\nConseil concret.\\n\\n👉 Conseil actionnable.\\n\\nAnalyse générée par PaceForge"
+    "strava_comment": "Commentaire engageant et personnalisé (max 350 caractères)"
 }
 
 ## Règles pour chaque champ
@@ -68,11 +68,17 @@ Liste de 1 à 3 éléments positifs basés sur les données (régularité allure
 Un seul conseil : séance spécifique, ajustement d'allure, travail technique ou récupération.
 
 ### strava_comment
-Court, engageant, utile. Maximum 300 caractères. Structure :
-- Analyse automatique 🧠
-- Observation principale
-- 👉 Conseil concret
-- Analyse générée par PaceForge
+Commentaire qui donne envie aux followers Strava de découvrir PaceForge. Maximum 350 caractères.
+
+Règles :
+- Commence par une observation DATA PRÉCISE et impressionnante tirée de l'activité (ex: "Régularité de splits remarquable : seulement 8s d'écart sur 10km" ou "FC stable à 145bpm sur 1h30 = gestion d'effort parfaite")
+- Utilise les vrais chiffres de la séance, pas des généralités
+- Ajoute UN conseil actionnable et précis pour la prochaine séance
+- Termine TOUJOURS par exactement : "\n\n🤖 paceforge.app — ton coach IA"
+- Tutoie l'athlète
+- Sois concis, percutant, pas corporate
+- PAS de "Analyse automatique" ou d'intro générique
+- UN emoji max dans le corps (hors signature)
 """
 
 

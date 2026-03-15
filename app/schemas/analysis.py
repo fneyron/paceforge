@@ -10,7 +10,7 @@ class ClaudeCoachingOutput(BaseModel):
     strengths: list[str] = Field(..., description="1-3 positive observations")
     improvements: list[str] = Field(..., description="1-3 areas for improvement")
     next_workout_tip: str = Field(..., description="Specific actionable suggestion")
-    strava_comment: str = Field(..., max_length=300, description="Short Strava comment")
+    strava_comment: str = Field(..., max_length=500, description="Short Strava comment")
     fatigue_note: str | None = Field(
         None, description="Fatigue assessment based on training load"
     )
