@@ -33,6 +33,7 @@ class ClaudeService:
         activity_data: dict,
         training_load: dict,
         recent_activities: list[dict],
+        computed_metrics: dict | None = None,
     ) -> tuple[ClaudeCoachingOutput, str]:
         """
         Analyze an activity using Claude.
@@ -44,6 +45,7 @@ class ClaudeService:
             activity_data=activity_data,
             training_load=training_load,
             recent_activities=recent_activities,
+            computed_metrics=computed_metrics,
         )
 
         logger.info(

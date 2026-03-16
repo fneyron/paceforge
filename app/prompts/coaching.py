@@ -56,6 +56,13 @@ Tu DOIS toujours :
 - Pas de diagnostic médical
 - Toujours donner des objectifs chiffrés
 
+## Métriques pré-calculées
+
+Quand des métriques avancées sont fournies (section "Métriques avancées"), utilise-les DIRECTEMENT dans ton analyse.
+Ces calculs sont exacts — ne les recalcule pas. Concentre-toi sur l'INTERPRÉTATION et les CONSEILS TECHNIQUES.
+Par exemple, si la dérive cardiaque est de 12%, ne dis pas juste "dérive élevée", mais explique ce que ça implique
+et donne un conseil concret pour la corriger (allure de départ, hydratation, etc.).
+
 ## Format de sortie
 
 Tu DOIS répondre UNIQUEMENT en JSON valide, sans texte avant ou après :
@@ -87,6 +94,7 @@ def build_activity_prompt(
     activity_data: dict,
     training_load: dict,
     recent_activities: list[dict],
+    computed_metrics: dict | None = None,
 ) -> str:
     """Build the user message with activity data for Claude analysis."""
     lines = ["## Données de l'activité\n"]
@@ -174,6 +182,11 @@ def build_activity_prompt(
             lap_hr = f" | FC {lap['average_heartrate']:.0f}" if lap.get("average_heartrate") else ""
             lines.append(f"  Lap {i}: {lap_dist:.2f}km en {l_min}'{l_sec:02d}\"{lap_hr}")
 
+    # Advanced computed metrics
+    if computed_metrics:
+        lines.append("\n## Métriques avancées (pré-calculées depuis les streams)\n")
+        _append_computed_metrics(lines, computed_metrics, sport)
+
     # Training load
     lines.append("\n## Charge d'entraînement récente\n")
     lines.append(
@@ -210,3 +223,137 @@ def build_activity_prompt(
             lines.append(f"  - {act_date} | {act_sport} | {act_dist:.1f}km | {time_str}")
 
     return "\n".join(lines)
+
+
+def _append_computed_metrics(lines: list[str], metrics: dict, sport: str) -> None:
+    """Format computed metrics into human-readable text for the prompt."""
+
+    # Cardiac drift (all sports)
+    cd = metrics.get("cardiac_drift")
+    if cd:
+        lines.append(
+            f"- Dérive cardiaque : {cd['drift_pct']:.1f}% "
+            f"({cd['first_half_avg']:.0f}→{cd['second_half_avg']:.0f} bpm) "
+            f"— {cd['assessment']}"
+        )
+
+    # Effort classification
+    ec = metrics.get("effort_classification")
+    if ec:
+        lines.append(
+            f"- Classification effort : {ec['classification']} "
+            f"(FC moy = {ec['avg_hr_pct']:.0f}% FCmax)"
+        )
+
+    # HR zones
+    hz = metrics.get("hr_zones_distribution")
+    if hz:
+        zones_str = " | ".join(
+            f"{z}: {hz[z]['pct']:.0f}%" for z in ["Z1", "Z2", "Z3", "Z4", "Z5"] if z in hz
+        )
+        lines.append(f"- Zones cardiaques : {zones_str}")
+
+    # Running-specific
+    if sport in ("Run", "TrailRun", "VirtualRun"):
+        sl = metrics.get("stride_length")
+        if sl:
+            lines.append(
+                f"- Longueur de foulée : {sl['avg_m']:.2f} m ({sl['assessment']})"
+            )
+
+        ca = metrics.get("cadence_analysis")
+        if ca:
+            lines.append(
+                f"- Cadence (streams) : {ca['avg_spm']:.0f} spm, "
+                f"{ca['pct_in_optimal_range']:.0f}% dans 170-185 ({ca['assessment']})"
+            )
+
+        pv = metrics.get("pace_variability")
+        if pv:
+            extra = ""
+            if pv.get("fastest_split_pace") and pv.get("slowest_split_pace"):
+                extra = f", plus rapide {pv['fastest_split_pace']} / plus lent {pv['slowest_split_pace']}"
+            lines.append(
+                f"- Variabilité d'allure : CV {pv['cv_pct']:.1f}% ({pv['assessment']}){extra}"
+            )
+
+        ad = metrics.get("aerobic_decoupling")
+        if ad:
+            lines.append(
+                f"- Découplage aérobie : {ad['decoupling_pct']:.1f}% ({ad['assessment']})"
+            )
+
+        sa = metrics.get("split_analysis")
+        if sa:
+            lines.append(
+                f"- Splits : {sa['type']} split "
+                f"({sa['magnitude_s_per_km']:.0f}s/km de différence)"
+            )
+
+        st = metrics.get("stop_time_pct")
+        if st:
+            lines.append(f"- Temps arrêté : {st['pct']:.1f}% du temps total")
+
+    # Cycling-specific
+    if sport in ("Ride", "VirtualRide", "EBikeRide"):
+        vi = metrics.get("variability_index")
+        if vi:
+            lines.append(
+                f"- Variability Index (NP/AP) : {vi['vi']:.2f} ({vi['assessment']})"
+            )
+
+        if_val = metrics.get("intensity_factor")
+        if if_val:
+            lines.append(f"- Intensity Factor (NP/FTP) : {if_val['if_value']:.2f}")
+
+        tss = metrics.get("tss_estimate")
+        if tss:
+            lines.append(f"- TSS estimé : {tss['tss']:.0f}")
+
+        np_comp = metrics.get("normalized_power_computed")
+        if np_comp:
+            lines.append(f"- Puissance normalisée (streams) : {np_comp['np_watts']:.0f} W")
+
+        ca = metrics.get("cadence_analysis")
+        if ca:
+            lines.append(
+                f"- Cadence (streams) : {ca['avg_rpm']:.0f} rpm, "
+                f"{ca['pct_in_optimal_range']:.0f}% dans 80-95 ({ca['assessment']})"
+            )
+
+        phr = metrics.get("power_hr_ratio")
+        if phr:
+            lines.append(f"- Ratio Puissance/FC : {phr['ratio']:.2f} W/bpm")
+
+        pz = metrics.get("power_zones_distribution")
+        if pz:
+            pz_str = " | ".join(
+                f"{z}: {pz[z]['pct']:.0f}%" for z in sorted(pz.keys())
+            )
+            lines.append(f"- Zones de puissance : {pz_str}")
+
+    # Swimming-specific
+    if sport == "Swim":
+        pd = metrics.get("pace_degradation")
+        if pd:
+            lines.append(
+                f"- Dégradation d'allure : {pd['degradation_pct']:.1f}% "
+                f"({pd.get('first_laps_pace', '?')} → {pd.get('last_laps_pace', '?')})"
+            )
+
+        cs = metrics.get("consistency_score")
+        if cs:
+            lines.append(
+                f"- Régularité : CV {cs['cv_pct']:.1f}% ({cs['assessment']})"
+            )
+
+    # Intervals detected
+    intervals = metrics.get("intervals_detected")
+    if intervals:
+        work_intervals = [i for i in intervals if i["type"] == "work"]
+        if work_intervals:
+            lines.append(f"\n### Intervalles détectés ({len(work_intervals)} efforts)")
+            for i, intv in enumerate(work_intervals[:10], 1):
+                dur = intv["duration_s"]
+                hr_str = f" | FC {intv['avg_hr']:.0f}" if intv.get("avg_hr") else ""
+                lines.append(f"  Effort {i}: {dur}s{hr_str}")

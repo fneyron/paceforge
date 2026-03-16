@@ -53,6 +53,52 @@ class AnalysisOrchestrator:
         # 4. Upsert Activity
         activity = await self._upsert_activity(user.id, strava_activity_id, strava_data)
 
+        # 4b. Fetch streams
+        streams_data = None
+        try:
+            streams_data = await self.strava.get_activity_streams(
+                user, strava_activity_id
+            )
+            if streams_data:
+                activity.streams_data = streams_data
+                await self.db.flush()
+        except Exception:
+            logger.warning(
+                "Failed to fetch streams for activity %d, continuing without",
+                strava_activity_id,
+            )
+
+        # 4c. Compute advanced metrics
+        computed_metrics = {}
+        try:
+            from app.services.advanced_metrics import compute_advanced_metrics
+
+            max_hr = activity.max_heartrate
+            ftp = None
+            if activity.sport_type in ("Ride", "VirtualRide", "EBikeRide"):
+                ftp = getattr(user, "ftp", None)
+
+            computed_metrics = compute_advanced_metrics(
+                sport_type=activity.sport_type,
+                streams=streams_data,
+                activity_data=strava_data,
+                ftp=ftp,
+                max_hr=max_hr,
+            )
+            if computed_metrics:
+                activity.computed_metrics = computed_metrics
+                await self.db.flush()
+                logger.info(
+                    "Computed %d advanced metrics for activity %d",
+                    len(computed_metrics),
+                    strava_activity_id,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to compute advanced metrics for activity %d, continuing",
+                strava_activity_id,
+            )
+
         # 5. Calculate training load
         training_load = await calculate_training_load(
             self.db,
@@ -68,6 +114,7 @@ class AnalysisOrchestrator:
             activity_data=strava_data,
             training_load=training_load.model_dump(),
             recent_activities=recent,
+            computed_metrics=computed_metrics,
         )
 
         # 8. Store analysis

@@ -157,6 +157,29 @@ class StravaService:
             page += 1
         return all_activities
 
+    async def get_activity_streams(
+        self, user: User, strava_activity_id: int,
+        stream_types: list[str] | None = None,
+    ) -> dict[str, list]:
+        """Fetch second-by-second streams for an activity."""
+        if stream_types is None:
+            stream_types = [
+                "time", "heartrate", "cadence", "watts",
+                "velocity_smooth", "altitude", "distance",
+            ]
+        keys = ",".join(stream_types)
+        response = await self._make_request(
+            user, "GET",
+            f"/activities/{strava_activity_id}/streams",
+            params={"keys": keys, "key_type": "time"},
+        )
+        raw = response.json()
+        return {
+            stream["type"]: stream["data"]
+            for stream in raw
+            if "type" in stream and "data" in stream
+        }
+
     async def update_activity_description(
         self, user: User, strava_activity_id: int, description: str
     ) -> dict:
