@@ -316,8 +316,9 @@ def _append_computed_metrics(lines: list[str], metrics: dict, sport: str) -> Non
 
         ca = metrics.get("cadence_analysis")
         if ca:
+            avg_cad = ca.get("avg_rpm") or ca.get("avg_spm", 0)
             lines.append(
-                f"- Cadence (streams) : {ca['avg_rpm']:.0f} rpm, "
+                f"- Cadence (streams) : {avg_cad:.0f} rpm, "
                 f"{ca['pct_in_optimal_range']:.0f}% dans 80-95 ({ca['assessment']})"
             )
 
