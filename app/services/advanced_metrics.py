@@ -279,8 +279,10 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
             strides = []
             for v, c in zip(velocity, cadence):
                 if c > 0 and v > 0:
-                    # cadence is steps/min for running streams; stride = v / (c / 60)
-                    stride = v / (c / 60.0)
+                    # Strava returns running cadence per foot (strides/min),
+                    # multiply by 2 to get total steps/min
+                    total_cadence = c * 2
+                    stride = v / (total_cadence / 60.0)
                     strides.append(stride)
             if strides:
                 avg_stride = statistics.mean(strides)
@@ -303,8 +305,9 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
         if cadence:
             non_zero = [c for c in cadence if c > 0]
             if non_zero:
-                avg_cad = statistics.mean(non_zero)
-                in_range = sum(1 for c in non_zero if 170 <= c <= 185)
+                # Strava returns running cadence per foot, multiply by 2
+                avg_cad = statistics.mean(non_zero) * 2
+                in_range = sum(1 for c in non_zero if 170 <= c * 2 <= 185)
                 pct_optimal = in_range / len(non_zero) * 100
 
                 if avg_cad < 170:
