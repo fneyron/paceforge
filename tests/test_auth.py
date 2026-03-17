@@ -9,15 +9,28 @@ async def test_landing_page(client: AsyncClient):
     response = await client.get("/")
     assert response.status_code == 200
     assert "PaceForge" in response.text
-    assert "Strava" in response.text
 
 
 @pytest.mark.asyncio
-async def test_strava_login_redirects_to_setup(client: AsyncClient):
-    """Without credentials, /auth/strava redirects to /setup."""
+async def test_register_page(client: AsyncClient):
+    response = await client.get("/auth/register")
+    assert response.status_code == 200
+    assert "Créer" in response.text or "compte" in response.text
+
+
+@pytest.mark.asyncio
+async def test_login_page(client: AsyncClient):
+    response = await client.get("/auth/login")
+    assert response.status_code == 200
+    assert "Connexion" in response.text
+
+
+@pytest.mark.asyncio
+async def test_strava_link_requires_login(client: AsyncClient):
+    """Without session, /auth/strava redirects to login."""
     response = await client.get("/auth/strava", follow_redirects=False)
     assert response.status_code == 302
-    assert "/setup" in response.headers["location"]
+    assert "/auth/login" in response.headers["location"]
 
 
 @pytest.mark.asyncio

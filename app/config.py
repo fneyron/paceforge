@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
 
+    # SMTP
+    SMTP_HOST: str = "ssl0.ovh.net"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "PaceForge <contact@paceforge.fr>"
+
     # App
     BASE_URL: str = "http://localhost:8000"
     SECRET_KEY: str = "change-me-to-a-random-secret-key"

@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "gpxpy>=1.6",
     "cryptography>=43.0",
+    "bcrypt>=4.2",
 ]
 
 [project.optional-dependencies]

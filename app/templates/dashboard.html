@@ -10,6 +10,25 @@
         <p class="text-gray-500 text-sm">Vos dernières séances et leur analyse coaching</p>
     </div>
 
+    <!-- Strava not linked -->
+    {% if strava_not_linked %}
+    <div class="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+            <p class="text-sm text-blue-900">Configure ton app Strava pour synchroniser tes activites et recevoir des analyses IA.</p>
+        </div>
+        <a href="/setup" class="text-sm font-semibold text-blue-700 underline hover:text-blue-900 shrink-0 ml-4">Configurer</a>
+    </div>
+    {% elif strava_no_app %}
+    <div class="rounded-xl border border-yellow-200 bg-yellow-50 px-5 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span>
+            <p class="text-sm text-yellow-900">Configure tes identifiants Strava API pour activer la synchronisation automatique.</p>
+        </div>
+        <a href="/setup" class="text-sm font-semibold text-yellow-700 underline hover:text-yellow-900 shrink-0 ml-4">Configurer</a>
+    </div>
+    {% endif %}
+
     <!-- Credentials invalid warning -->
     {% if credentials_invalid %}
     <div class="rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-center justify-between">

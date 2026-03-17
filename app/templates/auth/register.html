@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Inscription — PaceForge{% endblock %}
+{% block content_public %}
+<div class="min-h-screen bg-white flex items-center justify-center px-4">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <a href="/"><img src="/static/img/logo.svg" alt="PaceForge" class="w-12 h-12 mx-auto mb-4"></a>
+            <h1 class="text-2xl font-bold text-gray-900">Crée ton compte</h1>
+            <p class="text-sm text-gray-500 mt-1">Gratuit. Aucune carte bancaire.</p>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/auth/register" class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="firstname" class="block text-xs font-medium text-gray-500 mb-1">Prénom</label>
+                    <input type="text" name="firstname" id="firstname" value="{{ firstname or '' }}"
+                           class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
+                </div>
+                <div>
+                    <label for="lastname" class="block text-xs font-medium text-gray-500 mb-1">Nom</label>
+                    <input type="text" name="lastname" id="lastname" value="{{ lastname or '' }}"
+                           class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
+                </div>
+            </div>
+            <div>
+                <label for="email" class="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                <input type="email" name="email" id="email" required value="{{ email or '' }}"
+                       class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
+            </div>
+            <div>
+                <label for="password" class="block text-xs font-medium text-gray-500 mb-1">Mot de passe</label>
+                <input type="password" name="password" id="password" required minlength="8"
+                       placeholder="8 caractères minimum"
+                       class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
+            </div>
+            <button type="submit"
+                    class="w-full h-11 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-semibold text-sm transition-colors">
+                Créer mon compte
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-sm text-gray-500">
+            Déjà un compte ? <a href="/auth/login" class="font-medium text-gray-900 hover:underline">Se connecter</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

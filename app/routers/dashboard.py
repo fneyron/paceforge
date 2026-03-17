@@ -45,21 +45,18 @@ async def dashboard(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
-    # Guard: redirect to setup if user hasn't configured their own Strava app
-    if not user.has_own_strava_app:
-        return RedirectResponse(url="/setup", status_code=302)
-
     # Trigger initial sync for existing users who haven't done it
     if not user.initial_sync_done:
         from app.tasks.initial_sync import initial_sync
         initial_sync.delay(user.id)
         logger.info("Triggered initial sync for existing user %d", user.id)
 
-    # Only sync from Strava if last sync was > 5 minutes ago
-    last_sync = request.session.get("last_strava_sync")
-    if not last_sync or (now.timestamp() - last_sync) > 300:
-        await _sync_recent_activities(user, db)
-        request.session["last_strava_sync"] = now.timestamp()
+    # Only sync from Strava if user has linked + configured their app
+    if user.has_strava_linked and user.has_own_strava_app:
+        last_sync = request.session.get("last_strava_sync")
+        if not last_sync or (now.timestamp() - last_sync) > 300:
+            await _sync_recent_activities(user, db)
+            request.session["last_strava_sync"] = now.timestamp()
 
     # Check if initial sync is in progress
     sync_in_progress = not user.initial_sync_done
@@ -97,7 +94,9 @@ async def dashboard(
             "readiness": readiness,
             "latest_digest": latest_digest,
             "sync_in_progress": sync_in_progress,
-            "credentials_invalid": not user.strava_credentials_valid,
+            "strava_not_linked": not user.has_strava_linked,
+            "strava_no_app": user.has_strava_linked and not user.has_own_strava_app,
+            "credentials_invalid": user.has_own_strava_app and not user.strava_credentials_valid,
             "page": 1,
             "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
         },

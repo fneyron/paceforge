@@ -11,12 +11,28 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strava_athlete_id: Mapped[int] = mapped_column(
-        BigInteger, unique=True, index=True, nullable=False
+
+    # Email/password auth
+    email: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
     )
-    strava_access_token: Mapped[str] = mapped_column(String(512), nullable=False)
-    strava_refresh_token: Mapped[str] = mapped_column(String(512), nullable=False)
-    strava_token_expires_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    email_verify_token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    password_reset_token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Strava account link
+    strava_athlete_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
+    )
+    strava_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    strava_refresh_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    strava_token_expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Per-user Strava API app credentials
     strava_client_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -79,5 +95,9 @@ class User(Base):
     def has_own_strava_app(self) -> bool:
         return bool(self.strava_client_id and self.strava_client_secret_encrypted)
 
+    @property
+    def has_strava_linked(self) -> bool:
+        return bool(self.strava_athlete_id and self.strava_access_token)
+
     def __repr__(self) -> str:
-        return f"<User {self.id} strava={self.strava_athlete_id}>"
+        return f"<User {self.id} email={self.email}>"
