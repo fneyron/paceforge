@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#111827"/>
+  <!-- Logo centered -->
+  <circle cx="460" cy="315" r="120" fill="#1e293b"/>
+  <rect x="396" y="308" width="128" height="13" rx="3" fill="white"/>
+  <rect x="432" y="321" width="56" height="26" fill="white"/>
+  <rect x="415" y="347" width="90" height="13" rx="3" fill="white"/>
+  <rect x="450" y="275" width="11" height="11" rx="1" fill="#F59E0B" transform="rotate(45 455.5 280.5)"/>
+  <circle cx="441" cy="288" r="2.5" fill="#F59E0B"/>
+  <circle cx="473" cy="285" r="2" fill="#F59E0B"/>
+  <!-- Text -->
+  <text x="620" y="295" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white">PaceForge</text>
+  <text x="620" y="355" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#9ca3af">Ton coach IA qui connaît tes données</text>
+</svg>
