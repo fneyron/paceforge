@@ -11,6 +11,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - BASE_URL=${BASE_URL}
       - SECRET_KEY=${SECRET_KEY}
+      - SMTP_HOST=${SMTP_HOST:-ssl0.ovh.net}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
       - DEBUG=false
     depends_on:
       db:
@@ -39,6 +43,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - BASE_URL=${BASE_URL}
       - SECRET_KEY=${SECRET_KEY}
+      - SMTP_HOST=${SMTP_HOST:-ssl0.ovh.net}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
       - DEBUG=false
     command: celery -A app.celery_app worker --beat --loglevel=info --concurrency=2
     depends_on:
