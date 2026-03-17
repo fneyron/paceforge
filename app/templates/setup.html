@@ -113,7 +113,7 @@
         </div>
 
         <!-- Step 2: Enter credentials -->
-        <div x-show="step === 2" x-transition>
+        <div x-show="step === 2" x-transition x-cloak>
             <div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Etape 2 : Tes identifiants API</h2>
                 <p class="text-sm text-gray-500 mb-6">
@@ -160,7 +160,7 @@
         </div>
 
         <!-- Step 3: Connecting... (shown after form submit, before redirect) -->
-        <div x-show="step === 3" x-transition>
+        <div x-show="step === 3" x-transition x-cloak>
             <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center">
                 <div class="animate-spin w-8 h-8 border-2 border-gray-300 border-t-gray-900 rounded-full mx-auto mb-4"></div>
                 <h2 class="text-lg font-semibold text-gray-900 mb-2">Connexion a Strava...</h2>

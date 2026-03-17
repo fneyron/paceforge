@@ -43,9 +43,11 @@
         }
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        [x-cloak] { display: none !important; }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
