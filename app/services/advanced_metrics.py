@@ -446,6 +446,85 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
     except Exception:
         logger.exception("Error computing stop time percentage")
 
+    # Running power analysis
+    try:
+        watts = streams.get("watts", [])
+        if watts:
+            non_zero_watts = [w for w in watts if w > 0]
+            if non_zero_watts:
+                avg_power = statistics.mean(non_zero_watts)
+                max_power = max(non_zero_watts)
+
+                # Normalized power (30s rolling avg, raise to 4th, avg, 4th root)
+                np_value = None
+                if len(non_zero_watts) >= 30:
+                    rolling = _rolling_average(non_zero_watts, 30)
+                    fourth_powers = [v ** 4 for v in rolling]
+                    np_value = statistics.mean(fourth_powers) ** 0.25
+
+                power_data: dict = {
+                    "avg_watts": round(avg_power),
+                    "max_watts": max_power,
+                }
+                if np_value:
+                    power_data["normalized_power"] = round(np_value)
+                    if avg_power > 0:
+                        power_data["variability_index"] = round(np_value / avg_power, 2)
+
+                # Power-to-weight ratio (if weight available)
+                athlete_weight = activity_data.get("athlete", {}).get("weight")
+                if not athlete_weight:
+                    # Estimate from kilojoules and moving time if available
+                    pass
+                if athlete_weight and athlete_weight > 0:
+                    power_data["power_to_weight"] = round(avg_power / athlete_weight, 2)
+
+                metrics["running_power"] = power_data
+
+        # Power/pace efficiency (watts per m/s)
+        velocity = streams.get("velocity_smooth", [])
+        if watts and velocity:
+            length = min(len(watts), len(velocity))
+            pairs = [
+                (w, v) for w, v in zip(watts[:length], velocity[:length])
+                if w > 0 and v > 0.5  # filter stops
+            ]
+            if pairs:
+                avg_w = statistics.mean(p[0] for p in pairs)
+                avg_v = statistics.mean(p[1] for p in pairs)
+                if avg_v > 0:
+                    efficiency = avg_w / avg_v  # W per m/s
+                    # Lower is more efficient; typical range 60-100 W/(m/s)
+                    if efficiency < 70:
+                        assessment = "excellent"
+                    elif efficiency < 85:
+                        assessment = "bon"
+                    else:
+                        assessment = "à améliorer"
+                    metrics["power_pace_efficiency"] = {
+                        "watts_per_ms": round(efficiency, 1),
+                        "assessment": assessment,
+                    }
+
+        # Power/HR ratio for running
+        hr_data = streams.get("heartrate", [])
+        if watts and hr_data:
+            length = min(len(watts), len(hr_data))
+            pairs = [
+                (w, h) for w, h in zip(watts[:length], hr_data[:length])
+                if w > 0 and h > 60
+            ]
+            if pairs:
+                avg_w = statistics.mean(p[0] for p in pairs)
+                avg_hr = statistics.mean(p[1] for p in pairs)
+                if avg_hr > 0:
+                    metrics["running_power_hr_ratio"] = {
+                        "ratio": round(avg_w / avg_hr, 2),
+                        "unit": "W/bpm",
+                    }
+    except Exception:
+        logger.exception("Error computing running power metrics")
+
     return metrics
 
 
