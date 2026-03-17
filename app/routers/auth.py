@@ -79,6 +79,31 @@ async def strava_login(request: Request, db: AsyncSession = Depends(get_db)):
     return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
 
 
+@router.post("/auth/reconnect")
+async def reconnect(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    client_id: str = Form(...),
+):
+    """Re-login: look up user by their Client ID, use stored credentials for OAuth."""
+    client_id = client_id.strip()
+    if not client_id:
+        return RedirectResponse(url="/?error=missing_client_id", status_code=302)
+
+    result = await db.execute(
+        select(User).where(User.strava_client_id == client_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user or not user.has_own_strava_app:
+        return RedirectResponse(url="/?error=unknown_client_id", status_code=302)
+
+    strava = StravaService.for_user(db, user)
+    # Store client_id in session so callback knows this is a reconnect
+    request.session["reconnect_client_id"] = client_id
+    return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
+
+
 @router.get("/auth/strava/callback")
 async def strava_callback(
     request: Request,
@@ -93,11 +118,24 @@ async def strava_callback(
     # Determine which credentials to use for token exchange
     pending_id = request.session.get("pending_client_id")
     pending_secret = request.session.get("pending_client_secret")
+    reconnect_client_id = request.session.get("reconnect_client_id")
 
     if pending_id and pending_secret:
+        # New user from setup wizard
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
+    elif reconnect_client_id:
+        # Returning user via reconnect
+        result = await db.execute(
+            select(User).where(User.strava_client_id == reconnect_client_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        if existing_user and existing_user.has_own_strava_app:
+            strava = StravaService.for_user(db, existing_user)
+        else:
+            return RedirectResponse(url="/?error=unknown_client_id", status_code=302)
+        request.session.pop("reconnect_client_id", None)
     else:
-        # Re-auth: look up user's stored credentials
+        # Re-auth: look up user's stored credentials by session
         user_id = request.session.get("user_id")
         if user_id:
             result = await db.execute(select(User).where(User.id == user_id))

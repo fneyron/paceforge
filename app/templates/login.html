@@ -27,9 +27,30 @@
                     <span class="text-xs text-gray-400">Connexion avec Strava · Gratuit</span>
                 </div>
 
+                <!-- Reconnect for existing users -->
+                <div class="mt-6" x-data="{ open: false }">
+                    <button @click="open = !open" class="text-xs text-gray-400 hover:text-gray-600 underline transition-colors">
+                        Déjà un compte ? Se reconnecter
+                    </button>
+                    <form x-show="open" x-cloak x-transition action="/auth/reconnect" method="POST"
+                          class="mt-3 max-w-xs mx-auto flex gap-2">
+                        <input type="text" name="client_id" placeholder="Ton Client ID Strava" required
+                               pattern="[0-9]+"
+                               class="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-mono">
+                        <button type="submit"
+                                class="h-10 px-4 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold transition-colors shrink-0">
+                            Go
+                        </button>
+                    </form>
+                </div>
+
                 {% if error %}
                 <div class="mt-4 max-w-sm mx-auto rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {% if error == "unknown_client_id" or error == "missing_client_id" %}
+                    Client ID inconnu. Vérifie ton identifiant ou crée un nouveau compte.
+                    {% else %}
                     La connexion a échoué. Veuillez réessayer.
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
