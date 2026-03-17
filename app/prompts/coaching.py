@@ -294,6 +294,51 @@ def _append_computed_metrics(lines: list[str], metrics: dict, sport: str) -> Non
         if st:
             lines.append(f"- Temps arrêté : {st['pct']:.1f}% du temps total")
 
+        rp = metrics.get("running_power")
+        if rp:
+            power_parts = [f"Puissance moy {rp['avg_watts']}W, max {rp['max_watts']}W"]
+            if rp.get("normalized_power"):
+                power_parts.append(f"NP {rp['normalized_power']}W")
+            if rp.get("variability_index"):
+                power_parts.append(f"VI {rp['variability_index']:.2f}")
+            if rp.get("power_to_weight"):
+                power_parts.append(f"{rp['power_to_weight']:.1f} W/kg")
+            lines.append(f"- Running Power : {', '.join(power_parts)}")
+
+        ppe = metrics.get("power_pace_efficiency")
+        if ppe:
+            lines.append(
+                f"- Efficacité puissance/allure : {ppe['watts_per_ms']:.1f} W/(m/s) ({ppe['assessment']})"
+            )
+
+        rphr = metrics.get("running_power_hr_ratio")
+        if rphr:
+            lines.append(f"- Ratio Puissance/FC : {rphr['ratio']:.2f} {rphr['unit']}")
+
+        sw = metrics.get("structured_workout")
+        if sw:
+            lines.append(f"\n### Analyse séance structurée")
+            lines.append(f"  - Type : {sw['repetitions']}x{sw['avg_interval_distance_m']}m")
+            if sw.get("avg_interval_pace"):
+                lines.append(f"  - Allure moyenne intervalles : {sw['avg_interval_pace']}")
+            lines.append(
+                f"  - Régularité allure : CV {sw['pace_consistency_cv']:.1f}% ({sw.get('pace_consistency', 'N/A')})"
+            )
+            if sw.get("avg_interval_hr"):
+                lines.append(f"  - FC moyenne intervalles : {sw['avg_interval_hr']} bpm")
+            if sw.get("interval_hr_drift_pct") is not None:
+                lines.append(f"  - Dérive FC inter-intervalles : {sw['interval_hr_drift_pct']:.1f}%")
+            if sw.get("avg_interval_watts"):
+                lines.append(f"  - Puissance moyenne intervalles : {sw['avg_interval_watts']}W")
+            if sw.get("power_consistency_cv") is not None:
+                lines.append(f"  - Régularité puissance : CV {sw['power_consistency_cv']:.1f}%")
+            if sw.get("avg_interval_cadence_spm"):
+                lines.append(f"  - Cadence moyenne intervalles : {sw['avg_interval_cadence_spm']} spm")
+            if sw.get("avg_recovery_hr"):
+                lines.append(f"  - FC moyenne récup : {sw['avg_recovery_hr']} bpm")
+            if sw.get("work_rest_hr_delta"):
+                lines.append(f"  - Delta FC travail/récup : {sw['work_rest_hr_delta']} bpm")
+
     # Cycling-specific
     if sport in ("Ride", "VirtualRide", "EBikeRide"):
         vi = metrics.get("variability_index")

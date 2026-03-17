@@ -446,6 +446,97 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
     except Exception:
         logger.exception("Error computing stop time percentage")
 
+    # Structured workout analysis from manual laps
+    try:
+        laps = activity_data.get("laps", [])
+        if laps and len(laps) >= 5:
+            # Classify laps into work/rest based on distance and speed
+            lap_data = []
+            for lap in laps:
+                dist = lap.get("distance", 0)
+                mt = lap.get("moving_time", 0)
+                if dist > 0 and mt > 0:
+                    pace_ms = dist / mt
+                    lap_data.append({
+                        "name": lap.get("name", ""),
+                        "distance": round(dist),
+                        "moving_time": mt,
+                        "pace_ms": pace_ms,
+                        "avg_hr": lap.get("average_heartrate"),
+                        "avg_cadence": lap.get("average_cadence"),
+                        "avg_watts": lap.get("average_watts"),
+                        "lap_index": lap.get("lap_index"),
+                    })
+
+            if len(lap_data) >= 5:
+                # Find repeating patterns: group laps by similar distance
+                distances = [l["distance"] for l in lap_data]
+                speeds = [l["pace_ms"] for l in lap_data]
+                avg_speed = statistics.mean(speeds)
+
+                # Identify work laps (faster than average) and rest laps
+                work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1 and l["distance"] > 150]
+                rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.9 and l["distance"] < 300 and l["distance"] > 30]
+
+                if len(work_laps) >= 3:
+                    # This is a structured workout
+                    work_paces = [l["pace_ms"] for l in work_laps]
+                    work_hrs = [l["avg_hr"] for l in work_laps if l["avg_hr"]]
+                    work_watts_list = [l["avg_watts"] for l in work_laps if l["avg_watts"]]
+                    work_cadences = [l["avg_cadence"] for l in work_laps if l["avg_cadence"]]
+
+                    avg_work_dist = statistics.mean([l["distance"] for l in work_laps])
+                    avg_work_pace = statistics.mean(work_paces)
+                    pace_cv = (statistics.stdev(work_paces) / avg_work_pace * 100) if len(work_paces) >= 2 else 0
+
+                    workout_data: dict = {
+                        "type": "structured_intervals",
+                        "repetitions": len(work_laps),
+                        "avg_interval_distance_m": round(avg_work_dist),
+                        "avg_interval_pace": _format_pace(1000 / avg_work_pace) if avg_work_pace > 0 else None,
+                        "pace_consistency_cv": round(pace_cv, 1),
+                    }
+
+                    if pace_cv < 3:
+                        workout_data["pace_consistency"] = "excellent"
+                    elif pace_cv < 6:
+                        workout_data["pace_consistency"] = "bon"
+                    else:
+                        workout_data["pace_consistency"] = "irrégulier"
+
+                    if work_hrs:
+                        workout_data["avg_interval_hr"] = round(statistics.mean(work_hrs))
+                        # HR drift across intervals
+                        if len(work_hrs) >= 4:
+                            first_half = statistics.mean(work_hrs[:len(work_hrs)//2])
+                            second_half = statistics.mean(work_hrs[len(work_hrs)//2:])
+                            hr_drift = (second_half - first_half) / first_half * 100
+                            workout_data["interval_hr_drift_pct"] = round(hr_drift, 1)
+
+                    if work_watts_list:
+                        workout_data["avg_interval_watts"] = round(statistics.mean(work_watts_list))
+                        # Power consistency across intervals
+                        if len(work_watts_list) >= 2:
+                            power_cv = statistics.stdev(work_watts_list) / statistics.mean(work_watts_list) * 100
+                            workout_data["power_consistency_cv"] = round(power_cv, 1)
+
+                    if work_cadences:
+                        # Multiply by 2 for running (Strava per-foot)
+                        workout_data["avg_interval_cadence_spm"] = round(statistics.mean(work_cadences) * 2)
+
+                    if rest_laps:
+                        rest_hrs = [l["avg_hr"] for l in rest_laps if l["avg_hr"]]
+                        if rest_hrs:
+                            workout_data["avg_recovery_hr"] = round(statistics.mean(rest_hrs))
+                            if work_hrs:
+                                workout_data["work_rest_hr_delta"] = round(
+                                    statistics.mean(work_hrs) - statistics.mean(rest_hrs)
+                                )
+
+                    metrics["structured_workout"] = workout_data
+    except Exception:
+        logger.exception("Error computing structured workout analysis")
+
     # Running power analysis
     try:
         watts = streams.get("watts", [])
