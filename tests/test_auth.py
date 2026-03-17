@@ -13,10 +13,18 @@ async def test_landing_page(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_strava_login_redirects(client: AsyncClient):
+async def test_strava_login_redirects_to_setup(client: AsyncClient):
+    """Without credentials, /auth/strava redirects to /setup."""
     response = await client.get("/auth/strava", follow_redirects=False)
     assert response.status_code == 302
-    assert "strava.com/oauth/authorize" in response.headers["location"]
+    assert "/setup" in response.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_setup_page_loads(client: AsyncClient):
+    response = await client.get("/setup")
+    assert response.status_code == 200
+    assert "Client ID" in response.text
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -17,6 +17,21 @@ class User(Base):
     strava_access_token: Mapped[str] = mapped_column(String(512), nullable=False)
     strava_refresh_token: Mapped[str] = mapped_column(String(512), nullable=False)
     strava_token_expires_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Per-user Strava API app credentials
+    strava_client_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    strava_client_secret_encrypted: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True
+    )
+    strava_webhook_subscription_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    strava_credentials_valid: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    last_activity_poll_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     firstname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lastname: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -52,6 +67,17 @@ class User(Base):
     )
 
     activities = relationship("Activity", back_populates="user", lazy="noload")
+
+    @property
+    def strava_client_secret(self) -> str | None:
+        if not self.strava_client_secret_encrypted:
+            return None
+        from app.crypto import decrypt_secret
+        return decrypt_secret(self.strava_client_secret_encrypted)
+
+    @property
+    def has_own_strava_app(self) -> bool:
+        return bool(self.strava_client_id and self.strava_client_secret_encrypted)
 
     def __repr__(self) -> str:
         return f"<User {self.id} strava={self.strava_athlete_id}>"

@@ -55,17 +55,15 @@ async def test_process_activity_full_pipeline(
 ):
     orchestrator = AnalysisOrchestrator(db_session)
 
-    # Mock Strava service
-    with patch.object(
-        orchestrator.strava,
-        "refresh_token_if_needed",
-        new_callable=AsyncMock,
-        return_value=test_user,
-    ), patch.object(
-        orchestrator.strava,
-        "get_activity",
-        new_callable=AsyncMock,
-        return_value=mock_strava_activity,
+    # Mock StravaService.for_user to return a mock service
+    mock_strava = MagicMock()
+    mock_strava.refresh_token_if_needed = AsyncMock(return_value=test_user)
+    mock_strava.get_activity = AsyncMock(return_value=mock_strava_activity)
+    mock_strava.get_activity_streams = AsyncMock(return_value=None)
+
+    with patch(
+        "app.services.analysis.StravaService.for_user",
+        return_value=mock_strava,
     ), patch.object(
         orchestrator.claude,
         "analyze_activity",

@@ -10,6 +10,17 @@
         <p class="text-gray-500 text-sm">Vos dernières séances et leur analyse coaching</p>
     </div>
 
+    <!-- Credentials invalid warning -->
+    {% if credentials_invalid %}
+    <div class="rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+            <p class="text-sm text-red-700">Tes identifiants Strava ne sont plus valides. Mets-les à jour pour continuer à synchroniser.</p>
+        </div>
+        <a href="/settings" class="text-sm font-semibold text-red-700 underline hover:text-red-900 shrink-0 ml-4">Réglages</a>
+    </div>
+    {% endif %}
+
     <!-- Sync status -->
     {% if sync_in_progress %}
     {% include "partials/sync_banner.html" %}

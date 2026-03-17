@@ -2,10 +2,11 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
+from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 
@@ -102,5 +103,62 @@ async def save_settings(
             "user": user,
             "sport_options": SPORT_OPTIONS,
             "saved": True,
+        },
+    )
+
+
+@router.post("/settings/strava-credentials", response_class=HTMLResponse)
+async def update_strava_credentials(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    client_id: str = Form(...),
+    client_secret: str = Form(...),
+):
+    """Update the user's Strava API app credentials."""
+    client_id = client_id.strip()
+    client_secret = client_secret.strip()
+
+    if not client_id or not client_secret:
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            context={
+                "user": user,
+                "sport_options": SPORT_OPTIONS,
+                "credentials_error": "Client ID et Client Secret sont requis.",
+            },
+        )
+
+    user.strava_client_id = client_id
+    user.strava_client_secret_encrypted = encrypt_secret(client_secret)
+    user.strava_credentials_valid = True
+    await db.flush()
+
+    logger.info("Strava credentials updated for user %d", user.id)
+
+    # Re-create webhook subscription with new credentials
+    try:
+        from app.services.strava import StravaService
+        strava = StravaService.for_user(db, user)
+
+        # Delete old subscription if exists
+        if user.strava_webhook_subscription_id:
+            await strava.delete_webhook_subscription(user.strava_webhook_subscription_id)
+
+        sub_id = await strava.create_webhook_subscription(user)
+        if sub_id:
+            user.strava_webhook_subscription_id = sub_id
+            await db.flush()
+    except Exception:
+        logger.exception("Failed to update webhook for user %d", user.id)
+
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        context={
+            "user": user,
+            "sport_options": SPORT_OPTIONS,
+            "credentials_saved": True,
         },
     )

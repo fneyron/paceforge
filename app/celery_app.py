@@ -7,7 +7,7 @@ celery_app = Celery(
     "paceforge",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.analysis", "app.tasks.weekly_digest", "app.tasks.initial_sync"],
+    include=["app.tasks.analysis", "app.tasks.weekly_digest", "app.tasks.initial_sync", "app.tasks.poll_activities"],
 )
 
 celery_app.conf.update(
@@ -25,6 +25,10 @@ celery_app.conf.update(
         "weekly-digest": {
             "task": "paceforge.generate_weekly_digests",
             "schedule": crontab(hour=7, minute=0, day_of_week=1),  # Monday 07:00 UTC
+        },
+        "poll-new-activities": {
+            "task": "paceforge.poll_new_activities",
+            "schedule": crontab(minute="*/5"),  # Every 5 minutes
         },
     },
 )

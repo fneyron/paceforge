@@ -15,6 +15,70 @@
     </div>
     {% endif %}
 
+    {% if credentials_saved is defined and credentials_saved %}
+    <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        Identifiants Strava mis à jour avec succès.
+    </div>
+    {% endif %}
+
+    {% if credentials_error is defined and credentials_error %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {{ credentials_error }}
+    </div>
+    {% endif %}
+
+    <!-- Connexion Strava API -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold tracking-tight">Connexion Strava API</h2>
+            {% if user.has_own_strava_app %}
+                {% if user.strava_credentials_valid %}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-xs font-medium text-green-700">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                    Connecté
+                </span>
+                {% else %}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-xs font-medium text-red-700">
+                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    Invalide
+                </span>
+                {% endif %}
+            {% else %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-50 text-xs font-medium text-yellow-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                Non configuré
+            </span>
+            {% endif %}
+        </div>
+
+        <form method="post" action="/settings/strava-credentials" class="space-y-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="client_id" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Client ID</label>
+                    <input type="text" id="client_id" name="client_id"
+                           value="{{ user.strava_client_id or '' }}"
+                           placeholder="Ex: 123456"
+                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-mono">
+                </div>
+                <div>
+                    <label for="client_secret" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Client Secret</label>
+                    <input type="password" id="client_secret" name="client_secret"
+                           placeholder="{% if user.has_own_strava_app %}••••••••{% else %}a1b2c3d4e5f6...{% endif %}"
+                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-mono">
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-400">
+                    <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener" class="underline hover:text-gray-600">Gérer ton app Strava</a>
+                </p>
+                <button type="submit"
+                        class="h-9 px-4 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold transition-colors">
+                    Mettre à jour
+                </button>
+            </div>
+        </form>
+    </div>
+
     <form method="post" action="/settings" class="space-y-6">
 
         <!-- Profil athlète -->

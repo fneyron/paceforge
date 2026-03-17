@@ -92,7 +92,7 @@ async def post_strava_comment(
     error = None
 
     try:
-        strava = StravaService(db)
+        strava = StravaService.for_user(db, user)
         await strava.update_activity_description(
             user, activity.strava_activity_id, analysis.strava_comment
         )

@@ -45,6 +45,10 @@ async def dashboard(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
+    # Guard: redirect to setup if user hasn't configured their own Strava app
+    if not user.has_own_strava_app:
+        return RedirectResponse(url="/setup", status_code=302)
+
     # Trigger initial sync for existing users who haven't done it
     if not user.initial_sync_done:
         from app.tasks.initial_sync import initial_sync
@@ -93,6 +97,7 @@ async def dashboard(
             "readiness": readiness,
             "latest_digest": latest_digest,
             "sync_in_progress": sync_in_progress,
+            "credentials_invalid": not user.strava_credentials_valid,
             "page": 1,
             "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
         },
@@ -203,7 +208,7 @@ def _activity_to_summary(activity: Activity) -> ActivitySummary:
 async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
     """Sync recent activities from Strava. Paginates until we find existing ones."""
     try:
-        strava = StravaService(db)
+        strava = StravaService.for_user(db, user)
         page = 1
         total_synced = 0
 

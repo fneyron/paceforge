@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 class AnalysisOrchestrator:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.strava = StravaService(db)
         self.claude = ClaudeService()
 
     async def process_activity(
@@ -38,7 +37,10 @@ class AnalysisOrchestrator:
         if not user:
             raise UserNotFoundError(f"strava_athlete_id={owner_strava_id}")
 
-        # 2. Refresh token if needed
+        # 2. Create Strava service with user's own credentials
+        self.strava = StravaService.for_user(self.db, user)
+
+        # 3. Refresh token if needed
         user = await self.strava.refresh_token_if_needed(user)
 
         # 3. Fetch activity from Strava

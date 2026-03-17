@@ -77,7 +77,7 @@ async def _run_analysis(owner_strava_id: int, strava_activity_id: int) -> dict:
 
             if user and user.auto_post_comments:
                 try:
-                    strava = StravaService(db)
+                    strava = StravaService.for_user(db, user)
                     await strava.update_activity_description(
                         user, strava_activity_id, analysis.strava_comment
                     )

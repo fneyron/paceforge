@@ -1,4 +1,5 @@
 import logging
+import secrets
 import time
 
 import httpx
@@ -16,12 +17,31 @@ STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
 
 
 class StravaService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> None:
         self.db = db
+        self.client_id = client_id or settings.STRAVA_CLIENT_ID
+        self.client_secret = client_secret or settings.STRAVA_CLIENT_SECRET
+
+    @classmethod
+    def for_user(cls, db: AsyncSession, user: User) -> "StravaService":
+        """Create a StravaService using the user's own Strava app credentials."""
+        if user.has_own_strava_app:
+            return cls(
+                db,
+                client_id=user.strava_client_id,
+                client_secret=user.strava_client_secret,
+            )
+        # Fallback to global credentials (dev/testing only)
+        return cls(db)
 
     def get_authorize_url(self) -> str:
         params = {
-            "client_id": settings.STRAVA_CLIENT_ID,
+            "client_id": self.client_id,
             "redirect_uri": f"{settings.BASE_URL}/auth/strava/callback",
             "response_type": "code",
             "scope": "read,activity:read_all,activity:write",
@@ -35,8 +55,8 @@ class StravaService:
             response = await client.post(
                 f"{STRAVA_OAUTH_URL}/token",
                 data={
-                    "client_id": settings.STRAVA_CLIENT_ID,
-                    "client_secret": settings.STRAVA_CLIENT_SECRET,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
                     "code": code,
                     "grant_type": "authorization_code",
                 },
@@ -58,12 +78,18 @@ class StravaService:
             response = await client.post(
                 f"{STRAVA_OAUTH_URL}/token",
                 data={
-                    "client_id": settings.STRAVA_CLIENT_ID,
-                    "client_secret": settings.STRAVA_CLIENT_SECRET,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
                     "refresh_token": user.strava_refresh_token,
                     "grant_type": "refresh_token",
                 },
             )
+            if response.status_code == 401:
+                logger.error("Strava credentials invalid for user %d", user.id)
+                user.strava_credentials_valid = False
+                await self.db.flush()
+                raise StravaTokenError()
+
             if response.status_code != 200:
                 logger.error("Strava token refresh failed: %s", response.text)
                 raise StravaTokenError()
@@ -190,6 +216,68 @@ class StravaService:
             json={"description": description},
         )
         return response.json()
+
+    async def create_webhook_subscription(self, user: User) -> int | None:
+        """Create a Strava webhook subscription for the user's app.
+
+        Returns the subscription_id or None on failure.
+        """
+        verify_token = f"paceforge-{secrets.token_hex(16)}"
+
+        # Store verify token in Redis with 60s TTL for the verification callback
+        try:
+            import redis as redis_lib
+            r = redis_lib.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+            r.setex(f"strava_webhook_verify:{verify_token}", 60, "pending")
+            r.close()
+        except Exception:
+            logger.exception("Failed to store webhook verify token in Redis")
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{STRAVA_API_URL}/push_subscriptions",
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "callback_url": f"{settings.BASE_URL}/webhook/strava",
+                        "verify_token": verify_token,
+                    },
+                )
+
+            if response.status_code in (200, 201):
+                data = response.json()
+                subscription_id = data.get("id")
+                logger.info(
+                    "Webhook subscription %d created for user %d",
+                    subscription_id, user.id,
+                )
+                return subscription_id
+
+            logger.warning(
+                "Webhook subscription failed for user %d: %s %s",
+                user.id, response.status_code, response.text,
+            )
+            return None
+        except Exception:
+            logger.exception("Failed to create webhook subscription for user %d", user.id)
+            return None
+
+    async def delete_webhook_subscription(self, subscription_id: int) -> None:
+        """Delete a Strava webhook subscription."""
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.delete(
+                    f"{STRAVA_API_URL}/push_subscriptions/{subscription_id}",
+                    params={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                    },
+                )
+            logger.info("Webhook subscription %d deleted", subscription_id)
+        except Exception:
+            logger.exception("Failed to delete webhook subscription %d", subscription_id)
 
     async def deauthorize(self, user: User) -> None:
         try:

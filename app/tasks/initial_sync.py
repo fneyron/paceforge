@@ -94,7 +94,7 @@ async def _run_initial_sync(user_id: int) -> dict:
             if not user:
                 return {"error": "user_not_found", "synced": 0}
 
-            strava = StravaService(db)
+            strava = StravaService.for_user(db, user)
 
             # 6 months ago
             after = datetime.now(timezone.utc) - timedelta(days=SYNC_MONTHS * 30)
