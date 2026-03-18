@@ -43,6 +43,14 @@ class Analysis(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # User feedback
+    user_rpe: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, doc="Rate of Perceived Exertion 1-10"
+    )
+    user_rating: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, doc="Analysis quality rating: -1, 0, 1"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

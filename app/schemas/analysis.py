@@ -44,6 +44,8 @@ class AnalysisResponse(BaseModel):
     model_used: str
     comment_posted: bool = False
     comment_posted_at: datetime | None = None
+    user_rpe: int | None = None
+    user_rating: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

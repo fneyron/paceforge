@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,9 +44,12 @@ async def activity_detail(
     if activity.analysis:
         analysis = AnalysisResponse.model_validate(activity.analysis)
 
+    # Computed metrics (calculated from streams, stored as JSON)
+    metrics = activity.computed_metrics or {}
+
     return templates.TemplateResponse(
         request, "activity_detail.html",
-        context={"user": user, "activity": detail, "analysis": analysis},
+        context={"user": user, "activity": detail, "analysis": analysis, "metrics": metrics},
     )
 
 
@@ -136,4 +139,36 @@ async def trigger_analysis(
     return templates.TemplateResponse(
         request, "partials/analysis_card.html",
         context={"analysis": None, "activity": activity},
+    )
+
+
+@router.post("/partials/activity/{activity_id}/feedback", response_class=HTMLResponse)
+async def submit_feedback(
+    request: Request,
+    activity_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    rpe: int | None = Form(default=None),
+    rating: int | None = Form(default=None),
+):
+    result = await db.execute(
+        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
+    )
+    activity = result.scalar_one_or_none()
+    if not activity or not activity.analysis:
+        return HTMLResponse("")
+
+    analysis = activity.analysis
+
+    if rpe is not None and 1 <= rpe <= 10:
+        analysis.user_rpe = rpe
+    if rating is not None and rating in (-1, 0, 1):
+        analysis.user_rating = rating
+
+    await db.flush()
+    logger.info("Feedback for activity %d: rpe=%s rating=%s", activity_id, rpe, rating)
+
+    return templates.TemplateResponse(
+        request, "partials/feedback_widget.html",
+        context={"analysis": AnalysisResponse.model_validate(analysis)},
     )

@@ -1,0 +1,62 @@
+<div class="space-y-4">
+    <!-- RPE Scale -->
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Ressenti de la séance (RPE)</h4>
+        <div class="flex gap-1">
+            {% for i in range(1, 11) %}
+            {% set is_selected = analysis.user_rpe == i %}
+            {% if i <= 3 %}{% set color_class = "bg-green-500 text-white" %}{% set hover_class = "hover:bg-green-100 hover:text-green-700" %}
+            {% elif i <= 5 %}{% set color_class = "bg-yellow-400 text-white" %}{% set hover_class = "hover:bg-yellow-100 hover:text-yellow-700" %}
+            {% elif i <= 7 %}{% set color_class = "bg-orange-500 text-white" %}{% set hover_class = "hover:bg-orange-100 hover:text-orange-700" %}
+            {% else %}{% set color_class = "bg-red-500 text-white" %}{% set hover_class = "hover:bg-red-100 hover:text-red-700" %}
+            {% endif %}
+            <button
+                hx-post="/partials/activity/{{ analysis.activity_id }}/feedback"
+                hx-vals='{"rpe": {{ i }}}'
+                hx-target="#feedback-section-{{ analysis.activity_id }}"
+                hx-swap="innerHTML"
+                class="flex-1 h-9 rounded-lg text-xs font-bold transition-all
+                    {% if is_selected %}{{ color_class }} ring-2 ring-offset-1 ring-gray-900{% else %}bg-gray-100 text-gray-500 {{ hover_class }}{% endif %}">
+                {{ i }}
+            </button>
+            {% endfor %}
+        </div>
+        <div class="flex justify-between mt-1 text-[10px] text-gray-400">
+            <span>Facile</span>
+            <span>Modéré</span>
+            <span>Dur</span>
+            <span>Max</span>
+        </div>
+    </div>
+
+    <!-- Analysis Rating -->
+    <div>
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Cette analyse t'a aidé ?</h4>
+        <div class="flex gap-2">
+            <button
+                hx-post="/partials/activity/{{ analysis.activity_id }}/feedback"
+                hx-vals='{"rating": 1}'
+                hx-target="#feedback-section-{{ analysis.activity_id }}"
+                hx-swap="innerHTML"
+                class="flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium transition-all
+                    {% if analysis.user_rating == 1 %}bg-green-100 text-green-700 ring-1 ring-green-300{% else %}bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-600{% endif %}">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/>
+                </svg>
+                Oui
+            </button>
+            <button
+                hx-post="/partials/activity/{{ analysis.activity_id }}/feedback"
+                hx-vals='{"rating": -1}'
+                hx-target="#feedback-section-{{ analysis.activity_id }}"
+                hx-swap="innerHTML"
+                class="flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium transition-all
+                    {% if analysis.user_rating == -1 %}bg-red-100 text-red-700 ring-1 ring-red-300{% else %}bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600{% endif %}">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/>
+                </svg>
+                Non
+            </button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,251 @@
+{% if metrics %}
+<div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Métriques avancées</h3>
+
+    <!-- HR Zones Distribution -->
+    {% set hz = metrics.get('hr_zones_distribution') %}
+    {% if hz %}
+    <div>
+        <h4 class="text-xs font-medium text-gray-500 mb-3">Zones cardiaques</h4>
+        <div class="flex gap-1 h-8 rounded-lg overflow-hidden">
+            {% set zone_colors = {'Z1': 'bg-blue-300', 'Z2': 'bg-green-400', 'Z3': 'bg-yellow-400', 'Z4': 'bg-orange-400', 'Z5': 'bg-red-500'} %}
+            {% for zone in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'] %}
+            {% if hz.get(zone) and hz[zone].pct > 0 %}
+            <div class="{{ zone_colors[zone] }} relative group" style="width: {{ hz[zone].pct }}%">
+                <span class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    {{ zone }} {{ hz[zone].pct|int }}%
+                </span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="flex justify-between mt-1.5 text-[10px] text-gray-400">
+            {% for zone in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'] %}
+            {% if hz.get(zone) %}
+            <span>{{ zone }} {{ hz[zone].pct|int }}%</span>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Key Metrics Grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <!-- Cardiac Drift -->
+        {% set cd = metrics.get('cardiac_drift') %}
+        {% if cd %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Dérive cardiaque</p>
+            <p class="text-lg font-bold tabular-nums {% if cd.drift_pct > 10 %}text-red-500{% elif cd.drift_pct > 5 %}text-amber-500{% else %}text-green-600{% endif %}">
+                {{ "%.1f"|format(cd.drift_pct) }}%
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ cd.first_half_avg|int }}→{{ cd.second_half_avg|int }} bpm</p>
+        </div>
+        {% endif %}
+
+        <!-- Effort Classification -->
+        {% set ec = metrics.get('effort_classification') %}
+        {% if ec %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Effort</p>
+            <p class="text-sm font-bold">{{ ec.classification }}</p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ ec.avg_hr_pct|int }}% FCmax</p>
+        </div>
+        {% endif %}
+
+        <!-- Aerobic Decoupling (running) -->
+        {% set ad = metrics.get('aerobic_decoupling') %}
+        {% if ad %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Découplage aérobie</p>
+            <p class="text-lg font-bold tabular-nums {% if ad.decoupling_pct > 5 %}text-amber-500{% else %}text-green-600{% endif %}">
+                {{ "%.1f"|format(ad.decoupling_pct) }}%
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ ad.assessment }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Cadence Analysis -->
+        {% set ca = metrics.get('cadence_analysis') %}
+        {% if ca %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Cadence</p>
+            <p class="text-lg font-bold tabular-nums">
+                {{ ca.get('avg_spm', ca.get('avg_rpm', 0))|int }}
+                <span class="text-xs font-normal text-gray-400">{{ 'spm' if ca.get('avg_spm') else 'rpm' }}</span>
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ ca.pct_in_optimal_range|int }}% en zone optimale</p>
+        </div>
+        {% endif %}
+
+        <!-- Stride Length (running) -->
+        {% set sl = metrics.get('stride_length') %}
+        {% if sl %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Foulée</p>
+            <p class="text-lg font-bold tabular-nums">{{ "%.2f"|format(sl.avg_m) }} <span class="text-xs font-normal text-gray-400">m</span></p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ sl.assessment }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Pace Variability (running) -->
+        {% set pv = metrics.get('pace_variability') %}
+        {% if pv %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Variabilité allure</p>
+            <p class="text-lg font-bold tabular-nums {% if pv.cv_pct > 8 %}text-amber-500{% else %}text-green-600{% endif %}">
+                {{ "%.1f"|format(pv.cv_pct) }}%
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ pv.assessment }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Split Analysis (running) -->
+        {% set sa = metrics.get('split_analysis') %}
+        {% if sa %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Stratégie</p>
+            <p class="text-sm font-bold {% if sa.type == 'negative' %}text-green-600{% elif sa.type == 'positive' %}text-amber-500{% endif %}">
+                {{ sa.type }} split
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ sa.magnitude_s_per_km|int }}s/km</p>
+        </div>
+        {% endif %}
+
+        <!-- Running Power -->
+        {% set rp = metrics.get('running_power') %}
+        {% if rp %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Puissance</p>
+            <p class="text-lg font-bold tabular-nums">{{ rp.avg_watts }} <span class="text-xs font-normal text-gray-400">W</span></p>
+            {% if rp.get('power_to_weight') %}
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ "%.1f"|format(rp.power_to_weight) }} W/kg</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Variability Index (cycling) -->
+        {% set vi = metrics.get('variability_index') %}
+        {% if vi %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Variability Index</p>
+            <p class="text-lg font-bold tabular-nums">{{ "%.2f"|format(vi.vi) }}</p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ vi.assessment }}</p>
+        </div>
+        {% endif %}
+
+        <!-- TSS (cycling) -->
+        {% set tss = metrics.get('tss_estimate') %}
+        {% if tss %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">TSS</p>
+            <p class="text-lg font-bold tabular-nums">{{ tss.tss|int }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Intensity Factor (cycling) -->
+        {% set if_val = metrics.get('intensity_factor') %}
+        {% if if_val %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Intensity Factor</p>
+            <p class="text-lg font-bold tabular-nums">{{ "%.2f"|format(if_val.if_value) }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Pace Degradation (swimming) -->
+        {% set pd = metrics.get('pace_degradation') %}
+        {% if pd %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Dégradation</p>
+            <p class="text-lg font-bold tabular-nums {% if pd.degradation_pct > 5 %}text-amber-500{% else %}text-green-600{% endif %}">
+                {{ "%.1f"|format(pd.degradation_pct) }}%
+            </p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ pd.get('first_laps_pace', '?') }} → {{ pd.get('last_laps_pace', '?') }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Consistency Score (swimming) -->
+        {% set cs = metrics.get('consistency_score') %}
+        {% if cs %}
+        <div class="rounded-lg bg-gray-50 p-3">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Régularité</p>
+            <p class="text-lg font-bold tabular-nums">{{ "%.1f"|format(cs.cv_pct) }}%</p>
+            <p class="text-[10px] text-gray-400 mt-0.5">{{ cs.assessment }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Structured Workout Detection -->
+    {% set sw = metrics.get('structured_workout') %}
+    {% if sw %}
+    <div class="rounded-lg bg-gray-50 border border-gray-100 p-4">
+        <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Séance structurée détectée</h4>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+            <div>
+                <span class="text-gray-400 text-xs">Format</span>
+                <p class="font-semibold">{{ sw.repetitions }}x{{ sw.avg_interval_distance_m|int }}m</p>
+            </div>
+            {% if sw.get('avg_interval_pace') %}
+            <div>
+                <span class="text-gray-400 text-xs">Allure intervalles</span>
+                <p class="font-semibold tabular-nums">{{ sw.avg_interval_pace }}</p>
+            </div>
+            {% endif %}
+            <div>
+                <span class="text-gray-400 text-xs">Régularité</span>
+                <p class="font-semibold {% if sw.pace_consistency_cv < 3 %}text-green-600{% elif sw.pace_consistency_cv < 6 %}text-amber-500{% else %}text-red-500{% endif %}">
+                    CV {{ "%.1f"|format(sw.pace_consistency_cv) }}%
+                </p>
+            </div>
+            {% if sw.get('avg_interval_hr') %}
+            <div>
+                <span class="text-gray-400 text-xs">FC intervalles</span>
+                <p class="font-semibold tabular-nums">{{ sw.avg_interval_hr }} bpm</p>
+            </div>
+            {% endif %}
+            {% if sw.get('interval_hr_drift_pct') is not none %}
+            <div>
+                <span class="text-gray-400 text-xs">Dérive FC inter-séries</span>
+                <p class="font-semibold tabular-nums {% if sw.interval_hr_drift_pct > 8 %}text-amber-500{% endif %}">
+                    {{ "%.1f"|format(sw.interval_hr_drift_pct) }}%
+                </p>
+            </div>
+            {% endif %}
+            {% if sw.get('work_rest_hr_delta') %}
+            <div>
+                <span class="text-gray-400 text-xs">Delta FC travail/récup</span>
+                <p class="font-semibold tabular-nums">{{ sw.work_rest_hr_delta }} bpm</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Power Zones (cycling) -->
+    {% set pz = metrics.get('power_zones_distribution') %}
+    {% if pz %}
+    <div>
+        <h4 class="text-xs font-medium text-gray-500 mb-3">Zones de puissance</h4>
+        <div class="flex gap-1 h-8 rounded-lg overflow-hidden">
+            {% set pz_colors = {'Z1': 'bg-gray-300', 'Z2': 'bg-blue-300', 'Z3': 'bg-green-400', 'Z4': 'bg-yellow-400', 'Z5': 'bg-orange-400', 'Z6': 'bg-red-500'} %}
+            {% for zone in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6'] %}
+            {% if pz.get(zone) and pz[zone].pct > 0 %}
+            <div class="{{ pz_colors.get(zone, 'bg-gray-400') }} relative group" style="width: {{ pz[zone].pct }}%">
+                <span class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    {{ zone }} {{ pz[zone].pct|int }}%
+                </span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="flex justify-between mt-1.5 text-[10px] text-gray-400">
+            {% for zone in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6'] %}
+            {% if pz.get(zone) %}
+            <span>{{ zone }} {{ pz[zone].pct|int }}%</span>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}

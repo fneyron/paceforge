@@ -68,6 +68,11 @@
     </div>
     {% endif %}
 
+    <!-- User Feedback -->
+    <div class="pt-3 border-t border-gray-100" id="feedback-section-{{ analysis.activity_id }}">
+        {% include "partials/feedback_widget.html" %}
+    </div>
+
     <!-- Strava Comment Section -->
     <div class="pt-3 border-t border-gray-100">
         <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Commentaire Strava</h4>
