@@ -166,27 +166,28 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
             { maxZoom: 18 }
         ).addTo(map);
 
-        // Draw route colored by gradient (segment by segment)
-        var allLatLngs = [];
-        if (segments.length > 0) {
-            segments.forEach(function(seg) {
-                var segCoords = [];
-                for (var i = 0; i < routeCoords.length; i++) {
-                    var d = routeCoords[i][2];
-                    if (d >= seg.start_km && d <= seg.end_km) {
-                        segCoords.push([routeCoords[i][0], routeCoords[i][1]]);
+        // Draw route colored by gradient
+        // Build a color for each routeCoord based on which segment it falls in
+        var allLatLngs = routeCoords.map(function(c) { return [c[0], c[1]]; });
+
+        if (segments.length > 0 && routeCoords.length > 1) {
+            // For each consecutive pair of route coords, draw a colored segment
+            for (var i = 0; i < routeCoords.length - 1; i++) {
+                var distKm = routeCoords[i][2];
+                // Find which segment this point belongs to
+                var color = '#22c55e'; // default green (flat)
+                for (var s = 0; s < segments.length; s++) {
+                    if (distKm >= segments[s].start_km && distKm < segments[s].end_km) {
+                        color = gradientColor(segments[s].avg_gradient_pct);
+                        break;
                     }
                 }
-                if (segCoords.length > 1) {
-                    L.polyline(segCoords, {
-                        color: gradientColor(seg.avg_gradient_pct),
-                        weight: 4, opacity: 0.9,
-                    }).addTo(map);
-                }
-                allLatLngs = allLatLngs.concat(segCoords);
-            });
+                L.polyline(
+                    [[routeCoords[i][0], routeCoords[i][1]], [routeCoords[i+1][0], routeCoords[i+1][1]]],
+                    { color: color, weight: 4, opacity: 0.9 }
+                ).addTo(map);
+            }
         } else {
-            allLatLngs = routeCoords.map(function(c) { return [c[0], c[1]]; });
             L.polyline(allLatLngs, { color: '#2563eb', weight: 3, opacity: 0.85 }).addTo(map);
         }
 
@@ -486,10 +487,18 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
             .then(function(html) { document.getElementById('passage-times-result').innerHTML = html; });
     }
 
+    // ── Load GPX waypoints as initial checkpoints ──
+    try {
+        var gpxWpts = JSON.parse('{{ gpx_waypoints | default("[]") }}');
+        if (gpxWpts && gpxWpts.length > 0) {
+            checkpoints = gpxWpts;
+        }
+    } catch(e) {}
+
     // ── INIT ──
     initChart();
     initMap();
-    renderCpList();
+    renderAll();
 
     window._sim = {
         addCheckpoint: addCheckpoint,

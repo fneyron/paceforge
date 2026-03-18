@@ -49,8 +49,12 @@ async def gpx_upload(
 
     try:
         content = await gpx_file.read()
-        points = parse_gpx(content)
+        points, gpx_waypoints = parse_gpx(content)
         course = build_course_profile(points, name=gpx_file.filename or "Course")
+
+        # Snap GPX waypoints to route
+        from app.services.gpx import snap_waypoints_to_route
+        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         # Build athlete profile and predict
         profile = await build_athlete_gradient_profile(db, user.id)
@@ -63,6 +67,7 @@ async def gpx_upload(
                 "course": course,
                 "profile": profile,
                 "course_json": course.model_dump_json(),
+                "gpx_waypoints": json.dumps(snapped_wpts),
             },
         )
     except ValueError as e:

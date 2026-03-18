@@ -20,8 +20,11 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def parse_gpx(file_content: bytes) -> list[GpxPoint]:
-    """Parse a GPX file and return ordered points with cumulative distance."""
+def parse_gpx(file_content: bytes) -> tuple[list[GpxPoint], list[dict]]:
+    """Parse a GPX file. Returns (track_points, waypoints).
+
+    Waypoints are [{name, lat, lon, elevation}, ...] from <wpt> elements.
+    """
     gpx = gpxpy.parse(file_content.decode("utf-8"))
 
     points: list[GpxPoint] = []
@@ -48,7 +51,43 @@ def parse_gpx(file_content: bytes) -> list[GpxPoint]:
     if not points:
         raise ValueError("Le fichier GPX ne contient aucun point de trace.")
 
-    return points
+    # Parse waypoints (<wpt> elements)
+    waypoints = []
+    for wpt in gpx.waypoints:
+        waypoints.append({
+            "name": wpt.name or f"WPT {len(waypoints) + 1}",
+            "lat": wpt.latitude,
+            "lon": wpt.longitude,
+            "elevation": wpt.elevation or 0.0,
+        })
+
+    return points, waypoints
+
+
+def snap_waypoints_to_route(
+    waypoints: list[dict], points: list[GpxPoint]
+) -> list[dict]:
+    """Snap waypoints to the nearest point on the route and compute distance_km."""
+    result = []
+    for wpt in waypoints:
+        best_dist = float("inf")
+        best_km = 0.0
+        best_elev = 0.0
+        for pt in points:
+            d = _haversine(wpt["lat"], wpt["lon"], pt.lat, pt.lon)
+            if d < best_dist:
+                best_dist = d
+                best_km = pt.distance_from_start / 1000
+                best_elev = pt.elevation
+        # Only include if reasonably close to the route (< 500m)
+        if best_dist < 500:
+            result.append({
+                "name": wpt["name"],
+                "distance_km": round(best_km, 1),
+                "elevation": round(best_elev, 0),
+            })
+    result.sort(key=lambda w: w["distance_km"])
+    return result
 
 
 def _smooth_elevations(points: list[GpxPoint], window: int = 5) -> list[float]:
