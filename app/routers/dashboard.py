@@ -36,6 +36,14 @@ async def landing(
     )
 
 
+@router.get("/landing", response_class=HTMLResponse)
+async def landing_page(request: Request, error: str | None = None):
+    """Page marketing, accessible même connecté."""
+    return templates.TemplateResponse(
+        request, "login.html", context={"error": error, "force_public": True}
+    )
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
