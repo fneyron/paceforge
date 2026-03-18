@@ -256,3 +256,82 @@ def format_time(seconds: int) -> str:
     if hours > 0:
         return f"{hours}h{minutes:02d}'{secs:02d}\""
     return f"{minutes}'{secs:02d}\""
+
+
+def compute_passage_times(
+    course: CourseProfile,
+    checkpoints: list[dict],
+    target_time_s: int | None = None,
+) -> list[dict]:
+    """Compute passage times between checkpoints.
+
+    Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
+    automatically. Returns a list of PassageTimeSection dicts.
+    """
+    from app.schemas.simulator import PassageTimeSection
+
+    # Build full checkpoint list with start and finish
+    all_cps = [{"name": "Depart", "distance_km": 0.0}]
+    for cp in sorted(checkpoints, key=lambda c: c["distance_km"]):
+        if cp["distance_km"] > 0 and cp["distance_km"] < course.total_distance_km:
+            all_cps.append(cp)
+    all_cps.append({"name": "Arrivee", "distance_km": course.total_distance_km})
+
+    # Scale factor for target time
+    scale = 1.0
+    if target_time_s and course.predicted_total_time_s > 0:
+        scale = target_time_s / course.predicted_total_time_s
+
+    sections = []
+    cumulative = 0.0
+    adj_cumulative = 0.0
+
+    for i in range(len(all_cps) - 1):
+        start_km = all_cps[i]["distance_km"]
+        end_km = all_cps[i + 1]["distance_km"]
+        section_dist = end_km - start_km
+
+        # Aggregate segments that fall within this section
+        section_time = 0.0
+        section_gain = 0.0
+        section_loss = 0.0
+
+        for seg in course.segments:
+            # Skip segments entirely outside this section
+            if seg.end_km <= start_km or seg.start_km >= end_km:
+                continue
+
+            # Compute overlap fraction
+            overlap_start = max(seg.start_km, start_km)
+            overlap_end = min(seg.end_km, end_km)
+            seg_length = seg.end_km - seg.start_km
+            if seg_length <= 0:
+                continue
+            fraction = (overlap_end - overlap_start) / seg_length
+
+            section_time += seg.predicted_time_s * fraction
+            section_gain += seg.elevation_gain * fraction
+            section_loss += seg.elevation_loss * fraction
+
+        cumulative += section_time
+        pace = section_time / section_dist if section_dist > 0 else 0
+
+        adjusted_time = section_time * scale
+        adj_cumulative += adjusted_time
+
+        sections.append(PassageTimeSection(
+            start_name=all_cps[i]["name"],
+            end_name=all_cps[i + 1]["name"],
+            start_km=round(start_km, 1),
+            end_km=round(end_km, 1),
+            distance_km=round(section_dist, 1),
+            elevation_gain=round(section_gain, 0),
+            elevation_loss=round(section_loss, 0),
+            predicted_time_s=round(section_time, 0),
+            cumulative_time_s=round(cumulative, 0),
+            predicted_pace_s_per_km=round(pace, 0),
+            adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
+            adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
+        ).model_dump())
+
+    return sections

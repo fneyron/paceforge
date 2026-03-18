@@ -195,16 +195,28 @@ def _sample_route_coords(
     points: list[GpxPoint],
     max_points: int = 500,
 ) -> list[list[float]]:
-    """Downsample GPS coordinates for map rendering. Returns [[lat, lon], ...]."""
+    """Downsample GPS coordinates for map rendering.
+
+    Returns [[lat, lon, distance_km], ...] — the 3rd element enables
+    hover-sync between map and elevation profile.
+    """
     n = len(points)
     step = max(1, n // max_points)
 
     coords = []
     for i in range(0, n, step):
-        coords.append([round(points[i].lat, 6), round(points[i].lon, 6)])
+        coords.append([
+            round(points[i].lat, 6),
+            round(points[i].lon, 6),
+            round(points[i].distance_from_start / 1000, 3),
+        ])
 
     # Always include last point
-    last = [round(points[-1].lat, 6), round(points[-1].lon, 6)]
+    last = [
+        round(points[-1].lat, 6),
+        round(points[-1].lon, 6),
+        round(points[-1].distance_from_start / 1000, 3),
+    ]
     if coords and coords[-1] != last:
         coords.append(last)
 

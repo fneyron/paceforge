@@ -33,7 +33,7 @@ class CourseProfile(BaseModel):
     total_elevation_loss: float
     segments: list[CourseSegment]
     elevation_points: list[dict]  # {"distance_km": float, "elevation": float}
-    route_coords: list[list[float]] = []  # [[lat, lon], ...] for map
+    route_coords: list[list[float]] = []  # [[lat, lon, distance_km], ...] for map + hover sync
     km_markers: list[dict] = []  # [{"km": int, "lat": float, "lon": float, "elevation": float}]
     predicted_total_time_s: int = 0
     predicted_total_time_formatted: str = ""
@@ -85,3 +85,23 @@ class ClaudeRaceStrategyOutput(BaseModel):
     nutrition_plan: list[str]
     mental_tips: list[str]
     coach_note: str
+
+
+class CheckpointInput(BaseModel):
+    name: str
+    distance_km: float
+
+
+class PassageTimeSection(BaseModel):
+    start_name: str
+    end_name: str
+    start_km: float
+    end_km: float
+    distance_km: float
+    elevation_gain: float
+    elevation_loss: float
+    predicted_time_s: float
+    cumulative_time_s: float
+    predicted_pace_s_per_km: float
+    adjusted_time_s: float | None = None
+    adjusted_cumulative_time_s: float | None = None

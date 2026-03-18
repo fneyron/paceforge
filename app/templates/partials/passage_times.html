@@ -1,0 +1,58 @@
+<div class="overflow-x-auto">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="text-gray-400 text-[10px] uppercase tracking-wider">
+                <th class="text-left py-2 pr-3 font-medium">Section</th>
+                <th class="text-right py-2 px-3 font-medium">Dist.</th>
+                <th class="text-right py-2 px-3 font-medium">D+</th>
+                <th class="text-right py-2 px-3 font-medium">D-</th>
+                <th class="text-right py-2 px-3 font-medium">Allure</th>
+                <th class="text-right py-2 px-3 font-medium">Temps</th>
+                <th class="text-right py-2 pl-3 font-medium">Cumul</th>
+                {% if has_target %}
+                <th class="text-right py-2 pl-3 font-medium">Objectif</th>
+                <th class="text-right py-2 pl-3 font-medium">Cumul obj.</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+            {% for s in sections %}
+            {% set pace_min = (s.predicted_pace_s_per_km // 60) | int %}
+            {% set pace_sec = (s.predicted_pace_s_per_km % 60) | int %}
+            {% set time_min = (s.predicted_time_s // 60) | int %}
+            {% set time_sec = (s.predicted_time_s % 60) | int %}
+            {% set cum_h = (s.cumulative_time_s // 3600) | int %}
+            {% set cum_m = ((s.cumulative_time_s % 3600) // 60) | int %}
+            {% set cum_s = (s.cumulative_time_s % 60) | int %}
+            <tr class="hover:bg-gray-50/50">
+                <td class="py-2 pr-3">
+                    <p class="font-medium text-xs">{{ s.end_name }}</p>
+                    <p class="text-[10px] text-gray-400">km {{ s.start_km }}-{{ s.end_km }}</p>
+                </td>
+                <td class="text-right py-2 px-3 tabular-nums">{{ '%.1f'|format(s.distance_km) }} km</td>
+                <td class="text-right py-2 px-3 tabular-nums text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}-{% endif %}</td>
+                <td class="text-right py-2 px-3 tabular-nums text-red-500">{% if s.elevation_loss > 0 %}-{{ s.elevation_loss|int }}{% else %}-{% endif %}</td>
+                <td class="text-right py-2 px-3 tabular-nums">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}/km</td>
+                <td class="text-right py-2 px-3 tabular-nums text-gray-500">{{ time_min }}'{{ '%02d'|format(time_sec) }}"</td>
+                <td class="text-right py-2 pl-3 tabular-nums font-medium">
+                    {% if cum_h > 0 %}{{ cum_h }}h{{ '%02d'|format(cum_m) }}{% else %}{{ cum_m }}'{{ '%02d'|format(cum_s) }}"{% endif %}
+                </td>
+                {% if has_target and s.adjusted_time_s is not none %}
+                {% set at_min = (s.adjusted_time_s // 60) | int %}
+                {% set at_sec = (s.adjusted_time_s % 60) | int %}
+                {% set ac_h = (s.adjusted_cumulative_time_s // 3600) | int %}
+                {% set ac_m = ((s.adjusted_cumulative_time_s % 3600) // 60) | int %}
+                {% set ac_s = (s.adjusted_cumulative_time_s % 60) | int %}
+                {% set delta = s.adjusted_time_s - s.predicted_time_s %}
+                <td class="text-right py-2 pl-3 tabular-nums {% if delta < 0 %}text-green-600{% elif delta > 0 %}text-red-500{% endif %}">
+                    {{ at_min }}'{{ '%02d'|format(at_sec) }}"
+                </td>
+                <td class="text-right py-2 pl-3 tabular-nums font-medium">
+                    {% if ac_h > 0 %}{{ ac_h }}h{{ '%02d'|format(ac_m) }}{% else %}{{ ac_m }}'{{ '%02d'|format(ac_s) }}"{% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

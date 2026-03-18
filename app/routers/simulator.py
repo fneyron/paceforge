@@ -127,6 +127,41 @@ async def race_strategy(
         )
 
 
+@router.post("/partials/simulator/passage-times", response_class=HTMLResponse)
+async def passage_times(
+    request: Request,
+    course_json: str = Form(...),
+    checkpoints_json: str = Form(default="[]"),
+    target_time_s: int | None = Form(default=None),
+    user: User = Depends(get_current_user),
+):
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import compute_passage_times
+
+    try:
+        course = CourseProfile(**json.loads(course_json))
+        checkpoints = json.loads(checkpoints_json)
+        sections = compute_passage_times(course, checkpoints, target_time_s)
+
+        return templates.TemplateResponse(
+            request,
+            "partials/passage_times.html",
+            context={
+                "sections": sections,
+                "has_target": target_time_s is not None,
+                "predicted_total": course.predicted_total_time_s,
+                "target_total": target_time_s,
+            },
+        )
+    except Exception:
+        logger.exception("Passage time calculation failed")
+        return HTMLResponse(
+            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
+            "Erreur lors du calcul des temps de passage."
+            "</div>"
+        )
+
+
 @router.post("/partials/simulator/power-calc", response_class=HTMLResponse)
 async def power_calc(
     request: Request,
