@@ -117,29 +117,40 @@
 </div>
 
 <script>
+// Init window._sim immediately so onclick handlers work
+window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, recalc: function(){} };
+
 (function() {
-    const isDark = document.documentElement.classList.contains('dark');
-    const routeCoords = {{ course.route_coords | tojson }};
-    const elevData = {{ course.elevation_points | tojson }};
-    const kmMarkers = {{ course.km_markers | tojson }};
-    const totalDistKm = {{ course.total_distance_km }};
-    const predictedTotalS = {{ course.predicted_total_time_s }};
+    var isDark = document.documentElement.classList.contains('dark');
+    var routeCoords = {{ course.route_coords | tojson }};
+    var elevData = {{ course.elevation_points | tojson }};
+    var kmMarkers = {{ course.km_markers | tojson }};
+    var totalDistKm = {{ course.total_distance_km }};
+    var predictedTotalS = {{ course.predicted_total_time_s }};
 
-    const distances = elevData.map(p => p.distance_km);
-    const elevations = elevData.map(p => p.elevation);
+    var distances = elevData.map(function(p) { return p.distance_km; });
+    var elevations = elevData.map(function(p) { return p.elevation; });
 
-    let map = null, polyline = null, hoverMarker = null, chart = null;
-    let checkpoints = [];
-    let cpMapMarkers = [];
+    var map = null, polyline = null, hoverMarker = null, chart = null;
+    var checkpoints = [];
+    var cpMapMarkers = [];
 
-    const gridColor = isDark ? '#333' : '#f0f0f0';
-    const muted = isDark ? '#6b7280' : '#9ca3af';
-    const lineColor = isDark ? '#60a5fa' : '#2563eb';
+    var gridColor = isDark ? '#333' : '#f0f0f0';
+    var muted = isDark ? '#6b7280' : '#9ca3af';
+    var lineColor = isDark ? '#60a5fa' : '#2563eb';
+
+    function showMarker(marker, visible) {
+        if (!marker) return;
+        marker.setStyle({ opacity: visible ? 1 : 0, fillOpacity: visible ? 1 : 0 });
+    }
 
     // ── ELEVATION CHART ──
     function initChart() {
         const el = document.getElementById('elevationChart');
         if (!el || !elevData.length) return;
+
+        // Build [x, y] pairs for numeric xaxis (needed for annotations to work)
+        var xyData = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
 
         chart = new ApexCharts(el, {
             chart: {
@@ -154,16 +165,17 @@
                             updateMapMarker(distances[config.dataPointIndex]);
                         }
                     },
-                    mouseLeave: function() { if (hoverMarker) hoverMarker.setOpacity(0); },
+                    mouseLeave: function() { if (hoverMarker) showMarker(hoverMarker, false); },
                 },
             },
             theme: { mode: isDark ? 'dark' : 'light' },
-            series: [{ name: 'Altitude', data: elevations }],
+            series: [{ name: 'Altitude', data: xyData }],
             xaxis: {
-                categories: distances,
+                type: 'numeric',
+                tickAmount: 10,
                 labels: {
                     style: { colors: muted, fontSize: '9px' }, rotate: 0,
-                    formatter: function(v) { var km = parseFloat(v); return km % 5 < 0.15 ? Math.round(km) + '' : ''; },
+                    formatter: function(v) { return Math.round(v) + ''; },
                 },
                 axisBorder: { show: false }, axisTicks: { show: false },
                 crosshairs: { show: true, stroke: { color: '#f97316', width: 1, dashArray: 3 } },
@@ -178,7 +190,7 @@
             markers: { size: 0, hover: { size: 4 } },
             tooltip: {
                 theme: isDark ? 'dark' : 'light',
-                x: { formatter: function(v, opts) { return 'km ' + (distances[opts.dataPointIndex] || 0).toFixed(1); } },
+                x: { formatter: function(v) { return 'km ' + parseFloat(v).toFixed(1); } },
                 y: { formatter: function(v) { return Math.round(v) + ' m'; } },
             },
             annotations: { xaxis: [] },
@@ -218,19 +230,19 @@
 
         // Hover marker
         hoverMarker = L.circleMarker([0, 0], { radius: 6, fillColor: '#f97316', fillOpacity: 1, color: '#fff', weight: 2 }).addTo(map);
-        hoverMarker.setOpacity(0);
+        showMarker(hoverMarker, false);
 
         // Map hover → chart sync
         map.on('mousemove', function(e) {
             var nearest = findNearest(e.latlng);
             if (nearest) {
                 hoverMarker.setLatLng([nearest[0], nearest[1]]);
-                hoverMarker.setOpacity(1);
+                showMarker(hoverMarker, true);
                 updateChartCrosshair(nearest[2]);
             }
         });
         map.on('mouseout', function() {
-            hoverMarker.setOpacity(0);
+            showMarker(hoverMarker, false);
             clearChartCrosshair();
         });
     }
@@ -253,13 +265,28 @@
             if (d < bestD) { bestD = d; best = routeCoords[i]; }
         }
         hoverMarker.setLatLng([best[0], best[1]]);
-        hoverMarker.setOpacity(1);
+        showMarker(hoverMarker, true);
     }
 
     function updateChartCrosshair(distKm) {
         if (!chart) return;
+        // Find closest data point index
+        var bestIdx = 0, bestD = Math.abs(distances[0] - distKm);
+        for (var i = 1; i < distances.length; i++) {
+            var d = Math.abs(distances[i] - distKm);
+            if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        // Use annotation with the category value (must match exactly)
         chart.clearAnnotations();
-        chart.addXaxisAnnotation({ x: distKm, borderColor: '#f97316', strokeDashArray: 3 });
+        chart.addXaxisAnnotation({
+            x: distances[bestIdx],
+            borderColor: '#f97316',
+            strokeDashArray: 3,
+            label: {
+                text: distances[bestIdx].toFixed(1) + ' km',
+                style: { fontSize: '9px', color: '#fff', background: '#f97316', padding: { left: 4, right: 4, top: 2, bottom: 2 } },
+            },
+        });
         renderCpAnnotations();
     }
 
