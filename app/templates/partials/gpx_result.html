@@ -121,8 +121,7 @@
 </div>
 
 <script>
-// ── Cleanup previous instance ──
-if (window._sim && window._sim._cleanup) window._sim._cleanup();
+// Cleanup is done by htmx:beforeSwap in simulator.html
 window._sim = {};
 
 (function() {

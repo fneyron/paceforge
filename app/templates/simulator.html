@@ -286,8 +286,19 @@ function deleteRoute(routeId, btn) {
 
 function loadSavedRoute(routeId) {
     if (!routeId) return;
+    // Cleanup old map/chart BEFORE replacing DOM
+    if (window._sim && window._sim._cleanup) window._sim._cleanup();
+    // Clear the container first to avoid stale DOM references
+    document.getElementById('gpx-result').innerHTML = '';
     htmx.ajax('GET', '/api/simulator/routes/' + routeId, { target: '#gpx-result', swap: 'innerHTML' });
 }
+
+// Also cleanup before any HTMX swap into gpx-result (GPX upload)
+document.addEventListener('htmx:beforeSwap', function(e) {
+    if (e.detail.target && e.detail.target.id === 'gpx-result') {
+        if (window._sim && window._sim._cleanup) window._sim._cleanup();
+    }
+});
 
 function toggleCalcMode(mode) {
     const timeGroup = document.getElementById('time-input-group');
