@@ -484,7 +484,7 @@ window._sim = {};
     // INIT
     // ══════════════════════════════════════════════════
     try {
-        var wpts = JSON.parse('{{ gpx_waypoints | default("[]") }}');
+        var wpts = {{ gpx_waypoints | default("[]") | safe }};
         if (wpts && wpts.length) checkpoints = wpts;
     } catch(e) {}
 
