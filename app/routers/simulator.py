@@ -236,20 +236,45 @@ async def save_route(
     course_json: str = Form(...),
     checkpoints_json: str = Form(default="[]"),
     name: str = Form(default=""),
+    route_id: int | None = Form(default=None),
 ):
     try:
         course_data = json.loads(course_json)
         cps = json.loads(checkpoints_json)
 
-        route = Route(
-            user_id=user.id,
-            name=name or course_data.get("name", "Parcours"),
-            total_distance_km=course_data.get("total_distance_km", 0),
-            total_elevation_gain=course_data.get("total_elevation_gain", 0),
-            total_elevation_loss=course_data.get("total_elevation_loss", 0),
-            course_json=course_data,
-        )
-        db.add(route)
+        # Update existing route or create new one
+        route = None
+        if route_id:
+            result = await db.execute(
+                select(Route).where(Route.id == route_id, Route.user_id == user.id)
+            )
+            route = result.scalar_one_or_none()
+
+        if route:
+            # Update existing
+            route.name = name or route.name
+            route.course_json = course_data
+            route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
+            route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
+            route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
+
+            # Delete old checkpoints and replace
+            from sqlalchemy import delete
+            await db.execute(
+                delete(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id)
+            )
+        else:
+            # Create new
+            route = Route(
+                user_id=user.id,
+                name=name or course_data.get("name", "Parcours"),
+                total_distance_km=course_data.get("total_distance_km", 0),
+                total_elevation_gain=course_data.get("total_elevation_gain", 0),
+                total_elevation_loss=course_data.get("total_elevation_loss", 0),
+                course_json=course_data,
+            )
+            db.add(route)
+
         await db.flush()
 
         for cp in cps:
@@ -268,7 +293,7 @@ async def save_route(
         return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
 
 
-@router.get("/api/simulator/routes/{route_id}")
+@router.get("/api/simulator/routes/{route_id}", response_class=HTMLResponse)
 async def load_route(
     route_id: int,
     request: Request,
@@ -306,6 +331,7 @@ async def load_route(
             "profile": profile,
             "course_json": course.model_dump_json(),
             "gpx_waypoints": json.dumps(cps),
+            "saved_route_id": route_id,
         },
     )
 

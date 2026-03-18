@@ -149,6 +149,10 @@
 </div>
 
 <script>
+// ── CLEANUP previous instances before creating new ones ──
+if (window._sim && window._sim._cleanup) {
+    window._sim._cleanup();
+}
 window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, recalc: function(){}, autoDetect: function(){} };
 
 (function() {
@@ -168,6 +172,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
     var checkpoints = [];
     var cpMapMarkers = [];
     var currentHeatFactor = 1.0;
+    var currentRouteId = {{ saved_route_id | default('null') }};  // Set from loaded route or after save
 
     var gridColor = isDark ? '#333' : '#f0f0f0';
     var muted = isDark ? '#6b7280' : '#9ca3af';
@@ -179,6 +184,12 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
         if (!routeCoords.length) return;
         var mapEl = document.getElementById('courseMap');
         if (!mapEl) return;
+
+        // Destroy previous map instance
+        if (map) {
+            try { map.off(); map.remove(); } catch(e) {}
+            map = null;
+        }
 
         map = L.map(mapEl, { zoomControl: true, attributionControl: false });
         L.tileLayer(
@@ -277,6 +288,12 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
     function initChart() {
         var el = document.getElementById('elevationChart');
         if (!el || !elevData.length) return;
+
+        // Destroy previous chart instance
+        if (chart) {
+            try { chart.destroy(); } catch(e) {}
+            chart = null;
+        }
 
         var xyData = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
 
@@ -522,14 +539,16 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
         body.append('course_json', document.getElementById('courseJsonData').value);
         body.append('checkpoints_json', JSON.stringify(checkpoints));
         body.append('name', name);
+        if (currentRouteId) body.append('route_id', currentRouteId);
         if (h > 0 || m > 0) body.append('target_time_s', h * 3600 + m * 60);
 
         fetch('/api/simulator/routes', { method: 'POST', body: body })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.id) {
+                    currentRouteId = data.id;
                     document.getElementById('save-result').innerHTML =
-                        '<span class="text-green-600">Parcours sauvegarde !</span>';
+                        '<span class="text-green-600">Sauvegarde !</span>';
                 } else {
                     document.getElementById('save-result').innerHTML =
                         '<span class="text-red-500">Erreur</span>';
@@ -571,6 +590,13 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
             });
     }
 
+    function _cleanup() {
+        if (map) { try { map.off(); map.remove(); } catch(e) {} map = null; }
+        if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
+        hoverMarker = null;
+        cpMapMarkers = [];
+    }
+
     window._sim = {
         addCheckpoint: addCheckpoint,
         removeCheckpoint: removeCheckpoint,
@@ -578,6 +604,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
         autoDetect: autoDetect,
         saveRoute: saveRoute,
         fetchWeather: fetchWeather,
+        _cleanup: _cleanup,
     };
 })();
 </script>
