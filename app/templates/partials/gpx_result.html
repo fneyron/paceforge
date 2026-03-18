@@ -167,6 +167,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
     var map = null, hoverMarker = null, chart = null;
     var checkpoints = [];
     var cpMapMarkers = [];
+    var currentHeatFactor = 1.0;
 
     var gridColor = isDark ? '#333' : '#f0f0f0';
     var muted = isDark ? '#6b7280' : '#9ca3af';
@@ -492,6 +493,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
         body.append('course_json', document.getElementById('courseJsonData').value);
         body.append('checkpoints_json', JSON.stringify(checkpoints));
         if (targetS > 0) body.append('target_time_s', targetS);
+        if (currentHeatFactor > 1.0) body.append('heat_factor', currentHeatFactor);
 
         fetch('/partials/simulator/passage-times', { method: 'POST', body: body })
             .then(function(r) { return r.text(); })
@@ -514,10 +516,13 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
     // ── SAVE ROUTE ──
     function saveRoute() {
         var name = document.getElementById('save-name').value.trim() || 'Parcours';
+        var h = parseInt(document.getElementById('target-h').value) || 0;
+        var m = parseInt(document.getElementById('target-m').value) || 0;
         var body = new URLSearchParams();
         body.append('course_json', document.getElementById('courseJsonData').value);
         body.append('checkpoints_json', JSON.stringify(checkpoints));
         body.append('name', name);
+        if (h > 0 || m > 0) body.append('target_time_s', h * 3600 + m * 60);
 
         fetch('/api/simulator/routes', { method: 'POST', body: body })
             .then(function(r) { return r.json(); })
@@ -553,6 +558,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
                     document.getElementById('weather-result').innerHTML = '<span class="text-red-500">' + w.error + '</span>';
                     return;
                 }
+                currentHeatFactor = w.heat_factor;
                 var factorPct = Math.round((w.heat_factor - 1) * 100);
                 var color = factorPct > 5 ? 'text-red-500' : (factorPct > 0 ? 'text-amber-500' : 'text-green-600');
                 document.getElementById('weather-result').innerHTML =

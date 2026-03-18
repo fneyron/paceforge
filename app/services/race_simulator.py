@@ -292,6 +292,7 @@ def compute_passage_times(
     course: CourseProfile,
     checkpoints: list[dict],
     target_time_s: int | None = None,
+    heat_factor: float = 1.0,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
@@ -343,6 +344,8 @@ def compute_passage_times(
             section_gain += seg.elevation_gain * fraction
             section_loss += seg.elevation_loss * fraction
 
+        # Apply heat factor
+        section_time *= heat_factor
         cumulative += section_time
         pace = section_time / section_dist if section_dist > 0 else 0
 

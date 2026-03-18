@@ -93,15 +93,23 @@
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Parcours sauvegardes</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {% for r in saved_routes %}
-                <button onclick="loadSavedRoute({{ r.id }})"
-                        class="text-left rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all group">
-                    <p class="font-medium text-sm truncate group-hover:text-blue-600 transition-colors">{{ r.name }}</p>
-                    <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-                        <span class="tabular-nums">{{ '%.0f'|format(r.total_distance_km) }} km</span>
-                        <span class="text-red-400 tabular-nums">D+ {{ '%.0f'|format(r.total_elevation_gain) }}m</span>
-                        <span class="text-gray-300">{{ r.created_at.strftime('%d/%m') }}</span>
+                <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all group relative">
+                    <div onclick="loadSavedRoute({{ r.id }})" class="cursor-pointer">
+                        <p class="font-medium text-sm truncate group-hover:text-blue-600 transition-colors pr-6">{{ r.name }}</p>
+                        <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                            <span class="tabular-nums">{{ '%.0f'|format(r.total_distance_km) }} km</span>
+                            <span class="text-red-400 tabular-nums">D+ {{ '%.0f'|format(r.total_elevation_gain) }}m</span>
+                            <span class="text-gray-300">{{ r.created_at.strftime('%d/%m') }}</span>
+                        </div>
                     </div>
-                </button>
+                    <button onclick="deleteRoute({{ r.id }}, this)"
+                            class="absolute top-3 right-3 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Supprimer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                </div>
                 {% endfor %}
             </div>
         </div>
@@ -253,6 +261,12 @@ function handleDrop(e) {
         input.files = dt.files;
         updateFileName(input);
     }
+}
+
+function deleteRoute(routeId, btn) {
+    if (!confirm('Supprimer ce parcours ?')) return;
+    fetch('/api/simulator/routes/' + routeId, { method: 'DELETE' })
+        .then(function() { btn.closest('.rounded-xl').remove(); });
 }
 
 function loadSavedRoute(routeId) {

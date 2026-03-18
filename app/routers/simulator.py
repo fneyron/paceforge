@@ -150,6 +150,7 @@ async def passage_times(
     course_json: str = Form(...),
     checkpoints_json: str = Form(default="[]"),
     target_time_s: int | None = Form(default=None),
+    heat_factor: float = Form(default=1.0),
     user: User = Depends(get_current_user),
 ):
     from app.schemas.simulator import CourseProfile
@@ -158,7 +159,7 @@ async def passage_times(
     try:
         course = CourseProfile(**json.loads(course_json))
         checkpoints = json.loads(checkpoints_json)
-        sections = compute_passage_times(course, checkpoints, target_time_s)
+        sections = compute_passage_times(course, checkpoints, target_time_s, heat_factor)
 
         return templates.TemplateResponse(
             request,
