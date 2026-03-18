@@ -214,25 +214,55 @@ def _get_factor(profile: AthleteGradientProfile, gradient_pct: float) -> float:
     return 1.0
 
 
+def _fatigue_factor(
+    progress: float,
+    total_distance_km: float,
+    cumulative_gain: float,
+) -> float:
+    """Exponential fatigue factor based on race progress and D+.
+
+    Returns a multiplier >= 1.0 (higher = slower).
+    """
+    if total_distance_km < 20:
+        return 1.0
+
+    # Base exponential: grows with distance
+    k = 0.12 * (total_distance_km / 42)  # Scaled to marathon
+    base = 1.0 + k * (progress ** 2)
+
+    # Glycogen depletion after ~2.5h of running (~30-35km)
+    glycogen_threshold = min(35 / total_distance_km, 0.7)
+    if progress > glycogen_threshold:
+        glycogen_penalty = 0.04 * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
+        base += glycogen_penalty
+
+    # Elevation fatigue: more D+ = more fatigue
+    if cumulative_gain > 0:
+        base += (cumulative_gain / 8000) * 0.02
+
+    return min(base, 1.5)
+
+
 def predict_course(
     course: CourseProfile,
     profile: AthleteGradientProfile,
-    fatigue_factor: bool = True,
+    heat_factor: float = 1.0,
 ) -> CourseProfile:
-    """Apply gradient-adjusted pace prediction to all segments."""
+    """Apply gradient-adjusted pace prediction with fatigue and heat."""
     cumulative_time = 0.0
+    cumulative_gain = 0.0
     total_distance = course.total_distance_km
 
     for segment in course.segments:
         factor = _get_factor(profile, segment.avg_gradient_pct)
+        cumulative_gain += segment.elevation_gain
 
-        # Fatigue factor for long races (>30km)
-        if fatigue_factor and total_distance > 30:
-            progress = segment.cumulative_distance_km / total_distance if total_distance > 0 else 0
-            if progress > 0.8:
-                factor *= 1.10
-            elif progress > 0.6:
-                factor *= 1.05
+        # Progressive fatigue
+        progress = segment.cumulative_distance_km / total_distance if total_distance > 0 else 0
+        factor *= _fatigue_factor(progress, total_distance, cumulative_gain)
+
+        # Heat factor
+        factor *= heat_factor
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)

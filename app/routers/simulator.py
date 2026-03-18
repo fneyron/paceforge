@@ -2,11 +2,13 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
+from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,15 @@ async def simulator_page(
 
     ftp = await estimate_ftp(db, user.id)
 
+    # Saved routes
+    result = await db.execute(
+        select(Route)
+        .where(Route.user_id == user.id)
+        .order_by(Route.created_at.desc())
+        .limit(20)
+    )
+    saved_routes = result.scalars().all()
+
     return templates.TemplateResponse(
         request,
         "simulator.html",
@@ -33,6 +44,7 @@ async def simulator_page(
             "user": user,
             "ftp": ftp,
             "rider_weight": user.weight_kg or 75,
+            "saved_routes": saved_routes,
         },
     )
 
@@ -211,3 +223,119 @@ async def power_calc(
             "Erreur de calcul. Vérifiez les valeurs saisies."
             "</div>"
         )
+
+
+# ── Save / Load routes ──
+
+@router.post("/api/simulator/routes")
+async def save_route(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    course_json: str = Form(...),
+    checkpoints_json: str = Form(default="[]"),
+    name: str = Form(default=""),
+):
+    try:
+        course_data = json.loads(course_json)
+        cps = json.loads(checkpoints_json)
+
+        route = Route(
+            user_id=user.id,
+            name=name or course_data.get("name", "Parcours"),
+            total_distance_km=course_data.get("total_distance_km", 0),
+            total_elevation_gain=course_data.get("total_elevation_gain", 0),
+            total_elevation_loss=course_data.get("total_elevation_loss", 0),
+            course_json=course_data,
+        )
+        db.add(route)
+        await db.flush()
+
+        for cp in cps:
+            db.add(RouteCheckpoint(
+                route_id=route.id,
+                name=cp.get("name", ""),
+                distance_km=cp.get("distance_km", 0),
+                elevation=cp.get("elevation"),
+            ))
+        await db.flush()
+
+        logger.info("Route %d saved for user %d: %s", route.id, user.id, route.name)
+        return JSONResponse({"id": route.id, "name": route.name})
+    except Exception:
+        logger.exception("Failed to save route")
+        return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
+
+
+@router.get("/api/simulator/routes/{route_id}")
+async def load_route(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.race_simulator import predict_course, build_athlete_gradient_profile
+    from app.schemas.simulator import CourseProfile
+
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if not route or not route.course_json:
+        return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
+
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    course = predict_course(course, profile)
+
+    # Load checkpoints
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route_id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
+           for cp in cp_result.scalars().all()]
+
+    return templates.TemplateResponse(
+        request,
+        "partials/gpx_result.html",
+        context={
+            "course": course,
+            "profile": profile,
+            "course_json": course.model_dump_json(),
+            "gpx_waypoints": json.dumps(cps),
+        },
+    )
+
+
+@router.delete("/api/simulator/routes/{route_id}")
+async def delete_route(
+    route_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if route:
+        await db.delete(route)
+        await db.flush()
+    return JSONResponse({"ok": True})
+
+
+# ── Weather ──
+
+@router.post("/api/simulator/weather")
+async def get_weather(
+    lat: float = Form(...),
+    lon: float = Form(...),
+    date: str = Form(...),
+):
+    from app.services.weather import get_weather_forecast
+
+    weather = await get_weather_forecast(lat, lon, date)
+    if not weather:
+        return JSONResponse({"error": "Impossible de récupérer la météo"}, status_code=500)
+    return JSONResponse(weather)

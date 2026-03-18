@@ -82,6 +82,36 @@
         <div id="passage-times-result" class="mt-4"></div>
     </div>
 
+    <!-- Weather + Save -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Weather -->
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Meteo le jour de la course</h3>
+            <div class="flex gap-2 mb-3">
+                <input type="date" id="race-date" class="flex-1 h-8 px-2 rounded border border-gray-200 text-sm">
+                <button onclick="window._sim.fetchWeather()"
+                        class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">
+                    Charger
+                </button>
+            </div>
+            <div id="weather-result" class="text-xs text-gray-400">Entrez une date pour voir les conditions</div>
+        </div>
+
+        <!-- Save -->
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Sauvegarder</h3>
+            <div class="flex gap-2">
+                <input type="text" id="save-name" placeholder="Nom du parcours" value="{{ course.name }}"
+                       class="flex-1 h-8 px-3 rounded border border-gray-200 text-sm">
+                <button onclick="window._sim.saveRoute()"
+                        class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">
+                    Sauvegarder
+                </button>
+            </div>
+            <div id="save-result" class="mt-2 text-xs text-gray-400"></div>
+        </div>
+    </div>
+
     <!-- Athlete + Strategy -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -481,11 +511,67 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
     initMap();
     renderAll();
 
+    // ── SAVE ROUTE ──
+    function saveRoute() {
+        var name = document.getElementById('save-name').value.trim() || 'Parcours';
+        var body = new URLSearchParams();
+        body.append('course_json', document.getElementById('courseJsonData').value);
+        body.append('checkpoints_json', JSON.stringify(checkpoints));
+        body.append('name', name);
+
+        fetch('/api/simulator/routes', { method: 'POST', body: body })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.id) {
+                    document.getElementById('save-result').innerHTML =
+                        '<span class="text-green-600">Parcours sauvegarde !</span>';
+                } else {
+                    document.getElementById('save-result').innerHTML =
+                        '<span class="text-red-500">Erreur</span>';
+                }
+            });
+    }
+
+    // ── WEATHER ──
+    function fetchWeather() {
+        var date = document.getElementById('race-date').value;
+        if (!date) return;
+
+        // Use first route coord as location
+        var lat = routeCoords[0] ? routeCoords[0][0] : 0;
+        var lon = routeCoords[0] ? routeCoords[0][1] : 0;
+
+        var body = new URLSearchParams();
+        body.append('lat', lat);
+        body.append('lon', lon);
+        body.append('date', date);
+
+        fetch('/api/simulator/weather', { method: 'POST', body: body })
+            .then(function(r) { return r.json(); })
+            .then(function(w) {
+                if (w.error) {
+                    document.getElementById('weather-result').innerHTML = '<span class="text-red-500">' + w.error + '</span>';
+                    return;
+                }
+                var factorPct = Math.round((w.heat_factor - 1) * 100);
+                var color = factorPct > 5 ? 'text-red-500' : (factorPct > 0 ? 'text-amber-500' : 'text-green-600');
+                document.getElementById('weather-result').innerHTML =
+                    '<div class="flex items-center gap-4 text-sm">' +
+                    '<span>' + w.temperature_c + '°C</span>' +
+                    '<span>Humidite ' + w.humidity_pct + '%</span>' +
+                    '<span>Vent ' + w.wind_speed_kmh + ' km/h</span>' +
+                    '<span class="' + color + ' font-medium">' + (factorPct > 0 ? '+' + factorPct + '% impact' : 'Pas d\'impact') + '</span>' +
+                    '</div>';
+            });
+    }
+
     window._sim = {
         addCheckpoint: addCheckpoint,
         removeCheckpoint: removeCheckpoint,
         recalc: recalc,
         autoDetect: autoDetect,
+        saveRoute: saveRoute,
+        fetchWeather: fetchWeather,
     };
 })();
 </script>
