@@ -332,6 +332,7 @@ async def load_route(
             "course_json": course.model_dump_json(),
             "gpx_waypoints": json.dumps(cps),
             "saved_route_id": route_id,
+            "saved_route_name": route.name,
         },
     )
 
