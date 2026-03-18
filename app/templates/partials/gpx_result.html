@@ -543,6 +543,8 @@ window._sim = {};
     initChart();
     initMap();
     refreshCheckpoints();
+    // Auto-calculate passage times on load
+    recalc();
 
     function syncTarget() {
         var h = parseInt(document.getElementById('target-h-vis').value) || 0;
