@@ -54,41 +54,78 @@
         .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
         .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
 
-        /* Dark mode */
-        .dark body { background-color: #111; color: #e5e7eb; }
-        .dark .bg-white, .dark .bg-gray-50\/30 { background-color: #1a1a1a !important; }
-        .dark .bg-gray-50, .dark .bg-gray-50\/50 { background-color: #222 !important; }
-        .dark .border-gray-200, .dark .border-gray-100 { border-color: #333 !important; }
-        .dark .border-r { border-color: #333 !important; }
-        .dark .border-b { border-color: #333 !important; }
-        .dark .border-t { border-color: #333 !important; }
-        .dark .text-gray-900 { color: #f3f4f6 !important; }
+        /* Dark mode — Backgrounds */
+        .dark body { background-color: #111 !important; color: #e5e7eb; }
+        .dark .bg-white { background-color: #1a1a1a !important; }
+        .dark .bg-gray-50, .dark .bg-gray-50\/30, .dark .bg-gray-50\/50 { background-color: #222 !important; }
+        .dark .bg-gray-100 { background-color: #2a2a2a !important; }
+        .dark .bg-gray-200 { background-color: #374151 !important; }
+
+        /* Dark mode — Text */
+        .dark .text-gray-900:not(.bg-gray-900 *):not(button):not(a) { color: #f3f4f6 !important; }
+        .dark h1, .dark h2, .dark h3, .dark h4 { color: #f3f4f6 !important; }
+        .dark p:not([class*="text-green"]):not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-yellow"]):not([class*="text-white"]) { color: #d1d5db; }
         .dark .text-gray-700 { color: #d1d5db !important; }
         .dark .text-gray-600 { color: #9ca3af !important; }
         .dark .text-gray-500 { color: #9ca3af !important; }
         .dark .text-gray-400 { color: #6b7280 !important; }
         .dark .text-gray-300 { color: #4b5563 !important; }
-        .dark .bg-gray-200 { background-color: #374151 !important; }
-        .dark .bg-gray-900 { background-color: #f3f4f6 !important; }
-        .dark .bg-gray-900 .text-white { color: #111 !important; }
-        .dark .bg-gray-900\/10 { background-color: rgba(243,244,246,0.1) !important; }
+        .dark label { color: #9ca3af !important; }
+
+        /* Dark mode — Borders */
+        .dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300 { border-color: #333 !important; }
+        .dark .border-r, .dark .border-b, .dark .border-t, .dark .border-l { border-color: #333 !important; }
+        .dark .divide-gray-200 > * + * { border-color: #333 !important; }
+
+        /* Dark mode — Cards & containers */
+        .dark .shadow-sm, .dark .shadow-md { box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
+        .dark .shadow-lg { box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important; }
+        .dark .rounded-2xl.border { border-color: #333 !important; }
+
+        /* Dark mode — Sidebar */
+        .dark aside { background-color: #161616 !important; }
+        .dark .bg-gray-900\/10 { background-color: rgba(255,255,255,0.08) !important; }
+
+        /* Dark mode — Forms */
+        .dark input, .dark select, .dark textarea { background-color: #1a1a1a !important; color: #e5e7eb !important; border-color: #444 !important; }
+        .dark input::placeholder, .dark textarea::placeholder { color: #555 !important; }
+        .dark .focus\:ring-gray-900:focus { --tw-ring-color: #666 !important; }
+
+        /* Dark mode — Buttons (keep dark buttons dark, they work in both modes) */
         .dark .hover\:bg-gray-100:hover { background-color: #2a2a2a !important; }
         .dark .hover\:bg-gray-50:hover { background-color: #252525 !important; }
-        .dark .hover\:bg-gray-800:hover { background-color: #e5e7eb !important; }
-        .dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
-        .dark input, .dark select, .dark textarea { background-color: #1a1a1a !important; color: #e5e7eb !important; border-color: #333 !important; }
-        .dark input::placeholder { color: #4b5563 !important; }
-        .dark .focus\:ring-gray-900:focus { --tw-ring-color: #9ca3af !important; }
+        .dark .border.border-gray-300 { border-color: #555 !important; }
+
+        /* Dark mode — Code blocks */
+        .dark code { background-color: #2a2a2a !important; border-color: #444 !important; color: #e5e7eb !important; }
+
+        /* Dark mode — Status colors */
         .dark .bg-green-50 { background-color: #052e16 !important; }
         .dark .text-green-700 { color: #4ade80 !important; }
         .dark .border-green-200 { border-color: #166534 !important; }
+        .dark .bg-green-500 { background-color: #22c55e !important; }
         .dark .bg-blue-50 { background-color: #172554 !important; }
         .dark .text-blue-900 { color: #93c5fd !important; }
+        .dark .text-blue-700 { color: #60a5fa !important; }
         .dark .text-blue-600 { color: #60a5fa !important; }
         .dark .border-blue-200 { border-color: #1e40af !important; }
         .dark .bg-red-50 { background-color: #450a0a !important; }
-        .dark .text-red-700 { color: #fca5a5 !important; }
+        .dark .text-red-700, .dark .text-red-600 { color: #fca5a5 !important; }
         .dark .border-red-200 { border-color: #991b1b !important; }
+        .dark .bg-yellow-50 { background-color: #422006 !important; }
+        .dark .text-yellow-900, .dark .text-yellow-700 { color: #fcd34d !important; }
+        .dark .border-yellow-200 { border-color: #92400e !important; }
+
+        /* Dark mode — Mobile nav */
+        .dark nav.fixed { background-color: #1a1a1a !important; border-color: #333 !important; }
+        .dark .md\:hidden.fixed { background-color: #1a1a1a !important; border-color: #333 !important; }
+
+        /* Dark mode — Strava orange stays */
+        .dark .bg-strava { background-color: #FC4C02 !important; }
+
+        /* Dark mode — Scrollbar */
+        .dark ::-webkit-scrollbar { background: #111; }
+        .dark ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
     </style>
     {% block head %}{% endblock %}
 </head>
