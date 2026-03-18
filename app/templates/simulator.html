@@ -42,18 +42,7 @@
     <div id="panel-trail">
         <!-- GPX Upload -->
         <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Importer un parcours GPX</h3>
-                {% if saved_routes %}
-                <select id="saved-route-select" onchange="loadSavedRoute(this.value)"
-                        class="h-7 px-2 rounded-lg border border-gray-200 bg-white text-[11px]">
-                    <option value="">Charger un parcours...</option>
-                    {% for r in saved_routes %}
-                    <option value="{{ r.id }}">{{ r.name }} ({{ '%.0f'|format(r.total_distance_km) }}km)</option>
-                    {% endfor %}
-                </select>
-                {% endif %}
-            </div>
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX</h3>
 
             <form hx-post="/partials/simulator/gpx-upload"
                   hx-target="#gpx-result"
@@ -97,6 +86,26 @@
                 </div>
             </form>
         </div>
+
+        <!-- Saved routes -->
+        {% if saved_routes %}
+        <div class="mt-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Parcours sauvegardes</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for r in saved_routes %}
+                <button onclick="loadSavedRoute({{ r.id }})"
+                        class="text-left rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all group">
+                    <p class="font-medium text-sm truncate group-hover:text-blue-600 transition-colors">{{ r.name }}</p>
+                    <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                        <span class="tabular-nums">{{ '%.0f'|format(r.total_distance_km) }} km</span>
+                        <span class="text-red-400 tabular-nums">D+ {{ '%.0f'|format(r.total_elevation_gain) }}m</span>
+                        <span class="text-gray-300">{{ r.created_at.strftime('%d/%m') }}</span>
+                    </div>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         <!-- GPX Result Container -->
         <div id="gpx-result" class="mt-4"></div>
