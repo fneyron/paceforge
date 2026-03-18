@@ -143,17 +143,7 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
 
     function showMarker(m, v) { if (m) m.setStyle({ opacity: v ? 1 : 0, fillOpacity: v ? 1 : 0 }); }
 
-    // Color by gradient
-    function gradientColor(pct) {
-        if (pct > 15) return '#dc2626';      // steep climb - red
-        if (pct > 8) return '#f97316';        // moderate climb - orange
-        if (pct > 3) return '#eab308';        // gentle climb - yellow
-        if (pct > -3) return '#22c55e';       // flat - green
-        if (pct > -8) return '#3b82f6';       // gentle descent - blue
-        return '#8b5cf6';                      // steep descent - purple
-    }
-
-    // ── MAP with colored segments ──
+    // ── MAP with Leaflet.hotline (elevation-colored route) ──
     function initMap() {
         if (!routeCoords.length) return;
         var mapEl = document.getElementById('courseMap');
@@ -166,31 +156,22 @@ window._sim = { addCheckpoint: function(){}, removeCheckpoint: function(){}, rec
             { maxZoom: 18 }
         ).addTo(map);
 
-        // Draw route colored by gradient
-        // Build a color for each routeCoord based on which segment it falls in
+        // Hotline: colored polyline by elevation [lat, lon, elevation]
+        var hotlineData = routeCoords.map(function(c) { return [c[0], c[1], c[3] || 0]; });
+        var elevValues = routeCoords.map(function(c) { return c[3] || 0; });
+        var minElev = Math.min.apply(null, elevValues);
+        var maxElev = Math.max.apply(null, elevValues);
+
+        L.hotline(hotlineData, {
+            min: minElev,
+            max: maxElev,
+            palette: { 0.0: '#3b82f6', 0.25: '#22c55e', 0.5: '#eab308', 0.75: '#f97316', 1.0: '#dc2626' },
+            weight: 5,
+            outlineWidth: 1,
+            outlineColor: isDark ? '#333' : '#fff',
+        }).addTo(map);
+
         var allLatLngs = routeCoords.map(function(c) { return [c[0], c[1]]; });
-
-        if (segments.length > 0 && routeCoords.length > 1) {
-            // For each consecutive pair of route coords, draw a colored segment
-            for (var i = 0; i < routeCoords.length - 1; i++) {
-                var distKm = routeCoords[i][2];
-                // Find which segment this point belongs to
-                var color = '#22c55e'; // default green (flat)
-                for (var s = 0; s < segments.length; s++) {
-                    if (distKm >= segments[s].start_km && distKm < segments[s].end_km) {
-                        color = gradientColor(segments[s].avg_gradient_pct);
-                        break;
-                    }
-                }
-                L.polyline(
-                    [[routeCoords[i][0], routeCoords[i][1]], [routeCoords[i+1][0], routeCoords[i+1][1]]],
-                    { color: color, weight: 4, opacity: 0.9 }
-                ).addTo(map);
-            }
-        } else {
-            L.polyline(allLatLngs, { color: '#2563eb', weight: 3, opacity: 0.85 }).addTo(map);
-        }
-
         if (allLatLngs.length > 0) {
             map.fitBounds(L.latLngBounds(allLatLngs), { padding: [30, 30] });
         }

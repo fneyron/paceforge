@@ -248,6 +248,7 @@ def _sample_route_coords(
             round(points[i].lat, 6),
             round(points[i].lon, 6),
             round(points[i].distance_from_start / 1000, 3),
+            round(points[i].elevation, 1),
         ])
 
     # Always include last point
@@ -255,6 +256,7 @@ def _sample_route_coords(
         round(points[-1].lat, 6),
         round(points[-1].lon, 6),
         round(points[-1].distance_from_start / 1000, 3),
+        round(points[-1].elevation, 1),
     ]
     if coords and coords[-1] != last:
         coords.append(last)
