@@ -337,6 +337,24 @@ async def load_route(
     )
 
 
+@router.patch("/api/simulator/routes/{route_id}")
+async def rename_route(
+    route_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    name: str = Form(...),
+):
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if not route:
+        return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
+    route.name = name.strip() or route.name
+    await db.flush()
+    return JSONResponse({"id": route.id, "name": route.name})
+
+
 @router.delete("/api/simulator/routes/{route_id}")
 async def delete_route(
     route_id: int,
