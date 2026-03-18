@@ -308,6 +308,41 @@ async def strava_callback(
     if not strava_athlete_id:
         return RedirectResponse(url="/setup?error=auth_failed", status_code=302)
 
+    # Check if another user already has this Strava athlete ID
+    existing = await db.execute(
+        select(User).where(
+            User.strava_athlete_id == strava_athlete_id,
+            User.id != user.id,
+        )
+    )
+    old_user = existing.scalar_one_or_none()
+    if old_user:
+        # Migrate activities from old account to current user
+        from app.models.activity import Activity
+
+        await db.execute(
+            Activity.__table__.update()
+            .where(Activity.__table__.c.user_id == old_user.id)
+            .values(user_id=user.id)
+        )
+        # Carry over settings that the new user doesn't have yet
+        user.initial_sync_done = old_user.initial_sync_done
+        if old_user.preferred_sports and not user.preferred_sports:
+            user.preferred_sports = old_user.preferred_sports
+        if old_user.weekly_volume_target_km and not user.weekly_volume_target_km:
+            user.weekly_volume_target_km = old_user.weekly_volume_target_km
+        if old_user.weight_kg and not user.weight_kg:
+            user.weight_kg = old_user.weight_kg
+        if old_user.race_name and not user.race_name:
+            user.race_name = old_user.race_name
+            user.race_date = old_user.race_date
+            user.race_distance_km = old_user.race_distance_km
+
+        # Remove old user (strava_athlete_id unique constraint)
+        await db.delete(old_user)
+        await db.flush()
+        logger.info("Merged old user %d into user %d (athlete %d)", old_user.id, user.id, strava_athlete_id)
+
     # Link Strava to existing user
     user.strava_athlete_id = strava_athlete_id
     user.strava_access_token = token_data["access_token"]
