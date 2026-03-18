@@ -221,13 +221,13 @@ window._sim = {};
         L.circleMarker(bounds[0], { radius: 8, fillColor: '#22c55e', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map).bindPopup('<b>Depart</b>');
         L.circleMarker(bounds[bounds.length - 1], { radius: 8, fillColor: '#ef4444', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map).bindPopup('<b>Arrivee</b>');
 
-        // Km labels
-        var kmStep = totalDistKm > 50 ? 10 : 5;
+        // Km labels (small dots with tooltip)
+        var kmStep = totalDistKm > 80 ? 20 : totalDistKm > 40 ? 10 : 5;
         kmMarkers.forEach(function(m) {
             if (m.km % kmStep === 0 && m.km > 0) {
-                L.marker([m.lat, m.lon], {
-                    icon: L.divIcon({ className: '', html: '<div style="background:#fff;border:1px solid #d1d5db;border-radius:4px;padding:1px 4px;font-size:9px;font-weight:600;color:#374151;box-shadow:0 1px 2px rgba(0,0,0,0.1);">' + m.km + '</div>', iconSize: null, iconAnchor: [12, 10] }),
-                }).addTo(map);
+                L.circleMarker([m.lat, m.lon], {
+                    radius: 3, fillColor: isDark ? '#555' : '#d1d5db', fillOpacity: 1, color: isDark ? '#333' : '#fff', weight: 1,
+                }).addTo(map).bindTooltip('km ' + m.km, { direction: 'top', offset: [0, -4] });
             }
         });
 
@@ -269,8 +269,8 @@ window._sim = {};
             series: [{ name: 'Altitude', data: xyData }],
             xaxis: {
                 type: 'numeric', min: 0, max: Math.ceil(totalDistKm),
-                tickAmount: Math.min(20, Math.ceil(totalDistKm / 5)),
-                labels: { style: { colors: colors.muted, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + ' km'; } },
+                tickAmount: Math.min(12, Math.ceil(totalDistKm / 10)),
+                labels: { style: { colors: colors.muted, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + ''; } },
                 axisBorder: { show: false }, axisTicks: { show: false },
                 crosshairs: { show: true, stroke: { color: colors.cursor, width: 2, dashArray: 0 } },
                 tooltip: { enabled: false },
@@ -284,7 +284,19 @@ window._sim = {};
             markers: { size: 0, hover: { size: 5 } },
             tooltip: {
                 theme: isDark ? 'dark' : 'light',
-                x: { formatter: function(v) { return 'km ' + parseFloat(v).toFixed(1); } },
+                x: {
+                    formatter: function(v) {
+                        var km = parseFloat(v);
+                        var label = 'km ' + km.toFixed(1);
+                        for (var i = 0; i < checkpoints.length; i++) {
+                            if (Math.abs(checkpoints[i].distance_km - km) < 0.5) {
+                                label += ' — ' + checkpoints[i].name;
+                                break;
+                            }
+                        }
+                        return label;
+                    }
+                },
                 y: { formatter: function(v) { return Math.round(v) + ' m'; } },
             },
             annotations: { xaxis: [] },
@@ -410,9 +422,11 @@ window._sim = {};
         cpMapMarkers = [];
         checkpoints.forEach(function(cp) {
             var c = findCoordAtKm(cp.distance_km);
-            var m = L.marker([c[0], c[1]], {
-                icon: L.divIcon({ className: '', html: '<div style="background:#f59e0b;color:#fff;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2);border:1px solid #d97706;">' + cp.name + '</div>', iconSize: null, iconAnchor: [0, 12] }),
-            }).addTo(map);
+            var m = L.circleMarker([c[0], c[1]], {
+                radius: 6, fillColor: '#f59e0b', fillOpacity: 1, color: '#fff', weight: 2,
+            }).addTo(map).bindTooltip(cp.name + ' (km ' + cp.distance_km + ')', {
+                direction: 'top', offset: [0, -8],
+            });
             cpMapMarkers.push(m);
         });
     }
@@ -420,9 +434,12 @@ window._sim = {};
     function drawCpAnnotations() {
         if (!chart) return;
         checkpoints.forEach(function(cp) {
-            chart.addXaxisAnnotation({ x: cp.distance_km, borderColor: colors.checkpoint, strokeDashArray: 4,
-                label: { text: cp.name + ' (' + cp.elevation + 'm)', orientation: 'horizontal',
-                    style: { fontSize: '9px', color: '#92400e', background: '#fef3c7', padding: { left: 4, right: 4, top: 2, bottom: 2 } } } });
+            chart.addXaxisAnnotation({
+                x: cp.distance_km,
+                borderColor: colors.checkpoint,
+                strokeDashArray: 4,
+                opacity: 0.5,
+            });
         });
     }
 
