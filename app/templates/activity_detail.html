@@ -33,7 +33,7 @@
         </div>
         {% if activity.pace_formatted %}
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Allure</p>
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">{% if activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}Vitesse{% else %}Allure{% endif %}</p>
             <p class="text-xl font-bold tabular-nums">{{ activity.pace_formatted }}</p>
         </div>
         {% endif %}
@@ -124,14 +124,17 @@
 
     <!-- Splits -->
     {% if activity.splits_metric and activity.splits_metric|length > 1 %}
+    {% set is_cycling = activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Splits par kilomètre</h3>
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">
+            {% if is_cycling %}Vitesse par segment{% else %}Splits par kilometre{% endif %}
+        </h3>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-gray-400 text-xs uppercase tracking-wider">
                         <th class="text-left py-2 pr-4 font-medium">km</th>
-                        <th class="text-right py-2 px-4 font-medium">Allure</th>
+                        <th class="text-right py-2 px-4 font-medium">{% if is_cycling %}Vitesse{% else %}Allure{% endif %}</th>
                         {% if activity.splits_metric[0].get('average_heartrate') %}
                         <th class="text-right py-2 px-4 font-medium">FC</th>
                         {% endif %}
@@ -144,10 +147,15 @@
                         <td class="py-2 pr-4 font-medium tabular-nums">{{ loop.index }}</td>
                         <td class="text-right py-2 px-4 tabular-nums">
                             {% if split.get('moving_time') and split.get('distance', 0) > 0 %}
-                            {% set pace = split.moving_time / (split.distance / 1000) %}
-                            {% set p_min = (pace // 60)|int %}
-                            {% set p_sec = (pace % 60)|int %}
-                            {{ p_min }}:{{ '%02d'|format(p_sec) }}/km
+                                {% if is_cycling %}
+                                {% set speed_kmh = split.distance / split.moving_time * 3.6 %}
+                                {{ '%.1f'|format(speed_kmh) }} km/h
+                                {% else %}
+                                {% set pace = split.moving_time / (split.distance / 1000) %}
+                                {% set p_min = (pace // 60)|int %}
+                                {% set p_sec = (pace % 60)|int %}
+                                {{ p_min }}:{{ '%02d'|format(p_sec) }}/km
+                                {% endif %}
                             {% endif %}
                         </td>
                         {% if activity.splits_metric[0].get('average_heartrate') %}

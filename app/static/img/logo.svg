@@ -1,15 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <circle cx="256" cy="256" r="256" fill="#111827"/>
-  <!-- Geometric anvil: 3 simple rectangles -->
-  <!-- Top surface (wide) -->
-  <rect x="120" y="260" width="272" height="28" rx="6" fill="white"/>
-  <!-- Body (narrow) -->
-  <rect x="196" y="288" width="120" height="56" fill="white"/>
-  <!-- Base (medium) -->
-  <rect x="160" y="344" width="192" height="28" rx="6" fill="white"/>
-  <!-- Spark: diamond shape above anvil -->
-  <rect x="244" y="188" width="24" height="24" rx="2" fill="#F59E0B" transform="rotate(45 256 200)"/>
-  <!-- Two small spark dots -->
-  <circle cx="224" cy="216" r="5" fill="#F59E0B"/>
-  <circle cx="292" cy="210" r="4" fill="#F59E0B"/>
+  <!-- Clean geometric lightning bolt — forge + speed -->
+  <path d="M296 96 L206 272 H272 L216 416 L346 232 H274 Z" fill="white"/>
 </svg>
