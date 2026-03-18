@@ -248,11 +248,7 @@ function handleDrop(e) {
 
 function loadSavedRoute(routeId) {
     if (!routeId) return;
-    fetch('/api/simulator/routes/' + routeId)
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-            document.getElementById('gpx-result').innerHTML = html;
-        });
+    htmx.ajax('GET', '/api/simulator/routes/' + routeId, { target: '#gpx-result', swap: 'innerHTML' });
 }
 
 function toggleCalcMode(mode) {
