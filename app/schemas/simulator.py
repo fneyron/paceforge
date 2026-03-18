@@ -33,6 +33,8 @@ class CourseProfile(BaseModel):
     total_elevation_loss: float
     segments: list[CourseSegment]
     elevation_points: list[dict]  # {"distance_km": float, "elevation": float}
+    route_coords: list[list[float]] = []  # [[lat, lon], ...] for map
+    km_markers: list[dict] = []  # [{"km": int, "lat": float, "lon": float, "elevation": float}]
     predicted_total_time_s: int = 0
     predicted_total_time_formatted: str = ""
 

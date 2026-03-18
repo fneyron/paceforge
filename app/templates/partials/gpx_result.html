@@ -14,17 +14,23 @@
             <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(course.total_elevation_loss) }} <span class="text-xs font-normal text-gray-400">m</span></p>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps estimé</p>
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps estime</p>
             <p class="text-xl font-bold tabular-nums">{{ course.predicted_total_time_formatted }}</p>
         </div>
     </div>
 
-    <!-- Elevation Profile Chart -->
+    <!-- Map -->
+    {% if course.route_coords %}
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Parcours</h3>
+        <div id="courseMap" class="h-72 sm:h-96 rounded-lg overflow-hidden"></div>
+    </div>
+    {% endif %}
+
+    <!-- Elevation Profile -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Profil altimétrique</h3>
-        <div class="h-56">
-            <canvas id="elevationChart"></canvas>
-        </div>
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Profil altimetrique</h3>
+        <div id="elevationChart" style="min-height: 220px;"></div>
     </div>
 
     <!-- Athlete profile info -->
@@ -37,21 +43,21 @@
                     </svg>
                 </div>
                 <div>
-                    <p class="text-sm font-medium">Votre profil athlète</p>
+                    <p class="text-sm font-medium">Ton profil athlete</p>
                     {% set p_min = (profile.flat_pace_s_per_km // 60) | int %}
                     {% set p_sec = (profile.flat_pace_s_per_km % 60) | int %}
-                    <p class="text-xs text-gray-400">Allure sur plat : {{ p_min }}:{{ '%02d'|format(p_sec) }}/km · {{ profile.data_points }} splits analysés</p>
+                    <p class="text-xs text-gray-400">Allure sur plat : {{ p_min }}:{{ '%02d'|format(p_sec) }}/km · {{ profile.data_points }} splits analyses</p>
                 </div>
             </div>
             {% if profile.data_points == 0 %}
-            <span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Estimé (pas de splits)</span>
+            <span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Estime (pas de splits)</span>
             {% endif %}
         </div>
     </div>
 
     <!-- Split Table -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Temps de passage prédits</h3>
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Temps de passage predits</h3>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
@@ -118,7 +124,7 @@
                 <input type="hidden" name="course_json" value='{{ course_json }}'>
                 <button type="submit"
                         class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm">
-                    Générer la stratégie de course (IA)
+                    Generer la strategie de course (IA)
                     <span id="strategy-loading" class="htmx-indicator ml-1.5">
                         <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
@@ -134,71 +140,130 @@
     <div id="strategy-result"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<!-- Leaflet CSS/JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- ApexCharts -->
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
+
 <script>
 (function() {
+    const isDark = document.documentElement.classList.contains('dark');
+
+    // ── Map ──
+    {% if course.route_coords %}
+    const routeCoords = {{ course.route_coords | tojson }};
+    const kmMarkers = {{ course.km_markers | tojson }};
+
+    const map = L.map('courseMap', { zoomControl: true, attributionControl: false });
+
+    // Tile layer (dark or light)
+    L.tileLayer(
+        isDark
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        { maxZoom: 18 }
+    ).addTo(map);
+
+    // Route polyline
+    const polyline = L.polyline(routeCoords, {
+        color: isDark ? '#60a5fa' : '#2563eb',
+        weight: 3,
+        opacity: 0.85,
+    }).addTo(map);
+    map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+
+    // Start marker
+    if (routeCoords.length > 0) {
+        L.circleMarker(routeCoords[0], {
+            radius: 7, fillColor: '#22c55e', fillOpacity: 1, color: '#fff', weight: 2,
+        }).addTo(map).bindPopup('<b>Depart</b>');
+
+        // Finish marker
+        L.circleMarker(routeCoords[routeCoords.length - 1], {
+            radius: 7, fillColor: '#ef4444', fillOpacity: 1, color: '#fff', weight: 2,
+        }).addTo(map).bindPopup('<b>Arrivee</b>');
+    }
+
+    // Km markers (every 5km for readability, or every km if < 20km)
+    const totalKm = {{ course.total_distance_km }};
+    const kmInterval = totalKm > 20 ? 5 : 1;
+    kmMarkers.forEach(m => {
+        if (m.km % kmInterval === 0 && m.km > 0) {
+            L.circleMarker([m.lat, m.lon], {
+                radius: 4, fillColor: isDark ? '#9ca3af' : '#6b7280',
+                fillOpacity: 0.9, color: '#fff', weight: 1.5,
+            }).addTo(map).bindTooltip('km ' + m.km + ' · ' + m.elevation + 'm', {
+                direction: 'top', offset: [0, -6],
+                className: 'leaflet-tooltip-custom',
+            });
+        }
+    });
+    {% endif %}
+
+    // ── Elevation Profile (ApexCharts) ──
     const elevData = {{ course.elevation_points | tojson }};
-    const labels = elevData.map(p => p.distance_km.toFixed(1));
+    const distances = elevData.map(p => p.distance_km);
     const elevations = elevData.map(p => p.elevation);
 
-    const ctx = document.getElementById('elevationChart').getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, 0, 220);
-    gradient.addColorStop(0, 'rgba(31, 41, 55, 0.25)');
-    gradient.addColorStop(1, 'rgba(31, 41, 55, 0.02)');
+    const gridColor = isDark ? '#333' : '#f0f0f0';
+    const muted = isDark ? '#6b7280' : '#9ca3af';
 
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: elevations,
-                borderColor: '#1f2937',
-                backgroundColor: gradient,
-                borderWidth: 1.5,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 0,
-                pointHitRadius: 8,
-            }],
+    new ApexCharts(document.querySelector('#elevationChart'), {
+        chart: {
+            type: 'area',
+            height: 220,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            toolbar: { show: false },
+            background: 'transparent',
+            animations: { enabled: true, easing: 'easeinout', speed: 500 },
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1f2937',
-                    titleFont: { size: 11, family: 'Inter' },
-                    bodyFont: { size: 11, family: 'Inter' },
-                    padding: 10,
-                    cornerRadius: 8,
-                    callbacks: {
-                        title: ctx => 'Km ' + ctx[0].label,
-                        label: ctx => ctx.parsed.y.toFixed(0) + ' m',
-                    },
+        theme: { mode: isDark ? 'dark' : 'light' },
+        series: [{ name: 'Altitude', data: elevations }],
+        xaxis: {
+            categories: distances,
+            labels: {
+                style: { colors: muted, fontSize: '9px' },
+                rotate: 0,
+                formatter: function(v) {
+                    const km = parseFloat(v);
+                    const step = distances.length > 200 ? 5 : (distances.length > 50 ? 2 : 1);
+                    return km % step < 0.1 ? Math.round(km) + '' : '';
                 },
             },
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: {
-                        font: { size: 9, family: 'Inter' },
-                        maxTicksLimit: 20,
-                        callback: function(val, idx) {
-                            const km = parseFloat(labels[idx]);
-                            return km % 5 === 0 ? km + ' km' : '';
-                        },
-                    },
-                },
-                y: {
-                    grid: { color: '#f3f4f6', drawBorder: false },
-                    ticks: {
-                        font: { size: 9, family: 'Inter' },
-                        callback: v => v + ' m',
-                    },
-                },
+            axisBorder: { show: false },
+            axisTicks: { show: false },
+            tooltip: { enabled: false },
+        },
+        yaxis: {
+            labels: {
+                style: { colors: muted, fontSize: '9px' },
+                formatter: v => Math.round(v) + 'm',
             },
         },
-    });
+        grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 8, right: 8 } },
+        colors: [isDark ? '#60a5fa' : '#2563eb'],
+        stroke: { curve: 'smooth', width: 2 },
+        fill: {
+            type: 'gradient',
+            gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0.02, stops: [0, 100] },
+        },
+        dataLabels: { enabled: false },
+        markers: { size: 0 },
+        tooltip: {
+            theme: isDark ? 'dark' : 'light',
+            x: { formatter: v => 'km ' + parseFloat(distances[v - 1] || 0).toFixed(1) },
+            y: { formatter: v => Math.round(v) + ' m' },
+        },
+    }).render();
 })();
 </script>
+
+<style>
+.leaflet-tooltip-custom {
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+</style>

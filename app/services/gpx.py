@@ -141,6 +141,12 @@ def build_course_profile(
     # Sample elevation profile for chart
     elevation_points = _sample_elevation_profile(points, smoothed, max_points=400)
 
+    # Sample route coordinates for map (lat/lon)
+    route_coords = _sample_route_coords(points, max_points=500)
+
+    # Km markers for map (position at each km)
+    km_markers = _build_km_markers(points, smoothed, segment_distance_m)
+
     total_gain = sum(s.elevation_gain for s in segments)
     total_loss = sum(s.elevation_loss for s in segments)
 
@@ -151,6 +157,8 @@ def build_course_profile(
         total_elevation_loss=round(total_loss, 0),
         segments=segments,
         elevation_points=elevation_points,
+        route_coords=route_coords,
+        km_markers=km_markers,
     )
 
 
@@ -181,3 +189,46 @@ def _sample_elevation_profile(
         })
 
     return result
+
+
+def _sample_route_coords(
+    points: list[GpxPoint],
+    max_points: int = 500,
+) -> list[list[float]]:
+    """Downsample GPS coordinates for map rendering. Returns [[lat, lon], ...]."""
+    n = len(points)
+    step = max(1, n // max_points)
+
+    coords = []
+    for i in range(0, n, step):
+        coords.append([round(points[i].lat, 6), round(points[i].lon, 6)])
+
+    # Always include last point
+    last = [round(points[-1].lat, 6), round(points[-1].lon, 6)]
+    if coords and coords[-1] != last:
+        coords.append(last)
+
+    return coords
+
+
+def _build_km_markers(
+    points: list[GpxPoint],
+    smoothed: list[float],
+    segment_distance_m: float,
+) -> list[dict]:
+    """Build km marker positions for map. Returns [{km, lat, lon, elevation}, ...]."""
+    markers = []
+    next_km = segment_distance_m
+
+    for i, pt in enumerate(points):
+        if pt.distance_from_start >= next_km:
+            km_num = int(next_km / 1000)
+            markers.append({
+                "km": km_num,
+                "lat": round(pt.lat, 6),
+                "lon": round(pt.lon, 6),
+                "elevation": round(smoothed[i], 0),
+            })
+            next_km += segment_distance_m
+
+    return markers
