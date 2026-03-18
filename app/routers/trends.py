@@ -93,6 +93,12 @@ async def trends_page(
     # Build legend colors for displayed sports only
     sport_colors = {s: SPORT_COLORS.get(s, "#d1d5db") for s in sorted(all_sports)}
 
+    # Pace sport selector: only show sports the user actually has
+    pace_sport_options = []
+    for sport_key, sport_label in SPORT_LABELS.items():
+        if sport_key in all_sports:
+            pace_sport_options.append((sport_key, sport_label))
+
     return templates.TemplateResponse(
         request,
         "trends.html",
@@ -110,6 +116,7 @@ async def trends_page(
             "pace_data": pace_data,
             "records": records,
             "comparison": comparison,
+            "pace_sport_options": pace_sport_options,
         },
     )
 

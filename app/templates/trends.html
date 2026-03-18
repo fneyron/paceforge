@@ -42,20 +42,13 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {% macro delta_badge(value) %}
             {% if value > 0 %}
-            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
-                +{{ "%.0f"|format(value) }}%
-            </span>
+            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">+{{ "%.0f"|format(value) }}%</span>
             {% elif value < 0 %}
-            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-50 text-xs font-medium text-red-700">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                {{ "%.0f"|format(value) }}%
-            </span>
+            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-50 text-xs font-medium text-red-700">{{ "%.0f"|format(value) }}%</span>
             {% else %}
             <span class="text-xs text-gray-400">=</span>
             {% endif %}
             {% endmacro %}
-
             <div class="flex items-center justify-between sm:block">
                 <div>
                     <p class="text-xs text-gray-400 mb-1">Distance</p>
@@ -92,23 +85,9 @@
 
     <!-- Volume Chart -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Volume hebdomadaire</h3>
-            {% if volumes %}
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                {% for sport, color in sport_colors.items() %}
-                <div class="flex items-center gap-1.5">
-                    <div class="w-2.5 h-2.5 rounded-sm shrink-0" style="background-color: {{ color }}"></div>
-                    <span class="text-[10px] text-gray-400">{{ sport_labels.get(sport, sport) }}</span>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Volume hebdomadaire</h3>
         {% if volume_labels %}
-        <div class="h-56 sm:h-72">
-            <canvas id="volumeChart"></canvas>
-        </div>
+        <div id="volumeChart" style="min-height: 280px;"></div>
         {% else %}
         <p class="text-sm text-gray-400 py-8 text-center">Pas assez de donnees pour afficher les tendances.</p>
         {% endif %}
@@ -118,8 +97,9 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- Pace Chart -->
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center justify-between mb-2">
                 <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Allure moyenne</h3>
+                {% if pace_sport_options %}
                 <select id="pace-sport-selector"
                         hx-get="/partials/trends/pace"
                         hx-target="#pace-chart-container"
@@ -127,11 +107,11 @@
                         hx-include="this"
                         name="sport"
                         class="h-7 px-2 rounded-lg border border-gray-200 bg-white text-[11px] focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <option value="Run" selected>Course</option>
-                    <option value="TrailRun">Trail</option>
-                    <option value="Ride">Velo</option>
-                    <option value="Swim">Natation</option>
+                    {% for key, label in pace_sport_options %}
+                    <option value="{{ key }}" {% if key == 'Run' %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
                 </select>
+                {% endif %}
             </div>
             <div id="pace-chart-container">
                 {% include "partials/trends_pace.html" %}
@@ -140,11 +120,9 @@
 
         <!-- Duration per week -->
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Duree hebdomadaire</h3>
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Duree hebdomadaire</h3>
             {% if volume_labels %}
-            <div class="h-48">
-                <canvas id="durationChart"></canvas>
-            </div>
+            <div id="durationChart" style="min-height: 220px;"></div>
             {% else %}
             <p class="text-sm text-gray-400 py-8 text-center">Pas assez de donnees.</p>
             {% endif %}
@@ -158,10 +136,8 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {% for pr in records %}
             <a href="/activity/{{ pr.activity_id }}" class="group rounded-xl border border-gray-100 bg-gray-50/50 p-4 hover:border-gray-300 hover:bg-white hover:shadow-sm transition-all">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-[10px] font-bold text-gray-900 uppercase tracking-wider">{{ pr.distance_label }}</span>
-                </div>
-                <span class="text-xl font-bold tabular-nums block">
+                <span class="text-[10px] font-bold text-gray-900 uppercase tracking-wider">{{ pr.distance_label }}</span>
+                <span class="text-xl font-bold tabular-nums block mt-1">
                     {% set hours = pr.elapsed_time // 3600 %}
                     {% set mins = (pr.elapsed_time % 3600) // 60 %}
                     {% set secs = pr.elapsed_time % 60 %}
@@ -183,220 +159,152 @@
 {% endblock content %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
 <script>
-// Dark mode detection for chart colors
 const isDark = document.documentElement.classList.contains('dark');
-const gridColor = isDark ? '#333' : '#f3f4f6';
-const tickColor = isDark ? '#9ca3af' : '#6b7280';
-const tooltipBg = isDark ? '#374151' : '#1f2937';
+const fg = isDark ? '#e5e7eb' : '#1f2937';
+const muted = isDark ? '#6b7280' : '#9ca3af';
+const gridColor = isDark ? '#333' : '#f0f0f0';
+const bgCard = isDark ? '#1a1a1a' : '#fff';
 
-const chartDefaults = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 400, easing: 'easeOutQuart' },
-    plugins: { legend: { display: false } },
-    scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' }, color: tickColor, maxRotation: 0 } },
-        y: { grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 10, family: 'Inter' }, color: tickColor }, beginAtZero: true },
+const sportColorMap = {{ sport_colors | tojson }};
+const sportLabelMap = {{ sport_labels | tojson }};
+
+const baseOpts = {
+    chart: {
+        fontFamily: 'Inter, system-ui, sans-serif',
+        toolbar: { show: false },
+        background: 'transparent',
+        animations: { enabled: true, easing: 'easeinout', speed: 500 },
     },
-};
-
-const sportColorMap = {
-    'Run': '#1f2937', 'TrailRun': '#92400e', 'Ride': '#2563eb',
-    'VirtualRide': '#60a5fa', 'GravelRide': '#1e40af', 'Swim': '#0891b2',
-    'Walk': '#65a30d', 'Hike': '#16a34a', 'Yoga': '#a855f7', 'EBikeRide': '#3b82f6',
-};
-
-const tooltipConfig = {
-    backgroundColor: tooltipBg,
-    titleFont: { size: 11, family: 'Inter', weight: '600' },
-    bodyFont: { size: 11, family: 'Inter' },
-    padding: { top: 8, bottom: 8, left: 12, right: 12 },
-    cornerRadius: 8,
-    displayColors: false,
+    theme: { mode: isDark ? 'dark' : 'light' },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 8, right: 8 } },
+    tooltip: {
+        theme: isDark ? 'dark' : 'light',
+        style: { fontSize: '12px', fontFamily: 'Inter' },
+    },
+    xaxis: {
+        labels: { style: { colors: muted, fontSize: '10px', fontFamily: 'Inter' }, rotate: 0 },
+        axisBorder: { show: false },
+        axisTicks: { show: false },
+    },
+    yaxis: {
+        labels: { style: { colors: muted, fontSize: '10px', fontFamily: 'Inter' } },
+    },
 };
 
 {% if volume_labels %}
-// Volume Chart (stacked bar)
-const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+// ── Volume Chart (stacked bar) ──
 const sportDatasets = {{ sport_datasets | tojson }};
-const datasets = Object.entries(sportDatasets).map(([sport, data]) => ({
-    label: sport,
-    data: data,
-    backgroundColor: sportColorMap[sport] || '#d1d5db',
-    borderRadius: { topLeft: 4, topRight: 4 },
-    barPercentage: 0.7,
-    categoryPercentage: 0.8,
+const volumeSeries = Object.entries(sportDatasets).map(([sport, data]) => ({
+    name: sportLabelMap[sport] || sport,
+    data: data.map(v => Math.round(v * 10) / 10),
 }));
+const volumeColors = Object.keys(sportDatasets).map(s => sportColorMap[s] || '#d1d5db');
 
-new Chart(volumeCtx, {
-    type: 'bar',
-    data: {
-        labels: {{ volume_labels | tojson }},
-        datasets: datasets.length > 0 ? datasets : [{
-            label: 'Distance',
-            data: {{ volume_data | tojson }},
-            backgroundColor: '#1f2937',
-            borderRadius: 4,
-            barPercentage: 0.7,
-        }],
+new ApexCharts(document.querySelector('#volumeChart'), {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: 'bar', height: 280, stacked: true },
+    series: volumeSeries,
+    colors: volumeColors,
+    plotOptions: {
+        bar: { borderRadius: 3, borderRadiusApplication: 'end', columnWidth: '55%' },
     },
-    options: {
-        ...chartDefaults,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-            legend: { display: false },
-            tooltip: {
-                ...tooltipConfig,
-                displayColors: true,
-                callbacks: {
-                    afterBody: function(tooltipItems) {
-                        const idx = tooltipItems[0].dataIndex;
-                        const hours = {{ volume_hours | tojson }}[idx];
-                        const count = {{ volume_counts | tojson }}[idx];
-                        return `${hours}h \u00b7 ${count} seance${count > 1 ? 's' : ''}`;
-                    },
-                },
-            },
-        },
-        scales: {
-            x: {
-                stacked: true,
-                grid: { display: false },
-                ticks: { font: { size: 10, family: 'Inter' }, color: tickColor, maxRotation: 0 },
-            },
-            y: {
-                stacked: true,
-                beginAtZero: true,
-                grid: { color: gridColor, drawBorder: false },
-                ticks: {
-                    font: { size: 10, family: 'Inter' },
-                    color: tickColor,
-                    callback: v => v + ' km',
-                },
-            },
-        },
+    dataLabels: { enabled: false },
+    xaxis: { ...baseOpts.xaxis, categories: {{ volume_labels | tojson }} },
+    yaxis: {
+        ...baseOpts.yaxis,
+        labels: { ...baseOpts.yaxis.labels, formatter: v => Math.round(v) + ' km' },
     },
-});
+    legend: {
+        position: 'top',
+        horizontalAlign: 'right',
+        fontSize: '11px',
+        fontFamily: 'Inter',
+        labels: { colors: muted },
+        markers: { size: 6, shape: 'square', radius: 2 },
+        itemMargin: { horizontal: 8 },
+    },
+    tooltip: {
+        ...baseOpts.tooltip,
+        shared: true,
+        intersect: false,
+        y: { formatter: v => v ? v.toFixed(1) + ' km' : '0 km' },
+        custom: undefined,
+    },
+}).render();
 
-// Duration Chart
-const durationCtx = document.getElementById('durationChart').getContext('2d');
-const dGrad = durationCtx.createLinearGradient(0, 0, 0, 200);
-dGrad.addColorStop(0, isDark ? 'rgba(96, 165, 250, 0.2)' : 'rgba(37, 99, 235, 0.15)');
-dGrad.addColorStop(1, 'rgba(37, 99, 235, 0.01)');
-
-new Chart(durationCtx, {
-    type: 'line',
-    data: {
-        labels: {{ volume_labels | tojson }},
-        datasets: [{
-            label: 'Duree',
-            data: {{ volume_hours | tojson }},
-            borderColor: '#2563eb',
-            backgroundColor: dGrad,
-            borderWidth: 2,
-            fill: true,
-            tension: 0.35,
-            pointRadius: 3,
-            pointBackgroundColor: '#2563eb',
-            pointBorderColor: isDark ? '#1a1a1a' : '#fff',
-            pointBorderWidth: 2,
-            pointHoverRadius: 5,
-        }],
+// ── Duration Chart (area) ──
+new ApexCharts(document.querySelector('#durationChart'), {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: 'area', height: 220, sparkline: { enabled: false } },
+    series: [{ name: 'Duree', data: {{ volume_hours | tojson }} }],
+    colors: ['#2563eb'],
+    stroke: { curve: 'smooth', width: 2.5 },
+    fill: {
+        type: 'gradient',
+        gradient: { shadeIntensity: 1, opacityFrom: 0.25, opacityTo: 0.02, stops: [0, 100] },
     },
-    options: {
-        ...chartDefaults,
-        plugins: {
-            legend: { display: false },
-            tooltip: { ...tooltipConfig, callbacks: { label: ctx => ctx.parsed.y.toFixed(1) + ' h' } },
-        },
-        scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' }, color: tickColor, maxRotation: 0 } },
-            y: {
-                beginAtZero: true,
-                grid: { color: gridColor, drawBorder: false },
-                ticks: { font: { size: 10, family: 'Inter' }, color: tickColor, callback: v => v + 'h' },
-            },
-        },
+    dataLabels: { enabled: false },
+    markers: { size: 3, strokeWidth: 2, strokeColors: bgCard, hover: { size: 5 } },
+    xaxis: { ...baseOpts.xaxis, categories: {{ volume_labels | tojson }} },
+    yaxis: {
+        ...baseOpts.yaxis,
+        labels: { ...baseOpts.yaxis.labels, formatter: v => v.toFixed(1) + 'h' },
     },
-});
+    tooltip: { ...baseOpts.tooltip, y: { formatter: v => v.toFixed(1) + ' h' } },
+}).render();
 {% endif %}
 
-// Pace chart
+// ── Pace Chart ──
 function initPaceChart(labels, data, isCycling) {
-    const container = document.getElementById('paceCanvas');
-    if (!container || !labels.length) return;
+    const el = document.querySelector('#paceChartApex');
+    if (!el || !labels.length) return;
     if (window._paceChart) window._paceChart.destroy();
 
-    const ctx = container.getContext('2d');
-    const grad = ctx.createLinearGradient(0, 0, 0, 180);
-    grad.addColorStop(0, isDark ? 'rgba(156, 163, 175, 0.15)' : 'rgba(31, 41, 55, 0.12)');
-    grad.addColorStop(1, 'rgba(31, 41, 55, 0.01)');
-
-    window._paceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: isCycling ? 'Vitesse' : 'Allure',
-                data: data,
-                borderColor: isDark ? '#d1d5db' : '#1f2937',
-                backgroundColor: grad,
-                borderWidth: 2,
-                fill: true,
-                tension: 0.35,
-                pointRadius: 3,
-                pointBackgroundColor: isDark ? '#d1d5db' : '#1f2937',
-                pointBorderColor: isDark ? '#1a1a1a' : '#fff',
-                pointBorderWidth: 2,
-                pointHoverRadius: 5,
-            }],
+    window._paceChart = new ApexCharts(el, {
+        ...baseOpts,
+        chart: { ...baseOpts.chart, type: 'area', height: 220 },
+        series: [{ name: isCycling ? 'Vitesse' : 'Allure', data: data }],
+        colors: [isDark ? '#d1d5db' : '#1f2937'],
+        stroke: { curve: 'smooth', width: 2.5 },
+        fill: {
+            type: 'gradient',
+            gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0.01, stops: [0, 100] },
         },
-        options: {
-            ...chartDefaults,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    ...tooltipConfig,
-                    callbacks: {
-                        label: function(ctx) {
-                            if (isCycling) return ctx.parsed.y.toFixed(1) + ' km/h';
-                            const total = ctx.parsed.y;
-                            const min = Math.floor(total);
-                            const sec = Math.round((total - min) * 60);
-                            return `${min}:${sec.toString().padStart(2, '0')}/km`;
-                        },
-                    },
+        dataLabels: { enabled: false },
+        markers: { size: 3, strokeWidth: 2, strokeColors: bgCard, hover: { size: 5 } },
+        xaxis: { ...baseOpts.xaxis, categories: labels },
+        yaxis: {
+            ...baseOpts.yaxis,
+            reversed: !isCycling,
+            labels: {
+                ...baseOpts.yaxis.labels,
+                formatter: function(v) {
+                    if (isCycling) return v.toFixed(0) + ' km/h';
+                    const min = Math.floor(v);
+                    const sec = Math.round((v - min) * 60);
+                    return min + ':' + sec.toString().padStart(2, '0');
                 },
             },
-            scales: {
-                x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Inter' }, color: tickColor, maxRotation: 0 } },
-                y: {
-                    reverse: !isCycling,
-                    grid: { color: gridColor, drawBorder: false },
-                    ticks: {
-                        font: { size: 10, family: 'Inter' },
-                        color: tickColor,
-                        callback: function(v) {
-                            if (isCycling) return v.toFixed(0) + ' km/h';
-                            const min = Math.floor(v);
-                            const sec = Math.round((v - min) * 60);
-                            return `${min}:${sec.toString().padStart(2, '0')}`;
-                        },
-                    },
+        },
+        tooltip: {
+            ...baseOpts.tooltip,
+            y: {
+                formatter: function(v) {
+                    if (isCycling) return v.toFixed(1) + ' km/h';
+                    const min = Math.floor(v);
+                    const sec = Math.round((v - min) * 60);
+                    return min + ':' + sec.toString().padStart(2, '0') + '/km';
                 },
             },
         },
     });
+    window._paceChart.render();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    initPaceChart(
-        {{ pace_labels | tojson }},
-        {{ pace_data | tojson }},
-        false
-    );
+    initPaceChart({{ pace_labels | tojson }}, {{ pace_data | tojson }}, false);
 });
 
 document.addEventListener('htmx:afterSwap', function(event) {

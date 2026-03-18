@@ -181,18 +181,34 @@ def build_activity_prompt(
 
     # Splits
     splits = activity_data.get("splits_metric")
+    is_cycling = sport in ("Ride", "VirtualRide", "EBikeRide", "GravelRide")
     if splits and isinstance(splits, list) and len(splits) > 1:
-        lines.append("\n### Splits par kilomètre")
-        for i, split in enumerate(splits, 1):
-            split_pace = ""
-            if split.get("moving_time") and split.get("distance", 0) > 0:
-                pace = split["moving_time"] / (split["distance"] / 1000)
-                s_min, s_sec = divmod(int(pace), 60)
-                split_pace = f"{s_min}:{s_sec:02d}/km"
-            split_hr = ""
-            if split.get("average_heartrate"):
-                split_hr = f" | FC {split['average_heartrate']:.0f}"
-            lines.append(f"  km {i}: {split_pace}{split_hr}")
+        if is_cycling:
+            # For cycling: show speed in km/h, not pace/km (and limit to every 10km)
+            lines.append("\n### Vitesse par segment")
+            for i, split in enumerate(splits, 1):
+                if i % 10 != 0 and i != 1 and i != len(splits):
+                    continue  # Show every 10km + first + last
+                speed_str = ""
+                if split.get("moving_time") and split.get("distance", 0) > 0:
+                    speed_kmh = split["distance"] / split["moving_time"] * 3.6
+                    speed_str = f"{speed_kmh:.1f} km/h"
+                split_hr = ""
+                if split.get("average_heartrate"):
+                    split_hr = f" | FC {split['average_heartrate']:.0f}"
+                lines.append(f"  km {i}: {speed_str}{split_hr}")
+        else:
+            lines.append("\n### Splits par kilomètre")
+            for i, split in enumerate(splits, 1):
+                split_pace = ""
+                if split.get("moving_time") and split.get("distance", 0) > 0:
+                    pace = split["moving_time"] / (split["distance"] / 1000)
+                    s_min, s_sec = divmod(int(pace), 60)
+                    split_pace = f"{s_min}:{s_sec:02d}/km"
+                split_hr = ""
+                if split.get("average_heartrate"):
+                    split_hr = f" | FC {split['average_heartrate']:.0f}"
+                lines.append(f"  km {i}: {split_pace}{split_hr}")
 
     # Laps
     laps = activity_data.get("laps")
