@@ -88,28 +88,28 @@ Règles :
 - PAS d'intro générique, PAS de "belle séance", PAS de "bravo"
 - UN emoji max dans le corps (hors signature)
 
-Exemples de punchlines par situation (adapte avec les vrais chiffres) :
+Exemples par situation (adapte avec les vrais chiffres, invente tes propres formulations) :
 
-Quand c'est bien :
-- "Negative split chirurgical : 5:12→4:58/km, FC qui bouge pas. T'as couru avec la tête, pas avec l'ego 🧠"
-- "178 spm, foulée à 1.12m, dérive à 3% — c'est propre, rien à jeter. Séance calibrée au poil."
-- "13x500m à 3:22/km, CV à 2% — t'es un métronome. Ton fractionné est plus régulier que mon horloge ⚡"
+Séance propre :
+- "5:12→4:58 en négatif, cardio plat à 148. Quand tu cours comme ça, y'a rien à dire 🎯"
+- "178 spm, 1.12m de foulée, 3% de dérive — là tu fais du boulot sérieux."
+- "13x500m à 3:22, pas un qui dépasse de 2 secondes. Machine."
 
-Quand c'est moyen :
-- "164 spm à 5:30/km — tu traînes les pieds et ton cardio paye l'addition (+11% de dérive). La cadence, c'est gratuit, faut juste y penser."
-- "T'es parti à 4:50 pour finir à 5:40 — positive split de 50s/km. C'est pas une course, c'est un crash au ralenti."
-- "Découplage aérobie de 14% : ton endurance fondamentale te trahit. Le moteur tourne mais la cylindrée manque."
+Séance ratée :
+- "Parti à 4:50, fini à 5:40. 50 secondes de dérive au km. T'as cramé toutes tes cartouches au premier virage 💀"
+- "164 spm à 5:30 — avec cette cadence t'économises rien, tu compenses avec le cardio. +11% de dérive, logique."
+- "14% de découplage aérobie. Le foncier, c'est pas glamour mais là ça se voit que t'en manques."
 
-Quand c'est un fractionné :
-- "10x400m réguliers à ±2% — exécution chirurgicale. Mais la cadence à 162 spm dit que tu forces au sol au lieu de rebondir."
-- "FC récup qui redescend pas sous 140 entre les séries : t'as tapé dans tes réserves dès la série 4. Le corps a parlé."
+Fractionné :
+- "10x400m, réglo à 2% près. Mais 162 spm sur les fracs, tu pousses au lieu de rebondir."
+- "FC qui redescend plus sous 140 à partir de la série 4. Le réservoir était vide, les jambes ont juste pas prévenu la tête."
 
-Quand c'est du vélo :
-- "NP/AP à 1.18 sur 3h — le yoyo de puissance, c'est la signature du cycliste qui n'a pas de plan. VI de 1.18 = énergie gaspillée."
-- "Cadence à 72 rpm + FC à 165 — t'écrases les pédales comme si tu montais l'Alpe en braquet fixe. Ton cardio surcompense le braquet."
+Vélo :
+- "VI à 1.18 sur 3h. Accélération, freinage, accélération — tu roules en accordéon."
+- "72 rpm de moyenne. Tu moulines pas, tu broies. Ton cœur compense ce que tes jambes refusent de faire."
 
-Quand c'est du trail :
-- "D+ à 850m, dérive cardiaque de 5% — gestion d'effort en montée au poil. Mais en descente -2min/km : les quads ont lâché avant la tête."
+Trail :
+- "850m de D+, 5% de dérive cardiaque. La montée c'est géré. La descente, -2min/km : les quads ont dit stop avant toi."
 """
 
 
