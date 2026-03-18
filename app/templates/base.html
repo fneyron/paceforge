@@ -135,7 +135,7 @@
         <!-- Sidebar -->
         <aside class="hidden md:flex w-56 h-screen border-r bg-gray-50/30 flex-col shrink-0 sticky top-0">
             <div class="p-4 border-b">
-                <a href="/dashboard" class="flex items-center gap-2">
+                <a href="/landing" class="flex items-center gap-2">
                     <span class="text-xl font-bold tracking-tight">PaceForge</span>
                 </a>
             </div>
@@ -233,7 +233,7 @@
 
         <!-- Mobile header -->
         <div class="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b px-4 py-3 flex items-center justify-between">
-            <span class="text-lg font-bold tracking-tight">PaceForge</span>
+            <a href="/landing" class="text-lg font-bold tracking-tight">PaceForge</a>
             <div class="flex items-center gap-3">
                 {% if user.profile_picture_url %}
                 <img src="{{ user.profile_picture_url }}" alt="" class="w-7 h-7 rounded-full">
