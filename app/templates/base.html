@@ -6,7 +6,7 @@
     <title>{% block title %}PaceForge{% endblock %}</title>
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#111827">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
@@ -21,25 +21,11 @@
     <meta name="twitter:description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Feedback cash, zéro langue de bois.">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Analyse automatique, feedback cash, zéro langue de bois.">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/tailwind.css">
     <script>
         // Apply dark mode before render to avoid flash
         if (localStorage.getItem('darkMode') === 'true') {
             document.documentElement.classList.add('dark');
-        }
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        strava: '#FC4C02',
-                        'strava-hover': '#e04400',
-                    },
-                    borderRadius: {
-                        DEFAULT: '0.625rem',
-                    },
-                },
-            },
         }
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
