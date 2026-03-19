@@ -77,43 +77,67 @@
 
     <!-- Laps (structured workouts) -->
     {% set is_structured = metrics and metrics.get('structured_workout') %}
+    {% set is_cycling = activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}
     {% if activity.laps and activity.laps|length > 1 and is_structured %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Laps (séance structurée)</h3>
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Intervalles</h3>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-gray-400 text-xs uppercase tracking-wider">
                         <th class="text-left py-2 pr-4 font-medium">#</th>
+                        <th class="text-right py-2 px-4 font-medium">Duree</th>
                         <th class="text-right py-2 px-4 font-medium">Distance</th>
-                        <th class="text-right py-2 px-4 font-medium">Durée</th>
+                        {% if is_cycling %}
+                        <th class="text-right py-2 px-4 font-medium">Puissance</th>
+                        <th class="text-right py-2 px-4 font-medium">Vitesse</th>
+                        {% else %}
                         <th class="text-right py-2 px-4 font-medium">Allure</th>
-                        <th class="text-right py-2 pl-4 font-medium">FC</th>
+                        {% endif %}
+                        <th class="text-right py-2 px-4 font-medium">FC</th>
+                        {% if is_cycling %}
+                        <th class="text-right py-2 pl-4 font-medium">Cadence</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
                     {% for lap in activity.laps %}
-                    {% set lap_dist_km = lap.get('distance', 0) / 1000 %}
+                    {% set lap_dist = lap.get('distance', 0) %}
                     {% set lap_time = lap.get('moving_time', 0) %}
+                    {% set lap_watts = lap.get('average_watts') %}
                     <tr class="hover:bg-gray-50/50">
                         <td class="py-2 pr-4 font-medium tabular-nums">{{ loop.index }}</td>
-                        <td class="text-right py-2 px-4 tabular-nums">{{ "%.2f"|format(lap_dist_km) }}km</td>
-                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">
+                        <td class="text-right py-2 px-4 tabular-nums">
                             {% set l_min = (lap_time // 60)|int %}
                             {% set l_sec = (lap_time % 60)|int %}
                             {{ l_min }}'{{ '%02d'|format(l_sec) }}"
                         </td>
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">{{ "%.1f"|format(lap_dist / 1000) }}km</td>
+                        {% if is_cycling %}
+                        <td class="text-right py-2 px-4 tabular-nums font-medium {% if lap_watts and lap_watts > 200 %}text-red-500{% endif %}">
+                            {% if lap_watts %}{{ lap_watts|int }}W{% else %}-{% endif %}
+                        </td>
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">
+                            {% if lap_dist > 0 and lap_time > 0 %}{{ "%.1f"|format(lap_dist / lap_time * 3.6) }} km/h{% endif %}
+                        </td>
+                        {% else %}
                         <td class="text-right py-2 px-4 tabular-nums">
-                            {% if lap.get('distance', 0) > 0 and lap_time > 0 %}
-                            {% set pace = lap_time / lap_dist_km %}
+                            {% if lap_dist > 0 and lap_time > 0 %}
+                            {% set pace = lap_time / (lap_dist / 1000) %}
                             {% set p_min = (pace // 60)|int %}
                             {% set p_sec = (pace % 60)|int %}
                             {{ p_min }}:{{ '%02d'|format(p_sec) }}/km
                             {% endif %}
                         </td>
-                        <td class="text-right py-2 pl-4 tabular-nums text-gray-500">
+                        {% endif %}
+                        <td class="text-right py-2 px-4 tabular-nums text-gray-500">
                             {% if lap.get('average_heartrate') %}{{ lap.average_heartrate|int }}{% endif %}
                         </td>
+                        {% if is_cycling %}
+                        <td class="text-right py-2 pl-4 tabular-nums text-gray-500">
+                            {% if lap.get('average_cadence') %}{{ lap.average_cadence|int }}{% endif %}
+                        </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -122,8 +146,9 @@
     </div>
     {% endif %}
 
-    <!-- Splits -->
-    {% if activity.splits_metric and activity.splits_metric|length > 1 %}
+    <!-- Splits (hidden for indoor when structured laps are shown) -->
+    {% set is_indoor = activity.sport_type in ('VirtualRide', 'VirtualRun') %}
+    {% if activity.splits_metric and activity.splits_metric|length > 1 and not (is_indoor and is_structured) %}
     {% set is_cycling = activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">
