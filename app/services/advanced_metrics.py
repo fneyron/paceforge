@@ -92,13 +92,22 @@ def _hr_zones_distribution(hr_data: list, max_hr: float) -> dict:
         if not hr_data or max_hr <= 0:
             return {}
 
-        zones = {
-            "Z1": {"label": "Recovery", "seconds": 0},
-            "Z2": {"label": "Endurance", "seconds": 0},
-            "Z3": {"label": "Tempo", "seconds": 0},
-            "Z4": {"label": "Threshold", "seconds": 0},
-            "Z5": {"label": "VO2max", "seconds": 0},
-        }
+        zone_defs = [
+            ("Z1", "Recuperation", 0, 60),
+            ("Z2", "Endurance", 60, 70),
+            ("Z3", "Tempo", 70, 80),
+            ("Z4", "Seuil", 80, 90),
+            ("Z5", "VO2max", 90, 100),
+        ]
+
+        zones = {}
+        for key, label, low_pct, high_pct in zone_defs:
+            zones[key] = {
+                "label": label,
+                "seconds": 0,
+                "low_bpm": round(max_hr * low_pct / 100),
+                "high_bpm": round(max_hr * high_pct / 100),
+            }
 
         for hr in hr_data:
             pct = hr / max_hr * 100
@@ -119,6 +128,9 @@ def _hr_zones_distribution(hr_data: list, max_hr: float) -> dict:
             result[zone_key] = {
                 "pct": round(zone_val["seconds"] / total * 100, 1) if total else 0,
                 "seconds": zone_val["seconds"],
+                "label": zone_val["label"],
+                "low_bpm": zone_val["low_bpm"],
+                "high_bpm": zone_val["high_bpm"],
             }
         return result
     except Exception:

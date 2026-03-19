@@ -22,7 +22,9 @@
         <div class="flex justify-between mt-1.5 text-[10px] text-gray-400">
             {% for zone in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'] %}
             {% if hz.get(zone) %}
-            <span>{{ zone }} {{ hz[zone].pct|int }}%</span>
+            <span title="{{ hz[zone].get('label', zone) }}">{{ zone }} {{ hz[zone].pct|int }}%
+                {% if hz[zone].get('low_bpm') %}<span class="text-gray-300">({{ hz[zone].low_bpm }}-{{ hz[zone].high_bpm }})</span>{% endif %}
+            </span>
             {% endif %}
             {% endfor %}
         </div>
