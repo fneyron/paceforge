@@ -482,10 +482,11 @@ window._sim = {};
                 currentHeatFactor = w.heat_factor;
                 var pct = Math.round((w.heat_factor - 1) * 100);
                 var cls = pct > 5 ? 'text-red-500' : pct > 0 ? 'text-amber-500' : 'text-green-600';
-                el.innerHTML = '<div class="flex items-center gap-4 text-sm">' +
-                    '<span>' + w.temperature_c + '°C</span><span>Hum. ' + w.humidity_pct + '%</span>' +
-                    '<span>Vent ' + w.wind_speed_kmh + ' km/h</span>' +
-                    '<span class="' + cls + ' font-medium">' + (pct > 0 ? '+' + pct + '%' : 'OK') + '</span></div>';
+                var src = w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '';
+                el.innerHTML = '<span>' + w.temperature_c + '°C</span> · ' +
+                    '<span>Hum. ' + w.humidity_pct + '%</span> · ' +
+                    '<span>Vent ' + w.wind_speed_kmh + 'km/h</span> · ' +
+                    '<span class="' + cls + ' font-medium">' + (pct > 0 ? '+' + pct + '%' : 'OK') + '</span>' + src;
             });
     }
 
