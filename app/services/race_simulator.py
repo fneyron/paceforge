@@ -243,12 +243,66 @@ def _fatigue_factor(
     return min(base, 1.5)
 
 
+def _altitude_factor(avg_elevation: float) -> float:
+    """Performance loss at altitude. VO2max drops ~6.3% per 1000m above 1500m.
+
+    Returns multiplier >= 1.0 (higher = slower).
+    """
+    if avg_elevation <= 1500:
+        return 1.0
+    return 1.0 + 0.063 * ((avg_elevation - 1500) / 1000)
+
+
+def _terrain_difficulty_factor(gradient_pct: float, elevation_gain: float, elevation_loss: float, distance_m: float) -> float:
+    """Technical terrain penalty based on gradient steepness and elevation variance.
+
+    Steeper and more variable terrain = more technical = slower.
+    Returns multiplier >= 1.0.
+    """
+    if distance_m <= 0:
+        return 1.0
+    # Total elevation change per km (both up and down)
+    vert_intensity = (elevation_gain + elevation_loss) / (distance_m / 1000)
+    abs_gradient = abs(gradient_pct)
+
+    factor = 1.0
+    # Very steep terrain (>15%) gets a technical penalty
+    if abs_gradient > 20:
+        factor += 0.08
+    elif abs_gradient > 15:
+        factor += 0.04
+
+    # High vert intensity (lots of up AND down per km) = technical
+    if vert_intensity > 150:  # >150m of vert per km = very technical
+        factor += 0.05
+    elif vert_intensity > 100:
+        factor += 0.02
+
+    return factor
+
+
+def _night_penalty(cumulative_time_s: float, start_hour: int = 6) -> float:
+    """Penalty for running at night. Assumes race starts at start_hour.
+
+    Night = between 21:00 and 06:00. Returns multiplier >= 1.0.
+    """
+    elapsed_hours = cumulative_time_s / 3600
+    current_hour = (start_hour + elapsed_hours) % 24
+
+    if 21 <= current_hour or current_hour < 6:
+        return 1.08  # 8% slower at night
+    if 20 <= current_hour < 21 or 6 <= current_hour < 7:
+        return 1.03  # 3% slower dusk/dawn
+    return 1.0
+
+
 def predict_course(
     course: CourseProfile,
     profile: AthleteGradientProfile,
     heat_factor: float = 1.0,
+    start_hour: int = 6,
 ) -> CourseProfile:
-    """Apply gradient-adjusted pace prediction with fatigue and heat."""
+    """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night."""
     cumulative_time = 0.0
     cumulative_gain = 0.0
     total_distance = course.total_distance_km
@@ -263,6 +317,19 @@ def predict_course(
 
         # Heat factor
         factor *= heat_factor
+
+        # Altitude correction (>1500m)
+        avg_elev = (segment.min_elevation + segment.max_elevation) / 2
+        factor *= _altitude_factor(avg_elev)
+
+        # Terrain difficulty
+        factor *= _terrain_difficulty_factor(
+            segment.avg_gradient_pct, segment.elevation_gain,
+            segment.elevation_loss, segment.distance_m,
+        )
+
+        # Night penalty
+        factor *= _night_penalty(cumulative_time, start_hour)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
