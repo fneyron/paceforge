@@ -20,11 +20,9 @@
     </div>
 
     {% if course.route_coords %}
-    <!-- Map (full width) -->
-    <div class="rounded-xl border border-gray-200 bg-white shadow-sm map-container overflow-hidden">
-        <div id="courseMap" style="height:400px;position:relative;z-index:0;"></div>
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div id="courseMap" style="height:420px;"></div>
     </div>
-    <!-- Elevation Profile -->
     <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div id="elevChart" style="height:180px;"></div>
     </div>
@@ -42,8 +40,7 @@
             <div class="flex flex-col sm:flex-row gap-2">
                 <input type="text" id="cp-name" placeholder="Ajouter un checkpoint" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-sm">
                 <div class="flex gap-2">
-                    <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}"
-                           class="w-20 h-8 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
+                    <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-20 h-8 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
                     <button onclick="window._sim.addCheckpoint()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">+</button>
                 </div>
             </div>
@@ -60,9 +57,7 @@
         <div id="save-result" class="flex items-center text-xs"></div>
         <form hx-post="/partials/simulator/race-strategy" hx-target="#strategy-result" hx-swap="innerHTML" hx-indicator="#strategy-loading" class="inline">
             <input type="hidden" name="course_json" id="courseJsonData" value='{{ course_json }}'>
-            <button type="submit" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800">
-                Strategie IA <span id="strategy-loading" class="htmx-indicator ml-1"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg></span>
-            </button>
+            <button type="submit" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800">Strategie IA <span id="strategy-loading" class="htmx-indicator ml-1"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg></span></button>
         </form>
     </div>
     <div id="strategy-result"></div>
@@ -79,121 +74,206 @@ window._sim = {};
     var predictedTotalS = course.predicted_total_time_s || 0;
 
     var map = null, hoverMarker = null, chart = null;
-    var checkpoints = [], cpMapMarkers = [];
+    var checkpoints = [], cpMarkerEls = [];
     var currentHeatFactor = 1.0;
     var currentRouteId = {{ saved_route_id | default('null') }};
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
     function interpElev(km) {
-        for (var i = 1; i < elevData.length; i++) {
-            if (elevData[i].distance_km >= km) {
-                var p = elevData[i-1], n = elevData[i], t = (km - p.distance_km) / (n.distance_km - p.distance_km);
-                return Math.round(p.elevation + t * (n.elevation - p.elevation));
-            }
-        }
+        for (var i = 1; i < elevData.length; i++) { if (elevData[i].distance_km >= km) { var p=elevData[i-1],n=elevData[i],t=(km-p.distance_km)/(n.distance_km-p.distance_km); return Math.round(p.elevation+t*(n.elevation-p.elevation)); } }
         return elevData.length ? Math.round(elevData[elevData.length-1].elevation) : 0;
     }
     function findCoordAtKm(km) {
-        var best = routeCoords[0], bestD = Infinity;
-        for (var i = 0; i < routeCoords.length; i++) { var d = Math.abs(routeCoords[i][2] - km); if (d < bestD) { bestD = d; best = routeCoords[i]; } }
+        var best=routeCoords[0],bestD=Infinity;
+        for(var i=0;i<routeCoords.length;i++){var d=Math.abs(routeCoords[i][2]-km);if(d<bestD){bestD=d;best=routeCoords[i];}}
         return best;
     }
-    function showM(m, v) { if (m) m.setStyle({ opacity: v?1:0, fillOpacity: v?1:0 }); }
 
-    // ── MAP ──
+    // ── MAPLIBRE GL MAP ──
     function initMap() {
         if (!routeCoords.length) return;
-        var el = document.getElementById('courseMap'); if (!el) return;
-        if (map) { try { map.off(); map.remove(); } catch(e) {} map = null; }
-        map = L.map(el, { zoomControl: true, attributionControl: false });
-        L.tileLayer(isDark ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+        var el = document.getElementById('courseMap');
+        if (!el) return;
+        if (map) { try { map.remove(); } catch(e) {} map = null; }
 
-        var hotData = routeCoords.map(function(c) { return [c[0], c[1], c[3]||0]; });
-        var elevs = routeCoords.map(function(c) { return c[3]||0; });
-        L.hotline(hotData, { min: Math.min.apply(null,elevs), max: Math.max.apply(null,elevs),
-            palette: {0.0:'#f97316',0.3:'#ef4444',0.6:'#dc2626',1.0:'#991b1b'}, weight:4, outlineWidth:1, outlineColor: isDark?'#1a1a1a':'#fff' }).addTo(map);
+        // Build GeoJSON LineString
+        var coords = routeCoords.map(function(c) { return [c[1], c[0]]; }); // [lon, lat]
+        var elevs = routeCoords.map(function(c) { return c[3] || 0; });
+        var minE = Math.min.apply(null, elevs), maxE = Math.max.apply(null, elevs);
 
-        var bounds = routeCoords.map(function(c){return[c[0],c[1]];});
-        map.fitBounds(L.latLngBounds(bounds), {padding:[30,30]});
-        L.circleMarker(bounds[0],{radius:8,fillColor:'#22c55e',fillOpacity:1,color:'#fff',weight:3}).addTo(map).bindPopup('<b>Depart</b>');
-        L.circleMarker(bounds[bounds.length-1],{radius:8,fillColor:'#ef4444',fillOpacity:1,color:'#fff',weight:3}).addTo(map).bindPopup('<b>Arrivee</b>');
+        // Bounds
+        var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
+        var bounds = [[Math.min.apply(null,lons),Math.min.apply(null,lats)],[Math.max.apply(null,lons),Math.max.apply(null,lats)]];
 
-        hoverMarker = L.circleMarker([0,0],{radius:7,fillColor:'#f97316',fillOpacity:0,color:'#fff',weight:2,opacity:0}).addTo(map);
-        map.on('mousemove', function(e) {
-            var minD=Infinity,best=null;
-            for(var i=0;i<routeCoords.length;i+=2){var c=routeCoords[i],d=(c[0]-e.latlng.lat)**2+(c[1]-e.latlng.lng)**2;if(d<minD){minD=d;best=c;}}
-            if(best){hoverMarker.setLatLng([best[0],best[1]]);showM(hoverMarker,true);syncChart(best[2]);}
+        map = new maplibregl.Map({
+            container: el,
+            style: isDark
+                ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+                : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+            bounds: bounds,
+            fitBoundsOptions: { padding: 40 },
+            attributionControl: false,
         });
-        map.on('mouseout', function(){showM(hoverMarker,false);clearChart();});
+
+        map.addControl(new maplibregl.NavigationControl(), 'top-left');
+
+        map.on('load', function() {
+            // Route line with elevation-based color gradient
+            map.addSource('route', {
+                type: 'geojson',
+                data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} },
+            });
+
+            // Build color stops based on elevation
+            var stops = [];
+            for (var i = 0; i < coords.length; i++) {
+                var ratio = maxE > minE ? (elevs[i] - minE) / (maxE - minE) : 0;
+                stops.push(i / (coords.length - 1));
+                // Orange to red gradient
+                var r = Math.round(249 - ratio * 96);
+                var g = Math.round(115 - ratio * 88);
+                var b = Math.round(22 + ratio * 5);
+                stops.push('rgb(' + r + ',' + g + ',' + b + ')');
+            }
+
+            map.addLayer({
+                id: 'route-line',
+                type: 'line',
+                source: 'route',
+                paint: {
+                    'line-width': 4,
+                    'line-color': ['interpolate', ['linear'], ['line-progress']].concat(stops),
+                },
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+            });
+
+            // Start marker
+            new maplibregl.Marker({ color: '#22c55e' })
+                .setLngLat(coords[0])
+                .setPopup(new maplibregl.Popup().setHTML('<b>Depart</b>'))
+                .addTo(map);
+
+            // Finish marker
+            new maplibregl.Marker({ color: '#ef4444' })
+                .setLngLat(coords[coords.length - 1])
+                .setPopup(new maplibregl.Popup().setHTML('<b>Arrivee</b>'))
+                .addTo(map);
+
+            // Hover marker (hidden initially)
+            var hoverEl = document.createElement('div');
+            hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
+            hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
+
+            // Render checkpoints on map
+            renderCpOnMap();
+        });
+
+        // Map hover → chart sync
+        map.on('mousemove', function(e) {
+            var best = null, bestD = Infinity;
+            for (var i = 0; i < routeCoords.length; i += 3) {
+                var dx = routeCoords[i][1] - e.lngLat.lng, dy = routeCoords[i][0] - e.lngLat.lat;
+                var d = dx*dx + dy*dy;
+                if (d < bestD) { bestD = d; best = routeCoords[i]; }
+            }
+            if (best && hoverMarker) {
+                hoverMarker.setLngLat([best[1], best[0]]);
+                hoverMarker.getElement().style.display = 'block';
+                syncChart(best[2]);
+            }
+        });
+        map.on('mouseout', function() {
+            if (hoverMarker) hoverMarker.getElement().style.display = 'none';
+            clearChart();
+        });
     }
 
-    // ── CHART ──
+    // ── ELEVATION CHART (ApexCharts) ──
     function initChart() {
-        var el = document.getElementById('elevChart'); if(!el||!elevData.length) return;
-        if(chart){try{chart.destroy();}catch(e){}chart=null;}
-        var xy = elevData.map(function(p){return[p.distance_km,p.elevation];});
+        var el = document.getElementById('elevChart');
+        if (!el || !elevData.length) return;
+        if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
+        var xy = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
         chart = new ApexCharts(el, {
-            chart:{type:'area',height:180,fontFamily:'Inter,sans-serif',toolbar:{show:false},background:'transparent',zoom:{enabled:false},
-                events:{
-                    mouseMove:function(e,ctx,cfg){if(cfg.dataPointIndex>=0){var c=findCoordAtKm(elevData[cfg.dataPointIndex].distance_km);if(c){hoverMarker.setLatLng([c[0],c[1]]);showM(hoverMarker,true);}}},
-                    mouseLeave:function(){showM(hoverMarker,false);clearChart();}
-                }},
-            theme:{mode:isDark?'dark':'light'},
-            series:[{name:'Altitude',data:xy}],
-            xaxis:{type:'numeric',min:0,max:Math.ceil(totalDistKm),tickAmount:Math.min(15,Math.ceil(totalDistKm/10)),
-                labels:{style:{colors:mutedC,fontSize:'10px'},rotate:0,formatter:function(v){return Math.round(v)+'km';}},
-                axisBorder:{show:false},axisTicks:{show:false},crosshairs:{show:true,stroke:{color:'#f97316',width:2}},tooltip:{enabled:false}},
-            yaxis:{labels:{style:{colors:mutedC,fontSize:'10px'},formatter:function(v){return Math.round(v)+'m';}}},
-            grid:{borderColor:gridC,strokeDashArray:3,padding:{left:4,right:4,top:0,bottom:0}},
-            colors:['#ef4444'],stroke:{curve:'smooth',width:2},
-            fill:{type:'gradient',gradient:{shadeIntensity:1,opacityFrom:0.45,opacityTo:0.05,stops:[0,95],colorStops:[{offset:0,color:'#ef4444',opacity:0.45},{offset:100,color:'#fca5a5',opacity:0.05}]}},
-            dataLabels:{enabled:false},markers:{size:0,hover:{size:4}},
-            tooltip:{theme:isDark?'dark':'light',x:{formatter:function(v){var l='km '+parseFloat(v).toFixed(1);for(var i=0;i<checkpoints.length;i++){if(Math.abs(checkpoints[i].distance_km-v)<0.5){l+=' — '+checkpoints[i].name;break;}}return l;}},y:{formatter:function(v){return Math.round(v)+' m';}}},
-            annotations:{xaxis:[]}
+            chart: { type: 'area', height: 180, fontFamily: 'Inter,sans-serif', toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
+                events: {
+                    mouseMove: function(e, ctx, cfg) {
+                        if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
+                            var c = findCoordAtKm(elevData[cfg.dataPointIndex].distance_km);
+                            if (c && hoverMarker) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; }
+                        }
+                    },
+                    mouseLeave: function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); },
+                }
+            },
+            theme: { mode: isDark ? 'dark' : 'light' },
+            series: [{ name: 'Altitude', data: xy }],
+            xaxis: { type: 'numeric', min: 0, max: Math.ceil(totalDistKm), tickAmount: Math.min(15, Math.ceil(totalDistKm / 10)),
+                labels: { style: { colors: mutedC, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + 'km'; } },
+                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true, stroke: { color: '#f97316', width: 2 } }, tooltip: { enabled: false } },
+            yaxis: { labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } } },
+            grid: { borderColor: gridC, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
+            colors: ['#ef4444'], stroke: { curve: 'smooth', width: 2 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 95], colorStops: [{ offset: 0, color: '#ef4444', opacity: 0.45 }, { offset: 100, color: '#fca5a5', opacity: 0.05 }] } },
+            dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 4 } },
+            tooltip: { theme: isDark ? 'dark' : 'light',
+                x: { formatter: function(v) { var l = 'km ' + parseFloat(v).toFixed(1); for (var i = 0; i < checkpoints.length; i++) { if (Math.abs(checkpoints[i].distance_km - v) < 0.5) { l += ' — ' + checkpoints[i].name; break; } } return l; } },
+                y: { formatter: function(v) { return Math.round(v) + ' m'; } } },
+            annotations: { xaxis: [] },
         });
         chart.render();
     }
-    function syncChart(km){if(!chart)return;chart.clearAnnotations();var best=0,bestD=999;for(var i=0;i<elevData.length;i++){var d=Math.abs(elevData[i].distance_km-km);if(d<bestD){bestD=d;best=i;}}
-        chart.addXaxisAnnotation({x:elevData[best].distance_km,borderColor:'#f97316',strokeDashArray:0,label:{text:elevData[best].distance_km.toFixed(1)+'km',style:{fontSize:'9px',color:'#fff',background:'#f97316'}}});drawCpAnn();}
-    function clearChart(){if(!chart)return;chart.clearAnnotations();drawCpAnn();}
-    function drawCpAnn(){if(!chart)return;checkpoints.forEach(function(cp,i){chart.addXaxisAnnotation({x:cp.distance_km,borderColor:'#f59e0b',strokeDashArray:0,label:{text:'CP'+(i+1),orientation:'horizontal',style:{fontSize:'9px',fontWeight:700,color:'#fff',background:'#f59e0b',padding:{left:3,right:3,top:1,bottom:1}}}});});}
+
+    function syncChart(km) { if (!chart) return; chart.clearAnnotations(); var best = 0, bestD = 999; for (var i = 0; i < elevData.length; i++) { var d = Math.abs(elevData[i].distance_km - km); if (d < bestD) { bestD = d; best = i; } } chart.addXaxisAnnotation({ x: elevData[best].distance_km, borderColor: '#f97316', strokeDashArray: 0, label: { text: elevData[best].distance_km.toFixed(1) + 'km', style: { fontSize: '9px', color: '#fff', background: '#f97316' } } }); drawCpAnn(); }
+    function clearChart() { if (!chart) return; chart.clearAnnotations(); drawCpAnn(); }
+    function drawCpAnn() { if (!chart) return; checkpoints.forEach(function(cp, i) { chart.addXaxisAnnotation({ x: cp.distance_km, borderColor: '#f59e0b', strokeDashArray: 0, label: { text: 'CP' + (i + 1), orientation: 'horizontal', style: { fontSize: '9px', fontWeight: 700, color: '#fff', background: '#f59e0b', padding: { left: 3, right: 3, top: 1, bottom: 1 } } } }); }); }
 
     // ── CHECKPOINTS ──
-    function addCheckpoint(){var n=document.getElementById('cp-name').value.trim(),km=parseFloat(document.getElementById('cp-km').value);if(!n||isNaN(km)||km<=0||km>=totalDistKm)return;checkpoints.push({name:n,distance_km:km,elevation:interpElev(km)});checkpoints.sort(function(a,b){return a.distance_km-b.distance_km;});document.getElementById('cp-name').value='';document.getElementById('cp-km').value='';refresh();}
-    function removeCheckpoint(i){checkpoints.splice(i,1);refresh();}
-    function refresh(){renderList();renderOnMap();drawCpAnn();}
+    function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km) }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); }
+    function removeCheckpoint(i) { checkpoints.splice(i, 1); refresh(); }
+    function refresh() { renderCpList(); renderCpOnMap(); drawCpAnn(); }
 
-    function renderList(){
-        var el=document.getElementById('cp-list'),se=elevData.length?Math.round(elevData[0].elevation):0,ee=elevData.length?Math.round(elevData[elevData.length-1].elevation):0;
-        var pH=Math.floor(predictedTotalS/3600),pM=Math.round((predictedTotalS%3600)/60);
-        var h='<div class="space-y-0.5">';
-        h+='<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-green-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#22c55e;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-green-800">Depart</span></div><span class="text-xs text-green-600 tabular-nums">'+se+'m</span></div>';
-        checkpoints.forEach(function(cp,i){var n=i+1;h+='<div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50 group"><div class="flex items-center gap-2"><span style="width:20px;height:20px;background:#f59e0b;color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">'+n+'</span><span class="text-sm font-medium">CP'+n+' — '+cp.name+'</span></div><div class="flex items-center gap-3"><span class="text-xs text-gray-400 tabular-nums">km '+cp.distance_km+'</span><span class="text-xs text-gray-400 tabular-nums">'+cp.elevation+'m</span><button onclick="window._sim.removeCheckpoint('+i+')" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100">&times;</button></div></div>';});
-        h+='<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#ef4444;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-red-800">Arrivee</span></div><div class="flex items-center gap-3"><span class="text-xs text-red-600 tabular-nums">km '+totalDistKm+'</span><span class="text-xs text-red-600 tabular-nums">'+ee+'m</span><span class="text-[10px] text-gray-400 mx-1">Obj.</span><input type="number" id="target-h-vis" value="'+pH+'" min="0" max="99" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">h</span><input type="number" id="target-m-vis" value="'+pM+'" min="0" max="59" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">min</span><span id="target-delta" class="text-[10px] text-gray-400"></span></div></div>';
-        el.innerHTML=h+'</div>';
+    function renderCpList() {
+        var el = document.getElementById('cp-list'), se = elevData.length ? Math.round(elevData[0].elevation) : 0, ee = elevData.length ? Math.round(elevData[elevData.length - 1].elevation) : 0;
+        var pH = Math.floor(predictedTotalS / 3600), pM = Math.round((predictedTotalS % 3600) / 60);
+        var h = '<div class="space-y-0.5">';
+        h += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-green-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#22c55e;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-green-800">Depart</span></div><span class="text-xs text-green-600 tabular-nums">' + se + 'm</span></div>';
+        checkpoints.forEach(function(cp, i) { var n = i + 1; h += '<div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50 group"><div class="flex items-center gap-2"><span style="width:20px;height:20px;background:#f59e0b;color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">' + n + '</span><span class="text-sm font-medium">CP' + n + ' — ' + cp.name + '</span></div><div class="flex items-center gap-3"><span class="text-xs text-gray-400 tabular-nums">km ' + cp.distance_km + '</span><span class="text-xs text-gray-400 tabular-nums">' + cp.elevation + 'm</span><button onclick="window._sim.removeCheckpoint(' + i + ')" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100">&times;</button></div></div>'; });
+        h += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#ef4444;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-red-800">Arrivee</span></div><div class="flex items-center gap-3"><span class="text-xs text-red-600 tabular-nums">km ' + totalDistKm + '</span><span class="text-xs text-red-600 tabular-nums">' + ee + 'm</span><span class="text-[10px] text-gray-400 mx-1">Obj.</span><input type="number" id="target-h-vis" value="' + pH + '" min="0" max="99" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">h</span><input type="number" id="target-m-vis" value="' + pM + '" min="0" max="59" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">min</span><span id="target-delta" class="text-[10px] text-gray-400"></span></div></div>';
+        el.innerHTML = h + '</div>';
     }
-    function renderOnMap(){if(!map)return;cpMapMarkers.forEach(function(m){map.removeLayer(m);});cpMapMarkers=[];
-        checkpoints.forEach(function(cp,i){var c=findCoordAtKm(cp.distance_km),n=i+1,pk=i>0?checkpoints[i-1].distance_km:0,pe=i>0?checkpoints[i-1].elevation:(elevData.length?Math.round(elevData[0].elevation):0);
-            var pop='<div style="font-family:Inter,sans-serif;min-width:180px;"><p style="font-size:13px;font-weight:700;margin:0 0 6px;">CP'+n+' — '+cp.name+'</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;"><div><span style="color:#9ca3af;">Alt.</span><br><b>'+cp.elevation+' m</b></div><div><span style="color:#9ca3af;">Dist.</span><br><b>'+cp.distance_km+' km</b></div><div><span style="color:#9ca3af;">Depuis '+(i>0?'CP'+i:'Start')+'</span><br><b>'+(cp.distance_km-pk).toFixed(1)+' km</b></div><div><span style="color:#9ca3af;">D+</span><br><b>'+(cp.elevation>pe?'+'+(cp.elevation-pe):'0')+' m</b></div></div></div>';
-            var m=L.marker([c[0],c[1]],{icon:L.divIcon({className:'',html:'<div style="width:24px;height:24px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);">'+n+'</div>',iconSize:[24,24],iconAnchor:[12,12]})}).addTo(map).bindPopup(pop,{maxWidth:250});
-            cpMapMarkers.push(m);
+
+    function renderCpOnMap() {
+        if (!map) return;
+        cpMarkerEls.forEach(function(m) { m.remove(); });
+        cpMarkerEls = [];
+        checkpoints.forEach(function(cp, i) {
+            var c = findCoordAtKm(cp.distance_km), n = i + 1;
+            var pk = i > 0 ? checkpoints[i - 1].distance_km : 0, pe = i > 0 ? checkpoints[i - 1].elevation : (elevData.length ? Math.round(elevData[0].elevation) : 0);
+            var popup = '<div style="font-family:Inter,sans-serif;min-width:180px;"><p style="font-size:13px;font-weight:700;margin:0 0 6px;">CP' + n + ' — ' + cp.name + '</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;"><div><span style="color:#9ca3af;">Alt.</span><br><b>' + cp.elevation + ' m</b></div><div><span style="color:#9ca3af;">Dist.</span><br><b>' + cp.distance_km + ' km</b></div><div><span style="color:#9ca3af;">Depuis ' + (i > 0 ? 'CP' + i : 'Start') + '</span><br><b>' + (cp.distance_km - pk).toFixed(1) + ' km</b></div><div><span style="color:#9ca3af;">D+</span><br><b>' + (cp.elevation > pe ? '+' + (cp.elevation - pe) : '0') + ' m</b></div></div></div>';
+
+            var markerEl = document.createElement('div');
+            markerEl.style.cssText = 'width:24px;height:24px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;';
+            markerEl.textContent = n;
+
+            var m = new maplibregl.Marker({ element: markerEl })
+                .setLngLat([c[1], c[0]])
+                .setPopup(new maplibregl.Popup({ maxWidth: '250px' }).setHTML(popup))
+                .addTo(map);
+            cpMarkerEls.push(m);
         });
     }
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
-    function recalc(){var h=parseInt(document.getElementById('target-h').value)||0,m=parseInt(document.getElementById('target-m').value)||0,ts=h*3600+m*60;if(ts>0&&predictedTotalS>0){var d=Math.round((ts-predictedTotalS)/60);document.getElementById('target-delta').textContent='('+(d>0?'+':'')+d+' min)';}
-        var b=new URLSearchParams();b.append('course_json',document.getElementById('courseJsonData').value);b.append('checkpoints_json',JSON.stringify(checkpoints));if(ts>0)b.append('target_time_s',ts);if(currentHeatFactor>1)b.append('heat_factor',currentHeatFactor);
-        fetch('/partials/simulator/passage-times',{method:'POST',body:b}).then(function(r){return r.text();}).then(function(html){document.getElementById('passage-times-result').innerHTML=html;});}
-    function saveRoute(){var b=new URLSearchParams();b.append('course_json',document.getElementById('courseJsonData').value);b.append('checkpoints_json',JSON.stringify(checkpoints));b.append('name',document.getElementById('save-name').value||'Parcours');if(currentRouteId)b.append('route_id',currentRouteId);
-        fetch('/api/simulator/routes',{method:'POST',body:b}).then(function(r){return r.json();}).then(function(d){var el=document.getElementById('save-result');if(d.id){currentRouteId=d.id;el.innerHTML='<span class="text-green-600">OK</span>';setTimeout(function(){el.innerHTML='';},2000);}else{el.innerHTML='<span class="text-red-500">Err</span>';}});}
-    function fetchWeather(){var d=document.getElementById('race-date').value;if(!d||!routeCoords.length)return;var b=new URLSearchParams();b.append('lat',routeCoords[0][0]);b.append('lon',routeCoords[0][1]);b.append('date',d);
-        fetch('/api/simulator/weather',{method:'POST',body:b}).then(function(r){return r.json();}).then(function(w){var el=document.getElementById('weather-result');if(w.error){el.innerHTML='<span class="text-red-500">'+w.error+'</span>';return;}currentHeatFactor=w.heat_factor;var p=Math.round((w.heat_factor-1)*100),cls=p>5?'text-red-500':p>0?'text-amber-500':'text-green-600';el.innerHTML=w.temperature_c+'°C · Hum.'+w.humidity_pct+'% · <span class="'+cls+' font-medium">'+(p>0?'+'+p+'%':'OK')+'</span>'+(w.source?' <span class="text-gray-300">('+w.source+')</span>':'');});}
-    function syncTarget(){var h=parseInt(document.getElementById('target-h-vis').value)||0,m=parseInt(document.getElementById('target-m-vis').value)||0;document.getElementById('target-h').value=h;document.getElementById('target-m').value=m;var ts=h*3600+m*60,dl=document.getElementById('target-delta');if(ts>0&&predictedTotalS>0){var d=Math.round((ts-predictedTotalS)/60);dl.textContent='('+(d>0?'+':'')+d+' min)';}else{dl.textContent='';}}
-    function cleanup(){if(map){try{map.off();map.remove();}catch(e){}map=null;}if(chart){try{chart.destroy();}catch(e){}chart=null;}hoverMarker=null;cpMapMarkers=[];}
+    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); document.getElementById('target-delta').textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function saveRoute() { var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); b.append('name', document.getElementById('save-name').value || 'Parcours'); if (currentRouteId) b.append('route_id', currentRouteId); fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(d) { var el = document.getElementById('save-result'); if (d.id) { currentRouteId = d.id; el.innerHTML = '<span class="text-green-600">OK</span>'; setTimeout(function() { el.innerHTML = ''; }, 2000); } else { el.innerHTML = '<span class="text-red-500">Err</span>'; } }); }
+    function fetchWeather() { var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return; var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d); fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { var el = document.getElementById('weather-result'); if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; } currentHeatFactor = w.heat_factor; var p = Math.round((w.heat_factor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600'; el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : ''); }); }
+    function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } else { dl.textContent = ''; } }
+    function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
-    try{var wpts={{ gpx_waypoints | default("[]") | safe }};if(wpts&&wpts.length)checkpoints=wpts;}catch(e){}
-    initChart(); initMap(); refresh(); recalc();
-    window._sim={addCheckpoint:addCheckpoint,removeCheckpoint:removeCheckpoint,recalc:recalc,saveRoute:saveRoute,fetchWeather:fetchWeather,syncTarget:syncTarget,_cleanup:cleanup};
+    try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
+    initChart(); initMap(); renderCpList(); recalc();
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, recalc: recalc, saveRoute: saveRoute, fetchWeather: fetchWeather, syncTarget: syncTarget, _cleanup: cleanup };
 })();
 </script>
