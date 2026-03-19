@@ -19,17 +19,15 @@
         </div>
     </div>
 
-    <!-- Map + Profile -->
+    <!-- Map (full width) -->
     {% if course.route_coords %}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm map-container">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Parcours</h3>
-            <div id="courseMap" style="height:350px;border-radius:8px;overflow:hidden;position:relative;z-index:0;"></div>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Profil altimetrique</h3>
-            <div id="elevationChart" style="height:350px;"></div>
-        </div>
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm map-container overflow-hidden">
+        <div id="courseMap" style="height:400px;position:relative;z-index:0;"></div>
+    </div>
+
+    <!-- Elevation Profile (full width, below map) -->
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div id="elevationChart" style="height:200px;"></div>
     </div>
     {% endif %}
 
@@ -219,7 +217,7 @@ window._sim = {};
         var xyData = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
         chart = new ApexCharts(el, {
             chart: {
-                type: 'area', height: 350, fontFamily: 'Inter, system-ui, sans-serif',
+                type: 'area', height: 200, fontFamily: 'Inter, system-ui, sans-serif',
                 toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
                 events: {
                     mouseMove: function(e, ctx, cfg) {
@@ -353,10 +351,11 @@ window._sim = {};
 
         // User checkpoints
         checkpoints.forEach(function(cp, i) {
+            var num = i + 1;
             html += '<div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50 group">' +
                 '<div class="flex items-center gap-2">' +
-                '<span style="width:8px;height:8px;background:#f59e0b;border-radius:2px;transform:rotate(45deg);display:inline-block;"></span>' +
-                '<span class="text-sm font-medium">' + cp.name + '</span></div>' +
+                '<span style="width:20px;height:20px;background:#f59e0b;color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">' + num + '</span>' +
+                '<span class="text-sm font-medium">CP' + num + ' — ' + cp.name + '</span></div>' +
                 '<div class="flex items-center gap-3">' +
                 '<span class="text-xs text-gray-400 tabular-nums">km ' + cp.distance_km + '</span>' +
                 '<span class="text-xs text-gray-400 tabular-nums">' + cp.elevation + 'm</span>' +
@@ -386,25 +385,48 @@ window._sim = {};
         if (!map) return;
         cpMapMarkers.forEach(function(m) { map.removeLayer(m); });
         cpMapMarkers = [];
-        checkpoints.forEach(function(cp) {
+        checkpoints.forEach(function(cp, idx) {
             var c = findCoordAtKm(cp.distance_km);
-            var m = L.circleMarker([c[0], c[1]], {
-                radius: 6, fillColor: '#f59e0b', fillOpacity: 1, color: '#fff', weight: 2,
-            }).addTo(map).bindTooltip(cp.name + ' (km ' + cp.distance_km + ')', {
-                direction: 'top', offset: [0, -8],
-            });
+            var num = idx + 1;
+
+            // Distance and D+ from previous checkpoint
+            var prevKm = idx > 0 ? checkpoints[idx - 1].distance_km : 0;
+            var prevElev = idx > 0 ? checkpoints[idx - 1].elevation : (elevData.length ? Math.round(elevData[0].elevation) : 0);
+            var distFromPrev = (cp.distance_km - prevKm).toFixed(1);
+            var dPlus = Math.max(0, cp.elevation - prevElev);
+
+            var popupHtml = '<div style="font-family:Inter,sans-serif;min-width:180px;">' +
+                '<p style="font-size:13px;font-weight:700;margin:0 0 6px;">CP' + num + ' — ' + cp.name + '</p>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">' +
+                '<div><span style="color:#9ca3af;">Altitude</span><br><b>' + cp.elevation + ' m</b></div>' +
+                '<div><span style="color:#9ca3af;">Distance</span><br><b>' + cp.distance_km + ' km</b></div>' +
+                '<div><span style="color:#9ca3af;">Depuis CP' + (idx > 0 ? idx : 'Start') + '</span><br><b>' + distFromPrev + ' km</b></div>' +
+                '<div><span style="color:#9ca3af;">D+ depuis prev.</span><br><b>' + (dPlus > 0 ? '+' + dPlus : '0') + ' m</b></div>' +
+                '</div></div>';
+
+            var m = L.marker([c[0], c[1]], {
+                icon: L.divIcon({
+                    className: '',
+                    html: '<div style="width:24px;height:24px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);">' + num + '</div>',
+                    iconSize: [24, 24], iconAnchor: [12, 12],
+                }),
+            }).addTo(map).bindPopup(popupHtml, { maxWidth: 250 });
             cpMapMarkers.push(m);
         });
     }
 
     function drawCpAnnotations() {
         if (!chart) return;
-        checkpoints.forEach(function(cp) {
+        checkpoints.forEach(function(cp, idx) {
             chart.addXaxisAnnotation({
                 x: cp.distance_km,
                 borderColor: colors.checkpoint,
-                strokeDashArray: 4,
-                opacity: 0.5,
+                strokeDashArray: 0,
+                label: {
+                    text: 'CP' + (idx + 1),
+                    orientation: 'horizontal',
+                    style: { fontSize: '9px', fontWeight: 700, color: '#fff', background: '#f59e0b', padding: { left: 3, right: 3, top: 1, bottom: 1 } },
+                },
             });
         });
     }
