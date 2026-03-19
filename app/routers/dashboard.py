@@ -106,17 +106,6 @@ async def dashboard(
             db, user.id, user.race_date, user.race_distance_km
         )
 
-    # Latest weekly digest
-    from app.models.weekly_digest import WeeklyDigest
-    from sqlalchemy import select as sa_select
-    digest_result = await db.execute(
-        sa_select(WeeklyDigest)
-        .where(WeeklyDigest.user_id == user.id)
-        .order_by(WeeklyDigest.week_start.desc())
-        .limit(1)
-    )
-    latest_digest = digest_result.scalar_one_or_none()
-
     return templates.TemplateResponse(
         request, "dashboard.html",
         context={
@@ -129,7 +118,6 @@ async def dashboard(
             "last_analysis": last_analysis,
             "training_load": training_load,
             "readiness": readiness,
-            "latest_digest": latest_digest,
             "sync_in_progress": sync_in_progress,
             "strava_not_linked": not user.has_strava_linked,
             "strava_no_app": user.has_strava_linked and not user.has_own_strava_app,

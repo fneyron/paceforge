@@ -151,14 +151,6 @@
                     </svg>
                     Seances
                 </a>
-                <a href="/trends"
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path == '/trends' %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-                    </svg>
-                    Tendances
-                </a>
                 <a href="/coach"
                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                           {% if request.url.path == '/coach' %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
@@ -174,14 +166,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                     </svg>
                     Simulateur
-                </a>
-                <a href="/digests"
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path.startswith('/digest') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                    </svg>
-                    Bilans
                 </a>
                 <a href="/settings"
                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
@@ -258,11 +242,11 @@
                 </svg>
                 <span class="text-[9px] font-medium">Accueil</span>
             </a>
-            <a href="/trends" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path == '/trends' %}text-gray-900{% else %}text-gray-400{% endif %}">
+            <a href="/simulator" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/simulator') %}text-gray-900{% else %}text-gray-400{% endif %}">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                 </svg>
-                <span class="text-[9px] font-medium">Tendances</span>
+                <span class="text-[9px] font-medium">Simul.</span>
             </a>
             <a href="/coach" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path == '/coach' %}text-gray-900{% else %}text-gray-400{% endif %}">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
