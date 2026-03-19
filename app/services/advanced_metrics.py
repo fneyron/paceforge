@@ -808,7 +808,7 @@ def _cycling_metrics(streams: dict, activity_data: dict, ftp: float | None = Non
     except Exception:
         logger.exception("Error computing normalized power")
 
-    # Structured workout detection from laps (same as running)
+    # Structured workout detection from laps (power-based for cycling)
     try:
         laps = activity_data.get("laps", [])
         if laps and len(laps) >= 5:
@@ -826,12 +826,26 @@ def _cycling_metrics(streams: dict, activity_data: dict, ftp: float | None = Non
                     })
 
             if len(lap_data) >= 5:
-                speeds = [l["pace_ms"] for l in lap_data]
-                avg_speed = statistics.mean(speeds)
-                work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1]
-                rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.8]
+                # Detect work/rest by power (primary for cycling)
+                watts_vals = [l["avg_watts"] for l in lap_data if l["avg_watts"]]
+                if len(watts_vals) > len(lap_data) * 0.5:
+                    avg_w = statistics.mean(watts_vals)
+                    work_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] > avg_w * 1.15]
+                    rest_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] < avg_w * 0.85]
+                else:
+                    speeds = [l["pace_ms"] for l in lap_data]
+                    avg_speed = statistics.mean(speeds)
+                    work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1]
+                    rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.8]
 
                 if len(work_laps) >= 3 and rest_laps:
+                    # Detect time-based vs distance-based
+                    work_dists = [l["distance"] for l in work_laps]
+                    work_times = [l["moving_time"] for l in work_laps]
+                    dist_cv = (statistics.stdev(work_dists) / statistics.mean(work_dists) * 100) if len(work_dists) >= 2 and statistics.mean(work_dists) > 0 else 999
+                    time_cv = (statistics.stdev(work_times) / statistics.mean(work_times) * 100) if len(work_times) >= 2 and statistics.mean(work_times) > 0 else 999
+                    is_time_based = time_cv < dist_cv and time_cv < 20
+
                     work_watts = [l["avg_watts"] for l in work_laps if l["avg_watts"]]
                     work_hrs = [l["avg_hr"] for l in work_laps if l["avg_hr"]]
                     rest_watts = [l["avg_watts"] for l in rest_laps if l["avg_watts"]]
@@ -839,8 +853,19 @@ def _cycling_metrics(streams: dict, activity_data: dict, ftp: float | None = Non
                     workout_data: dict = {
                         "type": "structured_intervals",
                         "repetitions": len(work_laps),
-                        "avg_interval_distance_m": round(statistics.mean([l["distance"] for l in work_laps])),
+                        "interval_type": "time" if is_time_based else "distance",
                     }
+
+                    if is_time_based:
+                        avg_time = statistics.mean(work_times)
+                        mins = int(avg_time // 60)
+                        secs = int(avg_time % 60)
+                        workout_data["avg_interval_duration_s"] = round(avg_time)
+                        workout_data["avg_interval_duration_fmt"] = f"{mins}min{secs:02d}" if secs else f"{mins}min"
+                        workout_data["time_consistency_cv"] = round(time_cv, 1)
+                    else:
+                        workout_data["avg_interval_distance_m"] = round(statistics.mean(work_dists))
+
                     if work_watts:
                         workout_data["avg_interval_watts"] = round(statistics.mean(work_watts))
                         if len(work_watts) >= 2:
