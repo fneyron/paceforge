@@ -759,6 +759,58 @@ def _cycling_metrics(streams: dict, activity_data: dict, ftp: float | None = Non
     except Exception:
         logger.exception("Error computing normalized power")
 
+    # Structured workout detection from laps (same as running)
+    try:
+        laps = activity_data.get("laps", [])
+        if laps and len(laps) >= 5:
+            lap_data = []
+            for lap in laps:
+                dist = lap.get("distance", 0)
+                mt = lap.get("moving_time", 0)
+                if dist > 0 and mt > 0:
+                    lap_data.append({
+                        "distance": round(dist),
+                        "moving_time": mt,
+                        "pace_ms": dist / mt,
+                        "avg_hr": lap.get("average_heartrate"),
+                        "avg_watts": lap.get("average_watts"),
+                    })
+
+            if len(lap_data) >= 5:
+                speeds = [l["pace_ms"] for l in lap_data]
+                avg_speed = statistics.mean(speeds)
+                work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1]
+                rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.8]
+
+                if len(work_laps) >= 3 and rest_laps:
+                    work_watts = [l["avg_watts"] for l in work_laps if l["avg_watts"]]
+                    work_hrs = [l["avg_hr"] for l in work_laps if l["avg_hr"]]
+                    rest_watts = [l["avg_watts"] for l in rest_laps if l["avg_watts"]]
+
+                    workout_data: dict = {
+                        "type": "structured_intervals",
+                        "repetitions": len(work_laps),
+                        "avg_interval_distance_m": round(statistics.mean([l["distance"] for l in work_laps])),
+                    }
+                    if work_watts:
+                        workout_data["avg_interval_watts"] = round(statistics.mean(work_watts))
+                        if len(work_watts) >= 2:
+                            workout_data["power_consistency_cv"] = round(
+                                statistics.stdev(work_watts) / statistics.mean(work_watts) * 100, 1
+                            )
+                    if work_hrs:
+                        workout_data["avg_interval_hr"] = round(statistics.mean(work_hrs))
+                    if rest_watts:
+                        workout_data["avg_recovery_watts"] = round(statistics.mean(rest_watts))
+                        if work_watts:
+                            workout_data["work_rest_power_ratio"] = round(
+                                statistics.mean(work_watts) / statistics.mean(rest_watts), 2
+                            )
+
+                    metrics["structured_workout"] = workout_data
+    except Exception:
+        logger.exception("Error computing cycling structured workout")
+
     return metrics
 
 

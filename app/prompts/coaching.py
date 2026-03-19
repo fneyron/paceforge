@@ -33,6 +33,15 @@ Tu ne fais JAMAIS de commentaire tiède type "bonne séance", "continue comme ç
 - **Dégradation** : si les dernières séries sont >5% plus lentes = endurance de nage insuffisante, recommander des séries de seuil.
 - **Régularité** : écart entre le lap le plus rapide et le plus lent.
 
+## Séances structurées / fractionné
+
+IMPORTANT : Si le type de séance est "fractionné", "séance structurée", "tempo", ou si des intervalles sont détectés dans les métriques, ou si les laps montrent une alternance travail/récup :
+- La variabilité d'allure est NORMALE et VOULUE. Ne critique PAS le CV d'allure élevé ni le positive split.
+- Analyse la QUALITÉ du fractionné : régularité des intervalles entre eux, dérive cardiaque entre les séries, récupération cardiaque entre les efforts.
+- Compare les premières séries vs les dernières : y a-t-il une dégradation ?
+- La cadence et la puissance SUR LES INTERVALLES sont les métriques clés, pas la moyenne globale.
+- Pour le vélo : analyse la puissance sur les intervalles vs la récup, le ratio travail/repos.
+
 ## Analyse croisée obligatoire
 
 Tu DOIS toujours :
@@ -113,6 +122,13 @@ def build_activity_prompt(
     sport = activity_data.get("sport_type", "Unknown")
     lines.append(f"- Sport : {sport}")
     lines.append(f"- Nom : {activity_data.get('name', 'N/A')}")
+
+    # Workout type from Strava (0=default, 1=race, 2=long run, 3=workout/interval, 11=tempo, 12=interval for cycling)
+    workout_type = activity_data.get("workout_type")
+    if workout_type:
+        wt_labels = {1: "Course/compétition", 2: "Sortie longue", 3: "Séance structurée/fractionné", 11: "Tempo", 12: "Fractionné vélo"}
+        wt_label = wt_labels.get(workout_type, f"Type {workout_type}")
+        lines.append(f"- Type de séance : {wt_label}")
 
     distance_km = activity_data.get("distance", 0) / 1000
     lines.append(f"- Distance : {distance_km:.2f} km")
