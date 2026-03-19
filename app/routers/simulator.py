@@ -72,6 +72,16 @@ async def gpx_upload(
         profile = await build_athlete_gradient_profile(db, user.id)
         course = predict_course(course, profile)
 
+        # Build GeoJSON for leaflet-elevation
+        geojson = {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[p.lon, p.lat, p.elevation] for p in points[::max(1, len(points)//800)]],
+            },
+            "properties": {"name": course.name},
+        }
+
         return templates.TemplateResponse(
             request,
             "partials/gpx_result.html",
@@ -80,6 +90,7 @@ async def gpx_upload(
                 "profile": profile,
                 "course_json": course.model_dump_json(),
                 "gpx_waypoints": json.dumps(snapped_wpts),
+                "geojson": json.dumps(geojson),
             },
         )
     except ValueError as e:
@@ -323,6 +334,17 @@ async def load_route(
     cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
            for cp in cp_result.scalars().all()]
 
+    # Rebuild GeoJSON from route_coords
+    coords = course.route_coords or []
+    geojson = {
+        "type": "Feature",
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[c[1], c[0], c[3] if len(c) > 3 else 0] for c in coords],
+        },
+        "properties": {"name": course.name},
+    }
+
     return templates.TemplateResponse(
         request,
         "partials/gpx_result.html",
@@ -331,6 +353,7 @@ async def load_route(
             "profile": profile,
             "course_json": course.model_dump_json(),
             "gpx_waypoints": json.dumps(cps),
+            "geojson": json.dumps(geojson),
             "saved_route_id": route_id,
             "saved_route_name": route.name,
         },

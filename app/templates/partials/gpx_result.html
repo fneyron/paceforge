@@ -19,34 +19,21 @@
         </div>
     </div>
 
-    <!-- Map (full width) -->
+    <!-- Map (leaflet-elevation renders profile inside) -->
     {% if course.route_coords %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm map-container overflow-hidden">
-        <div id="courseMap" style="height:400px;position:relative;z-index:0;"></div>
-    </div>
-
-    <!-- Elevation Profile (full width, below map) -->
-    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div id="elevationChart" style="height:200px;"></div>
+        <div id="courseMap" style="height:500px;position:relative;z-index:0;"></div>
     </div>
     {% endif %}
 
     <!-- Temps de passage -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Temps de passage</h3>
-
-        <!-- Checkpoint list -->
         <div id="cp-list" class="mb-3"></div>
-
-        <!-- Hidden inputs -->
         <input type="hidden" id="target-h" value="{{ (course.predicted_total_time_s // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((course.predicted_total_time_s % 3600) // 60) }}">
         <input type="hidden" id="save-name" value="{{ saved_route_name | default(course.name) }}">
-
-        <!-- Passage time results -->
         <div id="passage-times-result"></div>
-
-        <!-- Add checkpoint (compact) -->
         <div class="mt-4 pt-4 border-t border-gray-100">
             <div class="flex flex-col sm:flex-row gap-2">
                 <input type="text" id="cp-name" placeholder="Ajouter un checkpoint" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-sm">
@@ -59,26 +46,19 @@
         </div>
     </div>
 
-    <!-- Actions bar -->
+    <!-- Actions -->
     <div class="flex flex-wrap gap-2">
-        <input type="date" id="race-date" class="h-8 px-2 rounded-lg border border-gray-200 text-xs" title="Date de course (meteo)">
+        <input type="date" id="race-date" class="h-8 px-2 rounded-lg border border-gray-200 text-xs">
         <button onclick="window._sim.fetchWeather()" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50">Meteo</button>
         <div id="weather-result" class="flex items-center text-xs text-gray-400"></div>
-
         <div class="flex-1"></div>
-
-        <button onclick="window._sim.saveRoute()" id="save-btn" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50">
-            Sauvegarder
-        </button>
+        <button onclick="window._sim.saveRoute()" id="save-btn" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50">Sauvegarder</button>
         <div id="save-result" class="flex items-center text-xs"></div>
-
         <form hx-post="/partials/simulator/race-strategy" hx-target="#strategy-result" hx-swap="innerHTML" hx-indicator="#strategy-loading" class="inline">
             <input type="hidden" name="course_json" id="courseJsonData" value='{{ course_json }}'>
             <button type="submit" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800">
                 Strategie IA
-                <span id="strategy-loading" class="htmx-indicator ml-1">
-                    <svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
-                </span>
+                <span id="strategy-loading" class="htmx-indicator ml-1"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg></span>
             </button>
         </form>
     </div>
@@ -86,42 +66,21 @@
 </div>
 
 <script>
-// Cleanup is done by htmx:beforeSwap in simulator.html
 window._sim = {};
 
 (function() {
-    // ══════════════════════════════════════════════════
-    // DATA
-    // ══════════════════════════════════════════════════
     var isDark = document.documentElement.classList.contains('dark');
     var course = JSON.parse(document.getElementById('courseJsonData').value);
     var routeCoords = course.route_coords || [];
     var elevData = course.elevation_points || [];
-    var kmMarkers = course.km_markers || [];
     var totalDistKm = course.total_distance_km || 0;
     var predictedTotalS = course.predicted_total_time_s || 0;
 
-    var distances = elevData.map(function(p) { return p.distance_km; });
-    var map = null, hoverMarker = null, chart = null;
+    var map = null, elevCtrl = null;
     var checkpoints = [];
     var cpMapMarkers = [];
     var currentHeatFactor = 1.0;
     var currentRouteId = {{ saved_route_id | default('null') }};
-
-    var colors = {
-        grid: isDark ? '#333' : '#f0f0f0',
-        muted: isDark ? '#6b7280' : '#9ca3af',
-        line: isDark ? '#60a5fa' : '#2563eb',
-        cursor: '#f97316',
-        checkpoint: '#f59e0b',
-    };
-
-    // ══════════════════════════════════════════════════
-    // UTILITIES
-    // ══════════════════════════════════════════════════
-    function showMarker(m, visible) {
-        if (m) m.setStyle({ opacity: visible ? 1 : 0, fillOpacity: visible ? 1 : 0 });
-    }
 
     function interpElev(km) {
         for (var i = 1; i < elevData.length; i++) {
@@ -134,16 +93,6 @@ window._sim = {};
         return elevData.length ? Math.round(elevData[elevData.length - 1].elevation) : 0;
     }
 
-    function findNearest(latlng) {
-        var minD = Infinity, best = null;
-        for (var i = 0; i < routeCoords.length; i += 2) {
-            var c = routeCoords[i];
-            var d = (c[0] - latlng.lat) * (c[0] - latlng.lat) + (c[1] - latlng.lng) * (c[1] - latlng.lng);
-            if (d < minD) { minD = d; best = c; }
-        }
-        return best;
-    }
-
     function findCoordAtKm(km) {
         var best = routeCoords[0], bestD = Infinity;
         for (var i = 0; i < routeCoords.length; i++) {
@@ -154,10 +103,9 @@ window._sim = {};
     }
 
     // ══════════════════════════════════════════════════
-    // MAP (Leaflet + Hotline)
+    // MAP + ELEVATION via leaflet-elevation
     // ══════════════════════════════════════════════════
     function initMap() {
-        if (!routeCoords.length) return;
         var el = document.getElementById('courseMap');
         if (!el) return;
         if (map) { try { map.off(); map.remove(); } catch(e) {} map = null; }
@@ -169,126 +117,37 @@ window._sim = {};
             { maxZoom: 18 }
         ).addTo(map);
 
-        // Route colored by elevation (red-orange palette like UTMB)
-        var hotData = routeCoords.map(function(c) { return [c[0], c[1], c[3] || 0]; });
-        var elevs = routeCoords.map(function(c) { return c[3] || 0; });
-        L.hotline(hotData, {
-            min: Math.min.apply(null, elevs), max: Math.max.apply(null, elevs),
-            palette: { 0.0: '#f97316', 0.3: '#ef4444', 0.6: '#dc2626', 1.0: '#991b1b' },
-            weight: 4, outlineWidth: 1, outlineColor: isDark ? '#1a1a1a' : '#fff',
+        // leaflet-elevation
+        elevCtrl = L.control.elevation({
+            theme: isDark ? 'magenta-theme' : 'lightblue-theme',
+            collapsed: false,
+            detached: false,
+            summary: 'inline',
+            slope: false,
+            speed: false,
+            time: false,
+            altitude: true,
+            distance: true,
+            followMarker: true,
+            almostOver: true,
+            distanceMarkers: { lazy: true, distance: totalDistKm > 50 ? 10 : 5 },
+            legend: false,
+            ruler: false,
+            edgeScale: false,
+            downloadLink: false,
+            handlers: ['Distance', 'Altitude'],
         }).addTo(map);
 
-        var bounds = routeCoords.map(function(c) { return [c[0], c[1]]; });
-        map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30] });
-
-        // Start / Finish
-        L.circleMarker(bounds[0], { radius: 8, fillColor: '#22c55e', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map).bindPopup('<b>Depart</b>');
-        L.circleMarker(bounds[bounds.length - 1], { radius: 8, fillColor: '#ef4444', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map).bindPopup('<b>Arrivee</b>');
-
-        // Km labels (small dots with tooltip)
-        var kmStep = totalDistKm > 80 ? 20 : totalDistKm > 40 ? 10 : 5;
-        kmMarkers.forEach(function(m) {
-            if (m.km % kmStep === 0 && m.km > 0) {
-                L.circleMarker([m.lat, m.lon], {
-                    radius: 3, fillColor: isDark ? '#555' : '#d1d5db', fillOpacity: 1, color: isDark ? '#333' : '#fff', weight: 1,
-                }).addTo(map).bindTooltip('km ' + m.km, { direction: 'top', offset: [0, -4] });
-            }
-        });
-
-        // Hover marker
-        hoverMarker = L.circleMarker([0, 0], { radius: 7, fillColor: colors.cursor, fillOpacity: 0, color: '#fff', weight: 2, opacity: 0 }).addTo(map);
-
-        // Hover sync: map → chart
-        map.on('mousemove', function(e) {
-            var n = findNearest(e.latlng);
-            if (n) { hoverMarker.setLatLng([n[0], n[1]]); showMarker(hoverMarker, true); syncChartCursor(n[2]); }
-        });
-        map.on('mouseout', function() { showMarker(hoverMarker, false); clearChartCursor(); });
-    }
-
-    // ══════════════════════════════════════════════════
-    // ELEVATION CHART (ApexCharts)
-    // ══════════════════════════════════════════════════
-    function initChart() {
-        var el = document.getElementById('elevationChart');
-        if (!el || !elevData.length) return;
-        if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
-
-        var xyData = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
-        chart = new ApexCharts(el, {
-            chart: {
-                type: 'area', height: 200, fontFamily: 'Inter, system-ui, sans-serif',
-                toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
-                events: {
-                    mouseMove: function(e, ctx, cfg) {
-                        if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < distances.length) {
-                            var c = findCoordAtKm(distances[cfg.dataPointIndex]);
-                            if (c) { hoverMarker.setLatLng([c[0], c[1]]); showMarker(hoverMarker, true); }
-                        }
-                    },
-                    mouseLeave: function() {
-                        showMarker(hoverMarker, false);
-                        // Clear map-originated annotation when leaving chart
-                        clearChartCursor();
-                    },
-                },
-            },
-            theme: { mode: isDark ? 'dark' : 'light' },
-            series: [{ name: 'Altitude', data: xyData }],
-            xaxis: {
-                type: 'numeric', min: 0, max: Math.ceil(totalDistKm),
-                tickAmount: Math.min(12, Math.ceil(totalDistKm / 10)),
-                labels: { style: { colors: colors.muted, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + ''; } },
-                axisBorder: { show: false }, axisTicks: { show: false },
-                crosshairs: { show: true, stroke: { color: colors.cursor, width: 2, dashArray: 0 } },
-                tooltip: { enabled: false },
-            },
-            yaxis: { labels: { style: { colors: colors.muted, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } }, forceNiceScale: true },
-            grid: { borderColor: colors.grid, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
-            colors: ['#ef4444'],
-            stroke: { curve: 'smooth', width: 2 },
-            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0.08, stops: [0, 90], colorStops: [
-                { offset: 0, color: '#ef4444', opacity: 0.5 },
-                { offset: 100, color: '#fca5a5', opacity: 0.05 },
-            ] } },
-            dataLabels: { enabled: false },
-            markers: { size: 0, hover: { size: 5 } },
-            tooltip: {
-                theme: isDark ? 'dark' : 'light',
-                x: {
-                    formatter: function(v) {
-                        var km = parseFloat(v);
-                        var label = 'km ' + km.toFixed(1);
-                        for (var i = 0; i < checkpoints.length; i++) {
-                            if (Math.abs(checkpoints[i].distance_km - km) < 0.5) {
-                                label += ' — ' + checkpoints[i].name;
-                                break;
-                            }
-                        }
-                        return label;
-                    }
-                },
-                y: { formatter: function(v) { return Math.round(v) + ' m'; } },
-            },
-            annotations: { xaxis: [] },
-        });
-        chart.render();
-    }
-
-    function syncChartCursor(km) {
-        if (!chart) return;
-        chart.clearAnnotations();
-        var bestIdx = 0, bestD = Math.abs(distances[0] - km);
-        for (var i = 1; i < distances.length; i++) { var d = Math.abs(distances[i] - km); if (d < bestD) { bestD = d; bestIdx = i; } }
-        chart.addXaxisAnnotation({ x: distances[bestIdx], borderColor: colors.cursor, strokeDashArray: 0,
-            label: { text: distances[bestIdx].toFixed(1) + ' km', style: { fontSize: '9px', color: '#fff', background: colors.cursor } } });
-        drawCpAnnotations();
-    }
-
-    function clearChartCursor() {
-        if (!chart) return;
-        chart.clearAnnotations();
-        drawCpAnnotations();
+        // Load GeoJSON
+        var geojson = {{ geojson | default('null') | safe }};
+        if (geojson) {
+            elevCtrl.load(geojson);
+        } else if (routeCoords.length) {
+            // Fallback: manual polyline
+            var bounds = routeCoords.map(function(c) { return [c[0], c[1]]; });
+            L.polyline(bounds, { color: '#ef4444', weight: 3 }).addTo(map);
+            map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30] });
+        }
     }
 
     // ══════════════════════════════════════════════════
@@ -310,32 +169,9 @@ window._sim = {};
         refreshCheckpoints();
     }
 
-    function autoDetect() {
-        checkpoints = [];
-        var win = Math.max(10, Math.floor(elevData.length / 30));
-        for (var i = win; i < elevData.length - win; i++) {
-            var curr = elevData[i].elevation, isMax = true;
-            for (var j = i - win; j <= i + win; j++) { if (j !== i && elevData[j].elevation >= curr) { isMax = false; break; } }
-            if (isMax && curr > 500) {
-                checkpoints.push({ name: 'Sommet ' + Math.round(curr) + 'm', distance_km: Math.round(elevData[i].distance_km * 10) / 10, elevation: Math.round(curr) });
-            }
-        }
-        if (totalDistKm > 30) {
-            var step = totalDistKm > 60 ? 15 : 10;
-            for (var km = step; km < totalDistKm - 5; km += step) {
-                if (!checkpoints.some(function(c) { return Math.abs(c.distance_km - km) < 3; })) {
-                    checkpoints.push({ name: 'km ' + km, distance_km: km, elevation: interpElev(km) });
-                }
-            }
-        }
-        checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; });
-        refreshCheckpoints();
-    }
-
     function refreshCheckpoints() {
         renderCpList();
         renderCpOnMap();
-        drawCpAnnotations();
     }
 
     function renderCpList() {
@@ -347,43 +183,33 @@ window._sim = {};
 
         var html = '<div class="space-y-0.5">';
 
-        // Depart
         html += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-green-50">' +
-            '<div class="flex items-center gap-2">' +
-            '<span style="width:10px;height:10px;background:#22c55e;border-radius:50%;display:inline-block;"></span>' +
+            '<div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#22c55e;border-radius:50%;display:inline-block;"></span>' +
             '<span class="text-sm font-semibold text-green-800">Depart</span></div>' +
-            '<div class="flex items-center gap-3">' +
-            '<span class="text-xs text-green-600 tabular-nums">km 0</span>' +
-            '<span class="text-xs text-green-600 tabular-nums">' + startElev + 'm</span></div></div>';
+            '<span class="text-xs text-green-600 tabular-nums">' + startElev + 'm</span></div>';
 
-        // User checkpoints
         checkpoints.forEach(function(cp, i) {
             var num = i + 1;
             html += '<div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50 group">' +
                 '<div class="flex items-center gap-2">' +
                 '<span style="width:20px;height:20px;background:#f59e0b;color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">' + num + '</span>' +
                 '<span class="text-sm font-medium">CP' + num + ' — ' + cp.name + '</span></div>' +
-                '<div class="flex items-center gap-3">' +
-                '<span class="text-xs text-gray-400 tabular-nums">km ' + cp.distance_km + '</span>' +
+                '<div class="flex items-center gap-3"><span class="text-xs text-gray-400 tabular-nums">km ' + cp.distance_km + '</span>' +
                 '<span class="text-xs text-gray-400 tabular-nums">' + cp.elevation + 'm</span>' +
                 '<button onclick="window._sim.removeCheckpoint(' + i + ')" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100">&times;</button></div></div>';
         });
 
-        // Arrivee with target time
         html += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50">' +
-            '<div class="flex items-center gap-2">' +
-            '<span style="width:10px;height:10px;background:#ef4444;border-radius:50%;display:inline-block;"></span>' +
+            '<div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#ef4444;border-radius:50%;display:inline-block;"></span>' +
             '<span class="text-sm font-semibold text-red-800">Arrivee</span></div>' +
-            '<div class="flex items-center gap-3">' +
-            '<span class="text-xs text-red-600 tabular-nums">km ' + totalDistKm + '</span>' +
+            '<div class="flex items-center gap-3"><span class="text-xs text-red-600 tabular-nums">km ' + totalDistKm + '</span>' +
             '<span class="text-xs text-red-600 tabular-nums">' + endElev + 'm</span>' +
-            '<span class="text-[10px] text-gray-400 mx-1">Objectif</span>' +
+            '<span class="text-[10px] text-gray-400 mx-1">Obj.</span>' +
             '<input type="number" id="target-h-vis" value="' + predH + '" min="0" max="99" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center">' +
             '<span class="text-[10px] text-gray-400">h</span>' +
             '<input type="number" id="target-m-vis" value="' + predM + '" min="0" max="59" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center">' +
             '<span class="text-[10px] text-gray-400">min</span>' +
-            '<span id="target-delta" class="text-[10px] text-gray-400"></span>' +
-            '</div></div>';
+            '<span id="target-delta" class="text-[10px] text-gray-400"></span></div></div>';
 
         el.innerHTML = html + '</div>';
     }
@@ -395,21 +221,18 @@ window._sim = {};
         checkpoints.forEach(function(cp, idx) {
             var c = findCoordAtKm(cp.distance_km);
             var num = idx + 1;
-
-            // Distance and D+ from previous checkpoint
             var prevKm = idx > 0 ? checkpoints[idx - 1].distance_km : 0;
             var prevElev = idx > 0 ? checkpoints[idx - 1].elevation : (elevData.length ? Math.round(elevData[0].elevation) : 0);
             var distFromPrev = (cp.distance_km - prevKm).toFixed(1);
             var dPlus = Math.max(0, cp.elevation - prevElev);
 
-            var popupHtml = '<div style="font-family:Inter,sans-serif;min-width:180px;">' +
+            var popup = '<div style="font-family:Inter,sans-serif;min-width:180px;">' +
                 '<p style="font-size:13px;font-weight:700;margin:0 0 6px;">CP' + num + ' — ' + cp.name + '</p>' +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">' +
                 '<div><span style="color:#9ca3af;">Altitude</span><br><b>' + cp.elevation + ' m</b></div>' +
                 '<div><span style="color:#9ca3af;">Distance</span><br><b>' + cp.distance_km + ' km</b></div>' +
                 '<div><span style="color:#9ca3af;">Depuis CP' + (idx > 0 ? idx : 'Start') + '</span><br><b>' + distFromPrev + ' km</b></div>' +
-                '<div><span style="color:#9ca3af;">D+ depuis prev.</span><br><b>' + (dPlus > 0 ? '+' + dPlus : '0') + ' m</b></div>' +
-                '</div></div>';
+                '<div><span style="color:#9ca3af;">D+</span><br><b>' + (dPlus > 0 ? '+' + dPlus : '0') + ' m</b></div></div></div>';
 
             var m = L.marker([c[0], c[1]], {
                 icon: L.divIcon({
@@ -417,92 +240,54 @@ window._sim = {};
                     html: '<div style="width:24px;height:24px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);">' + num + '</div>',
                     iconSize: [24, 24], iconAnchor: [12, 12],
                 }),
-            }).addTo(map).bindPopup(popupHtml, { maxWidth: 250 });
+            }).addTo(map).bindPopup(popup, { maxWidth: 250 });
             cpMapMarkers.push(m);
         });
     }
 
-    function drawCpAnnotations() {
-        if (!chart) return;
-        checkpoints.forEach(function(cp, idx) {
-            chart.addXaxisAnnotation({
-                x: cp.distance_km,
-                borderColor: colors.checkpoint,
-                strokeDashArray: 0,
-                label: {
-                    text: 'CP' + (idx + 1),
-                    orientation: 'horizontal',
-                    style: { fontSize: '9px', fontWeight: 700, color: '#fff', background: '#f59e0b', padding: { left: 3, right: 3, top: 1, bottom: 1 } },
-                },
-            });
-        });
-    }
-
     // ══════════════════════════════════════════════════
-    // PASSAGE TIMES
+    // PASSAGE TIMES / SAVE / WEATHER
     // ══════════════════════════════════════════════════
     function recalc() {
         var h = parseInt(document.getElementById('target-h').value) || 0;
         var m = parseInt(document.getElementById('target-m').value) || 0;
         var targetS = h * 3600 + m * 60;
-
         if (targetS > 0 && predictedTotalS > 0) {
             var diff = Math.round((targetS - predictedTotalS) / 60);
-            document.getElementById('target-delta').textContent = '(' + (diff > 0 ? '+' : '') + diff + ' min vs predit)';
+            document.getElementById('target-delta').textContent = '(' + (diff > 0 ? '+' : '') + diff + ' min)';
         }
-
         var body = new URLSearchParams();
         body.append('course_json', document.getElementById('courseJsonData').value);
         body.append('checkpoints_json', JSON.stringify(checkpoints));
         if (targetS > 0) body.append('target_time_s', targetS);
         if (currentHeatFactor > 1.0) body.append('heat_factor', currentHeatFactor);
-
         fetch('/partials/simulator/passage-times', { method: 'POST', body: body })
             .then(function(r) { return r.text(); })
             .then(function(html) { document.getElementById('passage-times-result').innerHTML = html; });
     }
 
-    // ══════════════════════════════════════════════════
-    // SAVE ROUTE
-    // ══════════════════════════════════════════════════
     function saveRoute() {
         var body = new URLSearchParams();
         body.append('course_json', document.getElementById('courseJsonData').value);
         body.append('checkpoints_json', JSON.stringify(checkpoints));
-        body.append('name', document.getElementById('save-name').value.trim() || 'Parcours');
+        body.append('name', document.getElementById('save-name').value || 'Parcours');
         if (currentRouteId) body.append('route_id', currentRouteId);
-
-        var h = parseInt(document.getElementById('target-h').value) || 0;
-        var m = parseInt(document.getElementById('target-m').value) || 0;
-        if (h > 0 || m > 0) body.append('target_time_s', h * 3600 + m * 60);
-
         fetch('/api/simulator/routes', { method: 'POST', body: body })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 var el = document.getElementById('save-result');
-                if (data.id) {
-                    currentRouteId = data.id;
-                    document.getElementById('save-btn').textContent = 'Mettre a jour';
-                    el.innerHTML = '<span class="text-green-600">Sauvegarde !</span>';
-                    setTimeout(function() { el.innerHTML = ''; }, 3000);
-                } else {
-                    el.innerHTML = '<span class="text-red-500">Erreur</span>';
-                }
+                if (data.id) { currentRouteId = data.id; el.innerHTML = '<span class="text-green-600">OK</span>'; setTimeout(function() { el.innerHTML = ''; }, 2000); }
+                else { el.innerHTML = '<span class="text-red-500">Erreur</span>'; }
             });
     }
 
-    // ══════════════════════════════════════════════════
-    // WEATHER
-    // ══════════════════════════════════════════════════
     function fetchWeather() {
         var date = document.getElementById('race-date').value;
         if (!date || !routeCoords.length) return;
-
         var body = new URLSearchParams();
         body.append('lat', routeCoords[0][0]);
         body.append('lon', routeCoords[0][1]);
         body.append('date', date);
-
         fetch('/api/simulator/weather', { method: 'POST', body: body })
             .then(function(r) { return r.json(); })
             .then(function(w) {
@@ -511,36 +296,11 @@ window._sim = {};
                 currentHeatFactor = w.heat_factor;
                 var pct = Math.round((w.heat_factor - 1) * 100);
                 var cls = pct > 5 ? 'text-red-500' : pct > 0 ? 'text-amber-500' : 'text-green-600';
-                var src = w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '';
-                el.innerHTML = '<span>' + w.temperature_c + '°C</span> · ' +
-                    '<span>Hum. ' + w.humidity_pct + '%</span> · ' +
-                    '<span>Vent ' + w.wind_speed_kmh + 'km/h</span> · ' +
-                    '<span class="' + cls + ' font-medium">' + (pct > 0 ? '+' + pct + '%' : 'OK') + '</span>' + src;
+                el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · ' +
+                    '<span class="' + cls + ' font-medium">' + (pct > 0 ? '+' + pct + '%' : 'OK') + '</span>' +
+                    (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '');
             });
     }
-
-    // ══════════════════════════════════════════════════
-    // CLEANUP
-    // ══════════════════════════════════════════════════
-    function cleanup() {
-        if (map) { try { map.off(); map.remove(); } catch(e) {} map = null; }
-        if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
-        hoverMarker = null; cpMapMarkers = [];
-    }
-
-    // ══════════════════════════════════════════════════
-    // INIT
-    // ══════════════════════════════════════════════════
-    try {
-        var wpts = {{ gpx_waypoints | default("[]") | safe }};
-        if (wpts && wpts.length) checkpoints = wpts;
-    } catch(e) {}
-
-    initChart();
-    initMap();
-    refreshCheckpoints();
-    // Auto-calculate passage times on load
-    recalc();
 
     function syncTarget() {
         var h = parseInt(document.getElementById('target-h-vis').value) || 0;
@@ -552,16 +312,26 @@ window._sim = {};
         if (targetS > 0 && predictedTotalS > 0) {
             var diff = Math.round((targetS - predictedTotalS) / 60);
             delta.textContent = '(' + (diff > 0 ? '+' : '') + diff + ' min)';
-        } else {
-            delta.textContent = '';
-        }
+        } else { delta.textContent = ''; }
     }
 
-    // Public API
+    function cleanup() {
+        if (map) { try { map.off(); map.remove(); } catch(e) {} map = null; elevCtrl = null; }
+        cpMapMarkers = [];
+    }
+
+    // ══════════════════════════════════════════════════
+    // INIT
+    // ══════════════════════════════════════════════════
+    try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
+
+    initMap();
+    refreshCheckpoints();
+    recalc();
+
     window._sim = {
         addCheckpoint: addCheckpoint,
         removeCheckpoint: removeCheckpoint,
-        autoDetect: autoDetect,
         recalc: recalc,
         saveRoute: saveRoute,
         fetchWeather: fetchWeather,
