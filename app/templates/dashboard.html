@@ -56,6 +56,20 @@
             </div>
         </div>
 
+        {% if user.weekly_volume_target_km and user.weekly_volume_target_km > 0 %}
+        {% set pct = (week_km / user.weekly_volume_target_km * 100) | int %}
+        <div class="mb-4">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] text-gray-400">Objectif {{ user.weekly_volume_target_km|int }} km</span>
+                <span class="text-[10px] font-medium {% if pct >= 100 %}text-green-600{% elif pct >= 70 %}text-amber-500{% else %}text-gray-400{% endif %}">{{ pct }}%</span>
+            </div>
+            <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div class="h-full rounded-full {% if pct >= 100 %}bg-green-500{% elif pct >= 70 %}bg-amber-400{% else %}bg-gray-300{% endif %}"
+                     style="width: {{ [pct, 100] | min }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+
         {% if this_week %}
         <div class="space-y-1.5">
             {% for activity in this_week %}
