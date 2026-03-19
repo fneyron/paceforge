@@ -5,91 +5,96 @@
 {% block content %}
 <div class="space-y-6">
     <!-- Header -->
-    <div>
-        <h1 class="text-2xl font-bold tracking-tight">Activités</h1>
-        <p class="text-gray-500 text-sm">Vos dernières séances et leur analyse coaching</p>
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <p class="text-gray-500 text-sm">Bonjour {{ user.firstname or '' }}</p>
+        </div>
+        <a href="/activities" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            Historique
+        </a>
     </div>
 
-    <!-- Strava not linked -->
+    <!-- Alerts -->
     {% if strava_not_linked %}
     <div class="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-            <p class="text-sm text-blue-900">Configure ton app Strava pour synchroniser tes activites et recevoir des analyses IA.</p>
-        </div>
-        <a href="/setup" class="text-sm font-semibold text-blue-700 underline hover:text-blue-900 shrink-0 ml-4">Configurer</a>
+        <p class="text-sm text-blue-900">Configure ton app Strava pour synchroniser tes activites.</p>
+        <a href="/setup" class="text-sm font-semibold text-blue-700 underline shrink-0 ml-4">Configurer</a>
     </div>
     {% elif strava_no_app %}
     <div class="rounded-xl border border-yellow-200 bg-yellow-50 px-5 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span>
-            <p class="text-sm text-yellow-900">Configure tes identifiants Strava API pour activer la synchronisation automatique.</p>
-        </div>
-        <a href="/setup" class="text-sm font-semibold text-yellow-700 underline hover:text-yellow-900 shrink-0 ml-4">Configurer</a>
+        <p class="text-sm text-yellow-900">Configure tes identifiants Strava API.</p>
+        <a href="/setup" class="text-sm font-semibold text-yellow-700 underline shrink-0 ml-4">Configurer</a>
     </div>
     {% endif %}
-
-    <!-- Credentials invalid warning -->
     {% if credentials_invalid %}
     <div class="rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
-            <p class="text-sm text-red-700">Tes identifiants Strava ne sont plus valides. Mets-les à jour pour continuer à synchroniser.</p>
-        </div>
-        <a href="/settings" class="text-sm font-semibold text-red-700 underline hover:text-red-900 shrink-0 ml-4">Réglages</a>
+        <p class="text-sm text-red-700">Identifiants Strava invalides.</p>
+        <a href="/settings" class="text-sm font-semibold text-red-700 underline shrink-0 ml-4">Reglages</a>
     </div>
     {% endif %}
-
-    <!-- Sync status -->
     {% if sync_in_progress %}
     {% include "partials/sync_banner.html" %}
     {% endif %}
 
-    <!-- Race Countdown (if goal set) -->
+    <!-- This Week -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Cette semaine</h2>
+        <div class="grid grid-cols-3 gap-4 mb-4">
+            <div>
+                <p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(week_km) }}<span class="text-xs font-normal text-gray-400 ml-1">km</span></p>
+                <p class="text-[10px] text-gray-400">Distance</p>
+            </div>
+            <div>
+                <p class="text-2xl font-bold tabular-nums">{{ "%.1f"|format(week_hours) }}<span class="text-xs font-normal text-gray-400 ml-1">h</span></p>
+                <p class="text-[10px] text-gray-400">Duree</p>
+            </div>
+            <div>
+                <p class="text-2xl font-bold tabular-nums">{{ week_count }}</p>
+                <p class="text-[10px] text-gray-400">Seances</p>
+            </div>
+        </div>
+
+        {% if this_week %}
+        <div class="space-y-1.5">
+            {% for activity in this_week %}
+            {% include "partials/activity_row.html" %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 text-center py-4">Aucune activite cette semaine.</p>
+        {% endif %}
+    </div>
+
+    <!-- Last Activity Analysis -->
+    {% if last_activity and last_analysis %}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Derniere analyse</h2>
+            <a href="/activity/{{ last_activity.id }}" class="text-[10px] text-blue-600 hover:text-blue-800 font-medium">Voir le detail</a>
+        </div>
+        <p class="text-sm font-medium mb-2">{{ last_activity.name }}</p>
+        <p class="text-sm text-gray-600 leading-relaxed">{{ last_analysis.summary }}</p>
+        {% if last_analysis.strava_comment %}
+        <div class="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+            <p class="text-xs text-gray-500 leading-relaxed">{{ last_analysis.strava_comment }}</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Race Countdown -->
     {% if readiness %}
     {% include "partials/race_countdown.html" %}
     {% endif %}
 
-    <!-- Weekly Digest (if available) -->
-    {% if latest_digest %}
-    {% include "partials/digest_card.html" %}
-    {% endif %}
-
-    <!-- Training Load Widget -->
+    <!-- Training Load -->
     {% include "partials/training_load.html" %}
 
-    <!-- Activities -->
-    {% if activities %}
-    <div id="activity-list" class="space-y-2">
-        {% for activity in activities %}
-            {% include "partials/activity_row.html" %}
-        {% endfor %}
-    </div>
-
-    {% if has_more %}
-    <div id="load-more" class="text-center pt-2">
-        <button
-            hx-get="/partials/activities?page={{ page + 1 }}"
-            hx-target="#activity-list"
-            hx-swap="beforeend"
-            hx-indicator="#load-spinner"
-            class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
-            Charger plus
-            <span id="load-spinner" class="htmx-indicator ml-1.5">
-                <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                </svg>
-            </span>
-        </button>
-    </div>
-    {% endif %}
-
-    {% else %}
-    <div class="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm">
-        <p class="text-gray-500">Aucune activité pour le moment.</p>
-        <p class="text-gray-400 text-sm mt-1">Vos activités Strava apparaîtront ici automatiquement.</p>
-    </div>
+    <!-- Weekly Digest -->
+    {% if latest_digest %}
+    {% include "partials/digest_card.html" %}
     {% endif %}
 </div>
 {% endblock content %}

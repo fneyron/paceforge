@@ -69,8 +69,32 @@ async def dashboard(
     # Check if initial sync is in progress
     sync_in_progress = not user.initial_sync_done
 
-    # Get activities with analysis status
-    activities = await _get_activities_page(db, user.id, page=1)
+    # Get THIS WEEK's activities (Monday to now)
+    from datetime import timedelta
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    from sqlalchemy.orm import selectinload
+    week_result = await db.execute(
+        select(Activity).options(selectinload(Activity.analysis))
+        .where(Activity.user_id == user.id, Activity.start_date >= monday)
+        .order_by(Activity.start_date.desc())
+    )
+    this_week = [_activity_to_summary(a) for a in week_result.scalars().all()]
+
+    # Last activity (for quick view)
+    last_result = await db.execute(
+        select(Activity).options(selectinload(Activity.analysis))
+        .where(Activity.user_id == user.id)
+        .order_by(Activity.start_date.desc())
+        .limit(1)
+    )
+    last_activity_obj = last_result.scalar_one_or_none()
+    last_activity = _activity_to_summary(last_activity_obj) if last_activity_obj else None
+    last_analysis = last_activity_obj.analysis if last_activity_obj else None
+
+    # Week volume
+    week_km = sum(a.distance / 1000 for a in this_week) if this_week else 0
+    week_hours = sum(a.moving_time / 3600 for a in this_week) if this_week else 0
+    week_count = len(this_week)
 
     # Training load
     training_load = await calculate_training_load(db, user.id, now)
@@ -97,7 +121,12 @@ async def dashboard(
         request, "dashboard.html",
         context={
             "user": user,
-            "activities": activities,
+            "this_week": this_week,
+            "week_km": week_km,
+            "week_hours": week_hours,
+            "week_count": week_count,
+            "last_activity": last_activity,
+            "last_analysis": last_analysis,
             "training_load": training_load,
             "readiness": readiness,
             "latest_digest": latest_digest,
@@ -105,7 +134,38 @@ async def dashboard(
             "strava_not_linked": not user.has_strava_linked,
             "strava_no_app": user.has_strava_linked and not user.has_own_strava_app,
             "credentials_invalid": user.has_own_strava_app and not user.strava_credentials_valid,
-            "page": 1,
+        },
+    )
+
+
+@router.get("/activities", response_class=HTMLResponse)
+async def activities_page(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    sport: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full activity history with pagination and sport filter."""
+    activities = await _get_activities_page(db, user.id, page, sport)
+
+    # Get unique sports for filter
+    from sqlalchemy import distinct
+    sport_result = await db.execute(
+        select(distinct(Activity.sport_type))
+        .where(Activity.user_id == user.id)
+        .order_by(Activity.sport_type)
+    )
+    available_sports = [r[0] for r in sport_result.all()]
+
+    return templates.TemplateResponse(
+        request, "activities.html",
+        context={
+            "user": user,
+            "activities": activities,
+            "page": page,
+            "sport": sport,
+            "available_sports": available_sports,
             "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
         },
     )

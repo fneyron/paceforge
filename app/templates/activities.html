@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Historique — PaceForge{% endblock title %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-semibold tracking-tight">Historique</h1>
+            <p class="text-sm text-gray-500">Toutes tes activites</p>
+        </div>
+        <!-- Sport filter -->
+        {% if available_sports %}
+        <div class="flex gap-1.5">
+            <a href="/activities" class="h-7 px-2.5 rounded-lg text-[11px] font-medium inline-flex items-center
+                {% if not sport %}bg-gray-900 text-white{% else %}border border-gray-200 text-gray-500 hover:bg-gray-50{% endif %}">
+                Tout
+            </a>
+            {% for s in available_sports %}
+            <a href="/activities?sport={{ s }}" class="h-7 px-2.5 rounded-lg text-[11px] font-medium inline-flex items-center
+                {% if sport == s %}bg-gray-900 text-white{% else %}border border-gray-200 text-gray-500 hover:bg-gray-50{% endif %}">
+                {{ s }}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% if activities %}
+    <div id="activity-list" class="space-y-1.5">
+        {% for activity in activities %}
+        {% include "partials/activity_row.html" %}
+        {% endfor %}
+    </div>
+
+    {% if has_more %}
+    <div class="text-center pt-2">
+        <button
+            hx-get="/partials/activities?page={{ page + 1 }}{% if sport %}&sport_type={{ sport }}{% endif %}"
+            hx-target="#activity-list"
+            hx-swap="beforeend"
+            hx-indicator="#load-spinner"
+            class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 shadow-sm">
+            Charger plus
+            <span id="load-spinner" class="htmx-indicator ml-1.5">
+                <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                </svg>
+            </span>
+        </button>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm">
+        <p class="text-gray-400">Aucune activite{% if sport %} de type {{ sport }}{% endif %}.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock content %}
