@@ -165,17 +165,17 @@ window._sim = {};
         map = L.map(el, { zoomControl: true, attributionControl: false });
         L.tileLayer(
             isDark ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                   : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                   : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
             { maxZoom: 18 }
         ).addTo(map);
 
-        // Colored route by elevation
+        // Route colored by elevation (red-orange palette like UTMB)
         var hotData = routeCoords.map(function(c) { return [c[0], c[1], c[3] || 0]; });
         var elevs = routeCoords.map(function(c) { return c[3] || 0; });
         L.hotline(hotData, {
             min: Math.min.apply(null, elevs), max: Math.max.apply(null, elevs),
-            palette: { 0.0: '#3b82f6', 0.25: '#22c55e', 0.5: '#eab308', 0.75: '#f97316', 1.0: '#dc2626' },
-            weight: 5, outlineWidth: 1, outlineColor: isDark ? '#333' : '#fff',
+            palette: { 0.0: '#f97316', 0.3: '#ef4444', 0.6: '#dc2626', 1.0: '#991b1b' },
+            weight: 4, outlineWidth: 1, outlineColor: isDark ? '#1a1a1a' : '#fff',
         }).addTo(map);
 
         var bounds = routeCoords.map(function(c) { return [c[0], c[1]]; });
@@ -226,7 +226,11 @@ window._sim = {};
                             if (c) { hoverMarker.setLatLng([c[0], c[1]]); showMarker(hoverMarker, true); }
                         }
                     },
-                    mouseLeave: function() { showMarker(hoverMarker, false); },
+                    mouseLeave: function() {
+                        showMarker(hoverMarker, false);
+                        // Clear map-originated annotation when leaving chart
+                        clearChartCursor();
+                    },
                 },
             },
             theme: { mode: isDark ? 'dark' : 'light' },
@@ -241,9 +245,12 @@ window._sim = {};
             },
             yaxis: { labels: { style: { colors: colors.muted, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } }, forceNiceScale: true },
             grid: { borderColor: colors.grid, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
-            colors: [colors.line],
+            colors: ['#ef4444'],
             stroke: { curve: 'smooth', width: 2 },
-            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 95] } },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0.08, stops: [0, 90], colorStops: [
+                { offset: 0, color: '#ef4444', opacity: 0.5 },
+                { offset: 100, color: '#fca5a5', opacity: 0.05 },
+            ] } },
             dataLabels: { enabled: false },
             markers: { size: 0, hover: { size: 5 } },
             tooltip: {
