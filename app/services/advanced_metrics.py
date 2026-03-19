@@ -450,18 +450,16 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
     try:
         laps = activity_data.get("laps", [])
         if laps and len(laps) >= 5:
-            # Classify laps into work/rest based on distance and speed
             lap_data = []
             for lap in laps:
                 dist = lap.get("distance", 0)
                 mt = lap.get("moving_time", 0)
                 if dist > 0 and mt > 0:
-                    pace_ms = dist / mt
                     lap_data.append({
                         "name": lap.get("name", ""),
                         "distance": round(dist),
                         "moving_time": mt,
-                        "pace_ms": pace_ms,
+                        "pace_ms": dist / mt,
                         "avg_hr": lap.get("average_heartrate"),
                         "avg_cadence": lap.get("average_cadence"),
                         "avg_watts": lap.get("average_watts"),
@@ -469,44 +467,83 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
                     })
 
             if len(lap_data) >= 5:
-                # Find repeating patterns: group laps by similar distance
-                distances = [l["distance"] for l in lap_data]
-                speeds = [l["pace_ms"] for l in lap_data]
-                avg_speed = statistics.mean(speeds)
+                # Detect work/rest using the best available metric:
+                # 1. Power (watts) — best for cycling/indoor
+                # 2. Heart rate — good for time-based intervals
+                # 3. Speed — fallback for outdoor running
+                has_power = sum(1 for l in lap_data if l["avg_watts"]) > len(lap_data) * 0.5
+                has_hr = sum(1 for l in lap_data if l["avg_hr"]) > len(lap_data) * 0.5
 
-                # Identify work laps (faster than average) and rest laps
-                work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1 and l["distance"] > 150]
-                rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.9 and l["distance"] < 300 and l["distance"] > 30]
+                work_laps = []
+                rest_laps = []
+
+                if has_power:
+                    # Power-based detection (time-based intervals like Zwift)
+                    watts_vals = [l["avg_watts"] for l in lap_data if l["avg_watts"]]
+                    if watts_vals:
+                        avg_watts = statistics.mean(watts_vals)
+                        work_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] > avg_watts * 1.15]
+                        rest_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] < avg_watts * 0.85]
+                elif has_hr:
+                    # HR-based detection
+                    hr_vals = [l["avg_hr"] for l in lap_data if l["avg_hr"]]
+                    if hr_vals:
+                        avg_hr = statistics.mean(hr_vals)
+                        work_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] > avg_hr * 1.05]
+                        rest_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] < avg_hr * 0.95]
+                else:
+                    # Speed-based fallback
+                    speeds = [l["pace_ms"] for l in lap_data]
+                    avg_speed = statistics.mean(speeds)
+                    work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1 and l["distance"] > 150]
+                    rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.9]
 
                 if len(work_laps) >= 3:
-                    # This is a structured workout
-                    work_paces = [l["pace_ms"] for l in work_laps]
+                    # Determine if intervals are time-based or distance-based
+                    work_dists = [l["distance"] for l in work_laps]
+                    work_times = [l["moving_time"] for l in work_laps]
+                    dist_cv = (statistics.stdev(work_dists) / statistics.mean(work_dists) * 100) if len(work_dists) >= 2 and statistics.mean(work_dists) > 0 else 999
+                    time_cv = (statistics.stdev(work_times) / statistics.mean(work_times) * 100) if len(work_times) >= 2 and statistics.mean(work_times) > 0 else 999
+
+                    # Time-based if time is more consistent than distance
+                    is_time_based = time_cv < dist_cv and time_cv < 20
+
                     work_hrs = [l["avg_hr"] for l in work_laps if l["avg_hr"]]
                     work_watts_list = [l["avg_watts"] for l in work_laps if l["avg_watts"]]
                     work_cadences = [l["avg_cadence"] for l in work_laps if l["avg_cadence"]]
 
-                    avg_work_dist = statistics.mean([l["distance"] for l in work_laps])
-                    avg_work_pace = statistics.mean(work_paces)
-                    pace_cv = (statistics.stdev(work_paces) / avg_work_pace * 100) if len(work_paces) >= 2 else 0
-
                     workout_data: dict = {
                         "type": "structured_intervals",
                         "repetitions": len(work_laps),
-                        "avg_interval_distance_m": round(avg_work_dist),
-                        "avg_interval_pace": _format_pace(1000 / avg_work_pace) if avg_work_pace > 0 else None,
-                        "pace_consistency_cv": round(pace_cv, 1),
+                        "interval_type": "time" if is_time_based else "distance",
                     }
 
-                    if pace_cv < 3:
-                        workout_data["pace_consistency"] = "excellent"
-                    elif pace_cv < 6:
-                        workout_data["pace_consistency"] = "bon"
+                    if is_time_based:
+                        avg_time = statistics.mean(work_times)
+                        workout_data["avg_interval_duration_s"] = round(avg_time)
+                        # Format as Xmin or X'XX"
+                        mins = int(avg_time // 60)
+                        secs = int(avg_time % 60)
+                        workout_data["avg_interval_duration_fmt"] = f"{mins}min{secs:02d}" if secs else f"{mins}min"
+                        workout_data["time_consistency_cv"] = round(time_cv, 1)
                     else:
-                        workout_data["pace_consistency"] = "irrégulier"
+                        avg_work_dist = statistics.mean(work_dists)
+                        avg_work_pace = statistics.mean([l["pace_ms"] for l in work_laps])
+                        workout_data["avg_interval_distance_m"] = round(avg_work_dist)
+                        workout_data["avg_interval_pace"] = _format_pace(1000 / avg_work_pace) if avg_work_pace > 0 else None
+                        workout_data["pace_consistency_cv"] = round(dist_cv, 1)
+
+                    # Consistency assessment on the primary metric
+                    primary_cv = time_cv if is_time_based else dist_cv
+                    if primary_cv < 5:
+                        workout_data["consistency"] = "excellent"
+                    elif primary_cv < 10:
+                        workout_data["consistency"] = "bon"
+                    else:
+                        workout_data["consistency"] = "irrégulier"
 
                     if work_hrs:
                         workout_data["avg_interval_hr"] = round(statistics.mean(work_hrs))
-                        # HR drift across intervals
                         if len(work_hrs) >= 4:
                             first_half = statistics.mean(work_hrs[:len(work_hrs)//2])
                             second_half = statistics.mean(work_hrs[len(work_hrs)//2:])

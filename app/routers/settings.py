@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -162,3 +163,51 @@ async def update_strava_credentials(
             "credentials_saved": True,
         },
     )
+
+
+@router.post("/settings/delete-account")
+async def delete_account(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    confirmation: str = Form(...),
+):
+    """Delete user account and all associated data."""
+    if confirmation != "SUPPRIMER":
+        return templates.TemplateResponse(
+            request, "settings.html",
+            context={
+                "user": user, "sport_options": SPORT_OPTIONS,
+                "delete_error": "Tape SUPPRIMER pour confirmer.",
+            },
+        )
+
+    user_id = user.id
+    logger.warning("User %d (%s) requested account deletion", user_id, user.email)
+
+    # Delete all user data (cascades handle most, but be explicit)
+    from app.models.activity import Activity
+    from app.models.analysis import Analysis
+    from app.models.chat_message import ChatMessage
+    from app.models.generated_plan import GeneratedPlan
+    from app.models.route import Route
+    from app.models.weekly_digest import WeeklyDigest
+
+    # Delete in order (foreign key constraints)
+    await db.execute(delete(Analysis).where(
+        Analysis.activity_id.in_(
+            select(Activity.id).where(Activity.user_id == user_id)
+        )
+    ))
+    await db.execute(delete(Activity).where(Activity.user_id == user_id))
+    await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user_id))
+    await db.execute(delete(GeneratedPlan).where(GeneratedPlan.user_id == user_id))
+    await db.execute(delete(Route).where(Route.user_id == user_id))
+    await db.execute(delete(WeeklyDigest).where(WeeklyDigest.user_id == user_id))
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.flush()
+
+    request.session.clear()
+    logger.warning("Account %d deleted successfully", user_id)
+
+    return RedirectResponse(url="/?account_deleted=1", status_code=302)

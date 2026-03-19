@@ -2,13 +2,14 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
 from app.models.activity import Activity
+from app.models.generated_plan import GeneratedPlan
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.claude import ClaudeService
@@ -20,9 +21,9 @@ templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["workout"])
 
 SPORT_LABELS = {
-    "running": "Course à pied",
+    "running": "Course a pied",
     "trail": "Trail",
-    "cycling": "Vélo",
+    "cycling": "Velo",
     "swimming": "Natation",
     "triathlon": "Triathlon",
 }
@@ -34,9 +35,17 @@ async def workout_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Determine main sport from recent activities
     now = datetime.now(timezone.utc)
     training_load = await calculate_training_load(db, user.id, now)
+
+    # Load saved plans
+    result = await db.execute(
+        select(GeneratedPlan)
+        .where(GeneratedPlan.user_id == user.id)
+        .order_by(GeneratedPlan.created_at.desc())
+        .limit(20)
+    )
+    saved_plans = result.scalars().all()
 
     return templates.TemplateResponse(
         request,
@@ -45,6 +54,7 @@ async def workout_page(
             "user": user,
             "training_load": training_load,
             "sport_labels": SPORT_LABELS,
+            "saved_plans": saved_plans,
         },
     )
 
@@ -58,11 +68,8 @@ async def generate_workout(
     db: AsyncSession = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
-
-    # Training load
     training_load = await calculate_training_load(db, user.id, now)
 
-    # Recent activities
     result = await db.execute(
         select(Activity)
         .where(Activity.user_id == user.id)
@@ -72,12 +79,9 @@ async def generate_workout(
     recent = result.scalars().all()
     recent_data = [
         {
-            "sport_type": a.sport_type,
-            "distance": a.distance,
-            "moving_time": a.moving_time,
-            "start_date": a.start_date,
-            "average_speed": a.average_speed,
-            "average_heartrate": a.average_heartrate,
+            "sport_type": a.sport_type, "distance": a.distance,
+            "moving_time": a.moving_time, "start_date": a.start_date,
+            "average_speed": a.average_speed, "average_heartrate": a.average_heartrate,
             "total_elevation_gain": a.total_elevation_gain,
         }
         for a in recent
@@ -92,23 +96,28 @@ async def generate_workout(
             recent_activities=recent_data,
         )
 
+        # Save to DB
+        plan = GeneratedPlan(
+            user_id=user.id,
+            plan_type="workout",
+            sport=sport,
+            goal=goal.strip() or None,
+            content_json=workout.model_dump(),
+        )
+        db.add(plan)
+        await db.flush()
+        logger.info("Workout %d saved for user %d", plan.id, user.id)
+
         return templates.TemplateResponse(
             request,
             "partials/workout_card.html",
-            context={
-                "workout": workout,
-                "sport_labels": SPORT_LABELS,
-            },
+            context={"workout": workout, "sport_labels": SPORT_LABELS},
         )
     except Exception:
         logger.exception("Failed to generate workout")
-        return templates.TemplateResponse(
-            request,
-            "partials/workout_card.html",
-            context={
-                "error": "La génération a échoué. Veuillez réessayer.",
-                "sport_labels": SPORT_LABELS,
-            },
+        return HTMLResponse(
+            '<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">'
+            "La generation a echoue. L'IA est peut-etre surchargee, reessayez dans quelques secondes.</div>"
         )
 
 
@@ -127,7 +136,6 @@ async def generate_plan(
     training_load = await calculate_training_load(db, user.id, now)
     zones = await estimate_training_zones(db, user.id)
 
-    # Recent activities
     result = await db.execute(
         select(Activity)
         .where(Activity.user_id == user.id)
@@ -151,7 +159,6 @@ async def generate_plan(
             "average_heartrate": a.average_heartrate,
         })
 
-    # Race goal
     race_goal = None
     if user.race_name and user.race_date and user.race_date > now:
         race_goal = {
@@ -164,23 +171,48 @@ async def generate_plan(
     try:
         claude = ClaudeService()
         plan = await claude.generate_training_plan(
-            sport=sport,
-            duration_weeks=duration_weeks,
+            sport=sport, duration_weeks=duration_weeks,
             goal=goal.strip() or None,
             training_load=training_load.model_dump(),
             recent_activities=recent_data,
-            race_goal=race_goal,
-            zones=zones,
+            race_goal=race_goal, zones=zones,
         )
 
+        # Save to DB
+        saved = GeneratedPlan(
+            user_id=user.id,
+            plan_type="training_plan",
+            sport=sport,
+            goal=goal.strip() or None,
+            content_json=plan.model_dump(),
+        )
+        db.add(saved)
+        await db.flush()
+        logger.info("Training plan %d saved for user %d", saved.id, user.id)
+
         return templates.TemplateResponse(
-            request,
-            "partials/training_plan_card.html",
+            request, "partials/training_plan_card.html",
             context={"plan": plan},
         )
     except Exception:
         logger.exception("Failed to generate training plan")
         return HTMLResponse(
             '<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">'
-            'La génération du plan a échoué. Veuillez réessayer.</div>'
+            "La generation du plan a echoue. L'IA est peut-etre surchargee, reessayez dans quelques secondes.</div>"
         )
+
+
+@router.delete("/api/workout/plans/{plan_id}")
+async def delete_plan(
+    plan_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(GeneratedPlan).where(GeneratedPlan.id == plan_id, GeneratedPlan.user_id == user.id)
+    )
+    plan = result.scalar_one_or_none()
+    if plan:
+        await db.delete(plan)
+        await db.flush()
+    return JSONResponse({"ok": True})

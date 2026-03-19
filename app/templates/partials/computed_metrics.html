@@ -183,8 +183,18 @@
         <div class="grid grid-cols-2 gap-2 text-sm">
             <div>
                 <span class="text-gray-400 text-xs">Format</span>
-                <p class="font-semibold">{{ sw.repetitions }}x{{ sw.avg_interval_distance_m|int }}m</p>
+                {% if sw.get('interval_type') == 'time' %}
+                <p class="font-semibold">{{ sw.repetitions }}x{{ sw.get('avg_interval_duration_fmt', '?') }}</p>
+                {% else %}
+                <p class="font-semibold">{{ sw.repetitions }}x{{ sw.get('avg_interval_distance_m', 0)|int }}m</p>
+                {% endif %}
             </div>
+            {% if sw.get('avg_interval_watts') %}
+            <div>
+                <span class="text-gray-400 text-xs">Puissance intervalles</span>
+                <p class="font-semibold tabular-nums">{{ sw.avg_interval_watts }}W</p>
+            </div>
+            {% endif %}
             {% if sw.get('avg_interval_pace') %}
             <div>
                 <span class="text-gray-400 text-xs">Allure intervalles</span>

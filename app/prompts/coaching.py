@@ -360,12 +360,18 @@ def _append_computed_metrics(lines: list[str], metrics: dict, sport: str) -> Non
         sw = metrics.get("structured_workout")
         if sw:
             lines.append(f"\n### Analyse séance structurée")
-            lines.append(f"  - Type : {sw['repetitions']}x{sw['avg_interval_distance_m']}m")
-            if sw.get("avg_interval_pace"):
-                lines.append(f"  - Allure moyenne intervalles : {sw['avg_interval_pace']}")
-            lines.append(
-                f"  - Régularité allure : CV {sw['pace_consistency_cv']:.1f}% ({sw.get('pace_consistency', 'N/A')})"
-            )
+            if sw.get("interval_type") == "time":
+                lines.append(f"  - Format : {sw['repetitions']}x{sw.get('avg_interval_duration_fmt', '?')}")
+                if sw.get("time_consistency_cv") is not None:
+                    lines.append(f"  - Régularité durée : CV {sw['time_consistency_cv']:.1f}% ({sw.get('consistency', 'N/A')})")
+            else:
+                dist = sw.get('avg_interval_distance_m', 0)
+                lines.append(f"  - Format : {sw['repetitions']}x{dist}m")
+                if sw.get("avg_interval_pace"):
+                    lines.append(f"  - Allure moyenne intervalles : {sw['avg_interval_pace']}")
+                cv = sw.get('pace_consistency_cv', 0)
+                if cv:
+                    lines.append(f"  - Régularité allure : CV {cv:.1f}% ({sw.get('consistency', 'N/A')})")
             if sw.get("avg_interval_hr"):
                 lines.append(f"  - FC moyenne intervalles : {sw['avg_interval_hr']} bpm")
             if sw.get("interval_hr_drift_pct") is not None:
