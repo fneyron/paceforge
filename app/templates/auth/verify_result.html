@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Verification — PaceForge{% endblock %}
+{% block content_public %}
+<div class="min-h-screen bg-white flex items-center justify-center px-4">
+    <div class="w-full max-w-sm text-center">
+        <a href="/"><img src="/static/img/logo.svg" alt="PaceForge" class="w-12 h-12 mx-auto mb-6"></a>
+        {% if success %}
+        <h1 class="text-xl font-bold text-gray-900 mb-2">Email verifie !</h1>
+        <p class="text-sm text-gray-500">Ton compte est actif.</p>
+        <a href="/dashboard" class="mt-6 h-10 px-6 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold inline-flex items-center">
+            Aller au dashboard
+        </a>
+        {% else %}
+        <h1 class="text-xl font-bold text-gray-900 mb-2">Lien invalide</h1>
+        <p class="text-sm text-gray-500">{{ error or 'Ce lien de verification a expire ou est invalide.' }}</p>
+        <a href="/auth/login" class="mt-6 h-10 px-6 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold inline-flex items-center">
+            Se connecter
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
