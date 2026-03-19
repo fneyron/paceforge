@@ -191,12 +191,15 @@
                 <p class="font-semibold tabular-nums">{{ sw.avg_interval_pace }}</p>
             </div>
             {% endif %}
+            {% set cv = sw.get('pace_consistency_cv') or sw.get('power_consistency_cv') or 0 %}
+            {% if cv > 0 %}
             <div>
-                <span class="text-gray-400 text-xs">Régularité</span>
-                <p class="font-semibold {% if sw.pace_consistency_cv < 3 %}text-green-600{% elif sw.pace_consistency_cv < 6 %}text-amber-500{% else %}text-red-500{% endif %}">
-                    CV {{ "%.1f"|format(sw.pace_consistency_cv) }}%
+                <span class="text-gray-400 text-xs">Regularite</span>
+                <p class="font-semibold {% if cv < 3 %}text-green-600{% elif cv < 6 %}text-amber-500{% else %}text-red-500{% endif %}">
+                    CV {{ "%.1f"|format(cv) }}%
                 </p>
             </div>
+            {% endif %}
             {% if sw.get('avg_interval_hr') %}
             <div>
                 <span class="text-gray-400 text-xs">FC intervalles</span>
