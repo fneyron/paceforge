@@ -248,6 +248,7 @@ async def save_route(
     checkpoints_json: str = Form(default="[]"),
     name: str = Form(default=""),
     route_id: int | None = Form(default=None),
+    target_time_s: int | None = Form(default=None),
 ):
     try:
         course_data = json.loads(course_json)
@@ -268,6 +269,7 @@ async def save_route(
             route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
             route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
             route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
+            route.target_time_s = target_time_s
 
             # Delete old checkpoints and replace
             from sqlalchemy import delete
@@ -283,6 +285,7 @@ async def save_route(
                 total_elevation_gain=course_data.get("total_elevation_gain", 0),
                 total_elevation_loss=course_data.get("total_elevation_loss", 0),
                 course_json=course_data,
+                target_time_s=target_time_s,
             )
             db.add(route)
 
@@ -356,6 +359,7 @@ async def load_route(
             "geojson": json.dumps(geojson),
             "saved_route_id": route_id,
             "saved_route_name": route.name,
+            "saved_target_time_s": route.target_time_s,
         },
     )
 
