@@ -134,49 +134,43 @@ window._sim = {};
         hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
 
         map.on('load', function() {
-            // Route line with elevation-based color gradient
-            map.addSource('route', {
-                type: 'geojson',
-                lineMetrics: true,
-                data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} },
-            });
-
-            // Build color stops based on GRADIENT (slope)
+            // Route colored by slope — individual segments per gradient zone
             function slopeColor(pct) {
-                if (pct > 15) return '#991b1b';     // very steep climb — dark red
-                if (pct > 8)  return '#dc2626';     // steep climb — red
-                if (pct > 3)  return '#f97316';     // moderate climb — orange
-                if (pct > -3) return '#22c55e';     // flat — green
-                if (pct > -8) return '#3b82f6';     // moderate descent — blue
-                if (pct > -15) return '#2563eb';    // steep descent — dark blue
-                return '#7c3aed';                    // very steep descent — purple
+                if (pct > 15) return '#991b1b';
+                if (pct > 8)  return '#dc2626';
+                if (pct > 3)  return '#f97316';
+                if (pct > -3) return '#22c55e';
+                if (pct > -8) return '#3b82f6';
+                if (pct > -15) return '#2563eb';
+                return '#7c3aed';
             }
 
-            // Sample ~50 color stops (too many breaks MapLibre)
-            var stopCount = Math.min(50, coords.length);
-            var step = Math.max(1, Math.floor(coords.length / stopCount));
-            var stops = [];
-            for (var i = 0; i < coords.length; i += step) {
-                var progress = i / (coords.length - 1);
-                if (progress > 1) progress = 1;
-                stops.push(progress);
-                stops.push(slopeColor(gradients[i]));
-            }
-            // Ensure we end at 1.0
-            if (stops[stops.length - 2] < 1) {
-                stops.push(1);
-                stops.push(slopeColor(gradients[gradients.length - 1]));
+            // Group consecutive points by color, create one LineString per group
+            var segStep = Math.max(1, Math.floor(coords.length / 200));
+            var segments = {};
+            for (var i = 0; i < coords.length - segStep; i += segStep) {
+                var color = slopeColor(gradients[i]);
+                if (!segments[color]) segments[color] = [];
+                segments[color].push([coords[i], coords[Math.min(i + segStep, coords.length - 1)]]);
             }
 
-            map.addLayer({
-                id: 'route-line',
-                type: 'line',
-                source: 'route',
-                paint: {
-                    'line-width': 4,
-                    'line-color': ['interpolate', ['linear'], ['line-progress']].concat(stops),
-                },
-                layout: { 'line-cap': 'round', 'line-join': 'round' },
+            var layerIdx = 0;
+            Object.keys(segments).forEach(function(color) {
+                var features = segments[color].map(function(pair) {
+                    return { type: 'Feature', geometry: { type: 'LineString', coordinates: pair }, properties: {} };
+                });
+                map.addSource('route-seg-' + layerIdx, {
+                    type: 'geojson',
+                    data: { type: 'FeatureCollection', features: features },
+                });
+                map.addLayer({
+                    id: 'route-seg-' + layerIdx,
+                    type: 'line',
+                    source: 'route-seg-' + layerIdx,
+                    paint: { 'line-width': 4, 'line-color': color },
+                    layout: { 'line-cap': 'round', 'line-join': 'round' },
+                });
+                layerIdx++;
             });
 
             // Start marker
@@ -252,7 +246,7 @@ window._sim = {};
             series: [{ name: 'Altitude', data: xy }],
             xaxis: { type: 'numeric', min: 0, max: Math.ceil(totalDistKm), tickAmount: Math.min(15, Math.ceil(totalDistKm / 10)),
                 labels: { style: { colors: mutedC, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + 'km'; } },
-                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: false }, tooltip: { enabled: false } },
+                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true, stroke: { color: '#f97316', width: 1.5 } }, tooltip: { enabled: false } },
             yaxis: { labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } } },
             grid: { borderColor: gridC, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
             colors: ['#111827'], stroke: { curve: 'smooth', width: 1.5 },
@@ -263,7 +257,13 @@ window._sim = {};
                 { offset: 100, color: '#3b82f6', opacity: 0.1 },
             ] } },
             dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 4 } },
-            tooltip: { enabled: false },
+            tooltip: { enabled: true, shared: false, intersect: false,
+                custom: function(opts) {
+                    var km = opts.w.globals.labels[opts.dataPointIndex] || 0;
+                    var alt = Math.round(opts.series[opts.seriesIndex][opts.dataPointIndex]);
+                    return '<div style="padding:4px 8px;font-size:11px;font-family:Inter,sans-serif;background:rgba(0,0,0,0.8);color:#fff;border-radius:6px;">' + parseFloat(km).toFixed(1) + 'km · ' + alt + 'm</div>';
+                }
+            },
             annotations: { xaxis: [] },
         });
         chart.render();
