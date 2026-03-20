@@ -128,6 +128,11 @@ window._sim = {};
 
         map.addControl(new maplibregl.NavigationControl(), 'top-left');
 
+        // Hover marker (created before map.load so chart can use it immediately)
+        var hoverEl = document.createElement('div');
+        hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
+        hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
+
         map.on('load', function() {
             // Route line with elevation-based color gradient
             map.addSource('route', {
@@ -147,10 +152,20 @@ window._sim = {};
                 return '#7c3aed';                    // very steep descent — purple
             }
 
+            // Sample ~50 color stops (too many breaks MapLibre)
+            var stopCount = Math.min(50, coords.length);
+            var step = Math.max(1, Math.floor(coords.length / stopCount));
             var stops = [];
-            for (var i = 0; i < coords.length; i++) {
-                stops.push(i / (coords.length - 1));
+            for (var i = 0; i < coords.length; i += step) {
+                var progress = i / (coords.length - 1);
+                if (progress > 1) progress = 1;
+                stops.push(progress);
                 stops.push(slopeColor(gradients[i]));
+            }
+            // Ensure we end at 1.0
+            if (stops[stops.length - 2] < 1) {
+                stops.push(1);
+                stops.push(slopeColor(gradients[gradients.length - 1]));
             }
 
             map.addLayer({
@@ -175,11 +190,6 @@ window._sim = {};
                 .setLngLat(coords[coords.length - 1])
                 .setPopup(new maplibregl.Popup().setHTML('<b>Arrivee</b>'))
                 .addTo(map);
-
-            // Hover marker (hidden initially)
-            var hoverEl = document.createElement('div');
-            hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
-            hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
 
             // Render checkpoints on map
             renderCpOnMap();
