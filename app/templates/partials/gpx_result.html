@@ -101,7 +101,14 @@ window._sim = {};
         // Build GeoJSON LineString
         var coords = routeCoords.map(function(c) { return [c[1], c[0]]; }); // [lon, lat]
         var elevs = routeCoords.map(function(c) { return c[3] || 0; });
-        var minE = Math.min.apply(null, elevs), maxE = Math.max.apply(null, elevs);
+
+        // Compute gradient (%) at each point
+        var gradients = [0];
+        for (var i = 1; i < routeCoords.length; i++) {
+            var dDist = (routeCoords[i][2] - routeCoords[i-1][2]) * 1000; // km → m
+            var dElev = elevs[i] - elevs[i-1];
+            gradients.push(dDist > 0 ? (dElev / dDist) * 100 : 0);
+        }
 
         // Bounds
         var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
@@ -126,16 +133,21 @@ window._sim = {};
                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} },
             });
 
-            // Build color stops based on elevation
+            // Build color stops based on GRADIENT (slope)
+            function slopeColor(pct) {
+                if (pct > 15) return '#991b1b';     // very steep climb — dark red
+                if (pct > 8)  return '#dc2626';     // steep climb — red
+                if (pct > 3)  return '#f97316';     // moderate climb — orange
+                if (pct > -3) return '#22c55e';     // flat — green
+                if (pct > -8) return '#3b82f6';     // moderate descent — blue
+                if (pct > -15) return '#2563eb';    // steep descent — dark blue
+                return '#7c3aed';                    // very steep descent — purple
+            }
+
             var stops = [];
             for (var i = 0; i < coords.length; i++) {
-                var ratio = maxE > minE ? (elevs[i] - minE) / (maxE - minE) : 0;
                 stops.push(i / (coords.length - 1));
-                // Orange to red gradient
-                var r = Math.round(249 - ratio * 96);
-                var g = Math.round(115 - ratio * 88);
-                var b = Math.round(22 + ratio * 5);
-                stops.push('rgb(' + r + ',' + g + ',' + b + ')');
+                stops.push(slopeColor(gradients[i]));
             }
 
             map.addLayer({
@@ -217,8 +229,13 @@ window._sim = {};
                 axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: false }, tooltip: { enabled: false } },
             yaxis: { labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } } },
             grid: { borderColor: gridC, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
-            colors: ['#ef4444'], stroke: { curve: 'smooth', width: 2 },
-            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 95], colorStops: [{ offset: 0, color: '#ef4444', opacity: 0.45 }, { offset: 100, color: '#fca5a5', opacity: 0.05 }] } },
+            colors: ['#111827'], stroke: { curve: 'smooth', width: 1.5 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.6, opacityTo: 0.1, stops: [0, 100], colorStops: [
+                { offset: 0, color: '#dc2626', opacity: 0.6 },
+                { offset: 30, color: '#f97316', opacity: 0.4 },
+                { offset: 60, color: '#22c55e', opacity: 0.3 },
+                { offset: 100, color: '#3b82f6', opacity: 0.1 },
+            ] } },
             dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 4 } },
             tooltip: { theme: isDark ? 'dark' : 'light',
                 x: { formatter: function(v) { var l = 'km ' + parseFloat(v).toFixed(1); for (var i = 0; i < checkpoints.length; i++) { if (Math.abs(checkpoints[i].distance_km - v) < 0.5) { l += ' — ' + checkpoints[i].name; break; } } return l; } },
