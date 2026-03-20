@@ -73,7 +73,7 @@ window._sim = {};
     var elevData = course.elevation_points || [];
     var totalDistKm = course.total_distance_km || 0;
     var predictedTotalS = course.predicted_total_time_s || 0;
-    var savedTargetS = {{ saved_target_time_s | default('0') }};
+    var savedTargetS = {{ saved_target_time_s | default(0) }};
 
     var map = null, hoverMarker = null, chart = null;
     var checkpoints = [], cpMarkerEls = [];

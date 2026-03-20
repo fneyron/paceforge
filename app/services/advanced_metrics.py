@@ -478,46 +478,47 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
                         "avg_hr": lap.get("average_heartrate"),
                         "avg_cadence": lap.get("average_cadence"),
                         "avg_watts": lap.get("average_watts"),
-                        "lap_index": lap.get("lap_index"),
                     })
 
-            if len(lap_data) >= 4:
-                # Detect work/rest using the best available metric
-                has_power = sum(1 for l in lap_data if l["avg_watts"]) > len(lap_data) * 0.5
-                has_hr = sum(1 for l in lap_data if l["avg_hr"]) > len(lap_data) * 0.5
+            if len(lap_data) >= 3:
+                # Group laps by similar duration (±20%) to find repeating pattern
+                # Skip first and last laps (warmup/cooldown)
+                core_laps = lap_data[1:-1] if len(lap_data) > 4 else lap_data
+                duration_groups: dict[int, list] = {}
+                for lap in core_laps:
+                    # Round duration to nearest 30s bucket
+                    bucket = round(lap["moving_time"] / 30) * 30
+                    if bucket not in duration_groups:
+                        duration_groups[bucket] = []
+                    duration_groups[bucket].append(lap)
 
-                work_laps = []
-                rest_laps = []
+                # Sort groups by size (largest first)
+                sorted_groups = sorted(duration_groups.values(), key=len, reverse=True)
 
-                if has_power:
-                    watts_vals = [l["avg_watts"] for l in lap_data if l["avg_watts"]]
-                    if watts_vals:
-                        avg_watts = statistics.mean(watts_vals)
-                        work_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] > avg_watts * 1.1]
-                        rest_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] < avg_watts * 0.9]
-                elif has_hr:
-                    hr_vals = [l["avg_hr"] for l in lap_data if l["avg_hr"]]
-                    if hr_vals:
-                        avg_hr = statistics.mean(hr_vals)
-                        work_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] > avg_hr * 1.03]
-                        rest_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] < avg_hr * 0.97]
-
-                # Speed-based fallback or supplement
-                if len(work_laps) < 3:
-                    speeds = [l["pace_ms"] for l in lap_data]
-                    avg_speed = statistics.mean(speeds)
-                    work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.08]
-                    rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.92]
+                if len(sorted_groups) >= 2:
+                    # Two largest groups = work and rest
+                    group_a = sorted_groups[0]
+                    group_b = sorted_groups[1]
+                    # Work = the faster group (higher pace_ms = faster)
+                    avg_speed_a = statistics.mean([l["pace_ms"] for l in group_a])
+                    avg_speed_b = statistics.mean([l["pace_ms"] for l in group_b])
+                    if avg_speed_a >= avg_speed_b:
+                        work_laps, rest_laps = group_a, group_b
+                    else:
+                        work_laps, rest_laps = group_b, group_a
+                elif len(sorted_groups) == 1 and len(sorted_groups[0]) >= 3:
+                    # All same duration = tempo or threshold (all work)
+                    work_laps = sorted_groups[0]
+                    rest_laps = []
+                else:
+                    work_laps, rest_laps = [], []
 
                 if len(work_laps) >= 2:
-                    # Determine if intervals are time-based or distance-based
-                    work_dists = [l["distance"] for l in work_laps]
                     work_times = [l["moving_time"] for l in work_laps]
+                    work_dists = [l["distance"] for l in work_laps]
                     dist_cv = (statistics.stdev(work_dists) / statistics.mean(work_dists) * 100) if len(work_dists) >= 2 and statistics.mean(work_dists) > 0 else 999
                     time_cv = (statistics.stdev(work_times) / statistics.mean(work_times) * 100) if len(work_times) >= 2 and statistics.mean(work_times) > 0 else 999
-
-                    # Time-based if time is more consistent than distance
-                    is_time_based = time_cv < dist_cv and time_cv < 20
+                    is_time_based = time_cv < dist_cv and time_cv < 25
 
                     work_hrs = [l["avg_hr"] for l in work_laps if l["avg_hr"]]
                     work_watts_list = [l["avg_watts"] for l in work_laps if l["avg_watts"]]
