@@ -199,8 +199,10 @@ window._sim = {};
                 events: {
                     mouseMove: function(e, ctx, cfg) {
                         if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
-                            var c = findCoordAtKm(elevData[cfg.dataPointIndex].distance_km);
+                            var pt = elevData[cfg.dataPointIndex];
+                            var c = findCoordAtKm(pt.distance_km);
                             if (c && hoverMarker) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; }
+                            syncChart(pt.distance_km);
                         }
                     },
                     mouseLeave: function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); },
@@ -210,7 +212,7 @@ window._sim = {};
             series: [{ name: 'Altitude', data: xy }],
             xaxis: { type: 'numeric', min: 0, max: Math.ceil(totalDistKm), tickAmount: Math.min(15, Math.ceil(totalDistKm / 10)),
                 labels: { style: { colors: mutedC, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + 'km'; } },
-                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true, stroke: { color: '#f97316', width: 2 } }, tooltip: { enabled: false } },
+                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: false }, tooltip: { enabled: false } },
             yaxis: { labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } } },
             grid: { borderColor: gridC, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
             colors: ['#ef4444'], stroke: { curve: 'smooth', width: 2 },
@@ -224,7 +226,9 @@ window._sim = {};
         chart.render();
     }
 
-    function syncChart(km) { if (!chart) return; chart.clearAnnotations(); var best = 0, bestD = 999; for (var i = 0; i < elevData.length; i++) { var d = Math.abs(elevData[i].distance_km - km); if (d < bestD) { bestD = d; best = i; } } chart.addXaxisAnnotation({ x: elevData[best].distance_km, borderColor: '#f97316', strokeDashArray: 0, label: { text: elevData[best].distance_km.toFixed(1) + 'km', style: { fontSize: '9px', color: '#fff', background: '#f97316' } } }); drawCpAnn(); }
+    function syncChart(km) { if (!chart) return; chart.clearAnnotations(); var best = 0, bestD = 999; for (var i = 0; i < elevData.length; i++) { var d = Math.abs(elevData[i].distance_km - km); if (d < bestD) { bestD = d; best = i; } }
+        var elev = Math.round(elevData[best].elevation);
+        chart.addXaxisAnnotation({ x: elevData[best].distance_km, borderColor: '#f97316', strokeDashArray: 0, label: { text: elevData[best].distance_km.toFixed(1) + 'km · ' + elev + 'm', style: { fontSize: '9px', color: '#fff', background: '#f97316', padding: { left: 4, right: 4, top: 2, bottom: 2 } } } }); drawCpAnn(); }
     function clearChart() { if (!chart) return; chart.clearAnnotations(); drawCpAnn(); }
     function drawCpAnn() { if (!chart) return; checkpoints.forEach(function(cp, i) { chart.addXaxisAnnotation({ x: cp.distance_km, borderColor: '#f59e0b', strokeDashArray: 0, label: { text: 'CP' + (i + 1), orientation: 'horizontal', style: { fontSize: '9px', fontWeight: 700, color: '#fff', background: '#f59e0b', padding: { left: 3, right: 3, top: 1, bottom: 1 } } } }); }); }
 
