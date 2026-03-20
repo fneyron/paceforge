@@ -249,6 +249,8 @@ async def save_route(
     name: str = Form(default=""),
     route_id: int | None = Form(default=None),
     target_time_s: int | None = Form(default=None),
+    race_date: str | None = Form(default=None),
+    start_hour: int | None = Form(default=None),
 ):
     try:
         course_data = json.loads(course_json)
@@ -270,6 +272,8 @@ async def save_route(
             route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
             route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
             route.target_time_s = target_time_s
+            if race_date: route.race_date = race_date
+            if start_hour is not None: route.start_hour = start_hour
 
             # Delete old checkpoints and replace
             from sqlalchemy import delete
@@ -286,6 +290,8 @@ async def save_route(
                 total_elevation_loss=course_data.get("total_elevation_loss", 0),
                 course_json=course_data,
                 target_time_s=target_time_s,
+                race_date=race_date,
+                start_hour=start_hour,
             )
             db.add(route)
 
@@ -360,6 +366,8 @@ async def load_route(
             "saved_route_id": route_id,
             "saved_route_name": route.name,
             "saved_target_time_s": route.target_time_s,
+            "saved_race_date": route.race_date,
+            "saved_start_hour": route.start_hour,
         },
     )
 
