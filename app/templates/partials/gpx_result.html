@@ -130,6 +130,7 @@ window._sim = {};
             // Route line with elevation-based color gradient
             map.addSource('route', {
                 type: 'geojson',
+                lineMetrics: true,
                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} },
             });
 
@@ -220,6 +221,19 @@ window._sim = {};
                         }
                     },
                     mouseLeave: function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); },
+                    click: function(e, ctx, cfg) {
+                        if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
+                            var km = elevData[cfg.dataPointIndex].distance_km;
+                            for (var i = 0; i < checkpoints.length; i++) {
+                                if (Math.abs(checkpoints[i].distance_km - km) < 1.5) {
+                                    if (cpMarkerEls[i]) cpMarkerEls[i].togglePopup();
+                                    var c = findCoordAtKm(checkpoints[i].distance_km);
+                                    if (c && map) map.flyTo({ center: [c[1], c[0]], zoom: 12 });
+                                    break;
+                                }
+                            }
+                        }
+                    },
                 }
             },
             theme: { mode: isDark ? 'dark' : 'light' },
@@ -237,9 +251,7 @@ window._sim = {};
                 { offset: 100, color: '#3b82f6', opacity: 0.1 },
             ] } },
             dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 4 } },
-            tooltip: { theme: isDark ? 'dark' : 'light',
-                x: { formatter: function(v) { var l = 'km ' + parseFloat(v).toFixed(1); for (var i = 0; i < checkpoints.length; i++) { if (Math.abs(checkpoints[i].distance_km - v) < 0.5) { l += ' — ' + checkpoints[i].name; break; } } return l; } },
-                y: { formatter: function(v) { return Math.round(v) + ' m'; } } },
+            tooltip: { enabled: false },
             annotations: { xaxis: [] },
         });
         chart.render();
