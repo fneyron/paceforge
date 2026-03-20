@@ -75,10 +75,12 @@
         {% endif %}
     </div>
 
-    <!-- Laps (structured workouts) -->
+    <!-- Laps -->
     {% set is_structured = metrics and metrics.get('structured_workout') %}
+    {% set has_intervals = metrics and metrics.get('intervals_detected') %}
     {% set is_cycling = activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}
-    {% if activity.laps and activity.laps|length > 1 and is_structured %}
+    {% set show_laps = activity.laps and activity.laps|length > 2 and (is_structured or has_intervals or activity.laps|length != (activity.distance / 1000)|round|int) %}
+    {% if show_laps %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm" x-data="{ open: true }">
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Intervalles <span class="text-gray-300 normal-case">({{ activity.laps|length }})</span></h3>
@@ -153,7 +155,7 @@
 
     <!-- Splits (only for outdoor non-structured activities, hidden otherwise) -->
     {% set is_indoor = activity.sport_type in ('VirtualRide', 'VirtualRun') %}
-    {% if activity.splits_metric and activity.splits_metric|length > 1 and not is_structured and not is_indoor %}
+    {% if activity.splits_metric and activity.splits_metric|length > 1 and not show_laps and not is_indoor %}
     {% set is_cycling = activity.sport_type in ('Ride', 'VirtualRide', 'EBikeRide', 'GravelRide') %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm" x-data="{ open: false }">
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">

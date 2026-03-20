@@ -310,26 +310,31 @@ def _append_computed_metrics(lines: list[str], metrics: dict, sport: str) -> Non
                 f"{ca['pct_in_optimal_range']:.0f}% dans 170-185 ({ca['assessment']})"
             )
 
-        pv = metrics.get("pace_variability")
-        if pv:
-            extra = ""
-            if pv.get("fastest_split_pace") and pv.get("slowest_split_pace"):
-                extra = f", plus rapide {pv['fastest_split_pace']} / plus lent {pv['slowest_split_pace']}"
-            lines.append(
-                f"- Variabilité d'allure : CV {pv['cv_pct']:.1f}% ({pv['assessment']}){extra}"
-            )
+        # Skip pace variability and split analysis for structured workouts
+        # (variability is intentional in intervals, split analysis is meaningless)
+        is_structured = bool(metrics.get("structured_workout")) or bool(metrics.get("intervals_detected"))
+
+        if not is_structured:
+            pv = metrics.get("pace_variability")
+            if pv:
+                extra = ""
+                if pv.get("fastest_split_pace") and pv.get("slowest_split_pace"):
+                    extra = f", plus rapide {pv['fastest_split_pace']} / plus lent {pv['slowest_split_pace']}"
+                lines.append(
+                    f"- Variabilité d'allure : CV {pv['cv_pct']:.1f}% ({pv['assessment']}){extra}"
+                )
+
+            sa = metrics.get("split_analysis")
+            if sa:
+                lines.append(
+                    f"- Splits : {sa['type']} split "
+                    f"({sa['magnitude_s_per_km']:.0f}s/km de différence)"
+                )
 
         ad = metrics.get("aerobic_decoupling")
         if ad:
             lines.append(
                 f"- Découplage aérobie : {ad['decoupling_pct']:.1f}% ({ad['assessment']})"
-            )
-
-        sa = metrics.get("split_analysis")
-        if sa:
-            lines.append(
-                f"- Splits : {sa['type']} split "
-                f"({sa['magnitude_s_per_km']:.0f}s/km de différence)"
             )
 
         st = metrics.get("stop_time_pct")
