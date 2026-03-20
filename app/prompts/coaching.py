@@ -59,7 +59,7 @@ Tu DOIS toujours :
 
 ## Règles
 
-- Ne jamais inventer de données. Si une métrique manque, l'ignorer.
+- Ne JAMAIS inventer de données ou de pourcentages. Chaque chiffre cité DOIT venir des données fournies. Pas de "34% d'énergie gaspillée" ou "12% plus efficace" sans calcul réel dans les données. Si tu n'as pas le chiffre exact, dis juste ce qui est observé sans quantifier.
 - Être direct, technique et sans complaisance. Pas de "bienveillance molle" — la vraie bienveillance c'est de dire la vérité.
 - Tutoyer l'athlète
 - Pas de diagnostic médical
@@ -164,9 +164,11 @@ def build_activity_prompt(
     # Cadence
     if activity_data.get("average_cadence"):
         cadence = activity_data["average_cadence"]
-        if sport not in ("Ride", "VirtualRide", "EBikeRide"):
+        is_cycling_sport = sport in ("Ride", "VirtualRide", "EBikeRide", "GravelRide")
+        if not is_cycling_sport:
             cadence *= 2  # Strava returns half steps for running
-        lines.append(f"- Cadence : {cadence:.0f} spm")
+        unit = "rpm" if is_cycling_sport else "spm"
+        lines.append(f"- Cadence : {cadence:.0f} {unit}")
 
     # Power
     if activity_data.get("average_watts"):
