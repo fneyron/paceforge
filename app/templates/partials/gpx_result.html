@@ -73,12 +73,12 @@ window._sim = {};
     var elevData = course.elevation_points || [];
     var totalDistKm = course.total_distance_km || 0;
     var predictedTotalS = course.predicted_total_time_s || 0;
-    var savedTargetS = {{ saved_target_time_s | default(0) }};
+    var savedTargetS = {{ saved_target_time_s if saved_target_time_s else 0 }};
 
     var map = null, hoverMarker = null, chart = null;
     var checkpoints = [], cpMarkerEls = [];
     var currentHeatFactor = 1.0;
-    var currentRouteId = {{ saved_route_id | default('null') }};
+    var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
     function interpElev(km) {
