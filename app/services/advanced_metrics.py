@@ -461,7 +461,10 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
     # Structured workout analysis from manual laps
     try:
         laps = activity_data.get("laps", [])
-        if laps and len(laps) >= 5:
+        total_dist_km = activity_data.get("distance", 0) / 1000
+        expected_auto_laps = round(total_dist_km) if total_dist_km > 0 else 0
+        is_manual_laps = len(laps) != expected_auto_laps and len(laps) >= 3
+        if laps and (is_manual_laps or len(laps) >= 5):
             lap_data = []
             for lap in laps:
                 dist = lap.get("distance", 0)
@@ -478,11 +481,8 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
                         "lap_index": lap.get("lap_index"),
                     })
 
-            if len(lap_data) >= 5:
-                # Detect work/rest using the best available metric:
-                # 1. Power (watts) — best for cycling/indoor
-                # 2. Heart rate — good for time-based intervals
-                # 3. Speed — fallback for outdoor running
+            if len(lap_data) >= 4:
+                # Detect work/rest using the best available metric
                 has_power = sum(1 for l in lap_data if l["avg_watts"]) > len(lap_data) * 0.5
                 has_hr = sum(1 for l in lap_data if l["avg_hr"]) > len(lap_data) * 0.5
 
@@ -490,27 +490,26 @@ def _running_metrics(streams: dict, activity_data: dict) -> dict:
                 rest_laps = []
 
                 if has_power:
-                    # Power-based detection (time-based intervals like Zwift)
                     watts_vals = [l["avg_watts"] for l in lap_data if l["avg_watts"]]
                     if watts_vals:
                         avg_watts = statistics.mean(watts_vals)
-                        work_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] > avg_watts * 1.15]
-                        rest_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] < avg_watts * 0.85]
+                        work_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] > avg_watts * 1.1]
+                        rest_laps = [l for l in lap_data if l["avg_watts"] and l["avg_watts"] < avg_watts * 0.9]
                 elif has_hr:
-                    # HR-based detection
                     hr_vals = [l["avg_hr"] for l in lap_data if l["avg_hr"]]
                     if hr_vals:
                         avg_hr = statistics.mean(hr_vals)
-                        work_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] > avg_hr * 1.05]
-                        rest_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] < avg_hr * 0.95]
-                else:
-                    # Speed-based fallback
+                        work_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] > avg_hr * 1.03]
+                        rest_laps = [l for l in lap_data if l["avg_hr"] and l["avg_hr"] < avg_hr * 0.97]
+
+                # Speed-based fallback or supplement
+                if len(work_laps) < 3:
                     speeds = [l["pace_ms"] for l in lap_data]
                     avg_speed = statistics.mean(speeds)
-                    work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.1 and l["distance"] > 150]
-                    rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.9]
+                    work_laps = [l for l in lap_data if l["pace_ms"] > avg_speed * 1.08]
+                    rest_laps = [l for l in lap_data if l["pace_ms"] <= avg_speed * 0.92]
 
-                if len(work_laps) >= 3:
+                if len(work_laps) >= 2:
                     # Determine if intervals are time-based or distance-based
                     work_dists = [l["distance"] for l in work_laps]
                     work_times = [l["moving_time"] for l in work_laps]
@@ -811,7 +810,10 @@ def _cycling_metrics(streams: dict, activity_data: dict, ftp: float | None = Non
     # Structured workout detection from laps (power-based for cycling)
     try:
         laps = activity_data.get("laps", [])
-        if laps and len(laps) >= 5:
+        total_dist_km = activity_data.get("distance", 0) / 1000
+        expected_auto_laps = round(total_dist_km) if total_dist_km > 0 else 0
+        is_manual_laps = len(laps) != expected_auto_laps and len(laps) >= 3
+        if laps and (is_manual_laps or len(laps) >= 5):
             lap_data = []
             for lap in laps:
                 dist = lap.get("distance", 0)
