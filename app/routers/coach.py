@@ -146,12 +146,12 @@ async def send_message(
         db.add(assistant_msg)
         await db.flush()
 
-        # Return both messages as HTML
+        # Return only assistant reply (user message already shown in JS)
         return templates.TemplateResponse(
             request,
             "partials/chat_messages.html",
             context={
-                "new_messages": [user_msg, assistant_msg],
+                "new_messages": [assistant_msg],
                 "user": user,
             },
         )
@@ -169,7 +169,7 @@ async def send_message(
             request,
             "partials/chat_messages.html",
             context={
-                "new_messages": [user_msg, error_msg],
+                "new_messages": [error_msg],
                 "user": user,
             },
         )

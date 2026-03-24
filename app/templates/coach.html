@@ -158,6 +158,22 @@ function onChatSend() {
     const btn = document.getElementById('chat-submit');
     const welcome = document.getElementById('chat-welcome');
     const typing = document.getElementById('typing-indicator');
+    const messages = document.getElementById('chat-messages');
+
+    // Show user message immediately (don't wait for server response)
+    const msgText = input.value.trim();
+    if (msgText) {
+        const userInitial = '{{ (user.firstname or "A")[0] | upper }}';
+        const now = new Date();
+        const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        const msgHtml = '<div class="flex gap-3 mb-3 justify-end">' +
+            '<div class="max-w-[80%] rounded-xl px-4 py-3 msg-user">' +
+            '<p class="text-sm leading-relaxed whitespace-pre-wrap">' + msgText.replace(/</g,'&lt;') + '</p>' +
+            '<p class="text-[10px] text-gray-300 mt-1">' + time + '</p></div>' +
+            '<div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">' +
+            '<span class="text-xs font-medium text-gray-500">' + userInitial + '</span></div></div>';
+        messages.insertAdjacentHTML('beforeend', msgHtml);
+    }
 
     if (welcome) welcome.remove();
     typing.classList.remove('hidden');
