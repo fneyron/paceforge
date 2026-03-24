@@ -68,9 +68,18 @@ def build_coach_context(
             ))
 
     if recent_activities:
+        # Sport summary (all sports practiced)
+        sport_counts: dict[str, int] = {}
+        for a in recent_activities:
+            s = a.get("sport_type", "?")
+            sport_counts[s] = sport_counts.get(s, 0) + 1
         lines.append("")
-        lines.append("## 10 dernières activités")
-        for a in recent_activities[:10]:
+        lines.append("## Sports pratiqués (30 derniers jours)")
+        lines.append(", ".join(f"{s}: {c} séances" for s, c in sorted(sport_counts.items(), key=lambda x: -x[1])))
+
+        lines.append("")
+        lines.append("## Dernières activités")
+        for a in recent_activities[:15]:
             dist = a.get("distance_km", 0)
             dur = a.get("duration_formatted", "")
             sport = a.get("sport_type", "")

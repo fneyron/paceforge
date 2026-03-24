@@ -76,7 +76,7 @@ async def send_message(
             select(Activity)
             .where(Activity.user_id == user.id)
             .order_by(Activity.start_date.desc())
-            .limit(10)
+            .limit(30)
         )
         recent_acts = acts_result.scalars().all()
         recent_data = []
