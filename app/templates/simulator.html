@@ -135,9 +135,54 @@
         </div>
         {% endif %}
 
+        <!-- GPX Upload (Bike) -->
+        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX velo</h3>
+            <p class="text-xs text-gray-500 mb-3">Estimation puissance/temps par segment avec relief et vent (style BestBikeSplit / myWindsock).</p>
+
+            <form hx-post="/partials/simulator/bike-gpx-upload"
+                  hx-target="#bike-gpx-result"
+                  hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data"
+                  hx-indicator="#bike-gpx-loading">
+                <div id="bike-gpx-drop-zone"
+                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
+                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
+                     ondrop="handleBikeDrop(event)">
+                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                    </svg>
+                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX velo ici</p>
+                    <p class="text-xs text-gray-400 mb-3">ou</p>
+                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateBikeFileName(this)">
+                        Choisir un fichier
+                    </label>
+                    <p id="bike-file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
+                </div>
+                <div class="flex items-center justify-between mt-4">
+                    <button type="submit"
+                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
+                            id="bike-gpx-submit-btn">
+                        Analyser le parcours
+                        <span id="bike-gpx-loading" class="htmx-indicator ml-1.5">
+                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Bike GPX Result -->
+        <div id="bike-gpx-result" class="mb-4"></div>
+
         <!-- Power Calculator Form -->
         <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Calculateur de puissance</h3>
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Calculateur mono-segment</h3>
 
             <form hx-post="/partials/simulator/power-calc"
                   hx-target="#power-result"
@@ -250,11 +295,33 @@ function handleDrop(e) {
     e.target.classList.remove('border-gray-400', 'bg-gray-50');
     const file = e.dataTransfer.files[0];
     if (file && file.name.endsWith('.gpx')) {
-        const input = document.querySelector('input[name="gpx_file"]');
+        const input = document.querySelector('#panel-trail input[name="gpx_file"]');
         const dt = new DataTransfer();
         dt.items.add(file);
         input.files = dt.files;
         updateFileName(input);
+    }
+}
+
+function updateBikeFileName(input) {
+    const name = input.files[0]?.name;
+    const el = document.getElementById('bike-file-name');
+    if (name) {
+        el.textContent = name;
+        el.classList.remove('hidden');
+    }
+}
+
+function handleBikeDrop(e) {
+    e.preventDefault();
+    e.target.classList.remove('border-gray-400', 'bg-gray-50');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.gpx')) {
+        const input = document.querySelector('#panel-power input[name="gpx_file"]');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        updateBikeFileName(input);
     }
 }
 

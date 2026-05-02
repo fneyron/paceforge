@@ -191,6 +191,135 @@ async def passage_times(
         )
 
 
+@router.post("/partials/simulator/bike-gpx-upload", response_class=HTMLResponse)
+async def bike_gpx_upload(
+    request: Request,
+    gpx_file: UploadFile,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.cycling_simulator import estimate_cda, predict_cycling_course
+    from app.services.gpx import build_course_profile, parse_gpx
+    from app.services.power_calculator import estimate_ftp
+
+    try:
+        content = await gpx_file.read()
+        points, _ = parse_gpx(content)
+        course = build_course_profile(points, name=gpx_file.filename or "Parcours velo")
+
+        ftp = await estimate_ftp(db, user.id)
+        rider_weight = user.weight_kg or 75
+        cda_est = await estimate_cda(db, user.id, rider_weight)
+        cda_default = cda_est.estimated_cda if cda_est else 0.32
+        # Default target power: 75% of FTP (endurance) if known, else 200W
+        default_target = round(ftp.estimated_ftp * 0.75) if ftp else 200
+
+        cycling = predict_cycling_course(
+            course,
+            target_power_watts=default_target,
+            rider_weight_kg=rider_weight,
+            cda=cda_default,
+            ftp_watts=ftp.estimated_ftp if ftp else None,
+        )
+
+        return templates.TemplateResponse(
+            request,
+            "partials/bike_gpx_result.html",
+            context={
+                "cycling": cycling,
+                "ftp": ftp,
+                "cda_est": cda_est,
+                "cycling_json": cycling.model_dump_json(),
+            },
+        )
+    except ValueError as e:
+        return HTMLResponse(
+            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
+        )
+    except Exception:
+        logger.exception("Bike GPX upload failed")
+        return HTMLResponse(
+            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
+            "Erreur lors de l'analyse du fichier GPX velo."
+            "</div>"
+        )
+
+
+@router.post("/partials/simulator/bike-predict", response_class=HTMLResponse)
+async def bike_predict(
+    request: Request,
+    cycling_json: str = Form(...),
+    target_power_watts: float = Form(...),
+    rider_weight_kg: float = Form(...),
+    bike_weight_kg: float = Form(9.0),
+    cda: float = Form(0.32),
+    crr: float = Form(0.005),
+    wind_speed_kmh: float = Form(0.0),
+    wind_direction_deg: float | None = Form(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.schemas.simulator import CourseProfile, CourseSegment, CyclingProfile
+    from app.services.cycling_simulator import estimate_cda, predict_cycling_course
+    from app.services.power_calculator import estimate_ftp
+
+    try:
+        prev = CyclingProfile(**json.loads(cycling_json))
+        # Reconstruct a CourseProfile from the cycling profile (segments share the
+        # geometric fields predict_cycling_course needs).
+        course = CourseProfile(
+            name=prev.name,
+            total_distance_km=prev.total_distance_km,
+            total_elevation_gain=prev.total_elevation_gain,
+            total_elevation_loss=prev.total_elevation_loss,
+            segments=[
+                CourseSegment(
+                    index=s.index, start_km=s.start_km, end_km=s.end_km,
+                    distance_m=s.distance_m, elevation_gain=s.elevation_gain,
+                    elevation_loss=s.elevation_loss, avg_gradient_pct=s.avg_gradient_pct,
+                    min_elevation=s.min_elevation, max_elevation=s.max_elevation,
+                )
+                for s in prev.segments
+            ],
+            elevation_points=prev.elevation_points,
+            route_coords=prev.route_coords,
+            km_markers=prev.km_markers,
+        )
+
+        ftp = await estimate_ftp(db, user.id)
+        cda_est = await estimate_cda(db, user.id, rider_weight_kg, bike_weight_kg, crr=crr)
+        cycling = predict_cycling_course(
+            course,
+            target_power_watts=target_power_watts,
+            rider_weight_kg=rider_weight_kg,
+            bike_weight_kg=bike_weight_kg,
+            cda=cda,
+            crr=crr,
+            wind_speed_kmh=wind_speed_kmh,
+            wind_direction_deg=wind_direction_deg,
+            wind_source=prev.wind_source,
+            ftp_watts=ftp.estimated_ftp if ftp else None,
+        )
+
+        return templates.TemplateResponse(
+            request,
+            "partials/bike_gpx_result.html",
+            context={
+                "cycling": cycling,
+                "ftp": ftp,
+                "cda_est": cda_est,
+                "cycling_json": cycling.model_dump_json(),
+            },
+        )
+    except Exception:
+        logger.exception("Bike predict failed")
+        return HTMLResponse(
+            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
+            "Erreur lors du calcul. Verifiez les valeurs saisies."
+            "</div>"
+        )
+
+
 @router.post("/partials/simulator/power-calc", response_class=HTMLResponse)
 async def power_calc(
     request: Request,

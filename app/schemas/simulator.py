@@ -78,6 +78,65 @@ class FtpEstimate(BaseModel):
     confidence: str
 
 
+class CdaEstimate(BaseModel):
+    estimated_cda: float
+    samples: list[float]  # per-ride values used in the median
+    activity_count: int
+    confidence: str
+    crr_assumed: float
+    rho_assumed: float
+    median_speed_kmh: float
+
+
+class CyclingSegment(BaseModel):
+    index: int
+    start_km: float
+    end_km: float
+    distance_m: float
+    elevation_gain: float
+    elevation_loss: float
+    avg_gradient_pct: float
+    min_elevation: float
+    max_elevation: float
+    bearing_deg: float = 0  # rider's heading on this segment
+    headwind_ms: float = 0  # +ve = headwind, -ve = tailwind
+    predicted_power_watts: float = 0
+    predicted_speed_kmh: float = 0
+    predicted_time_s: float = 0
+    cumulative_time_s: float = 0
+    cumulative_distance_km: float = 0
+
+
+class CyclingProfile(BaseModel):
+    name: str = "Parcours velo"
+    total_distance_km: float
+    total_elevation_gain: float
+    total_elevation_loss: float
+    segments: list[CyclingSegment]
+    elevation_points: list[dict]
+    route_coords: list[list[float]] = []
+    km_markers: list[dict] = []
+    # Inputs used
+    target_power_watts: float = 0
+    rider_weight_kg: float = 0
+    bike_weight_kg: float = 9.0
+    cda: float = 0.32
+    crr: float = 0.005
+    rho: float = 1.225
+    wind_speed_kmh: float = 0
+    wind_direction_deg: float | None = None
+    wind_source: str | None = None
+    # Outputs
+    predicted_total_time_s: int = 0
+    predicted_total_time_formatted: str = ""
+    avg_power_watts: float = 0
+    normalized_power_watts: float = 0
+    avg_speed_kmh: float = 0
+    intensity_factor: float | None = None  # NP / FTP if FTP known
+    work_kj: float = 0
+    tss: float | None = None
+
+
 class ClaudeRaceStrategyOutput(BaseModel):
     race_summary: str
     key_challenges: list[str]

@@ -1,0 +1,305 @@
+<div class="space-y-4" id="bike-sim-root">
+    <!-- Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Distance</p>
+            <p class="text-xl font-bold tabular-nums">{{ cycling.total_distance_km }} <span class="text-xs font-normal text-gray-400">km</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D+</p>
+            <p class="text-xl font-bold tabular-nums text-red-500">{{ "%.0f"|format(cycling.total_elevation_gain) }} <span class="text-xs font-normal text-gray-400">m</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps estime</p>
+            <p class="text-xl font-bold tabular-nums">{{ cycling.predicted_total_time_formatted }}</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Vitesse moy.</p>
+            <p class="text-xl font-bold tabular-nums">{{ cycling.avg_speed_kmh }} <span class="text-xs font-normal text-gray-400">km/h</span></p>
+        </div>
+    </div>
+
+    <!-- Power summary -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Puissance moy.</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(cycling.avg_power_watts) }} <span class="text-xs font-normal text-gray-400">W</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">NP</p>
+            <p class="text-xl font-bold tabular-nums">{{ "%.0f"|format(cycling.normalized_power_watts) }} <span class="text-xs font-normal text-gray-400">W</span></p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">IF</p>
+            <p class="text-xl font-bold tabular-nums">{% if cycling.intensity_factor is not none %}{{ cycling.intensity_factor }}{% else %}—{% endif %}</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">TSS · kJ</p>
+            <p class="text-xl font-bold tabular-nums">{% if cycling.tss is not none %}{{ "%.0f"|format(cycling.tss) }}{% else %}—{% endif %} <span class="text-xs font-normal text-gray-400">/ {{ "%.0f"|format(cycling.work_kj) }} kJ</span></p>
+        </div>
+    </div>
+
+    <!-- Map + Elevation -->
+    {% if cycling.route_coords %}
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div id="bikeCourseMap" style="height:380px;"></div>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div id="bikePowerChart" style="height:200px;"></div>
+    </div>
+    {% endif %}
+
+    <!-- Parameters form -->
+    <form hx-post="/partials/simulator/bike-predict"
+          hx-target="#bike-gpx-result"
+          hx-swap="innerHTML"
+          class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Paramètres</h3>
+        <input type="hidden" name="cycling_json" value='{{ cycling_json }}'>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Puissance cible (W)</label>
+                <input type="number" name="target_power_watts" value="{{ "%.0f"|format(cycling.target_power_watts) }}" step="5" min="50" max="600"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                {% if ftp %}<p class="text-[10px] text-gray-400 mt-0.5">FTP: {{ "%.0f"|format(ftp.estimated_ftp) }}W</p>{% endif %}
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Cycliste (kg)</label>
+                <input type="number" name="rider_weight_kg" value="{{ cycling.rider_weight_kg }}" step="0.5" min="30" max="150"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Velo (kg)</label>
+                <input type="number" name="bike_weight_kg" value="{{ cycling.bike_weight_kg }}" step="0.1" min="3" max="20"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1 flex items-center justify-between">
+                    <span>CdA (m²)</span>
+                    {% if cda_est %}
+                    <span class="text-[9px] text-blue-600 font-medium" title="Estime sur {{ cda_est.activity_count }} sortie(s) - confiance {{ cda_est.confidence|lower }}">
+                        Auto: {{ cda_est.estimated_cda }} ({{ cda_est.activity_count }} sortie{% if cda_est.activity_count > 1 %}s{% endif %})
+                    </span>
+                    {% endif %}
+                </label>
+                <input type="number" name="cda" value="{{ cycling.cda }}" step="0.01" min="0.15" max="0.6"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                {% if cda_est %}
+                <p class="text-[10px] text-gray-400 mt-0.5">Estime depuis tes Strava (Crr suppose {{ cda_est.crr_assumed }}, vitesse mediane {{ cda_est.median_speed_kmh }} km/h)</p>
+                {% else %}
+                <p class="text-[10px] text-gray-400 mt-0.5">0.25 contre-la-montre · 0.32 route · 0.40 droit sur les cocottes</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Crr</label>
+                <input type="number" name="crr" value="{{ cycling.crr }}" step="0.0005" min="0.002" max="0.012"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <p class="text-[10px] text-gray-400 mt-0.5">0.004 route lisse · 0.005 standard · 0.008 chaussée rugueuse</p>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Vent (km/h)</label>
+                <input type="number" name="wind_speed_kmh" value="{{ cycling.wind_speed_kmh }}" step="1" min="0" max="80"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Vent depuis (°)</label>
+                <input type="number" name="wind_direction_deg" value="{{ cycling.wind_direction_deg if cycling.wind_direction_deg is not none else '' }}" step="5" min="0" max="360"
+                       class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                       placeholder="0=N, 90=E, 180=S, 270=O">
+            </div>
+            <div class="flex items-end">
+                <button type="button" onclick="bikeFetchWeather()"
+                        class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50 w-full">
+                    Recup. meteo
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="submit" class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Recalculer</button>
+            <input type="date" id="bike-race-date" class="h-9 px-2 rounded-lg border border-gray-200 text-xs">
+            <span id="bike-weather-result" class="text-xs text-gray-500"></span>
+        </div>
+    </form>
+
+    <!-- Per-segment table -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Détail par km</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs tabular-nums">
+                <thead class="text-[10px] text-gray-400 uppercase tracking-wider">
+                    <tr class="border-b border-gray-100">
+                        <th class="text-left py-2 px-2">Km</th>
+                        <th class="text-right py-2 px-2">Pente</th>
+                        <th class="text-right py-2 px-2">Vent</th>
+                        <th class="text-right py-2 px-2">W</th>
+                        <th class="text-right py-2 px-2">km/h</th>
+                        <th class="text-right py-2 px-2">Temps</th>
+                        <th class="text-right py-2 px-2">Cumul</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for seg in cycling.segments %}
+                    {% set hw = seg.headwind_ms %}
+                    <tr class="border-b border-gray-50 hover:bg-gray-50">
+                        <td class="py-1.5 px-2 text-gray-600">{{ "%.1f"|format(seg.start_km) }} – {{ "%.1f"|format(seg.end_km) }}</td>
+                        <td class="py-1.5 px-2 text-right {% if seg.avg_gradient_pct > 5 %}text-red-500{% elif seg.avg_gradient_pct > 2 %}text-orange-500{% elif seg.avg_gradient_pct < -3 %}text-blue-500{% endif %}">{{ "%.1f"|format(seg.avg_gradient_pct) }}%</td>
+                        <td class="py-1.5 px-2 text-right {% if hw > 1 %}text-red-500{% elif hw < -1 %}text-green-600{% else %}text-gray-400{% endif %}">{{ "%+.1f"|format(hw * 3.6) }} km/h</td>
+                        <td class="py-1.5 px-2 text-right font-medium">{{ "%.0f"|format(seg.predicted_power_watts) }}</td>
+                        <td class="py-1.5 px-2 text-right">{{ "%.1f"|format(seg.predicted_speed_kmh) }}</td>
+                        <td class="py-1.5 px-2 text-right text-gray-500">{{ "%d:%02d"|format(seg.predicted_time_s // 60, seg.predicted_time_s % 60 | int) }}</td>
+                        <td class="py-1.5 px-2 text-right text-gray-400">{% set ct = seg.cumulative_time_s | int %}{% if ct >= 3600 %}{{ ct // 3600 }}h{{ "%02d"|format((ct % 3600) // 60) }}{% else %}{{ ct // 60 }}'{{ "%02d"|format(ct % 60) }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var isDark = document.documentElement.classList.contains('dark');
+    var cycling = JSON.parse(document.querySelector('input[name="cycling_json"]').value);
+    var routeCoords = cycling.route_coords || [];
+    var segs = cycling.segments || [];
+    var gridC = isDark ? '#333' : '#f0f0f0';
+    var mutedC = isDark ? '#6b7280' : '#9ca3af';
+
+    // Cleanup any prior instances
+    if (window._bikeMap) { try { window._bikeMap.remove(); } catch(e) {} window._bikeMap = null; }
+    if (window._bikeChart) { try { window._bikeChart.destroy(); } catch(e) {} window._bikeChart = null; }
+
+    // ── MAP (slope-coloured) ──
+    if (routeCoords.length) {
+        var el = document.getElementById('bikeCourseMap');
+        if (el) {
+            var coords = routeCoords.map(function(c) { return [c[1], c[0]]; });
+            var elevs = routeCoords.map(function(c) { return c[3] || 0; });
+            var gradients = [0];
+            for (var i = 1; i < routeCoords.length; i++) {
+                var dDist = (routeCoords[i][2] - routeCoords[i-1][2]) * 1000;
+                var dElev = elevs[i] - elevs[i-1];
+                gradients.push(dDist > 0 ? (dElev / dDist) * 100 : 0);
+            }
+            var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
+            var bounds = [[Math.min.apply(null,lons),Math.min.apply(null,lats)],[Math.max.apply(null,lons),Math.max.apply(null,lats)]];
+
+            var map = new maplibregl.Map({
+                container: el,
+                style: isDark
+                    ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+                    : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                bounds: bounds,
+                fitBoundsOptions: { padding: 40 },
+                attributionControl: false,
+            });
+            map.addControl(new maplibregl.NavigationControl(), 'top-left');
+            window._bikeMap = map;
+
+            map.on('load', function() {
+                function slopeColor(pct) {
+                    if (pct > 10) return '#991b1b';
+                    if (pct > 6)  return '#dc2626';
+                    if (pct > 3)  return '#f97316';
+                    if (pct > -3) return '#22c55e';
+                    if (pct > -6) return '#3b82f6';
+                    return '#7c3aed';
+                }
+                var segStep = Math.max(1, Math.floor(coords.length / 200));
+                var segments = {};
+                for (var i = 0; i < coords.length - segStep; i += segStep) {
+                    var color = slopeColor(gradients[i]);
+                    if (!segments[color]) segments[color] = [];
+                    segments[color].push([coords[i], coords[Math.min(i + segStep, coords.length - 1)]]);
+                }
+                var layerIdx = 0;
+                Object.keys(segments).forEach(function(color) {
+                    var features = segments[color].map(function(pair) {
+                        return { type: 'Feature', geometry: { type: 'LineString', coordinates: pair }, properties: {} };
+                    });
+                    map.addSource('bike-route-' + layerIdx, { type: 'geojson', data: { type: 'FeatureCollection', features: features } });
+                    map.addLayer({
+                        id: 'bike-route-' + layerIdx,
+                        type: 'line',
+                        source: 'bike-route-' + layerIdx,
+                        paint: { 'line-width': 4, 'line-color': color },
+                        layout: { 'line-cap': 'round', 'line-join': 'round' },
+                    });
+                    layerIdx++;
+                });
+                new maplibregl.Marker({ color: '#22c55e' }).setLngLat(coords[0]).addTo(map);
+                new maplibregl.Marker({ color: '#ef4444' }).setLngLat(coords[coords.length - 1]).addTo(map);
+
+                // Wind compass
+                if (cycling.wind_direction_deg !== null && cycling.wind_speed_kmh > 0) {
+                    var compass = document.createElement('div');
+                    compass.style.cssText = 'position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.95);border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-family:Inter,sans-serif;font-size:11px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);z-index:1;';
+                    var arrowDir = (cycling.wind_direction_deg + 180) % 360;
+                    compass.innerHTML = '<div style="font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Vent</div><div style="display:flex;align-items:center;gap:6px;"><svg width="20" height="20" viewBox="0 0 20 20" style="transform:rotate(' + arrowDir + 'deg);"><path d="M10 2 L14 16 L10 13 L6 16 Z" fill="#3b82f6"/></svg><span style="font-weight:600;">' + cycling.wind_speed_kmh + ' km/h</span></div>';
+                    el.parentElement.style.position = 'relative';
+                    el.parentElement.appendChild(compass);
+                }
+            });
+        }
+    }
+
+    // ── POWER PROFILE CHART (ApexCharts) ──
+    var chartEl = document.getElementById('bikePowerChart');
+    if (chartEl && segs.length) {
+        var powerData = segs.map(function(s) { return [s.end_km, s.predicted_power_watts]; });
+        var elevData = (cycling.elevation_points || []).map(function(p) { return [p.distance_km, p.elevation]; });
+        var totalDistKm = cycling.total_distance_km || 0;
+
+        var chart = new ApexCharts(chartEl, {
+            chart: { type: 'line', height: 200, fontFamily: 'Inter,sans-serif', toolbar: { show: false }, background: 'transparent', zoom: { enabled: false } },
+            theme: { mode: isDark ? 'dark' : 'light' },
+            series: [
+                { name: 'Puissance', type: 'area', data: powerData },
+                { name: 'Altitude', type: 'line', data: elevData },
+            ],
+            stroke: { curve: 'stepline', width: [1.5, 1] },
+            colors: ['#dc2626', '#9ca3af'],
+            fill: { type: ['gradient', 'solid'], gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05 } },
+            xaxis: { type: 'numeric', min: 0, max: Math.ceil(totalDistKm),
+                labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'km'; } },
+                axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+            },
+            yaxis: [
+                { title: { text: 'W', style: { color: '#dc2626', fontSize: '10px' } }, labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v); } } },
+                { opposite: true, title: { text: 'm', style: { color: '#9ca3af', fontSize: '10px' } }, labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v); } } },
+            ],
+            grid: { borderColor: gridC, strokeDashArray: 3 },
+            dataLabels: { enabled: false }, markers: { size: 0 },
+            tooltip: { shared: true, intersect: false },
+            legend: { show: false },
+        });
+        chart.render();
+        window._bikeChart = chart;
+    }
+
+    window.bikeFetchWeather = function() {
+        var d = document.getElementById('bike-race-date').value;
+        if (!d || !routeCoords.length) {
+            document.getElementById('bike-weather-result').innerHTML = '<span class="text-amber-500">Date requise</span>';
+            return;
+        }
+        var b = new URLSearchParams();
+        b.append('lat', routeCoords[0][0]);
+        b.append('lon', routeCoords[0][1]);
+        b.append('date', d);
+        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) {
+            var el = document.getElementById('bike-weather-result');
+            if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; }
+            var form = document.querySelector('#bike-sim-root form');
+            if (w.wind_speed_kmh != null) form.querySelector('input[name="wind_speed_kmh"]').value = w.wind_speed_kmh;
+            if (w.wind_direction_deg != null) form.querySelector('input[name="wind_direction_deg"]').value = w.wind_direction_deg;
+            el.innerHTML = w.temperature_c + '°C · vent ' + w.wind_speed_kmh + ' km/h' + (w.wind_direction_deg != null ? ' depuis ' + Math.round(w.wind_direction_deg) + '°' : '') + ' (' + (w.source || '') + ')';
+        });
+    };
+})();
+</script>
