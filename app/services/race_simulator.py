@@ -374,6 +374,10 @@ def _elevation_at_km(course: CourseProfile, km: float) -> float | None:
     return round(pts[-1]["elevation"])
 
 
+# Standard atmospheric lapse rate: temperature drops ~6.5°C per 1000m of altitude.
+_LAPSE_RATE_C_PER_M = 0.0065
+
+
 def compute_passage_times(
     course: CourseProfile,
     checkpoints: list[dict],
@@ -381,14 +385,21 @@ def compute_passage_times(
     heat_factor: float = 1.0,
     start_hour: int = 6,
     start_minute: int = 0,
+    hourly_weather: dict | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
     Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
     automatically. Clock passage times are derived from the race start time of
     day (``start_hour``:``start_minute``). Returns PassageTimeSection dicts.
+
+    When ``hourly_weather`` ({"temps": [24], "humidity": [24]}) is provided, a
+    per-section heat factor is computed from each section's estimated time of day
+    (which hour it is run) and its mean altitude (lapse-rate corrected from the
+    start). This overrides the scalar ``heat_factor``.
     """
     from app.schemas.simulator import PassageTimeSection
+    from app.services.weather import compute_heat_factor
 
     start_offset_s = start_hour * 3600 + (start_minute or 0) * 60
 
@@ -410,62 +421,87 @@ def compute_passage_times(
     if target_time_s and course.predicted_total_time_s > 0:
         scale = target_time_s / course.predicted_total_time_s
 
-    sections = []
-    cumulative = 0.0
-    adj_cumulative = 0.0
+    use_hourly = bool(hourly_weather and hourly_weather.get("temps"))
+    base_elev = _elevation_at_km(course, 0.0) or 0.0
 
+    # Pass 1: aggregate baseline section times (no heat) so we can estimate the
+    # clock time at which each section is run before applying weather.
+    raw = []
+    baseline_cum = 0.0
     for i in range(len(all_cps) - 1):
         start_km = all_cps[i]["distance_km"]
         end_km = all_cps[i + 1]["distance_km"]
         section_dist = end_km - start_km
 
-        # Aggregate segments that fall within this section
         section_time = 0.0
         section_gain = 0.0
         section_loss = 0.0
-
         for seg in course.segments:
-            # Skip segments entirely outside this section
             if seg.end_km <= start_km or seg.start_km >= end_km:
                 continue
-
-            # Compute overlap fraction
             overlap_start = max(seg.start_km, start_km)
             overlap_end = min(seg.end_km, end_km)
             seg_length = seg.end_km - seg.start_km
             if seg_length <= 0:
                 continue
             fraction = (overlap_end - overlap_start) / seg_length
-
             section_time += seg.predicted_time_s * fraction
             section_gain += seg.elevation_gain * fraction
             section_loss += seg.elevation_loss * fraction
 
-        # Apply heat factor
-        section_time *= heat_factor
+        mid_cum = baseline_cum + section_time / 2
+        baseline_cum += section_time
+        raw.append({
+            "start_km": start_km, "end_km": end_km, "dist": section_dist,
+            "time": section_time, "gain": section_gain, "loss": section_loss,
+            "mid_cum": mid_cum, "cp_index": all_cps[i + 1]["cp_index"],
+            "start_name": all_cps[i]["name"], "end_name": all_cps[i + 1]["name"],
+        })
+
+    # Pass 2: apply per-section (or global) heat and accumulate final times.
+    sections = []
+    cumulative = 0.0
+    adj_cumulative = 0.0
+    for r in raw:
+        temperature_c = None
+        if use_hourly:
+            hour = int((start_offset_s + r["mid_cum"]) // 3600) % 24
+            temps = hourly_weather["temps"]
+            hums = hourly_weather.get("humidity") or []
+            base_temp = temps[hour] if hour < len(temps) else temps[-1]
+            humidity = hums[hour] if hour < len(hums) else (hums[-1] if hums else 60)
+            mid_elev = _elevation_at_km(course, (r["start_km"] + r["end_km"]) / 2) or base_elev
+            temperature_c = round(base_temp - _LAPSE_RATE_C_PER_M * (mid_elev - base_elev), 1)
+            sec_heat = compute_heat_factor(temperature_c, humidity)
+        else:
+            sec_heat = heat_factor
+
+        section_time = r["time"] * sec_heat
         cumulative += section_time
-        pace = section_time / section_dist if section_dist > 0 else 0
+        pace = section_time / r["dist"] if r["dist"] > 0 else 0
 
         adjusted_time = section_time * scale
         adj_cumulative += adjusted_time
 
         sections.append(PassageTimeSection(
-            start_name=all_cps[i]["name"],
-            end_name=all_cps[i + 1]["name"],
-            start_km=round(start_km, 1),
-            end_km=round(end_km, 1),
-            distance_km=round(section_dist, 1),
-            elevation_gain=round(section_gain, 0),
-            elevation_loss=round(section_loss, 0),
+            start_name=r["start_name"],
+            end_name=r["end_name"],
+            start_km=round(r["start_km"], 1),
+            end_km=round(r["end_km"], 1),
+            distance_km=round(r["dist"], 1),
+            elevation_gain=round(r["gain"], 0),
+            elevation_loss=round(r["loss"], 0),
             predicted_time_s=round(section_time, 0),
             cumulative_time_s=round(cumulative, 0),
             predicted_pace_s_per_km=round(pace, 0),
             adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
             adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
-            end_elevation=_elevation_at_km(course, end_km),
+            end_elevation=_elevation_at_km(course, r["end_km"]),
             clock_time_s=int(start_offset_s + cumulative),
             adjusted_clock_time_s=int(start_offset_s + adj_cumulative) if target_time_s else None,
-            end_checkpoint_index=all_cps[i + 1]["cp_index"],
+            end_checkpoint_index=r["cp_index"],
+            temperature_c=temperature_c,
+            heat_factor=round(sec_heat, 3) if use_hourly else None,
         ).model_dump())
 
     return sections

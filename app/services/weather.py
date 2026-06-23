@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime, timedelta
 
 import httpx
@@ -51,6 +52,11 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
     avg_wind_dir = _avg_wind_direction(wind_dir, race_hours)
     heat_factor = compute_heat_factor(avg_temp, avg_humidity)
 
+    # Full 24h profile so the simulator can derive per-checkpoint temperatures
+    # from each section's estimated time of day.
+    hourly_temps = [temps[h] if h < len(temps) and temps[h] is not None else avg_temp for h in range(24)]
+    hourly_hum = [humidity[h] if h < len(humidity) and humidity[h] is not None else avg_humidity for h in range(24)]
+
     return {
         "temperature_c": round(avg_temp, 1),
         "humidity_pct": round(avg_humidity, 0),
@@ -59,6 +65,7 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
         "heat_factor": round(heat_factor, 3),
         "source": "prevision",
         "date": date,
+        "hourly": {"temps": [round(t, 1) for t in hourly_temps], "humidity": [round(h, 0) for h in hourly_hum]},
     }
 
 
@@ -99,6 +106,7 @@ async def _fetch_climate(lat: float, lon: float, race_date) -> dict | None:
             "heat_factor": round(heat_factor, 3),
             "source": "moyennes climatiques",
             "date": race_date.isoformat(),
+            "hourly": _diurnal_profile(avg_temp, avg_humidity),
         }
     except Exception:
         logger.exception("Climate API failed, using rough estimate")
@@ -136,7 +144,19 @@ def _estimate_climate(lat: float, month: int, race_date) -> dict:
         "heat_factor": round(heat_factor, 3),
         "source": "estimation",
         "date": race_date.isoformat(),
+        "hourly": _diurnal_profile(base_temp, 60),
     }
+
+
+def _diurnal_profile(mean_temp: float, humidity_pct: float, amplitude: float = 5.0) -> dict:
+    """Synthesize a 24h temperature curve from a daily mean.
+
+    Used when only daily/monthly averages are available (races beyond the
+    forecast horizon). Coldest ~03:00, warmest ~15:00 — the typical mountain
+    diurnal cycle, so a night/dawn start reads colder than a midday section.
+    """
+    temps = [round(mean_temp + amplitude * math.cos((h - 15) * math.pi / 12), 1) for h in range(24)]
+    return {"temps": temps, "humidity": [round(humidity_pct, 0)] * 24}
 
 
 def _avg_slice(data: list, indices: list) -> float:

@@ -144,6 +144,7 @@ window._sim = {};
     var map = null, hoverMarker = null, chart = null;
     var checkpoints = [], cpMarkerEls = [];
     var currentHeatFactor = 1.0;
+    var currentHourly = null;
     var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
@@ -342,6 +343,8 @@ window._sim = {};
     // ── CHECKPOINTS ──
     function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km) }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); recalc(); scheduleSave(); }
     function removeCheckpoint(i) { checkpoints.splice(i, 1); refresh(); recalc(); scheduleSave(); }
+    function editCheckpointName(i, val) { if (!checkpoints[i]) return; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; refresh(); recalc(); scheduleSave(); }
+    function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } checkpoints[i].distance_km = km; checkpoints[i].elevation = interpElev(km); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
     function refresh() { renderCpOnMap(); drawCpAnn(); }
 
     function renderCpOnMap() {
@@ -367,7 +370,7 @@ window._sim = {};
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
     function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
-    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -414,14 +417,14 @@ window._sim = {};
         if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/simulator/routes/' + currentRouteId + '/print', '_blank'); }); return; }
         window.open('/simulator/routes/' + currentRouteId + '/print', '_blank');
     }
-    function fetchWeather() { var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return; var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d); fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { var el = document.getElementById('weather-result'); if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; } currentHeatFactor = w.heat_factor; var p = Math.round((w.heat_factor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600'; el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : ''); recalc(); }); }
+    function fetchWeather() { var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return; var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d); fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { var el = document.getElementById('weather-result'); if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; } currentHeatFactor = w.heat_factor; currentHourly = w.hourly || null; var p = Math.round((w.heat_factor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600'; el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· T° par point</span>' : ''); recalc(); }); }
     function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     initChart(); initMap(); recalc();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, syncTarget: syncTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, syncTarget: syncTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
 
     // Auto-save: fresh GPX upload (no route id yet) is persisted as a draft immediately.
     if (currentRouteId) { setStatus('saved'); } else { saveRoute(); }

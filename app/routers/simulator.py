@@ -164,6 +164,7 @@ async def passage_times(
     heat_factor: float = Form(default=1.0),
     start_hour: int = Form(default=6),
     start_minute: int = Form(default=0),
+    hourly_json: str = Form(default=""),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -178,6 +179,7 @@ async def passage_times(
     try:
         course = CourseProfile(**json.loads(course_json))
         checkpoints = json.loads(checkpoints_json)
+        hourly_weather = json.loads(hourly_json) if hourly_json else None
 
         # Re-predict so the night penalty reflects the chosen start time.
         # Heat is applied once, in compute_passage_times.
@@ -187,8 +189,10 @@ async def passage_times(
         )
 
         sections = compute_passage_times(
-            course, checkpoints, target_time_s, heat_factor, start_hour, start_minute
+            course, checkpoints, target_time_s, heat_factor,
+            start_hour, start_minute, hourly_weather,
         )
+        has_weather = any(s.get("temperature_c") is not None for s in sections)
 
         return templates.TemplateResponse(
             request,
@@ -196,6 +200,7 @@ async def passage_times(
             context={
                 "sections": sections,
                 "has_target": target_time_s is not None,
+                "has_weather": has_weather,
                 "predicted_total": course.predicted_total_time_s,
                 "target_total": target_time_s,
                 "start_offset_s": start_hour * 3600 + start_minute * 60,
@@ -652,9 +657,22 @@ async def print_route_plan(
     cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
            for cp in cp_result.scalars().all()]
 
+    # Fetch weather for the saved race date so the printed plan shows the same
+    # per-checkpoint temperatures as the live simulator.
+    hourly_weather = None
+    if route.race_date and course.route_coords:
+        from app.services.weather import get_weather_forecast
+
+        weather = await get_weather_forecast(
+            course.route_coords[0][0], course.route_coords[0][1], str(route.race_date)
+        )
+        if weather:
+            hourly_weather = weather.get("hourly")
+
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute
+        course, cps, route.target_time_s, 1.0, start_hour, start_minute, hourly_weather
     )
+    has_weather = any(s.get("temperature_c") is not None for s in sections)
 
     return templates.TemplateResponse(
         request,
@@ -664,6 +682,7 @@ async def print_route_plan(
             "course": course,
             "sections": sections,
             "has_target": route.target_time_s is not None,
+            "has_weather": has_weather,
             "start_hour": start_hour,
             "start_minute": start_minute,
             "start_offset_s": start_hour * 3600 + start_minute * 60,

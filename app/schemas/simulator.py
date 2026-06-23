@@ -168,3 +168,5 @@ class PassageTimeSection(BaseModel):
     clock_time_s: int | None = None
     adjusted_clock_time_s: int | None = None
     end_checkpoint_index: int | None = None
+    temperature_c: float | None = None
+    heat_factor: float | None = None
