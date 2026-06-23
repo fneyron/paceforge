@@ -30,7 +30,7 @@ async def landing(
     user: User | None = Depends(get_optional_user),
 ):
     if user:
-        return RedirectResponse(url="/dashboard", status_code=302)
+        return RedirectResponse(url="/simulator", status_code=302)
     return templates.TemplateResponse(
         request, "login.html", context={"error": error}
     )

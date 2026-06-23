@@ -113,7 +113,7 @@ async def verify_email(
     request.session["user_id"] = user.id
     logger.info("Email verified for user %d", user.id)
 
-    return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url="/simulator", status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ async def login(
     request.session["user_id"] = user.id
     logger.info("User %d logged in: %s", user.id, email)
 
-    return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url="/simulator", status_code=302)
 
 
 @router.get("/auth/logout")
