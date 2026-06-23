@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import pytest
 from httpx import AsyncClient
 
@@ -34,20 +32,18 @@ async def test_webhook_validation_invalid_token(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_webhook_event_create_activity(client: AsyncClient):
-    with patch("app.routers.webhook.process_new_activity") as mock_task:
-        mock_task.delay = lambda **kwargs: None
-
-        response = await client.post(
-            "/webhook/strava",
-            json={
-                "object_type": "activity",
-                "object_id": 12345,
-                "aspect_type": "create",
-                "owner_id": 67890,
-                "subscription_id": 1,
-                "event_time": 1234567890,
-            },
-        )
+    # Analysis is disabled — the webhook acknowledges the event without dispatching.
+    response = await client.post(
+        "/webhook/strava",
+        json={
+            "object_type": "activity",
+            "object_id": 12345,
+            "aspect_type": "create",
+            "owner_id": 67890,
+            "subscription_id": 1,
+            "event_time": 1234567890,
+        },
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
