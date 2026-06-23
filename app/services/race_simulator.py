@@ -281,9 +281,10 @@ def _terrain_difficulty_factor(gradient_pct: float, elevation_gain: float, eleva
     return factor
 
 
-def _night_penalty(cumulative_time_s: float, start_hour: int = 6) -> float:
+def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     """Penalty for running at night. Assumes race starts at start_hour.
 
+    ``start_hour`` may be fractional (e.g. 6.5 for 06:30).
     Night = between 21:00 and 06:00. Returns multiplier >= 1.0.
     """
     elapsed_hours = cumulative_time_s / 3600
@@ -301,8 +302,10 @@ def predict_course(
     profile: AthleteGradientProfile,
     heat_factor: float = 1.0,
     start_hour: int = 6,
+    start_minute: int = 0,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night."""
+    start_hour_frac = start_hour + (start_minute or 0) / 60
     cumulative_time = 0.0
     cumulative_gain = 0.0
     total_distance = course.total_distance_km
@@ -329,7 +332,7 @@ def predict_course(
         )
 
         # Night penalty
-        factor *= _night_penalty(cumulative_time, start_hour)
+        factor *= _night_penalty(cumulative_time, start_hour_frac)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
@@ -377,16 +380,17 @@ def compute_passage_times(
     target_time_s: int | None = None,
     heat_factor: float = 1.0,
     start_hour: int = 6,
+    start_minute: int = 0,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
     Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
-    automatically. Clock passage times are derived from ``start_hour`` (the race
-    start time of day). Returns a list of PassageTimeSection dicts.
+    automatically. Clock passage times are derived from the race start time of
+    day (``start_hour``:``start_minute``). Returns PassageTimeSection dicts.
     """
     from app.schemas.simulator import PassageTimeSection
 
-    start_offset_s = start_hour * 3600
+    start_offset_s = start_hour * 3600 + (start_minute or 0) * 60
 
     # Build full checkpoint list with start and finish. Track the original index
     # of each checkpoint so the UI can map a row back to its checkpoint.

@@ -37,8 +37,8 @@
                 <td class="text-right py-2.5 px-2 text-gray-300">—</td>
                 <td class="text-right py-2.5 px-2 text-gray-300">—</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-medium">0h00</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(start_hour * 3600) }}</td>
-                {% if has_target %}<td class="text-right py-2.5 pl-2 tabular-nums text-gray-400">{{ fmt_clock(start_hour * 3600) }}</td>{% endif %}
+                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(start_offset_s) }}</td>
+                {% if has_target %}<td class="text-right py-2.5 pl-2 tabular-nums text-gray-400">{{ fmt_clock(start_offset_s) }}</td>{% endif %}
                 <td></td>
             </tr>
             {% for s in sections %}

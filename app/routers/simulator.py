@@ -163,16 +163,31 @@ async def passage_times(
     target_time_s: int | None = Form(default=None),
     heat_factor: float = Form(default=1.0),
     start_hour: int = Form(default=6),
+    start_minute: int = Form(default=0),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import _elevation_at_km, compute_passage_times
+    from app.services.race_simulator import (
+        _elevation_at_km,
+        build_athlete_gradient_profile,
+        compute_passage_times,
+        predict_course,
+    )
 
     try:
         course = CourseProfile(**json.loads(course_json))
         checkpoints = json.loads(checkpoints_json)
+
+        # Re-predict so the night penalty reflects the chosen start time.
+        # Heat is applied once, in compute_passage_times.
+        profile = await build_athlete_gradient_profile(db, user.id)
+        course = predict_course(
+            course, profile, start_hour=start_hour, start_minute=start_minute
+        )
+
         sections = compute_passage_times(
-            course, checkpoints, target_time_s, heat_factor, start_hour
+            course, checkpoints, target_time_s, heat_factor, start_hour, start_minute
         )
 
         return templates.TemplateResponse(
@@ -183,7 +198,7 @@ async def passage_times(
                 "has_target": target_time_s is not None,
                 "predicted_total": course.predicted_total_time_s,
                 "target_total": target_time_s,
-                "start_hour": start_hour,
+                "start_offset_s": start_hour * 3600 + start_minute * 60,
                 "start_elevation": _elevation_at_km(course, 0.0),
                 "total_distance_km": course.total_distance_km,
             },
@@ -386,6 +401,7 @@ async def save_route(
     target_time_s: int | None = Form(default=None),
     race_date: str | None = Form(default=None),
     start_hour: int | None = Form(default=None),
+    start_minute: int | None = Form(default=None),
 ):
     try:
         course_data = json.loads(course_json)
@@ -409,6 +425,7 @@ async def save_route(
             route.target_time_s = target_time_s
             if race_date: route.race_date = race_date
             if start_hour is not None: route.start_hour = start_hour
+            if start_minute is not None: route.start_minute = start_minute
 
             # Delete old checkpoints and replace
             from sqlalchemy import delete
@@ -427,6 +444,7 @@ async def save_route(
                 target_time_s=target_time_s,
                 race_date=race_date,
                 start_hour=start_hour,
+                start_minute=start_minute,
             )
             db.add(route)
 
@@ -503,6 +521,7 @@ async def load_route(
             "saved_target_time_s": route.target_time_s,
             "saved_race_date": route.race_date,
             "saved_start_hour": route.start_hour,
+            "saved_start_minute": route.start_minute,
         },
     )
 
@@ -616,9 +635,14 @@ async def print_route_plan(
     if not route or not route.course_json:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
+    start_hour = route.start_hour if route.start_hour is not None else 6
+    start_minute = route.start_minute or 0
+
     course = CourseProfile(**route.course_json)
     profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(course, profile, start_hour=route.start_hour or 6)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute
+    )
 
     cp_result = await db.execute(
         select(RouteCheckpoint)
@@ -628,9 +652,8 @@ async def print_route_plan(
     cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
            for cp in cp_result.scalars().all()]
 
-    start_hour = route.start_hour if route.start_hour is not None else 6
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour
+        course, cps, route.target_time_s, 1.0, start_hour, start_minute
     )
 
     return templates.TemplateResponse(
@@ -642,6 +665,8 @@ async def print_route_plan(
             "sections": sections,
             "has_target": route.target_time_s is not None,
             "start_hour": start_hour,
+            "start_minute": start_minute,
+            "start_offset_s": start_hour * 3600 + start_minute * 60,
             "start_elevation": _elevation_at_km(course, 0.0),
             "total_distance_km": course.total_distance_km,
             "print_mode": True,

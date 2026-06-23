@@ -86,14 +86,12 @@
                        class="h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
             </div>
             <div class="flex flex-col gap-1">
-                <label for="start-hour" class="text-[11px] font-medium text-gray-500">Heure de départ</label>
-                <select id="start-hour" onchange="window._sim && window._sim.onConditionsChange()"
-                        class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
-                    {% for h in range(0, 24) %}
-                    <option value="{{ h }}" {% if h == sh %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>
-                    {% endfor %}
-                </select>
+                <label for="start-time" class="text-[11px] font-medium text-gray-500">Heure de départ</label>
+                {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
+                {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
+                <input type="time" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}" step="60"
+                       onchange="window._sim && window._sim.onConditionsChange()"
+                       class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
             </div>
             <div class="flex flex-col gap-1">
                 <label class="text-[11px] font-medium text-gray-500">Objectif</label>
@@ -368,7 +366,8 @@ window._sim = {};
     }
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
-    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var she = document.getElementById('start-hour'); if (she) b.append('start_hour', she.value); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
+    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -394,7 +393,7 @@ window._sim = {};
         var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0;
         if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
         var rd = document.getElementById('race-date').value; if (rd) b.append('race_date', rd);
-        var sh = document.getElementById('start-hour').value; if (sh !== '') b.append('start_hour', sh);
+        var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
         return fetch('/api/simulator/routes', { method: 'POST', body: b })
             .then(function(r) { return r.json(); })
             .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); } else { setStatus('error'); } })
