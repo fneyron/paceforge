@@ -33,7 +33,6 @@ async def _run_poll() -> dict:
 
     from app.database import get_task_session
     from app.services.strava import StravaService
-    from app.tasks.analysis import process_new_activity
 
     users_checked = 0
     new_activities = 0
@@ -86,14 +85,10 @@ async def _run_poll() -> dict:
                     if exists.scalar() > 0:
                         continue
 
-                    # New activity found — dispatch analysis
+                    # New activity found — sync only (analysis disabled)
                     logger.info(
-                        "Poll found new activity %d for user %d",
+                        "Poll found new activity %d for user %d (sync only)",
                         strava_id, user.id,
-                    )
-                    process_new_activity.delay(
-                        owner_strava_id=user.strava_athlete_id,
-                        strava_activity_id=strava_id,
                     )
                     new_activities += 1
 

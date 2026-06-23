@@ -5,7 +5,6 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.schemas.strava import StravaWebhookEvent
-from app.tasks.analysis import process_new_activity
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +63,9 @@ async def strava_webhook_event(request: Request):
 
     if event.object_type == "activity" and event.aspect_type == "create":
         logger.info(
-            "New activity %d from athlete %d — dispatching analysis",
+            "New activity %d from athlete %d — sync only (analysis disabled)",
             event.object_id,
             event.owner_id,
-        )
-        process_new_activity.delay(
-            owner_strava_id=event.owner_id,
-            strava_activity_id=event.object_id,
         )
 
     return JSONResponse(status_code=200, content={"status": "ok"})
