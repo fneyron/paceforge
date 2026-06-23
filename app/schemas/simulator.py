@@ -164,3 +164,7 @@ class PassageTimeSection(BaseModel):
     predicted_pace_s_per_km: float
     adjusted_time_s: float | None = None
     adjusted_cumulative_time_s: float | None = None
+    end_elevation: float | None = None
+    clock_time_s: int | None = None
+    adjusted_clock_time_s: int | None = None
+    end_checkpoint_index: int | None = None

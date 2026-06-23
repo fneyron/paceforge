@@ -43,20 +43,33 @@
     </div>
     {% endif %}
 
-    <!-- Temps de passage -->
+    <!-- Plan de course -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Temps de passage</h3>
-        <div id="cp-list" class="mb-3"></div>
+        <div class="flex items-center justify-between gap-2 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
+            <div class="flex items-center gap-1.5">
+                <button onclick="window._sim.exportGpx()" id="btn-export-gpx"
+                        class="h-7 px-2.5 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                    GPX
+                </button>
+                <button onclick="window._sim.printPlan()" id="btn-print"
+                        class="h-7 px-2.5 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659"/></svg>
+                    Imprimer
+                </button>
+            </div>
+        </div>
         {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
         <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
         <div id="passage-times-result"></div>
         <div class="mt-4 pt-4 border-t border-gray-100">
             <div class="flex flex-col sm:flex-row gap-2">
-                <input type="text" id="cp-name" placeholder="Ajouter un checkpoint" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-sm">
+                <input type="text" id="cp-name" placeholder="Ajouter un point de passage" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-sm">
                 <div class="flex gap-2">
                     <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-20 h-8 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
-                    <button onclick="window._sim.addCheckpoint()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">+</button>
+                    <button onclick="window._sim.addCheckpoint()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">+ Ajouter</button>
                 </div>
             </div>
         </div>
@@ -81,6 +94,19 @@
                     <option value="{{ h }}" {% if h == sh %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[11px] font-medium text-gray-500">Objectif</label>
+                {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
+                <div class="flex items-center gap-1 h-9">
+                    <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim.syncTarget()"
+                           class="w-12 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <span class="text-xs text-gray-400">h</span>
+                    <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim.syncTarget()"
+                           class="w-12 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <span class="text-xs text-gray-400">min</span>
+                    <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
+                </div>
             </div>
             <button onclick="window._sim.fetchWeather()"
                     class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
@@ -318,17 +344,7 @@ window._sim = {};
     // ── CHECKPOINTS ──
     function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km) }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); recalc(); scheduleSave(); }
     function removeCheckpoint(i) { checkpoints.splice(i, 1); refresh(); recalc(); scheduleSave(); }
-    function refresh() { renderCpList(); renderCpOnMap(); drawCpAnn(); }
-
-    function renderCpList() {
-        var el = document.getElementById('cp-list'), se = elevData.length ? Math.round(elevData[0].elevation) : 0, ee = elevData.length ? Math.round(elevData[elevData.length - 1].elevation) : 0;
-        var pH = Math.floor(predictedTotalS / 3600), pM = Math.round((predictedTotalS % 3600) / 60);
-        var h = '<div class="space-y-0.5">';
-        h += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-green-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#22c55e;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-green-800">Depart</span></div><span class="text-xs text-green-600 tabular-nums">' + se + 'm</span></div>';
-        checkpoints.forEach(function(cp, i) { var n = i + 1; h += '<div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50 group"><div class="flex items-center gap-2"><span style="width:20px;height:20px;background:#f59e0b;color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">' + n + '</span><span class="text-sm font-medium">CP' + n + ' — ' + cp.name + '</span></div><div class="flex items-center gap-3"><span class="text-xs text-gray-400 tabular-nums">km ' + cp.distance_km + '</span><span class="text-xs text-gray-400 tabular-nums">' + cp.elevation + 'm</span><button onclick="window._sim.removeCheckpoint(' + i + ')" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100">&times;</button></div></div>'; });
-        h += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50"><div class="flex items-center gap-2"><span style="width:10px;height:10px;background:#ef4444;border-radius:50%;display:inline-block;"></span><span class="text-sm font-semibold text-red-800">Arrivee</span></div><div class="flex items-center gap-3"><span class="text-xs text-red-600 tabular-nums">km ' + totalDistKm + '</span><span class="text-xs text-red-600 tabular-nums">' + ee + 'm</span><span class="text-[10px] text-gray-400 mx-1">Obj.</span><input type="number" id="target-h-vis" value="' + pH + '" min="0" max="99" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">h</span><input type="number" id="target-m-vis" value="' + pM + '" min="0" max="59" onchange="window._sim.syncTarget()" class="w-10 h-6 px-1 rounded border border-gray-200 text-xs tabular-nums text-center"><span class="text-[10px] text-gray-400">min</span><span id="target-delta" class="text-[10px] text-gray-400"></span></div></div>';
-        el.innerHTML = h + '</div>';
-    }
+    function refresh() { renderCpOnMap(); drawCpAnn(); }
 
     function renderCpOnMap() {
         if (!map) return;
@@ -352,7 +368,7 @@ window._sim = {};
     }
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
-    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); document.getElementById('target-delta').textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var she = document.getElementById('start-hour'); if (she) b.append('start_hour', she.value); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -390,15 +406,23 @@ window._sim = {};
         saveTimer = setTimeout(saveRoute, 800);
     }
     function onNameChange() { scheduleSave(); }
-    function onConditionsChange() { scheduleSave(); }
+    function onConditionsChange() { recalc(); scheduleSave(); }
+    function exportGpx() {
+        if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/api/simulator/routes/' + currentRouteId + '/gpx', '_blank'); }); return; }
+        window.open('/api/simulator/routes/' + currentRouteId + '/gpx', '_blank');
+    }
+    function printPlan() {
+        if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/simulator/routes/' + currentRouteId + '/print', '_blank'); }); return; }
+        window.open('/simulator/routes/' + currentRouteId + '/print', '_blank');
+    }
     function fetchWeather() { var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return; var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d); fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { var el = document.getElementById('weather-result'); if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; } currentHeatFactor = w.heat_factor; var p = Math.round((w.heat_factor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600'; el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : ''); recalc(); }); }
     function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
-    initChart(); initMap(); renderCpList(); recalc();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, syncTarget: syncTarget, _cleanup: cleanup };
+    initChart(); initMap(); recalc();
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, syncTarget: syncTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
 
     // Auto-save: fresh GPX upload (no route id yet) is persisted as a draft immediately.
     if (currentRouteId) { setStatus('saved'); } else { saveRoute(); }

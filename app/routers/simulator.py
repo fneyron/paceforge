@@ -2,7 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
@@ -162,15 +162,18 @@ async def passage_times(
     checkpoints_json: str = Form(default="[]"),
     target_time_s: int | None = Form(default=None),
     heat_factor: float = Form(default=1.0),
+    start_hour: int = Form(default=6),
     user: User = Depends(get_current_user),
 ):
     from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import compute_passage_times
+    from app.services.race_simulator import _elevation_at_km, compute_passage_times
 
     try:
         course = CourseProfile(**json.loads(course_json))
         checkpoints = json.loads(checkpoints_json)
-        sections = compute_passage_times(course, checkpoints, target_time_s, heat_factor)
+        sections = compute_passage_times(
+            course, checkpoints, target_time_s, heat_factor, start_hour
+        )
 
         return templates.TemplateResponse(
             request,
@@ -180,6 +183,9 @@ async def passage_times(
                 "has_target": target_time_s is not None,
                 "predicted_total": course.predicted_total_time_s,
                 "target_total": target_time_s,
+                "start_hour": start_hour,
+                "start_elevation": _elevation_at_km(course, 0.0),
+                "total_distance_km": course.total_distance_km,
             },
         )
     except Exception:
@@ -517,6 +523,130 @@ async def rename_route(
     route.name = name.strip() or route.name
     await db.flush()
     return JSONResponse({"id": route.id, "name": route.name})
+
+
+@router.get("/api/simulator/routes/{route_id}/gpx")
+async def export_route_gpx(
+    route_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a saved route as a GPX file with checkpoints as waypoints."""
+    import gpxpy
+    import gpxpy.gpx
+
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if not route or not route.course_json:
+        return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
+
+    # route_coords entries are [lat, lon, cumulative_km, elevation]
+    coords = route.course_json.get("route_coords", []) or []
+    if not coords:
+        return JSONResponse({"error": "Trace GPS indisponible"}, status_code=400)
+
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route_id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    checkpoints = cp_result.scalars().all()
+
+    gpx = gpxpy.gpx.GPX()
+    gpx.name = route.name
+    gpx.creator = "PaceForge"
+
+    track = gpxpy.gpx.GPXTrack(name=route.name)
+    gpx.tracks.append(track)
+    seg = gpxpy.gpx.GPXTrackSegment()
+    track.segments.append(seg)
+    for c in coords:
+        lat, lon = c[0], c[1]
+        elev = c[3] if len(c) > 3 else None
+        seg.points.append(gpxpy.gpx.GPXTrackPoint(lat, lon, elevation=elev))
+
+    def _coord_at_km(km: float):
+        best, best_d = coords[0], float("inf")
+        for c in coords:
+            d = abs((c[2] if len(c) > 2 else 0) - km)
+            if d < best_d:
+                best_d, best = d, c
+        return best
+
+    for i, cp in enumerate(checkpoints, start=1):
+        c = _coord_at_km(cp.distance_km)
+        gpx.waypoints.append(gpxpy.gpx.GPXWaypoint(
+            latitude=c[0],
+            longitude=c[1],
+            elevation=cp.elevation if cp.elevation is not None else (c[3] if len(c) > 3 else None),
+            name=f"CP{i} — {cp.name}" if cp.name else f"CP{i}",
+            description=f"km {cp.distance_km}",
+        ))
+
+    safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
+    return Response(
+        content=gpx.to_xml(),
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.gpx"'},
+    )
+
+
+@router.get("/simulator/routes/{route_id}/print", response_class=HTMLResponse)
+async def print_route_plan(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Printable race plan (passage timeline) for a saved route."""
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import (
+        _elevation_at_km,
+        build_athlete_gradient_profile,
+        compute_passage_times,
+        predict_course,
+    )
+
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if not route or not route.course_json:
+        return HTMLResponse("Parcours non trouvé", status_code=404)
+
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    course = predict_course(course, profile, start_hour=route.start_hour or 6)
+
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route_id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
+           for cp in cp_result.scalars().all()]
+
+    start_hour = route.start_hour if route.start_hour is not None else 6
+    sections = compute_passage_times(
+        course, cps, route.target_time_s, 1.0, start_hour
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "simulator_print.html",
+        context={
+            "route": route,
+            "course": course,
+            "sections": sections,
+            "has_target": route.target_time_s is not None,
+            "start_hour": start_hour,
+            "start_elevation": _elevation_at_km(course, 0.0),
+            "total_distance_km": course.total_distance_km,
+            "print_mode": True,
+        },
+    )
 
 
 @router.delete("/api/simulator/routes/{route_id}")

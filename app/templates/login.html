@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}PaceForge — Le coach IA qui ne te fait aucun cadeau{% endblock title %}
+{% block title %}PaceForge — Simulateur de temps de passage pour le trail{% endblock title %}
 
 {% block content_public %}
 <div class="min-h-screen bg-white">
@@ -10,11 +10,11 @@
             <div class="text-center max-w-2xl mx-auto">
                 <img src="/static/img/logo.svg" alt="PaceForge" class="w-16 h-16 mx-auto mb-6">
                 <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 leading-tight">
-                    Le coach IA<br>qui ne te fait aucun cadeau
+                    Ton plan de course,<br>au mètre près
                 </h1>
                 <p class="mt-5 text-lg text-gray-500 leading-relaxed">
-                    Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment.<br>
-                    Analyse automatique, feedback cash, zéro langue de bois.
+                    Upload ton GPX. PaceForge calcule tes temps de passage ajustés au dénivelé,<br>
+                    à partir de <span class="text-gray-700 font-medium">ton vrai historique d'entraînement</span>. Pas des allures rêvées.
                 </p>
                 <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                     <a href="/auth/register"
@@ -36,173 +36,88 @@
         </div>
     </div>
 
-    <!-- Example Comment - Social Proof -->
+    <!-- Plan preview - Social Proof -->
     <div class="bg-gray-50 py-14 sm:py-16">
-        <div class="max-w-3xl mx-auto px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-8">Ce qui apparaît sur ton Strava</h2>
-            <div class="max-w-lg mx-auto">
-                <div class="rounded-2xl bg-white p-6 shadow-md border border-gray-100">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center">
-                            <img src="/static/img/logo.svg" alt="" class="w-5 h-5 invert">
-                        </div>
-                        <div>
-                            <p class="text-sm font-semibold text-gray-900">PaceForge</p>
-                            <p class="text-[10px] text-gray-400">Commentaire automatique</p>
-                        </div>
+        <div class="max-w-2xl mx-auto px-6">
+            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-8">Ce que tu obtiens</h2>
+            <div class="rounded-2xl bg-white p-5 shadow-md border border-gray-100">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-900">Plan de course — départ 06:00</p>
+                        <p class="text-[10px] text-gray-400">42 km · 2 400 m D+ · objectif 5h30</p>
                     </div>
-                    <p class="text-sm text-gray-700 leading-relaxed">
-                        Cadence à 168 spm pour 5:20/km — tu traînes les pieds et ton cardio paye l'addition (dérive +11%). Vise 174 spm minimum, tu gagneras 8s/km sans effort supplémentaire.
-                    </p>
-                    <p class="text-xs text-gray-400 mt-3">🤖 paceforge.fr — ton coach IA</p>
+                    <span class="text-[10px] text-gray-400">Temps de passage</span>
                 </div>
-                <p class="text-center text-xs text-gray-400 mt-4">Automatiquement posté sur chaque activité Strava</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Strava vs PaceForge -->
-    <div class="py-14 sm:py-16">
-        <div class="max-w-4xl mx-auto px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">Ce que Strava ne te dit pas</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="rounded-2xl border-2 border-gray-200 p-6">
-                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Strava</p>
-                    <ul class="space-y-3 text-sm text-gray-400">
-                        <li class="flex items-start gap-2">
-                            <span class="mt-0.5">—</span>
-                            <span>FC moyenne : 162 bpm</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <span class="mt-0.5">—</span>
-                            <span>Cadence : 168 spm</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <span class="mt-0.5">—</span>
-                            <span>Allure : 5:20/km</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <span class="mt-0.5">—</span>
-                            <span>Effort relatif : 78</span>
-                        </li>
-                    </ul>
-                    <p class="mt-4 text-xs text-gray-300 italic">Des chiffres. Point.</p>
+                <div class="space-y-1.5 text-sm">
+                    <div class="flex items-center justify-between py-1.5 px-3 rounded-lg bg-green-50">
+                        <span class="font-semibold text-green-800 text-xs">Départ · km 0</span>
+                        <span class="tabular-nums font-semibold">06:00</span>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50">
+                        <span class="text-xs font-medium">CP1 — Ravito du col · km 12</span>
+                        <span class="tabular-nums text-gray-500">07:48 <span class="text-gray-300">(1h48)</span></span>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-gray-50">
+                        <span class="text-xs font-medium">CP2 — Refuge · km 27</span>
+                        <span class="tabular-nums text-gray-500">10:22 <span class="text-gray-300">(4h22)</span></span>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 px-3 rounded-lg bg-red-50">
+                        <span class="font-semibold text-red-800 text-xs">Arrivée · km 42</span>
+                        <span class="tabular-nums font-semibold">11:30 <span class="text-red-400 font-normal">(5h30)</span></span>
+                    </div>
                 </div>
-                <div class="rounded-2xl border-2 border-gray-900 p-6 bg-gray-50">
-                    <p class="text-xs font-bold text-gray-900 uppercase tracking-wider mb-4">PaceForge</p>
-                    <ul class="space-y-3 text-sm text-gray-700">
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                            <span>Dérive cardiaque de 11% — t'es parti trop vite, pars 10s/km plus lent</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                            <span>Cadence trop basse : vise 174 spm, tu gagnes en efficacité</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                            <span>Découplage aérobie 6.2% — endurance fondamentale insuffisante</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <svg class="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                            <span>Prochaine séance : 45min EF à 5:50/km, FC &lt;148bpm</span>
-                        </li>
-                    </ul>
-                    <p class="mt-4 text-xs text-gray-500 font-medium">Des réponses. Des ordres. Du concret.</p>
-                </div>
+                <p class="text-[10px] text-gray-400 mt-3 text-center">Export GPX avec points de passage · Plan imprimable</p>
             </div>
         </div>
     </div>
 
     <!-- Features -->
-    <div class="bg-gray-50 py-14 sm:py-16">
+    <div class="py-14 sm:py-16">
         <div class="max-w-5xl mx-auto px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">Tout ce que PaceForge fait pour toi</h2>
+            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">Pensé pour préparer une course</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Analyse automatique</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Chaque activité est décortiquée : dérive cardiaque, cadence, découplage aérobie, variabilité d'allure. Pas juste des chiffres — un diagnostic.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Upload GPX</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Glisse le tracé de ta course. Carte interactive colorée par pente et profil altimétrique détaillé, instantanément.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Coach conversationnel</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Un coach qui connaît ton historique, tes zones, ta charge. Demande-lui ta prochaine séance, il te répond avec tes vrais chiffres.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Allures réalistes</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Le modèle apprend ta relation pente↔allure sur tes 6 derniers mois Strava. Tes temps, pas une moyenne générique.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Commentaire Strava</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Un commentaire de coach apparaît directement sur ton activité Strava. Le genre que tes potes screenshot et t'envoient.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Points de passage</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Place tes ravitos et checkpoints. Distance, dénivelé, allure et heure de passage à chaque point.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Plans & séances</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Plans de 4 à 16 semaines calibrés sur ton niveau réel. Séances avec allures, FC cible, récup. Pas des plans génériques.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Heure de passage</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Choisis ton heure de départ : PaceForge calcule l'heure réelle à chaque point, avec pénalité de nuit et de chaleur.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Simulateur de course</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Upload ton GPX, obtiens tes temps de passage ajustés au dénivelé. Stratégie de course km par km. Allures réalistes, pas rêvées.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Export & impression</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Exporte le tracé en GPX avec tes points de passage pour ta montre, ou imprime ta timeline pour le jour J.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Bilan hebdomadaire</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Chaque lundi, ton coach fait le bilan. Volume, tendances, ce qui a marché, ce qu'il faut changer. Sans complaisance.</p>
+                    <h3 class="font-semibold text-gray-900 mb-1.5">Stratégie IA & vélo</h3>
+                    <p class="text-sm text-gray-500 leading-relaxed">Une stratégie de course détaillée générée par l'IA. Et pour le vélo : estimation de temps par la puissance, le CdA et le vent.</p>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Advanced Metrics Preview -->
-    <div class="py-14 sm:py-16">
-        <div class="max-w-3xl mx-auto px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Métriques avancées</h2>
-            <p class="text-center text-gray-500 text-sm mb-10">Ce que PaceForge calcule sur chaque activité, en plus de ce que Strava te montre</p>
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {% set metrics_list = [
-                    ("Dérive cardiaque", "FC 1ère vs 2ème moitié"),
-                    ("Zones cardiaques", "Répartition Z1→Z5"),
-                    ("Découplage aérobie", "Efficacité endurance"),
-                    ("Variabilité d'allure", "Régularité des splits"),
-                    ("Analyse de cadence", "% en zone optimale"),
-                    ("Longueur de foulée", "Biomécanique"),
-                    ("Negative/Positive split", "Stratégie de course"),
-                    ("Détection intervalles", "Séances structurées"),
-                    ("TSS / IF / VI", "Métriques puissance vélo"),
-                    ("Puissance running", "W et W/kg"),
-                    ("Ratio puissance/FC", "Efficacité aérobie"),
-                    ("Dégradation natation", "Endurance de nage"),
-                ] %}
-                {% for name, desc in metrics_list %}
-                <div class="rounded-xl bg-gray-50 border border-gray-100 p-3">
-                    <p class="text-xs font-semibold text-gray-900">{{ name }}</p>
-                    <p class="text-[10px] text-gray-400 mt-0.5">{{ desc }}</p>
-                </div>
-                {% endfor %}
             </div>
         </div>
     </div>
@@ -210,27 +125,27 @@
     <!-- How it works -->
     <div class="bg-gray-50 py-14 sm:py-16">
         <div class="max-w-3xl mx-auto px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">3 minutes pour commencer</h2>
+            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">3 minutes pour ton plan</h2>
             <div class="space-y-8">
                 <div class="flex gap-5 items-start">
                     <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">1</div>
                     <div>
-                        <h3 class="font-semibold text-gray-900">Crée ton compte</h3>
-                        <p class="text-sm text-gray-500 mt-0.5">Email + mot de passe, c'est tout.</p>
+                        <h3 class="font-semibold text-gray-900">Connecte Strava</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">On synchronise ton historique pour calibrer le modèle sur ton allure réelle, à plat comme en montée.</p>
                     </div>
                 </div>
                 <div class="flex gap-5 items-start">
                     <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">2</div>
                     <div>
-                        <h3 class="font-semibold text-gray-900">Connecte Strava</h3>
-                        <p class="text-sm text-gray-500 mt-0.5">On te guide pas à pas pour lier ton compte Strava. Tes activités passées sont synchronisées automatiquement.</p>
+                        <h3 class="font-semibold text-gray-900">Upload le GPX de ta course</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">Carte, profil et temps estimé apparaissent immédiatement. Place tes points de passage.</p>
                     </div>
                 </div>
                 <div class="flex gap-5 items-start">
                     <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">3</div>
                     <div>
-                        <h3 class="font-semibold text-gray-900">Ton coach est prêt</h3>
-                        <p class="text-sm text-gray-500 mt-0.5">Chaque nouvelle activité reçoit une analyse et un commentaire automatique. Le coach ne dort jamais.</p>
+                        <h3 class="font-semibold text-gray-900">Affine et imprime</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">Règle ton objectif, l'heure de départ et la météo. Exporte en GPX ou imprime ta timeline.</p>
                     </div>
                 </div>
             </div>
@@ -241,15 +156,13 @@
     <div class="py-10">
         <div class="max-w-5xl mx-auto px-6 text-center">
             <div class="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-400 font-medium">
-                <span>Course à pied</span>
-                <span class="text-gray-200">·</span>
                 <span>Trail</span>
                 <span class="text-gray-200">·</span>
+                <span>Ultra</span>
+                <span class="text-gray-200">·</span>
+                <span>Course sur route</span>
+                <span class="text-gray-200">·</span>
                 <span>Vélo</span>
-                <span class="text-gray-200">·</span>
-                <span>Natation</span>
-                <span class="text-gray-200">·</span>
-                <span>Triathlon</span>
             </div>
         </div>
     </div>
@@ -257,8 +170,8 @@
     <!-- CTA -->
     <div class="bg-gray-900 py-14 sm:py-16">
         <div class="max-w-2xl mx-auto px-6 text-center">
-            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-white">Arrête de courir à l'aveugle</h2>
-            <p class="mt-3 text-gray-400">Un coach qui te dit la vérité.</p>
+            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-white">Arrive sur la ligne avec un plan</h2>
+            <p class="mt-3 text-gray-400">Des temps de passage que tu peux vraiment tenir.</p>
             <a href="/auth/register"
                class="mt-6 h-12 px-8 rounded-xl inline-flex items-center justify-center bg-white hover:bg-gray-100 text-gray-900 font-semibold text-sm transition-colors">
                 Créer mon compte

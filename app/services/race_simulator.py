@@ -355,25 +355,51 @@ def format_time(seconds: int) -> str:
     return f"{minutes}'{secs:02d}\""
 
 
+def _elevation_at_km(course: CourseProfile, km: float) -> float | None:
+    """Interpolate elevation (m) at a given distance from the elevation profile."""
+    pts = course.elevation_points or []
+    if not pts:
+        return None
+    if km <= pts[0]["distance_km"]:
+        return round(pts[0]["elevation"])
+    for i in range(1, len(pts)):
+        if pts[i]["distance_km"] >= km:
+            p, n = pts[i - 1], pts[i]
+            span = n["distance_km"] - p["distance_km"]
+            t = (km - p["distance_km"]) / span if span > 0 else 0
+            return round(p["elevation"] + t * (n["elevation"] - p["elevation"]))
+    return round(pts[-1]["elevation"])
+
+
 def compute_passage_times(
     course: CourseProfile,
     checkpoints: list[dict],
     target_time_s: int | None = None,
     heat_factor: float = 1.0,
+    start_hour: int = 6,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
     Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
-    automatically. Returns a list of PassageTimeSection dicts.
+    automatically. Clock passage times are derived from ``start_hour`` (the race
+    start time of day). Returns a list of PassageTimeSection dicts.
     """
     from app.schemas.simulator import PassageTimeSection
 
-    # Build full checkpoint list with start and finish
-    all_cps = [{"name": "Depart", "distance_km": 0.0}]
-    for cp in sorted(checkpoints, key=lambda c: c["distance_km"]):
+    start_offset_s = start_hour * 3600
+
+    # Build full checkpoint list with start and finish. Track the original index
+    # of each checkpoint so the UI can map a row back to its checkpoint.
+    all_cps = [{"name": "Depart", "distance_km": 0.0, "cp_index": None}]
+    sorted_cps = sorted(
+        enumerate(checkpoints), key=lambda pair: pair[1]["distance_km"]
+    )
+    for orig_idx, cp in sorted_cps:
         if cp["distance_km"] > 0 and cp["distance_km"] < course.total_distance_km:
-            all_cps.append(cp)
-    all_cps.append({"name": "Arrivee", "distance_km": course.total_distance_km})
+            all_cps.append({**cp, "cp_index": orig_idx})
+    all_cps.append(
+        {"name": "Arrivee", "distance_km": course.total_distance_km, "cp_index": None}
+    )
 
     # Scale factor for target time
     scale = 1.0
@@ -432,6 +458,10 @@ def compute_passage_times(
             predicted_pace_s_per_km=round(pace, 0),
             adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
             adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
+            end_elevation=_elevation_at_km(course, end_km),
+            clock_time_s=int(start_offset_s + cumulative),
+            adjusted_clock_time_s=int(start_offset_s + adj_cumulative) if target_time_s else None,
+            end_checkpoint_index=all_cps[i + 1]["cp_index"],
         ).model_dump())
 
     return sections
