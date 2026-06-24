@@ -133,9 +133,18 @@ async def race_strategy(
 ):
     from datetime import datetime, timezone
 
+    from app.config import settings
     from app.services.claude import ClaudeService
     from app.services.race_simulator import build_athlete_gradient_profile
     from app.services.training_load import calculate_training_load
+
+    if not settings.ANTHROPIC_API_KEY:
+        return HTMLResponse(
+            '<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">'
+            "Stratégie IA indisponible : la clé API Anthropic n'est pas configurée sur le serveur "
+            "(<code>ANTHROPIC_API_KEY</code>)."
+            "</div>"
+        )
 
     try:
         course_data = json.loads(course_json)
@@ -164,11 +173,14 @@ async def race_strategy(
             "partials/race_strategy_card.html",
             context={"strategy": strategy},
         )
-    except Exception:
+    except Exception as e:
         logger.exception("Race strategy generation failed")
+        import html as _html
+        detail = _html.escape(f"{type(e).__name__}: {e}"[:300])
         return HTMLResponse(
             '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors de la génération de la stratégie. Réessayez."
+            "Erreur lors de la génération de la stratégie."
+            f'<br><span class="text-[11px] text-red-400 font-mono">{detail}</span>'
             "</div>"
         )
 
