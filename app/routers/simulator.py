@@ -879,9 +879,30 @@ async def nutrition_card(
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
-@router.post("/partials/simulator/nutrition/{route_id}/product", response_class=HTMLResponse)
-async def add_nutrition_product(
-    route_id: int,
+# ── Pantry (reusable products, managed on their own page) ──
+
+async def _pantry_context(request: Request, db: AsyncSession, user: User) -> dict:
+    result = await db.execute(
+        select(NutritionProduct)
+        .where(NutritionProduct.user_id == user.id)
+        .order_by(NutritionProduct.created_at.desc())
+    )
+    return {"request": request, "products": [_product_dict(p) for p in result.scalars().all()]}
+
+
+@router.get("/nutrition", response_class=HTMLResponse)
+async def nutrition_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ctx = await _pantry_context(request, db, user)
+    ctx["user"] = user
+    return templates.TemplateResponse(request, "nutrition.html", context=ctx)
+
+
+@router.post("/api/nutrition/products", response_class=HTMLResponse)
+async def create_product(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -893,9 +914,6 @@ async def add_nutrition_product(
     caffeine_mg: float | None = Form(default=None),
     volume_ml: float | None = Form(default=None),
 ):
-    route = await _get_owned_route(route_id, user, db)
-    if not route:
-        return HTMLResponse("", status_code=404)
     if name.strip():
         db.add(NutritionProduct(
             user_id=user.id, name=name.strip()[:100], kind=kind or "gel",
@@ -903,21 +921,50 @@ async def add_nutrition_product(
             kcal=kcal, caffeine_mg=caffeine_mg, volume_ml=volume_ml,
         ))
         await db.flush()
-    ctx = await _nutrition_card_context(request, route, db, user)
-    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+    ctx = await _pantry_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
 
 
-@router.post("/partials/simulator/nutrition/{route_id}/product/{product_id}/delete", response_class=HTMLResponse)
-async def delete_nutrition_product(
-    route_id: int,
+@router.post("/api/nutrition/products/{product_id}", response_class=HTMLResponse)
+async def update_product(
+    product_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    name: str = Form(...),
+    kind: str = Form(default="gel"),
+    carbs_g: float = Form(default=0),
+    sodium_mg: float = Form(default=0),
+    kcal: float | None = Form(default=None),
+    caffeine_mg: float | None = Form(default=None),
+    volume_ml: float | None = Form(default=None),
+):
+    pr = await db.execute(
+        select(NutritionProduct).where(
+            NutritionProduct.id == product_id, NutritionProduct.user_id == user.id
+        )
+    )
+    product = pr.scalar_one_or_none()
+    if product and name.strip():
+        product.name = name.strip()[:100]
+        product.kind = kind or "gel"
+        product.carbs_g = carbs_g or 0
+        product.sodium_mg = sodium_mg or 0
+        product.kcal = kcal
+        product.caffeine_mg = caffeine_mg
+        product.volume_ml = volume_ml
+        await db.flush()
+    ctx = await _pantry_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
+
+
+@router.post("/api/nutrition/products/{product_id}/delete", response_class=HTMLResponse)
+async def delete_product(
     product_id: int,
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    route = await _get_owned_route(route_id, user, db)
-    if not route:
-        return HTMLResponse("", status_code=404)
     pr = await db.execute(
         select(NutritionProduct).where(
             NutritionProduct.id == product_id, NutritionProduct.user_id == user.id
@@ -926,13 +973,9 @@ async def delete_nutrition_product(
     product = pr.scalar_one_or_none()
     if product:
         await db.delete(product)
-        # Also drop it from the saved plan items.
-        if route.nutrition_json and route.nutrition_json.get("items"):
-            kept = [it for it in route.nutrition_json["items"] if it.get("product_id") != product_id]
-            route.nutrition_json = {**route.nutrition_json, "items": kept}
         await db.flush()
-    ctx = await _nutrition_card_context(request, route, db, user)
-    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+    ctx = await _pantry_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
 
 
 def _to_float(v, default=0.0):

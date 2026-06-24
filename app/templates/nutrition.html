@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Garde-manger — PaceForge{% endblock title %}
+
+{% block head %}
+<style>
+.sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sim-num { -moz-appearance: textfield; appearance: textfield; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Garde-manger</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Tes gels, boissons et barres — réutilisables dans le plan nutritionnel de chaque course.</p>
+    </div>
+
+    {% include "partials/pantry.html" %}
+</div>
+{% endblock content %}

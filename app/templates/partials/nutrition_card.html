@@ -5,52 +5,26 @@
 <div id="nutrition-card" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
     <div class="flex items-center justify-between gap-2">
         <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan nutritionnel</h3>
-        {% if plan.hours %}<span class="text-[11px] text-gray-400 tabular-nums">durée {{ fmt_hm(plan.duration_s) }}</span>{% endif %}
+        <div class="flex items-center gap-3">
+            {% if plan.hours %}<span class="text-[11px] text-gray-400 tabular-nums">durée {{ fmt_hm(plan.duration_s) }}</span>{% endif %}
+            <a href="/nutrition" class="text-[11px] text-gray-500 hover:text-gray-900 inline-flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v18M5 8h6a3 3 0 003-3V3M19 3c-1.5 1-2 3-2 6s.5 5 2 6v6"/></svg>
+                Garde-manger
+            </a>
+        </div>
     </div>
 
     {% if not has_duration %}
     <p class="text-sm text-gray-500">Définis un objectif de temps (ou laisse l'estimation) pour calculer les quantités.</p>
     {% else %}
 
-    <!-- Pantry: add a product -->
-    <form hx-post="/partials/simulator/nutrition/{{ route_id }}/product" hx-target="#nutrition-card" hx-swap="outerHTML"
-          class="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-        <p class="text-[11px] font-medium text-gray-500 mb-2">Ajouter un produit au garde-manger</p>
-        <div class="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end">
-            <div class="col-span-2 sm:col-span-2">
-                <label class="block text-[10px] text-gray-400 mb-0.5">Nom</label>
-                <input name="name" required placeholder="Maurten 160" class="w-full h-8 px-2 rounded-lg border border-gray-200 text-sm">
-            </div>
-            <div>
-                <label class="block text-[10px] text-gray-400 mb-0.5">Type</label>
-                <select name="kind" class="w-full h-8 px-1 rounded-lg border border-gray-200 text-sm">
-                    <option value="gel">Gel</option>
-                    <option value="drink">Boisson</option>
-                    <option value="bar">Barre</option>
-                    <option value="solid">Solide</option>
-                    <option value="salt">Sel</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-[10px] text-gray-400 mb-0.5">Gluc. (g)</label>
-                <input name="carbs_g" type="number" step="1" min="0" value="0" class="sim-num w-full h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
-            </div>
-            <div>
-                <label class="block text-[10px] text-gray-400 mb-0.5">Sodium (mg)</label>
-                <input name="sodium_mg" type="number" step="1" min="0" value="0" class="sim-num w-full h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
-            </div>
-            <div>
-                <label class="block text-[10px] text-gray-400 mb-0.5">Vol. (ml)</label>
-                <input name="volume_ml" type="number" step="10" min="0" placeholder="—" class="sim-num w-full h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
-            </div>
-            <div>
-                <button type="submit" class="w-full h-8 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">+ Ajouter</button>
-            </div>
-        </div>
-    </form>
-
     {% if not products %}
-    <p class="text-sm text-gray-400">Aucun produit. Ajoute tes gels, boissons et barres ci-dessus.</p>
+    <div class="rounded-lg border border-dashed border-gray-200 p-5 text-center">
+        <p class="text-sm text-gray-500">Ton garde-manger est vide. Ajoute tes gels, boissons et barres pour bâtir ton plan.</p>
+        <a href="/nutrition" class="inline-flex items-center gap-1.5 mt-2 h-8 px-3 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">
+            Gérer le garde-manger
+        </a>
+    </div>
     {% else %}
     <!-- Plan form: targets + per-product intake rate -->
     <form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" class="space-y-4">
@@ -87,7 +61,6 @@
                         <th class="text-right py-2 px-2 font-medium">Vol.</th>
                         <th class="text-right py-2 px-2 font-medium" title="Nombre d'unités à prendre par heure">/ heure</th>
                         <th class="text-right py-2 px-2 font-medium" title="Total sur la course">Total</th>
-                        <th class="w-6"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
@@ -105,11 +78,6 @@
                             <input name="rate_{{ p.id }}" type="number" min="0" step="0.25" value="{{ rate }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
                         </td>
                         <td class="text-right py-2 px-2 tabular-nums text-gray-500">{% if rate %}{{ (rate * plan.hours)|round(1) }}{% else %}—{% endif %}</td>
-                        <td class="text-center align-middle">
-                            <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/product/{{ p.id }}/delete"
-                                    hx-target="#nutrition-card" hx-swap="outerHTML" hx-confirm="Supprimer « {{ p.name }} » du garde-manger ?"
-                                    class="text-gray-300 hover:text-red-500 text-base leading-none px-1" title="Supprimer">&times;</button>
-                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

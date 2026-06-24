@@ -1,0 +1,78 @@
+<div id="pantry" class="space-y-5">
+    <!-- Add a product -->
+    <form hx-post="/api/nutrition/products" hx-target="#pantry" hx-swap="outerHTML"
+          class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Ajouter un produit</p>
+        <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
+            <div class="col-span-2">
+                <label class="block text-[10px] text-gray-400 mb-0.5">Nom</label>
+                <input name="name" required placeholder="Maurten Gel 100" class="w-full h-9 px-2 rounded-lg border border-gray-200 text-sm">
+            </div>
+            <div>
+                <label class="block text-[10px] text-gray-400 mb-0.5">Type</label>
+                <select name="kind" class="w-full h-9 px-1 rounded-lg border border-gray-200 text-sm">
+                    <option value="gel">Gel</option>
+                    <option value="drink">Boisson</option>
+                    <option value="bar">Barre</option>
+                    <option value="solid">Solide</option>
+                    <option value="salt">Sel</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] text-gray-400 mb-0.5">Gluc. (g)</label>
+                <input name="carbs_g" type="number" step="1" min="0" value="0" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+            </div>
+            <div>
+                <label class="block text-[10px] text-gray-400 mb-0.5">Sodium (mg)</label>
+                <input name="sodium_mg" type="number" step="1" min="0" value="0" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+            </div>
+            <div>
+                <label class="block text-[10px] text-gray-400 mb-0.5">Vol. (ml)</label>
+                <input name="volume_ml" type="number" step="10" min="0" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+            </div>
+        </div>
+        <div class="flex justify-end mt-3">
+            <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">+ Ajouter</button>
+        </div>
+    </form>
+
+    <!-- Existing products (each row is an inline-editable form) -->
+    {% if not products %}
+    <div class="rounded-xl border border-dashed border-gray-200 p-8 text-center">
+        <p class="text-sm text-gray-400">Aucun produit pour l'instant. Ajoute tes gels, boissons et barres ci-dessus —
+            ils seront réutilisables dans le plan nutritionnel de chaque course.</p>
+    </div>
+    {% else %}
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div class="hidden sm:grid grid-cols-[1.6fr_1fr_0.8fr_0.9fr_0.8fr_auto] gap-2 px-4 py-2 text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+            <span>Nom</span><span>Type</span><span class="text-right">Gluc.</span><span class="text-right">Sodium</span><span class="text-right">Vol.</span><span></span>
+        </div>
+        <div class="divide-y divide-gray-50">
+            {% for p in products %}
+            <form hx-post="/api/nutrition/products/{{ p.id }}" hx-target="#pantry" hx-swap="outerHTML"
+                  class="grid grid-cols-2 sm:grid-cols-[1.6fr_1fr_0.8fr_0.9fr_0.8fr_auto] gap-2 px-4 py-2.5 items-center hover:bg-gray-50/50">
+                <input name="name" value="{{ p.name }}" required class="h-8 px-2 rounded-lg border border-gray-200 text-sm font-medium">
+                <select name="kind" class="h-8 px-1 rounded-lg border border-gray-200 text-sm">
+                    {% for val, lbl in [('gel','Gel'),('drink','Boisson'),('bar','Barre'),('solid','Solide'),('salt','Sel')] %}
+                    <option value="{{ val }}" {% if p.kind == val %}selected{% endif %}>{{ lbl }}</option>
+                    {% endfor %}
+                </select>
+                <input name="carbs_g" type="number" step="1" min="0" value="{{ p.carbs_g|round|int }}" class="sim-num h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-right">
+                <input name="sodium_mg" type="number" step="1" min="0" value="{{ p.sodium_mg|round|int }}" class="sim-num h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-right">
+                <input name="volume_ml" type="number" step="10" min="0" value="{{ p.volume_ml|round|int if p.volume_ml else '' }}" placeholder="—" class="sim-num h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-right">
+                <div class="flex items-center gap-1 justify-end">
+                    <button type="submit" class="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-emerald-600 hover:bg-gray-50" title="Enregistrer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button type="button" hx-post="/api/nutrition/products/{{ p.id }}/delete" hx-target="#pantry" hx-swap="outerHTML"
+                            hx-confirm="Supprimer « {{ p.name }} » ?"
+                            class="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-gray-50" title="Supprimer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
