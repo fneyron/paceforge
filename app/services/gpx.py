@@ -51,11 +51,16 @@ def parse_gpx(file_content: bytes) -> tuple[list[GpxPoint], list[dict]]:
     if not points:
         raise ValueError("Le fichier GPX ne contient aucun point de trace.")
 
-    # Parse waypoints (<wpt> elements)
+    # Parse waypoints (<wpt> elements). Only keep genuinely named waypoints —
+    # official race GPX files carry dozens of unnamed/auto-numbered points that
+    # would otherwise flood the checkpoint list.
     waypoints = []
     for wpt in gpx.waypoints:
+        name = (wpt.name or "").strip()
+        if not name:
+            continue
         waypoints.append({
-            "name": wpt.name or f"WPT {len(waypoints) + 1}",
+            "name": name,
             "lat": wpt.latitude,
             "lon": wpt.longitude,
             "elevation": wpt.elevation or 0.0,
