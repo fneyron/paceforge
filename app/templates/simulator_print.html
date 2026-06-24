@@ -54,7 +54,7 @@
                 <p class="text-[9px] font-semibold uppercase tracking-wide truncate {% if is_finish %}text-red-700{% else %}text-gray-600{% endif %}">
                     {% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}
                 </p>
-                <p class="text-[9px] text-gray-400 tabular-nums">km {{ s.end_km }}{% if s.elevation_gain > 0 %} · <span class="text-red-400">+{{ s.elevation_gain|int }}</span>{% endif %}</p>
+                <p class="text-[9px] text-gray-400 tabular-nums">km {{ s.end_km }}{% if s.elevation_gain > 0 %} · <span class="text-red-400">+{{ s.elevation_gain|int }}</span>{% endif %}{% if s.elevation_loss > 0 %} <span class="text-blue-400">-{{ s.elevation_loss|int }}</span>{% endif %}</p>
                 <p class="text-lg font-bold tabular-nums leading-tight">{{ fmt_clock(clock_val) }}</p>
             </div>
             {% endfor %}
