@@ -897,7 +897,11 @@ async def nutrition_card(
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     ctx = await _nutrition_card_context(request, route, db, user)
-    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+    # htmx GETs can be heuristically cached by the browser; force a fresh card.
+    return templates.TemplateResponse(
+        request, "partials/nutrition_card.html", context=ctx,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ── Pantry (reusable products, managed on their own page) ──
