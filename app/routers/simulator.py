@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
+from app.models.nutrition import NutritionProduct
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
 
@@ -788,3 +789,191 @@ async def get_weather(
     if not weather:
         return JSONResponse({"error": "Impossible de récupérer la météo"}, status_code=500)
     return JSONResponse(weather)
+
+
+# ── Nutrition ──
+
+def _product_dict(p: NutritionProduct) -> dict:
+    return {
+        "id": p.id, "name": p.name, "kind": p.kind,
+        "carbs_g": p.carbs_g, "sodium_mg": p.sodium_mg,
+        "kcal": p.kcal, "caffeine_mg": p.caffeine_mg, "volume_ml": p.volume_ml,
+    }
+
+
+async def _nutrition_card_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+    """Build everything the nutrition card needs: pantry, plan, schedule."""
+    from app.schemas.simulator import CourseProfile
+    from app.services.nutrition import compute_plan, default_targets
+    from app.services.race_simulator import (
+        build_athlete_gradient_profile,
+        compute_passage_times,
+        predict_course,
+    )
+
+    prod_result = await db.execute(
+        select(NutritionProduct)
+        .where(NutritionProduct.user_id == user.id)
+        .order_by(NutritionProduct.created_at.desc())
+    )
+    products = [_product_dict(p) for p in prod_result.scalars().all()]
+    products_by_id = {p["id"]: p for p in products}
+
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    start_hour = route.start_hour if route.start_hour is not None else 6
+    start_minute = route.start_minute or 0
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+
+    # Duration used for totals: target if set, else the model prediction.
+    duration_s = route.target_time_s or course.predicted_total_time_s or 0
+
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route.id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    cps = [{"name": cp.name, "distance_km": cp.distance_km} for cp in cp_result.scalars().all()]
+    hourly_weather = route.weather_json.get("hourly") if route.weather_json else None
+    sections = compute_passage_times(
+        course, cps, route.target_time_s, 1.0, start_hour, start_minute, hourly_weather
+    )
+
+    mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
+    nutrition = route.nutrition_json or {}
+    targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
+    items = nutrition.get("items") or []
+    plan = compute_plan(duration_s, targets, items, products_by_id, sections)
+    # rate per product for the form (product_id -> per_hour)
+    rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
+
+    return {
+        "request": request,
+        "route_id": route.id,
+        "products": products,
+        "targets": targets,
+        "rates": rates,
+        "plan": plan,
+        "has_duration": duration_s > 0,
+    }
+
+
+async def _get_owned_route(route_id: int, user: User, db: AsyncSession) -> Route | None:
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    return result.scalar_one_or_none()
+
+
+@router.get("/partials/simulator/nutrition/{route_id}", response_class=HTMLResponse)
+async def nutrition_card(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/product", response_class=HTMLResponse)
+async def add_nutrition_product(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    name: str = Form(...),
+    kind: str = Form(default="gel"),
+    carbs_g: float = Form(default=0),
+    sodium_mg: float = Form(default=0),
+    kcal: float | None = Form(default=None),
+    caffeine_mg: float | None = Form(default=None),
+    volume_ml: float | None = Form(default=None),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    if name.strip():
+        db.add(NutritionProduct(
+            user_id=user.id, name=name.strip()[:100], kind=kind or "gel",
+            carbs_g=carbs_g or 0, sodium_mg=sodium_mg or 0,
+            kcal=kcal, caffeine_mg=caffeine_mg, volume_ml=volume_ml,
+        ))
+        await db.flush()
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/product/{product_id}/delete", response_class=HTMLResponse)
+async def delete_nutrition_product(
+    route_id: int,
+    product_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    pr = await db.execute(
+        select(NutritionProduct).where(
+            NutritionProduct.id == product_id, NutritionProduct.user_id == user.id
+        )
+    )
+    product = pr.scalar_one_or_none()
+    if product:
+        await db.delete(product)
+        # Also drop it from the saved plan items.
+        if route.nutrition_json and route.nutrition_json.get("items"):
+            kept = [it for it in route.nutrition_json["items"] if it.get("product_id") != product_id]
+            route.nutrition_json = {**route.nutrition_json, "items": kept}
+        await db.flush()
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+
+
+def _to_float(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/plan", response_class=HTMLResponse)
+async def save_nutrition_plan(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist targets + per-product intake rates (form fields), re-render card.
+
+    Targets come as carbs_g_per_h / fluid_ml_per_h / sodium_mg_per_h; intake
+    rates come as rate_<product_id> fields (units per hour).
+    """
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+
+    form = await request.form()
+    targets = {
+        "carbs_g_per_h": round(_to_float(form.get("carbs_g_per_h"))),
+        "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h"))),
+        "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"))),
+    }
+    items = []
+    for key, val in form.items():
+        if key.startswith("rate_"):
+            rate = _to_float(val)
+            if rate > 0:
+                try:
+                    items.append({"product_id": int(key[5:]), "per_hour": rate})
+                except ValueError:
+                    continue
+    route.nutrition_json = {"targets": targets, "items": items}
+    await db.flush()
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)

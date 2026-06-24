@@ -25,6 +25,8 @@ class Route(Base):
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # Per-race nutrition plan: {"targets": {...}, "items": [{"product_id", "per_hour"}]}.
+    nutrition_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
