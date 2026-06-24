@@ -1,9 +1,9 @@
 {% macro fmt_hm(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}min{% endif %}{% endmacro %}
 {% set kind_labels = {'gel':'Gel','drink':'Boisson','bar':'Barre','solid':'Solide','salt':'Sel'} %}
-{% set cov = {'under':{'bar':'bg-amber-400','txt':'text-amber-600','word':'sous-dosé'},'over':{'bar':'bg-red-400','txt':'text-red-600','word':'trop'},'ok':{'bar':'bg-emerald-500','txt':'text-emerald-600','word':'OK'}} %}
+{% set cov = {'under':{'txt':'text-amber-600','word':'sous-dosé'},'over':{'txt':'text-red-600','word':'trop'},'ok':{'txt':'text-emerald-600','word':'OK'}} %}
 <div id="nutrition-card" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
     <div class="flex items-center justify-between gap-2">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan nutritionnel</h3>
+        <h3 class="text-sm font-semibold tracking-tight">Plan nutritionnel</h3>
         <div class="flex items-center gap-3">
             {% if plan.hours %}<span class="text-[11px] text-gray-400 tabular-nums">durée {{ fmt_hm(plan.duration_s) }}</span>{% endif %}
             <a href="/nutrition" class="text-[11px] text-gray-500 hover:text-gray-900 inline-flex items-center gap-1">
@@ -22,185 +22,37 @@
     </div>
     {% else %}
 
-    <!-- How it works -->
-    <ol class="flex flex-col sm:flex-row gap-2 text-[11px] text-gray-500">
-        <li class="flex-1 rounded-lg bg-gray-50 px-3 py-2"><b class="text-gray-700">1.</b> Règle tes <b>cibles par heure</b> (pré-remplies selon durée + chaleur).</li>
-        <li class="flex-1 rounded-lg bg-gray-50 px-3 py-2"><b class="text-gray-700">2.</b> Indique combien d'<b>unités/heure</b> de chaque produit — ou clique <b>Suggérer</b>.</li>
-        <li class="flex-1 rounded-lg bg-gray-50 px-3 py-2"><b class="text-gray-700">3.</b> Suis le <b>planning par tronçon</b> en bas : quoi prendre, et quand.</li>
-    </ol>
-
-    <form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" class="space-y-4">
-        <!-- Hourly targets -->
-        <div class="flex flex-wrap items-end gap-3">
-            <div>
-                <p class="text-[11px] font-medium text-gray-500 mb-1">Cibles par heure</p>
-                <div class="flex flex-wrap gap-2">
-                    <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Glucides</span>
-                        <input name="carbs_g_per_h" type="number" min="0" step="5" value="{{ targets.carbs_g_per_h }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">g/h</span></label>
-                    <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Liquide</span>
-                        <input name="fluid_ml_per_h" type="number" min="0" step="50" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">ml/h</span></label>
-                    <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Sodium</span>
-                        <input name="sodium_mg_per_h" type="number" min="0" step="50" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">mg/h</span></label>
-                </div>
-            </div>
-            <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/suggest" hx-include="closest form"
-                    hx-target="#nutrition-card" hx-swap="outerHTML"
-                    class="h-8 px-3 rounded-lg border border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
-                    title="Remplir automatiquement les quantités pour atteindre la cible glucides">
-                <svg width="1em" height="1em" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
-                Suggérer les quantités
-            </button>
-        </div>
-
-        <!-- Hydration: carried capacity + which checkpoints are refill points -->
-        <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <label class="flex items-center gap-1.5 text-sm">
-                    <span class="text-[11px] font-medium text-gray-500">Eau portée</span>
-                    <input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
-                    <span class="text-gray-400 text-xs">ml (flasques)</span>
-                </label>
-                {% if refill_points %}
-                <div class="flex-1 min-w-[12rem]">
-                    <p class="text-[11px] font-medium text-gray-500 mb-1">Ravitos (plein d'eau possible)</p>
-                    <div class="flex flex-wrap gap-x-3 gap-y-1">
-                        {% for cp in refill_points %}
-                        <label class="inline-flex items-center gap-1 text-[11px] text-gray-600">
-                            <input type="checkbox" name="refill_{{ cp.km }}" value="1" {% if cp.is_refill %}checked{% endif %} class="rounded border-gray-300">
-                            {{ cp.name }}
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Products + intake rate -->
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm min-w-[600px]">
-                <thead>
-                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
-                        <th class="text-left py-2 pr-2 font-medium">Produit</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Glucides par unité">Gluc.</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Sodium par unité">Sodium</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Volume par unité (boissons)">Vol.</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Combien d'unités tu prévois de prendre par heure">Unités / heure</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Total estimé sur toute la course">Total</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">
-                    {% for p in products %}
-                    {% set rate = rates.get(p.id, 0) %}
-                    <tr class="hover:bg-gray-50/50">
-                        <td class="py-2 pr-2">
-                            <span class="font-medium text-gray-800">{{ p.name }}</span>
-                            <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ kind_labels.get(p.kind, p.kind) }}</span>
-                        </td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ p.carbs_g|round|int }}g</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ p.sodium_mg|round|int }}mg</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-400">{% if p.volume_ml %}{{ p.volume_ml|round|int }}ml{% else %}—{% endif %}</td>
-                        <td class="py-2 px-2">
-                            <div class="flex flex-col items-end">
-                                <input name="rate_{{ p.id }}" type="number" min="0" step="0.5" value="{{ rate }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
-                                {% if target_rates.get(p.id) %}<span class="text-[9px] text-gray-400 mt-0.5">≈ {{ target_rates[p.id] }}/h pour la cible</span>{% endif %}
-                            </div>
-                        </td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500 align-top pt-2.5">{% if rate %}{{ (rate * plan.hours)|round|int }} u.{% else %}—{% endif %}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Appliquer</button>
-    </form>
-
-    <!-- Coverage vs targets -->
-    <div>
-        <div class="flex items-center justify-between mb-2">
-            <p class="text-[11px] font-medium text-gray-500">Apport réel vs cible (par heure)</p>
-            <div class="flex items-center gap-3 text-[10px] text-gray-400">
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span>sous-dosé</span>
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>OK</span>
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-400"></span>trop</span>
-            </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {% for key, label, unit in [('carbs','Glucides','g/h'), ('fluid','Liquide','ml/h'), ('sodium','Sodium','mg/h')] %}
-            {% set c = plan.coverage[key] %}
-            {% set st = cov[c.status] %}
-            {% set pct = (c.provided_per_h / c.target_per_h * 100) if c.target_per_h else 0 %}
-            <div class="rounded-lg border border-gray-100 p-3">
-                <div class="flex items-baseline justify-between">
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wider">{{ label }}</p>
-                    <p class="text-[10px] font-medium {{ st.txt }}">{{ st.word }}</p>
-                </div>
-                <p class="text-base font-bold tabular-nums mt-0.5">{{ c.provided_per_h }} <span class="text-[11px] font-normal text-gray-400">/ {{ c.target_per_h }} {{ unit }}</span></p>
-                <div class="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-                    <div class="h-full rounded-full {{ st.bar }}" style="width: {{ [pct, 100] | min }}%"></div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+    <!-- ── RESULT (the actionable output) ── -->
+    {% set has_plan = plan.lines | length > 0 %}
+    {% if not has_plan %}
+    <div class="rounded-lg border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+        Ouvre <b>Réglages du plan</b> ci-dessous et clique <b>Suggérer les quantités</b> pour démarrer.
     </div>
+    {% else %}
 
-    <!-- Totals -->
-    <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
-        <span>Total à emporter : <b class="text-gray-700 tabular-nums">{{ plan.totals.carbs_g }} g</b> glucides</span>
-        <span><b class="text-gray-700 tabular-nums">{{ (plan.totals.fluid_ml / 1000)|round(1) }} L</b> liquide</span>
-        <span><b class="text-gray-700 tabular-nums">{{ plan.totals.sodium_mg }} mg</b> sodium</span>
-        {% if plan.totals.caffeine_mg %}<span><b class="text-gray-700 tabular-nums">{{ plan.totals.caffeine_mg }} mg</b> caféine</span>{% endif %}
-    </div>
-
-    <!-- Hydration feasibility between refill points -->
-    {% if plan.hydration %}
-    <div>
-        <div class="flex items-center justify-between mb-1">
-            <p class="text-[11px] font-medium text-gray-500">Hydratation entre ravitos</p>
-            <span class="text-[10px] text-gray-400">tu portes {{ plan.hydration.capacity_ml }} ml</span>
-        </div>
-        {% if not plan.hydration.has_refills %}
-        <p class="text-[11px] text-gray-400 mb-2">Aucun ravito coché : le besoin est calculé sur toute la course. Coche tes points de ravitaillement ci-dessus.</p>
+    <!-- Compact status strip -->
+    <div class="flex flex-wrap items-center gap-2 text-[11px]">
+        {% for key, label, unit in [('carbs','Glucides','g/h'), ('fluid','Liquide','ml/h'), ('sodium','Sodium','mg/h')] %}
+        {% set c = plan.coverage[key] %}
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 pl-2.5 pr-2 py-1">
+            <span class="text-gray-500">{{ label }}</span>
+            <span class="tabular-nums font-semibold text-gray-800">{{ c.provided_per_h }}</span>
+            <span class="text-gray-400 tabular-nums">/ {{ c.target_per_h }} {{ unit }}</span>
+            <span class="font-medium {{ cov[c.status].txt }}">{{ cov[c.status].word }}</span>
+        </span>
+        {% endfor %}
+        {% if plan.hydration %}
+        {% if plan.hydration.feasible %}
+        <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">💧 Hydratation OK</span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-red-700">💧 manque {{ plan.hydration.max_shortfall_ml }} ml</span>
         {% endif %}
-        {% if not plan.hydration.feasible %}
-        <div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700 mb-2">
-            <svg width="1em" height="1em" class="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-            <span>Sur certains segments tu auras besoin de plus d'eau que tu n'en portes (jusqu'à <b>{{ plan.hydration.max_shortfall_ml }} ml</b> de manque). Porte plus, ajoute un ravito, ou prévois de rationner.</span>
-        </div>
         {% endif %}
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm min-w-[480px]">
-                <thead>
-                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
-                        <th class="text-left py-2 pr-2 font-medium">Segment (entre ravitos)</th>
-                        <th class="text-right py-2 px-2 font-medium">Durée</th>
-                        <th class="text-right py-2 px-2 font-medium">Besoin eau</th>
-                        <th class="text-right py-2 px-2 font-medium">Portée</th>
-                        <th class="text-right py-2 px-2 font-medium">État</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">
-                    {% for sg in plan.hydration.segments %}
-                    <tr class="{% if not sg.ok %}bg-red-50/50{% endif %}">
-                        <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ sg.from_name }}</span> → <b>{{ sg.to_name }}</b></td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(sg.time_s) }}</td>
-                        <td class="text-right py-2 px-2 tabular-nums {% if not sg.ok %}text-red-600 font-semibold{% endif %}">{{ (sg.need_ml/1000)|round(2) }}L</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ (sg.capacity_ml/1000)|round(2) }}L</td>
-                        <td class="text-right py-2 px-2 text-[11px]">{% if sg.ok %}<span class="text-emerald-600">OK</span>{% else %}<span class="text-red-600 font-medium">−{{ sg.shortfall_ml }} ml</span>{% endif %}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
     </div>
-    {% endif %}
 
-    <!-- Per-leg schedule -->
-    {% if plan.schedule and plan.lines %}
+    <!-- Schedule: the hero — what to take, leg by leg -->
     <div>
-        <p class="text-[11px] font-medium text-gray-500 mb-1">À prendre sur chaque tronçon</p>
-        <p class="text-[10px] text-gray-400 mb-2">Quantités à consommer entre deux points de passage.</p>
+        <p class="text-xs font-medium text-gray-500 mb-2">À prendre sur chaque tronçon</p>
         <div class="overflow-x-auto">
             <table class="w-full text-sm min-w-[520px]">
                 <thead>
@@ -208,8 +60,8 @@
                         <th class="text-left py-2 pr-2 font-medium">Tronçon</th>
                         <th class="text-right py-2 px-2 font-medium">Durée</th>
                         <th class="text-left py-2 pl-3 font-medium">À prendre</th>
-                        <th class="text-right py-2 px-2 font-medium">Glucides</th>
-                        <th class="text-right py-2 px-2 font-medium">Liquide</th>
+                        <th class="text-right py-2 px-2 font-medium">Gluc.</th>
+                        <th class="text-right py-2 px-2 font-medium">Eau</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
@@ -229,7 +81,113 @@
                 </tbody>
             </table>
         </div>
+        <p class="mt-2 text-[11px] text-gray-400">Total à emporter : <b class="text-gray-600">{{ plan.totals.carbs_g }} g</b> glucides · <b class="text-gray-600">{{ (plan.totals.fluid_ml/1000)|round(1) }} L</b> · <b class="text-gray-600">{{ plan.totals.sodium_mg }} mg</b> sodium</p>
     </div>
     {% endif %}
+
+    <!-- ── SETTINGS (collapsed once configured) ── -->
+    <details {% if not has_plan %}open{% endif %} class="rounded-lg border border-gray-200">
+        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-gray-600 flex items-center gap-1.5 hover:bg-gray-50 rounded-lg">
+            <svg width="1em" height="1em" class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/></svg>
+            Réglages du plan
+        </summary>
+        <form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" class="p-3 border-t border-gray-100 space-y-4">
+            <!-- Targets + suggest -->
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <p class="text-[11px] font-medium text-gray-500 mb-1">Cibles par heure <span class="font-normal text-gray-400">(selon durée + chaleur)</span></p>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Glucides</span>
+                            <input name="carbs_g_per_h" type="number" min="0" step="5" value="{{ targets.carbs_g_per_h }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">g/h</span></label>
+                        <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Liquide</span>
+                            <input name="fluid_ml_per_h" type="number" min="0" step="50" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">ml/h</span></label>
+                        <label class="flex items-center gap-1 text-sm"><span class="text-gray-500 text-xs">Sodium</span>
+                            <input name="sodium_mg_per_h" type="number" min="0" step="50" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400 text-xs">mg/h</span></label>
+                    </div>
+                </div>
+                <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/suggest" hx-include="closest form"
+                        hx-target="#nutrition-card" hx-swap="outerHTML"
+                        class="h-8 px-3 rounded-lg border border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
+                        title="Remplir automatiquement les quantités pour atteindre la cible glucides">
+                    <svg width="1em" height="1em" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                    Suggérer les quantités
+                </button>
+            </div>
+
+            <!-- Hydration: carried water + refill points as chips -->
+            <div class="rounded-lg bg-gray-50/70 p-3 space-y-2">
+                <label class="flex items-center gap-1.5 text-sm">
+                    <span class="text-[11px] font-medium text-gray-500">Eau portée</span>
+                    <input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
+                    <span class="text-gray-400 text-xs">ml (flasques)</span>
+                </label>
+                {% if refill_points %}
+                <div>
+                    <p class="text-[11px] font-medium text-gray-500 mb-1.5">Ravitos — coche où tu refais le plein d'eau</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for cp in refill_points %}
+                        <label class="cursor-pointer">
+                            <input type="checkbox" name="refill_{{ cp.km }}" value="1" {% if cp.is_refill %}checked{% endif %} class="peer sr-only">
+                            <span class="inline-block px-2.5 py-1 rounded-full border border-gray-200 text-[11px] text-gray-600 hover:bg-white peer-checked:bg-gray-900 peer-checked:text-white transition-colors">{{ cp.name }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% if plan.hydration and plan.hydration.segments %}
+                <details class="text-[11px]">
+                    <summary class="cursor-pointer text-gray-500 hover:text-gray-700">Détail eau par segment</summary>
+                    <table class="w-full mt-1.5">
+                        <tbody class="divide-y divide-gray-100">
+                            {% for sg in plan.hydration.segments %}
+                            <tr class="{% if not sg.ok %}text-red-600{% else %}text-gray-600{% endif %}">
+                                <td class="py-1 pr-2">{{ sg.from_name }} → {{ sg.to_name }}</td>
+                                <td class="py-1 px-2 text-right tabular-nums">{{ fmt_hm(sg.time_s) }}</td>
+                                <td class="py-1 px-2 text-right tabular-nums">besoin {{ (sg.need_ml/1000)|round(2) }}L</td>
+                                <td class="py-1 pl-2 text-right tabular-nums">{% if sg.ok %}OK{% else %}−{{ sg.shortfall_ml }}ml{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </details>
+                {% endif %}
+            </div>
+
+            <!-- Products + intake rate -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm min-w-[560px]">
+                    <thead>
+                        <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                            <th class="text-left py-2 pr-2 font-medium">Produit</th>
+                            <th class="text-right py-2 px-2 font-medium">Gluc.</th>
+                            <th class="text-right py-2 px-2 font-medium">Sodium</th>
+                            <th class="text-right py-2 px-2 font-medium">Vol.</th>
+                            <th class="text-right py-2 px-2 font-medium" title="Unités à prendre par heure">Unités / h</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        {% for p in products %}
+                        {% set rate = rates.get(p.id, 0) %}
+                        <tr class="hover:bg-gray-50/50">
+                            <td class="py-2 pr-2"><span class="font-medium text-gray-800">{{ p.name }}</span>
+                                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ kind_labels.get(p.kind, p.kind) }}</span></td>
+                            <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ p.carbs_g|round|int }}g</td>
+                            <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ p.sodium_mg|round|int }}mg</td>
+                            <td class="text-right py-2 px-2 tabular-nums text-gray-400">{% if p.volume_ml %}{{ p.volume_ml|round|int }}ml{% else %}—{% endif %}</td>
+                            <td class="py-2 px-2">
+                                <div class="flex flex-col items-end">
+                                    <input name="rate_{{ p.id }}" type="number" min="0" step="0.5" value="{{ rate }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
+                                    {% if target_rates.get(p.id) %}<span class="text-[9px] text-gray-400 mt-0.5">≈ {{ target_rates[p.id] }}/h pour la cible</span>{% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Appliquer</button>
+        </form>
+    </details>
     {% endif %}
 </div>
