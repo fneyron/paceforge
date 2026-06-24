@@ -82,6 +82,8 @@ def compute_plan(
     items: list[dict],
     products_by_id: dict[int, dict],
     sections: list[dict] | None = None,
+    flask_capacity_ml: float = 0,
+    refill_kms: set | None = None,
 ) -> dict:
     """Build the nutrition plan.
 
@@ -175,8 +177,46 @@ def compute_plan(
             prev_cum_s = cum_s
             prev_name = s.get("end_name", "")
 
+    # Hydration feasibility: between two refill points you only carry
+    # `flask_capacity_ml`. If a segment needs more fluid than you can carry,
+    # flag the shortfall — you'd run dry before the next aid station.
+    hydration = None
+    if flask_capacity_ml and per_h["fluid_ml"] > 0 and schedule:
+        refills = {round(float(k), 1) for k in (refill_kms or set())}
+        cap = float(flask_capacity_ml)
+        segs = []
+        seg_from = "Départ"
+        seg_time = 0.0
+        seg_fluid = 0.0
+        for i, leg in enumerate(schedule):
+            seg_time += leg["leg_time_s"]
+            seg_fluid += leg["fluid_ml"]
+            is_refill = round(float(leg["km"]), 1) in refills if leg["km"] is not None else False
+            is_last = i == len(schedule) - 1
+            if is_refill or is_last:
+                segs.append({
+                    "from_name": seg_from,
+                    "to_name": leg["to_name"],
+                    "time_s": int(seg_time),
+                    "need_ml": round(seg_fluid),
+                    "capacity_ml": round(cap),
+                    "ok": seg_fluid <= cap + 1,
+                    "shortfall_ml": max(0, round(seg_fluid - cap)),
+                })
+                seg_from = leg["to_name"]
+                seg_time = 0.0
+                seg_fluid = 0.0
+        hydration = {
+            "capacity_ml": round(cap),
+            "segments": segs,
+            "feasible": all(s["ok"] for s in segs),
+            "max_shortfall_ml": max((s["shortfall_ml"] for s in segs), default=0),
+            "has_refills": bool(refills),
+        }
+
     return {
         "duration_s": int(duration_s),
+        "hydration": hydration,
         "hours": round(hours, 2),
         "targets": targets,
         "per_hour": {k: round(v) for k, v in per_h.items()},

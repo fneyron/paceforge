@@ -843,7 +843,12 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     nutrition = route.nutrition_json or {}
     targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
     items = nutrition.get("items") or []
-    plan = compute_plan(duration_s, targets, items, products_by_id, sections)
+    flask_capacity_ml = nutrition.get("flask_capacity_ml") or 1000
+    refills = set(nutrition.get("refills") or [])
+    plan = compute_plan(
+        duration_s, targets, items, products_by_id, sections,
+        flask_capacity_ml=flask_capacity_ml, refill_kms=refills,
+    )
     # rate per product for the form (product_id -> per_hour)
     rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
     # hint: units/h of each product needed to hit the carb target alone
@@ -852,6 +857,13 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         p["id"]: rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"])
         for p in products
     }
+    # checkpoints the athlete can mark as refill points (all section ends but
+    # the finish), with their current refill state.
+    refill_points = [
+        {"name": s.get("end_name", ""), "km": round(float(s.get("end_km") or 0), 1),
+         "is_refill": round(float(s.get("end_km") or 0), 1) in {round(float(k), 1) for k in refills}}
+        for s in sections[:-1]
+    ] if sections else []
 
     return {
         "request": request,
@@ -860,6 +872,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "targets": targets,
         "rates": rates,
         "target_rates": target_rates,
+        "flask_capacity_ml": flask_capacity_ml,
+        "refill_points": refill_points,
         "plan": plan,
         "has_duration": duration_s > 0,
     }
@@ -906,6 +920,32 @@ async def nutrition_page(
     ctx = await _pantry_context(request, db, user)
     ctx["user"] = user
     return templates.TemplateResponse(request, "nutrition.html", context=ctx)
+
+
+_DEFAULT_PRODUCTS = [
+    # name, kind, carbs_g, sodium_mg, volume_ml
+    ("Eau", "drink", 0, 0, 500),
+    ("Boisson glucidique", "drink", 30, 300, 500),
+    ("Gel énergétique", "gel", 22, 0, None),
+    ("Pastille de sel", "salt", 0, 300, None),
+]
+
+
+@router.post("/api/nutrition/products/seed", response_class=HTMLResponse)
+async def seed_products(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a starter pantry (water + common items) the athlete can tweak."""
+    for name, kind, carbs, sodium, vol in _DEFAULT_PRODUCTS:
+        db.add(NutritionProduct(
+            user_id=user.id, name=name, kind=kind,
+            carbs_g=carbs, sodium_mg=sodium, volume_ml=vol,
+        ))
+    await db.flush()
+    ctx = await _pantry_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
 
 
 @router.post("/api/nutrition/products", response_class=HTMLResponse)
@@ -1015,7 +1055,8 @@ async def save_nutrition_plan(
         "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"))),
     }
     items = []
-    for key, val in form.items():
+    refills = []
+    for key, val in form.multi_items() if hasattr(form, "multi_items") else form.items():
         if key.startswith("rate_"):
             rate = _to_float(val)
             if rate > 0:
@@ -1023,7 +1064,16 @@ async def save_nutrition_plan(
                     items.append({"product_id": int(key[5:]), "per_hour": rate})
                 except ValueError:
                     continue
-    route.nutrition_json = {"targets": targets, "items": items}
+        elif key.startswith("refill_"):
+            try:
+                refills.append(round(float(key[7:]), 1))
+            except ValueError:
+                continue
+    flask_capacity_ml = round(_to_float(form.get("flask_capacity_ml"), 1000))
+    route.nutrition_json = {
+        "targets": targets, "items": items,
+        "flask_capacity_ml": flask_capacity_ml, "refills": sorted(set(refills)),
+    }
     await db.flush()
     ctx = await _nutrition_card_context(request, route, db, user)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)

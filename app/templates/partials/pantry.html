@@ -39,8 +39,12 @@
     <!-- Existing products (each row is an inline-editable form) -->
     {% if not products %}
     <div class="rounded-xl border border-dashed border-gray-200 p-8 text-center">
-        <p class="text-sm text-gray-400">Aucun produit pour l'instant. Ajoute tes gels, boissons et barres ci-dessus —
-            ils seront réutilisables dans le plan nutritionnel de chaque course.</p>
+        <p class="text-sm text-gray-400 mb-3">Aucun produit pour l'instant. Ajoute les tiens ci-dessus, ou pars d'une base.</p>
+        <button hx-post="/api/nutrition/products/seed" hx-target="#pantry" hx-swap="outerHTML"
+                class="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">
+            Ajouter les produits de base
+        </button>
+        <p class="text-[11px] text-gray-400 mt-2">Eau · boisson glucidique · gel · pastille de sel</p>
     </div>
     {% else %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">

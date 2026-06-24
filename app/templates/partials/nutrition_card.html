@@ -52,6 +52,30 @@
             </button>
         </div>
 
+        <!-- Hydration: carried capacity + which checkpoints are refill points -->
+        <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <label class="flex items-center gap-1.5 text-sm">
+                    <span class="text-[11px] font-medium text-gray-500">Eau portée</span>
+                    <input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
+                    <span class="text-gray-400 text-xs">ml (flasques)</span>
+                </label>
+                {% if refill_points %}
+                <div class="flex-1 min-w-[12rem]">
+                    <p class="text-[11px] font-medium text-gray-500 mb-1">Ravitos (plein d'eau possible)</p>
+                    <div class="flex flex-wrap gap-x-3 gap-y-1">
+                        {% for cp in refill_points %}
+                        <label class="inline-flex items-center gap-1 text-[11px] text-gray-600">
+                            <input type="checkbox" name="refill_{{ cp.km }}" value="1" {% if cp.is_refill %}checked{% endif %} class="rounded border-gray-300">
+                            {{ cp.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Products + intake rate -->
         <div class="overflow-x-auto">
             <table class="w-full text-sm min-w-[600px]">
@@ -128,6 +152,49 @@
         <span><b class="text-gray-700 tabular-nums">{{ plan.totals.sodium_mg }} mg</b> sodium</span>
         {% if plan.totals.caffeine_mg %}<span><b class="text-gray-700 tabular-nums">{{ plan.totals.caffeine_mg }} mg</b> caféine</span>{% endif %}
     </div>
+
+    <!-- Hydration feasibility between refill points -->
+    {% if plan.hydration %}
+    <div>
+        <div class="flex items-center justify-between mb-1">
+            <p class="text-[11px] font-medium text-gray-500">Hydratation entre ravitos</p>
+            <span class="text-[10px] text-gray-400">tu portes {{ plan.hydration.capacity_ml }} ml</span>
+        </div>
+        {% if not plan.hydration.has_refills %}
+        <p class="text-[11px] text-gray-400 mb-2">Aucun ravito coché : le besoin est calculé sur toute la course. Coche tes points de ravitaillement ci-dessus.</p>
+        {% endif %}
+        {% if not plan.hydration.feasible %}
+        <div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700 mb-2">
+            <svg width="1em" height="1em" class="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+            <span>Sur certains segments tu auras besoin de plus d'eau que tu n'en portes (jusqu'à <b>{{ plan.hydration.max_shortfall_ml }} ml</b> de manque). Porte plus, ajoute un ravito, ou prévois de rationner.</span>
+        </div>
+        {% endif %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[480px]">
+                <thead>
+                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                        <th class="text-left py-2 pr-2 font-medium">Segment (entre ravitos)</th>
+                        <th class="text-right py-2 px-2 font-medium">Durée</th>
+                        <th class="text-right py-2 px-2 font-medium">Besoin eau</th>
+                        <th class="text-right py-2 px-2 font-medium">Portée</th>
+                        <th class="text-right py-2 px-2 font-medium">État</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for sg in plan.hydration.segments %}
+                    <tr class="{% if not sg.ok %}bg-red-50/50{% endif %}">
+                        <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ sg.from_name }}</span> → <b>{{ sg.to_name }}</b></td>
+                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(sg.time_s) }}</td>
+                        <td class="text-right py-2 px-2 tabular-nums {% if not sg.ok %}text-red-600 font-semibold{% endif %}">{{ (sg.need_ml/1000)|round(2) }}L</td>
+                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ (sg.capacity_ml/1000)|round(2) }}L</td>
+                        <td class="text-right py-2 px-2 text-[11px]">{% if sg.ok %}<span class="text-emerald-600">OK</span>{% else %}<span class="text-red-600 font-medium">−{{ sg.shortfall_ml }} ml</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Per-leg schedule -->
     {% if plan.schedule and plan.lines %}
