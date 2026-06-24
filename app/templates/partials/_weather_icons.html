@@ -6,24 +6,24 @@
 {% macro wicon(cat, cls="w-4 h-4") -%}
 {%- set cat = cat or "unknown" -%}
 {%- if cat == "clear" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" fill="#f59e0b"/><g stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2L17 7M7 17l-1.8 1.8"/></g></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" fill="#f59e0b"/><g stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2L17 7M7 17l-1.8 1.8"/></g></svg>
 {%- elif cat == "mostly-clear" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="9" r="3.6" fill="#f59e0b"/><g stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"><path d="M9 1.8v2M2.2 9h2M9 14.2v.2M3.9 3.9l1.4 1.4M14.1 3.9l-1.4 1.4"/></g><path d="M9.5 18a3.2 3.2 0 010-6.4 4.2 4.2 0 018.1 1.2A2.9 2.9 0 0117.5 18z" fill="#cbd5e1"/></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="9" r="3.6" fill="#f59e0b"/><g stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"><path d="M9 1.8v2M2.2 9h2M9 14.2v.2M3.9 3.9l1.4 1.4M14.1 3.9l-1.4 1.4"/></g><path d="M9.5 18a3.2 3.2 0 010-6.4 4.2 4.2 0 018.1 1.2A2.9 2.9 0 0117.5 18z" fill="#cbd5e1"/></svg>
 {%- elif cat == "partly-cloudy" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="8.5" cy="8" r="3.4" fill="#f59e0b"/><path d="M9.5 19a3.4 3.4 0 010-6.8 4.5 4.5 0 018.7 1.3A3.1 3.1 0 0117.7 19z" fill="#94a3b8"/></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><circle cx="8.5" cy="8" r="3.4" fill="#f59e0b"/><path d="M9.5 19a3.4 3.4 0 010-6.8 4.5 4.5 0 018.7 1.3A3.1 3.1 0 0117.7 19z" fill="#94a3b8"/></svg>
 {%- elif cat == "overcast" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 18a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 18z" fill="#94a3b8"/></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 18a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 18z" fill="#94a3b8"/></svg>
 {%- elif cat == "fog" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 14a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 14z" fill="#cbd5e1"/><g stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round"><path d="M5 17.5h14M7 20.5h10"/></g></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 14a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 14z" fill="#cbd5e1"/><g stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round"><path d="M5 17.5h14M7 20.5h10"/></g></svg>
 {%- elif cat == "drizzle" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 14a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 14z" fill="#94a3b8"/><g stroke="#3b82f6" stroke-width="1.6" stroke-linecap="round"><path d="M9 17v1.5M13 17v1.5"/></g></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 14a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 14z" fill="#94a3b8"/><g stroke="#3b82f6" stroke-width="1.6" stroke-linecap="round"><path d="M9 17v1.5M13 17v1.5"/></g></svg>
 {%- elif cat == "rain" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#64748b"/><g stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"><path d="M8.5 16l-1 3M12 16l-1 3M15.5 16l-1 3"/></g></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#64748b"/><g stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"><path d="M8.5 16l-1 3M12 16l-1 3M15.5 16l-1 3"/></g></svg>
 {%- elif cat == "snow" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#cbd5e1"/><g fill="#38bdf8"><circle cx="9" cy="17.5" r="1"/><circle cx="12.5" cy="19" r="1"/><circle cx="15.5" cy="17.5" r="1"/></g></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#cbd5e1"/><g fill="#38bdf8"><circle cx="9" cy="17.5" r="1"/><circle cx="12.5" cy="19" r="1"/><circle cx="15.5" cy="17.5" r="1"/></g></svg>
 {%- elif cat == "storm" -%}
-<svg class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#64748b"/><path d="M12 14l-2.5 4h2l-1 3 3.5-4.5h-2z" fill="#f59e0b"/></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle" viewBox="0 0 24 24" fill="none"><path d="M7.5 13a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 13z" fill="#64748b"/><path d="M12 14l-2.5 4h2l-1 3 3.5-4.5h-2z" fill="#f59e0b"/></svg>
 {%- else -%}
-<svg class="{{ cls }} inline-block align-middle text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7.5 16a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 16z" stroke-linejoin="round"/></svg>
+<svg width="1em" height="1em" style="width:1em;height:1em" class="{{ cls }} inline-block align-middle text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7.5 16a4 4 0 010-8 5.3 5.3 0 0110.2 1.5A3.6 3.6 0 0116.5 16z" stroke-linejoin="round"/></svg>
 {%- endif -%}
 {%- endmacro %}

@@ -42,6 +42,28 @@ def default_targets(duration_h: float, mean_temp_c: float | None) -> dict:
     }
 
 
+def suggest_rates(target_carbs_per_h: float, products: list[dict]) -> dict[int, float]:
+    """Suggest an intake rate (units/h) to roughly meet the carb target.
+
+    Strategy: lean on the highest-carb product as the main fuel and set its
+    rate so it alone covers the carb target. Simple and transparent; the
+    athlete fine-tunes from there (e.g. swapping some gels for drink/solids).
+    """
+    carb_products = [p for p in products if (p.get("carbs_g") or 0) > 0]
+    if not carb_products or target_carbs_per_h <= 0:
+        return {}
+    main = max(carb_products, key=lambda p: p.get("carbs_g") or 0)
+    rate = target_carbs_per_h / (main["carbs_g"])
+    return {main["id"]: round(rate * 2) / 2}  # nearest 0.5 unit/h
+
+
+def rate_for_target(target_carbs_per_h: float, carbs_per_unit: float) -> float:
+    """Units/h of one product needed to hit the carb target alone."""
+    if carbs_per_unit and carbs_per_unit > 0 and target_carbs_per_h > 0:
+        return round((target_carbs_per_h / carbs_per_unit) * 2) / 2
+    return 0.0
+
+
 def _status(provided: float, target: float) -> str:
     """under / ok / over relative to a target (±15% band = ok)."""
     if target <= 0:
@@ -127,25 +149,31 @@ def compute_plan(
         },
     }
 
-    # Checkpoint-mapped cumulative schedule: by the time you reach each point,
-    # roughly this much should already be consumed (rate × elapsed hours).
+    # Per-leg schedule: what to actually take BETWEEN two checkpoints (the
+    # elapsed time on that leg × rate). More actionable than a fractional
+    # cumulative count — "between Départ and Planpraz: 3 gels, 0.5 L".
     schedule = []
+    prev_cum_s = 0.0
+    prev_name = "Départ"
     if sections:
         for s in sections:
             cum_s = s.get("cumulative_time_s") or 0
-            cum_h = cum_s / 3600.0
+            leg_h = max((cum_s - prev_cum_s) / 3600.0, 0.0)
             schedule.append({
-                "name": s.get("end_name", ""),
+                "from_name": prev_name,
+                "to_name": s.get("end_name", ""),
                 "km": s.get("end_km"),
-                "cumulative_time_s": cum_s,
-                "carbs_g": round(per_h["carbs_g"] * cum_h),
-                "fluid_ml": round(per_h["fluid_ml"] * cum_h),
-                "sodium_mg": round(per_h["sodium_mg"] * cum_h),
+                "leg_time_s": int(cum_s - prev_cum_s),
+                "carbs_g": round(per_h["carbs_g"] * leg_h),
+                "fluid_ml": round(per_h["fluid_ml"] * leg_h),
                 "units": [
-                    {"name": ln["name"], "kind": ln["kind"], "units": round(ln["per_hour"] * cum_h, 1)}
+                    {"name": ln["name"], "kind": ln["kind"],
+                     "units": round(ln["per_hour"] * leg_h * 2) / 2}  # nearest 0.5
                     for ln in lines
                 ],
             })
+            prev_cum_s = cum_s
+            prev_name = s.get("end_name", "")
 
     return {
         "duration_s": int(duration_s),

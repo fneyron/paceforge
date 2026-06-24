@@ -846,6 +846,12 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     plan = compute_plan(duration_s, targets, items, products_by_id, sections)
     # rate per product for the form (product_id -> per_hour)
     rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
+    # hint: units/h of each product needed to hit the carb target alone
+    from app.services.nutrition import rate_for_target
+    target_rates = {
+        p["id"]: rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"])
+        for p in products
+    }
 
     return {
         "request": request,
@@ -853,6 +859,7 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "products": products,
         "targets": targets,
         "rates": rates,
+        "target_rates": target_rates,
         "plan": plan,
         "has_duration": duration_s > 0,
     }
@@ -1017,6 +1024,43 @@ async def save_nutrition_plan(
                 except ValueError:
                     continue
     route.nutrition_json = {"targets": targets, "items": items}
+    await db.flush()
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/suggest", response_class=HTMLResponse)
+async def suggest_nutrition_plan(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-fill intake rates to roughly meet the carb target, then re-render."""
+    from app.services.nutrition import suggest_rates
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+
+    prod_result = await db.execute(
+        select(NutritionProduct).where(NutritionProduct.user_id == user.id)
+    )
+    products = [_product_dict(p) for p in prod_result.scalars().all()]
+
+    # Targets come from the current form (the button includes the plan form),
+    # falling back to whatever was saved.
+    form = await request.form()
+    nutrition = route.nutrition_json or {}
+    saved_targets = nutrition.get("targets") or {}
+    targets = {
+        "carbs_g_per_h": round(_to_float(form.get("carbs_g_per_h"), saved_targets.get("carbs_g_per_h", 0))),
+        "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h"), saved_targets.get("fluid_ml_per_h", 0))),
+        "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"), saved_targets.get("sodium_mg_per_h", 0))),
+    }
+    rates = suggest_rates(targets.get("carbs_g_per_h", 0), products)
+    items = [{"product_id": pid, "per_hour": rate} for pid, rate in rates.items() if rate > 0]
+    route.nutrition_json = {**nutrition, "targets": targets, "items": items}
     await db.flush()
     ctx = await _nutrition_card_context(request, route, db, user)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
