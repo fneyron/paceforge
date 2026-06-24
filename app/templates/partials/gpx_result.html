@@ -123,10 +123,10 @@
                 <label class="text-[11px] font-medium text-gray-500" title="Ton temps cible. Les temps de passage « Obj. » du plan sont recalés dessus. Par défaut = temps estimé par le modèle.">Objectif</label>
                 {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
                 <div class="flex items-center gap-1.5 h-9">
-                    <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim.syncTarget()"
+                    <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim && window._sim.syncTarget()"
                            class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
                     <span class="text-xs text-gray-400">h</span>
-                    <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim.syncTarget()"
+                    <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim && window._sim.syncTarget()"
                            class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
                     <span class="text-xs text-gray-400">min</span>
                     <button type="button" onclick="window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé par le modèle"
@@ -433,8 +433,16 @@ window._sim = {};
         if (currentWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b })
             .then(function(r) { return r.json(); })
-            .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); } else { setStatus('error'); } })
+            .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); refreshNutrition(); } else { setStatus('error'); } })
             .catch(function() { setStatus('error'); });
+    }
+    // The nutrition plan's duration depends on the saved objective; refresh it
+    // after a save so it tracks objective/condition changes without a reload.
+    function refreshNutrition() {
+        var el = document.getElementById('nutrition-wrap');
+        if (el && window.htmx && currentRouteId) {
+            window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId, { target: '#nutrition-wrap', swap: 'innerHTML' });
+        }
     }
     function scheduleSave() {
         setStatus('saving');

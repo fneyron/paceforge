@@ -219,7 +219,7 @@ class ClaudeService:
         raw_response = await self._call_claude(
             user_message,
             system_prompt=RACE_STRATEGY_SYSTEM_PROMPT,
-            max_tokens=2048,
+            max_tokens=8192,  # 2048 truncated the JSON mid-string → parse error
         )
         return self._parse_race_strategy_response(raw_response)
 
