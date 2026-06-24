@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ saved_route_name }} — PaceForge{% endblock title %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
+<style>
+.maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
+.map-container { position: relative; z-index: 0; overflow: hidden; }
+/* Hide native number spinners so narrow time inputs don't truncate their value. */
+.sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sim-num { -moz-appearance: textfield; appearance: textfield; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+    <a href="/simulator" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+        Tous les parcours
+    </a>
+    {% include "partials/gpx_result.html" %}
+</div>
+{% endblock content %}

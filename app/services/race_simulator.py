@@ -464,12 +464,16 @@ def compute_passage_times(
     adj_cumulative = 0.0
     for r in raw:
         temperature_c = None
+        weather_code = None
         if use_hourly:
             hour = int((start_offset_s + r["mid_cum"]) // 3600) % 24
             temps = hourly_weather["temps"]
             hums = hourly_weather.get("humidity") or []
+            codes = hourly_weather.get("codes") or []
             base_temp = temps[hour] if hour < len(temps) else temps[-1]
             humidity = hums[hour] if hour < len(hums) else (hums[-1] if hums else 60)
+            if hour < len(codes) and codes[hour] is not None:
+                weather_code = int(codes[hour])
             mid_elev = _elevation_at_km(course, (r["start_km"] + r["end_km"]) / 2) or base_elev
             temperature_c = round(base_temp - _LAPSE_RATE_C_PER_M * (mid_elev - base_elev), 1)
             sec_heat = compute_heat_factor(temperature_c, humidity)
@@ -502,6 +506,7 @@ def compute_passage_times(
             end_checkpoint_index=r["cp_index"],
             temperature_c=temperature_c,
             heat_factor=round(sec_heat, 3) if use_hourly else None,
+            weather_code=weather_code,
         ).model_dump())
 
     return sections

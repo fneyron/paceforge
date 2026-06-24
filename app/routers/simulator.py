@@ -14,6 +14,12 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 
+# Expose weather-code → icon-category / label helpers to all simulator templates.
+from app.services.weather import WMO_LABELS, wmo_category  # noqa: E402
+
+templates.env.globals["wmo_category"] = wmo_category
+templates.env.globals["wmo_label"] = lambda code: WMO_LABELS.get(wmo_category(code), "")
+
 router = APIRouter(tags=["simulator"])
 
 
@@ -56,7 +62,13 @@ async def gpx_upload(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.gpx import build_course_profile, parse_gpx
+    """Parse an uploaded GPX, persist it as a new Route, then redirect (via
+    HX-Redirect) to its own detail page — so refresh/share/back work natively."""
+    from app.services.gpx import (
+        build_course_profile,
+        parse_gpx,
+        snap_waypoints_to_route,
+    )
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
     try:
@@ -65,33 +77,39 @@ async def gpx_upload(
         course = build_course_profile(points, name=gpx_file.filename or "Course")
 
         # Snap GPX waypoints to route
-        from app.services.gpx import snap_waypoints_to_route
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         # Build athlete profile and predict
         profile = await build_athlete_gradient_profile(db, user.id)
         course = predict_course(course, profile)
 
-        # Build GeoJSON for leaflet-elevation
-        geojson = {
-            "type": "Feature",
-            "geometry": {
-                "type": "LineString",
-                "coordinates": [[p.lon, p.lat, p.elevation] for p in points[::max(1, len(points)//800)]],
-            },
-            "properties": {"name": course.name},
-        }
+        course_data = json.loads(course.model_dump_json())
+        route = Route(
+            user_id=user.id,
+            name=course.name,
+            total_distance_km=course.total_distance_km,
+            total_elevation_gain=course.total_elevation_gain,
+            total_elevation_loss=course.total_elevation_loss,
+            course_json=course_data,
+            sport_type="trail",
+        )
+        db.add(route)
+        await db.flush()
 
-        return templates.TemplateResponse(
-            request,
-            "partials/gpx_result.html",
-            context={
-                "course": course,
-                "profile": profile,
-                "course_json": course.model_dump_json(),
-                "gpx_waypoints": json.dumps(snapped_wpts),
-                "geojson": json.dumps(geojson),
-            },
+        for wpt in snapped_wpts:
+            db.add(RouteCheckpoint(
+                route_id=route.id,
+                name=wpt.get("name", ""),
+                distance_km=wpt.get("distance_km", 0),
+                elevation=wpt.get("elevation"),
+            ))
+        await db.flush()
+
+        logger.info("Route %d created from GPX for user %d", route.id, user.id)
+        # HTMX swaps nothing; it follows the redirect to the new detail page.
+        return HTMLResponse(
+            status_code=204,
+            headers={"HX-Redirect": f"/simulator/routes/{route.id}"},
         )
     except ValueError as e:
         return HTMLResponse(
@@ -407,10 +425,13 @@ async def save_route(
     race_date: str | None = Form(default=None),
     start_hour: int | None = Form(default=None),
     start_minute: int | None = Form(default=None),
+    sport_type: str = Form(default="trail"),
+    weather_json: str | None = Form(default=None),
 ):
     try:
         course_data = json.loads(course_json)
         cps = json.loads(checkpoints_json)
+        weather_data = json.loads(weather_json) if weather_json else None
 
         # Update existing route or create new one
         route = None
@@ -431,6 +452,8 @@ async def save_route(
             if race_date: route.race_date = race_date
             if start_hour is not None: route.start_hour = start_hour
             if start_minute is not None: route.start_minute = start_minute
+            if sport_type: route.sport_type = sport_type
+            if weather_data is not None: route.weather_json = weather_data
 
             # Delete old checkpoints and replace
             from sqlalchemy import delete
@@ -450,6 +473,8 @@ async def save_route(
                 race_date=race_date,
                 start_hour=start_hour,
                 start_minute=start_minute,
+                sport_type=sport_type or "trail",
+                weather_json=weather_data,
             )
             db.add(route)
 
@@ -471,37 +496,27 @@ async def save_route(
         return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
 
 
-@router.get("/api/simulator/routes/{route_id}", response_class=HTMLResponse)
-async def load_route(
-    route_id: int,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    from app.services.race_simulator import predict_course, build_athlete_gradient_profile
+async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
+    """Shared context for the route detail page and its partial."""
     from app.schemas.simulator import CourseProfile
-
-    result = await db.execute(
-        select(Route).where(Route.id == route_id, Route.user_id == user.id)
-    )
-    route = result.scalar_one_or_none()
-    if not route or not route.course_json:
-        return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
+    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
 
     course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(course, profile)
+    profile = await build_athlete_gradient_profile(db, user_id)
+    course = predict_course(
+        course, profile,
+        start_hour=route.start_hour if route.start_hour is not None else 6,
+        start_minute=route.start_minute or 0,
+    )
 
-    # Load checkpoints
     cp_result = await db.execute(
         select(RouteCheckpoint)
-        .where(RouteCheckpoint.route_id == route_id)
+        .where(RouteCheckpoint.route_id == route.id)
         .order_by(RouteCheckpoint.distance_km)
     )
     cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
            for cp in cp_result.scalars().all()]
 
-    # Rebuild GeoJSON from route_coords
     coords = course.route_coords or []
     geojson = {
         "type": "Feature",
@@ -512,23 +527,59 @@ async def load_route(
         "properties": {"name": course.name},
     }
 
-    return templates.TemplateResponse(
-        request,
-        "partials/gpx_result.html",
-        context={
-            "course": course,
-            "profile": profile,
-            "course_json": course.model_dump_json(),
-            "gpx_waypoints": json.dumps(cps),
-            "geojson": json.dumps(geojson),
-            "saved_route_id": route_id,
-            "saved_route_name": route.name,
-            "saved_target_time_s": route.target_time_s,
-            "saved_race_date": route.race_date,
-            "saved_start_hour": route.start_hour,
-            "saved_start_minute": route.start_minute,
-        },
+    return {
+        "course": course,
+        "profile": profile,
+        "course_json": course.model_dump_json(),
+        "gpx_waypoints": json.dumps(cps),
+        "geojson": json.dumps(geojson),
+        "saved_route_id": route.id,
+        "saved_route_name": route.name,
+        "saved_target_time_s": route.target_time_s,
+        "saved_race_date": route.race_date,
+        "saved_start_hour": route.start_hour,
+        "saved_start_minute": route.start_minute,
+        "saved_sport_type": route.sport_type,
+        "saved_weather_json": json.dumps(route.weather_json) if route.weather_json else None,
+    }
+
+
+@router.get("/simulator/routes/{route_id}", response_class=HTMLResponse)
+async def route_detail_page(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full server-rendered detail page for a saved route (refresh-safe)."""
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
+    route = result.scalar_one_or_none()
+    if not route or not route.course_json:
+        return HTMLResponse("Parcours non trouvé", status_code=404)
+
+    ctx = await _build_route_context(route, db, user.id)
+    ctx["user"] = user
+    return templates.TemplateResponse(request, "simulator_route.html", context=ctx)
+
+
+@router.get("/api/simulator/routes/{route_id}", response_class=HTMLResponse)
+async def load_route(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Route).where(Route.id == route_id, Route.user_id == user.id)
+    )
+    route = result.scalar_one_or_none()
+    if not route or not route.course_json:
+        return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
+
+    ctx = await _build_route_context(route, db, user.id)
+    return templates.TemplateResponse(request, "partials/gpx_result.html", context=ctx)
 
 
 @router.patch("/api/simulator/routes/{route_id}")
@@ -657,10 +708,12 @@ async def print_route_plan(
     cps = [{"name": cp.name, "distance_km": cp.distance_km, "elevation": cp.elevation}
            for cp in cp_result.scalars().all()]
 
-    # Fetch weather for the saved race date so the printed plan shows the same
-    # per-checkpoint temperatures as the live simulator.
+    # Per-checkpoint temperatures for the printed plan. Prefer the weather saved
+    # with the route (no re-fetch); fall back to a fresh forecast only if absent.
     hourly_weather = None
-    if route.race_date and course.route_coords:
+    if route.weather_json and route.weather_json.get("hourly"):
+        hourly_weather = route.weather_json["hourly"]
+    elif route.race_date and course.route_coords:
         from app.services.weather import get_weather_forecast
 
         weather = await get_weather_forecast(

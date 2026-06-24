@@ -1,3 +1,4 @@
+{% import "partials/_weather_icons.html" as wx %}
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro fmt_clock(seconds) %}{% set day = (seconds // 86400) | int %}{% set rem = seconds % 86400 %}{% set h = (rem // 3600) | int %}{% set m = ((rem % 3600) // 60) | int %}{{ '%02d:%02d'|format(h, m) }}{% if day > 0 %} <span class="text-[9px] text-amber-500">+{{ day }}j</span>{% endif %}{% endmacro %}
 
@@ -6,17 +7,17 @@
         <thead>
             <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
                 <th class="text-left py-2 pr-3 font-medium">Point</th>
-                <th class="text-right py-2 px-2 font-medium">Alt.</th>
-                {% if has_weather is defined and has_weather %}<th class="text-right py-2 px-2 font-medium">T°</th>{% endif %}
-                <th class="text-right py-2 px-2 font-medium">Dist.</th>
-                <th class="text-right py-2 px-2 font-medium">D+</th>
-                <th class="text-right py-2 px-2 font-medium">D-</th>
-                <th class="text-right py-2 px-2 font-medium">Allure</th>
-                <th class="text-right py-2 px-2 font-medium">Section</th>
-                <th class="text-right py-2 px-2 font-medium">Cumul</th>
-                <th class="text-right py-2 px-2 font-medium text-gray-900">Heure</th>
+                <th class="text-right py-2 px-2 font-medium" title="Altitude du point de passage">Alt.</th>
+                {% if has_weather is defined and has_weather %}<th class="text-right py-2 px-2 font-medium" title="Météo et température estimées à l'heure de passage, corrigées de l'altitude">T°</th>{% endif %}
+                <th class="text-right py-2 px-2 font-medium" title="Distance de la section depuis le point précédent">Dist.</th>
+                <th class="text-right py-2 px-2 font-medium" title="Dénivelé positif de la section">D+</th>
+                <th class="text-right py-2 px-2 font-medium" title="Dénivelé négatif de la section">D-</th>
+                <th class="text-right py-2 px-2 font-medium" title="Allure moyenne prédite sur la section (min/km), selon ton profil et la pente">Allure</th>
+                <th class="text-right py-2 px-2 font-medium" title="Temps prédit pour parcourir cette section">Section</th>
+                <th class="text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ (prédiction du modèle)">Cumul</th>
+                <th class="text-right py-2 px-2 font-medium text-gray-900" title="Heure de la journée à laquelle tu passes (départ + temps prédit)">Heure</th>
                 {% if has_target %}
-                <th class="text-right py-2 pl-2 font-medium">Obj.</th>
+                <th class="text-right py-2 pl-2 font-medium" title="Heure de passage si tu tiens ton temps objectif (prédiction recalée sur ta cible). Vert = plus rapide que la prédiction, rouge = plus lent.">Obj.</th>
                 {% endif %}
                 <th class="w-6"></th>
             </tr>
@@ -77,7 +78,7 @@
                     {% endif %}
                 </td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{% if s.end_elevation is not none %}{{ s.end_elevation|int }}m{% else %}—{% endif %}</td>
-                {% if has_weather is defined and has_weather %}<td class="text-right py-2.5 px-2 tabular-nums {% if s.heat_factor and s.heat_factor > 1.08 %}text-red-500{% elif s.heat_factor and s.heat_factor > 1.0 %}text-amber-500{% else %}text-gray-500{% endif %}">{% if s.temperature_c is not none %}{{ s.temperature_c|round|int }}°{% else %}—{% endif %}</td>{% endif %}
+                {% if has_weather is defined and has_weather %}<td class="text-right py-2.5 px-2 tabular-nums {% if s.heat_factor and s.heat_factor > 1.08 %}text-red-500{% elif s.heat_factor and s.heat_factor > 1.0 %}text-amber-500{% else %}text-gray-500{% endif %}">{% if s.temperature_c is not none %}<span class="inline-flex items-center justify-end gap-1">{% if s.weather_code is not none %}<span title="{{ wmo_label(s.weather_code) }}">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}</span>{% endif %}{{ s.temperature_c|round|int }}°</span>{% else %}—{% endif %}</td>{% endif %}
                 <td class="text-right py-2.5 px-2 tabular-nums">{{ '%.1f'|format(s.distance_km) }}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-red-500">{% if s.elevation_loss > 0 %}-{{ s.elevation_loss|int }}{% else %}—{% endif %}</td>

@@ -170,3 +170,4 @@ class PassageTimeSection(BaseModel):
     end_checkpoint_index: int | None = None
     temperature_c: float | None = None
     heat_factor: float | None = None
+    weather_code: int | None = None

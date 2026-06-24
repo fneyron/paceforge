@@ -21,6 +21,10 @@ class Route(Base):
     race_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
     start_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-23
     start_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-59
+    sport_type: Mapped[str] = mapped_column(String(20), nullable=False, default="trail", server_default="trail")
+    # Cached weather payload (see services/weather.get_weather_forecast) so a saved
+    # route restores its conditions without re-fetching on every page view.
+    weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

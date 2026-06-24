@@ -1,3 +1,10 @@
+{% import "partials/_weather_icons.html" as wx %}
+{# Hidden registry: JS clones the matching icon for the live (general) weather. #}
+<div id="wicon-registry" hidden>
+    {% for c in ["clear","mostly-clear","partly-cloudy","overcast","fog","drizzle","rain","snow","storm","unknown"] %}
+    <span data-cat="{{ c }}">{{ wx.wicon(c, "w-4 h-4") }}</span>
+    {% endfor %}
+</div>
 <div class="space-y-4" id="simulator-root">
     <!-- Header: editable name + auto-save status -->
     <div class="flex items-center gap-2">
@@ -28,11 +35,30 @@
             <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D-</p>
             <p class="text-xl font-bold tabular-nums text-blue-500">{{ "%.0f"|format(course.total_elevation_loss) }} <span class="text-xs font-normal text-gray-400">m</span></p>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Temps estime</p>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm" title="Temps prédit par le modèle : ton allure selon la pente (profil Strava), ajustée pour la fatigue, l'altitude, le terrain technique, la nuit et la chaleur. C'est une estimation, pas ta cible.">
+            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1">Temps estimé
+                <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+            </p>
             <p class="text-xl font-bold tabular-nums">{{ course.predicted_total_time_formatted }}</p>
         </div>
     </div>
+
+    <!-- Prediction basis (transparency on what the estimate is built from) -->
+    {% if profile is defined and profile %}
+    {% if profile.data_points and profile.data_points > 0 %}
+    <div class="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2 text-[11px] text-gray-500">
+        <svg class="w-3.5 h-3.5 mt-px shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+        <span>Prédiction basée sur <b class="text-gray-700">{{ profile.data_points }}</b> segments de tes activités Strava
+            {%- if profile.sport_types_used %} ({{ profile.sport_types_used | join(', ') }}){% endif %}
+            des 6 derniers mois · allure de référence à plat <b class="text-gray-700">{{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km</b>.</span>
+    </div>
+    {% else %}
+    <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+        <svg class="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        <span><b>Aucune donnée Strava exploitable</b> (pas de splits sur tes activités des 6 derniers mois). L'estimation repose sur un modèle physiologique générique (Minetti) — re-synchronise Strava pour une prédiction personnalisée.</span>
+    </div>
+    {% endif %}
+    {% endif %}
 
     {% if course.route_coords %}
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -94,15 +120,19 @@
                        class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
             </div>
             <div class="flex flex-col gap-1">
-                <label class="text-[11px] font-medium text-gray-500">Objectif</label>
+                <label class="text-[11px] font-medium text-gray-500" title="Ton temps cible. Les temps de passage « Obj. » du plan sont recalés dessus. Par défaut = temps estimé par le modèle.">Objectif</label>
                 {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
-                <div class="flex items-center gap-1 h-9">
+                <div class="flex items-center gap-1.5 h-9">
                     <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim.syncTarget()"
-                           class="w-12 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
                     <span class="text-xs text-gray-400">h</span>
                     <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim.syncTarget()"
-                           class="w-12 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
                     <span class="text-xs text-gray-400">min</span>
+                    <button type="button" onclick="window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé par le modèle"
+                            class="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 shrink-0">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                    </button>
                     <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
                 </div>
             </div>
@@ -145,6 +175,8 @@ window._sim = {};
     var checkpoints = [], cpMarkerEls = [];
     var currentHeatFactor = 1.0;
     var currentHourly = null;
+    var currentWeather = null;  // full weather payload (persisted with the route)
+    var savedSportType = {{ ('"' + saved_sport_type + '"') | safe if saved_sport_type is defined and saved_sport_type else '"trail"' }};
     var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
@@ -397,6 +429,8 @@ window._sim = {};
         if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
         var rd = document.getElementById('race-date').value; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
+        b.append('sport_type', savedSportType || 'trail');
+        if (currentWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b })
             .then(function(r) { return r.json(); })
             .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); } else { setStatus('error'); } })
@@ -417,16 +451,55 @@ window._sim = {};
         if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/simulator/routes/' + currentRouteId + '/print', '_blank'); }); return; }
         window.open('/simulator/routes/' + currentRouteId + '/print', '_blank');
     }
-    function fetchWeather() { var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return; var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d); fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { var el = document.getElementById('weather-result'); if (w.error) { el.innerHTML = '<span class="text-red-500">' + w.error + '</span>'; return; } currentHeatFactor = w.heat_factor; currentHourly = w.hourly || null; var p = Math.round((w.heat_factor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600'; el.innerHTML = w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· T° par point</span>' : ''); recalc(); }); }
-    function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
+    function wmoCategoryJs(code) {
+        if (code === null || code === undefined) return 'unknown';
+        if (code === 0) return 'clear';
+        if (code === 1) return 'mostly-clear';
+        if (code === 2) return 'partly-cloudy';
+        if (code === 3) return 'overcast';
+        if (code === 45 || code === 48) return 'fog';
+        if ([51,53,55,56,57].indexOf(code) >= 0) return 'drizzle';
+        if ([61,63,65,66,67,80,81,82].indexOf(code) >= 0) return 'rain';
+        if ([71,73,75,77,85,86].indexOf(code) >= 0) return 'snow';
+        if (code >= 95) return 'storm';
+        return 'unknown';
+    }
+    function iconForCat(cat) {
+        var reg = document.getElementById('wicon-registry');
+        if (!reg) return '';
+        var el = reg.querySelector('[data-cat="' + cat + '"]');
+        return el ? el.innerHTML : '';
+    }
+    function renderWeather(w) {
+        var el = document.getElementById('weather-result');
+        if (!el) return;
+        if (!w || w.error) { el.innerHTML = w && w.error ? '<span class="text-red-500">' + w.error + '</span>' : ''; return; }
+        currentWeather = w;
+        currentHeatFactor = w.heat_factor || 1.0;
+        currentHourly = w.hourly || null;
+        var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600';
+        var icon = (w.weather_code !== undefined && w.weather_code !== null) ? '<span class="mr-1" title="condition au départ">' + iconForCat(wmoCategoryJs(w.weather_code)) + '</span>' : '';
+        el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· météo par point</span>' : '');
+    }
+    function fetchWeather() {
+        var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return;
+        var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d);
+        document.getElementById('weather-result').innerHTML = '<span class="text-gray-400">…</span>';
+        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { renderWeather(w); recalc(); scheduleSave(); });
+    }
+    function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
+    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h-vis').value = h; document.getElementById('target-m-vis').value = m; syncTarget(); }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
+    // Restore saved weather (no re-fetch) so per-checkpoint conditions show on load.
+    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     initChart(); initMap(); recalc();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, syncTarget: syncTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
 
-    // Auto-save: fresh GPX upload (no route id yet) is persisted as a draft immediately.
-    if (currentRouteId) { setStatus('saved'); } else { saveRoute(); }
+    // Existing route is already persisted; mark saved. (Fresh uploads now create
+    // the route server-side and redirect here, so there's no id-less draft case.)
+    setStatus('saved');
 })();
 </script>
