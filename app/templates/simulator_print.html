@@ -3,49 +3,68 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ route.name }} — Plan de course</title>
+    <title>{{ route.name }} — Bande de course</title>
     <link rel="stylesheet" href="/static/css/tailwind.css">
     <style>
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
             .no-print { display: none !important; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            @page { margin: 1.2cm; }
+            @page { size: A4 landscape; margin: 0.6cm; }
         }
+        /* On-screen: mimic the landscape band so what you see is what prints. */
+        .band-wrap { max-width: 27cm; }
     </style>
 </head>
-<body class="bg-white text-gray-900">
-    <div class="max-w-3xl mx-auto p-6">
-        <div class="flex items-start justify-between gap-4 mb-5">
-            <div>
-                <h1 class="text-xl font-bold tracking-tight">{{ route.name }}</h1>
-                <p class="text-sm text-gray-500 mt-0.5">Plan de course — temps de passage</p>
-            </div>
-            <button onclick="window.print()" class="no-print h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Imprimer</button>
-        </div>
+<body class="bg-gray-100 text-gray-900">
+{% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %}+{{ (seconds // 86400) | int }}j{% endif %}{% endmacro %}
 
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <div class="rounded-lg border border-gray-200 p-3">
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Distance</p>
-                <p class="text-lg font-bold tabular-nums">{{ course.total_distance_km }} km</p>
-            </div>
-            <div class="rounded-lg border border-gray-200 p-3">
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">D+</p>
-                <p class="text-lg font-bold tabular-nums text-red-500">{{ "%.0f"|format(course.total_elevation_gain) }} m</p>
-            </div>
-            <div class="rounded-lg border border-gray-200 p-3">
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Départ</p>
-                <p class="text-lg font-bold tabular-nums">{{ '%02d:%02d'|format(start_hour, start_minute) }}{% if route.race_date %} <span class="text-xs font-normal text-gray-400">{{ route.race_date }}</span>{% endif %}</p>
-            </div>
-            <div class="rounded-lg border border-gray-200 p-3">
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">{% if has_target %}Objectif{% else %}Estimé{% endif %}</p>
-                <p class="text-lg font-bold tabular-nums">{% if has_target %}{{ '%dh%02d'|format(route.target_time_s // 3600, (route.target_time_s % 3600) // 60) }}{% else %}{{ course.predicted_total_time_formatted }}{% endif %}</p>
-            </div>
-        </div>
-
-        {% include "partials/passage_times.html" %}
-
-        <p class="text-[10px] text-gray-400 mt-6 text-center">Généré par PaceForge — temps estimés à partir de ton historique d'entraînement.</p>
+<div class="band-wrap mx-auto p-4">
+    <div class="flex items-center justify-between gap-4 mb-3 no-print">
+        <p class="text-sm text-gray-500">Bande à plier et glisser derrière ton dossard.</p>
+        <button onclick="window.print()" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Imprimer</button>
     </div>
-    <script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });</script>
+
+    <!-- The printable band -->
+    <div class="bg-white border border-gray-300 rounded-lg p-3">
+        <!-- Title strip -->
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2 mb-2">
+            <h1 class="text-base font-bold tracking-tight truncate">{{ route.name }}</h1>
+            <div class="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 shrink-0">
+                <span>{{ course.total_distance_km }} km</span>
+                <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+                <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
+                <span class="font-semibold text-gray-900">{% if has_target %}Objectif {{ '%dh%02d'|format(route.target_time_s // 3600, (route.target_time_s % 3600) // 60) }}{% else %}Estimé {{ course.predicted_total_time_formatted }}{% endif %}</span>
+            </div>
+        </div>
+
+        <!-- Horizontal checkpoint band -->
+        <div class="flex flex-wrap gap-1.5">
+            <!-- Start -->
+            <div class="flex-1 min-w-[2.4cm] border border-green-200 bg-green-50 rounded-md px-2 py-1.5 text-center">
+                <p class="text-[9px] font-semibold text-green-700 uppercase tracking-wide truncate">Départ</p>
+                <p class="text-[9px] text-gray-400 tabular-nums">km 0</p>
+                <p class="text-lg font-bold tabular-nums leading-tight">{{ fmt_clock(start_offset_s) }}</p>
+            </div>
+
+            {% for s in sections %}
+            {% set use_adj = has_target and s.adjusted_clock_time_s is not none %}
+            {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
+            {% set is_finish = loop.last %}
+            <div class="flex-1 min-w-[2.4cm] border {% if is_finish %}border-red-200 bg-red-50{% else %}border-gray-200{% endif %} rounded-md px-2 py-1.5 text-center">
+                <p class="text-[9px] font-semibold uppercase tracking-wide truncate {% if is_finish %}text-red-700{% else %}text-gray-600{% endif %}">
+                    {% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}
+                </p>
+                <p class="text-[9px] text-gray-400 tabular-nums">km {{ s.end_km }}{% if s.elevation_gain > 0 %} · <span class="text-red-400">+{{ s.elevation_gain|int }}</span>{% endif %}</p>
+                <p class="text-lg font-bold tabular-nums leading-tight">{{ fmt_clock(clock_val) }}</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <p class="text-[8px] text-gray-400 mt-2 text-center">
+            {% if has_target %}Heures de passage visées (objectif).{% else %}Heures de passage estimées.{% endif %} Généré par PaceForge.
+        </p>
+    </div>
+</div>
+<script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });</script>
 </body>
 </html>

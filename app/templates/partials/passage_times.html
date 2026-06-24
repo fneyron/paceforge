@@ -12,13 +12,10 @@
                 <th class="text-right py-2 px-2 font-medium" title="Distance de la section depuis le point précédent">Dist.</th>
                 <th class="text-right py-2 px-2 font-medium" title="Dénivelé positif de la section">D+</th>
                 <th class="text-right py-2 px-2 font-medium" title="Dénivelé négatif de la section">D-</th>
-                <th class="text-right py-2 px-2 font-medium" title="Allure moyenne prédite sur la section (min/km), selon ton profil et la pente">Allure</th>
-                <th class="text-right py-2 px-2 font-medium" title="Temps prédit pour parcourir cette section">Section</th>
-                <th class="text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ (prédiction du modèle)">Cumul</th>
-                <th class="text-right py-2 px-2 font-medium text-gray-900" title="Heure de la journée à laquelle tu passes (départ + temps prédit)">Heure</th>
-                {% if has_target %}
-                <th class="text-right py-2 pl-2 font-medium" title="Heure de passage si tu tiens ton temps objectif (prédiction recalée sur ta cible). Vert = plus rapide que la prédiction, rouge = plus lent.">Obj.</th>
-                {% endif %}
+                <th class="text-right py-2 px-2 font-medium" title="Allure moyenne sur la section (min/km)">Allure</th>
+                <th class="text-right py-2 px-2 font-medium" title="Temps pour parcourir cette section">Section</th>
+                <th class="text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ">Cumul</th>
+                <th class="text-right py-2 px-2 font-medium text-gray-900" title="{% if has_target %}Heure de passage si tu tiens ton objectif (toute la ligne est recalée sur ta cible){% else %}Heure de passage estimée (départ + temps prédit){% endif %}">{% if has_target %}Heure visée{% else %}Heure{% endif %}</th>
                 <th class="w-6"></th>
             </tr>
         </thead>
@@ -41,12 +38,16 @@
                 <td class="text-right py-2.5 px-2 text-gray-300">—</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-medium">0h00</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(start_offset_s) }}</td>
-                {% if has_target %}<td class="text-right py-2.5 pl-2 tabular-nums text-gray-400">{{ fmt_clock(start_offset_s) }}</td>{% endif %}
                 <td></td>
             </tr>
             {% for s in sections %}
-            {% set pace_min = (s.predicted_pace_s_per_km // 60) | int %}
-            {% set pace_sec = (s.predicted_pace_s_per_km % 60) | int %}
+            {% set use_adj = has_target and s.adjusted_time_s is not none %}
+            {% set sec_time = s.adjusted_time_s if use_adj else s.predicted_time_s %}
+            {% set cum_time = s.adjusted_cumulative_time_s if use_adj else s.cumulative_time_s %}
+            {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
+            {% set pace_val = (sec_time / s.distance_km) if s.distance_km and s.distance_km > 0 else 0 %}
+            {% set pace_min = (pace_val // 60) | int %}
+            {% set pace_sec = (pace_val % 60) | int %}
             {% set is_finish = loop.last %}
             {% set editable = s.end_checkpoint_index is not none and not print_mode %}
             <tr class="{% if is_finish %}bg-red-50/60{% else %}hover:bg-gray-50/50{% endif %}">
@@ -83,14 +84,9 @@
                 <td class="text-right py-2.5 px-2 tabular-nums text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-red-500">{% if s.elevation_loss > 0 %}-{{ s.elevation_loss|int }}{% else %}—{% endif %}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(s.predicted_time_s) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(s.cumulative_time_s) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(s.clock_time_s) }}</td>
-                {% if has_target %}
-                <td class="text-right py-2.5 pl-2 tabular-nums {% if s.adjusted_clock_time_s is not none and s.adjusted_clock_time_s < s.clock_time_s %}text-green-600{% elif s.adjusted_clock_time_s is not none and s.adjusted_clock_time_s > s.clock_time_s %}text-red-500{% else %}text-gray-400{% endif %}">
-                    {% if s.adjusted_clock_time_s is not none %}{{ fmt_clock(s.adjusted_clock_time_s) }}{% else %}—{% endif %}
-                </td>
-                {% endif %}
+                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
+                <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(cum_time) }}</td>
+                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}</td>
                 <td class="text-center align-middle">
                     {% if s.end_checkpoint_index is not none and not print_mode %}
                     <button onclick="window._sim && window._sim.removeCheckpoint({{ s.end_checkpoint_index }})"
