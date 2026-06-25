@@ -463,14 +463,19 @@ window._sim = {};
     }
     function onNameChange() { scheduleSave(); }
     function onConditionsChange() { recalc(); scheduleSave(); }
-    function exportGpx() {
-        if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/api/simulator/routes/' + currentRouteId + '/gpx', '_blank'); }); return; }
-        window.open('/api/simulator/routes/' + currentRouteId + '/gpx', '_blank');
+    // Save the live state FIRST, then open — otherwise print/export would use
+    // the last-saved data and show different values than the on-screen table.
+    // The tab is opened synchronously (within the click) to dodge popup blockers,
+    // then navigated once the save persists.
+    function _saveThenOpen(urlFn) {
+        var w = window.open('', '_blank');
+        saveRoute().then(function() {
+            if (currentRouteId && w) { w.location = urlFn(currentRouteId); }
+            else if (w) { w.close(); }
+        }).catch(function() { if (w) w.close(); });
     }
-    function printPlan() {
-        if (!currentRouteId) { saveRoute().then(function() { if (currentRouteId) window.open('/simulator/routes/' + currentRouteId + '/print', '_blank'); }); return; }
-        window.open('/simulator/routes/' + currentRouteId + '/print', '_blank');
-    }
+    function exportGpx() { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
+    function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
     function wmoCategoryJs(code) {
         if (code === null || code === undefined) return 'unknown';
         if (code === 0) return 'clear';
