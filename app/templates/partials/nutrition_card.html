@@ -30,9 +30,9 @@
     </div>
     {% else %}
 
-    <!-- Compact status strip -->
+    <!-- Compact status strip — carbs & sodium from products; water is hydration -->
     <div class="flex flex-wrap items-center gap-2 text-[11px]">
-        {% for key, label, unit in [('carbs','Glucides','g/h'), ('fluid','Liquide','ml/h'), ('sodium','Sodium','mg/h')] %}
+        {% for key, label, unit in [('carbs','Glucides','g/h'), ('sodium','Sodium','mg/h')] %}
         {% set c = plan.coverage[key] %}
         <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 pl-2.5 pr-2 py-1">
             <span class="text-gray-500">{{ label }}</span>
@@ -41,6 +41,7 @@
             <span class="font-medium {{ cov[c.status].txt }}">{{ cov[c.status].word }}</span>
         </span>
         {% endfor %}
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">💧 boire {{ targets.fluid_ml_per_h }} ml/h</span>
         {% if plan.hydration %}
         {% if plan.hydration.feasible %}
         <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">💧 Hydratation OK</span>

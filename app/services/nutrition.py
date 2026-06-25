@@ -96,6 +96,9 @@ def compute_plan(
             to build a checkpoint-mapped schedule.
     """
     hours = max(duration_s / 3600.0, 0.0)
+    # Hydration is driven by the fluid target, not by a "water product": water
+    # is what you drink/refill (flasks + aid stations), not a fuel you dose.
+    fluid_per_h = float(targets.get("fluid_ml_per_h", 0) or 0)
 
     per_h = {"carbs_g": 0.0, "fluid_ml": 0.0, "sodium_mg": 0.0, "caffeine_mg": 0.0, "kcal": 0.0}
     lines = []
@@ -133,22 +136,19 @@ def compute_plan(
 
     totals = {
         "carbs_g": round(per_h["carbs_g"] * hours),
-        "fluid_ml": round(per_h["fluid_ml"] * hours),
+        "fluid_ml": round(fluid_per_h * hours),
         "sodium_mg": round(per_h["sodium_mg"] * hours),
         "caffeine_mg": round(per_h["caffeine_mg"] * hours),
         "kcal": round(per_h["kcal"] * hours),
     }
 
+    # Coverage is product-driven (what your gels/drinks/salt provide). Water is
+    # not here — it's the fluid target + the flask/refill model below.
     coverage = {
         "carbs": {
             "provided_per_h": round(per_h["carbs_g"]),
             "target_per_h": targets.get("carbs_g_per_h", 0),
             "status": _status(per_h["carbs_g"], targets.get("carbs_g_per_h", 0)),
-        },
-        "fluid": {
-            "provided_per_h": round(per_h["fluid_ml"]),
-            "target_per_h": targets.get("fluid_ml_per_h", 0),
-            "status": _status(per_h["fluid_ml"], targets.get("fluid_ml_per_h", 0)),
         },
         "sodium": {
             "provided_per_h": round(per_h["sodium_mg"]),
@@ -173,7 +173,7 @@ def compute_plan(
                 "km": s.get("end_km"),
                 "leg_time_s": int(cum_s - prev_cum_s),
                 "carbs_g": round(per_h["carbs_g"] * leg_h),
-                "fluid_ml": round(per_h["fluid_ml"] * leg_h),
+                "fluid_ml": round(fluid_per_h * leg_h),
                 "units": [
                     {"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"],
                      "units": round(ln["per_hour"] * leg_h * 2) / 2}  # nearest 0.5
@@ -187,7 +187,7 @@ def compute_plan(
     # `flask_capacity_ml`. If a segment needs more fluid than you can carry,
     # flag the shortfall — you'd run dry before the next aid station.
     hydration = None
-    if flask_capacity_ml and per_h["fluid_ml"] > 0 and schedule:
+    if flask_capacity_ml and fluid_per_h > 0 and schedule:
         refills = {round(float(k), 1) for k in (refill_kms or set())}
         cap = float(flask_capacity_ml)
         segs = []

@@ -982,8 +982,8 @@ async def nutrition_page(
 
 
 _DEFAULT_PRODUCTS = [
-    # name, kind, carbs_g, sodium_mg, volume_ml
-    ("Eau", "drink", 0, 0, 500),
+    # name, kind, carbs_g, sodium_mg, volume_ml. Water isn't a product — it's
+    # the fluid target + flasks/refills (hydration), not a dosed fuel.
     ("Boisson glucidique", "drink", 30, 300, 500),
     ("Gel énergétique", "gel", 22, 0, None),
     ("Pastille de sel", "salt", 0, 300, None),
