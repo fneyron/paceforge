@@ -851,10 +851,16 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     )
     # rate per product for the form (product_id -> per_hour)
     rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
-    # hint: units/h of each product needed to hit the carb target alone
+
+    def _interval_min(per_hour):
+        return round(60.0 / per_hour) if per_hour and per_hour > 0 else None
+
+    # The UI is interval-based ("1 every X min") — more natural than a fractional
+    # rate. Convert per_hour <-> minutes for display; the math stays on per_hour.
+    intervals = {pid: _interval_min(ph) for pid, ph in rates.items()}
     from app.services.nutrition import rate_for_target
-    target_rates = {
-        p["id"]: rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"])
+    target_intervals = {
+        p["id"]: _interval_min(rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"]))
         for p in products
     }
     # checkpoints the athlete can mark as refill points (all section ends but
@@ -871,7 +877,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "products": products,
         "targets": targets,
         "rates": rates,
-        "target_rates": target_rates,
+        "intervals": intervals,
+        "target_intervals": target_intervals,
         "flask_capacity_ml": flask_capacity_ml,
         "refill_points": refill_points,
         "plan": plan,
@@ -1061,11 +1068,12 @@ async def save_nutrition_plan(
     items = []
     refills = []
     for key, val in form.multi_items() if hasattr(form, "multi_items") else form.items():
-        if key.startswith("rate_"):
-            rate = _to_float(val)
-            if rate > 0:
+        if key.startswith("interval_"):
+            # "1 unit every N minutes" → units per hour
+            minutes = _to_float(val)
+            if minutes > 0:
                 try:
-                    items.append({"product_id": int(key[5:]), "per_hour": rate})
+                    items.append({"product_id": int(key[9:]), "per_hour": round(60.0 / minutes, 3)})
                 except ValueError:
                     continue
         elif key.startswith("refill_"):

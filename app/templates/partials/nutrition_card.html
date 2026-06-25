@@ -59,6 +59,7 @@
             <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm">
                 <b class="tabular-nums text-gray-900">×{{ ln.total_units | round(0, 'ceil') | int }}</b>
                 <span class="text-gray-600">{{ ln.name }}</span>
+                {% if ln.per_hour %}<span class="text-[10px] text-gray-400">· 1 / {{ (60 / ln.per_hour) | round | int }} min</span>{% endif %}
             </span>
             {% set ns2.any = true %}{% endif %}{% endfor %}
             {% if not ns2.any %}<span class="text-sm text-gray-400">Configure les quantités dans Réglages du plan.</span>{% endif %}
@@ -179,12 +180,12 @@
                             <th class="text-right py-2 px-2 font-medium">Gluc.</th>
                             <th class="text-right py-2 px-2 font-medium">Sodium</th>
                             <th class="text-right py-2 px-2 font-medium">Vol.</th>
-                            <th class="text-right py-2 px-2 font-medium" title="Unités à prendre par heure">Unités / h</th>
+                            <th class="text-right py-2 px-2 font-medium" title="Prendre 1 unité tous les X minutes (laisse vide pour ne pas en prendre)">Fréquence</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-50">
                         {% for p in products %}
-                        {% set rate = rates.get(p.id, 0) %}
+                        {% set interval = intervals.get(p.id) %}
                         <tr class="hover:bg-gray-50/50">
                             <td class="py-2 pr-2"><span class="font-medium text-gray-800">{{ p.name }}</span>
                                 <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ kind_labels.get(p.kind, p.kind) }}</span></td>
@@ -193,8 +194,12 @@
                             <td class="text-right py-2 px-2 tabular-nums text-gray-400">{% if p.volume_ml %}{{ p.volume_ml|round|int }}ml{% else %}—{% endif %}</td>
                             <td class="py-2 px-2">
                                 <div class="flex flex-col items-end">
-                                    <input name="rate_{{ p.id }}" type="number" min="0" step="0.5" value="{{ rate }}" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
-                                    {% if target_rates.get(p.id) %}<span class="text-[9px] text-gray-400 mt-0.5">≈ {{ target_rates[p.id] }}/h pour la cible</span>{% endif %}
+                                    <div class="flex items-center gap-1 text-xs text-gray-500">
+                                        <span>1 / </span>
+                                        <input name="interval_{{ p.id }}" type="number" min="0" step="5" value="{{ interval if interval else '' }}" placeholder="—" class="sim-num w-16 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
+                                        <span>min</span>
+                                    </div>
+                                    {% if target_intervals.get(p.id) %}<span class="text-[9px] text-gray-400 mt-0.5">≈ 1 / {{ target_intervals[p.id] }} min pour la cible</span>{% endif %}
                                 </div>
                             </td>
                         </tr>
