@@ -24,7 +24,7 @@
     {% include "partials/gpx_result.html" %}
 
     <!-- Nutrition plan: loaded after the page so the heavy map/chart render first -->
-    <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=2" hx-trigger="load" hx-swap="innerHTML">
+    <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=3" hx-trigger="load" hx-swap="innerHTML">
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center gap-2 text-sm text-gray-400">
                 <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>

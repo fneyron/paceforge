@@ -69,10 +69,12 @@
                     <tr class="{% if loop.last %}bg-red-50/40{% endif %}">
                         <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ leg.from_name }}</span> → <b>{{ leg.to_name }}</b></td>
                         <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
-                        <td class="py-2 pl-3 text-[11px] text-gray-700">
+                        <td class="py-2 pl-3">
                             {% set ns = namespace(any=false) %}
-                            {% for u in leg.units %}{% if u.units %}{% if ns.any %} · {% endif %}{{ u.name }} <b>×{{ u.units }}</b>{% set ns.any = true %}{% endif %}{% endfor %}
-                            {% if not ns.any %}<span class="text-gray-300">—</span>{% endif %}
+                            <div class="flex flex-wrap gap-1">
+                                {% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700">{{ u.name }} <b class="tabular-nums">×{{ u.units }}</b></span>{% set ns.any = true %}{% endif %}{% endfor %}
+                                {% if not ns.any %}<span class="text-[11px] text-gray-300">eau seule</span>{% endif %}
+                            </div>
                         </td>
                         <td class="text-right py-2 px-2 tabular-nums">{{ leg.carbs_g }}g</td>
                         <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ (leg.fluid_ml/1000)|round(2) }}L</td>

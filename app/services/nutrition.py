@@ -115,6 +115,11 @@ def compute_plan(
         per_h["fluid_ml"] += fluid
         per_h["caffeine_mg"] += caff
         per_h["kcal"] += kcal
+        is_water = (
+            (p.get("carbs_g") or 0) == 0
+            and (p.get("sodium_mg") or 0) == 0
+            and p.get("kind") == "drink"
+        )
         lines.append({
             "product_id": pid,
             "name": p.get("name", "?"),
@@ -123,6 +128,7 @@ def compute_plan(
             "total_units": rate * hours,
             "carbs_g_per_h": round(carbs),
             "fluid_ml_per_h": round(fluid),
+            "is_water": is_water,
         })
 
     totals = {
@@ -169,7 +175,7 @@ def compute_plan(
                 "carbs_g": round(per_h["carbs_g"] * leg_h),
                 "fluid_ml": round(per_h["fluid_ml"] * leg_h),
                 "units": [
-                    {"name": ln["name"], "kind": ln["kind"],
+                    {"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"],
                      "units": round(ln["per_hour"] * leg_h * 2) / 2}  # nearest 0.5
                     for ln in lines
                 ],
