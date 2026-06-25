@@ -40,12 +40,12 @@
         </div>
 
         <!-- Horizontal checkpoint band -->
-        <div class="flex flex-wrap gap-1.5">
+        <div class="flex gap-1 items-stretch">
             <!-- Start -->
-            <div class="flex-1 min-w-[2.4cm] border border-green-200 bg-green-50 rounded-md px-2 py-1.5 text-center">
+            <div class="flex-1 min-w-0 border border-green-200 bg-green-50 rounded-md px-1 py-1 text-center">
                 <p class="text-[9px] font-semibold text-green-700 uppercase tracking-wide truncate">Départ</p>
                 <p class="text-[9px] text-gray-400 tabular-nums">km 0</p>
-                <p class="text-lg font-bold tabular-nums leading-tight">{{ fmt_clock(start_offset_s) }}</p>
+                <p class="text-sm font-bold tabular-nums leading-tight">{{ fmt_clock(start_offset_s) }}</p>
             </div>
 
             {% for s in sections %}
@@ -54,12 +54,12 @@
             {% set sec_time = s.adjusted_time_s if (has_target and s.adjusted_time_s is not none) else s.predicted_time_s %}
             {% set pace = (sec_time / s.distance_km) if s.distance_km and s.distance_km > 0 else 0 %}
             {% set is_finish = loop.last %}
-            <div class="flex-1 min-w-[2.4cm] border {% if is_finish %}border-red-200 bg-red-50{% else %}border-gray-200{% endif %} rounded-md px-2 py-1.5 text-center">
+            <div class="flex-1 min-w-0 border {% if is_finish %}border-red-200 bg-red-50{% else %}border-gray-200{% endif %} rounded-md px-1 py-1 text-center">
                 <p class="text-[9px] font-semibold uppercase tracking-wide truncate {% if is_finish %}text-red-700{% else %}text-gray-600{% endif %}">
                     {% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}
                 </p>
                 <p class="text-[9px] text-gray-400 tabular-nums">km {{ s.end_km }}{% if s.elevation_gain > 0 %} · <span class="text-red-400">+{{ s.elevation_gain|int }}</span>{% endif %}{% if s.elevation_loss > 0 %} <span class="text-blue-400">-{{ s.elevation_loss|int }}</span>{% endif %}</p>
-                <p class="text-lg font-bold tabular-nums leading-tight">{{ fmt_clock(clock_val) }}</p>
+                <p class="text-sm font-bold tabular-nums leading-tight">{{ fmt_clock(clock_val) }}</p>
                 {% if pace %}<p class="text-[9px] text-gray-500 tabular-nums">{{ fmt_pace(pace) }}/km</p>{% endif %}
             </div>
             {% endfor %}
