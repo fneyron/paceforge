@@ -622,7 +622,11 @@ async def route_detail_page(
 
     ctx = await _build_route_context(route, db, user.id)
     ctx["user"] = user
-    return templates.TemplateResponse(request, "simulator_route.html", context=ctx)
+    # Don't let the browser serve a stale page (kept hiding UI updates).
+    return templates.TemplateResponse(
+        request, "simulator_route.html", context=ctx,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/api/simulator/routes/{route_id}", response_class=HTMLResponse)

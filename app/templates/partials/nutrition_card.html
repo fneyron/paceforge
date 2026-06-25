@@ -65,7 +65,7 @@
             {% set ns2.any = true %}{% endif %}{% endfor %}
             {% if not ns2.any %}<span class="text-sm text-gray-400">Configure les quantités dans Réglages du plan.</span>{% endif %}
         </div>
-        <p class="mt-1.5 text-[11px] text-gray-400">≈ {{ plan.totals.carbs_g }} g glucides · {{ (plan.totals.fluid_ml/1000)|round(1) }} L · {{ plan.totals.sodium_mg }} mg sodium. L'eau se recharge aux ravitos (voir ci-dessous).</p>
+        <p class="mt-1.5 text-[11px] text-gray-400">≈ {{ plan.totals.carbs_g }} g glucides · {{ (plan.totals.fluid_ml/1000)|round(1) }} L · {{ plan.totals.sodium_mg }} mg sodium. Le liquide (eau + boisson) se recharge aux ravitos (voir ci-dessous).</p>
     </div>
 
     <!-- Schedule: the hero — what to take, leg by leg -->
@@ -79,7 +79,7 @@
                         <th class="text-right py-2 px-2 font-medium">Durée</th>
                         <th class="text-left py-2 pl-3 font-medium">À prendre</th>
                         <th class="text-right py-2 px-2 font-medium">Gluc.</th>
-                        <th class="text-right py-2 px-2 font-medium">Eau</th>
+                        <th class="text-right py-2 px-2 font-medium">Liquide</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
@@ -91,7 +91,7 @@
                             {% set ns = namespace(any=false) %}
                             <div class="flex flex-wrap gap-1">
                                 {% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700">{{ u.name }} <b class="tabular-nums">×{{ u.units }}</b></span>{% set ns.any = true %}{% endif %}{% endfor %}
-                                {% if not ns.any %}<span class="text-[11px] text-gray-300">eau seule</span>{% endif %}
+                                {% if not ns.any %}<span class="text-[11px] text-gray-300">eau plate</span>{% endif %}
                             </div>
                         </td>
                         <td class="text-right py-2 px-2 tabular-nums">{{ leg.carbs_g }}g</td>
@@ -107,7 +107,7 @@
     {% if plan.hydration %}
     <div>
         <div class="flex items-center justify-between gap-2 mb-2">
-            <p class="text-xs font-medium text-gray-500">Eau entre ravitos</p>
+            <p class="text-xs font-medium text-gray-500">Liquide entre ravitos</p>
             <span class="text-[10px] text-gray-400">tu portes {{ (plan.hydration.capacity_ml/1000)|round(1) }} L</span>
         </div>
         {% if not plan.hydration.has_refills %}
@@ -116,7 +116,7 @@
         </div>
         {% elif not plan.hydration.feasible %}
         <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700 mb-2">
-            ⚠ Sur certains tronçons tu manqueras d'eau (jusqu'à <b>{{ plan.hydration.max_shortfall_ml }} ml</b>). Porte plus d'eau, ajoute un ravito, ou prévois de rationner.
+            ⚠ Sur certains tronçons le liquide à boire dépasse ce que tu portes (jusqu'à <b>{{ plan.hydration.max_shortfall_ml }} ml</b>). Porte plus, ajoute un ravito, ou prévois de rationner.
         </div>
         {% endif %}
         <div class="space-y-1">
@@ -156,15 +156,15 @@
                 <p class="text-[11px] font-medium text-gray-500"><span class="text-gray-700">2.</span> Hydratation : ce que tu portes + où tu recharges</p>
                 <div>
                     <label class="flex items-center gap-1.5 text-sm">
-                        <span class="text-[11px] font-medium text-gray-500">Eau transportée au total</span>
+                        <span class="text-[11px] font-medium text-gray-500">Liquide transporté au total</span>
                         <input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-8 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center">
                         <span class="text-gray-400 text-xs">ml</span>
                     </label>
-                    <p class="text-[10px] text-gray-400 mt-1">Capacité totale de tes contenants, pas par flasque. Ex. 2 flasques de 500 ml = <b>1000 ml</b>.</p>
+                    <p class="text-[10px] text-gray-400 mt-1">Capacité totale de tes flasques (eau <b>+</b> boisson). Ex. 2 flasques de 500 ml = <b>1000 ml</b>.</p>
                 </div>
                 {% if refill_points %}
                 <div>
-                    <p class="text-[11px] font-medium text-gray-500 mb-1.5">Ravitos — coche où tu refais le plein d'eau</p>
+                    <p class="text-[11px] font-medium text-gray-500 mb-1.5">Ravitos — coche où tu refais le plein de liquide</p>
                     <div class="flex flex-wrap gap-1.5">
                         {% for cp in refill_points %}
                         <label class="cursor-pointer">
