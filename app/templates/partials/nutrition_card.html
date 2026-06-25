@@ -50,6 +50,22 @@
         {% endif %}
     </div>
 
+    <!-- Total to pack: how many of each product over the whole race -->
+    <div>
+        <p class="text-xs font-medium text-gray-500 mb-2">À emporter au total</p>
+        {% set ns2 = namespace(any=false) %}
+        <div class="flex flex-wrap gap-2">
+            {% for ln in plan.lines %}{% if ln.total_units and not ln.is_water %}
+            <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm">
+                <b class="tabular-nums text-gray-900">×{{ ln.total_units | round(0, 'ceil') | int }}</b>
+                <span class="text-gray-600">{{ ln.name }}</span>
+            </span>
+            {% set ns2.any = true %}{% endif %}{% endfor %}
+            {% if not ns2.any %}<span class="text-sm text-gray-400">Configure les quantités dans Réglages du plan.</span>{% endif %}
+        </div>
+        <p class="mt-1.5 text-[11px] text-gray-400">≈ {{ plan.totals.carbs_g }} g glucides · {{ (plan.totals.fluid_ml/1000)|round(1) }} L · {{ plan.totals.sodium_mg }} mg sodium. L'eau se recharge aux ravitos (voir ci-dessous).</p>
+    </div>
+
     <!-- Schedule: the hero — what to take, leg by leg -->
     <div>
         <p class="text-xs font-medium text-gray-500 mb-2">À prendre sur chaque tronçon</p>
@@ -83,7 +99,6 @@
                 </tbody>
             </table>
         </div>
-        <p class="mt-2 text-[11px] text-gray-400">Total à emporter : <b class="text-gray-600">{{ plan.totals.carbs_g }} g</b> glucides · <b class="text-gray-600">{{ (plan.totals.fluid_ml/1000)|round(1) }} L</b> · <b class="text-gray-600">{{ plan.totals.sodium_mg }} mg</b> sodium</p>
     </div>
     {% endif %}
 
