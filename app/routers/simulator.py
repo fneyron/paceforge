@@ -509,6 +509,54 @@ async def save_route(
         return JSONResponse({"error": "Erreur lors de la sauvegarde"}, status_code=500)
 
 
+@router.post("/api/simulator/routes/{route_id}/reimport", response_class=HTMLResponse)
+async def reimport_route_gpx(
+    route_id: int,
+    request: Request,
+    gpx_file: UploadFile,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh an existing route's GPS trace from a re-uploaded GPX, keeping its
+    name, checkpoints, objective, conditions and nutrition plan untouched.
+
+    Lets users fix routes imported before the full-resolution export fix without
+    losing the checkpoints/aid-stations they already set up.
+    """
+    from app.services.gpx import build_course_profile, parse_gpx
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("Parcours non trouvé", status_code=404)
+
+    try:
+        content = await gpx_file.read()
+        points, _ = parse_gpx(content)
+        course = build_course_profile(points, name=route.name)
+        course_data = json.loads(course.model_dump_json())
+
+        # Update only the geometry/elevation; leave everything else as-is.
+        route.course_json = course_data
+        route.total_distance_km = course.total_distance_km
+        route.total_elevation_gain = course.total_elevation_gain
+        route.total_elevation_loss = course.total_elevation_loss
+        await db.flush()
+
+        logger.info("Route %d trace re-imported for user %d", route.id, user.id)
+        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{route.id}"})
+    except ValueError as e:
+        return HTMLResponse(
+            f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{e}</div>'
+        )
+    except Exception:
+        logger.exception("Route re-import failed")
+        return HTMLResponse(
+            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">'
+            "Erreur lors de la mise à jour de la trace."
+            "</div>"
+        )
+
+
 async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
     """Shared context for the route detail page and its partial."""
     from app.schemas.simulator import CourseProfile
