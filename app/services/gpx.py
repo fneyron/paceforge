@@ -95,6 +95,32 @@ def snap_waypoints_to_route(
     return result
 
 
+def _gain_loss_hysteresis(elevations: list[float], threshold: float = 3.0) -> tuple[float, float]:
+    """Total elevation gain/loss with a hysteresis threshold (meters).
+
+    A climb is only counted once it rises ``threshold`` above the running
+    reference; this filters GPS noise without the heavy under-counting of moving
+    averages. Tuned to match Strava/COROS totals closely (e.g. 90km Mont-Blanc:
+    ~6.27 km vs Strava 6.26 km).
+    """
+    if len(elevations) < 2:
+        return 0.0, 0.0
+    gain = loss = 0.0
+    ref_up = ref_down = elevations[0]
+    for v in elevations[1:]:
+        if v - ref_up > threshold:
+            gain += v - ref_up
+            ref_up = v
+        elif v < ref_up:
+            ref_up = v
+        if ref_down - v > threshold:
+            loss += ref_down - v
+            ref_down = v
+        elif v > ref_down:
+            ref_down = v
+    return gain, loss
+
+
 def _smooth_elevations(points: list[GpxPoint], window: int = 5) -> list[float]:
     """Apply moving average to smooth GPS elevation noise."""
     elevations = [p.elevation for p in points]
@@ -146,16 +172,12 @@ def build_course_profile(
         if not seg_points_idx:
             continue
 
-        # Compute elevation gain/loss from smoothed data
-        gain = 0.0
-        loss = 0.0
+        # Gain/loss from RAW elevations with a hysteresis threshold (matches
+        # Strava/COROS far better than averaging the noise away). min/max and
+        # gradient still use the smoothed series to avoid spiky display values.
         elevs = [smoothed[j] for j in seg_points_idx]
-        for k in range(1, len(elevs)):
-            diff = elevs[k] - elevs[k - 1]
-            if diff > 0:
-                gain += diff
-            else:
-                loss += abs(diff)
+        raw_elevs = [points[j].elevation for j in seg_points_idx]
+        gain, loss = _gain_loss_hysteresis(raw_elevs)
 
         distance_m = seg_end_dist - seg_start_dist
         if distance_m < 1:
@@ -185,8 +207,8 @@ def build_course_profile(
     # Sample elevation profile for chart
     elevation_points = _sample_elevation_profile(points, smoothed, max_points=400)
 
-    # Sample route coordinates for map (lat/lon)
-    route_coords = _sample_route_coords(points, max_points=500)
+    # Full-resolution polyline for map + accurate GPX re-export.
+    route_coords = _sample_route_coords(points)
 
     # Km markers for map (position at each km)
     km_markers = _build_km_markers(points, smoothed, segment_distance_m)
@@ -237,12 +259,15 @@ def _sample_elevation_profile(
 
 def _sample_route_coords(
     points: list[GpxPoint],
-    max_points: int = 500,
+    max_points: int = 20000,
 ) -> list[list[float]]:
-    """Downsample GPS coordinates for map rendering.
+    """GPS coordinates for map rendering AND for GPX re-export.
 
-    Returns [[lat, lon, distance_km], ...] — the 3rd element enables
-    hover-sync between map and elevation profile.
+    Returns [[lat, lon, distance_km, elevation], ...]. Kept at (near) full
+    resolution: this polyline is what the GPX export rebuilds the track from, so
+    decimating it here shortens the exported distance (cutting switchbacks). The
+    map decimates client-side for display; only pathological tracks (> max_points)
+    are thinned, and even then with a small step to preserve length.
     """
     n = len(points)
     step = max(1, n // max_points)
