@@ -14,32 +14,38 @@ logger = logging.getLogger(__name__)
 
 # Minetti-based empirical model: gradient% -> pace multiplier relative to flat
 # These are defaults when athlete has no data for a gradient bucket
+# Generic gradient → pace multipliers (relative to flat), used when the athlete
+# has no personal split data or to fill gaps. Calibrated to a trained trail
+# runner's grade-adjusted pace (GAP): the previous table was markedly pessimistic
+# — it slowed steep climbs ~2× too much and treated moderate descents as SLOWER
+# than flat. Real strong runners climb more efficiently and gain time on
+# moderate descents. (Personal Strava splits override these where available.)
 _DEFAULT_GRADIENT_FACTORS = {
-    -20: 1.4,
-    -15: 1.1,
-    -10: 0.85,
-    -8: 0.78,
-    -6: 0.75,
-    -5: 0.77,
-    -4: 0.80,
-    -3: 0.85,
-    -2: 0.90,
-    -1: 0.95,
+    -20: 1.10,
+    -15: 0.92,
+    -10: 0.82,
+    -8: 0.80,
+    -6: 0.80,
+    -5: 0.82,
+    -4: 0.85,
+    -3: 0.88,
+    -2: 0.92,
+    -1: 0.96,
     0: 1.0,
-    1: 1.06,
-    2: 1.13,
-    3: 1.21,
-    4: 1.30,
-    5: 1.40,
-    6: 1.52,
-    7: 1.65,
-    8: 1.80,
-    10: 2.10,
-    12: 2.45,
-    15: 3.00,
-    20: 4.00,
-    25: 5.20,
-    30: 6.50,
+    1: 1.05,
+    2: 1.10,
+    3: 1.16,
+    4: 1.23,
+    5: 1.31,
+    6: 1.40,
+    7: 1.50,
+    8: 1.62,
+    10: 1.85,
+    12: 2.10,
+    15: 2.45,
+    20: 3.10,
+    25: 3.90,
+    30: 4.70,
 }
 
 
