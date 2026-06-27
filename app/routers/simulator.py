@@ -889,24 +889,28 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         })
 
     candidates = []
+    total_activities = 0
     if not result:
         route_m = (route.total_distance_km or 0) * 1000
+        # Broad net: a race may be recorded with odd GPS distance; don't hide it
+        # behind a tight band. Show the longest recent runs (races are long),
+        # closest-distance first, and let the user pick.
         cand_q = await db.execute(
             select(Activity)
-            .where(
-                Activity.user_id == user.id,
-                Activity.sport_type.in_(_RUN_TYPES),
-                Activity.distance >= route_m * 0.7,
-                Activity.distance <= route_m * 1.3,
-            )
+            .where(Activity.user_id == user.id, Activity.sport_type.in_(_RUN_TYPES))
             .order_by(Activity.start_date.desc())
-            .limit(25)
+            .limit(200)
         )
-        for a in cand_q.scalars().all():
+        acts = cand_q.scalars().all()
+        total_activities = len(acts)
+        # rank by distance proximity to the route, keep the 40 closest
+        acts = sorted(acts, key=lambda a: abs((a.distance or 0) - route_m))[:40]
+        acts = sorted(acts, key=lambda a: a.start_date or 0, reverse=True)
+        for a in acts:
             candidates.append({
                 "id": a.id, "name": a.name,
                 "date": a.start_date.strftime("%d/%m/%Y") if a.start_date else "",
-                "distance_km": round(a.distance / 1000, 1),
+                "distance_km": round((a.distance or 0) / 1000, 1),
                 "dplus": round(a.total_elevation_gain or 0),
                 "has_splits": bool(a.splits_metric),
             })
@@ -918,6 +922,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         "predicted_total_s": predicted_total,
         "result": result,
         "candidates": candidates,
+        "total_activities": total_activities,
     }
 
 
@@ -963,12 +968,6 @@ async def save_route_result(
         return HTMLResponse(
             '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">Activité introuvable.</div>'
         )
-    if not activity.splits_metric:
-        return HTMLResponse(
-            '<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">'
-            "Cette activité n'a pas de splits détaillés (re-synchronise-la depuis Strava)."
-            "</div>"
-        )
 
     cp_result = await db.execute(
         select(RouteCheckpoint)
@@ -976,7 +975,12 @@ async def save_route_result(
         .order_by(RouteCheckpoint.distance_km)
     )
     cps = [{"name": cp.name, "distance_km": cp.distance_km} for cp in cp_result.scalars().all()]
-    actual, total_actual_s = actual_passage_times(activity.splits_metric, cps, route.total_distance_km)
+    if activity.splits_metric:
+        # full per-checkpoint comparison
+        actual, total_actual_s = actual_passage_times(activity.splits_metric, cps, route.total_distance_km)
+    else:
+        # no splits → compare the total only (still useful)
+        actual, total_actual_s = [], int(activity.moving_time or activity.elapsed_time or 0)
 
     route.result_activity_id = activity.id
     route.result_json = {
