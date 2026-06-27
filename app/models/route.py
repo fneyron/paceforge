@@ -27,6 +27,11 @@ class Route(Base):
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Per-race nutrition plan: {"targets": {...}, "items": [{"product_id", "per_hour"}]}.
     nutrition_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # Actual race result matched to this route (Strava activity) for predicted-vs-
+    # actual calibration: {"activity_id", "activity_name", "activity_date",
+    # "total_actual_s", "actual": [{"name", "km", "time_s"}]}.
+    result_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

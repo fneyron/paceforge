@@ -1,0 +1,71 @@
+{% macro hm(seconds) %}{% if seconds is none %}—{% else %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{{ h }}h{{ '%02d'|format(m) }}{% endif %}{% endmacro %}
+{% macro diffmin(a, p) %}{% if a is none or p is none %}{% else %}{% set d = ((a - p) / 60) | round | int %}{% if d > 0 %}+{{ d }}{% elif d < 0 %}{{ d }}{% else %}0{% endif %} min{% endif %}{% endmacro %}
+<div id="result-compare" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+    <div class="flex items-center justify-between gap-2">
+        <h3 class="text-sm font-semibold tracking-tight">Simulé vs réalisé</h3>
+        {% if result %}
+        <button hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML"
+                class="text-[11px] text-gray-400 hover:text-gray-700">Changer / retirer</button>
+        {% endif %}
+    </div>
+
+    {% if result %}
+    {% set total_a = result.total_actual_s %}
+    {% set total_p = predicted_total_s %}
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+        <span class="text-gray-500">Réalisé <b class="text-gray-900 tabular-nums">{{ hm(total_a) }}</b></span>
+        <span class="text-gray-400">·</span>
+        <span class="text-gray-500">Prédit <b class="text-gray-700 tabular-nums">{{ hm(total_p) }}</b></span>
+        {% if total_a is not none and total_p is not none %}
+        {% set dt = ((total_a - total_p) / 60) | round | int %}
+        <span class="text-[11px] font-medium {% if dt > 12 %}text-red-600{% elif dt < -12 %}text-emerald-600{% else %}text-gray-500{% endif %}">
+            écart {{ '+' if dt > 0 else '' }}{{ dt }} min ({% if total_p %}{{ ((total_a - total_p) / total_p * 100) | round(1) }}{% else %}0{% endif %} %)
+        </span>
+        {% endif %}
+    </div>
+    <p class="text-[11px] text-gray-400 -mt-2">d'après {{ result.activity_name }}{% if result.activity_date %} · {{ result.activity_date }}{% endif %} (temps en mouvement, hors arrêts ravitos)</p>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[420px]">
+            <thead>
+                <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                    <th class="text-left py-2 pr-2 font-medium">Point</th>
+                    <th class="text-right py-2 px-2 font-medium">Prédit</th>
+                    <th class="text-right py-2 px-2 font-medium">Réel</th>
+                    <th class="text-right py-2 px-2 font-medium">Écart</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for r in rows %}
+                {% set d = (r.actual_s - r.predicted_s) if (r.actual_s is not none and r.predicted_s is not none) else none %}
+                <tr class="{% if loop.last %}bg-gray-50/60 font-medium{% endif %}">
+                    <td class="py-2 pr-2 text-gray-700">{{ r.name }} <span class="text-[10px] text-gray-400 tabular-nums">km {{ r.km }}</span></td>
+                    <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ hm(r.predicted_s) }}</td>
+                    <td class="text-right py-2 px-2 tabular-nums text-gray-900">{{ hm(r.actual_s) }}</td>
+                    <td class="text-right py-2 px-2 tabular-nums {% if d is not none and d > 60 %}text-red-600{% elif d is not none and d < -60 %}text-emerald-600{% else %}text-gray-400{% endif %}">{{ diffmin(r.actual_s, r.predicted_s) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-[11px] text-gray-400">Écart positif = tu étais plus lent que prédit (souvent en fin de course = fatigue/coup de moins bien). Ces données nourrissent l'amélioration du modèle.</p>
+
+    {% else %}
+    <!-- No result yet: pick the matching activity -->
+    {% if not candidates %}
+    <p class="text-sm text-gray-500">Quand tu auras couru cette course, reviens ici : si l'activité est sur Strava (distance proche), tu pourras comparer ton temps réel au prédit.</p>
+    {% else %}
+    <p class="text-sm text-gray-500">Tu as couru cette course ? Choisis l'activité Strava correspondante pour comparer réel vs prédit.</p>
+    <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML"
+          class="flex flex-wrap items-center gap-2">
+        <select name="activity_id" class="h-9 px-2 rounded-lg border border-gray-200 text-sm max-w-full">
+            {% for c in candidates %}
+            <option value="{{ c.id }}" {% if not c.has_splits %}disabled{% endif %}>{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} (pas de splits){% endif %}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Comparer</button>
+    </form>
+    <p class="text-[10px] text-gray-400">Activités de distance proche (±30 %). Il faut des splits détaillés (re-sync Strava si absents).</p>
+    {% endif %}
+    {% endif %}
+</div>

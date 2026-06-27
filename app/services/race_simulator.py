@@ -12,6 +12,65 @@ from app.schemas.simulator import AthleteGradientProfile, CourseProfile, CourseS
 
 logger = logging.getLogger(__name__)
 
+
+def actual_passage_times(
+    splits_metric: list,
+    checkpoints: list[dict],
+    route_total_km: float,
+) -> tuple[list[dict], int]:
+    """Reconstruct real cumulative times at each checkpoint from a Strava
+    activity's per-km splits. Returns (per-checkpoint [{name, km, time_s}],
+    total_moving_s).
+
+    Checkpoints are mapped onto the activity by proportion of total distance
+    (the matched activity may differ slightly in length from the planned route).
+    Uses moving time — so it's comparable to the model's moving prediction
+    (both exclude aid-station stops).
+    """
+    cum_d = 0.0
+    cum_t = 0.0
+    pts = [(0.0, 0.0)]  # (cumulative_distance_m, cumulative_moving_s)
+    for s in splits_metric or []:
+        d = s.get("distance", 0) or 0
+        mt = s.get("moving_time", 0) or 0
+        if d <= 0 or mt <= 0:
+            continue
+        cum_d += d
+        cum_t += mt
+        pts.append((cum_d, cum_t))
+
+    total_d = pts[-1][0]
+    total_t = int(pts[-1][1])
+    if total_d <= 0:
+        return [], 0
+
+    def _time_at(dist_m: float) -> float:
+        if dist_m <= 0:
+            return 0.0
+        if dist_m >= total_d:
+            return pts[-1][1]
+        for i in range(1, len(pts)):
+            if pts[i][0] >= dist_m:
+                d0, t0 = pts[i - 1]
+                d1, t1 = pts[i]
+                span = d1 - d0
+                frac = (dist_m - d0) / span if span > 0 else 0
+                return t0 + frac * (t1 - t0)
+        return pts[-1][1]
+
+    out = []
+    for cp in checkpoints:
+        km = cp.get("distance_km", 0)
+        # position in the activity = same proportion of total distance
+        frac = (km / route_total_km) if route_total_km else 0
+        out.append({
+            "name": cp.get("name", ""),
+            "km": km,
+            "time_s": round(_time_at(frac * total_d)),
+        })
+    return out, total_t
+
+
 # Minetti-based empirical model: gradient% -> pace multiplier relative to flat
 # These are defaults when athlete has no data for a gradient bucket
 # Generic gradient → pace multipliers (relative to flat), used when the athlete

@@ -843,6 +843,171 @@ async def get_weather(
     return JSONResponse(weather)
 
 
+# ── Simulated vs actual (predicted-vs-actual calibration) ──
+
+_RUN_TYPES = ["Run", "TrailRun", "VirtualRun"]
+
+
+async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+    from app.models.activity import Activity
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import (
+        build_athlete_gradient_profile,
+        compute_passage_times,
+        predict_course,
+    )
+
+    start_hour = route.start_hour if route.start_hour is not None else 6
+    start_minute = route.start_minute or 0
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route.id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    cps = [{"name": cp.name, "distance_km": cp.distance_km} for cp in cp_result.scalars().all()]
+    sections = compute_passage_times(course, cps, None, 1.0, start_hour, start_minute, None)
+    predicted = {s["end_name"]: s["cumulative_time_s"] for s in sections}
+    predicted_total = course.predicted_total_time_s
+
+    rows = []
+    result = route.result_json
+    if result and result.get("actual"):
+        actual = {a["name"]: a["time_s"] for a in result["actual"]}
+        for cp in cps:
+            n = cp["name"]
+            rows.append({
+                "name": n, "km": cp["distance_km"],
+                "predicted_s": predicted.get(n), "actual_s": actual.get(n),
+            })
+        rows.append({
+            "name": "Arrivée", "km": route.total_distance_km,
+            "predicted_s": predicted_total, "actual_s": result.get("total_actual_s"),
+        })
+
+    candidates = []
+    if not result:
+        route_m = (route.total_distance_km or 0) * 1000
+        cand_q = await db.execute(
+            select(Activity)
+            .where(
+                Activity.user_id == user.id,
+                Activity.sport_type.in_(_RUN_TYPES),
+                Activity.distance >= route_m * 0.7,
+                Activity.distance <= route_m * 1.3,
+            )
+            .order_by(Activity.start_date.desc())
+            .limit(25)
+        )
+        for a in cand_q.scalars().all():
+            candidates.append({
+                "id": a.id, "name": a.name,
+                "date": a.start_date.strftime("%d/%m/%Y") if a.start_date else "",
+                "distance_km": round(a.distance / 1000, 1),
+                "dplus": round(a.total_elevation_gain or 0),
+                "has_splits": bool(a.splits_metric),
+            })
+
+    return {
+        "request": request,
+        "route_id": route.id,
+        "rows": rows,
+        "predicted_total_s": predicted_total,
+        "result": result,
+        "candidates": candidates,
+    }
+
+
+@router.get("/api/simulator/routes/{route_id}/result", response_class=HTMLResponse)
+async def result_compare_card(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    ctx = await _result_compare_context(request, route, db, user)
+    return templates.TemplateResponse(
+        request, "partials/result_compare.html", context=ctx,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/simulator/routes/{route_id}/result", response_class=HTMLResponse)
+async def save_route_result(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    activity_id: int = Form(...),
+):
+    """Match a Strava activity to this route and store the real per-checkpoint
+    times for predicted-vs-actual comparison + the global calibration dataset."""
+    from app.models.activity import Activity
+    from app.services.race_simulator import actual_passage_times
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+
+    act_res = await db.execute(
+        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
+    )
+    activity = act_res.scalar_one_or_none()
+    if not activity:
+        return HTMLResponse(
+            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">Activité introuvable.</div>'
+        )
+    if not activity.splits_metric:
+        return HTMLResponse(
+            '<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">'
+            "Cette activité n'a pas de splits détaillés (re-synchronise-la depuis Strava)."
+            "</div>"
+        )
+
+    cp_result = await db.execute(
+        select(RouteCheckpoint)
+        .where(RouteCheckpoint.route_id == route.id)
+        .order_by(RouteCheckpoint.distance_km)
+    )
+    cps = [{"name": cp.name, "distance_km": cp.distance_km} for cp in cp_result.scalars().all()]
+    actual, total_actual_s = actual_passage_times(activity.splits_metric, cps, route.total_distance_km)
+
+    route.result_activity_id = activity.id
+    route.result_json = {
+        "activity_id": activity.id,
+        "activity_name": activity.name,
+        "activity_date": activity.start_date.strftime("%d/%m/%Y") if activity.start_date else "",
+        "total_actual_s": total_actual_s,
+        "actual": actual,
+    }
+    await db.flush()
+    ctx = await _result_compare_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/result_compare.html", context=ctx)
+
+
+@router.post("/api/simulator/routes/{route_id}/result/clear", response_class=HTMLResponse)
+async def clear_route_result(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    route.result_activity_id = None
+    route.result_json = None
+    await db.flush()
+    ctx = await _result_compare_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/result_compare.html", context=ctx)
+
+
 # ── Nutrition ──
 
 def _product_dict(p: NutritionProduct) -> dict:
