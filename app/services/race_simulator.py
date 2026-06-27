@@ -232,21 +232,28 @@ def _fatigue_factor(
     if total_distance_km < 20:
         return 1.0
 
-    # Base exponential: grows with distance
-    k = 0.12 * (total_distance_km / 42)  # Scaled to marathon
+    # Base growth with distance (original magnitudes — keeps the overall total).
+    k = 0.12 * (total_distance_km / 42)
     base = 1.0 + k * (progress ** 2)
 
-    # Glycogen depletion after ~2.5h of running (~30-35km)
+    # Modest, ~total-neutral reshape: fresh legs run a touch faster than the
+    # averaged gradient curve early, then decay late. Validation against real
+    # race splits showed the old (purely-additive) curve was too flat — too slow
+    # when fresh, catching up late. This bends the prediction (fast-then-slow)
+    # without materially changing the total. Deliberately modest: it's a
+    # structural fix for everyone, not a fit to one (strong) athlete's chronos.
+    base += 0.15 * (progress - 0.45)
+
+    # Glycogen depletion after ~30-35km
     glycogen_threshold = min(35 / total_distance_km, 0.7)
     if progress > glycogen_threshold:
-        glycogen_penalty = 0.04 * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
-        base += glycogen_penalty
+        base += 0.04 * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
 
-    # Elevation fatigue: more D+ = more fatigue
+    # Elevation fatigue: more D+ = more fatigue (bites late on hilly ultras).
     if cumulative_gain > 0:
         base += (cumulative_gain / 8000) * 0.02
 
-    return min(base, 1.5)
+    return max(0.85, min(base, 1.55))
 
 
 def _altitude_factor(avg_elevation: float) -> float:
