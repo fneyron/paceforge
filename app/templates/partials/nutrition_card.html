@@ -16,64 +16,36 @@
     <p class="text-sm text-gray-500">Définis un objectif de temps (ou laisse l'estimation) pour calculer ton plan.</p>
     {% else %}
 
-    <!-- ── 1. The one knob: carbs/hour ── -->
-    <div>
-        <p class="text-[11px] font-medium text-gray-500 mb-1.5">Glucides par heure <span class="font-normal text-gray-400">— le réglage clé</span></p>
-        <div class="flex flex-wrap items-center gap-1.5">
+    <!-- ── The plan: one scannable "coach's note" ── -->
+    <div class="rounded-xl border border-gray-200 p-4">
+        <ul class="space-y-2.5 text-sm">
+            {% for ln in plan.lines %}{% if ln.per_hour and not ln.is_water %}
+            <li class="flex items-start gap-2.5">
+                <span class="text-base leading-5">🍯</span>
+                <span><b class="tabular-nums">{{ targets.carbs_g_per_h }} g/h</b> de glucides → <b>1 {{ ln.name }}</b> toutes les <b class="tabular-nums">{{ (60 / ln.per_hour) | round | int }} min</b></span>
+            </li>
+            {% endif %}{% endfor %}
+            <li class="flex items-start gap-2.5">
+                <span class="text-base leading-5">💧</span>
+                <span>Bois <b class="tabular-nums">~{{ targets.fluid_ml_per_h }} ml/h</b>{% if plan.hydration %}{% if not plan.hydration.has_refills %} · <span class="text-gray-400">coche tes ravitos (Avancé)</span>{% elif plan.hydration.feasible %} · <span class="text-emerald-700">eau OK entre ravitos</span>{% else %} · <span class="text-red-700">⚠ manque {{ plan.hydration.max_shortfall_ml }} ml entre 2 ravitos</span>{% endif %}{% endif %}</span>
+            </li>
+            {% set ns2 = namespace(first=true) %}
+            <li class="flex items-start gap-2.5">
+                <span class="text-base leading-5">🎒</span>
+                <span>À emporter : {% for ln in plan.lines %}{% if ln.total_units and not ln.is_water %}{% if not ns2.first %} · {% endif %}<b class="tabular-nums">×{{ ln.total_units | round(0, 'ceil') | int }}</b> {{ ln.name }}{% set ns2.first = false %}{% endif %}{% endfor %} <span class="text-gray-400">(≈ {{ plan.totals.carbs_g }} g)</span></span>
+            </li>
+        </ul>
+
+        <!-- the one knob -->
+        <div class="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-gray-100">
+            <span class="text-xs text-gray-400 mr-0.5">Glucides/h</span>
             {% for c in carb_presets %}
             <button hx-post="/partials/simulator/nutrition/{{ route_id }}/carb" hx-vals='{"carbs_g_per_h": {{ c }}}' hx-target="#nutrition-card" hx-swap="outerHTML"
-                    class="h-9 px-3 rounded-lg border text-sm font-medium transition-colors {% if targets.carbs_g_per_h == c %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">
-                {{ c }} g/h
-            </button>
+                    class="h-8 px-2.5 rounded-lg border text-[13px] font-medium transition-colors {% if targets.carbs_g_per_h == c %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">{{ c }}</button>
             {% endfor %}
             <span class="text-[11px] text-gray-400 ml-1">{% if targets.carbs_g_per_h <= 60 %}prudent{% elif targets.carbs_g_per_h <= 75 %}standard{% else %}intestin entraîné{% endif %}</span>
         </div>
-    </div>
-
-    <!-- ── 2. The plan: simple hourly cadence ── -->
-    {% set cadence = [] %}
-    <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-        <p class="text-[11px] font-medium text-gray-500 mb-1.5">Ton plan{% if is_auto %} <span class="font-normal text-gray-400">(auto — ajuste en Avancé)</span>{% endif %}</p>
-        <ul class="space-y-1 text-sm">
-            {% set ns = namespace(any=false) %}
-            {% for ln in plan.lines %}{% if ln.per_hour and not ln.is_water %}
-            <li class="flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span>
-                <span><b>1 {{ ln.name }}</b> toutes les <b class="tabular-nums">{{ (60 / ln.per_hour) | round | int }} min</b></span>
-            </li>
-            {% set ns.any = true %}{% endif %}{% endfor %}
-            <li class="flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>
-                <span>Bois <b class="tabular-nums">~{{ targets.fluid_ml_per_h }} ml/h</b> (gorgées régulières)</span>
-            </li>
-        </ul>
         {% if using_generic %}<p class="text-[10px] text-gray-400 mt-2">Produits génériques — <a href="/nutrition" class="underline hover:text-gray-600">ajoute les tiens</a> pour un plan exact.</p>{% endif %}
-    </div>
-
-    <!-- ── 3. Hydration in one line ── -->
-    {% if plan.hydration %}
-    {% if not plan.hydration.has_refills %}
-    <p class="text-[11px] text-gray-500">💧 <b>Coche tes ravitos</b> (Avancé) pour vérifier que tu portes assez d'eau entre deux.</p>
-    {% elif plan.hydration.feasible %}
-    <p class="text-[11px] text-emerald-700">💧 Hydratation OK : tu portes assez de liquide entre chaque ravito.</p>
-    {% else %}
-    <p class="text-[11px] text-red-700">⚠ Il te manquera jusqu'à <b>{{ plan.hydration.max_shortfall_ml }} ml</b> sur le plus long inter-ravito — porte plus, ajoute un ravito, ou rationne.</p>
-    {% endif %}
-    {% endif %}
-
-    <!-- ── 4. Pack list ── -->
-    <div>
-        <p class="text-xs font-medium text-gray-500 mb-2">À emporter au total</p>
-        {% set ns2 = namespace(any=false) %}
-        <div class="flex flex-wrap gap-2">
-            {% for ln in plan.lines %}{% if ln.total_units and not ln.is_water %}
-            <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm">
-                <b class="tabular-nums text-gray-900">×{{ ln.total_units | round(0, 'ceil') | int }}</b>
-                <span class="text-gray-600">{{ ln.name }}</span>
-            </span>
-            {% set ns2.any = true %}{% endif %}{% endfor %}
-        </div>
-        <p class="mt-1.5 text-[11px] text-gray-400">≈ {{ plan.totals.carbs_g }} g glucides · {{ (plan.totals.fluid_ml/1000)|round(1) }} L liquide. Le liquide se recharge aux ravitos.</p>
     </div>
 
     <!-- ── ADVANCED ── -->
