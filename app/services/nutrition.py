@@ -7,6 +7,8 @@ against recommended targets, and a schedule mapped to the race checkpoints.
 Nothing here calls an LLM — the numbers are reproducible and explainable.
 """
 
+import math
+
 # Recommended intake guidelines (endurance, trained gut). These are defaults the
 # athlete can override; they are not medical advice.
 _CARBS_SHORT = 60.0   # g/h, efforts < 3h
@@ -157,31 +159,46 @@ def compute_plan(
         },
     }
 
-    # Per-leg schedule: what to actually take BETWEEN two checkpoints (the
-    # elapsed time on that leg × rate). More actionable than a fractional
-    # cumulative count — "between Départ and Planpraz: 3 gels, 0.5 L".
+    # Per-leg schedule: WHOLE units to take between two checkpoints (you never
+    # take half a gel/sachet → ceil, so any product used shows at least 1). Also
+    # flags legs where you'd run dry before the next refill (carried > capacity).
+    refills = {round(float(k), 1) for k in (refill_kms or set())}
+    cap = float(flask_capacity_ml or 0)
     schedule = []
+    line_totals = [0] * len(lines)
     prev_cum_s = 0.0
     prev_name = "Départ"
+    carried = 0.0  # fluid consumed since the last refill
     if sections:
         for s in sections:
             cum_s = s.get("cumulative_time_s") or 0
             leg_h = max((cum_s - prev_cum_s) / 3600.0, 0.0)
+            leg_fluid = round(fluid_per_h * leg_h)
+            carried += leg_fluid
+            dry = bool(cap and carried > cap + 1)
+            leg_units = []
+            for li, ln in enumerate(lines):
+                u = math.ceil(ln["per_hour"] * leg_h) if ln["per_hour"] > 0 else 0
+                line_totals[li] += u
+                leg_units.append({"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"], "units": u})
             schedule.append({
                 "from_name": prev_name,
                 "to_name": s.get("end_name", ""),
                 "km": s.get("end_km"),
                 "leg_time_s": int(cum_s - prev_cum_s),
                 "carbs_g": round(per_h["carbs_g"] * leg_h),
-                "fluid_ml": round(fluid_per_h * leg_h),
-                "units": [
-                    {"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"],
-                     "units": round(ln["per_hour"] * leg_h * 2) / 2}  # nearest 0.5
-                    for ln in lines
-                ],
+                "fluid_ml": leg_fluid,
+                "dry": dry,
+                "over_ml": max(0, round(carried - cap)) if dry else 0,
+                "units": leg_units,
             })
+            if round(float(s.get("end_km") or 0), 1) in refills:
+                carried = 0.0  # topped up at this aid station
             prev_cum_s = cum_s
             prev_name = s.get("end_name", "")
+    # Pack list = sum of the whole per-leg units (consistent with the schedule).
+    for li, ln in enumerate(lines):
+        ln["total_units"] = line_totals[li]
 
     # Hydration feasibility: between two refill points you only carry
     # `flask_capacity_ml`. If a segment needs more fluid than you can carry,
