@@ -1028,13 +1028,18 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         predict_course,
     )
 
+    from app.services.nutrition import suggest_rates
+
     prod_result = await db.execute(
         select(NutritionProduct)
         .where(NutritionProduct.user_id == user.id)
         .order_by(NutritionProduct.created_at.desc())
     )
     products = [_product_dict(p) for p in prod_result.scalars().all()]
-    products_by_id = {p["id"]: p for p in products}
+    # Works out of the box: with an empty pantry, plan on generic products.
+    using_generic = not products
+    products_for_plan = products if products else _GENERIC_PLAN_PRODUCTS
+    products_by_id = {p["id"]: p for p in products_for_plan}
 
     course = CourseProfile(**route.course_json)
     profile = await build_athlete_gradient_profile(db, user.id)
@@ -1059,15 +1064,27 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
     nutrition = route.nutrition_json or {}
     targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
-    items = nutrition.get("items") or []
+    saved_items = nutrition.get("items") or []
+    # Auto plan: with no manual items, derive a sensible cadence from the carb
+    # target so the user sees a complete plan with zero setup. Manual edits
+    # (Advanced) take precedence.
+    is_auto = not saved_items
+    if is_auto:
+        items = [
+            {"product_id": pid, "per_hour": r}
+            for pid, r in suggest_rates(targets.get("carbs_g_per_h", 0), products_for_plan).items()
+            if r > 0
+        ]
+    else:
+        items = saved_items
     flask_capacity_ml = nutrition.get("flask_capacity_ml") or 1000
     refills = set(nutrition.get("refills") or [])
     plan = compute_plan(
         duration_s, targets, items, products_by_id, sections,
         flask_capacity_ml=flask_capacity_ml, refill_kms=refills,
     )
-    # rate per product for the form (product_id -> per_hour)
-    rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
+    # rate per product for the form (product_id -> per_hour) — manual items only
+    rates = {it.get("product_id"): it.get("per_hour", 0) for it in saved_items}
 
     def _interval_min(per_hour):
         return round(60.0 / per_hour) if per_hour and per_hour > 0 else None
@@ -1100,6 +1117,9 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "refill_points": refill_points,
         "plan": plan,
         "has_duration": duration_s > 0,
+        "is_auto": is_auto,
+        "using_generic": using_generic,
+        "carb_presets": [50, 60, 75, 90],
     }
 
 
@@ -1137,6 +1157,55 @@ async def _pantry_context(request: Request, db: AsyncSession, user: User) -> dic
         .order_by(NutritionProduct.created_at.desc())
     )
     return {"request": request, "products": [_product_dict(p) for p in result.scalars().all()]}
+
+
+# Generic products used to auto-build a plan when the pantry is empty (display
+# only — never saved). Gel is the primary carb source so the auto cadence reads
+# naturally ("1 gel toutes les X min").
+_GENERIC_PLAN_PRODUCTS = [
+    {"id": -1, "name": "Gel", "kind": "gel", "carbs_g": 25, "sodium_mg": 0, "kcal": 100, "caffeine_mg": None, "volume_ml": None},
+    {"id": -2, "name": "Boisson glucidique", "kind": "drink", "carbs_g": 22, "sodium_mg": 300, "kcal": 90, "caffeine_mg": None, "volume_ml": 500},
+    {"id": -3, "name": "Pastille de sel", "kind": "salt", "carbs_g": 0, "sodium_mg": 300, "kcal": None, "caffeine_mg": None, "volume_ml": None},
+]
+
+
+async def _route_default_targets(route: Route, db: AsyncSession, user_id: int) -> dict:
+    from app.schemas.simulator import CourseProfile
+    from app.services.nutrition import default_targets
+    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
+
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user_id)
+    course = predict_course(
+        course, profile,
+        start_hour=route.start_hour if route.start_hour is not None else 6,
+        start_minute=route.start_minute or 0,
+    )
+    duration_s = route.target_time_s or course.predicted_total_time_s or 0
+    mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
+    return default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/carb", response_class=HTMLResponse)
+async def set_carb_target(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    carbs_g_per_h: int = Form(...),
+):
+    """Basic-mode carb-target control: set g/h and re-derive the auto plan."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    nutrition = route.nutrition_json or {}
+    targets = nutrition.get("targets") or await _route_default_targets(route, db, user.id)
+    targets = {**targets, "carbs_g_per_h": max(0, int(carbs_g_per_h))}
+    # Clear manual items so the plan auto-derives from the new carb target.
+    route.nutrition_json = {**nutrition, "targets": targets, "items": []}
+    await db.flush()
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
 @router.get("/nutrition", response_class=HTMLResponse)
