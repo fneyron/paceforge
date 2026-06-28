@@ -11,7 +11,7 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-SYNC_MONTHS = 6
+SYNC_MONTHS = 24
 
 
 @celery_app.task(
