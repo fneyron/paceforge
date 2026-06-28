@@ -260,6 +260,40 @@ def _activity_to_summary(activity: Activity) -> ActivitySummary:
     )
 
 
+
+@router.post("/api/sync", response_class=HTMLResponse)
+async def manual_sync(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually trigger a Strava activity sync."""
+    from datetime import datetime
+    count_before_q = await db.execute(
+        select(func.count(Activity.id)).where(Activity.user_id == user.id)
+    )
+    count_before = count_before_q.scalar() or 0
+
+    if user.has_strava_linked and user.has_own_strava_app:
+        await _sync_recent_activities(user, db)
+        request.session["last_strava_sync"] = datetime.now().timestamp()
+
+    count_after_q = await db.execute(
+        select(func.count(Activity.id)).where(Activity.user_id == user.id)
+    )
+    count_after = count_after_q.scalar() or 0
+    new_count = max(0, count_after - count_before)
+
+    if new_count > 0:
+        msg = f"{new_count} nouvelle(s) activité(s) importée(s)."
+    elif not user.has_strava_linked:
+        msg = "Strava non connecté."
+    elif not user.has_own_strava_app:
+        msg = "Configure ton app Strava dans les Réglages pour activer la sync."
+    else:
+        msg = "Déjà à jour — aucune nouvelle activité."
+
+    return HTMLResponse(f'<p class="text-xs text-gray-500 mt-2">{msg}</p>')
 async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
     """Sync recent activities from Strava. Paginates until we find existing ones."""
     try:
