@@ -30,7 +30,7 @@
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>htmx.config.allowScriptTags = true;</script>
-    <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script><script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
@@ -39,7 +39,7 @@
         .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
-        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); } i[data-lucide] { display: inline-block; vertical-align: middle; }
 
         /* Dark mode — Backgrounds */
         .dark body { background-color: #111 !important; color: #e5e7eb; }

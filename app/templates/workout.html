@@ -152,9 +152,9 @@
                         <p class="text-[10px] text-gray-400">{{ plan.created_at.strftime('%d/%m/%Y %H:%M') }}</p>
                     </div>
                 </div>
-                <button onclick="if(confirm('Supprimer ?')){fetch('/api/workout/plans/{{ plan.id }}',{method:'DELETE'}).then(()=>document.getElementById('plan-{{ plan.id }}').remove())}"
+                <button onclick="pfConfirm('Supprimer ce plan d'entraînement ?', function(){ fetch('/api/workout/plans/{{ plan.id }}',{method:'DELETE'}).then(()=>document.getElementById('plan-{{ plan.id }}').remove()) }, 'Supprimer le plan')"
                         class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 </button>
             </div>
             {% endfor %}

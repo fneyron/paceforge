@@ -117,7 +117,7 @@
         {% endif %}
 
         <p class="text-xs text-red-600">La suppression de ton compte est definitive. Toutes tes donnees (parcours, points de passage, activites synchronisees) seront effacees.</p>
-        <form method="post" action="/settings/delete-account" onsubmit="return confirm('Es-tu sur de vouloir supprimer ton compte ? Cette action est irreversible.');">
+        <form method="post" action="/settings/delete-account" id="pf-delete-account-form" onsubmit="event.preventDefault(); pfConfirm('Es-tu sûr de vouloir supprimer ton compte ? Cette action est irréversible.', function(){ document.getElementById("pf-delete-account-form").submit(); }, 'Supprimer le compte')"; return false;>
             <div class="flex items-center gap-3">
                 <input type="text" name="confirmation" placeholder="Tape SUPPRIMER"
                        class="h-9 px-3 rounded-lg border border-red-200 text-sm w-48">
