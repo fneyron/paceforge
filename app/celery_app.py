@@ -7,7 +7,7 @@ celery_app = Celery(
     "paceforge",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.initial_sync", "app.tasks.poll_activities"],
+    include=["app.tasks.initial_sync", "app.tasks.poll_activities", "app.tasks.webhook_sync"],
     # disabled: "app.tasks.analysis", "app.tasks.weekly_digest"
 )
 

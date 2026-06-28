@@ -63,9 +63,11 @@ async def strava_webhook_event(request: Request):
 
     if event.object_type == "activity" and event.aspect_type == "create":
         logger.info(
-            "New activity %d from athlete %d — sync only (analysis disabled)",
+            "Webhook: new activity %d from athlete %d, enqueuing sync",
             event.object_id,
             event.owner_id,
         )
+        from app.tasks.webhook_sync import sync_activity_from_webhook
+        sync_activity_from_webhook.delay(event.object_id, event.owner_id)
 
     return JSONResponse(status_code=200, content={"status": "ok"})

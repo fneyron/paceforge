@@ -85,10 +85,36 @@ async def _run_poll() -> dict:
                     if exists.scalar() > 0:
                         continue
 
-                    # New activity found — sync only (analysis disabled)
+                    # New activity — save to DB
+                    from datetime import datetime as _dt2
+                    start_val = data.get("start_date")
+                    if isinstance(start_val, str):
+                        start_val = _dt2.fromisoformat(
+                            start_val.replace("Z", "+00:00")
+                        )
+                    activity = Activity(
+                        strava_activity_id=strava_id,
+                        user_id=user.id,
+                        sport_type=data.get("sport_type", data.get("type", "Unknown")),
+                        name=data.get("name", "Untitled"),
+                        start_date=start_val,
+                        distance=data.get("distance", 0),
+                        moving_time=data.get("moving_time", 0),
+                        elapsed_time=data.get("elapsed_time", 0),
+                        total_elevation_gain=data.get("total_elevation_gain", 0),
+                        average_speed=data.get("average_speed"),
+                        max_speed=data.get("max_speed"),
+                        average_heartrate=data.get("average_heartrate"),
+                        max_heartrate=data.get("max_heartrate"),
+                        average_cadence=data.get("average_cadence"),
+                        average_watts=data.get("average_watts"),
+                        splits_metric=data.get("splits_metric"),
+                        raw_data=data,
+                    )
+                    db.add(activity)
                     logger.info(
-                        "Poll found new activity %d for user %d (sync only)",
-                        strava_id, user.id,
+                        "Poll saved new activity %d for user %d: %s",
+                        strava_id, user.id, activity.name,
                     )
                     new_activities += 1
 

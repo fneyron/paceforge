@@ -57,14 +57,7 @@
     {% else %}
     <!-- No result yet: pick the matching activity -->
     {% if not candidates %}
-    <p class="text-sm text-gray-500">Aucune activité course à pied synchronisée dans PaceForge pour l'instant.</p>
-    <div id="sync-result" class="mt-2">
-        <button hx-post="/api/sync" hx-target="#sync-result" hx-swap="innerHTML"
-                class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600 hover:bg-gray-50 shadow-sm transition-colors">
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Strava
-        </button>
-    </div>
-    <p class="text-[11px] text-gray-400 mt-1">La liste vient des activités importées dans PaceForge. Si ta course n'apparaît pas, clique Sync puis recharge la page.</p>
+        <p class="text-sm text-gray-500">Aucune activité course à pied synchronisée dans PaceForge pour l'instant. Les activités Strava se synchronisent automatiquement — réessaie dans quelques minutes.</p>
     {% else %}
     <p class="text-sm text-gray-500">Tu as couru cette course ? Choisis l'activité correspondante pour comparer réel vs prédit.</p>
     <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML"
