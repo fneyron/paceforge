@@ -1,6 +1,10 @@
 // PaceForge - HTMX configuration
-
 document.addEventListener("DOMContentLoaded", function () {
+    // Initialize Lucide icons
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+
     // Configure HTMX
     document.body.addEventListener("htmx:configRequest", function (event) {
         // Add CSRF token if needed in the future
@@ -18,10 +22,16 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
+    // Re-initialize Lucide icons after every HTMX content swap
+    document.body.addEventListener("htmx:afterSettle", function () {
+        if (typeof lucide !== "undefined") {
+            lucide.createIcons();
+        }
+    });
+
     // Mobile nav toggle
     const navToggle = document.getElementById("nav-toggle");
     const navMenu = document.getElementById("nav-menu");
-
     if (navToggle && navMenu) {
         navToggle.addEventListener("click", function () {
             navMenu.classList.toggle("hidden");
