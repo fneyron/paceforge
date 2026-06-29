@@ -1032,8 +1032,6 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         predict_course,
     )
 
-    from app.services.nutrition import suggest_rates
-
     prod_result = await db.execute(
         select(NutritionProduct)
         .where(NutritionProduct.user_id == user.id)
@@ -1068,19 +1066,10 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
     nutrition = route.nutrition_json or {}
     targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
-    saved_items = nutrition.get("items") or []
-    # Auto plan: with no manual items, derive a sensible cadence from the carb
-    # target so the user sees a complete plan with zero setup. Manual edits
-    # (Advanced) take precedence.
-    is_auto = not saved_items
-    if is_auto:
-        items = [
-            {"product_id": pid, "per_hour": r}
-            for pid, r in suggest_rates(targets.get("carbs_g_per_h", 0), products_for_plan).items()
-            if r > 0
-        ]
-    else:
-        items = saved_items
+    # No auto-fill: the plan shows ONLY what the athlete sets (a frequency per
+    # product). Empty = no plan yet, with per-product "pour la cible" hints to
+    # guide them. Never silently pick a product.
+    items = nutrition.get("items") or []
     flask_capacity_ml = nutrition.get("flask_capacity_ml") or 1000
     refills = set(nutrition.get("refills") or [])
     plan = compute_plan(
@@ -1121,7 +1110,6 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "refill_points": refill_points,
         "plan": plan,
         "has_duration": duration_s > 0,
-        "is_auto": is_auto,
         "using_generic": using_generic,
         "carb_presets": [50, 60, 75, 90],
     }

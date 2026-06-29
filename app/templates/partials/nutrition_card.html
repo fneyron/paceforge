@@ -107,6 +107,10 @@
         <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Appliquer</button>
     </form>
 
+    {% if not plan.lines %}
+    <p class="rounded-lg border border-dashed border-gray-200 px-3 py-2.5 text-[12px] text-gray-500">Renseigne une <b>fréquence</b> (1 / X min) pour les produits que tu comptes prendre — l'indice « pour la cible » te donne la valeur — puis clique <b>Appliquer</b>.</p>
+    {% endif %}
+
     <!-- ── Hydration verdict (one clear, actionable line) ── -->
     {% set hy = plan.hydration %}
     {% if hy %}
@@ -158,6 +162,7 @@
     {% endif %}
 
     <!-- ── À emporter (computed) ── -->
+    {% if plan.lines %}
     <div>
         <p class="text-xs font-medium text-gray-500 mb-2">À emporter au total</p>
         <div class="flex flex-wrap gap-2">
@@ -170,5 +175,6 @@
         </div>
         <p class="mt-1.5 text-[11px] text-gray-400">≈ {{ plan.totals.carbs_g }} g glucides · {{ (plan.totals.fluid_ml/1000)|round(1) }} L liquide.</p>
     </div>
+    {% endif %}
     {% endif %}
 </div>

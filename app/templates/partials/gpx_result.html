@@ -442,7 +442,7 @@ window._sim = {};
     function refreshNutrition() {
         var el = document.getElementById('nutrition-wrap');
         if (el && window.htmx && currentRouteId) {
-            window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=14', { target: '#nutrition-wrap', swap: 'innerHTML' });
+            window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=15', { target: '#nutrition-wrap', swap: 'innerHTML' });
         }
     }
     function scheduleSave() {
