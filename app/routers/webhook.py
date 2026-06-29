@@ -67,7 +67,12 @@ async def strava_webhook_event(request: Request):
             event.object_id,
             event.owner_id,
         )
-        from app.tasks.webhook_sync import sync_activity_from_webhook
-        sync_activity_from_webhook.delay(event.object_id, event.owner_id)
+        # Enqueue async, but never let a broker hiccup break the webhook ACK —
+        # Strava expects a fast 200 or it retries/disables the subscription.
+        try:
+            from app.tasks.webhook_sync import sync_activity_from_webhook
+            sync_activity_from_webhook.delay(event.object_id, event.owner_id)
+        except Exception:
+            logger.exception("Failed to enqueue webhook sync (broker unavailable?)")
 
     return JSONResponse(status_code=200, content={"status": "ok"})
