@@ -107,6 +107,21 @@
         <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Appliquer</button>
     </form>
 
+    <!-- ── Hydration verdict (one clear, actionable line) ── -->
+    {% set hy = plan.hydration %}
+    {% if hy %}
+    {% if not hy.has_refills %}
+    <div class="rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-[12px] text-gray-600">💧 Coche tes ravitos ci-dessus pour vérifier l'eau entre deux.</div>
+    {% elif hy.feasible %}
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">💧 Hydratation OK — tes {{ (hy.capacity_ml/1000)|round(1) }} L suffisent entre chaque ravito.</div>
+    {% else %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+        ⚠ Hydratation tendue : sur <b>{{ hy.dry_count }}/{{ hy.segment_count }}</b> segments, {{ (hy.capacity_ml/1000)|round(1) }} L ne suffisent pas{% if hy.worst_segment %} (le pire : <b>{{ hy.worst_segment.from_name }} → {{ hy.worst_segment.to_name }}</b>, besoin {{ (hy.worst_segment.need_ml/1000)|round(1) }} L){% endif %}.
+        <span class="block mt-0.5 text-red-600/90">→ Porte ~<b>{{ (hy.suggested_capacity_ml/1000)|round(1) }} L</b>, baisse la cible liquide, ou rapproche tes ravitos.</span>
+    </div>
+    {% endif %}
+    {% endif %}
+
     <!-- ── À prendre sur chaque tronçon (computed) ── -->
     {% if plan.schedule and plan.lines %}
     <div>
@@ -121,7 +136,7 @@
                 </tr></thead>
                 <tbody class="divide-y divide-gray-50">
                     {% for leg in plan.schedule %}
-                    <tr class="{% if leg.dry %}bg-red-50/60{% elif loop.last %}bg-gray-50/50{% endif %}">
+                    <tr class="{% if loop.last %}bg-gray-50/50{% endif %}">
                         <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ leg.from_name }}</span> → <b>{{ leg.to_name }}</b></td>
                         <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
                         <td class="py-2 pl-3">
@@ -131,15 +146,14 @@
                                 {% if not ns3.any %}<span class="text-[11px] text-gray-300">eau plate</span>{% endif %}
                             </div>
                         </td>
-                        <td class="text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-600 font-medium{% else %}text-gray-500{% endif %}">
-                            {{ (leg.fluid_ml/1000)|round(2) }}L{% if leg.dry %}<br><span class="text-[10px]">⚠ à sec</span>{% endif %}
+                        <td class="text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-500{% else %}text-gray-500{% endif %}">
+                            {{ (leg.fluid_ml/1000)|round(2) }}L{% if leg.dry %} <span title="tu seras à sec avant le prochain ravito">⚠</span>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <p class="mt-1.5 text-[11px] text-gray-400">Quantités entières. <span class="text-red-600">Rouge = tu manques d'eau</span> avant le prochain ravito (coche tes ravitos plus haut).</p>
     </div>
     {% endif %}
 

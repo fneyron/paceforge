@@ -229,12 +229,21 @@ def compute_plan(
                 seg_from = leg["to_name"]
                 seg_time = 0.0
                 seg_fluid = 0.0
+        not_ok = [s for s in segs if not s["ok"]]
+        worst = max(segs, key=lambda s: s["need_ml"], default=None)
+        # Suggested carry = cover the longest single inter-refill segment.
+        suggested = int(math.ceil((worst["need_ml"] if worst else cap) / 100.0) * 100)
         hydration = {
             "capacity_ml": round(cap),
             "segments": segs,
             "feasible": all(s["ok"] for s in segs),
             "max_shortfall_ml": max((s["shortfall_ml"] for s in segs), default=0),
             "has_refills": bool(refills),
+            "dry_count": len(not_ok),
+            "segment_count": len(segs),
+            "worst_segment": {"from_name": worst["from_name"], "to_name": worst["to_name"],
+                              "need_ml": worst["need_ml"]} if worst else None,
+            "suggested_capacity_ml": suggested,
         }
 
     return {
