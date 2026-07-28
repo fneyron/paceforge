@@ -55,21 +55,27 @@
     {% endif %}
 
     {% else %}
-    <!-- No result yet: pick the matching activity -->
-    {% if not candidates %}
-        <p class="text-sm text-gray-500">Aucune activité course à pied synchronisée dans PaceForge pour l'instant. Les activités Strava se synchronisent automatiquement — réessaie dans quelques minutes.</p>
-    {% else %}
-    <p class="text-sm text-gray-500">Tu as couru cette course ? Choisis l'activité correspondante pour comparer réel vs prédit.</p>
-    <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML"
-          class="flex flex-wrap items-center gap-2">
-        <select name="activity_id" class="h-9 px-2 rounded-lg border border-gray-200 text-sm max-w-full">
-            {% for c in candidates %}
-            <option value="{{ c.id }}">{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Comparer</button>
-    </form>
-    <p class="text-[10px] text-gray-400">{{ candidates|length }} activités proposées (les plus proches en distance). Pas de splits détaillés sur une activité → on compare au moins le temps total. Tu ne vois pas ta course ? Re-synchronise Strava.</p>
-    {% endif %}
+    <!-- No result yet: optional, collapsed — the race may simply not have happened. -->
+    <details>
+        <summary class="cursor-pointer select-none text-sm text-gray-500 hover:text-gray-700">
+            Course déjà courue ? <span class="underline decoration-gray-300 underline-offset-2">Associer l'activité Strava</span> pour comparer réel vs prédit <span class="text-gray-400">(optionnel)</span>
+        </summary>
+        <div class="mt-3 space-y-2">
+            {% if not candidates %}
+            <p class="text-[12px] text-gray-500">Aucune activité course à pied synchronisée pour l'instant. Les activités Strava se synchronisent automatiquement — réessaie dans quelques minutes.</p>
+            {% else %}
+            <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML"
+                  class="flex flex-wrap items-center gap-2">
+                <select name="activity_id" class="h-9 px-2 rounded-lg border border-gray-200 text-sm max-w-full">
+                    {% for c in candidates %}
+                    <option value="{{ c.id }}">{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Comparer</button>
+            </form>
+            <p class="text-[10px] text-gray-400">Les plus proches en distance. Sans splits détaillés → temps total seul. Ta course manque ? Re-synchronise Strava.</p>
+            {% endif %}
+        </div>
+    </details>
     {% endif %}
 </div>

@@ -1077,7 +1077,7 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         flask_capacity_ml=flask_capacity_ml, refill_kms=refills,
     )
     # rate per product for the form (product_id -> per_hour) — manual items only
-    rates = {it.get("product_id"): it.get("per_hour", 0) for it in saved_items}
+    rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
 
     def _interval_min(per_hour):
         return round(60.0 / per_hour) if per_hour and per_hour > 0 else None
