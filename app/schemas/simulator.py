@@ -22,6 +22,10 @@ class CourseSegment(BaseModel):
     max_elevation: float
     predicted_pace_s_per_km: float = 0
     predicted_time_s: float = 0
+    # Terrain-difficulty time (gradient/altitude/technicality only — no fatigue,
+    # night or heat). Used to distribute a target time at EVEN effort: a pacing
+    # plan must not tell the athlete to bank time while fresh.
+    base_time_s: float = 0
     cumulative_time_s: float = 0
     cumulative_distance_km: float = 0
 
@@ -44,6 +48,9 @@ class AthleteGradientProfile(BaseModel):
     gradient_factors: dict[int, float]  # gradient% -> pace multiplier
     data_points: int
     sport_types_used: list[str]
+    # Personal fresh→fade tilt of the fatigue curve, calibrated from the
+    # athlete's matched race results (default = generic).
+    fatigue_tilt: float = 0.15
 
 
 class PowerCalcInput(BaseModel):

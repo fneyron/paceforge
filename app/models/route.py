@@ -22,6 +22,8 @@ class Route(Base):
     start_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-23
     start_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-59
     sport_type: Mapped[str] = mapped_column(String(20), nullable=False, default="trail", server_default="trail")
+    # Planned stop per aid station (minutes) — shifts clock passage times.
+    stop_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)

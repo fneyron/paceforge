@@ -21,19 +21,49 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
         Tous les parcours
     </a>
-    {% include "partials/gpx_result.html" %}
 
-    <!-- Simulated vs actual: compare a real Strava result to the prediction -->
-    <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=1" hx-trigger="load" hx-swap="innerHTML"></div>
+    <!-- Tabs: the page mixes three jobs — planning, fueling, debrief -->
+    <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button id="rtab-plan" onclick="switchRouteTab('plan')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">Plan de course</button>
+        <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
+        <button id="rtab-realise" onclick="switchRouteTab('realise')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Réalisé</button>
+    </div>
 
-    <!-- Nutrition plan: loaded after the page so the heavy map/chart render first -->
-    <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=15" hx-trigger="load" hx-swap="innerHTML">
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div class="flex items-center gap-2 text-sm text-gray-400">
-                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                Plan nutritionnel…
+    <div id="rpanel-plan">
+        {% include "partials/gpx_result.html" %}
+    </div>
+
+    <div id="rpanel-nutrition" class="hidden">
+        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="load" hx-swap="innerHTML">
+            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center gap-2 text-sm text-gray-400">
+                    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Plan nutritionnel…
+                </div>
             </div>
         </div>
     </div>
+
+    <div id="rpanel-realise" class="hidden">
+        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=2" hx-trigger="load" hx-swap="innerHTML"></div>
+    </div>
 </div>
 {% endblock content %}
+
+{% block scripts %}
+<script>
+function switchRouteTab(tab) {
+    ['plan', 'nutrition', 'realise'].forEach(function(t) {
+        document.getElementById('rpanel-' + t).classList.toggle('hidden', t !== tab);
+        var btn = document.getElementById('rtab-' + t);
+        btn.classList.toggle('bg-white', t === tab);
+        btn.classList.toggle('text-gray-900', t === tab);
+        btn.classList.toggle('shadow-sm', t === tab);
+        btn.classList.toggle('text-gray-500', t !== tab);
+    });
+}
+</script>
+{% endblock scripts %}

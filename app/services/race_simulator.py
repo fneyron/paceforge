@@ -204,12 +204,39 @@ async def build_athlete_gradient_profile(
         if grad not in gradient_factors:
             gradient_factors[grad] = _get_default_factor(grad)
 
-    return AthleteGradientProfile(
+    profile = AthleteGradientProfile(
         flat_pace_s_per_km=round(flat_pace, 1),
         gradient_factors=gradient_factors,
         data_points=len(data_points),
         sport_types_used=list(sport_types_used),
     )
+    profile.fatigue_tilt = await _personal_fatigue_tilt(db, user_id)
+    return profile
+
+
+async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
+    """Personal fresh→fade tilt, calibrated when a matched race result exists.
+
+    The tilt is computed once at match time (see save_route_result) and stored
+    in Route.result_json; here we just read the most recent one. Clamped hard —
+    one race must adjust, not dominate.
+    """
+    from app.models.route import Route
+
+    try:
+        result = await db.execute(
+            select(Route.result_json)
+            .where(Route.user_id == user_id, Route.result_json.is_not(None))
+            .order_by(Route.id.desc())
+            .limit(5)
+        )
+        for rj in result.scalars().all():
+            tilt = (rj or {}).get("fatigue_tilt")
+            if tilt is not None:
+                return max(0.05, min(float(tilt), 0.40))
+    except Exception:
+        logger.exception("personal fatigue tilt lookup failed")
+    return 0.15
 
 
 async def _estimate_flat_pace_from_activities(
@@ -283,6 +310,7 @@ def _fatigue_factor(
     progress: float,
     total_distance_km: float,
     cumulative_gain: float,
+    tilt: float = 0.15,
 ) -> float:
     """Exponential fatigue factor based on race progress and D+.
 
@@ -295,13 +323,11 @@ def _fatigue_factor(
     k = 0.12 * (total_distance_km / 42)
     base = 1.0 + k * (progress ** 2)
 
-    # Modest, ~total-neutral reshape: fresh legs run a touch faster than the
-    # averaged gradient curve early, then decay late. Validation against real
-    # race splits showed the old (purely-additive) curve was too flat — too slow
-    # when fresh, catching up late. This bends the prediction (fast-then-slow)
-    # without materially changing the total. Deliberately modest: it's a
-    # structural fix for everyone, not a fit to one (strong) athlete's chronos.
-    base += 0.15 * (progress - 0.45)
+    # ~Total-neutral fresh→fade reshape: fresh legs run a touch faster than the
+    # averaged gradient curve early, then decay late (validated on real race
+    # splits). ``tilt`` is per-athlete once a matched race result exists —
+    # a runner who blows up late gets a steeper tilt than the generic default.
+    base += tilt * (progress - 0.45)
 
     # Glycogen depletion after ~30-35km
     glycogen_threshold = min(35 / total_distance_km, 0.7)
@@ -382,26 +408,37 @@ def predict_course(
     cumulative_gain = 0.0
     total_distance = course.total_distance_km
 
+    tilt = getattr(profile, "fatigue_tilt", 0.15) or 0.15
+
     for segment in course.segments:
-        factor = _get_factor(profile, segment.avg_gradient_pct)
+        grade_factor = _get_factor(profile, segment.avg_gradient_pct)
         cumulative_gain += segment.elevation_gain
-
-        # Progressive fatigue
-        progress = segment.cumulative_distance_km / total_distance if total_distance > 0 else 0
-        factor *= _fatigue_factor(progress, total_distance, cumulative_gain)
-
-        # Heat factor
-        factor *= heat_factor
 
         # Altitude correction (>1500m)
         avg_elev = (segment.min_elevation + segment.max_elevation) / 2
-        factor *= _altitude_factor(avg_elev)
+        alt = _altitude_factor(avg_elev)
 
         # Terrain difficulty
-        factor *= _terrain_difficulty_factor(
+        terrain = _terrain_difficulty_factor(
             segment.avg_gradient_pct, segment.elevation_gain,
             segment.elevation_loss, segment.distance_m,
         )
+
+        # Terrain-only time (no fatigue/night/heat): the even-effort basis used
+        # to split a TARGET time into passage times. A pacing plan must not
+        # inherit the prediction's fast-start shape.
+        base_pace = profile.flat_pace_s_per_km * grade_factor * alt * terrain
+        segment.base_time_s = round(base_pace * (segment.distance_m / 1000), 1)
+
+        # Progressive fatigue (personalised tilt). Progress from the segment's
+        # own end_km: reading cumulative_distance_km here used the PREVIOUS
+        # prediction's value (0 on a fresh course — flattening fatigue).
+        progress = segment.end_km / total_distance if total_distance > 0 else 0
+        factor = grade_factor * alt * terrain
+        factor *= _fatigue_factor(progress, total_distance, cumulative_gain, tilt)
+
+        # Heat factor
+        factor *= heat_factor
 
         # Night penalty
         factor *= _night_penalty(cumulative_time, start_hour_frac)
@@ -458,6 +495,8 @@ def compute_passage_times(
     start_hour: int = 6,
     start_minute: int = 0,
     hourly_weather: dict | None = None,
+    stop_s_per_aid: int = 0,
+    aid_kms: set | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
@@ -469,6 +508,15 @@ def compute_passage_times(
     per-section heat factor is computed from each section's estimated time of day
     (which hour it is run) and its mean altitude (lapse-rate corrected from the
     start). This overrides the scalar ``heat_factor``.
+
+    ``stop_s_per_aid`` adds a stop at each checkpoint whose km is in ``aid_kms``
+    (aid stations). Stops shift the CLOCK times (and the target distribution's
+    moving budget) — predictions themselves stay moving-time.
+
+    The target plan ("adjusted_*") is distributed at EVEN grade-adjusted effort
+    (segment.base_time_s), NOT proportionally to the prediction: a plan that
+    mirrors the prediction's fast-start shape tells the athlete to bank time
+    while fresh, which is how you blow up late.
     """
     from app.schemas.simulator import PassageTimeSection
     from app.services.weather import compute_heat_factor
@@ -488,10 +536,13 @@ def compute_passage_times(
         {"name": "Arrivee", "distance_km": course.total_distance_km, "cp_index": None}
     )
 
-    # Scale factor for target time
-    scale = 1.0
-    if target_time_s and course.predicted_total_time_s > 0:
-        scale = target_time_s / course.predicted_total_time_s
+    aid_set = {round(float(k), 1) for k in (aid_kms or set())}
+    # Aid stops apply at intermediate checkpoints only (not the finish).
+    n_stops = sum(
+        1 for cp in all_cps[1:-1]
+        if round(float(cp["distance_km"]), 1) in aid_set
+    ) if stop_s_per_aid else 0
+    total_stops_s = n_stops * stop_s_per_aid
 
     use_hourly = bool(hourly_weather and hourly_weather.get("temps"))
     base_elev = _elevation_at_km(course, 0.0) or 0.0
@@ -506,6 +557,7 @@ def compute_passage_times(
         section_dist = end_km - start_km
 
         section_time = 0.0
+        section_base = 0.0
         section_gain = 0.0
         section_loss = 0.0
         for seg in course.segments:
@@ -518,6 +570,8 @@ def compute_passage_times(
                 continue
             fraction = (overlap_end - overlap_start) / seg_length
             section_time += seg.predicted_time_s * fraction
+            # even-effort basis (falls back to predicted for old cached courses)
+            section_base += (seg.base_time_s or seg.predicted_time_s) * fraction
             section_gain += seg.elevation_gain * fraction
             section_loss += seg.elevation_loss * fraction
 
@@ -525,20 +579,30 @@ def compute_passage_times(
         baseline_cum += section_time
         raw.append({
             "start_km": start_km, "end_km": end_km, "dist": section_dist,
-            "time": section_time, "gain": section_gain, "loss": section_loss,
+            "time": section_time, "base": section_base,
+            "gain": section_gain, "loss": section_loss,
             "mid_cum": mid_cum, "cp_index": all_cps[i + 1]["cp_index"],
             "start_name": all_cps[i]["name"], "end_name": all_cps[i + 1]["name"],
         })
+
+    # Even-effort target distribution: the plan's moving budget is the target
+    # minus planned aid-station stops, split proportionally to terrain
+    # difficulty (base) — flat pacing by effort, not the prediction's shape.
+    total_base = sum(r["base"] for r in raw) or 1.0
+    moving_target_s = None
+    if target_time_s:
+        moving_target_s = max(target_time_s - total_stops_s, 1)
 
     # Pass 2: apply per-section (or global) heat and accumulate final times.
     sections = []
     cumulative = 0.0
     adj_cumulative = 0.0
+    stops_acc = 0
     for r in raw:
         temperature_c = None
         weather_code = None
         if use_hourly:
-            hour = int((start_offset_s + r["mid_cum"]) // 3600) % 24
+            hour = int((start_offset_s + r["mid_cum"] + stops_acc) // 3600) % 24
             temps = hourly_weather["temps"]
             hums = hourly_weather.get("humidity") or []
             codes = hourly_weather.get("codes") or []
@@ -556,8 +620,14 @@ def compute_passage_times(
         cumulative += section_time
         pace = section_time / r["dist"] if r["dist"] > 0 else 0
 
-        adjusted_time = section_time * scale
+        # Plan (target): even effort by terrain share, not prediction share.
+        adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
         adj_cumulative += adjusted_time
+
+        # Stop at this arrival checkpoint? (intermediate aid stations only)
+        arrival_stop = 0
+        if stop_s_per_aid and r["cp_index"] is not None and round(float(r["end_km"]), 1) in aid_set:
+            arrival_stop = stop_s_per_aid
 
         sections.append(PassageTimeSection(
             start_name=r["start_name"],
@@ -573,12 +643,14 @@ def compute_passage_times(
             adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
             adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
             end_elevation=_elevation_at_km(course, r["end_km"]),
-            clock_time_s=int(start_offset_s + cumulative),
-            adjusted_clock_time_s=int(start_offset_s + adj_cumulative) if target_time_s else None,
+            clock_time_s=int(start_offset_s + cumulative + stops_acc),
+            adjusted_clock_time_s=int(start_offset_s + adj_cumulative + stops_acc) if target_time_s else None,
             end_checkpoint_index=r["cp_index"],
             temperature_c=temperature_c,
             heat_factor=round(sec_heat, 3) if use_hourly else None,
             weather_code=weather_code,
         ).model_dump())
+
+        stops_acc += arrival_stop
 
     return sections

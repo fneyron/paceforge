@@ -27,6 +27,41 @@
     </div>
     {% endif %}
 
+    <!-- Données Strava synchronisées (what predictions are built on) -->
+    {% if strava_stats is defined and strava_stats %}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Données Strava synchronisées</h3>
+        {% if strava_stats.total %}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Activités</p>
+                <p class="text-xl font-bold tabular-nums">{{ strava_stats.total }}</p>
+            </div>
+            <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider" title="Les splits détaillés alimentent la prédiction personnalisée">Avec splits</p>
+                <p class="text-xl font-bold tabular-nums {% if strava_stats.with_splits < strava_stats.total // 2 %}text-amber-600{% endif %}">{{ strava_stats.with_splits }}</p>
+            </div>
+            <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Depuis</p>
+                <p class="text-xl font-bold tabular-nums">{{ strava_stats.first_date.strftime('%m/%Y') if strava_stats.first_date else '—' }}</p>
+            </div>
+            <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Dernière</p>
+                <p class="text-xl font-bold tabular-nums">{{ strava_stats.last_date.strftime('%d/%m') if strava_stats.last_date else '—' }}</p>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+            {% for sport, n in strava_stats.by_sport %}
+            <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600">{{ sport }} <b class="tabular-nums">{{ n }}</b></span>
+            {% endfor %}
+        </div>
+        <p class="text-[11px] text-gray-400 mt-2">C'est sur ces activités (splits) que reposent les prédictions personnalisées. Synchronisation automatique toutes les 5 min + à chaque activité Strava.</p>
+        {% else %}
+        <p class="text-sm text-gray-500">Aucune activité synchronisée pour l'instant — la synchronisation tourne automatiquement, reviens dans quelques minutes.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Connexion Strava API -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
         <div class="flex items-center justify-between">

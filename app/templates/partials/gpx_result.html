@@ -148,6 +148,15 @@
                     <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
                 </div>
             </div>
+            <div class="flex flex-col gap-1">
+                <label for="stop-min" class="text-[11px] font-medium text-gray-500" title="Temps d'arrêt moyen à chaque ravito (coché dans le plan nutrition). Décale les heures de passage.">Arrêt/ravito</label>
+                <div class="flex items-center gap-1 h-9">
+                    <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes is not none else '' }}" placeholder="0"
+                           onchange="window._sim && window._sim.onConditionsChange()"
+                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <span class="text-xs text-gray-400">min</span>
+                </div>
+            </div>
             <button onclick="window._sim.fetchWeather()"
                     class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
@@ -403,7 +412,7 @@ window._sim = {};
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
     function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
-    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -431,6 +440,7 @@ window._sim = {};
         var rd = document.getElementById('race-date').value; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
         b.append('sport_type', savedSportType || 'trail');
+        var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
         if (currentWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b })
             .then(function(r) { return r.json(); })
@@ -442,7 +452,7 @@ window._sim = {};
     function refreshNutrition() {
         var el = document.getElementById('nutrition-wrap');
         if (el && window.htmx && currentRouteId) {
-            window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=15', { target: '#nutrition-wrap', swap: 'innerHTML' });
+            window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=16', { target: '#nutrition-wrap', swap: 'innerHTML' });
         }
     }
     function scheduleSave() {

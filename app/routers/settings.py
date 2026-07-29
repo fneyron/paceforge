@@ -31,13 +31,43 @@ SPORT_OPTIONS = [
 async def settings_page(
     request: Request,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    # Strava data inventory: make visible what the predictions are built on.
+    from sqlalchemy import func
+
+    from app.models.activity import Activity
+
+    stats_q = await db.execute(
+        select(
+            func.count(Activity.id),
+            func.count(Activity.id).filter(Activity.splits_metric.is_not(None)),
+            func.min(Activity.start_date),
+            func.max(Activity.start_date),
+        ).where(Activity.user_id == user.id)
+    )
+    total, with_splits, first_date, last_date = stats_q.one()
+    by_sport_q = await db.execute(
+        select(Activity.sport_type, func.count(Activity.id))
+        .where(Activity.user_id == user.id)
+        .group_by(Activity.sport_type)
+        .order_by(func.count(Activity.id).desc())
+    )
+    strava_stats = {
+        "total": total or 0,
+        "with_splits": with_splits or 0,
+        "first_date": first_date,
+        "last_date": last_date,
+        "by_sport": by_sport_q.all(),
+    }
+
     return templates.TemplateResponse(
         request,
         "settings.html",
         context={
             "user": user,
             "sport_options": SPORT_OPTIONS,
+            "strava_stats": strava_stats,
         },
     )
 

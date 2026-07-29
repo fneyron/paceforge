@@ -66,9 +66,37 @@
         </div>
 
         <p class="text-[8px] text-gray-400 mt-2 text-center">
-            {% if has_target %}Heures de passage visées (objectif).{% else %}Heures de passage estimées.{% endif %} Généré par PaceForge.
+            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if stop_minutes and n_aid %} Inclut {{ stop_minutes }} min d'arrêt × {{ n_aid }} ravitos.{% endif %} Généré par PaceForge.
         </p>
     </div>
+
+    {% if nutrition_schedule and nutrition_lines %}
+    <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
+    <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
+            <p class="text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
+            <p class="text-[10px] text-gray-500 tabular-nums">
+                {% for ln in nutrition_lines %}×{{ ln.total_units | int }} {{ ln.name }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </p>
+        </div>
+        <table class="w-full text-[10px]">
+            <tbody class="divide-y divide-gray-100">
+                {% for leg in nutrition_schedule %}
+                <tr>
+                    <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
+                    <td class="py-1 px-1 text-right tabular-nums text-gray-500">{% set h = (leg.leg_time_s // 3600) | int %}{% set m = ((leg.leg_time_s % 3600) // 60) | int %}{% if h %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}min{% endif %}</td>
+                    <td class="py-1 pl-2 text-gray-700">
+                        {% set ns = namespace(any=false) %}
+                        {% for u in leg.units %}{% if u.units and not u.is_water %}{% if ns.any %} · {% endif %}{{ u.name }} <b>×{{ u.units }}</b>{% set ns.any = true %}{% endif %}{% endfor %}
+                        {% if not ns.any %}<span class="text-gray-300">—</span>{% endif %}
+                    </td>
+                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500">{{ (leg.fluid_ml/1000)|round(1) }}L</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 <script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });</script>
 </body>
