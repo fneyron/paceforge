@@ -3,163 +3,146 @@
 {% block title %}Réglages — PaceForge{% endblock title %}
 
 {% block content %}
-<div class="space-y-6">
+{% set input_cls = "w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent" %}
+<div class="space-y-5 max-w-3xl">
     <div>
         <h1 class="text-lg font-semibold tracking-tight">Réglages</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Compte et préférences du simulateur</p>
+        <p class="text-sm text-gray-500 mt-0.5">Ton profil, tes objectifs et ta connexion Strava.</p>
     </div>
 
     {% if saved is defined and saved %}
-    <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-        Réglages sauvegardés avec succès.
-    </div>
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">Réglages enregistrés.</div>
     {% endif %}
-
     {% if credentials_saved is defined and credentials_saved %}
-    <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-        Identifiants Strava mis à jour avec succès.
-    </div>
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">Identifiants Strava mis à jour.</div>
     {% endif %}
-
     {% if credentials_error is defined and credentials_error %}
-    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {{ credentials_error }}
-    </div>
+    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{{ credentials_error }}</div>
     {% endif %}
 
-    <!-- Données Strava synchronisées (what predictions are built on) -->
-    {% if strava_stats is defined and strava_stats %}
+    <!-- Compte -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Données Strava synchronisées</h3>
-        {% if strava_stats.total %}
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Activités</p>
-                <p class="text-xl font-bold tabular-nums">{{ strava_stats.total }}</p>
-            </div>
-            <div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider" title="Les splits détaillés alimentent la prédiction personnalisée">Avec splits</p>
-                <p class="text-xl font-bold tabular-nums {% if strava_stats.with_splits < strava_stats.total // 2 %}text-amber-600{% endif %}">{{ strava_stats.with_splits }}</p>
-            </div>
-            <div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Depuis</p>
-                <p class="text-xl font-bold tabular-nums">{{ strava_stats.first_date.strftime('%m/%Y') if strava_stats.first_date else '—' }}</p>
-            </div>
-            <div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Dernière</p>
-                <p class="text-xl font-bold tabular-nums">{{ strava_stats.last_date.strftime('%d/%m') if strava_stats.last_date else '—' }}</p>
-            </div>
-        </div>
-        <div class="flex flex-wrap gap-1.5">
-            {% for sport, n in strava_stats.by_sport %}
-            <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600">{{ sport }} <b class="tabular-nums">{{ n }}</b></span>
-            {% endfor %}
-        </div>
-        <p class="text-[11px] text-gray-400 mt-2">C'est sur ces activités (splits) que reposent les prédictions personnalisées. Synchronisation automatique toutes les 5 min + à chaque activité Strava.</p>
-        {% else %}
-        <p class="text-sm text-gray-500">Aucune activité synchronisée pour l'instant — la synchronisation tourne automatiquement, reviens dans quelques minutes.</p>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    <!-- Connexion Strava API -->
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold tracking-tight">Connexion Strava API</h2>
-            {% if user.has_own_strava_app %}
-                {% if user.strava_credentials_valid %}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-xs font-medium text-green-700">
-                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                    Connecté
-                </span>
-                {% else %}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-xs font-medium text-red-700">
-                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                    Invalide
-                </span>
-                {% endif %}
+        <div class="flex items-center gap-3">
+            {% if user.profile_picture_url %}
+            <img src="{{ user.profile_picture_url }}" alt="" class="w-11 h-11 rounded-full">
             {% else %}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-50 text-xs font-medium text-yellow-700">
-                <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
-                Non configuré
-            </span>
+            <div class="w-11 h-11 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">{{ (user.firstname or 'A')[0] | upper }}</div>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold truncate">{{ user.firstname or '' }} {{ user.lastname or '' }}</p>
+                <p class="text-xs text-gray-400 truncate">Connecté via Strava{% if user.strava_athlete_id %} · athlète #{{ user.strava_athlete_id }}{% endif %}{% if user.email %} · {{ user.email }}{% endif %}</p>
+            </div>
+            <a href="/auth/logout" class="text-xs text-gray-400 hover:text-gray-700 inline-flex items-center gap-1 shrink-0">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Se déconnecter
+            </a>
+        </div>
+    </div>
+
+    <!-- Profil & objectifs (the fields the app actually uses) -->
+    <form method="post" action="/settings" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+        <h2 class="text-sm font-semibold tracking-tight">Profil &amp; objectifs</h2>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="weight_kg" class="block text-xs font-medium text-gray-500 mb-1.5">Poids</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="weight_kg" name="weight_kg" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} tabular-nums">
+                    <span class="text-sm text-gray-400 shrink-0">kg</span>
+                </div>
+                <p class="text-[11px] text-gray-400 mt-1">Puissance dans le simulateur vélo.</p>
+            </div>
+            <div>
+                <label for="weekly_volume_target_km" class="block text-xs font-medium text-gray-500 mb-1.5">Objectif hebdo</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="weekly_volume_target_km" name="weekly_volume_target_km" value="{{ user.weekly_volume_target_km|int if user.weekly_volume_target_km else '' }}" placeholder="60" step="5" min="0" max="500" class="{{ input_cls }} tabular-nums">
+                    <span class="text-sm text-gray-400 shrink-0">km</span>
+                </div>
+                <p class="text-[11px] text-gray-400 mt-1">Barre de progression en tête d'Activités.</p>
+            </div>
+        </div>
+
+        <div>
+            <p class="text-xs font-medium text-gray-500 mb-1.5">Course objectif <span class="font-normal text-gray-400">— compte à rebours et indicateur de préparation sur Activités</span></p>
+            <div class="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-3">
+                <input type="text" name="race_name" value="{{ user.race_name or '' }}" placeholder="Ex : 90 km du Mont-Blanc" class="{{ input_cls }}">
+                <input type="date" name="race_date" value="{{ user.race_date.strftime('%Y-%m-%d') if user.race_date else '' }}" class="{{ input_cls }} tabular-nums">
+                <div class="flex items-center gap-2">
+                    <input type="number" name="race_distance_km" value="{{ user.race_distance_km|int if user.race_distance_km else '' }}" placeholder="90" step="1" min="1" max="500" class="{{ input_cls }} tabular-nums">
+                    <span class="text-sm text-gray-400 shrink-0">km</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="pt-1">
+            <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">Enregistrer</button>
+        </div>
+    </form>
+
+    <!-- Strava: status + inventory; credentials tucked away -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold tracking-tight">Strava</h2>
+            {% if user.has_own_strava_app and user.strava_credentials_valid %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-xs font-medium text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Connecté</span>
+            {% elif user.has_own_strava_app %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-xs font-medium text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Identifiants invalides</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-xs font-medium text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>À configurer</span>
             {% endif %}
         </div>
 
-        <form method="post" action="/settings/strava-credentials" class="space-y-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                    <label for="client_id" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Client ID</label>
-                    <input type="text" id="client_id" name="client_id"
-                           value="{{ user.strava_client_id or '' }}"
-                           placeholder="Ex: 123456"
-                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-mono">
-                </div>
-                <div>
-                    <label for="client_secret" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Client Secret</label>
-                    <input type="password" id="client_secret" name="client_secret"
-                           placeholder="{% if user.has_own_strava_app %}••••••••{% else %}a1b2c3d4e5f6...{% endif %}"
-                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-mono">
-                </div>
-            </div>
-            <div class="flex items-center justify-between">
-                <p class="text-xs text-gray-400">
-                    <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener" class="underline hover:text-gray-600">Gérer ton app Strava</a>
-                </p>
-                <button type="submit"
-                        class="h-9 px-4 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold transition-colors">
-                    Mettre à jour
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <form method="post" action="/settings" class="space-y-6">
-
-        <!-- Profil athlète -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-            <h2 class="text-sm font-semibold tracking-tight">Profil athlète</h2>
-            <div class="max-w-xs">
-                <label for="weight_kg" class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Poids</label>
-                <div class="flex items-center gap-2">
-                    <input type="number" id="weight_kg" name="weight_kg"
-                           value="{{ user.weight_kg or '' }}"
-                           placeholder="Ex: 70"
-                           step="0.1" min="30" max="200"
-                           class="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm tabular-nums placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent">
-                    <span class="text-sm text-gray-400 shrink-0">kg</span>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Utilisé pour l'estimation de puissance dans le simulateur vélo</p>
-            </div>
+        {% if strava_stats and strava_stats.total %}
+        <p class="text-sm text-gray-700 tabular-nums">
+            <b>{{ strava_stats.total }}</b> activités synchronisées{% if strava_stats.first_date %} depuis {{ strava_stats.first_date.strftime('%m/%Y') }}{% endif %}{% if strava_stats.last_date %} · dernière le {{ strava_stats.last_date.strftime('%d/%m') }}{% endif %}
+            · <span title="Les splits détaillés alimentent la prédiction personnalisée">{{ strava_stats.with_splits }} avec splits</span>
+        </p>
+        <div class="flex flex-wrap gap-1.5">
+            {% for fam, n in strava_stats.families %}
+            <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600">{{ fam }} <b class="tabular-nums">{{ n }}</b></span>
+            {% endfor %}
         </div>
-
-        <!-- Submit -->
-        <div>
-            <button type="submit"
-                    class="inline-flex items-center h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
-                Sauvegarder
-            </button>
-        </div>
-    </form>
-</div>
-
-    <!-- Danger Zone -->
-    <div class="rounded-xl border border-red-200 bg-red-50/50 p-5 shadow-sm space-y-4">
-        <h2 class="text-sm font-semibold text-red-700">Zone dangereuse</h2>
-
-        {% if delete_error is defined and delete_error %}
-        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ delete_error }}</div>
+        {% else %}
+        <p class="text-sm text-gray-500">Aucune activité synchronisée pour l'instant.</p>
         {% endif %}
+        <p class="text-[11px] text-gray-400">Synchronisation automatique toutes les 5 min et à chaque nouvelle activité Strava. Bouton « Synchroniser » sur la page <a href="/activities" class="underline hover:text-gray-600">Activités</a>.</p>
 
-        <p class="text-xs text-red-600">La suppression de ton compte est definitive. Toutes tes donnees (parcours, points de passage, activites synchronisees) seront effacees.</p>
-        <form method="post" action="/settings/delete-account" id="pf-delete-account-form" onsubmit="event.preventDefault(); pfConfirm('Es-tu sûr de vouloir supprimer ton compte ? Cette action est irréversible.', function(){ document.getElementById("pf-delete-account-form").submit(); }, 'Supprimer le compte')"; return false;>
-            <div class="flex items-center gap-3">
-                <input type="text" name="confirmation" placeholder="Tape SUPPRIMER"
-                       class="h-9 px-3 rounded-lg border border-red-200 text-sm w-48">
-                <button type="submit" class="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold">
-                    Supprimer mon compte
-                </button>
-            </div>
-        </form>
+        <details class="border-t border-gray-100 pt-3"{% if not (user.has_own_strava_app and user.strava_credentials_valid) %} open{% endif %}>
+            <summary class="cursor-pointer select-none text-xs font-medium text-gray-500 hover:text-gray-800">Identifiants de l'app Strava (Client ID / Secret)</summary>
+            <form method="post" action="/settings/strava-credentials" class="mt-3 space-y-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="client_id" class="block text-xs font-medium text-gray-500 mb-1.5">Client ID</label>
+                        <input type="text" id="client_id" name="client_id" value="{{ user.strava_client_id or '' }}" placeholder="123456" class="{{ input_cls }} font-mono">
+                    </div>
+                    <div>
+                        <label for="client_secret" class="block text-xs font-medium text-gray-500 mb-1.5">Client Secret</label>
+                        <input type="password" id="client_secret" name="client_secret" placeholder="{% if user.has_own_strava_app %}•••••••• (inchangé si vide){% else %}a1b2c3d4e5f6…{% endif %}" class="{{ input_cls }} font-mono">
+                    </div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener" class="text-xs text-gray-400 underline hover:text-gray-600">Gérer ton app sur Strava</a>
+                    <button type="submit" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50">Mettre à jour</button>
+                </div>
+            </form>
+        </details>
     </div>
+
+    <!-- Danger: collapsed, out of the way -->
+    <details class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <summary class="cursor-pointer select-none text-xs font-medium text-gray-400 hover:text-red-600">Supprimer mon compte</summary>
+        <div class="mt-3 space-y-3">
+            {% if delete_error is defined and delete_error %}
+            <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ delete_error }}</div>
+            {% endif %}
+            <p class="text-xs text-gray-500">Définitif : parcours, points de passage, plans nutrition et activités synchronisées seront effacés.</p>
+            <form method="post" action="/settings/delete-account" id="pf-delete-account-form"
+                  onsubmit="event.preventDefault(); var f = this; var msg = 'Supprimer ton compte ? Cette action est irréversible.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Supprimer le compte'); } else if (confirm(msg)) { f.submit(); }">
+                <div class="flex flex-wrap items-center gap-2">
+                    <input type="text" name="confirmation" placeholder="Tape SUPPRIMER" autocomplete="off" class="h-9 px-3 rounded-lg border border-gray-200 text-sm w-44">
+                    <button type="submit" class="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold">Supprimer définitivement</button>
+                </div>
+            </form>
+        </div>
+    </details>
+</div>
 {% endblock content %}
