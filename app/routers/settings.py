@@ -1,6 +1,4 @@
 import logging
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import delete, func, select
@@ -76,24 +74,8 @@ async def save_settings(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     weight_kg: str = Form(default=""),
-    weekly_volume_target_km: str = Form(default=""),
-    race_name: str = Form(default=""),
-    race_date: str = Form(default=""),
-    race_distance_km: str = Form(default=""),
 ):
     user.weight_kg = _to_float(weight_kg)
-    user.weekly_volume_target_km = _to_float(weekly_volume_target_km)
-    user.race_name = race_name.strip() or None
-    user.race_distance_km = _to_float(race_distance_km)
-
-    if race_date.strip():
-        try:
-            user.race_date = datetime.strptime(race_date.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except ValueError:
-            user.race_date = None
-    else:
-        user.race_date = None
-
     await db.flush()
     logger.info("Settings updated for user %d", user.id)
 

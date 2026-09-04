@@ -49,23 +49,7 @@
                 <p class="text-[10px] text-gray-400">Séance{{ 's' if week.count != 1 else '' }}</p>
             </div>
         </div>
-        {% if user.weekly_volume_target_km and user.weekly_volume_target_km > 0 %}
-        {% set pct = (week.km / user.weekly_volume_target_km * 100) | int %}
-        <div class="mt-4">
-            <div class="flex items-center justify-between mb-1">
-                <span class="text-[10px] text-gray-400">Objectif {{ user.weekly_volume_target_km|int }} km / semaine</span>
-                <span class="text-[10px] font-medium {% if pct >= 100 %}text-green-600{% elif pct >= 70 %}text-amber-500{% else %}text-gray-400{% endif %}">{{ pct }} %</span>
-            </div>
-            <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div class="h-full rounded-full {% if pct >= 100 %}bg-green-500{% elif pct >= 70 %}bg-amber-400{% else %}bg-gray-300{% endif %}" style="width: {{ [pct, 100] | min }}%"></div>
-            </div>
-        </div>
-        {% endif %}
     </div>
-
-    {% if readiness %}
-    {% include "partials/race_countdown.html" %}
-    {% endif %}
 
     <!-- Filters: four families, not thirteen sport codes -->
     <div class="flex flex-wrap gap-1.5">

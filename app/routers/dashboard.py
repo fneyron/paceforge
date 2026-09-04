@@ -12,7 +12,6 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
-from app.services.readiness import calculate_race_readiness
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
 
@@ -72,12 +71,6 @@ async def activities_page(
     week = await _this_week_summary(db, user.id, now)
     training_load = await calculate_training_load(db, user.id, now)
 
-    readiness = None
-    if user.race_date and user.race_distance_km and user.race_date > now:
-        readiness = await calculate_race_readiness(
-            db, user.id, user.race_date, user.race_distance_km
-        )
-
     return templates.TemplateResponse(
         request, "activities.html",
         context={
@@ -89,7 +82,6 @@ async def activities_page(
             "filters": FILTERS,
             "week": week,
             "training_load": training_load,
-            "readiness": readiness,
             "last_sync": _humanize_since(user.last_activity_poll_at, now),
         },
     )
