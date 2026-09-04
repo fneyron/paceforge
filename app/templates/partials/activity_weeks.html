@@ -1,0 +1,23 @@
+{# Activities grouped by week, each with its totals (duplicates excluded from totals). #}
+{% for wk in weeks %}
+<section class="space-y-1.5" id="week-{{ wk.key }}">
+    <div class="flex items-baseline justify-between gap-3 px-1 pt-3">
+        <h2 class="text-xs font-semibold text-gray-700">{{ wk.label }}</h2>
+        <p class="text-[11px] text-gray-400 tabular-nums truncate">
+            {{ wk.count }} séance{{ 's' if wk.count != 1 else '' }}
+            · <b class="text-gray-600">{{ '%.0f'|format(wk.km) }} km</b>
+            {% if wk.dplus %}· <span class="text-red-400">+{{ wk.dplus|int }} m</span>{% endif %}
+            · {{ wk.hours_formatted }}
+        </p>
+    </div>
+    {% for activity in wk.activities %}
+    {% include "partials/activity_row.html" %}
+    {% endfor %}
+</section>
+{% endfor %}
+
+{% if oob %}
+<div hx-swap-oob="true" id="load-more">
+    {% include "partials/load_more.html" %}
+</div>
+{% endif %}

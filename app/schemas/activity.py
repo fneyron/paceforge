@@ -16,6 +16,9 @@ class ActivitySummary(BaseModel):
     average_heartrate: float | None = None
     total_elevation_gain: float = 0.0
     has_analysis: bool = False
+    # Hygiene flags (see services/activity_dedupe): set by the list handler.
+    is_duplicate: bool = False
+    is_false_start: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -23,6 +26,18 @@ class ActivitySummary(BaseModel):
     @property
     def distance_km(self) -> float:
         return round(self.distance / 1000, 2)
+
+    @computed_field
+    @property
+    def elevation_m(self) -> int:
+        return int(round(self.total_elevation_gain or 0))
+
+    @computed_field
+    @property
+    def sport_group(self) -> str:
+        from app.services.activity_dedupe import sport_group
+
+        return sport_group(self.sport_type)
 
     @computed_field
     @property

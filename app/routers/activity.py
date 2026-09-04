@@ -1,7 +1,13 @@
-import logging
-from datetime import datetime, timezone
+"""Activity detail page — light version (metrics, laps, splits).
 
-from fastapi import APIRouter, Depends, Form, Request
+The AI-analysis flow that used to live here is disabled product-wide; this
+page must never promise it. What it does offer: a bridge to the simulator
+("Comparer à un parcours"), which is what feeds the prediction calibration.
+"""
+
+import logging
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,17 +16,19 @@ from starlette.templating import Jinja2Templates
 from app.dependencies import get_current_user, get_db
 from app.exceptions import ActivityNotFoundError
 from app.models.activity import Activity
-from app.models.analysis import Analysis
+from app.models.route import Route
 from app.models.user import User
 from app.schemas.activity import ActivityDetail
-from app.schemas.analysis import AnalysisResponse
-from app.services.strava import StravaService
-from app.tasks.analysis import process_new_activity
+from app.services.activity_dedupe import sport_group
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["activity"])
+
+# A saved route is a plausible match for this outing if distances agree.
+_COMPARE_DISTANCE_TOL = 0.35
+_COMPARE_MAX = 5
 
 
 @router.get("/activity/{activity_id}", response_class=HTMLResponse)
@@ -38,137 +46,29 @@ async def activity_detail(
         raise ActivityNotFoundError(activity_id)
 
     detail = ActivityDetail.model_validate(activity)
-
-    # Get analysis if exists
-    analysis = None
-    if activity.analysis:
-        analysis = AnalysisResponse.model_validate(activity.analysis)
-
-    # Computed metrics (calculated from streams, stored as JSON)
     metrics = activity.computed_metrics or {}
+
+    # Routes worth comparing against (foot activities only), closest first.
+    compare_routes: list[Route] = []
+    if sport_group(activity.sport_type) in ("run", "trail") and activity.distance:
+        dist_km = activity.distance / 1000
+        routes_q = await db.execute(
+            select(Route).where(Route.user_id == user.id, Route.sport_type != "bike")
+        )
+        candidates = [
+            r for r in routes_q.scalars().all()
+            if r.total_distance_km
+            and abs(r.total_distance_km - dist_km) / max(r.total_distance_km, 1.0) <= _COMPARE_DISTANCE_TOL
+        ]
+        candidates.sort(key=lambda r: abs(r.total_distance_km - dist_km))
+        compare_routes = candidates[:_COMPARE_MAX]
 
     return templates.TemplateResponse(
         request, "activity_detail.html",
-        context={"user": user, "activity": detail, "analysis": analysis, "metrics": metrics},
-    )
-
-
-@router.get("/partials/activity/{activity_id}/analysis", response_class=HTMLResponse)
-async def activity_analysis_partial(
-    request: Request,
-    activity_id: int,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
-    )
-    activity = result.scalar_one_or_none()
-    if not activity:
-        return HTMLResponse("")
-
-    analysis = None
-    if activity.analysis:
-        analysis = AnalysisResponse.model_validate(activity.analysis)
-
-    return templates.TemplateResponse(
-        request, "partials/analysis_card.html",
-        context={"analysis": analysis, "activity": activity},
-    )
-
-
-@router.post("/partials/activity/{activity_id}/post-comment", response_class=HTMLResponse)
-async def post_strava_comment(
-    request: Request,
-    activity_id: int,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
-    )
-    activity = result.scalar_one_or_none()
-    if not activity or not activity.analysis:
-        return HTMLResponse("<span class='text-red-500'>Erreur: analyse non trouvée</span>")
-
-    analysis = activity.analysis
-    error = None
-
-    try:
-        strava = StravaService.for_user(db, user)
-        await strava.update_activity_description(
-            user, activity.strava_activity_id, analysis.strava_comment
-        )
-        analysis.comment_posted = True
-        analysis.comment_posted_at = datetime.now(timezone.utc)
-        await db.flush()
-        logger.info("Description updated on Strava activity %d", activity.strava_activity_id)
-    except Exception as e:
-        logger.exception("Failed to update description on Strava")
-        error = str(e)
-
-    return templates.TemplateResponse(
-        request, "partials/comment_button.html",
         context={
-            "activity": activity,
-            "analysis": AnalysisResponse.model_validate(analysis),
-            "error": error,
+            "user": user,
+            "activity": detail,
+            "metrics": metrics,
+            "compare_routes": compare_routes,
         },
-    )
-
-
-@router.post("/activity/{activity_id}/analyze", response_class=HTMLResponse)
-async def trigger_analysis(
-    request: Request,
-    activity_id: int,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
-    )
-    activity = result.scalar_one_or_none()
-    if not activity:
-        raise ActivityNotFoundError(activity_id)
-
-    process_new_activity.delay(
-        owner_strava_id=user.strava_athlete_id,
-        strava_activity_id=activity.strava_activity_id,
-    )
-
-    return templates.TemplateResponse(
-        request, "partials/analysis_card.html",
-        context={"analysis": None, "activity": activity},
-    )
-
-
-@router.post("/partials/activity/{activity_id}/feedback", response_class=HTMLResponse)
-async def submit_feedback(
-    request: Request,
-    activity_id: int,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    rpe: int | None = Form(default=None),
-    rating: int | None = Form(default=None),
-):
-    result = await db.execute(
-        select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
-    )
-    activity = result.scalar_one_or_none()
-    if not activity or not activity.analysis:
-        return HTMLResponse("")
-
-    analysis = activity.analysis
-
-    if rpe is not None and 1 <= rpe <= 10:
-        analysis.user_rpe = rpe
-    if rating is not None and rating in (-1, 0, 1):
-        analysis.user_rating = rating
-
-    await db.flush()
-    logger.info("Feedback for activity %d: rpe=%s rating=%s", activity_id, rpe, rating)
-
-    return templates.TemplateResponse(
-        request, "partials/feedback_widget.html",
-        context={"analysis": AnalysisResponse.model_validate(analysis)},
     )

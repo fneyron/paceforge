@@ -50,19 +50,16 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import auth, dashboard, simulator, webhook
+    from app.routers import activity, auth, dashboard, simulator, webhook
     from app.routers import settings as settings_router
-    # from app.routers import activity, api, coach, workout  # disabled – focus on simulator
+    # from app.routers import api, coach, workout  # disabled – AI coach era, kept for reference
 
     app.include_router(auth.router)
-    app.include_router(dashboard.router)  # kept for landing route (/)
+    app.include_router(dashboard.router)  # landing (/), activities, sync
+    app.include_router(activity.router)   # activity detail (light: no AI analysis)
     app.include_router(simulator.router)
     app.include_router(settings_router.router)
     app.include_router(webhook.router)
-    # app.include_router(activity.router)  # disabled
-    # app.include_router(workout.router)   # disabled
-    # app.include_router(coach.router)     # disabled
-    # app.include_router(api.router)       # disabled
 
     # Health check
     @app.get("/health")

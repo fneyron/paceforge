@@ -128,11 +128,18 @@ async def build_athlete_gradient_profile(
     )
     activities = result.scalars().all()
 
+    # Double recordings (watch + phone) would count the same outing twice.
+    from app.services.activity_dedupe import find_duplicate_ids
+
+    duplicate_ids = find_duplicate_ids(activities)
+
     # Extract gradient-pace data points from splits
     data_points: list[tuple[float, float]] = []
     sport_types_used = set()
 
     for activity in activities:
+        if activity.id in duplicate_ids:
+            continue
         splits = activity.splits_metric
         if not splits or not isinstance(splits, list):
             continue

@@ -56,7 +56,7 @@
 
     {% else %}
     <!-- No result yet: optional, collapsed — the race may simply not have happened. -->
-    <details>
+    <details{% if preselect %} open{% endif %}>
         <summary class="cursor-pointer select-none text-sm text-gray-500 hover:text-gray-700">
             Course déjà courue ? <span class="underline decoration-gray-300 underline-offset-2">Associer l'activité Strava</span> pour comparer réel vs prédit <span class="text-gray-400">(optionnel)</span>
         </summary>
@@ -68,7 +68,7 @@
                   class="flex flex-wrap items-center gap-2">
                 <select name="activity_id" class="h-9 px-2 rounded-lg border border-gray-200 text-sm max-w-full">
                     {% for c in candidates %}
-                    <option value="{{ c.id }}">{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
+                    <option value="{{ c.id }}"{% if preselect == c.id %} selected{% endif %}>{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
                     {% endfor %}
                 </select>
                 <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Comparer</button>

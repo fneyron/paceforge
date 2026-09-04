@@ -48,7 +48,7 @@
     </div>
 
     <div id="rpanel-realise" class="hidden">
-        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=2" hx-trigger="load" hx-swap="innerHTML"></div>
+        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=3{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></div>
     </div>
 </div>
 {% endblock content %}
@@ -65,5 +65,9 @@ function switchRouteTab(tab) {
         btn.classList.toggle('text-gray-500', t !== tab);
     });
 }
+{% if compare_activity_id %}
+// Arrived from an activity ("Comparer à un parcours"): open the debrief tab.
+document.addEventListener('DOMContentLoaded', function () { switchRouteTab('realise'); });
+{% endif %}
 </script>
 {% endblock scripts %}

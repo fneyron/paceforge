@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,9 +9,9 @@ from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.activity import Activity
-from app.models.analysis import Analysis
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
+from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
 from app.services.readiness import calculate_race_readiness
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
@@ -20,7 +21,12 @@ templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["dashboard"])
 
-ACTIVITIES_PER_PAGE = 20
+# The history is paginated by WEEKS (not by row count) so a week is never split
+# across two "load more" chunks and weekly totals stay honest.
+WEEKS_PER_PAGE = 6
+FILTERS = [(None, "Tout"), ("run", "Course"), ("trail", "Trail"), ("bike", "Vélo"), ("other", "Autre")]
+_FILTER_KEYS = {"run", "trail", "bike", "other"}
+_MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -44,86 +50,10 @@ async def landing_page(request: Request, error: str | None = None):
     )
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-
-    # Trigger initial sync for existing users who haven't done it
-    if not user.initial_sync_done:
-        from app.tasks.initial_sync import initial_sync
-        initial_sync.delay(user.id)
-        logger.info("Triggered initial sync for existing user %d", user.id)
-
-    # Only sync from Strava if user has linked + configured their app
-    if user.has_strava_linked and user.has_own_strava_app:
-        last_sync = request.session.get("last_strava_sync")
-        if not last_sync or (now.timestamp() - last_sync) > 300:
-            await _sync_recent_activities(user, db)
-            request.session["last_strava_sync"] = now.timestamp()
-
-    # Check if initial sync is in progress
-    sync_in_progress = not user.initial_sync_done
-
-    # Get THIS WEEK's activities (Monday to now)
-    from datetime import timedelta
-    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    from sqlalchemy.orm import selectinload
-    week_result = await db.execute(
-        select(Activity).options(selectinload(Activity.analysis))
-        .where(Activity.user_id == user.id, Activity.start_date >= monday)
-        .order_by(Activity.start_date.desc())
-    )
-    this_week = [_activity_to_summary(a) for a in week_result.scalars().all()]
-
-    # Last activity (for quick view)
-    last_result = await db.execute(
-        select(Activity).options(selectinload(Activity.analysis))
-        .where(Activity.user_id == user.id)
-        .order_by(Activity.start_date.desc())
-        .limit(1)
-    )
-    last_activity_obj = last_result.scalar_one_or_none()
-    last_activity = _activity_to_summary(last_activity_obj) if last_activity_obj else None
-    last_analysis = last_activity_obj.analysis if last_activity_obj else None
-
-    # Week volume
-    week_km = sum(a.distance / 1000 for a in this_week) if this_week else 0
-    week_hours = sum(a.moving_time / 3600 for a in this_week) if this_week else 0
-    week_count = len(this_week)
-
-    # Training load
-    training_load = await calculate_training_load(db, user.id, now)
-
-    # Race readiness (if goal is set)
-    readiness = None
-    if user.race_date and user.race_distance_km and user.race_date > now:
-        readiness = await calculate_race_readiness(
-            db, user.id, user.race_date, user.race_distance_km
-        )
-
-    return templates.TemplateResponse(
-        request, "dashboard.html",
-        context={
-            "user": user,
-            "this_week": this_week,
-            "week_km": week_km,
-            "week_hours": week_hours,
-            "week_count": week_count,
-            "last_activity": last_activity,
-            "last_analysis": last_analysis,
-            "training_load": training_load,
-            "readiness": readiness,
-            "sync_in_progress": sync_in_progress,
-            "strava_not_linked": not user.has_strava_linked,
-            "strava_no_app": user.has_strava_linked and not user.has_own_strava_app,
-            "credentials_invalid": user.has_own_strava_app and not user.strava_credentials_valid,
-        },
-    )
+@router.get("/dashboard")
+async def dashboard(user: User = Depends(get_current_user)):
+    """Legacy home: the weekly summary now lives on the activities page."""
+    return RedirectResponse(url="/activities", status_code=302)
 
 
 @router.get("/activities", response_class=HTMLResponse)
@@ -134,50 +64,34 @@ async def activities_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Full activity history with pagination and sport filter."""
-    activities = await _get_activities_page(db, user.id, page, sport)
+    """Training log: this week + load at the top, then activities grouped by week."""
+    sport = sport if sport in _FILTER_KEYS else None
+    now = datetime.now(timezone.utc)
 
-    # Get unique sports for filter
-    from sqlalchemy import distinct
-    sport_result = await db.execute(
-        select(distinct(Activity.sport_type))
-        .where(Activity.user_id == user.id)
-        .order_by(Activity.sport_type)
-    )
-    available_sports = [r[0] for r in sport_result.all()]
+    weeks, has_more = await _week_groups(db, user.id, page, sport)
+    week = await _this_week_summary(db, user.id, now)
+    training_load = await calculate_training_load(db, user.id, now)
+
+    readiness = None
+    if user.race_date and user.race_distance_km and user.race_date > now:
+        readiness = await calculate_race_readiness(
+            db, user.id, user.race_date, user.race_distance_km
+        )
 
     return templates.TemplateResponse(
         request, "activities.html",
         context={
             "user": user,
-            "activities": activities,
+            "weeks": weeks,
+            "has_more": has_more,
             "page": page,
             "sport": sport,
-            "available_sports": available_sports,
-            "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
+            "filters": FILTERS,
+            "week": week,
+            "training_load": training_load,
+            "readiness": readiness,
+            "last_sync": _humanize_since(user.last_activity_poll_at, now),
         },
-    )
-
-
-@router.get("/partials/sync-status", response_class=HTMLResponse)
-async def sync_status(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Returns empty HTML when sync is done (removes the banner)."""
-    # Refresh user from DB
-    await db.refresh(user)
-    if user.initial_sync_done:
-        # Sync complete — return a script that reloads the page to show new data
-        return HTMLResponse(
-            '<script>window.location.reload();</script>'
-        )
-    # Still syncing — keep the banner with polling
-    return templates.TemplateResponse(
-        request,
-        "partials/sync_banner.html",
-        context={"sync_in_progress": True},
     )
 
 
@@ -185,80 +99,16 @@ async def sync_status(
 async def activities_partial(
     request: Request,
     page: int = Query(default=1, ge=1),
-    sport_type: str | None = None,
+    sport: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    activities = await _get_activities_page(db, user.id, page, sport_type)
+    sport = sport if sport in _FILTER_KEYS else None
+    weeks, has_more = await _week_groups(db, user.id, page, sport)
     return templates.TemplateResponse(
-        request, "partials/activity_list.html",
-        context={
-            "activities": activities,
-            "page": page,
-            "has_more": len(activities) >= ACTIVITIES_PER_PAGE,
-        },
+        request, "partials/activity_weeks.html",
+        context={"weeks": weeks, "has_more": has_more, "page": page, "sport": sport, "oob": True},
     )
-
-
-@router.get("/partials/activity/{activity_id}/row", response_class=HTMLResponse)
-async def activity_row_partial(
-    request: Request,
-    activity_id: int,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Activity)
-        .where(Activity.id == activity_id, Activity.user_id == user.id)
-    )
-    activity = result.scalar_one_or_none()
-    if not activity:
-        return HTMLResponse("")
-
-    summary = _activity_to_summary(activity)
-    return templates.TemplateResponse(
-        request, "partials/activity_row.html",
-        context={"activity": summary},
-    )
-
-
-async def _get_activities_page(
-    db: AsyncSession, user_id: int, page: int = 1, sport_type: str | None = None
-) -> list[ActivitySummary]:
-    from sqlalchemy.orm import selectinload
-
-    query = select(Activity).options(selectinload(Activity.analysis)).where(Activity.user_id == user_id)
-
-    if sport_type:
-        query = query.where(Activity.sport_type == sport_type)
-
-    query = (
-        query.order_by(Activity.start_date.desc())
-        .offset((page - 1) * ACTIVITIES_PER_PAGE)
-        .limit(ACTIVITIES_PER_PAGE)
-    )
-
-    result = await db.execute(query)
-    activities = result.scalars().all()
-
-    return [_activity_to_summary(a) for a in activities]
-
-
-def _activity_to_summary(activity: Activity) -> ActivitySummary:
-    return ActivitySummary(
-        id=activity.id,
-        strava_activity_id=activity.strava_activity_id,
-        sport_type=activity.sport_type,
-        name=activity.name,
-        start_date=activity.start_date,
-        distance=activity.distance,
-        moving_time=activity.moving_time,
-        average_speed=activity.average_speed,
-        average_heartrate=activity.average_heartrate,
-        total_elevation_gain=activity.total_elevation_gain,
-        has_analysis=activity.analysis is not None,
-    )
-
 
 
 @router.post("/api/sync", response_class=HTMLResponse)
@@ -268,7 +118,6 @@ async def manual_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a Strava activity sync."""
-    from datetime import datetime
     count_before_q = await db.execute(
         select(func.count(Activity.id)).where(Activity.user_id == user.id)
     )
@@ -285,15 +134,157 @@ async def manual_sync(
     new_count = max(0, count_after - count_before)
 
     if new_count > 0:
-        msg = f"{new_count} nouvelle(s) activité(s) importée(s)."
-    elif not user.has_strava_linked:
+        # Show the result, then refresh so the new rows land in their week.
+        return HTMLResponse(
+            f'<span class="text-emerald-700">{new_count} nouvelle(s) activité(s) importée(s).</span>'
+            "<script>setTimeout(function () { window.location.reload(); }, 700);</script>"
+        )
+    if not user.has_strava_linked:
         msg = "Strava non connecté."
     elif not user.has_own_strava_app:
         msg = "Configure ton app Strava dans les Réglages pour activer la sync."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."
+    return HTMLResponse(f"<span>{msg}</span>")
 
-    return HTMLResponse(f'<p class="text-xs text-gray-500 mt-2">{msg}</p>')
+
+# ── helpers ─────────────────────────────────────────────────────────────────
+
+def _monday(dt: datetime) -> datetime:
+    return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _sport_filter(query, sport: str | None):
+    if sport in SPORT_GROUPS:
+        return query.where(Activity.sport_type.in_(SPORT_GROUPS[sport]))
+    if sport == "other":
+        known = [t for types in SPORT_GROUPS.values() for t in types]
+        return query.where(Activity.sport_type.not_in(known))
+    return query
+
+
+def _fmt_hours(seconds: float) -> str:
+    h, m = divmod(int(seconds) // 60, 60)
+    return f"{h}h{m:02d}" if h else f"{m} min"
+
+
+def _week_label(monday: datetime, this_monday: datetime) -> str:
+    weeks_ago = (this_monday.date() - monday.date()).days // 7
+    if weeks_ago == 0:
+        return "Cette semaine"
+    if weeks_ago == 1:
+        return "Semaine dernière"
+    sunday = monday + timedelta(days=6)
+    year = f" {monday.year}" if monday.year != this_monday.year else ""
+    if monday.month == sunday.month:
+        return f"{monday.day}–{sunday.day} {_MONTHS_FR[monday.month - 1]}{year}"
+    return f"{monday.day} {_MONTHS_FR[monday.month - 1]} – {sunday.day} {_MONTHS_FR[sunday.month - 1]}{year}"
+
+
+def _humanize_since(dt: datetime | None, now: datetime) -> str | None:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    minutes = int((now - dt).total_seconds() // 60)
+    if minutes < 1:
+        return "moins d'une minute"
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} h"
+    return f"{hours // 24} j"
+
+
+def _activity_to_summary(activity: Activity, duplicate_ids: frozenset | set = frozenset()) -> ActivitySummary:
+    return ActivitySummary(
+        id=activity.id,
+        strava_activity_id=activity.strava_activity_id,
+        sport_type=activity.sport_type,
+        name=activity.name,
+        start_date=activity.start_date,
+        distance=activity.distance,
+        moving_time=activity.moving_time,
+        average_speed=activity.average_speed,
+        average_heartrate=activity.average_heartrate,
+        total_elevation_gain=activity.total_elevation_gain,
+        is_duplicate=activity.id in duplicate_ids,
+        is_false_start=is_false_start(activity),
+    )
+
+
+async def _week_groups(
+    db: AsyncSession, user_id: int, page: int, sport: str | None
+) -> tuple[list[dict], bool]:
+    """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first)."""
+    now = datetime.now(timezone.utc)
+    this_monday = _monday(now)
+    window_end = this_monday + timedelta(weeks=1) - timedelta(weeks=(page - 1) * WEEKS_PER_PAGE)
+    window_start = window_end - timedelta(weeks=WEEKS_PER_PAGE)
+
+    query = select(Activity).where(
+        Activity.user_id == user_id,
+        Activity.start_date >= window_start,
+        Activity.start_date < window_end,
+    )
+    query = _sport_filter(query, sport).order_by(Activity.start_date.desc())
+    activities = (await db.execute(query)).scalars().all()
+    duplicate_ids = find_duplicate_ids(activities)
+
+    groups: dict[str, dict] = {}
+    for a in activities:
+        summary = _activity_to_summary(a, duplicate_ids)
+        monday = _monday(a.start_date)
+        key = monday.strftime("%Y-%m-%d")
+        g = groups.setdefault(key, {
+            "key": key, "monday": monday, "activities": [],
+            "km": 0.0, "dplus": 0.0, "seconds": 0, "count": 0,
+        })
+        g["activities"].append(summary)
+        if not (summary.is_duplicate or summary.is_false_start):
+            g["km"] += (a.distance or 0) / 1000
+            g["dplus"] += a.total_elevation_gain or 0
+            g["seconds"] += a.moving_time or 0
+            g["count"] += 1
+
+    weeks = []
+    for key in sorted(groups, reverse=True):
+        g = groups[key]
+        g["hours_formatted"] = _fmt_hours(g["seconds"])
+        g["label"] = _week_label(g["monday"], this_monday)
+        weeks.append(g)
+
+    older = _sport_filter(
+        select(func.count(Activity.id)).where(
+            Activity.user_id == user_id, Activity.start_date < window_start
+        ),
+        sport,
+    )
+    has_more = ((await db.execute(older)).scalar() or 0) > 0
+    return weeks, has_more
+
+
+async def _this_week_summary(db: AsyncSession, user_id: int, now: datetime) -> dict:
+    """This week's totals across all sports, duplicates and false starts excluded."""
+    monday = _monday(now)
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.user_id == user_id, Activity.start_date >= monday)
+        .order_by(Activity.start_date.desc())
+    )
+    activities = result.scalars().all()
+    duplicate_ids = find_duplicate_ids(activities)
+    kept = [a for a in activities if a.id not in duplicate_ids and not is_false_start(a)]
+    seconds = sum(a.moving_time or 0 for a in kept)
+    return {
+        "km": sum((a.distance or 0) / 1000 for a in kept),
+        "dplus": sum(a.total_elevation_gain or 0 for a in kept),
+        "hours": seconds / 3600,
+        "count": len(kept),
+    }
+
+
 async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
     """Sync recent activities from Strava. Paginates until we find existing ones."""
     try:
@@ -324,7 +315,6 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
                     continue
 
                 all_known = False
-                from datetime import datetime
                 start_date = data.get("start_date")
                 if isinstance(start_date, str):
                     start_date = datetime.fromisoformat(

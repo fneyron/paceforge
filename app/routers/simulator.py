@@ -578,10 +578,15 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
 async def route_detail_page(
     route_id: int,
     request: Request,
+    compare: int | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Full server-rendered detail page for a saved route (refresh-safe)."""
+    """Full server-rendered detail page for a saved route (refresh-safe).
+
+    ``compare`` = an activity id coming from "Comparer à un parcours": the page
+    opens on the debrief tab with that activity preselected.
+    """
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
@@ -622,6 +627,7 @@ async def route_detail_page(
 
     ctx = await _build_route_context(route, db, user.id)
     ctx["user"] = user
+    ctx["compare_activity_id"] = compare
     # Don't let the browser serve a stale page (kept hiding UI updates).
     return templates.TemplateResponse(
         request, "simulator_route.html", context=ctx,
@@ -958,6 +964,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
 async def result_compare_card(
     route_id: int,
     request: Request,
+    preselect: int | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -965,6 +972,7 @@ async def result_compare_card(
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     ctx = await _result_compare_context(request, route, db, user)
+    ctx["preselect"] = preselect
     return templates.TemplateResponse(
         request, "partials/result_compare.html", context=ctx,
         headers={"Cache-Control": "no-store"},
