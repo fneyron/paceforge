@@ -82,7 +82,9 @@ class FtpEstimate(BaseModel):
     best_20min_power: float
     activity_name: str
     activity_date: datetime | None = None
-    confidence: str
+    confidence: str  # Bonne / Moyenne / Faible
+    is_stale: bool = False  # reference ride older than 6 months
+    age_months: int | None = None
 
 
 class CdaEstimate(BaseModel):

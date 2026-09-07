@@ -19,18 +19,18 @@
 </div>
 {% endif %}
 <div class="overflow-x-auto -mx-1">
-    <table class="w-full text-sm min-w-[640px]">
+    <table class="w-full text-sm sm:min-w-[640px]">
         <thead>
             <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
                 <th class="text-left py-2 pr-3 font-medium">Point</th>
-                <th class="text-right py-2 px-2 font-medium" title="Altitude du point de passage">Alt.</th>
-                {% if has_weather is defined and has_weather %}<th class="text-right py-2 px-2 font-medium" title="Météo et température estimées à l'heure de passage, corrigées de l'altitude">T°</th>{% endif %}
-                <th class="text-right py-2 px-2 font-medium" title="Distance de la section depuis le point précédent">Dist.</th>
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Altitude du point de passage">Alt.</th>
+                {% if has_weather is defined and has_weather %}<th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Météo et température estimées à l'heure de passage, corrigées de l'altitude">T°</th>{% endif %}
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Distance de la section depuis le point précédent">Dist.</th>
                 <th class="text-right py-2 px-2 font-medium" title="Dénivelé positif de la section">D+</th>
-                <th class="text-right py-2 px-2 font-medium" title="Dénivelé négatif de la section">D-</th>
-                <th class="text-right py-2 px-2 font-medium" title="Allure moyenne sur la section (min/km)">Allure</th>
-                <th class="text-right py-2 px-2 font-medium" title="Temps pour parcourir cette section">Section</th>
-                <th class="text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ">Cumul</th>
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Dénivelé négatif de la section">D-</th>
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Allure moyenne sur la section (min/km)">Allure</th>
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Temps pour parcourir cette section">Section</th>
+                <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ">Cumul</th>
                 <th class="text-right py-2 px-2 font-medium text-gray-900" title="{% if has_target %}Heure de passage si tu tiens ton objectif (toute la ligne est recalée sur ta cible){% else %}Heure de passage estimée (départ + temps prédit){% endif %}">{% if replan is defined and replan %}Heure recalée{% elif has_target %}Heure visée{% else %}Heure{% endif %}</th>
                 <th class="w-14"></th>
             </tr>
@@ -45,14 +45,14 @@
                     </div>
                     <p class="text-[10px] text-gray-400 pl-4">km 0</p>
                 </td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{% if start_elevation is not none %}{{ start_elevation|int }}m{% else %}—{% endif %}</td>
-                {% if has_weather is defined and has_weather %}<td class="text-right py-2.5 px-2 text-gray-300">—</td>{% endif %}
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{% if start_elevation is not none %}{{ start_elevation|int }}m{% else %}—{% endif %}</td>
+                {% if has_weather is defined and has_weather %}<td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>{% endif %}
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>
                 <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-medium">0h00</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums font-medium">0h00</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(start_offset_s) }}</td>
                 <td></td>
             </tr>
@@ -94,14 +94,14 @@
                     <p class="text-[10px] text-gray-400 {% if is_finish %}pl-4{% else %}pl-7{% endif %}">km {{ s.end_km }}</p>
                     {% endif %}
                 </td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{% if s.end_elevation is not none %}{{ s.end_elevation|int }}m{% else %}—{% endif %}</td>
-                {% if has_weather is defined and has_weather %}<td class="text-right py-2.5 px-2 tabular-nums {% if s.heat_factor and s.heat_factor > 1.08 %}text-red-500{% elif s.heat_factor and s.heat_factor > 1.0 %}text-amber-500{% else %}text-gray-500{% endif %}">{% if s.temperature_c is not none %}<span class="inline-flex items-center justify-end gap-1">{% if s.weather_code is not none %}<span title="{{ wmo_label(s.weather_code) }}">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}</span>{% endif %}{{ s.temperature_c|round|int }}°</span>{% else %}—{% endif %}</td>{% endif %}
-                <td class="text-right py-2.5 px-2 tabular-nums">{{ '%.1f'|format(s.distance_km) }}</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{% if s.end_elevation is not none %}{{ s.end_elevation|int }}m{% else %}—{% endif %}</td>
+                {% if has_weather is defined and has_weather %}<td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums {% if s.heat_factor and s.heat_factor > 1.08 %}text-red-500{% elif s.heat_factor and s.heat_factor > 1.0 %}text-amber-500{% else %}text-gray-500{% endif %}">{% if s.temperature_c is not none %}<span class="inline-flex items-center justify-end gap-1">{% if s.weather_code is not none %}<span title="{{ wmo_label(s.weather_code) }}">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}</span>{% endif %}{{ s.temperature_c|round|int }}°</span>{% else %}—{% endif %}</td>{% endif %}
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums">{{ '%.1f'|format(s.distance_km) }}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-red-500">{% if s.elevation_loss > 0 %}-{{ s.elevation_loss|int }}{% else %}—{% endif %}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(cum_time) }}</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-red-500">{% if s.elevation_loss > 0 %}-{{ s.elevation_loss|int }}{% else %}—{% endif %}</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
+                <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(cum_time) }}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}{% if s.is_anchor %} <span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}</td>
                 <td class="text-right align-middle whitespace-nowrap">
                     {% if s.end_checkpoint_index is not none and not print_mode %}

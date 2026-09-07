@@ -101,41 +101,45 @@ def calculate_from_input(input: PowerCalcInput) -> PowerCalcResult:
 
 
 async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
-    """Estimate FTP from Strava ride data with power."""
-    result = await db.execute(
-        select(Activity)
-        .where(
-            Activity.user_id == user_id,
-            Activity.sport_type.in_(["Ride", "VirtualRide"]),
-            Activity.weighted_average_watts.is_not(None),
-            Activity.weighted_average_watts > 0,
-            Activity.moving_time >= 1200,  # At least 20 minutes
-        )
-        .order_by(Activity.weighted_average_watts.desc())
-        .limit(10)
-    )
-    activities = result.scalars().all()
+    """Estimate FTP from Strava ride data with power.
 
-    if not activities:
-        # Fallback: try average_watts
-        result2 = await db.execute(
-            select(Activity)
-            .where(
-                Activity.user_id == user_id,
-                Activity.sport_type.in_(["Ride", "VirtualRide"]),
-                Activity.average_watts.is_not(None),
-                Activity.average_watts > 0,
-                Activity.moving_time >= 1200,
+    Prefers the last 12 months (fitness moves); falls back to all-time and
+    flags the estimate as stale when the reference ride is older than 6 months.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    activities = []
+    for since in (now - timedelta(days=365), None):
+        for col in (Activity.weighted_average_watts, Activity.average_watts):
+            q = (
+                select(Activity)
+                .where(
+                    Activity.user_id == user_id,
+                    Activity.sport_type.in_(["Ride", "VirtualRide"]),
+                    col.is_not(None),
+                    col > 0,
+                    Activity.moving_time >= 1200,  # At least 20 minutes
+                )
+                .order_by(col.desc())
+                .limit(10)
             )
-            .order_by(Activity.average_watts.desc())
-            .limit(10)
-        )
-        activities = result2.scalars().all()
-        if not activities:
-            return None
+            if since is not None:
+                q = q.where(Activity.start_date >= since)
+            activities = (await db.execute(q)).scalars().all()
+            if activities:
+                break
+        if activities:
+            break
+    if not activities:
+        return None
 
     # Find best power effort
     best_activity = activities[0]
+    sd = best_activity.start_date
+    if sd is not None and sd.tzinfo is None:
+        sd = sd.replace(tzinfo=timezone.utc)
+    age_days = (now - sd).days if sd else 0
     best_power = best_activity.weighted_average_watts or best_activity.average_watts
 
     # Duration-based FTP estimation
@@ -152,15 +156,15 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     elif duration_min > 70:
         # Long ride, power is below FTP
         ftp = best_power * 1.05
-        confidence = "Estimée"
+        confidence = "Moyenne"
     else:
         # Short ride
         ftp = best_power * 0.90
-        confidence = "Approximative"
+        confidence = "Faible"
 
     # Adjust confidence by number of rides
     if len(activities) < 3:
-        confidence = "Approximative"
+        confidence = "Faible"
 
     return FtpEstimate(
         estimated_ftp=round(ftp, 0),
@@ -168,4 +172,6 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         activity_name=best_activity.name,
         activity_date=best_activity.start_date,
         confidence=confidence,
+        is_stale=age_days > 180,
+        age_months=max(0, age_days // 30),
     )

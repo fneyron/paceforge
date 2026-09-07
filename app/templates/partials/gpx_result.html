@@ -28,13 +28,20 @@
     <div id="reimport-error"></div>
 
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div class="min-w-0">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-5">
+       <div class="md:col-span-3 flex flex-col min-w-0">
+        <div class="min-w-0">
                 <p id="hero-label" class="text-[10px] text-gray-400 uppercase tracking-wider">{% if has_obj %}Objectif{% else %}Temps estimé{% endif %}</p>
                 <p id="hero-time" class="text-4xl font-bold tabular-nums leading-none mt-1">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</p>
                 <p class="text-xs text-gray-500 mt-2">
                     <span id="hero-sub-est">{% if has_obj %}Estimation {{ course.predicted_total_time_formatted }} · {% endif %}</span>{% if has_data %}d'après <b class="text-gray-700">{{ profile.data_points }}</b> sorties Strava{% else %}<span class="text-amber-600">modèle générique — synchronise Strava pour une prédiction personnalisée</span>{% endif %}
                 </p>
+        </div>
+        <div class="mt-auto pt-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
+                <span><b class="text-gray-800">{{ course.total_distance_km }}</b> km</span>
+                <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+                <span class="text-blue-500">D- {{ "%.0f"|format(course.total_elevation_loss) }} m</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <button onclick="window._sim.exportGpx()" id="btn-export-gpx"
@@ -49,17 +56,19 @@
                 </button>
             </div>
         </div>
-        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
-            <span><b class="text-gray-800">{{ course.total_distance_km }}</b> km</span>
-            <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
-            <span class="text-blue-500">D- {{ "%.0f"|format(course.total_elevation_loss) }} m</span>
-        </div>
+       </div>
+       {% if course.route_coords %}
+       <div class="md:col-span-2 rounded-lg overflow-hidden border border-gray-200 map-container h-full" style="min-height:176px;">
+           <div id="courseMap" style="height:100%;min-height:176px;"></div>
+       </div>
+       {% endif %}
+      </div>
     </div>
 
     {# ── Niveau 2 · ajuster (replié, résumé toujours visible) ───────────── #}
     <details id="adjust" class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if not saved_race_date %} open{% endif %}>
         <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
-            <span id="adjust-summary" class="text-sm text-gray-700 truncate">…</span>
+            <span id="adjust-summary" class="text-sm text-gray-700 sm:truncate">…</span>
             <span class="text-xs font-medium text-gray-500 shrink-0 inline-flex items-center gap-1">Ajuster
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
             </span>
@@ -117,7 +126,7 @@
 
     {% if course.route_coords %}
     <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-        <div id="elevChart" style="height:150px;"></div>
+        <div id="elevChart" style="height:170px;"></div>
     </div>
     {% endif %}
 
@@ -141,7 +150,7 @@
     <details id="advanced" class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
             <span class="text-sm text-gray-700">Avancé</span>
-            <span class="text-xs text-gray-400 truncate">points de passage · carte · trace GPX · base de la prédiction</span>
+            <span class="text-xs text-gray-400 truncate">points de passage · trace GPX · base de la prédiction</span>
         </summary>
         <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-5">
             <div>
@@ -155,12 +164,6 @@
                 </div>
                 <p class="text-[11px] text-gray-400 mt-1.5">Dans le tableau : clique un nom ou un km pour le modifier, × pour supprimer.</p>
             </div>
-            {% if course.route_coords %}
-            <div>
-                <p class="text-[11px] font-medium text-gray-500 mb-2">Carte</p>
-                <div class="rounded-lg overflow-hidden border border-gray-200"><div id="courseMap" style="height:380px;"></div></div>
-            </div>
-            {% endif %}
             {% if saved_route_id %}
             <div>
                 <p class="text-[11px] font-medium text-gray-500 mb-2">Trace GPX</p>
@@ -216,10 +219,11 @@ window._sim = {};
         for (var i = 1; i < elevData.length; i++) { if (elevData[i].distance_km >= km) { var p=elevData[i-1],n=elevData[i],t=(km-p.distance_km)/(n.distance_km-p.distance_km); return Math.round(p.elevation+t*(n.elevation-p.elevation)); } }
         return elevData.length ? Math.round(elevData[elevData.length-1].elevation) : 0;
     }
-    function findCoordAtKm(km) {
-        var best=routeCoords[0],bestD=Infinity;
-        for(var i=0;i<routeCoords.length;i++){var d=Math.abs(routeCoords[i][2]-km);if(d<bestD){bestD=d;best=routeCoords[i];}}
-        return best;
+    function findCoordAtKm(km) {  // route_coords are sorted by cumulative km → binary search
+        var n = routeCoords.length; if (!n) return null;
+        var lo = 0, hi = n - 1;
+        while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; }
+        return (Math.abs(routeCoords[lo][2] - km) <= Math.abs(routeCoords[hi][2] - km)) ? routeCoords[lo] : routeCoords[hi];
     }
 
     // ── MAPLIBRE GL MAP ──
@@ -255,7 +259,8 @@ window._sim = {};
             attributionControl: false,
         });
 
-        map.addControl(new maplibregl.NavigationControl(), 'top-left');
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+        map.scrollZoom.disable();  // the page must keep scrolling; zoom with the buttons or pinch
 
         // Hover marker (created before map.load so chart can use it immediately)
         var hoverEl = document.createElement('div');
@@ -264,16 +269,6 @@ window._sim = {};
 
         map.on('load', function() {
             // Route colored by slope — individual segments per gradient zone
-            function slopeColor(pct) {
-                if (pct > 15) return '#991b1b';
-                if (pct > 8)  return '#dc2626';
-                if (pct > 3)  return '#f97316';
-                if (pct > -3) return '#22c55e';
-                if (pct > -8) return '#3b82f6';
-                if (pct > -15) return '#2563eb';
-                return '#7c3aed';
-            }
-
             // Group consecutive points by color, create one LineString per group
             var segStep = Math.max(1, Math.floor(coords.length / 200));
             var segments = {};
@@ -319,18 +314,24 @@ window._sim = {};
         });
 
         // Map hover → chart sync
+        var mapHoverRaf = null, mapHoverPt = null;
         map.on('mousemove', function(e) {
-            var best = null, bestD = Infinity;
-            for (var i = 0; i < routeCoords.length; i += 3) {
-                var dx = routeCoords[i][1] - e.lngLat.lng, dy = routeCoords[i][0] - e.lngLat.lat;
-                var d = dx*dx + dy*dy;
-                if (d < bestD) { bestD = d; best = routeCoords[i]; }
-            }
-            if (best && hoverMarker) {
-                hoverMarker.setLngLat([best[1], best[0]]);
-                hoverMarker.getElement().style.display = 'block';
-                syncChart(best[2]);
-            }
+            mapHoverPt = e.lngLat;
+            if (mapHoverRaf) return;
+            mapHoverRaf = requestAnimationFrame(function () {
+                mapHoverRaf = null;
+                var best = null, bestD = Infinity, stride = Math.max(1, Math.floor(routeCoords.length / 2500));
+                for (var i = 0; i < routeCoords.length; i += stride) {
+                    var dx = routeCoords[i][1] - mapHoverPt.lng, dy = routeCoords[i][0] - mapHoverPt.lat;
+                    var d = dx*dx + dy*dy;
+                    if (d < bestD) { bestD = d; best = routeCoords[i]; }
+                }
+                if (best && hoverMarker) {
+                    hoverMarker.setLngLat([best[1], best[0]]);
+                    hoverMarker.getElement().style.display = 'block';
+                    syncChart(best[2]);
+                }
+            });
         });
         map.on('mouseout', function() {
             if (hoverMarker) hoverMarker.getElement().style.display = 'none';
@@ -338,71 +339,171 @@ window._sim = {};
         });
     }
 
-    // ── ELEVATION CHART (ApexCharts) ──
+    // ── ELEVATION PROFILE — dependency-free SVG, fluid crosshair, slope-coloured ──
+    // Everything static is drawn once; hovering only moves a line, a dot and a
+    // label (transform), so it stays at 60 fps even on a 20 000-point route.
+    function slopeColor(pct) {
+        if (pct > 15) return '#991b1b';
+        if (pct > 8)  return '#dc2626';
+        if (pct > 3)  return '#f97316';
+        if (pct > -3) return '#22c55e';
+        if (pct > -8) return '#3b82f6';
+        if (pct > -15) return '#2563eb';
+        return '#7c3aed';
+    }
+    // Profile fill: calm bands — climbs warm, flats neutral, descents cool.
+    function bandColor(pct) {
+        if (pct > 12) return '#b91c1c';
+        if (pct > 6)  return '#ef4444';
+        if (pct > 2)  return '#fb923c';
+        if (pct > -2) return '#d1d5db';
+        if (pct > -6) return '#93c5fd';
+        if (pct > -12) return '#3b82f6';
+        return '#1d4ed8';
+    }
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var prof = { svg: null, w: 0, h: 0, padL: 42, padR: 10, padT: 18, padB: 20, minE: 0, maxE: 1, cross: null, dot: null, lblBox: null, lblText: null, cpLayer: null, ro: null };
+    function mk(tag, attrs) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); return el; }
+    function xOf(km) { return prof.padL + (km / (totalDistKm || 1)) * (prof.w - prof.padL - prof.padR); }
+    function yOf(e) { return prof.padT + (1 - (e - prof.minE) / ((prof.maxE - prof.minE) || 1)) * (prof.h - prof.padT - prof.padB); }
+    function kmOfX(px) { return Math.max(0, Math.min(totalDistKm, (px - prof.padL) / (prof.w - prof.padL - prof.padR) * totalDistKm)); }
+    function elevAt(km) {  // binary search + linear interpolation on elevation_points
+        var lo = 0, hi = elevData.length - 1;
+        if (hi < 0) return 0;
+        if (km <= elevData[0].distance_km) return elevData[0].elevation;
+        if (km >= elevData[hi].distance_km) return elevData[hi].elevation;
+        while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (elevData[mid].distance_km <= km) lo = mid; else hi = mid; }
+        var p = elevData[lo], n = elevData[hi], t = (km - p.distance_km) / ((n.distance_km - p.distance_km) || 1);
+        return p.elevation + t * (n.elevation - p.elevation);
+    }
+    function gradeAt(km) { var d = 0.25; var a = elevAt(Math.max(0, km - d)), b = elevAt(Math.min(totalDistKm, km + d)); var run = Math.min(totalDistKm, km + d) - Math.max(0, km - d); return run > 0 ? (b - a) / (run * 1000) * 100 : 0; }
+    function fmtKm(km) { return km.toFixed(1).replace('.', ','); }
+    function fmtM(m) { return Math.round(m).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
     function initChart() {
         var el = document.getElementById('elevChart');
         if (!el || !elevData.length) return;
-        if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
-        var xy = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
-        chart = new ApexCharts(el, {
-            chart: { type: 'area', height: 150, fontFamily: 'Inter,sans-serif', toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
-                events: {
-                    mouseMove: function(e, ctx, cfg) {
-                        if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
-                            var pt = elevData[cfg.dataPointIndex];
-                            var c = findCoordAtKm(pt.distance_km);
-                            if (c && hoverMarker) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; }
-                            syncChart(pt.distance_km);
-                        }
-                    },
-                    mouseLeave: function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); },
-                    click: function(e, ctx, cfg) {
-                        if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
-                            var km = elevData[cfg.dataPointIndex].distance_km;
-                            for (var i = 0; i < checkpoints.length; i++) {
-                                if (Math.abs(checkpoints[i].distance_km - km) < 1.5) {
-                                    if (cpMarkerEls[i]) cpMarkerEls[i].togglePopup();
-                                    var c = findCoordAtKm(checkpoints[i].distance_km);
-                                    if (c && map) map.flyTo({ center: [c[1], c[0]], zoom: 12 });
-                                    break;
-                                }
-                            }
-                        }
-                    },
-                }
-            },
-            theme: { mode: isDark ? 'dark' : 'light' },
-            series: [{ name: 'Altitude', data: xy }],
-            xaxis: { type: 'numeric', min: 0, max: Math.ceil(totalDistKm), tickAmount: Math.min(15, Math.ceil(totalDistKm / 10)),
-                labels: { style: { colors: mutedC, fontSize: '10px' }, rotate: 0, formatter: function(v) { return Math.round(v) + 'km'; } },
-                axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true, stroke: { color: '#f97316', width: 1.5 } }, tooltip: { enabled: false } },
-            yaxis: { labels: { style: { colors: mutedC, fontSize: '10px' }, formatter: function(v) { return Math.round(v) + 'm'; } } },
-            grid: { borderColor: gridC, strokeDashArray: 3, padding: { left: 4, right: 4, top: 0, bottom: 0 } },
-            colors: ['#111827'], stroke: { curve: 'smooth', width: 1.5 },
-            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.6, opacityTo: 0.1, stops: [0, 100], colorStops: [
-                { offset: 0, color: '#dc2626', opacity: 0.6 },
-                { offset: 30, color: '#f97316', opacity: 0.4 },
-                { offset: 60, color: '#22c55e', opacity: 0.3 },
-                { offset: 100, color: '#3b82f6', opacity: 0.1 },
-            ] } },
-            dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 4 } },
-            tooltip: { enabled: true, shared: false, intersect: false,
-                custom: function(opts) {
-                    var km = opts.w.globals.labels[opts.dataPointIndex] || 0;
-                    var alt = Math.round(opts.series[opts.seriesIndex][opts.dataPointIndex]);
-                    return '<div style="padding:4px 8px;font-size:11px;font-family:Inter,sans-serif;background:rgba(0,0,0,0.8);color:#fff;border-radius:6px;">' + parseFloat(km).toFixed(1) + 'km · ' + alt + 'm</div>';
-                }
-            },
-            annotations: { xaxis: [] },
-        });
-        chart.render();
-    }
+        el.innerHTML = '';
+        var w = el.clientWidth || 800, h = el.clientHeight || 170;
+        prof.w = w; prof.h = h;
+        var minE = Infinity, maxE = -Infinity;
+        for (var i = 0; i < elevData.length; i++) { var e = elevData[i].elevation; if (e < minE) minE = e; if (e > maxE) maxE = e; }
+        var pad = Math.max(40, (maxE - minE) * 0.08);
+        prof.minE = Math.floor((minE - pad) / 50) * 50; prof.maxE = Math.ceil((maxE + pad) / 50) * 50;
 
-    function syncChart(km) { if (!chart) return; chart.clearAnnotations(); var best = 0, bestD = 999; for (var i = 0; i < elevData.length; i++) { var d = Math.abs(elevData[i].distance_km - km); if (d < bestD) { bestD = d; best = i; } }
-        var elev = Math.round(elevData[best].elevation);
-        chart.addXaxisAnnotation({ x: elevData[best].distance_km, borderColor: '#f97316', strokeDashArray: 0, label: { text: elevData[best].distance_km.toFixed(1) + 'km · ' + elev + 'm', style: { fontSize: '9px', color: '#fff', background: '#f97316', padding: { left: 4, right: 4, top: 2, bottom: 2 } } } }); drawCpAnn(); }
-    function clearChart() { if (!chart) return; chart.clearAnnotations(); drawCpAnn(); }
-    function drawCpAnn() { if (!chart) return; checkpoints.forEach(function(cp, i) { chart.addXaxisAnnotation({ x: cp.distance_km, borderColor: '#f59e0b', strokeDashArray: 0, label: { text: 'CP' + (i + 1), orientation: 'horizontal', style: { fontSize: '9px', fontWeight: 700, color: '#fff', background: '#f59e0b', padding: { left: 3, right: 3, top: 1, bottom: 1 } } } }); }); }
+        var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h });
+        svg.style.display = 'block'; svg.style.cursor = 'crosshair'; svg.style.touchAction = 'pan-y';
+
+        // grid + y labels (3 levels)
+        var grid = mk('g', {});
+        [prof.minE, (prof.minE + prof.maxE) / 2, prof.maxE].forEach(function (lvl) {
+            var y = yOf(lvl);
+            grid.appendChild(mk('line', { x1: prof.padL, x2: w - prof.padR, y1: y, y2: y, stroke: gridC, 'stroke-dasharray': '3 3' }));
+            var t = mk('text', { x: prof.padL - 6, y: y + 3, 'text-anchor': 'end', 'font-size': '10', fill: mutedC }); t.textContent = fmtM(lvl) + ' m'; grid.appendChild(t);
+        });
+        var stepKm = totalDistKm > 120 ? 20 : totalDistKm > 60 ? 10 : totalDistKm > 25 ? 5 : totalDistKm > 10 ? 2 : 1;
+        for (var k = stepKm; k < totalDistKm; k += stepKm) {
+            var tx = mk('text', { x: xOf(k), y: h - 6, 'text-anchor': 'middle', 'font-size': '10', fill: mutedC }); tx.textContent = k + ' km'; grid.appendChild(tx);
+        }
+        svg.appendChild(grid);
+
+        // slope-coloured strips (downsampled to ~400) + outline
+        var step = Math.max(1, Math.floor(elevData.length / 400)), pts = [];
+        for (i = 0; i < elevData.length; i += step) pts.push(elevData[i]);
+        if (pts[pts.length - 1] !== elevData[elevData.length - 1]) pts.push(elevData[elevData.length - 1]);
+        var strips = mk('g', { 'fill-opacity': isDark ? '0.55' : '0.45' }), base = h - prof.padB, d = '';
+        var win = Math.max(0.6, totalDistKm / 60);  // smoothing window (km): ~1.5 km on a 90 km course
+        for (i = 1; i < pts.length; i++) {
+            var a = pts[i - 1], b = pts[i], mid = (a.distance_km + b.distance_km) / 2;
+            var k0 = Math.max(0, mid - win / 2), k1 = Math.min(totalDistKm, mid + win / 2);
+            var pct = (k1 > k0) ? (elevAt(k1) - elevAt(k0)) / ((k1 - k0) * 1000) * 100 : 0;
+            var xa = xOf(a.distance_km).toFixed(1), xb = xOf(b.distance_km).toFixed(1);
+            strips.appendChild(mk('polygon', { points: xa + ',' + yOf(a.elevation).toFixed(1) + ' ' + xb + ',' + yOf(b.elevation).toFixed(1) + ' ' + xb + ',' + base + ' ' + xa + ',' + base, fill: bandColor(pct) }));
+        }
+        pts.forEach(function (p, i) { d += (i ? 'L' : 'M') + xOf(p.distance_km).toFixed(1) + ' ' + yOf(p.elevation).toFixed(1) + ' '; });
+        svg.appendChild(strips);
+        svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.5', 'stroke-linejoin': 'round' }));
+
+        // checkpoints layer (redrawn by drawCpAnn)
+        prof.cpLayer = mk('g', {}); svg.appendChild(prof.cpLayer);
+
+        // crosshair (moved, never re-created)
+        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden' });
+        prof.dot = mk('circle', { r: 4, fill: '#f97316', stroke: '#fff', 'stroke-width': '1.5', visibility: 'hidden' });
+        var lbl = mk('g', { visibility: 'hidden' });
+        prof.lblBox = mk('rect', { rx: 4, ry: 4, height: 18, fill: isDark ? '#f3f4f6' : '#111827' });
+        prof.lblText = mk('text', { 'font-size': '10', 'font-weight': '600', fill: isDark ? '#111827' : '#ffffff', y: 12.5 });
+        lbl.appendChild(prof.lblBox); lbl.appendChild(prof.lblText); prof.lbl = lbl;
+        svg.appendChild(prof.cross); svg.appendChild(prof.dot); svg.appendChild(lbl);
+
+        // events
+        function kmFromEvent(ev) { var r = svg.getBoundingClientRect(); var cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left; return kmOfX(cx * (w / r.width)); }
+        svg.addEventListener('mousemove', function (ev) { scheduleHover(kmFromEvent(ev), true); });
+        svg.addEventListener('mouseleave', function () { hideCross(); if (hoverMarker) hoverMarker.getElement().style.display = 'none'; });
+        svg.addEventListener('touchstart', function (ev) { scheduleHover(kmFromEvent(ev), true); }, { passive: true });
+        svg.addEventListener('touchmove', function (ev) { scheduleHover(kmFromEvent(ev), true); }, { passive: true });
+        svg.addEventListener('click', function (ev) {
+            var km = kmFromEvent(ev), c = findCoordAtKm(km);
+            for (var i = 0; i < checkpoints.length; i++) {
+                if (Math.abs(checkpoints[i].distance_km - km) < Math.max(1.5, totalDistKm * 0.015)) {
+                    if (cpMarkerEls[i]) cpMarkerEls[i].togglePopup();
+                    c = findCoordAtKm(checkpoints[i].distance_km); break;
+                }
+            }
+            if (c && map) map.flyTo({ center: [c[1], c[0]], zoom: 13 });
+        });
+        el.appendChild(svg); prof.svg = svg;
+        drawCpAnn();
+
+        // redraw on container resize (debounced) — keeps text crisp, no stretching
+        if (prof.ro) { try { prof.ro.disconnect(); } catch (e) {} }
+        if (window.ResizeObserver) {
+            var rt = null;
+            prof.ro = new ResizeObserver(function () { if (rt) clearTimeout(rt); rt = setTimeout(function () { if (el.clientWidth && Math.abs(el.clientWidth - prof.w) > 4) initChart(); }, 120); });
+            prof.ro.observe(el);
+        }
+    }
+    function showCross(km) {
+        if (!prof.svg) return;
+        var x = xOf(km), y = yOf(elevAt(km));
+        prof.cross.setAttribute('x1', x); prof.cross.setAttribute('x2', x); prof.cross.setAttribute('visibility', 'visible');
+        prof.dot.setAttribute('cx', x); prof.dot.setAttribute('cy', y); prof.dot.setAttribute('visibility', 'visible');
+        var g = gradeAt(km);
+        prof.lblText.textContent = 'km ' + fmtKm(km) + ' · ' + fmtM(elevAt(km)) + ' m · ' + (g > 0 ? '+' : '') + Math.round(g) + ' %';
+        var tw = prof.lblText.getComputedTextLength() + 12;
+        var lx = x + 8; if (lx + tw > prof.w - prof.padR) lx = x - 8 - tw;
+        prof.lblBox.setAttribute('width', tw); prof.lblText.setAttribute('x', 6);
+        prof.lbl.setAttribute('transform', 'translate(' + lx.toFixed(1) + ',' + prof.padT + ')');
+        prof.lbl.setAttribute('visibility', 'visible');
+    }
+    function hideCross() {
+        if (!prof.svg) return;
+        prof.cross.setAttribute('visibility', 'hidden'); prof.dot.setAttribute('visibility', 'hidden'); prof.lbl.setAttribute('visibility', 'hidden');
+    }
+    var hoverRaf = null, hoverKm = 0, hoverFromChart = false;
+    function scheduleHover(km, fromChart) {
+        hoverKm = km; hoverFromChart = fromChart;
+        if (hoverRaf) return;
+        hoverRaf = requestAnimationFrame(function () {
+            hoverRaf = null; showCross(hoverKm);
+            if (hoverFromChart && hoverMarker) { var c = findCoordAtKm(hoverKm); if (c) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; } }
+        });
+    }
+    function syncChart(km) { scheduleHover(km, false); }
+    function clearChart() { hideCross(); }
+    function drawCpAnn() {
+        if (!prof.cpLayer) return;
+        while (prof.cpLayer.firstChild) prof.cpLayer.removeChild(prof.cpLayer.firstChild);
+        var base = prof.h - prof.padB;
+        checkpoints.forEach(function (cp, i) {
+            var x = xOf(cp.distance_km);
+            prof.cpLayer.appendChild(mk('line', { x1: x, x2: x, y1: prof.padT - 2, y2: base, stroke: '#f59e0b', 'stroke-width': '1', 'stroke-dasharray': '2 2', opacity: '0.9' }));
+            var g = mk('g', { transform: 'translate(' + (x - 11).toFixed(1) + ',' + (prof.padT - 16) + ')' });
+            g.appendChild(mk('rect', { width: 22, height: 13, rx: 3, ry: 3, fill: '#f59e0b' }));
+            var t = mk('text', { x: 11, y: 9.5, 'text-anchor': 'middle', 'font-size': '8', 'font-weight': '700', fill: '#fff' }); t.textContent = 'CP' + (i + 1); g.appendChild(t);
+            prof.cpLayer.appendChild(g);
+        });
+    }
 
     // ── CHECKPOINTS ──
     function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km) }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); recalc(); scheduleSave(); }
@@ -586,16 +687,15 @@ window._sim = {};
         if (currentWeather && currentWeather.temperature_c !== undefined && currentWeather.temperature_c !== null) parts.push(currentWeather.temperature_c + '°C');
         el.textContent = parts.join(' · ');
     }
-    function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
+    function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     // Restore saved weather (no re-fetch) so per-checkpoint conditions show on load.
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
-    initChart(); recalc();
-    // The map lives under "Avancé": build it on first open (a hidden MapLibre container renders at 0×0).
-    var adv = document.getElementById('advanced');
-    if (adv) adv.addEventListener('toggle', function () { if (!adv.open) return; if (!map) { initMap(); } else { try { map.resize(); } catch (e) {} } });
+    try { initChart(); } catch (e) { console.error('profile init failed', e); }
+    try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); var mc = document.getElementById('courseMap'); if (mc) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; }
+    recalc();
     window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create

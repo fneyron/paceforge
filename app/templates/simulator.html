@@ -61,10 +61,11 @@
                             <span class="tabular-nums">{{ '%.0f'|format(r.total_distance_km) }} km</span>
                             <span class="text-red-400 tabular-nums">D+ {{ '%.0f'|format(r.total_elevation_gain) }}m</span>
                             {% if r.target_time_s %}
-                            <span class="tabular-nums text-gray-500">obj. {{ '%d:%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}</span>
+                            <span class="tabular-nums text-gray-500">obj. {{ '%dh%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}</span>
                             {% endif %}
                             {% if r.race_date %}
-                            <span class="text-gray-300 tabular-nums">{{ r.race_date }}</span>
+                            {% set rd = r.race_date.split('-') %}
+                            <span class="text-gray-300 tabular-nums">{{ rd[2] }}/{{ rd[1] }}/{{ rd[0] }}</span>
                             {% else %}
                             <span class="text-gray-300">{{ r.created_at.strftime('%d/%m') }}</span>
                             {% endif %}
@@ -145,10 +146,10 @@
                     <p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(ftp.estimated_ftp) }} <span class="text-sm font-normal text-gray-400">W</span></p>
                 </div>
                 <div class="text-right">
-                    <p class="text-xs text-gray-400">{{ ftp.confidence }}</p>
-                    <p class="text-xs text-gray-400 mt-0.5">Basée sur : {{ ftp.activity_name }}</p>
-                    {% if ftp.activity_date %}
-                    <p class="text-[10px] text-gray-300">{{ ftp.activity_date.strftime('%d/%m/%Y') }}</p>
+                    <p class="text-xs text-gray-400">Fiabilité {{ ftp.confidence | lower }}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">D'après « {{ ftp.activity_name }} »{% if ftp.activity_date %} · {{ ftp.activity_date.strftime('%d/%m/%Y') }}{% endif %}</p>
+                    {% if ftp.is_stale %}
+                    <p class="text-[11px] text-amber-600 mt-1">Il y a {{ ftp.age_months }} mois : probablement dépassée. Une sortie récente avec capteur de puissance la mettra à jour.</p>
                     {% endif %}
                 </div>
             </div>
