@@ -59,6 +59,8 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
     hourly_temps = [temps[h] if h < len(temps) and temps[h] is not None else avg_temp for h in range(24)]
     hourly_hum = [humidity[h] if h < len(humidity) and humidity[h] is not None else avg_humidity for h in range(24)]
     hourly_codes = [int(codes[h]) if h < len(codes) and codes[h] is not None else (day_code or 0) for h in range(24)]
+    hourly_wind = [wind[h] if h < len(wind) and wind[h] is not None else avg_wind for h in range(24)]
+    hourly_wind_dir = [wind_dir[h] if h < len(wind_dir) and wind_dir[h] is not None else avg_wind_dir for h in range(24)]
 
     return {
         "temperature_c": round(avg_temp, 1),
@@ -73,6 +75,10 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
             "temps": [round(t, 1) for t in hourly_temps],
             "humidity": [round(h, 0) for h in hourly_hum],
             "codes": hourly_codes,
+            # 10 m wind by hour — the bike simulator projects it on the rider's
+            # heading at the estimated time of passage (myWindsock-style).
+            "wind": [round(w, 1) for w in hourly_wind],
+            "wind_dir": [round(d, 0) for d in hourly_wind_dir],
         },
     }
 

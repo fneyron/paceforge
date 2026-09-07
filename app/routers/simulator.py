@@ -291,81 +291,6 @@ async def bike_gpx_upload(
         )
 
 
-@router.post("/partials/simulator/bike-predict", response_class=HTMLResponse)
-async def bike_predict(
-    request: Request,
-    cycling_json: str = Form(...),
-    target_power_watts: float = Form(...),
-    rider_weight_kg: float = Form(...),
-    bike_weight_kg: float = Form(9.0),
-    cda: float = Form(0.32),
-    crr: float = Form(0.005),
-    wind_speed_kmh: float = Form(0.0),
-    wind_direction_deg: float | None = Form(None),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    from app.schemas.simulator import CourseProfile, CourseSegment, CyclingProfile
-    from app.services.cycling_simulator import estimate_cda, predict_cycling_course
-    from app.services.power_calculator import estimate_ftp
-
-    try:
-        prev = CyclingProfile(**json.loads(cycling_json))
-        # Reconstruct a CourseProfile from the cycling profile (segments share the
-        # geometric fields predict_cycling_course needs).
-        course = CourseProfile(
-            name=prev.name,
-            total_distance_km=prev.total_distance_km,
-            total_elevation_gain=prev.total_elevation_gain,
-            total_elevation_loss=prev.total_elevation_loss,
-            segments=[
-                CourseSegment(
-                    index=s.index, start_km=s.start_km, end_km=s.end_km,
-                    distance_m=s.distance_m, elevation_gain=s.elevation_gain,
-                    elevation_loss=s.elevation_loss, avg_gradient_pct=s.avg_gradient_pct,
-                    min_elevation=s.min_elevation, max_elevation=s.max_elevation,
-                )
-                for s in prev.segments
-            ],
-            elevation_points=prev.elevation_points,
-            route_coords=prev.route_coords,
-            km_markers=prev.km_markers,
-        )
-
-        ftp = await estimate_ftp(db, user.id)
-        cda_est = await estimate_cda(db, user.id, rider_weight_kg, bike_weight_kg, crr=crr)
-        cycling = predict_cycling_course(
-            course,
-            target_power_watts=target_power_watts,
-            rider_weight_kg=rider_weight_kg,
-            bike_weight_kg=bike_weight_kg,
-            cda=cda,
-            crr=crr,
-            wind_speed_kmh=wind_speed_kmh,
-            wind_direction_deg=wind_direction_deg,
-            wind_source=prev.wind_source,
-            ftp_watts=ftp.estimated_ftp if ftp else None,
-        )
-
-        return templates.TemplateResponse(
-            request,
-            "partials/bike_gpx_result.html",
-            context={
-                "cycling": cycling,
-                "ftp": ftp,
-                "cda_est": cda_est,
-                "cycling_json": cycling.model_dump_json(),
-            },
-        )
-    except Exception:
-        logger.exception("Bike predict failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors du calcul. Verifiez les valeurs saisies."
-            "</div>"
-        )
-
-
 @router.post("/partials/simulator/power-calc", response_class=HTMLResponse)
 async def power_calc(
     request: Request,
@@ -620,33 +545,9 @@ async def route_detail_page(
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
     if route.sport_type == "bike":
-        from app.schemas.simulator import CourseProfile
-        from app.services.cycling_simulator import estimate_cda, predict_cycling_course
-        from app.services.power_calculator import estimate_ftp
-
-        course = CourseProfile(**route.course_json)
-        ftp = await estimate_ftp(db, user.id)
-        rider_weight = user.weight_kg or 75
-        cda_est = await estimate_cda(db, user.id, rider_weight)
-        cda_default = cda_est.estimated_cda if cda_est else 0.32
-        default_target = round(ftp.estimated_ftp * 0.75) if ftp else 200
-        cycling = predict_cycling_course(
-            course,
-            target_power_watts=default_target,
-            rider_weight_kg=rider_weight,
-            cda=cda_default,
-            ftp_watts=ftp.estimated_ftp if ftp else None,
-        )
+        ctx = await _bike_plan_context(request, route, db, user)
         return templates.TemplateResponse(
-            request, "simulator_route_bike.html",
-            context={
-                "user": user,
-                "route": route,
-                "cycling": cycling,
-                "ftp": ftp,
-                "cda_est": cda_est,
-                "cycling_json": cycling.model_dump_json(),
-            },
+            request, "simulator_route_bike.html", context=ctx,
             headers={"Cache-Control": "no-store"},
         )
 
@@ -788,6 +689,118 @@ async def set_live_passage(
         }
     await db.flush()
     return JSONResponse({"ok": True, "live": route.live_json})
+
+
+# ── Bike plan (road book with wind at time of passage) ──
+
+async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+    """Everything the bike plan page needs: prediction at the saved parameters,
+    wind taken from the saved forecast at each segment's time of passage, and
+    the road-book sections."""
+    from app.schemas.simulator import CourseProfile
+    from app.services.cycling_simulator import build_bike_sections, estimate_cda, predict_cycling_course
+    from app.services.power_calculator import estimate_ftp
+
+    course = CourseProfile(**route.course_json)
+    ftp = await estimate_ftp(db, user.id)
+    p = route.params_json or {}
+    rider_weight = float(p.get("rider_weight_kg") or user.weight_kg or 75)
+    bike_weight = float(p.get("bike_weight_kg") or 9.0)
+    crr = float(p.get("crr") or 0.005)
+    cda_est = await estimate_cda(db, user.id, rider_weight, bike_weight, crr=crr)
+    cda = float(p.get("cda") or (cda_est.estimated_cda if cda_est else 0.32))
+    target = float(p.get("target_power_watts") or (round(ftp.estimated_ftp * 0.75) if ftp else 200))
+    weather = route.weather_json or {}
+    wind_mode = p.get("wind_mode") or ("auto" if weather else "none")
+    start_hour = route.start_hour if route.start_hour is not None else 8
+    start_minute = route.start_minute or 0
+    start_offset = start_hour * 3600 + start_minute * 60
+
+    hourly_wind = None
+    wind_speed, wind_dir, wind_source = 0.0, None, None
+    if wind_mode == "auto" and weather:
+        hw = weather.get("hourly") or {}
+        if hw.get("wind"):
+            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or []}
+        else:
+            wind_speed = float(weather.get("wind_speed_kmh") or 0)
+            wind_dir = weather.get("wind_direction_deg")
+        wind_source = weather.get("source")
+    elif wind_mode == "manual":
+        wind_speed = float(p.get("wind_speed_kmh") or 0)
+        wind_dir = p.get("wind_direction_deg")
+
+    cycling = predict_cycling_course(
+        course, target_power_watts=target, rider_weight_kg=rider_weight, bike_weight_kg=bike_weight,
+        cda=cda, crr=crr, wind_speed_kmh=wind_speed, wind_direction_deg=wind_dir, wind_source=wind_source,
+        ftp_watts=ftp.estimated_ftp if ftp else None, hourly_wind=hourly_wind, start_offset_s=start_offset,
+    )
+    sections = build_bike_sections(cycling, start_offset)
+    return {
+        "request": request, "user": user, "route": route,
+        "cycling": cycling, "cycling_json": cycling.model_dump_json(), "sections": sections,
+        "ftp": ftp, "cda_est": cda_est,
+        "params": {
+            "target_power_watts": int(round(target)), "rider_weight_kg": rider_weight, "bike_weight_kg": bike_weight,
+            "cda": cda, "crr": crr, "wind_mode": wind_mode,
+            "wind_speed_kmh": float(p.get("wind_speed_kmh") or weather.get("wind_speed_kmh") or 0),
+            "wind_direction_deg": p.get("wind_direction_deg") if p.get("wind_direction_deg") is not None else weather.get("wind_direction_deg"),
+        },
+        "weather": weather, "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset,
+    }
+
+
+@router.post("/api/simulator/routes/{route_id}/bike", response_class=HTMLResponse)
+async def save_bike_plan(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    target_power_watts: float = Form(...),
+    rider_weight_kg: float = Form(...),
+    bike_weight_kg: float = Form(default=9.0),
+    cda: float = Form(default=0.32),
+    crr: float = Form(default=0.005),
+    race_date: str = Form(default=""),
+    start_time: str = Form(default="08:00"),
+    wind_mode: str = Form(default="auto"),
+    wind_speed_kmh: float = Form(default=0.0),
+    wind_direction_deg: float | None = Form(default=None),
+    refresh_weather: str = Form(default=""),
+):
+    """Save the bike plan parameters (+ date/start), refresh the forecast when
+    needed, and re-render the plan."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route or route.sport_type != "bike":
+        return HTMLResponse("", status_code=404)
+
+    route.params_json = {
+        "target_power_watts": max(30.0, target_power_watts), "rider_weight_kg": rider_weight_kg,
+        "bike_weight_kg": bike_weight_kg, "cda": cda, "crr": crr,
+        "wind_mode": wind_mode if wind_mode in ("auto", "manual", "none") else "auto",
+        "wind_speed_kmh": wind_speed_kmh, "wind_direction_deg": wind_direction_deg,
+    }
+    route.race_date = race_date.strip() or None
+    st = _clock_to_s(start_time)
+    if st is not None:
+        route.start_hour, route.start_minute = st // 3600, (st % 3600) // 60
+
+    saved = route.weather_json or {}
+    if route.race_date and (refresh_weather or not saved or saved.get("date") != route.race_date):
+        coords = (route.course_json or {}).get("route_coords") or []
+        if coords:
+            from app.services.weather import get_weather_forecast
+
+            w = await get_weather_forecast(coords[0][0], coords[0][1], route.race_date)
+            if w:
+                w["date"] = route.race_date
+                route.weather_json = w
+    await db.flush()
+
+    ctx = await _bike_plan_context(request, route, db, user)
+    return templates.TemplateResponse(
+        request, "partials/bike_plan.html", context=ctx, headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/simulator/routes/{route_id}/print", response_class=HTMLResponse)

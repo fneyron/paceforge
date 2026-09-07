@@ -1,0 +1,276 @@
+{# Bike plan — same three levels as the trail plan: hero · Ajuster · parcours · feuille de route · Avancé #}
+{% macro clock(s) %}{% set r = s % 86400 %}{{ '%02d:%02d'|format((r // 3600)|int, ((r % 3600) // 60)|int) }}{% endmacro %}
+{% macro dur(s) %}{% set h = (s // 3600)|int %}{% set m = ((s % 3600) // 60)|int %}{% if h %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
+{% set t = cycling.predicted_total_time_s %}
+{% set input_cls = "sim-num h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900" %}
+<div id="bike-plan" class="space-y-4">
+    <div class="flex items-center gap-2">
+        <h1 class="text-lg font-semibold tracking-tight truncate">{{ route.name }}</h1>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-600 font-semibold uppercase tracking-wide shrink-0">Vélo</span>
+    </div>
+
+    {# ── Niveau 1 · le plan ── #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="min-w-0">
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Temps estimé</p>
+                <p class="text-4xl font-bold tabular-nums leading-none mt-1">{{ (t // 3600)|int }}h{{ '%02d'|format(((t % 3600) // 60)|int) }}</p>
+                <p class="text-xs text-gray-500 mt-2">
+                    à <b class="text-gray-700">{{ params.target_power_watts }} W</b>
+                    {% if ftp %} · FTP estimée <b class="text-gray-700">{{ ftp.estimated_ftp|int }} W</b> <span class="text-gray-400">(fiabilité {{ ftp.confidence|lower }}{% if ftp.is_stale %}, ancienne{% endif %})</span>{% else %} · <span class="text-amber-600">pas de FTP : aucune sortie avec puissance synchronisée</span>{% endif %}
+                    {% if cda_est %} · CdA <b class="text-gray-700">{{ '%.2f'|format(params.cda) }}</b> <span class="text-gray-400">estimé sur {{ cda_est.activity_count }} sortie{{ 's' if cda_est.activity_count != 1 else '' }}</span>{% else %} · CdA {{ '%.2f'|format(params.cda) }}{% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
+            <span><b class="text-gray-800">{{ cycling.total_distance_km }}</b> km</span>
+            <span class="text-red-500">D+ {{ "%.0f"|format(cycling.total_elevation_gain) }} m</span>
+            <span><b class="text-gray-800">{{ cycling.avg_speed_kmh }}</b> km/h moy.</span>
+            <span>NP <b class="text-gray-800">{{ cycling.normalized_power_watts|int }}</b> W</span>
+            {% if cycling.intensity_factor %}<span>IF {{ cycling.intensity_factor }}</span>{% endif %}
+            {% if cycling.tss %}<span>TSS {{ cycling.tss|int }}</span>{% endif %}
+            <span>{{ cycling.work_kj|int }} kJ</span>
+        </div>
+    </div>
+
+    {# ── Niveau 2 · ajuster ── #}
+    {% set wm = params.wind_mode %}
+    <details id="bike-adjust" class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if not route.race_date %} open{% endif %}>
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 sm:truncate">
+                Départ {% if route.race_date %}{% set rd = route.race_date.split('-') %}{{ rd[2] }}/{{ rd[1] }}/{{ rd[0] }} {% else %}<span class="text-gray-400">date non fixée</span> {% endif %}{{ '%02d:%02d'|format(start_hour, start_minute) }}
+                · {{ params.target_power_watts }} W · {{ params.rider_weight_kg|round(1) }} + {{ params.bike_weight_kg|round(1) }} kg · CdA {{ '%.2f'|format(params.cda) }}
+                · vent {% if cycling.wind_mode == 'auto' %}prévision à l'heure de passage{% elif cycling.wind_mode == 'manual' %}{{ cycling.wind_speed_kmh }} km/h depuis {{ cycling.wind_direction_deg|int }}°{% else %}sans{% endif %}
+            </span>
+            <span class="text-xs font-medium text-gray-500 shrink-0 inline-flex items-center gap-1">Ajuster
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
+        </summary>
+        <form hx-post="/api/simulator/routes/{{ route.id }}/bike" hx-target="#bike-plan" hx-swap="outerHTML" class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+            <div class="flex flex-wrap items-end gap-4">
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Date
+                    <input type="date" name="race_date" value="{{ route.race_date or '' }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Heure de départ
+                    <input type="time" name="start_time" step="60" value="{{ '%02d:%02d'|format(start_hour, start_minute) }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Puissance que tu comptes tenir. Par défaut 75 % de ta FTP estimée.">Puissance cible
+                    <span class="flex items-center gap-1"><input type="number" name="target_power_watts" value="{{ params.target_power_watts }}" step="5" min="50" max="600" class="{{ input_cls }} w-20 font-semibold"><span class="text-xs text-gray-400 font-normal">W</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Cycliste
+                    <span class="flex items-center gap-1"><input type="number" name="rider_weight_kg" value="{{ params.rider_weight_kg|round(1) }}" step="0.5" min="30" max="150" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">kg</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Vélo
+                    <span class="flex items-center gap-1"><input type="number" name="bike_weight_kg" value="{{ params.bike_weight_kg|round(1) }}" step="0.1" min="3" max="25" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">kg</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Surface frontale × coefficient de traînée. 0,25 contre-la-montre · 0,32 route · 0,40 cocottes.">CdA
+                    <input type="number" name="cda" value="{{ '%.3f'|format(params.cda) }}" step="0.01" min="0.15" max="0.6" class="{{ input_cls }} w-20 font-normal">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Résistance au roulement. 0,004 route lisse · 0,005 standard · 0,008 rugueux.">Crr
+                    <input type="number" name="crr" value="{{ '%.4f'|format(params.crr) }}" step="0.0005" min="0.002" max="0.012" class="{{ input_cls }} w-20 font-normal">
+                </label>
+            </div>
+            <div class="flex flex-wrap items-end gap-4">
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Vent
+                    <select name="wind_mode" class="h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
+                        <option value="auto" {% if wm == 'auto' %}selected{% endif %}>Prévision à l'heure de passage</option>
+                        <option value="manual" {% if wm == 'manual' %}selected{% endif %}>Manuel</option>
+                        <option value="none" {% if wm == 'none' %}selected{% endif %}>Sans vent</option>
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Vitesse (manuel)
+                    <span class="flex items-center gap-1"><input type="number" name="wind_speed_kmh" value="{{ params.wind_speed_kmh|round(0)|int }}" step="1" min="0" max="80" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">km/h</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="D'où vient le vent : 0 = nord, 90 = est, 180 = sud, 270 = ouest">Depuis (manuel)
+                    <span class="flex items-center gap-1"><input type="number" name="wind_direction_deg" value="{{ params.wind_direction_deg|int if params.wind_direction_deg is not none else '' }}" step="5" min="0" max="360" placeholder="270" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">°</span></span>
+                </label>
+                <label class="inline-flex items-center gap-1.5 h-9 text-xs text-gray-500"><input type="checkbox" name="refresh_weather" value="1" class="rounded border-gray-300"> Actualiser la météo</label>
+                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Recalculer</button>
+            </div>
+            {% if weather %}
+            <p class="text-[11px] text-gray-400">Météo {{ weather.source or '' }}{% if weather.date %} du {{ weather.date }}{% endif %} : {{ weather.temperature_c }}°C · vent moyen {{ weather.wind_speed_kmh }} km/h{% if weather.wind_direction_deg is not none %} depuis {{ weather.wind_direction_deg|int }}°{% endif %}. Le vent de prévision (10 m) est ramené à hauteur de cycliste (×0,75) et projeté sur ta direction, heure par heure.</p>
+            {% else %}
+            <p class="text-[11px] text-gray-400">Fixe une date : la météo est récupérée automatiquement et le vent est appliqué heure par heure sur ta direction.</p>
+            {% endif %}
+        </form>
+    </details>
+
+    {# ── parcours ── #}
+    {% if cycling.route_coords %}
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden map-container">
+        <div id="bikeCourseMap" class="h-64 md:h-96"></div>
+        <div class="border-t border-gray-100 p-3"><div id="bikeElevChart" style="height:170px;"></div></div>
+    </div>
+    {% endif %}
+
+    {# ── feuille de route ── #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Feuille de route</h3>
+            <p class="text-[11px] text-gray-400">Une ligne par montée, descente ou plat · vent à l'heure de passage</p>
+        </div>
+        <div class="overflow-x-auto -mx-1">
+            <table class="w-full text-sm sm:min-w-[640px]">
+                <thead>
+                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                        <th class="text-left py-2 pr-3 font-medium">Section</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Dist.</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">D+</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Pente</th>
+                        <th class="text-right py-2 px-2 font-medium" title="Vent à l'heure de passage, en km/h : face = de face, dos = dans le dos, travers = latéral">Vent</th>
+                        <th class="text-right py-2 px-2 font-medium" title="Puissance moyenne à tenir sur la section">W</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">km/h</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Temps</th>
+                        <th class="text-right py-2 px-2 font-medium text-gray-900">Heure</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    <tr class="bg-green-50/60">
+                        <td class="py-2.5 pr-3"><span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-green-500"></span><span class="font-semibold text-green-800 text-xs">Départ</span></span></td>
+                        <td class="hidden sm:table-cell"></td><td class="hidden sm:table-cell"></td><td class="hidden sm:table-cell"></td><td></td><td></td><td class="hidden sm:table-cell"></td><td class="hidden sm:table-cell"></td>
+                        <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(start_offset_s) }}</td>
+                    </tr>
+                    {% for r in sections %}
+                    <tr class="{% if loop.last %}bg-red-50/60{% else %}hover:bg-gray-50/50{% endif %}">
+                        <td class="py-2.5 pr-3">
+                            <span class="inline-flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full {% if r.kind == 'climb' %}bg-red-500{% elif r.kind == 'descent' %}bg-blue-500{% else %}bg-gray-400{% endif %}"></span>
+                                <span class="font-medium text-xs">{{ r.label }}</span>
+                            </span>
+                            <p class="text-[10px] text-gray-400 pl-4 tabular-nums">km {{ r.start_km }} – {{ r.end_km }}<span class="sm:hidden"> · {{ r.distance_km }} km{% if r.elevation_gain > 20 %} · +{{ r.elevation_gain }} m{% endif %}</span></p>
+                        </td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums">{{ r.distance_km }}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-green-600">{% if r.elevation_gain > 0 %}+{{ r.elevation_gain }}{% else %}—{% endif %}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums {% if r.grade_pct > 5 %}text-red-500{% elif r.grade_pct > 2 %}text-orange-500{% elif r.grade_pct < -3 %}text-blue-500{% else %}text-gray-500{% endif %}">{{ '%+.1f'|format(r.grade_pct) }} %</td>
+                        <td class="text-right py-2.5 px-2 tabular-nums {% if r.wind_label == 'face' %}text-red-500{% elif r.wind_label == 'dos' %}text-green-600{% else %}text-gray-400{% endif %}">{% if r.wind_label == 'calme' %}calme{% elif r.wind_label == 'travers' %}travers {{ r.wind_kmh|round(0)|int }}{% else %}{{ r.wind_label }} {{ r.headwind_kmh|abs|round(0)|int }}{% endif %}</td>
+                        <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ r.power_watts }}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ r.speed_kmh }}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ dur(r.time_s) }}</td>
+                        <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(r.clock_s) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# ── Niveau 3 · avancé ── #}
+    <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700">Avancé</span>
+            <span class="text-xs text-gray-400 truncate">détail par kilomètre · hypothèses du modèle</span>
+        </summary>
+        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+            <p class="text-[11px] text-gray-500">Modèle physique : gravité, roulement (Crr) et traînée aérodynamique (CdA, air à {{ cycling.rho }} kg/m³) à puissance constante ; vitesse plafonnée à 70 km/h en descente ; vent projeté sur ton cap segment par segment. Précision typique de ce type de modèle : 2 à 3 % quand puissance, poids et météo sont justes.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs tabular-nums">
+                    <thead class="text-[10px] text-gray-400 uppercase tracking-wider">
+                        <tr class="border-b border-gray-100">
+                            <th class="text-left py-2 px-2">Km</th><th class="text-right py-2 px-2">Pente</th><th class="text-right py-2 px-2">Vent</th><th class="text-right py-2 px-2">W</th><th class="text-right py-2 px-2">km/h</th><th class="text-right py-2 px-2">Temps</th><th class="text-right py-2 px-2">Cumul</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for seg in cycling.segments %}
+                        {% set hw = seg.headwind_ms %}
+                        <tr class="border-b border-gray-50 hover:bg-gray-50">
+                            <td class="py-1.5 px-2 text-gray-600">{{ "%.1f"|format(seg.start_km) }} – {{ "%.1f"|format(seg.end_km) }}</td>
+                            <td class="py-1.5 px-2 text-right {% if seg.avg_gradient_pct > 5 %}text-red-500{% elif seg.avg_gradient_pct > 2 %}text-orange-500{% elif seg.avg_gradient_pct < -3 %}text-blue-500{% endif %}">{{ "%.1f"|format(seg.avg_gradient_pct) }}%</td>
+                            <td class="py-1.5 px-2 text-right {% if hw > 1 %}text-red-500{% elif hw < -1 %}text-green-600{% else %}text-gray-400{% endif %}">{{ "%+.1f"|format(hw * 3.6) }}</td>
+                            <td class="py-1.5 px-2 text-right font-medium">{{ "%.0f"|format(seg.predicted_power_watts) }}</td>
+                            <td class="py-1.5 px-2 text-right">{{ "%.1f"|format(seg.predicted_speed_kmh) }}</td>
+                            <td class="py-1.5 px-2 text-right text-gray-500">{{ "%d:%02d"|format(seg.predicted_time_s // 60, seg.predicted_time_s % 60 | int) }}</td>
+                            <td class="py-1.5 px-2 text-right text-gray-400">{{ dur(seg.cumulative_time_s|int) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
+    <input type="hidden" id="bikeCyclingJson" value='{{ cycling_json }}'>
+</div>
+
+<script>
+(function () {
+    var isDark = document.documentElement.classList.contains('dark');
+    var cycling = JSON.parse(document.getElementById('bikeCyclingJson').value);
+    var routeCoords = cycling.route_coords || [], elevData = cycling.elevation_points || [], totalDistKm = cycling.total_distance_km || 0;
+    if (window._bikeMap) { try { window._bikeMap.remove(); } catch (e) {} window._bikeMap = null; }
+    if (window._bikeProfile) { try { window._bikeProfile.destroy(); } catch (e) {} window._bikeProfile = null; }
+
+    function findCoordAtKm(km) {
+        var n = routeCoords.length; if (!n) return null;
+        var lo = 0, hi = n - 1;
+        while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; }
+        return (Math.abs(routeCoords[lo][2] - km) <= Math.abs(routeCoords[hi][2] - km)) ? routeCoords[lo] : routeCoords[hi];
+    }
+    var map = null, hoverMarker = null;
+
+    // ── profile (shared widget) ──
+    var chartEl = document.getElementById('bikeElevChart');
+    if (chartEl && elevData.length && window.PFElevationProfile) {
+        try {
+            window._bikeProfile = PFElevationProfile(chartEl, {
+                elevData: elevData, totalDistKm: totalDistKm, isDark: isDark,
+                onHover: function (km) { var c = findCoordAtKm(km); if (c && hoverMarker) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; } },
+                onLeave: function () { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; },
+                onClick: function (km) { var c = findCoordAtKm(km); if (c && map) map.flyTo({ center: [c[1], c[0]], zoom: 13 }); }
+            });
+        } catch (e) { console.error('profile failed', e); }
+    }
+
+    // ── map ──
+    var el = document.getElementById('bikeCourseMap');
+    if (el && routeCoords.length && window.maplibregl) {
+        try {
+            var coords = routeCoords.map(function (c) { return [c[1], c[0]]; });
+            var lons = coords.map(function (c) { return c[0]; }), lats = coords.map(function (c) { return c[1]; });
+            map = new maplibregl.Map({
+                container: el,
+                style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                bounds: [[Math.min.apply(null, lons), Math.min.apply(null, lats)], [Math.max.apply(null, lons), Math.max.apply(null, lats)]],
+                fitBoundsOptions: { padding: 40 }, attributionControl: false, cooperativeGestures: true,
+                locale: { 'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl + molette pour zoomer la carte', 'CooperativeGesturesHandler.MacHelpText': '⌘ + molette pour zoomer la carte', 'CooperativeGesturesHandler.MobileHelpText': 'Deux doigts pour déplacer la carte' },
+            });
+            map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+            window._bikeMap = map;
+            var hoverEl = document.createElement('div');
+            hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
+            hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
+            map.on('load', function () {
+                function slopeColor(pct) { if (pct > 10) return '#991b1b'; if (pct > 6) return '#dc2626'; if (pct > 3) return '#f97316'; if (pct > -3) return '#22c55e'; if (pct > -6) return '#3b82f6'; return '#7c3aed'; }
+                var elevs = routeCoords.map(function (c) { return c[3] || 0; }), gradients = [0];
+                for (var i = 1; i < routeCoords.length; i++) { var dd = (routeCoords[i][2] - routeCoords[i - 1][2]) * 1000; gradients.push(dd > 0 ? (elevs[i] - elevs[i - 1]) / dd * 100 : 0); }
+                var segStep = Math.max(1, Math.floor(coords.length / 200)), groups = {};
+                for (i = 0; i < coords.length - segStep; i += segStep) { var col = slopeColor(gradients[i]); (groups[col] = groups[col] || []).push([coords[i], coords[Math.min(i + segStep, coords.length - 1)]]); }
+                var idx = 0;
+                Object.keys(groups).forEach(function (col) {
+                    map.addSource('bike-route-' + idx, { type: 'geojson', data: { type: 'FeatureCollection', features: groups[col].map(function (pair) { return { type: 'Feature', geometry: { type: 'LineString', coordinates: pair }, properties: {} }; }) } });
+                    map.addLayer({ id: 'bike-route-' + idx, type: 'line', source: 'bike-route-' + idx, paint: { 'line-width': 4, 'line-color': col }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+                    idx++;
+                });
+                new maplibregl.Marker({ color: '#22c55e' }).setLngLat(coords[0]).addTo(map);
+                new maplibregl.Marker({ color: '#ef4444' }).setLngLat(coords[coords.length - 1]).addTo(map);
+                if (cycling.wind_direction_deg !== null && cycling.wind_direction_deg !== undefined && cycling.wind_speed_kmh > 0) {
+                    var compass = document.createElement('div');
+                    compass.style.cssText = 'position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.95);border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;font-family:Inter,sans-serif;font-size:11px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);z-index:1;';
+                    var arrowDir = (cycling.wind_direction_deg + 180) % 360;
+                    compass.innerHTML = '<div style="font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Vent moyen</div><div style="display:flex;align-items:center;gap:6px;"><svg width="20" height="20" viewBox="0 0 20 20" style="transform:rotate(' + arrowDir + 'deg);"><path d="M10 2 L14 16 L10 13 L6 16 Z" fill="#3b82f6"/></svg><span style="font-weight:600;">' + Math.round(cycling.wind_speed_kmh) + ' km/h</span></div>';
+                    el.appendChild(compass);
+                }
+            });
+            var mapRaf = null, mapPt = null;
+            map.on('mousemove', function (e) {
+                mapPt = e.lngLat; if (mapRaf) return;
+                mapRaf = requestAnimationFrame(function () {
+                    mapRaf = null; var best = null, bestD = Infinity, stride = Math.max(1, Math.floor(routeCoords.length / 2500));
+                    for (var i = 0; i < routeCoords.length; i += stride) { var dx = routeCoords[i][1] - mapPt.lng, dy = routeCoords[i][0] - mapPt.lat, d = dx * dx + dy * dy; if (d < bestD) { bestD = d; best = routeCoords[i]; } }
+                    if (best && hoverMarker) { hoverMarker.setLngLat([best[1], best[0]]); hoverMarker.getElement().style.display = 'block'; if (window._bikeProfile) window._bikeProfile.showCross(best[2]); }
+                });
+            });
+            map.on('mouseout', function () { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; if (window._bikeProfile) window._bikeProfile.hideCross(); });
+        } catch (e) { console.error('map failed', e); el.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; }
+    }
+})();
+</script>

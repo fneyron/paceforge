@@ -109,6 +109,8 @@ class CyclingSegment(BaseModel):
     max_elevation: float
     bearing_deg: float = 0  # rider's heading on this segment
     headwind_ms: float = 0  # +ve = headwind, -ve = tailwind
+    wind_kmh: float = 0  # wind speed used on this segment (at rider height)
+    wind_from_deg: float | None = None  # meteo direction the wind comes FROM
     predicted_power_watts: float = 0
     predicted_speed_kmh: float = 0
     predicted_time_s: float = 0
@@ -135,6 +137,7 @@ class CyclingProfile(BaseModel):
     wind_speed_kmh: float = 0
     wind_direction_deg: float | None = None
     wind_source: str | None = None
+    wind_mode: str = "none"  # none | manual | auto (hourly forecast at time of passage)
     # Outputs
     predicted_total_time_s: int = 0
     predicted_total_time_formatted: str = ""

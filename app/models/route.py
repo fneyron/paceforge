@@ -28,6 +28,9 @@ class Route(Base):
     # ({"anchor_km", "anchor_clock": "HH:MM", "anchor_name"}); the plan is
     # re-planned from there. Persisted so a phone reload mid-race keeps it.
     live_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # Sport-specific plan parameters (bike: target power, weights, CdA, Crr,
+    # wind mode/override). Trail uses dedicated columns.
+    params_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)

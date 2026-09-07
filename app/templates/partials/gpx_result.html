@@ -359,7 +359,7 @@ window._sim = {};
         return '#1d4ed8';
     }
     var SVGNS = 'http://www.w3.org/2000/svg';
-    var prof = { svg: null, w: 0, h: 0, padL: 42, padR: 10, padT: 18, padB: 20, minE: 0, maxE: 1, cross: null, dot: null, lblBox: null, lblText: null, cpLayer: null, ro: null };
+    var prof = { svg: null, w: 0, h: 0, padL: 52, padR: 10, padT: 18, padB: 20, minE: 0, maxE: 1, cross: null, dot: null, lblBox: null, lblText: null, cpLayer: null, ro: null };
     function mk(tag, attrs) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); return el; }
     function xOf(km) { return prof.padL + (km / (totalDistKm || 1)) * (prof.w - prof.padL - prof.padR); }
     function yOf(e) { return prof.padT + (1 - (e - prof.minE) / ((prof.maxE - prof.minE) || 1)) * (prof.h - prof.padT - prof.padB); }
