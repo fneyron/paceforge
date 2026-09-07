@@ -28,20 +28,13 @@
     <div id="reimport-error"></div>
 
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div class="grid grid-cols-1 md:grid-cols-5 gap-5">
-       <div class="md:col-span-3 flex flex-col min-w-0">
-        <div class="min-w-0">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="min-w-0">
                 <p id="hero-label" class="text-[10px] text-gray-400 uppercase tracking-wider">{% if has_obj %}Objectif{% else %}Temps estimé{% endif %}</p>
                 <p id="hero-time" class="text-4xl font-bold tabular-nums leading-none mt-1">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</p>
                 <p class="text-xs text-gray-500 mt-2">
                     <span id="hero-sub-est">{% if has_obj %}Estimation {{ course.predicted_total_time_formatted }} · {% endif %}</span>{% if has_data %}d'après <b class="text-gray-700">{{ profile.data_points }}</b> sorties Strava{% else %}<span class="text-amber-600">modèle générique — synchronise Strava pour une prédiction personnalisée</span>{% endif %}
                 </p>
-        </div>
-        <div class="mt-auto pt-4 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
-                <span><b class="text-gray-800">{{ course.total_distance_km }}</b> km</span>
-                <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
-                <span class="text-blue-500">D- {{ "%.0f"|format(course.total_elevation_loss) }} m</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <button onclick="window._sim.exportGpx()" id="btn-export-gpx"
@@ -56,13 +49,11 @@
                 </button>
             </div>
         </div>
-       </div>
-       {% if course.route_coords %}
-       <div class="md:col-span-2 rounded-lg overflow-hidden border border-gray-200 map-container h-full" style="min-height:176px;">
-           <div id="courseMap" style="height:100%;min-height:176px;"></div>
-       </div>
-       {% endif %}
-      </div>
+        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
+            <span><b class="text-gray-800">{{ course.total_distance_km }}</b> km</span>
+            <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+            <span class="text-blue-500">D- {{ "%.0f"|format(course.total_elevation_loss) }} m</span>
+        </div>
     </div>
 
     {# ── Niveau 2 · ajuster (replié, résumé toujours visible) ───────────── #}
@@ -125,8 +116,11 @@
     </details>
 
     {% if course.route_coords %}
-    <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-        <div id="elevChart" style="height:170px;"></div>
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden map-container">
+        <div id="courseMap" class="h-64 md:h-96"></div>
+        <div class="border-t border-gray-100 p-3">
+            <div id="elevChart" style="height:170px;"></div>
+        </div>
     </div>
     {% endif %}
 
@@ -257,10 +251,15 @@ window._sim = {};
             bounds: bounds,
             fitBoundsOptions: { padding: 40 },
             attributionControl: false,
+            cooperativeGestures: true,  // Ctrl/⌘ + wheel to zoom, two fingers to pan: the page keeps scrolling
+            locale: {
+                'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl + molette pour zoomer la carte',
+                'CooperativeGesturesHandler.MacHelpText': '⌘ + molette pour zoomer la carte',
+                'CooperativeGesturesHandler.MobileHelpText': 'Deux doigts pour déplacer la carte',
+            },
         });
 
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-        map.scrollZoom.disable();  // the page must keep scrolling; zoom with the buttons or pinch
 
         // Hover marker (created before map.load so chart can use it immediately)
         var hoverEl = document.createElement('div');
