@@ -127,7 +127,7 @@
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
-            <p class="text-[11px] text-gray-400">Noms et km modifiables dans le tableau · <a href="#advanced" onclick="document.getElementById('advanced').open = true" class="underline hover:text-gray-600">ajouter un point</a> · jour J : ⏱ sur un point pour saisir ton heure réelle</p>
+            <p class="text-[11px] text-gray-400">Clique un nom ou un km pour le modifier · ⏱ le jour J pour saisir ton heure réelle</p>
         </div>
         <div id="live-strip" class="hidden mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-gray-700">
             <span>Passage réel à <b id="live-name">…</b> à</span>
@@ -138,26 +138,24 @@
         <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
         <div id="passage-times-result"></div>
+        <div class="mt-4 pt-4 border-t border-gray-100">
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" id="cp-name" placeholder="Ajouter un point de passage (ravito, col, …)" class="flex-1 h-9 px-3 rounded-lg border border-gray-200 text-sm">
+                <div class="flex gap-2">
+                    <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-24 h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
+                    <button onclick="window._sim.addCheckpoint()" class="h-9 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 shrink-0">+ Ajouter</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     {# ── Niveau 3 · avancé ──────────────────────────────────────────────── #}
     <details id="advanced" class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
             <span class="text-sm text-gray-700">Avancé</span>
-            <span class="text-xs text-gray-400 truncate">points de passage · trace GPX · base de la prédiction</span>
+            <span class="text-xs text-gray-400 truncate">trace GPX · base de la prédiction</span>
         </summary>
         <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-5">
-            <div>
-                <p class="text-[11px] font-medium text-gray-500 mb-2">Ajouter un point de passage</p>
-                <div class="flex flex-col sm:flex-row gap-2">
-                    <input type="text" id="cp-name" placeholder="Nom (ravito, col, …)" class="flex-1 h-9 px-3 rounded-lg border border-gray-200 text-sm">
-                    <div class="flex gap-2">
-                        <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-24 h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
-                        <button onclick="window._sim.addCheckpoint()" class="h-9 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">+ Ajouter</button>
-                    </div>
-                </div>
-                <p class="text-[11px] text-gray-400 mt-1.5">Dans le tableau : clique un nom ou un km pour le modifier, × pour supprimer.</p>
-            </div>
             {% if saved_route_id %}
             <div>
                 <p class="text-[11px] font-medium text-gray-500 mb-2">Trace GPX</p>
