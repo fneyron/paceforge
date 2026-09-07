@@ -24,6 +24,10 @@ class Route(Base):
     sport_type: Mapped[str] = mapped_column(String(20), nullable=False, default="trail", server_default="trail")
     # Planned stop per aid station (minutes) — shifts clock passage times.
     stop_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Race-day state: the last real passage the athlete entered
+    # ({"anchor_km", "anchor_clock": "HH:MM", "anchor_name"}); the plan is
+    # re-planned from there. Persisted so a phone reload mid-race keeps it.
+    live_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)

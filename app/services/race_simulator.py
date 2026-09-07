@@ -661,3 +661,108 @@ def compute_passage_times(
         stops_acc += arrival_stop
 
     return sections
+
+
+def replan_from_passage(
+    sections: list[dict],
+    start_offset_s: int,
+    target_time_s: int | None,
+    anchor_km: float,
+    anchor_clock_s: int,
+    stop_s_per_aid: int = 0,
+    aid_kms: set | None = None,
+    min_feasible_ratio: float = 0.85,
+) -> tuple[list[dict], dict | None]:
+    """Race-day re-plan: "I'm at <checkpoint> at <clock>, now what?"
+
+    Given the plan's sections and the REAL arrival clock at one checkpoint,
+    rewrite the remaining sections at even effort so the plan stays usable:
+
+    - if the objective is still within reach (the remainder needs at most
+      ``1 - min_feasible_ratio`` faster than predicted), the remaining time
+      budget is (objective - elapsed - remaining stops), distributed by the
+      same effort shares as the plan;
+    - otherwise the plan falls back to the athlete's ACTUAL rhythm so far
+      (elapsed / predicted at the anchor) and announces the projected finish.
+
+    Rows up to the anchor are flagged ``passed``; the anchor row shows the
+    real clock. Returns (new_sections, replan_summary) or (sections, None)
+    when the anchor doesn't match a checkpoint.
+    """
+    aid_set = {round(float(k), 1) for k in (aid_kms or set())}
+    idx = next(
+        (i for i, s in enumerate(sections)
+         if s.get("end_checkpoint_index") is not None and abs(float(s["end_km"]) - float(anchor_km)) < 0.15),
+        None,
+    )
+    if idx is None:
+        return sections, None
+
+    anchor_elapsed = int(anchor_clock_s) - int(start_offset_s)
+    while anchor_elapsed < 0:  # passage after midnight
+        anchor_elapsed += 86400
+
+    a = sections[idx]
+    use_plan = bool(target_time_s) and a.get("adjusted_clock_time_s") is not None
+    plan_elapsed = (a["adjusted_clock_time_s"] if use_plan else a["clock_time_s"]) - start_offset_s
+    delta_s = anchor_elapsed - plan_elapsed
+    # Rhythm is measured against the PLAN (even effort is deliberately slower
+    # than the prediction early on): 1.05 = 5 % slower than planned so far.
+    rhythm = (anchor_elapsed / plan_elapsed) if plan_elapsed > 0 else 1.0
+
+    def is_aid(s: dict) -> bool:
+        return s.get("end_checkpoint_index") is not None and round(float(s["end_km"]), 1) in aid_set
+
+    remaining = sections[idx + 1:]
+    anchor_stop = stop_s_per_aid if (stop_s_per_aid and is_aid(a)) else 0
+    stops_remaining = anchor_stop + sum(stop_s_per_aid for s in remaining if stop_s_per_aid and is_aid(s))
+    shares = [
+        float(s["adjusted_time_s"]) if (target_time_s and s.get("adjusted_time_s")) else float(s["predicted_time_s"])
+        for s in remaining
+    ]
+    total_share = sum(shares) or 1.0  # = the plan's remaining moving time
+
+    projected_moving = total_share * rhythm
+    projected_finish = start_offset_s + anchor_elapsed + projected_moving + stops_remaining
+
+    mode, feasible, required_ratio, budget = "rhythm", None, None, projected_moving
+    if target_time_s and total_share > 0:
+        budget_target = target_time_s - anchor_elapsed - stops_remaining
+        required_ratio = budget_target / total_share  # vs what the plan intended
+        feasible = budget_target > 0 and required_ratio >= min_feasible_ratio
+        if feasible:
+            mode, budget = "target", budget_target
+
+    out = [dict(s) for s in sections]
+    for i in range(idx + 1):
+        out[i]["passed"] = True
+    out[idx]["is_anchor"] = True
+    out[idx]["adjusted_clock_time_s"] = int(anchor_clock_s)
+    out[idx]["adjusted_cumulative_time_s"] = int(anchor_elapsed)
+
+    cum = 0.0
+    stops_acc = anchor_stop
+    for j, s in enumerate(remaining):
+        t = budget * shares[j] / total_share
+        cum += t
+        o = out[idx + 1 + j]
+        o["adjusted_time_s"] = round(t)
+        o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
+        o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
+        if stop_s_per_aid and is_aid(s) and j < len(remaining) - 1:
+            stops_acc += stop_s_per_aid
+
+    replan = {
+        "anchor_name": a["end_name"],
+        "anchor_km": a["end_km"],
+        "anchor_clock_s": int(anchor_clock_s),
+        "delta_s": int(delta_s),
+        "mode": mode,
+        "feasible": feasible,
+        "required_ratio": round(required_ratio, 3) if required_ratio is not None else None,
+        "rhythm": round(rhythm, 3),
+        "projected_finish_clock_s": int(projected_finish),
+        "finish_clock_s": out[-1]["adjusted_clock_time_s"] if out else None,
+        "target_time_s": target_time_s,
+    }
+    return out, replan

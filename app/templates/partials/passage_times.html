@@ -2,6 +2,22 @@
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro fmt_clock(seconds) %}{% set day = (seconds // 86400) | int %}{% set rem = seconds % 86400 %}{% set h = (rem // 3600) | int %}{% set m = ((rem % 3600) // 60) | int %}{{ '%02d:%02d'|format(h, m) }}{% if day > 0 %} <span class="text-[9px] text-amber-500">+{{ day }}j</span>{% endif %}{% endmacro %}
 
+{% if replan is defined and replan %}
+{% set dm = (replan.delta_s / 60) | round | int %}
+<div class="mb-3 rounded-lg border px-3 py-2 text-xs {% if dm > 1 %}border-amber-200 bg-amber-50 text-amber-900{% elif dm < -1 %}border-emerald-200 bg-emerald-50 text-emerald-900{% else %}border-gray-200 bg-gray-50 text-gray-700{% endif %}">
+    <b>{{ replan.anchor_name }} à {{ fmt_clock(replan.anchor_clock_s) }}</b> :
+    {% if dm > 1 %}<b>+{{ dm }} min</b> sur le plan.{% elif dm < -1 %}<b>{{ -dm }} min d'avance</b>.{% else %}dans les temps.{% endif %}
+    {% if replan.mode == 'target' %}
+        Objectif {{ fmt_time(replan.target_time_s) }} tenable :
+        {% if replan.required_ratio < 0.99 %}il faut <b>{{ ((1 - replan.required_ratio) * 100) | round | int }} % plus vite</b> que prévu sur la suite{% elif replan.required_ratio > 1.01 %}tu as <b>{{ ((replan.required_ratio - 1) * 100) | round | int }} % de marge</b> sur la suite{% else %}garde le même effort{% endif %}.
+        Plan recalé ci-dessous. À ton rythme actuel : arrivée {{ fmt_clock(replan.projected_finish_clock_s) }}.
+    {% else %}
+        {% if replan.target_time_s %}Objectif {{ fmt_time(replan.target_time_s) }} hors de portée{% if replan.required_ratio %} (il faudrait {{ ((1 - replan.required_ratio) * 100) | round | int }} % plus vite){% endif %}. {% endif %}
+        Plan recalé sur ton rythme actuel : arrivée <b>{{ fmt_clock(replan.finish_clock_s) }}</b>.
+    {% endif %}
+    {% if not print_mode %}<button onclick="window._sim && window._sim.clearPassage()" class="ml-1 underline text-gray-500 hover:text-gray-800">Effacer</button>{% endif %}
+</div>
+{% endif %}
 <div class="overflow-x-auto -mx-1">
     <table class="w-full text-sm min-w-[640px]">
         <thead>
@@ -15,8 +31,8 @@
                 <th class="text-right py-2 px-2 font-medium" title="Allure moyenne sur la section (min/km)">Allure</th>
                 <th class="text-right py-2 px-2 font-medium" title="Temps pour parcourir cette section">Section</th>
                 <th class="text-right py-2 px-2 font-medium" title="Temps total écoulé depuis le départ">Cumul</th>
-                <th class="text-right py-2 px-2 font-medium text-gray-900" title="{% if has_target %}Heure de passage si tu tiens ton objectif (toute la ligne est recalée sur ta cible){% else %}Heure de passage estimée (départ + temps prédit){% endif %}">{% if has_target %}Heure visée{% else %}Heure{% endif %}</th>
-                <th class="w-6"></th>
+                <th class="text-right py-2 px-2 font-medium text-gray-900" title="{% if has_target %}Heure de passage si tu tiens ton objectif (toute la ligne est recalée sur ta cible){% else %}Heure de passage estimée (départ + temps prédit){% endif %}">{% if replan is defined and replan %}Heure recalée{% elif has_target %}Heure visée{% else %}Heure{% endif %}</th>
+                <th class="w-14"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-50">
@@ -50,7 +66,7 @@
             {% set pace_sec = (pace_val % 60) | int %}
             {% set is_finish = loop.last %}
             {% set editable = s.end_checkpoint_index is not none and not print_mode %}
-            <tr class="{% if is_finish %}bg-red-50/60{% else %}hover:bg-gray-50/50{% endif %}">
+            <tr class="{% if s.is_anchor %}bg-amber-50{% elif s.passed %}opacity-60{% elif is_finish %}bg-red-50/60{% else %}hover:bg-gray-50/50{% endif %}">
                 <td class="py-2.5 pr-3">
                     <div class="flex items-center gap-2">
                         {% if is_finish %}
@@ -86,11 +102,15 @@
                 <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
                 <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(cum_time) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}</td>
-                <td class="text-center align-middle">
+                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}{% if s.is_anchor %} <span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}</td>
+                <td class="text-right align-middle whitespace-nowrap">
                     {% if s.end_checkpoint_index is not none and not print_mode %}
+                    <button onclick="window._sim && window._sim.markPassage({{ s.end_checkpoint_index }}, {{ s.end_km }}, '{{ '%02d:%02d'|format(((clock_val % 86400) // 3600) | int, ((clock_val % 3600) // 60) | int) }}')"
+                            class="text-gray-300 hover:text-gray-900 px-1 align-middle" title="Jour J : je suis passé ici — saisir mon heure réelle">
+                        <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+                    </button>
                     <button onclick="window._sim && window._sim.removeCheckpoint({{ s.end_checkpoint_index }})"
-                            class="text-gray-300 hover:text-red-500 text-base leading-none px-1" title="Supprimer">&times;</button>
+                            class="text-gray-300 hover:text-red-500 text-base leading-none px-1 align-middle" title="Supprimer">&times;</button>
                     {% endif %}
                 </td>
             </tr>

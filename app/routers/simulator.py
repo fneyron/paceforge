@@ -125,6 +125,15 @@ async def gpx_upload(
         )
 
 
+def _clock_to_s(clock: str) -> int | None:
+    """'HH:MM' → seconds since midnight, None if malformed."""
+    try:
+        hh, mm = clock.strip().split(":")[:2]
+        return int(hh) * 3600 + int(mm) * 60
+    except (ValueError, AttributeError):
+        return None
+
+
 @router.post("/partials/simulator/passage-times", response_class=HTMLResponse)
 async def passage_times(
     request: Request,
@@ -137,6 +146,8 @@ async def passage_times(
     hourly_json: str = Form(default=""),
     route_id: int | None = Form(default=None),
     stop_minutes: int | None = Form(default=None),
+    anchor_km: float | None = Form(default=None),
+    anchor_clock: str | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -182,12 +193,25 @@ async def passage_times(
         )
         has_weather = any(s.get("temperature_c") is not None for s in sections)
 
+        # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
+        replan = None
+        if anchor_km is not None and anchor_clock:
+            from app.services.race_simulator import replan_from_passage
+
+            anchor_clock_s = _clock_to_s(anchor_clock)
+            if anchor_clock_s is not None:
+                sections, replan = replan_from_passage(
+                    sections, start_hour * 3600 + start_minute * 60, target_time_s,
+                    anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+                )
+
         return templates.TemplateResponse(
             request,
             "partials/passage_times.html",
             context={
                 "sections": sections,
-                "has_target": target_time_s is not None,
+                "has_target": (target_time_s is not None) or replan is not None,
+                "replan": replan,
                 "has_weather": has_weather,
                 "predicted_total": course.predicted_total_time_s,
                 "target_total": target_time_s,
@@ -571,6 +595,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "saved_sport_type": route.sport_type,
         "saved_weather_json": json.dumps(route.weather_json) if route.weather_json else None,
         "saved_stop_minutes": route.stop_minutes,
+        "saved_live_json": json.dumps(route.live_json) if route.live_json else None,
     }
 
 
@@ -739,6 +764,32 @@ async def export_route_gpx(
     )
 
 
+@router.post("/api/simulator/routes/{route_id}/live")
+async def set_live_passage(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    anchor_km: float | None = Form(default=None),
+    anchor_clock: str | None = Form(default=None),
+    anchor_name: str = Form(default=""),
+):
+    """Persist (or clear) the race-day passage anchor so a reload keeps it."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return JSONResponse({"ok": False}, status_code=404)
+    if anchor_km is None or not anchor_clock or _clock_to_s(anchor_clock) is None:
+        route.live_json = None
+    else:
+        route.live_json = {
+            "anchor_km": float(anchor_km),
+            "anchor_clock": anchor_clock.strip()[:5],
+            "anchor_name": (anchor_name or "")[:100],
+        }
+    await db.flush()
+    return JSONResponse({"ok": True, "live": route.live_json})
+
+
 @router.get("/simulator/routes/{route_id}/print", response_class=HTMLResponse)
 async def print_route_plan(
     route_id: int,
@@ -799,6 +850,18 @@ async def print_route_plan(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute, hourly_weather,
         stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
     )
+    live = route.live_json or {}
+    live_applied = False
+    if live.get("anchor_km") is not None and live.get("anchor_clock"):
+        from app.services.race_simulator import replan_from_passage
+
+        clock_s = _clock_to_s(live["anchor_clock"])
+        if clock_s is not None:
+            sections, rp = replan_from_passage(
+                sections, start_hour * 3600 + start_minute * 60, route.target_time_s,
+                float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+            )
+            live_applied = rp is not None
     has_weather = any(s.get("temperature_c") is not None for s in sections)
 
     # Race pack: include the nutrition per-leg plan on the same printout.
@@ -829,7 +892,7 @@ async def print_route_plan(
             "route": route,
             "course": course,
             "sections": sections,
-            "has_target": route.target_time_s is not None,
+            "has_target": route.target_time_s is not None or live_applied,
             "has_weather": has_weather,
             "start_hour": start_hour,
             "start_minute": start_minute,

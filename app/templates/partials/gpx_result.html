@@ -124,7 +124,13 @@
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
-            <p class="text-[11px] text-gray-400">Noms et km modifiables dans le tableau · <a href="#advanced" onclick="document.getElementById('advanced').open = true" class="underline hover:text-gray-600">ajouter un point</a></p>
+            <p class="text-[11px] text-gray-400">Noms et km modifiables dans le tableau · <a href="#advanced" onclick="document.getElementById('advanced').open = true" class="underline hover:text-gray-600">ajouter un point</a> · jour J : ⏱ sur un point pour saisir ton heure réelle</p>
+        </div>
+        <div id="live-strip" class="hidden mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-gray-700">
+            <span>Passage réel à <b id="live-name">…</b> à</span>
+            <input type="time" id="live-clock" step="60" class="h-8 px-2 rounded-lg border border-gray-200 bg-white text-sm tabular-nums">
+            <button onclick="window._sim.applyPassage()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">Recalculer la suite</button>
+            <button onclick="window._sim.hideLiveStrip()" class="text-gray-500 hover:text-gray-800 underline">Annuler</button>
         </div>
         <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
@@ -202,6 +208,8 @@ window._sim = {};
     var currentWeather = null;  // full weather payload (persisted with the route)
     var savedSportType = {{ ('"' + saved_sport_type + '"') | safe if saved_sport_type is defined and saved_sport_type else '"trail"' }};
     var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
+    var liveAnchor = {{ saved_live_json | safe if saved_live_json is defined and saved_live_json else 'null' }};  // race-day passage anchor
+    var pendingLive = null;
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
     function interpElev(km) {
@@ -426,7 +434,7 @@ window._sim = {};
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
     function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
-    function recalc() { updateHero(); updateSummary(); var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { updateHero(); updateSummary(); var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); } var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -528,6 +536,32 @@ window._sim = {};
     }
     function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
     function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h-vis').value = h; document.getElementById('target-m-vis').value = m; syncTarget(); }
+    // ── RACE DAY: "I'm here at HH:MM" → re-plan the remainder ──
+    function markPassage(cpIndex, km, plannedClock) {
+        var cp = checkpoints[cpIndex];
+        pendingLive = { km: km, name: cp ? cp.name : ('km ' + km) };
+        var strip = document.getElementById('live-strip'), inp = document.getElementById('live-clock');
+        if (!strip || !inp) return;
+        document.getElementById('live-name').textContent = pendingLive.name;
+        inp.value = (liveAnchor && Math.abs(liveAnchor.anchor_km - km) < 0.15) ? liveAnchor.anchor_clock : plannedClock;
+        strip.classList.remove('hidden');
+        try { inp.focus(); } catch (e) {}
+    }
+    function hideLiveStrip() { var strip = document.getElementById('live-strip'); if (strip) strip.classList.add('hidden'); pendingLive = null; }
+    function applyPassage() {
+        if (!pendingLive) return;
+        var v = (document.getElementById('live-clock') || {}).value; if (!v) return;
+        liveAnchor = { anchor_km: pendingLive.km, anchor_clock: v, anchor_name: pendingLive.name };
+        hideLiveStrip(); recalc(); persistLive();
+    }
+    function clearPassage() { liveAnchor = null; hideLiveStrip(); recalc(); persistLive(); }
+    function persistLive() {
+        if (!currentRouteId) return;
+        var b = new URLSearchParams();
+        if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); b.append('anchor_name', liveAnchor.anchor_name || ''); }
+        fetch('/api/simulator/routes/' + currentRouteId + '/live', { method: 'POST', body: b }).catch(function () {});
+    }
+
     // ── HERO + SUMMARY (level 1/2 headline, kept in sync with the inputs) ──
     function fmtHM(s) { var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); if (m === 60) { h += 1; m = 0; } return h + 'h' + (m < 10 ? '0' : '') + m; }
     function currentTargetS() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0; return h * 3600 + m * 60; }
@@ -562,7 +596,7 @@ window._sim = {};
     // The map lives under "Avancé": build it on first open (a hidden MapLibre container renders at 0×0).
     var adv = document.getElementById('advanced');
     if (adv) adv.addEventListener('toggle', function () { if (!adv.open) return; if (!map) { initMap(); } else { try { map.resize(); } catch (e) {} } });
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create
     // the route server-side and redirect here, so there's no id-less draft case.)
