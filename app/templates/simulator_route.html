@@ -12,6 +12,7 @@
 /* Hide native number spinners so narrow time inputs don't truncate their value. */
 .sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sim-num { -moz-appearance: textfield; appearance: textfield; }
+summary::-webkit-details-marker { display: none; }
 </style>
 {% endblock %}
 
@@ -19,7 +20,7 @@
 <div class="space-y-4">
     <a href="/simulator" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
-        Tous les parcours
+        Mes courses
     </a>
 
     <!-- Tabs: the page mixes three jobs — planning, fueling, debrief -->
@@ -29,7 +30,7 @@
         <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
         <button id="rtab-realise" onclick="switchRouteTab('realise')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Réalisé</button>
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
     </div>
 
     <div id="rpanel-plan">

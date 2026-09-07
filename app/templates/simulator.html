@@ -18,76 +18,28 @@
 {% block content %}
 <div class="space-y-6">
     <div>
-        <h1 class="text-lg font-semibold tracking-tight">Simulateur de course</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Prédiction de temps et calcul de puissance</p>
+        <h1 class="text-lg font-semibold tracking-tight">Courses</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Ton plan de course, au mètre près.</p>
     </div>
 
     <!-- Tabs -->
     <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
         <button id="tab-trail" onclick="switchTab('trail')"
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">
-            Trail / Course à pied
+            Course à pied
         </button>
         <button id="tab-power" onclick="switchTab('power')"
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">
-            Puissance vélo
+            Vélo
         </button>
     </div>
 
     <!-- Trail Tab -->
     <div id="panel-trail">
-        <!-- GPX Upload -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX</h3>
-
-            <form hx-post="/partials/simulator/gpx-upload"
-                  hx-target="#gpx-error"
-                  hx-swap="innerHTML"
-                  hx-encoding="multipart/form-data"
-                  hx-indicator="#gpx-loading">
-
-                <div id="gpx-drop-zone"
-                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
-                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
-                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
-                     ondrop="handleDrop(event)">
-
-                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
-                    </svg>
-
-                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX ici</p>
-                    <p class="text-xs text-gray-400 mb-3">ou</p>
-
-                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this)">
-                        Choisir un fichier
-                    </label>
-
-                    <p id="file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
-                </div>
-
-                <div class="flex items-center justify-between mt-4">
-                    <button type="submit"
-                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
-                            id="gpx-submit-btn">
-                        Analyser le parcours
-                        <span id="gpx-loading" class="htmx-indicator ml-1.5">
-                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                        </span>
-                    </button>
-                </div>
-                <div id="gpx-error" class="mt-3"></div>
-            </form>
-        </div>
-
         <!-- Saved routes -->
         {% if saved_routes %}
-        <div class="mt-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Parcours sauvegardes</h3>
+        <div class="mb-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Mes courses</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {% for r in saved_routes %}
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all relative" id="route-card-{{ r.id }}">
@@ -131,6 +83,55 @@
             </div>
         </div>
         {% endif %}
+        <!-- GPX Upload -->
+        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Nouvelle course</h3>
+            <p class="text-sm text-gray-500 -mt-2 mb-4">Glisse le GPX de la course : tu obtiens ton plan de passage tout de suite, calé sur ton historique Strava.</p>
+
+            <form hx-post="/partials/simulator/gpx-upload"
+                  hx-target="#gpx-error"
+                  hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data"
+                  hx-indicator="#gpx-loading">
+
+                <div id="gpx-drop-zone"
+                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
+                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
+                     ondrop="handleDrop(event)">
+
+                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                    </svg>
+
+                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX ici</p>
+                    <p class="text-xs text-gray-400 mb-3">ou</p>
+
+                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this)">
+                        Choisir un fichier
+                    </label>
+
+                    <p id="file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
+                </div>
+
+                <div class="flex items-center justify-between mt-4">
+                    <button type="submit"
+                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
+                            id="gpx-submit-btn">
+                        Créer mon plan
+                        <span id="gpx-loading" class="htmx-indicator ml-1.5">
+                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+                <div id="gpx-error" class="mt-3"></div>
+            </form>
+        </div>
+
     </div>
 
     <!-- Power Tab -->

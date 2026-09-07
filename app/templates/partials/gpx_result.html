@@ -5,168 +5,182 @@
     <span data-cat="{{ c }}">{{ wx.wicon(c, "w-4 h-4") }}</span>
     {% endfor %}
 </div>
+{% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
+{% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
+{% set hero_s = saved_target_time_s if has_obj else course.predicted_total_time_s %}
+{% set has_data = profile is defined and profile and profile.data_points and profile.data_points > 0 %}
 <div class="space-y-4" id="simulator-root">
-    <!-- Header: editable name + auto-save status -->
+
+    {# ── Niveau 1 · le plan ─────────────────────────────────────────────── #}
     <div class="flex items-center gap-2">
         <div class="flex-1 min-w-0">
             <div class="group flex items-center gap-1.5">
                 <input type="text" id="save-name"
                        value="{{ saved_route_name | default(course.name) }}"
-                       placeholder="Nom du parcours"
+                       placeholder="Nom de la course"
                        onchange="window._sim && window._sim.onNameChange()"
                        class="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5 text-lg font-semibold tracking-tight focus:outline-none transition-colors">
                 <svg class="w-3.5 h-3.5 text-gray-300 shrink-0 group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
             </div>
         </div>
         <div id="save-status" class="flex items-center gap-1 text-xs text-gray-400 shrink-0"></div>
-        {% if saved_route_id %}
-        <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data"
-              hx-target="#reimport-error" hx-swap="innerHTML" class="inline shrink-0">
-            <label class="h-8 px-3 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer"
-                   title="Recharger le fichier GPX pour corriger la trace (distance/D+), en gardant checkpoints, ravitos, objectif et nutrition">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
-                Mettre à jour la trace
-                <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()">
-            </label>
-        </form>
-        {% endif %}
     </div>
     <div id="reimport-error"></div>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Distance</p>
-            <p class="text-xl font-bold tabular-nums">{{ course.total_distance_km }} <span class="text-xs font-normal text-gray-400">km</span></p>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D+</p>
-            <p class="text-xl font-bold tabular-nums text-red-500">{{ "%.0f"|format(course.total_elevation_gain) }} <span class="text-xs font-normal text-gray-400">m</span></p>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">D-</p>
-            <p class="text-xl font-bold tabular-nums text-blue-500">{{ "%.0f"|format(course.total_elevation_loss) }} <span class="text-xs font-normal text-gray-400">m</span></p>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm" title="Temps prédit par le modèle : ton allure selon la pente (profil Strava), ajustée pour la fatigue, l'altitude, le terrain technique, la nuit et la chaleur. C'est une estimation, pas ta cible.">
-            <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1">Temps estimé
-                <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
-            </p>
-            <p class="text-xl font-bold tabular-nums">{{ course.predicted_total_time_formatted }}</p>
-        </div>
-    </div>
-
-    <!-- Prediction basis (transparency on what the estimate is built from) -->
-    {% if profile is defined and profile %}
-    {% if profile.data_points and profile.data_points > 0 %}
-    <div class="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2 text-[11px] text-gray-500">
-        <svg class="w-3.5 h-3.5 mt-px shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-        <span>Prédiction basée sur <b class="text-gray-700">{{ profile.data_points }}</b> segments de tes activités Strava
-            {%- if profile.sport_types_used %} ({{ profile.sport_types_used | join(', ') }}){% endif %}
-            des 6 derniers mois · allure de référence à plat <b class="text-gray-700">{{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km</b>.</span>
-    </div>
-    {% else %}
-    <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-        <svg class="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-        <span><b>Aucune donnée Strava exploitable</b> (pas de splits sur tes activités des 6 derniers mois). L'estimation repose sur un modèle physiologique générique (Minetti) — re-synchronise Strava pour une prédiction personnalisée.</span>
-    </div>
-    {% endif %}
-    {% endif %}
-
-    {% if course.route_coords %}
-    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div id="courseMap" style="height:420px;"></div>
-    </div>
-    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div id="elevChart" style="height:180px;"></div>
-    </div>
-    {% endif %}
-
-    <!-- Plan de course -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-2 mb-3">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
-            <div class="flex items-center gap-1.5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="min-w-0">
+                <p id="hero-label" class="text-[10px] text-gray-400 uppercase tracking-wider">{% if has_obj %}Objectif{% else %}Temps estimé{% endif %}</p>
+                <p id="hero-time" class="text-4xl font-bold tabular-nums leading-none mt-1">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</p>
+                <p class="text-xs text-gray-500 mt-2">
+                    <span id="hero-sub-est">{% if has_obj %}Estimation {{ course.predicted_total_time_formatted }} · {% endif %}</span>{% if has_data %}d'après <b class="text-gray-700">{{ profile.data_points }}</b> sorties Strava{% else %}<span class="text-amber-600">modèle générique — synchronise Strava pour une prédiction personnalisée</span>{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
                 <button onclick="window._sim.exportGpx()" id="btn-export-gpx"
-                        class="h-7 px-2.5 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1">
+                        class="h-9 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
                     GPX
                 </button>
                 <button onclick="window._sim.printPlan()" id="btn-print"
-                        class="h-7 px-2.5 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1">
+                        class="h-9 px-4 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 inline-flex items-center gap-1.5">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659"/></svg>
-                    Imprimer
+                    Imprimer le pack
                 </button>
             </div>
         </div>
-        {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
+        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
+            <span><b class="text-gray-800">{{ course.total_distance_km }}</b> km</span>
+            <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+            <span class="text-blue-500">D- {{ "%.0f"|format(course.total_elevation_loss) }} m</span>
+        </div>
+    </div>
+
+    {# ── Niveau 2 · ajuster (replié, résumé toujours visible) ───────────── #}
+    <details id="adjust" class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if not saved_race_date %} open{% endif %}>
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span id="adjust-summary" class="text-sm text-gray-700 truncate">…</span>
+            <span class="text-xs font-medium text-gray-500 shrink-0 inline-flex items-center gap-1">Ajuster
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
+        </summary>
+        <div class="px-5 pb-5 pt-4 border-t border-gray-100">
+            <div class="flex flex-wrap items-end gap-4">
+                <div class="flex flex-col gap-1">
+                    <label for="race-date" class="text-[11px] font-medium text-gray-500">Date de course</label>
+                    <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}"
+                           onchange="window._sim && window._sim.onConditionsChange()"
+                           class="h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label for="start-time" class="text-[11px] font-medium text-gray-500">Heure de départ</label>
+                    {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
+                    {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
+                    <input type="time" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}" step="60"
+                           onchange="window._sim && window._sim.onConditionsChange()"
+                           class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[11px] font-medium text-gray-500" title="Ton temps cible. Le plan répartit ce temps à effort régulier. Par défaut = temps estimé.">Objectif</label>
+                    <div class="flex items-center gap-1.5 h-9">
+                        <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim && window._sim.syncTarget()"
+                               class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        <span class="text-xs text-gray-400">h</span>
+                        <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim && window._sim.syncTarget()"
+                               class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        <span class="text-xs text-gray-400">min</span>
+                        <button type="button" onclick="window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé"
+                                class="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                        </button>
+                        <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label for="stop-min" class="text-[11px] font-medium text-gray-500" title="Temps d'arrêt moyen à chaque ravito (coché dans Nutrition). Décale les heures de passage.">Arrêt/ravito</label>
+                    <div class="flex items-center gap-1 h-9">
+                        <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes is not none else '' }}" placeholder="0"
+                               onchange="window._sim && window._sim.onConditionsChange()"
+                               class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        <span class="text-xs text-gray-400">min</span>
+                    </div>
+                </div>
+                <button onclick="window._sim.fetchWeather()"
+                        class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
+                    Météo
+                </button>
+                <div id="weather-result" class="flex items-center text-xs text-gray-500 pb-2"></div>
+            </div>
+        </div>
+    </details>
+
+    {% if course.route_coords %}
+    <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div id="elevChart" style="height:150px;"></div>
+    </div>
+    {% endif %}
+
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
+            <p class="text-[11px] text-gray-400">Noms et km modifiables dans le tableau · <a href="#advanced" onclick="document.getElementById('advanced').open = true" class="underline hover:text-gray-600">ajouter un point</a></p>
+        </div>
         <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
         <div id="passage-times-result"></div>
-        <div class="mt-4 pt-4 border-t border-gray-100">
-            <div class="flex flex-col sm:flex-row gap-2">
-                <input type="text" id="cp-name" placeholder="Ajouter un point de passage" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-sm">
-                <div class="flex gap-2">
-                    <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-20 h-8 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
-                    <button onclick="window._sim.addCheckpoint()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-gray-800">+ Ajouter</button>
-                </div>
-            </div>
-        </div>
     </div>
 
-    <!-- Conditions de course -->
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Conditions de course</h3>
-        <div class="flex flex-wrap items-end gap-4">
-            <div class="flex flex-col gap-1">
-                <label for="race-date" class="text-[11px] font-medium text-gray-500">Date de course</label>
-                <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}"
-                       onchange="window._sim && window._sim.onConditionsChange()"
-                       class="h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-            </div>
-            <div class="flex flex-col gap-1">
-                <label for="start-time" class="text-[11px] font-medium text-gray-500">Heure de départ</label>
-                {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
-                {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
-                <input type="time" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}" step="60"
-                       onchange="window._sim && window._sim.onConditionsChange()"
-                       class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
-            </div>
-            <div class="flex flex-col gap-1">
-                <label class="text-[11px] font-medium text-gray-500" title="Ton temps cible. Les temps de passage « Obj. » du plan sont recalés dessus. Par défaut = temps estimé par le modèle.">Objectif</label>
-                {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
-                <div class="flex items-center gap-1.5 h-9">
-                    <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim && window._sim.syncTarget()"
-                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <span class="text-xs text-gray-400">h</span>
-                    <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim && window._sim.syncTarget()"
-                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <span class="text-xs text-gray-400">min</span>
-                    <button type="button" onclick="window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé par le modèle"
-                            class="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 shrink-0">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
-                    </button>
-                    <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
+    {# ── Niveau 3 · avancé ──────────────────────────────────────────────── #}
+    <details id="advanced" class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700">Avancé</span>
+            <span class="text-xs text-gray-400 truncate">points de passage · carte · trace GPX · base de la prédiction</span>
+        </summary>
+        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-5">
+            <div>
+                <p class="text-[11px] font-medium text-gray-500 mb-2">Ajouter un point de passage</p>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="cp-name" placeholder="Nom (ravito, col, …)" class="flex-1 h-9 px-3 rounded-lg border border-gray-200 text-sm">
+                    <div class="flex gap-2">
+                        <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-24 h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
+                        <button onclick="window._sim.addCheckpoint()" class="h-9 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">+ Ajouter</button>
+                    </div>
                 </div>
+                <p class="text-[11px] text-gray-400 mt-1.5">Dans le tableau : clique un nom ou un km pour le modifier, × pour supprimer.</p>
             </div>
-            <div class="flex flex-col gap-1">
-                <label for="stop-min" class="text-[11px] font-medium text-gray-500" title="Temps d'arrêt moyen à chaque ravito (coché dans le plan nutrition). Décale les heures de passage.">Arrêt/ravito</label>
-                <div class="flex items-center gap-1 h-9">
-                    <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes is not none else '' }}" placeholder="0"
-                           onchange="window._sim && window._sim.onConditionsChange()"
-                           class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <span class="text-xs text-gray-400">min</span>
-                </div>
+            {% if course.route_coords %}
+            <div>
+                <p class="text-[11px] font-medium text-gray-500 mb-2">Carte</p>
+                <div class="rounded-lg overflow-hidden border border-gray-200"><div id="courseMap" style="height:380px;"></div></div>
             </div>
-            <button onclick="window._sim.fetchWeather()"
-                    class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
-                Météo
-            </button>
-            <div id="weather-result" class="flex items-center text-xs text-gray-500 pb-2"></div>
+            {% endif %}
+            {% if saved_route_id %}
+            <div>
+                <p class="text-[11px] font-medium text-gray-500 mb-2">Trace GPX</p>
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data"
+                      hx-target="#reimport-error" hx-swap="innerHTML" class="inline">
+                    <label class="h-9 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer"
+                           title="Recharger le fichier GPX pour corriger la trace (distance/D+), en gardant points de passage, objectif et nutrition">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                        Mettre à jour la trace
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()">
+                    </label>
+                </form>
+                <p class="text-[11px] text-gray-400 mt-1.5">Points de passage, objectif et nutrition sont conservés.</p>
+            </div>
+            {% endif %}
+            <div>
+                <p class="text-[11px] font-medium text-gray-500 mb-2">Base de la prédiction</p>
+                {% if has_data %}
+                <p class="text-xs text-gray-500">Ton allure selon la pente est apprise sur <b class="text-gray-700">{{ profile.data_points }}</b> segments de tes activités Strava{% if profile.sport_types_used %} ({{ profile.sport_types_used | join(', ') }}){% endif %} · référence à plat <b class="text-gray-700">{{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km</b>. Puis ajustée pour la fatigue, l'altitude, le terrain, la nuit et la chaleur. Associer une course réelle (onglet Débrief) affine ton profil de fatigue.</p>
+                {% else %}
+                <p class="text-xs text-amber-700">Aucune donnée Strava exploitable (pas de splits sur tes activités récentes) : l'estimation repose sur un modèle générique. Elle deviendra personnelle dès que tes activités seront synchronisées.</p>
+                {% endif %}
+            </div>
         </div>
-    </div>
+    </details>
 
-    <!-- course payload used by the map/chart/recalc/save JS -->
     <input type="hidden" id="courseJsonData" value='{{ course_json }}'>
 </div>
 
@@ -323,7 +337,7 @@ window._sim = {};
         if (chart) { try { chart.destroy(); } catch(e) {} chart = null; }
         var xy = elevData.map(function(p) { return [p.distance_km, p.elevation]; });
         chart = new ApexCharts(el, {
-            chart: { type: 'area', height: 180, fontFamily: 'Inter,sans-serif', toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
+            chart: { type: 'area', height: 150, fontFamily: 'Inter,sans-serif', toolbar: { show: false }, background: 'transparent', zoom: { enabled: false },
                 events: {
                     mouseMove: function(e, ctx, cfg) {
                         if (cfg.dataPointIndex >= 0 && cfg.dataPointIndex < elevData.length) {
@@ -412,7 +426,7 @@ window._sim = {};
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
     function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
-    function recalc() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { updateHero(); updateSummary(); var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -504,6 +518,7 @@ window._sim = {};
         var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600';
         var icon = (w.weather_code !== undefined && w.weather_code !== null) ? '<span class="mr-1" title="condition au départ">' + iconForCat(wmoCategoryJs(w.weather_code)) + '</span>' : '';
         el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· météo par point</span>' : '');
+        updateSummary();
     }
     function fetchWeather() {
         var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return;
@@ -513,13 +528,40 @@ window._sim = {};
     }
     function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
     function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h-vis').value = h; document.getElementById('target-m-vis').value = m; syncTarget(); }
+    // ── HERO + SUMMARY (level 1/2 headline, kept in sync with the inputs) ──
+    function fmtHM(s) { var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); if (m === 60) { h += 1; m = 0; } return h + 'h' + (m < 10 ? '0' : '') + m; }
+    function currentTargetS() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0; return h * 3600 + m * 60; }
+    function hasRealTarget() { var ts = currentTargetS(); return ts > 0 && Math.abs(ts - predictedTotalS) > 60; }
+    function updateHero() {
+        var t = document.getElementById('hero-time'), l = document.getElementById('hero-label'), s = document.getElementById('hero-sub-est');
+        if (!t) return;
+        var real = hasRealTarget();
+        t.textContent = fmtHM(real ? currentTargetS() : predictedTotalS);
+        if (l) l.textContent = real ? 'Objectif' : 'Temps estimé';
+        if (s) s.textContent = real ? ('Estimation ' + fmtHM(predictedTotalS) + ' · ') : '';
+    }
+    function updateSummary() {
+        var el = document.getElementById('adjust-summary'); if (!el) return;
+        var d = (document.getElementById('race-date') || {}).value || '';
+        var st = (document.getElementById('start-time') || {}).value || '06:00';
+        var stop = parseInt((document.getElementById('stop-min') || {}).value) || 0;
+        var parts = [];
+        parts.push('Départ ' + (d ? d.split('-').reverse().join('/') + ' ' : '') + st);
+        parts.push(hasRealTarget() ? 'objectif ' + fmtHM(currentTargetS()) : 'objectif = estimation');
+        parts.push(stop ? stop + ' min par ravito' : 'sans arrêt aux ravitos');
+        if (currentWeather && currentWeather.temperature_c !== undefined && currentWeather.temperature_c !== null) parts.push(currentWeather.temperature_c + '°C');
+        el.textContent = parts.join(' · ');
+    }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (chart) { try { chart.destroy(); } catch(e) {} chart = null; } hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     // Restore saved weather (no re-fetch) so per-checkpoint conditions show on load.
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
-    initChart(); initMap(); recalc();
+    initChart(); recalc();
+    // The map lives under "Avancé": build it on first open (a hidden MapLibre container renders at 0×0).
+    var adv = document.getElementById('advanced');
+    if (adv) adv.addEventListener('toggle', function () { if (!adv.open) return; if (!map) { initMap(); } else { try { map.resize(); } catch (e) {} } });
     window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create
