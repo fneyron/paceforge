@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,14 +33,17 @@ async def simulator_page(
     # Estimate FTP for power tab
     from app.services.power_calculator import estimate_ftp
 
+    from app.services.triathlon import FORMATS, estimate_swim_pace, fmt_pace_100m
+
     ftp = await estimate_ftp(db, user.id)
+    swim_pace_est = await estimate_swim_pace(db, user.id)
 
     # Saved routes
     result = await db.execute(
         select(Route)
         .where(Route.user_id == user.id)
         .order_by(Route.created_at.desc())
-        .limit(20)
+        .limit(40)
     )
     saved_routes = result.scalars().all()
 
@@ -52,6 +55,8 @@ async def simulator_page(
             "ftp": ftp,
             "rider_weight": user.weight_kg or 75,
             "saved_routes": saved_routes,
+            "swim_pace_est": fmt_pace_100m(swim_pace_est),
+            "tri_formats": FORMATS,
         },
     )
 
@@ -541,7 +546,18 @@ async def route_detail_page(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
     route = result.scalar_one_or_none()
-    if not route or not route.course_json:
+    if not route:
+        return HTMLResponse("Parcours non trouvé", status_code=404)
+
+    if route.sport_type == "triathlon":
+        ctx = await _tri_plan_context(request, route, db, user)
+        ctx["compare_activity_id"] = compare
+        return templates.TemplateResponse(
+            request, "simulator_route_tri.html", context=ctx,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    if not route.course_json:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
     if route.sport_type == "bike":
@@ -693,7 +709,7 @@ async def set_live_passage(
 
 # ── Bike plan (road book with wind at time of passage) ──
 
-async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, user: User, start_offset_override: int | None = None) -> dict:
     """Everything the bike plan page needs: prediction at the saved parameters,
     wind taken from the saved forecast at each segment's time of passage, and
     the road-book sections."""
@@ -715,6 +731,9 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     start_hour = route.start_hour if route.start_hour is not None else 8
     start_minute = route.start_minute or 0
     start_offset = start_hour * 3600 + start_minute * 60
+    if start_offset_override is not None:  # e.g. triathlon: bike starts after swim + T1
+        start_offset = int(start_offset_override) % 86400
+        start_hour, start_minute = start_offset // 3600, (start_offset % 3600) // 60
 
     hourly_wind = None
     wind_speed, wind_dir, wind_source = 0.0, None, None
@@ -801,6 +820,227 @@ async def save_bike_plan(
     return templates.TemplateResponse(
         request, "partials/bike_plan.html", context=ctx, headers={"Cache-Control": "no-store"},
     )
+
+
+# ── Triathlon: swim + T1 + bike + T2 + run, one timeline, one fuel plan ──
+
+async def _create_run_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
+    from app.services.gpx import build_course_profile, parse_gpx, snap_waypoints_to_route
+    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
+
+    points, gpx_waypoints = parse_gpx(content)
+    course = build_course_profile(points, name=filename or "Course")
+    snapped = snap_waypoints_to_route(gpx_waypoints, points)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    course = predict_course(course, profile)
+    route = Route(
+        user_id=user.id, name=course.name, total_distance_km=course.total_distance_km,
+        total_elevation_gain=course.total_elevation_gain, total_elevation_loss=course.total_elevation_loss,
+        course_json=json.loads(course.model_dump_json()), sport_type="trail",
+    )
+    db.add(route)
+    await db.flush()
+    for wpt in snapped:
+        db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
+    await db.flush()
+    return route
+
+
+async def _create_bike_route_from_gpx(content: bytes, filename: str, user: User, db: AsyncSession) -> Route:
+    from app.services.gpx import build_course_profile, parse_gpx
+
+    points, _ = parse_gpx(content)
+    course = build_course_profile(points, name=filename or "Parcours vélo")
+    route = Route(
+        user_id=user.id, name=course.name, total_distance_km=course.total_distance_km,
+        total_elevation_gain=course.total_elevation_gain, total_elevation_loss=course.total_elevation_loss,
+        course_json=json.loads(course.model_dump_json()), sport_type="bike",
+    )
+    db.add(route)
+    await db.flush()
+    return route
+
+
+_TRI_IF_BY_FORMAT = {"S": (0.90, 1.00), "M": (0.80, 0.90), "half": (0.75, 0.85), "full": (0.65, 0.75)}
+_POWER_ZONES = [("Z1 Récupération", 0.0, 0.55), ("Z2 Endurance", 0.56, 0.75), ("Z3 Tempo", 0.76, 0.90),
+                ("Z4 Seuil", 0.91, 1.05), ("Z5 VO2max", 1.06, 1.20), ("Z6 Anaérobie", 1.21, 1.50)]
+
+
+@router.post("/api/simulator/triathlon", response_class=HTMLResponse)
+async def create_triathlon(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    name: str = Form(default="Triathlon"),
+    tri_format: str = Form(default="half"),
+    swim_distance_m: float = Form(default=1500),
+    swim_pace: str = Form(default="2:00"),
+    t1_min: float = Form(default=3),
+    t2_min: float = Form(default=2),
+    race_date: str = Form(default=""),
+    start_time: str = Form(default="07:00"),
+    bike_route_id: str = Form(default=""),
+    run_route_id: str = Form(default=""),
+    bike_gpx: UploadFile | None = File(default=None),
+    run_gpx: UploadFile | None = File(default=None),
+):
+    """Create a triathlon from two legs (existing routes or fresh GPX uploads)."""
+    from app.services.triathlon import DEFAULT_T1_S, DEFAULT_T2_S, parse_pace_100m
+
+    def err(msg: str) -> HTMLResponse:
+        return HTMLResponse(f'<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{msg}</div>')
+
+    try:
+        bike = run = None
+        if bike_gpx is not None and bike_gpx.filename:
+            bike = await _create_bike_route_from_gpx(await bike_gpx.read(), bike_gpx.filename, user, db)
+        elif bike_route_id.strip():
+            bike = await _get_owned_route(int(bike_route_id), user, db)
+        if run_gpx is not None and run_gpx.filename:
+            run = await _create_run_route_from_gpx(await run_gpx.read(), run_gpx.filename, user, db)
+        elif run_route_id.strip():
+            run = await _get_owned_route(int(run_route_id), user, db)
+        if not bike or bike.sport_type != "bike":
+            return err("Il manque le parcours vélo : choisis-en un ou importe son GPX.")
+        if not run or run.sport_type == "bike":
+            return err("Il manque le parcours à pied : choisis-en un ou importe son GPX.")
+
+        pace_s = parse_pace_100m(swim_pace) or 120.0
+        st = _clock_to_s(start_time)
+        tri = Route(
+            user_id=user.id, name=(name or "Triathlon").strip()[:255],
+            total_distance_km=round(swim_distance_m / 1000 + bike.total_distance_km + run.total_distance_km, 2),
+            total_elevation_gain=(bike.total_elevation_gain or 0) + (run.total_elevation_gain or 0),
+            total_elevation_loss=(bike.total_elevation_loss or 0) + (run.total_elevation_loss or 0),
+            course_json=None, sport_type="triathlon",
+            race_date=race_date.strip() or None,
+            start_hour=(st // 3600) if st is not None else 7,
+            start_minute=((st % 3600) // 60) if st is not None else 0,
+            params_json={
+                "format": tri_format if tri_format in _TRI_IF_BY_FORMAT else "half",
+                "swim_distance_m": float(swim_distance_m), "swim_pace_s_100m": float(pace_s),
+                "t1_s": int(t1_min * 60) if t1_min is not None else DEFAULT_T1_S,
+                "t2_s": int(t2_min * 60) if t2_min is not None else DEFAULT_T2_S,
+                "bike_route_id": bike.id, "run_route_id": run.id,
+            },
+        )
+        db.add(tri)
+        await db.flush()
+        logger.info("Triathlon %d created for user %d (bike %d, run %d)", tri.id, user.id, bike.id, run.id)
+        return HTMLResponse(status_code=204, headers={"HX-Redirect": f"/simulator/routes/{tri.id}"})
+    except ValueError as e:
+        return err(str(e))
+    except Exception:
+        logger.exception("Triathlon creation failed")
+        return err("Erreur lors de la création du triathlon. Vérifie les fichiers GPX.")
+
+
+async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+    from app.schemas.simulator import CourseProfile
+    from app.services.power_calculator import estimate_ftp
+    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
+    from app.services.triathlon import (
+        DEFAULT_T1_S, DEFAULT_T2_S, FORMATS, build_timeline, fmt_pace_100m, triathlon_nutrition,
+    )
+
+    p = route.params_json or {}
+    bike = await _get_owned_route(int(p["bike_route_id"]), user, db) if p.get("bike_route_id") else None
+    run = await _get_owned_route(int(p["run_route_id"]), user, db) if p.get("run_route_id") else None
+    if bike and (bike.sport_type != "bike" or not bike.course_json):
+        bike = None
+    if run and (run.sport_type == "bike" or not run.course_json):
+        run = None
+
+    swim_m = float(p.get("swim_distance_m") or 1500)
+    pace_s = float(p.get("swim_pace_s_100m") or 120)
+    swim_s = int(round(swim_m / 100.0 * pace_s))
+    t1_s = int(p.get("t1_s") if p.get("t1_s") is not None else DEFAULT_T1_S)
+    t2_s = int(p.get("t2_s") if p.get("t2_s") is not None else DEFAULT_T2_S)
+    start_hour = route.start_hour if route.start_hour is not None else 7
+    start_minute = route.start_minute or 0
+    start_offset = start_hour * 3600 + start_minute * 60
+
+    bike_s, bike_ctx = 0, None
+    if bike:
+        bike_ctx = await _bike_plan_context(request, bike, db, user, start_offset_override=start_offset + swim_s + t1_s)
+        bike_s = int(bike_ctx["cycling"].predicted_total_time_s)
+
+    run_s, run_pred_s = 0, None
+    if run:
+        profile = await build_athlete_gradient_profile(db, user.id)
+        run_start = start_offset + swim_s + t1_s + bike_s + t2_s
+        course = predict_course(
+            CourseProfile(**run.course_json), profile,
+            start_hour=int(run_start // 3600) % 24, start_minute=int((run_start % 3600) // 60),
+        )
+        run_pred_s = int(course.predicted_total_time_s)
+        run_s = int(run.target_time_s or run_pred_s)
+
+    timeline = build_timeline(start_offset, swim_s, t1_s, bike_s, t2_s, run_s)
+    total_s = swim_s + t1_s + bike_s + t2_s + run_s
+    nutrition = triathlon_nutrition(bike_s / 3600, run_s / 3600, user.weight_kg, p.get("carbs_g_per_h"))
+
+    ftp = await estimate_ftp(db, user.id)
+    fmt = p.get("format") if p.get("format") in _TRI_IF_BY_FORMAT else "half"
+    power = None
+    if ftp:
+        lo, hi = _TRI_IF_BY_FORMAT[fmt]
+        power = {
+            "ftp": int(round(ftp.estimated_ftp)), "if_lo": lo, "if_hi": hi,
+            "lo": int(round(ftp.estimated_ftp * lo)), "hi": int(round(ftp.estimated_ftp * hi)),
+            "zones": [{"name": n, "lo": int(round(ftp.estimated_ftp * a)), "hi": int(round(ftp.estimated_ftp * b))} for n, a, b in _POWER_ZONES],
+            "bike_target": bike_ctx["params"]["target_power_watts"] if bike_ctx else None,
+            "bike_if": round(bike_ctx["params"]["target_power_watts"] / ftp.estimated_ftp, 2) if bike_ctx and ftp.estimated_ftp else None,
+        }
+
+    return {
+        "request": request, "user": user, "route": route, "params": p, "fmt": fmt, "formats": FORMATS,
+        "bike": bike, "run": run, "bike_ctx": bike_ctx, "run_pred_s": run_pred_s,
+        "swim_m": swim_m, "swim_pace": fmt_pace_100m(pace_s), "swim_s": swim_s, "t1_s": t1_s, "t2_s": t2_s,
+        "bike_s": bike_s, "run_s": run_s, "total_s": total_s, "timeline": timeline,
+        "nutrition": nutrition, "power": power, "ftp": ftp,
+        "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset,
+    }
+
+
+@router.post("/api/simulator/routes/{route_id}/tri", response_class=HTMLResponse)
+async def save_tri_plan(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    tri_format: str = Form(default="half"),
+    swim_distance_m: float = Form(default=1500),
+    swim_pace: str = Form(default="2:00"),
+    t1_min: float = Form(default=3),
+    t2_min: float = Form(default=2),
+    race_date: str = Form(default=""),
+    start_time: str = Form(default="07:00"),
+    carbs_g_per_h: str = Form(default=""),
+):
+    from app.services.triathlon import parse_pace_100m
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route or route.sport_type != "triathlon":
+        return HTMLResponse("", status_code=404)
+    p = dict(route.params_json or {})
+    p.update({
+        "format": tri_format if tri_format in _TRI_IF_BY_FORMAT else p.get("format", "half"),
+        "swim_distance_m": float(swim_distance_m), "swim_pace_s_100m": float(parse_pace_100m(swim_pace) or p.get("swim_pace_s_100m") or 120),
+        "t1_s": int(max(0.0, t1_min) * 60), "t2_s": int(max(0.0, t2_min) * 60),
+    })
+    try:
+        p["carbs_g_per_h"] = float(carbs_g_per_h.replace(",", ".")) if carbs_g_per_h.strip() else None
+    except ValueError:
+        p["carbs_g_per_h"] = None
+    route.params_json = p
+    route.race_date = race_date.strip() or None
+    st = _clock_to_s(start_time)
+    if st is not None:
+        route.start_hour, route.start_minute = st // 3600, (st % 3600) // 60
+    await db.flush()
+    ctx = await _tri_plan_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/tri_plan.html", context=ctx, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/simulator/routes/{route_id}/print", response_class=HTMLResponse)

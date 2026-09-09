@@ -1,0 +1,156 @@
+{# Triathlon plan — hero · Ajuster · ligne de temps · glucides · puissance vélo · Avancé #}
+{% macro clock(s) %}{% set r = s % 86400 %}{{ '%02d:%02d'|format((r // 3600)|int, ((r % 3600) // 60)|int) }}{% endmacro %}
+{% macro dur(s) %}{% set h = (s // 3600)|int %}{% set m = ((s % 3600) // 60)|int %}{% if h %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
+{% set input_cls = "sim-num h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900" %}
+<div id="tri-plan" class="space-y-4">
+    <div class="flex items-center gap-2">
+        <h1 class="text-lg font-semibold tracking-tight truncate">{{ route.name }}</h1>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold uppercase tracking-wide shrink-0">Triathlon {{ formats[fmt].label.split('·')[0].strip() }}</span>
+    </div>
+
+    {# ── Niveau 1 · le plan ── #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Temps total estimé</p>
+        <p class="text-4xl font-bold tabular-nums leading-none mt-1">{{ (total_s // 3600)|int }}h{{ '%02d'|format(((total_s % 3600) // 60)|int) }}</p>
+        <p class="text-xs text-gray-500 mt-2 tabular-nums">
+            natation <b class="text-gray-700">{{ dur(swim_s) }}</b> · T1 {{ (t1_s // 60)|int }} min · vélo <b class="text-gray-700">{% if bike %}{{ dur(bike_s) }}{% else %}?{% endif %}</b> · T2 {{ (t2_s // 60)|int }} min · course <b class="text-gray-700">{% if run %}{{ dur(run_s) }}{% else %}?{% endif %}</b>
+            {% if run and run.target_time_s %}<span class="text-gray-400">(objectif course)</span>{% endif %}
+        </p>
+        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
+            <span><b class="text-gray-800">{{ (swim_m / 1000)|round(1) }}</b> km nage</span>
+            {% if bike %}<span><b class="text-gray-800">{{ '%.0f'|format(bike.total_distance_km) }}</b> km vélo <span class="text-red-400">+{{ '%.0f'|format(bike.total_elevation_gain) }} m</span></span>{% endif %}
+            {% if run %}<span><b class="text-gray-800">{{ '%.1f'|format(run.total_distance_km) }}</b> km course <span class="text-red-400">+{{ '%.0f'|format(run.total_elevation_gain) }} m</span></span>{% endif %}
+            <span>arrivée <b class="text-gray-800">{{ clock(start_offset_s + total_s) }}</b></span>
+        </div>
+    </div>
+
+    {# ── Niveau 2 · ajuster ── #}
+    <details class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if not route.race_date %} open{% endif %}>
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 sm:truncate">
+                Départ {% if route.race_date %}{% set rd = route.race_date.split('-') %}{{ rd[2] }}/{{ rd[1] }}/{{ rd[0] }} {% else %}<span class="text-gray-400">date non fixée</span> {% endif %}{{ '%02d:%02d'|format(start_hour, start_minute) }}
+                · nage {{ swim_m|int }} m à {{ swim_pace }}/100 m · T1 {{ (t1_s // 60)|int }} min · T2 {{ (t2_s // 60)|int }} min
+                · glucides {% if params.carbs_g_per_h %}{{ params.carbs_g_per_h|int }} g/h (réglé){% else %}{{ nutrition.base_g_per_h }} g/h (auto){% endif %}
+            </span>
+            <span class="text-xs font-medium text-gray-500 shrink-0 inline-flex items-center gap-1">Ajuster
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
+        </summary>
+        <form hx-post="/api/simulator/routes/{{ route.id }}/tri" hx-target="#tri-plan" hx-swap="outerHTML" class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+            <div class="flex flex-wrap items-end gap-4">
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Date
+                    <input type="date" name="race_date" value="{{ route.race_date or '' }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Départ
+                    <input type="time" name="start_time" step="60" value="{{ '%02d:%02d'|format(start_hour, start_minute) }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Format
+                    <select name="tri_format" class="h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
+                        {% for key, f in formats.items() %}<option value="{{ key }}" {% if key == fmt %}selected{% endif %}>{{ f.label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Natation
+                    <span class="flex items-center gap-1"><input type="number" name="swim_distance_m" value="{{ swim_m|int }}" step="50" min="100" class="{{ input_cls }} w-20 font-normal"><span class="text-xs text-gray-400 font-normal">m</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Allure nage
+                    <span class="flex items-center gap-1"><input type="text" name="swim_pace" value="{{ swim_pace }}" placeholder="2:00" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">/100 m</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">T1
+                    <span class="flex items-center gap-1"><input type="number" name="t1_min" value="{{ (t1_s / 60)|round(1) }}" step="0.5" min="0" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">min</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">T2
+                    <span class="flex items-center gap-1"><input type="number" name="t2_min" value="{{ (t2_s / 60)|round(1) }}" step="0.5" min="0" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">min</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Base glucides par heure (vélo = base + 10, course = base − 10). Vide = automatique selon la durée.">Glucides
+                    <span class="flex items-center gap-1"><input type="number" name="carbs_g_per_h" value="{{ params.carbs_g_per_h|int if params.carbs_g_per_h else '' }}" placeholder="{{ nutrition.base_g_per_h }}" step="5" min="30" max="120" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">g/h</span></span>
+                </label>
+                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Recalculer</button>
+            </div>
+            <p class="text-[11px] text-gray-400">La puissance vélo, le vent et l'objectif course se règlent sur les plans de chaque étape (liens dans la ligne de temps). Le vélo est calculé avec le vent prévu à son heure réelle de passage, après la natation et T1.</p>
+        </form>
+    </details>
+
+    {# ── ligne de temps ── #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Ligne de temps</h3>
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                    <th class="text-left py-2 pr-3 font-medium">Étape</th>
+                    <th class="text-right py-2 px-2 font-medium">Départ</th>
+                    <th class="text-right py-2 px-2 font-medium">Durée</th>
+                    <th class="text-right py-2 px-2 font-medium text-gray-900">Fin</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for row in timeline %}
+                {% set leg = bike if row.key == 'bike' else (run if row.key == 'run' else none) %}
+                <tr class="{% if row.key in ('t1', 't2') %}text-gray-400{% endif %}">
+                    <td class="py-2.5 pr-3">
+                        <span class="inline-flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full {% if row.key == 'swim' %}bg-sky-500{% elif row.key == 'bike' %}bg-amber-500{% elif row.key == 'run' %}bg-emerald-500{% else %}bg-gray-300{% endif %}"></span>
+                            <span class="font-medium text-xs">{{ row.label }}</span>
+                            {% if leg %}<a href="/simulator/routes/{{ leg.id }}" class="text-[11px] text-gray-400 underline decoration-gray-300 hover:text-gray-700">{{ leg.name }} →</a>{% elif row.key in ('bike', 'run') %}<span class="text-[11px] text-amber-600">parcours manquant</span>{% endif %}
+                        </span>
+                    </td>
+                    <td class="text-right py-2.5 px-2 tabular-nums text-gray-500">{{ clock(row.start_clock_s) }}</td>
+                    <td class="text-right py-2.5 px-2 tabular-nums whitespace-nowrap">{{ dur(row.duration_s) }}</td>
+                    <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(row.end_clock_s) }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="bg-red-50/60">
+                    <td class="py-2.5 pr-3"><span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="font-semibold text-red-800 text-xs">Arrivée</span></span></td>
+                    <td></td>
+                    <td class="text-right py-2.5 px-2 tabular-nums font-medium">{{ dur(total_s) }}</td>
+                    <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(start_offset_s + total_s) }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    {# ── glucides ── #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Glucides</h3>
+            <p class="text-[11px] text-gray-400">le compteur démarre à T1 · on ne mange pas dans l'eau</p>
+        </div>
+        <p class="text-2xl font-bold tabular-nums">{{ nutrition.total_g }} g <span class="text-sm font-normal text-gray-400">au total ≈ {{ nutrition.gels_equiv }} gels de 25 g</span></p>
+        <ul class="mt-3 space-y-1.5 text-sm">
+            <li class="flex items-start gap-2.5"><span class="text-base leading-5">🚴</span><span>Vélo : <b>{{ nutrition.bike_g_per_h }} g/h</b> × {{ dur(bike_s) }} = <b>{{ nutrition.bike_g }} g</b> <span class="text-gray-400">— c'est là que tu manges le plus</span></span></li>
+            <li class="flex items-start gap-2.5"><span class="text-base leading-5">🏃</span><span>Course : <b>{{ nutrition.run_g_per_h }} g/h</b> × {{ dur(run_s) }} = <b>{{ nutrition.run_g }} g</b> <span class="text-gray-400">— plutôt liquide ou gels, la tolérance baisse</span></span></li>
+            {% if nutrition.breakfast_g %}<li class="flex items-start gap-2.5"><span class="text-base leading-5">🥣</span><span>Petit-déjeuner 2 à 3 h avant : <b>{{ nutrition.breakfast_g[0] }} à {{ nutrition.breakfast_g[1] }} g</b> <span class="text-gray-400">(1 à 2 g par kg)</span></span></li>{% endif %}
+        </ul>
+        {% for n in nutrition.notes %}<p class="mt-2 text-[11px] text-amber-700">{{ n }}</p>{% endfor %}
+        <p class="mt-2 text-[11px] text-gray-400">Base {{ nutrition.base_g_per_h }} g/h ({% if params.carbs_g_per_h %}réglée{% else %}automatique : {{ nutrition.active_h|round(1) }} h d'effort actif{% endif %}). Repères d'entraînement, pas un avis médical.</p>
+    </div>
+
+    {# ── puissance vélo ── #}
+    {% if power %}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Puissance à viser sur le vélo</h3>
+        <p class="text-sm">Pour un {{ formats[fmt].label.split('·')[0].strip() }} : <b>{{ (power.if_lo * 100)|int }} à {{ (power.if_hi * 100)|int }} % de ta FTP</b> ({{ power.ftp }} W estimés) = <b class="tabular-nums">{{ power.lo }} à {{ power.hi }} W</b>.
+            {% if power.bike_target %}Ton plan vélo est réglé à <b>{{ power.bike_target }} W</b> ({{ (power.bike_if * 100)|int }} %){% if power.bike_target < power.lo %} <span class="text-amber-700">— prudent, tu as de la marge</span>{% elif power.bike_target > power.hi %} <span class="text-red-600">— trop haut pour tenir la course derrière</span>{% else %} <span class="text-emerald-700">— dans la zone</span>{% endif %}.{% endif %}
+        </p>
+        {% if bike %}<a href="/simulator/routes/{{ bike.id }}" class="inline-block mt-2 text-xs underline text-gray-500 hover:text-gray-800">Ajuster la puissance sur le plan vélo →</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Niveau 3 · avancé ── #}
+    <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700">Avancé</span>
+            <span class="text-xs text-gray-400 truncate">zones de puissance · hypothèses</span>
+        </summary>
+        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+            {% if power %}
+            <div>
+                <p class="text-[11px] font-medium text-gray-500 mb-2">Zones de puissance (FTP {{ power.ftp }} W)</p>
+                <div class="flex flex-wrap gap-1.5">
+                    {% for z in power.zones %}<span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600">{{ z.name }} <b class="tabular-nums">{{ z.lo }}–{{ z.hi }} W</b></span>{% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            <p class="text-[11px] text-gray-500">Natation = distance × allure. T1 et T2 = tes valeurs. Vélo = plan vélo (puissance cible, CdA, vent à l'heure réelle de passage). Course = objectif si tu en as fixé un sur le plan course, sinon la prédiction personnalisée{% if run_pred_s %} ({{ dur(run_pred_s) }}){% endif %}. Glucides : base selon la durée (60 g/h sous 3 h, 75 entre 3 et 6 h, 80 au-delà), vélo +10, course −10.</p>
+        </div>
+    </details>
+</div>
