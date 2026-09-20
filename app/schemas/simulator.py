@@ -92,6 +92,8 @@ class FtpEstimate(BaseModel):
     confidence: str  # Bonne / Moyenne / Faible
     is_stale: bool = False  # reference ride older than 6 months
     age_months: int | None = None
+    method: str = ""  # how the number was obtained (60 min, 20 min × 0,95, CP…)
+    rides_used: int = 0
 
 
 class CdaEstimate(BaseModel):

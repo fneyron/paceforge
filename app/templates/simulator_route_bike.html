@@ -21,6 +21,40 @@ summary::-webkit-details-marker { display: none; }
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
         Mes courses
     </a>
-    {% include "partials/bike_plan.html" %}
+    <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button id="rtab-plan" onclick="switchRouteTab('plan')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">Plan de course</button>
+        <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
+        <button id="rtab-realise" onclick="switchRouteTab('realise')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
+    </div>
+    <div id="rpanel-plan">
+        {% include "partials/bike_plan.html" %}
+    </div>
+    <div id="rpanel-nutrition" class="hidden">
+        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ route.id }}?v=17" hx-trigger="load" hx-swap="innerHTML">
+            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Plan nutritionnel…</div>
+        </div>
+    </div>
+    <div id="rpanel-realise" class="hidden space-y-4">
+        <div hx-get="/api/simulator/routes/{{ route.id }}/result?v=4" hx-trigger="load" hx-swap="innerHTML"></div>
+    </div>
 </div>
 {% endblock content %}
+
+{% block scripts %}
+<script>
+function switchRouteTab(tab) {
+    ['plan', 'nutrition', 'realise'].forEach(function(t) {
+        document.getElementById('rpanel-' + t).classList.toggle('hidden', t !== tab);
+        var btn = document.getElementById('rtab-' + t);
+        btn.classList.toggle('bg-white', t === tab);
+        btn.classList.toggle('text-gray-900', t === tab);
+        btn.classList.toggle('shadow-sm', t === tab);
+        btn.classList.toggle('text-gray-500', t !== tab);
+    });
+    // the plan may have changed (objective, checkpoints): reload the nutrition card when shown
+    if (tab === 'nutrition' && window.htmx) {
+        window.htmx.ajax('GET', '/partials/simulator/nutrition/{{ route.id }}?v=17', { target: '#nutrition-wrap', swap: 'innerHTML' });
+    }
+}
+</script>
+{% endblock scripts %}

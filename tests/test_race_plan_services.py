@@ -317,3 +317,47 @@ def test_align_and_compare_reference():
 
 def test_effort_km():
     assert math.isclose(effort_km(148, 5000), 198.0)
+
+
+# ── bike: passage sections at checkpoints, objective → power, FTP from streams ──
+
+def test_bike_passage_sections_and_power_solver():
+    from app.services.cycling_simulator import build_bike_passage_sections, predict_cycling_course, solve_power_for_time
+
+    course = _course()
+
+    def predict(w):
+        return predict_cycling_course(course, target_power_watts=w, rider_weight_kg=70, bike_weight_kg=8)
+
+    cycling = predict(200)
+    secs = build_bike_passage_sections(cycling, CPS, 8 * 3600, target_time_s=None, stop_s_per_aid=120, aid_kms={6.0, 10.0, 20.0})
+    assert [s["end_name"] for s in secs] == ["Eau 1", "Col", "Village", "Arrivee"]
+    assert abs(secs[-1]["cumulative_time_s"] - cycling.predicted_total_time_s) < 2
+    assert abs(secs[-1]["clock_time_s"] - (8 * 3600 + secs[-1]["cumulative_time_s"] + 3 * 120)) < 2  # 3 aid stops on the clock
+    # with an objective every leg scales by the same factor
+    secs_t = build_bike_passage_sections(cycling, CPS, 8 * 3600, target_time_s=int(cycling.predicted_total_time_s * 1.2))
+    ratios = [s["adjusted_time_s"] / s["predicted_time_s"] for s in secs_t if s["predicted_time_s"]]
+    assert max(ratios) - min(ratios) < 0.01
+    # objective → required power: faster objective needs more watts, and lands on the objective
+    target = int(cycling.predicted_total_time_s * 0.9)
+    w = solve_power_for_time(predict, target)
+    assert w and w > 200 and abs(predict(w).predicted_total_time_s - target) < 60
+    assert solve_power_for_time(predict, 60) is None  # out of range
+
+
+def test_ftp_from_streams():
+    from app.services.power_calculator import ftp_from_mean_max, mean_max_power
+
+    # 40 min ride: 20 min at 300 W then 20 min at 200 W, 1 Hz samples with a pause gap
+    times = list(range(0, 1200)) + list(range(1500, 2700))
+    watts = [300] * 1200 + [200] * 1200
+    p20 = mean_max_power({"time": times, "watts": watts}, 1200)
+    assert p20 == 300
+    p5 = mean_max_power({"time": times, "watts": watts}, 300)
+    assert p5 == 300
+    assert mean_max_power({"time": times, "watts": watts}, 3600) is None  # ride shorter than the window (pause excluded)
+    ftp, method = ftp_from_mean_max(p5=330, p20=300, p60=None)
+    assert ftp == 290 and "critique" in method  # CP (290) beats 95 % of P20 (285)
+    ftp2, method2 = ftp_from_mean_max(p5=None, p20=None, p60=270)
+    assert ftp2 == 270 and method2 == "60 min"
+    assert ftp_from_mean_max(None, None, None) == (None, "")

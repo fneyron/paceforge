@@ -10,16 +10,42 @@
     </div>
 
     {# ── Niveau 1 · le plan ── #}
+    {% set obj = route.target_time_s %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0">
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Temps estimé</p>
-                <p class="text-4xl font-bold tabular-nums leading-none mt-1">{{ (t // 3600)|int }}h{{ '%02d'|format(((t % 3600) // 60)|int) }}</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider">{% if obj %}Objectif{% else %}Temps estimé{% endif %}</p>
+                <p class="text-4xl font-bold tabular-nums leading-none mt-1">{% if obj %}{{ dur(obj) }}{% else %}{{ (t // 3600)|int }}h{{ '%02d'|format(((t % 3600) // 60)|int) }}{% endif %}</p>
+                {% if obj %}
                 <p class="text-xs text-gray-500 mt-2">
-                    à <b class="text-gray-700">{{ params.target_power_watts }} W</b>
+                    {% if required_power %}il faut tenir <b class="text-gray-900">≈ {{ required_power }} W</b>{% if ftp and ftp.estimated_ftp %} (IF {{ '%.2f'|format(required_power / ftp.estimated_ftp) }}){% endif %} · {% else %}<span class="text-amber-600">objectif hors de portée du modèle (60–600 W) · </span>{% endif %}
+                    estimation <b class="text-gray-700">{{ dur(t) }}</b> à {{ params.target_power_watts }} W
+                </p>
+                <p class="text-xs text-gray-500 mt-1">
+                {% else %}
+                <p class="text-xs text-gray-500 mt-2">
+                    à <b class="text-gray-700">{{ params.target_power_watts }} W</b>{% endif %}
                     {% if ftp %} · FTP estimée <b class="text-gray-700">{{ ftp.estimated_ftp|int }} W</b> <span class="text-gray-400">(fiabilité {{ ftp.confidence|lower }}{% if ftp.is_stale %}, ancienne{% endif %})</span>{% else %} · <span class="text-amber-600">pas de FTP : aucune sortie avec puissance synchronisée</span>{% endif %}
                     {% if cda_est %} · CdA <b class="text-gray-700">{{ '%.2f'|format(params.cda) }}</b> <span class="text-gray-400">estimé sur {{ cda_est.activity_count }} sortie{{ 's' if cda_est.activity_count != 1 else '' }}</span>{% else %} · CdA {{ '%.2f'|format(params.cda) }}{% endif %}
                 </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <details class="relative">
+                    <summary class="list-none h-9 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer select-none">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                        Exporter
+                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-20 text-left">
+                        <p class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Pace strategy montre</p>
+                        <a href="/api/simulator/routes/{{ route.id }}/pace-export?format=gpx" target="_blank" class="block px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX horodaté</b> <span class="text-gray-400">— COROS · Garmin, waypoints avec l'heure cible</span></a>
+                        <a href="/api/simulator/routes/{{ route.id }}/pace-export?format=tcx" target="_blank" class="block px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>TCX course</b> <span class="text-gray-400">— Garmin Virtual Partner</span></a>
+                        <a href="/api/simulator/routes/{{ route.id }}/pace-export?format=csv" target="_blank" class="block px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>CSV</b> <span class="text-gray-400">— km · point · heure cible</span></a>
+                        <div class="my-1 border-t border-gray-100"></div>
+                        <a href="/api/simulator/routes/{{ route.id }}/gpx" target="_blank" class="block px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— parcours + points, sans temps</span></a>
+                    </div>
+                </details>
+                <a href="/simulator/routes/{{ route.id }}/print" target="_blank" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 inline-flex items-center gap-1.5">Imprimer le pack</a>
             </div>
         </div>
         <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 tabular-nums">
@@ -46,13 +72,19 @@
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
             </span>
         </summary>
-        <form hx-post="/api/simulator/routes/{{ route.id }}/bike" hx-target="#bike-plan" hx-swap="outerHTML" class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+        <form hx-post="/api/simulator/routes/{{ route.id }}/bike" hx-target="#bike-plan" hx-swap="outerHTML" hx-trigger="change delay:300ms, submit" class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
             <div class="flex flex-wrap items-end gap-4">
                 <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Date
                     <input type="date" name="race_date" value="{{ route.race_date or '' }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
                 </label>
                 <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500">Heure de départ
                     <input type="time" name="start_time" step="60" value="{{ '%02d:%02d'|format(start_hour, start_minute) }}" class="h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Temps visé : le plan te dit la puissance à tenir. Vide = estimation à la puissance cible.">Objectif
+                    <span class="flex items-center gap-1"><input type="number" name="target_h" value="{{ (obj // 3600)|int if obj else '' }}" min="0" max="99" placeholder="—" class="{{ input_cls }} w-14 font-semibold"><span class="text-xs text-gray-400 font-normal">h</span><input type="number" name="target_m" value="{{ ((obj % 3600) // 60)|int if obj else '' }}" min="0" max="59" placeholder="—" class="{{ input_cls }} w-14 font-semibold"><span class="text-xs text-gray-400 font-normal">min</span></span>
+                </label>
+                <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Arrêt moyen à chaque ravito typé (eau / complet) — décale les heures de passage.">Arrêt/ravito
+                    <span class="flex items-center gap-1"><input type="number" name="stop_minutes" value="{{ route.stop_minutes if route.stop_minutes is not none else '' }}" min="0" max="60" placeholder="0" class="{{ input_cls }} w-14 font-normal"><span class="text-xs text-gray-400 font-normal">min</span></span>
                 </label>
                 <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Puissance que tu comptes tenir. Par défaut 75 % de ta FTP estimée.">Puissance cible
                     <span class="flex items-center gap-1"><input type="number" name="target_power_watts" value="{{ params.target_power_watts }}" step="5" min="50" max="600" class="{{ input_cls }} w-20 font-semibold"><span class="text-xs text-gray-400 font-normal">W</span></span>
@@ -84,11 +116,9 @@
                 <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="D'où vient le vent : 0 = nord, 90 = est, 180 = sud, 270 = ouest">Depuis (manuel)
                     <span class="flex items-center gap-1"><input type="number" name="wind_direction_deg" value="{{ params.wind_direction_deg|int if params.wind_direction_deg is not none else '' }}" step="5" min="0" max="360" placeholder="270" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">°</span></span>
                 </label>
-                <label class="inline-flex items-center gap-1.5 h-9 text-xs text-gray-500"><input type="checkbox" name="refresh_weather" value="1" class="rounded border-gray-300"> Actualiser la météo</label>
-                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Recalculer</button>
             </div>
             {% if weather %}
-            <p class="text-[11px] text-gray-400">Météo {{ weather.source or '' }}{% if weather.date %} du {{ weather.date }}{% endif %} : {{ weather.temperature_c }}°C · vent moyen {{ weather.wind_speed_kmh }} km/h{% if weather.wind_direction_deg is not none %} depuis {{ weather.wind_direction_deg|int }}°{% endif %}. Le vent de prévision (10 m) est ramené à hauteur de cycliste (×0,75) et projeté sur ta direction, heure par heure.</p>
+            <p class="text-[11px] text-gray-400">Météo {{ weather.source or '' }}{% if weather.date %} du {{ weather.date }}{% endif %} : {{ weather.temperature_c }}°C · vent moyen {{ weather.wind_speed_kmh }} km/h{% if weather.wind_direction_deg is not none %} depuis {{ weather.wind_direction_deg|int }}°{% endif %} <button type="submit" name="refresh_weather" value="1" class="underline decoration-gray-300 hover:text-gray-700">actualiser</button>. Vent (10 m) ramené à hauteur de cycliste (×0,75), projeté sur ta direction heure par heure. Tout changement recalcule le plan.</p>
             {% else %}
             <p class="text-[11px] text-gray-400">Fixe une date : la météo est récupérée automatiquement et le vent est appliqué heure par heure sur ta direction.</p>
             {% endif %}
@@ -152,6 +182,99 @@
                 </tbody>
             </table>
         </div>
+    </div>
+
+    {# ── points de passage : ravitos, barrières, autonomie — comme le plan trail ── #}
+    {% set obj_on = obj and passages and passages[0].adjusted_clock_time_s is not none %}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Points de passage</h3>
+            <p class="text-[11px] text-gray-400">{% if obj_on %}heures visées pour {{ dur(obj) }}{% else %}heures estimées à {{ params.target_power_watts }} W{% endif %} · type, assistance, drop bag et barrière par point</p>
+        </div>
+        {% if autonomy and autonomy|length > 1 %}
+        {% set worst = autonomy | max(attribute='km') %}
+        {% set n_alert = autonomy | selectattr('alert') | list | length %}
+        <div class="mb-3 rounded-lg border px-3 py-2 text-xs {% if n_alert %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-gray-200 bg-gray-50 text-gray-700{% endif %}">
+            <span class="font-semibold">Autonomie</span> · plus longue portion sans ravito complet : <b>{{ worst.from_name }} → {{ worst.to_name }}</b>, <b>{{ worst.km }} km</b>{% if worst.time_s %} · ~{{ dur(worst.time_s) }}{% endif %}.
+        </div>
+        {% endif %}
+        <div class="overflow-x-auto -mx-1">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                        <th class="text-left py-2 pr-3 font-medium">Point</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Alt.</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Dist.</th>
+                        <th class="text-right py-2 px-2 font-medium">D+</th>
+                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Section</th>
+                        <th class="text-right py-2 px-2 font-medium text-gray-900">{% if obj_on %}Heure visée{% else %}Heure{% endif %}</th>
+                        <th class="w-8"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    <tr class="bg-green-50/60">
+                        <td class="py-2.5 pr-3"><span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-green-500"></span><span class="font-semibold text-green-800 text-xs">Départ</span></span><p class="text-[10px] text-gray-400 pl-4">km 0</p></td>
+                        <td class="hidden sm:table-cell"></td><td class="hidden sm:table-cell"></td><td></td><td class="hidden sm:table-cell"></td>
+                        <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(start_offset_s) }}</td><td></td>
+                    </tr>
+                    {% for s in passages %}
+                    {% set is_finish = loop.last %}
+                    {% set cp = checkpoints[s.end_checkpoint_index] if s.end_checkpoint_index is not none else none %}
+                    {% set clock_val = s.adjusted_clock_time_s if obj_on else s.clock_time_s %}
+                    {% set sec_time = s.adjusted_time_s if obj_on else s.predicted_time_s %}
+                    <tr class="{% if is_finish %}bg-red-50/60{% else %}hover:bg-gray-50/50{% endif %}">
+                        <td class="py-2.5 pr-3">
+                            {% if is_finish %}
+                            <span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="font-semibold text-red-800 text-xs">Arrivée</span></span><p class="text-[10px] text-gray-400 pl-4">km {{ s.end_km }}</p>
+                            {% else %}
+                            {% set cpid = cp_ids[s.end_checkpoint_index] %}
+                            {% set url = '/api/simulator/routes/' ~ route.id ~ '/checkpoints/' ~ cpid %}
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-amber-500 text-white text-[9px] font-bold inline-flex items-center justify-center shrink-0">{{ loop.index }}</span>
+                                <input type="text" name="name" value="{{ s.end_name }}" hx-post="{{ url }}" hx-trigger="change" hx-target="#bike-plan" hx-swap="outerHTML"
+                                       class="font-medium text-xs w-full min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 focus:outline-none">
+                            </div>
+                            <div class="pl-7 flex items-center gap-1 text-[10px] text-gray-400">km
+                                <input type="number" name="distance_km" step="0.1" min="0.1" value="{{ s.end_km }}" hx-post="{{ url }}" hx-trigger="change" hx-target="#bike-plan" hx-swap="outerHTML"
+                                       class="text-[10px] text-gray-500 tabular-nums w-14 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 focus:outline-none">
+                            </div>
+                            <div class="pl-7 mt-1 flex flex-wrap items-center gap-1">
+                                <select name="kind" hx-post="{{ url }}" hx-trigger="change" hx-target="#bike-plan" hx-swap="outerHTML" title="Type de poste"
+                                        class="h-6 pl-1 pr-5 py-0 rounded border text-[10px] {% if cp.kind and cp.kind != 'none' %}border-gray-300 bg-white text-gray-700{% else %}border-gray-200 bg-transparent text-gray-400{% endif %}">
+                                    {% for val, lbl in kinds.items() %}<option value="{{ val }}" {% if (cp.kind or 'none') == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+                                </select>
+                                <button type="button" hx-post="{{ url }}" hx-vals='{"crew": "{{ 'false' if cp.crew else 'true' }}"}' hx-target="#bike-plan" hx-swap="outerHTML" title="Assistance autorisée"
+                                        class="h-6 px-1.5 rounded border text-[10px] {% if cp.crew %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-400 hover:text-gray-700{% endif %}">Assist.</button>
+                                <button type="button" hx-post="{{ url }}" hx-vals='{"drop_bag": "{{ 'false' if cp.drop_bag else 'true' }}"}' hx-target="#bike-plan" hx-swap="outerHTML" title="Drop bag"
+                                        class="h-6 px-1.5 rounded border text-[10px] {% if cp.drop_bag %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-400 hover:text-gray-700{% endif %}">Drop bag</button>
+                                <label class="inline-flex items-center gap-0.5 text-[10px] text-gray-400" title="Barrière horaire">⏳
+                                    <input type="time" name="cutoff_clock" value="{{ cp.cutoff_clock or '' }}" step="60" hx-post="{{ url }}" hx-trigger="change" hx-target="#bike-plan" hx-swap="outerHTML"
+                                           class="h-6 w-[74px] px-1 py-0 rounded border border-gray-200 bg-transparent text-[10px] tabular-nums text-gray-600">
+                                </label>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{% if s.end_elevation is not none %}{{ s.end_elevation|int }}m{% else %}—{% endif %}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums">{{ '%.1f'|format(s.distance_km) }}</td>
+                        <td class="text-right py-2.5 px-2 tabular-nums text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</td>
+                        <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ dur(sec_time) }}</td>
+                        <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ clock(clock_val) }}
+                            {% if s.cutoff_margin_s is defined and s.cutoff_margin_s is not none %}{% set cm = (s.cutoff_margin_s / 60) | round | int %}
+                            <span class="block text-[9px] font-medium {% if cm < 0 %}text-red-600{% elif cm < 30 %}text-amber-600{% else %}text-gray-400{% endif %}">barrière {{ s.cutoff_clock }} · {% if cm < 0 %}{{ cm }} min ⚠{% else %}+{{ cm }} min{% endif %}</span>
+                            {% endif %}</td>
+                        <td class="text-right align-middle">{% if not is_finish %}<button type="button" hx-post="{{ url }}/delete" hx-target="#bike-plan" hx-swap="outerHTML" class="text-gray-300 hover:text-red-500 text-base leading-none px-1" title="Supprimer">&times;</button>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form hx-post="/api/simulator/routes/{{ route.id }}/checkpoints" hx-target="#bike-plan" hx-swap="outerHTML" class="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row gap-2">
+            <input type="text" name="name" required placeholder="Ajouter un point de passage (ravito, col, …)" class="flex-1 h-9 px-3 rounded-lg border border-gray-200 text-sm">
+            <div class="flex gap-2">
+                <input type="number" name="distance_km" required placeholder="km" step="0.1" min="0.1" max="{{ cycling.total_distance_km }}" class="w-24 h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums">
+                <button type="submit" class="h-9 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 shrink-0">+ Ajouter</button>
+            </div>
+        </form>
     </div>
 
     {# ── Niveau 3 · avancé ── #}

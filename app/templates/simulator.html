@@ -32,10 +32,6 @@
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">
             Vélo
         </button>
-        <button id="tab-tri" onclick="switchTab('tri')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">
-            Triathlon
-        </button>
     </div>
 
     <!-- Trail Tab -->
@@ -45,7 +41,7 @@
         <div class="mb-4">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Mes courses</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {% for r in saved_routes %}
+                {% for r in saved_routes if r.sport_type != 'triathlon' %}
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all relative" id="route-card-{{ r.id }}">
                     <a href="/simulator/routes/{{ r.id }}" class="block cursor-pointer pr-16">
                         <div class="flex items-center gap-2 min-w-0">
@@ -143,80 +139,6 @@
 
     </div>
 
-    <!-- Triathlon Tab -->
-    <div id="panel-tri" class="hidden">
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Nouveau triathlon</h3>
-            <p class="text-sm text-gray-500 mb-4">Natation, vélo et course à pied enchaînés : une seule ligne de temps, et les glucides calculés sur la durée totale.</p>
-            <form hx-post="/api/simulator/triathlon" hx-target="#tri-error" hx-swap="innerHTML" hx-encoding="multipart/form-data" class="space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label class="text-xs font-medium text-gray-500">Nom
-                        <input type="text" name="name" placeholder="Ex : Half d'Aix-les-Bains" class="mt-1 w-full h-9 px-3 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
-                    </label>
-                    <label class="text-xs font-medium text-gray-500">Format
-                        <select name="tri_format" onchange="triFormatChanged(this)" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
-                            {% for key, f in tri_formats.items() %}<option value="{{ key }}" data-swim="{{ f.swim_m }}" {% if key == 'half' %}selected{% endif %}>{{ f.label }}</option>{% endfor %}
-                        </select>
-                    </label>
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="text-xs font-medium text-gray-500">Date
-                            <input type="date" name="race_date" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800">
-                        </label>
-                        <label class="text-xs font-medium text-gray-500">Départ
-                            <input type="time" name="start_time" value="07:00" step="60" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
-                        </label>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <label class="text-xs font-medium text-gray-500">Natation (m)
-                        <input type="number" name="swim_distance_m" id="tri-swim-m" value="1900" step="50" min="100" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
-                    </label>
-                    <label class="text-xs font-medium text-gray-500">Allure (min/100 m)
-                        <input type="text" name="swim_pace" value="{{ swim_pace_est or '2:00' }}" placeholder="2:00" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
-                        {% if swim_pace_est %}<span class="block text-[10px] text-gray-400 font-normal mt-0.5">estimée sur tes nages Strava</span>{% endif %}
-                    </label>
-                    <label class="text-xs font-medium text-gray-500">T1 (min)
-                        <input type="number" name="t1_min" value="3" step="0.5" min="0" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
-                    </label>
-                    <label class="text-xs font-medium text-gray-500">T2 (min)
-                        <input type="number" name="t2_min" value="2" step="0.5" min="0" class="mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-normal text-gray-800 tabular-nums">
-                    </label>
-                </div>
-                {% set bike_routes = saved_routes | selectattr('sport_type', 'equalto', 'bike') | list %}
-                {% set run_routes = saved_routes | rejectattr('sport_type', 'equalto', 'bike') | rejectattr('sport_type', 'equalto', 'triathlon') | list %}
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div class="rounded-lg border border-gray-200 p-3 space-y-2">
-                        <p class="text-xs font-medium text-gray-700">Parcours vélo</p>
-                        {% if bike_routes %}
-                        <select name="bike_route_id" class="w-full h-9 px-2 rounded-lg border border-gray-200 text-sm text-gray-800">
-                            <option value="">— choisir un parcours vélo enregistré —</option>
-                            {% for r in bike_routes %}<option value="{{ r.id }}">{{ r.name }} · {{ '%.0f'|format(r.total_distance_km) }} km</option>{% endfor %}
-                        </select>
-                        <p class="text-[11px] text-gray-400">ou importe un GPX :</p>
-                        {% endif %}
-                        <input type="file" name="bike_gpx" accept=".gpx" class="block w-full text-xs text-gray-500 file:mr-3 file:h-8 file:px-3 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:text-gray-700">
-                    </div>
-                    <div class="rounded-lg border border-gray-200 p-3 space-y-2">
-                        <p class="text-xs font-medium text-gray-700">Parcours à pied</p>
-                        {% if run_routes %}
-                        <select name="run_route_id" class="w-full h-9 px-2 rounded-lg border border-gray-200 text-sm text-gray-800">
-                            <option value="">— choisir un parcours enregistré —</option>
-                            {% for r in run_routes %}<option value="{{ r.id }}">{{ r.name }} · {{ '%.0f'|format(r.total_distance_km) }} km</option>{% endfor %}
-                        </select>
-                        <p class="text-[11px] text-gray-400">ou importe un GPX :</p>
-                        {% endif %}
-                        <input type="file" name="run_gpx" accept=".gpx" class="block w-full text-xs text-gray-500 file:mr-3 file:h-8 file:px-3 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:text-gray-700">
-                    </div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button type="submit" class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 shadow-sm">Créer mon plan triathlon</button>
-                    <p class="text-[11px] text-gray-400">La puissance vélo et l'objectif course se règlent ensuite sur chaque étape.</p>
-                </div>
-                <div id="tri-error"></div>
-            </form>
-        </div>
-    </div>
-
     <!-- Power Tab -->
     <div id="panel-power" class="hidden">
         <!-- FTP Estimate -->
@@ -283,86 +205,6 @@
         <!-- Bike GPX Result -->
         <div id="bike-gpx-result" class="mb-4"></div>
 
-        <!-- Power Calculator Form -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Calculateur mono-segment</h3>
-
-            <form hx-post="/partials/simulator/power-calc"
-                  hx-target="#power-result"
-                  hx-swap="innerHTML"
-                  hx-indicator="#power-loading">
-
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Pente (%)</label>
-                        <input type="number" name="gradient_pct" value="7" step="0.1"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Longueur (km)</label>
-                        <input type="number" name="length_km" value="10" step="0.1" min="0.1"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Poids cycliste (kg)</label>
-                        <input type="number" name="rider_weight_kg" value="{{ rider_weight }}" step="0.5" min="30"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Poids vélo (kg)</label>
-                        <input type="number" name="bike_weight_kg" value="9" step="0.1" min="3"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    </div>
-                </div>
-
-                <!-- Mode toggle -->
-                <div class="mb-4">
-                    <p class="text-xs text-gray-500 mb-2">Mode de calcul</p>
-                    <div class="flex gap-2">
-                        <label class="flex-1">
-                            <input type="radio" name="calc_mode" value="time" class="sr-only peer" checked onchange="toggleCalcMode('time')">
-                            <div class="peer-checked:bg-gray-900 peer-checked:text-white px-3 py-2 rounded-lg border border-gray-200 text-sm text-center cursor-pointer text-gray-600 hover:bg-gray-50 transition-colors">
-                                Temps cible → Watts
-                            </div>
-                        </label>
-                        <label class="flex-1">
-                            <input type="radio" name="calc_mode" value="watts" class="sr-only peer" onchange="toggleCalcMode('watts')">
-                            <div class="peer-checked:bg-gray-900 peer-checked:text-white px-3 py-2 rounded-lg border border-gray-200 text-sm text-center cursor-pointer text-gray-600 hover:bg-gray-50 transition-colors">
-                                Watts cible → Temps
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div id="time-input-group">
-                        <label class="block text-xs text-gray-500 mb-1">Temps cible (minutes)</label>
-                        <input type="number" name="target_time_min" value="30" step="0.5" min="1"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    </div>
-                    <div id="watts-input-group" class="hidden">
-                        <label class="block text-xs text-gray-500 mb-1">Puissance cible (W)</label>
-                        <input type="number" name="target_watts" value="{{ '%.0f'|format(ftp.estimated_ftp) if ftp else 250 }}" step="5" min="50"
-                               class="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                               disabled>
-                    </div>
-                </div>
-
-                <button type="submit"
-                        class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm">
-                    Calculer
-                    <span id="power-loading" class="htmx-indicator ml-1.5">
-                        <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                        </svg>
-                    </span>
-                </button>
-            </form>
-        </div>
-
-        <!-- Power Result -->
-        <div id="power-result" class="mt-4"></div>
     </div>
 </div>
 {% endblock content %}
@@ -370,7 +212,7 @@
 {% block scripts %}
 <script>
 function switchTab(tab) {
-    ['trail', 'power', 'tri'].forEach(function (t) {
+    ['trail', 'power'].forEach(function (t) {
         var panel = document.getElementById('panel-' + t), btn = document.getElementById('tab-' + t);
         if (panel) panel.classList.toggle('hidden', t !== tab);
         if (!btn) return;
@@ -379,11 +221,6 @@ function switchTab(tab) {
         btn.classList.toggle('shadow-sm', t === tab);
         btn.classList.toggle('text-gray-500', t !== tab);
     });
-}
-function triFormatChanged(sel) {
-    var swim = sel.options[sel.selectedIndex].getAttribute('data-swim');
-    var el = document.getElementById('tri-swim-m');
-    if (swim && el) el.value = swim;
 }
 
 function updateFileName(input) {

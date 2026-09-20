@@ -50,7 +50,7 @@
                 <span>{{ course.total_distance_km }} km</span>
                 <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
                 <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
-                <span class="font-semibold text-gray-900">{% if has_target %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ course.predicted_total_time_formatted }}{% endif %}</span>
+                <span class="font-semibold text-gray-900">{% if has_target %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
             </div>
         </div>
 
@@ -92,6 +92,29 @@
             {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if stop_minutes and n_aid %} Inclut {{ stop_minutes }} min d'arrêt × {{ n_aid }} ravitos.{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
         </p>
     </div>
+
+    {% if guide and guide.blocks %}
+    <!-- Pilotage: one line per terrain block, the dials to hold -->
+    <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
+            <p class="text-[11px] font-bold uppercase tracking-wide">Pilotage</p>
+            <p class="text-[9px] text-gray-500">FC commande · VAM et allure = garde-fous · un cadran dépasse → tu ralentis</p>
+        </div>
+        <table class="w-full text-[9.5px] tabular-nums">
+            <tbody class="divide-y divide-gray-100">
+                {% for b in guide.blocks %}
+                <tr class="{% if b.cls == 'stairs' %}bg-red-50{% elif b.cls == 'climb' %}bg-orange-50/60{% elif b.cls == 'descent' %}bg-blue-50/60{% endif %}">
+                    <td class="py-0.5 pr-2 text-gray-600 whitespace-nowrap">km {{ b.start_km }}–{{ b.end_km }}</td>
+                    <td class="py-0.5 pr-2 font-semibold whitespace-nowrap">{{ b.label }}{% if b.gain %} +{{ b.gain }}{% endif %}{% if b.max_grade >= guide.caps.walk_grade %} <span class="text-red-700">{{ b.max_grade|int }} %</span>{% endif %}</td>
+                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}</td>
+                    <td class="py-0.5 pr-2 whitespace-nowrap">{% if b.vam_m_per_h %}{{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %}{{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}</td>
+                    <td class="py-0.5 text-gray-600">{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 
     {% if nutrition_schedule and nutrition_lines %}
     <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
