@@ -1,9 +1,13 @@
 {% import "partials/_weather_icons.html" as wx %}
-{# Hidden registry: JS clones the matching icon for the live (general) weather. #}
+{% import "partials/_plan_glyphs.html" as gl %}
+{# Hidden registries: JS clones the matching icon for the live weather chip and the aid-station glyph. #}
 <div id="wicon-registry" hidden>
     {% for c in ["clear","mostly-clear","partly-cloudy","overcast","fog","drizzle","rain","snow","storm","unknown"] %}
     <span data-cat="{{ c }}">{{ wx.wicon(c, "w-4 h-4") }}</span>
     {% endfor %}
+</div>
+<div id="glyph-registry" hidden>
+    {% for k in ["none","water","full","base"] %}<span data-kind="{{ k }}">{{ gl.glyph(k) }}</span>{% endfor %}
 </div>
 {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
 {% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
@@ -20,102 +24,84 @@
                    class="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5 text-lg font-semibold tracking-tight focus:outline-none transition-colors">
             <svg class="w-3.5 h-3.5 text-gray-300 shrink-0 group-hover:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         </div>
-        <div id="save-status" class="flex items-center gap-1 text-xs text-gray-400 shrink-0"></div>
+        <span id="save-status" class="inline-flex items-center shrink-0 w-3 justify-center"></span>
     </div>
     <div id="reimport-error"></div>
 
-    {# ── header: the numbers + the three conditions, one card ──────────── #}
-    <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
-                <span class="inline-flex items-baseline gap-1.5">
-                    <span id="hero-time" class="text-3xl font-bold tabular-nums leading-none">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</span>
-                    <span id="hero-label" class="text-[11px] uppercase tracking-wider text-gray-400">{% if has_obj %}objectif{% else %}estimé{% endif %}</span>
-                </span>
-                <span id="hero-sub-est" class="text-xs text-gray-500">{% if has_obj %}estimé {{ course.predicted_total_time_formatted }}{% endif %}</span>
-                <span class="text-xs text-gray-500 tabular-nums"><b class="text-gray-800">{{ course.total_distance_km }}</b> km · <span class="text-red-500">+{{ "%.0f"|format(course.total_elevation_gain) }}</span> / <span class="text-blue-500">−{{ "%.0f"|format(course.total_elevation_loss) }}</span> m</span>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-                <details class="relative">
-                    <summary class="list-none h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer select-none">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-                        Exporter
-                    </summary>
-                    <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-30 text-left">
-                        <p class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Montre</p>
-                        <button onclick="window._sim.exportPace('gpx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX horodaté</b> <span class="text-gray-400">— COROS · Garmin, heure cible et consigne à chaque point</span></button>
-                        <button onclick="window._sim.exportPace('tcx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>TCX course</b> <span class="text-gray-400">— Garmin Virtual Partner</span></button>
-                        <button onclick="window._sim.exportPace('csv')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>CSV</b> <span class="text-gray-400">— tableur</span></button>
-                        <div class="my-1 border-t border-gray-100"></div>
-                        <button onclick="window._sim.exportGpx()" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— sans temps</span></button>
-                    </div>
-                </details>
-                <button onclick="window._sim.printPlan()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 inline-flex items-center gap-1.5">Imprimer</button>
-            </div>
+    {# ── hero: the objective, the conditions, the track ─────────────────── #}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div class="order-1 flex items-baseline h-11">
+            <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" title="Objectif · clique pour le modifier"
+                    class="text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900 hover:text-gray-600 transition-colors">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</button>
+            <span id="hero-edit" class="hidden items-baseline text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900">
+                <input type="number" id="target-h" min="0" max="99" value="{{ (tgt // 3600) }}" aria-label="Objectif, heures"
+                       class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] text-right bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes"
+                       class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">
+            </span>
         </div>
-        <div class="mt-2 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500">
-            <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Course le
-                <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}" onchange="window._sim && window._sim.onConditionsChange()"
-                       class="h-7 px-2 rounded-lg border border-gray-200 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900">
-            </label>
-            <span class="text-gray-300 hidden sm:inline">·</span>
-            <label class="inline-flex items-center gap-1.5 whitespace-nowrap" title="Arrêt moyen à chaque ravito typé (eau / complet / base vie) — décale les heures de passage">
-                <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes is not none else '' }}" placeholder="0" onchange="window._sim && window._sim.onConditionsChange()"
-                       class="sim-num h-7 w-12 px-1 rounded-lg border border-gray-200 text-xs tabular-nums text-center text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900"> min par ravito
-            </label>
-            <span class="text-gray-300 hidden sm:inline">·</span>
-            <span id="weather-result" class="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 min-h-7"><span class="text-gray-400">choisis une date pour la météo</span></span>
-            <input type="hidden" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}">
-            <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
-            <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
+        <div class="order-5 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-600 tabular-nums">
+            <span class="inline-flex items-center gap-x-1.5 whitespace-nowrap">
+            <span id="race-wd" class="text-gray-400 hidden"></span>
+            <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}" onchange="window._sim && window._sim.onConditionsChange()" aria-label="Date de la course" title="Date de la course"
+                   class="fit time-inline text-xs text-gray-600 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-gray-900 focus:ring-0 px-0 py-0 h-6">
+            <span class="text-gray-300">·</span>
+            <input type="time" id="start-time" step="60" value="{{ '%02d:%02d'|format(sh, sm) }}" onchange="window._sim && window._sim.setStartTime(this.value)" aria-label="Heure de départ" title="Heure de départ"
+                   class="fit time-inline text-xs text-gray-600 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-gray-900 focus:ring-0 px-0 py-0 h-6">
+            <span class="text-gray-300">·</span>
+            <span class="inline-flex items-center whitespace-nowrap" title="Arrêt moyen à chaque ravito typé (eau / complet / base vie) — décale les heures de passage"><input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes is not none else '' }}" placeholder="0" onchange="window._sim && window._sim.onConditionsChange()" aria-label="Minutes par ravito"
+                   class="sim-num w-5 text-right text-xs text-gray-600 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-gray-900 focus:ring-0 px-0 py-0 h-6">′/ravito</span>
+            </span>
+            <span id="weather-result" class="inline-flex items-center gap-x-1.5 whitespace-nowrap"></span>
         </div>
+        <div class="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-0.5 shrink-0">
+            {% if course.route_coords %}
+            <button id="map-toggle" type="button" onclick="window._sim && window._sim.toggleMap()" aria-pressed="false" title="Carte"
+                    class="w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/></svg>
+            </button>
+            {% endif %}
+            <details class="relative">
+                <summary class="list-none cursor-pointer select-none w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Exporter">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                </summary>
+                <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-30 text-left">
+                    <p class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Montre</p>
+                    <button onclick="window._sim.exportPace('gpx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX horodaté</b> <span class="text-gray-400">— COROS · Garmin, heure cible et consigne à chaque point</span></button>
+                    <button onclick="window._sim.exportPace('tcx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>TCX course</b> <span class="text-gray-400">— Garmin Virtual Partner</span></button>
+                    <button onclick="window._sim.exportPace('csv')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>CSV</b> <span class="text-gray-400">— tableur</span></button>
+                    <div class="my-1 border-t border-gray-100"></div>
+                    <button onclick="window._sim.exportGpx()" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— sans temps</span></button>
+                </div>
+            </details>
+            <button type="button" onclick="window._sim.printPlan()" class="w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Imprimer la bande">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
+            </button>
+        </div>
+        <div class="order-4 hidden lg:block w-full h-0 -my-2"></div>
+        <div class="order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
+            <input type="range" id="obj-slider" min="0" max="100" step="1" aria-label="Objectif" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
+            <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="absolute top-1/2 -translate-y-1/2 w-6 h-6 -ml-3 flex items-center justify-center hidden" title="estimé"><span class="block w-px h-3 bg-gray-400"></span></button>
+        </div>
+        <div class="order-6 text-xs text-gray-500 tabular-nums whitespace-nowrap"><b class="text-gray-800 font-semibold">{{ course.total_distance_km }}</b> km · <span class="text-red-500">+{{ "%.0f"|format(course.total_elevation_gain) }}</span> / <span class="text-blue-500">−{{ "%.0f"|format(course.total_elevation_loss) }}</span> m</div>
     </div>
 
-    {# ── course: map + profile (the profile IS the visual plan) ─────────── #}
+    {# ── the band: profile with the plan on it (map on demand) ───────────── #}
     {% if course.route_coords %}
-    <details id="parcours" class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden map-container" open>
-        <summary class="list-none cursor-pointer select-none px-4 py-2 flex items-center justify-between gap-3 sm:hidden">
-            <span class="text-sm text-gray-700">Carte et profil</span>
-            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </summary>
-        <div id="courseMap" class="h-56 md:h-80"></div>
-        <div class="border-t border-gray-100 p-3 relative">
-            <div id="elevChart" style="height:190px;"></div>
-            <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-400">
-                <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-slate-700/30 align-middle mr-1"></span>nuit</span>
-                <span><span class="inline-block w-2.5 h-1.5 rounded-sm bg-orange-400 align-middle mr-1"></span>montée</span>
-                <span><span class="inline-block w-2.5 h-1.5 rounded-sm bg-red-700 align-middle mr-1"></span>escaliers</span>
-                <span><span class="inline-block w-2.5 h-1.5 rounded-sm bg-blue-400 align-middle mr-1"></span>descente</span>
-                <span class="text-gray-300">·</span>
-                <span>glisse un point pour le déplacer · clique le profil pour en ajouter un</span>
-            </div>
-            <div id="add-pop" class="hidden absolute z-30 rounded-xl border border-gray-200 bg-white shadow-lg p-2 flex items-center gap-1.5">
-                <input type="text" id="add-name" placeholder="Nom du point" class="h-8 w-40 px-2 rounded-lg border border-gray-200 text-xs">
-                <span class="text-[11px] text-gray-400">km <input type="number" id="add-km" step="0.1" min="0.1" class="sim-num h-8 w-16 px-1 rounded-lg border border-gray-200 text-xs tabular-nums text-center"></span>
-                <button onclick="window._sim.addFromPop()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold">Ajouter</button>
-                <button onclick="window._sim.hideAddPop()" class="text-gray-400 hover:text-gray-700 px-1">&times;</button>
-            </div>
-        </div>
-    </details>
+    <div class="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div id="courseMap" class="hidden h-[200px] lg:h-[280px] map-container"></div>
+        <div id="elevChart" class="h-[150px] lg:h-[200px]"></div>
+    </div>
     {% endif %}
 
-    {# ── the plan ───────────────────────────────────────────────────────── #}
-    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
-            <label class="flex items-center gap-2 text-[11px] text-gray-500" title="Fais glisser : toutes les heures se recalculent à effort régulier">
-                <span>objectif</span>
-                <input type="range" id="obj-slider" min="0" max="100" step="1" class="w-36 sm:w-56 accent-gray-900" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
-                <span id="obj-slider-val" class="tabular-nums font-semibold text-gray-800 w-12">{{ '%dh%02d'|format(tgt // 3600, (tgt % 3600) // 60) }}</span>
-            </label>
-        </div>
+    {# ── the plan: one table ─────────────────────────────────────────────── #}
+    <div>
         <div id="passage-times-result" class="transition-opacity"></div>
-        <div class="mt-3 pt-3 border-t border-gray-100 flex flex-col sm:flex-row gap-2">
-            <input type="text" id="cp-name" placeholder="Ajouter un point (ravito, col, …)" class="flex-1 h-8 px-3 rounded-lg border border-gray-200 text-xs">
-            <div class="flex gap-2">
-                <input type="number" id="cp-km" placeholder="km" step="0.1" min="0.1" max="{{ course.total_distance_km }}" class="w-20 h-8 px-2 rounded-lg border border-gray-200 text-xs tabular-nums">
-                <button onclick="window._sim.addCheckpoint()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 shrink-0">+ Ajouter</button>
-            </div>
+        <div class="h-9 flex items-center gap-2 text-xs text-gray-400 pl-1 border-t border-gray-100">
+            <span class="w-5 h-5 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0 leading-none">+</span>
+            <input type="text" id="cp-name" placeholder="Ajouter un point" aria-label="Nom du nouveau point" class="w-36 sm:w-52 bg-transparent border-0 border-b border-transparent focus:border-gray-900 focus:ring-0 px-0 py-0 text-xs text-gray-700 placeholder-gray-400 focus:outline-none">
+            <span>km</span>
+            <input type="number" id="cp-km" placeholder="0,0" step="0.1" min="0.1" max="{{ course.total_distance_km }}" aria-label="km du nouveau point" class="sim-num w-12 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 text-xs text-right tabular-nums text-gray-700 focus:outline-none">
+            <button type="button" onclick="window._sim.addCheckpoint()" class="text-xs font-medium text-gray-500 hover:text-gray-900 px-1">Ajouter</button>
         </div>
     </div>
 
@@ -167,10 +153,16 @@ window._sim = {};
     var liveAnchor = {{ saved_live_json | safe if saved_live_json is defined and saved_live_json else 'null' }};
     var planData = null;
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
+    // phone state, re-applied after every table swap
+    var openCp = null, focusKm = null, scn = 'target';
+    try { scn = localStorage.getItem('pf.scn') || 'target'; } catch (e) {}
+    if (['safe', 'target', 'fast'].indexOf(scn) < 0) scn = 'target';
+    function isCompact() { return window.innerWidth < 1024; }
 
     function fmtHM(s) { var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); if (m === 60) { h += 1; m = 0; } return h + 'h' + (m < 10 ? '0' : '') + m; }
+    function fmtDur(s) { return s >= 3600 ? fmtHM(s) : Math.round(s / 60) + ' min'; }
     function fmtClock(s) { var r = ((s % 86400) + 86400) % 86400, h = Math.floor(r / 3600), m = Math.floor((r % 3600) / 60); return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m; }
-    function dayOf(s) { return Math.floor(s / 86400); }
+    function fmtMargin(s) { var a = Math.abs(s), h = Math.floor(a / 3600), m = Math.floor((a % 3600) / 60); return (s < 0 ? '−' : '+') + h + 'h' + (m < 10 ? '0' : '') + m; }
     function interpElev(km) { return Math.round(elevAt(km)); }
     function findCoordAtKm(km) {
         var n = routeCoords.length; if (!n) return null;
@@ -180,7 +172,7 @@ window._sim = {};
     }
     function idxAtKm(km) { var n = routeCoords.length, lo = 0, hi = n - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; } return lo; }
 
-    // ── MAP ──
+    // ── MAP (on demand) ──
     function initMap() {
         if (!routeCoords.length) return;
         var el = document.getElementById('courseMap'); if (!el || !window.maplibregl) return;
@@ -210,7 +202,6 @@ window._sim = {};
                 map.addLayer({ id: 'route-seg-' + layerIdx, type: 'line', source: 'route-seg-' + layerIdx, paint: { 'line-width': 4, 'line-color': color }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
                 layerIdx++;
             });
-            // highlighted section (linked to the table rows)
             map.addSource('hi-seg', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
             map.addLayer({ id: 'hi-seg', type: 'line', source: 'hi-seg', paint: { 'line-width': 9, 'line-color': '#f59e0b', 'line-opacity': 0.55 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
             new maplibregl.Marker({ color: '#22c55e' }).setLngLat(coords[0]).setPopup(new maplibregl.Popup().setHTML('<b>Départ</b>')).addTo(map);
@@ -238,12 +229,23 @@ window._sim = {};
         }
         map.getSource('hi-seg').setData({ type: 'FeatureCollection', features: feats });
     }
+    function toggleMap(force) {
+        var mc = document.getElementById('courseMap'), btn = document.getElementById('map-toggle'); if (!mc) return;
+        var show = (force === undefined) ? mc.classList.contains('hidden') : !!force;
+        mc.classList.toggle('hidden', !show);
+        if (btn) { btn.setAttribute('aria-pressed', show ? 'true' : 'false'); btn.classList.toggle('bg-gray-100', show); btn.classList.toggle('text-gray-900', show); btn.classList.toggle('text-gray-500', !show); }
+        try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {}
+        if (!show) return;
+        if (!map) {
+            try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
+            if (!map) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
+        } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
+    }
 
-    // ── PROFILE: the visual plan (night, terrain, clocks, cutoffs) ──
+    // ── PROFILE: the band — night, numbered pins, switch line, autonomy brackets ──
     function slopeColor(pct) { if (pct > 15) return '#991b1b'; if (pct > 8) return '#dc2626'; if (pct > 3) return '#f97316'; if (pct > -3) return '#22c55e'; if (pct > -8) return '#3b82f6'; if (pct > -15) return '#2563eb'; return '#7c3aed'; }
-    function bandColor(pct) { if (pct > 12) return '#b91c1c'; if (pct > 6) return '#ef4444'; if (pct > 2) return '#fb923c'; if (pct > -2) return '#d1d5db'; if (pct > -6) return '#93c5fd'; if (pct > -12) return '#3b82f6'; return '#1d4ed8'; }
     var SVGNS = 'http://www.w3.org/2000/svg';
-    var prof = { svg: null, w: 0, h: 0, padL: 46, padR: 10, padT: 30, padB: 30, minE: 0, maxE: 1, cross: null, dot: null, lblBox: null, lblText: null, cpLayer: null, nightLayer: null, blockLayer: null, hiLayer: null, ro: null };
+    var prof = { svg: null, w: 0, h: 0, compact: false, padL: 46, padR: 12, padT: 34, padB: 34, minE: 0, maxE: 1, twoRows: false, cross: null, dot: null, lbl: null, lblBox: null, lblText: null, cpLayer: null, nightLayer: null, autoLayer: null, switchLayer: null, hiLayer: null, ro: null };
     function mk(tag, attrs) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); return el; }
     function xOf(km) { return prof.padL + (km / (totalDistKm || 1)) * (prof.w - prof.padL - prof.padR); }
     function yOf(e) { return prof.padT + (1 - (e - prof.minE) / ((prof.maxE - prof.minE) || 1)) * (prof.h - prof.padT - prof.padB); }
@@ -259,91 +261,136 @@ window._sim = {};
     function gradeAt(km) { var d = 0.25; var a = elevAt(Math.max(0, km - d)), b = elevAt(Math.min(totalDistKm, km + d)); var run = Math.min(totalDistKm, km + d) - Math.max(0, km - d); return run > 0 ? (b - a) / (run * 1000) * 100 : 0; }
     function fmtKm(km) { return km.toFixed(1).replace('.', ','); }
     function fmtM(m) { return Math.round(m).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+    // pins: one row, or two alternated rows when neighbours are closer than 20 px
+    function pinLayout() {
+        var compact = prof.w < 640, xs = checkpoints.map(function (cp) { return xOf(cp.distance_km); }), rows = [], small = [], two = false;
+        for (var i = 0; i < xs.length; i++) {
+            var gap = i > 0 ? xs[i] - xs[i - 1] : Infinity;
+            var lim = compact ? 16 : 20;
+            rows.push(gap < lim ? 1 - rows[i - 1] : 0); small.push(gap < (compact ? 9 : 12));
+            if (gap < lim) two = true;
+        }
+        return { xs: xs, rows: rows, small: small, two: two };
+    }
 
     function initChart() {
         var el = document.getElementById('elevChart');
         if (!el || !elevData.length || !el.clientWidth) return;
         el.innerHTML = '';
-        var w = el.clientWidth || 800, h = el.clientHeight || 190;
-        prof.w = w; prof.h = h;
+        var w = el.clientWidth || 800, h = el.clientHeight || 200, compact = w < 640;
+        prof.w = w; prof.h = h; prof.compact = compact; prof.padL = compact ? 8 : 46; prof.padR = compact ? 8 : 12;
+        prof.twoRows = pinLayout().two; prof.padT = compact ? (prof.twoRows ? 40 : 26) : (prof.twoRows ? 44 : 34); prof.padB = compact ? 24 : 34;
         var minE = Infinity, maxE = -Infinity;
         for (var i = 0; i < elevData.length; i++) { var e = elevData[i].elevation; if (e < minE) minE = e; if (e > maxE) maxE = e; }
-        var pad = Math.max(40, (maxE - minE) * 0.08);
-        prof.minE = Math.floor((minE - pad) / 50) * 50; prof.maxE = Math.ceil((maxE + pad) / 50) * 50;
+        var range = Math.max(1, maxE - minE), pad = Math.max(20, range * 0.06);
+        prof.minE = Math.floor((minE - pad) / 50) * 50; if (minE >= 0) prof.minE = Math.max(0, prof.minE);
+        prof.maxE = Math.ceil((maxE + pad) / 50) * 50;
+        var base = h - prof.padB;
         var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h });
-        svg.style.display = 'block'; svg.style.cursor = 'crosshair'; svg.style.touchAction = 'pan-y';
-        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);
+        svg.style.display = 'block'; svg.style.cursor = 'crosshair'; svg.style.touchAction = 'pan-y'; svg.style.userSelect = 'none';
         var grid = mk('g', {});
-        [prof.minE, (prof.minE + prof.maxE) / 2, prof.maxE].forEach(function (lvl) {
+        // altitude lines on round values (500 · 1 000 · 1 500), never a negative altitude, at most three
+        var step = range > 1500 ? 500 : range > 700 ? 250 : range > 300 ? 100 : 50, levels = [];
+        do { levels = []; for (var lv = Math.ceil((prof.minE + 1) / step) * step; lv <= prof.maxE; lv += step) levels.push(lv); if (levels.length > 3) step *= 2; } while (levels.length > 3);
+        levels.forEach(function (lvl) {
             var y = yOf(lvl);
             grid.appendChild(mk('line', { x1: prof.padL, x2: w - prof.padR, y1: y, y2: y, stroke: gridC, 'stroke-dasharray': '3 3' }));
-            var t = mk('text', { x: prof.padL - 6, y: y + 3, 'text-anchor': 'end', 'font-size': '10', fill: mutedC }); t.textContent = fmtM(lvl) + ' m'; grid.appendChild(t);
+            if (!compact) { var t = mk('text', { x: prof.padL - 6, y: y + 3, 'text-anchor': 'end', 'font-size': '10', fill: mutedC }); t.textContent = fmtM(lvl) + ' m'; grid.appendChild(t); }
         });
-        var stepKm = totalDistKm > 120 ? 20 : totalDistKm > 60 ? 10 : totalDistKm > 25 ? 5 : totalDistKm > 10 ? 2 : 1;
-        for (var k = stepKm; k < totalDistKm; k += stepKm) { var tx = mk('text', { x: xOf(k), y: h - 4, 'text-anchor': 'middle', 'font-size': '10', fill: mutedC }); tx.textContent = k + ' km'; grid.appendChild(tx); }
+        var stepKm = totalDistKm > 120 ? 20 : totalDistKm > 60 ? 10 : totalDistKm > 25 ? 5 : totalDistKm > 10 ? 2 : 1, lastK = 0;
+        for (var k = stepKm; k < totalDistKm; k += stepKm) lastK = k;
+        for (k = stepKm; k < totalDistKm; k += stepKm) { var tx = mk('text', { x: xOf(k), y: base + 12, 'text-anchor': 'middle', 'font-size': '10', fill: mutedC }); tx.textContent = k + (k === lastK ? ' km' : ''); grid.appendChild(tx); }
         svg.appendChild(grid);
         var step = Math.max(1, Math.floor(elevData.length / 400)), pts = [];
         for (i = 0; i < elevData.length; i += step) pts.push(elevData[i]);
         if (pts[pts.length - 1] !== elevData[elevData.length - 1]) pts.push(elevData[elevData.length - 1]);
-        var strips = mk('g', { 'fill-opacity': isDark ? '0.55' : '0.45' }), base = h - prof.padB, d = '';
-        var win = Math.max(0.6, totalDistKm / 60);
-        for (i = 1; i < pts.length; i++) {
-            var a = pts[i - 1], b = pts[i], mid = (a.distance_km + b.distance_km) / 2;
-            var k0 = Math.max(0, mid - win / 2), k1 = Math.min(totalDistKm, mid + win / 2);
-            var pct = (k1 > k0) ? (elevAt(k1) - elevAt(k0)) / ((k1 - k0) * 1000) * 100 : 0;
-            strips.appendChild(mk('polygon', { points: xOf(a.distance_km).toFixed(1) + ',' + yOf(a.elevation).toFixed(1) + ' ' + xOf(b.distance_km).toFixed(1) + ',' + yOf(b.elevation).toFixed(1) + ' ' + xOf(b.distance_km).toFixed(1) + ',' + base + ' ' + xOf(a.distance_km).toFixed(1) + ',' + base, fill: bandColor(pct) }));
-        }
+        var d = '';
         pts.forEach(function (p, i) { d += (i ? 'L' : 'M') + xOf(p.distance_km).toFixed(1) + ' ' + yOf(p.elevation).toFixed(1) + ' '; });
-        svg.appendChild(strips);
+        svg.appendChild(mk('path', { d: d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' ' + base + ' L' + xOf(pts[0].distance_km).toFixed(1) + ' ' + base + ' Z', fill: isDark ? '#1f2937' : '#e5e7eb', stroke: 'none' }));
+        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);  // night sits on the area, under the trace
         svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.5', 'stroke-linejoin': 'round' }));
         prof.hiLayer = mk('g', {}); svg.appendChild(prof.hiLayer);
-        prof.blockLayer = mk('g', {}); svg.appendChild(prof.blockLayer);
+        prof.autoLayer = mk('g', {}); svg.appendChild(prof.autoLayer);
+        prof.switchLayer = mk('g', {}); svg.appendChild(prof.switchLayer);
         prof.cpLayer = mk('g', {}); svg.appendChild(prof.cpLayer);
-        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden' });
-        prof.dot = mk('circle', { r: 4, fill: '#f97316', stroke: '#fff', 'stroke-width': '1.5', visibility: 'hidden' });
-        var lbl = mk('g', { visibility: 'hidden' });
+        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
+        prof.dot = mk('circle', { r: 4, fill: '#f97316', stroke: '#fff', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
+        var lbl = mk('g', { visibility: 'hidden', 'pointer-events': 'none' });
         prof.lblBox = mk('rect', { rx: 4, ry: 4, height: 18, fill: isDark ? '#f3f4f6' : '#111827' });
         prof.lblText = mk('text', { 'font-size': '10', 'font-weight': '600', fill: isDark ? '#111827' : '#ffffff', y: 12.5 });
         lbl.appendChild(prof.lblBox); lbl.appendChild(prof.lblText); prof.lbl = lbl;
         svg.appendChild(prof.cross); svg.appendChild(prof.dot); svg.appendChild(lbl);
 
-        // events: hover, drag a checkpoint, click to add
-        var drag = null;
-        function kmFromEvent(ev) { var r = svg.getBoundingClientRect(); var cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left; return kmOfX(cx * (w / r.width)); }
+        // pointer: hover = crosshair, pin = drag (touch: hold 200 ms), click on the area = new point
+        var drag = null, press = null, holdTimer = null;
+        function kmFromEvent(ev) { var r = svg.getBoundingClientRect(); return kmOfX((ev.clientX - r.left) * (w / r.width)); }
+        function endHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
         svg.addEventListener('pointerdown', function (ev) {
+            var leg = ev.target.closest && ev.target.closest('[data-leg]');
+            if (leg && leg._leg && ev.pointerType === 'touch') { press = null; showLeg(leg._leg); return; }
             var g = ev.target.closest && ev.target.closest('[data-cp]');
-            if (g) { drag = { i: parseInt(g.getAttribute('data-cp'), 10), moved: false }; svg.setPointerCapture(ev.pointerId); ev.preventDefault(); }
+            if (g) {
+                var i = parseInt(g.getAttribute('data-cp'), 10);
+                if (ev.pointerType === 'touch') {
+                    press = { i: i, x: ev.clientX, y: ev.clientY, id: ev.pointerId };
+                    holdTimer = setTimeout(function () { holdTimer = null; if (!press) return; drag = { i: press.i, moved: false }; try { svg.setPointerCapture(press.id); } catch (e) {} press = null; }, 200);
+                } else { drag = { i: i, moved: false }; try { svg.setPointerCapture(ev.pointerId); } catch (e) {} ev.preventDefault(); }
+                return;
+            }
+            press = { i: null, x: ev.clientX, y: ev.clientY, touch: ev.pointerType === 'touch' };
+            if (ev.pointerType === 'touch') scheduleHover(kmFromEvent(ev), true);
         });
         svg.addEventListener('pointermove', function (ev) {
             var km = kmFromEvent(ev);
             if (drag) { drag.moved = true; drag.km = Math.max(0.1, Math.min(totalDistKm - 0.1, km)); moveCpFlag(drag.i, drag.km); showCross(drag.km); return; }
-            scheduleHover(km, true);
+            if (press && press.i !== null && holdTimer && (Math.abs(ev.clientX - press.x) > 6 || Math.abs(ev.clientY - press.y) > 6)) { endHold(); press = null; return; }
+            if (ev.pointerType !== 'touch') scheduleHover(km, true);
         });
         svg.addEventListener('pointerup', function (ev) {
-            if (drag) { var dg = drag; drag = null; if (dg.moved && dg.km !== undefined) editCheckpointKm(dg.i, dg.km); return; }
+            endHold();
+            if (drag) {
+                var dg = drag; drag = null; press = null;
+                if (dg.moved && dg.km !== undefined) editCheckpointKm(dg.i, dg.km);
+                else if (map && checkpoints[dg.i] && !document.getElementById('courseMap').classList.contains('hidden')) { var c = findCoordAtKm(checkpoints[dg.i].distance_km); if (c) map.flyTo({ center: [c[1], c[0]], zoom: 13 }); if (cpMarkerEls[dg.i]) cpMarkerEls[dg.i].togglePopup(); }
+                return;
+            }
+            if (press && press.i === null && !press.touch && Math.abs(ev.clientX - press.x) < 4 && Math.abs(ev.clientY - press.y) < 4) { press = null; addAtKm(kmFromEvent(ev)); return; }
+            press = null;
         });
-        svg.addEventListener('pointerleave', function () { if (!drag) { hideCross(); if (hoverMarker) hoverMarker.getElement().style.display = 'none'; highlightRow(null); } });
-        svg.addEventListener('click', function (ev) {
-            if (ev.target.closest && ev.target.closest('[data-cp]')) { var i = parseInt(ev.target.closest('[data-cp]').getAttribute('data-cp'), 10); if (cpMarkerEls[i]) cpMarkerEls[i].togglePopup(); var c = findCoordAtKm(checkpoints[i].distance_km); if (c && map) map.flyTo({ center: [c[1], c[0]], zoom: 13 }); return; }
-            showAddPop(kmFromEvent(ev), ev);
-        });
+        svg.addEventListener('pointercancel', function () { endHold(); drag = null; press = null; });
+        svg.addEventListener('pointerleave', function (ev) { if (ev.pointerType === 'touch' || drag) return; hideCross(); if (hoverMarker) hoverMarker.getElement().style.display = 'none'; highlightRow(null); });
         el.appendChild(svg); prof.svg = svg;
         drawOverlays();
         if (prof.ro) { try { prof.ro.disconnect(); } catch (e) {} }
         if (window.ResizeObserver) { var rt = null; prof.ro = new ResizeObserver(function () { if (rt) clearTimeout(rt); rt = setTimeout(function () { if (el.clientWidth && Math.abs(el.clientWidth - prof.w) > 4) initChart(); }, 120); }); prof.ro.observe(el); }
+    }
+    function placeLabel(text, cx, y) {
+        prof.lblText.textContent = text;
+        var tw = prof.lblText.getComputedTextLength() + 12;
+        var lx = Math.max(prof.padL, Math.min(prof.w - prof.padR - tw, cx));
+        prof.lblBox.setAttribute('width', tw); prof.lblText.setAttribute('x', 6);
+        prof.lbl.setAttribute('transform', 'translate(' + lx.toFixed(1) + ',' + y + ')');
+        prof.lbl.setAttribute('visibility', 'visible');
+    }
+    function tempAtKm(km) {
+        if (!planData) return null; var best = null, bd = Infinity;
+        planData.points.forEach(function (p) { if (p.temp === null || p.temp === undefined) return; var d = Math.abs(p.km - km); if (d < bd) { bd = d; best = p.temp; } });
+        return best;
     }
     function showCross(km) {
         if (!prof.svg) return;
         var x = xOf(km), y = yOf(elevAt(km));
         prof.cross.setAttribute('x1', x); prof.cross.setAttribute('x2', x); prof.cross.setAttribute('visibility', 'visible');
         prof.dot.setAttribute('cx', x); prof.dot.setAttribute('cy', y); prof.dot.setAttribute('visibility', 'visible');
-        var g = gradeAt(km), clk = planData ? clockAtKm(km) : null;
-        prof.lblText.textContent = 'km ' + fmtKm(km) + ' · ' + fmtM(elevAt(km)) + ' m · ' + (g > 0 ? '+' : '') + Math.round(g) + ' %' + (clk !== null ? ' · ' + fmtClock(clk) : '');
-        var tw = prof.lblText.getComputedTextLength() + 12;
-        var lx = x + 8; if (lx + tw > prof.w - prof.padR) lx = x - 8 - tw;
-        prof.lblBox.setAttribute('width', tw); prof.lblText.setAttribute('x', 6);
-        prof.lbl.setAttribute('transform', 'translate(' + lx.toFixed(1) + ',' + (prof.padT + 2) + ')');
-        prof.lbl.setAttribute('visibility', 'visible');
+        var g = gradeAt(km), clk = planData ? clockAtKm(km) : null, tmp = tempAtKm(km);
+        var text = 'km ' + fmtKm(km) + ' · ' + fmtM(elevAt(km)) + ' m · ' + (g > 0 ? '+' : '') + Math.round(g) + ' %' + (clk !== null ? ' · ' + fmtClock(clk) : '') + (tmp !== null ? ' · ' + Math.round(tmp) + '°' : '');
+        prof.lblText.textContent = text;
+        var tw = prof.lblText.getComputedTextLength() + 12, lx = x + 8; if (lx + tw > prof.w - prof.padR) lx = x - 8 - tw;
+        placeLabel(text, lx, prof.padT + 2);
+    }
+    function showSectionLabel(a, b, gain, loss, sec) {
+        if (!prof.svg) return;
+        placeLabel(fmtKm(b - a) + ' km · +' + gain + '/−' + loss + ' · ' + fmtDur(sec), (xOf(a) + xOf(b)) / 2 - 40, prof.padT + 2);
     }
     function hideCross() { if (!prof.svg) return; prof.cross.setAttribute('visibility', 'hidden'); prof.dot.setAttribute('visibility', 'hidden'); prof.lbl.setAttribute('visibility', 'hidden'); }
     var hoverRaf = null, hoverKm = 0, hoverFromChart = false;
@@ -356,6 +403,16 @@ window._sim = {};
     }
     function syncChart(km) { scheduleHover(km, false); }
     function clearChart() { hideCross(); highlightRow(null); }
+    function legLabel(l) { return fmtKm(l.km) + ' km' + (l.time_s ? ' · ' + fmtDur(l.time_s) : '') + ' sans ravito'; }
+    // phone: no room for a label under the axis, a tap on the bracket shows it for a moment
+    var legTimer = null;
+    function showLeg(l) {
+        if (!prof.svg) return;
+        highlightSection(l.start_km, l.end_km);
+        placeLabel(legLabel(l) + ' · ' + l.from_name + ' → ' + l.to_name, (xOf(l.start_km) + xOf(l.end_km)) / 2 - 80, prof.padT + 2);
+        if (legTimer) clearTimeout(legTimer);
+        legTimer = setTimeout(function () { legTimer = null; hideCross(); highlightSection(null, null); }, 3000);
+    }
     function clockAtKm(km) {
         if (!planData || !planData.points.length) return null;
         var prevKm = 0, prevC = planData.start_offset_s;
@@ -364,37 +421,54 @@ window._sim = {};
     }
     function drawOverlays() {
         if (!prof.svg) return;
+        var lay = pinLayout();
+        if (lay.two !== prof.twoRows) { initChart(); return; }
         var base = prof.h - prof.padB;
-        [prof.nightLayer, prof.blockLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
+        [prof.nightLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
         if (planData) {
-            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#0f172a' : '#334155', 'fill-opacity': isDark ? '0.35' : '0.13' })); });
-            planData.blocks.forEach(function (b) {
-                var col = b.cls === 'climb' ? '#fb923c' : b.cls === 'stairs' ? '#b91c1c' : b.cls === 'descent' ? '#60a5fa' : '#d1d5db';
-                var r = mk('rect', { x: xOf(b.start_km), y: base + 2, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: 5, fill: col, rx: 1 });
-                var tt = mk('title', {}); tt.textContent = (b.cls === 'climb' ? 'Montée' : b.cls === 'stairs' ? 'Escaliers' : b.cls === 'descent' ? 'Descente' : 'Roulant') + ' km ' + b.start_km + '–' + b.end_km + (b.hr_cap ? ' · FC ≤ ' + b.hr_cap : '') + (b.vam ? ' · ' + b.vam + ' m/h' : ''); r.appendChild(tt);
-                prof.blockLayer.appendChild(r);
+            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.45' : '0.22' })); });
+            // autonomy: every stretch without a full aid station is an amber bracket under the axis,
+            // labelled « 29,9 km · 3h32 sans ravito » when it has the room (desktop); a tap shows it on the phone
+            var yBar = prof.compact ? base + 18 : base + 17;
+            var legs = planData.autonomy || [], longest = legs.reduce(function (a, l) { return (!a || l.km > a.km) ? l : a; }, null);
+            legs.forEach(function (l) {
+                var x0 = xOf(l.start_km), x1 = xOf(l.end_km), g = mk('g', { 'data-leg': '', style: 'cursor:help' }), main = l === longest;
+                g._leg = l;
+                g.appendChild(mk('rect', { x: x0, y: yBar, width: Math.max(2, x1 - x0), height: main ? 3 : 2, rx: 1, fill: '#f59e0b', 'fill-opacity': main ? '1' : '0.35' }));
+                if (main && !prof.compact && x1 - x0 >= 120) { var t = mk('text', { x: (x0 + x1) / 2, y: base + 30, 'text-anchor': 'middle', 'font-size': '9', fill: '#92400e' }); t.textContent = legLabel(l); g.appendChild(t); }
+                var tt = mk('title', {}); tt.textContent = l.from_name + ' → ' + l.to_name + ' · ' + legLabel(l) + ' complet'; g.appendChild(tt);
+                g.appendChild(mk('rect', { x: x0, y: base + 12, width: Math.max(2, x1 - x0), height: prof.padB - 12, fill: 'transparent' }));
+                g.addEventListener('mouseenter', function () { if (!isCompact()) highlightSection(l.start_km, l.end_km); });
+                g.addEventListener('mouseleave', function () { if (!legTimer) highlightSection(null, null); });
+                prof.autoLayer.appendChild(g);
             });
         }
-        // checkpoint flags with the planned clock; draggable
+        var switchIdx = (planData && planData.scenarios) ? planData.scenarios.switch_cp_index : null;
         checkpoints.forEach(function (cp, i) {
-            var x = xOf(cp.distance_km), pt = planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] : null;
-            var g = mk('g', { 'data-cp': i, style: 'cursor:grab' });
-            g.appendChild(mk('line', { x1: x, x2: x, y1: prof.padT - 6, y2: base, stroke: '#f59e0b', 'stroke-width': '1', 'stroke-dasharray': '2 2', opacity: '0.9' }));
-            var label = (pt && pt.clock_s !== null) ? fmtClock(pt.clock_s) : ('CP' + (i + 1));
-            var tw = label.length * 6 + 8;
-            var fl = mk('g', { transform: 'translate(' + (x - tw / 2).toFixed(1) + ',' + (prof.padT - 22) + ')' });
+            var x = lay.xs[i], pt = planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] : null;
             var late = pt && pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined && pt.cutoff_margin_s < 0;
-            fl.appendChild(mk('rect', { width: tw, height: 14, rx: 3, ry: 3, fill: late ? '#dc2626' : (pt && pt.kind === 'full' || pt && pt.kind === 'base') ? '#111827' : '#f59e0b' }));
-            var t = mk('text', { x: tw / 2, y: 10, 'text-anchor': 'middle', 'font-size': '9', 'font-weight': '700', fill: '#fff' }); t.textContent = label; fl.appendChild(t);
-            var tt = mk('title', {}); tt.textContent = (i + 1) + ' · ' + cp.name + ' · km ' + cp.distance_km + (pt && pt.cutoff_clock ? ' · barrière ' + pt.cutoff_clock : ''); fl.appendChild(tt);
-            g.appendChild(fl);
-            g.appendChild(mk('rect', { x: x - 8, y: prof.padT - 24, width: 16, height: base - prof.padT + 24, fill: 'transparent' }));
+            var isSwitch = switchIdx !== null && switchIdx === i;
+            var cy = prof.twoRows ? (lay.rows[i] ? (prof.compact ? 9 : 12) : (prof.compact ? 27 : 32)) : (prof.compact ? 14 : 22), r = lay.small[i] ? (prof.compact ? 4 : 3) : (prof.compact ? 7 : 9);
+            if (isSwitch) {
+                var badge = document.querySelector('#plan-table tr[data-switch] [title]');
+                var sl = mk('line', { 'data-switch-line': '', x1: x, x2: x, y1: prof.padT - 4, y2: base, stroke: '#111827', 'stroke-width': '2' });
+                var st = mk('title', {}); st.textContent = badge ? badge.getAttribute('title') : 'Point de bascule'; sl.appendChild(st);
+                prof.switchLayer.appendChild(sl);
+            }
+            var g = mk('g', { 'data-cp': i, style: 'cursor:grab' });
+            if (!isSwitch) g.appendChild(mk('line', { x1: x, x2: x, y1: cy + r, y2: base, stroke: '#9ca3af', 'stroke-width': '1', 'stroke-dasharray': '2 2' }));
+            g.appendChild(mk('circle', { cx: x, cy: cy, r: r, fill: late ? '#dc2626' : isSwitch ? '#111827' : '#f59e0b', stroke: '#fff', 'stroke-width': '1.5' }));
+            if (!lay.small[i]) { var t = mk('text', { x: x, y: cy + 3, 'text-anchor': 'middle', 'font-size': prof.compact ? '8' : '9', 'font-weight': '700', fill: '#fff', 'pointer-events': 'none' }); t.textContent = i + 1; g.appendChild(t); }
+            var tt = mk('title', {});
+            tt.textContent = (i + 1) + ' · ' + cp.name + ' · km ' + fmtKm(cp.distance_km) + (pt && pt.clock_s !== null ? ' · ' + fmtClock(pt.clock_s) : '') + (pt && pt.cutoff_clock ? ' · barrière ' + pt.cutoff_clock + (pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined ? ' (' + fmtMargin(pt.cutoff_margin_s) + ')' : '') : '');
+            g.appendChild(tt);
+            g.appendChild(mk('rect', { x: x - 10, y: 0, width: 20, height: base, fill: 'transparent' }));
             prof.cpLayer.appendChild(g);
         });
     }
     function moveCpFlag(i, km) { var g = prof.cpLayer && prof.cpLayer.querySelector('[data-cp="' + i + '"]'); if (!g) return; var x = xOf(km), old = xOf(checkpoints[i].distance_km); g.setAttribute('transform', 'translate(' + (x - old).toFixed(1) + ',0)'); }
     function highlightSection(startKm, endKm) {
-        if (prof.hiLayer) { while (prof.hiLayer.firstChild) prof.hiLayer.removeChild(prof.hiLayer.firstChild); if (startKm !== null) prof.hiLayer.appendChild(mk('rect', { x: xOf(startKm), y: prof.padT - 4, width: Math.max(2, xOf(endKm) - xOf(startKm)), height: prof.h - prof.padB - prof.padT + 4, fill: '#f59e0b', 'fill-opacity': '0.18' })); }
+        if (prof.hiLayer) { while (prof.hiLayer.firstChild) prof.hiLayer.removeChild(prof.hiLayer.firstChild); if (startKm !== null) prof.hiLayer.appendChild(mk('rect', { x: xOf(startKm), y: prof.padT - 4, width: Math.max(2, xOf(endKm) - xOf(startKm)), height: prof.h - prof.padB - prof.padT + 4, fill: '#f59e0b', 'fill-opacity': '0.18', 'pointer-events': 'none' })); }
         mapHighlight(startKm, endKm);
     }
     var hiRow = null;
@@ -402,35 +476,50 @@ window._sim = {};
         var rows = document.querySelectorAll('#plan-table [data-row]'), target = null;
         if (km !== null) rows.forEach(function (r) { var a = parseFloat(r.getAttribute('data-start-km')), b = parseFloat(r.getAttribute('data-end-km')); if (km > a && km <= b) target = r; });
         if (target === hiRow) return;
-        if (hiRow) hiRow.classList.remove('bg-amber-50');
-        hiRow = target; if (hiRow) hiRow.classList.add('bg-amber-50');
+        if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.remove('bg-amber-50');
+        hiRow = target; if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.add('bg-amber-50');
     }
     function bindRows() {
         document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
             var a = parseFloat(r.getAttribute('data-start-km')), b = parseFloat(r.getAttribute('data-end-km'));
-            r.addEventListener('mouseenter', function () { if (b > a) highlightSection(a, b); });
-            r.addEventListener('mouseleave', function () { highlightSection(null, null); });
+            r.addEventListener('mouseenter', function () { if (isCompact()) return; if (b > a) { highlightSection(a, b); showSectionLabel(a, b, r.getAttribute('data-gain') || 0, r.getAttribute('data-loss') || 0, parseFloat(r.getAttribute('data-sec')) || 0); } });
+            r.addEventListener('mouseleave', function () { if (isCompact()) return; highlightSection(null, null); hideCross(); });
         });
     }
-    // add-point popover on the profile
-    function showAddPop(km, ev) {
-        var pop = document.getElementById('add-pop'); if (!pop) return;
-        var wrap = pop.parentElement.getBoundingClientRect();
-        pop.style.left = Math.max(8, Math.min(wrap.width - 330, ev.clientX - wrap.left - 100)) + 'px'; pop.style.top = (ev.clientY - wrap.top + 12) + 'px';
-        document.getElementById('add-km').value = km.toFixed(1); pop.classList.remove('hidden'); try { document.getElementById('add-name').focus(); } catch (e) {}
-    }
-    function hideAddPop() { var pop = document.getElementById('add-pop'); if (pop) pop.classList.add('hidden'); }
-    function addFromPop() { var n = document.getElementById('add-name').value.trim(), km = parseFloat(document.getElementById('add-km').value); if (!n || isNaN(km)) return; document.getElementById('add-name').value = ''; hideAddPop(); pushCheckpoint(n, km); }
 
     // ── CHECKPOINTS ──
     function pushCheckpoint(n, km) { if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: Math.round(km * 10) / 10, elevation: interpElev(km), kind: 'none', crew: false, drop_bag: false, cutoff_clock: null }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
     function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; pushCheckpoint(n, km); }
-    function removeCheckpoint(i) { checkpoints.splice(i, 1); refresh(); recalc(); scheduleSave(); }
-    function editCheckpointName(i, val) { if (!checkpoints[i]) return; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; refresh(); recalc(); scheduleSave(); }
-    function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } checkpoints[i].distance_km = Math.round(km * 10) / 10; checkpoints[i].elevation = interpElev(km); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
+    function addAtKm(km) { km = Math.round(km * 10) / 10; if (km <= 0 || km >= totalDistKm) return; focusKm = km; pushCheckpoint('Point', km); }
+    function focusNewRow() {
+        if (focusKm === null) return; var km = focusKm, idx = -1; focusKm = null;
+        checkpoints.forEach(function (cp, i) { if (Math.abs(cp.distance_km - km) < 0.05) idx = i; }); if (idx < 0) return;
+        var inp = document.querySelector('#plan-table tr[data-row][data-cp="' + idx + '"] input[type=text]'); if (inp) { try { inp.focus(); inp.select(); } catch (e) {} }
+    }
+    function anchorOn(cp) { return liveAnchor && cp && Math.abs(parseFloat(liveAnchor.anchor_km) - cp.distance_km) < 0.15; }
+    function removeCheckpoint(i) { if (!checkpoints[i]) return; if (anchorOn(checkpoints[i])) { liveAnchor = null; persistLive(); } checkpoints.splice(i, 1); if (openCp === i) openCp = null; else if (openCp !== null && openCp > i) openCp -= 1; refresh(); recalc(); scheduleSave(); }
+    function confirmRemove(btn, i) {
+        if (btn.getAttribute('data-armed')) { removeCheckpoint(i); return; }
+        var html = btn.innerHTML, cls = btn.className, det = btn.closest('tr[data-detail]'), hid = [];
+        btn.setAttribute('data-armed', '1'); btn.innerHTML = 'Supprimer ?';
+        if (det) {
+            // phone detail line: the margin / temperature step aside for 1,5 s, nothing is covered
+            det.querySelectorAll('[data-secondary]').forEach(function (el) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); hid.push(el); } });
+            btn.className = cls + ' text-red-600 font-semibold';
+        } else {
+            btn.className = cls + ' text-red-600 font-semibold opacity-100 whitespace-nowrap px-1 rounded absolute right-0 top-1/2 -translate-y-1/2 bg-white';
+        }
+        setTimeout(function () { if (btn.getAttribute('data-armed')) { btn.removeAttribute('data-armed'); btn.innerHTML = html; btn.className = cls; hid.forEach(function (el) { el.classList.remove('hidden'); }); } }, 1500);
+    }
+    function editCheckpointName(i, el) { if (!checkpoints[i]) return; var val = (el && el.value !== undefined) ? el.value : el; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; if (el && el.value !== undefined) el.value = checkpoints[i].name; refresh(); scheduleSave(); }
+    function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } var cp = checkpoints[i], wasAnchor = anchorOn(cp); cp.distance_km = Math.round(km * 10) / 10; cp.elevation = interpElev(km); if (wasAnchor) { liveAnchor.anchor_km = cp.distance_km; persistLive(); } checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); if (openCp === i) openCp = checkpoints.indexOf(cp); refresh(); recalc(); scheduleSave(); }
     function editCheckpointMeta(i, field, val) {
         if (!checkpoints[i]) return;
-        if (field === 'kind') checkpoints[i].kind = val || 'none';
+        if (field === 'kind') {
+            checkpoints[i].kind = val || 'none';
+            var reg = document.querySelector('#glyph-registry [data-kind="' + checkpoints[i].kind + '"]');
+            if (reg) document.querySelectorAll('#plan-table [data-glyph="' + i + '"]').forEach(function (el) { el.innerHTML = reg.innerHTML; });
+        }
         else if (field === 'crew' || field === 'drop_bag') checkpoints[i][field] = !!val;
         else if (field === 'cutoff_clock') checkpoints[i].cutoff_clock = (val && /^\d{2}:\d{2}$/.test(val)) ? val : null;
         recalc(); scheduleSave();
@@ -449,7 +538,7 @@ window._sim = {};
         });
     }
 
-    // ── RECALC (server) + PLAN DATA (profile overlays, slider bounds) ──
+    // ── RECALC (server) + PLAN DATA ──
     function startParts() { var v = (document.getElementById('start-time') || {}).value || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
     var recalcSeq = 0;
     function recalc() {
@@ -466,50 +555,104 @@ window._sim = {};
         out.classList.add('opacity-60');
         fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) {
             if (seq !== recalcSeq) return;
-            out.innerHTML = html; out.classList.remove('opacity-60');
-            var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-            drawOverlays(); bindRows(); syncSlider();
+            out.classList.remove('opacity-60');
+            var ae = document.activeElement;
+            if (ae && out.contains(ae) && inProgress(ae)) {
+                // he is typing in a field: leave it alone and fetch a fresh table once he leaves it
+                ae.addEventListener('blur', function () { setTimeout(function () { if (seq === recalcSeq) recalc(); }, 0); }, { once: true });
+                return;
+            }
+            swapTable(html);
         }).catch(function () { out.classList.remove('opacity-60'); });
     }
+    // a field is "in progress" when its value differs from what was last committed (change) or it was keyed into moments ago
+    var typingEl = null, typingAt = 0;
+    function inProgress(el) { return el.tagName === 'INPUT' && (el.value !== el.defaultValue || (el === typingEl && Date.now() - typingAt < 1500)); }
+    var renderedCps = [];
+    function focusKey(el) {
+        var tr = el.closest('tr'); if (!tr) return null;
+        var det = tr.hasAttribute('data-detail'), n = parseInt(det ? tr.getAttribute('data-detail') : tr.getAttribute('data-cp'), 10);
+        if (isNaN(n) || !renderedCps[n]) return null;
+        var k = { cp: renderedCps[n], det: det, label: el.getAttribute('aria-label') || '' };
+        try { k.ss = el.selectionStart; k.se = el.selectionEnd; } catch (e) {}
+        return k;
+    }
+    function refocus(k) {
+        if (!k) return; var i = checkpoints.indexOf(k.cp); if (i < 0) return;
+        var el = document.querySelector('#plan-table ' + (k.det ? 'tr[data-detail="' + i + '"]' : 'tr[data-row][data-cp="' + i + '"]') + ' [aria-label="' + k.label + '"]'); if (!el) return;
+        try { el.focus({ preventScroll: true }); if (k.ss !== undefined && k.ss !== null) el.setSelectionRange(k.ss, k.se); } catch (e) {}
+    }
+    function swapTable(html) {
+        var out = document.getElementById('passage-times-result'), ae = document.activeElement, k = (ae && out.contains(ae)) ? focusKey(ae) : null;
+        out.innerHTML = html; renderedCps = checkpoints.slice();
+        var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); refocus(k); focusNewRow();
+    }
 
-    // ── OBJECTIVE SLIDER: instant preview, server on release ──
+    // ── OBJECTIVE: the number is the control ──
     var sliderMin = 0, sliderMax = 0;
     function currentTargetS() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0; return h * 3600 + m * 60; }
+    function hasRealTarget() { var ts = currentTargetS(); return ts > 0 && Math.abs(ts - predictedTotalS) > 60; }
     function syncSlider() {
-        var sl = document.getElementById('obj-slider'); if (!sl || !predictedTotalS) return;
+        var sl = document.getElementById('obj-slider'), est = document.getElementById('obj-est');
+        if (!sl || !predictedTotalS) { if (est) est.classList.add('hidden'); return; }
         sliderMin = Math.round(predictedTotalS * 0.8 / 300) * 300; sliderMax = Math.round(predictedTotalS * 1.35 / 300) * 300;
         var ts = currentTargetS() || predictedTotalS;
+        sliderMin = Math.min(sliderMin, Math.floor(ts / 300) * 300); sliderMax = Math.max(sliderMax, Math.ceil(ts / 300) * 300);
         sl.value = Math.round((ts - sliderMin) / (sliderMax - sliderMin) * 100);
-        var v = document.getElementById('obj-slider-val'); if (v) v.textContent = fmtHM(ts);
+        sl.title = 'Objectif ' + fmtHM(ts) + ' · glisse : toutes les heures se recalculent';
+        if (est) {
+            var p = Math.max(0, Math.min(1, (predictedTotalS - sliderMin) / (sliderMax - sliderMin)));
+            est.style.left = 'calc(6px + ' + (p * 100).toFixed(2) + '% - ' + (p * 12).toFixed(1) + 'px)';
+            est.title = 'estimé ' + fmtHM(predictedTotalS) + ' · clic : revenir à l\'estimation';
+            est.classList.remove('hidden'); est.classList.toggle('pointer-events-none', !hasRealTarget());
+        }
     }
     function sliderToS(val) { var s = sliderMin + (parseFloat(val) / 100) * (sliderMax - sliderMin); return Math.round(s / 300) * 300; }
     function previewObjective(val) {
-        var ts = sliderToS(val), v = document.getElementById('obj-slider-val'); if (v) v.textContent = fmtHM(ts);
+        var ts = sliderToS(val);
         var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(ts);
         if (!planData || !planData.points.length) return;
         var last = planData.points[planData.points.length - 1], totalStops = last.stops_s || 0;
-        var curBudget = (last.cum_s || 0), newBudget = Math.max(60, ts - totalStops), f = curBudget > 0 ? newBudget / curBudget : 1;
+        // race day: the clocks up to the anchor are real, only what remains scales
+        var anchor = document.querySelector('#plan-table tr[data-anchor]'), aCum = anchor ? (parseFloat(anchor.getAttribute('data-cum')) || 0) : 0;
+        var curBudget = (last.cum_s || 0) - aCum, newBudget = Math.max(60, ts - totalStops - aCum), f = curBudget > 0 ? newBudget / curBudget : 1;
         var safe = planData.scenarios ? 1 + planData.scenarios.safe_pct / 100 : null, fast = planData.scenarios ? 1 - planData.scenarios.fast_pct / 100 : null;
-        var rows = document.querySelectorAll('#plan-table [data-row]');
-        rows.forEach(function (r) {
+        document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
+            if (r.hasAttribute('data-passed')) return;
             var cum = parseFloat(r.getAttribute('data-cum')), stops = parseFloat(r.getAttribute('data-stops') || '0'); if (isNaN(cum)) return;
-            var start = planData.start_offset_s, clk = start + cum * f + stops;
+            var start = planData.start_offset_s + aCum, rest = cum - aCum, clk = start + rest * f + stops;
             var inp = r.querySelector('[data-cible]'); if (inp) inp.value = fmtClock(clk);
-            var txt = r.querySelector('[data-cible-text]'); if (txt) txt.textContent = fmtClock(clk) + (dayOf(clk) > 0 ? '+' + dayOf(clk) + 'j' : '');
-            var dsp = r.querySelector('[data-cible-day]'); if (dsp) dsp.textContent = dayOf(clk) > 0 ? '+' + dayOf(clk) + 'j' : '';
-            var sf = r.querySelector('[data-safe]'); if (sf && safe) sf.textContent = fmtClock(start + cum * f * safe + stops) + (dayOf(start + cum * f * safe + stops) > 0 ? '+1j' : '');
-            var fs = r.querySelector('[data-fast]'); if (fs && fast) fs.textContent = fmtClock(start + cum * f * fast + stops) + (dayOf(start + cum * f * fast + stops) > 0 ? '+1j' : '');
+            var txt = r.querySelector('[data-cible-text]'); if (txt) txt.textContent = fmtClock(clk);
+            var sf = r.querySelector('[data-safe]'); if (sf && safe) sf.textContent = fmtClock(start + rest * f * safe + stops);
+            var fs = r.querySelector('[data-fast]'); if (fs && fast) fs.textContent = fmtClock(start + rest * f * fast + stops);
         });
     }
     function commitObjective(val) { var ts = sliderToS(val); setTarget(Math.floor(ts / 3600), Math.round((ts % 3600) / 60)); }
+    var heroPrev = null;
+    function heroEdit() {
+        var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
+        heroPrev = { h: th.value, m: document.getElementById('target-m').value };
+        b.classList.add('hidden'); e.classList.remove('hidden'); e.classList.add('inline-flex');
+        try { th.focus(); th.select(); } catch (err) {}
+    }
+    function heroClose(commit) {
+        var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'); if (!e || e.classList.contains('hidden')) return;
+        e.classList.add('hidden'); e.classList.remove('inline-flex'); b.classList.remove('hidden');
+        var th = document.getElementById('target-h'), tm = document.getElementById('target-m');
+        var h = parseInt(th.value, 10), m = parseInt(tm.value, 10), valid = !isNaN(h) && h >= 0 && h < 100 && (tm.value === '' || (!isNaN(m) && m >= 0 && m < 60)) && (h > 0 || m > 0);
+        if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = m; if (!heroPrev || String(h) !== String(heroPrev.h) || String(m) !== String(heroPrev.m)) setTarget(h, m); }
+        else if (heroPrev) { th.value = heroPrev.h; tm.value = heroPrev.m; }
+    }
 
     // ── SAVE ──
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status'); if (!el) return;
-        if (state === 'saving') { el.innerHTML = '<svg class="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg><span>Enregistrement…</span>'; el.className = 'flex items-center gap-1 text-xs text-gray-400 shrink-0'; }
-        else if (state === 'saved') { el.innerHTML = '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg><span>Enregistré</span>'; el.className = 'flex items-center gap-1 text-xs text-green-600 shrink-0'; }
-        else if (state === 'error') { el.innerHTML = '<span>Erreur d\'enregistrement</span>'; el.className = 'flex items-center gap-1 text-xs text-red-500 shrink-0'; }
+        var cls = state === 'saving' ? 'bg-gray-300 animate-pulse' : state === 'error' ? 'bg-red-500' : 'bg-green-500';
+        var title = state === 'saving' ? 'Enregistrement…' : state === 'error' ? 'Erreur d\'enregistrement' : 'Enregistré';
+        el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full ' + cls + '" title="' + title + '"></span>';
+        el.setAttribute('data-state', state);
     }
     function saveRoute() {
         setStatus('saving');
@@ -532,28 +675,30 @@ window._sim = {};
     function exportPace(fmt) { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
-    // ── START / OBJECTIVE / PASSAGE (inline in the table) ──
+    // ── START / OBJECTIVE / PASSAGE ──
     function setTarget(h, m) { h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; recalc(); scheduleSave(); }
-    function setTargetFrom(el) { var row = el.closest('[data-target-editor]'); if (!row) return; setTarget(row.querySelector('[data-target-h]').value, row.querySelector('[data-target-m]').value); }
     function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
     function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; document.getElementById('start-time').value = v; recalc(); scheduleSave(); }
     function setPassage(cpIndex, km, clock) { if (!clock || !/^\d{2}:\d{2}$/.test(clock)) return; var cp = checkpoints[cpIndex]; liveAnchor = { anchor_km: km, anchor_clock: clock, anchor_name: cp ? cp.name : ('km ' + km) }; recalc(); persistLive(); }
     function clearPassage() { liveAnchor = null; recalc(); persistLive(); }
     function persistLive() { if (!currentRouteId) return; var b = new URLSearchParams(); if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); b.append('anchor_name', liveAnchor.anchor_name || ''); } fetch('/api/simulator/routes/' + currentRouteId + '/live', { method: 'POST', body: b }).catch(function () {}); }
 
-    // ── WEATHER: fetched on its own, at every checkpoint ──
+    // ── WEATHER: one chip ──
     function wmoCategoryJs(code) { if (code === null || code === undefined) return 'unknown'; if (code === 0) return 'clear'; if (code === 1) return 'mostly-clear'; if (code === 2) return 'partly-cloudy'; if (code === 3) return 'overcast'; if (code === 45 || code === 48) return 'fog'; if ([51,53,55,56,57].indexOf(code) >= 0) return 'drizzle'; if ([61,63,65,66,67,80,81,82].indexOf(code) >= 0) return 'rain'; if ([71,73,75,77,85,86].indexOf(code) >= 0) return 'snow'; if (code >= 95) return 'storm'; return 'unknown'; }
     function iconForCat(cat) { var reg = document.getElementById('wicon-registry'); if (!reg) return ''; var el = reg.querySelector('[data-cat="' + cat + '"]'); return el ? el.innerHTML : ''; }
     function renderWeather(w) {
         var el = document.getElementById('weather-result'); if (!el) return;
-        if (!w || w.error) { el.innerHTML = w && w.error ? '<span class="text-red-500">' + w.error + '</span>' : ''; return; }
+        if (!w || w.error) { el.innerHTML = w && w.error ? '<span class="text-gray-300 hidden lg:inline">·</span><button type="button" onclick="window._sim.fetchWeather()" class="text-red-500 hover:text-red-700" title="' + w.error + ' · réessayer">météo ✕</button>' : ''; return; }
         currentWeather = w; currentHeatFactor = w.heat_factor || 1.0; currentHourly = w.hourly || null;
-        var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600';
-        var icon = (w.weather_code !== undefined && w.weather_code !== null) ? '<span title="condition au départ">' + iconForCat(wmoCategoryJs(w.weather_code)) + '</span>' : '';
+        var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : 'text-amber-500';
         var when = '';
         if (w.fetched_at) { var dt = new Date(w.fetched_at * 1000), age = (Date.now() / 1000 - w.fetched_at) / 3600; when = age < 24 ? (age < 1 ? 'à l\'instant' : 'à ' + dt.getHours() + ':' + (dt.getMinutes() < 10 ? '0' : '') + dt.getMinutes()) : ('le ' + dt.getDate() + '/' + (dt.getMonth() + 1)); }
         var scope = (currentHourly && currentHourly.points && currentHourly.points.length) ? 'à chaque point' : 'au départ';
-        el.innerHTML = '<span class="whitespace-nowrap inline-flex items-center gap-1">' + icon + '<span class="text-gray-800">' + w.temperature_c + '°C</span> · ' + w.humidity_pct + '% · <span class="' + cls + ' font-medium" title="effet chaleur sur le temps">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span></span> <span class="text-gray-300 whitespace-nowrap">· ' + scope + (when ? ', ' + when : '') + '</span> <button type="button" onclick="window._sim.fetchWeather()" class="text-gray-400 hover:text-gray-800 underline decoration-gray-300" title="Actualiser la prévision">actualiser</button>';
+        var title = 'prévision ' + scope + (when ? ' · ' + when : '') + (p > 0 ? ' · effet chaleur +' + p + ' %' : '') + ' · clique pour actualiser';
+        el.innerHTML = '<span class="text-gray-300 hidden lg:inline">·</span><button type="button" onclick="window._sim.fetchWeather()" class="inline-flex items-center gap-x-1.5 text-xs text-gray-600 hover:text-gray-900 whitespace-nowrap" title="' + title + '">'
+            + (weatherStale(w) ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" title="prévision à actualiser"></span>' : '')
+            + iconForCat(wmoCategoryJs(w.weather_code)) + '<span class="text-gray-800">' + Math.round(w.temperature_c) + '°</span><span class="text-gray-300">·</span><span class="text-gray-400">' + w.humidity_pct + ' %</span>'
+            + (p > 0 ? '<span class="' + cls + ' font-medium">+' + p + ' %</span>' : '') + '</button>';
     }
     var weatherInFlight = false;
     function fetchWeather() {
@@ -562,45 +707,86 @@ window._sim = {};
         var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d);
         var pts = checkpoints.map(function (cp) { var c = findCoordAtKm(cp.distance_km); return c ? [c[0], c[1], cp.distance_km] : null; }).filter(Boolean);
         var last = routeCoords[routeCoords.length - 1]; pts.push([last[0], last[1], last[2]]); b.append('points_json', JSON.stringify(pts));
-        document.getElementById('weather-result').innerHTML = '<span class="text-gray-400">prévision…</span>';
+        document.getElementById('weather-result').innerHTML = '<span class="text-gray-300 hidden lg:inline">·</span><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>';
         fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { weatherInFlight = false; renderWeather(w); recalc(); scheduleSave(); }).catch(function() { weatherInFlight = false; renderWeather({ error: 'météo indisponible' }); });
     }
     function weatherStale(w) { var d = (document.getElementById('race-date') || {}).value || ''; if (!d) return false; if (!w || w.date !== d || !w.fetched_at) return true; return (Date.now() / 1000 - w.fetched_at) > ((w.source === 'prevision') ? 3 * 3600 : 24 * 3600); }
     function maybeFetchWeather() { if (weatherStale(currentWeather)) fetchWeather(); }
     var lastDate = (document.getElementById('race-date') || {}).value || '';
+    function labelWeekday() {
+        var d = (document.getElementById('race-date') || {}).value || '', el = document.getElementById('race-wd'); if (!el) return;
+        var t = ''; if (d) { try { t = new Date(d + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'short' }); } catch (e) {} }
+        el.textContent = t; el.classList.toggle('hidden', !t);
+    }
+    function labelDays() {
+        var d = (document.getElementById('race-date') || {}).value || '';
+        document.querySelectorAll('#plan-table tr[data-day]').forEach(function (tr) {
+            var n = parseInt(tr.getAttribute('data-day'), 10) || 0, el = tr.querySelector('[data-day-label]'); if (!el) return;
+            var t = 'jour ' + (n + 1);
+            if (d) { try { t = new Date(new Date(d + 'T00:00').getTime() + n * 86400e3).toLocaleDateString('fr-FR', { weekday: 'long' }); } catch (e) {} }
+            el.textContent = t;
+        });
+        if (d) document.querySelectorAll('#plan-table [data-day-of]').forEach(function (el) { var n = parseInt(el.getAttribute('data-day-of'), 10) || 0; try { el.textContent = new Date(new Date(d + 'T00:00').getTime() + n * 86400e3).toLocaleDateString('fr-FR', { weekday: 'short' }); } catch (e) {} });
+    }
     function onConditionsChange() {
         var d = (document.getElementById('race-date') || {}).value || '';
-        if (d !== lastDate) { lastDate = d; if (d) { fetchWeather(); return; } currentWeather = null; currentHourly = null; currentHeatFactor = 1.0; var wr = document.getElementById('weather-result'); if (wr) wr.innerHTML = '<span class="text-gray-400">choisis une date pour la météo</span>'; }
+        labelWeekday();
+        if (d !== lastDate) { lastDate = d; if (d) { fetchWeather(); return; } currentWeather = null; currentHourly = null; currentHeatFactor = 1.0; var wr = document.getElementById('weather-result'); if (wr) wr.innerHTML = ''; }
         recalc(); scheduleSave();
     }
 
-    // ── HERO ──
-    function hasRealTarget() { var ts = currentTargetS(); return ts > 0 && Math.abs(ts - predictedTotalS) > 60; }
-    function updateHero() {
-        var t = document.getElementById('hero-time'), l = document.getElementById('hero-label'), s = document.getElementById('hero-sub-est'); if (!t) return;
-        var real = hasRealTarget();
-        t.textContent = fmtHM(real ? currentTargetS() : predictedTotalS);
-        if (l) l.textContent = real ? 'objectif' : 'estimé';
-        if (s) s.textContent = real ? ('estimé ' + fmtHM(predictedTotalS)) : '';
+    // ── HERO / PHONE STATE ──
+    function updateHero() { var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : predictedTotalS); }
+    function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); }
+    function toggleDetail(ci) { openCp = (openCp === ci) ? null : ci; applyDetail(); }
+    function applyDetail() {
+        var found = false;
+        document.querySelectorAll('#plan-table tr[data-detail]').forEach(function (tr) { var on = parseInt(tr.getAttribute('data-detail'), 10) === openCp; if (on) found = true; tr.classList.toggle('hidden', !on); });
+        if (!found) openCp = null;
+    }
+    function fixSpans() {
+        var t = document.getElementById('plan-table'); if (!t) return; var n = 0;
+        t.querySelectorAll('thead tr:first-child th').forEach(function (th) { if (getComputedStyle(th).display !== 'none') n++; });
+        if (n > 0) t.querySelectorAll('tr[data-day] > td, tr[data-detail] > td').forEach(function (td) { td.colSpan = n; });
+    }
+    function applyPhoneState() {
+        var t = document.getElementById('plan-table'); if (!t) return;
+        var eff = t.querySelector('[data-scn-pill]') ? scn : 'target';
+        t.setAttribute('data-scn', eff); fixSpans();
+        t.querySelectorAll('[data-scn-btn]').forEach(function (b) { var on = b.getAttribute('data-scn-btn') === eff; b.className = 'px-1.5 py-0.5 rounded-full ' + (on ? 'bg-gray-900 text-white' : 'text-gray-400'); });
+        applyDetail();
     }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
-    var parcours = document.getElementById('parcours');
-    if (parcours && window.innerWidth < 640) parcours.removeAttribute('open');  // phone: the table first
-    function initCourse() { try { initChart(); } catch (e) { console.error('profile init failed', e); } try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); var mc = document.getElementById('courseMap'); if (mc) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; } }
-    if (!parcours || parcours.open) initCourse();
-    if (parcours) parcours.addEventListener('toggle', function () { if (parcours.open) { if (!prof.svg) initCourse(); else if (map) map.resize(); } });
-    // close open checkpoint cards / add popover when clicking elsewhere
-    document.addEventListener('click', function (ev) {
-        document.querySelectorAll('#plan-table details.cp-card[open]').forEach(function (d) { if (!d.contains(ev.target)) d.removeAttribute('open'); });
-        var pop = document.getElementById('add-pop'); if (pop && !pop.classList.contains('hidden') && !pop.contains(ev.target) && !(ev.target.closest && ev.target.closest('#elevChart'))) hideAddPop();
+    labelWeekday();
+    try { initChart(); } catch (e) { console.error('profile init failed', e); }
+    var wantMap = false; try { wantMap = localStorage.getItem('pf.map') === '1' && window.innerWidth >= 1024; } catch (e) {}
+    if (wantMap) toggleMap(true);
+    var rsT = null, wasCompact = isCompact();
+    window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
+    var ptr = document.getElementById('passage-times-result');
+    ptr.addEventListener('keydown', function (ev) { if (ev.target.tagName === 'INPUT') { typingEl = ev.target; typingAt = Date.now(); } }, true);
+    ptr.addEventListener('change', function (ev) { var el = ev.target; if (el.tagName === 'INPUT') { try { el.defaultValue = el.value; } catch (e) {} if (typingEl === el) typingEl = null; } }, true);
+    // phone: tap a row (outside its fields) → its detail line
+    ptr.addEventListener('click', function (ev) {
+        if (!isCompact()) return;
+        if (ev.target.closest && ev.target.closest('input,select,button,a,label,summary')) return;
+        highlightSection(null, null); hideCross();
+        var tr = ev.target.closest && ev.target.closest('tr[data-row]'); if (!tr || !tr.getAttribute('data-cp')) return;
+        toggleDetail(parseInt(tr.getAttribute('data-cp'), 10));
     });
+    var he = document.getElementById('hero-edit');
+    if (he) {
+        he.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); heroClose(true); } else if (ev.key === 'Escape') { ev.preventDefault(); heroClose(false); } });
+        he.addEventListener('focusout', function () { setTimeout(function () { if (!he.contains(document.activeElement)) heroClose(true); }, 0); });
+    }
+    ['cp-name', 'cp-km'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addCheckpoint(); } }); });
     recalc();
     maybeFetchWeather();
-    window._sim = { addCheckpoint: addCheckpoint, addFromPop: addFromPop, hideAddPop: hideAddPop, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, setTargetFrom: setTargetFrom, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>

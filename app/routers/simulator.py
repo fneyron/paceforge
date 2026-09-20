@@ -129,6 +129,12 @@ async def gpx_upload(
         )
 
 
+def _script_json(obj) -> str:
+    """JSON for a <script> block: '</' would end the block (a checkpoint named
+    '</script>…' must not run)."""
+    return json.dumps(obj).replace("</", "<\\/")
+
+
 def _clock_to_s(clock: str) -> int | None:
     """'HH:MM' → seconds since midnight, None if malformed."""
     try:
@@ -200,8 +206,6 @@ async def passage_times(
         )
         has_weather = any(s.get("temperature_c") is not None for s in sections)
         start_offset_s = start_hour * 3600 + start_minute * 60
-        sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
-        autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
 
         # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
         replan = None
@@ -214,6 +218,10 @@ async def passage_times(
                     sections, start_hour * 3600 + start_minute * 60, target_time_s,
                     anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
                 )
+        # Cutoff margins and autonomy legs read the (re)planned clocks, so they
+        # come after the replan: on race day the margin is THE number he checks.
+        sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
+        autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
 
         from app.services.checkpoints import KINDS
         from app.services.race_simulator import build_scenarios
@@ -234,12 +242,12 @@ async def passage_times(
         dflt = default_hr_caps(zones.get("max_hr"))
         caps = {k: (int(params[k]) if params.get(k) else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
         guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
-        plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios)
+        plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
         return templates.TemplateResponse(
             request,
             "partials/passage_times.html",
             context={
-                "plan_data": json.dumps(plan_data),
+                "plan_data": _script_json(plan_data),
                 "sections": sections,
                 "has_target": (target_time_s is not None) or replan is not None,
                 "replan": replan,
@@ -508,7 +516,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "course": course,
         "profile": profile,
         "course_json": course.model_dump_json(),
-        "gpx_waypoints": json.dumps(cps),
+        "gpx_waypoints": _script_json(cps),
         "geojson": json.dumps(geojson),
         "saved_route_id": route.id,
         "saved_route_name": route.name,
@@ -517,9 +525,9 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "saved_start_hour": route.start_hour,
         "saved_start_minute": route.start_minute,
         "saved_sport_type": route.sport_type,
-        "saved_weather_json": json.dumps(route.weather_json) if route.weather_json else None,
+        "saved_weather_json": _script_json(route.weather_json) if route.weather_json else None,
         "saved_stop_minutes": route.stop_minutes,
-        "saved_live_json": json.dumps(route.live_json) if route.live_json else None,
+        "saved_live_json": _script_json(route.live_json) if route.live_json else None,
         "race_calibration": getattr(profile, "race_calibration", None),
         "params": route.params_json or {},
     }
@@ -1128,6 +1136,10 @@ async def print_route_plan(
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
             )
             live_applied = rp is not None
+            if live_applied:  # margins against the recalculated clocks
+                from app.services.checkpoints import annotate_cutoffs
+
+                sections = annotate_cutoffs(sections, cps, start_offset_s)
     has_weather = any(s.get("temperature_c") is not None for s in sections)
     pp = route.params_json or {}
     scenarios = None if live_applied else build_scenarios(
@@ -1245,9 +1257,13 @@ async def get_weather(
             points = [p for p in json.loads(points_json) if isinstance(p, list | tuple) and len(p) >= 3][:24]
         except (ValueError, TypeError):
             points = None
-    weather = await get_weather_forecast(lat, lon, date, points=points)
+    try:
+        weather = await get_weather_forecast(lat, lon, date, points=points)
+    except Exception:  # the service already logs; the page shows a retry chip either way
+        weather = None
     if not weather:
-        return JSONResponse({"error": "Impossible de récupérer la météo"}, status_code=500)
+        # 503, not 500: the upstream is unreachable, nothing is broken here — the client reads the error field
+        return JSONResponse({"error": "météo indisponible"}, status_code=503)
     return JSONResponse(weather)
 
 

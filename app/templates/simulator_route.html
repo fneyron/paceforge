@@ -15,6 +15,28 @@ summary::-webkit-details-marker { display: none; }
 /* Inline time fields: no picker icon, the value alone. */
 .time-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .time-inline { -webkit-appearance: none; appearance: none; }
+input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none; }
+/* An empty cutoff shows a dash on the phone detail line and when its desktop row is hovered — never a column of dashes. */
+.time-empty:not(:focus)::-webkit-datetime-edit { color: transparent; }
+.time-empty:not(:focus)::before { content: '—'; color: #d1d5db; line-height: 1.5rem; }
+.time-empty:not(:focus) { display: inline-flex; align-items: center; }
+@media (min-width: 1024px) { #plan-table tr[data-row]:not(:hover) .time-empty:not(:focus)::before { content: ''; } }
+/* Hero conditions: date / start / minutes take the width of their value, so the separators sit next to them. */
+.fit { field-sizing: content; }
+/* Objective: a 2 px track under the hero number, a 12 px black thumb. */
+#obj-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; margin: 0; outline: none; display: block; cursor: pointer; }
+#obj-slider::-webkit-slider-runnable-track { height: 2px; background: #e5e7eb; border-radius: 1px; }
+#obj-slider::-moz-range-track { height: 2px; background: #e5e7eb; border-radius: 1px; }
+#obj-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: #111827; border: 2px solid #fff; box-shadow: 0 0 0 1px #111827; cursor: grab; }
+#obj-slider::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #111827; border: 2px solid #fff; box-shadow: 0 0 0 1px #111827; cursor: grab; }
+#obj-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(17, 24, 39, .2); }
+#plan-table tr[data-day] td { padding: 0; }
+/* Phone / tablet: one clock column, picked with the pill in the header. */
+@media (max-width: 1023px) {
+  #plan-table td.col-safe, #plan-table td.col-fast { display: none; }
+  #plan-table[data-scn=safe] td.col-safe, #plan-table[data-scn=fast] td.col-fast { display: table-cell; }
+  #plan-table[data-scn=safe] td.col-target, #plan-table[data-scn=fast] td.col-target { display: none; }
+}
 </style>
 {% endblock %}
 
@@ -28,13 +50,13 @@ summary::-webkit-details-marker { display: none; }
     <!-- Tabs: the page mixes three jobs — planning, fueling, debrief -->
     <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
         <button id="rtab-plan" onclick="switchRouteTab('plan')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">Plan de course</button>
+                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm"><span class="sm:hidden">Plan</span><span class="hidden sm:inline">Plan de course</span></button>
         <button id="rtab-pacing" onclick="switchRouteTab('pacing')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Pilotage</button>
+                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Pilotage</button>
         <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
+                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
         <button id="rtab-realise" onclick="switchRouteTab('realise')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
+                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
     </div>
 
     <div id="rpanel-plan">
