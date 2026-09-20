@@ -51,6 +51,13 @@ class AthleteGradientProfile(BaseModel):
     # Personal fresh→fade tilt of the fatigue curve, calibrated from the
     # athlete's matched race results (default = generic).
     fatigue_tilt: float = 0.15
+    # Race-based effort model (services/race_calibration): when present, the
+    # prediction is re-levelled so its total matches what the athlete sustains
+    # on real races (effort-km/h with duration decay). Training splits keep
+    # deciding the SHAPE (where the time goes), races decide the LEVEL.
+    race_model: dict | None = None
+    # Filled by predict_course when the race model was applied.
+    race_calibration: dict | None = None
 
 
 class PowerCalcInput(BaseModel):

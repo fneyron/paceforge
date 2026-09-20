@@ -3,7 +3,7 @@
     <form hx-post="/api/nutrition/products" hx-target="#pantry" hx-swap="outerHTML"
           class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Ajouter un produit</p>
-        <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
+        <div class="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end">
             <div class="col-span-2">
                 <label class="block text-[10px] text-gray-400 mb-0.5">Nom</label>
                 <input name="name" required placeholder="Maurten Gel 100" class="w-full h-9 px-2 rounded-lg border border-gray-200 text-sm">
@@ -30,6 +30,10 @@
                 <label class="block text-[10px] text-gray-400 mb-0.5">Vol. (ml)</label>
                 <input name="volume_ml" type="number" step="10" min="0" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
             </div>
+            <div>
+                <label class="block text-[10px] text-gray-400 mb-0.5" title="Caféine par unité">Caf. (mg)</label>
+                <input name="caffeine_mg" type="number" step="5" min="0" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+            </div>
         </div>
         <div class="flex justify-end mt-3">
             <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">+ Ajouter</button>
@@ -52,7 +56,7 @@
         {% for p in products %}
         <form hx-post="/api/nutrition/products/{{ p.id }}" hx-target="#pantry" hx-swap="outerHTML"
               class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-            <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
+            <div class="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end">
                 <div class="col-span-2">
                     <label class="block text-[10px] text-gray-400 mb-0.5">Nom</label>
                     <input name="name" value="{{ p.name }}" required class="w-full h-9 px-2 rounded-lg border border-gray-200 text-sm font-medium">
@@ -76,6 +80,10 @@
                 <div>
                     <label class="block text-[10px] text-gray-400 mb-0.5">Volume (ml)</label>
                     <input name="volume_ml" type="number" step="10" min="0" value="{{ p.volume_ml|round|int if p.volume_ml else '' }}" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5" title="Caféine par unité">Caf. (mg)</label>
+                    <input name="caffeine_mg" type="number" step="5" min="0" value="{{ p.caffeine_mg|round|int if p.caffeine_mg else '' }}" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 mt-2">

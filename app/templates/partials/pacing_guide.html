@@ -1,0 +1,88 @@
+{% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
+{% macro fmt_pace(p) %}{{ (p // 60) | int }}:{{ '%02d'|format((p % 60) | int) }}{% endmacro %}
+{% set g = guide %}
+<div id="pacing-card" class="space-y-4">
+    <!-- Settings: the dials -->
+    <form hx-post="/api/simulator/routes/{{ route_id }}/params" hx-target="#pacing-card" hx-swap="outerHTML"
+          class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 class="text-sm font-semibold tracking-tight">Cadrans de pilotage</h3>
+            <p class="text-[11px] text-gray-400">{% if max_hr %}FC max observée {{ max_hr }} bpm — plafonds par défaut ≈ 75 % (LT1 − 5){% else %}Pas de FC dans tes activités : renseigne tes plafonds{% endif %}</p>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label class="text-xs text-gray-500">FC plafond montée
+                <input name="hr_cap_climb" type="number" min="80" max="220" value="{{ caps.hr_cap_climb or '' }}" placeholder="{{ defaults.hr_cap_climb or '—' }}" class="sim-num mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center font-semibold"></label>
+            <label class="text-xs text-gray-500">FC à plat
+                <input name="hr_cap_flat" type="number" min="80" max="220" value="{{ caps.hr_cap_flat or '' }}" placeholder="{{ defaults.hr_cap_flat or '—' }}" class="sim-num mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"></label>
+            <label class="text-xs text-gray-500">FC relâchement descente
+                <input name="hr_release_descent" type="number" min="80" max="220" value="{{ caps.hr_release_descent or '' }}" placeholder="{{ defaults.hr_release_descent or '—' }}" class="sim-num mt-1 w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"></label>
+            <label class="text-xs text-gray-500">Marche dès (pente)
+                <div class="mt-1 flex items-center gap-1"><input name="walk_grade" type="number" min="8" max="40" step="1" value="{{ walk_grade|round|int }}" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-xs text-gray-400">%</span></div></label>
+        </div>
+        <div class="flex flex-wrap items-end gap-3 pt-3 border-t border-gray-100">
+            <p class="text-[11px] font-medium text-gray-500 w-full">Scénarios (onglet Plan de course)</p>
+            <label class="text-xs text-gray-500">Optimiste
+                <div class="mt-1 flex items-center gap-1"><span class="text-gray-400">−</span><input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int }}" class="sim-num w-16 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-xs text-gray-400">%</span></div></label>
+            <label class="text-xs text-gray-500">Sécurité
+                <div class="mt-1 flex items-center gap-1"><span class="text-gray-400">+</span><input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int }}" class="sim-num w-16 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-xs text-gray-400">%</span></div></label>
+            <label class="text-xs text-gray-500">Point de bascule
+                <select name="switch_km" class="mt-1 h-9 px-2 rounded-lg border border-gray-200 text-sm">
+                    <option value="">auto (≈ 60 % de la distance)</option>
+                    {% for cp in checkpoints %}<option value="{{ cp.distance_km }}" {% if scenario.switch_km and (scenario.switch_km|float - cp.distance_km|float)|abs < 0.15 %}selected{% endif %}>{{ cp.name }} · km {{ cp.distance_km }}</option>{% endfor %}
+                </select></label>
+            <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Appliquer</button>
+        </div>
+    </form>
+
+    <!-- Steepness alerts: the kms nobody spots on a 148 km profile -->
+    {% if g.alerts %}
+    <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+        <p class="text-xs font-semibold text-red-800 mb-1.5">⚠ Alertes de raideur — pente ≥ {{ walk_grade|round|int }} %</p>
+        <ul class="space-y-1 text-xs text-red-900">
+            {% for a in g.alerts %}
+            <li><b>km {{ a.start_km }} → {{ a.end_km }}</b> ({{ a.km }} km, +{{ a.gain }} m) : {{ a.min_grade|int }}{% if a.max_grade != a.min_grade %}–{{ a.max_grade|int }}{% endif %} % — {{ a.note }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Blocks: one instruction per stretch of terrain -->
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <h3 class="text-sm font-semibold tracking-tight">Consignes par type de terrain</h3>
+            <p class="text-[11px] text-gray-400">{{ g.blocks|length }} tronçons · {{ g.n_climb_km }} km de montée{% if g.n_stairs_km %} dont {{ g.n_stairs_km }} km d'escaliers{% endif %} · temps = {% if has_target %}plan à effort régulier{% else %}estimation{% endif %}</p>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">La FC commande. La <b>VAM</b> en montée et l'<b>allure</b> sur le roulant sont les garde-fous : si un cadran dépasse son plafond, tu ralentis — jamais l'inverse. Les plafonds évoluent : {% for ph in g.phases %}{% if ph.offset is none %}au-delà de {{ g.phases[loop.index0 - 1].until_pct }} % libre{% else %}≤ {{ ph.until_pct }} % {{ '+' if ph.offset > 0 }}{{ ph.offset }} bpm{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}.</p>
+        <div class="overflow-x-auto -mx-1">
+            <table class="w-full text-sm min-w-[640px]">
+                <thead>
+                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                        <th class="text-left py-2 pr-2 font-medium">Tronçon</th>
+                        <th class="text-left py-2 px-2 font-medium">Terrain</th>
+                        <th class="text-right py-2 px-2 font-medium" title="Pente moyenne · pente max locale">Pente</th>
+                        <th class="text-right py-2 px-2 font-medium">FC</th>
+                        <th class="text-right py-2 px-2 font-medium" title="Vitesse ascensionnelle que le plan demande sur ce tronçon">VAM</th>
+                        <th class="text-right py-2 px-2 font-medium">Allure</th>
+                        <th class="text-right py-2 px-2 font-medium">Temps</th>
+                        <th class="text-left py-2 pl-3 font-medium">Consigne</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for b in g.blocks %}
+                    <tr class="{% if b.cls == 'stairs' %}bg-red-50/60{% elif b.cls == 'climb' %}bg-orange-50/40{% elif b.cls == 'descent' %}bg-blue-50/40{% endif %} align-top">
+                        <td class="py-2 pr-2 tabular-nums text-xs text-gray-700 whitespace-nowrap">km {{ b.start_km }} → {{ b.end_km }}<span class="block text-[10px] text-gray-400">{{ b.km }} km{% if b.gain %} · +{{ b.gain }}{% endif %}{% if b.loss %} · −{{ b.loss }}{% endif %}</span></td>
+                        <td class="py-2 px-2 text-xs"><span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold {% if b.cls == 'stairs' %}bg-red-100 text-red-800{% elif b.cls == 'climb' %}bg-orange-100 text-orange-800{% elif b.cls == 'descent' %}bg-blue-100 text-blue-800{% else %}bg-gray-100 text-gray-700{% endif %}">{{ b.label }}</span></td>
+                        <td class="py-2 px-2 text-right tabular-nums text-xs text-gray-600">{{ '+' if b.avg_grade > 0 }}{{ b.avg_grade }} %{% if b.max_grade >= walk_grade %}<span class="block text-[10px] text-red-600 font-medium">max {{ b.max_grade|int }} %</span>{% elif b.cls != 'flat' %}<span class="block text-[10px] text-gray-400">max {{ b.max_grade|int }} %</span>{% endif %}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-xs font-semibold {% if b.hr_free %}text-emerald-700{% else %}text-gray-900{% endif %}">{% if b.hr_free %}libre{% elif b.hr_cap %}{% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% else %}—{% endif %}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-xs text-gray-700">{% if b.vam_m_per_h %}{{ b.vam_m_per_h }} m/h{% else %}—{% endif %}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-xs text-gray-700">{% if b.pace_s_per_km %}{{ fmt_pace(b.pace_s_per_km) }}/km{% else %}—{% endif %}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-xs text-gray-500">{{ fmt_time(b.time_s) }}</td>
+                        <td class="py-2 pl-3 text-xs text-gray-700 leading-snug">{{ b.instruction }}<span class="block text-[10px] text-gray-400 mt-0.5">{{ b.phase }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">Écran montre conseillé : FC · vitesse verticale · allure · chrono, plus l'alarme nutrition. VAM et allures sont celles du {% if has_target %}plan{% else %}temps estimé{% endif %} sur chaque tronçon — pas des maxima.</p>
+    </div>
+</div>

@@ -37,11 +37,21 @@
                 </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-                <button onclick="window._sim.exportGpx()" id="btn-export-gpx"
-                        class="h-9 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-                    GPX
-                </button>
+                <details class="relative">
+                    <summary class="list-none h-9 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer select-none">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                        Exporter
+                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-20 text-left">
+                        <p class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Pace strategy montre</p>
+                        <button onclick="window._sim.exportPace('gpx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX horodaté</b> <span class="text-gray-400">— COROS · Garmin : waypoints « CP3 04:12 · Ravito »</span></button>
+                        <button onclick="window._sim.exportPace('tcx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>TCX course</b> <span class="text-gray-400">— Garmin Virtual Partner suit tes temps cibles</span></button>
+                        <button onclick="window._sim.exportPace('csv')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>CSV</b> <span class="text-gray-400">— km · point · heure cible · allure</span></button>
+                        <div class="my-1 border-t border-gray-100"></div>
+                        <button onclick="window._sim.exportGpx()" id="btn-export-gpx" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— parcours + points de passage, sans temps</span></button>
+                    </div>
+                </details>
                 <button onclick="window._sim.printPlan()" id="btn-print"
                         class="h-9 px-4 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 inline-flex items-center gap-1.5">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659"/></svg>
@@ -173,8 +183,18 @@
             {% endif %}
             <div>
                 <p class="text-[11px] font-medium text-gray-500 mb-2">Base de la prédiction</p>
+                {% if race_calibration is defined and race_calibration %}
+                {% set rc = race_calibration %}
+                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 mb-2">
+                    <b>Niveau calé sur tes courses</b> ({{ rc.n }} {% if rc.n_races %}course{{ 's' if rc.n_races > 1 }} taguée{{ 's' if rc.n_races > 1 }} « course » sur Strava{% else %}longues sorties{% endif %}) :
+                    {{ rc.ekm }} km-effort à <b>{{ rc.ekm_h }} km-effort/h</b> → <b>{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>
+                    <span class="opacity-80">(l'allure d'entraînement seule donnait {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }}{% if rc.ratio <= 0.61 or rc.ratio >= 1.39 %}, correction plafonnée{% endif %})</span>.
+                    Décroissance par la durée : {{ '%.2f'|format(rc.b) }}{% if not rc.fitted %} (générique — une 2e course la rendra personnelle){% endif %}.
+                    <span class="block mt-1 text-[11px] opacity-80">{% for r in rc.races[:4] %}{{ r.name }} · {{ r.km }} km / {{ r.dplus }} m · {{ r.ekm_h }} km-eff/h{% if not loop.last %} — {% endif %}{% endfor %}</span>
+                </div>
+                {% endif %}
                 {% if has_data %}
-                <p class="text-xs text-gray-500">Ton allure selon la pente est apprise sur <b class="text-gray-700">{{ profile.data_points }}</b> segments de tes activités Strava{% if profile.sport_types_used %} ({{ profile.sport_types_used | join(', ') }}){% endif %} · référence à plat <b class="text-gray-700">{{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km</b>. Puis ajustée pour la fatigue, l'altitude, le terrain, la nuit et la chaleur. Associer une course réelle (onglet Débrief) affine ton profil de fatigue.</p>
+                <p class="text-xs text-gray-500">La <b>forme</b> (où passe le temps) vient de ton allure selon la pente, apprise sur <b class="text-gray-700">{{ profile.data_points }}</b> segments de tes activités Strava{% if profile.sport_types_used %} ({{ profile.sport_types_used | join(', ') }}){% endif %} · référence à plat <b class="text-gray-700">{{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km</b>, ajustée pour la fatigue, l'altitude, le terrain, la nuit et la chaleur.{% if race_calibration is defined and race_calibration %} Le <b>niveau</b> vient de tes courses (ci-dessus).{% else %} Tague tes courses « Course » sur Strava : elles caleront le niveau de la prédiction sur ce que tu tiens vraiment en compétition.{% endif %} Associer une course réelle (onglet Débrief) affine ton profil de fatigue.</p>
                 {% else %}
                 <p class="text-xs text-amber-700">Aucune donnée Strava exploitable (pas de splits sur tes activités récentes) : l'estimation repose sur un modèle générique. Elle deviendra personnelle dès que tes activités seront synchronisées.</p>
                 {% endif %}
@@ -503,9 +523,16 @@ window._sim = {};
     }
 
     // ── CHECKPOINTS ──
-    function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km) }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); recalc(); scheduleSave(); }
+    function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: km, elevation: interpElev(km), kind: 'none', crew: false, drop_bag: false, cutoff_clock: null }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; refresh(); recalc(); scheduleSave(); }
     function removeCheckpoint(i) { checkpoints.splice(i, 1); refresh(); recalc(); scheduleSave(); }
     function editCheckpointName(i, val) { if (!checkpoints[i]) return; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; refresh(); recalc(); scheduleSave(); }
+    function editCheckpointMeta(i, field, val) {
+        if (!checkpoints[i]) return;
+        if (field === 'kind') checkpoints[i].kind = val || 'none';
+        else if (field === 'crew' || field === 'drop_bag') checkpoints[i][field] = !!val;
+        else if (field === 'cutoff_clock') checkpoints[i].cutoff_clock = (val && /^\d{2}:\d{2}$/.test(val)) ? val : null;
+        recalc(); scheduleSave();  // the save refreshes the nutrition card (drop bags split the pack list)
+    }
     function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } checkpoints[i].distance_km = km; checkpoints[i].elevation = interpElev(km); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
     function refresh() { renderCpOnMap(); drawCpAnn(); }
 
@@ -594,6 +621,7 @@ window._sim = {};
         }).catch(function() { if (w) w.close(); });
     }
     function exportGpx() { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
+    function exportPace(fmt) { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
     function wmoCategoryJs(code) {
         if (code === null || code === undefined) return 'unknown';
@@ -693,7 +721,7 @@ window._sim = {};
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); var mc = document.getElementById('courseMap'); if (mc) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; }
     recalc();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create
     // the route server-side and redirect here, so there's no id-less draft case.)

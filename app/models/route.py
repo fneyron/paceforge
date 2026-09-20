@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -41,6 +41,9 @@ class Route(Base):
     # "total_actual_s", "actual": [{"name", "km", "time_s"}]}.
     result_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    # Reference finisher aligned on this route: {"label", "source", "total_s",
+    # "points": [{"km", "time_s"}]} — their passage time next to yours at each CP.
+    reference_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -58,8 +61,21 @@ class RouteCheckpoint(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     elevation: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Aid-station metadata (see services/checkpoints.py): none | water | full | base
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="none", server_default="none")
+    crew: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    drop_bag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Official cutoff as a clock time "HH:MM" (day rollover inferred from the start).
+    cutoff_clock: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
     route = relationship("Route", back_populates="checkpoints")
+
+    def as_dict(self) -> dict:
+        return {
+            "name": self.name, "distance_km": self.distance_km, "elevation": self.elevation,
+            "kind": self.kind or "none", "crew": bool(self.crew), "drop_bag": bool(self.drop_bag),
+            "cutoff_clock": self.cutoff_clock,
+        }
 
 
 class Simulation(Base):

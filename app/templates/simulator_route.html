@@ -26,6 +26,8 @@ summary::-webkit-details-marker { display: none; }
     <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
         <button id="rtab-plan" onclick="switchRouteTab('plan')"
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">Plan de course</button>
+        <button id="rtab-pacing" onclick="switchRouteTab('pacing')"
+                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Pilotage</button>
         <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
                 class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
         <button id="rtab-realise" onclick="switchRouteTab('realise')"
@@ -34,6 +36,12 @@ summary::-webkit-details-marker { display: none; }
 
     <div id="rpanel-plan">
         {% include "partials/gpx_result.html" %}
+    </div>
+
+    <div id="rpanel-pacing" class="hidden">
+        <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="load" hx-swap="innerHTML">
+            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Consignes de pilotage…</div>
+        </div>
     </div>
 
     <div id="rpanel-nutrition" class="hidden">
@@ -47,8 +55,9 @@ summary::-webkit-details-marker { display: none; }
         </div>
     </div>
 
-    <div id="rpanel-realise" class="hidden">
-        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=3{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></div>
+    <div id="rpanel-realise" class="hidden space-y-4">
+        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/reference?v=1" hx-trigger="load" hx-swap="innerHTML"></div>
+        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></div>
     </div>
 </div>
 {% endblock content %}
@@ -56,7 +65,7 @@ summary::-webkit-details-marker { display: none; }
 {% block scripts %}
 <script>
 function switchRouteTab(tab) {
-    ['plan', 'nutrition', 'realise'].forEach(function(t) {
+    ['plan', 'pacing', 'nutrition', 'realise'].forEach(function(t) {
         document.getElementById('rpanel-' + t).classList.toggle('hidden', t !== tab);
         var btn = document.getElementById('rtab-' + t);
         btn.classList.toggle('bg-white', t === tab);
@@ -64,6 +73,9 @@ function switchRouteTab(tab) {
         btn.classList.toggle('shadow-sm', t === tab);
         btn.classList.toggle('text-gray-500', t !== tab);
     });
+    if (tab === 'pacing' && window.htmx) {
+        window.htmx.ajax('GET', '/partials/simulator/pacing/{{ saved_route_id }}?v=1', { target: '#pacing-wrap', swap: 'innerHTML' });
+    }
 }
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief tab.
