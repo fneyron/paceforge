@@ -409,3 +409,26 @@ def test_weather_hourly_lookup_uses_nearest_point_and_second_day():
     summit_day2 = hourly_at(hourly, 30, 95.0)  # 06:00 the next day, near the km-90 point
     assert summit_day2["temp"] == 5.0 and summit_day2["code"] == 61 and summit_day2["elevation"] == 1500
     assert hourly_at({"temps": [12.0] * 24}, 27, 50.0)["temp"] == 12.0  # legacy 24 h payload wraps
+
+
+def test_best_efforts_ignore_hikes_and_slow_duplicates():
+    from app.services.race_calibration import fit_effort_model, select_best_efforts
+
+    pts = [
+        {"name": "Trail 30", "hours": 3.0, "ekm_h": 13.0, "weight": 1.0},
+        {"name": "Trail 30 malade", "hours": 3.2, "ekm_h": 10.0, "weight": 1.0},   # same bin, slower
+        {"name": "Trans Inthanon", "hours": 12.0, "ekm_h": 10.9, "weight": 1.0},
+        {"name": "TDS UTMB", "hours": 22.0, "ekm_h": 10.5, "weight": 1.0},
+        {"name": "Fast Hiking - TMB", "hours": 34.0, "ekm_h": 8.3, "weight": 1.0},  # a hike tagged race
+    ]
+    used, ignored = select_best_efforts(pts)
+    names = {p["name"] for p in used}
+    assert "Fast Hiking - TMB" not in names and "Trail 30 malade" not in names
+    assert {"Trail 30", "Trans Inthanon", "TDS UTMB"} <= names
+    assert {p["why"] for p in ignored} >= {"pas une course", "moins bonne perf sur cette durée"}
+    # the curve at 20 h now sits near the TDS level, not dragged toward the hike
+    m = fit_effort_model(used)
+    at20 = m["a"] * 20 ** (-m["b"])
+    assert 10.2 <= at20 <= 11.5
+    m_all = fit_effort_model(pts)
+    assert m_all["a"] * 20 ** (-m_all["b"]) < at20
