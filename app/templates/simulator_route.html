@@ -5,8 +5,21 @@
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
 <style>
 .maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
+.maplibregl-popup-content { font-size: 12px; line-height: 1.35; }
+/* phone: the map opens full screen (a pitched 3D map cannot live in a 200 px strip) */
+#map-wrap.map-full { position: fixed; inset: 0; z-index: 60; background: #fff; height: 100dvh; }
+#map-wrap.map-full #courseMap { height: 100%; }
+#map-wrap .map-close { display: none; }
+#map-wrap.map-full .map-close { display: inline-flex; }
+.map-ctl { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); font: 600 12px/1 Inter, system-ui, sans-serif; color: #111827; padding: 0 9px; height: 29px; display: inline-flex; align-items: center; cursor: pointer; }
+.map-ctl[aria-pressed="true"] { background: #111827; color: #fff; }
+.dark #map-wrap.map-full { background: #111827; }
+.cp-marker { width: 24px; height: 24px; border-radius: 50%; background: #f59e0b; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; font: 700 11px/1 Inter, system-ui, sans-serif; cursor: pointer; }
+.cp-marker.late { background: #dc2626; } .cp-marker.switch { background: #111827; }
+
 .map-container { position: relative; z-index: 0; overflow: hidden; }
 /* Hide native number spinners so narrow time inputs don't truncate their value. */
 .sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -64,13 +77,13 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
     </div>
 
     <div id="rpanel-pacing" class="hidden">
-        <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="load" hx-swap="innerHTML">
+        <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="intersect once" hx-swap="innerHTML">
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Consignes de pilotage…</div>
         </div>
     </div>
 
     <div id="rpanel-nutrition" class="hidden">
-        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="load" hx-swap="innerHTML">
+        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="intersect once" hx-swap="innerHTML">
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="flex items-center gap-2 text-sm text-gray-400">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -81,7 +94,7 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
     </div>
 
     <div id="rpanel-realise" class="hidden space-y-4">
-        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></div>
+        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="intersect once" hx-swap="innerHTML"></div>
     </div>
 </div>
 {% endblock content %}

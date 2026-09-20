@@ -147,7 +147,7 @@ def _clock_to_s(clock: str) -> int | None:
 @router.post("/partials/simulator/passage-times", response_class=HTMLResponse)
 async def passage_times(
     request: Request,
-    course_json: str = Form(...),
+    course_json: str = Form(default=""),
     checkpoints_json: str = Form(default="[]"),
     target_time_s: int | None = Form(default=None),
     heat_factor: float = Form(default=1.0),
@@ -171,9 +171,26 @@ async def passage_times(
     )
 
     try:
-        course = CourseProfile(**json.loads(course_json))
+        # The course is 175 KB+ of GPX points: once the route is saved the
+        # client sends only its id and the server reads the course from the db.
+        route_obj = None
+        if route_id:
+            r_res = await db.execute(
+                select(Route).where(Route.id == route_id, Route.user_id == user.id)
+            )
+            route_obj = r_res.scalar_one_or_none()
+        if course_json:
+            course = CourseProfile(**json.loads(course_json))
+        elif route_obj and route_obj.course_json:
+            course = CourseProfile(**route_obj.course_json)
+        else:
+            return HTMLResponse('<div class="text-sm text-red-600">Parcours introuvable.</div>', status_code=404)
         checkpoints = [normalize_checkpoint(c) for c in json.loads(checkpoints_json)]
         hourly_weather = json.loads(hourly_json) if hourly_json else None
+        if hourly_weather is None and route_obj and route_obj.weather_json:
+            hourly_weather = (route_obj.weather_json or {}).get("hourly")
+            if heat_factor == 1.0:
+                heat_factor = float((route_obj.weather_json or {}).get("heat_factor") or 1.0)
 
         # Re-predict so the night penalty reflects the chosen start time.
         # Heat is applied once, in compute_passage_times.
@@ -187,17 +204,12 @@ async def passage_times(
         aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
         stop_min = stop_minutes or 0
         params: dict = {}
-        if route_id:
-            r_res = await db.execute(
-                select(Route).where(Route.id == route_id, Route.user_id == user.id)
-            )
-            route_obj = r_res.scalar_one_or_none()
-            if route_obj:
-                if route_obj.nutrition_json:
-                    aid_kms |= set(route_obj.nutrition_json.get("refills") or [])
-                if stop_minutes is None:
-                    stop_min = route_obj.stop_minutes or 0
-                params = route_obj.params_json or {}
+        if route_obj:
+            if route_obj.nutrition_json:
+                aid_kms |= set(route_obj.nutrition_json.get("refills") or [])
+            if stop_minutes is None:
+                stop_min = route_obj.stop_minutes or 0
+            params = route_obj.params_json or {}
 
         sections = compute_passage_times(
             course, checkpoints, target_time_s, heat_factor,
@@ -347,7 +359,7 @@ async def save_route(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    course_json: str = Form(...),
+    course_json: str = Form(default=""),
     checkpoints_json: str = Form(default="[]"),
     name: str = Form(default=""),
     route_id: int | None = Form(default=None),
@@ -360,7 +372,7 @@ async def save_route(
     stop_minutes: int | None = Form(default=None),
 ):
     try:
-        course_data = json.loads(course_json)
+        course_data = json.loads(course_json) if course_json else None
         cps = json.loads(checkpoints_json)
         weather_data = json.loads(weather_json) if weather_json else None
 
@@ -373,12 +385,13 @@ async def save_route(
             route = result.scalar_one_or_none()
 
         if route:
-            # Update existing
+            # Update existing (the course itself is re-sent only for a fresh import)
             route.name = name or route.name
-            route.course_json = course_data
-            route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
-            route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
-            route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
+            if course_data:
+                route.course_json = course_data
+                route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
+                route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
+                route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
             route.target_time_s = target_time_s
             if race_date: route.race_date = race_date
             if start_hour is not None: route.start_hour = start_hour
@@ -394,6 +407,8 @@ async def save_route(
             )
         else:
             # Create new
+            if not course_data:
+                return JSONResponse({"error": "Parcours manquant"}, status_code=400)
             route = Route(
                 user_id=user.id,
                 name=name or course_data.get("name", "Parcours"),
