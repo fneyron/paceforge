@@ -628,6 +628,8 @@ def compute_passage_times(
     for r in raw:
         temperature_c = None
         weather_code = None
+        wind_kmh = None
+        humidity_pct = None
         if use_hourly:
             from app.services.weather import hourly_at
 
@@ -638,6 +640,8 @@ def compute_passage_times(
             humidity = w["humidity"] if w["humidity"] is not None else 60
             if w["code"] is not None:
                 weather_code = int(w["code"])
+            wind_kmh = round(float(w["wind"]), 1) if w["wind"] is not None else None
+            humidity_pct = round(float(humidity))
             # The forecast point has its own elevation (model grid): correct the
             # section's temperature from THAT elevation, not from the start's.
             mid_elev = _elevation_at_km(course, mid_km) or base_elev
@@ -680,6 +684,9 @@ def compute_passage_times(
             temperature_c=temperature_c,
             heat_factor=round(sec_heat, 3) if use_hourly else None,
             weather_code=weather_code,
+            wind_kmh=wind_kmh,
+            humidity_pct=humidity_pct,
+            stop_s=int(arrival_stop),
         ).model_dump())
 
         stops_acc += arrival_stop

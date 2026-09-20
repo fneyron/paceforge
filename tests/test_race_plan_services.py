@@ -209,9 +209,15 @@ def test_nutrition_real_rates_packing_and_caffeine():
     )
     legs = plan["schedule"]
     assert len(legs) == 4  # Eau 1, Col, Village, Arrivée
-    # whole units → real g/h on a leg is ≥ the target (ceil), never silently under
-    assert all(l["carbs_real_per_h"] >= 75 for l in legs)
-    assert all(l["carbs_status"] in ("ok", "over") for l in legs)
+    # whole units per leg, the fraction carried to the next leg: the race total
+    # stays within half a unit of rate × duration for every product, and a short
+    # leg no longer gets a full hour's worth of everything
+    hours = sum(l["leg_time_s"] for l in legs) / 3600
+    for ln in plan["lines"]:
+        assert abs(ln["total_units"] - ln["per_hour"] * hours) <= 0.5 + 1e-9
+    assert all(u["units"] >= 0 for l in legs for u in l["units"])
+    race_real = sum(l["carbs_real_g"] for l in legs) / hours
+    assert 60 <= race_real <= 90  # 3 gels + 1 drink per hour ≈ 75 g/h over the race
     assert legs[0]["night"] is True
     # packing: start bag until the Col drop bag, then the drop bag until the finish
     assert [p["at"] for p in plan["packing"]] == ["Départ", "Col"]

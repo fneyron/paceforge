@@ -79,7 +79,7 @@ def build_plan_data(
             "cp_index": s.get("end_checkpoint_index"), "clock_s": int(clock) if clock is not None else None,
             "cum_s": float(cum) if cum is not None else None, "stops_s": round(stops),
             "kind": s.get("kind") or "none", "cutoff_clock": s.get("cutoff_clock"),
-            "cutoff_margin_s": s.get("cutoff_margin_s"), "temp": s.get("temperature_c"), "code": s.get("weather_code"),
+            "cutoff_margin_s": s.get("cutoff_margin_s"), "temp": s.get("temperature_c"), "code": s.get("weather_code"), "wind": s.get("wind_kmh"),
             "drop_bag": bool(s.get("drop_bag")), "crew": bool(s.get("crew")),
         })
     return {

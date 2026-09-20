@@ -306,8 +306,15 @@ window._sim = {};
         if (pts[pts.length - 1] !== elevData[elevData.length - 1]) pts.push(elevData[elevData.length - 1]);
         var d = '';
         pts.forEach(function (p, i) { d += (i ? 'L' : 'M') + xOf(p.distance_km).toFixed(1) + ' ' + yOf(p.elevation).toFixed(1) + ' '; });
-        svg.appendChild(mk('path', { d: d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' ' + base + ' L' + xOf(pts[0].distance_km).toFixed(1) + ' ' + base + ' Z', fill: isDark ? '#1f2937' : '#e5e7eb', stroke: 'none' }));
-        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);  // night sits on the area, under the trace
+        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);  // night darkens the sky; the ground keeps its slope colours
+        // area coloured by slope, same scale as the map (one slab per sampled step, ~0.5 km window)
+        var slabs = mk('g', { 'fill-opacity': isDark ? '0.5' : '0.42', stroke: 'none' }), byColor = {};
+        for (i = 0; i < pts.length - 1; i++) {
+            var a = pts[i], b = pts[i + 1], c = slopeColor(gradeAt((a.distance_km + b.distance_km) / 2));
+            byColor[c] = (byColor[c] || '') + 'M' + xOf(a.distance_km).toFixed(1) + ' ' + yOf(a.elevation).toFixed(1) + 'L' + xOf(b.distance_km).toFixed(1) + ' ' + yOf(b.elevation).toFixed(1) + 'L' + xOf(b.distance_km).toFixed(1) + ' ' + base + 'L' + xOf(a.distance_km).toFixed(1) + ' ' + base + 'Z';
+        }
+        Object.keys(byColor).forEach(function (c) { slabs.appendChild(mk('path', { d: byColor[c], fill: c })); });
+        svg.appendChild(slabs);
         svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.5', 'stroke-linejoin': 'round' }));
         prof.hiLayer = mk('g', {}); svg.appendChild(prof.hiLayer);
         prof.autoLayer = mk('g', {}); svg.appendChild(prof.autoLayer);
@@ -426,7 +433,7 @@ window._sim = {};
         var base = prof.h - prof.padB;
         [prof.nightLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
         if (planData) {
-            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.45' : '0.22' })); });
+            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.5' : '0.16' })); });
             // autonomy: every stretch without a full aid station is an amber bracket under the axis,
             // labelled « 29,9 km · 3h32 sans ravito » when it has the room (desktop); a tap shows it on the phone
             var yBar = prof.compact ? base + 18 : base + 17;

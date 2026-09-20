@@ -1,13 +1,16 @@
 {% import "partials/_plan_glyphs.html" as gl %}
+{% import "partials/_weather_icons.html" as wx %}
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro hhmm(seconds) %}{{ '%02d:%02d'|format(((seconds % 86400) // 3600) | int, ((seconds % 3600) // 60) | int) }}{% endmacro %}
+{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span class="inline-flex items-center gap-0.5 text-[11px] text-gray-600 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
+{% macro fmt_leg(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) / 60) | round | int %}{% if m == 60 %}{% set h = h + 1 %}{% set m = 0 %}{% endif %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
 {% macro margin_cls(sec) %}{% if sec < 0 %}text-red-600 font-semibold{% elif sec < 1800 %}text-amber-600{% else %}text-gray-400{% endif %}{% endmacro %}
 {# type of aid station = one glyph covered by a transparent native select; crew / drop bag = two toggles #}
 {% macro poste(s, ci) -%}
-<span class="relative inline-flex w-7 h-7 lg:w-6 lg:h-6 items-center justify-center rounded hover:bg-gray-100 shrink-0"><span data-glyph="{{ ci }}" class="inline-flex">{{ gl.glyph(s.kind or 'none') }}</span><select class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" title="Type de poste · {{ kinds.get(s.kind or 'none', '') }}" aria-label="Type de poste" onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'kind', this.value)">{% for val, lbl in kinds.items() %}<option value="{{ val }}" {% if (s.kind or 'none') == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select></span>
-<button type="button" title="Assistance" aria-pressed="{{ 'true' if s.crew else 'false' }}" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'crew', {{ 'false' if s.crew else 'true' }})" class="w-7 h-7 lg:w-6 lg:h-6 inline-flex items-center justify-center rounded hover:bg-gray-100 shrink-0 {% if s.crew %}text-gray-900{% else %}text-gray-300 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100{% endif %}">{{ gl.glyph('crew') }}</button>
-<button type="button" title="Drop bag" aria-pressed="{{ 'true' if s.drop_bag else 'false' }}" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'drop_bag', {{ 'false' if s.drop_bag else 'true' }})" class="w-7 h-7 lg:w-6 lg:h-6 inline-flex items-center justify-center rounded hover:bg-gray-100 shrink-0 {% if s.drop_bag %}text-gray-900{% else %}text-gray-300 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100{% endif %}">{{ gl.glyph('bag') }}</button>
+<span class="relative inline-flex h-7 lg:h-6 pl-1 pr-1.5 items-center justify-center gap-0.5 rounded border border-transparent hover:border-gray-200 hover:bg-gray-50 shrink-0"><span data-glyph="{{ ci }}" class="inline-flex">{{ gl.glyph(s.kind or 'none') }}</span><svg class="w-2.5 h-2.5 text-gray-300 -mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><select class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" title="Type de poste · {{ kinds.get(s.kind or 'none', '') }}" aria-label="Type de poste" onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'kind', this.value)">{% for val, lbl in kinds.items() %}<option value="{{ val }}" {% if (s.kind or 'none') == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select></span>
+<button type="button" title="Assistance" aria-pressed="{{ 'true' if s.crew else 'false' }}" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'crew', {{ 'false' if s.crew else 'true' }})" class="w-7 h-7 lg:w-6 lg:h-6 inline-flex items-center justify-center rounded hover:bg-gray-100 shrink-0 {% if s.crew %}text-gray-900{% else %}text-gray-200 hover:text-gray-500{% endif %}">{{ gl.glyph('crew') }}</button>
+<button type="button" title="Drop bag" aria-pressed="{{ 'true' if s.drop_bag else 'false' }}" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'drop_bag', {{ 'false' if s.drop_bag else 'true' }})" class="w-7 h-7 lg:w-6 lg:h-6 inline-flex items-center justify-center rounded hover:bg-gray-100 shrink-0 {% if s.drop_bag %}text-gray-900{% else %}text-gray-200 hover:text-gray-500{% endif %}">{{ gl.glyph('bag') }}</button>
 {%- endmacro %}
 {# cutoff clock + margin, in the same cell (the margin is "secondary": the phone hides it while a delete is armed) #}
 {% macro barriere(s, ci) -%}
@@ -28,7 +31,8 @@
 {% set sc = scenarios if (scenarios is defined and scenarios and not (replan is defined and replan)) else none %}
 {% set rp = replan if (replan is defined and replan) else none %}
 {# desktop column count (the phone one is set by fixSpans() after each swap) #}
-{% set ncols = 10 if sc else 8 %}
+{% set wx_on = has_weather is defined and has_weather %}
+{% set ncols = (11 if sc else 9) + (1 if wx_on else 0) %}
 {% if plan_data is defined %}<script type="application/json" id="plan-data">{{ plan_data | safe }}</script>{% endif %}
 <div class="overflow-x-auto">
     <table class="w-full table-fixed text-sm" id="plan-table" data-scn="target">
@@ -37,8 +41,10 @@
                 <th class="w-6 lg:w-7 text-left py-2 pl-0 pr-1 font-medium">#</th>
                 <th data-col="point" class="text-left py-2 px-1 font-medium">Point</th>
                 <th class="w-11 lg:w-[52px] text-right py-2 px-1 font-medium">km</th>
-                <th class="hidden lg:table-cell w-[68px] text-right py-2 px-1 font-medium whitespace-nowrap" title="Dénivelé de la section · survol : durée et allure">D+ D−</th>
-                <th class="hidden lg:table-cell w-[84px] text-left py-2 px-1 font-medium">Poste</th>
+                {% if wx_on %}<th class="hidden lg:table-cell w-[54px] text-right py-2 px-1 font-medium" title="Prévision au point, à l'heure de passage prévue">Météo</th>{% endif %}
+                <th class="hidden lg:table-cell w-[68px] text-right py-2 px-1 font-medium whitespace-nowrap" title="Dénivelé du tronçon · survol : allure">D+ D−</th>
+                <th class="hidden lg:table-cell w-[64px] text-right py-2 px-1 font-medium whitespace-nowrap" title="Temps de course entre deux points · +x' = arrêt prévu à ce poste (réglage « '/ravito » en haut)">Tronçon</th>
+                <th class="hidden lg:table-cell w-[84px] text-left py-2 px-1 font-medium" title="Clique l'icône : passage · eau · ravito complet · base vie. Puis assistance et drop bag.">Poste</th>
                 <th class="hidden lg:table-cell w-[112px] text-left py-2 px-1 font-medium">Barrière</th>
                 {% if sc %}<th class="hidden lg:table-cell w-16 text-right py-2 px-1 font-medium text-blue-700" title="Plan lent : +{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</th>{% endif %}
                 <th class="hidden lg:table-cell {% if rp %}w-[300px]{% else %}w-[84px]{% endif %} text-right py-2 px-1 font-medium text-gray-900 whitespace-nowrap" title="{% if rp %}{% if rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% if (rp.finish_clock_s // 86400)|int > ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int %} (+{{ (rp.finish_clock_s // 86400)|int - ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int }}j){% endif %}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}{% elif has_target %}Heure de passage si tu tiens ton objectif{% else %}Heure de passage estimée{% endif %}">{% if rp %}{{ recalee(rp) }}{% else %}Cible{% endif %}</th>
@@ -58,6 +64,7 @@
             {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
             {% set stops_val = clock_val - start_offset_s - cum_val %}
             {% set is_finish = loop.last %}
+            {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
             {% set ci = s.end_checkpoint_index %}
             {% set editable = ci is not none %}
             {% set row = sc.rows[loop.index0] if sc else none %}
@@ -82,9 +89,9 @@
                     {% else %}
                     <div class="flex items-center gap-1.5 min-w-0">
                         <input type="text" value="{{ s.end_name }}" onchange="window._sim && window._sim.editCheckpointName({{ ci }}, this)" aria-label="Nom du point"
-                               title="km {{ s.end_km }}{% if s.end_elevation is not none %} · {{ s.end_elevation|int }} m{% endif %}{% if has_weather is defined and has_weather and s.temperature_c is not none %} · {{ s.temperature_c|round|int }}°{% if s.weather_code is not none %} {{ wmo_label(s.weather_code) }}{% endif %}{% endif %}"
+                               title="km {{ s.end_km }}{% if s.end_elevation is not none %} · {{ s.end_elevation|int }} m{% endif %}"
                                class="text-[13px] font-medium min-w-0 w-full bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 truncate focus:outline-none">
-                        {% if (s.kind and s.kind != 'none') or s.crew or s.drop_bag %}<span class="lg:hidden inline-flex items-center gap-0.5 shrink-0 text-gray-700">{% if s.kind and s.kind != 'none' %}{{ gl.glyph(s.kind) }}{% endif %}{% if s.crew %}{{ gl.glyph('crew') }}{% endif %}{% if s.drop_bag %}{{ gl.glyph('bag') }}{% endif %}</span>{% endif %}
+                        {% if (s.kind and s.kind != 'none') or s.crew or s.drop_bag %}<span class="lg:hidden inline-flex items-center gap-0.5 shrink-0 text-gray-700">{% if s.kind and s.kind != 'none' %}{{ gl.glyph(s.kind) }}{% endif %}{% if s.crew %}{{ gl.glyph('crew') }}{% endif %}{% if s.drop_bag %}{{ gl.glyph('bag') }}{% endif %}</span>{% endif %}{% if wx_on %}{{ meteo(s, "lg:hidden shrink-0") }}{% endif %}
                     </div>
                     {% endif %}
                 </td>
@@ -95,7 +102,9 @@
                                class="sim-num w-11 text-[11px] text-gray-500 tabular-nums text-right bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 focus:outline-none">{% endif %}
                     </div>
                 </td>
-                <td class="hidden lg:table-cell py-2 px-1 text-right text-[11px] leading-tight tabular-nums whitespace-nowrap" data-section title="{{ fmt_time(sec_time) }} · {{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km"><span class="text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</span> <span class="text-red-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></td>
+                {% if wx_on %}<td class="hidden lg:table-cell py-2 px-1 text-right"><div class="h-6 flex items-center justify-end">{{ meteo(s) }}</div></td>{% endif %}
+                <td class="hidden lg:table-cell py-2 px-1 text-right text-[11px] leading-tight tabular-nums whitespace-nowrap" data-section title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km"><span class="text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</span> <span class="text-red-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></td>
+                <td class="hidden lg:table-cell py-2 px-1 text-right text-[11px] tabular-nums whitespace-nowrap text-gray-600" data-leg-time title="{{ fmt_time(sec_time) }} de course depuis le point précédent · {{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km{% if arr_stop > 0 %} · puis {{ (arr_stop / 60)|round|int }} min d'arrêt à ce poste{% endif %}">{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %}<span class="text-gray-400"> +{{ (arr_stop / 60)|round|int }}'</span>{% endif %}</td>
                 <td class="hidden lg:table-cell py-2 px-1"><div class="flex items-center">{% if editable %}{{ poste(s, ci) }}{% endif %}</div></td>
                 <td class="hidden lg:table-cell py-2 px-1 whitespace-nowrap"><div class="h-6 flex items-center">{% if editable %}{{ barriere(s, ci) }}{% endif %}</div></td>
                 {% if sc %}<td class="col-safe hidden lg:table-cell py-2 px-1 text-right text-xs tabular-nums {% if row.safe_ok is defined and row.safe_ok == false %}text-red-600 font-semibold{% else %}text-blue-700{% endif %}" data-safe>{{ hhmm(row.safe_s) }}</td>{% endif %}
@@ -112,7 +121,7 @@
                 <td class="hidden lg:table-cell py-2 px-0 text-center relative">{% if editable %}<button type="button" data-del onclick="window._sim && window._sim.confirmRemove(this, {{ ci }})" class="opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400 hover:text-red-600 text-sm leading-none" title="Supprimer">×</button>{% endif %}</td>
             </tr>
             {% if editable %}
-            <tr data-detail="{{ ci }}" class="hidden lg:hidden"><td colspan="4" class="pl-8 pr-1 py-1"><div class="flex items-center gap-2 h-8 text-gray-500">{{ poste(s, ci) }}<span class="w-px h-5 bg-gray-200 shrink-0"></span><span class="inline-flex items-center gap-1 text-gray-400">{{ gl.glyph('clock') }}{{ barriere(s, ci) }}</span>{% if has_weather is defined and has_weather and s.temperature_c is not none %}<span data-secondary class="text-[11px] text-gray-400 tabular-nums whitespace-nowrap" title="{% if s.weather_code is not none %}{{ wmo_label(s.weather_code) }} · {% endif %}prévision à ce point">{{ s.temperature_c|round|int }}°</span>{% endif %}<button type="button" data-del onclick="window._sim && window._sim.confirmRemove(this, {{ ci }})" class="ml-auto h-7 px-1.5 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-600 text-xs shrink-0 whitespace-nowrap" title="Supprimer">{{ gl.glyph('trash') }}</button></div></td></tr>
+            <tr data-detail="{{ ci }}" class="hidden lg:hidden"><td colspan="4" class="pl-8 pr-1 py-1"><div class="flex items-center gap-2 h-8 text-gray-500">{{ poste(s, ci) }}<span class="w-px h-5 bg-gray-200 shrink-0"></span><span class="inline-flex items-center gap-1 text-gray-400">{{ gl.glyph('clock') }}{{ barriere(s, ci) }}</span><span class="w-px h-5 bg-gray-200 shrink-0"></span><span data-secondary class="text-[11px] text-gray-500 tabular-nums whitespace-nowrap" title="temps de course depuis le point précédent{% if arr_stop > 0 %} · +{{ (arr_stop / 60)|round|int }} min d'arrêt{% endif %}">{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %}<span class="text-gray-400"> +{{ (arr_stop / 60)|round|int }}'</span>{% endif %}</span><button type="button" data-del onclick="window._sim && window._sim.confirmRemove(this, {{ ci }})" class="ml-auto h-7 px-1.5 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-600 text-xs shrink-0 whitespace-nowrap" title="Supprimer">{{ gl.glyph('trash') }}</button></div></td></tr>
             {% endif %}
             {% endfor %}
         </tbody>
