@@ -1149,6 +1149,16 @@ async def print_route_plan(
             )
             live_applied = rp is not None
     has_weather = any(s.get("temperature_c") is not None for s in sections)
+    from app.services.checkpoints import annotate_cutoffs
+    from app.services.race_simulator import build_scenarios
+
+    sections = annotate_cutoffs(sections, cps, start_hour * 3600 + start_minute * 60)
+    pp = route.params_json or {}
+    scenarios = None if live_applied else build_scenarios(
+        sections, start_hour * 3600 + start_minute * 60, route.target_time_s,
+        fast_pct=float(pp.get("scenario_fast_pct") or 5.0), safe_pct=float(pp.get("scenario_safe_pct") or 10.0),
+        switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
+    )
 
     # Race pack: include the nutrition per-leg plan on the same printout.
     nutrition_schedule = []
@@ -1190,6 +1200,7 @@ async def print_route_plan(
             "n_aid": len(aid_kms),
             "nutrition_schedule": nutrition_schedule,
             "nutrition_lines": nutrition_lines,
+            "scenarios": scenarios,
         },
     )
 
@@ -1530,46 +1541,48 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         resupply_points=resupply_points, caffeine=caffeine_cfg,
         start_offset_s=start_hour * 3600 + start_minute * 60, weight_kg=user.weight_kg,
     )
-    # rate per product for the form (product_id -> per_hour) — manual items only
-    rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
-
-    def _interval_min(per_hour):
-        return round(60.0 / per_hour) if per_hour and per_hour > 0 else None
-
-    # The UI is interval-based ("1 every X min") — more natural than a fractional
-    # rate. Convert per_hour <-> minutes for display; the math stays on per_hour.
-    intervals = {pid: _interval_min(ph) for pid, ph in rates.items()}
-    from app.services.nutrition import rate_for_target
-    target_intervals = {
-        p["id"]: _interval_min(rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"]))
-        for p in products
-    }
-    # checkpoints the athlete can mark as refill points (all section ends but
-    # the finish), with their current refill state.
-    refill_points = [
-        {"name": s.get("end_name", ""), "km": round(float(s.get("end_km") or 0), 1),
-         "is_refill": round(float(s.get("end_km") or 0), 1) in {round(float(k), 1) for k in refills}}
-        for s in sections[:-1]
-    ] if sections else []
-
+    # quantity per hour per product (what the athlete set); a product is "used"
+    # when it has a rate. Each product row also shows what its rate brings.
+    rates = {it.get("product_id"): float(it.get("per_hour") or 0) for it in items}
+    for p in products_for_plan:
+        r = rates.get(p["id"], 0.0)
+        p["per_hour"] = r
+        p["used"] = r > 0
+        p["carbs_per_h"] = round(r * (p.get("carbs_g") or 0))
+        p["sodium_per_h"] = round(r * (p.get("sodium_mg") or 0))
+    hours = duration_s / 3600.0 if duration_s else 0
+    legs = plan["schedule"]
+    real_carbs_per_h = round(sum(l["carbs_real_g"] for l in legs) / hours) if hours and legs else plan["per_hour"]["carbs_g"]
+    real_sodium_per_h = round(sum(l["sodium_real_per_h"] * l["leg_time_s"] for l in legs) / max(1, sum(l["leg_time_s"] for l in legs))) if legs else plan["per_hour"]["sodium_mg"]
+    n_aid = len({round(float(s.get("end_km") or 0), 1) for s in sections[:-1] if round(float(s.get("end_km") or 0), 1) in refills}) if sections else 0
     return {
         "request": request,
         "route_id": route.id,
-        "products": products,
+        "products": products_for_plan,
         "targets": targets,
-        "rates": rates,
-        "intervals": intervals,
-        "target_intervals": target_intervals,
         "flask_capacity_ml": flask_capacity_ml,
-        "refill_points": refill_points,
         "plan": plan,
         "has_duration": duration_s > 0,
         "using_generic": using_generic,
-        "carb_presets": [50, 60, 75, 90],
+        "carb_presets": [60, 75, 90],
         "caffeine_cfg": caffeine_cfg,
         "resupply_points": resupply_points,
         "start_offset_s": start_hour * 3600 + start_minute * 60,
+        "kpi": {
+            "carbs_real": real_carbs_per_h, "sodium_real": real_sodium_per_h,
+            "carbs_status": _nutrition_status(real_carbs_per_h, targets.get("carbs_g_per_h", 0)),
+            "sodium_status": _nutrition_status(real_sodium_per_h, targets.get("sodium_mg_per_h", 0)),
+        },
+        "n_aid": n_aid,
+        "has_sodium": any((p.get("sodium_mg") or 0) > 0 for p in products_for_plan),
+        "has_caffeine_product": any((p.get("caffeine_mg") or 0) > 0 for p in products_for_plan),
     }
+
+
+def _nutrition_status(value: float, target: float) -> str:
+    from app.services.nutrition import _status
+
+    return _status(float(value or 0), float(target or 0))
 
 
 async def _get_owned_route(route_id: int, user: User, db: AsyncSession) -> Route | None:
@@ -2047,22 +2060,39 @@ async def save_nutrition_plan(
         "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h"))),
         "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"))),
     }
-    items = []
-    refills = []
+    from app.services.nutrition import auto_rates
+
+    prev = route.nutrition_json or {}
+    prev_rates = {it.get("product_id"): float(it.get("per_hour") or 0) for it in (prev.get("items") or [])}
+    used: set[int] = set()
+    qty: dict[int, float] = {}
     for key, val in form.multi_items() if hasattr(form, "multi_items") else form.items():
-        if key.startswith("interval_"):
-            # "1 unit every N minutes" → units per hour
-            minutes = _to_float(val)
-            if minutes > 0:
-                try:
-                    items.append({"product_id": int(key[9:]), "per_hour": round(60.0 / minutes, 3)})
-                except ValueError:
-                    continue
-        elif key.startswith("refill_"):
-            try:
-                refills.append(round(float(key[7:]), 1))
-            except ValueError:
-                continue
+        try:
+            if key.startswith("use_"):
+                used.add(int(key[4:]))
+            elif key.startswith("qty_"):
+                qty[int(key[4:])] = _to_float(str(val).replace(",", "."))
+        except ValueError:
+            continue
+    prod_result = await db.execute(select(NutritionProduct).where(NutritionProduct.user_id == user.id))
+    products = [_product_dict(p) for p in prod_result.scalars().all()] or _GENERIC_PLAN_PRODUCTS
+    by_id = {p["id"]: p for p in products}
+    # A product just ticked (no quantity yet) — or "répartir" — gets its share of
+    # the targets; a quantity the athlete typed is kept as is.
+    auto_all = bool(form.get("auto"))
+    selected = [by_id[i] for i in used if i in by_id]
+    suggested = auto_rates(targets["carbs_g_per_h"], targets["sodium_mg_per_h"], selected) if selected else {}
+    items = []
+    for p in selected:
+        pid = p["id"]
+        r = qty.get(pid, 0.0)
+        if auto_all or r <= 0 and prev_rates.get(pid, 0) <= 0:
+            r = suggested.get(pid, 0.0)
+        elif r <= 0:
+            r = prev_rates.get(pid, 0.0)
+        if r > 0:
+            items.append({"product_id": pid, "per_hour": round(r, 2)})
+    refills = list(prev.get("refills") or [])  # legacy tick list; stations now come from checkpoint kinds
     flask_capacity_ml = round(_to_float(form.get("flask_capacity_ml"), 1000))
     caffeine = {
         "enabled": bool(form.get("caffeine_enabled")),

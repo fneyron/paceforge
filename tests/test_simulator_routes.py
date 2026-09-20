@@ -73,17 +73,23 @@ async def test_nutrition_card_with_packing_and_caffeine(as_user: AsyncClient, db
     r = await as_user.post("/api/nutrition/products", data={"name": "Gel caf", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50})
     assert r.status_code == 200
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Caféine planifiée" in r.text
-    form = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    pid = form.text.split('name="interval_')[1].split('"')[0]
+    assert r.status_code == 200 and "Ce que tu prends" in r.text and "Coche les produits" in r.text
+    pid = r.text.split('name="use_')[1].split('"')[0]
+    # ticking a product with no quantity → it gets its share of the target (75 g/h / 25 g = 3/h)
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
         "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000,
-        f"interval_{pid}": 20, "refill_10.0": 1, "caffeine_enabled": 1, "caffeine_from_h": 1,
-        "caffeine_every_h": 2, "caffeine_dose_mg": 50, "caffeine_boost_dawn": 1,
+        f"use_{pid}": 1, "caffeine_enabled": 1, "caffeine_from_h": 1, "caffeine_every_h": 2, "caffeine_dose_mg": 50, "caffeine_boost_dawn": 1,
     })
     assert r.status_code == 200, r.text
-    assert "g/h réel" in r.text and "Répartition sac / drop bags" in r.text and "Sac au départ" in r.text
-    assert "Caféine —" in r.text
+    t = r.text
+    assert f'name="qty_{pid}"' in t and 'value="3"' in t and "75 g/h" in t
+    assert "Par tronçon" in t and "Sac au départ" in t and "Drop bag · Col" in t
+    assert "Caféine" in t and "aube" not in t.split("Caféine <span")[0]  # the caffeine card renders its doses
+    # a typed quantity is kept as is
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
+        "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000, f"use_{pid}": 1, f"qty_{pid}": "2.5",
+    })
+    assert 'value="2.5"' in r.text
 
 
 @pytest.mark.asyncio

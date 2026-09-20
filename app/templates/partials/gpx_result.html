@@ -82,30 +82,10 @@
                            onchange="window._sim && window._sim.onConditionsChange()"
                            class="h-9 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
                 </div>
-                <div class="flex flex-col gap-1">
-                    <label for="start-time" class="text-[11px] font-medium text-gray-500">Heure de départ</label>
-                    {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
-                    {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
-                    <input type="time" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}" step="60"
-                           onchange="window._sim && window._sim.onConditionsChange()"
-                           class="h-9 px-3 rounded-lg border border-gray-200 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-gray-900">
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-[11px] font-medium text-gray-500" title="Ton temps cible. Le plan répartit ce temps à effort régulier. Par défaut = temps estimé.">Objectif</label>
-                    <div class="flex items-center gap-1.5 h-9">
-                        <input type="number" id="target-h-vis" value="{{ (tgt // 3600) }}" min="0" max="99" onchange="window._sim && window._sim.syncTarget()"
-                               class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                        <span class="text-xs text-gray-400">h</span>
-                        <input type="number" id="target-m-vis" value="{{ ((tgt % 3600) // 60) }}" min="0" max="59" onchange="window._sim && window._sim.syncTarget()"
-                               class="sim-num w-14 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                        <span class="text-xs text-gray-400">min</span>
-                        <button type="button" onclick="window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé"
-                                class="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 shrink-0">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
-                        </button>
-                        <span id="target-delta" class="text-[11px] text-gray-400 ml-1 tabular-nums"></span>
-                    </div>
-                </div>
+                {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
+                {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
+                {# Start time and objective are edited inline in the plan table (Départ / Arrivée rows). #}
+                <input type="hidden" id="start-time" value="{{ '%02d:%02d'|format(sh, sm) }}">
                 <div class="flex flex-col gap-1">
                     <label for="stop-min" class="text-[11px] font-medium text-gray-500" title="Temps d'arrêt moyen à chaque ravito (coché dans Nutrition). Décale les heures de passage.">Arrêt/ravito</label>
                     <div class="flex items-center gap-1 h-9">
@@ -115,13 +95,12 @@
                         <span class="text-xs text-gray-400">min</span>
                     </div>
                 </div>
-                <button onclick="window._sim.fetchWeather()"
-                        class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
-                    Météo
-                </button>
-                <div id="weather-result" class="flex items-center text-xs text-gray-500 pb-2"></div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-[11px] font-medium text-gray-500">Météo</span>
+                    <div id="weather-result" class="h-9 flex items-center text-xs text-gray-500"><span class="text-gray-400">choisis une date</span></div>
+                </div>
             </div>
+            <p class="mt-3 text-[11px] text-gray-400">Heure de départ et objectif se règlent directement dans le plan de course (lignes Départ et Arrivée). La météo se met à jour toute seule dès qu'une date est choisie, puis à chaque ouverture si la prévision a plus de 3 h.</p>
         </div>
     </details>
 
@@ -559,7 +538,7 @@ window._sim = {};
 
     // ── PASSAGE TIMES / SAVE / WEATHER ──
     function startParts() { var el = document.getElementById('start-time'); var v = (el && el.value) || '06:00'; var p = v.split(':'); return { h: parseInt(p[0], 10) || 0, m: parseInt(p[1], 10) || 0 }; }
-    function recalc() { updateHero(); updateSummary(); var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var dl = document.getElementById('target-delta'); if (dl) { if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } } var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); } var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
+    function recalc() { updateHero(); updateSummary(); var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60; var b = new URLSearchParams(); b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints)); if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor); var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId); if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); } var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0); fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) { document.getElementById('passage-times-result').innerHTML = html; }); }
     var saveTimer = null;
     function setStatus(state) {
         var el = document.getElementById('save-status');
@@ -608,7 +587,12 @@ window._sim = {};
         saveTimer = setTimeout(saveRoute, 800);
     }
     function onNameChange() { scheduleSave(); }
-    function onConditionsChange() { recalc(); scheduleSave(); }
+    var lastDate = (document.getElementById('race-date') || {}).value || '';
+    function onConditionsChange() {
+        var d = (document.getElementById('race-date') || {}).value || '';
+        if (d !== lastDate) { lastDate = d; if (d) { fetchWeather(); return; } currentWeather = null; currentHourly = null; currentHeatFactor = 1.0; var wr = document.getElementById('weather-result'); if (wr) wr.innerHTML = '<span class="text-gray-400">choisis une date</span>'; }
+        recalc(); scheduleSave();
+    }
     // Save the live state FIRST, then open — otherwise print/export would use
     // the last-saved data and show different values than the on-screen table.
     // The tab is opened synchronously (within the click) to dodge popup blockers,
@@ -651,17 +635,35 @@ window._sim = {};
         currentHourly = w.hourly || null;
         var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : p > 0 ? 'text-amber-500' : 'text-green-600';
         var icon = (w.weather_code !== undefined && w.weather_code !== null) ? '<span class="mr-1" title="condition au départ">' + iconForCat(wmoCategoryJs(w.weather_code)) + '</span>' : '';
-        el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· météo par point</span>' : '');
+        var when = '';
+        if (w.fetched_at) { var dt = new Date(w.fetched_at * 1000); var age = (Date.now() / 1000 - w.fetched_at) / 3600; when = age < 24 ? ('mise à jour ' + (age < 1 ? 'à l\'instant' : 'à ' + dt.getHours() + ':' + (dt.getMinutes() < 10 ? '0' : '') + dt.getMinutes())) : ('du ' + dt.getDate() + '/' + (dt.getMonth() + 1)); }
+        el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· par point</span>' : '') + (when ? ' <span class="text-gray-300">· ' + when + '</span>' : '') + ' <button type="button" onclick="window._sim.fetchWeather()" class="ml-1 text-gray-400 hover:text-gray-800 underline decoration-gray-300" title="Actualiser la prévision">actualiser</button>';
         updateSummary();
     }
+    var weatherInFlight = false;
     function fetchWeather() {
-        var d = document.getElementById('race-date').value; if (!d || !routeCoords.length) return;
+        var d = document.getElementById('race-date').value; if (!d || !routeCoords.length || weatherInFlight) return;
+        weatherInFlight = true;
         var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d);
-        document.getElementById('weather-result').innerHTML = '<span class="text-gray-400">…</span>';
-        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { renderWeather(w); recalc(); scheduleSave(); });
+        document.getElementById('weather-result').innerHTML = '<span class="text-gray-400 inline-flex items-center gap-1"><svg class="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> prévision…</span>';
+        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { weatherInFlight = false; renderWeather(w); recalc(); scheduleSave(); }).catch(function() { weatherInFlight = false; renderWeather({ error: 'météo indisponible' }); });
     }
-    function syncTarget() { var h = parseInt(document.getElementById('target-h-vis').value) || 0, m = parseInt(document.getElementById('target-m-vis').value) || 0; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; var ts = h * 3600 + m * 60, dl = document.getElementById('target-delta'); if (ts > 0 && predictedTotalS > 0) { var d = Math.round((ts - predictedTotalS) / 60); dl.textContent = '(' + (d > 0 ? '+' : '') + d + ' min vs estimé)'; } else { dl.textContent = ''; } recalc(); scheduleSave(); }
-    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h-vis').value = h; document.getElementById('target-m-vis').value = m; syncTarget(); }
+    // The forecast is fetched without a click: when a date is set and nothing is
+    // saved for it, and again on each visit once the saved forecast is older than
+    // 3 h (climate averages: 24 h). Manual refresh stays available in the line.
+    function weatherStale(w) {
+        var d = (document.getElementById('race-date') || {}).value || '';
+        if (!d) return false;
+        if (!w || w.date !== d || !w.fetched_at) return true;
+        var maxAge = (w.source === 'prevision') ? 3 * 3600 : 24 * 3600;
+        return (Date.now() / 1000 - w.fetched_at) > maxAge;
+    }
+    function maybeFetchWeather() { if (weatherStale(currentWeather)) fetchWeather(); }
+    // Inline edits from the plan table (Départ row → start time, Arrivée row → objective).
+    function setTarget(h, m) { h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; recalc(); scheduleSave(); }
+    function setTargetFrom(el) { var row = el.closest('[data-target-editor]'); if (!row) return; setTarget(row.querySelector('[data-target-h]').value, row.querySelector('[data-target-m]').value); }
+    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
+    function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; document.getElementById('start-time').value = v; recalc(); scheduleSave(); }
     // ── RACE DAY: "I'm here at HH:MM" → re-plan the remainder ──
     function markPassage(cpIndex, km, plannedClock) {
         var cp = checkpoints[cpIndex];
@@ -721,7 +723,8 @@ window._sim = {};
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); var mc = document.getElementById('courseMap'); if (mc) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; }
     recalc();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, syncTarget: syncTarget, resetTarget: resetTarget, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
+    maybeFetchWeather();
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, setTargetFrom: setTargetFrom, resetTarget: resetTarget, setStartTime: setStartTime, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create
     // the route server-side and redirect here, so there's no id-less draft case.)

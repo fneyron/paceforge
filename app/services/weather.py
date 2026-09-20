@@ -1,5 +1,6 @@
 import logging
 import math
+import time
 from datetime import datetime, timedelta
 
 import httpx
@@ -17,9 +18,13 @@ async def get_weather_forecast(lat: float, lon: float, date: str) -> dict | None
         days_away = (race_date - datetime.now().date()).days
 
         if days_away <= 15:
-            return await _fetch_forecast(lat, lon, date)
+            result = await _fetch_forecast(lat, lon, date)
         else:
-            return await _fetch_climate(lat, lon, race_date)
+            result = await _fetch_climate(lat, lon, race_date)
+        if result:
+            # Lets the plan page refresh a forecast on its own once it is stale.
+            result["fetched_at"] = int(time.time())
+        return result
     except Exception:
         logger.exception("Failed to get weather for %s", date)
         return None

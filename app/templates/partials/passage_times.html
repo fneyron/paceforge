@@ -56,7 +56,16 @@
                         <span class="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0"></span>
                         <span class="font-semibold text-green-800 text-xs">Départ</span>
                     </div>
+                    {% if print_mode %}
                     <p class="text-[10px] text-gray-400 pl-4">km 0</p>
+                    {% else %}
+                    <div class="pl-4 mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-400">
+                        <span>km 0 · départ</span>
+                        <input type="time" value="{{ '%02d:%02d'|format((start_offset_s // 3600) | int, ((start_offset_s % 3600) // 60) | int) }}" step="60"
+                               onchange="window._sim && window._sim.setStartTime(this.value)" title="Heure de départ de la course"
+                               class="h-6 w-[74px] px-1 py-0 rounded border border-gray-200 bg-white text-[11px] font-semibold tabular-nums text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    </div>
+                    {% endif %}
                 </td>
                 <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{% if start_elevation is not none %}{{ start_elevation|int }}m{% else %}—{% endif %}</td>
                 {% if has_weather is defined and has_weather %}<td class="hidden sm:table-cell text-right py-2.5 px-2 text-gray-300">—</td>{% endif %}
@@ -118,6 +127,17 @@
                                    onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'cutoff_clock', this.value)"
                                    class="h-6 w-[74px] px-1 py-0 rounded border border-gray-200 bg-transparent text-[10px] tabular-nums text-gray-600">
                         </label>
+                    </div>
+                    {% elif is_finish and not print_mode %}
+                    {% set tt = target_total if (target_total is defined and target_total) else predicted_total %}
+                    <div class="pl-4 mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-gray-400" data-target-editor>
+                        <span>km {{ s.end_km }} · objectif</span>
+                        <input type="number" data-target-h min="0" max="99" value="{{ (tt // 3600) | int }}" onchange="window._sim && window._sim.setTargetFrom(this)" class="sim-num h-6 w-9 px-1 py-0 rounded border border-gray-200 bg-white text-[11px] font-semibold tabular-nums text-center text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900"><span>h</span>
+                        <input type="number" data-target-m min="0" max="59" value="{{ ((tt % 3600) // 60) | int }}" onchange="window._sim && window._sim.setTargetFrom(this)" class="sim-num h-6 w-9 px-1 py-0 rounded border border-gray-200 bg-white text-[11px] font-semibold tabular-nums text-center text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900"><span>min</span>
+                        {% if predicted_total %}{% set dm = ((tt - predicted_total) / 60) | round | int %}
+                        <span class="tabular-nums {% if dm | abs > 1 %}text-gray-500{% endif %}">({% if dm | abs <= 1 %}= estimé{% else %}{{ '+' if dm > 0 }}{{ dm }} min vs estimé{% endif %})</span>
+                        {% if dm | abs > 1 %}<button type="button" onclick="window._sim && window._sim.resetTarget()" title="Remettre l'objectif sur le temps estimé" class="text-gray-400 hover:text-gray-800 underline decoration-gray-300">reset</button>{% endif %}
+                        {% endif %}
                     </div>
                     {% else %}
                     <p class="text-[10px] text-gray-400 {% if is_finish %}pl-4{% else %}pl-7{% endif %}">km {{ s.end_km }}</p>
