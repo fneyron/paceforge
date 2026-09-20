@@ -116,13 +116,7 @@
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Plan de course</h3>
-            <p class="text-[11px] text-gray-400">Tout s'édite dans le tableau : départ, objectif, points, type de ravito, barrière · ⏱ le jour J pour ton heure réelle</p>
-        </div>
-        <div id="live-strip" class="hidden mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-gray-700">
-            <span>Passage réel à <b id="live-name">…</b> à</span>
-            <input type="time" id="live-clock" step="60" class="h-8 px-2 rounded-lg border border-gray-200 bg-white text-sm tabular-nums">
-            <button onclick="window._sim.applyPassage()" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800">Recalculer la suite</button>
-            <button onclick="window._sim.hideLiveStrip()" class="text-gray-500 hover:text-gray-800 underline">Annuler</button>
+            <p class="text-[11px] text-gray-400">Clique une valeur pour la modifier · le jour J, saisis ton heure réelle sur un point : la suite se recale</p>
         </div>
         <input type="hidden" id="target-h" value="{{ (tgt // 3600) }}">
         <input type="hidden" id="target-m" value="{{ ((tgt % 3600) // 60) }}">
@@ -203,7 +197,6 @@ window._sim = {};
     var savedSportType = {{ ('"' + saved_sport_type + '"') | safe if saved_sport_type is defined and saved_sport_type else '"trail"' }};
     var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
     var liveAnchor = {{ saved_live_json | safe if saved_live_json is defined and saved_live_json else 'null' }};  // race-day passage anchor
-    var pendingLive = null;
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
 
     function interpElev(km) {
@@ -637,7 +630,7 @@ window._sim = {};
         var icon = (w.weather_code !== undefined && w.weather_code !== null) ? '<span class="mr-1" title="condition au départ">' + iconForCat(wmoCategoryJs(w.weather_code)) + '</span>' : '';
         var when = '';
         if (w.fetched_at) { var dt = new Date(w.fetched_at * 1000); var age = (Date.now() / 1000 - w.fetched_at) / 3600; when = age < 24 ? ('mise à jour ' + (age < 1 ? 'à l\'instant' : 'à ' + dt.getHours() + ':' + (dt.getMinutes() < 10 ? '0' : '') + dt.getMinutes())) : ('du ' + dt.getDate() + '/' + (dt.getMonth() + 1)); }
-        el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + (currentHourly ? ' <span class="text-gray-400">· par point</span>' : '') + (when ? ' <span class="text-gray-300">· ' + when + '</span>' : '') + ' <button type="button" onclick="window._sim.fetchWeather()" class="ml-1 text-gray-400 hover:text-gray-800 underline decoration-gray-300" title="Actualiser la prévision">actualiser</button>';
+        el.innerHTML = icon + w.temperature_c + '°C · Hum.' + w.humidity_pct + '% · <span class="' + cls + ' font-medium">' + (p > 0 ? '+' + p + '%' : 'OK') + '</span>' + (w.source ? ' <span class="text-gray-300">(' + w.source + ')</span>' : '') + ((currentHourly && currentHourly.points && currentHourly.points.length) ? ' <span class="text-gray-400">· à chaque point, 48 h</span>' : (currentHourly ? ' <span class="text-gray-400">· au départ, par heure</span>' : '')) + (when ? ' <span class="text-gray-300">· ' + when + '</span>' : '') + ' <button type="button" onclick="window._sim.fetchWeather()" class="ml-1 text-gray-400 hover:text-gray-800 underline decoration-gray-300" title="Actualiser la prévision">actualiser</button>';
         updateSummary();
     }
     var weatherInFlight = false;
@@ -645,6 +638,10 @@ window._sim = {};
         var d = document.getElementById('race-date').value; if (!d || !routeCoords.length || weatherInFlight) return;
         weatherInFlight = true;
         var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d);
+        // forecast at each checkpoint and at the finish: the plan takes the nearest point per section
+        var pts = checkpoints.map(function (cp) { var c = findCoordAtKm(cp.distance_km); return c ? [c[0], c[1], cp.distance_km] : null; }).filter(Boolean);
+        var last = routeCoords[routeCoords.length - 1]; pts.push([last[0], last[1], last[2]]);
+        b.append('points_json', JSON.stringify(pts));
         document.getElementById('weather-result').innerHTML = '<span class="text-gray-400 inline-flex items-center gap-1"><svg class="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> prévision…</span>';
         fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { weatherInFlight = false; renderWeather(w); recalc(); scheduleSave(); }).catch(function() { weatherInFlight = false; renderWeather({ error: 'météo indisponible' }); });
     }
@@ -664,25 +661,14 @@ window._sim = {};
     function setTargetFrom(el) { var row = el.closest('[data-target-editor]'); if (!row) return; setTarget(row.querySelector('[data-target-h]').value, row.querySelector('[data-target-m]').value); }
     function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
     function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; document.getElementById('start-time').value = v; recalc(); scheduleSave(); }
-    // ── RACE DAY: "I'm here at HH:MM" → re-plan the remainder ──
-    function markPassage(cpIndex, km, plannedClock) {
+    // ── RACE DAY: typing a passage time on a checkpoint = "I'm here at HH:MM" → re-plan the remainder ──
+    function setPassage(cpIndex, km, clock) {
+        if (!clock || !/^\d{2}:\d{2}$/.test(clock)) return;
         var cp = checkpoints[cpIndex];
-        pendingLive = { km: km, name: cp ? cp.name : ('km ' + km) };
-        var strip = document.getElementById('live-strip'), inp = document.getElementById('live-clock');
-        if (!strip || !inp) return;
-        document.getElementById('live-name').textContent = pendingLive.name;
-        inp.value = (liveAnchor && Math.abs(liveAnchor.anchor_km - km) < 0.15) ? liveAnchor.anchor_clock : plannedClock;
-        strip.classList.remove('hidden');
-        try { inp.focus(); } catch (e) {}
+        liveAnchor = { anchor_km: km, anchor_clock: clock, anchor_name: cp ? cp.name : ('km ' + km) };
+        recalc(); persistLive();
     }
-    function hideLiveStrip() { var strip = document.getElementById('live-strip'); if (strip) strip.classList.add('hidden'); pendingLive = null; }
-    function applyPassage() {
-        if (!pendingLive) return;
-        var v = (document.getElementById('live-clock') || {}).value; if (!v) return;
-        liveAnchor = { anchor_km: pendingLive.km, anchor_clock: v, anchor_name: pendingLive.name };
-        hideLiveStrip(); recalc(); persistLive();
-    }
-    function clearPassage() { liveAnchor = null; hideLiveStrip(); recalc(); persistLive(); }
+    function clearPassage() { liveAnchor = null; recalc(); persistLive(); }
     function persistLive() {
         if (!currentRouteId) return;
         var b = new URLSearchParams();
@@ -708,8 +694,7 @@ window._sim = {};
         var st = (document.getElementById('start-time') || {}).value || '06:00';
         var stop = parseInt((document.getElementById('stop-min') || {}).value) || 0;
         var parts = [];
-        parts.push('Départ ' + (d ? d.split('-').reverse().join('/') + ' ' : '') + st);
-        parts.push(hasRealTarget() ? 'objectif ' + fmtHM(currentTargetS()) : 'objectif = estimation');
+        parts.push(d ? 'Course le ' + d.split('-').reverse().join('/') : 'Date de course non fixée');
         parts.push(stop ? stop + ' min par ravito' : 'sans arrêt aux ravitos');
         if (currentWeather && currentWeather.temperature_c !== undefined && currentWeather.temperature_c !== null) parts.push(currentWeather.temperature_c + '°C');
         el.textContent = parts.join(' · ');
@@ -724,7 +709,7 @@ window._sim = {};
     try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); var mc = document.getElementById('courseMap'); if (mc) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>'; }
     recalc();
     maybeFetchWeather();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, setTargetFrom: setTargetFrom, resetTarget: resetTarget, setStartTime: setStartTime, exportGpx: exportGpx, printPlan: printPlan, markPassage: markPassage, applyPassage: applyPassage, clearPassage: clearPassage, hideLiveStrip: hideLiveStrip, _cleanup: cleanup };
+    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, setTargetFrom: setTargetFrom, resetTarget: resetTarget, setStartTime: setStartTime, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
 
     // Existing route is already persisted; mark saved. (Fresh uploads now create
     // the route server-side and redirect here, so there's no id-less draft case.)

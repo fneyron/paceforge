@@ -170,10 +170,18 @@ def predict_cycling_course(
 
         seg_wind_kmh, seg_wind_from = 0.0, None
         if apply_hourly:
-            hour = int((start_offset_s + cumulative_time) // 3600) % 24
-            speeds, dirs = hourly_wind["speed"], hourly_wind.get("dir") or []
-            ws_kmh = (speeds[hour] if hour < len(speeds) else speeds[-1]) or 0.0
-            wd = dirs[hour] if hour < len(dirs) else (dirs[-1] if dirs else None)
+            from app.services.weather import hourly_index
+
+            hour = int((start_offset_s + cumulative_time) // 3600)
+            src = hourly_wind
+            pts = hourly_wind.get("points") or []
+            if pts:
+                mid_km = (seg.start_km + seg.end_km) / 2
+                near = min(pts, key=lambda p: abs(float(p.get("km", 0)) - mid_km))
+                src = {"speed": near.get("wind") or hourly_wind["speed"], "dir": near.get("wind_dir") or hourly_wind.get("dir") or []}
+            speeds, dirs = src["speed"], src.get("dir") or []
+            ws_kmh = speeds[hourly_index(hour, len(speeds))] or 0.0
+            wd = dirs[hourly_index(hour, len(dirs))] if dirs else None
             seg_wind_kmh = ws_kmh * wind_height_factor
             seg_wind_from = wd
             headwind_ms = headwind_component(seg_wind_kmh / 3.6, wd, bearing) if wd is not None else 0.0

@@ -729,7 +729,7 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     if wind_mode == "auto" and weather:
         hw = weather.get("hourly") or {}
         if hw.get("wind"):
-            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or []}
+            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or [], "points": hw.get("points") or []}
         else:
             wind_speed = float(weather.get("wind_speed_kmh") or 0)
             wind_dir = weather.get("wind_direction_deg")
@@ -847,7 +847,8 @@ async def save_bike_plan(
         if coords:
             from app.services.weather import get_weather_forecast
 
-            w = await get_weather_forecast(coords[0][0], coords[0][1], route.race_date)
+            cp_res = await db.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id).order_by(RouteCheckpoint.distance_km))
+            w = await get_weather_forecast(coords[0][0], coords[0][1], route.race_date, points=_route_sample_points(route, [cp.as_dict() for cp in cp_res.scalars().all()]))
             if w:
                 w["date"] = route.race_date
                 route.weather_json = w
@@ -1202,15 +1203,38 @@ async def delete_route(
 
 # ── Weather ──
 
+def _route_sample_points(route: Route, cps: list[dict]) -> list[list[float]]:
+    """[[lat, lon, km]] at every checkpoint and at the finish — where the
+    forecast is fetched so each section gets the weather of its own place."""
+    coords = (route.course_json or {}).get("route_coords") or []
+    if not coords:
+        return []
+
+    def at_km(km: float):
+        return min(coords, key=lambda c: abs(float(c[2]) - km))
+
+    pts = [[float(at_km(float(cp["distance_km"]))[0]), float(at_km(float(cp["distance_km"]))[1]), float(cp["distance_km"])] for cp in cps]
+    last = coords[-1]
+    pts.append([float(last[0]), float(last[1]), float(last[2])])
+    return pts
+
+
 @router.post("/api/simulator/weather")
 async def get_weather(
     lat: float = Form(...),
     lon: float = Form(...),
     date: str = Form(...),
+    points_json: str = Form(default=""),
 ):
     from app.services.weather import get_weather_forecast
 
-    weather = await get_weather_forecast(lat, lon, date)
+    points = None
+    if points_json:
+        try:
+            points = [p for p in json.loads(points_json) if isinstance(p, list | tuple) and len(p) >= 3][:24]
+        except (ValueError, TypeError):
+            points = None
+    weather = await get_weather_forecast(lat, lon, date, points=points)
     if not weather:
         return JSONResponse({"error": "Impossible de récupérer la météo"}, status_code=500)
     return JSONResponse(weather)
