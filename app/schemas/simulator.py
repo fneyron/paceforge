@@ -192,3 +192,6 @@ class PassageTimeSection(BaseModel):
     temperature_c: float | None = None
     heat_factor: float | None = None
     weather_code: int | None = None
+    wind_kmh: float | None = None
+    humidity_pct: float | None = None
+    stop_s: int = 0  # planned stop at this arrival point (aid stations only)

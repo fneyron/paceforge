@@ -238,13 +238,17 @@ def compute_plan(
     }
 
     # Per-leg schedule: WHOLE units to take between two checkpoints (you never
-    # take half a gel/sachet → ceil, so any product used shows at least 1). Also
-    # flags legs where you'd run dry before the next refill (carried > capacity),
-    # and the REAL g/h and sodium/h the whole units give on that leg.
+    # take half a gel/sachet). The fraction left over on one leg carries to the
+    # next (cumulative rounding), so a 50-minute leg does not get a full hour's
+    # worth of every product and the race total stays within half a unit of
+    # rate × duration. Also flags legs where you'd run dry before the next
+    # refill (carried > capacity), and the REAL g/h and sodium/h the whole
+    # units give on that leg.
     refills = {round(float(k), 1) for k in (refill_kms or set())}
     cap = float(flask_capacity_ml or 0)
     schedule = []
     line_totals = [0] * len(lines)
+    line_due = [0.0] * len(lines)  # units owed so far = rate × elapsed hours
     prev_cum_s = 0.0
     prev_clock_s = float(start_offset_s)
     prev_name = "Départ"
@@ -268,7 +272,11 @@ def compute_plan(
             leg_units = []
             real_carbs = real_sodium = real_caff = 0.0
             for li, ln in enumerate(lines):
-                u = math.ceil(ln["per_hour"] * leg_h) if ln["per_hour"] > 0 else 0
+                if ln["per_hour"] > 0:
+                    line_due[li] += ln["per_hour"] * leg_h
+                    u = max(0, int(math.floor(line_due[li] + 0.5)) - line_totals[li])
+                else:
+                    u = 0
                 line_totals[li] += u
                 real_carbs += u * ln["carbs_per_unit"]
                 real_sodium += u * ln["sodium_per_unit"]
