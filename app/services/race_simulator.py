@@ -608,7 +608,7 @@ def compute_passage_times(
             "start_km": start_km, "end_km": end_km, "dist": section_dist,
             "time": section_time, "base": section_base,
             "gain": section_gain, "loss": section_loss,
-            "mid_cum": mid_cum, "cp_index": all_cps[i + 1]["cp_index"],
+            "mid_cum": mid_cum, "cum": baseline_cum, "cp_index": all_cps[i + 1]["cp_index"],
             "start_name": all_cps[i]["name"], "end_name": all_cps[i + 1]["name"],
         })
 
@@ -648,6 +648,18 @@ def compute_passage_times(
             ref_elev = float(w["elevation"]) if w["elevation"] is not None else base_elev
             temperature_c = round(base_temp - _LAPSE_RATE_C_PER_M * (mid_elev - ref_elev), 1)
             sec_heat = compute_heat_factor(temperature_c, humidity)
+            # What the table shows is the forecast AT the arrival point, at the
+            # arrival hour (the mid-leg sample above only drives the heat factor).
+            end_hour = int((start_offset_s + r["cum"] + stops_acc) // 3600)
+            w_end = hourly_at(hourly_weather, end_hour, r["end_km"])
+            if w_end["temp"] is not None:
+                end_elev = _elevation_at_km(course, r["end_km"]) or base_elev
+                end_ref = float(w_end["elevation"]) if w_end["elevation"] is not None else base_elev
+                temperature_c = round(float(w_end["temp"]) - _LAPSE_RATE_C_PER_M * (end_elev - end_ref), 1)
+                if w_end["code"] is not None:
+                    weather_code = int(w_end["code"])
+                wind_kmh = round(float(w_end["wind"]), 1) if w_end["wind"] is not None else wind_kmh
+                humidity_pct = round(float(w_end["humidity"])) if w_end["humidity"] is not None else humidity_pct
         else:
             sec_heat = heat_factor
 

@@ -38,6 +38,7 @@
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] text-right bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes"
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">
             </span>
+            <button id="hero-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="lg:hidden ml-3 self-center text-[11px] text-gray-400 hidden" title="Revenir à l'estimation"></button>
         </div>
         <div class="order-5 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-600 tabular-nums">
             <span class="inline-flex items-center gap-x-1.5 whitespace-nowrap">
@@ -56,12 +57,12 @@
         <div class="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-0.5 shrink-0">
             {% if course.route_coords %}
             <button id="map-toggle" type="button" onclick="window._sim && window._sim.toggleMap()" aria-pressed="false" title="Carte"
-                    class="w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+                    class="w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/></svg>
             </button>
             {% endif %}
             <details class="relative">
-                <summary class="list-none cursor-pointer select-none w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Exporter">
+                <summary class="list-none cursor-pointer select-none w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Exporter">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
                 </summary>
                 <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-30 text-left">
@@ -73,12 +74,12 @@
                     <button onclick="window._sim.exportGpx()" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— sans temps</span></button>
                 </div>
             </details>
-            <button type="button" onclick="window._sim.printPlan()" class="w-8 h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Imprimer la bande">
+            <button type="button" onclick="window._sim.printPlan()" class="w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Imprimer la bande">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
             </button>
         </div>
         <div class="order-4 hidden lg:block w-full h-0 -my-2"></div>
-        <div class="order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
+        <div class="hidden lg:block order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
             <input type="range" id="obj-slider" min="0" max="100" step="1" aria-label="Objectif" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
             <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="absolute top-1/2 -translate-y-1/2 w-6 h-6 -ml-3 flex items-center justify-center hidden" title="estimé"><span class="block w-px h-3 bg-gray-400"></span></button>
         </div>
@@ -88,14 +89,20 @@
     {# ── the band: profile with the plan on it (map on demand) ───────────── #}
     {% if course.route_coords %}
     <div class="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div id="courseMap" class="hidden h-[200px] lg:h-[280px] map-container"></div>
+        <div id="map-wrap" class="hidden relative">
+            <div id="courseMap" class="h-[220px] lg:h-[340px] map-container"></div>
+            <button type="button" onclick="window._sim && window._sim.toggleMap(false)" class="map-close absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white shadow items-center justify-center text-gray-700" aria-label="Fermer la carte">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
         <div id="elevChart" class="h-[150px] lg:h-[200px]"></div>
     </div>
     {% endif %}
 
     {# ── the plan: one table ─────────────────────────────────────────────── #}
     <div>
-        <div id="passage-times-result" class="transition-opacity"></div>
+        <div id="passage-times-result"></div>
+        <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
         <div class="h-9 flex items-center gap-2 text-xs text-gray-400 pl-1 border-t border-gray-100">
             <span class="w-5 h-5 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0 leading-none">+</span>
             <input type="text" id="cp-name" placeholder="Ajouter un point" aria-label="Nom du nouveau point" class="w-36 sm:w-52 bg-transparent border-0 border-b border-transparent focus:border-gray-900 focus:ring-0 px-0 py-0 text-xs text-gray-700 placeholder-gray-400 focus:outline-none">
@@ -172,41 +179,52 @@ window._sim = {};
     }
     function idxAtKm(km) { var n = routeCoords.length, lo = 0, hi = n - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; } return lo; }
 
-    // ── MAP (on demand) ──
+    // ── MAP ──
+    var DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+    var terrain3d = false, ctl3dBtn = null;
+    try { terrain3d = localStorage.getItem('pf.map3d') === '1'; } catch (e) {}
+    function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function routeGradientExpr() {
+        // one line, coloured by the same 0.5 km-averaged grade as the profile (no confetti)
+        var n = Math.min(400, Math.max(20, Math.floor(totalDistKm * 3))), expr = ['step', ['line-progress']];
+        expr.push(slopeColor(gradeAt(totalDistKm / n / 2)));
+        for (var k = 1; k < n; k++) { var km = totalDistKm * (k + 0.5) / n; expr.push(k / n, slopeColor(gradeAt(km))); }
+        return expr;
+    }
     function initMap() {
         if (!routeCoords.length) return;
         var el = document.getElementById('courseMap'); if (!el || !window.maplibregl) return;
         if (map) { try { map.remove(); } catch(e) {} map = null; }
         var coords = routeCoords.map(function(c) { return [c[1], c[0]]; });
-        var elevs = routeCoords.map(function(c) { return c[3] || 0; });
-        var gradients = [0];
-        for (var i = 1; i < routeCoords.length; i++) { var dDist = (routeCoords[i][2] - routeCoords[i-1][2]) * 1000, dElev = elevs[i] - elevs[i-1]; gradients.push(dDist > 0 ? (dElev / dDist) * 100 : 0); }
         var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
         map = new maplibregl.Map({
             container: el,
             style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
             bounds: [[Math.min.apply(null,lons),Math.min.apply(null,lats)],[Math.max.apply(null,lons),Math.max.apply(null,lats)]],
-            fitBoundsOptions: { padding: 40 }, attributionControl: false, cooperativeGestures: true,
+            fitBoundsOptions: { padding: 48 }, attributionControl: false, cooperativeGestures: !isCompact(), maxPitch: 72,
             locale: { 'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl + molette pour zoomer la carte', 'CooperativeGesturesHandler.MacHelpText': '⌘ + molette pour zoomer la carte', 'CooperativeGesturesHandler.MobileHelpText': 'Deux doigts pour déplacer la carte' },
         });
-        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+        map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'top-left');
+        map.addControl({
+            onAdd: function () { var d = document.createElement('div'); d.className = 'maplibregl-ctrl'; var b = document.createElement('button'); b.type = 'button'; b.className = 'map-ctl'; b.textContent = '3D'; b.title = 'Relief en 3D'; b.setAttribute('aria-pressed', terrain3d ? 'true' : 'false'); b.onclick = function () { setTerrain3d(!terrain3d); }; d.appendChild(b); ctl3dBtn = b; return d; },
+            onRemove: function () { ctl3dBtn = null; }
+        }, 'top-left');
         var hoverEl = document.createElement('div');
         hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
         hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
         map.on('load', function() {
-            var segStep = Math.max(1, Math.floor(coords.length / 200)), segments = {};
-            for (var i = 0; i < coords.length - segStep; i += segStep) { var color = slopeColor(gradients[i]); (segments[color] = segments[color] || []).push([coords[i], coords[Math.min(i + segStep, coords.length - 1)]]); }
-            var layerIdx = 0;
-            Object.keys(segments).forEach(function(color) {
-                map.addSource('route-seg-' + layerIdx, { type: 'geojson', data: { type: 'FeatureCollection', features: segments[color].map(function(pair) { return { type: 'Feature', geometry: { type: 'LineString', coordinates: pair }, properties: {} }; }) } });
-                map.addLayer({ id: 'route-seg-' + layerIdx, type: 'line', source: 'route-seg-' + layerIdx, paint: { 'line-width': 4, 'line-color': color }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
-                layerIdx++;
-            });
+            map.addSource('dem', { type: 'raster-dem', tiles: [DEM_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+            var firstSymbol = (map.getStyle().layers || []).filter(function (l) { return l.type === 'symbol'; })[0];
+            map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': isDark ? 0.25 : 0.32, 'hillshade-shadow-color': '#475569', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#94a3b8' } }, firstSymbol ? firstSymbol.id : undefined);
+            map.addSource('route', { type: 'geojson', lineMetrics: true, data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
+            map.addLayer({ id: 'route-casing', type: 'line', source: 'route', paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+            map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-width': 4, 'line-gradient': routeGradientExpr() }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
             map.addSource('hi-seg', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-            map.addLayer({ id: 'hi-seg', type: 'line', source: 'hi-seg', paint: { 'line-width': 9, 'line-color': '#f59e0b', 'line-opacity': 0.55 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
-            new maplibregl.Marker({ color: '#22c55e' }).setLngLat(coords[0]).setPopup(new maplibregl.Popup().setHTML('<b>Départ</b>')).addTo(map);
-            new maplibregl.Marker({ color: '#ef4444' }).setLngLat(coords[coords.length - 1]).setPopup(new maplibregl.Popup().setHTML('<b>Arrivée</b>')).addTo(map);
+            map.addLayer({ id: 'hi-seg', type: 'line', source: 'hi-seg', paint: { 'line-width': 10, 'line-color': '#f59e0b', 'line-opacity': 0.5 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+            new maplibregl.Marker({ color: '#22c55e', scale: 0.8 }).setLngLat(coords[0]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Départ</b>')).addTo(map);
+            new maplibregl.Marker({ color: '#ef4444', scale: 0.8 }).setLngLat(coords[coords.length - 1]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Arrivée</b>')).addTo(map);
             renderCpOnMap();
+            if (terrain3d) applyTerrain(true, false);
         });
         var mapHoverRaf = null, mapHoverPt = null;
         map.on('mousemove', function(e) {
@@ -219,6 +237,29 @@ window._sim = {};
         });
         map.on('mouseout', function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); });
     }
+    function applyTerrain(on, animate) {
+        if (!map || !map.getSource || !map.getSource('dem')) return;
+        try {
+            if (on) {
+                map.setTerrain({ source: 'dem', exaggeration: 1.35 });
+                try { map.setSky({ 'sky-color': isDark ? '#0f172a' : '#bfdbfe', 'horizon-color': isDark ? '#1e293b' : '#e0f2fe', 'fog-color': isDark ? '#1e293b' : '#f8fafc', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.7 }); } catch (e) {}
+                map.easeTo({ pitch: 62, bearing: map.getBearing() || -25, duration: animate ? 900 : 0 });
+            } else {
+                map.setTerrain(null);
+                map.easeTo({ pitch: 0, bearing: 0, duration: animate ? 600 : 0 });
+            }
+        } catch (e) { console.error('terrain', e); }
+        if (ctl3dBtn) ctl3dBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    function setTerrain3d(on) { terrain3d = !!on; try { localStorage.setItem('pf.map3d', on ? '1' : '0'); } catch (e) {} applyTerrain(terrain3d, true); }
+    function flyToCp(i) {
+        var cp = checkpoints[i]; if (!cp) return;
+        if (isCompact()) return;  // phone: the row tap already opens the detail line; the map has its own button
+        toggleMap(true);
+        var c = findCoordAtKm(cp.distance_km); if (!c || !map) return;
+        var go = function () { map.flyTo({ center: [c[1], c[0]], zoom: Math.max(map.getZoom(), 12.5), duration: 900 }); setTimeout(function () { if (cpMarkerEls[i] && !cpMarkerEls[i].getPopup().isOpen()) cpMarkerEls[i].togglePopup(); }, 950); };
+        if (map.getSource && map.getSource('route')) go(); else map.once('load', go);  // loaded() is false while terrain tiles stream in
+    }
     function mapHighlight(startKm, endKm) {
         if (!map || !map.getSource || !map.getSource('hi-seg')) return;
         var feats = [];
@@ -230,15 +271,18 @@ window._sim = {};
         map.getSource('hi-seg').setData({ type: 'FeatureCollection', features: feats });
     }
     function toggleMap(force) {
-        var mc = document.getElementById('courseMap'), btn = document.getElementById('map-toggle'); if (!mc) return;
-        var show = (force === undefined) ? mc.classList.contains('hidden') : !!force;
-        mc.classList.toggle('hidden', !show);
+        var wrap = document.getElementById('map-wrap'), btn = document.getElementById('map-toggle'); if (!wrap) return;
+        var show = (force === undefined) ? wrap.classList.contains('hidden') : !!force;
+        if (show && !wrap.classList.contains('hidden') && (!isCompact() || wrap.classList.contains('map-full'))) return;
+        wrap.classList.toggle('hidden', !show);
+        wrap.classList.toggle('map-full', show && isCompact());
+        document.body.style.overflow = (show && isCompact()) ? 'hidden' : '';
         if (btn) { btn.setAttribute('aria-pressed', show ? 'true' : 'false'); btn.classList.toggle('bg-gray-100', show); btn.classList.toggle('text-gray-900', show); btn.classList.toggle('text-gray-500', !show); }
-        try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {}
+        if (!isCompact()) { try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {} }
         if (!show) return;
         if (!map) {
             try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
-            if (!map) mc.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
+            if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
         } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
     }
 
@@ -306,7 +350,10 @@ window._sim = {};
         if (pts[pts.length - 1] !== elevData[elevData.length - 1]) pts.push(elevData[elevData.length - 1]);
         var d = '';
         pts.forEach(function (p, i) { d += (i ? 'L' : 'M') + xOf(p.distance_km).toFixed(1) + ' ' + yOf(p.elevation).toFixed(1) + ' '; });
-        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);  // night darkens the sky; the ground keeps its slope colours
+        var defs = mk('defs', {}), clip = mk('clipPath', { id: 'sky-clip' });
+        clip.appendChild(mk('path', { d: d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' 0 L' + xOf(pts[0].distance_km).toFixed(1) + ' 0 Z' }));
+        defs.appendChild(clip); svg.appendChild(defs);
+        prof.nightLayer = mk('g', { 'clip-path': 'url(#sky-clip)' }); svg.appendChild(prof.nightLayer);  // night darkens the sky only; the ground keeps its slope colours
         // area coloured by slope, same scale as the map (one slab per sampled step, ~0.5 km window)
         var slabs = mk('g', { 'fill-opacity': isDark ? '0.5' : '0.42', stroke: 'none' }), byColor = {};
         for (i = 0; i < pts.length - 1; i++) {
@@ -433,7 +480,7 @@ window._sim = {};
         var base = prof.h - prof.padB;
         [prof.nightLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
         if (planData) {
-            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.5' : '0.16' })); });
+            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.55' : '0.14' })); });
             // autonomy: every stretch without a full aid station is an amber bracket under the axis,
             // labelled « 29,9 km · 3h32 sans ravito » when it has the room (desktop); a tap shows it on the phone
             var yBar = prof.compact ? base + 18 : base + 17;
@@ -469,7 +516,7 @@ window._sim = {};
             var tt = mk('title', {});
             tt.textContent = (i + 1) + ' · ' + cp.name + ' · km ' + fmtKm(cp.distance_km) + (pt && pt.clock_s !== null ? ' · ' + fmtClock(pt.clock_s) : '') + (pt && pt.cutoff_clock ? ' · barrière ' + pt.cutoff_clock + (pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined ? ' (' + fmtMargin(pt.cutoff_margin_s) + ')' : '') : '');
             g.appendChild(tt);
-            g.appendChild(mk('rect', { x: x - 10, y: 0, width: 20, height: base, fill: 'transparent' }));
+            g.appendChild(mk('rect', { x: x - 14, y: cy - 14, width: 28, height: 28, fill: 'transparent', style: 'touch-action:none' }));
             prof.cpLayer.appendChild(g);
         });
     }
@@ -532,15 +579,29 @@ window._sim = {};
         recalc(); scheduleSave();
     }
     function refresh() { renderCpOnMap(); drawOverlays(); }
+    var KIND_LABEL = { water: 'eau', full: 'ravito complet', base: 'base vie' };
+    function cpPopupHtml(cp, i, pt) {
+        var h = '<b>' + (i + 1) + ' · ' + esc(cp.name) + '</b><div class="text-gray-500">km ' + fmtKm(cp.distance_km) + ' · ' + fmtM(cp.elevation || 0) + ' m</div>';
+        if (pt && pt.clock_s !== null && pt.clock_s !== undefined) h += '<div class="mt-1 text-[15px] font-bold tabular-nums">' + fmtClock(pt.clock_s) + '</div>';
+        if (pt && pt.cutoff_clock) h += '<div class="' + (pt.cutoff_margin_s < 0 ? 'text-red-600 font-semibold' : 'text-gray-600') + '">barrière ' + esc(pt.cutoff_clock) + (pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined ? ' · ' + fmtMargin(pt.cutoff_margin_s) : '') + '</div>';
+        var tags = []; if (KIND_LABEL[cp.kind]) tags.push(KIND_LABEL[cp.kind]); if (cp.crew) tags.push('assistance'); if (cp.drop_bag) tags.push('drop bag');
+        if (tags.length) h += '<div class="text-gray-500">' + tags.join(' · ') + '</div>';
+        if (pt && pt.temp !== null && pt.temp !== undefined) h += '<div class="text-gray-400">' + Math.round(pt.temp) + '°</div>';
+        return h;
+    }
     function renderCpOnMap() {
         if (!map || !map.getSource) return;
         cpMarkerEls.forEach(function(m) { m.remove(); }); cpMarkerEls = [];
+        var switchIdx = (planData && planData.scenarios) ? planData.scenarios.switch_cp_index : null;
         checkpoints.forEach(function(cp, i) {
             var c = findCoordAtKm(cp.distance_km); if (!c) return;
+            var pt = planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] : null;
+            var late = pt && pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined && pt.cutoff_margin_s < 0;
             var markerEl = document.createElement('div');
-            markerEl.style.cssText = 'width:22px;height:22px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;';
-            markerEl.textContent = i + 1;
-            var m = new maplibregl.Marker({ element: markerEl }).setLngLat([c[1], c[0]]).setPopup(new maplibregl.Popup({ maxWidth: '240px' }).setHTML('<b>' + (i + 1) + ' · ' + cp.name + '</b><br>km ' + cp.distance_km + ' · ' + cp.elevation + ' m')).addTo(map);
+            markerEl.className = 'cp-marker' + (late ? ' late' : (switchIdx === i ? ' switch' : ''));
+            markerEl.textContent = i + 1; markerEl.title = cp.name;
+            markerEl.addEventListener('mouseenter', function () { syncChart(cp.distance_km); });
+            var m = new maplibregl.Marker({ element: markerEl, anchor: 'center' }).setLngLat([c[1], c[0]]).setPopup(new maplibregl.Popup({ maxWidth: '240px', offset: 14, closeButton: false }).setHTML(cpPopupHtml(cp, i, pt))).addTo(map);
             cpMarkerEls.push(m);
         });
     }
@@ -552,17 +613,17 @@ window._sim = {};
         updateHero();
         var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0, ts = h * 3600 + m * 60;
         var b = new URLSearchParams();
-        b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints));
+        if (!currentRouteId) b.append('course_json', document.getElementById('courseJsonData').value);
+        b.append('checkpoints_json', JSON.stringify(checkpoints));
         if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
-        if (currentHourly) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
+        if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
         var out = document.getElementById('passage-times-result'), seq = ++recalcSeq;
-        out.classList.add('opacity-60');
-        fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { return r.text(); }).then(function(html) {
+        fetch('/partials/simulator/passage-times', { method: 'POST', body: b }).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then(function(html) {
             if (seq !== recalcSeq) return;
-            out.classList.remove('opacity-60');
+            recalcError(false);
             var ae = document.activeElement;
             if (ae && out.contains(ae) && inProgress(ae)) {
                 // he is typing in a field: leave it alone and fetch a fresh table once he leaves it
@@ -570,8 +631,9 @@ window._sim = {};
                 return;
             }
             swapTable(html);
-        }).catch(function () { out.classList.remove('opacity-60'); });
+        }).catch(function () { if (seq === recalcSeq) recalcError(true); });
     }
+    function recalcError(on) { var el = document.getElementById('recalc-error'); if (el) el.classList.toggle('hidden', !on); }
     // a field is "in progress" when its value differs from what was last committed (change) or it was keyed into moments ago
     var typingEl = null, typingAt = 0;
     function inProgress(el) { return el.tagName === 'INPUT' && (el.value !== el.defaultValue || (el === typingEl && Date.now() - typingAt < 1500)); }
@@ -591,9 +653,11 @@ window._sim = {};
     }
     function swapTable(html) {
         var out = document.getElementById('passage-times-result'), ae = document.activeElement, k = (ae && out.contains(ae)) ? focusKey(ae) : null;
-        out.innerHTML = html; renderedCps = checkpoints.slice();
+        // morph: unchanged cells are left alone (no blink, focus and selection survive natively)
+        if (window.Idiomorph) { try { Idiomorph.morph(out, html, { morphStyle: 'innerHTML' }); } catch (e) { out.innerHTML = html; } } else { out.innerHTML = html; }
+        renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); refocus(k); focusNewRow();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); if (document.activeElement !== ae) refocus(k); focusNewRow(); renderCpOnMap();
     }
 
     // ── OBJECTIVE: the number is the control ──
@@ -608,6 +672,7 @@ window._sim = {};
         sliderMin = Math.min(sliderMin, Math.floor(ts / 300) * 300); sliderMax = Math.max(sliderMax, Math.ceil(ts / 300) * 300);
         sl.value = Math.round((ts - sliderMin) / (sliderMax - sliderMin) * 100);
         sl.title = 'Objectif ' + fmtHM(ts) + ' · glisse : toutes les heures se recalculent';
+        var he = document.getElementById('hero-est'); if (he) { he.textContent = 'estimé ' + fmtHM(predictedTotalS); he.classList.toggle('hidden', !hasRealTarget()); }
         if (est) {
             var p = Math.max(0, Math.min(1, (predictedTotalS - sliderMin) / (sliderMax - sliderMin)));
             est.style.left = 'calc(6px + ' + (p * 100).toFixed(2) + '% - ' + (p * 12).toFixed(1) + 'px)';
@@ -658,28 +723,36 @@ window._sim = {};
         var el = document.getElementById('save-status'); if (!el) return;
         var cls = state === 'saving' ? 'bg-gray-300 animate-pulse' : state === 'error' ? 'bg-red-500' : 'bg-green-500';
         var title = state === 'saving' ? 'Enregistrement…' : state === 'error' ? 'Erreur d\'enregistrement' : 'Enregistré';
-        el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full ' + cls + '" title="' + title + '"></span>';
+        el.innerHTML = state === 'error'
+            ? '<button type="button" onclick="window._sim && window._sim.saveRoute()" class="text-[11px] text-red-600 hover:text-red-800 whitespace-nowrap">Non enregistré · réessayer</button>'
+            : '<span class="inline-block w-2 h-2 rounded-full ' + cls + '" title="' + title + '"></span>';
+        el.classList.toggle('w-3', state !== 'error');
         el.setAttribute('data-state', state);
     }
     function saveRoute() {
         setStatus('saving');
         var b = new URLSearchParams();
-        b.append('course_json', document.getElementById('courseJsonData').value); b.append('checkpoints_json', JSON.stringify(checkpoints));
+        if (!currentRouteId) b.append('course_json', document.getElementById('courseJsonData').value);
+        b.append('checkpoints_json', JSON.stringify(checkpoints));
         b.append('name', (document.getElementById('save-name').value || '').trim() || 'Parcours'); if (currentRouteId) b.append('route_id', currentRouteId);
         var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0; if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
         var rd = document.getElementById('race-date').value; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
-        if (currentWeather) b.append('weather_json', JSON.stringify(currentWeather));
+        var withWeather = !!currentWeather; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); })
-            .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); refreshNutrition(); } else { setStatus('error'); } }).catch(function() { setStatus('error'); });
+            .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; refreshNutrition(); } else { saveFailed(); } }).catch(function() { saveFailed(); });
     }
+    var saveRetried = false, hourlySaved = false;
+    function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
     function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=17', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }
-    function exportGpx() { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
-    function exportPace(fmt) { _saveThenOpen(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
+    function _saveThenDownload(urlFn) { closeMenus(); saveRoute().then(function () { if (currentRouteId) { var a = document.createElement('a'); a.href = urlFn(currentRouteId); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); } }); }
+    function exportGpx() { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
+    function exportPace(fmt) { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
+    function closeMenus() { document.querySelectorAll('#simulator-root details[open]').forEach(function (d) { d.removeAttribute('open'); }); }
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
     // ── START / OBJECTIVE / PASSAGE ──
@@ -696,7 +769,7 @@ window._sim = {};
     function renderWeather(w) {
         var el = document.getElementById('weather-result'); if (!el) return;
         if (!w || w.error) { el.innerHTML = w && w.error ? '<span class="text-gray-300 hidden lg:inline">·</span><button type="button" onclick="window._sim.fetchWeather()" class="text-red-500 hover:text-red-700" title="' + w.error + ' · réessayer">météo ✕</button>' : ''; return; }
-        currentWeather = w; currentHeatFactor = w.heat_factor || 1.0; currentHourly = w.hourly || null;
+        currentWeather = w; currentHeatFactor = w.heat_factor || 1.0; currentHourly = w.hourly || null; hourlySaved = false;
         var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : 'text-amber-500';
         var when = '';
         if (w.fetched_at) { var dt = new Date(w.fetched_at * 1000), age = (Date.now() / 1000 - w.fetched_at) / 3600; when = age < 24 ? (age < 1 ? 'à l\'instant' : 'à ' + dt.getHours() + ':' + (dt.getMinutes() < 10 ? '0' : '') + dt.getMinutes()) : ('le ' + dt.getDate() + '/' + (dt.getMonth() + 1)); }
@@ -760,7 +833,7 @@ window._sim = {};
         var t = document.getElementById('plan-table'); if (!t) return;
         var eff = t.querySelector('[data-scn-pill]') ? scn : 'target';
         t.setAttribute('data-scn', eff); fixSpans();
-        t.querySelectorAll('[data-scn-btn]').forEach(function (b) { var on = b.getAttribute('data-scn-btn') === eff; b.className = 'px-1.5 py-0.5 rounded-full ' + (on ? 'bg-gray-900 text-white' : 'text-gray-400'); });
+        t.querySelectorAll('[data-scn-btn]').forEach(function (b) { var on = b.getAttribute('data-scn-btn') === eff; b.className = 'px-2 py-1.5 rounded-full ' + (on ? 'bg-gray-900 text-white' : 'text-gray-500'); });
         applyDetail();
     }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
@@ -770,8 +843,14 @@ window._sim = {};
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     labelWeekday();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
-    var wantMap = false; try { wantMap = localStorage.getItem('pf.map') === '1' && window.innerWidth >= 1024; } catch (e) {}
+    var wantMap = !isCompact(); try { if (localStorage.getItem('pf.map') === '0') wantMap = false; } catch (e) {}
     if (wantMap) toggleMap(true);
+    document.addEventListener('pointerdown', function (ev) {
+        var t = ev.target;
+        if (!(t.closest && t.closest('#elevChart'))) { if (ev.pointerType === 'touch') { hideCross(); highlightRow(null); } }
+        document.querySelectorAll('#simulator-root details[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
+    });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -793,7 +872,7 @@ window._sim = {};
     ['cp-name', 'cp-km'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addCheckpoint(); } }); });
     recalc();
     maybeFetchWeather();
-    window._sim = { addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>
