@@ -11,14 +11,20 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 CLIMATE_URL = "https://climate-api.open-meteo.com/v1/climate"
 
 
-async def get_weather_forecast(lat: float, lon: float, date: str) -> dict | None:
-    """Fetch weather for a race date. Uses forecast if <15 days, climate averages otherwise."""
+async def get_weather_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
+    """Fetch weather for a race date. Uses forecast if <15 days, climate averages otherwise.
+
+    ``points`` = [[lat, lon, km], ...] along the route (checkpoints, finish):
+    the forecast is then fetched at EACH of them, two days long (a race
+    crossing midnight reads the second day's hours), and the plan uses the
+    point nearest to every section. Without points: the start only.
+    """
     try:
         race_date = datetime.strptime(date, "%Y-%m-%d").date()
         days_away = (race_date - datetime.now().date()).days
 
         if days_away <= 15:
-            result = await _fetch_forecast(lat, lon, date)
+            result = await _fetch_forecast(lat, lon, date, points)
         else:
             result = await _fetch_climate(lat, lon, race_date)
         if result:
@@ -30,16 +36,66 @@ async def get_weather_forecast(lat: float, lon: float, date: str) -> dict | None
         return None
 
 
-async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
-    """Real forecast for dates within 15 days."""
-    async with httpx.AsyncClient(timeout=10) as client:
+HOURS = 48  # two days of hourly data: the race may cross midnight
+
+
+def _hourly_arrays(data: dict, fallback: dict | None = None) -> dict | None:
+    """Normalise one Open-Meteo location result to fixed-length hourly arrays."""
+    hourly = data.get("hourly", {})
+    temps = hourly.get("temperature_2m", [])
+    if not temps:
+        return None
+    humidity = hourly.get("relative_humidity_2m", [])
+    wind = hourly.get("wind_speed_10m", [])
+    wind_dir = hourly.get("wind_direction_10m", [])
+    codes = hourly.get("weathercode", [])
+    n = min(HOURS, len(temps))
+    fb = fallback or {}
+
+    def fill(arr, default, cast=float):
+        out = []
+        for h in range(HOURS):
+            v = arr[h] if h < len(arr) else None
+            if v is None:
+                v = default
+            out.append(cast(v))
+        return out
+
+    avg_t = _avg_slice(temps, list(range(n)))
+    avg_h = _avg_slice(humidity, list(range(n))) or fb.get("humidity", 60)
+    avg_w = _avg_slice(wind, list(range(n)))
+    return {
+        "elevation": data.get("elevation"),
+        "temps": [round(t, 1) for t in fill(temps, avg_t)],
+        "humidity": [round(h, 0) for h in fill(humidity, avg_h)],
+        "codes": fill(codes, 0, int),
+        "wind": [round(w, 1) for w in fill(wind, avg_w)],
+        "wind_dir": [round(d, 0) for d in fill(wind_dir, 0)],
+    }
+
+
+async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
+    """Real forecast for dates within 15 days, at the start and at each point."""
+    locs = [[float(lat), float(lon), 0.0]]
+    for pt in points or []:
+        try:
+            plat, plon, pkm = float(pt[0]), float(pt[1]), float(pt[2])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if all(abs(plat - l[0]) > 0.002 or abs(plon - l[1]) > 0.002 for l in locs):
+            locs.append([plat, plon, pkm])
+    locs = locs[:24]
+    end_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(FORECAST_URL, params={
-            "latitude": lat, "longitude": lon,
+            "latitude": ",".join(f"{l[0]:.4f}" for l in locs), "longitude": ",".join(f"{l[1]:.4f}" for l in locs),
             "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weathercode",
-            "start_date": date, "end_date": date, "timezone": "auto",
+            "start_date": date, "end_date": end_date, "timezone": "auto",
         })
         response.raise_for_status()
-        data = response.json()
+        payload = response.json()
+    results = payload if isinstance(payload, list) else [payload]
+    data = results[0]
 
     hourly = data.get("hourly", {})
     temps = hourly.get("temperature_2m", [])
@@ -59,13 +115,20 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
     heat_factor = compute_heat_factor(avg_temp, avg_humidity)
     day_code = _dominant_code([codes[i] for i in race_hours if i < len(codes)])
 
-    # Full 24h profile so the simulator can derive per-checkpoint temperatures
-    # and conditions from each section's estimated time of day.
-    hourly_temps = [temps[h] if h < len(temps) and temps[h] is not None else avg_temp for h in range(24)]
-    hourly_hum = [humidity[h] if h < len(humidity) and humidity[h] is not None else avg_humidity for h in range(24)]
-    hourly_codes = [int(codes[h]) if h < len(codes) and codes[h] is not None else (day_code or 0) for h in range(24)]
-    hourly_wind = [wind[h] if h < len(wind) and wind[h] is not None else avg_wind for h in range(24)]
-    hourly_wind_dir = [wind_dir[h] if h < len(wind_dir) and wind_dir[h] is not None else avg_wind_dir for h in range(24)]
+    # 48 h profile at the start + one per point: the plan derives every
+    # section's temperature, wind and condition from the nearest point at the
+    # estimated time of passage.
+    start_arrays = _hourly_arrays(data, {"humidity": avg_humidity}) or {}
+    point_arrays = []
+    for loc, res in zip(locs, results, strict=False):
+        arr = _hourly_arrays(res, {"humidity": avg_humidity})
+        if arr:
+            point_arrays.append({"km": loc[2], "lat": loc[0], "lon": loc[1], **arr})
+    hourly_temps = start_arrays.get("temps", [avg_temp] * HOURS)
+    hourly_hum = start_arrays.get("humidity", [avg_humidity] * HOURS)
+    hourly_codes = start_arrays.get("codes", [day_code or 0] * HOURS)
+    hourly_wind = start_arrays.get("wind", [avg_wind] * HOURS)
+    hourly_wind_dir = start_arrays.get("wind_dir", [avg_wind_dir] * HOURS)
 
     return {
         "temperature_c": round(avg_temp, 1),
@@ -84,7 +147,41 @@ async def _fetch_forecast(lat: float, lon: float, date: str) -> dict | None:
             # heading at the estimated time of passage (myWindsock-style).
             "wind": [round(w, 1) for w in hourly_wind],
             "wind_dir": [round(d, 0) for d in hourly_wind_dir],
+            "elevation": data.get("elevation"),
+            "points": point_arrays if len(point_arrays) > 1 else [],
         },
+    }
+
+
+def hourly_index(hour: int, n: int) -> int:
+    """Index into an hourly array for ``hour`` counted from the race day's
+    midnight (may exceed 24). Old 24 h payloads wrap; 48 h payloads clamp."""
+    if hour < n:
+        return max(0, hour)
+    return hour % 24 if n == 24 else max(0, n - 1)
+
+
+def hourly_at(hourly: dict, hour: int, km: float | None = None) -> dict:
+    """Weather at a given hour (from the race day's midnight) and route km:
+    the nearest forecast point when the payload carries several, else the
+    start's profile. Returns {temp, humidity, code, wind, wind_dir, elevation}."""
+    src = hourly
+    pts = hourly.get("points") or []
+    if pts and km is not None:
+        src = min(pts, key=lambda p: abs(float(p.get("km", 0)) - km))
+    temps = src.get("temps") or hourly.get("temps") or []
+    n = len(temps)
+    if n == 0:
+        return {"temp": None, "humidity": None, "code": None, "wind": None, "wind_dir": None, "elevation": None}
+    i = hourly_index(int(hour), n)
+
+    def pick(key):
+        arr = src.get(key) or hourly.get(key) or []
+        return arr[hourly_index(int(hour), len(arr))] if arr else None
+
+    return {
+        "temp": temps[i], "humidity": pick("humidity"), "code": pick("codes"),
+        "wind": pick("wind"), "wind_dir": pick("wind_dir"), "elevation": src.get("elevation"),
     }
 
 

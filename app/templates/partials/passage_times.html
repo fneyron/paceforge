@@ -6,21 +6,15 @@
 
 {% if replan is defined and replan %}
 {% set dm = (replan.delta_s / 60) | round | int %}
-<div class="mb-3 rounded-lg border px-3 py-2 text-xs {% if dm > 1 %}border-amber-200 bg-amber-50 text-amber-900{% elif dm < -1 %}border-emerald-200 bg-emerald-50 text-emerald-900{% else %}border-gray-200 bg-gray-50 text-gray-700{% endif %}">
-    <b>{{ replan.anchor_name }} à {{ fmt_clock(replan.anchor_clock_s) }}</b> :
-    {% if dm > 1 %}<b>+{{ dm }} min</b> sur le plan.{% elif dm < -1 %}<b>{{ -dm }} min d'avance</b>.{% else %}dans les temps.{% endif %}
-    {% if replan.mode == 'target' %}
-        Objectif {{ fmt_time(replan.target_time_s) }} tenable :
-        {% if replan.required_ratio < 0.99 %}il faut <b>{{ ((1 - replan.required_ratio) * 100) | round | int }} % plus vite</b> sur la suite{% elif replan.required_ratio > 1.01 %}tu as <b>{{ ((replan.required_ratio - 1) * 100) | round | int }} % de marge</b>{% else %}garde le même effort{% endif %}.
-        À ton rythme actuel : arrivée {{ fmt_clock(replan.projected_finish_clock_s) }}.
-    {% else %}
-        {% if replan.target_time_s %}Objectif {{ fmt_time(replan.target_time_s) }} hors de portée. {% endif %}Plan recalé sur ton rythme : arrivée <b>{{ fmt_clock(replan.finish_clock_s) }}</b>.
-    {% endif %}
-    {% if editable_rows %}<button onclick="window._sim && window._sim.clearPassage()" class="ml-1 underline text-gray-500 hover:text-gray-800">Effacer</button>{% endif %}
-</div>
+<p class="mb-2 text-[11px] {% if dm > 1 %}text-amber-800{% elif dm < -1 %}text-emerald-800{% else %}text-gray-600{% endif %}">
+    Recalé depuis <b>{{ replan.anchor_name }} {{ fmt_clock(replan.anchor_clock_s) }}</b>{% if dm > 1 %} (+{{ dm }} min){% elif dm < -1 %} ({{ -dm }} min d'avance){% endif %} ·
+    {% if replan.mode == 'target' %}objectif {{ fmt_time(replan.target_time_s) }} tenable{% if replan.required_ratio < 0.99 %}, {{ ((1 - replan.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if replan.target_time_s %}objectif hors de portée, {% endif %}arrivée à ton rythme <b>{{ fmt_clock(replan.finish_clock_s) }}</b>{% endif %}
+    {% if editable_rows %}· <button onclick="window._sim && window._sim.clearPassage()" class="underline decoration-gray-300 hover:text-gray-900">effacer</button>{% endif %}
+</p>
 {% endif %}
 
-{% if autonomy is defined and autonomy %}{% set alerts = autonomy | selectattr('alert') | list %}{% if alerts %}
+{% set typed = sections | selectattr('kind', 'in', ['full', 'base']) | list %}
+{% if autonomy is defined and autonomy and typed %}{% set alerts = autonomy | selectattr('alert') | list %}{% if alerts %}
 <p class="mb-2 text-[11px] text-amber-800">⚠ Sans ravito complet sur {% for l in alerts %}<b>{{ l.from_name }} → {{ l.to_name }}</b> ({{ l.km }} km{% if l.time_s %}, ~{{ fmt_time(l.time_s) }}{% endif %}){% if not loop.last %}, {% endif %}{% endfor %} : tu portes tout.</p>
 {% endif %}{% endif %}
 
@@ -30,12 +24,11 @@
             <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
                 <th class="text-left py-2 pr-2 font-medium">Point</th>
                 <th class="text-right py-2 px-2 font-medium" title="Dénivelé de la section">D+ / D−</th>
-                <th class="hidden md:table-cell text-right py-2 px-2 font-medium" title="Allure moyenne sur la section">Allure</th>
                 <th class="hidden md:table-cell text-right py-2 px-2 font-medium" title="Temps de la section">Section</th>
                 {% if sc %}<th class="hidden sm:table-cell text-right py-2 px-2 font-medium text-blue-700" title="Plan lent : +{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</th>{% endif %}
                 <th class="text-right py-2 px-2 font-medium text-gray-900" title="{% if replan is defined and replan %}Heure recalée sur ton passage réel{% elif has_target %}Heure de passage si tu tiens ton objectif{% else %}Heure de passage estimée{% endif %}">{% if replan is defined and replan %}Recalée{% elif sc %}Cible{% elif has_target %}Heure visée{% else %}Heure{% endif %}</th>
                 {% if sc %}<th class="hidden sm:table-cell text-right py-2 px-2 font-medium text-emerald-700" title="Plan rapide : −{{ sc.fast_pct|round|int }} %">Optimiste</th>{% endif %}
-                <th class="w-12"></th>
+                <th class="w-6"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-50">
@@ -52,7 +45,7 @@
                     </div>
                 </td>
                 <td class="text-right py-2.5 px-2 text-gray-300">—</td>
-                <td class="hidden md:table-cell"></td><td class="hidden md:table-cell"></td>
+                <td class="hidden md:table-cell"></td>
                 {% if sc %}<td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-blue-700">{{ fmt_clock(start_offset_s) }}</td>{% endif %}
                 <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(start_offset_s) }}</td>
                 {% if sc %}<td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-emerald-700">{{ fmt_clock(start_offset_s) }}</td>{% endif %}
@@ -68,7 +61,8 @@
             {% set editable = ci is not none and editable_rows %}
             {% set row = sc.rows[loop.index0] if sc else none %}
             {% set is_switch = sc and sc.switch and ci is not none and ci == sc.switch.cp_index %}
-            <tr class="{% if s.is_anchor %}bg-amber-50{% elif s.passed %}opacity-60{% elif is_finish %}bg-red-50/60{% elif is_switch %}bg-amber-50/40{% else %}hover:bg-gray-50/50{% endif %}">
+            {% set has_meta = (s.kind and s.kind != 'none') or s.crew or s.drop_bag or s.cutoff_clock %}
+            <tr class="group {% if s.is_anchor %}bg-amber-50{% elif s.passed %}opacity-60{% elif is_finish %}bg-red-50/60{% elif is_switch %}bg-amber-50/40{% else %}hover:bg-gray-50/50{% endif %}">
                 <td class="py-2.5 pr-2">
                     <div class="flex items-center gap-2">
                         {% if is_finish %}
@@ -88,7 +82,6 @@
                         <span class="inline-flex items-center gap-0.5">km <input type="number" step="0.1" min="0.1" value="{{ s.end_km }}" onchange="window._sim && window._sim.editCheckpointKm({{ ci }}, this.value)"
                                class="text-[10px] text-gray-500 tabular-nums w-12 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 focus:outline-none"></span>
                         {% else %}<span>km {{ s.end_km }}</span>{% endif %}
-                        <span>· {{ '%.1f'|format(s.distance_km) }} km</span>
                         {% if s.end_elevation is not none %}<span>· {{ s.end_elevation|int }} m</span>{% endif %}
                         {% if has_weather is defined and has_weather and s.temperature_c is not none %}<span class="inline-flex items-center gap-0.5 {% if s.heat_factor and s.heat_factor > 1.08 %}text-red-500{% elif s.heat_factor and s.heat_factor > 1.0 %}text-amber-500{% endif %}" title="{{ wmo_label(s.weather_code) if s.weather_code is not none else '' }}">· {% if s.weather_code is not none %}{{ wx.wicon(wmo_category(s.weather_code), "w-3 h-3") }}{% endif %}{{ s.temperature_c|round|int }}°</span>{% endif %}
                         {% if is_finish and editable_rows %}
@@ -102,7 +95,7 @@
                     </div>
                     {# line 3: aid-station metadata #}
                     {% if editable %}
-                    <div class="pl-7 mt-1 flex flex-wrap items-center gap-1">
+                    <div class="pl-7 mt-1 flex flex-wrap items-center gap-1 {% if not has_meta %}opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity{% endif %}">
                         <select onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'kind', this.value)" title="Type de poste"
                                 class="h-5 pl-1 pr-5 py-0 rounded border text-[10px] {% if s.kind and s.kind != 'none' %}border-gray-300 bg-white text-gray-700{% else %}border-transparent bg-transparent text-gray-300 hover:text-gray-500{% endif %}">
                             {% for val, lbl in kinds.items() %}<option value="{{ val }}" {% if (s.kind or 'none') == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
@@ -118,21 +111,26 @@
                     {% endif %}
                 </td>
                 <td class="text-right py-2.5 px-2 tabular-nums text-[11px] leading-tight"><span class="text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</span><br><span class="text-red-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></td>
-                <td class="hidden md:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ (pace_val // 60) | int }}:{{ '%02d'|format((pace_val % 60) | int) }}</td>
                 <td class="hidden md:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
                 {% if sc %}<td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-blue-700 {% if row.safe_ok is defined and row.safe_ok == false %}text-red-600 font-semibold{% endif %}">{{ fmt_clock(row.safe_s) }}</td>{% endif %}
-                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}{% if s.is_anchor %} <span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}
+                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">
+                    {% if editable %}
+                    {% set day = (clock_val // 86400) | int %}
+                    <span class="inline-flex items-center justify-end gap-1">
+                        {% if s.is_anchor %}<span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}
+                        <input type="time" step="60" value="{{ '%02d:%02d'|format(((clock_val % 86400) // 3600) | int, ((clock_val % 3600) // 60) | int) }}"
+                               onchange="window._sim && window._sim.setPassage({{ ci }}, {{ s.end_km }}, this.value)"
+                               title="Heure de passage. Saisis ton heure réelle le jour J : la suite se recale."
+                               class="h-7 w-[74px] px-1 py-0 rounded border text-sm font-semibold tabular-nums text-right text-gray-900 {% if s.is_anchor %}border-amber-300 bg-amber-50{% else %}border-transparent bg-transparent hover:border-gray-200 focus:border-gray-900{% endif %} focus:outline-none focus:ring-0">{% if day > 0 %}<span class="text-[9px] text-amber-500">+{{ day }}j</span>{% endif %}
+                    </span>
+                    {% else %}{{ fmt_clock(clock_val) }}{% endif %}
                     {% if s.cutoff_margin_s is defined and s.cutoff_margin_s is not none %}{% set cm = (s.cutoff_margin_s / 60) | round | int %}
                     <span class="block text-[9px] font-medium {% if cm < 0 %}text-red-600{% elif cm < 30 %}text-amber-600{% else %}text-gray-400{% endif %}" title="Barrière horaire">barrière {{ s.cutoff_clock }} · {% if cm < 0 %}{{ cm }} min ⚠{% else %}+{{ cm }} min{% endif %}</span>
                     {% endif %}</td>
                 {% if sc %}<td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums {% if sc.switch and row.km|float < sc.switch.km|float %}text-gray-300{% else %}text-emerald-700{% endif %}">{{ fmt_clock(row.fast_s) }}</td>{% endif %}
                 <td class="text-right align-middle whitespace-nowrap">
                     {% if editable %}
-                    <button onclick="window._sim && window._sim.markPassage({{ ci }}, {{ s.end_km }}, '{{ '%02d:%02d'|format(((clock_val % 86400) // 3600) | int, ((clock_val % 3600) // 60) | int) }}')"
-                            class="text-gray-300 hover:text-gray-900 px-1 align-middle" title="Jour J : je suis passé ici — saisir mon heure réelle">
-                        <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
-                    </button>
-                    <button onclick="window._sim && window._sim.removeCheckpoint({{ ci }})" class="text-gray-300 hover:text-red-500 text-base leading-none px-1 align-middle" title="Supprimer">&times;</button>
+                    <button onclick="window._sim && window._sim.removeCheckpoint({{ ci }})" class="text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 text-base leading-none px-1 align-middle" title="Supprimer ce point">&times;</button>
                     {% endif %}
                 </td>
             </tr>

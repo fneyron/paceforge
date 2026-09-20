@@ -361,3 +361,21 @@ def test_ftp_from_streams():
     ftp2, method2 = ftp_from_mean_max(p5=None, p20=None, p60=270)
     assert ftp2 == 270 and method2 == "60 min"
     assert ftp_from_mean_max(None, None, None) == (None, "")
+
+
+def test_weather_hourly_lookup_uses_nearest_point_and_second_day():
+    from app.services.weather import hourly_at, hourly_index
+
+    assert hourly_index(30, 48) == 30 and hourly_index(30, 24) == 6 and hourly_index(50, 48) == 47
+    hourly = {
+        "temps": [10.0] * 48, "humidity": [50] * 48, "codes": [0] * 48, "elevation": 100,
+        "points": [
+            {"km": 0.0, "temps": [10.0] * 48, "humidity": [50] * 48, "codes": [0] * 48, "elevation": 100},
+            {"km": 90.0, "temps": [20.0] * 24 + [5.0] * 24, "humidity": [80] * 48, "codes": [61] * 48, "elevation": 1500},
+        ],
+    }
+    near_start = hourly_at(hourly, 22, 10.0)
+    assert near_start["temp"] == 10.0 and near_start["elevation"] == 100
+    summit_day2 = hourly_at(hourly, 30, 95.0)  # 06:00 the next day, near the km-90 point
+    assert summit_day2["temp"] == 5.0 and summit_day2["code"] == 61 and summit_day2["elevation"] == 1500
+    assert hourly_at({"temps": [12.0] * 24}, 27, 50.0)["temp"] == 12.0  # legacy 24 h payload wraps
