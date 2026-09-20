@@ -18,6 +18,19 @@
     {% if not print_mode %}<button onclick="window._sim && window._sim.clearPassage()" class="ml-1 underline text-gray-500 hover:text-gray-800">Effacer</button>{% endif %}
 </div>
 {% endif %}
+{% if autonomy is defined and autonomy and not print_mode %}
+{% set worst = autonomy | max(attribute='km') %}
+{% set n_alert = autonomy | selectattr('alert') | list | length %}
+<div class="mb-3 rounded-lg border px-3 py-2 text-xs {% if n_alert %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-gray-200 bg-gray-50 text-gray-700{% endif %}">
+    <span class="font-semibold">Autonomie</span>
+    {% if autonomy | length <= 1 %}
+    — aucun ravito complet marqué : type tes points de passage (Eau / Ravito complet / Base vie) pour voir la plus longue portion sans ravitaillement.
+    {% else %}
+    · plus longue portion sans ravito complet : <b>{{ worst.from_name }} → {{ worst.to_name }}</b>, <b>{{ worst.km }} km</b>{% if worst.time_s %} · ~{{ fmt_time(worst.time_s) }}{% endif %}.
+    {% if n_alert %}<span class="block mt-0.5">⚠ {{ n_alert }} portion{{ 's' if n_alert > 1 }} ≥ 18 km ou ≥ 3 h : tu portes tout (eau + nourriture) — c'est une info de sécurité, pas un détail.</span>{% endif %}
+    {% endif %}
+</div>
+{% endif %}
 <div class="overflow-x-auto -mx-1">
     <table class="w-full text-sm sm:min-w-[640px]">
         <thead>
@@ -90,6 +103,22 @@
                                onchange="window._sim && window._sim.editCheckpointKm({{ s.end_checkpoint_index }}, this.value)"
                                class="text-[10px] text-gray-500 tabular-nums w-14 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 focus:outline-none">
                     </div>
+                    {% set ci = s.end_checkpoint_index %}
+                    <div class="pl-7 mt-1 flex flex-wrap items-center gap-1">
+                        <select onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'kind', this.value)" title="Type de poste"
+                                class="h-6 pl-1 pr-5 py-0 rounded border text-[10px] {% if s.kind and s.kind != 'none' %}border-gray-300 bg-white text-gray-700{% else %}border-gray-200 bg-transparent text-gray-400{% endif %}">
+                            {% for val, lbl in kinds.items() %}<option value="{{ val }}" {% if (s.kind or 'none') == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+                        </select>
+                        <button type="button" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'crew', {{ 'false' if s.crew else 'true' }})" title="Assistance autorisée"
+                                class="h-6 px-1.5 rounded border text-[10px] {% if s.crew %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-400 hover:text-gray-700{% endif %}">Assist.</button>
+                        <button type="button" onclick="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'drop_bag', {{ 'false' if s.drop_bag else 'true' }})" title="Drop bag"
+                                class="h-6 px-1.5 rounded border text-[10px] {% if s.drop_bag %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-400 hover:text-gray-700{% endif %}">Drop bag</button>
+                        <label class="inline-flex items-center gap-0.5 text-[10px] text-gray-400" title="Barrière horaire (heure limite de passage)">⏳
+                            <input type="time" value="{{ s.cutoff_clock or '' }}" step="60"
+                                   onchange="window._sim && window._sim.editCheckpointMeta({{ ci }}, 'cutoff_clock', this.value)"
+                                   class="h-6 w-[74px] px-1 py-0 rounded border border-gray-200 bg-transparent text-[10px] tabular-nums text-gray-600">
+                        </label>
+                    </div>
                     {% else %}
                     <p class="text-[10px] text-gray-400 {% if is_finish %}pl-4{% else %}pl-7{% endif %}">km {{ s.end_km }}</p>
                     {% endif %}
@@ -102,7 +131,10 @@
                 <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ pace_min }}:{{ '%02d'|format(pace_sec) }}</td>
                 <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums text-gray-500">{{ fmt_time(sec_time) }}</td>
                 <td class="hidden sm:table-cell text-right py-2.5 px-2 tabular-nums font-medium">{{ fmt_time(cum_time) }}</td>
-                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}{% if s.is_anchor %} <span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}</td>
+                <td class="text-right py-2.5 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(clock_val) }}{% if s.is_anchor %} <span class="text-[9px] font-medium text-amber-600">réel</span>{% endif %}
+                    {% if s.cutoff_margin_s is defined and s.cutoff_margin_s is not none %}{% set cm = (s.cutoff_margin_s / 60) | round | int %}
+                    <span class="block text-[9px] font-medium {% if cm < 0 %}text-red-600{% elif cm < 30 %}text-amber-600{% else %}text-gray-400{% endif %}" title="Barrière horaire {{ s.cutoff_clock }}">barrière {{ s.cutoff_clock }} · {% if cm < 0 %}{{ cm }} min ⚠{% else %}+{{ cm }} min{% endif %}</span>
+                    {% endif %}</td>
                 <td class="text-right align-middle whitespace-nowrap">
                     {% if s.end_checkpoint_index is not none and not print_mode %}
                     <button onclick="window._sim && window._sim.markPassage({{ s.end_checkpoint_index }}, {{ s.end_km }}, '{{ '%02d:%02d'|format(((clock_val % 86400) // 3600) | int, ((clock_val % 3600) // 60) | int) }}')"
@@ -118,3 +150,52 @@
         </tbody>
     </table>
 </div>
+
+{% if scenarios is defined and scenarios and not print_mode %}
+{% set sc = scenarios %}
+<div class="mt-5 pt-4 border-t border-gray-100">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Trois scénarios</h4>
+        <p class="text-[11px] text-gray-400">Sécurité +{{ sc.safe_pct|round|int }} % · Cible{% if sc.basis == 'prediction' %} = estimation{% endif %} · Optimiste −{{ sc.fast_pct|round|int }} % <span class="text-gray-300">(réglable dans Pilotage)</span></p>
+    </div>
+    {% if sc.switch %}
+    <div class="mb-3 rounded-lg border border-gray-900 bg-gray-900 text-white px-3 py-2.5 text-xs leading-relaxed">
+        <b>Règle de bascule — {{ sc.switch.name }} (km {{ sc.switch.km }}) :</b>
+        tu passes sur la colonne <b>Optimiste</b> seulement si tu y es <b>à l'heure Cible ({{ fmt_clock(sc.switch.target_s) }}) ou avant</b> en te sentant bien — FC sous le plafond, tu manges, tu bois.
+        Sinon tu restes sur <b>Cible</b>. Plus de <b>{{ (sc.switch_late_s / 60)|round|int }} min de retard</b> à ce point → colonne <b>Sécurité</b>, sans discussion.
+        <span class="block text-gray-300 mt-0.5">Avant ce point, une seule colonne existe : Cible. Le scénario optimiste ne se court pas dès le km 1.</span>
+    </div>
+    {% endif %}
+    {% if sc.cutoff_breach %}
+    <div class="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        ⚠ Le scénario Sécurité passe <b>après la barrière</b> à {% for r in sc.cutoff_breach %}<b>{{ r.name }}</b> ({{ fmt_clock(r.safe_s) }} vs {{ fmt_clock(r.cutoff_clock_s) }}){% if not loop.last %}, {% endif %}{% endfor %} : ta marge réelle est plus petite que +{{ sc.safe_pct|round|int }} %.
+    </div>
+    {% endif %}
+    <div class="overflow-x-auto -mx-1">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
+                    <th class="text-left py-2 pr-3 font-medium">Point</th>
+                    <th class="text-right py-2 px-2 font-medium text-blue-700" title="Plan lent : +{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</th>
+                    <th class="text-right py-2 px-2 font-medium text-gray-900">Cible</th>
+                    <th class="text-right py-2 px-2 font-medium text-emerald-700" title="Plan rapide : −{{ sc.fast_pct|round|int }} %">Optimiste</th>
+                    <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Barrière</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for r in sc.rows %}
+                {% set is_switch = sc.switch and r.cp_index is not none and r.cp_index == sc.switch.cp_index %}
+                <tr class="{% if is_switch %}bg-amber-50{% elif loop.last %}bg-gray-50/60 font-medium{% endif %}">
+                    <td class="py-2 pr-3 text-xs">{{ 'Arrivée' if loop.last else r.name }} <span class="text-[10px] text-gray-400 tabular-nums">km {{ r.km }}</span>{% if is_switch %} <span class="ml-1 text-[9px] font-semibold text-amber-700 uppercase">bascule</span>{% endif %}</td>
+                    <td class="text-right py-2 px-2 tabular-nums text-blue-700 {% if r.safe_ok is defined and r.safe_ok == false %}text-red-600 font-semibold{% endif %}">{{ fmt_clock(r.safe_s) }}</td>
+                    <td class="text-right py-2 px-2 tabular-nums font-semibold text-gray-900">{{ fmt_clock(r.target_s) }}</td>
+                    <td class="text-right py-2 px-2 tabular-nums {% if sc.switch and r.km|float < sc.switch.km|float %}text-gray-300{% else %}text-emerald-700{% endif %}">{{ fmt_clock(r.fast_s) }}</td>
+                    <td class="hidden sm:table-cell text-right py-2 px-2 tabular-nums text-gray-400">{% if r.cutoff_clock_s is defined %}{{ fmt_clock(r.cutoff_clock_s) }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="mt-1.5 text-[11px] text-gray-400">Arrivée : sécurité {{ fmt_time(sc.totals.safe_s) }} · cible {{ fmt_time(sc.totals.target_s) }} · optimiste {{ fmt_time(sc.totals.fast_s) }} (arrêts ravitos inclus). Même forme d'effort, seul le budget change.</p>
+</div>
+{% endif %}

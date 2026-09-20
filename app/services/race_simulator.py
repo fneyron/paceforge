@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
-from app.schemas.simulator import AthleteGradientProfile, CourseProfile, CourseSegment
+from app.schemas.simulator import AthleteGradientProfile, CourseProfile
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +166,14 @@ async def build_athlete_gradient_profile(
     if not data_points:
         # No split data — use a reasonable default based on avg speed
         flat_pace = await _estimate_flat_pace_from_activities(db, user_id, cutoff)
-        return AthleteGradientProfile(
+        profile = AthleteGradientProfile(
             flat_pace_s_per_km=flat_pace,
             gradient_factors=_DEFAULT_GRADIENT_FACTORS,
             data_points=0,
             sport_types_used=list(sport_types_used),
         )
+        profile.race_model = await _race_model(db, user_id)
+        return profile
 
     # Group by gradient bucket (integer-rounded)
     buckets: dict[int, list[float]] = {}
@@ -218,7 +220,19 @@ async def build_athlete_gradient_profile(
         sport_types_used=list(sport_types_used),
     )
     profile.fatigue_tilt = await _personal_fatigue_tilt(db, user_id)
+    profile.race_model = await _race_model(db, user_id)
     return profile
+
+
+async def _race_model(db: AsyncSession, user_id: int) -> dict | None:
+    """Effort-km/h model fitted on the athlete's races (never raises)."""
+    try:
+        from app.services.race_calibration import build_race_effort_model
+
+        return await build_race_effort_model(db, user_id)
+    except Exception:
+        logger.exception("race effort model failed")
+        return None
 
 
 async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
@@ -461,6 +475,12 @@ def predict_course(
 
     course.predicted_total_time_s = int(cumulative_time)
     course.predicted_total_time_formatted = format_time(int(cumulative_time))
+
+    # Races, not training, set the level of the prediction (see race_calibration).
+    if getattr(profile, "race_model", None):
+        from app.services.race_calibration import apply_race_calibration
+
+        profile.race_calibration = apply_race_calibration(course, profile.race_model)
 
     return course
 
@@ -766,3 +786,67 @@ def replan_from_passage(
         "target_time_s": target_time_s,
     }
     return out, replan
+
+
+# ── Three scenarios with an explicit switch rule ──
+
+def build_scenarios(
+    sections: list[dict],
+    start_offset_s: int,
+    target_time_s: int | None,
+    fast_pct: float = 5.0,
+    safe_pct: float = 10.0,
+    switch_km: float | None = None,
+    total_distance_km: float | None = None,
+) -> dict | None:
+    """Target / optimistic / safety columns for every checkpoint, plus the
+    rule that decides which column you are running.
+
+    The three plans share the SAME shape (even effort) and the same aid stops;
+    only the moving budget changes: cible = the plan (or the prediction when no
+    target is set), optimiste = cible × (1 − fast_pct), sécurité = cible ×
+    (1 + safe_pct). The switch checkpoint defaults to the one closest to 60 %
+    of the distance — past the point where a fast start can still be paid for.
+    """
+    if not sections:
+        return None
+    use_target = bool(target_time_s) and sections[0].get("adjusted_clock_time_s") is not None
+    f_fast = max(0.0, fast_pct) / 100.0
+    f_safe = max(0.0, safe_pct) / 100.0
+    rows = []
+    for s in sections:
+        cum = float(s["adjusted_cumulative_time_s"] if use_target else s["cumulative_time_s"])
+        clock = int(s["adjusted_clock_time_s"] if use_target else s["clock_time_s"])
+        stops = clock - int(start_offset_s) - cum  # aid stops accumulated so far
+        rows.append({
+            "name": s["end_name"], "km": s["end_km"], "cp_index": s.get("end_checkpoint_index"),
+            "target_s": int(round(start_offset_s + cum + stops)),
+            "fast_s": int(round(start_offset_s + cum * (1 - f_fast) + stops)),
+            "safe_s": int(round(start_offset_s + cum * (1 + f_safe) + stops)),
+            "cutoff_elapsed_s": s.get("cutoff_elapsed_s"),
+            "kind": s.get("kind"),
+        })
+        cut = s.get("cutoff_elapsed_s")
+        if cut is not None:
+            cut_clock = int(start_offset_s) + int(cut)
+            rows[-1]["safe_ok"] = rows[-1]["safe_s"] <= cut_clock
+            rows[-1]["target_ok"] = rows[-1]["target_s"] <= cut_clock
+            rows[-1]["cutoff_clock_s"] = cut_clock
+
+    total_km = float(total_distance_km or sections[-1]["end_km"] or 1)
+    want = float(switch_km) if switch_km else total_km * 0.6
+    cps = [r for r in rows if r["cp_index"] is not None]
+    switch = min(cps, key=lambda r: abs(float(r["km"]) - want)) if cps else None
+
+    total_target = rows[-1]["target_s"] - start_offset_s
+    total_fast = rows[-1]["fast_s"] - start_offset_s
+    total_safe = rows[-1]["safe_s"] - start_offset_s
+    return {
+        "rows": rows,
+        "switch": switch,
+        "switch_late_s": 15 * 60,  # ≥ 15 min late at the switch point → safety column
+        "fast_pct": fast_pct, "safe_pct": safe_pct,
+        "totals": {"target_s": int(total_target), "fast_s": int(total_fast), "safe_s": int(total_safe)},
+        "basis": "target" if use_target else "prediction",
+        "cutoff_breach": [r for r in rows if r.get("safe_ok") is False],
+    }

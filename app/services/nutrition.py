@@ -78,6 +78,73 @@ def _status(provided: float, target: float) -> str:
     return "ok"
 
 
+def _clock_hour(clock_s: float) -> float:
+    return (clock_s % 86400) / 3600.0
+
+
+# Caffeine defaults (per dose, timing). Guidance for a night start: small doses
+# every 2–3 h once the night sets in, a full dose at dawn. Totals are capped
+# (≈ 6 mg/kg, never > 400 mg) — the athlete sees the total, not just the plan.
+CAFFEINE_DEFAULTS = {"enabled": False, "from_h": 3.0, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True}
+CAFFEINE_MAX_MG = 400
+CAFFEINE_MAX_MG_PER_KG = 6.0
+
+
+def caffeine_schedule(
+    duration_s: float,
+    legs: list[dict],
+    settings: dict | None,
+    start_offset_s: int = 0,
+    weight_kg: float | None = None,
+    product_name: str | None = None,
+) -> dict | None:
+    """Timed caffeine doses mapped onto the legs. Returns {doses, total_mg,
+    max_mg, over} or None when disabled."""
+    cfg = {**CAFFEINE_DEFAULTS, **(settings or {})}
+    if not cfg.get("enabled") or duration_s <= 0:
+        return None
+    from_s = max(0.0, float(cfg.get("from_h") or 0)) * 3600
+    every_s = max(0.5, float(cfg.get("every_h") or 2.5)) * 3600
+    dose = max(0.0, float(cfg.get("dose_mg") or 0))
+    if dose <= 0:
+        return None
+
+    def clock_at(elapsed: float) -> float:
+        """Elapsed moving time → clock, walking the legs (stops shift the clock)."""
+        prev_cum, prev_clock = 0.0, float(start_offset_s)
+        for leg in legs:
+            cum, clk = float(leg["cum_s"]), float(leg["clock_s"])
+            if elapsed <= cum:
+                span = cum - prev_cum
+                return prev_clock + (elapsed - prev_cum) / span * (clk - prev_clock) if span > 0 else clk
+            prev_cum, prev_clock = cum, clk
+        return prev_clock + (elapsed - prev_cum)
+
+    def leg_at(elapsed: float) -> dict | None:
+        for leg in legs:
+            if elapsed <= float(leg["cum_s"]):
+                return leg
+        return legs[-1] if legs else None
+
+    doses, t, total = [], from_s, 0.0
+    dawn_done = False
+    while t < duration_s - 20 * 60:  # no point dosing in the last 20 min
+        clk = clock_at(t)
+        mg = dose
+        label = "petite dose"
+        if cfg.get("boost_dawn") and not dawn_done and 5.0 <= _clock_hour(clk) < 7.5:
+            mg, label, dawn_done = dose * 2, "dose pleine (aube)", True
+        leg = leg_at(t)
+        doses.append({
+            "elapsed_s": int(t), "clock_s": int(clk), "mg": int(round(mg)), "label": label,
+            "leg_to": leg["to_name"] if leg else "", "product": product_name,
+        })
+        total += mg
+        t += every_s
+    max_mg = min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG
+    return {"doses": doses, "total_mg": int(round(total)), "max_mg": int(round(max_mg)), "over": total > max_mg, "settings": cfg}
+
+
 def compute_plan(
     duration_s: float,
     targets: dict,
@@ -86,6 +153,10 @@ def compute_plan(
     sections: list[dict] | None = None,
     flask_capacity_ml: float = 0,
     refill_kms: set | None = None,
+    resupply_points: list[dict] | None = None,
+    caffeine: dict | None = None,
+    start_offset_s: int = 0,
+    weight_kg: float | None = None,
 ) -> dict:
     """Build the nutrition plan.
 
@@ -95,7 +166,11 @@ def compute_plan(
         items: [{"product_id": int, "per_hour": float}].
         products_by_id: {id: {name, kind, carbs_g, sodium_mg, volume_ml, ...}}.
         sections: optional passage sections (with cumulative_time_s, end_name)
-            to build a checkpoint-mapped schedule.
+            to build a checkpoint-mapped schedule. The PLAN times are used when
+            a target exists (adjusted_*), the prediction otherwise.
+        resupply_points: [{"km", "name"}] where a drop bag / crew lets you
+            restock → the pack list is split per carry segment.
+        caffeine: {enabled, from_h, every_h, dose_mg, boost_dawn}.
     """
     hours = max(duration_s / 3600.0, 0.0)
     # Hydration is driven by the fluid target, not by a "water product": water
@@ -133,6 +208,9 @@ def compute_plan(
             "total_units": rate * hours,
             "carbs_g_per_h": round(carbs),
             "fluid_ml_per_h": round(fluid),
+            "carbs_per_unit": float(p.get("carbs_g") or 0),
+            "sodium_per_unit": float(p.get("sodium_mg") or 0),
+            "caffeine_per_unit": float(p.get("caffeine_mg") or 0),
             "is_water": is_water,
         })
 
@@ -161,32 +239,57 @@ def compute_plan(
 
     # Per-leg schedule: WHOLE units to take between two checkpoints (you never
     # take half a gel/sachet → ceil, so any product used shows at least 1). Also
-    # flags legs where you'd run dry before the next refill (carried > capacity).
+    # flags legs where you'd run dry before the next refill (carried > capacity),
+    # and the REAL g/h and sodium/h the whole units give on that leg.
     refills = {round(float(k), 1) for k in (refill_kms or set())}
     cap = float(flask_capacity_ml or 0)
     schedule = []
     line_totals = [0] * len(lines)
     prev_cum_s = 0.0
+    prev_clock_s = float(start_offset_s)
     prev_name = "Départ"
     carried = 0.0  # fluid consumed since the last refill
+    target_carbs = float(targets.get("carbs_g_per_h", 0) or 0)
+    target_sodium = float(targets.get("sodium_mg_per_h", 0) or 0)
     if sections:
         for s in sections:
-            cum_s = s.get("cumulative_time_s") or 0
+            cum_s = s.get("adjusted_cumulative_time_s")
+            if cum_s is None:
+                cum_s = s.get("cumulative_time_s") or 0
+            clock_s = s.get("adjusted_clock_time_s")
+            if clock_s is None:
+                clock_s = s.get("clock_time_s")
+            if clock_s is None:
+                clock_s = start_offset_s + cum_s
             leg_h = max((cum_s - prev_cum_s) / 3600.0, 0.0)
             leg_fluid = round(fluid_per_h * leg_h)
             carried += leg_fluid
             dry = bool(cap and carried > cap + 1)
             leg_units = []
+            real_carbs = real_sodium = real_caff = 0.0
             for li, ln in enumerate(lines):
                 u = math.ceil(ln["per_hour"] * leg_h) if ln["per_hour"] > 0 else 0
                 line_totals[li] += u
+                real_carbs += u * ln["carbs_per_unit"]
+                real_sodium += u * ln["sodium_per_unit"]
+                real_caff += u * ln["caffeine_per_unit"]
                 leg_units.append({"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"], "units": u})
             schedule.append({
                 "from_name": prev_name,
                 "to_name": s.get("end_name", ""),
                 "km": s.get("end_km"),
                 "leg_time_s": int(cum_s - prev_cum_s),
+                "cum_s": int(cum_s),
+                "clock_s": int(clock_s),
+                "start_clock_s": int(prev_clock_s),
+                "night": _clock_hour(prev_clock_s) >= 21 or _clock_hour(prev_clock_s) < 6,
                 "carbs_g": round(per_h["carbs_g"] * leg_h),
+                "carbs_real_g": round(real_carbs),
+                "carbs_real_per_h": round(real_carbs / leg_h) if leg_h > 0 else 0,
+                "carbs_status": _status(real_carbs / leg_h, target_carbs) if leg_h > 0 else "ok",
+                "sodium_real_per_h": round(real_sodium / leg_h) if leg_h > 0 else 0,
+                "sodium_status": _status(real_sodium / leg_h, target_sodium) if leg_h > 0 else "ok",
+                "caffeine_mg": round(real_caff),
                 "fluid_ml": leg_fluid,
                 "dry": dry,
                 "over_ml": max(0, round(carried - cap)) if dry else 0,
@@ -195,10 +298,42 @@ def compute_plan(
             if round(float(s.get("end_km") or 0), 1) in refills:
                 carried = 0.0  # topped up at this aid station
             prev_cum_s = cum_s
+            prev_clock_s = clock_s
             prev_name = s.get("end_name", "")
     # Pack list = sum of the whole per-leg units (consistent with the schedule).
     for li, ln in enumerate(lines):
         ln["total_units"] = line_totals[li]
+
+    # Where does each unit travel? From the start bag until the first drop bag /
+    # crew point, then from that bag until the next one. What you carry at
+    # once is the max over carry segments — that's the "sac" size.
+    packing = []
+    if schedule:
+        resupply = {round(float(r.get("km") or 0), 1): r.get("name", "") for r in (resupply_points or []) if r.get("km")}
+        group = {"at": "Départ", "km": 0.0, "until": None, "until_km": None, "legs": 0, "fluid_ml": 0, "units": {}, "carbs_g": 0}
+        for leg in schedule:
+            group["legs"] += 1
+            group["fluid_ml"] += leg["fluid_ml"]
+            group["carbs_g"] += leg["carbs_real_g"]
+            for u in leg["units"]:
+                if u["units"] and not u["is_water"]:
+                    group["units"][u["name"]] = group["units"].get(u["name"], 0) + u["units"]
+            km = round(float(leg["km"] or 0), 1)
+            if km in resupply:
+                group["until"], group["until_km"] = resupply[km], km
+                packing.append(group)
+                group = {"at": resupply[km], "km": km, "until": None, "until_km": None, "legs": 0, "fluid_ml": 0, "units": {}, "carbs_g": 0}
+        group["until"] = "Arrivée"
+        group["until_km"] = schedule[-1]["km"]
+        if group["legs"]:
+            packing.append(group)
+        for g in packing:
+            g["units"] = [{"name": n, "units": u} for n, u in g["units"].items()]
+            g["is_start"] = g["at"] == "Départ"
+
+    # Caffeine: timed doses on top of what the products already carry.
+    caff_product = next((ln["name"] for ln in lines if ln["caffeine_per_unit"] > 0), None)
+    caffeine_plan = caffeine_schedule(duration_s, schedule, caffeine, start_offset_s, weight_kg, caff_product)
 
     # Hydration feasibility: between two refill points you only carry
     # `flask_capacity_ml`. If a segment needs more fluid than you can carry,
@@ -256,4 +391,6 @@ def compute_plan(
         "coverage": coverage,
         "lines": lines,
         "schedule": schedule,
+        "packing": packing,
+        "caffeine": caffeine_plan,
     }

@@ -65,6 +65,24 @@
             {% endif %}
         </div>
 
+        <!-- Caffeine: timed, not "when I feel like it" -->
+        {% set cf = caffeine_cfg %}
+        <div class="rounded-lg bg-gray-50/70 p-3 space-y-2">
+            <label class="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" name="caffeine_enabled" value="1" {% if cf.enabled %}checked{% endif %} onchange="this.form.requestSubmit()" class="rounded border-gray-300">
+                <span class="text-[11px] font-medium text-gray-500">Caféine planifiée</span>
+                <span class="text-[11px] text-gray-400">— petites doses régulières, dose pleine à l'aube</span>
+            </label>
+            {% if cf.enabled %}
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500">
+                <label class="inline-flex items-center gap-1">dès <input name="caffeine_from_h" type="number" min="0" max="30" step="0.5" value="{{ cf.from_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> h de course</label>
+                <label class="inline-flex items-center gap-1">toutes les <input name="caffeine_every_h" type="number" min="0.5" max="6" step="0.5" value="{{ cf.every_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> h</label>
+                <label class="inline-flex items-center gap-1"><input name="caffeine_dose_mg" type="number" min="0" max="200" step="10" value="{{ cf.dose_mg|round|int }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> mg / dose</label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" name="caffeine_boost_dawn" value="1" {% if cf.boost_dawn %}checked{% endif %} class="rounded border-gray-300"> dose pleine (×2) à l'aube</label>
+            </div>
+            {% endif %}
+        </div>
+
         <!-- Products: each one's frequency (the plan) -->
         {% if products %}
         <div class="overflow-x-auto">
@@ -136,12 +154,14 @@
                     <th class="text-left py-2 pr-2 font-medium">Tronçon</th>
                     <th class="text-right py-2 px-2 font-medium">Durée</th>
                     <th class="text-left py-2 pl-3 font-medium">À prendre</th>
+                    <th class="text-right py-2 px-2 font-medium" title="Glucides réels par heure avec les unités entières de ce tronçon">g/h réel</th>
+                    <th class="text-right py-2 px-2 font-medium" title="Sodium réel par heure sur ce tronçon">Na/h</th>
                     <th class="text-right py-2 px-2 font-medium" title="Liquide à boire sur le tronçon">Eau</th>
                 </tr></thead>
                 <tbody class="divide-y divide-gray-50">
                     {% for leg in plan.schedule %}
                     <tr class="{% if loop.last %}bg-gray-50/50{% endif %}">
-                        <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ leg.from_name }}</span> → <b>{{ leg.to_name }}</b></td>
+                        <td class="py-2 pr-2 text-gray-700"><span class="text-gray-400">{{ leg.from_name }}</span> → <b>{{ leg.to_name }}</b>{% if leg.night %} <span class="text-[10px]" title="de nuit">🌙</span>{% endif %}<span class="block text-[10px] text-gray-400 tabular-nums">{{ '%02d:%02d'|format((leg.start_clock_s % 86400) // 3600, (leg.start_clock_s % 3600) // 60) }} → {{ '%02d:%02d'|format((leg.clock_s % 86400) // 3600, (leg.clock_s % 3600) // 60) }}</span></td>
                         <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
                         <td class="py-2 pl-3">
                             {% set ns3 = namespace(any=false) %}
@@ -150,6 +170,8 @@
                                 {% if not ns3.any %}<span class="text-[11px] text-gray-300">eau plate</span>{% endif %}
                             </div>
                         </td>
+                        <td class="text-right py-2 px-2 tabular-nums font-medium {% if leg.carbs_status == 'under' %}text-red-500{% elif leg.carbs_status == 'over' %}text-amber-500{% else %}text-emerald-600{% endif %}" title="cible {{ targets.carbs_g_per_h }} g/h">{{ leg.carbs_real_per_h }}</td>
+                        <td class="text-right py-2 px-2 tabular-nums {% if leg.sodium_status == 'under' %}text-red-500{% elif leg.sodium_status == 'over' %}text-amber-500{% else %}text-gray-500{% endif %}" title="cible {{ targets.sodium_mg_per_h }} mg/h">{{ leg.sodium_real_per_h }}</td>
                         <td class="text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-500{% else %}text-gray-500{% endif %}">
                             {{ (leg.fluid_ml/1000)|round(2) }}L{% if leg.dry %} <span title="tu seras à sec avant le prochain ravito">⚠</span>{% endif %}
                         </td>
@@ -159,6 +181,47 @@
             </table>
         </div>
     </div>
+    {% endif %}
+
+    <!-- ── Caféine (timed doses) ── -->
+    {% set cfp = plan.caffeine %}
+    {% if cfp and cfp.doses %}
+    <div>
+        <p class="text-xs font-medium text-gray-500 mb-2">Caféine — {{ cfp.doses|length }} prises, {{ cfp.total_mg }} mg au total <span class="font-normal {% if cfp.over %}text-red-500{% else %}text-gray-400{% endif %}">(max conseillé {{ cfp.max_mg }} mg{% if cfp.over %} — dépassé, espace les prises{% endif %})</span></p>
+        <div class="flex flex-wrap gap-1.5">
+            {% for d in cfp.doses %}
+            <span class="inline-flex items-center gap-1.5 rounded-lg border {% if d.label.startswith('dose pleine') %}border-amber-300 bg-amber-50{% else %}border-gray-200 bg-white{% endif %} px-2.5 py-1 text-[11px]">
+                <b class="tabular-nums">{{ '%02d:%02d'|format((d.clock_s % 86400) // 3600, (d.clock_s % 3600) // 60) }}</b>
+                <span class="text-gray-500">{{ d.mg }} mg</span>
+                <span class="text-gray-400">→ {{ d.leg_to }}</span>
+                {% if d.label.startswith('dose pleine') %}<span class="text-amber-700">aube</span>{% endif %}
+            </span>
+            {% endfor %}
+        </div>
+        <p class="mt-1 text-[11px] text-gray-400">{% if cfp.doses[0].product %}Avec « {{ cfp.doses[0].product }} » ({{ plan.lines | selectattr('caffeine_per_unit', '>', 0) | map(attribute='caffeine_per_unit') | first | round | int }} mg/unité){% else %}Aucun produit caféiné dans ton plan : prévois un gel caféiné ou des comprimés{% endif %} · en plus des produits déjà planifiés.</p>
+    </div>
+    {% endif %}
+
+    <!-- ── Sac / drop bags (computed from the checkpoints flagged drop bag / assistance) ── -->
+    {% if plan.packing and plan.packing|length > 1 %}
+    <div>
+        <p class="text-xs font-medium text-gray-500 mb-2">Répartition sac / drop bags</p>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {% for g in plan.packing %}
+            <div class="rounded-lg border {% if g.is_start %}border-gray-900{% else %}border-gray-200{% endif %} bg-white p-3">
+                <p class="text-[11px] font-semibold text-gray-800">{% if g.is_start %}Sac au départ{% else %}Drop bag · {{ g.at }} <span class="text-gray-400 font-normal">km {{ g.km }}</span>{% endif %}</p>
+                <p class="text-[10px] text-gray-400 mb-1.5">jusqu'à {{ g.until }} · {{ g.legs }} tronçon{{ 's' if g.legs > 1 }} · ≈ {{ g.carbs_g }} g glucides</p>
+                <div class="flex flex-wrap gap-1">
+                    {% for u in g.units %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700">{{ u.name }} <b>×{{ u.units }}</b></span>{% endfor %}
+                    {% if not g.units %}<span class="text-[11px] text-gray-300">rien à prendre</span>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="mt-1 text-[11px] text-gray-400">Chaque drop bag contient ce qu'il faut jusqu'au suivant. Marque « Drop bag » ou « Assist. » sur les points de passage (Plan de course) pour découper.</p>
+    </div>
+    {% elif plan.lines and plan.schedule %}
+    <p class="text-[11px] text-gray-400">Marque des points « Drop bag » / « Assist. » dans le plan de course pour répartir les produits entre ton sac et tes drop bags.</p>
     {% endif %}
 
     <!-- ── À emporter (computed) ── -->
