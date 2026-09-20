@@ -1150,6 +1150,11 @@ async def print_route_plan(
         nutrition_lines = [ln for ln in nplan["lines"] if ln.get("total_units") and not ln.get("is_water")]
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
+    legs_guide = None
+    if guide:
+        from app.services.pacing_guide import leg_instructions
+
+        legs_guide = leg_instructions(guide, sections)
     total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
     return templates.TemplateResponse(
         request,
@@ -1174,6 +1179,7 @@ async def print_route_plan(
             "scenarios": scenarios,
             "sport": b["sport"],
             "guide": guide,
+            "legs_guide": legs_guide,
         },
     )
 
@@ -1692,7 +1698,7 @@ async def export_pace_strategy(
 ):
     """Target passage times per waypoint, for the watch: timed GPX, TCX course
     (Garmin Virtual Partner) or CSV (COROS pace strategy / spreadsheet)."""
-    from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx, pacing_points
+    from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx
 
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
@@ -1702,18 +1708,22 @@ async def export_pace_strategy(
         return JSONResponse({"error": "Trace GPS indisponible"}, status_code=400)
     b = await _plan_bundle(route, db, user)
     segs = [g.model_dump() for g in (b["cycling"].segments if b["sport"] == "bike" else b["course"].segments)]
-    extra = pacing_points((await _pacing_guide_for(route, db, user))["blocks"]) if b["sport"] != "bike" else []
+    leg_codes: list[str] = []
+    if b["sport"] != "bike":
+        from app.services.pacing_guide import leg_instructions
+
+        leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user), b["sections"])]
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
-        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"])
+        body = build_pace_csv(route.name, b["sections"], b["use_target"], b["start_offset_s"], leg_codes=leg_codes)
         return Response(content=body, media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
     if fmt == "tcx":
-        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], extra_points=extra)
+        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
-    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], extra_points=extra)
+    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
     return Response(content=body, media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
 

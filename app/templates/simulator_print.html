@@ -93,22 +93,21 @@
         </p>
     </div>
 
-    {% if guide and guide.blocks %}
-    <!-- Pilotage: one line per terrain block, the dials to hold -->
+    {% if legs_guide %}
+    <!-- Pilotage: one instruction per leg between two points (what the watch shows) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
         <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
             <p class="text-[11px] font-bold uppercase tracking-wide">Pilotage</p>
-            <p class="text-[9px] text-gray-500">FC commande · VAM et allure = garde-fous · un cadran dépasse → tu ralentis</p>
+            <p class="text-[9px] text-gray-500">une consigne par tronçon · FC commande, VAM et allure = garde-fous</p>
         </div>
         <table class="w-full text-[9.5px] tabular-nums">
             <tbody class="divide-y divide-gray-100">
-                {% for b in guide.blocks %}
-                <tr class="{% if b.cls == 'stairs' %}bg-red-50{% elif b.cls == 'climb' %}bg-orange-50/60{% elif b.cls == 'descent' %}bg-blue-50/60{% endif %}">
-                    <td class="py-0.5 pr-2 text-gray-600 whitespace-nowrap">km {{ b.start_km }}–{{ b.end_km }}</td>
-                    <td class="py-0.5 pr-2 font-semibold whitespace-nowrap">{{ b.label }}{% if b.gain %} +{{ b.gain }}{% endif %}{% if b.max_grade >= guide.caps.walk_grade %} <span class="text-red-700">{{ b.max_grade|int }} %</span>{% endif %}</td>
-                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}</td>
-                    <td class="py-0.5 pr-2 whitespace-nowrap">{% if b.vam_m_per_h %}{{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %}{{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}</td>
-                    <td class="py-0.5 text-gray-600">{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}</td>
+                {% for l in legs_guide %}{% set b = l.block %}
+                <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-orange-50/60{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
+                    <td class="py-0.5 pr-2 text-gray-600 whitespace-nowrap">→ <b class="text-gray-900">{{ l.to_name }}</b></td>
+                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}{% endif %}</td>
+                    <td class="py-0.5 pr-2 whitespace-nowrap">{% if b %}{{ b.label }}{% if b.vam_m_per_h %} · {{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %} · {{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}{% endif %}</td>
+                    <td class="py-0.5 text-gray-600">{% if b %}{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} · <span class="text-red-700">escaliers km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
