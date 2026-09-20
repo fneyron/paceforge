@@ -237,3 +237,58 @@ def _alert(run: list[dict]) -> dict:
         "gain": int(round(sum(r["gain"] for r in run))),
         "note": "Escaliers / pente raide : on marche, mains sur les cuisses. Bâtons.",
     }
+
+
+def instruction_code(block: dict) -> str:
+    """Short watch-friendly code for a block: 'MONT FC135 650m/h', 'ESCAL marche',
+    'DESC FC125', 'PLAT FC131 5:45', 'LIBRE course'."""
+    if block.get("hr_free"):
+        return "LIBRE course"
+    parts = []
+    hr = f"FC{block['hr_cap']}" if block.get("hr_cap") else ""
+    cls = block["cls"]
+    if cls == "stairs":
+        parts = ["ESCAL", "marche", hr]
+    elif cls == "climb":
+        parts = ["MONT", hr, f"{block['vam_m_per_h']}m/h" if block.get("vam_m_per_h") else ""]
+    elif cls == "descent":
+        parts = ["DESC", hr]
+    else:
+        pace = int(block.get("pace_s_per_km") or 0)
+        parts = ["PLAT", hr, f"{pace // 60}:{pace % 60:02d}" if pace else ""]
+    return " ".join(p for p in parts if p)
+
+
+def leg_instructions(guide: dict, sections: list[dict]) -> list[dict]:
+    """ONE instruction per leg between two checkpoints: the terrain block that
+    takes the most time on that leg, plus the steep stretches inside it.
+
+    Fewer alerts on the watch than one per terrain block: a 100-miler with
+    12 aid stations gets 12 instructions, each valid until the next station.
+    """
+    blocks = guide.get("blocks") or []
+    alerts = guide.get("alerts") or []
+    out = []
+    for s in sections:
+        a, b = float(s["start_km"]), float(s["end_km"])
+        best, best_w = None, 0.0
+        for blk in blocks:
+            o0, o1 = max(a, blk["start_km"]), min(b, blk["end_km"])
+            if o1 <= o0:
+                continue
+            length = blk["end_km"] - blk["start_km"] or 1e-9
+            w = blk["time_s"] * (o1 - o0) / length  # time share of the block inside the leg
+            if w > best_w:
+                best, best_w = blk, w
+        steep = [al for al in alerts if al["end_km"] > a and al["start_km"] < b]
+        if best is None:
+            out.append({"from_name": s["start_name"], "to_name": s["end_name"], "code": "", "block": None, "steep": steep})
+            continue
+        code = instruction_code(best)
+        if steep and best["cls"] != "stairs":
+            code += " · ESCAL km " + "/".join(f"{al['start_km']:g}" for al in steep[:2])
+        out.append({
+            "from_name": s["start_name"], "to_name": s["end_name"], "start_km": a, "end_km": b,
+            "code": code, "block": best, "steep": steep,
+        })
+    return out
