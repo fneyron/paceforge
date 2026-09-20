@@ -19,8 +19,8 @@ RESUPPLY_KINDS = {"full", "base"}
 
 # A leg between two full stations longer than this is flagged (you carry
 # everything for it): distance OR planned time.
-AUTONOMY_ALERT_KM = 18.0
-AUTONOMY_ALERT_S = 3 * 3600
+AUTONOMY_ALERT_KM = 25.0
+AUTONOMY_ALERT_S = 4 * 3600
 
 
 def _clock_to_s(clock: str | None) -> int | None:
@@ -142,7 +142,9 @@ def annotate_cutoffs(sections: list[dict], checkpoints: list[dict], start_offset
         if planned_clock is None:
             planned_clock = s.get("clock_time_s")
         if cp and cp.get("cutoff_clock") and planned_clock is not None:
-            planned_elapsed = int(planned_clock) - int(start_offset_s)
+            # the clock is printed floored to the minute: the margin is computed on
+            # that same minute so "barrier 00:10, passage 23:25" reads +0h45
+            planned_elapsed = int(planned_clock) // 60 * 60 - int(start_offset_s)
             cut = cutoff_elapsed_s(cp["cutoff_clock"], start_offset_s, min_elapsed_s=planned_elapsed)
             s["cutoff_elapsed_s"] = cut
             s["cutoff_margin_s"] = (cut - planned_elapsed) if cut is not None else None

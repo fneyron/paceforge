@@ -66,6 +66,7 @@ def build_plan_data(
     total_km: float,
     blocks: list[dict] | None = None,
     scenarios: dict | None = None,
+    autonomy: list[dict] | None = None,
 ) -> dict:
     points = []
     cum_stops = 0.0
@@ -88,4 +89,7 @@ def build_plan_data(
         "blocks": [{"start_km": b["start_km"], "end_km": b["end_km"], "cls": b["cls"], "hr_cap": b.get("hr_cap"), "vam": b.get("vam_m_per_h")} for b in (blocks or [])],
         "scenarios": ({"fast_pct": scenarios["fast_pct"], "safe_pct": scenarios["safe_pct"],
                        "switch_cp_index": scenarios["switch"]["cp_index"] if scenarios.get("switch") else None} if scenarios else None),
+        # long stretches without a full aid station: drawn as brackets under the profile
+        "autonomy": [{"start_km": l["from_km"], "end_km": l["to_km"], "km": l["km"], "time_s": l["time_s"],
+                      "from_name": l["from_name"], "to_name": l["to_name"]} for l in (autonomy or []) if l.get("alert")],
     }

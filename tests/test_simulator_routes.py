@@ -49,8 +49,26 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     t = r.text
     assert "Sécurité" in t  # one table: scenario columns live in the passage table
     assert "Sécurité" in t and "Optimiste" in t and ">bascule<" in t
-    assert "barrière 10:30" in t  # cutoff shown under the planned clock
+    assert "barrière 10:30" in t  # cutoff carried by the inline time input's title
     assert 'value="full" selected' in t and "Drop bag" in t
+    # v4: day separator, no "+1j" suffix, no start row, switch row flagged, autonomy legs in the plan data
+    assert 'data-day="1"' in t and "+1j" not in t and ">Départ<" not in t and "data-switch" in t and '"autonomy"' in t
+
+    # race day, passage after midnight at Village (km 20): the day separator still precedes the anchor row,
+    # the header carries the delta, the cutoff margin is the one against the real clock
+    r = await as_user.post("/partials/simulator/passage-times", data={
+        "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS),
+        "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id, "stop_minutes": 3,
+        "anchor_km": 20.0, "anchor_clock": "00:58",
+    })
+    assert r.status_code == 200, r.text
+    t = r.text
+    assert "Recalée" in t and "Sécurité" not in t
+    assert t.index('data-day="1"') < t.index('bg-amber-50">')  # separator before the anchor row (its class ends the attribute)
+    plan = json.loads(t.split('id="plan-data">')[1].split("</script>")[0])
+    village = next(p for p in plan["points"] if p["name"] == "Village")
+    assert village["clock_s"] == 86400 + 58 * 60
+    assert village["cutoff_margin_s"] == 16 * 3600 - (3 * 3600 + 58 * 60)  # 13:00 next day − real elapsed
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,7 @@ from app.services.race_calibration import (
     fit_effort_model,
     predict_total_s,
 )
-from app.services.race_simulator import build_scenarios, compute_passage_times
+from app.services.race_simulator import build_scenarios, compute_passage_times, replan_from_passage
 from app.services.reference import (
     align_reference,
     compare_to_plan,
@@ -110,6 +110,30 @@ def test_cutoff_margin_annotated_on_sections():
     col = next(s for s in secs if s["end_name"] == "Col")
     assert col["cutoff_elapsed_s"] == 4 * 3600 + 30 * 60
     assert col["cutoff_margin_s"] > 0 and col["kind"] == "full" and col["drop_bag"] is True
+
+
+def test_replan_after_midnight_keeps_the_day_and_recomputes_margins():
+    # 21:00 start, 5 h plan: Village (km 20) is planned after midnight
+    course, secs = _sections(target=5 * 3600, start_hour=21)
+    start = 21 * 3600
+    village = next(s for s in secs if s["end_name"] == "Village")
+    assert village["adjusted_clock_time_s"] >= 86400
+    # real passage at 00:58 → the anchor clock carries its day, like its neighbours
+    out, rp = replan_from_passage(secs, start, 5 * 3600, 20.0, 58 * 60, stop_s_per_aid=0, aid_kms=set())
+    anchor = next(s for s in out if s.get("is_anchor"))
+    assert anchor["adjusted_clock_time_s"] == 86400 + 58 * 60
+    assert anchor["adjusted_cumulative_time_s"] == 3 * 3600 + 58 * 60
+    # the delta is what he reads: real minute − printed plan minute
+    plan_min = village["adjusted_clock_time_s"] // 60 * 60
+    assert rp["delta_s"] == (86400 + 58 * 60) - plan_min
+    # a passage typed for the SAME clock on the wrong side of midnight is not sent 24 h away
+    out2, rp2 = replan_from_passage(secs, start, 5 * 3600, 20.0, village["adjusted_clock_time_s"] % 86400, stop_s_per_aid=0, aid_kms=set())
+    assert abs(rp2["delta_s"]) < 60
+    # cutoff margins annotated after the replan use the real clock (13:00 next day, 16 h after the start)
+    after = cpsvc.annotate_cutoffs(out, CPS, start)
+    village_after = next(s for s in after if s["end_name"] == "Village")
+    assert village_after["cutoff_margin_s"] == 16 * 3600 - (3 * 3600 + 58 * 60)
+    assert village_after["cutoff_margin_s"] != village["cutoff_margin_s"]
 
 
 # ── 4. pacing guide ──

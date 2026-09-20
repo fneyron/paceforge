@@ -722,13 +722,19 @@ def replan_from_passage(
     if idx is None:
         return sections, None
 
+    a = sections[idx]
+    use_plan = bool(target_time_s) and a.get("adjusted_clock_time_s") is not None
+    # The plan's clock floored to the minute, as the table prints it, so the
+    # delta the athlete reads matches the two clocks he compares.
+    plan_clock = int(a["adjusted_clock_time_s"] if use_plan else a["clock_time_s"]) // 60 * 60
+    plan_elapsed = plan_clock - int(start_offset_s)
     anchor_elapsed = int(anchor_clock_s) - int(start_offset_s)
     while anchor_elapsed < 0:  # passage after midnight
         anchor_elapsed += 86400
-
-    a = sections[idx]
-    use_plan = bool(target_time_s) and a.get("adjusted_clock_time_s") is not None
-    plan_elapsed = (a["adjusted_clock_time_s"] if use_plan else a["clock_time_s"]) - start_offset_s
+    # A clock alone does not say which day: take the occurrence closest to the
+    # plan (a 100-miler crosses midnight twice).
+    while abs(anchor_elapsed + 86400 - plan_elapsed) < abs(anchor_elapsed - plan_elapsed):
+        anchor_elapsed += 86400
     delta_s = anchor_elapsed - plan_elapsed
     # Rhythm is measured against the PLAN (even effort is deliberately slower
     # than the prediction early on): 1.05 = 5 % slower than planned so far.
@@ -761,7 +767,8 @@ def replan_from_passage(
     for i in range(idx + 1):
         out[i]["passed"] = True
     out[idx]["is_anchor"] = True
-    out[idx]["adjusted_clock_time_s"] = int(anchor_clock_s)
+    # stored with its day so day separators, cutoffs and the profile agree
+    out[idx]["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed)
     out[idx]["adjusted_cumulative_time_s"] = int(anchor_elapsed)
 
     cum = 0.0
