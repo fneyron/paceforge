@@ -52,7 +52,7 @@
             <h3 class="text-sm font-semibold tracking-tight">Consignes par type de terrain</h3>
             <p class="text-[11px] text-gray-400">{{ g.blocks|length }} tronçons · {{ g.n_climb_km }} km de montée{% if g.n_stairs_km %} dont {{ g.n_stairs_km }} km d'escaliers{% endif %} · temps = {% if has_target %}plan à effort régulier{% else %}estimation{% endif %}</p>
         </div>
-        <p class="text-xs text-gray-500 mb-3">La FC commande. La <b>VAM</b> en montée et l'<b>allure</b> sur le roulant sont les garde-fous : si un cadran dépasse son plafond, tu ralentis — jamais l'inverse. Les plafonds évoluent : {% for ph in g.phases %}{% if ph.offset is none %}au-delà de {{ g.phases[loop.index0 - 1].until_pct }} % libre{% else %}≤ {{ ph.until_pct }} % {{ '+' if ph.offset > 0 }}{{ ph.offset }} bpm{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}.</p>
+        <p class="text-xs text-gray-500 mb-3"><b class="text-gray-700">En course :</b> chaque tronçon est un point de parcours dans l'export montre (GPX horodaté / TCX, menu Exporter du plan) — la montre affiche la consigne en arrivant dessus (« MONT FC135 650m/h », « ESCAL marche », « DESC FC125 ») — et figure sur la bande imprimée. La FC commande. La <b>VAM</b> en montée et l'<b>allure</b> sur le roulant sont les garde-fous : si un cadran dépasse son plafond, tu ralentis — jamais l'inverse. Les plafonds évoluent : {% for ph in g.phases %}{% if ph.offset is none %}au-delà de {{ g.phases[loop.index0 - 1].until_pct }} % libre{% else %}≤ {{ ph.until_pct }} % {{ '+' if ph.offset > 0 }}{{ ph.offset }} bpm{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}.</p>
         <div class="overflow-x-auto -mx-1">
             <table class="w-full text-sm min-w-[640px]">
                 <thead>

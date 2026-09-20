@@ -138,8 +138,33 @@ def _coord_at_km(coords: list, km: float):
     return coords[lo] if abs(coords[lo][2] - km) <= abs(coords[hi][2] - km) else coords[hi]
 
 
+def pacing_points(blocks: list[dict]) -> list[dict]:
+    """One course point per pacing block, named with the instruction the watch
+    should show when you reach it (short: watches truncate names).
+
+    MONT = climb (HR ceiling · VAM), ESCAL = stairs (walk), DESC = descent
+    (release HR), PLAT = flat (HR · pace). "libre" = race.
+    """
+    pts = []
+    for b in blocks:
+        hr = f"FC{b['hr_cap']}" if b.get("hr_cap") else ("libre" if b.get("hr_free") else "")
+        if b["cls"] == "stairs":
+            label = f"ESCAL marche {hr}".strip()
+        elif b["cls"] == "climb":
+            vam = f" {b['vam_m_per_h']}m/h" if b.get("vam_m_per_h") else ""
+            label = f"MONT {hr}{vam}".strip()
+        elif b["cls"] == "descent":
+            label = f"DESC {hr} relache".strip()
+        else:
+            pace = b.get("pace_s_per_km") or 0
+            label = f"PLAT {hr} {pace // 60}:{pace % 60:02d}".strip()
+        pts.append({"km": float(b["start_km"]), "name": label, "desc": f"km {b['start_km']}–{b['end_km']} · {b['label']} · {b['instruction']}"})
+    return pts
+
+
 def build_pace_gpx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
-                   use_target: bool, race_date: str | None, start_offset_s: int) -> str:
+                   use_target: bool, race_date: str | None, start_offset_s: int,
+                   extra_points: list[dict] | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
     curve = time_curve(course_segments, sections, use_target)
     rows = waypoint_rows(sections, use_target, start_offset_s)
@@ -147,6 +172,10 @@ def build_pace_gpx(name: str, coords: list, course_segments: list[dict], section
     out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     out.write('<gpx version="1.1" creator="PaceForge" xmlns="http://www.topografix.com/GPX/1/1">\n')
     out.write(f"  <metadata><name>{escape(name)} — plan</name><time>{start.strftime('%Y-%m-%dT%H:%M:%SZ')}</time></metadata>\n")
+    for pt in extra_points or []:
+        c = _coord_at_km(coords, pt["km"])
+        t = start + timedelta(seconds=elapsed_at(curve, pt["km"]))
+        out.write(f'  <wpt lat="{c[0]:.6f}" lon="{c[1]:.6f}"><time>{t.strftime("%Y-%m-%dT%H:%M:%SZ")}</time><name>{escape(pt["name"])}</name><desc>{escape(pt.get("desc", ""))}</desc><sym>Flag</sym></wpt>\n')
     for r in rows:
         c = _coord_at_km(coords, r["km"])
         label = f"{'ARR' if r['is_finish'] else 'CP' + str(r['index'])} {r['clock']} · {r['name']}"
@@ -166,7 +195,8 @@ def build_pace_gpx(name: str, coords: list, course_segments: list[dict], section
 
 
 def build_pace_tcx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
-                   use_target: bool, race_date: str | None, start_offset_s: int) -> str:
+                   use_target: bool, race_date: str | None, start_offset_s: int,
+                   extra_points: list[dict] | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
     curve = time_curve(course_segments, sections, use_target)
     rows = waypoint_rows(sections, use_target, start_offset_s)
@@ -191,6 +221,13 @@ def build_pace_tcx(name: str, coords: list, course_segments: list[dict], section
             out.write(f"<AltitudeMeters>{float(c[3]):.1f}</AltitudeMeters>")
         out.write(f"<DistanceMeters>{float(c[2]) * 1000:.1f}</DistanceMeters></Trackpoint>\n")
     out.write("    </Track>\n")
+    for pt in extra_points or []:
+        c = _coord_at_km(coords, pt["km"])
+        t = start + timedelta(seconds=elapsed_at(curve, pt["km"]))
+        out.write("    <CoursePoint>")
+        out.write(f"<Name>{escape(pt['name'][:15])}</Name><Time>{t.strftime('%Y-%m-%dT%H:%M:%SZ')}</Time>")
+        out.write(f"<Position><LatitudeDegrees>{c[0]:.6f}</LatitudeDegrees><LongitudeDegrees>{c[1]:.6f}</LongitudeDegrees></Position>")
+        out.write(f"<PointType>Generic</PointType><Notes>{escape(pt.get('desc', '')[:250])}</Notes></CoursePoint>\n")
     for r in rows:
         c = _coord_at_km(coords, r["km"])
         t = start + timedelta(seconds=r["elapsed_s"])

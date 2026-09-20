@@ -100,15 +100,121 @@ def calculate_from_input(input: PowerCalcInput) -> PowerCalcResult:
     )
 
 
-async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
-    """Estimate FTP from Strava ride data with power.
+def mean_max_power(streams: dict, window_s: int) -> float | None:
+    """Best average power over any ``window_s`` seconds of a ride's streams.
 
-    Prefers the last 12 months (fitness moves); falls back to all-time and
-    flags the estimate as stale when the reference ride is older than 6 months.
+    Strava streams are time-indexed (seconds since start) with gaps at pauses;
+    the ride is resampled to 1 s on a prefix sum so windows are exact.
+    """
+    watts = streams.get("watts") or []
+    times = streams.get("time") or []
+    n = min(len(watts), len(times))
+    if n < 2 or not times[n - 1] or times[n - 1] < window_s:
+        return None
+    total = int(times[n - 1]) + 1
+    if total > 48 * 3600:
+        return None
+    series = [0.0] * total
+    for i in range(1, n):
+        t0, t1 = int(times[i - 1]), int(times[i])
+        if t1 <= t0 or t1 - t0 > 30:  # pause: no power produced
+            continue
+        w = float(watts[i] or 0)
+        for t in range(t0, min(t1, total)):
+            series[t] = w
+    prefix = [0.0]
+    for v in series:
+        prefix.append(prefix[-1] + v)
+    best = 0.0
+    for t in range(window_s, total + 1):
+        avg = (prefix[t] - prefix[t - window_s]) / window_s
+        if avg > best:
+            best = avg
+    return round(best) if best > 0 else None
+
+
+def ftp_from_mean_max(p5: float | None, p20: float | None, p60: float | None) -> tuple[float | None, str]:
+    """FTP candidates from a ride's mean-max curve; returns (ftp, method).
+
+    - 60 min: FTP by definition;
+    - 20 min: the classic 95 % (Coggan);
+    - Monod critical power from the 5 and 20 min points — CP is a good FTP
+      proxy and is robust when the rider never did a clean 20 min effort.
+    The estimate keeps the highest of the three: FTP is what you CAN hold,
+    and a sub-maximal 60 min ride must not drag it down.
+    """
+    cands = []
+    if p60:
+        cands.append((p60, "60 min"))
+    if p20:
+        cands.append((p20 * 0.95, "20 min × 0,95"))
+    if p5 and p20 and p5 > p20:
+        cp = (p20 * 1200 - p5 * 300) / (1200 - 300)
+        if cp > 0:
+            cands.append((cp, "puissance critique 5–20 min"))
+    if not cands:
+        return None, ""
+    return max(cands, key=lambda c: c[0])
+
+
+async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
+    """Estimate FTP from Strava rides with power.
+
+    Two tiers:
+    1. Rides with second-by-second streams → mean-max 5 / 20 / 60 min, FTP as
+       the best of 60 min, 95 % of 20 min and the 5–20 min critical power
+       (intervals.icu-style eFTP), over the last 120 days.
+    2. Otherwise (summary data only) → the best normalized power of the last
+       12 months scaled by ride duration, averaged over the top 3 rides so a
+       single freak value does not set the number.
+    Falls back to all-time data and flags the estimate as stale when the
+    reference ride is older than 6 months.
     """
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
+
+    def _age_days(a: Activity) -> int:
+        sd = a.start_date
+        if sd is not None and sd.tzinfo is None:
+            sd = sd.replace(tzinfo=timezone.utc)
+        return (now - sd).days if sd else 0
+
+    # ── tier 1: streams ──
+    q = (
+        select(Activity)
+        .where(
+            Activity.user_id == user_id,
+            Activity.sport_type.in_(["Ride", "VirtualRide", "GravelRide"]),
+            Activity.streams_data.is_not(None),
+            Activity.start_date >= now - timedelta(days=120),
+            Activity.moving_time >= 1200,
+        )
+        .order_by(Activity.start_date.desc())
+        .limit(60)
+    )
+    rides = (await db.execute(q)).scalars().all()
+    best = None
+    n_with_power = 0
+    for a in rides:
+        st = a.streams_data or {}
+        if not st.get("watts"):
+            continue
+        n_with_power += 1
+        p5, p20, p60 = mean_max_power(st, 300), mean_max_power(st, 1200), mean_max_power(st, 3600)
+        ftp, method = ftp_from_mean_max(p5, p20, p60)
+        if ftp and (best is None or ftp > best[0]):
+            best = (ftp, method, a, p20 or p60 or p5)
+    if best:
+        ftp, method, a, ref_power = best
+        confidence = "Bonne" if n_with_power >= 3 else "Moyenne"
+        return FtpEstimate(
+            estimated_ftp=round(ftp, 0), best_20min_power=round(ref_power or ftp, 0),
+            activity_name=a.name, activity_date=a.start_date, confidence=confidence,
+            is_stale=False, age_months=max(0, _age_days(a) // 30), method=method, rides_used=n_with_power,
+        )
+
+    # ── tier 2: summary data (NP / average power by duration) ──
     activities = []
     for since in (now - timedelta(days=365), None):
         for col in (Activity.weighted_average_watts, Activity.average_watts):
@@ -116,7 +222,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
                 select(Activity)
                 .where(
                     Activity.user_id == user_id,
-                    Activity.sport_type.in_(["Ride", "VirtualRide"]),
+                    Activity.sport_type.in_(["Ride", "VirtualRide", "GravelRide"]),
                     col.is_not(None),
                     col > 0,
                     Activity.moving_time >= 1200,  # At least 20 minutes
@@ -134,44 +240,30 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     if not activities:
         return None
 
-    # Find best power effort
+    def _scaled(a: Activity) -> float:
+        power = a.weighted_average_watts or a.average_watts or 0
+        minutes = a.moving_time / 60
+        if 18 <= minutes <= 25:
+            return power * 0.95
+        if 40 <= minutes <= 70:
+            return power * 1.0
+        if minutes > 70:
+            return power * 1.05
+        return power * 0.90
+
+    top = sorted((_scaled(a) for a in activities), reverse=True)[:3]
+    ftp = sum(top) / len(top)
     best_activity = activities[0]
-    sd = best_activity.start_date
-    if sd is not None and sd.tzinfo is None:
-        sd = sd.replace(tzinfo=timezone.utc)
-    age_days = (now - sd).days if sd else 0
-    best_power = best_activity.weighted_average_watts or best_activity.average_watts
-
-    # Duration-based FTP estimation
-    duration_min = best_activity.moving_time / 60
-
-    if 18 <= duration_min <= 25:
-        # Classic 20min test
-        ftp = best_power * 0.95
-        confidence = "Bonne"
-    elif 40 <= duration_min <= 70:
-        # ~1h effort is close to FTP
-        ftp = best_power * 1.0
-        confidence = "Bonne"
-    elif duration_min > 70:
-        # Long ride, power is below FTP
-        ftp = best_power * 1.05
-        confidence = "Moyenne"
-    else:
-        # Short ride
-        ftp = best_power * 0.90
-        confidence = "Faible"
-
-    # Adjust confidence by number of rides
-    if len(activities) < 3:
-        confidence = "Faible"
-
+    age_days = _age_days(best_activity)
+    confidence = "Moyenne" if len(activities) >= 3 else "Faible"
     return FtpEstimate(
         estimated_ftp=round(ftp, 0),
-        best_20min_power=round(best_power, 0),
+        best_20min_power=round(best_activity.weighted_average_watts or best_activity.average_watts or 0, 0),
         activity_name=best_activity.name,
         activity_date=best_activity.start_date,
         confidence=confidence,
         is_stale=age_days > 180,
         age_months=max(0, age_days // 30),
+        method="puissance normalisée des meilleures sorties",
+        rides_used=len(activities),
     )

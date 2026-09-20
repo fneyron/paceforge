@@ -56,7 +56,6 @@ summary::-webkit-details-marker { display: none; }
     </div>
 
     <div id="rpanel-realise" class="hidden space-y-4">
-        <div hx-get="/api/simulator/routes/{{ saved_route_id }}/reference?v=1" hx-trigger="load" hx-swap="innerHTML"></div>
         <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></div>
     </div>
 </div>

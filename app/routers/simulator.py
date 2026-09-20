@@ -265,9 +265,12 @@ async def bike_gpx_upload(
     from app.services.power_calculator import estimate_ftp
 
     try:
+        from app.services.gpx import snap_waypoints_to_route
+
         content = await gpx_file.read()
-        points, _ = parse_gpx(content)
+        points, gpx_waypoints = parse_gpx(content)
         course = build_course_profile(points, name=gpx_file.filename or "Parcours velo")
+        snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         ftp = await estimate_ftp(db, user.id)
         rider_weight = user.weight_kg or 75
@@ -297,6 +300,9 @@ async def bike_gpx_upload(
         )
         db.add(route)
         await db.flush()
+        for wpt in snapped_wpts:
+            db.add(RouteCheckpoint(route_id=route.id, name=wpt.get("name", ""), distance_km=wpt.get("distance_km", 0), elevation=wpt.get("elevation")))
+        await db.flush()
         logger.info("Bike route %d created from GPX for user %d", route.id, user.id)
         return HTMLResponse(
             status_code=204,
@@ -311,52 +317,6 @@ async def bike_gpx_upload(
         return HTMLResponse(
             '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
             "Erreur lors de l'analyse du fichier GPX velo."
-            "</div>"
-        )
-
-
-@router.post("/partials/simulator/power-calc", response_class=HTMLResponse)
-async def power_calc(
-    request: Request,
-    gradient_pct: float = Form(...),
-    length_km: float = Form(...),
-    rider_weight_kg: float = Form(...),
-    bike_weight_kg: float = Form(9.0),
-    target_time_min: float | None = Form(None),
-    target_watts: float | None = Form(None),
-    user: User = Depends(get_current_user),
-):
-    from app.schemas.simulator import PowerCalcInput
-    from app.services.power_calculator import calculate_from_input
-
-    try:
-        target_time_s = int(target_time_min * 60) if target_time_min else None
-
-        calc_input = PowerCalcInput(
-            gradient_pct=gradient_pct,
-            length_km=length_km,
-            rider_weight_kg=rider_weight_kg,
-            bike_weight_kg=bike_weight_kg,
-            target_time_s=target_time_s,
-            target_watts=target_watts if not target_time_s else None,
-        )
-
-        result = calculate_from_input(calc_input)
-
-        return templates.TemplateResponse(
-            request,
-            "partials/power_result.html",
-            context={"result": result},
-        )
-    except ValueError as e:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{e}</div>'
-        )
-    except Exception:
-        logger.exception("Power calculation failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur de calcul. Vérifiez les valeurs saisies."
             "</div>"
         )
 
@@ -778,15 +738,51 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
         wind_speed = float(p.get("wind_speed_kmh") or 0)
         wind_dir = p.get("wind_direction_deg")
 
-    cycling = predict_cycling_course(
-        course, target_power_watts=target, rider_weight_kg=rider_weight, bike_weight_kg=bike_weight,
-        cda=cda, crr=crr, wind_speed_kmh=wind_speed, wind_direction_deg=wind_dir, wind_source=wind_source,
-        ftp_watts=ftp.estimated_ftp if ftp else None, hourly_wind=hourly_wind, start_offset_s=start_offset,
-    )
+    def _predict(watts: float):
+        return predict_cycling_course(
+            course, target_power_watts=watts, rider_weight_kg=rider_weight, bike_weight_kg=bike_weight,
+            cda=cda, crr=crr, wind_speed_kmh=wind_speed, wind_direction_deg=wind_dir, wind_source=wind_source,
+            ftp_watts=ftp.estimated_ftp if ftp else None, hourly_wind=hourly_wind, start_offset_s=start_offset,
+        )
+
+    cycling = _predict(target)
     sections = build_bike_sections(cycling, start_offset)
+
+    # Objective → the constant power it takes (the bike's "even effort").
+    required_power = None
+    if route.target_time_s and start_offset_override is None:
+        from app.services.cycling_simulator import solve_power_for_time
+
+        stop_total = (route.stop_minutes or 0) * 60 * len(_aid_kms_from_checkpoints(
+            [cp.as_dict() for cp in (await db.execute(
+                select(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id))).scalars().all()]))
+        required_power = solve_power_for_time(_predict, max(1, route.target_time_s - stop_total))
+
+    # Checkpoints (aid stations) with passage times, cutoffs and autonomy — the
+    # same table as the trail plan, fed by the power model.
+    cps: list[dict] = []
+    cp_ids: list[int] = []
+    passages: list[dict] = []
+    autonomy: list[dict] = []
+    if start_offset_override is None:
+        from app.services.checkpoints import annotate_cutoffs, autonomy_legs
+        from app.services.cycling_simulator import build_bike_passage_sections
+
+        cp_res = await db.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id).order_by(RouteCheckpoint.distance_km))
+        cp_rows = cp_res.scalars().all()
+        cps = [cp.as_dict() for cp in cp_rows]
+        cp_ids = [cp.id for cp in cp_rows]
+        aid = set((route.nutrition_json or {}).get("refills") or []) | _aid_kms_from_checkpoints(cps)
+        passages = build_bike_passage_sections(
+            cycling, cps, start_offset, route.target_time_s, stop_s_per_aid=(route.stop_minutes or 0) * 60, aid_kms=aid,
+        )
+        passages = annotate_cutoffs(passages, cps, start_offset)
+        autonomy = autonomy_legs(cps, cycling.total_distance_km, passages)
     return {
         "request": request, "user": user, "route": route,
         "cycling": cycling, "cycling_json": cycling.model_dump_json(), "sections": sections,
+        "checkpoints": cps, "cp_ids": cp_ids, "passages": passages, "autonomy": autonomy, "required_power": required_power,
+        "kinds": __import__("app.services.checkpoints", fromlist=["KINDS"]).KINDS,
         "ftp": ftp, "cda_est": cda_est,
         "params": {
             "target_power_watts": int(round(target)), "rider_weight_kg": rider_weight, "bike_weight_kg": bike_weight,
@@ -815,12 +811,24 @@ async def save_bike_plan(
     wind_speed_kmh: float = Form(default=0.0),
     wind_direction_deg: float | None = Form(default=None),
     refresh_weather: str = Form(default=""),
+    target_h: str = Form(default=""),
+    target_m: str = Form(default=""),
+    stop_minutes: str = Form(default=""),
 ):
-    """Save the bike plan parameters (+ date/start), refresh the forecast when
-    needed, and re-render the plan."""
+    """Save the bike plan parameters (+ date/start/objective), refresh the
+    forecast when needed, and re-render the plan."""
     route = await _get_owned_route(route_id, user, db)
     if not route or route.sport_type != "bike":
         return HTMLResponse("", status_code=404)
+    try:
+        th, tm = int(target_h or 0), int(target_m or 0)
+        route.target_time_s = th * 3600 + tm * 60 if (th or tm) else None
+    except ValueError:
+        pass
+    try:
+        route.stop_minutes = int(stop_minutes) if stop_minutes.strip() else None
+    except ValueError:
+        pass
 
     route.params_json = {
         "target_power_watts": max(30.0, target_power_watts), "rider_weight_kg": rider_weight_kg,
@@ -1084,14 +1092,8 @@ async def print_route_plan(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Printable race plan (passage timeline) for a saved route."""
-    from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import (
-        _elevation_at_km,
-        build_athlete_gradient_profile,
-        compute_passage_times,
-        predict_course,
-    )
+    """Printable race plan (passage timeline + nutrition) for a saved route."""
+    from app.services.race_simulator import _elevation_at_km, build_scenarios, replan_from_passage
 
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
@@ -1100,89 +1102,68 @@ async def print_route_plan(
     if not route or not route.course_json:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
-    start_hour = route.start_hour if route.start_hour is not None else 6
-    start_minute = route.start_minute or 0
-
-    course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(
-        course, profile, start_hour=start_hour, start_minute=start_minute
-    )
-
-    cp_result = await db.execute(
-        select(RouteCheckpoint)
-        .where(RouteCheckpoint.route_id == route_id)
-        .order_by(RouteCheckpoint.distance_km)
-    )
-    cps = [cp.as_dict() for cp in cp_result.scalars().all()]
-
-    # Per-checkpoint temperatures for the printed plan. Prefer the weather saved
-    # with the route (no re-fetch); fall back to a fresh forecast only if absent.
-    hourly_weather = None
-    if route.weather_json and route.weather_json.get("hourly"):
-        hourly_weather = route.weather_json["hourly"]
-    elif route.race_date and course.route_coords:
-        from app.services.weather import get_weather_forecast
-
-        weather = await get_weather_forecast(
-            course.route_coords[0][0], course.route_coords[0][1], str(route.race_date)
-        )
-        if weather:
-            hourly_weather = weather.get("hourly")
-
-    aid_kms = set((route.nutrition_json or {}).get("refills") or []) | _aid_kms_from_checkpoints(cps)
-    stop_min = route.stop_minutes or 0
-    sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute, hourly_weather,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
-    )
+    b = await _plan_bundle(route, db, user)
+    course, sections, cps = b["course"], b["sections"], b["checkpoints"]
+    start_hour, start_minute, start_offset_s = b["start_hour"], b["start_minute"], b["start_offset_s"]
+    aid_kms, stop_min = b["aid_kms"], b["stop_min"]
     live = route.live_json or {}
     live_applied = False
     if live.get("anchor_km") is not None and live.get("anchor_clock"):
-        from app.services.race_simulator import replan_from_passage
-
         clock_s = _clock_to_s(live["anchor_clock"])
         if clock_s is not None:
             sections, rp = replan_from_passage(
-                sections, start_hour * 3600 + start_minute * 60, route.target_time_s,
+                sections, start_offset_s, route.target_time_s,
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
             )
             live_applied = rp is not None
     has_weather = any(s.get("temperature_c") is not None for s in sections)
+    pp = route.params_json or {}
+    scenarios = None if live_applied else build_scenarios(
+        sections, start_offset_s, route.target_time_s,
+        fast_pct=float(pp.get("scenario_fast_pct") or 5.0), safe_pct=float(pp.get("scenario_safe_pct") or 10.0),
+        switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
+    )
 
     # Race pack: include the nutrition per-leg plan on the same printout.
     nutrition_schedule = []
     nutrition_lines = []
     nut = route.nutrition_json or {}
     if nut.get("items"):
-        from app.services.nutrition import compute_plan, default_targets
+        from app.services.nutrition import CAFFEINE_DEFAULTS, compute_plan, default_targets
 
         prod_result = await db.execute(
             select(NutritionProduct).where(NutritionProduct.user_id == user.id)
         )
         products_by_id = {p.id: _product_dict(p) for p in prod_result.scalars().all()}
-        duration_s = route.target_time_s or course.predicted_total_time_s or 0
+        if not products_by_id:
+            products_by_id = {p["id"]: p for p in _GENERIC_PLAN_PRODUCTS}
+        duration_s = route.target_time_s or b["predicted_total_s"] or 0
         mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
         targets = nut.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
         nplan = compute_plan(
             duration_s, targets, nut["items"], products_by_id, sections,
             flask_capacity_ml=nut.get("flask_capacity_ml") or 1000, refill_kms=aid_kms,
+            resupply_points=[{"km": cp["distance_km"], "name": cp["name"]} for cp in cps if cp.get("drop_bag") or cp.get("crew")],
+            caffeine={**CAFFEINE_DEFAULTS, **(nut.get("caffeine") or {})}, start_offset_s=start_offset_s, weight_kg=user.weight_kg,
         )
         nutrition_schedule = nplan["schedule"]
         nutrition_lines = [ln for ln in nplan["lines"] if ln.get("total_units") and not ln.get("is_water")]
 
+    guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
+    total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
     return templates.TemplateResponse(
         request,
         "simulator_print.html",
         context={
             "route": route,
             "course": course,
+            "predicted_total_formatted": total_fmt,
             "sections": sections,
             "has_target": route.target_time_s is not None or live_applied,
             "has_weather": has_weather,
             "start_hour": start_hour,
             "start_minute": start_minute,
-            "start_offset_s": start_hour * 3600 + start_minute * 60,
+            "start_offset_s": start_offset_s,
             "start_elevation": _elevation_at_km(course, 0.0),
             "total_distance_km": course.total_distance_km,
             "print_mode": True,
@@ -1190,6 +1171,9 @@ async def print_route_plan(
             "n_aid": len(aid_kms),
             "nutrition_schedule": nutrition_schedule,
             "nutrition_lines": nutrition_lines,
+            "scenarios": scenarios,
+            "sport": b["sport"],
+            "guide": guide,
         },
     )
 
@@ -1231,30 +1215,18 @@ async def get_weather(
 _RUN_TYPES = ["Run", "TrailRun", "VirtualRun"]
 
 
+_BIKE_TYPES = ["Ride", "VirtualRide", "GravelRide", "EBikeRide", "MountainBikeRide"]
+
+
 async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     from app.models.activity import Activity
-    from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import (
-        build_athlete_gradient_profile,
-        compute_passage_times,
-        predict_course,
-    )
 
-    start_hour = route.start_hour if route.start_hour is not None else 6
-    start_minute = route.start_minute or 0
-    course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
-
-    cp_result = await db.execute(
-        select(RouteCheckpoint)
-        .where(RouteCheckpoint.route_id == route.id)
-        .order_by(RouteCheckpoint.distance_km)
-    )
-    cps = [cp.as_dict() for cp in cp_result.scalars().all()]
-    sections = compute_passage_times(course, cps, None, 1.0, start_hour, start_minute, None)
-    predicted = {s["end_name"]: s["cumulative_time_s"] for s in sections}
-    predicted_total = course.predicted_total_time_s
+    b = await _plan_bundle(route, db, user)
+    start_hour, start_minute = b["start_hour"], b["start_minute"]
+    cps, plan_sections = b["checkpoints"], b["sections"]
+    predicted = {s["end_name"]: s["cumulative_time_s"] for s in plan_sections}
+    predicted_total = b["predicted_total_s"]
+    sport_types = _BIKE_TYPES if route.sport_type == "bike" else _RUN_TYPES
 
     # Leg-by-leg debrief against the PLAN the athlete actually ran with (target
     # + aid stops) — or the prediction when no target was set.
@@ -1266,16 +1238,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
 
         act = (await db.execute(select(_Act).where(_Act.id == result["activity_id"], _Act.user_id == user.id))).scalar_one_or_none()
         if act and act.splits_metric:
-            aid = set((route.nutrition_json or {}).get("refills") or []) | _aid_kms_from_checkpoints(cps)
-            stop_min = route.stop_minutes or 0
-            plan_sections = compute_passage_times(
-                course, cps, route.target_time_s, 1.0, start_hour, start_minute,
-                route.weather_json.get("hourly") if route.weather_json else None,
-                stop_s_per_aid=stop_min * 60, aid_kms=aid,
-            )
-            from app.services.checkpoints import annotate_cutoffs
-
-            plan_sections = annotate_cutoffs(plan_sections, cps, start_hour * 3600 + start_minute * 60)
+            stop_min = b["stop_min"]
             hr_cap = (route.params_json or {}).get("hr_cap_climb")
             debrief = leg_debrief(
                 act.splits_metric, plan_sections, route.total_distance_km,
@@ -1307,7 +1270,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         # closest-distance first, and let the user pick.
         cand_q = await db.execute(
             select(Activity)
-            .where(Activity.user_id == user.id, Activity.sport_type.in_(_RUN_TYPES))
+            .where(Activity.user_id == user.id, Activity.sport_type.in_(sport_types))
             .order_by(Activity.start_date.desc())
             .limit(200)
         )
@@ -1400,7 +1363,7 @@ async def save_route_result(
     # than predicted early but fades to (or past) the prediction late gets a
     # steeper fresh→fade tilt. Hard-clamped: one race adjusts, never dominates.
     fatigue_tilt = None
-    if actual and total_actual_s:
+    if actual and total_actual_s and route.sport_type != "bike":
         try:
             from app.schemas.simulator import CourseProfile
             from app.services.race_simulator import (
@@ -1469,13 +1432,7 @@ def _product_dict(p: NutritionProduct) -> dict:
 
 async def _nutrition_card_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     """Build everything the nutrition card needs: pantry, plan, schedule."""
-    from app.schemas.simulator import CourseProfile
     from app.services.nutrition import compute_plan, default_targets
-    from app.services.race_simulator import (
-        build_athlete_gradient_profile,
-        compute_passage_times,
-        predict_course,
-    )
 
     prod_result = await db.execute(
         select(NutritionProduct)
@@ -1488,29 +1445,12 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     products_for_plan = products if products else _GENERIC_PLAN_PRODUCTS
     products_by_id = {p["id"]: p for p in products_for_plan}
 
-    course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
-    start_hour = route.start_hour if route.start_hour is not None else 6
-    start_minute = route.start_minute or 0
-    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
-
+    b = await _plan_bundle(route, db, user)
+    start_hour, start_minute = b["start_hour"], b["start_minute"]
+    cps, sections, refills = b["checkpoints"], b["sections"], b["aid_kms"]
     # Duration used for totals: target if set, else the model prediction.
-    duration_s = route.target_time_s or course.predicted_total_time_s or 0
-
-    cp_result = await db.execute(
-        select(RouteCheckpoint)
-        .where(RouteCheckpoint.route_id == route.id)
-        .order_by(RouteCheckpoint.distance_km)
-    )
-    cps = [cp.as_dict() for cp in cp_result.scalars().all()]
-    hourly_weather = route.weather_json.get("hourly") if route.weather_json else None
+    duration_s = route.target_time_s or b["predicted_total_s"] or 0
     nutrition = route.nutrition_json or {}
-    refills = set(nutrition.get("refills") or []) | _aid_kms_from_checkpoints(cps)
-    stop_min = route.stop_minutes or 0
-    sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute, hourly_weather,
-        stop_s_per_aid=stop_min * 60, aid_kms=refills,
-    )
 
     mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
     targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
@@ -1530,46 +1470,48 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         resupply_points=resupply_points, caffeine=caffeine_cfg,
         start_offset_s=start_hour * 3600 + start_minute * 60, weight_kg=user.weight_kg,
     )
-    # rate per product for the form (product_id -> per_hour) — manual items only
-    rates = {it.get("product_id"): it.get("per_hour", 0) for it in items}
-
-    def _interval_min(per_hour):
-        return round(60.0 / per_hour) if per_hour and per_hour > 0 else None
-
-    # The UI is interval-based ("1 every X min") — more natural than a fractional
-    # rate. Convert per_hour <-> minutes for display; the math stays on per_hour.
-    intervals = {pid: _interval_min(ph) for pid, ph in rates.items()}
-    from app.services.nutrition import rate_for_target
-    target_intervals = {
-        p["id"]: _interval_min(rate_for_target(targets.get("carbs_g_per_h", 0), p["carbs_g"]))
-        for p in products
-    }
-    # checkpoints the athlete can mark as refill points (all section ends but
-    # the finish), with their current refill state.
-    refill_points = [
-        {"name": s.get("end_name", ""), "km": round(float(s.get("end_km") or 0), 1),
-         "is_refill": round(float(s.get("end_km") or 0), 1) in {round(float(k), 1) for k in refills}}
-        for s in sections[:-1]
-    ] if sections else []
-
+    # quantity per hour per product (what the athlete set); a product is "used"
+    # when it has a rate. Each product row also shows what its rate brings.
+    rates = {it.get("product_id"): float(it.get("per_hour") or 0) for it in items}
+    for p in products_for_plan:
+        r = rates.get(p["id"], 0.0)
+        p["per_hour"] = r
+        p["used"] = r > 0
+        p["carbs_per_h"] = round(r * (p.get("carbs_g") or 0))
+        p["sodium_per_h"] = round(r * (p.get("sodium_mg") or 0))
+    hours = duration_s / 3600.0 if duration_s else 0
+    legs = plan["schedule"]
+    real_carbs_per_h = round(sum(l["carbs_real_g"] for l in legs) / hours) if hours and legs else plan["per_hour"]["carbs_g"]
+    real_sodium_per_h = round(sum(l["sodium_real_per_h"] * l["leg_time_s"] for l in legs) / max(1, sum(l["leg_time_s"] for l in legs))) if legs else plan["per_hour"]["sodium_mg"]
+    n_aid = len({round(float(s.get("end_km") or 0), 1) for s in sections[:-1] if round(float(s.get("end_km") or 0), 1) in refills}) if sections else 0
     return {
         "request": request,
         "route_id": route.id,
-        "products": products,
+        "products": products_for_plan,
         "targets": targets,
-        "rates": rates,
-        "intervals": intervals,
-        "target_intervals": target_intervals,
         "flask_capacity_ml": flask_capacity_ml,
-        "refill_points": refill_points,
         "plan": plan,
         "has_duration": duration_s > 0,
         "using_generic": using_generic,
-        "carb_presets": [50, 60, 75, 90],
+        "carb_presets": [60, 75, 90],
         "caffeine_cfg": caffeine_cfg,
         "resupply_points": resupply_points,
         "start_offset_s": start_hour * 3600 + start_minute * 60,
+        "kpi": {
+            "carbs_real": real_carbs_per_h, "sodium_real": real_sodium_per_h,
+            "carbs_status": _nutrition_status(real_carbs_per_h, targets.get("carbs_g_per_h", 0)),
+            "sodium_status": _nutrition_status(real_sodium_per_h, targets.get("sodium_mg_per_h", 0)),
+        },
+        "n_aid": n_aid,
+        "has_sodium": any((p.get("sodium_mg") or 0) > 0 for p in products_for_plan),
+        "has_caffeine_product": any((p.get("caffeine_mg") or 0) > 0 for p in products_for_plan),
     }
+
+
+def _nutrition_status(value: float, target: float) -> str:
+    from app.services.nutrition import _status
+
+    return _status(float(value or 0), float(target or 0))
 
 
 async def _get_owned_route(route_id: int, user: User, db: AsyncSession) -> Route | None:
@@ -1597,18 +1539,37 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
         predict_course,
     )
 
-    start_hour = route.start_hour if route.start_hour is not None else 6
-    start_minute = route.start_minute or 0
-    start_offset_s = start_hour * 3600 + start_minute * 60
-    course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
     cp_result = await db.execute(
         select(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id).order_by(RouteCheckpoint.distance_km)
     )
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
     aid = set((route.nutrition_json or {}).get("refills") or []) | _aid_kms_from_checkpoints(cps)
     stop_min = route.stop_minutes or 0
+
+    if route.sport_type == "bike":
+        from app.services.cycling_simulator import build_bike_passage_sections
+
+        bctx = await _bike_plan_context(None, route, db, user)
+        cycling = bctx["cycling"]
+        start_offset_s = bctx["start_offset_s"]
+        sections = build_bike_passage_sections(
+            cycling, cps, start_offset_s, route.target_time_s, stop_s_per_aid=stop_min * 60, aid_kms=aid,
+        )
+        sections = annotate_cutoffs(sections, cps, start_offset_s)
+        return {
+            "course": CourseProfile(**route.course_json), "profile": None, "cycling": cycling, "bike_ctx": bctx,
+            "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
+            "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
+            "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
+            "params": route.params_json or {}, "sport": "bike",
+        }
+
+    start_hour = route.start_hour if route.start_hour is not None else 6
+    start_minute = route.start_minute or 0
+    start_offset_s = start_hour * 3600 + start_minute * 60
+    course = CourseProfile(**route.course_json)
+    profile = await build_athlete_gradient_profile(db, user.id)
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
@@ -1617,15 +1578,23 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     sections = annotate_cutoffs(sections, cps, start_offset_s)
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections,
+        "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
-        "params": route.params_json or {},
+        "params": route.params_json or {}, "sport": "trail",
     }
 
 
 # ── Pacing guide (terrain-typed instructions) ──
 
-async def _pacing_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
+async def _pacing_guide_for(route: Route, db: AsyncSession, user: User) -> dict:
+    """The terrain guide with the athlete's ceilings (used by the Pilotage tab,
+    the watch export and the printed band)."""
+    ctx = await _pacing_context(None, route, db, user)
+    return ctx["guide"]
+
+
+async def _pacing_context(request: Request | None, route: Route, db: AsyncSession, user: User) -> dict:
     from app.services.pacing_guide import DEFAULT_WALK_GRADE, build_pacing_guide, default_hr_caps
     from app.services.training_zones import estimate_training_zones
 
@@ -1723,7 +1692,7 @@ async def export_pace_strategy(
 ):
     """Target passage times per waypoint, for the watch: timed GPX, TCX course
     (Garmin Virtual Partner) or CSV (COROS pace strategy / spreadsheet)."""
-    from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx
+    from app.services.pace_export import build_pace_csv, build_pace_gpx, build_pace_tcx, pacing_points
 
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
@@ -1732,7 +1701,8 @@ async def export_pace_strategy(
     if not coords:
         return JSONResponse({"error": "Trace GPS indisponible"}, status_code=400)
     b = await _plan_bundle(route, db, user)
-    segs = [g.model_dump() for g in b["course"].segments]
+    segs = [g.model_dump() for g in (b["cycling"].segments if b["sport"] == "bike" else b["course"].segments)]
+    extra = pacing_points((await _pacing_guide_for(route, db, user))["blocks"]) if b["sport"] != "bike" else []
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
@@ -1740,10 +1710,10 @@ async def export_pace_strategy(
         return Response(content=body, media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
     if fmt == "tcx":
-        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"])
+        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], extra_points=extra)
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
-    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"])
+    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], extra_points=extra)
     return Response(content=body, media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
 
@@ -2047,22 +2017,39 @@ async def save_nutrition_plan(
         "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h"))),
         "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"))),
     }
-    items = []
-    refills = []
+    from app.services.nutrition import auto_rates
+
+    prev = route.nutrition_json or {}
+    prev_rates = {it.get("product_id"): float(it.get("per_hour") or 0) for it in (prev.get("items") or [])}
+    used: set[int] = set()
+    qty: dict[int, float] = {}
     for key, val in form.multi_items() if hasattr(form, "multi_items") else form.items():
-        if key.startswith("interval_"):
-            # "1 unit every N minutes" → units per hour
-            minutes = _to_float(val)
-            if minutes > 0:
-                try:
-                    items.append({"product_id": int(key[9:]), "per_hour": round(60.0 / minutes, 3)})
-                except ValueError:
-                    continue
-        elif key.startswith("refill_"):
-            try:
-                refills.append(round(float(key[7:]), 1))
-            except ValueError:
-                continue
+        try:
+            if key.startswith("use_"):
+                used.add(int(key[4:]))
+            elif key.startswith("qty_"):
+                qty[int(key[4:])] = _to_float(str(val).replace(",", "."))
+        except ValueError:
+            continue
+    prod_result = await db.execute(select(NutritionProduct).where(NutritionProduct.user_id == user.id))
+    products = [_product_dict(p) for p in prod_result.scalars().all()] or _GENERIC_PLAN_PRODUCTS
+    by_id = {p["id"]: p for p in products}
+    # A product just ticked (no quantity yet) — or "répartir" — gets its share of
+    # the targets; a quantity the athlete typed is kept as is.
+    auto_all = bool(form.get("auto"))
+    selected = [by_id[i] for i in used if i in by_id]
+    suggested = auto_rates(targets["carbs_g_per_h"], targets["sodium_mg_per_h"], selected) if selected else {}
+    items = []
+    for p in selected:
+        pid = p["id"]
+        r = qty.get(pid, 0.0)
+        if auto_all or r <= 0 and prev_rates.get(pid, 0) <= 0:
+            r = suggested.get(pid, 0.0)
+        elif r <= 0:
+            r = prev_rates.get(pid, 0.0)
+        if r > 0:
+            items.append({"product_id": pid, "per_hour": round(r, 2)})
+    refills = list(prev.get("refills") or [])  # legacy tick list; stations now come from checkpoint kinds
     flask_capacity_ml = round(_to_float(form.get("flask_capacity_ml"), 1000))
     caffeine = {
         "enabled": bool(form.get("caffeine_enabled")),
@@ -2081,3 +2068,82 @@ async def save_nutrition_plan(
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
+
+
+# ── Bike checkpoints (aid stations): server-side editing, plan re-rendered ──
+
+async def _render_bike_plan(request: Request, route: Route, db: AsyncSession, user: User) -> HTMLResponse:
+    ctx = await _bike_plan_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/bike_plan.html", context=ctx, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/api/simulator/routes/{route_id}/checkpoints", response_class=HTMLResponse)
+async def add_checkpoint(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    name: str = Form(default=""),
+    distance_km: float = Form(...),
+):
+    from app.services.race_simulator import _elevation_at_km
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    if name.strip() and 0 < distance_km < (route.total_distance_km or 0):
+        from app.schemas.simulator import CourseProfile
+
+        elev = _elevation_at_km(CourseProfile(**route.course_json), float(distance_km))
+        db.add(RouteCheckpoint(route_id=route.id, name=name.strip()[:100], distance_km=round(float(distance_km), 1), elevation=elev))
+        await db.flush()
+    return await _render_bike_plan(request, route, db, user)
+
+
+@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}", response_class=HTMLResponse)
+async def update_checkpoint(
+    route_id: int,
+    cp_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.checkpoints import normalize_checkpoint
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    cp = (await db.execute(select(RouteCheckpoint).where(RouteCheckpoint.id == cp_id, RouteCheckpoint.route_id == route.id))).scalar_one_or_none()
+    if cp:
+        form = await request.form()
+        data = cp.as_dict()
+        for key in ("name", "distance_km", "kind", "cutoff_clock"):
+            if key in form:
+                data[key] = form.get(key)
+        for key in ("crew", "drop_bag"):
+            if key in form:
+                data[key] = str(form.get(key)).lower() in ("1", "true", "on")
+        n = normalize_checkpoint(data)
+        if n["name"] and 0 < n["distance_km"] < (route.total_distance_km or 0):
+            cp.name, cp.distance_km = n["name"], n["distance_km"]
+        cp.kind, cp.crew, cp.drop_bag, cp.cutoff_clock = n["kind"], n["crew"], n["drop_bag"], n["cutoff_clock"]
+        await db.flush()
+    return await _render_bike_plan(request, route, db, user)
+
+
+@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}/delete", response_class=HTMLResponse)
+async def delete_checkpoint(
+    route_id: int,
+    cp_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    cp = (await db.execute(select(RouteCheckpoint).where(RouteCheckpoint.id == cp_id, RouteCheckpoint.route_id == route.id))).scalar_one_or_none()
+    if cp:
+        await db.delete(cp)
+        await db.flush()
+    return await _render_bike_plan(request, route, db, user)

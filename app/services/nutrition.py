@@ -394,3 +394,32 @@ def compute_plan(
         "packing": packing,
         "caffeine": caffeine_plan,
     }
+
+
+def _round_half(x: float) -> float:
+    return round(x * 2) / 2
+
+
+def auto_rates(target_carbs_per_h: float, target_sodium_per_h: float, products: list[dict]) -> dict[int, float]:
+    """Units/h per product so the SELECTED products meet the targets together.
+
+    Carb products share the carb target equally (each brings target/n g/h);
+    salt products cover whatever sodium the carb products leave uncovered.
+    Rates are in halves (2.5 gels/h), never below 0.5 for a carb product the
+    athlete chose to use — you don't pack a product to not take it.
+    """
+    carb = [p for p in products if (p.get("carbs_g") or 0) > 0]
+    salt = [p for p in products if (p.get("carbs_g") or 0) <= 0 and (p.get("sodium_mg") or 0) > 0]
+    rates: dict[int, float] = {}
+    sodium_covered = 0.0
+    if carb and target_carbs_per_h > 0:
+        share = target_carbs_per_h / len(carb)
+        for p in carb:
+            r = max(0.5, _round_half(share / float(p["carbs_g"])))
+            rates[p["id"]] = r
+            sodium_covered += r * float(p.get("sodium_mg") or 0)
+    remaining = max(0.0, float(target_sodium_per_h or 0) - sodium_covered)
+    for p in salt:
+        r = _round_half(remaining / float(p["sodium_mg"]) / len(salt)) if remaining > 0 else 0.0
+        rates[p["id"]] = r
+    return rates

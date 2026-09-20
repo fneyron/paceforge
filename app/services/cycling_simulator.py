@@ -508,3 +508,123 @@ def build_bike_sections(cycling: CyclingProfile, start_offset_s: int = 0, min_le
             "clock_s": int(start_offset_s + cumulative),
         })
     return rows
+
+
+# ── Passage times at checkpoints + objective → required power ──
+
+def _cum_time_at_km(cycling: CyclingProfile, km: float) -> float:
+    """Cumulative predicted moving time at ``km`` (linear inside a segment)."""
+    prev_end, prev_cum = 0.0, 0.0
+    for sg in cycling.segments:
+        if sg.end_km >= km - 1e-9:
+            span = sg.end_km - prev_end
+            frac = (km - prev_end) / span if span > 0 else 1.0
+            return prev_cum + frac * (sg.cumulative_time_s - prev_cum)
+        prev_end, prev_cum = sg.end_km, sg.cumulative_time_s
+    return cycling.segments[-1].cumulative_time_s if cycling.segments else 0.0
+
+
+def _elev_at_km(cycling: CyclingProfile, km: float) -> float | None:
+    pts = cycling.elevation_points or []
+    if not pts:
+        return None
+    if km <= pts[0]["distance_km"]:
+        return round(pts[0]["elevation"])
+    for a, b in zip(pts, pts[1:], strict=False):
+        if b["distance_km"] >= km:
+            span = b["distance_km"] - a["distance_km"]
+            t = (km - a["distance_km"]) / span if span > 0 else 0
+            return round(a["elevation"] + t * (b["elevation"] - a["elevation"]))
+    return round(pts[-1]["elevation"])
+
+
+def build_bike_passage_sections(
+    cycling: CyclingProfile,
+    checkpoints: list[dict],
+    start_offset_s: int,
+    target_time_s: int | None = None,
+    stop_s_per_aid: int = 0,
+    aid_kms: set | None = None,
+) -> list[dict]:
+    """Checkpoint-to-checkpoint sections in the SAME shape as the trail plan's
+    passage sections (services/race_simulator.compute_passage_times), so the
+    nutrition plan, exports, cutoffs, scenarios and debrief work unchanged.
+
+    Prediction = the power model at the target power. With an objective, the
+    plan scales every leg by the same factor (riding at another constant
+    power keeps the shape), and aid stops shift the clock.
+    """
+    from app.schemas.simulator import PassageTimeSection
+
+    total_km = cycling.total_distance_km
+    all_cps = [{"name": "Depart", "distance_km": 0.0, "cp_index": None}]
+    for orig_idx, cp in sorted(enumerate(checkpoints), key=lambda pair: float(pair[1]["distance_km"])):
+        km = float(cp["distance_km"])
+        if 0 < km < total_km:
+            all_cps.append({**cp, "distance_km": km, "cp_index": orig_idx})
+    all_cps.append({"name": "Arrivee", "distance_km": total_km, "cp_index": None})
+
+    aid_set = {round(float(k), 1) for k in (aid_kms or set())}
+    n_stops = sum(1 for cp in all_cps[1:-1] if round(float(cp["distance_km"]), 1) in aid_set) if stop_s_per_aid else 0
+    total_pred = cycling.predicted_total_time_s or _cum_time_at_km(cycling, total_km) or 1.0
+    scale = ((max(target_time_s - n_stops * stop_s_per_aid, 1)) / total_pred) if target_time_s else None
+
+    sections = []
+    cum = adj_cum = 0.0
+    stops_acc = 0
+    prev_km, prev_name = 0.0, all_cps[0]["name"]
+    for cp in all_cps[1:]:
+        end_km = float(cp["distance_km"])
+        t_end = _cum_time_at_km(cycling, end_km)
+        section_time = max(0.0, t_end - cum)
+        cum = t_end
+        gain = loss = 0.0
+        for sg in cycling.segments:
+            if sg.end_km <= prev_km or sg.start_km >= end_km:
+                continue
+            length = sg.end_km - sg.start_km
+            frac = (min(sg.end_km, end_km) - max(sg.start_km, prev_km)) / length if length > 0 else 0
+            gain += sg.elevation_gain * frac
+            loss += sg.elevation_loss * frac
+        dist = end_km - prev_km
+        adjusted = section_time * scale if scale else None
+        if adjusted is not None:
+            adj_cum += adjusted
+        sections.append(PassageTimeSection(
+            start_name=prev_name, end_name=cp["name"],
+            start_km=round(prev_km, 1), end_km=round(end_km, 1), distance_km=round(dist, 1),
+            elevation_gain=round(gain), elevation_loss=round(loss),
+            predicted_time_s=round(section_time), cumulative_time_s=round(cum),
+            predicted_pace_s_per_km=round(section_time / dist) if dist > 0 else 0,
+            adjusted_time_s=round(adjusted) if adjusted is not None else None,
+            adjusted_cumulative_time_s=round(adj_cum) if adjusted is not None else None,
+            end_elevation=_elev_at_km(cycling, end_km),
+            clock_time_s=int(start_offset_s + cum + stops_acc),
+            adjusted_clock_time_s=int(start_offset_s + adj_cum + stops_acc) if adjusted is not None else None,
+            end_checkpoint_index=cp["cp_index"],
+        ).model_dump())
+        if stop_s_per_aid and cp["cp_index"] is not None and round(end_km, 1) in aid_set:
+            stops_acc += stop_s_per_aid
+        prev_km, prev_name = end_km, cp["name"]
+    return sections
+
+
+def solve_power_for_time(predict, target_time_s: int, lo_w: float = 60.0, hi_w: float = 600.0) -> float | None:
+    """Constant power that brings the predicted moving time to ``target_time_s``.
+
+    ``predict(watts)`` returns a CyclingProfile. Bisection on the monotonic
+    power→time relation; None when the objective is out of the range.
+    """
+    if not target_time_s or target_time_s <= 0:
+        return None
+    t_lo = predict(lo_w).predicted_total_time_s
+    t_hi = predict(hi_w).predicted_total_time_s
+    if target_time_s > t_lo or target_time_s < t_hi:
+        return None
+    for _ in range(22):
+        mid = (lo_w + hi_w) / 2
+        if predict(mid).predicted_total_time_s > target_time_s:
+            lo_w = mid
+        else:
+            hi_w = mid
+    return round((lo_w + hi_w) / 2)
