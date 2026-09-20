@@ -38,7 +38,6 @@
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] text-right bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes"
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">
             </span>
-            <button id="hero-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="lg:hidden ml-3 self-center text-[11px] text-gray-400 hidden" title="Revenir à l'estimation"></button>
         </div>
         <div class="order-5 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-600 tabular-nums">
             <span class="inline-flex items-center gap-x-1.5 whitespace-nowrap">
@@ -79,9 +78,10 @@
             </button>
         </div>
         <div class="order-4 hidden lg:block w-full h-0 -my-2"></div>
-        <div class="hidden lg:block order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
+        <div class="order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
+            <div id="obj-guard" class="lg:hidden absolute inset-0 z-10" style="touch-action: pan-y"></div>
             <input type="range" id="obj-slider" min="0" max="100" step="1" aria-label="Objectif" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
-            <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="absolute top-1/2 -translate-y-1/2 w-6 h-6 -ml-3 flex items-center justify-center hidden" title="estimé"><span class="block w-px h-3 bg-gray-400"></span></button>
+            <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="absolute top-1/2 -translate-y-1/2 w-6 h-6 -ml-3 flex items-center justify-center hidden" title="estimé"><span class="block w-0.5 h-3 bg-gray-500 rounded-sm"></span></button>
         </div>
         <div class="order-6 text-xs text-gray-500 tabular-nums whitespace-nowrap"><b class="text-gray-800 font-semibold">{{ course.total_distance_km }}</b> km · <span class="text-red-500">+{{ "%.0f"|format(course.total_elevation_gain) }}</span> / <span class="text-blue-500">−{{ "%.0f"|format(course.total_elevation_loss) }}</span> m</div>
     </div>
@@ -672,7 +672,6 @@ window._sim = {};
         sliderMin = Math.min(sliderMin, Math.floor(ts / 300) * 300); sliderMax = Math.max(sliderMax, Math.ceil(ts / 300) * 300);
         sl.value = Math.round((ts - sliderMin) / (sliderMax - sliderMin) * 100);
         sl.title = 'Objectif ' + fmtHM(ts) + ' · glisse : toutes les heures se recalculent';
-        var he = document.getElementById('hero-est'); if (he) { he.textContent = 'estimé ' + fmtHM(predictedTotalS); he.classList.toggle('hidden', !hasRealTarget()); }
         if (est) {
             var p = Math.max(0, Math.min(1, (predictedTotalS - sliderMin) / (sliderMax - sliderMin)));
             est.style.left = 'calc(6px + ' + (p * 100).toFixed(2) + '% - ' + (p * 12).toFixed(1) + 'px)';
@@ -701,6 +700,29 @@ window._sim = {};
         });
     }
     function commitObjective(val) { var ts = sliderToS(val); setTarget(Math.floor(ts / 3600), Math.round((ts % 3600) / 60)); }
+    // phone: the slider sits in the fold, so a touch on it only becomes an objective change once the finger
+    // clearly moves sideways; a vertical move is a page scroll (touch-action: pan-y hands it to the browser)
+    (function () {
+        var guard = document.getElementById('obj-guard'), sl = document.getElementById('obj-slider'); if (!guard || !sl) return;
+        var g = null;
+        function valAt(clientX) { var r = sl.getBoundingClientRect(), p = (clientX - r.left - 6) / Math.max(1, r.width - 12); return Math.round(Math.max(0, Math.min(1, p)) * 100); }
+        guard.addEventListener('pointerdown', function (ev) { g = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, mode: null }; });
+        guard.addEventListener('pointermove', function (ev) {
+            if (!g) return; var dx = ev.clientX - g.x, dy = ev.clientY - g.y;
+            if (!g.mode) { if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { g.mode = 'h'; try { guard.setPointerCapture(g.id); } catch (e) {} } else if (Math.abs(dy) > 8) { g.mode = 'v'; } else return; }
+            if (g.mode === 'h') { ev.preventDefault(); var v = valAt(ev.clientX); sl.value = v; previewObjective(v); }
+        });
+        guard.addEventListener('pointerup', function (ev) {
+            if (!g) return; var gg = g; g = null;
+            if (gg.mode === 'h') { commitObjective(sl.value); return; }
+            if (gg.mode) return;
+            // a plain tap: on the « estimé » tick → back to the estimate, elsewhere → that objective
+            var est = document.getElementById('obj-est');
+            if (est && !est.classList.contains('hidden')) { var er = est.getBoundingClientRect(); if (Math.abs(ev.clientX - (er.left + er.width / 2)) < 14) { resetTarget(); return; } }
+            var v = valAt(ev.clientX); sl.value = v; previewObjective(v); commitObjective(v);
+        });
+        guard.addEventListener('pointercancel', function () { g = null; });
+    })();
     var heroPrev = null;
     function heroEdit() {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
