@@ -22,7 +22,8 @@ PATTERNS = [
 def _css_has(cls: str) -> bool:
     # Tailwind escapes [ ] : / . % in selectors: text-[10px] → .text-\[10px\]
     escaped = re.sub(r"([\[\]:/.%])", r"\\\1", cls)
-    return re.search(r"\." + re.escape(escaped) + r"(?=[\s{:,>~+)\\])", CSS) is not None
+    # a variant prefix (hover:, sm:…) may sit in front of the class in the CSS
+    return re.search(r"\.(?:[a-z-]+\\:)*" + re.escape(escaped) + r"(?=[\s{:,>~+)\\])", CSS) is not None
 
 
 def test_template_classes_exist_in_built_css():

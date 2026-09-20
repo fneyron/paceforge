@@ -225,10 +225,21 @@ async def passage_times(
             switch_km=params.get("switch_km"),
             total_distance_km=course.total_distance_km,
         )
+        # What the profile draws: night, terrain bands, clocks, cutoffs.
+        from app.services.pacing_guide import DEFAULT_WALK_GRADE, build_pacing_guide, default_hr_caps
+        from app.services.plan_view import build_plan_data
+        from app.services.training_zones import estimate_training_zones
+
+        zones = await estimate_training_zones(db, user.id)
+        dflt = default_hr_caps(zones.get("max_hr"))
+        caps = {k: (int(params[k]) if params.get(k) else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
+        guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
+        plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios)
         return templates.TemplateResponse(
             request,
             "partials/passage_times.html",
             context={
+                "plan_data": json.dumps(plan_data),
                 "sections": sections,
                 "has_target": (target_time_s is not None) or replan is not None,
                 "replan": replan,
