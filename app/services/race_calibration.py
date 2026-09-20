@@ -127,12 +127,61 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
     points = races if len(races) >= 2 else races + long_efforts
     if not points:
         return None
-    model = fit_effort_model(points)
+    used, ignored = select_best_efforts(points)
+    model = fit_effort_model(used)
     if not model:
         return None
-    model["races"] = sorted(points, key=lambda p: -p["hours"])[:8]
+    model["races"] = sorted(used, key=lambda p: -p["hours"])[:8]
+    model["ignored"] = sorted(ignored, key=lambda p: -p["hours"])[:6]
     model["n_races"] = len(races)
+    model["n_used"] = len(used)
     return model
+
+
+_NOT_A_RACE = ("hik", "rando", "randon", "marche", "walk", "trek", "balade", "recon", "reco ", "pacer", "accompagn", "dnf", "abandon")
+BEST_BIN_FACTOR = 1.5   # duration bins: 3-4.5 h, 4.5-6.75 h, … one best effort each
+OUTLIER_RATIO = 0.8     # a race more than 20 % under the curve of the others is not a performance
+
+
+def select_best_efforts(points: list[dict]) -> tuple[list[dict], list[dict]]:
+    """A race curve is fitted on what the athlete CAN do, not on the average
+    of everything tagged « race » on Strava: a hike, a recce, a day spent
+    pacing a friend, an abandon all sit far under the real curve and would
+    drag the prediction down. Keep, per duration bin, the fastest effort;
+    then drop what still sits well under the curve of the others."""
+    kept, ignored = [], []
+    for p in points:
+        name = (p.get("name") or "").lower()
+        if any(k in name for k in _NOT_A_RACE):
+            ignored.append({**p, "why": "pas une course"})
+        else:
+            kept.append(p)
+    if len(kept) < 2:
+        kept, ignored = list(points), []
+    # best effort per duration bin (log-spaced)
+    best: dict[int, dict] = {}
+    for p in kept:
+        b = int(math.floor(math.log(max(p["hours"], 0.1)) / math.log(BEST_BIN_FACTOR)))
+        if b not in best or p["ekm_h"] > best[b]["ekm_h"]:
+            best[b] = p
+    chosen = list(best.values())
+    for p in kept:
+        if p not in chosen:
+            ignored.append({**p, "why": "moins bonne perf sur cette durée"})
+    # second pass: a remaining point far under the curve of the others is not a performance
+    if len(chosen) >= 3:
+        keep2 = []
+        for p in chosen:
+            others = [q for q in chosen if q is not p]
+            m = fit_effort_model(others)
+            pred = (m["a"] * (p["hours"] ** (-m["b"]))) if m else None
+            if pred and p["ekm_h"] < OUTLIER_RATIO * pred:
+                ignored.append({**p, "why": "bien sous ta courbe"})
+            else:
+                keep2.append(p)
+        if len(keep2) >= 2:
+            chosen = keep2
+    return chosen, ignored
 
 
 def apply_race_calibration(course, model: dict | None) -> dict | None:
@@ -166,4 +215,6 @@ def apply_race_calibration(course, model: dict | None) -> dict | None:
         "n": model.get("n", 0), "n_races": model.get("n_races", 0), "fitted": model.get("fitted", False),
         "ekm_h": round(ekm / (cum / 3600), 2) if cum else None,
         "races": model.get("races", []),
+        "ignored": model.get("ignored", []),
+        "n_used": model.get("n_used", model.get("n", 0)),
     }

@@ -102,6 +102,7 @@
     {# ── the plan: one table ─────────────────────────────────────────────── #}
     <div>
         <div id="passage-times-result"></div>
+        <div id="poste-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 text-xs" role="menu" aria-label="Poste"></div>
         <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
         <div class="h-9 flex items-center gap-2 text-xs text-gray-400 pl-1 border-t border-gray-100">
             <span class="w-5 h-5 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0 leading-none">+</span>
@@ -121,7 +122,7 @@
         <div class="px-4 pb-4 pt-3 border-t border-gray-100 space-y-3 text-xs text-gray-500">
             {% if race_calibration is defined and race_calibration %}
             {% set rc = race_calibration %}
-            <p><b class="text-gray-800">Niveau calé sur tes courses</b> ({{ rc.n }}{% if rc.n_races %} taguée{{ 's' if rc.n_races > 1 }} « course » sur Strava{% endif %}) : {{ rc.ekm }} km-effort à <b class="text-gray-800">{{ rc.ekm_h }} km-effort/h</b> → {{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}, contre {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} d'après l'entraînement seul. {% for r in rc.races[:3] %}{{ r.name }} ({{ r.ekm_h }} km-eff/h){% if not loop.last %}, {% endif %}{% endfor %}.</p>
+            <p><b class="text-gray-800">Niveau calé sur tes courses</b> ({{ rc.n }}{% if rc.n_races %} taguée{{ 's' if rc.n_races > 1 }} « course » sur Strava{% endif %}) : {{ rc.ekm }} km-effort à <b class="text-gray-800">{{ rc.ekm_h }} km-effort/h</b> → {{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}, contre {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} d'après l'entraînement seul. {% for r in rc.races[:3] %}{{ r.name }} ({{ r.ekm_h }} km-eff/h){% if not loop.last %}, {% endif %}{% endfor %}. Meilleure perf par durée{% if rc.ignored %} · écartées : {% for r in rc.ignored[:3] %}{{ r.name }} ({{ r.why }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.</p>
             {% endif %}
             {% if has_data %}
             <p>Forme du plan : allure selon la pente apprise sur <b class="text-gray-700">{{ profile.data_points }}</b> segments Strava, référence à plat {{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km, ajustée fatigue, altitude, terrain, nuit, chaleur.{% if not (race_calibration is defined and race_calibration) %} Tague tes courses « Course » sur Strava pour caler le niveau sur tes compétitions.{% endif %}</p>
@@ -579,6 +580,43 @@ window._sim = {};
         recalc(); scheduleSave();
     }
     function refresh() { renderCpOnMap(); drawOverlays(); }
+    // ── POSTE POPOVER: one small menu for kind + assistance + drop bag ──
+    var POSTE_KINDS = [['none', 'Passage', 'simple repère, pas d\'arrêt'], ['water', 'Eau', 'flasques, arrêt court'], ['full', 'Ravito complet', 'manger, arrêt compté, borne l\'autonomie'], ['base', 'Base vie', 'drop bag, assistance, arrêt long']];
+    var posteOpen = null;
+    function glyphHtml(k) { var r = document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
+    function renderPoste() {
+        var pop = document.getElementById('poste-pop'), cp = posteOpen !== null ? checkpoints[posteOpen] : null; if (!pop || !cp) return;
+        var h = '<div class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider truncate">' + esc(cp.name) + '</div>';
+        POSTE_KINDS.forEach(function (k) {
+            var on = (cp.kind || 'none') === k[0];
+            h += '<button type="button" role="menuitemradio" aria-checked="' + on + '" data-k="' + k[0] + '" class="w-full flex items-center gap-2 px-2 py-2 lg:py-1.5 rounded-lg text-left hover:bg-gray-50 ' + (on ? 'bg-gray-100' : '') + '"><span class="w-4 inline-flex justify-center">' + glyphHtml(k[0]) + '</span><span class="flex-1"><span class="font-medium text-gray-900">' + k[1] + '</span><span class="block text-[10px] text-gray-400">' + k[2] + '</span></span>' + (on ? '<svg class="w-3.5 h-3.5 text-gray-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>' : '') + '</button>';
+        });
+        h += '<div class="my-1 border-t border-gray-100"></div>';
+        [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].forEach(function (t) {
+            var on = !!cp[t[0]];
+            h += '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" aria-pressed="' + on + '" title="' + t[1] + '" data-toggle="' + t[0] + '" class="w-full flex items-center gap-2 px-2 py-2 lg:py-1.5 rounded-lg text-left hover:bg-gray-50"><span class="w-4 inline-flex justify-center ' + (on ? 'text-gray-900' : 'text-gray-400') + '">' + (document.querySelector('#glyph-registry [data-kind="' + t[2] + '"]') || { innerHTML: '' }).innerHTML + '</span><span class="flex-1 ' + (on ? 'text-gray-900 font-medium' : 'text-gray-600') + '">' + t[1] + '</span><span class="w-4 h-4 rounded border ' + (on ? 'bg-gray-900 border-gray-900' : 'border-gray-300') + ' inline-flex items-center justify-center">' + (on ? '<svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>' : '') + '</span></button>';
+        });
+        pop.innerHTML = h;
+    }
+    function placePoste(btn) {
+        var pop = document.getElementById('poste-pop'); if (!pop) return;
+        if (isCompact()) { pop.style.cssText = 'left:0;right:0;bottom:0;width:auto;border-radius:16px 16px 0 0;padding-bottom:max(12px, env(safe-area-inset-bottom));'; return; }
+        var r = btn.getBoundingClientRect(), w = 236, h = pop.offsetHeight || 260;
+        var left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)), top = r.bottom + 4;
+        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+        pop.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;';
+    }
+    function openPoste(i, btn) {
+        var pop = document.getElementById('poste-pop'); if (!pop || !checkpoints[i]) return;
+        if (posteOpen === i && !pop.classList.contains('hidden')) { closePoste(); return; }
+        posteOpen = i; renderPoste(); pop.classList.remove('hidden'); placePoste(btn);
+        pop.onclick = function (ev) {
+            var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
+            if (k) { editCheckpointMeta(posteOpen, 'kind', k.getAttribute('data-k')); renderPoste(); if (!isCompact()) closePoste(); }
+            else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(posteOpen, f, !checkpoints[posteOpen][f]); renderPoste(); }
+        };
+    }
+    function closePoste() { var pop = document.getElementById('poste-pop'); if (pop) pop.classList.add('hidden'); posteOpen = null; }
     var KIND_LABEL = { water: 'eau', full: 'ravito complet', base: 'base vie' };
     function cpPopupHtml(cp, i, pt) {
         var h = '<b>' + (i + 1) + ' · ' + esc(cp.name) + '</b><div class="text-gray-500">km ' + fmtKm(cp.distance_km) + ' · ' + fmtM(cp.elevation || 0) + ' m</div>';
@@ -774,7 +812,7 @@ window._sim = {};
     function _saveThenDownload(urlFn) { closeMenus(); saveRoute().then(function () { if (currentRouteId) { var a = document.createElement('a'); a.href = urlFn(currentRouteId); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); } }); }
     function exportGpx() { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
     function exportPace(fmt) { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
-    function closeMenus() { document.querySelectorAll('#simulator-root details[open]').forEach(function (d) { d.removeAttribute('open'); }); }
+    function closeMenus() { document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { d.removeAttribute('open'); }); }
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
     // ── START / OBJECTIVE / PASSAGE ──
@@ -870,9 +908,10 @@ window._sim = {};
     document.addEventListener('pointerdown', function (ev) {
         var t = ev.target;
         if (!(t.closest && t.closest('#elevChart'))) { if (ev.pointerType === 'touch') { hideCross(); highlightRow(null); } }
-        document.querySelectorAll('#simulator-root details[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
+        document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
+        var pp = document.getElementById('poste-pop'); if (pp && !pp.classList.contains('hidden') && !pp.contains(t) && !(t.closest && t.closest('[data-poste]'))) closePoste();
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -892,9 +931,11 @@ window._sim = {};
         he.addEventListener('focusout', function () { setTimeout(function () { if (!he.contains(document.activeElement)) heroClose(true); }, 0); });
     }
     ['cp-name', 'cp-km'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addCheckpoint(); } }); });
+    var adv = document.getElementById('advanced');
+    if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
     recalc();
     maybeFetchWeather();
-    window._sim = { flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>
