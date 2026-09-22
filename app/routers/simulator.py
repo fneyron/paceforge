@@ -1549,6 +1549,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         r = rates.get(p["id"], 0.0)
         p["per_hour"] = r
         p["used"] = r > 0
+        p["by_caffeine"] = bool(caffeine_cfg.get("enabled")) and (p.get("caffeine_mg") or 0) > 0 and r > 0 and any(
+            rates.get(q["id"], 0) > 0 and (q.get("carbs_g") or 0) > 0 and not (q.get("caffeine_mg") or 0) for q in products_for_plan)
         p["carbs_per_h"] = round(r * (p.get("carbs_g") or 0))
         p["sodium_per_h"] = round(r * (p.get("sodium_mg") or 0))
     hours = duration_s / 3600.0 if duration_s else 0
@@ -1576,7 +1578,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         },
         "n_aid": n_aid,
         "has_sodium": any((p.get("sodium_mg") or 0) > 0 for p in products_for_plan),
-        "has_caffeine_product": any((p.get("caffeine_mg") or 0) > 0 for p in products_for_plan),
+        "has_caffeine_product": any((p.get("caffeine_mg") or 0) > 0 and p.get("used") for p in products_for_plan),
+        "catalog": _catalog_for(products),
     }
 
 
@@ -1937,7 +1940,8 @@ async def _pantry_context(request: Request, db: AsyncSession, user: User) -> dic
         .where(NutritionProduct.user_id == user.id)
         .order_by(NutritionProduct.created_at.desc())
     )
-    return {"request": request, "products": [_product_dict(p) for p in result.scalars().all()]}
+    products = [_product_dict(p) for p in result.scalars().all()]
+    return {"request": request, "products": products, "catalog": _catalog_for(products)}
 
 
 # Generic products used to auto-build a plan when the pantry is empty (display
@@ -1985,6 +1989,59 @@ async def seed_products(
     await db.flush()
     ctx = await _pantry_context(request, db, user)
     return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
+
+
+def _catalog_for(products: list[dict]) -> list[dict]:
+    """Catalogue entries not already in the pantry (by name, case-insensitive)."""
+    from app.services.nutrition import PRODUCT_CATALOG
+
+    have = {(p.get("name") or "").strip().lower() for p in products}
+    return [c for c in PRODUCT_CATALOG if c["name"].lower() not in have]
+
+
+async def _add_from_catalog(key: str, db: AsyncSession, user: User) -> None:
+    from app.services.nutrition import CATALOG_BY_KEY
+
+    c = CATALOG_BY_KEY.get(key)
+    if not c:
+        return
+    res = await db.execute(select(NutritionProduct).where(NutritionProduct.user_id == user.id))
+    if any((p.name or "").strip().lower() == c["name"].lower() for p in res.scalars().all()):
+        return
+    db.add(NutritionProduct(
+        user_id=user.id, name=c["name"], kind=c["kind"], carbs_g=c["carbs_g"], sodium_mg=c["sodium_mg"],
+        kcal=c.get("kcal"), caffeine_mg=c.get("caffeine_mg"), volume_ml=c.get("volume_ml"),
+    ))
+    await db.flush()
+
+
+@router.post("/api/nutrition/products/catalog/{key}", response_class=HTMLResponse)
+async def add_catalog_product(
+    key: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _add_from_catalog(key, db, user)
+    ctx = await _pantry_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/pantry.html", context=ctx)
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/catalog/{key}", response_class=HTMLResponse)
+async def add_catalog_product_to_plan(
+    route_id: int,
+    key: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a catalogue product from the race's nutrition card, re-render the card."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    await _add_from_catalog(key, db, user)
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
 @router.post("/api/nutrition/products", response_class=HTMLResponse)
@@ -2115,6 +2172,7 @@ async def save_nutrition_plan(
     auto_all = bool(form.get("auto"))
     selected = [by_id[i] for i in used if i in by_id]
     suggested = auto_rates(targets["carbs_g_per_h"], targets["sodium_mg_per_h"], selected) if selected else {}
+    plain_carb = any((p.get("carbs_g") or 0) > 0 and not (p.get("caffeine_mg") or 0) for p in selected)
     items = []
     for p in selected:
         pid = p["id"]
@@ -2123,12 +2181,15 @@ async def save_nutrition_plan(
             r = suggested.get(pid, 0.0)
         elif r <= 0:
             r = prev_rates.get(pid, 0.0)
+        if r <= 0 and (p.get("caffeine_mg") or 0) > 0 and plain_carb:
+            r = 1.0  # a caffeinated gel is placed by the caffeine plan; keep it ticked
         if r > 0:
             items.append({"product_id": pid, "per_hour": round(r, 2)})
     refills = list(prev.get("refills") or [])  # legacy tick list; stations now come from checkpoint kinds
     flask_capacity_ml = round(_to_float(form.get("flask_capacity_ml"), 1000))
+    new_caf = plain_carb and any((p.get("caffeine_mg") or 0) > 0 and p["id"] not in prev_rates for p in selected)
     caffeine = {
-        "enabled": bool(form.get("caffeine_enabled")),
+        "enabled": bool(form.get("caffeine_enabled")) or new_caf,
         "from_h": max(0.0, _to_float(form.get("caffeine_from_h"), 3.0)),
         "every_h": max(0.5, _to_float(form.get("caffeine_every_h"), 2.5)),
         "dose_mg": max(0.0, _to_float(form.get("caffeine_dose_mg"), 50)),

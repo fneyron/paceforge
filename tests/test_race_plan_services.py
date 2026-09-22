@@ -432,3 +432,18 @@ def test_best_efforts_ignore_hikes_and_slow_duplicates():
     assert 10.2 <= at20 <= 11.5
     m_all = fit_effort_model(pts)
     assert m_all["a"] * 20 ** (-m_all["b"]) < at20
+
+
+def test_caffeinated_gel_follows_the_caffeine_plan():
+    _, secs = _sections(target=18 * 3600, start_hour=21)
+    prods = {**PRODUCTS, 4: {"id": 4, "name": "CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None, "kcal": 100}}
+    targets = {"carbs_g_per_h": 60, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
+    plan = compute_plan(18 * 3600, targets, [{"product_id": 1, "per_hour": 2}, {"product_id": 4, "per_hour": 1}], prods, secs,
+                        caffeine={"enabled": True, "from_h": 3, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True},
+                        start_offset_s=21 * 3600, weight_kg=70)
+    cf = plan["caffeine"]
+    caf_line = next(l for l in plan["lines"] if l["name"] == "CAF 100")
+    assert caf_line["by_caffeine"] and caf_line["per_hour"] == 0
+    assert all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
+    assert caf_line["total_units"] == len(cf["doses"])  # one gel per dose, packed as such
+    assert sum(u["units"] for l in plan["schedule"] for u in l["units"] if u["name"] == "CAF 100") == len(cf["doses"])

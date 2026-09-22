@@ -64,16 +64,36 @@
                     <span class="text-sm font-medium {% if p.used %}text-gray-900{% endif %}">{{ p.name }}</span>
                     <span class="ml-1.5 text-[11px] text-gray-400">{{ kind_labels.get(p.kind, p.kind) }} · {{ p.carbs_g|round|int }} g{% if p.sodium_mg %} · {{ p.sodium_mg|round|int }} mg Na{% endif %}{% if p.caffeine_mg %} · {{ p.caffeine_mg|round|int }} mg caf{% endif %}</span>
                 </span>
+                {% if p.by_caffeine %}
+                <span class="flex items-center gap-1.5 text-xs text-amber-700 shrink-0" title="Un gel par prise de caféine, placé par le planning caféine ci-dessous">
+                    <input type="hidden" name="qty_{{ p.id }}" value="1">selon la caféine
+                </span>
+                {% else %}
                 <span class="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
                     <input type="number" name="qty_{{ p.id }}" min="0" max="12" step="0.5" value="{% if p.used %}{{ qty(p.per_hour) | replace(',', '.') }}{% endif %}" placeholder="—" {% if not p.used %}disabled{% endif %}
                            class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900 disabled:bg-gray-50 disabled:text-gray-300">
                     <span>/h</span>
                     <span class="w-16 text-right tabular-nums {% if p.used %}text-gray-700{% else %}text-gray-300{% endif %}">{% if p.used %}{{ p.carbs_per_h }} g/h{% else %}&nbsp;{% endif %}</span>
                 </span>
+                {% endif %}
             </label>
             {% endfor %}
         </div>
         {% if not used %}<p class="mt-2 text-[12px] text-gray-500">Coche les produits que tu comptes prendre : chacun reçoit sa part de la cible, tu ajustes ensuite la quantité par heure.</p>{% endif %}
+        {% if catalog %}
+        <details class="mt-2">
+            <summary class="list-none cursor-pointer select-none text-[11px] text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"><span class="w-4 h-4 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center leading-none">+</span>Ajouter depuis le catalogue</summary>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+                {% for c in catalog %}
+                <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/catalog/{{ c.key }}" hx-target="#nutrition-card" hx-swap="outerHTML" hx-params="none"
+                        class="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-gray-200 text-[11px] text-gray-700 hover:border-gray-900 hover:bg-gray-50"
+                        title="{{ c.carbs_g }} g glucides{% if c.sodium_mg %} · {{ c.sodium_mg }} mg sodium{% endif %}{% if c.caffeine_mg %} · {{ c.caffeine_mg }} mg caféine{% endif %} · modifiable ensuite dans le garde-manger">
+                    {{ c.name }}<span class="text-gray-400">{% if c.carbs_g %}{{ c.carbs_g }} g{% else %}{{ c.sodium_mg }} mg Na{% endif %}{% if c.caffeine_mg %} · caf{% endif %}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
     </div>
 
     {# ── 3. Per leg: the table you'd otherwise redo by hand ─────────────── #}
@@ -157,7 +177,7 @@
             <span class="inline-flex items-center gap-1.5 rounded-lg border {% if d.label.startswith('dose pleine') %}border-amber-300 bg-amber-50{% else %}border-gray-200{% endif %} px-2.5 py-1 text-[11px]"><b class="tabular-nums">{{ clock(d.clock_s) }}</b><span class="text-gray-500">{{ d.mg }} mg</span><span class="text-gray-400">→ {{ d.leg_to }}</span>{% if d.label.startswith('dose pleine') %}<span class="text-amber-700">aube</span>{% endif %}</span>
             {% endfor %}
         </div>
-        {% if not has_caffeine_product %}<p class="mt-1.5 text-[11px] text-gray-400">Aucun produit caféiné coché : prévois un gel caféiné ou des comprimés en plus.</p>{% endif %}
+        {% if not has_caffeine_product %}<p class="mt-1.5 text-[11px] text-gray-400">Aucun produit caféiné coché : prévois un gel caféiné ou des comprimés en plus.</p>{% elif cfp.doses and cfp.doses[0].product %}<p class="mt-1.5 text-[11px] text-gray-500">Chaque prise = 1 {{ cfp.doses[0].product }}, compté dans les glucides du tronçon.</p>{% endif %}
     </div>
     {% endif %}
     {% endif %}
