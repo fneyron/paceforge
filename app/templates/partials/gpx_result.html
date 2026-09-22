@@ -200,9 +200,9 @@ window._sim = {};
         var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
         map = new maplibregl.Map({
             container: el,
-            style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+            style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : 'https://tiles.openfreemap.org/styles/liberty',
             bounds: [[Math.min.apply(null,lons),Math.min.apply(null,lats)],[Math.max.apply(null,lons),Math.max.apply(null,lats)]],
-            fitBoundsOptions: { padding: 48 }, attributionControl: false, cooperativeGestures: !isCompact(), maxPitch: 72,
+            fitBoundsOptions: { padding: 48 }, attributionControl: false, cooperativeGestures: false, scrollZoom: isCompact(), maxPitch: 72, fadeDuration: 0,
             locale: { 'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl + molette pour zoomer la carte', 'CooperativeGesturesHandler.MacHelpText': '⌘ + molette pour zoomer la carte', 'CooperativeGesturesHandler.MobileHelpText': 'Deux doigts pour déplacer la carte' },
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'top-left');
@@ -217,6 +217,16 @@ window._sim = {};
             map.addSource('dem', { type: 'raster-dem', tiles: [DEM_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
             var firstSymbol = (map.getStyle().layers || []).filter(function (l) { return l.type === 'symbol'; })[0];
             map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': isDark ? 0.25 : 0.32, 'hillshade-shadow-color': '#475569', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#94a3b8' } }, firstSymbol ? firstSymbol.id : undefined);
+            // contour lines from the same DEM (Komoot / Gaia look), when the plugin is there
+            try {
+                if (window.mlcontour) {
+                    var demC = new mlcontour.DemSource({ url: DEM_TILES, encoding: 'terrarium', maxzoom: 13, worker: true });
+                    demC.setupMaplibre(maplibregl);
+                    map.addSource('contours', { type: 'vector', maxzoom: 15, tiles: [demC.contourProtocolUrl({ multiplier: 1, thresholds: { 10: [200, 1000], 11: [100, 500], 12: [50, 250], 13: [20, 100], 14: [10, 50] }, elevationKey: 'ele', levelKey: 'level', contourLayer: 'contours' })] });
+                    map.addLayer({ id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours', minzoom: 10, filter: ['>', ['to-number', ['get', 'ele'], 0], 0], paint: { 'line-color': isDark ? 'rgba(255,255,255,0.18)' : 'rgba(120,83,48,0.35)', 'line-width': ['match', ['to-number', ['get', 'level'], 0], 1, 0.9, 0.45] } }, firstSymbol ? firstSymbol.id : undefined);
+                    map.addLayer({ id: 'contour-labels', type: 'symbol', source: 'contours', 'source-layer': 'contours', minzoom: 12, filter: ['all', ['>', ['to-number', ['get', 'level'], 0], 0], ['>', ['to-number', ['get', 'ele'], 0], 0]], layout: { 'symbol-placement': 'line', 'text-size': 9, 'text-field': ['concat', ['to-string', ['get', 'ele']], ' m'], 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': isDark ? '#9ca3af' : '#8b6b4a', 'text-halo-color': isDark ? '#111827' : '#ffffff', 'text-halo-width': 1 } });
+                }
+            } catch (e) { console.warn('contours off', e); }
             map.addSource('route', { type: 'geojson', lineMetrics: true, data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
             map.addLayer({ id: 'route-casing', type: 'line', source: 'route', paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
             map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-width': 4, 'line-gradient': routeGradientExpr() }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
@@ -227,6 +237,10 @@ window._sim = {};
             renderCpOnMap();
             if (terrain3d) applyTerrain(true, false);
         });
+        if (!isCompact()) {
+            map.on('mousedown', function () { map.scrollZoom.enable(); });
+            el.addEventListener('mouseleave', function () { try { map.scrollZoom.disable(); } catch (e) {} });
+        }
         var mapHoverRaf = null, mapHoverPt = null;
         map.on('mousemove', function(e) {
             mapHoverPt = e.lngLat; if (mapHoverRaf) return;
@@ -355,20 +369,36 @@ window._sim = {};
         clip.appendChild(mk('path', { d: d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' 0 L' + xOf(pts[0].distance_km).toFixed(1) + ' 0 Z' }));
         defs.appendChild(clip); svg.appendChild(defs);
         prof.nightLayer = mk('g', { 'clip-path': 'url(#sky-clip)' }); svg.appendChild(prof.nightLayer);  // night darkens the sky only; the ground keeps its slope colours
-        // area coloured by slope, same scale as the map (one slab per sampled step, ~0.5 km window)
-        var slabs = mk('g', { 'fill-opacity': isDark ? '0.5' : '0.42', stroke: 'none' }), byColor = {};
-        for (i = 0; i < pts.length - 1; i++) {
-            var a = pts[i], b = pts[i + 1], c = slopeColor(gradeAt((a.distance_km + b.distance_km) / 2));
-            byColor[c] = (byColor[c] || '') + 'M' + xOf(a.distance_km).toFixed(1) + ' ' + yOf(a.elevation).toFixed(1) + 'L' + xOf(b.distance_km).toFixed(1) + ' ' + yOf(b.elevation).toFixed(1) + 'L' + xOf(b.distance_km).toFixed(1) + ' ' + base + 'L' + xOf(a.distance_km).toFixed(1) + ' ' + base + 'Z';
+        // ground coloured by slope, same scale as the map: ONE path filled with a hard-stop gradient
+        // (adjacent slabs leave hairline seams), classes smoothed over ~1 km and short runs merged
+        var gid = 'slope-' + Math.random().toString(36).slice(2, 7), grad = mk('linearGradient', { id: gid, gradientUnits: 'userSpaceOnUse', x1: prof.padL, x2: w - prof.padR, y1: 0, y2: 0 });
+        var NS = Math.max(60, Math.min(360, Math.round(totalDistKm * 2))), runs = [];
+        for (var si = 0; si < NS; si++) {
+            var k0 = totalDistKm * si / NS, k1 = totalDistKm * (si + 1) / NS, km = (k0 + k1) / 2, win = 0.5;
+            var ga = elevAt(Math.max(0, km - win)), gb = elevAt(Math.min(totalDistKm, km + win)), run = (Math.min(totalDistKm, km + win) - Math.max(0, km - win)) * 1000;
+            var col = slopeColor(run > 0 ? (gb - ga) / run * 100 : 0);
+            if (runs.length && runs[runs.length - 1].c === col) runs[runs.length - 1].b = k1; else runs.push({ a: k0, b: k1, c: col });
         }
-        Object.keys(byColor).forEach(function (c) { slabs.appendChild(mk('path', { d: byColor[c], fill: c })); });
-        svg.appendChild(slabs);
-        svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.5', 'stroke-linejoin': 'round' }));
+        // a run shorter than 0.6 % of the course takes its neighbour's colour (no confetti)
+        for (var ri = 1; ri < runs.length - 1; ri++) { if (runs[ri].b - runs[ri].a < totalDistKm * 0.006) { runs[ri - 1].b = runs[ri].b; runs.splice(ri, 1); ri--; } }
+        var span = (w - prof.padR) - prof.padL;
+        runs.forEach(function (r) {
+            var o0 = ((xOf(r.a) - prof.padL) / span * 100).toFixed(3) + '%', o1 = ((xOf(r.b) - prof.padL) / span * 100).toFixed(3) + '%';
+            grad.appendChild(mk('stop', { offset: o0, 'stop-color': r.c })); grad.appendChild(mk('stop', { offset: o1, 'stop-color': r.c }));
+        });
+        var fade = mk('linearGradient', { id: gid + 'f', x1: 0, x2: 0, y1: 0, y2: 1 });
+        fade.appendChild(mk('stop', { offset: '0%', 'stop-color': '#fff', 'stop-opacity': '1' })); fade.appendChild(mk('stop', { offset: '100%', 'stop-color': '#fff', 'stop-opacity': '0.35' }));
+        var mask = mk('mask', { id: gid + 'm' }); mask.appendChild(mk('rect', { x: 0, y: 0, width: w, height: h, fill: 'url(#' + gid + 'f)' }));
+        defs.appendChild(grad); defs.appendChild(fade); defs.appendChild(mask);
+        var groundD = d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' ' + base + ' L' + xOf(pts[0].distance_km).toFixed(1) + ' ' + base + ' Z';
+        svg.appendChild(mk('path', { d: groundD, fill: 'url(#' + gid + ')', 'fill-opacity': isDark ? '0.55' : '0.5', mask: 'url(#' + gid + 'm)' }));
+        prof.runs = runs;
+        svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.75', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
         prof.hiLayer = mk('g', {}); svg.appendChild(prof.hiLayer);
         prof.autoLayer = mk('g', {}); svg.appendChild(prof.autoLayer);
         prof.switchLayer = mk('g', {}); svg.appendChild(prof.switchLayer);
         prof.cpLayer = mk('g', {}); svg.appendChild(prof.cpLayer);
-        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
+        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none', 'shape-rendering': 'crispEdges' });
         prof.dot = mk('circle', { r: 4, fill: '#f97316', stroke: '#fff', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
         var lbl = mk('g', { visibility: 'hidden', 'pointer-events': 'none' });
         prof.lblBox = mk('rect', { rx: 4, ry: 4, height: 18, fill: isDark ? '#f3f4f6' : '#111827' });
@@ -377,7 +407,7 @@ window._sim = {};
         svg.appendChild(prof.cross); svg.appendChild(prof.dot); svg.appendChild(lbl);
 
         // pointer: hover = crosshair, pin = drag (touch: hold 200 ms), click on the area = new point
-        var drag = null, press = null, holdTimer = null;
+        var drag = null, press = null, holdTimer = null, touchHideT = null;
         function kmFromEvent(ev) { var r = svg.getBoundingClientRect(); return kmOfX((ev.clientX - r.left) * (w / r.width)); }
         function endHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
         svg.addEventListener('pointerdown', function (ev) {
@@ -399,7 +429,8 @@ window._sim = {};
             var km = kmFromEvent(ev);
             if (drag) { drag.moved = true; drag.km = Math.max(0.1, Math.min(totalDistKm - 0.1, km)); moveCpFlag(drag.i, drag.km); showCross(drag.km); return; }
             if (press && press.i !== null && holdTimer && (Math.abs(ev.clientX - press.x) > 6 || Math.abs(ev.clientY - press.y) > 6)) { endHold(); press = null; return; }
-            if (ev.pointerType !== 'touch') scheduleHover(km, true);
+            if (ev.pointerType !== 'touch') { scheduleHover(km, true); return; }
+            if (press && press.i === null) { press.scrub = true; scheduleHover(km, true); }
         });
         svg.addEventListener('pointerup', function (ev) {
             endHold();
@@ -409,6 +440,7 @@ window._sim = {};
                 else if (map && checkpoints[dg.i] && !document.getElementById('courseMap').classList.contains('hidden')) { var c = findCoordAtKm(checkpoints[dg.i].distance_km); if (c) map.flyTo({ center: [c[1], c[0]], zoom: 13 }); if (cpMarkerEls[dg.i]) cpMarkerEls[dg.i].togglePopup(); }
                 return;
             }
+            if (press && press.touch) { var pz = press; press = null; if (touchHideT) clearTimeout(touchHideT); touchHideT = setTimeout(function () { hideCross(); highlightRow(null); if (hoverMarker) hoverMarker.getElement().style.display = 'none'; }, pz.scrub ? 2500 : 4000); return; }
             if (press && press.i === null && !press.touch && Math.abs(ev.clientX - press.x) < 4 && Math.abs(ev.clientY - press.y) < 4) { press = null; addAtKm(kmFromEvent(ev)); return; }
             press = null;
         });
@@ -439,8 +471,8 @@ window._sim = {};
         prof.dot.setAttribute('cx', x); prof.dot.setAttribute('cy', y); prof.dot.setAttribute('visibility', 'visible');
         var g = gradeAt(km), clk = planData ? clockAtKm(km) : null, tmp = tempAtKm(km);
         var text = 'km ' + fmtKm(km) + ' · ' + fmtM(elevAt(km)) + ' m · ' + (g > 0 ? '+' : '') + Math.round(g) + ' %' + (clk !== null ? ' · ' + fmtClock(clk) : '') + (tmp !== null ? ' · ' + Math.round(tmp) + '°' : '');
-        prof.lblText.textContent = text;
-        var tw = prof.lblText.getComputedTextLength() + 12, lx = x + 8; if (lx + tw > prof.w - prof.padR) lx = x - 8 - tw;
+        // label right of the cursor, flipped left near the edge (width estimated: no layout read per frame)
+        var tw = text.length * 5.6 + 12, lx = x + 8; if (lx + tw > prof.w - prof.padR) lx = x - 8 - tw;
         placeLabel(text, lx, prof.padT + 2);
     }
     function showSectionLabel(a, b, gain, loss, sec) {
@@ -527,14 +559,17 @@ window._sim = {};
         mapHighlight(startKm, endKm);
     }
     var hiRow = null;
+    var rowRanges = [];
+    function cacheRows() { rowRanges = []; document.querySelectorAll('#plan-table [data-row]').forEach(function (r) { rowRanges.push([parseFloat(r.getAttribute('data-start-km')), parseFloat(r.getAttribute('data-end-km')), r]); }); }
     function highlightRow(km) {
-        var rows = document.querySelectorAll('#plan-table [data-row]'), target = null;
-        if (km !== null) rows.forEach(function (r) { var a = parseFloat(r.getAttribute('data-start-km')), b = parseFloat(r.getAttribute('data-end-km')); if (km > a && km <= b) target = r; });
+        var target = null;
+        if (km !== null) for (var ri = 0; ri < rowRanges.length; ri++) { if (km > rowRanges[ri][0] && km <= rowRanges[ri][1]) { target = rowRanges[ri][2]; break; } }
         if (target === hiRow) return;
         if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.remove('bg-amber-50');
         hiRow = target; if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.add('bg-amber-50');
     }
     function bindRows() {
+        cacheRows();
         document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
             var a = parseFloat(r.getAttribute('data-start-km')), b = parseFloat(r.getAttribute('data-end-km'));
             r.addEventListener('mouseenter', function () { if (isCompact()) return; if (b > a) { highlightSection(a, b); showSectionLabel(a, b, r.getAttribute('data-gain') || 0, r.getAttribute('data-loss') || 0, parseFloat(r.getAttribute('data-sec')) || 0); } });

@@ -40,6 +40,21 @@
         </div>
     </form>
 
+    {% if catalog %}
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Catalogue · un clic pour ajouter</p>
+        <div class="flex flex-wrap gap-1.5">
+            {% for c in catalog %}
+            <button type="button" hx-post="/api/nutrition/products/catalog/{{ c.key }}" hx-target="#pantry" hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-gray-200 text-xs text-gray-700 hover:border-gray-900 hover:bg-gray-50">
+                {{ c.name }}<span class="text-gray-400">{% if c.carbs_g %}{{ c.carbs_g }} g{% else %}{{ c.sodium_mg }} mg Na{% endif %}{% if c.caffeine_mg %} · {{ c.caffeine_mg }} mg caf{% endif %}</span>
+            </button>
+            {% endfor %}
+        </div>
+        <p class="text-[10px] text-gray-400 mt-2">Valeurs de l'étiquette par unité, modifiables ci-dessous après ajout.</p>
+    </div>
+    {% endif %}
+
     <!-- Existing products (each row is an inline-editable form) -->
     {% if not products %}
     <div class="rounded-xl border border-dashed border-gray-200 p-8 text-center">

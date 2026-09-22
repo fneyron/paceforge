@@ -82,6 +82,26 @@ def _clock_hour(clock_s: float) -> float:
     return (clock_s % 86400) / 3600.0
 
 
+# One-click catalogue of common race products (per unit, label values; the
+# athlete can still edit them in the pantry). Keys are stable slugs.
+PRODUCT_CATALOG: list[dict] = [
+    {"key": "maurten-gel-100", "name": "Maurten Gel 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": None, "volume_ml": None},
+    {"key": "maurten-gel-100-caf", "name": "Maurten Gel 100 CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": 100, "volume_ml": None},
+    {"key": "maurten-gel-160", "name": "Maurten Gel 160", "kind": "gel", "carbs_g": 40, "sodium_mg": 30, "kcal": 160, "caffeine_mg": None, "volume_ml": None},
+    {"key": "pf-30-gel", "name": "Precision Fuel PF 30 Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
+    {"key": "pf-30-caf", "name": "Precision Fuel PF 30 Caffeine Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": 100, "volume_ml": None},
+    {"key": "pf-90-gel", "name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None},
+    {"key": "ph-1500", "name": "Precision Hydration PH 1500 (pastille, 500 ml)", "kind": "salt", "carbs_g": 0, "sodium_mg": 750, "kcal": None, "caffeine_mg": None, "volume_ml": None},
+    {"key": "ph-1000", "name": "Precision Hydration PH 1000 (pastille, 500 ml)", "kind": "salt", "carbs_g": 0, "sodium_mg": 500, "kcal": None, "caffeine_mg": None, "volume_ml": None},
+    {"key": "baouw-gel", "name": "Baouw Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
+    {"key": "gu-gel", "name": "GU Energy Gel", "kind": "gel", "carbs_g": 22, "sodium_mg": 60, "kcal": 100, "caffeine_mg": None, "volume_ml": None},
+    {"key": "neversecond-c30", "name": "Neversecond C30 Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 200, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
+    {"key": "tailwind", "name": "Tailwind Endurance Fuel (1 dose)", "kind": "drink", "carbs_g": 25, "sodium_mg": 303, "kcal": 100, "caffeine_mg": None, "volume_ml": 500},
+    {"key": "saltstick", "name": "SaltStick Caps", "kind": "salt", "carbs_g": 0, "sodium_mg": 215, "kcal": None, "caffeine_mg": None, "volume_ml": None},
+]
+CATALOG_BY_KEY = {c["key"]: c for c in PRODUCT_CATALOG}
+
+
 # Caffeine defaults (per dose, timing). Guidance for a night start: small doses
 # every 2–3 h once the night sets in, a full dose at dawn. Totals are capped
 # (≈ 6 mg/kg, never > 400 mg) — the athlete sees the total, not just the plan.
@@ -97,6 +117,7 @@ def caffeine_schedule(
     start_offset_s: int = 0,
     weight_kg: float | None = None,
     product_name: str | None = None,
+    unit_mg: float | None = None,
 ) -> dict | None:
     """Timed caffeine doses mapped onto the legs. Returns {doses, total_mg,
     max_mg, over} or None when disabled."""
@@ -106,8 +127,13 @@ def caffeine_schedule(
     from_s = max(0.0, float(cfg.get("from_h") or 0)) * 3600
     every_s = max(0.5, float(cfg.get("every_h") or 2.5)) * 3600
     dose = max(0.0, float(cfg.get("dose_mg") or 0))
+    units_per_dose = 1
+    if unit_mg:  # caffeinated gels: whole gels per dose, you can't take half
+        units_per_dose = max(1, int(round(dose / float(unit_mg)))) if dose > 0 else 1
+        dose = float(unit_mg) * units_per_dose
     if dose <= 0:
         return None
+    max_mg = min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG
 
     def clock_at(elapsed: float) -> float:
         """Elapsed moving time → clock, walking the legs (stops shift the clock)."""
@@ -133,15 +159,18 @@ def caffeine_schedule(
         mg = dose
         label = "petite dose"
         if cfg.get("boost_dawn") and not dawn_done and 5.0 <= _clock_hour(clk) < 7.5:
-            mg, label, dawn_done = dose * 2, "dose pleine (aube)", True
+            # dawn: a full dose — with 100 mg gels one gel already is one
+            mg, label, dawn_done = (dose if (unit_mg and unit_mg >= 100) else dose * 2), "dose pleine (aube)", True
+        if unit_mg and total + mg > max_mg + 1:
+            break  # never plan past the safe total with whole gels
         leg = leg_at(t)
         doses.append({
             "elapsed_s": int(t), "clock_s": int(clk), "mg": int(round(mg)), "label": label,
             "leg_to": leg["to_name"] if leg else "", "product": product_name,
+            "units": int(round(mg / unit_mg)) if unit_mg else None,
         })
         total += mg
         t += every_s
-    max_mg = min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG
     return {"doses": doses, "total_mg": int(round(total)), "max_mg": int(round(max_mg)), "over": total > max_mg, "settings": cfg}
 
 
@@ -178,6 +207,10 @@ def compute_plan(
     fluid_per_h = float(targets.get("fluid_ml_per_h", 0) or 0)
 
     per_h = {"carbs_g": 0.0, "fluid_ml": 0.0, "sodium_mg": 0.0, "caffeine_mg": 0.0, "kcal": 0.0}
+    caffeine_on = bool((caffeine or {}).get("enabled"))
+    def _p(it): return products_by_id.get(it.get("product_id")) or {}
+    has_plain_carb = any(float(it.get("per_hour") or 0) > 0 and (_p(it).get("carbs_g") or 0) > 0 and not (_p(it).get("caffeine_mg") or 0) for it in items)
+    caffeine_on = caffeine_on and has_plain_carb
     lines = []
     for it in items:
         pid = it.get("product_id")
@@ -185,6 +218,11 @@ def compute_plan(
         p = products_by_id.get(pid)
         if not p or rate <= 0:
             continue
+        # A caffeinated gel is not taken « n per hour »: it is the caffeine
+        # plan's dose. Its units come from the schedule below.
+        by_caffeine = caffeine_on and (p.get("caffeine_mg") or 0) > 0
+        if by_caffeine:
+            rate = 0.0
         carbs = (p.get("carbs_g") or 0) * rate
         sodium = (p.get("sodium_mg") or 0) * rate
         fluid = (p.get("volume_ml") or 0) * rate
@@ -212,6 +250,7 @@ def compute_plan(
             "sodium_per_unit": float(p.get("sodium_mg") or 0),
             "caffeine_per_unit": float(p.get("caffeine_mg") or 0),
             "is_water": is_water,
+            "by_caffeine": by_caffeine,
         })
 
     totals = {
@@ -308,6 +347,28 @@ def compute_plan(
             prev_cum_s = cum_s
             prev_clock_s = clock_s
             prev_name = s.get("end_name", "")
+    # Caffeine: timed doses. With a caffeinated gel ticked, each dose IS one of
+    # those gels: it lands in the leg where the dose falls (carbs included).
+    caff_line = next((ln for ln in lines if ln.get("by_caffeine")), None) or next((ln for ln in lines if ln["caffeine_per_unit"] > 0), None)
+    caffeine_plan = caffeine_schedule(
+        duration_s, schedule, caffeine, start_offset_s, weight_kg,
+        caff_line["name"] if caff_line else None,
+        unit_mg=caff_line["caffeine_per_unit"] if caff_line and caff_line.get("by_caffeine") else None,
+    )
+    if caffeine_plan and caff_line and caff_line.get("by_caffeine") and schedule:
+        li = lines.index(caff_line)
+        for d in caffeine_plan["doses"]:
+            leg = next((lg for lg in schedule if d["elapsed_s"] <= lg["cum_s"]), schedule[-1])
+            n = d.get("units") or 1
+            leg["units"][li]["units"] += n
+            line_totals[li] += n
+            leg["carbs_real_g"] += round(caff_line["carbs_per_unit"] * n)
+            leg["caffeine_mg"] += round(caff_line["caffeine_per_unit"] * n)
+            lh = leg["leg_time_s"] / 3600.0
+            if lh > 0:
+                leg["carbs_real_per_h"] = round(leg["carbs_real_g"] / lh)
+                leg["sodium_real_per_h"] = round(leg["sodium_real_per_h"] + caff_line["sodium_per_unit"] * n / lh)
+                leg["carbs_status"] = _status(leg["carbs_real_g"] / lh, target_carbs)
     # Pack list = sum of the whole per-leg units (consistent with the schedule).
     for li, ln in enumerate(lines):
         ln["total_units"] = line_totals[li]
@@ -339,9 +400,6 @@ def compute_plan(
             g["units"] = [{"name": n, "units": u} for n, u in g["units"].items()]
             g["is_start"] = g["at"] == "Départ"
 
-    # Caffeine: timed doses on top of what the products already carry.
-    caff_product = next((ln["name"] for ln in lines if ln["caffeine_per_unit"] > 0), None)
-    caffeine_plan = caffeine_schedule(duration_s, schedule, caffeine, start_offset_s, weight_kg, caff_product)
 
     # Hydration feasibility: between two refill points you only carry
     # `flask_capacity_ml`. If a segment needs more fluid than you can carry,
@@ -416,18 +474,38 @@ def auto_rates(target_carbs_per_h: float, target_sodium_per_h: float, products: 
     Rates are in halves (2.5 gels/h), never below 0.5 for a carb product the
     athlete chose to use — you don't pack a product to not take it.
     """
-    carb = [p for p in products if (p.get("carbs_g") or 0) > 0]
-    salt = [p for p in products if (p.get("carbs_g") or 0) <= 0 and (p.get("sodium_mg") or 0) > 0]
-    rates: dict[int, float] = {}
+    caff = [p for p in products if (p.get("caffeine_mg") or 0) > 0]
+    if not any((p.get("carbs_g") or 0) > 0 for p in products if p not in caff):
+        caff = []  # only caffeinated products: they carry the carbs, per hour like any gel
+    carb = [p for p in products if (p.get("carbs_g") or 0) > 0 and p not in caff]
+    salt = [p for p in products if (p.get("carbs_g") or 0) <= 0 and (p.get("sodium_mg") or 0) > 0 and p not in caff]
+    rates: dict[int, float] = {p["id"]: 1.0 for p in caff}  # kept « used »; the caffeine plan sets the count
     sodium_covered = 0.0
     if carb and target_carbs_per_h > 0:
-        share = target_carbs_per_h / len(carb)
+        # every chosen product at least ½ per hour, then add halves where they
+        # bring the total closest to the target (small products fine-tune)
+        cr = {p["id"]: 0.5 for p in carb}
+        def total() -> float:
+            return sum(cr[p["id"]] * float(p["carbs_g"]) for p in carb)
+        for _ in range(60):
+            gap = target_carbs_per_h - total()
+            best = min(carb, key=lambda p: abs(gap - 0.5 * float(p["carbs_g"])))
+            if abs(gap - 0.5 * float(best["carbs_g"])) >= abs(gap):
+                break
+            cr[best["id"]] += 0.5
         for p in carb:
-            r = max(0.5, _round_half(share / float(p["carbs_g"])))
-            rates[p["id"]] = r
-            sodium_covered += r * float(p.get("sodium_mg") or 0)
+            rates[p["id"]] = cr[p["id"]]
+            sodium_covered += cr[p["id"]] * float(p.get("sodium_mg") or 0)
     remaining = max(0.0, float(target_sodium_per_h or 0) - sodium_covered)
     for p in salt:
-        r = _round_half(remaining / float(p["sodium_mg"]) / len(salt)) if remaining > 0 else 0.0
-        rates[p["id"]] = r
+        if remaining <= 0:
+            rates[p["id"]] = 0.0
+            continue
+        exact = remaining / float(p["sodium_mg"]) / len(salt)
+        lo, hi = math.floor(exact * 2) / 2, math.ceil(exact * 2) / 2
+        # the half-step whose sodium is closest to the target in RATIO (under-dosing is not « closer » by default)
+        def miss(r: float) -> float:
+            got = sodium_covered + r * float(p["sodium_mg"]) * len(salt)
+            return abs(math.log(max(got, 1.0) / max(float(target_sodium_per_h), 1.0)))
+        rates[p["id"]] = min((c for c in (lo, hi) if c > 0), key=miss, default=hi)
     return rates
