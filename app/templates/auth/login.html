@@ -15,12 +15,12 @@
         <form method="POST" action="/auth/login" class="space-y-4">
             <div>
                 <label for="email" class="block text-xs font-medium text-gray-500 mb-1">Email</label>
-                <input type="email" name="email" id="email" required value="{{ email or '' }}" autofocus
+                <input type="email" name="email" id="email" required value="{{ email or '' }}" autofocus autocomplete="email"
                        class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
             </div>
             <div>
                 <label for="password" class="block text-xs font-medium text-gray-500 mb-1">Mot de passe</label>
-                <input type="password" name="password" id="password" required
+                <input type="password" name="password" id="password" required autocomplete="current-password"
                        class="w-full h-11 px-4 rounded-xl border border-gray-300 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none">
             </div>
             <button type="submit"

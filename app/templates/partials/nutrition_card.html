@@ -7,7 +7,8 @@
 {% if not has_duration %}
 <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-500">Définis un objectif de temps (ou laisse l'estimation) pour calculer ton plan.</div>
 {% else %}
-<form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:250ms, submit" class="space-y-4">
+<form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:250ms, submit" novalidate hx-validate="false" class="space-y-4">
+    <input type="hidden" name="settings_open" id="settings-open" value="{{ '1' if settings_open else '' }}">
     {# ── 1. The numbers that matter, on one line ─────────────────────────── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -37,10 +38,6 @@
                 <div>
                     <p class="text-[10px] text-gray-400 uppercase tracking-wider">Liquide</p>
                     <p class="text-lg font-semibold tabular-nums text-gray-800">{{ (targets.fluid_ml_per_h / 1000) | round(2) }}<span class="text-xs font-normal text-gray-400"> L/h</span></p>
-                </div>
-                <div>
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wider">Durée</p>
-                    <p class="text-lg font-semibold tabular-nums text-gray-800">{{ fmt_hm(plan.duration_s) }}</p>
                 </div>
             </div>
         </div>
@@ -183,15 +180,15 @@
     {% endif %}
 
     {# ── 6. Settings, out of the way ────────────────────────────────────── #}
-    <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <details class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if settings_open %} open{% endif %} ontoggle="var f=document.getElementById('settings-open'); if(f) f.value=this.open?'1':''">
         <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
             <span class="text-sm text-gray-700">Réglages</span>
             <span class="text-xs text-gray-400 truncate">liquide {{ targets.fluid_ml_per_h }} ml/h · sodium {{ targets.sodium_mg_per_h }} mg/h · {{ (flask_capacity_ml/1000)|round(1) }} L portés · caféine {% if caffeine_cfg.enabled %}on{% else %}off{% endif %}</span>
         </summary>
         <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
             <div class="flex flex-wrap gap-4">
-                <label class="text-xs text-gray-500">Liquide<div class="mt-1 flex items-center gap-1"><input name="fluid_ml_per_h" type="number" min="0" step="50" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">ml/h</span></div></label>
-                <label class="text-xs text-gray-500">Sodium<div class="mt-1 flex items-center gap-1"><input name="sodium_mg_per_h" type="number" min="0" step="50" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">mg/h</span></div></label>
+                <label class="text-xs text-gray-500">Liquide<div class="mt-1 flex items-center gap-1"><input name="fluid_ml_per_h" type="number" min="0" step="any" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">ml/h</span></div></label>
+                <label class="text-xs text-gray-500">Sodium<div class="mt-1 flex items-center gap-1"><input name="sodium_mg_per_h" type="number" min="0" step="any" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">mg/h</span></div></label>
                 <label class="text-xs text-gray-500">Liquide porté<div class="mt-1 flex items-center gap-1"><input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">ml</span></div></label>
             </div>
             {% set cf = caffeine_cfg %}

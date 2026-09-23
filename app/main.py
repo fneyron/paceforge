@@ -72,3 +72,9 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+try:  # cache-buster for the prebuilt stylesheet: browsers must not keep an older build after a deploy
+    import os as _os
+
+    app.state.build_id = str(int(_os.path.getmtime("app/static/css/tailwind.css")))
+except OSError:
+    app.state.build_id = "0"

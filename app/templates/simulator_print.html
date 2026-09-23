@@ -50,7 +50,7 @@
                 <span>{{ course.total_distance_km }} km</span>
                 <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
                 <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
-                <span class="font-semibold text-gray-900">{% if has_target %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
+                <span class="font-semibold text-gray-900">{% if route.target_time_s %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
             </div>
         </div>
 

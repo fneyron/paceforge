@@ -570,7 +570,7 @@ def build_bike_passage_sections(
         km = float(cp["distance_km"])
         if 0 < km < total_km:
             all_cps.append({**cp, "distance_km": km, "cp_index": orig_idx})
-    all_cps.append({"name": "Arrivee", "distance_km": total_km, "cp_index": None})
+    all_cps.append({"name": "Arrivée", "distance_km": total_km, "cp_index": None})
 
     aid_set = {round(float(k), 1) for k in (aid_kms or set())}
     n_stops = sum(1 for cp in all_cps[1:-1] if round(float(cp["distance_km"]), 1) in aid_set) if stop_s_per_aid else 0

@@ -39,8 +39,8 @@ def default_targets(duration_h: float, mean_temp_c: float | None) -> dict:
 
     return {
         "carbs_g_per_h": round(carbs),
-        "fluid_ml_per_h": round(fluid),
-        "sodium_mg_per_h": round(sodium),
+        "fluid_ml_per_h": int(round(fluid / 10.0) * 10),
+        "sodium_mg_per_h": int(round(sodium / 10.0) * 10),
     }
 
 
