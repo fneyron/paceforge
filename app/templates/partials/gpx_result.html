@@ -207,7 +207,8 @@ window._sim = {};
         var lons = coords.map(function(c){return c[0];}), lats = coords.map(function(c){return c[1];});
         map = new maplibregl.Map({
             container: el,
-            style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : 'https://tiles.openfreemap.org/styles/liberty',
+            // phones get the lighter style: the outdoor one plus terrain plus contours is too much for Safari's memory
+            style: isDark ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : (isCompact() ? 'https://tiles.openfreemap.org/styles/positron' : 'https://tiles.openfreemap.org/styles/liberty'),
             bounds: [[Math.min.apply(null,lons),Math.min.apply(null,lats)],[Math.max.apply(null,lons),Math.max.apply(null,lats)]],
             fitBoundsOptions: { padding: 48 }, attributionControl: false, cooperativeGestures: false, scrollZoom: isCompact(), maxPitch: 72, fadeDuration: 0,
             locale: { 'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl + molette pour zoomer la carte', 'CooperativeGesturesHandler.MacHelpText': '⌘ + molette pour zoomer la carte', 'CooperativeGesturesHandler.MobileHelpText': 'Deux doigts pour déplacer la carte' },
@@ -231,7 +232,7 @@ window._sim = {};
             map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': isDark ? 0.25 : 0.32, 'hillshade-shadow-color': '#475569', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#94a3b8' } }, firstSymbol ? firstSymbol.id : undefined);
             // contour lines from the same DEM (Komoot / Gaia look), when the plugin is there
             try {
-                if (window.mlcontour) {
+                if (false && window.mlcontour) {  // contour lines: off — too heavy for what they bring
                     var demC = new mlcontour.DemSource({ url: DEM_TILES, encoding: 'terrarium', maxzoom: 13, worker: true });
                     demC.setupMaplibre(maplibregl);
                     map.addSource('contours', { type: 'vector', maxzoom: 15, tiles: [demC.contourProtocolUrl({ multiplier: 1, thresholds: { 10: [200, 1000], 11: [100, 500], 12: [50, 250], 13: [20, 100], 14: [10, 50] }, elevationKey: 'ele', levelKey: 'level', contourLayer: 'contours' })] });
@@ -1036,11 +1037,12 @@ window._sim = {};
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
+    window.addEventListener('error', function (ev) { try { var el = document.getElementById('recalc-error'); if (el) { el.textContent = 'Erreur dans la page : ' + (ev.message || ev.error) + ' (' + (ev.filename || '').split('/').pop() + ':' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     labelWeekday();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
-    var wantMap = !isCompact(); try { if (localStorage.getItem('pf.map') === '0') wantMap = false; } catch (e) {}
+    var wantMap = false; try { wantMap = !isCompact() && localStorage.getItem('pf.map') === '1'; } catch (e) {}
     if (wantMap) toggleMap(true);
     document.addEventListener('pointerdown', function (ev) {
         var t = ev.target;
