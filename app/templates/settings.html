@@ -49,6 +49,14 @@
             </div>
             <p class="text-[11px] text-gray-400 mt-1">Utilisé pour la puissance dans le simulateur vélo.</p>
         </div>
+        <div class="max-w-xs">
+            <label for="ftp_watts" class="block text-xs font-medium text-gray-500 mb-1.5">FTP</label>
+            <div class="flex items-center gap-2">
+                <input type="number" id="ftp_watts" name="ftp_watts" value="{{ user.ftp_watts|int if user.ftp_watts else '' }}" placeholder="auto" step="1" min="50" max="600" class="{{ input_cls }} tabular-nums">
+                <span class="text-sm text-gray-400 shrink-0">W</span>
+            </div>
+            <p class="text-[11px] text-gray-400 mt-1">Vide = estimée d'après tes sorties Strava avec capteur de puissance (jamais d'après la puissance estimée par Strava).</p>
+        </div>
         <div>
             <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">Enregistrer</button>
         </div>

@@ -31,10 +31,10 @@ async def simulator_page(
     db: AsyncSession = Depends(get_db),
 ):
     # Estimate FTP for power tab
-    from app.services.power_calculator import estimate_ftp
+    from app.services.power_calculator import ftp_for_user
     from app.services.triathlon import FORMATS, estimate_swim_pace, fmt_pace_100m
 
-    ftp = await estimate_ftp(db, user.id)
+    ftp = await ftp_for_user(db, user)
     swim_pace_est = await estimate_swim_pace(db, user.id)
 
     # Saved routes
@@ -44,7 +44,17 @@ async def simulator_page(
         .order_by(Route.created_at.desc())
         .limit(40)
     )
-    saved_routes = result.scalars().all()
+    saved_routes = list(result.scalars().all())
+    # upcoming races first (soonest), then past ones (most recent first), then undated
+    from datetime import date as _date
+
+    today = _date.today()
+    for rt in saved_routes:
+        try:
+            rt.days_to = (_date.fromisoformat(str(rt.race_date)[:10]) - today).days if rt.race_date else None
+        except ValueError:
+            rt.days_to = None
+    saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
 
     return templates.TemplateResponse(
         request,
@@ -293,7 +303,7 @@ async def bike_gpx_upload(
 ):
     from app.services.cycling_simulator import estimate_cda, predict_cycling_course
     from app.services.gpx import build_course_profile, parse_gpx
-    from app.services.power_calculator import estimate_ftp
+    from app.services.power_calculator import ftp_for_user
 
     try:
         from app.services.gpx import snap_waypoints_to_route
@@ -303,7 +313,7 @@ async def bike_gpx_upload(
         course = build_course_profile(points, name=gpx_file.filename or "Parcours velo")
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
-        ftp = await estimate_ftp(db, user.id)
+        ftp = await ftp_for_user(db, user)
         rider_weight = user.weight_kg or 75
         cda_est = await estimate_cda(db, user.id, rider_weight)
         cda_default = cda_est.estimated_cda if cda_est else 0.32
@@ -738,10 +748,10 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
         estimate_cda,
         predict_cycling_course,
     )
-    from app.services.power_calculator import estimate_ftp
+    from app.services.power_calculator import ftp_for_user
 
     course = CourseProfile(**route.course_json)
-    ftp = await estimate_ftp(db, user.id)
+    ftp = await ftp_for_user(db, user)
     p = route.params_json or {}
     rider_weight = float(p.get("rider_weight_kg") or user.weight_kg or 75)
     bike_weight = float(p.get("bike_weight_kg") or 9.0)
@@ -1009,7 +1019,7 @@ async def create_triathlon(
 
 async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     from app.schemas.simulator import CourseProfile
-    from app.services.power_calculator import estimate_ftp
+    from app.services.power_calculator import ftp_for_user
     from app.services.race_simulator import build_athlete_gradient_profile, predict_course
     from app.services.triathlon import (
         DEFAULT_T1_S,
@@ -1057,7 +1067,7 @@ async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, us
     total_s = swim_s + t1_s + bike_s + t2_s + run_s
     nutrition = triathlon_nutrition(bike_s / 3600, run_s / 3600, user.weight_kg, p.get("carbs_g_per_h"))
 
-    ftp = await estimate_ftp(db, user.id)
+    ftp = await ftp_for_user(db, user)
     fmt = p.get("format") if p.get("format") in _TRI_IF_BY_FORMAT else "half"
     power = None
     if ftp:

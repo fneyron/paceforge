@@ -157,6 +157,18 @@ def ftp_from_mean_max(p5: float | None, p20: float | None, p60: float | None) ->
     return max(cands, key=lambda c: c[0])
 
 
+async def ftp_for_user(db: AsyncSession, user) -> FtpEstimate | None:
+    """The FTP to plan with: the athlete's own number when typed in the settings,
+    else the estimate from power-meter rides (None when he has no meter data)."""
+    manual = getattr(user, "ftp_watts", None)
+    if manual:
+        return FtpEstimate(
+            estimated_ftp=float(manual), best_20min_power=float(manual), activity_name="saisie dans Réglages",
+            activity_date=None, confidence="Saisie", is_stale=False, age_months=0, method="saisie", rides_used=0,
+        )
+    return await estimate_ftp(db, user.id)
+
+
 async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     """Estimate FTP from Strava rides with power.
 
@@ -214,27 +226,29 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
             is_stale=False, age_months=max(0, _age_days(a) // 30), method=method, rides_used=n_with_power,
         )
 
-    # ── tier 2: summary data (NP / average power by duration) ──
+    # ── tier 2: summary data — power-meter rides ONLY ──
+    # Strava fills average_watts on every ride, with its own estimate when
+    # there is no meter; weighted_average_watts (NP) and max_watts only exist
+    # with a real meter. An FTP from Strava's guessed watts is worthless.
     activities = []
+    col = Activity.weighted_average_watts
     for since in (now - timedelta(days=365), None):
-        for col in (Activity.weighted_average_watts, Activity.average_watts):
-            q = (
-                select(Activity)
-                .where(
-                    Activity.user_id == user_id,
-                    Activity.sport_type.in_(["Ride", "VirtualRide", "GravelRide"]),
-                    col.is_not(None),
-                    col > 0,
-                    Activity.moving_time >= 1200,  # At least 20 minutes
-                )
-                .order_by(col.desc())
-                .limit(10)
+        q = (
+            select(Activity)
+            .where(
+                Activity.user_id == user_id,
+                Activity.sport_type.in_(["Ride", "VirtualRide", "GravelRide"]),
+                col.is_not(None),
+                col > 0,
+                Activity.max_watts.is_not(None),
+                Activity.moving_time >= 1200,  # At least 20 minutes
             )
-            if since is not None:
-                q = q.where(Activity.start_date >= since)
-            activities = (await db.execute(q)).scalars().all()
-            if activities:
-                break
+            .order_by(col.desc())
+            .limit(10)
+        )
+        if since is not None:
+            q = q.where(Activity.start_date >= since)
+        activities = (await db.execute(q)).scalars().all()
         if activities:
             break
     if not activities:
