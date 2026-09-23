@@ -25,7 +25,7 @@
                 {% else %}
                 <p class="text-xs text-gray-500 mt-2">
                     à <b class="text-gray-700">{{ params.target_power_watts }} W</b>{% endif %}
-                    {% if ftp %} · FTP estimée <b class="text-gray-700">{{ ftp.estimated_ftp|int }} W</b> <span class="text-gray-400">(fiabilité {{ ftp.confidence|lower }}{% if ftp.is_stale %}, ancienne{% endif %})</span>{% else %} · <span class="text-amber-600">pas de FTP : aucune sortie avec puissance synchronisée</span>{% endif %}
+                    {% if ftp and ftp.method == 'saisie' %} · FTP <b class="text-gray-700">{{ ftp.estimated_ftp|int }} W</b> <a href="/settings" class="text-gray-400 underline decoration-gray-300">saisie</a>{% elif ftp %} · FTP estimée <b class="text-gray-700">{{ ftp.estimated_ftp|int }} W</b> <span class="text-gray-400">(fiabilité {{ ftp.confidence|lower }}{% if ftp.is_stale %}, ancienne{% endif %})</span>{% else %} · <span class="text-amber-600">pas de FTP : aucune sortie avec puissance synchronisée</span>{% endif %}
                     {% if cda_est %} · CdA <b class="text-gray-700">{{ '%.2f'|format(params.cda) }}</b> <span class="text-gray-400">estimé sur {{ cda_est.activity_count }} sortie{{ 's' if cda_est.activity_count != 1 else '' }}</span>{% else %} · CdA {{ '%.2f'|format(params.cda) }}{% endif %}
                 </p>
             </div>

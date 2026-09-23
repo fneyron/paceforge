@@ -16,6 +16,42 @@
 {% endblock %}
 
 {% block content %}
+{% macro route_list(routes) %}
+        <div class="mb-4">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Mes courses</h3>
+            <div class="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+                {% for r in routes %}
+                <div class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors" id="route-card-{{ r.id }}">
+                    <a href="/simulator/routes/{{ r.id }}" class="flex-1 min-w-0 block">
+                        <p class="font-medium text-[15px] text-gray-900 truncate" id="route-name-{{ r.id }}">{{ r.name }}</p>
+                        <p class="text-xs text-gray-500 tabular-nums mt-0.5">
+                            {{ '%.0f'|format(r.total_distance_km) }} km · <span class="text-red-500">+{{ '{:,}'.format(r.total_elevation_gain|int).replace(',', ' ') }} m</span>{% if r.target_time_s %} · obj. {{ '%dh%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}{% endif %}
+                        </p>
+                    </a>
+                    <div class="text-right shrink-0">
+                        {% if r.race_date %}
+                        {% set rd = r.race_date.split('-') %}
+                        <p class="text-xs tabular-nums {% if r.days_to is not none and r.days_to < 0 %}text-gray-400{% else %}text-gray-700{% endif %}">{{ rd[2]|int }} {{ ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'][rd[1]|int - 1] }} {{ rd[0] }}</p>
+                        {% if r.days_to is not none %}
+                        <p class="text-[11px] tabular-nums {% if r.days_to < 0 %}text-gray-400{% elif r.days_to <= 14 %}text-amber-700 font-medium{% else %}text-gray-500{% endif %}">{% if r.days_to == 0 %}aujourd'hui{% elif r.days_to == 1 %}demain{% elif r.days_to > 1 %}dans {{ r.days_to }} j{% else %}il y a {{ -r.days_to }} j{% endif %}</p>
+                        {% endif %}
+                        {% else %}
+                        <p class="text-xs text-gray-400">sans date</p>
+                        {% endif %}
+                    </div>
+                    <div class="flex gap-0.5 shrink-0 lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button onclick="renameRoute({{ r.id }})" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100" title="Renommer">
+                            <i data-lucide="pencil" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteRoute({{ r.id }}, this)" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-gray-100" title="Supprimer">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+{% endmacro %}
 <div class="space-y-6">
     <div>
         <h1 class="text-lg font-semibold tracking-tight">Courses</h1>
@@ -37,57 +73,8 @@
     <!-- Trail Tab -->
     <div id="panel-trail">
         <!-- Saved routes -->
-        {% if saved_routes %}
-        <div class="mb-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Mes courses</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {% for r in saved_routes if r.sport_type != 'triathlon' %}
-                <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 hover:shadow-md transition-all relative" id="route-card-{{ r.id }}">
-                    <a href="/simulator/routes/{{ r.id }}" class="block cursor-pointer pr-16">
-                        <div class="flex items-center gap-2 min-w-0">
-                            {% set is_bike = r.sport_type == 'bike' %}
-                            {% set is_tri = r.sport_type == 'triathlon' %}
-                            <span class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide {% if is_tri %}bg-amber-50 text-amber-700{% elif is_bike %}bg-sky-50 text-sky-600{% else %}bg-emerald-50 text-emerald-600{% endif %}">
-                                {% if is_tri %}
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" d="M3 12c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2M3 17c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/></svg>
-                                Triathlon
-                                {% elif is_bike %}
-                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M5.5 20.5A3.5 3.5 0 1 1 9 17a3.5 3.5 0 0 1-3.5 3.5Zm13 0A3.5 3.5 0 1 1 22 17a3.5 3.5 0 0 1-3.5 3.5ZM12 7.5l2 4h3M9 17l3-5.5L8.5 8H6"/></svg>
-                                Vélo
-                                {% else %}
-                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M13.5 5.5a2 2 0 1 0-2-2 2 2 0 0 0 2 2Zm-3.2 3.4 2.1-1.1 1.9 1.6-1.7 1.6 1 4.5-1.6.4-1-4-1.6 1.2-.6 3.1-1.6-.3.8-3.9 2.8-2.6Z"/></svg>
-                                Trail
-                                {% endif %}
-                            </span>
-                            <p class="font-medium text-sm truncate hover:text-blue-600 transition-colors" id="route-name-{{ r.id }}">{{ r.name }}</p>
-                        </div>
-                        <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-gray-400">
-                            <span class="tabular-nums">{{ '%.0f'|format(r.total_distance_km) }} km</span>
-                            <span class="text-red-400 tabular-nums">D+ {{ '%.0f'|format(r.total_elevation_gain) }}m</span>
-                            {% if r.target_time_s %}
-                            <span class="tabular-nums text-gray-500">obj. {{ '%dh%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}</span>
-                            {% endif %}
-                            {% if r.race_date %}
-                            {% set rd = r.race_date.split('-') %}
-                            <span class="text-gray-300 tabular-nums">{{ rd[2] }}/{{ rd[1] }}/{{ rd[0] }}</span>
-                            {% else %}
-                            <span class="text-gray-300">{{ r.created_at.strftime('%d/%m') }}</span>
-                            {% endif %}
-                        </div>
-                    </a>
-                    <div class="absolute top-3 right-3 flex gap-0.5">
-                        <button onclick="renameRoute({{ r.id }})" class="p-1.5 rounded-lg text-gray-300 hover:text-blue-500 hover:bg-gray-50 transition-colors" title="Renommer">
-                            <i data-lucide="pencil" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteRoute({{ r.id }}, this)" class="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-50 transition-colors" title="Supprimer">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
+        {% set run_routes = saved_routes | rejectattr('sport_type', 'equalto', 'triathlon') | rejectattr('sport_type', 'equalto', 'bike') | list %}
+        {% if run_routes %}{{ route_list(run_routes) }}{% endif %}
         <!-- GPX Upload -->
         <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Nouvelle course</h3>
@@ -142,24 +129,33 @@
     <!-- Power Tab -->
     <div id="panel-power" class="hidden">
         <!-- FTP Estimate -->
-        {% if ftp %}
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm mb-4">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">FTP estimée</h3>
-                    <p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(ftp.estimated_ftp) }} <span class="text-sm font-normal text-gray-400">W</span></p>
+                    <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">FTP{% if ftp and ftp.method == 'saisie' %} saisie{% elif ftp %} estimée{% endif %}</h3>
+                    {% if ftp %}<p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(ftp.estimated_ftp) }} <span class="text-sm font-normal text-gray-400">W</span></p>
+                    {% else %}<p class="text-2xl font-bold tabular-nums text-gray-300">—</p>{% endif %}
                 </div>
                 <div class="text-right">
-                    <p class="text-xs text-gray-400">Fiabilité {{ ftp.confidence | lower }}</p>
+                    {% if ftp and ftp.method == 'saisie' %}
+                    <p class="text-xs text-gray-400">Ta valeur, <a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">modifiable dans Réglages</a>.</p>
+                    {% elif ftp %}
+                    <p class="text-xs text-gray-400">{{ ftp.method }} · fiabilité {{ ftp.confidence | lower }}{% if ftp.rides_used %} · {{ ftp.rides_used }} sortie{{ 's' if ftp.rides_used > 1 }} avec capteur{% endif %}</p>
                     <p class="text-xs text-gray-400 mt-0.5">D'après « {{ ftp.activity_name }} »{% if ftp.activity_date %} · {{ ftp.activity_date.strftime('%d/%m/%Y') }}{% endif %}</p>
                     {% if ftp.is_stale %}
                     <p class="text-[11px] text-amber-600 mt-1">Il y a {{ ftp.age_months }} mois : probablement dépassée. Une sortie récente avec capteur de puissance la mettra à jour.</p>
                     {% endif %}
+                    <p class="text-[11px] text-gray-400 mt-1">Pas d'accord ? <a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">Saisis ta FTP</a>, elle prendra le dessus.</p>
+                    {% else %}
+                    <p class="text-xs text-gray-500">Aucune sortie avec capteur de puissance sur Strava : la puissance estimée par Strava n'est pas utilisée.</p>
+                    <p class="text-[11px] text-gray-400 mt-1"><a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">Saisis ta FTP dans Réglages</a> pour planifier à la puissance.</p>
+                    {% endif %}
                 </div>
             </div>
         </div>
-        {% endif %}
 
+        {% set bike_routes = saved_routes | selectattr('sport_type', 'equalto', 'bike') | list %}
+        {% if bike_routes %}{{ route_list(bike_routes) }}{% endif %}
         <!-- GPX Upload (Bike) -->
         <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-4">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX velo</h3>

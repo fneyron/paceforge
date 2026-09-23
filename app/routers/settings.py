@@ -74,8 +74,11 @@ async def save_settings(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     weight_kg: str = Form(default=""),
+    ftp_watts: str = Form(default=""),
 ):
     user.weight_kg = _to_float(weight_kg)
+    ftp = _to_float(ftp_watts)
+    user.ftp_watts = ftp if ftp and 50 <= ftp <= 600 else None
     await db.flush()
     logger.info("Settings updated for user %d", user.id)
 
