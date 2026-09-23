@@ -157,6 +157,24 @@ def ftp_from_mean_max(p5: float | None, p20: float | None, p60: float | None) ->
     return max(cands, key=lambda c: c[0])
 
 
+_FTP_CACHE: dict[int, tuple] = {}  # user_id → (expires_at, estimate): the mean-max crunch is not free
+
+
+def _best_ftp_from_rows(rows) -> tuple:
+    """Pure-Python mean-max over the rides' streams, run in a worker thread."""
+    best, n_with_power = None, 0
+    for row in rows:
+        st = row.streams_data or {}
+        if not st.get("watts"):
+            continue
+        n_with_power += 1
+        p5, p20, p60 = mean_max_power(st, 300), mean_max_power(st, 1200), mean_max_power(st, 3600)
+        ftp, method = ftp_from_mean_max(p5, p20, p60)
+        if ftp and (best is None or ftp > best[0]):
+            best = (ftp, method, row.name, row.start_date, p20 or p60 or p5)
+    return best, n_with_power
+
+
 async def ftp_for_user(db: AsyncSession, user) -> FtpEstimate | None:
     """The FTP to plan with: the athlete's own number when typed in the settings,
     else the estimate from power-meter rides (None when he has no meter data)."""
@@ -192,39 +210,41 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
             sd = sd.replace(tzinfo=timezone.utc)
         return (now - sd).days if sd else 0
 
-    # ── tier 1: streams ──
+    # ── tier 1: streams of power-meter rides (max_watts only exists with a meter) ──
+    cached = _FTP_CACHE.get(user_id)
+    if cached and cached[0] > now:
+        return cached[1]
     q = (
-        select(Activity)
+        select(Activity.id, Activity.name, Activity.start_date, Activity.streams_data)
         .where(
             Activity.user_id == user_id,
             Activity.sport_type.in_(["Ride", "VirtualRide", "GravelRide"]),
             Activity.streams_data.is_not(None),
+            Activity.max_watts.is_not(None),
             Activity.start_date >= now - timedelta(days=120),
             Activity.moving_time >= 1200,
         )
         .order_by(Activity.start_date.desc())
-        .limit(60)
+        .limit(20)
     )
-    rides = (await db.execute(q)).scalars().all()
-    best = None
-    n_with_power = 0
-    for a in rides:
-        st = a.streams_data or {}
-        if not st.get("watts"):
-            continue
-        n_with_power += 1
-        p5, p20, p60 = mean_max_power(st, 300), mean_max_power(st, 1200), mean_max_power(st, 3600)
-        ftp, method = ftp_from_mean_max(p5, p20, p60)
-        if ftp and (best is None or ftp > best[0]):
-            best = (ftp, method, a, p20 or p60 or p5)
-    if best:
-        ftp, method, a, ref_power = best
-        confidence = "Bonne" if n_with_power >= 3 else "Moyenne"
-        return FtpEstimate(
-            estimated_ftp=round(ftp, 0), best_20min_power=round(ref_power or ftp, 0),
-            activity_name=a.name, activity_date=a.start_date, confidence=confidence,
-            is_stale=False, age_months=max(0, _age_days(a) // 30), method=method, rides_used=n_with_power,
-        )
+    rows = (await db.execute(q)).all()
+    if rows:
+        import asyncio
+
+        best, n_with_power = await asyncio.to_thread(_best_ftp_from_rows, rows)
+        if best:
+            ftp, method, name, start_date, ref_power = best
+            confidence = "Bonne" if n_with_power >= 3 else "Moyenne"
+            sd = start_date
+            if sd is not None and sd.tzinfo is None:
+                sd = sd.replace(tzinfo=timezone.utc)
+            est = FtpEstimate(
+                estimated_ftp=round(ftp, 0), best_20min_power=round(ref_power or ftp, 0),
+                activity_name=name or "", activity_date=start_date, confidence=confidence,
+                is_stale=False, age_months=max(0, (now - sd).days // 30) if sd else 0, method=method, rides_used=n_with_power,
+            )
+            _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+            return est
 
     # ── tier 2: summary data — power-meter rides ONLY ──
     # Strava fills average_watts on every ride, with its own estimate when
@@ -252,6 +272,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         if activities:
             break
     if not activities:
+        _FTP_CACHE[user_id] = (now + timedelta(minutes=10), None)
         return None
 
     def _scaled(a: Activity) -> float:
@@ -270,7 +291,7 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
     best_activity = activities[0]
     age_days = _age_days(best_activity)
     confidence = "Moyenne" if len(activities) >= 3 else "Faible"
-    return FtpEstimate(
+    est = FtpEstimate(
         estimated_ftp=round(ftp, 0),
         best_20min_power=round(best_activity.weighted_average_watts or best_activity.average_watts or 0, 0),
         activity_name=best_activity.name,
@@ -281,3 +302,5 @@ async def estimate_ftp(db: AsyncSession, user_id: int) -> FtpEstimate | None:
         method="puissance normalisée des meilleures sorties",
         rides_used=len(activities),
     )
+    _FTP_CACHE[user_id] = (now + timedelta(minutes=10), est)
+    return est

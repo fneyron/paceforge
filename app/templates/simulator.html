@@ -29,7 +29,7 @@
                         </p>
                     </a>
                     <div class="text-right shrink-0">
-                        {% if r.race_date %}
+                        {% if r.race_date and r.days_to is not none %}
                         {% set rd = r.race_date.split('-') %}
                         <p class="text-xs tabular-nums {% if r.days_to is not none and r.days_to < 0 %}text-gray-400{% else %}text-gray-700{% endif %}">{{ rd[2]|int }} {{ ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'][rd[1]|int - 1] }} {{ rd[0] }}</p>
                         {% if r.days_to is not none %}
@@ -100,7 +100,7 @@
                     <p class="text-xs text-gray-400 mb-3">ou</p>
 
                     <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this)">
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this); if (this.files.length && window.htmx) htmx.trigger(this.form, 'submit')">
                         Choisir un fichier
                     </label>
 
@@ -177,7 +177,7 @@
                     <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX velo ici</p>
                     <p class="text-xs text-gray-400 mb-3">ou</p>
                     <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateBikeFileName(this)">
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateBikeFileName(this); if (this.files.length && window.htmx) htmx.trigger(this.form, 'submit')">
                         Choisir un fichier
                     </label>
                     <p id="bike-file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
@@ -281,7 +281,7 @@ function renameRoute(routeId) {
 function deleteRoute(routeId, btn) {
     if (!confirm('Supprimer ce parcours ?')) return;
     fetch('/api/simulator/routes/' + routeId, { method: 'DELETE' })
-        .then(function() { btn.closest('.rounded-xl').remove(); });
+        .then(function(r) { if (!r.ok) return; var c = document.getElementById('route-card-' + routeId); if (c) c.remove(); });
 }
 
 function toggleCalcMode(mode) {

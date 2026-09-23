@@ -21,7 +21,7 @@
     <meta name="twitter:description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Feedback cash, zéro langue de bois.">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Analyse automatique, feedback cash, zéro langue de bois.">
-    <link rel="stylesheet" href="/static/css/tailwind.css">
+    <link rel="stylesheet" href="/static/css/tailwind.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
     <script>
         // Apply dark mode before render to avoid flash
         if (localStorage.getItem('darkMode') === 'true') {

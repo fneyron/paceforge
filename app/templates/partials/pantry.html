@@ -28,7 +28,7 @@
             </div>
             <div>
                 <label class="block text-[10px] text-gray-400 mb-0.5">Vol. (ml)</label>
-                <input name="volume_ml" type="number" step="10" min="0" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+                <input name="volume_ml" type="number" step="any" min="0" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
             </div>
             <div>
                 <label class="block text-[10px] text-gray-400 mb-0.5" title="Caféine par unité">Caf. (mg)</label>
@@ -94,7 +94,7 @@
                 </div>
                 <div>
                     <label class="block text-[10px] text-gray-400 mb-0.5">Volume (ml)</label>
-                    <input name="volume_ml" type="number" step="10" min="0" value="{{ p.volume_ml|round|int if p.volume_ml else '' }}" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
+                    <input name="volume_ml" type="number" step="any" min="0" value="{{ p.volume_ml|round|int if p.volume_ml else '' }}" placeholder="—" class="sim-num w-full h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums">
                 </div>
                 <div>
                     <label class="block text-[10px] text-gray-400 mb-0.5" title="Caféine par unité">Caf. (mg)</label>

@@ -78,11 +78,12 @@ async def save_settings(
 ):
     user.weight_kg = _to_float(weight_kg)
     ftp = _to_float(ftp_watts)
+    ftp_bad = bool(ftp) and not (50 <= ftp <= 600)
     user.ftp_watts = ftp if ftp and 50 <= ftp <= 600 else None
     await db.flush()
     logger.info("Settings updated for user %d", user.id)
 
-    ctx = await _settings_context(request, user, db, saved=True)
+    ctx = await _settings_context(request, user, db, saved=not ftp_bad, ftp_bad=ftp_bad)
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
 

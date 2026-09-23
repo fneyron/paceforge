@@ -560,7 +560,7 @@ def compute_passage_times(
         if cp["distance_km"] > 0 and cp["distance_km"] < course.total_distance_km:
             all_cps.append({**cp, "cp_index": orig_idx})
     all_cps.append(
-        {"name": "Arrivee", "distance_km": course.total_distance_km, "cp_index": None}
+        {"name": "Arrivée", "distance_km": course.total_distance_km, "cp_index": None}
     )
 
     aid_set = {round(float(k), 1) for k in (aid_kms or set())}

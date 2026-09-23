@@ -1,4 +1,4 @@
-const CACHE_NAME = 'paceforge-v1';
+const CACHE_NAME = 'paceforge-v2';
 const STATIC_ASSETS = [
   '/static/js/app.js',
   '/static/css/app.css',
@@ -21,6 +21,9 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // only this origin's static files go through the cache; tiles, CDN scripts, pages and API calls go straight to the network
+  const u = new URL(event.request.url);
+  if (u.origin !== self.location.origin || !u.pathname.startsWith('/static/')) return;
   // Network-first for HTML and API, cache-first for static assets
   if (event.request.mode === 'navigate' || event.request.url.includes('/api/') || event.request.url.includes('/partials/')) {
     event.respondWith(

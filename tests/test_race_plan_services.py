@@ -361,7 +361,7 @@ def test_bike_passage_sections_and_power_solver():
 
     cycling = predict(200)
     secs = build_bike_passage_sections(cycling, CPS, 8 * 3600, target_time_s=None, stop_s_per_aid=120, aid_kms={6.0, 10.0, 20.0})
-    assert [s["end_name"] for s in secs] == ["Eau 1", "Col", "Village", "Arrivee"]
+    assert [s["end_name"] for s in secs] == ["Eau 1", "Col", "Village", "Arrivée"]
     assert abs(secs[-1]["cumulative_time_s"] - cycling.predicted_total_time_s) < 2
     assert abs(secs[-1]["clock_time_s"] - (8 * 3600 + secs[-1]["cumulative_time_s"] + 3 * 120)) < 2  # 3 aid stops on the clock
     # with an objective every leg scales by the same factor

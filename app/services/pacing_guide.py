@@ -56,7 +56,7 @@ def _classify(grade: float, walk_grade: float) -> str:
     return "flat"
 
 
-def _local_max_grade(course: CourseProfile, start_km: float, end_km: float) -> float:
+def _local_max_grade(course: CourseProfile, start_km: float, end_km: float, descent: bool = False) -> float:
     """Steepest stretch inside [start_km, end_km] from the elevation profile
     (finer than the 1 km segments when the profile allows it)."""
     pts = course.elevation_points or []
@@ -68,7 +68,7 @@ def _local_max_grade(course: CourseProfile, start_km: float, end_km: float) -> f
         if run < 80:  # too short to mean anything (GPS noise)
             continue
         g = (b["elevation"] - a["elevation"]) / run * 100
-        if best is None or g > best:
+        if best is None or (g < best if descent else g > best):
             best = g
     return round(best, 1) if best is not None else 0.0
 
@@ -163,7 +163,7 @@ def build_pacing_guide(
         time_s = sum(r["time_s"] for r in rs)
         hours = time_s / 3600 if time_s > 0 else 0
         avg_grade = round(sum(r["seg"].avg_gradient_pct * r["seg"].distance_m for r in rs) / (dist_km * 1000), 1)
-        max_grade = max(_local_max_grade(course, r["seg"].start_km, r["seg"].end_km) for r in rs)
+        max_grade = (min if b["cls"] == "descent" else max)(_local_max_grade(course, r["seg"].start_km, r["seg"].end_km, descent=(b["cls"] == "descent")) for r in rs)
         progress = (start_km + end_km) / 2 / total_km
         offset, phase_label = _phase(progress)
         cls = b["cls"]
@@ -182,7 +182,7 @@ def build_pacing_guide(
         if cls == "stairs":
             instr = "On marche, mains sur les cuisses, bâtons sortis. Rythme métronome, pas de course sur les marches."
         elif cls == "climb":
-            instr = "Montée : FC plafond, VAM cible. On marche toute pente > 8 %, on court le reste. Si un cadran dépasse, tu ralentis — jamais l'inverse."
+            instr = f"Montée : FC plafond, VAM cible. On marche toute pente > {int(round(walk_grade))} %, on court le reste. Si un cadran dépasse, tu ralentis — jamais l'inverse."
         elif cls == "descent":
             instr = "Descente : FC de relâchement, quadriceps économes, pas de freinage. Manger en haut avant la bascule."
         else:

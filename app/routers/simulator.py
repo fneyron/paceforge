@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
@@ -89,7 +90,7 @@ async def gpx_upload(
     try:
         content = await gpx_file.read()
         points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=gpx_file.filename or "Course")
+        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Course"))
 
         # Snap GPX waypoints to route
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
@@ -262,7 +263,7 @@ async def passage_times(
 
         zones = await estimate_training_zones(db, user.id)
         dflt = default_hr_caps(zones.get("max_hr"))
-        caps = {k: (int(params[k]) if params.get(k) else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
+        caps = {k: (int(float(params[k])) if params.get(k) not in (None, "") else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
         guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
         plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
         return templates.TemplateResponse(
@@ -287,11 +288,7 @@ async def passage_times(
         )
     except Exception:
         logger.exception("Passage time calculation failed")
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">'
-            "Erreur lors du calcul des temps de passage."
-            "</div>"
-        )
+        return HTMLResponse("", status_code=500)  # the page keeps its last table and offers « réessayer »
 
 
 @router.post("/partials/simulator/bike-gpx-upload", response_class=HTMLResponse)
@@ -310,7 +307,7 @@ async def bike_gpx_upload(
 
         content = await gpx_file.read()
         points, gpx_waypoints = parse_gpx(content)
-        course = build_course_profile(points, name=gpx_file.filename or "Parcours velo")
+        course = build_course_profile(points, name=_gpx_title(content, gpx_file.filename, "Parcours vélo"))
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         ftp = await ftp_for_user(db, user)
@@ -403,7 +400,7 @@ async def save_route(
                 route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
                 route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
             route.target_time_s = target_time_s
-            if race_date: route.race_date = race_date
+            if race_date: route.race_date = _iso_date(race_date)
             if start_hour is not None: route.start_hour = start_hour
             if start_minute is not None: route.start_minute = start_minute
             if sport_type: route.sport_type = sport_type
@@ -427,7 +424,7 @@ async def save_route(
                 total_elevation_loss=course_data.get("total_elevation_loss", 0),
                 course_json=course_data,
                 target_time_s=target_time_s,
-                race_date=race_date,
+                race_date=_iso_date(race_date),
                 start_hour=start_hour,
                 start_minute=start_minute,
                 sport_type=sport_type or "trail",
@@ -880,7 +877,7 @@ async def save_bike_plan(
         "wind_mode": wind_mode if wind_mode in ("auto", "manual", "none") else "auto",
         "wind_speed_kmh": wind_speed_kmh, "wind_direction_deg": wind_direction_deg,
     }
-    route.race_date = race_date.strip() or None
+    route.race_date = _iso_date(race_date)
     st = _clock_to_s(start_time)
     if st is not None:
         route.start_hour, route.start_minute = st // 3600, (st % 3600) // 60
@@ -1249,6 +1246,31 @@ async def delete_route(
     return JSONResponse({"ok": True})
 
 
+def _iso_date(value: str | None) -> str | None:
+    """YYYY-MM-DD or None: a date the browser could not parse must not reach the db."""
+    from datetime import date as _d
+
+    try:
+        return _d.fromisoformat((value or "").strip()[:10]).isoformat() if value and value.strip() else None
+    except ValueError:
+        return None
+
+
+def _gpx_title(content: bytes, filename: str | None, fallback: str) -> str:
+    """The GPX's own name (<metadata><name> or <trk><name>), else the file name without .gpx."""
+    try:
+        import gpxpy
+
+        g = gpxpy.parse(content.decode("utf-8", "ignore"))
+        for cand in [g.name] + [t.name for t in g.tracks]:
+            if cand and cand.strip():
+                return cand.strip()[:120]
+    except Exception:
+        pass
+    base = (filename or "").rsplit("/", 1)[-1]
+    return (re.sub(r"\.gpx$", "", base, flags=re.I).replace("_", " ").replace("-", " ").strip() or fallback)[:120]
+
+
 # ── Weather ──
 
 def _route_sample_points(route: Route, cps: list[dict]) -> list[list[float]]:
@@ -1427,6 +1449,13 @@ async def save_route_result(
             '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">Activité introuvable.</div>'
         )
 
+    act_km = float(activity.distance or 0) / 1000
+    route_km = float(route.total_distance_km or 0)
+    if route_km and act_km and abs(act_km - route_km) / route_km > 0.15:
+        return HTMLResponse(
+            f'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Cette activité fait {act_km:.0f} km, la course {route_km:.0f} km : ce n\'est pas le même parcours, elle n\'est pas associée.</div>'
+        )
+
     cp_result = await db.execute(
         select(RouteCheckpoint)
         .where(RouteCheckpoint.route_id == route.id)
@@ -1535,7 +1564,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     nutrition = route.nutrition_json or {}
 
     mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
-    targets = nutrition.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
+    _dflt_targets = default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
+    targets = {**_dflt_targets, **{k: v for k, v in (nutrition.get("targets") or {}).items() if v is not None}}
     # No auto-fill: the plan shows ONLY what the athlete sets (a frequency per
     # product). Empty = no plan yet, with per-product "pour la cible" hints to
     # guide them. Never silently pick a product.
@@ -1581,6 +1611,7 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "caffeine_cfg": caffeine_cfg,
         "resupply_points": resupply_points,
         "start_offset_s": start_hour * 3600 + start_minute * 60,
+        "settings_open": bool(getattr(request, "_pf_settings_open", False)),
         "kpi": {
             "carbs_real": real_carbs_per_h, "sodium_real": real_sodium_per_h,
             "carbs_status": _nutrition_status(real_carbs_per_h, targets.get("carbs_g_per_h", 0)),
@@ -2047,7 +2078,7 @@ async def add_catalog_product_to_plan(
 ):
     """Add a catalogue product from the race's nutrition card, re-render the card."""
     route = await _get_owned_route(route_id, user, db)
-    if not route:
+    if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     await _add_from_catalog(key, db, user)
     ctx = await _nutrition_card_context(request, route, db, user)
@@ -2205,6 +2236,7 @@ async def save_nutrition_plan(
         "dose_mg": max(0.0, _to_float(form.get("caffeine_dose_mg"), 50)),
         "boost_dawn": bool(form.get("caffeine_boost_dawn")),
     }
+    request._pf_settings_open = bool(form.get("settings_open"))
     route.nutrition_json = {
         "targets": targets, "items": items,
         "flask_capacity_ml": flask_capacity_ml, "refills": sorted(set(refills)),
