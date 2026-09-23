@@ -91,6 +91,13 @@
     <div class="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div id="map-wrap" class="hidden relative">
             <div id="courseMap" class="h-[220px] lg:h-[340px] map-container"></div>
+            <div id="fly-hud" class="hidden absolute left-1/2 -translate-x-1/2 bottom-3 z-10 items-center gap-2 rounded-full bg-gray-900/85 text-white pl-2 pr-3 py-1.5 shadow-lg backdrop-blur text-xs whitespace-nowrap max-w-[calc(100%-24px)]">
+                <button type="button" id="fly-play" onclick="window._sim && window._sim.flyToggle()" class="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 inline-flex items-center justify-center" aria-label="Lecture / pause"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path id="fly-icon" d="M8 5v14l11-7z"/></svg></button>
+                <button type="button" id="fly-speed" onclick="window._sim && window._sim.flySpeed()" class="h-7 px-2 rounded-full bg-white/15 hover:bg-white/25 tabular-nums font-semibold" title="Vitesse du survol">1×</button>
+                <div class="w-24 lg:w-40 h-1 rounded-full bg-white/25 overflow-hidden cursor-pointer" id="fly-bar" onclick="window._sim && window._sim.flySeek(event)"><div id="fly-prog" class="h-full bg-amber-400" style="width:0%"></div></div>
+                <span id="fly-text" class="tabular-nums truncate"></span>
+                <button type="button" onclick="window._sim && window._sim.flyStop()" class="w-7 h-7 rounded-full hover:bg-white/20 inline-flex items-center justify-center" aria-label="Quitter le survol"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
             <button type="button" onclick="window._sim && window._sim.toggleMap(false)" class="map-close absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white shadow items-center justify-center text-gray-700" aria-label="Fermer la carte">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
@@ -210,6 +217,11 @@ window._sim = {};
             onAdd: function () { var d = document.createElement('div'); d.className = 'maplibregl-ctrl'; var b = document.createElement('button'); b.type = 'button'; b.className = 'map-ctl'; b.textContent = '3D'; b.title = 'Relief en 3D'; b.setAttribute('aria-pressed', terrain3d ? 'true' : 'false'); b.onclick = function () { setTerrain3d(!terrain3d); }; d.appendChild(b); ctl3dBtn = b; return d; },
             onRemove: function () { ctl3dBtn = null; }
         }, 'top-left');
+        map.addControl({
+            onAdd: function () { var d = document.createElement('div'); d.className = 'maplibregl-ctrl'; var b = document.createElement('button'); b.type = 'button'; b.className = 'map-ctl'; b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="margin-right:5px"><path d="M8 5v14l11-7z"/></svg>Survol'; b.title = 'Survoler le parcours en 3D'; b.onclick = function () { flyStart(); }; d.appendChild(b); return d; },
+            onRemove: function () {}
+        }, 'top-left');
+        ['dragstart', 'wheel', 'touchstart', 'rotatestart', 'pitchstart'].forEach(function (evn) { map.on(evn, function (e) { if (e && e.originalEvent && fly.on && !fly.paused) flyPause(true); }); /* the user's hand, not the camera itself */ });
         var hoverEl = document.createElement('div');
         hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
         hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
@@ -266,6 +278,94 @@ window._sim = {};
         } catch (e) { console.error('terrain', e); }
         if (ctl3dBtn) ctl3dBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
+    // ── FLYOVER: a camera behind the runner, low over the terrain, along the whole course ──
+    var fly = { on: false, paused: false, km: 0, speed: 1, raf: null, last: 0, bearing: null, base: 0 };
+    var FLY_SPEEDS = [1, 2, 4, 8];
+    function posAtKm(km) {
+        var n = routeCoords.length; if (!n) return null;
+        var i = idxAtKm(km), a = routeCoords[i], b = routeCoords[Math.min(n - 1, i + 1)];
+        var span = (b[2] - a[2]) || 1, t = Math.max(0, Math.min(1, (km - a[2]) / span));
+        return { lng: a[1] + (b[1] - a[1]) * t, lat: a[0] + (b[0] - a[0]) * t };
+    }
+    function bearingBetween(a, b) {
+        var toR = Math.PI / 180, dL = (b.lng - a.lng) * toR, la1 = a.lat * toR, la2 = b.lat * toR;
+        var y = Math.sin(dL) * Math.cos(la2), x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dL);
+        return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+    function offsetLngLat(p, bearingDeg, meters) {
+        var toR = Math.PI / 180, br = bearingDeg * toR, dLat = meters * Math.cos(br) / 111320, dLng = meters * Math.sin(br) / (111320 * Math.cos(p.lat * toR));
+        return { lng: p.lng + dLng, lat: p.lat + dLat };
+    }
+    function terrainAt(p, fallbackKm) {
+        var e = null; try { e = map.queryTerrainElevation(p); } catch (err) {}
+        if (e === null || e === undefined || isNaN(e)) e = elevAt(fallbackKm) * 1.35;
+        return e;
+    }
+    function flyCamera(km, smooth) {
+        if (!map) return;
+        var here = posAtKm(km), ahead = posAtKm(Math.min(totalDistKm, km + 0.35)), back = posAtKm(Math.max(0, km - 0.35));
+        if (!here || !ahead) return;
+        var target = bearingBetween(back, ahead);
+        if (fly.bearing === null || !smooth) fly.bearing = target;
+        else { var d = ((target - fly.bearing + 540) % 360) - 180; fly.bearing += d * 0.08; }
+        var dist = isCompact() ? 420 : 560, camPos = offsetLngLat(here, fly.bearing + 180, dist);
+        var groundHere = terrainAt(here, km), groundCam = terrainAt(camPos, Math.max(0, km - 0.5));
+        var alt = Math.max(groundHere + 220, groundCam + 120);
+        try {
+            var cam = map.getFreeCameraOptions();
+            cam.position = maplibregl.MercatorCoordinate.fromLngLat(camPos, alt);
+            cam.lookAtPoint(ahead, [0, 0, 1]);
+            map.setFreeCameraOptions(cam);
+        } catch (e) { map.jumpTo({ center: here, bearing: fly.bearing, pitch: 60, zoom: 14 }); }
+        if (hoverMarker) { hoverMarker.setLngLat(here); hoverMarker.getElement().style.display = 'block'; }
+        scheduleHover(km, false);
+        flyHud(km);
+    }
+    function flyHud(km) {
+        var t = document.getElementById('fly-text'), pr = document.getElementById('fly-prog'); if (!t) return;
+        pr.style.width = (km / totalDistKm * 100).toFixed(1) + '%';
+        var clk = planData ? clockAtKm(km) : null, next = null;
+        for (var i = 0; i < checkpoints.length; i++) { if (checkpoints[i].distance_km > km + 0.05) { next = checkpoints[i]; break; } }
+        var nextTxt = next ? ' · ' + (checkpoints.indexOf(next) + 1) + ' ' + next.name + ' dans ' + fmtKm(next.distance_km - km) + ' km' : ' · arrivée dans ' + fmtKm(totalDistKm - km) + ' km';
+        t.textContent = 'km ' + fmtKm(km) + ' · ' + fmtM(elevAt(km)) + ' m' + (clk !== null ? ' · ' + fmtClock(clk) : '') + nextTxt;
+    }
+    function flyStep(ts) {
+        if (!fly.on) return;
+        if (!fly.paused) {
+            var dt = fly.last ? Math.min(0.1, (ts - fly.last) / 1000) : 0;
+            fly.km += fly.base * fly.speed * dt;
+            if (fly.km >= totalDistKm) { fly.km = totalDistKm; flyCamera(fly.km, true); flyPause(true); return; }
+            flyCamera(fly.km, true);
+        }
+        fly.last = ts; fly.raf = requestAnimationFrame(flyStep);
+    }
+    function flyStart() {
+        toggleMap(true); if (!map) return;
+        var wrap = document.getElementById('map-wrap'), hud = document.getElementById('fly-hud');
+        wrap.classList.add('flying'); hud.classList.remove('hidden'); hud.classList.add('flex');
+        setTimeout(function () { try { map.resize(); } catch (e) {} }, 0);
+        if (!terrain3d) setTerrain3d(true);
+        fly.on = true; fly.paused = false; fly.bearing = null; fly.last = 0;
+        fly.base = totalDistKm / 90;  // 1× = the whole course in 90 s
+        if (fly.km >= totalDistKm - 0.01) fly.km = 0;
+        flyIcon();
+        var go = function () { flyCamera(fly.km, false); if (fly.raf) cancelAnimationFrame(fly.raf); fly.raf = requestAnimationFrame(flyStep); };
+        if (map.getSource && map.getSource('dem')) go(); else map.once('load', go);
+    }
+    function flyPause(p) { fly.paused = p === undefined ? !fly.paused : !!p; fly.last = 0; flyIcon(); }
+    function flyToggle() { if (!fly.on) { flyStart(); return; } if (fly.paused && fly.km >= totalDistKm - 0.01) fly.km = 0; flyPause(); }
+    function flyIcon() { var ic = document.getElementById('fly-icon'); if (ic) ic.setAttribute('d', fly.paused ? 'M8 5v14l11-7z' : 'M6 5h4v14H6zM14 5h4v14h-4z'); }
+    function flySpeed() { var i = FLY_SPEEDS.indexOf(fly.speed); fly.speed = FLY_SPEEDS[(i + 1) % FLY_SPEEDS.length]; var b = document.getElementById('fly-speed'); if (b) b.textContent = fly.speed + '×'; }
+    function flySeek(ev) { var bar = document.getElementById('fly-bar'), r = bar.getBoundingClientRect(); fly.km = Math.max(0, Math.min(totalDistKm, (ev.clientX - r.left) / r.width * totalDistKm)); fly.bearing = null; flyCamera(fly.km, false); }
+    function flyScrub(km) { if (fly.on && fly.paused) { fly.km = km; flyCamera(km, true); } }
+    function flyStop() {
+        if (fly.raf) cancelAnimationFrame(fly.raf); fly.raf = null; fly.on = false; fly.paused = false;
+        var wrap = document.getElementById('map-wrap'), hud = document.getElementById('fly-hud');
+        if (wrap) wrap.classList.remove('flying'); if (hud) { hud.classList.add('hidden'); hud.classList.remove('flex'); }
+        if (hoverMarker) hoverMarker.getElement().style.display = 'none'; hideCross(); highlightRow(null);
+        setTimeout(function () { try { map.resize(); } catch (e) {} }, 0);
+        if (map) { var lons = routeCoords.map(function (c) { return c[1]; }), lats = routeCoords.map(function (c) { return c[0]; }); map.fitBounds([[Math.min.apply(null, lons), Math.min.apply(null, lats)], [Math.max.apply(null, lons), Math.max.apply(null, lats)]], { padding: 48, pitch: terrain3d ? 62 : 0, bearing: terrain3d ? -25 : 0, duration: 900 }); }
+    }
     function setTerrain3d(on) { terrain3d = !!on; try { localStorage.setItem('pf.map3d', on ? '1' : '0'); } catch (e) {} applyTerrain(terrain3d, true); }
     function flyToCp(i) {
         var cp = checkpoints[i]; if (!cp) return;
@@ -289,6 +389,7 @@ window._sim = {};
         var wrap = document.getElementById('map-wrap'), btn = document.getElementById('map-toggle'); if (!wrap) return;
         var show = (force === undefined) ? wrap.classList.contains('hidden') : !!force;
         if (show && !wrap.classList.contains('hidden') && (!isCompact() || wrap.classList.contains('map-full'))) return;
+        if (!show && fly.on) flyStop();
         wrap.classList.toggle('hidden', !show);
         wrap.classList.toggle('map-full', show && isCompact());
         document.body.style.overflow = (show && isCompact()) ? 'hidden' : '';
@@ -485,6 +586,7 @@ window._sim = {};
         hoverKm = km; hoverFromChart = fromChart; if (hoverRaf) return;
         hoverRaf = requestAnimationFrame(function () {
             hoverRaf = null; showCross(hoverKm); highlightRow(hoverKm);
+            if (hoverFromChart) flyScrub(hoverKm);
             if (hoverFromChart && hoverMarker) { var c = findCoordAtKm(hoverKm); if (c) { hoverMarker.setLngLat([c[1], c[0]]); hoverMarker.getElement().style.display = 'block'; } }
         });
     }
@@ -946,7 +1048,7 @@ window._sim = {};
         document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
         var pp = document.getElementById('poste-pop'); if (pp && !pp.classList.contains('hidden') && !pp.contains(t) && !(t.closest && t.closest('[data-poste]'))) closePoste();
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); if (fly.on) { flyStop(); return; } var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -970,7 +1072,7 @@ window._sim = {};
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
     recalc();
     maybeFetchWeather();
-    window._sim = { openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { flyStart: flyStart, flyToggle: flyToggle, flyStop: flyStop, flySpeed: flySpeed, flySeek: flySeek, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>
