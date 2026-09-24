@@ -1,303 +1,121 @@
 {% extends "base.html" %}
 
-{% block title %}Simulateur — PaceForge{% endblock title %}
+{% block title %}Courses — PaceForge{% endblock title %}
 
 {% block head %}
-<!-- MapLibre GL JS + ApexCharts -->
 <style>
-.maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
-.map-container { position: relative; z-index: 0; overflow: hidden; }
 .sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sim-num { -moz-appearance: textfield; appearance: textfield; }
 </style>
 {% endblock %}
 
 {% block content %}
-{% macro route_list(routes) %}
-        <div class="mb-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Mes courses</h3>
-            <div class="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
-                {% for r in routes %}
-                <div class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors" id="route-card-{{ r.id }}">
-                    <a href="/simulator/routes/{{ r.id }}" class="flex-1 min-w-0 block">
-                        <p class="font-medium text-[15px] text-gray-900 truncate" id="route-name-{{ r.id }}">{{ r.name }}</p>
-                        <p class="text-xs text-gray-500 tabular-nums mt-0.5">
-                            {{ '%.0f'|format(r.total_distance_km) }} km · <span class="text-red-500">+{{ '{:,}'.format(r.total_elevation_gain|int).replace(',', ' ') }} m</span>{% if r.target_time_s %} · obj. {{ '%dh%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}{% endif %}
-                        </p>
-                    </a>
-                    <div class="text-right shrink-0">
-                        {% if r.race_date and r.days_to is not none %}
-                        {% set rd = r.race_date.split('-') %}
-                        <p class="text-xs tabular-nums {% if r.days_to is not none and r.days_to < 0 %}text-gray-400{% else %}text-gray-700{% endif %}">{{ rd[2]|int }} {{ ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'][rd[1]|int - 1] }} {{ rd[0] }}</p>
-                        {% if r.days_to is not none %}
-                        <p class="text-[11px] tabular-nums {% if r.days_to < 0 %}text-gray-400{% elif r.days_to <= 14 %}text-amber-700 font-medium{% else %}text-gray-500{% endif %}">{% if r.days_to == 0 %}aujourd'hui{% elif r.days_to == 1 %}demain{% elif r.days_to > 1 %}dans {{ r.days_to }} j{% else %}il y a {{ -r.days_to }} j{% endif %}</p>
-                        {% endif %}
-                        {% else %}
-                        <p class="text-xs text-gray-400">sans date</p>
-                        {% endif %}
-                    </div>
-                    <div class="flex gap-0.5 shrink-0 lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                        <button onclick="renameRoute({{ r.id }})" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100" title="Renommer">
-                            <i data-lucide="pencil" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteRoute({{ r.id }}, this)" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-gray-100" title="Supprimer">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-{% endmacro %}
+{% set routes = saved_routes | rejectattr('sport_type', 'equalto', 'triathlon') | list %}
 <div class="space-y-6">
     <div>
         <h1 class="text-lg font-semibold tracking-tight">Courses</h1>
         <p class="text-sm text-gray-500 mt-0.5">Ton plan de course, au mètre près.</p>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
-        <button id="tab-trail" onclick="switchTab('trail')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">
-            Course à pied
-        </button>
-        <button id="tab-power" onclick="switchTab('power')"
-                class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">
-            Vélo
-        </button>
-    </div>
-
-    <!-- Trail Tab -->
-    <div id="panel-trail">
-        <!-- Saved routes -->
-        {% set run_routes = saved_routes | rejectattr('sport_type', 'equalto', 'triathlon') | rejectattr('sport_type', 'equalto', 'bike') | list %}
-        {% if run_routes %}{{ route_list(run_routes) }}{% endif %}
-        <!-- GPX Upload -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Nouvelle course</h3>
-            <p class="text-sm text-gray-500 -mt-2 mb-4">Glisse le GPX de la course : tu obtiens ton plan de passage tout de suite, calé sur ton historique Strava.</p>
-
-            <form hx-post="/partials/simulator/gpx-upload"
-                  hx-target="#gpx-error"
-                  hx-swap="innerHTML"
-                  hx-encoding="multipart/form-data"
-                  hx-indicator="#gpx-loading">
-
-                <div id="gpx-drop-zone"
-                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
-                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
-                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
-                     ondrop="handleDrop(event)">
-
-                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
-                    </svg>
-
-                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX ici</p>
-                    <p class="text-xs text-gray-400 mb-3">ou</p>
-
-                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateFileName(this); if (this.files.length && window.htmx) htmx.trigger(this.form, 'submit')">
-                        Choisir un fichier
-                    </label>
-
-                    <p id="file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
-                </div>
-
-                <div class="flex items-center justify-between mt-4">
-                    <button type="submit"
-                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
-                            id="gpx-submit-btn">
-                        Créer mon plan
-                        <span id="gpx-loading" class="htmx-indicator ml-1.5">
-                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                        </span>
-                    </button>
-                </div>
-                <div id="gpx-error" class="mt-3"></div>
-            </form>
-        </div>
-
-    </div>
-
-    <!-- Power Tab -->
-    <div id="panel-power" class="hidden">
-        <!-- FTP Estimate -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm mb-4">
-            <div class="flex items-center justify-between gap-4">
-                <div>
-                    <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">FTP{% if ftp and ftp.method == 'saisie' %} saisie{% elif ftp %} estimée{% endif %}</h3>
-                    {% if ftp %}<p class="text-2xl font-bold tabular-nums">{{ "%.0f"|format(ftp.estimated_ftp) }} <span class="text-sm font-normal text-gray-400">W</span></p>
-                    {% else %}<p class="text-2xl font-bold tabular-nums text-gray-300">—</p>{% endif %}
-                </div>
-                <div class="text-right">
-                    {% if ftp and ftp.method == 'saisie' %}
-                    <p class="text-xs text-gray-400">Ta valeur, <a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">modifiable dans Réglages</a>.</p>
-                    {% elif ftp %}
-                    <p class="text-xs text-gray-400">{{ ftp.method }} · fiabilité {{ ftp.confidence | lower }}{% if ftp.rides_used %} · {{ ftp.rides_used }} sortie{{ 's' if ftp.rides_used > 1 }} avec capteur{% endif %}</p>
-                    <p class="text-xs text-gray-400 mt-0.5">D'après « {{ ftp.activity_name }} »{% if ftp.activity_date %} · {{ ftp.activity_date.strftime('%d/%m/%Y') }}{% endif %}</p>
-                    {% if ftp.is_stale %}
-                    <p class="text-[11px] text-amber-600 mt-1">Il y a {{ ftp.age_months }} mois : probablement dépassée. Une sortie récente avec capteur de puissance la mettra à jour.</p>
-                    {% endif %}
-                    <p class="text-[11px] text-gray-400 mt-1">Pas d'accord ? <a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">Saisis ta FTP</a>, elle prendra le dessus.</p>
-                    {% else %}
-                    <p class="text-xs text-gray-500">Aucune sortie avec capteur de puissance sur Strava : la puissance estimée par Strava n'est pas utilisée.</p>
-                    <p class="text-[11px] text-gray-400 mt-1"><a href="/settings" class="underline decoration-gray-300 hover:text-gray-700">Saisis ta FTP dans Réglages</a> pour planifier à la puissance.</p>
-                    {% endif %}
-                </div>
+    {% if routes %}
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+        {% for r in routes %}
+        {% set bike = r.sport_type == 'bike' %}
+        <div class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors" id="route-card-{{ r.id }}">
+            <span class="w-8 h-8 rounded-full inline-flex items-center justify-center shrink-0 {% if bike %}bg-sky-50 text-sky-600{% else %}bg-amber-50 text-amber-600{% endif %}" title="{% if bike %}Vélo{% else %}Course à pied{% endif %}">
+                {% if bike %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>
+                {% else %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg>{% endif %}
+            </span>
+            <a href="/simulator/routes/{{ r.id }}" class="flex-1 min-w-0 block">
+                <p class="font-medium text-[15px] text-gray-900 truncate" id="route-name-{{ r.id }}">{{ r.name }}</p>
+                <p class="text-xs text-gray-500 tabular-nums mt-0.5">
+                    {{ '%.0f'|format(r.total_distance_km) }} km · <span class="text-red-500">+{{ '{:,}'.format(r.total_elevation_gain|int).replace(',', ' ') }} m</span>{% if r.target_time_s %} · obj. {{ '%dh%02d'|format(r.target_time_s // 3600, (r.target_time_s % 3600) // 60) }}{% endif %}
+                </p>
+            </a>
+            <div class="text-right shrink-0">
+                {% if r.race_date and r.days_to is not none %}
+                {% set rd = r.race_date.split('-') %}
+                <p class="text-xs tabular-nums {% if r.days_to < 0 %}text-gray-400{% else %}text-gray-700{% endif %}">{{ rd[2]|int }} {{ ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'][rd[1]|int - 1] }} {{ rd[0] }}</p>
+                <p class="text-[11px] tabular-nums {% if r.days_to < 0 %}text-gray-400{% elif r.days_to <= 14 %}text-amber-700 font-medium{% else %}text-gray-500{% endif %}">{% if r.days_to == 0 %}aujourd'hui{% elif r.days_to == 1 %}demain{% elif r.days_to > 1 %}dans {{ r.days_to }} j{% else %}il y a {{ -r.days_to }} j{% endif %}</p>
+                {% else %}
+                <p class="text-xs text-gray-400">sans date</p>
+                {% endif %}
+            </div>
+            <div class="flex gap-0.5 shrink-0 lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button onclick="renameRoute({{ r.id }})" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100" title="Renommer">
+                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteRoute({{ r.id }}, this)" class="w-9 h-9 lg:w-8 lg:h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-gray-100" title="Supprimer">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
             </div>
         </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 
-        {% set bike_routes = saved_routes | selectattr('sport_type', 'equalto', 'bike') | list %}
-        {% if bike_routes %}{{ route_list(bike_routes) }}{% endif %}
-        <!-- GPX Upload (Bike) -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-4">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Importer un parcours GPX velo</h3>
-            <p class="text-xs text-gray-500 mb-3">Estimation puissance/temps par segment avec relief et vent (style BestBikeSplit / myWindsock).</p>
-
-            <form hx-post="/partials/simulator/bike-gpx-upload"
-                  hx-target="#bike-gpx-result"
-                  hx-swap="innerHTML"
-                  hx-encoding="multipart/form-data"
-                  hx-indicator="#bike-gpx-loading">
-                <div id="bike-gpx-drop-zone"
-                     class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
-                     ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
-                     ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
-                     ondrop="handleBikeDrop(event)">
-                    <svg class="mx-auto w-8 h-8 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
-                    </svg>
-                    <p class="text-sm text-gray-500 mb-1">Glissez un fichier GPX velo ici</p>
-                    <p class="text-xs text-gray-400 mb-3">ou</p>
-                    <label class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="updateBikeFileName(this); if (this.files.length && window.htmx) htmx.trigger(this.form, 'submit')">
-                        Choisir un fichier
-                    </label>
-                    <p id="bike-file-name" class="text-xs text-gray-500 mt-2 hidden"></p>
-                </div>
-                <div class="flex items-center justify-between mt-4">
-                    <button type="submit"
-                            class="h-9 px-5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
-                            id="bike-gpx-submit-btn">
-                        Analyser le parcours
-                        <span id="bike-gpx-loading" class="htmx-indicator ml-1.5">
-                            <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                        </span>
-                    </button>
-                </div>
-            </form>
+    {# one drop zone; the sport decides which planner reads the GPX #}
+    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Nouvelle course</h3>
+            <div class="inline-flex items-center rounded-full bg-gray-100 p-0.5 text-xs leading-none" role="radiogroup" aria-label="Sport">
+                <button type="button" id="sport-run" role="radio" aria-checked="true" onclick="setSport('run')" class="px-3 py-1.5 rounded-full bg-white shadow-sm text-gray-900 font-medium">Course à pied</button>
+                <button type="button" id="sport-bike" role="radio" aria-checked="false" onclick="setSport('bike')" class="px-3 py-1.5 rounded-full text-gray-500">Vélo</button>
+            </div>
         </div>
-
-        <!-- Bike GPX Result -->
-        <div id="bike-gpx-result" class="mb-4"></div>
-
+        <form id="gpx-form" hx-post="/partials/simulator/gpx-upload" hx-target="#gpx-error" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-indicator="#gpx-loading">
+            <div id="gpx-drop-zone" class="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-gray-400 transition-colors"
+                 ondragover="event.preventDefault(); this.classList.add('border-gray-400', 'bg-gray-50')"
+                 ondragleave="this.classList.remove('border-gray-400', 'bg-gray-50')"
+                 ondrop="handleDrop(event)">
+                <svg class="mx-auto w-7 h-7 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                <p class="text-sm text-gray-600" id="drop-label">Glisse le GPX de la course : le plan de passage est prêt tout de suite, calé sur ton historique Strava.</p>
+                <label class="mt-3 inline-flex items-center px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm">
+                    <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="if (this.files.length && window.htmx) htmx.trigger(this.form, 'submit')">
+                    Choisir un fichier GPX
+                    <span id="gpx-loading" class="htmx-indicator ml-1.5"><svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg></span>
+                </label>
+            </div>
+            <div id="gpx-error" class="mt-3"></div>
+        </form>
     </div>
 </div>
 {% endblock content %}
 
 {% block scripts %}
 <script>
-function switchTab(tab) {
-    ['trail', 'power'].forEach(function (t) {
-        var panel = document.getElementById('panel-' + t), btn = document.getElementById('tab-' + t);
-        if (panel) panel.classList.toggle('hidden', t !== tab);
-        if (!btn) return;
-        btn.classList.toggle('bg-white', t === tab);
-        btn.classList.toggle('text-gray-900', t === tab);
-        btn.classList.toggle('shadow-sm', t === tab);
-        btn.classList.toggle('text-gray-500', t !== tab);
-    });
+var SPORT_URL = { run: '/partials/simulator/gpx-upload', bike: '/partials/simulator/bike-gpx-upload' };
+var SPORT_LABEL = { run: 'Glisse le GPX de la course : le plan de passage est prêt tout de suite, calé sur ton historique Strava.', bike: 'Glisse le GPX du parcours : puissance et heures de passage avec le relief et le vent.' };
+function setSport(s) {
+    var f = document.getElementById('gpx-form'); f.setAttribute('hx-post', SPORT_URL[s]); if (window.htmx) htmx.process(f);
+    document.getElementById('drop-label').textContent = SPORT_LABEL[s];
+    ['run', 'bike'].forEach(function (k) { var b = document.getElementById('sport-' + k), on = k === s; b.setAttribute('aria-checked', on ? 'true' : 'false'); b.className = 'px-3 py-1.5 rounded-full ' + (on ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500'); });
+    try { localStorage.setItem('pf.sport', s); } catch (e) {}
 }
-
-function updateFileName(input) {
-    const name = input.files[0]?.name;
-    const el = document.getElementById('file-name');
-    const btn = document.getElementById('gpx-submit-btn');
-    if (name) {
-        el.textContent = name;
-        el.classList.remove('hidden');
-        btn.disabled = false;
-    }
-}
-
+try { if (localStorage.getItem('pf.sport') === 'bike') setSport('bike'); } catch (e) {}
 function handleDrop(e) {
     e.preventDefault();
-    e.target.classList.remove('border-gray-400', 'bg-gray-50');
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.gpx')) {
-        const input = document.querySelector('#panel-trail input[name="gpx_file"]');
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        input.files = dt.files;
-        updateFileName(input);
+    var z = document.getElementById('gpx-drop-zone'); z.classList.remove('border-gray-400', 'bg-gray-50');
+    var file = e.dataTransfer.files[0];
+    if (file && /\.gpx$/i.test(file.name)) {
+        var input = document.querySelector('#gpx-form input[name="gpx_file"]'), dt = new DataTransfer();
+        dt.items.add(file); input.files = dt.files;
+        if (window.htmx) htmx.trigger(input.form, 'submit');
     }
 }
-
-function updateBikeFileName(input) {
-    const name = input.files[0]?.name;
-    const el = document.getElementById('bike-file-name');
-    if (name) {
-        el.textContent = name;
-        el.classList.remove('hidden');
-    }
-}
-
-function handleBikeDrop(e) {
-    e.preventDefault();
-    e.target.classList.remove('border-gray-400', 'bg-gray-50');
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.gpx')) {
-        const input = document.querySelector('#panel-power input[name="gpx_file"]');
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        input.files = dt.files;
-        updateBikeFileName(input);
-    }
-}
-
 function renameRoute(routeId) {
-    var current = document.getElementById('route-name-' + routeId).textContent;
+    var el = document.getElementById('route-name-' + routeId), current = el.textContent;
     var name = prompt('Nouveau nom :', current);
     if (!name || name === current) return;
-    var body = new URLSearchParams();
-    body.append('name', name);
+    var body = new URLSearchParams(); body.append('name', name);
     fetch('/api/simulator/routes/' + routeId, { method: 'PATCH', body: body })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.name) document.getElementById('route-name-' + routeId).textContent = data.name;
-        });
+        .then(function (r) { return r.json(); })
+        .then(function (data) { if (data.name) el.textContent = data.name; });
 }
-
 function deleteRoute(routeId, btn) {
-    if (!confirm('Supprimer ce parcours ?')) return;
+    if (!confirm('Supprimer cette course ?')) return;
     fetch('/api/simulator/routes/' + routeId, { method: 'DELETE' })
-        .then(function(r) { if (!r.ok) return; var c = document.getElementById('route-card-' + routeId); if (c) c.remove(); });
-}
-
-function toggleCalcMode(mode) {
-    const timeGroup = document.getElementById('time-input-group');
-    const wattsGroup = document.getElementById('watts-input-group');
-    const timeInput = timeGroup.querySelector('input');
-    const wattsInput = wattsGroup.querySelector('input');
-
-    if (mode === 'time') {
-        timeGroup.classList.remove('hidden');
-        wattsGroup.classList.add('hidden');
-        timeInput.disabled = false;
-        wattsInput.disabled = true;
-    } else {
-        timeGroup.classList.add('hidden');
-        wattsGroup.classList.remove('hidden');
-        timeInput.disabled = true;
-        wattsInput.disabled = false;
-    }
+        .then(function (r) { if (!r.ok) return; var c = document.getElementById('route-card-' + routeId); if (c) c.remove(); });
 }
 </script>
 {% endblock scripts %}

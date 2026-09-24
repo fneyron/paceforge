@@ -75,7 +75,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
 async def test_pacing_guide_and_params(as_user: AsyncClient):
     route_id = await _create_route(as_user)
     r = await as_user.get(f"/partials/simulator/pacing/{route_id}")
-    assert r.status_code == 200 and "Alertes de raideur" in r.text and "Escaliers" in r.text
+    assert r.status_code == 200 and "Raide ≥" in r.text and "Escaliers" in r.text
     r = await as_user.post(f"/api/simulator/routes/{route_id}/params", data={
         "hr_cap_climb": 140, "hr_cap_flat": 136, "hr_release_descent": 128, "walk_grade": 20,
         "scenario_fast_pct": 4, "scenario_safe_pct": 12, "switch_km": 10.0,
@@ -164,7 +164,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "Points de passage" in html and "Nutrition" in html and "Débrief" in html and "Exporter" in html
+    assert ("Plan de passage" in html or "Feuille de route" in html) and "Nutrition" in html and "Débrief" in html and "Exporter" in html
     assert "Calculateur mono-segment" not in html
     # objective → required power in the hero
     r = await as_user.post(f"/api/simulator/routes/{route_id}/bike", data={

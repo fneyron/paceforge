@@ -37,6 +37,13 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         ).where(Activity.user_id == user.id)
     )
     total, with_splits, first_date, last_date = stats_q.one()
+    from app.services.power_calculator import ftp_for_user
+
+    try:
+        ftp_est = await ftp_for_user(db, user)
+    except Exception:
+        logger.exception("FTP estimate failed on the settings page")
+        ftp_est = None
 
     by_sport_q = await db.execute(
         select(Activity.sport_type, func.count(Activity.id))
@@ -55,6 +62,7 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         "last_date": last_date,
         "families": [(f, families[f]) for f in _FAMILY_ORDER if families.get(f)],
     }
+    flags.setdefault("ftp_est", ftp_est)
     return {"request": request, "user": user, "strava_stats": strava_stats, **flags}
 
 

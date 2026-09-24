@@ -137,6 +137,13 @@
             <p class="text-amber-700">Aucune donnée Strava exploitable : modèle générique tant que tes activités ne sont pas synchronisées.</p>
             {% endif %}
             {% if saved_route_id %}
+            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()"
+                  class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3 border-t border-gray-100" title="Les colonnes Optimiste et Sécurité du tableau, et le point où choisir entre les deux">
+                <span class="font-medium text-gray-700">Scénarios</span>
+                <label class="inline-flex items-center gap-1 whitespace-nowrap text-emerald-700">optimiste −<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus vite" class="sim-num w-9 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900"> %</label>
+                <label class="inline-flex items-center gap-1 whitespace-nowrap text-blue-700">sécurité +<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="sim-num w-9 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900"> %</label>
+                <label class="inline-flex items-center gap-1 whitespace-nowrap">bascule <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point de bascule" class="h-7 pl-1.5 pr-6 rounded-md border border-gray-200 text-xs text-gray-900 max-w-[180px]"><option value="">auto (60 % du parcours)</option></select></label>
+            </form>
             <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="inline">
                 <label class="h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer" title="Recharger le GPX : points, objectif et nutrition sont conservés">
                     Mettre à jour la trace GPX
@@ -825,7 +832,16 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet(); fillSwitchSelect();
+    }
+    // the switch-point choice follows the checkpoints
+    function fillSwitchSelect() {
+        var sel = document.querySelector('[data-switch-select]'); if (!sel) return;
+        var cur = sel.value || sel.getAttribute('data-value') || '';
+        while (sel.options.length > 1) sel.remove(1);
+        checkpoints.forEach(function (cp) { var o = document.createElement('option'); o.value = cp.distance_km; o.textContent = cp.name + ' · km ' + fmtKm(cp.distance_km); sel.appendChild(o); });
+        var found = false; Array.prototype.forEach.call(sel.options, function (o) { if (cur !== '' && Math.abs(parseFloat(o.value) - parseFloat(cur)) < 0.15) { o.selected = true; found = true; } });
+        if (!found) sel.selectedIndex = 0;
     }
 
     // ── OBJECTIVE: the number is the control ──

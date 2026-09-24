@@ -107,3 +107,31 @@ async def test_debrief_refuses_an_activity_of_another_distance(as_user: AsyncCli
     await db_session.flush()
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
     assert r.status_code == 200 and "pas le même parcours" in r.text
+
+
+@pytest.mark.asyncio
+async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab(as_user: AsyncClient):
+    route_id = await _create_route(as_user)
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/scenarios", data={"scenario_fast_pct": "7", "scenario_safe_pct": "12", "switch_km": CPS[1]["distance_km"]})
+    assert r.status_code == 204
+    r = await as_user.get(f"/simulator/routes/{route_id}")
+    assert r.status_code == 200 and 'name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="7"' in r.text
+    # the pacing dials no longer carry the scenarios, and saving them must not reset the margins
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/params", data={"hr_cap_climb": "150", "hr_cap_flat": "140", "hr_release_descent": "", "walk_grade": "18"})
+    assert r.status_code == 200 and "scenario_fast_pct" not in r.text
+    r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
+    assert r.status_code == 200 and "+12 % de temps" in r.text
+    # products: add, edit, delete from the race's nutrition tab
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": "", "volume_ml": ""})
+    assert r.status_code == 200 and "Gel maison" in r.text and 'id="pantry-box" class="rounded-xl border border-gray-200 bg-white shadow-sm" open' in r.text
+    pid = int(r.text.split("/products/")[1].split("\"")[0].split("/")[0])
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40"})
+    assert r.status_code == 200 and "Gel maison 40" in r.text
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}/delete")
+    assert r.status_code == 200 and "Gel maison" not in r.text
+    r = await as_user.get("/nutrition", follow_redirects=False)
+    assert r.status_code == 303
+    r = await as_user.get("/simulator")
+    assert r.status_code == 200 and "Nouvelle course" in r.text and "FTP" not in r.text
+    r = await as_user.get("/settings")
+    assert r.status_code == 200

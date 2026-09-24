@@ -49,10 +49,10 @@
             <h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3>
             <div class="flex items-center gap-3">
                 {% if used %}<button type="submit" name="auto" value="1" class="text-[11px] text-gray-500 hover:text-gray-900 underline decoration-gray-300" title="Répartir la cible entre les produits cochés">répartir pour {{ targets.carbs_g_per_h }} g/h</button>{% endif %}
-                <a href="/nutrition" class="text-[11px] text-gray-500 hover:text-gray-900">{% if using_generic %}Ajouter mes produits{% else %}Garde-manger{% endif %} →</a>
+                <button type="button" onclick="var d=document.getElementById('pantry-box'); if(d){d.open=true; d.scrollIntoView({behavior:'smooth', block:'start'});}" class="text-[11px] text-gray-500 hover:text-gray-900">{% if using_generic %}Ajouter mes produits{% else %}Mes produits{% endif %} ↓</button>
             </div>
         </div>
-        {% if using_generic %}<p class="text-[11px] text-amber-700 mb-2">Produits génériques — ajoute les tiens dans le garde-manger pour un plan à ta sauce.</p>{% endif %}
+        {% if using_generic %}<p class="text-[11px] text-amber-700 mb-2">Produits génériques — ajoute les tiens (catalogue ci-dessous ou « Mes produits ») pour un plan à ta sauce.</p>{% endif %}
         <div class="divide-y divide-gray-50">
             {% for p in products %}
             <label class="flex items-center gap-3 py-2 cursor-pointer {% if not p.used %}text-gray-400{% endif %}">
@@ -210,4 +210,42 @@
     </details>
 </form>
 {% endif %}
+
+{# ── 7. The products themselves: label values, editable here (a change recomputes the plan) ── #}
+{% set pf = "sim-num h-8 px-1.5 rounded-lg border border-gray-200 text-sm tabular-nums text-center w-full text-gray-900" %}
+{% macro numfields(p) -%}
+<div class="col-span-3 sm:contents grid grid-cols-4 gap-2">
+    {% for name, lbl, step, ph, val in [('carbs_g', 'glucides g', '1', '0', (p.carbs_g|round|int) if p else ''), ('sodium_mg', 'sodium mg', '1', '0', (p.sodium_mg|round|int) if p else ''), ('volume_ml', 'volume ml', 'any', '—', (p.volume_ml|round|int) if p and p.volume_ml else ''), ('caffeine_mg', 'caféine mg', '5', '—', (p.caffeine_mg|round|int) if p and p.caffeine_mg else '')] %}
+    <label class="sm:contents text-[10px] text-gray-400"><span class="sm:hidden block mb-0.5">{{ lbl }}</span><input name="{{ name }}" type="number" step="{{ step }}" min="0" value="{{ val }}" placeholder="{{ ph }}" aria-label="{{ lbl }}" class="{{ pf }}"></label>
+    {% endfor %}
+</div>
+{%- endmacro %}
+<details id="pantry-box" class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if pantry_open %} open{% endif %}>
+    <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
+        <span class="text-sm text-gray-700">Mes produits</span>
+        <span class="text-xs text-gray-400 truncate">{{ pantry|length }} produit{{ 's' if pantry|length != 1 }} · valeurs de l'étiquette, par unité</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 border-t border-gray-100">
+        <div class="hidden sm:grid grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 text-[10px] text-gray-400 uppercase tracking-wider mb-1 px-0.5"><span>Produit</span><span>Type</span><span class="text-center">Gluc. g</span><span class="text-center">Na mg</span><span class="text-center">ml</span><span class="text-center">Caf. mg</span><span></span></div>
+        <div class="divide-y divide-gray-50">
+        {% for p in pantry %}
+        <form hx-post="/partials/simulator/nutrition/{{ route_id }}/products/{{ p.id }}" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:300ms, submit" novalidate
+              class="py-1.5 grid grid-cols-[minmax(0,1fr)_88px_28px] sm:grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 items-center">
+            <input name="name" value="{{ p.name }}" aria-label="Nom du produit" class="h-8 px-2 rounded-lg border border-gray-200 text-sm font-medium min-w-0 w-full">
+            <select name="kind" aria-label="Type" class="h-8 pl-1.5 pr-5 rounded-lg border border-gray-200 text-xs w-full">{% for val, lbl in [('gel','Gel'),('drink','Boisson'),('bar','Barre'),('solid','Solide'),('salt','Sel')] %}<option value="{{ val }}" {% if p.kind == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>
+            <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/products/{{ p.id }}/delete" hx-target="#nutrition-card" hx-swap="outerHTML" hx-confirm="Supprimer « {{ p.name }} » ?" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg text-gray-300 hover:text-red-600 hover:bg-gray-50 text-lg leading-none" title="Supprimer">×</button>
+            {{ numfields(p) }}
+        </form>
+        {% endfor %}
+        </div>
+        <form hx-post="/partials/simulator/nutrition/{{ route_id }}/products" hx-target="#nutrition-card" hx-swap="outerHTML" novalidate
+              class="mt-2 pt-2 border-t border-dashed border-gray-200 grid grid-cols-[minmax(0,1fr)_88px_28px] sm:grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 items-center">
+            <input name="name" placeholder="Nouveau produit" aria-label="Nom du nouveau produit" class="h-8 px-2 rounded-lg border border-gray-200 text-sm min-w-0 w-full">
+            <select name="kind" aria-label="Type" class="h-8 pl-1.5 pr-5 rounded-lg border border-gray-200 text-xs w-full"><option value="gel">Gel</option><option value="drink">Boisson</option><option value="bar">Barre</option><option value="solid">Solide</option><option value="salt">Sel</option></select>
+            <button type="submit" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg bg-gray-900 text-white text-lg leading-none" title="Ajouter">+</button>
+            {{ numfields(none) }}
+        </form>
+        <p class="mt-2 text-[10px] text-gray-400">Par unité : un gel, une flasque, une pastille. Modifier une valeur recalcule le plan.</p>
+    </div>
+</details>
 </div>
