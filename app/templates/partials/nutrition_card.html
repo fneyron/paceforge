@@ -1,90 +1,83 @@
 {% macro fmt_hm(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
 {% macro clock(seconds) %}{{ '%02d:%02d'|format((seconds % 86400) // 3600, (seconds % 3600) // 60) }}{% endmacro %}
 {% macro qty(x) %}{% if x == (x | int) %}{{ x | int }}{% else %}{{ ('%.1f' | format(x)).replace('.', ',') }}{% endif %}{% endmacro %}
+{% macro per_hour_words(x) %}{% if x >= 1 and x == (x | int) %}{{ x | int }} par heure{% elif x == 0.5 %}1 toutes les 2 h{% elif x < 1 %}{{ qty(x) }} par heure{% else %}{{ qty(x) }} par heure{% endif %}{% endmacro %}
 {% set kind_labels = {'gel':'gel','drink':'boisson','bar':'barre','solid':'solide','salt':'sel'} %}
 {% set used = products | selectattr('used') | list %}
-<div id="nutrition-card" class="space-y-4">
+{% set hours = plan.hours if plan and plan.hours else 0 %}
+{% set gel_eq = (targets.carbs_g_per_h / 25) | round | int %}
+<div id="nutrition-card" class="space-y-3">
 {% if not has_duration %}
 <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-500">Définis un objectif de temps (ou laisse l'estimation) pour calculer ton plan.</div>
 {% else %}
-<form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:250ms, submit" novalidate hx-validate="false" class="space-y-4">
+<form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:250ms, submit" novalidate hx-validate="false" class="space-y-3">
     <input type="hidden" name="settings_open" id="settings-open" value="{{ '1' if settings_open else '' }}">
-    {# ── 1. The numbers that matter, on one line ─────────────────────────── #}
+
+    {# ── 1. The objective, in words a first-timer understands ─────────────── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Glucides par heure</p>
-                <div class="mt-1 flex items-center gap-2">
-                    <input type="number" name="carbs_g_per_h" min="0" max="150" step="5" value="{{ targets.carbs_g_per_h }}"
-                           class="sim-num w-20 h-11 px-2 rounded-lg border border-gray-300 text-2xl font-bold tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <span class="text-sm text-gray-400">g/h</span>
-                    <div class="flex gap-1 ml-1">
-                        {% for c in carb_presets %}
-                        <button type="button" onclick="var f=this.form;f.querySelector('[name=carbs_g_per_h]').value={{ c }};f.requestSubmit()"
-                                class="h-7 px-2 rounded-md border text-[11px] font-medium {% if targets.carbs_g_per_h == c %}bg-gray-900 text-white border-gray-900{% else %}border-gray-200 text-gray-500 hover:bg-gray-50{% endif %}">{{ c }}</button>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                <div>
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wider">Plan</p>
-                    <p class="text-lg font-semibold tabular-nums {% if not used %}text-gray-300{% elif kpi.carbs_status == 'under' %}text-red-600{% elif kpi.carbs_status == 'over' %}text-amber-600{% else %}text-emerald-600{% endif %}">{{ kpi.carbs_real if used else '—' }}<span class="text-xs font-normal text-gray-400"> g/h</span></p>
-                </div>
-                <div>
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wider">Sodium</p>
-                    <p class="text-lg font-semibold tabular-nums {% if not used %}text-gray-300{% elif kpi.sodium_status == 'under' %}text-red-600{% else %}text-gray-800{% endif %}">{{ kpi.sodium_real if used else '—' }}<span class="text-xs font-normal text-gray-400"> / {{ targets.sodium_mg_per_h }} mg/h</span></p>
-                </div>
-                <div>
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wider">Liquide</p>
-                    <p class="text-lg font-semibold tabular-nums text-gray-800">{{ (targets.fluid_ml_per_h / 1000) | round(2) }}<span class="text-xs font-normal text-gray-400"> L/h</span></p>
-                </div>
-            </div>
+        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">1</span><h3 class="text-sm font-semibold tracking-tight">Combien manger</h3></div>
+        <p class="text-[13px] text-gray-600 mb-3">Sur une course longue, le corps a besoin de sucres toutes les heures. La question est simple : <b class="text-gray-900">combien de grammes de glucides par heure</b> ton estomac accepte.</p>
+        <div class="grid grid-cols-3 gap-2 mb-3">
+            {% for c, lbl, desc in [(60, 'Prudent', 'estomac fragile, peu entraîné à manger'), (75, 'Habitué', 'tu manges déjà en course sans souci'), (90, 'Entraîné', 'gros volume, estomac entraîné')] %}
+            <button type="button" onclick="var f=this.form;f.querySelector('[name=carbs_g_per_h]').value={{ c }};f.requestSubmit()"
+                    class="rounded-lg border p-2.5 text-left {% if targets.carbs_g_per_h == c %}border-gray-900 bg-gray-900 text-white{% else %}border-gray-200 text-gray-700 hover:border-gray-400{% endif %}">
+                <span class="block text-lg font-bold tabular-nums leading-none">{{ c }} <span class="text-[10px] font-normal opacity-70">g/h</span></span>
+                <span class="block text-[11px] font-medium mt-1">{{ lbl }}</span>
+                <span class="block text-[10px] mt-0.5 leading-snug {% if targets.carbs_g_per_h == c %}text-gray-300{% else %}text-gray-400{% endif %}">{{ desc }}</span>
+            </button>
+            {% endfor %}
+        </div>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-gray-600">
+            <label class="inline-flex items-center gap-1.5">ou <input type="number" name="carbs_g_per_h" min="0" max="150" step="5" value="{{ targets.carbs_g_per_h }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900"> g/h</label>
+            <span class="text-gray-400">·</span>
+            <span>Sur <b class="text-gray-800">{{ fmt_hm(plan.duration_s) }}</b>, ça fait <b class="text-gray-800">{{ (targets.carbs_g_per_h * hours) | round | int }} g</b> en tout : environ <b class="text-gray-800">{{ gel_eq }} gel{{ 's' if gel_eq > 1 }}</b> de 25 g par heure, ou un mélange gels, boisson et barres.</span>
         </div>
     </div>
 
-    {# ── 2. What you take: tick a product, get its share; adjust the quantity ── #}
+    {# ── 2. What you carry: tick, and each product gets its share in words ───── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3>
-            <div class="flex items-center gap-3">
-                {% if used %}<button type="submit" name="auto" value="1" class="text-[11px] text-gray-500 hover:text-gray-900 underline decoration-gray-300" title="Répartir la cible entre les produits cochés">répartir pour {{ targets.carbs_g_per_h }} g/h</button>{% endif %}
-                <button type="button" onclick="var d=document.getElementById('pantry-box'); if(d){d.open=true; d.scrollIntoView({behavior:'smooth', block:'start'});}" class="text-[11px] text-gray-500 hover:text-gray-900">{% if using_generic %}Ajouter mes produits{% else %}Mes produits{% endif %} ↓</button>
-            </div>
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+            <div class="flex items-baseline gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">2</span><h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3></div>
+            {% if used %}<button type="submit" name="auto" value="1" class="text-[11px] text-gray-500 hover:text-gray-900 underline decoration-gray-300" title="Répartir la cible entre les produits cochés">répartir automatiquement pour {{ targets.carbs_g_per_h }} g/h</button>{% endif %}
         </div>
-        {% if using_generic %}<p class="text-[11px] text-amber-700 mb-2">Produits génériques — ajoute les tiens (catalogue ci-dessous ou « Mes produits ») pour un plan à ta sauce.</p>{% endif %}
+        <p class="text-[13px] text-gray-600 mb-3">Coche les produits que tu comptes vraiment emporter. Chacun reçoit sa part de la cible, tu ajustes la quantité par heure si tu veux.</p>
+        {% if using_generic %}<p class="text-[12px] text-amber-700 mb-2">Ce sont des produits génériques. Ajoute les tiens depuis le catalogue ci-dessous, le plan sera calculé sur leurs vraies valeurs.</p>{% endif %}
         <div class="divide-y divide-gray-50">
             {% for p in products %}
-            <label class="flex items-center gap-3 py-2 cursor-pointer {% if not p.used %}text-gray-400{% endif %}">
-                <input type="checkbox" name="use_{{ p.id }}" value="1" {% if p.used %}checked{% endif %} class="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900">
+            <label class="flex items-center gap-3 py-2.5 cursor-pointer {% if not p.used %}text-gray-400{% endif %}">
+                <input type="checkbox" name="use_{{ p.id }}" value="1" {% if p.used %}checked{% endif %} class="h-5 w-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900">
                 <span class="flex-1 min-w-0">
-                    <span class="text-sm font-medium {% if p.used %}text-gray-900{% endif %}">{{ p.name }}</span>
-                    <span class="ml-1.5 text-[11px] text-gray-400">{{ kind_labels.get(p.kind, p.kind) }} · {{ p.carbs_g|round|int }} g{% if p.sodium_mg %} · {{ p.sodium_mg|round|int }} mg Na{% endif %}{% if p.caffeine_mg %} · {{ p.caffeine_mg|round|int }} mg caf{% endif %}</span>
+                    <span class="block text-sm font-medium {% if p.used %}text-gray-900{% endif %}">{{ p.name }}</span>
+                    <span class="block text-[11px] text-gray-400">{{ kind_labels.get(p.kind, p.kind) }} · {{ p.carbs_g|round|int }} g de glucides{% if p.sodium_mg %} · {{ p.sodium_mg|round|int }} mg de sel{% endif %}{% if p.caffeine_mg %} · {{ p.caffeine_mg|round|int }} mg de caféine{% endif %} par unité</span>
                 </span>
                 {% if p.by_caffeine %}
-                <span class="flex items-center gap-1.5 text-xs text-amber-700 shrink-0" title="Un gel par prise de caféine, placé par le planning caféine ci-dessous">
-                    <input type="hidden" name="qty_{{ p.id }}" value="1">selon la caféine
+                <span class="text-right text-xs text-amber-700 shrink-0" title="Un gel par prise de caféine, placé par le planning caféine">
+                    <input type="hidden" name="qty_{{ p.id }}" value="1">aux heures<br>de caféine
                 </span>
                 {% else %}
                 <span class="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
-                    <input type="number" name="qty_{{ p.id }}" min="0" max="12" step="0.5" value="{% if p.used %}{{ qty(p.per_hour) | replace(',', '.') }}{% endif %}" placeholder="—" {% if not p.used %}disabled{% endif %}
-                           class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900 disabled:bg-gray-50 disabled:text-gray-300">
-                    <span>/h</span>
-                    <span class="w-16 text-right tabular-nums {% if p.used %}text-gray-700{% else %}text-gray-300{% endif %}">{% if p.used %}{{ p.carbs_per_h }} g/h{% else %}&nbsp;{% endif %}</span>
+                    <input type="number" name="qty_{{ p.id }}" min="0" max="12" step="0.5" value="{% if p.used %}{{ qty(p.per_hour) | replace(',', '.') }}{% endif %}" placeholder="—" {% if not p.used %}disabled{% endif %} aria-label="{{ p.name }} par heure"
+                           class="sim-num w-14 h-9 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900 disabled:bg-gray-50 disabled:text-gray-300">
+                    <span class="w-[74px] leading-tight {% if p.used %}text-gray-700{% else %}text-gray-300{% endif %}">par heure{% if p.used and p.carbs_per_h %}<span class="block text-[10px] text-gray-400 tabular-nums">= {{ p.carbs_per_h }} g/h</span>{% endif %}</span>
                 </span>
                 {% endif %}
             </label>
             {% endfor %}
         </div>
-        {% if not used %}<p class="mt-2 text-[12px] text-gray-500">Coche les produits que tu comptes prendre : chacun reçoit sa part de la cible, tu ajustes ensuite la quantité par heure.</p>{% endif %}
+        {% if used %}
+        <p class="mt-3 text-[13px] rounded-lg px-3 py-2 {% if kpi.carbs_status == 'under' %}bg-red-50 text-red-800{% elif kpi.carbs_status == 'over' %}bg-amber-50 text-amber-800{% else %}bg-emerald-50 text-emerald-800{% endif %}">
+            Avec ça : <b>{{ kpi.carbs_real }} g/h</b> de glucides{% if kpi.carbs_status == 'under' %} — en dessous des {{ targets.carbs_g_per_h }} g/h visés : coche un produit de plus ou monte une quantité.{% elif kpi.carbs_status == 'over' %} — plus que les {{ targets.carbs_g_per_h }} g/h visés : baisse une quantité si ton estomac n'est pas entraîné.{% else %} — c'est la cible, parfait.{% endif %}
+            {% if has_sodium %}<span class="block text-[11px] mt-0.5 opacity-80">Sel : {{ kpi.sodium_real }} mg/h{% if kpi.sodium_status == 'under' %}, un peu juste pour {{ targets.sodium_mg_per_h }} mg/h visés (pastilles ou boisson salée){% else %} pour {{ targets.sodium_mg_per_h }} mg/h visés{% endif %}.</span>{% endif %}
+        </p>
+        {% endif %}
         {% if catalog %}
-        <details class="mt-2">
-            <summary class="list-none cursor-pointer select-none text-[11px] text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"><span class="w-4 h-4 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center leading-none">+</span>Ajouter depuis le catalogue</summary>
+        <details class="mt-3"{% if using_generic %} open{% endif %}>
+            <summary class="list-none cursor-pointer select-none text-[12px] text-gray-600 hover:text-gray-900 inline-flex items-center gap-1.5"><span class="w-5 h-5 rounded-full border border-dashed border-gray-400 inline-flex items-center justify-center leading-none">+</span>Ajouter un produit du commerce (catalogue)</summary>
             <div class="mt-2 flex flex-wrap gap-1.5">
                 {% for c in catalog %}
                 <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/catalog/{{ c.key }}" hx-target="#nutrition-card" hx-swap="outerHTML" hx-params="none"
-                        class="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-gray-200 text-[11px] text-gray-700 hover:border-gray-900 hover:bg-gray-50"
-                        title="{{ c.carbs_g }} g glucides{% if c.sodium_mg %} · {{ c.sodium_mg }} mg sodium{% endif %}{% if c.caffeine_mg %} · {{ c.caffeine_mg }} mg caféine{% endif %} · modifiable ensuite dans le garde-manger">
+                        class="inline-flex items-center gap-1 h-9 px-3 rounded-lg border border-gray-200 text-[12px] text-gray-700 hover:border-gray-900 hover:bg-gray-50"
+                        title="{{ c.carbs_g }} g glucides{% if c.sodium_mg %} · {{ c.sodium_mg }} mg sodium{% endif %}{% if c.caffeine_mg %} · {{ c.caffeine_mg }} mg caféine{% endif %} · modifiable ensuite dans « Mes produits »">
                     {{ c.name }}<span class="text-gray-400">{% if c.carbs_g %}{{ c.carbs_g }} g{% else %}{{ c.sodium_mg }} mg Na{% endif %}{% if c.caffeine_mg %} · caf{% endif %}</span>
                 </button>
                 {% endfor %}
@@ -93,74 +86,77 @@
         {% endif %}
     </div>
 
-    {# ── 3. Per leg: the table you'd otherwise redo by hand ─────────────── #}
+    {# ── 3. The plan: one line per leg, in words ──────────────────────────── #}
     {% if used and plan.schedule %}
     {% set hy = plan.hydration %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <h3 class="text-sm font-semibold tracking-tight">Par tronçon</h3>
-            <p class="text-[11px] text-gray-400">unités entières entre deux points · {% if n_aid %}{{ n_aid }} ravito{{ 's' if n_aid > 1 }} d'après le type des points de passage{% else %}type tes points de passage (eau / ravito) pour les recharges d'eau{% endif %}</p>
-        </div>
-        <div class="overflow-x-auto -mx-1">
+        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">3</span><h3 class="text-sm font-semibold tracking-tight">Ton plan, ravito par ravito</h3></div>
+        <p class="text-[13px] text-gray-600 mb-3">Entre deux points de passage, voilà ce que tu prends. Unités entières : ce que tu sors réellement de la poche.{% if n_aid %} L'eau se recharge aux {{ n_aid }} ravito{{ 's' if n_aid > 1 }}.{% else %} Type tes points de passage (eau / ravito) dans le plan pour placer les recharges d'eau.{% endif %}</p>
+        <div class="hidden sm:block overflow-x-auto -mx-1">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
                         <th class="text-left py-2 pr-2 font-medium">Jusqu'à</th>
-                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium">Durée</th>
+                        <th class="text-right py-2 px-2 font-medium">Durée</th>
                         <th class="text-left py-2 pl-3 font-medium">À prendre</th>
                         <th class="text-right py-2 px-2 font-medium" title="Glucides réels par heure avec les unités entières du tronçon">g/h</th>
-                        {% if has_sodium %}<th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Sodium réel par heure">Na/h</th>{% endif %}
-                        <th class="hidden sm:table-cell text-right py-2 px-2 font-medium" title="Liquide à boire sur le tronçon">Eau</th>
+                        <th class="text-right py-2 px-2 font-medium" title="Eau à boire sur le tronçon">Eau</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
                     {% for leg in plan.schedule %}
                     <tr class="{% if loop.last %}bg-gray-50/50{% endif %}">
-                        <td class="py-2 pr-2">
-                            <span class="font-medium text-gray-800">{{ leg.to_name }}</span>{% if leg.night %} <span class="text-[10px]" title="de nuit">🌙</span>{% endif %}
-                            <span class="block text-[10px] text-gray-400 tabular-nums">{{ clock(leg.start_clock_s) }} → {{ clock(leg.clock_s) }}<span class="sm:hidden"> · {{ fmt_hm(leg.leg_time_s) }}</span></span>
-                        </td>
-                        <td class="hidden sm:table-cell text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
-                        <td class="py-2 pl-3">
-                            <div class="flex flex-wrap gap-1">
-                                {% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700">{{ u.name }} <b>×{{ u.units }}</b></span>{% endif %}{% endfor %}
-                            </div>
-                        </td>
+                        <td class="py-2 pr-2"><span class="font-medium text-gray-800">{{ leg.to_name }}</span>{% if leg.night %} <span class="text-[10px]" title="de nuit">🌙</span>{% endif %}<span class="block text-[10px] text-gray-400 tabular-nums">{{ clock(leg.start_clock_s) }} → {{ clock(leg.clock_s) }}</span></td>
+                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
+                        <td class="py-2 pl-3"><div class="flex flex-wrap gap-1">{% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700"><b>{{ u.units }}</b> {{ u.name }}</span>{% endif %}{% endfor %}</div></td>
                         <td class="text-right py-2 px-2 tabular-nums font-semibold {% if leg.carbs_status == 'under' %}text-red-600{% elif leg.carbs_status == 'over' %}text-amber-600{% else %}text-emerald-600{% endif %}">{{ leg.carbs_real_per_h }}</td>
-                        {% if has_sodium %}<td class="hidden sm:table-cell text-right py-2 px-2 tabular-nums {% if leg.sodium_status == 'under' %}text-red-500{% else %}text-gray-500{% endif %}">{{ leg.sodium_real_per_h }}</td>{% endif %}
-                        <td class="hidden sm:table-cell text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-500{% else %}text-gray-500{% endif %}">{{ (leg.fluid_ml/1000)|round(1) }} L{% if leg.dry %} ⚠{% endif %}</td>
+                        <td class="text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-500{% else %}text-gray-500{% endif %}">{{ (leg.fluid_ml/1000)|round(1) }} L{% if leg.dry %} ⚠{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        <ol class="sm:hidden divide-y divide-gray-100">
+            {% for leg in plan.schedule %}
+            <li class="py-2.5">
+                <div class="flex items-baseline justify-between gap-2">
+                    <span class="text-sm font-medium text-gray-900 truncate">→ {{ leg.to_name }}{% if leg.night %} 🌙{% endif %}</span>
+                    <span class="text-[11px] text-gray-400 tabular-nums shrink-0">{{ fmt_hm(leg.leg_time_s) }} · {{ clock(leg.clock_s) }}</span>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-1">{% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[12px] text-gray-800"><b>{{ u.units }}</b> {{ u.name }}</span>{% endif %}{% endfor %}<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[12px] {% if leg.dry %}bg-red-50 text-red-700{% else %}bg-sky-50 text-sky-800{% endif %}">{{ (leg.fluid_ml/1000)|round(1) }} L d'eau{% if leg.dry %} ⚠{% endif %}</span></div>
+                <p class="mt-0.5 text-[11px] {% if leg.carbs_status == 'under' %}text-red-600{% elif leg.carbs_status == 'over' %}text-amber-600{% else %}text-gray-400{% endif %}">{{ leg.carbs_real_per_h }} g/h{% if leg.carbs_status == 'under' %} · un peu léger sur ce tronçon{% elif leg.carbs_status == 'over' %} · copieux sur ce tronçon{% endif %}</p>
+            </li>
+            {% endfor %}
+        </ol>
         {% if hy and hy.has_refills and not hy.feasible %}
-        <p class="mt-2 text-[12px] text-red-700">⚠ Eau : {{ (hy.capacity_ml/1000)|round(1) }} L ne suffisent pas sur {{ hy.dry_count }} portion{{ 's' if hy.dry_count > 1 }}{% if hy.worst_segment %} (pire : <b>{{ hy.worst_segment.from_name }} → {{ hy.worst_segment.to_name }}</b>, {{ (hy.worst_segment.need_ml/1000)|round(1) }} L){% endif %}. Porte ~{{ (hy.suggested_capacity_ml/1000)|round(1) }} L ou baisse la cible liquide (réglages).</p>
+        <p class="mt-2 text-[12px] rounded-lg bg-red-50 px-3 py-2 text-red-800">Eau : {{ (hy.capacity_ml/1000)|round(1) }} L portés ne suffisent pas sur {{ hy.dry_count }} portion{{ 's' if hy.dry_count > 1 }}{% if hy.worst_segment %} (la pire : <b>{{ hy.worst_segment.from_name }} → {{ hy.worst_segment.to_name }}</b>, {{ (hy.worst_segment.need_ml/1000)|round(1) }} L){% endif %}. Porte environ {{ (hy.suggested_capacity_ml/1000)|round(1) }} L, ou baisse la cible d'eau dans les réglages.</p>
         {% endif %}
     </div>
 
-    {# ── 4. What goes where ──────────────────────────────────────────────── #}
+    {# ── 4. What goes in which bag ───────────────────────────────────────── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-sm font-semibold tracking-tight mb-2">À emporter</h3>
+        <h3 class="text-sm font-semibold tracking-tight mb-1">À emporter</h3>
         {% if plan.packing and plan.packing|length > 1 %}
+        <p class="text-[13px] text-gray-600 mb-3">Ce que tu mets dans ton sac au départ, et ce que tu laisses dans chaque drop bag.</p>
         <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {% for g in plan.packing %}
             <div class="rounded-lg border {% if g.is_start %}border-gray-900{% else %}border-gray-200{% endif %} p-3">
-                <p class="text-[11px] font-semibold text-gray-800">{% if g.is_start %}Sac au départ{% else %}Drop bag · {{ g.at }}{% endif %} <span class="text-gray-400 font-normal">→ {{ g.until }}</span></p>
+                <p class="text-[12px] font-semibold text-gray-800">{% if g.is_start %}Sac au départ{% else %}Drop bag · {{ g.at }}{% endif %} <span class="text-gray-400 font-normal">→ {{ g.until }}</span></p>
                 <div class="mt-1.5 flex flex-wrap gap-1">
-                    {% for u in g.units %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700">{{ u.name }} <b>×{{ u.units }}</b></span>{% endfor %}
+                    {% for u in g.units %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[12px] text-gray-700"><b>{{ u.units }}</b> {{ u.name }}</span>{% endfor %}
                     {% if not g.units %}<span class="text-[11px] text-gray-300">rien</span>{% endif %}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
+        <p class="text-[13px] text-gray-600 mb-3">Le total à mettre dans le sac au départ.</p>
         <div class="flex flex-wrap gap-2">
             {% for ln in plan.lines %}{% if ln.total_units and not ln.is_water %}
-            <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"><b class="tabular-nums text-gray-900">×{{ ln.total_units | int }}</b><span class="text-gray-600">{{ ln.name }}</span></span>
+            <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"><b class="tabular-nums text-gray-900">{{ ln.total_units | int }}</b><span class="text-gray-600">{{ ln.name }}</span></span>
             {% endif %}{% endfor %}
         </div>
-        <p class="mt-2 text-[11px] text-gray-400">Marque « Drop bag » ou « Assist. » sur un point de passage (Plan de course) pour découper entre ton sac et tes drop bags.</p>
+        <p class="mt-2 text-[11px] text-gray-400">Avec un drop bag ou une assistance sur un point de passage (dans le plan), la liste se découpe entre ton sac et chaque drop bag.</p>
         {% endif %}
     </div>
 
@@ -168,41 +164,43 @@
     {% set cfp = plan.caffeine %}
     {% if cfp and cfp.doses %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-sm font-semibold tracking-tight mb-2">Caféine <span class="font-normal text-[11px] {% if cfp.over %}text-red-500{% else %}text-gray-400{% endif %}">{{ cfp.total_mg }} mg en {{ cfp.doses|length }} prises{% if cfp.over %} — au-dessus des {{ cfp.max_mg }} mg conseillés, espace les prises{% endif %}</span></h3>
+        <h3 class="text-sm font-semibold tracking-tight mb-1">Caféine</h3>
+        <p class="text-[13px] text-gray-600 mb-2">{{ cfp.total_mg }} mg en {{ cfp.doses|length }} prises, petites doses régulières et une dose pleine à l'aube.{% if cfp.over %} <span class="text-red-600">C'est au-dessus des {{ cfp.max_mg }} mg conseillés : espace les prises.</span>{% endif %}</p>
         <div class="flex flex-wrap gap-1.5">
             {% for d in cfp.doses %}
-            <span class="inline-flex items-center gap-1.5 rounded-lg border {% if d.label.startswith('dose pleine') %}border-amber-300 bg-amber-50{% else %}border-gray-200{% endif %} px-2.5 py-1 text-[11px]"><b class="tabular-nums">{{ clock(d.clock_s) }}</b><span class="text-gray-500">{{ d.mg }} mg</span><span class="text-gray-400">→ {{ d.leg_to }}</span>{% if d.label.startswith('dose pleine') %}<span class="text-amber-700">aube</span>{% endif %}</span>
+            <span class="inline-flex items-center gap-1.5 rounded-lg border {% if d.label.startswith('dose pleine') %}border-amber-300 bg-amber-50{% else %}border-gray-200{% endif %} px-2.5 py-1 text-[12px]"><b class="tabular-nums">{{ clock(d.clock_s) }}</b><span class="text-gray-500">{{ d.mg }} mg</span><span class="text-gray-400">→ {{ d.leg_to }}</span>{% if d.label.startswith('dose pleine') %}<span class="text-amber-700">aube</span>{% endif %}</span>
             {% endfor %}
         </div>
-        {% if not has_caffeine_product %}<p class="mt-1.5 text-[11px] text-gray-400">Aucun produit caféiné coché : prévois un gel caféiné ou des comprimés en plus.</p>{% elif cfp.doses and cfp.doses[0].product %}<p class="mt-1.5 text-[11px] text-gray-500">Chaque prise = 1 {{ cfp.doses[0].product }}, compté dans les glucides du tronçon.</p>{% endif %}
+        {% if not has_caffeine_product %}<p class="mt-1.5 text-[11px] text-gray-400">Aucun produit caféiné coché : prévois un gel caféiné ou des comprimés en plus.</p>{% elif cfp.doses and cfp.doses[0].product %}<p class="mt-1.5 text-[11px] text-gray-500">Chaque prise = 1 {{ cfp.doses[0].product }}, déjà compté dans les glucides du tronçon.</p>{% endif %}
     </div>
     {% endif %}
     {% endif %}
 
-    {# ── 6. Settings, out of the way ────────────────────────────────────── #}
+    {# ── 6. Settings, out of the way, explained ──────────────────────────── #}
     <details class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if settings_open %} open{% endif %} ontoggle="var f=document.getElementById('settings-open'); if(f) f.value=this.open?'1':''">
         <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
-            <span class="text-sm text-gray-700">Réglages</span>
-            <span class="text-xs text-gray-400 truncate">liquide {{ targets.fluid_ml_per_h }} ml/h · sodium {{ targets.sodium_mg_per_h }} mg/h · {{ (flask_capacity_ml/1000)|round(1) }} L portés · caféine {% if caffeine_cfg.enabled %}on{% else %}off{% endif %}</span>
+            <span class="text-sm text-gray-700">Eau, sel, caféine</span>
+            <span class="text-xs text-gray-400 truncate">{{ (targets.fluid_ml_per_h / 1000) | round(1) }} L/h · {{ targets.sodium_mg_per_h }} mg de sel/h · {{ (flask_capacity_ml/1000)|round(1) }} L portés · caféine {% if caffeine_cfg.enabled %}oui{% else %}non{% endif %}</span>
         </summary>
-        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4">
+        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4 text-[13px] text-gray-600">
+            <p>Valeurs proposées d'après la durée et la météo prévue. Change-les seulement si tu sais que tu bois ou transpires plus que la moyenne.</p>
             <div class="flex flex-wrap gap-4">
-                <label class="text-xs text-gray-500">Liquide<div class="mt-1 flex items-center gap-1"><input name="fluid_ml_per_h" type="number" min="0" step="any" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">ml/h</span></div></label>
-                <label class="text-xs text-gray-500">Sodium<div class="mt-1 flex items-center gap-1"><input name="sodium_mg_per_h" type="number" min="0" step="any" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">mg/h</span></div></label>
-                <label class="text-xs text-gray-500">Liquide porté<div class="mt-1 flex items-center gap-1"><input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center"><span class="text-gray-400">ml</span></div></label>
+                <label class="text-xs text-gray-500">Eau à boire<div class="mt-1 flex items-center gap-1"><input name="fluid_ml_per_h" type="number" min="0" step="any" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">ml par heure</span></div></label>
+                <label class="text-xs text-gray-500">Sel (sodium)<div class="mt-1 flex items-center gap-1"><input name="sodium_mg_per_h" type="number" min="0" step="any" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">mg par heure</span></div></label>
+                <label class="text-xs text-gray-500">Eau que tu portes (flasques)<div class="mt-1 flex items-center gap-1"><input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">ml</span></div></label>
             </div>
             {% set cf = caffeine_cfg %}
             <div class="space-y-2">
                 <label class="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" name="caffeine_enabled" value="1" {% if cf.enabled %}checked{% endif %} class="h-4 w-4 rounded border-gray-300">
-                    <span class="text-gray-700">Planifier la caféine</span><span class="text-[11px] text-gray-400">petites doses régulières, dose pleine à l'aube</span>
+                    <span class="text-gray-700">Planifier la caféine</span><span class="text-[11px] text-gray-400">utile la nuit et en fin de course</span>
                 </label>
                 {% if cf.enabled %}
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 pl-6">
-                    <label class="inline-flex items-center gap-1">dès <input name="caffeine_from_h" type="number" min="0" max="30" step="0.5" value="{{ cf.from_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> h de course</label>
-                    <label class="inline-flex items-center gap-1">toutes les <input name="caffeine_every_h" type="number" min="0.5" max="6" step="0.5" value="{{ cf.every_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> h</label>
-                    <label class="inline-flex items-center gap-1"><input name="caffeine_dose_mg" type="number" min="0" max="200" step="10" value="{{ cf.dose_mg|round|int }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center"> mg / dose</label>
-                    <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" name="caffeine_boost_dawn" value="1" {% if cf.boost_dawn %}checked{% endif %} class="rounded border-gray-300"> ×2 à l'aube</label>
+                    <label class="inline-flex items-center gap-1">à partir de <input name="caffeine_from_h" type="number" min="0" max="30" step="0.5" value="{{ cf.from_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> h de course</label>
+                    <label class="inline-flex items-center gap-1">toutes les <input name="caffeine_every_h" type="number" min="0.5" max="6" step="0.5" value="{{ cf.every_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> h</label>
+                    <label class="inline-flex items-center gap-1"><input name="caffeine_dose_mg" type="number" min="0" max="200" step="10" value="{{ cf.dose_mg|round|int }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> mg par prise</label>
+                    <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" name="caffeine_boost_dawn" value="1" {% if cf.boost_dawn %}checked{% endif %} class="rounded border-gray-300"> dose double à l'aube</label>
                 </div>
                 {% endif %}
             </div>
@@ -226,6 +224,7 @@
         <span class="text-xs text-gray-400 truncate">{{ pantry|length }} produit{{ 's' if pantry|length != 1 }} · valeurs de l'étiquette, par unité</span>
     </summary>
     <div class="px-5 pb-5 pt-3 border-t border-gray-100">
+        <p class="text-[12px] text-gray-500 mb-2">Un produit = ce qui est écrit sur l'étiquette pour une unité (un gel, une flasque préparée, une pastille). Corrige une valeur et le plan se recalcule.</p>
         <div class="hidden sm:grid grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 text-[10px] text-gray-400 uppercase tracking-wider mb-1 px-0.5"><span>Produit</span><span>Type</span><span class="text-center">Gluc. g</span><span class="text-center">Na mg</span><span class="text-center">ml</span><span class="text-center">Caf. mg</span><span></span></div>
         <div class="divide-y divide-gray-50">
         {% for p in pantry %}
@@ -245,7 +244,6 @@
             <button type="submit" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg bg-gray-900 text-white text-lg leading-none" title="Ajouter">+</button>
             {{ numfields(none) }}
         </form>
-        <p class="mt-2 text-[10px] text-gray-400">Par unité : un gel, une flasque, une pastille. Modifier une valeur recalcule le plan.</p>
     </div>
 </details>
 </div>

@@ -90,7 +90,7 @@
         {% endif %}
 
         <p class="text-[8px] text-gray-400 mt-1.5 text-center">
-            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if stop_minutes and n_aid %} Inclut {{ stop_minutes }} min d'arrêt × {{ n_aid }} ravitos.{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
+            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if n_aid %} Arrêts aux postes inclus ({% if stop_minutes %}{{ stop_minutes }} min chacun{% else %}eau 2′, ravito 5′, base vie 15′{% endif %}).{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
         </p>
     </div>
 

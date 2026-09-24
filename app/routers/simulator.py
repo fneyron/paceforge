@@ -166,19 +166,22 @@ async def _passage_table_context(
     # Aid-station stops: refills come from the saved route's nutrition plan;
     # the stop duration comes from the live input (fallback: saved value).
     aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
-    stop_min = stop_minutes or 0
+    refills: list = []
     params: dict = {}
     if route_obj:
         if route_obj.nutrition_json:
-            aid_kms |= set(route_obj.nutrition_json.get("refills") or [])
+            refills = list(route_obj.nutrition_json.get("refills") or [])
+            aid_kms |= set(refills)
         if stop_minutes is None:
-            stop_min = route_obj.stop_minutes or 0
+            stop_minutes = route_obj.stop_minutes
         params = route_obj.params_json or {}
+    aid_stops = _aid_stops(checkpoints, refills, stop_minutes)
+    stop_min = stop_minutes or 0
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
         start_hour, start_minute, hourly_weather,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
     )
     has_weather = any(s.get("temperature_c") is not None for s in sections)
     start_offset_s = start_hour * 3600 + start_minute * 60
@@ -192,7 +195,7 @@ async def _passage_table_context(
         if anchor_clock_s is not None:
             sections, replan = replan_from_passage(
                 sections, start_hour * 3600 + start_minute * 60, target_time_s,
-                anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+                anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
             )
     # Cutoff margins and autonomy legs read the (re)planned clocks, so they
     # come after the replan: on race day the margin is THE number he checks.
@@ -1194,7 +1197,7 @@ async def print_route_plan(
         if clock_s is not None:
             sections, rp = replan_from_passage(
                 sections, start_offset_s, route.target_time_s,
-                float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+                float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=b.get("aid_stops"),
             )
             live_applied = rp is not None
             if live_applied:  # margins against the recalculated clocks
@@ -1706,6 +1709,23 @@ def _aid_kms_from_checkpoints(cps: list[dict]) -> set:
     return {round(float(cp.get("distance_km") or 0), 1) for cp in cps if (cp.get("kind") or "none") != "none"}
 
 
+STOP_DEFAULT_S = {"water": 120, "full": 300, "base": 900}  # eau 2′ · ravito 5′ · base vie 15′
+
+
+def _aid_stops(cps: list[dict], refills=None, override_min: int | None = None) -> dict:
+    """{km: stop seconds} for every aid station: by kind, or one value everywhere when set (> 0)."""
+    forced = int(override_min) * 60 if override_min else None
+    out: dict = {}
+    for cp in cps:
+        kind = cp.get("kind") or "none"
+        if kind == "none":
+            continue
+        out[round(float(cp.get("distance_km") or 0), 1)] = forced if forced is not None else STOP_DEFAULT_S.get(kind, 300)
+    for k in refills or []:
+        out.setdefault(round(float(k), 1), forced if forced is not None else STOP_DEFAULT_S["full"])
+    return out
+
+
 async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     """Everything derived from a saved trail route, computed ONE way for every
     consumer (pacing guide, exports, reference, debrief): the predicted course,
@@ -1723,8 +1743,10 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
         select(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id).order_by(RouteCheckpoint.distance_km)
     )
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
-    aid = set((route.nutrition_json or {}).get("refills") or []) | _aid_kms_from_checkpoints(cps)
+    refills = list((route.nutrition_json or {}).get("refills") or [])
+    aid = set(refills) | _aid_kms_from_checkpoints(cps)
     stop_min = route.stop_minutes or 0
+    aid_stops = _aid_stops(cps, refills, route.stop_minutes)
 
     if route.sport_type == "bike":
         from app.services.cycling_simulator import build_bike_passage_sections
@@ -1753,11 +1775,11 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
     )
     sections = annotate_cutoffs(sections, cps, start_offset_s)
     return {
-        "course": course, "profile": profile, "checkpoints": cps, "sections": sections,
+        "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
         "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
