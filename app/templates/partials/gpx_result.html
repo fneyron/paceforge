@@ -102,21 +102,13 @@
     {# ── the plan: one table ─────────────────────────────────────────────── #}
     <div>
         <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
-        <div id="poste-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 text-xs" role="menu" aria-label="Poste"></div>
-        <div id="cp-sheet" class="hidden lg:hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Point de passage">
+        <div id="cp-sheet" class="hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Point de passage">
             <div data-sheet-bg class="absolute inset-0 bg-black/30" onclick="window._sim && window._sim.closeSheet()"></div>
-            <div data-sheet-panel class="absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl px-4 pt-3" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
+            <div data-sheet-panel class="absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl px-4 pt-3 lg:left-1/2 lg:right-auto lg:bottom-auto lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[460px] lg:max-h-[85vh] lg:rounded-2xl lg:px-6 lg:pt-5 lg:pb-6" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
         </div>
         <div id="page-error" class="hidden px-1 py-2 text-xs text-red-600"></div>
         <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
-        <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="lg:hidden mt-2 w-full h-11 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-600 inline-flex items-center justify-center gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white inline-flex items-center justify-center leading-none text-base">+</span>Ajouter un point de passage</button>
-        <div class="hidden lg:flex h-9 items-center gap-2 text-xs text-gray-400 pl-1 border-t border-gray-100">
-            <span class="w-5 h-5 rounded-full border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0 leading-none">+</span>
-            <input type="text" id="cp-name" placeholder="Ajouter un point" aria-label="Nom du nouveau point" class="w-36 sm:w-52 bg-transparent border-0 border-b border-transparent focus:border-gray-900 focus:ring-0 px-0 py-0 text-xs text-gray-700 placeholder-gray-400 focus:outline-none">
-            <span>km</span>
-            <input type="number" id="cp-km" placeholder="0,0" step="0.1" min="0.1" max="{{ course.total_distance_km }}" aria-label="km du nouveau point" class="sim-num w-12 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0 text-xs text-right tabular-nums text-gray-700 focus:outline-none">
-            <button type="button" onclick="window._sim.addCheckpoint()" class="text-xs font-medium text-gray-500 hover:text-gray-900 px-1">Ajouter</button>
-        </div>
+        <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="mt-2 w-full h-11 lg:h-10 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-600 hover:border-gray-500 hover:text-gray-900 inline-flex items-center justify-center gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white inline-flex items-center justify-center leading-none text-base">+</span>Ajouter un point de passage</button>
     </div>
 
     {# ── advanced ───────────────────────────────────────────────────────── #}
@@ -666,54 +658,9 @@ window._sim = {};
         recalc(); scheduleSave();
     }
     function refresh() { renderCpOnMap(); drawOverlays(); }
-    // ── POSTE POPOVER: one small menu for kind + assistance + drop bag ──
+    // ── POINT DIALOG: kind, assistance, drop bag, name, km — one place, every screen ──
     var POSTE_KINDS = [['none', 'Passage', 'simple repère, pas d\'arrêt'], ['water', 'Eau', 'flasques, arrêt court'], ['full', 'Ravito complet', 'manger, arrêt compté, borne l\'autonomie'], ['base', 'Base vie', 'drop bag, assistance, arrêt long']];
-    var posteOpen = null, posteBtn = null;
     function glyphHtml(k) { var r = document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
-    function renderPoste() {
-        var pop = document.getElementById('poste-pop'), cp = posteOpen !== null ? checkpoints[posteOpen] : null; if (!pop || !cp) return;
-        var h = '<div class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider truncate">' + esc(cp.name) + '</div>';
-        POSTE_KINDS.forEach(function (k) {
-            var on = (cp.kind || 'none') === k[0];
-            h += '<button type="button" role="menuitemradio" aria-checked="' + on + '" data-k="' + k[0] + '" class="w-full flex items-center gap-2 px-2 py-2 lg:py-1.5 rounded-lg text-left hover:bg-gray-50 ' + (on ? 'bg-gray-100' : '') + '"><span class="w-4 inline-flex justify-center">' + glyphHtml(k[0]) + '</span><span class="flex-1"><span class="font-medium text-gray-900">' + k[1] + '</span><span class="block text-[10px] text-gray-400">' + k[2] + '</span></span>' + (on ? '<svg class="w-3.5 h-3.5 text-gray-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>' : '') + '</button>';
-        });
-        h += '<div class="my-1 border-t border-gray-100"></div>';
-        [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].forEach(function (t) {
-            var on = !!cp[t[0]];
-            h += '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" aria-pressed="' + on + '" title="' + t[1] + '" data-toggle="' + t[0] + '" class="w-full flex items-center gap-2 px-2 py-2 lg:py-1.5 rounded-lg text-left hover:bg-gray-50"><span class="w-4 inline-flex justify-center ' + (on ? 'text-gray-900' : 'text-gray-400') + '">' + (document.querySelector('#glyph-registry [data-kind="' + t[2] + '"]') || { innerHTML: '' }).innerHTML + '</span><span class="flex-1 ' + (on ? 'text-gray-900 font-medium' : 'text-gray-600') + '">' + t[1] + '</span><span class="w-4 h-4 rounded border ' + (on ? 'bg-gray-900 border-gray-900' : 'border-gray-300') + ' inline-flex items-center justify-center">' + (on ? '<svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>' : '') + '</span></button>';
-        });
-        pop.innerHTML = h;
-    }
-    function placePoste(btn) {
-        var pop = document.getElementById('poste-pop'); if (!pop) return;
-        if (isCompact()) { pop.style.cssText = 'left:0;right:0;bottom:0;width:auto;border-radius:16px 16px 0 0;padding-bottom:max(12px, env(safe-area-inset-bottom));'; return; }
-        var r = btn.getBoundingClientRect(), w = 236, h = pop.offsetHeight || 260;
-        var left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)), top = r.bottom + 4;
-        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
-        pop.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;';
-    }
-    function openPoste(i, btn) {
-        var pop = document.getElementById('poste-pop'); if (!pop || !checkpoints[i]) return;
-        if (posteOpen === i && !pop.classList.contains('hidden')) { closePoste(); return; }
-        posteOpen = i; posteBtn = btn; renderPoste(); pop.classList.remove('hidden'); placePoste(btn);
-        pop.onclick = function (ev) {
-            var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
-            if (k) { editCheckpointMeta(posteOpen, 'kind', k.getAttribute('data-k')); renderPoste(); if (!isCompact()) closePoste(); }
-            else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(posteOpen, f, !checkpoints[posteOpen][f]); renderPoste(); }
-        };
-    }
-    function closePoste() { var pop = document.getElementById('poste-pop'); if (pop) pop.classList.add('hidden'); posteOpen = null; posteBtn = null; }
-    // the popover is fixed: it follows its chip while the page scrolls, and closes once the chip leaves the screen
-    function repositionPoste() {
-        var pop = document.getElementById('poste-pop'); if (!pop || pop.classList.contains('hidden') || isCompact() || !posteBtn) return;
-        if (!document.contains(posteBtn)) { closePoste(); return; }
-        var r = posteBtn.getBoundingClientRect();
-        if (r.bottom < 0 || r.top > window.innerHeight) { closePoste(); return; }
-        placePoste(posteBtn);
-    }
-    document.addEventListener('scroll', repositionPoste, true);
-    window.addEventListener('resize', repositionPoste);
-    // ── POINT SHEET (phone): name, km, planned clocks, type of poste, cutoff, real passage, delete ──
     var sheetCp = null;
     function sheetOpen() { var sh = document.getElementById('cp-sheet'); return !!sh && !sh.classList.contains('hidden'); }
     function sheetRowVals(i) {
@@ -744,13 +691,24 @@ window._sim = {};
             else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(i, f, !checkpoints[i][f]); renderSheet(); }
         };
     }
+    // planned clock at any km: linear inside the leg that contains it (rows carry cumulative time and stops)
+    function predictClockAt(km) {
+        if (isNaN(km) || km <= 0 || km >= totalDistKm) return null;
+        var sp = startParts(), start = sp.h * 3600 + sp.m * 60, prevCum = 0;
+        for (var i = 0; i < rowRanges.length; i++) {
+            var a = rowRanges[i][0], b = rowRanges[i][1], r = rowRanges[i][2], cum = parseFloat(r.getAttribute('data-cum')) || 0, stops = parseFloat(r.getAttribute('data-stops')) || 0;
+            if (km > a && km <= b) return start + prevCum + (cum - prevCum) * (km - a) / Math.max(0.01, b - a) + stops;
+            prevCum = cum;
+        }
+        return null;
+    }
     function openAddSheet() {
         var sh = document.getElementById('cp-sheet'), p = document.querySelector('#cp-sheet [data-sheet-panel]'); if (!sh || !p) return;
         sheetCp = null;
         p.innerHTML = '<div class="flex items-center gap-2 mb-3"><span class="w-6 h-6 rounded-full bg-gray-900 text-white text-base inline-flex items-center justify-center shrink-0 leading-none">+</span><span class="flex-1 text-base font-semibold text-gray-900">Nouveau point de passage</span><button type="button" onclick="window._sim.closeSheet()" class="w-9 h-9 -mr-2 inline-flex items-center justify-center rounded-full text-gray-500 text-2xl leading-none" aria-label="Fermer">×</button></div>'
             + '<label class="block text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-1">Nom</label><input type="text" data-add-name placeholder="Ravito, col, village…" aria-label="Nom du nouveau point" class="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm text-gray-900 mb-3">'
             + '<label class="block text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-1">Kilomètre</label><div class="flex items-center gap-2 mb-1"><input type="number" data-add-km inputmode="decimal" step="0.1" min="0.1" max="' + totalDistKm + '" placeholder="0,0" aria-label="km du nouveau point" class="sim-num w-28 h-10 px-3 rounded-lg border border-gray-200 text-sm tabular-nums text-gray-900"><span class="text-xs text-gray-400">entre 0,1 et ' + fmtKm(totalDistKm) + ' km</span></div>'
-            + '<p data-add-err class="hidden text-[11px] text-red-600 mb-2"></p>'
+            + '<p data-add-eta class="text-[12px] text-gray-500 mb-1 min-h-4"></p><p data-add-err class="hidden text-[11px] text-red-600 mb-2"></p>'
             + '<button type="button" data-add-go class="mt-3 w-full h-11 rounded-lg bg-gray-900 text-white text-sm font-medium">Ajouter le point</button>';
         p.onclick = function (ev) {
             if (!(ev.target.closest && ev.target.closest('[data-add-go]'))) return;
@@ -759,6 +717,10 @@ window._sim = {};
             if (isNaN(km) || km <= 0 || km >= totalDistKm) { err.textContent = 'Le kilomètre doit être entre 0,1 et ' + fmtKm(totalDistKm) + '.'; err.classList.remove('hidden'); return; }
             closeSheet(); pushCheckpoint(n, km);
         };
+        p.querySelector('[data-add-km]').addEventListener('input', function () {
+            var c = predictClockAt(parseFloat(this.value)), e = p.querySelector('[data-add-eta]');
+            e.textContent = c === null ? '' : 'Passage prévu vers ' + fmtClock(c) + (hasRealTarget() ? ' avec ton objectif' : ' d\'après la prédiction') + '.';
+        });
         sh.classList.remove('hidden');
         setTimeout(function () { try { p.querySelector('[data-add-name]').focus(); } catch (e) {} }, 50);
     }
@@ -1078,9 +1040,8 @@ window._sim = {};
         var t = ev.target;
         if (!(t.closest && t.closest('#elevChart'))) { if (ev.pointerType === 'touch') { hideCross(); highlightRow(null); } }
         document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
-        var pp = document.getElementById('poste-pop'); if (pp && !pp.classList.contains('hidden') && !pp.contains(t) && !(t.closest && t.closest('[data-poste]'))) closePoste();
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); closeSheet(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) expandMap(false); } });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closeSheet(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) expandMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -1088,8 +1049,8 @@ window._sim = {};
     ptr.addEventListener('change', function (ev) { var el = ev.target; if (el.tagName === 'INPUT') { try { el.defaultValue = el.value; } catch (e) {} if (typingEl === el) typingEl = null; } }, true);
     // phone: tap a row (outside its fields) → its detail line
     ptr.addEventListener('click', function (ev) {
-        if (!isCompact()) return;
-        if (ev.target.closest && ev.target.closest('input,select,button,a,label,summary')) return;
+        if (ev.target.closest && ev.target.closest('input,select,a,label,summary,[role=button]')) return;
+        if (ev.target.closest && ev.target.closest('button') && !(ev.target.closest('button[data-poste]'))) return;
         highlightSection(null, null); hideCross();
         var tr = ev.target.closest && ev.target.closest('tr[data-row]'); if (!tr || !tr.getAttribute('data-cp')) return;
         toggleDetail(parseInt(tr.getAttribute('data-cp'), 10));
@@ -1104,7 +1065,7 @@ window._sim = {};
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
     if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
-    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, toggleMap: toggleMap, expandMap: expandMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, toggleMap: toggleMap, expandMap: expandMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>
