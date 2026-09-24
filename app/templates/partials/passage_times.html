@@ -9,7 +9,7 @@
 {# type of aid station = one glyph covered by a transparent native select; crew / drop bag = two toggles #}
 {% macro poste(s, ci) -%}
 {% set k = s.kind or 'none' %}{% set short = {'none': 'passage', 'water': 'eau', 'full': 'ravito', 'base': 'base vie'} %}
-{% set tone = {'none': 'text-gray-400', 'water': 'text-blue-700', 'full': 'text-gray-900', 'base': 'text-violet-700'} %}
+{% set tone = {'none': 'text-gray-400', 'water': 'text-blue-700', 'full': 'text-amber-800', 'base': 'text-violet-700'} %}
 <button type="button" data-poste="{{ ci }}" data-kind="{{ k }}" data-crew="{{ '1' if s.crew else '0' }}" data-bag="{{ '1' if s.drop_bag else '0' }}" aria-haspopup="dialog" title="{{ short[k]|capitalize }}{% if s.crew %} · assistance{% endif %}{% if s.drop_bag %} · drop bag{% endif %} · clique pour modifier" onclick="window._sim && window._sim.openSheet({{ ci }})"
         class="inline-flex items-center gap-1.5 h-7 text-[12px] whitespace-nowrap shrink-0 {{ tone[k] }}">
     <span data-glyph="{{ ci }}" class="inline-flex w-6 h-6 rounded-md items-center justify-center {% if k == 'water' %}bg-blue-50{% elif k == 'full' %}bg-amber-50{% elif k == 'base' %}bg-violet-50{% else %}bg-gray-50{% endif %}">{{ gl.glyph(k, "w-4 h-4") }}</span><span>{{ short[k] }}</span>{% if s.crew %}<span class="inline-flex text-gray-700" title="Assistance">{{ gl.glyph('crew', "w-4 h-4") }}</span>{% endif %}{% if s.drop_bag %}<span class="inline-flex text-gray-700" title="Drop bag">{{ gl.glyph('bag', "w-4 h-4") }}</span>{% endif %}
