@@ -7,7 +7,10 @@
     {% endfor %}
 </div>
 <div id="glyph-registry" hidden>
-    {% for k in ["none","water","full","base"] %}<span data-kind="{{ k }}">{{ gl.glyph(k) }}</span>{% endfor %}
+    {% for k in ["none","water","full","base"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-4 h-4") }}</span>{% endfor %}
+</div>
+<div id="glyph-registry-lg" hidden>
+    {% for k in ["none","water","full","base","crew","bag"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
 </div>
 {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
 {% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
@@ -653,6 +656,7 @@ window._sim = {};
             var reg = document.querySelector('#glyph-registry [data-kind="' + checkpoints[i].kind + '"]');
             if (reg) document.querySelectorAll('#plan-table [data-glyph="' + i + '"]').forEach(function (el) { el.innerHTML = reg.innerHTML; });
         }
+        else if (field === 'stop_min') checkpoints[i].stop_s = (val === null || val === '' || isNaN(parseFloat(val))) ? null : Math.max(0, Math.round(parseFloat(val) * 60));
         else if (field === 'crew' || field === 'drop_bag') checkpoints[i][field] = !!val;
         else if (field === 'cutoff_clock') checkpoints[i].cutoff_clock = (val && /^\d{2}:\d{2}$/.test(val)) ? val : null;
         recalc(); scheduleSave();
@@ -660,7 +664,14 @@ window._sim = {};
     function refresh() { renderCpOnMap(); drawOverlays(); }
     // ── POINT DIALOG: kind, assistance, drop bag, name, km — one place, every screen ──
     var POSTE_KINDS = [['none', 'Passage', 'simple repère, pas d\'arrêt'], ['water', 'Eau', 'flasques, arrêt court'], ['full', 'Ravito complet', 'manger, arrêt compté, borne l\'autonomie'], ['base', 'Base vie', 'drop bag, assistance, arrêt long']];
-    function glyphHtml(k) { var r = document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
+    function glyphHtml(k) { var r = document.querySelector('#glyph-registry-lg [data-kind="' + k + '"]') || document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
+    var STOP_DEFAULT_MIN = { none: 0, water: 2, full: 5, base: 15 };
+    function stopMinOf(cp) {  // the stop this point gets: its own value, else the global override, else its kind's default
+        if (cp.stop_s !== null && cp.stop_s !== undefined) return Math.round(cp.stop_s / 60);
+        var ov = parseInt((document.getElementById('stop-min') || {}).value, 10);
+        if (ov > 0 && (cp.kind || 'none') !== 'none') return ov;
+        return STOP_DEFAULT_MIN[cp.kind || 'none'] || 0;
+    }
     var sheetCp = null;
     function sheetOpen() { var sh = document.getElementById('cp-sheet'); return !!sh && !sh.classList.contains('hidden'); }
     function sheetRowVals(i) {
@@ -680,16 +691,24 @@ window._sim = {};
         var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
         if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
         var kind = cp.kind || 'none', kdesc = '';
-        h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] leading-none ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
+        h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1.5 rounded-lg border py-2.5 text-[12px] leading-none ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
         h += '<p class="text-[11px] text-gray-400 mb-2 min-h-4">' + esc(kdesc) + '</p>';
+        var own = cp.stop_s !== null && cp.stop_s !== undefined, cur = stopMinOf(cp);
+        h += sec('Temps d\'arrêt ici') + '<div class="flex flex-wrap items-center gap-1.5 mb-1">' + [0, 2, 5, 10, 15, 30].map(function (m) { var on = cur === m; return '<button type="button" data-stop="' + m + '" aria-pressed="' + on + '" class="h-9 min-w-[44px] px-2 rounded-lg border text-[13px] tabular-nums ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700') + '">' + (m ? m + '\'' : '0') + '</button>'; }).join('')
+            + '<label class="inline-flex items-center gap-1 text-[12px] text-gray-500 ml-1">ou <input type="number" data-stop-custom inputmode="numeric" min="0" max="240" step="1" value="' + (([0, 2, 5, 10, 15, 30].indexOf(cur) < 0) ? cur : '') + '" placeholder="…" aria-label="Temps d\'arrêt en minutes" class="sim-num w-14 h-9 px-1 rounded-lg border border-gray-200 text-[13px] tabular-nums text-center text-gray-900"> min</label></div>';
+        h += '<p class="text-[11px] text-gray-400 mb-4">' + (own ? 'Réglé pour ce point · <button type="button" data-stop-auto class="underline">revenir à la valeur du type (' + (STOP_DEFAULT_MIN[kind] || 0) + '\')</button>' : 'Valeur du type de poste (eau 2′, ravito 5′, base vie 15′). Les heures qui suivent en tiennent compte.') + '</p>';
         h += '<div class="flex gap-2 mb-5">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
         h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-10 rounded-lg border border-gray-200 text-sm text-gray-500">Supprimer ce point</button>';
         p.innerHTML = h;
         p.onclick = function (ev) {
             var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
+            var st = ev.target.closest && ev.target.closest('[data-stop]'), sa = ev.target.closest && ev.target.closest('[data-stop-auto]');
             if (k) { editCheckpointMeta(i, 'kind', k.getAttribute('data-k')); renderSheet(); }
             else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(i, f, !checkpoints[i][f]); renderSheet(); }
+            else if (st) { editCheckpointMeta(i, 'stop_min', st.getAttribute('data-stop')); renderSheet(); }
+            else if (sa) { editCheckpointMeta(i, 'stop_min', null); renderSheet(); }
         };
+        var sc = p.querySelector('[data-stop-custom]'); if (sc) sc.addEventListener('change', function () { editCheckpointMeta(i, 'stop_min', this.value === '' ? null : this.value); renderSheet(); });
     }
     // planned clock at any km: linear inside the leg that contains it (rows carry cumulative time and stops)
     function predictClockAt(km) {

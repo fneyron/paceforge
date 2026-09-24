@@ -67,6 +67,8 @@ class RouteCheckpoint(Base):
     drop_bag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Official cutoff as a clock time "HH:MM" (day rollover inferred from the start).
     cutoff_clock: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # Planned stop at this station in seconds; null = the default for its kind.
+    stop_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     route = relationship("Route", back_populates="checkpoints")
 
@@ -74,7 +76,7 @@ class RouteCheckpoint(Base):
         return {
             "name": self.name, "distance_km": self.distance_km, "elevation": self.elevation,
             "kind": self.kind or "none", "crew": bool(self.crew), "drop_bag": bool(self.drop_bag),
-            "cutoff_clock": self.cutoff_clock,
+            "cutoff_clock": self.cutoff_clock, "stop_s": self.stop_s,
         }
 
 

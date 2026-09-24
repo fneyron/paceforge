@@ -446,7 +446,7 @@ async def save_route(
                 distance_km=cp["distance_km"],
                 elevation=cp["elevation"],
                 kind=cp["kind"], crew=cp["crew"], drop_bag=cp["drop_bag"],
-                cutoff_clock=cp["cutoff_clock"],
+                cutoff_clock=cp["cutoff_clock"], stop_s=cp.get("stop_s"),
             ))
         await db.flush()
 
@@ -1718,6 +1718,11 @@ def _aid_stops(cps: list[dict], refills=None, override_min: int | None = None) -
     out: dict = {}
     for cp in cps:
         kind = cp.get("kind") or "none"
+        own = cp.get("stop_s")
+        if own is not None:  # set on the point itself: wins, even 0
+            if int(own) > 0:
+                out[round(float(cp.get("distance_km") or 0), 1)] = int(own)
+            continue
         if kind == "none":
             continue
         out[round(float(cp.get("distance_km") or 0), 1)] = forced if forced is not None else STOP_DEFAULT_S.get(kind, 300)

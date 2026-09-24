@@ -149,3 +149,16 @@ async def test_debrief_tab_waits_for_race_day_and_print_names_the_day(as_user: A
     r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(CPS), "race_date": "2020-10-02", "name": "Past"})
     r = await as_user.get(f"/simulator/routes/{route_id}")
     assert r.status_code == 200 and 'id="rtab-realise"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_a_point_carries_its_own_stop_time(as_user: AsyncClient):
+    route_id = await _create_route(as_user)
+    cps = [dict(c) for c in CPS]
+    cps[1]["kind"] = "full"; cps[1]["stop_s"] = 600  # 10 min here, whatever the kind default
+    r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(cps), "name": "Stops"})
+    assert r.status_code == 200
+    r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(cps), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
+    assert r.status_code == 200 and "+10'" in r.text
+    r = await as_user.get(f"/simulator/routes/{route_id}")
+    assert r.status_code == 200 and '"stop_s": 600' in r.text  # persisted and handed back to the page
