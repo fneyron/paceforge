@@ -33,7 +33,8 @@
 
     {# ── hero: the objective, the conditions, the track ─────────────────── #}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div class="order-1 flex items-baseline h-11">
+        <div class="order-1 flex flex-col justify-center h-11">
+          <div class="flex items-baseline">
             <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" title="Objectif · clique pour le modifier"
                     class="text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900 hover:text-gray-600 transition-colors">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</button>
             <span id="hero-edit" class="hidden items-baseline text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900">
@@ -41,6 +42,8 @@
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] text-right bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes"
                        class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">
             </span>
+          </div>
+          <p id="hero-sub" class="text-[11px] leading-none text-gray-500 whitespace-nowrap mt-1">{% if has_obj %}ton objectif · estimation <b class="text-gray-700 tabular-nums">{{ '%dh%02d'|format(course.predicted_total_time_s // 3600, (course.predicted_total_time_s % 3600) // 60) }}</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="underline decoration-gray-300 hover:text-gray-900">revenir à l'estimation</button>{% else %}temps estimé d'après tes courses · glisse le curseur pour fixer un objectif{% endif %}</p>
         </div>
         <div class="order-5 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-600 tabular-nums">
             <span class="inline-flex items-center gap-x-1.5 whitespace-nowrap">
@@ -1026,7 +1029,13 @@ window._sim = {};
     }
 
     // ── HERO / PHONE STATE ──
-    function updateHero() { var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : predictedTotalS); }
+    function updateHero() {
+        var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : predictedTotalS);
+        var sub = document.getElementById('hero-sub');
+        if (sub) sub.innerHTML = hasRealTarget()
+            ? 'ton objectif · estimation <b class="text-gray-700 tabular-nums">' + fmtHM(predictedTotalS) + '</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="underline decoration-gray-300 hover:text-gray-900">revenir à l\'estimation</button>'
+            : 'temps estimé d\'après tes courses · glisse le curseur pour fixer un objectif';
+    }
     function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); }
     function toggleDetail(ci) { openSheet(ci); }
     function applyDetail() {
