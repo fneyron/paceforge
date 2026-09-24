@@ -668,7 +668,7 @@ window._sim = {};
     function refresh() { renderCpOnMap(); drawOverlays(); }
     // ── POSTE POPOVER: one small menu for kind + assistance + drop bag ──
     var POSTE_KINDS = [['none', 'Passage', 'simple repère, pas d\'arrêt'], ['water', 'Eau', 'flasques, arrêt court'], ['full', 'Ravito complet', 'manger, arrêt compté, borne l\'autonomie'], ['base', 'Base vie', 'drop bag, assistance, arrêt long']];
-    var posteOpen = null;
+    var posteOpen = null, posteBtn = null;
     function glyphHtml(k) { var r = document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
     function renderPoste() {
         var pop = document.getElementById('poste-pop'), cp = posteOpen !== null ? checkpoints[posteOpen] : null; if (!pop || !cp) return;
@@ -695,14 +695,24 @@ window._sim = {};
     function openPoste(i, btn) {
         var pop = document.getElementById('poste-pop'); if (!pop || !checkpoints[i]) return;
         if (posteOpen === i && !pop.classList.contains('hidden')) { closePoste(); return; }
-        posteOpen = i; renderPoste(); pop.classList.remove('hidden'); placePoste(btn);
+        posteOpen = i; posteBtn = btn; renderPoste(); pop.classList.remove('hidden'); placePoste(btn);
         pop.onclick = function (ev) {
             var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
             if (k) { editCheckpointMeta(posteOpen, 'kind', k.getAttribute('data-k')); renderPoste(); if (!isCompact()) closePoste(); }
             else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(posteOpen, f, !checkpoints[posteOpen][f]); renderPoste(); }
         };
     }
-    function closePoste() { var pop = document.getElementById('poste-pop'); if (pop) pop.classList.add('hidden'); posteOpen = null; }
+    function closePoste() { var pop = document.getElementById('poste-pop'); if (pop) pop.classList.add('hidden'); posteOpen = null; posteBtn = null; }
+    // the popover is fixed: it follows its chip while the page scrolls, and closes once the chip leaves the screen
+    function repositionPoste() {
+        var pop = document.getElementById('poste-pop'); if (!pop || pop.classList.contains('hidden') || isCompact() || !posteBtn) return;
+        if (!document.contains(posteBtn)) { closePoste(); return; }
+        var r = posteBtn.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) { closePoste(); return; }
+        placePoste(posteBtn);
+    }
+    document.addEventListener('scroll', repositionPoste, true);
+    window.addEventListener('resize', repositionPoste);
     // ── POINT SHEET (phone): name, km, planned clocks, type of poste, cutoff, real passage, delete ──
     var sheetCp = null;
     function sheetOpen() { var sh = document.getElementById('cp-sheet'); return !!sh && !sh.classList.contains('hidden'); }
