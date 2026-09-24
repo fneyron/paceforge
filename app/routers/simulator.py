@@ -31,13 +31,6 @@ async def simulator_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Estimate FTP for power tab
-    from app.services.power_calculator import ftp_for_user
-    from app.services.triathlon import FORMATS, estimate_swim_pace, fmt_pace_100m
-
-    ftp = await ftp_for_user(db, user)
-    swim_pace_est = await estimate_swim_pace(db, user.id)
-
     # Saved routes
     result = await db.execute(
         select(Route)
@@ -60,14 +53,7 @@ async def simulator_page(
     return templates.TemplateResponse(
         request,
         "simulator.html",
-        context={
-            "user": user,
-            "ftp": ftp,
-            "rider_weight": user.weight_kg or 75,
-            "saved_routes": saved_routes,
-            "swim_pace_est": fmt_pace_100m(swim_pace_est),
-            "tri_formats": FORMATS,
-        },
+        context={"user": user, "saved_routes": saved_routes},
     )
 
 
@@ -562,10 +548,12 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     except Exception:
         logger.exception("Initial passage table failed; the page will ask for it")
 
+    p = route.params_json or {}
     return {
         "course": course,
         "profile": profile,
         "initial_table_html": initial_table_html,
+        "scenario": {"fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0), "switch_km": p.get("switch_km")},
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
         "geojson": json.dumps(geojson),
@@ -764,6 +752,19 @@ async def set_live_passage(
 
 # ── Bike plan (road book with wind at time of passage) ──
 
+def _bike_leg_stats(cycling, a: float, b: float) -> dict:
+    """Time-weighted wind and power over a leg of the course, plus its mean speed."""
+    from app.services.cycling_simulator import wind_label
+
+    parts = [sg for sg in cycling.segments if sg.end_km > a and sg.start_km < b]
+    t = sum(sg.predicted_time_s for sg in parts) or 1.0
+    power = sum(sg.predicted_power_watts * sg.predicted_time_s for sg in parts) / t
+    hw = sum(sg.headwind_ms * sg.predicted_time_s for sg in parts) / t * 3.6
+    wk = sum(sg.wind_kmh * sg.predicted_time_s for sg in parts) / t
+    speed = (b - a) / (t / 3600) if parts and t > 0 else 0.0
+    return {"power_watts": round(power), "headwind_kmh": round(hw, 1), "wind_kmh": round(wk), "wind_label": wind_label(hw, wk), "speed_kmh": round(speed, 1)}
+
+
 async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, user: User, start_offset_override: int | None = None) -> dict:
     """Everything the bike plan page needs: prediction at the saved parameters,
     wind taken from the saved forecast at each segment's time of passage, and
@@ -848,6 +849,8 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
         )
         passages = annotate_cutoffs(passages, cps, start_offset)
         autonomy = autonomy_legs(cps, cycling.total_distance_km, passages)
+        for ps in passages:
+            ps.update(_bike_leg_stats(cycling, float(ps.get("start_km") or 0), float(ps.get("end_km") or 0)))
     return {
         "request": request, "user": user, "route": route,
         "cycling": cycling, "cycling_json": cycling.model_dump_json(), "sections": sections,
@@ -1650,6 +1653,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
         "has_sodium": any((p.get("sodium_mg") or 0) > 0 for p in products_for_plan),
         "has_caffeine_product": any((p.get("caffeine_mg") or 0) > 0 and p.get("used") for p in products_for_plan),
         "catalog": _catalog_for(products),
+        "pantry": products,
+        "pantry_open": bool(getattr(request, "_pf_pantry_open", False)),
     }
 
 
@@ -1803,27 +1808,51 @@ async def save_route_params(
         return HTMLResponse("", status_code=404)
     form = await request.form()
     p = dict(route.params_json or {})
-
-    def _num(key, lo, hi, cast=float):
-        raw = form.get(key)
-        if raw in (None, ""):
-            return None
-        try:
-            v = cast(float(str(raw).replace(",", ".")))
-        except (TypeError, ValueError):
-            return None
-        return max(lo, min(hi, v))
-
     for key in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent"):
-        p[key] = _num(key, 80, 220, int)
-    p["walk_grade"] = _num("walk_grade", 8, 40) or 18.0
-    p["scenario_fast_pct"] = _num("scenario_fast_pct", 0, 30) if _num("scenario_fast_pct", 0, 30) is not None else 5.0
-    p["scenario_safe_pct"] = _num("scenario_safe_pct", 0, 60) if _num("scenario_safe_pct", 0, 60) is not None else 10.0
-    p["switch_km"] = _num("switch_km", 0.1, float(route.total_distance_km or 9999))
+        p[key] = _form_num(form, key, 80, 220, int)
+    p["walk_grade"] = _form_num(form, "walk_grade", 8, 40) or 18.0
+    if "scenario_fast_pct" in form or "scenario_safe_pct" in form or "switch_km" in form:  # older clients
+        _apply_scenarios(form, p, route)
     route.params_json = p
     await db.flush()
     ctx = await _pacing_context(request, route, db, user)
     return templates.TemplateResponse(request, "partials/pacing_guide.html", context=ctx, headers={"Cache-Control": "no-store"})
+
+
+def _form_num(form, key, lo, hi, cast=float):
+    raw = form.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        v = cast(float(str(raw).replace(",", ".")))
+    except (TypeError, ValueError):
+        return None
+    return max(lo, min(hi, v))
+
+
+def _apply_scenarios(form, p: dict, route: Route) -> None:
+    fast, safe = _form_num(form, "scenario_fast_pct", 0, 30), _form_num(form, "scenario_safe_pct", 0, 60)
+    p["scenario_fast_pct"] = fast if fast is not None else 5.0
+    p["scenario_safe_pct"] = safe if safe is not None else 10.0
+    p["switch_km"] = _form_num(form, "switch_km", 0.1, float(route.total_distance_km or 9999))
+
+
+@router.post("/api/simulator/routes/{route_id}/scenarios")
+async def save_route_scenarios(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Optimiste / sécurité margins and the switch point, from the plan page; the page then recalculates."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route:
+        return HTMLResponse("", status_code=404)
+    p = dict(route.params_json or {})
+    _apply_scenarios(await request.form(), p, route)
+    route.params_json = p
+    await db.flush()
+    return HTMLResponse(status_code=204)
 
 
 # ── Pace strategy export (COROS / Garmin) ──
@@ -2024,15 +2053,76 @@ _GENERIC_PLAN_PRODUCTS = [
 ]
 
 
-@router.get("/nutrition", response_class=HTMLResponse)
-async def nutrition_page(
+@router.get("/nutrition")
+async def nutrition_page(user: User = Depends(get_current_user)):
+    """The pantry now lives in each race's Nutrition tab."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse("/simulator", status_code=303)
+
+
+def _product_fields(form) -> dict | None:
+    """Label values from a product form; None when there is no name."""
+    name = (form.get("name") or "").strip()
+    if not name:
+        return None
+
+    def _f(key):
+        raw = form.get(key)
+        if raw in (None, ""):
+            return None
+        try:
+            return float(str(raw).replace(",", "."))
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "name": name[:100], "kind": (form.get("kind") or "gel")[:20],
+        "carbs_g": _f("carbs_g") or 0, "sodium_mg": _f("sodium_mg") or 0,
+        "kcal": _f("kcal"), "caffeine_mg": _f("caffeine_mg"), "volume_ml": _f("volume_ml"),
+    }
+
+
+async def _pantry_write(db: AsyncSession, user: User, form, product_id: int | None = None, delete: bool = False) -> None:
+    if product_id is None:
+        f = _product_fields(form)
+        if f:
+            db.add(NutritionProduct(user_id=user.id, **f))
+            await db.flush()
+        return
+    pr = await db.execute(select(NutritionProduct).where(NutritionProduct.id == product_id, NutritionProduct.user_id == user.id))
+    product = pr.scalar_one_or_none()
+    if not product:
+        return
+    if delete:
+        await db.delete(product)
+    else:
+        f = _product_fields(form)
+        if not f:
+            return
+        for k, v in f.items():
+            setattr(product, k, v)
+    await db.flush()
+
+
+@router.post("/partials/simulator/nutrition/{route_id}/products", response_class=HTMLResponse)
+@router.post("/partials/simulator/nutrition/{route_id}/products/{product_id}", response_class=HTMLResponse)
+@router.post("/partials/simulator/nutrition/{route_id}/products/{product_id}/delete", response_class=HTMLResponse)
+async def pantry_in_plan(
+    route_id: int,
     request: Request,
+    product_id: int | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    ctx = await _pantry_context(request, db, user)
-    ctx["user"] = user
-    return templates.TemplateResponse(request, "nutrition.html", context=ctx)
+    """Add, edit or remove a product from the race's Nutrition tab; the plan follows."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    await _pantry_write(db, user, await request.form(), product_id, delete=request.url.path.endswith("/delete"))
+    request._pf_pantry_open = True
+    ctx = await _nutrition_card_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
 _DEFAULT_PRODUCTS = [
