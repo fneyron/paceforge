@@ -31,7 +31,8 @@
     </style>
 </head>
 <body class="bg-gray-100 text-gray-900">
-{% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %}<sup>+{{ (seconds // 86400) | int }}j</sup>{% endif %}{% endmacro %}
+{% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %} <span class="font-normal text-[8px] text-gray-500">{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</span>{% endif %}{% endmacro %}
+{% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
 {% macro fmt_hm(seconds) %}{{ (seconds // 3600) | int }}h{{ '%02d'|format(((seconds % 3600) // 60) | int) }}{% endmacro %}
 {% macro fmt_pace(pace) %}{{ (pace // 60) | int }}:{{ '%02d'|format((pace % 60) | int) }}{% endmacro %}
 {% set kind_mark = {'water': '💧', 'full': '🍽', 'base': '🏠'} %}
@@ -72,7 +73,7 @@
                 <p class="t">{{ fmt_clock(clock_val) }}</p>
                 {% if pace %}<p class="p">{{ fmt_pace(pace) }}/km</p>{% endif %}
                 <p class="d"><span class="text-red-400">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% endif %}</span> <span class="text-blue-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></p>
-                {% if s.cutoff_clock %}<p class="c">barrière {{ s.cutoff_clock }}{% if s.cutoff_margin_s is not none %} ({{ '+' if s.cutoff_margin_s > 0 }}{{ (s.cutoff_margin_s / 60)|round|int }}′){% endif %}</p>{% endif %}
+                {% if s.cutoff_clock %}<p class="c">barrière {{ s.cutoff_clock }}{% if s.cutoff_margin_s is not none %} · marge <b{% if s.cutoff_margin_s < 0 %} class="text-red-700"{% endif %}>{{ fmt_margin(s.cutoff_margin_s) }}</b>{% endif %}</p>{% endif %}
             </div>
             {% endfor %}
         </div>
@@ -93,7 +94,7 @@
         </p>
     </div>
 
-    {% if legs_guide %}
+    {% if legs_rows %}
     <!-- Pilotage: one instruction per leg between two points (what the watch shows) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
         <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
@@ -102,9 +103,9 @@
         </div>
         <table class="w-full text-[9.5px] tabular-nums">
             <tbody class="divide-y divide-gray-100">
-                {% for l in legs_guide %}{% set b = l.block %}
+                {% for l in legs_rows %}{% set b = l.block %}
                 <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-orange-50/60{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
-                    <td class="py-0.5 pr-2 text-gray-600 whitespace-nowrap">→ <b class="text-gray-900">{{ l.to_name }}</b></td>
+                    <td class="py-0.5 pr-2 text-gray-600">→ <b class="text-gray-900">{{ l.to_names | join(', ') }}</b></td>
                     <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}{% endif %}</td>
                     <td class="py-0.5 pr-2 whitespace-nowrap">{% if b %}{{ b.label }}{% if b.vam_m_per_h %} · {{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %} · {{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}{% endif %}</td>
                     <td class="py-0.5 text-gray-600">{% if b %}{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} · <span class="text-red-700">escaliers km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</td>

@@ -549,10 +549,17 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         logger.exception("Initial passage table failed; the page will ask for it")
 
     p = route.params_json or {}
+    from datetime import date as _date
+
+    try:
+        race_passed = bool(route.race_date) and _date.fromisoformat(str(route.race_date)[:10]) <= _date.today()
+    except ValueError:
+        race_passed = False
     return {
         "course": course,
         "profile": profile,
         "initial_table_html": initial_table_html,
+        "show_debrief": race_passed or bool(route.result_json) or not route.race_date,
         "scenario": {"fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0), "switch_km": p.get("switch_km")},
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
@@ -1234,10 +1241,21 @@ async def print_route_plan(
 
         legs_guide = leg_instructions(guide, sections)
     total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
+    # consecutive legs with the same instruction print as one row (« → A, B, C »)
+    legs_rows: list[dict] = []
+    for lg in legs_guide or []:
+        bl = lg.get("block") or {}
+        key = (bl.get("cls"), bl.get("hr_cap"), bl.get("hr_free"), bl.get("label"), bl.get("vam_m_per_h"), bl.get("pace_s_per_km"), bool(lg.get("steep")))
+        if legs_rows and legs_rows[-1]["key"] == key and not lg.get("steep"):
+            legs_rows[-1]["to_names"].append(lg["to_name"])
+        else:
+            legs_rows.append({"key": key, "to_names": [lg["to_name"]], "block": lg.get("block"), "steep": lg.get("steep")})
     return templates.TemplateResponse(
         request,
         "simulator_print.html",
         context={
+            "day_labels": _day_labels(route.race_date),
+            "legs_rows": legs_rows,
             "route": route,
             "course": course,
             "predicted_total_formatted": total_fmt,
@@ -1276,6 +1294,18 @@ async def delete_route(
         await db.delete(route)
         await db.flush()
     return JSONResponse({"ok": True})
+
+
+def _day_labels(race_date: str | None, n: int = 5) -> list[str]:
+    """Weekday names for day 0..n-1 of the race (« ven. », « sam. »…), or « jour 2 »… without a date."""
+    from datetime import date as _d, timedelta
+
+    names = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+    try:
+        d0 = _d.fromisoformat((race_date or "")[:10])
+        return [names[(d0 + timedelta(days=i)).weekday()] for i in range(n)]
+    except ValueError:
+        return [f"jour {i + 1}" for i in range(n)]
 
 
 def _iso_date(value: str | None) -> str | None:
