@@ -257,7 +257,7 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
                 return max(0.05, min(float(tilt), 0.40))
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
-    return 0.15
+    return DEFAULT_FATIGUE_TILT
 
 
 async def _estimate_flat_pace_from_activities(
@@ -333,18 +333,24 @@ def _get_factor(profile: AthleteGradientProfile, gradient_pct: float) -> float:
 # mean gap is 10 min and the last two legs are within 12 min of his. Only the shape moves for athletes with races: the race model
 # re-levels the total.
 FATIGUE_SCALE = 1.3
+# Fresh→fade reshape when the athlete has no matched race of his own. Fitted
+# with FATIGUE_SCALE on the 2025 Transjeju 1st and 3rd (Ko 16:55, Mamba
+# 18:07): mean gap at the checkpoints 7,7 and 7,8 min (0.15 gave 9,8 and 8,4).
+DEFAULT_FATIGUE_TILT = 0.22
 
 
 def _fatigue_factor(
     progress: float,
     total_distance_km: float,
     cumulative_gain: float,
-    tilt: float = 0.15,
+    tilt: float = None,
 ) -> float:
     """Exponential fatigue factor based on race progress and D+.
 
     Returns a multiplier >= 1.0 (higher = slower).
     """
+    if tilt is None:
+        tilt = DEFAULT_FATIGUE_TILT
     if total_distance_km < 20:
         return 1.0
 
@@ -437,7 +443,7 @@ def predict_course(
     cumulative_gain = 0.0
     total_distance = course.total_distance_km
 
-    tilt = getattr(profile, "fatigue_tilt", 0.15) or 0.15
+    tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
 
     for segment in course.segments:
         grade_factor = _get_factor(profile, segment.avg_gradient_pct)
