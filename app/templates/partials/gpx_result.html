@@ -91,18 +91,24 @@
     <div class="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div id="map-wrap" class="hidden relative">
             <div id="courseMap" class="h-[220px] lg:h-[340px] map-container"></div>
+            <div id="map-legend" class="absolute left-2 bottom-2 z-10 hidden lg:flex flex-wrap items-center gap-x-2 rounded-md bg-white/90 px-2 py-1 text-[10px] leading-none text-gray-600 shadow-sm pointer-events-none"></div>
             <button type="button" onclick="window._sim && window._sim.toggleMap(false)" class="map-close absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white shadow items-center justify-center text-gray-700" aria-label="Fermer la carte">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
         </div>
         <div id="elevChart" class="h-[150px] lg:h-[200px]"></div>
+        <div id="slope-legend" class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-2 pb-1.5 text-[10px] leading-none text-gray-500"></div>
     </div>
     {% endif %}
 
     {# ── the plan: one table ─────────────────────────────────────────────── #}
     <div>
-        <div id="passage-times-result"></div>
+        <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
         <div id="poste-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 text-xs" role="menu" aria-label="Poste"></div>
+        <div id="cp-sheet" class="hidden lg:hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Point de passage">
+            <div data-sheet-bg class="absolute inset-0 bg-black/30" onclick="window._sim && window._sim.closeSheet()"></div>
+            <div data-sheet-panel class="absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl px-4 pt-3" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
+        </div>
         <div id="page-error" class="hidden px-1 py-2 text-xs text-red-600"></div>
         <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
         <div class="h-9 flex items-center gap-2 text-xs text-gray-400 pl-1 border-t border-gray-100">
@@ -182,6 +188,18 @@ window._sim = {};
     function idxAtKm(km) { var n = routeCoords.length, lo = 0, hi = n - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; } return lo; }
 
     // ── MAP ──
+    // MapLibre (800 KB) loads only when the map is asked for
+    var mapLibLoading = null;
+    function loadMapLib(cb) {
+        if (window.maplibregl) { cb(); return; }
+        if (!mapLibLoading) {
+            mapLibLoading = new Promise(function (resolve) {
+                var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css'; document.head.appendChild(l);
+                var sc = document.createElement('script'); sc.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'; sc.onload = resolve; sc.onerror = resolve; document.head.appendChild(sc);
+            });
+        }
+        mapLibLoading.then(cb);
+    }
     var DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
     var terrain3d = false, ctl3dBtn = null;
     try { terrain3d = !isCompact() && localStorage.getItem('pf.map3d') === '1'; } catch (e) {}
@@ -303,13 +321,32 @@ window._sim = {};
         if (!isCompact()) { try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {} }
         if (!show) { if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; } return; }
         if (!map) {
-            try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
-            if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
+            if (!window.maplibregl) { loadMapLib(function () { if (window.maplibregl) mountMap(); else document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible (script non chargé)</div>'; }); return; }
+            mountMap();
         } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
+    }
+    // the map is built once its script is here and the panel is still open
+    function mountMap() {
+        var wrap = document.getElementById('map-wrap'); if (map || !wrap || wrap.classList.contains('hidden')) return;
+        try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
+        if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
     }
 
     // ── PROFILE: the band — night, numbered pins, switch line, autonomy brackets ──
-    function slopeColor(pct) { if (pct > 15) return '#991b1b'; if (pct > 8) return '#dc2626'; if (pct > 3) return '#f97316'; if (pct > -3) return '#22c55e'; if (pct > -8) return '#3b82f6'; if (pct > -15) return '#2563eb'; return '#7c3aed'; }
+    // slope classes shared by the map line, the profile ground and the legend
+    var SLOPE_CLASSES = [[15, '#7f1d1d', '> 15 %'], [8, '#dc2626', '8–15 %'], [3, '#f59e0b', '3–8 %'], [-3, '#22c55e', 'plat'], [-10, '#3b82f6', 'descente'], [-Infinity, '#1e3a8a', '< −10 %']];
+    function slopeColor(pct) { for (var i = 0; i < SLOPE_CLASSES.length; i++) if (pct > SLOPE_CLASSES[i][0]) return SLOPE_CLASSES[i][1]; return SLOPE_CLASSES[SLOPE_CLASSES.length - 1][1]; }
+    function legendHtml(withNight) {
+        var order = [3, 2, 1, 0, 4, 5], h = '<span class="text-gray-400 mr-0.5 hidden sm:inline">pente</span>';
+        order.forEach(function (k) { var c = SLOPE_CLASSES[k]; h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + c[1] + '"></i>' + c[2] + '</span>'; });
+        if (withNight) h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + (isDark ? '#020617' : '#1e293b') + ';opacity:' + (isDark ? '.6' : '.2') + '"></i>nuit</span>';
+        return h;
+    }
+    function fillLegends() {
+        var night = !!(planData && planData.night && planData.night.length);
+        var a = document.getElementById('slope-legend'); if (a) a.innerHTML = legendHtml(night);
+        var b = document.getElementById('map-legend'); if (b) b.innerHTML = legendHtml(false);
+    }
     var SVGNS = 'http://www.w3.org/2000/svg';
     var prof = { svg: null, w: 0, h: 0, compact: false, padL: 46, padR: 12, padT: 34, padB: 34, minE: 0, maxE: 1, twoRows: false, cross: null, dot: null, lbl: null, lblBox: null, lblText: null, cpLayer: null, nightLayer: null, autoLayer: null, switchLayer: null, hiLayer: null, ro: null };
     function mk(tag, attrs) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); return el; }
@@ -333,7 +370,7 @@ window._sim = {};
         for (var i = 0; i < xs.length; i++) {
             var gap = i > 0 ? xs[i] - xs[i - 1] : Infinity;
             var lim = compact ? 16 : 20;
-            rows.push(gap < lim ? 1 - rows[i - 1] : 0); small.push(gap < (compact ? 9 : 12));
+            rows.push(gap < lim ? 1 - rows[i - 1] : 0); small.push(false);
             if (gap < lim) two = true;
         }
         return { xs: xs, rows: rows, small: small, two: two };
@@ -394,11 +431,11 @@ window._sim = {};
             grad.appendChild(mk('stop', { offset: o0, 'stop-color': r.c })); grad.appendChild(mk('stop', { offset: o1, 'stop-color': r.c }));
         });
         var fade = mk('linearGradient', { id: gid + 'f', x1: 0, x2: 0, y1: 0, y2: 1 });
-        fade.appendChild(mk('stop', { offset: '0%', 'stop-color': '#fff', 'stop-opacity': '1' })); fade.appendChild(mk('stop', { offset: '100%', 'stop-color': '#fff', 'stop-opacity': '0.35' }));
+        fade.appendChild(mk('stop', { offset: '0%', 'stop-color': '#fff', 'stop-opacity': '1' })); fade.appendChild(mk('stop', { offset: '100%', 'stop-color': '#fff', 'stop-opacity': '0.55' }));
         var mask = mk('mask', { id: gid + 'm' }); mask.appendChild(mk('rect', { x: 0, y: 0, width: w, height: h, fill: 'url(#' + gid + 'f)' }));
         defs.appendChild(grad); defs.appendChild(fade); defs.appendChild(mask);
         var groundD = d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' ' + base + ' L' + xOf(pts[0].distance_km).toFixed(1) + ' ' + base + ' Z';
-        svg.appendChild(mk('path', { d: groundD, fill: 'url(#' + gid + ')', 'fill-opacity': isDark ? '0.55' : '0.5', mask: 'url(#' + gid + 'm)' }));
+        svg.appendChild(mk('path', { d: groundD, fill: 'url(#' + gid + ')', 'fill-opacity': isDark ? '0.6' : '0.62', mask: 'url(#' + gid + 'm)' }));
         prof.runs = runs;
         svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.75', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
         prof.hiLayer = mk('g', {}); svg.appendChild(prof.hiLayer);
@@ -595,12 +632,13 @@ window._sim = {};
         var inp = document.querySelector('#plan-table tr[data-row][data-cp="' + idx + '"] input[type=text]'); if (inp) { try { inp.focus(); inp.select(); } catch (e) {} }
     }
     function anchorOn(cp) { return liveAnchor && cp && Math.abs(parseFloat(liveAnchor.anchor_km) - cp.distance_km) < 0.15; }
-    function removeCheckpoint(i) { if (!checkpoints[i]) return; if (anchorOn(checkpoints[i])) { liveAnchor = null; persistLive(); } checkpoints.splice(i, 1); if (openCp === i) openCp = null; else if (openCp !== null && openCp > i) openCp -= 1; refresh(); recalc(); scheduleSave(); }
+    function removeCheckpoint(i) { if (!checkpoints[i]) return; if (anchorOn(checkpoints[i])) { liveAnchor = null; persistLive(); } checkpoints.splice(i, 1); if (openCp === i) openCp = null; else if (openCp !== null && openCp > i) openCp -= 1; if (sheetCp === i) closeSheet(); else if (sheetCp !== null && sheetCp > i) sheetCp -= 1; refresh(); recalc(); scheduleSave(); }
     function confirmRemove(btn, i) {
         if (btn.getAttribute('data-armed')) { removeCheckpoint(i); return; }
         var html = btn.innerHTML, cls = btn.className, det = btn.closest('tr[data-detail]'), hid = [];
         btn.setAttribute('data-armed', '1'); btn.innerHTML = 'Supprimer ?';
-        if (det) {
+        if (btn.closest('#cp-sheet')) { btn.className = cls + ' border-red-300 text-red-600 font-semibold'; }
+        else if (det) {
             // phone detail line: the margin / temperature step aside for 1,5 s, nothing is covered
             det.querySelectorAll('[data-secondary]').forEach(function (el) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); hid.push(el); } });
             btn.className = cls + ' text-red-600 font-semibold';
@@ -609,8 +647,8 @@ window._sim = {};
         }
         setTimeout(function () { if (btn.getAttribute('data-armed')) { btn.removeAttribute('data-armed'); btn.innerHTML = html; btn.className = cls; hid.forEach(function (el) { el.classList.remove('hidden'); }); } }, 1500);
     }
-    function editCheckpointName(i, el) { if (!checkpoints[i]) return; recalcSeq++; var val = (el && el.value !== undefined) ? el.value : el; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; if (el && el.value !== undefined) el.value = checkpoints[i].name; refresh(); scheduleSave(); }
-    function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } var cp = checkpoints[i], wasAnchor = anchorOn(cp); cp.distance_km = Math.round(km * 10) / 10; cp.elevation = interpElev(km); if (wasAnchor) { liveAnchor.anchor_km = cp.distance_km; persistLive(); } checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); if (openCp === i) openCp = checkpoints.indexOf(cp); refresh(); recalc(); scheduleSave(); }
+    function editCheckpointName(i, el) { if (!checkpoints[i]) return; recalcSeq++; var val = (el && el.value !== undefined) ? el.value : el; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; if (el && el.value !== undefined) el.value = checkpoints[i].name; var nt = document.querySelector('#plan-table tr[data-row][data-cp="' + i + '"] [data-name-text]'); if (nt) nt.textContent = checkpoints[i].name; refresh(); scheduleSave(); }
+    function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } var cp = checkpoints[i], wasAnchor = anchorOn(cp); cp.distance_km = Math.round(km * 10) / 10; cp.elevation = interpElev(km); if (wasAnchor) { liveAnchor.anchor_km = cp.distance_km; persistLive(); } checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); if (openCp === i) openCp = checkpoints.indexOf(cp); if (sheetCp === i) sheetCp = checkpoints.indexOf(cp); refresh(); recalc(); scheduleSave(); }
     function editCheckpointMeta(i, field, val) {
         if (!checkpoints[i]) return;
         if (field === 'kind') {
@@ -660,6 +698,45 @@ window._sim = {};
         };
     }
     function closePoste() { var pop = document.getElementById('poste-pop'); if (pop) pop.classList.add('hidden'); posteOpen = null; }
+    // ── POINT SHEET (phone): name, km, planned clocks, type of poste, cutoff, real passage, delete ──
+    var sheetCp = null;
+    function sheetOpen() { var sh = document.getElementById('cp-sheet'); return !!sh && !sh.classList.contains('hidden'); }
+    function sheetRowVals(i) {
+        var tr = document.querySelector('#plan-table tr[data-row][data-cp="' + i + '"]'); if (!tr) return {};
+        var q = function (sel) { var e = tr.querySelector(sel); return e ? e.textContent.trim() : ''; };
+        var m = tr.querySelector('[data-margin]');
+        return { target: q('[data-cible-text]'), safe: q('[data-safe]'), fast: q('[data-fast]'), leg: q('[data-leg-time]'), margin: m ? m.textContent.trim() : '', marginCls: m ? m.className.replace(/.*?(text-[a-z]+-\d+).*/, '$1') : '' };
+    }
+    function renderSheet() {
+        var p = document.querySelector('#cp-sheet [data-sheet-panel]'), cp = sheetCp !== null ? checkpoints[sheetCp] : null; if (!p || !cp) return;
+        var i = sheetCp, v = sheetRowVals(i), anchored = anchorOn(cp), sec = function (t) { return '<div class="text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-1.5">' + t + '</div>'; };
+        var h = '<div class="flex items-center gap-2 mb-2"><span class="w-6 h-6 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center shrink-0">' + (i + 1) + '</span>'
+            + '<input type="text" value="' + esc(cp.name) + '" aria-label="Nom du point" onchange="window._sim.editCheckpointName(' + i + ', this)" class="flex-1 min-w-0 text-base font-semibold text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-1">'
+            + '<button type="button" onclick="window._sim.closeSheet()" class="w-9 h-9 -mr-2 inline-flex items-center justify-center rounded-full text-gray-500 text-2xl leading-none" aria-label="Fermer">×</button></div>';
+        h += '<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-600 mb-3"><label class="inline-flex items-baseline gap-1">km <input type="number" step="0.1" min="0.1" value="' + cp.distance_km + '" aria-label="km" onchange="window._sim.editCheckpointKm(' + i + ', this.value)" class="sim-num w-14 text-[13px] tabular-nums text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5"></label>'
+            + '<span class="text-gray-300">·</span><span>' + fmtM(cp.elevation || 0) + ' m</span>' + (v.leg ? '<span class="text-gray-300">·</span><span>' + esc(v.leg.split('+')[0].trim()) + ' de course depuis le point précédent' + (v.leg.indexOf('+') > 0 ? ' · arrêt ' + esc(v.leg.split('+')[1].trim()) : '') + '</span>' : '') + '</div>';
+        var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
+        if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
+        var kind = cp.kind || 'none', kdesc = '';
+        h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] leading-none ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
+        h += '<p class="text-[11px] text-gray-400 mb-2 min-h-4">' + esc(kdesc) + '</p>';
+        h += '<div class="flex gap-2 mb-4">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
+        h += sec('Barrière horaire') + '<div class="flex items-center gap-3 mb-4"><input type="time" step="60" value="' + esc(cp.cutoff_clock || '') + '" aria-label="Barrière horaire" onchange="window._sim.editCheckpointMeta(' + i + ', \'cutoff_clock\', this.value)" class="time-inline h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-gray-900 bg-white">'
+            + (v.margin ? '<span class="text-sm ' + esc(v.marginCls) + '">marge ' + esc(v.margin) + '</span>' : '<span class="text-[11px] text-gray-400">heure limite imposée par l\'organisation</span>') + '</div>';
+        h += sec('Jour J') + '<div class="flex items-center gap-3 mb-1"><span class="text-[13px] text-gray-700">Je suis passé ici à</span><input type="time" step="60" value="' + esc(anchored ? liveAnchor.anchor_clock : '') + '" aria-label="Heure réelle de passage" onchange="window._sim.setPassage(' + i + ', ' + cp.distance_km + ', this.value)" class="time-inline h-9 px-2 rounded-lg border ' + (anchored ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white') + ' text-sm tabular-nums text-gray-900">'
+            + (anchored ? '<button type="button" onclick="window._sim.clearPassage()" class="text-[13px] text-gray-500 underline">effacer</button>' : '') + '</div>'
+            + '<p class="text-[11px] text-gray-400 mb-4">Pendant la course : ton heure réelle ici, et tous les points suivants se recalent.</p>';
+        h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-10 rounded-lg border border-gray-200 text-sm text-gray-500">Supprimer ce point</button>';
+        p.innerHTML = h;
+        p.onclick = function (ev) {
+            var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
+            if (k) { editCheckpointMeta(i, 'kind', k.getAttribute('data-k')); renderSheet(); }
+            else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(i, f, !checkpoints[i][f]); renderSheet(); }
+        };
+    }
+    function openSheet(i) { var sh = document.getElementById('cp-sheet'); if (!sh || !checkpoints[i]) return; if (sheetCp === i && sheetOpen()) { closeSheet(); return; } sheetCp = i; renderSheet(); sh.classList.remove('hidden'); }
+    function closeSheet() { var sh = document.getElementById('cp-sheet'); if (sh) sh.classList.add('hidden'); sheetCp = null; }
+    function refreshSheet() { if (sheetCp === null || !sheetOpen()) return; var ae = document.activeElement; if (ae && ae.closest && ae.closest('#cp-sheet') && (ae.type === 'text' || ae.type === 'number')) return; renderSheet(); }
     var KIND_LABEL = { water: 'eau', full: 'ravito complet', base: 'base vie' };
     function cpPopupHtml(cp, i, pt) {
         var h = '<b>' + (i + 1) + ' · ' + esc(cp.name) + '</b><div class="text-gray-500">km ' + fmtKm(cp.distance_km) + ' · ' + fmtM(cp.elevation || 0) + ' m</div>';
@@ -743,9 +820,12 @@ window._sim = {};
         var out = document.getElementById('passage-times-result'), ae = document.activeElement, k = (ae && out.contains(ae)) ? focusKey(ae) : null;
         // morph: unchanged cells are left alone (no blink, focus and selection survive natively)
         if (window.Idiomorph) { try { Idiomorph.morph(out, html, { morphStyle: 'innerHTML' }); } catch (e) { out.innerHTML = html; } } else { out.innerHTML = html; }
+        afterTable(); if (document.activeElement !== ae) refocus(k); focusNewRow();
+    }
+    function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); if (document.activeElement !== ae) refocus(k); focusNewRow(); renderCpOnMap();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet();
     }
 
     // ── OBJECTIVE: the number is the control ──
@@ -927,7 +1007,7 @@ window._sim = {};
     // ── HERO / PHONE STATE ──
     function updateHero() { var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : predictedTotalS); }
     function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); }
-    function toggleDetail(ci) { openCp = (openCp === ci) ? null : ci; applyDetail(); }
+    function toggleDetail(ci) { openSheet(ci); }
     function applyDetail() {
         var found = false;
         document.querySelectorAll('#plan-table tr[data-detail]').forEach(function (tr) { var on = parseInt(tr.getAttribute('data-detail'), 10) === openCp; if (on) found = true; tr.classList.toggle('hidden', !on); });
@@ -940,9 +1020,10 @@ window._sim = {};
     }
     function applyPhoneState() {
         var t = document.getElementById('plan-table'); if (!t) return;
-        var eff = t.querySelector('[data-scn-pill]') ? scn : 'target';
+        var pill = document.querySelector('#passage-times-result [data-scn-pill]'), eff = pill ? scn : 'target';
         t.setAttribute('data-scn', eff); fixSpans();
-        t.querySelectorAll('[data-scn-btn]').forEach(function (b) { var on = b.getAttribute('data-scn-btn') === eff; b.className = 'px-2 py-1.5 rounded-full ' + (on ? 'bg-gray-900 text-white' : 'text-gray-500'); });
+        if (pill) pill.querySelectorAll('[data-scn-btn]').forEach(function (b) { var on = b.getAttribute('data-scn-btn') === eff; b.className = 'px-2.5 py-1.5 rounded-full ' + (on ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500'); });
+        var nm = t.querySelector('[data-scn-name]'); if (nm) nm.textContent = { safe: 'Sécurité', target: 'Cible', fast: 'Optimiste' }[eff];
         applyDetail();
     }
     function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
@@ -953,6 +1034,7 @@ window._sim = {};
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     labelWeekday();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
+    fillLegends();
     var wantMap = false; try { wantMap = !isCompact() && localStorage.getItem('pf.map') === '1'; } catch (e) {}
     if (wantMap) toggleMap(true);
     document.addEventListener('pointerdown', function (ev) {
@@ -961,7 +1043,7 @@ window._sim = {};
         document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
         var pp = document.getElementById('poste-pop'); if (pp && !pp.classList.contains('hidden') && !pp.contains(t) && !(t.closest && t.closest('[data-poste]'))) closePoste();
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); closeSheet(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -983,9 +1065,9 @@ window._sim = {};
     ['cp-name', 'cp-km'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addCheckpoint(); } }); });
     var adv = document.getElementById('advanced');
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
-    recalc();
+    if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
-    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>

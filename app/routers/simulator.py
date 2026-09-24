@@ -155,6 +155,102 @@ def _clock_to_s(clock: str) -> int | None:
         return None
 
 
+async def _passage_table_context(
+    db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
+    start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
+    anchor_km: float | None, anchor_clock: str | None, profile=None, route_id: int | None = None,
+) -> dict:
+    """Everything partials/passage_times.html needs: the (re)planned sections, scenarios, plan data.
+    Used by the recalculation endpoint and by the page itself, so the first paint already has the table."""
+    from app.services.checkpoints import annotate_cutoffs, autonomy_legs
+    from app.services.race_simulator import (
+        _elevation_at_km,
+        build_athlete_gradient_profile,
+        compute_passage_times,
+        predict_course,
+    )
+
+    # Re-predict so the night penalty reflects the chosen start time.
+    # Heat is applied once, in compute_passage_times.
+    profile = profile or await build_athlete_gradient_profile(db, user_id)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute
+    )
+
+    # Aid-station stops: refills come from the saved route's nutrition plan;
+    # the stop duration comes from the live input (fallback: saved value).
+    aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
+    stop_min = stop_minutes or 0
+    params: dict = {}
+    if route_obj:
+        if route_obj.nutrition_json:
+            aid_kms |= set(route_obj.nutrition_json.get("refills") or [])
+        if stop_minutes is None:
+            stop_min = route_obj.stop_minutes or 0
+        params = route_obj.params_json or {}
+
+    sections = compute_passage_times(
+        course, checkpoints, target_time_s, heat_factor,
+        start_hour, start_minute, hourly_weather,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+    )
+    has_weather = any(s.get("temperature_c") is not None for s in sections)
+    start_offset_s = start_hour * 3600 + start_minute * 60
+
+    # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
+    replan = None
+    if anchor_km is not None and anchor_clock:
+        from app.services.race_simulator import replan_from_passage
+
+        anchor_clock_s = _clock_to_s(anchor_clock)
+        if anchor_clock_s is not None:
+            sections, replan = replan_from_passage(
+                sections, start_hour * 3600 + start_minute * 60, target_time_s,
+                anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
+            )
+    # Cutoff margins and autonomy legs read the (re)planned clocks, so they
+    # come after the replan: on race day the margin is THE number he checks.
+    sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
+    autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
+
+    from app.services.checkpoints import KINDS
+    from app.services.race_simulator import build_scenarios
+
+    scenarios = None if replan else build_scenarios(
+        sections, start_offset_s, target_time_s,
+        fast_pct=float(params.get("scenario_fast_pct") or 5.0),
+        safe_pct=float(params.get("scenario_safe_pct") or 10.0),
+        switch_km=params.get("switch_km"),
+        total_distance_km=course.total_distance_km,
+    )
+    # What the profile draws: night, terrain bands, clocks, cutoffs.
+    from app.services.pacing_guide import DEFAULT_WALK_GRADE, build_pacing_guide, default_hr_caps
+    from app.services.plan_view import build_plan_data
+    from app.services.training_zones import estimate_training_zones
+
+    zones = await estimate_training_zones(db, user_id)
+    dflt = default_hr_caps(zones.get("max_hr"))
+    caps = {k: (int(float(params[k])) if params.get(k) not in (None, "") else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
+    guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
+    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    return {
+        "plan_data": _script_json(plan_data),
+        "sections": sections,
+        "has_target": (target_time_s is not None) or replan is not None,
+        "replan": replan,
+        "has_weather": has_weather,
+        "predicted_total": course.predicted_total_time_s,
+        "target_total": target_time_s,
+        "start_offset_s": start_offset_s,
+        "start_elevation": _elevation_at_km(course, 0.0),
+        "total_distance_km": course.total_distance_km,
+        "autonomy": autonomy,
+        "scenarios": scenarios,
+        "kinds": KINDS,
+        "route_id": route_id,
+    }
+
+
 @router.post("/partials/simulator/passage-times", response_class=HTMLResponse)
 async def passage_times(
     request: Request,
@@ -173,13 +269,7 @@ async def passage_times(
     db: AsyncSession = Depends(get_db),
 ):
     from app.schemas.simulator import CourseProfile
-    from app.services.checkpoints import annotate_cutoffs, autonomy_legs, normalize_checkpoint
-    from app.services.race_simulator import (
-        _elevation_at_km,
-        build_athlete_gradient_profile,
-        compute_passage_times,
-        predict_course,
-    )
+    from app.services.checkpoints import normalize_checkpoint
 
     try:
         # The course is 175 KB+ of GPX points: once the route is saved the
@@ -203,89 +293,11 @@ async def passage_times(
             if heat_factor == 1.0:
                 heat_factor = float((route_obj.weather_json or {}).get("heat_factor") or 1.0)
 
-        # Re-predict so the night penalty reflects the chosen start time.
-        # Heat is applied once, in compute_passage_times.
-        profile = await build_athlete_gradient_profile(db, user.id)
-        course = predict_course(
-            course, profile, start_hour=start_hour, start_minute=start_minute
+        ctx = await _passage_table_context(
+            db, user.id, course, checkpoints, target_time_s, heat_factor, start_hour, start_minute, hourly_weather,
+            route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id,
         )
-
-        # Aid-station stops: refills come from the saved route's nutrition plan;
-        # the stop duration comes from the live input (fallback: saved value).
-        aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
-        stop_min = stop_minutes or 0
-        params: dict = {}
-        if route_obj:
-            if route_obj.nutrition_json:
-                aid_kms |= set(route_obj.nutrition_json.get("refills") or [])
-            if stop_minutes is None:
-                stop_min = route_obj.stop_minutes or 0
-            params = route_obj.params_json or {}
-
-        sections = compute_passage_times(
-            course, checkpoints, target_time_s, heat_factor,
-            start_hour, start_minute, hourly_weather,
-            stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
-        )
-        has_weather = any(s.get("temperature_c") is not None for s in sections)
-        start_offset_s = start_hour * 3600 + start_minute * 60
-
-        # Race day: "I'm at <checkpoint> at <clock>" → re-plan the remainder.
-        replan = None
-        if anchor_km is not None and anchor_clock:
-            from app.services.race_simulator import replan_from_passage
-
-            anchor_clock_s = _clock_to_s(anchor_clock)
-            if anchor_clock_s is not None:
-                sections, replan = replan_from_passage(
-                    sections, start_hour * 3600 + start_minute * 60, target_time_s,
-                    anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms,
-                )
-        # Cutoff margins and autonomy legs read the (re)planned clocks, so they
-        # come after the replan: on race day the margin is THE number he checks.
-        sections = annotate_cutoffs(sections, checkpoints, start_offset_s)
-        autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
-
-        from app.services.checkpoints import KINDS
-        from app.services.race_simulator import build_scenarios
-
-        scenarios = None if replan else build_scenarios(
-            sections, start_offset_s, target_time_s,
-            fast_pct=float(params.get("scenario_fast_pct") or 5.0),
-            safe_pct=float(params.get("scenario_safe_pct") or 10.0),
-            switch_km=params.get("switch_km"),
-            total_distance_km=course.total_distance_km,
-        )
-        # What the profile draws: night, terrain bands, clocks, cutoffs.
-        from app.services.pacing_guide import DEFAULT_WALK_GRADE, build_pacing_guide, default_hr_caps
-        from app.services.plan_view import build_plan_data
-        from app.services.training_zones import estimate_training_zones
-
-        zones = await estimate_training_zones(db, user.id)
-        dflt = default_hr_caps(zones.get("max_hr"))
-        caps = {k: (int(float(params[k])) if params.get(k) not in (None, "") else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
-        guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
-        plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
-        return templates.TemplateResponse(
-            request,
-            "partials/passage_times.html",
-            context={
-                "plan_data": _script_json(plan_data),
-                "sections": sections,
-                "has_target": (target_time_s is not None) or replan is not None,
-                "replan": replan,
-                "has_weather": has_weather,
-                "predicted_total": course.predicted_total_time_s,
-                "target_total": target_time_s,
-                "start_offset_s": start_offset_s,
-                "start_elevation": _elevation_at_km(course, 0.0),
-                "total_distance_km": course.total_distance_km,
-                "autonomy": autonomy,
-                "scenarios": scenarios,
-                "kinds": KINDS,
-                "route_id": route_id,
-            },
-        )
+        return templates.TemplateResponse(request, "partials/passage_times.html", context=ctx)
     except Exception:
         logger.exception("Passage time calculation failed")
         return HTMLResponse("", status_code=500)  # the page keeps its last table and offers « réessayer »
@@ -534,9 +546,26 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "properties": {"name": course.name},
     }
 
+    # The table itself, rendered now: no blank band and no round trip before the plan shows.
+    initial_table_html = None
+    try:
+        from app.services.checkpoints import normalize_checkpoint
+
+        w = route.weather_json or {}
+        live = route.live_json or {}
+        tctx = await _passage_table_context(
+            db, user_id, CourseProfile(**route.course_json), [normalize_checkpoint(c) for c in cps], route.target_time_s,
+            float(w.get("heat_factor") or 1.0), route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
+            w.get("hourly"), route, route.stop_minutes, live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
+        )
+        initial_table_html = templates.get_template("partials/passage_times.html").render(tctx)
+    except Exception:
+        logger.exception("Initial passage table failed; the page will ask for it")
+
     return {
         "course": course,
         "profile": profile,
+        "initial_table_html": initial_table_html,
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
         "geojson": json.dumps(geojson),
