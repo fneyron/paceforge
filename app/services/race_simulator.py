@@ -327,6 +327,14 @@ def _get_factor(profile: AthleteGradientProfile, gradient_pct: float) -> float:
     return 1.0
 
 
+# How hard the late-race slowdown bites. Fitted on the 2025 Transjeju winner's
+# splits (145,6 km, 16:55): at 1.0 the plan for his time ran the last 30 km
+# 24 min faster than he did (15 min mean gap at the checkpoints); at 1.3 the
+# mean gap is 10 min and the last two legs are within 12 min of his. Only the shape moves for athletes with races: the race model
+# re-levels the total.
+FATIGUE_SCALE = 1.3
+
+
 def _fatigue_factor(
     progress: float,
     total_distance_km: float,
@@ -340,8 +348,8 @@ def _fatigue_factor(
     if total_distance_km < 20:
         return 1.0
 
-    # Base growth with distance (original magnitudes — keeps the overall total).
-    k = 0.12 * (total_distance_km / 42)
+    # Base growth with distance, scaled by FATIGUE_SCALE (see its note).
+    k = 0.12 * FATIGUE_SCALE * (total_distance_km / 42)
     base = 1.0 + k * (progress ** 2)
 
     # ~Total-neutral fresh→fade reshape: fresh legs run a touch faster than the
@@ -353,7 +361,7 @@ def _fatigue_factor(
     # Glycogen depletion after ~30-35km
     glycogen_threshold = min(35 / total_distance_km, 0.7)
     if progress > glycogen_threshold:
-        base += 0.04 * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
+        base += 0.04 * FATIGUE_SCALE * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
 
     # Elevation fatigue: more D+ = more fatigue (bites late on hilly ultras).
     if cumulative_gain > 0:
