@@ -683,8 +683,8 @@ window._sim = {};
     function sheetRowVals(i) {
         var tr = document.querySelector('#plan-table tr[data-row][data-cp="' + i + '"]'); if (!tr) return {};
         var q = function (sel) { var e = tr.querySelector(sel); return e ? e.textContent.trim() : ''; };
-        var m = tr.querySelector('[data-margin]');
-        return { target: q('[data-cible-text]'), safe: q('[data-safe]'), fast: q('[data-fast]'), leg: q('[data-leg-time]'), margin: m ? m.textContent.trim() : '', marginCls: m ? m.className.replace(/.*?(text-[a-z]+-\d+).*/, '$1') : '' };
+        var m = tr.querySelector('[data-margin]'), wx = tr.querySelector('[data-wx]');
+        return { wx_html: wx ? wx.innerHTML : '', wx_title: wx ? (wx.getAttribute('title') || '').replace(/\s*·\s*prévision.*$/, '') : '', target: q('[data-cible-text]'), safe: q('[data-safe]'), fast: q('[data-fast]'), leg: q('[data-leg-time]'), margin: m ? m.textContent.trim() : '', marginCls: m ? m.className.replace(/.*?(text-[a-z]+-\d+).*/, '$1') : '' };
     }
     function renderSheet() {
         var p = document.querySelector('#cp-sheet [data-sheet-panel]'), cp = sheetCp !== null ? checkpoints[sheetCp] : null; if (!p || !cp) return;
@@ -693,7 +693,9 @@ window._sim = {};
             + '<input type="text" value="' + esc(cp.name) + '" aria-label="Nom du point" onchange="window._sim.editCheckpointName(' + i + ', this)" class="flex-1 min-w-0 text-base font-semibold text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-1">'
             + '<button type="button" onclick="window._sim.closeSheet()" class="w-9 h-9 -mr-2 inline-flex items-center justify-center rounded-full text-gray-500 text-2xl leading-none" aria-label="Fermer">×</button></div>';
         h += '<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-600 mb-3"><label class="inline-flex items-baseline gap-1">km <input type="number" step="0.1" min="0.1" value="' + cp.distance_km + '" aria-label="km" onchange="window._sim.editCheckpointKm(' + i + ', this.value)" class="sim-num w-14 text-[13px] tabular-nums text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5"></label>'
-            + '<span class="text-gray-300">·</span><span>' + fmtM(cp.elevation || 0) + ' m</span>' + (v.leg ? '<span class="text-gray-300">·</span><span>' + esc(v.leg.split('+')[0].trim()) + ' de course depuis le point précédent' + (v.leg.indexOf('+') > 0 ? ' · arrêt ' + esc(v.leg.split('+')[1].trim()) : '') + '</span>' : '') + '</div>';
+            + '<span class="text-gray-300">·</span><span>' + fmtM(cp.elevation || 0) + ' m</span>'
+            + (v.wx_html ? '<span class="text-gray-300">·</span><span class="inline-flex items-center gap-1 text-[13px] text-gray-800" title="' + esc(v.wx_title) + '">' + v.wx_html + '</span>' : '') + (v.leg ? '<span class="text-gray-300">·</span><span>' + esc(v.leg.split('+')[0].trim()) + ' de course depuis le point précédent' + (v.leg.indexOf('+') > 0 ? ' · arrêt ' + esc(v.leg.split('+')[1].trim()) : '') + '</span>' : '') + '</div>';
+        if (v.wx_title) h += '<p class="-mt-2 mb-3 text-[12px] text-gray-500">Météo prévue à ton passage : ' + esc(v.wx_title.replace(/\s*·\s*/g, ', ')) + '.</p>';
         var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
         if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
         var kind = cp.kind || 'none', kdesc = '';
