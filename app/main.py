@@ -54,7 +54,6 @@ def create_app() -> FastAPI:
     # Routers
     from app.routers import activity, auth, dashboard, simulator, webhook
     from app.routers import settings as settings_router
-    # from app.routers import api, coach, workout  # disabled – AI coach era, kept for reference
 
     app.include_router(auth.router)
     app.include_router(dashboard.router)  # landing (/), activities, sync

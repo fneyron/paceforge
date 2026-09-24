@@ -135,3 +135,17 @@ async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab
     assert r.status_code == 200 and "Nouvelle course" in r.text and "FTP" not in r.text
     r = await as_user.get("/settings")
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_debrief_tab_waits_for_race_day_and_print_names_the_day(as_user: AsyncClient):
+    route_id = await _create_route(as_user)
+    r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(CPS), "race_date": "2099-10-02", "name": "Future", "start_hour": 21, "start_minute": 0, "target_time_s": 6 * 3600})
+    assert r.status_code == 200
+    r = await as_user.get(f"/simulator/routes/{route_id}")
+    assert r.status_code == 200 and 'id="rtab-realise"' not in r.text
+    r = await as_user.get(f"/simulator/routes/{route_id}/print")
+    assert r.status_code == 200 and "sam." in r.text  # the finish after midnight carries the weekday
+    r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(CPS), "race_date": "2020-10-02", "name": "Past"})
+    r = await as_user.get(f"/simulator/routes/{route_id}")
+    assert r.status_code == 200 and 'id="rtab-realise"' in r.text

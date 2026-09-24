@@ -67,8 +67,8 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
                 class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Pilotage</button>
         <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
                 class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
-        <button id="rtab-realise" onclick="switchRouteTab('realise')"
-                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
+        {% if show_debrief or compare_activity_id %}<button id="rtab-realise" onclick="switchRouteTab('realise')"
+                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>{% endif %}
     </div>
 
     <div id="rpanel-plan">
@@ -102,8 +102,9 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
 <script>
 function switchRouteTab(tab) {
     ['plan', 'pacing', 'nutrition', 'realise'].forEach(function(t) {
-        document.getElementById('rpanel-' + t).classList.toggle('hidden', t !== tab);
-        var btn = document.getElementById('rtab-' + t);
+        var panel = document.getElementById('rpanel-' + t), btn = document.getElementById('rtab-' + t);
+        if (!panel || !btn) return;  // the Débrief tab only exists once the race is run
+        panel.classList.toggle('hidden', t !== tab);
         btn.classList.toggle('bg-white', t === tab);
         btn.classList.toggle('text-gray-900', t === tab);
         btn.classList.toggle('shadow-sm', t === tab);
@@ -123,7 +124,7 @@ document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
     if (id === 'pacing-wrap') tabLoadedAt.pacing = pv; else if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-document.addEventListener('DOMContentLoaded', function () { var h = (location.hash || '').slice(1); if (['pacing', 'nutrition', 'realise'].indexOf(h) >= 0) switchRouteTab(h); });
+document.addEventListener('DOMContentLoaded', function () { var h = (location.hash || '').slice(1); if (['pacing', 'nutrition', 'realise'].indexOf(h) >= 0 && document.getElementById('rtab-' + h)) switchRouteTab(h); });
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief tab.
 document.addEventListener('DOMContentLoaded', function () { switchRouteTab('realise'); });
