@@ -20,14 +20,11 @@ DESCENT_GRADE = -5.0     # % — below this a km is a descent
 DEFAULT_WALK_GRADE = 18  # % — "stairs": walk, hands on thighs
 MIN_BLOCK_KM = 2.0       # shorter blocks are merged into a neighbour (stairs are kept)
 
-# Progressive ceilings as the race goes on: hold back early, let go late.
-# (fraction of distance, offset in bpm from the climb ceiling, label)
-_PHASES = [
-    (0.30, -5, "départ : jamais plus, même dans l'euphorie"),
-    (0.70, 0, "régularité — les places se perdent ici, elles ne s'y prennent pas"),
-    (0.85, +4, "on peut commencer à remonter"),
-    (1.01, None, "libre — course"),
-]
+# Heart-rate ceilings come down as the race goes on: late in an ultra the same
+# effort sits at a lower heart rate (fatigue, glycogen, sleep), so a fixed cap
+# stops meaning anything. Linear drop of HR_DECAY of the ceiling from start to
+# finish: a 152 cap reads ≈ 131 at 80 % of the race, ≈ 126 at the finish.
+HR_DECAY = 0.17
 
 
 def default_hr_caps(max_hr: int | None) -> dict:
@@ -39,11 +36,11 @@ def default_hr_caps(max_hr: int | None) -> dict:
     return {"hr_cap_climb": climb, "hr_cap_flat": climb - 4, "hr_release_descent": climb - 10}
 
 
-def _phase(progress: float) -> tuple[int | None, str]:
-    for limit, offset, label in _PHASES:
-        if progress <= limit:
-            return offset, label
-    return None, "libre"
+def _cap_at(cap: int | None, progress: float) -> int | None:
+    """The ceiling at this point of the race (see HR_DECAY)."""
+    if not cap:
+        return None
+    return int(round(cap * (1 - HR_DECAY * max(0.0, min(1.0, progress)))))
 
 
 def _classify(grade: float, walk_grade: float) -> str:
@@ -165,19 +162,19 @@ def build_pacing_guide(
         avg_grade = round(sum(r["seg"].avg_gradient_pct * r["seg"].distance_m for r in rs) / (dist_km * 1000), 1)
         max_grade = (min if b["cls"] == "descent" else max)(_local_max_grade(course, r["seg"].start_km, r["seg"].end_km, descent=(b["cls"] == "descent")) for r in rs)
         progress = (start_km + end_km) / 2 / total_km
-        offset, phase_label = _phase(progress)
         cls = b["cls"]
 
         hr_cap = None
         vam = None
         pace_s = time_s / dist_km if dist_km > 0 else 0
         if cls in ("climb", "stairs"):
-            hr_cap = (hr_cap_climb + offset) if (hr_cap_climb and offset is not None) else None
+            hr_cap = _cap_at(hr_cap_climb, progress)
             vam = int(round(gain / hours)) if hours > 0 and gain > 0 else None
         elif cls == "descent":
-            hr_cap = hr_release_descent if (hr_release_descent and offset is not None) else None
+            hr_cap = _cap_at(hr_release_descent, progress)
         else:
-            hr_cap = (hr_cap_flat + offset) if (hr_cap_flat and offset is not None) else None
+            hr_cap = _cap_at(hr_cap_flat, progress)
+        phase_label = "plafond d'origine" if progress < 0.1 else f"plafond −{int(round(HR_DECAY * progress * 100))} %"
 
         # one instruction a first-timer can act on, with the numbers of this stretch inside
         pace_txt = f"{int(pace_s) // 60}:{int(pace_s) % 60:02d}/km" if pace_s else None
@@ -191,8 +188,6 @@ def build_pacing_guide(
                      " Mange en haut, avant de descendre.")
         else:
             instr = (f"Cours régulier, environ {pace_txt}" if pace_txt else "Cours régulier") + (f", cardio sous {hr_cap}." if hr_cap else ".") + " Profites-en pour manger et boire."
-        if offset is None:
-            instr = "Dernière partie, plus de plafond : donne ce qui reste. " + instr
 
         blk = {
             "cls": cls,
@@ -201,7 +196,7 @@ def build_pacing_guide(
             "gain": int(round(gain)), "loss": int(round(loss)),
             "avg_grade": avg_grade, "max_grade": max_grade,
             "time_s": int(round(time_s)), "pace_s_per_km": int(round(pace_s)),
-            "vam_m_per_h": vam, "hr_cap": hr_cap, "hr_free": offset is None,
+            "vam_m_per_h": vam, "hr_cap": hr_cap, "hr_free": False,
             "phase": phase_label, "instruction": instr,
         }
         out_blocks.append(blk)
@@ -226,7 +221,7 @@ def build_pacing_guide(
             "hr_cap_climb": hr_cap_climb, "hr_cap_flat": hr_cap_flat,
             "hr_release_descent": hr_release_descent, "walk_grade": walk_grade,
         },
-        "phases": [{"until_pct": int(round(lim * 100)) if lim <= 1 else 100, "offset": off, "label": lab} for lim, off, lab in _PHASES],
+        "hr_decay": HR_DECAY,
         "n_climb_km": sum(1 for r in rows if r["cls"] in ("climb", "stairs")),
         "n_stairs_km": sum(1 for r in rows if r["cls"] == "stairs"),
     }

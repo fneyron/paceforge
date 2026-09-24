@@ -445,11 +445,6 @@ def predict_course(
             segment.elevation_loss, segment.distance_m,
         )
 
-        # Terrain-only time (no fatigue/night/heat): the even-effort basis used
-        # to split a TARGET time into passage times. A pacing plan must not
-        # inherit the prediction's fast-start shape.
-        base_pace = profile.flat_pace_s_per_km * grade_factor * alt * terrain
-        segment.base_time_s = round(base_pace * (segment.distance_m / 1000), 1)
 
         # Progressive fatigue (personalised tilt). Progress from the segment's
         # own end_km: reading cumulative_distance_km here used the PREVIOUS
@@ -466,6 +461,11 @@ def predict_course(
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
+        # The basis used to split a TARGET into passage times: terrain, fatigue
+        # and night, not heat (applied per section with the forecast). A plan
+        # on terrain alone asked for the last 30 km faster than the start —
+        # faster than the 2025 Transjeju winner ran them.
+        segment.base_time_s = round(predicted_time / (heat_factor or 1.0), 1)
 
         segment.predicted_pace_s_per_km = round(predicted_pace, 1)
         segment.predicted_time_s = round(predicted_time, 1)
@@ -544,10 +544,10 @@ def compute_passage_times(
     (aid stations). Stops shift the CLOCK times (and the target distribution's
     moving budget) — predictions themselves stay moving-time.
 
-    The target plan ("adjusted_*") is distributed at EVEN grade-adjusted effort
-    (segment.base_time_s), NOT proportionally to the prediction: a plan that
-    mirrors the prediction's fast-start shape tells the athlete to bank time
-    while fresh, which is how you blow up late.
+    The target plan ("adjusted_*") is distributed by segment.base_time_s:
+    terrain, fatigue and night (heat excluded, applied per section here). A
+    plan on terrain alone asked for the second half faster than the first,
+    which nobody runs on a 100-miler.
     """
     from app.schemas.simulator import PassageTimeSection
     from app.services.weather import compute_heat_factor
@@ -597,7 +597,7 @@ def compute_passage_times(
                 continue
             fraction = (overlap_end - overlap_start) / seg_length
             section_time += seg.predicted_time_s * fraction
-            # even-effort basis (falls back to predicted for old cached courses)
+            # plan basis: terrain + fatigue + night (falls back to predicted for old cached courses)
             section_base += (seg.base_time_s or seg.predicted_time_s) * fraction
             section_gain += seg.elevation_gain * fraction
             section_loss += seg.elevation_loss * fraction
@@ -612,9 +612,9 @@ def compute_passage_times(
             "start_name": all_cps[i]["name"], "end_name": all_cps[i + 1]["name"],
         })
 
-    # Even-effort target distribution: the plan's moving budget is the target
-    # minus planned aid-station stops, split proportionally to terrain
-    # difficulty (base) — flat pacing by effort, not the prediction's shape.
+    # Target distribution: the plan's moving budget is the target minus the
+    # planned aid-station stops, split in proportion to each section's basis
+    # (terrain, fatigue, night): the finish is slower than the start.
     total_base = sum(r["base"] for r in raw) or 1.0
     moving_target_s = None
     if target_time_s:
@@ -667,7 +667,7 @@ def compute_passage_times(
         cumulative += section_time
         pace = section_time / r["dist"] if r["dist"] > 0 else 0
 
-        # Plan (target): even effort by terrain share, not prediction share.
+        # Plan (target): the moving budget split by the basis share.
         adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
         adj_cumulative += adjusted_time
 

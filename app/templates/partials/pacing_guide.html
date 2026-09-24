@@ -15,7 +15,7 @@
         <div class="grid sm:grid-cols-3 gap-2">
             <div class="rounded-lg bg-orange-50 border border-orange-100 p-3">
                 <p class="text-[10px] font-semibold uppercase tracking-wider text-orange-800">En montée</p>
-                <p class="text-sm text-gray-900 mt-1">{% if caps.hr_cap_climb %}Reste sous <b>{{ caps.hr_cap_climb }} bpm</b>.{% else %}Reste sous ton plafond de montée.{% endif %} Marche dès que la pente dépasse <b>{{ walk_grade|round|int }} %</b>, cours le reste.</p>
+                <p class="text-sm text-gray-900 mt-1">{% if caps.hr_cap_climb %}Au départ, reste sous <b>{{ caps.hr_cap_climb }} bpm</b>.{% else %}Reste sous ton plafond de montée.{% endif %} Marche dès que la pente dépasse <b>{{ walk_grade|round|int }} %</b>, cours le reste.</p>
             </div>
             <div class="rounded-lg bg-gray-50 border border-gray-100 p-3">
                 <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-700">Sur le plat</p>
@@ -26,7 +26,7 @@
                 <p class="text-sm text-gray-900 mt-1">Relâché, sans freiner{% if caps.hr_release_descent %}, le cardio redescend vers <b>{{ caps.hr_release_descent }} bpm</b>{% endif %}. Mange en haut, avant.</p>
             </div>
         </div>
-        <p class="mt-3 text-[12px] text-gray-500">Les plafonds baissent de 5 battements sur le premier tiers (on se retient), puis remontent un peu en fin de course, et sautent sur les derniers 15 %.</p>
+        <p class="mt-3 text-[12px] text-gray-500">Ces plafonds valent au départ. Avec la fatigue, le cœur monte moins haut pour le même effort : ils baissent donc au fil de la course, d'environ {{ (guide.hr_decay * 100)|round|int }} % à l'arrivée{% if caps.hr_cap_climb %} (montée : {{ caps.hr_cap_climb }} au départ, {{ (caps.hr_cap_climb * (1 - guide.hr_decay * 0.8))|round|int }} aux 4/5 de la course){% endif %}. Le tableau dessous donne le plafond de chaque portion.</p>
     </div>
 
     {# steepness alerts: the kilometres nobody spots on a 145 km profile #}
