@@ -148,9 +148,10 @@ def test_pacing_guide_blocks_and_stairs_alert():
     assert "marche" in stairs["instruction"].lower()
     assert g["alerts"] and g["alerts"][0]["start_km"] == 7.0 and g["alerts"][0]["max_grade"] >= 22
     climb = next(b for b in g["blocks"] if b["cls"] == "climb")
-    assert climb["vam_m_per_h"] and climb["hr_cap"] == 135  # early phase: cap − 5
+    prog = (climb["start_km"] + climb["end_km"]) / 2 / course.total_distance_km
+    assert climb["vam_m_per_h"] and climb["hr_cap"] == round(140 * (1 - 0.17 * prog))  # the ceiling comes down with the race
     last = g["blocks"][-1]
-    assert last["hr_free"] and last["hr_cap"] is None
+    assert not last["hr_free"] and last["hr_cap"] and last["hr_cap"] < 136 * 0.9  # never « libre »: late, the cap is ~15 % lower
     # the plan's block times add up to the target
     assert abs(sum(b["time_s"] for b in g["blocks"]) - 4 * 3600) < 5
 

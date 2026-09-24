@@ -3,6 +3,7 @@ render every plan surface (passage times + scenarios, pacing guide, nutrition,
 exports, reference finisher, debrief)."""
 
 import json
+import re
 
 import pytest
 from httpx import AsyncClient
@@ -80,7 +81,7 @@ async def test_pacing_guide_and_params(as_user: AsyncClient):
         "hr_cap_climb": 140, "hr_cap_flat": 136, "hr_release_descent": 128, "walk_grade": 20,
         "scenario_fast_pct": 4, "scenario_safe_pct": 12, "switch_km": 10.0,
     })
-    assert r.status_code == 200 and "sous 135" in r.text  # early-phase climb cap = 140 − 5, in the instruction
+    assert r.status_code == 200 and re.search(r"sous 1[23]\d battements", r.text)  # the climb cap (140 at the start) comes down with the race
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=csv")
     assert r.status_code == 200 and "Village" in r.text
 
@@ -196,7 +197,7 @@ async def test_trail_export_carries_pacing_points_and_courses_page_has_no_triath
     gpx = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=gpx")
     # one instruction per leg, attached to the point where the leg starts — no extra waypoints
     assert gpx.text.count("<wpt") == 5  # DEP + 3 CPs + ARR
-    assert "DEP 21:00 | PLAT" in gpx.text and "| ESCAL marche" in gpx.text and "| LIBRE course" in gpx.text
+    assert "DEP 21:00 | PLAT" in gpx.text and "| ESCAL marche" in gpx.text and "LIBRE" not in gpx.text
     print_page = await as_user.get(f"/simulator/routes/{route_id}/print")
     assert "Pilotage" in print_page.text and "mains sur les cuisses" in print_page.text
     courses = await as_user.get("/simulator")
