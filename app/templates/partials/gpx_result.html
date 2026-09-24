@@ -54,6 +54,10 @@
             <span id="weather-result" class="inline-flex items-center gap-x-1.5 whitespace-nowrap"></span>
         </div>
         <div class="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-0.5 shrink-0">
+            <button id="jourj-btn" type="button" onclick="window._sim && window._sim.openJourJ(this)" aria-haspopup="dialog" title="Jour J : je suis passé à… (la suite du plan se recale)"
+                    class="h-10 lg:h-8 px-2 rounded-lg inline-flex items-center gap-1 text-[12px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+                <svg class="w-5 h-5 lg:w-4 lg:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6M12 2v3"/></svg><span>Jour J</span>
+            </button>
             {% if course.route_coords %}
             <button id="map-toggle" type="button" onclick="window._sim && window._sim.toggleMap()" aria-pressed="false" title="Carte"
                     class="w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900">
@@ -105,6 +109,7 @@
     <div>
         <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
         <div id="poste-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 text-xs" role="menu" aria-label="Poste"></div>
+        <div id="jourj-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-3 text-xs" role="dialog" aria-label="Jour J"></div>
         <div id="cp-sheet" class="hidden lg:hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Point de passage">
             <div data-sheet-bg class="absolute inset-0 bg-black/30" onclick="window._sim && window._sim.closeSheet()"></div>
             <div data-sheet-panel class="absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl px-4 pt-3" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
@@ -341,12 +346,12 @@ window._sim = {};
 
     // ── PROFILE: the band — night, numbered pins, switch line, autonomy brackets ──
     // slope classes shared by the map line, the profile ground and the legend
-    var SLOPE_CLASSES = [[15, '#7f1d1d', '> 15 %'], [8, '#dc2626', '8–15 %'], [3, '#f59e0b', '3–8 %'], [-3, '#22c55e', 'plat'], [-10, '#3b82f6', 'descente'], [-Infinity, '#1e3a8a', '< −10 %']];
+    var SLOPE_CLASSES = [[15, '#7f1d1d', 'très raide', '> 15 %'], [8, '#dc2626', 'raide', '8–15 %'], [3, '#f59e0b', 'montée', '3–8 %'], [-3, '#22c55e', 'plat', ''], [-10, '#3b82f6', 'descente', ''], [-Infinity, '#1e3a8a', 'descente raide', '< −10 %']];
     function slopeColor(pct) { for (var i = 0; i < SLOPE_CLASSES.length; i++) if (pct > SLOPE_CLASSES[i][0]) return SLOPE_CLASSES[i][1]; return SLOPE_CLASSES[SLOPE_CLASSES.length - 1][1]; }
     function legendHtml(withNight) {
-        var order = [3, 2, 1, 0, 4, 5], h = '<span class="text-gray-400 mr-0.5 hidden sm:inline">pente</span>';
-        order.forEach(function (k) { var c = SLOPE_CLASSES[k]; h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + c[1] + '"></i>' + c[2] + '</span>'; });
-        if (withNight) h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + (isDark ? '#020617' : '#1e293b') + ';opacity:' + (isDark ? '.6' : '.2') + '"></i>nuit</span>';
+        var order = [3, 2, 1, 0, 4, 5], h = '<span class="text-gray-500 mr-0.5">Pente du terrain :</span>';
+        order.forEach(function (k) { var c = SLOPE_CLASSES[k]; h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + c[1] + '"></i>' + c[2] + (c[3] ? '<span class="hidden sm:inline text-gray-400"> ' + c[3] + '</span>' : '') + '</span>'; });
+        if (withNight) h += '<span class="inline-flex items-center gap-1 whitespace-nowrap"><i class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + (isDark ? '#020617' : '#1e293b') + ';opacity:' + (isDark ? '.6' : '.2') + '"></i>nuit (heures de nuit)</span>';
         return h;
     }
     function fillLegends() {
@@ -724,15 +729,15 @@ window._sim = {};
             + '<span class="text-gray-300">·</span><span>' + fmtM(cp.elevation || 0) + ' m</span>' + (v.leg ? '<span class="text-gray-300">·</span><span>' + esc(v.leg.split('+')[0].trim()) + ' de course depuis le point précédent' + (v.leg.indexOf('+') > 0 ? ' · arrêt ' + esc(v.leg.split('+')[1].trim()) : '') + '</span>' : '') + '</div>';
         var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
         if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
+        h += sec('Jour J') + '<div class="flex items-center gap-3 mb-1"><span class="text-[13px] text-gray-700">Je suis passé ici à</span><input type="time" step="60" value="' + esc(anchored ? liveAnchor.anchor_clock : '') + '" aria-label="Heure réelle de passage" onchange="window._sim.setPassage(' + i + ', ' + cp.distance_km + ', this.value)" class="time-inline h-9 px-2 rounded-lg border ' + (anchored ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white') + ' text-sm tabular-nums text-gray-900">'
+            + (anchored ? '<button type="button" onclick="window._sim.clearPassage()" class="text-[13px] text-gray-500 underline">effacer</button>' : '') + '</div>'
+            + '<p class="text-[11px] text-gray-400 mb-4">Pendant la course : ton heure réelle ici, et tous les points suivants se recalent.</p>';
         var kind = cp.kind || 'none', kdesc = '';
         h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] leading-none ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
         h += '<p class="text-[11px] text-gray-400 mb-2 min-h-4">' + esc(kdesc) + '</p>';
         h += '<div class="flex gap-2 mb-4">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] ' + (on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600') + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
         h += sec('Barrière horaire') + '<div class="flex items-center gap-3 mb-4"><input type="time" step="60" value="' + esc(cp.cutoff_clock || '') + '" aria-label="Barrière horaire" onchange="window._sim.editCheckpointMeta(' + i + ', \'cutoff_clock\', this.value)" class="time-inline h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-gray-900 bg-white">'
             + (v.margin ? '<span class="text-sm ' + esc(v.marginCls) + '">marge ' + esc(v.margin) + '</span>' : '<span class="text-[11px] text-gray-400">heure limite imposée par l\'organisation</span>') + '</div>';
-        h += sec('Jour J') + '<div class="flex items-center gap-3 mb-1"><span class="text-[13px] text-gray-700">Je suis passé ici à</span><input type="time" step="60" value="' + esc(anchored ? liveAnchor.anchor_clock : '') + '" aria-label="Heure réelle de passage" onchange="window._sim.setPassage(' + i + ', ' + cp.distance_km + ', this.value)" class="time-inline h-9 px-2 rounded-lg border ' + (anchored ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white') + ' text-sm tabular-nums text-gray-900">'
-            + (anchored ? '<button type="button" onclick="window._sim.clearPassage()" class="text-[13px] text-gray-500 underline">effacer</button>' : '') + '</div>'
-            + '<p class="text-[11px] text-gray-400 mb-4">Pendant la course : ton heure réelle ici, et tous les points suivants se recalent.</p>';
         h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-10 rounded-lg border border-gray-200 text-sm text-gray-500">Supprimer ce point</button>';
         p.innerHTML = h;
         p.onclick = function (ev) {
@@ -744,6 +749,36 @@ window._sim = {};
     function openSheet(i) { var sh = document.getElementById('cp-sheet'); if (!sh || !checkpoints[i]) return; if (sheetCp === i && sheetOpen()) { closeSheet(); return; } sheetCp = i; renderSheet(); sh.classList.remove('hidden'); }
     function closeSheet() { var sh = document.getElementById('cp-sheet'); if (sh) sh.classList.add('hidden'); sheetCp = null; }
     function refreshSheet() { if (sheetCp === null || !sheetOpen()) return; var ae = document.activeElement; if (ae && ae.closest && ae.closest('#cp-sheet') && (ae.type === 'text' || ae.type === 'number')) return; renderSheet(); }
+    // ── JOUR J: « je suis passé à <point> à <heure> » from the toolbar, on every screen ──
+    function renderJourJ() {
+        var pop = document.getElementById('jourj-pop'); if (!pop) return;
+        var now = new Date(), hhmm = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+        var sel = 0; if (liveAnchor) { var nx = -1; checkpoints.forEach(function (cp, i) { if (nx < 0 && cp.distance_km > parseFloat(liveAnchor.anchor_km) + 0.05) nx = i; }); if (nx >= 0) sel = nx; }
+        var h = '<p class="text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-2">Jour J · pendant la course</p>';
+        h += '<label class="block text-gray-600 mb-1">Je suis passé à</label><select data-jj-cp class="w-full h-9 pl-2 pr-6 rounded-lg border border-gray-200 text-sm text-gray-900 bg-white mb-2">' + checkpoints.map(function (cp, i) { return '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + (i + 1) + ' · ' + esc(cp.name) + ' · km ' + fmtKm(cp.distance_km) + '</option>'; }).join('') + '</select>';
+        h += '<div class="flex items-center gap-2 mb-2"><span class="text-gray-600">à</span><input type="time" step="60" data-jj-clock value="' + hhmm + '" aria-label="Heure réelle de passage" class="time-inline h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-gray-900 bg-white"><button type="button" data-jj-go class="ml-auto h-9 px-3 rounded-lg bg-gray-900 text-white text-xs font-medium">Recaler la suite</button></div>';
+        h += '<p class="text-[11px] text-gray-400">Les heures de tous les points suivants se recalent sur ton passage réel.</p>';
+        if (liveAnchor) h += '<div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2 text-[11px]"><span class="text-amber-700">Recalé depuis <b>' + esc(liveAnchor.anchor_name || ('km ' + liveAnchor.anchor_km)) + '</b> à ' + esc(liveAnchor.anchor_clock) + '</span><button type="button" data-jj-clear class="text-gray-500 underline">effacer</button></div>';
+        pop.innerHTML = h;
+        pop.onclick = function (ev) {
+            if (ev.target.closest && ev.target.closest('[data-jj-go]')) { var i = parseInt(pop.querySelector('[data-jj-cp]').value, 10), cp = checkpoints[i]; if (cp) setPassage(i, cp.distance_km, pop.querySelector('[data-jj-clock]').value); closeJourJ(); }
+            else if (ev.target.closest && ev.target.closest('[data-jj-clear]')) { clearPassage(); closeJourJ(); }
+        };
+    }
+    function openJourJ(btn) {
+        var pop = document.getElementById('jourj-pop'); if (!pop) return;
+        if (!pop.classList.contains('hidden')) { closeJourJ(); return; }
+        if (!checkpoints.length) { pop.innerHTML = '<p class="text-gray-500">Ajoute d\'abord des points de passage.</p>'; }
+        else renderJourJ();
+        pop.classList.remove('hidden');
+        if (isCompact()) { pop.style.cssText = 'left:0;right:0;bottom:0;width:auto;border-radius:16px 16px 0 0;padding:16px;padding-bottom:max(16px, env(safe-area-inset-bottom));'; return; }
+        var r = btn.getBoundingClientRect(), w = 300, h = pop.offsetHeight || 200;
+        var left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)), top = r.bottom + 4;
+        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+        pop.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;';
+    }
+    function closeJourJ() { var pop = document.getElementById('jourj-pop'); if (pop) pop.classList.add('hidden'); }
+    function markJourJ() { var b = document.getElementById('jourj-btn'); if (!b) return; var on = !!liveAnchor; b.classList.toggle('bg-amber-100', on); b.classList.toggle('text-amber-900', on); b.classList.toggle('text-gray-500', !on); b.title = on ? ('Recalé depuis ' + (liveAnchor.anchor_name || '') + ' à ' + liveAnchor.anchor_clock + ' · clique pour changer') : 'Jour J : je suis passé à… (la suite du plan se recale)'; }
     var KIND_LABEL = { water: 'eau', full: 'ravito complet', base: 'base vie' };
     function cpPopupHtml(cp, i, pt) {
         var h = '<b>' + (i + 1) + ' · ' + esc(cp.name) + '</b><div class="text-gray-500">km ' + fmtKm(cp.distance_km) + ' · ' + fmtM(cp.elevation || 0) + ' m</div>';
@@ -832,7 +867,7 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet(); fillSwitchSelect();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet(); fillSwitchSelect(); markJourJ();
     }
     // the switch-point choice follows the checkpoints
     function fillSwitchSelect() {
@@ -1058,8 +1093,9 @@ window._sim = {};
         if (!(t.closest && t.closest('#elevChart'))) { if (ev.pointerType === 'touch') { hideCross(); highlightRow(null); } }
         document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { if (!d.contains(t)) d.removeAttribute('open'); });
         var pp = document.getElementById('poste-pop'); if (pp && !pp.classList.contains('hidden') && !pp.contains(t) && !(t.closest && t.closest('[data-poste]'))) closePoste();
+        var jj = document.getElementById('jourj-pop'); if (jj && !jj.classList.contains('hidden') && !jj.contains(t) && !(t.closest && t.closest('#jourj-btn'))) closeJourJ();
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); closeSheet(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeMenus(); closePoste(); closeSheet(); closeJourJ(); var w = document.getElementById('map-wrap'); if (w && w.classList.contains('map-full')) toggleMap(false); } });
     var rsT = null, wasCompact = isCompact();
     window.addEventListener('resize', function () { if (rsT) clearTimeout(rsT); rsT = setTimeout(function () { if (isCompact() !== wasCompact) { wasCompact = isCompact(); applyPhoneState(); } }, 150); });
     var ptr = document.getElementById('passage-times-result');
@@ -1083,7 +1119,7 @@ window._sim = {};
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
     if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
-    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openJourJ: openJourJ, closeJourJ: closeJourJ, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>
