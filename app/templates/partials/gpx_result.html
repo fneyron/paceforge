@@ -321,10 +321,15 @@ window._sim = {};
         if (!isCompact()) { try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {} }
         if (!show) { if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; } return; }
         if (!map) {
-            if (!window.maplibregl) { loadMapLib(function () { if (window.maplibregl) toggleMap(true); else document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible (script non chargé)</div>'; }); return; }
-            try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
-            if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
+            if (!window.maplibregl) { loadMapLib(function () { if (window.maplibregl) mountMap(); else document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible (script non chargé)</div>'; }); return; }
+            mountMap();
         } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
+    }
+    // the map is built once its script is here and the panel is still open
+    function mountMap() {
+        var wrap = document.getElementById('map-wrap'); if (map || !wrap || wrap.classList.contains('hidden')) return;
+        try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
+        if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
     }
 
     // ── PROFILE: the band — night, numbered pins, switch line, autonomy brackets ──
