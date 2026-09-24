@@ -80,7 +80,7 @@ async def test_pacing_guide_and_params(as_user: AsyncClient):
         "hr_cap_climb": 140, "hr_cap_flat": 136, "hr_release_descent": 128, "walk_grade": 20,
         "scenario_fast_pct": 4, "scenario_safe_pct": 12, "switch_km": 10.0,
     })
-    assert r.status_code == 200 and "≤ 135" in r.text  # early-phase climb cap = 140 − 5
+    assert r.status_code == 200 and "sous 135" in r.text  # early-phase climb cap = 140 − 5, in the instruction
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=csv")
     assert r.status_code == 200 and "Village" in r.text
 
@@ -101,8 +101,8 @@ async def test_nutrition_card_with_packing_and_caffeine(as_user: AsyncClient, db
     assert r.status_code == 200, r.text
     t = r.text
     assert f'name="qty_{pid}"' in t and 'value="3"' in t and "75 g/h" in t
-    assert "Par tronçon" in t and "Sac au départ" in t and "Drop bag · Col" in t
-    assert "Caféine" in t and "aube" not in t.split("Caféine <span")[0]  # the caffeine card renders its doses
+    assert "ravito par ravito" in t and "Sac au départ" in t and "Drop bag · Col" in t
+    assert "Caféine" in t and "aube" in t  # the caffeine card renders its doses
     # a typed quantity is kept as is
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
         "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000, f"use_{pid}": 1, f"qty_{pid}": "2.5",

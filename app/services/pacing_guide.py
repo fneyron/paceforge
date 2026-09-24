@@ -179,16 +179,20 @@ def build_pacing_guide(
         else:
             hr_cap = (hr_cap_flat + offset) if (hr_cap_flat and offset is not None) else None
 
+        # one instruction a first-timer can act on, with the numbers of this stretch inside
+        pace_txt = f"{int(pace_s) // 60}:{int(pace_s) % 60:02d}/km" if pace_s else None
         if cls == "stairs":
-            instr = "On marche, mains sur les cuisses, bâtons sortis. Rythme métronome, pas de course sur les marches."
+            instr = "Trop raide pour courir : marche, mains sur les cuisses, bâtons si tu en as. Un rythme régulier, sans forcer."
         elif cls == "climb":
-            instr = f"Montée : FC plafond, VAM cible. On marche toute pente > {int(round(walk_grade))} %, on court le reste. Si un cadran dépasse, tu ralentis — jamais l'inverse."
+            instr = (f"Monte au cardio{f', sous {hr_cap} battements' if hr_cap else ''} : marche dès que ça dépasse {int(round(walk_grade))} %, cours le reste."
+                     + (f" Ça fait environ {vam} m de montée par heure." if vam else ""))
         elif cls == "descent":
-            instr = "Descente : FC de relâchement, quadriceps économes, pas de freinage. Manger en haut avant la bascule."
+            instr = (f"Descends relâché, sans freiner{f', et laisse le cardio redescendre vers {hr_cap}' if hr_cap else ''}."
+                     " Mange en haut, avant de descendre.")
         else:
-            instr = "Roulant : allure d'effort, régularité. Manger, boire, ne rien décider."
+            instr = (f"Cours régulier, environ {pace_txt}" if pace_txt else "Cours régulier") + (f", cardio sous {hr_cap}." if hr_cap else ".") + " Profites-en pour manger et boire."
         if offset is None:
-            instr = "Course : tout ce qui reste. " + (instr.split(":")[1].strip() if ":" in instr else instr)
+            instr = "Dernière partie, plus de plafond : donne ce qui reste. " + instr
 
         blk = {
             "cls": cls,

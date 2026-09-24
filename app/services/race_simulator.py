@@ -524,8 +524,12 @@ def compute_passage_times(
     hourly_weather: dict | None = None,
     stop_s_per_aid: int = 0,
     aid_kms: set | None = None,
+    aid_stops: dict | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
+
+    ``aid_stops`` maps a checkpoint km to its stop in seconds (one value per
+    station); without it every km of ``aid_kms`` gets ``stop_s_per_aid``.
 
     Checkpoints are [{name, distance_km}]. Start (0km) and finish are added
     automatically. Clock passage times are derived from the race start time of
@@ -563,13 +567,9 @@ def compute_passage_times(
         {"name": "Arrivée", "distance_km": course.total_distance_km, "cp_index": None}
     )
 
-    aid_set = {round(float(k), 1) for k in (aid_kms or set())}
+    stops = _stops_by_km(stop_s_per_aid, aid_kms, aid_stops)
     # Aid stops apply at intermediate checkpoints only (not the finish).
-    n_stops = sum(
-        1 for cp in all_cps[1:-1]
-        if round(float(cp["distance_km"]), 1) in aid_set
-    ) if stop_s_per_aid else 0
-    total_stops_s = n_stops * stop_s_per_aid
+    total_stops_s = sum(stops.get(round(float(cp["distance_km"]), 1), 0) for cp in all_cps[1:-1])
 
     use_hourly = bool(hourly_weather and hourly_weather.get("temps"))
     base_elev = _elevation_at_km(course, 0.0) or 0.0
@@ -672,9 +672,7 @@ def compute_passage_times(
         adj_cumulative += adjusted_time
 
         # Stop at this arrival checkpoint? (intermediate aid stations only)
-        arrival_stop = 0
-        if stop_s_per_aid and r["cp_index"] is not None and round(float(r["end_km"]), 1) in aid_set:
-            arrival_stop = stop_s_per_aid
+        arrival_stop = stops.get(round(float(r["end_km"]), 1), 0) if r["cp_index"] is not None else 0
 
         sections.append(PassageTimeSection(
             start_name=r["start_name"],
@@ -706,6 +704,15 @@ def compute_passage_times(
     return sections
 
 
+def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | None) -> dict:
+    """{km: stop seconds}: the per-station map when given, else one value for every aid km."""
+    if aid_stops:
+        return {round(float(k), 1): int(v) for k, v in aid_stops.items() if v}
+    if stop_s_per_aid:
+        return {round(float(k), 1): int(stop_s_per_aid) for k in (aid_kms or set())}
+    return {}
+
+
 def replan_from_passage(
     sections: list[dict],
     start_offset_s: int,
@@ -715,6 +722,7 @@ def replan_from_passage(
     stop_s_per_aid: int = 0,
     aid_kms: set | None = None,
     min_feasible_ratio: float = 0.85,
+    aid_stops: dict | None = None,
 ) -> tuple[list[dict], dict | None]:
     """Race-day re-plan: "I'm at <checkpoint> at <clock>, now what?"
 
@@ -759,12 +767,14 @@ def replan_from_passage(
     # than the prediction early on): 1.05 = 5 % slower than planned so far.
     rhythm = (anchor_elapsed / plan_elapsed) if plan_elapsed > 0 else 1.0
 
-    def is_aid(s: dict) -> bool:
-        return s.get("end_checkpoint_index") is not None and round(float(s["end_km"]), 1) in aid_set
+    stops = _stops_by_km(stop_s_per_aid, aid_kms, aid_stops)
+
+    def stop_of(s: dict) -> int:
+        return stops.get(round(float(s["end_km"]), 1), 0) if s.get("end_checkpoint_index") is not None else 0
 
     remaining = sections[idx + 1:]
-    anchor_stop = stop_s_per_aid if (stop_s_per_aid and is_aid(a)) else 0
-    stops_remaining = anchor_stop + sum(stop_s_per_aid for s in remaining if stop_s_per_aid and is_aid(s))
+    anchor_stop = stop_of(a)
+    stops_remaining = anchor_stop + sum(stop_of(s) for s in remaining)
     shares = [
         float(s["adjusted_time_s"]) if (target_time_s and s.get("adjusted_time_s")) else float(s["predicted_time_s"])
         for s in remaining
@@ -799,8 +809,8 @@ def replan_from_passage(
         o["adjusted_time_s"] = round(t)
         o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
         o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
-        if stop_s_per_aid and is_aid(s) and j < len(remaining) - 1:
-            stops_acc += stop_s_per_aid
+        if stop_of(s) and j < len(remaining) - 1:
+            stops_acc += stop_of(s)
 
     replan = {
         "anchor_name": a["end_name"],
