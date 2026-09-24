@@ -101,7 +101,7 @@
 
     {# ── the plan: one table ─────────────────────────────────────────────── #}
     <div>
-        <div id="passage-times-result"></div>
+        <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
         <div id="poste-pop" class="hidden fixed z-[70] rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 text-xs" role="menu" aria-label="Poste"></div>
         <div id="page-error" class="hidden px-1 py-2 text-xs text-red-600"></div>
         <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
@@ -182,6 +182,18 @@ window._sim = {};
     function idxAtKm(km) { var n = routeCoords.length, lo = 0, hi = n - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (routeCoords[mid][2] <= km) lo = mid; else hi = mid; } return lo; }
 
     // ── MAP ──
+    // MapLibre (800 KB) loads only when the map is asked for
+    var mapLibLoading = null;
+    function loadMapLib(cb) {
+        if (window.maplibregl) { cb(); return; }
+        if (!mapLibLoading) {
+            mapLibLoading = new Promise(function (resolve) {
+                var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css'; document.head.appendChild(l);
+                var sc = document.createElement('script'); sc.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'; sc.onload = resolve; sc.onerror = resolve; document.head.appendChild(sc);
+            });
+        }
+        mapLibLoading.then(cb);
+    }
     var DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
     var terrain3d = false, ctl3dBtn = null;
     try { terrain3d = !isCompact() && localStorage.getItem('pf.map3d') === '1'; } catch (e) {}
@@ -303,6 +315,7 @@ window._sim = {};
         if (!isCompact()) { try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {} }
         if (!show) { if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; } return; }
         if (!map) {
+            if (!window.maplibregl) { loadMapLib(function () { if (window.maplibregl) toggleMap(true); else document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible (script non chargé)</div>'; }); return; }
             try { initMap(); } catch (e) { console.error('map init failed (WebGL?)', e); }
             if (!map) document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible dans ce navigateur</div>';
         } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
@@ -743,9 +756,12 @@ window._sim = {};
         var out = document.getElementById('passage-times-result'), ae = document.activeElement, k = (ae && out.contains(ae)) ? focusKey(ae) : null;
         // morph: unchanged cells are left alone (no blink, focus and selection survive natively)
         if (window.Idiomorph) { try { Idiomorph.morph(out, html, { morphStyle: 'innerHTML' }); } catch (e) { out.innerHTML = html; } } else { out.innerHTML = html; }
+        afterTable(); if (document.activeElement !== ae) refocus(k); focusNewRow();
+    }
+    function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); if (document.activeElement !== ae) refocus(k); focusNewRow(); renderCpOnMap();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap();
     }
 
     // ── OBJECTIVE: the number is the control ──
@@ -983,7 +999,7 @@ window._sim = {};
     ['cp-name', 'cp-km'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addCheckpoint(); } }); });
     var adv = document.getElementById('advanced');
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
-    recalc();
+    if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
     window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, openPoste: openPoste, closePoste: closePoste, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
