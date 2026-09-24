@@ -53,6 +53,11 @@ def normalize_checkpoint(cp: dict) -> dict:
         elev = float(elev) if elev is not None else None
     except (TypeError, ValueError):
         elev = None
+    stop_s = cp.get("stop_s")
+    try:
+        stop_s = max(0, min(4 * 3600, int(float(stop_s)))) if stop_s is not None and str(stop_s) != "" else None
+    except (TypeError, ValueError):
+        stop_s = None
     return {
         "name": str(cp.get("name") or "")[:100],
         "distance_km": km,
@@ -61,6 +66,7 @@ def normalize_checkpoint(cp: dict) -> dict:
         "crew": bool(cp.get("crew")),
         "drop_bag": bool(cp.get("drop_bag")),
         "cutoff_clock": (str(cutoff)[:5] if cutoff else None),
+        "stop_s": stop_s,
     }
 
 

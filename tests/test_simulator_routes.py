@@ -64,7 +64,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     assert r.status_code == 200, r.text
     t = r.text
     assert "Recalée" in t and "Sécurité" not in t
-    assert t.index('data-day="1"') < t.index('bg-amber-50"')  # separator before the anchor row
+    assert t.index('data-day="1"') < t.index('bg-amber-50" title=')  # separator before the anchor row
     plan = json.loads(t.split('id="plan-data">')[1].split("</script>")[0])
     village = next(p for p in plan["points"] if p["name"] == "Village")
     assert village["clock_s"] == 86400 + 58 * 60
