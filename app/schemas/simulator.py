@@ -50,7 +50,7 @@ class AthleteGradientProfile(BaseModel):
     sport_types_used: list[str]
     # Personal fresh→fade tilt of the fatigue curve, calibrated from the
     # athlete's matched race results (default = generic).
-    fatigue_tilt: float = 0.15
+    fatigue_tilt: float = 0.22  # = race_simulator.DEFAULT_FATIGUE_TILT
     # Race-based effort model (services/race_calibration): when present, the
     # prediction is re-levelled so its total matches what the athlete sustains
     # on real races (effort-km/h with duration decay). Training splits keep
