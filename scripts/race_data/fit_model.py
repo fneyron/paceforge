@@ -1,44 +1,58 @@
-"""Fit PaceForge's plan shape (gradient curve by level, fatigue, night, terrain)
-on real race results and validate it on held-out events.
+"""Fit PaceForge's plan shape (gradient curve, fatigue, night, terrain) on real
+race results and validate it on held-out events.
 
-Pipeline (end to end, ~10-20 min on 4 cores):
+Pipeline (end to end, ~30 min on 4 cores, most of it the model-selection CV):
 
-  .venv/bin/python scripts/race_data/fit_data.py      # once: per-race precompute (app code)
-  .venv/bin/python scripts/race_data/fit_model.py     # fit on TRAIN events, score TEST events
+  .venv/bin/python scripts/race_data/fit_data.py      # once, ~15 s: per-race precompute with the app's code
+  .venv/bin/python scripts/race_data/fit_model.py     # CV on TRAIN, fit on TRAIN, score held-out TEST
+  .venv/bin/python scripts/race_data/fit_model.py --form hours --lam-c 0 --lam-t 3   # skip the CV
 
-numpy/scipy are not in the app venv; install them aside and point PACEFORGE_PYLIB at them:
+numpy/scipy are not in the app venv; install them aside and point PACEFORGE_PYLIB at
+them (default <PACEFORGE_FIT_DIR>/pylib):
   uv pip install --python .venv/bin/python --target <dir> numpy scipy
+
+DATA: UTMB Live races of 40-180 km WITH a GPS track (LiveTrail terrain classes);
+races without a track (profile rebuilt from checkpoint D+) are left out, their
+gradient composition being synthetic. A track labelled > 80 % road on a trail
+race (Translantau) is treated as unlabelled (class U).
 
 WHAT IS SCORED (same metric as calibrate.score_race): for each race and level
 group (finish 0-12, 12-18, 18-24, 24-30, 30+ h of MOVING time, stops removed
-where departures are timed), the plan is simulated at the group's median
-finish (flat pace re-levelled 3x, so fatigue-by-hours and night see the right
-clock), then scaled to each runner's own finish; the metric is the mean
-|predicted - actual| in minutes at the intermediate checkpoints, averaged over
-(race, group) weighted by the group's runner count.
+where departures are timed), the plan is simulated at the group's median finish
+(flat pace re-levelled 4x, so fatigue-by-hours and night see the right clock),
+then scaled to each runner's own finish; the metric is the mean |predicted -
+actual| in minutes at the intermediate checkpoints, averaged over (race, group)
+weighted by the group's runner count. The production path reproduces
+calibrate.score_race exactly.
 
 FAST PATH: fit_data.py stores per 1 km segment a histogram of the 25 m sample
-points over (integer gradient, LiveTrail class) built exactly as the app's
+points over (integer gradient, LiveTrail class), built exactly as the app's
 _fine_terrain reads the course (gradient over 100 m, rounded). A candidate
-gradient curve x terrain multipliers is then one matrix product; the
-sequential fatigue/night replay is vectorised over all (race, group) pairs.
+gradient curve x terrain multipliers is one matrix product; the sequential
+fatigue/night replay is vectorised over all (race, group) pairs (~25 ms/eval).
 
 MODELS
-  production  the app today: _DEFAULT_GRADIENT_FACTORS on _fine_terrain with
-              the OSM-like surface (road 1, track 1.06, trail 1.12), altitude,
-              _fatigue_factor (progress, D+), _night_penalty (1.08 / 1.03).
-  prod+hours  production terrain, fatigue f = 1 + c (h/10)^q - fresh max(0, 1-h/3)
-              with c=.3 q=.75 fresh=.15 (the earlier 35-race finding).
-  fit         gradient curve with knots (-35 -25 -15 -8 -3 0 3 8 15 25 35 %),
-              monotone uphill, level term: log F(g, T) = log F(g) (T/20)^gamma
-              (gamma_up for g > 0, gamma_down for g < 0, T = group's median
-              moving hours); fatigue (c, q, fresh) by hours; night multiplier;
-              LiveTrail multipliers (road = 1; track F; trail T, T1, T2, T3;
-              steps S; unknown U). Altitude as production.
-  fit_nolevel the same with gamma = 0 (one curve for everybody).
+  production   the app today: _DEFAULT_GRADIENT_FACTORS on _fine_terrain, OSM-like
+               surface (road 1, track 1.06, trail 1.12), altitude, _fatigue_factor
+               (progress, D+), _night_penalty (1.08 night / 1.03 dusk-dawn).
+  prod+hours   production terrain, fatigue f = 1 + c (h/10)^q - fresh max(0, 1-h/3),
+               c=.3 q=.75 fresh=.15 (the earlier 35-race finding).
+  fitted forms gradient curve with knots -35 -25 -15 -8 -3 0 3 8 15 25 35 %
+               (uphill monotone; downhill log-factor convex in |g|: gains, then
+               costs as the descent steepens), night multiplier, LiveTrail
+               multipliers (R = 1; F, T, T1, T2, T3, S, U), altitude as production,
+               fatigue f = 1 + c (T/10)^q (D/100)^p (h/T)^r - fresh max(0, 1-h/3)
+               (h hours on course, T target finish, D km):
+     hours          r = q, p = 0: fatigue by hours on course only
+     general        q, r, p free (nests progress-based fatigue as in production)
+     general+level  + level term log F(g, T) = log F(g) (T/20)^gamma (gamma_up / gamma_down)
+     prodcurve      production curve kept, fatigue / night / terrain fitted
+  Penalties: lam_c x curvature of the curve, lam_t x (terrain - production)^2.
+  The form and (lam_c, lam_t) are chosen by 2-fold cross-validation over TRAIN
+  events; the test events are only scored once, at the end.
 
-SPLIT: by EVENT (all editions and distances of an event on the same side), a
-seeded shuffle; Transjeju forced into TEST (the guard runs there).
+SPLIT: by EVENT (all editions and distances of an event on the same side),
+seeded shuffle, Transjeju forced into TEST (the guard runs there).
 
 Outputs: scripts/race_data/fitted_params.json, scripts/race_data/fit_results.txt
 """
@@ -55,6 +69,8 @@ import statistics
 import sys
 import time
 
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")  # the fit parallelises over processes; BLAS threads would oversubscribe
 HERE = pathlib.Path(__file__).resolve().parent
 FIT_DIR = os.environ.get("PACEFORGE_FIT_DIR", "/tmp/claude-0/-home-user-paceforge/cb4ce7f8-b738-551f-a7c5-c130c0de27e8/scratchpad/fit")
 sys.path.insert(0, os.environ.get("PACEFORGE_PYLIB", FIT_DIR + "/pylib"))
@@ -155,7 +171,7 @@ def describe(x):
     c = curves(x)
     out = {
         "knots_pct": KNOTS.astype(int).tolist(),
-        "curve_at_20h": [round(v, 3) for v in kv],
+        "curve_at_20h": [round(float(v), 3) for v in kv],
         "gamma_up": round(float(x[10]), 3), "gamma_down": round(float(x[11]), 3),
         "curve_by_level_h": {f"{int(h)}h": {int(g): round(float(c[list(GRID).index(int(g)), i]), 3) for g in KNOTS} for i, h in enumerate(REF_H)},
         "fatigue": {"c": round(float(x[I_C]), 4), "q": round(float(x[I_Q]), 4), "r": round(float(x[I_R]), 4), "p": round(float(x[I_P]), 4),
@@ -164,6 +180,9 @@ def describe(x):
                                "T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"},
         "night": {"night": round(float(x[I_NIGHT]), 4), "dusk_dawn": round(1 + (float(x[I_NIGHT]) - 1) * 0.375, 4)},
         "terrain": dict(zip(["R"] + TERRAIN, [round(float(v), 4) for v in terrain(x)])),
+        # drop-in for race_simulator._DEFAULT_GRADIENT_FACTORS (the app reads integer %, clamped to -20..30;
+        # the fitted curve keeps rising below -20 %, which the app's clamp would cut)
+        "integer_table_20h": {int(g): round(float(v), 3) for g, v in zip(GRID, c[:, 2]) if -35 <= g <= 35},
     }
     return out
 
@@ -370,7 +389,7 @@ def penalty(x, lam_c, lam_t):
     return lam_c * pc + lam_t * pt
 
 
-def fit(prob, x0, form="general", lam_c=0.0, lam_t=0.0, maxiter=300, label="", verbose=True):
+def fit(prob, x0, form="general", lam_c=0.0, lam_t=0.0, maxiter=300, label="", verbose=True, polish=True):
     """Minimise mean |gap| + penalty over the form's parameters (L-BFGS-B, Powell polish)."""
     free = np.array(FORMS[form])
     lo, hi = bounds()
@@ -394,8 +413,10 @@ def fit(prob, x0, form="general", lam_c=0.0, lam_t=0.0, maxiter=300, label="", v
 
     bnds = list(zip(lo[free], hi[free]))
     r = optimize.minimize(f, x[free], method="L-BFGS-B", bounds=bnds, options={"maxiter": maxiter, "eps": 2e-3})
-    r2 = optimize.minimize(f, r.x, method="Powell", bounds=bnds, options={"maxiter": 2, "xtol": 1e-3, "ftol": 1e-5})
-    best = r2 if r2.fun < r.fun else r
+    best = r
+    if polish:
+        r2 = optimize.minimize(f, r.x, method="Powell", bounds=bnds, options={"maxiter": 2, "xtol": 1e-3, "ftol": 1e-5})
+        best = r2 if r2.fun < r.fun else r
     y = full(best.x)
     if verbose:
         print(f"  [{label or form}] lam_c {lam_c} lam_t {lam_t}: {n[0]} evals, {time.time() - t0:.0f}s, "
@@ -424,7 +445,7 @@ def cv_folds(train, k=2):
 def _cv_job(job):
     form, lam_c, lam_t, fi = job
     tr, va = _CV["folds"][fi]
-    x = fit(tr, x0_from_production(), form, lam_c, lam_t, verbose=False)
+    x = fit(tr, x0_from_production(), form, lam_c, lam_t, verbose=False, polish=False)
     return job, va.score(va.predict(x)), tr.score(tr.predict(x))
 
 
@@ -641,19 +662,24 @@ def main():
     say("\n" + fmt_table("HELD-OUT mean |gap| (min) by level group", cols, compare(pte, preds, "by_group")))
     say("\n" + fmt_table("HELD-OUT mean |gap| (min) by distance band", cols, compare(pte, preds, "by_band")))
     m_prod, _ = pte.pair_gaps(preds["production"])
+    m_ph, _ = pte.pair_gaps(preds["prod+hours"])
     m_fit, _ = pte.pair_gaps(preds["fit"])
     ok = pte.has_obs
-    say(f"  (race, group) pairs where fit beats production: {int(np.sum(m_fit[ok] < m_prod[ok]))}/{int(ok.sum())}")
+    say(f"  (race, group) pairs where the selected fit ({sel}) beats production: {int(np.sum(m_fit[ok] < m_prod[ok]))}/{int(ok.sum())}, "
+        f"beats prod+hours: {int(np.sum(m_fit[ok] < m_ph[ok]))}/{int(ok.sum())}")
     per_race = {}
     for p in np.where(ok)[0]:
         rid = pte.races[pte.pairs[p][0]]["id"]
-        d = per_race.setdefault(rid, [0, 0.0, 0.0])
+        d = per_race.setdefault(rid, [0, 0.0, 0.0, 0.0])
         d[0] += pte.nrun[p]
         d[1] += pte.nrun[p] * m_prod[p]
-        d[2] += pte.nrun[p] * m_fit[p]
-    say(f"\nHELD-OUT per race (runners, production, selected fit = {sel}):")
-    for rid, (n, a_, b_) in sorted(per_race.items()):
-        say(f"  {rid:40s}{int(n):5d}{a_ / n:8.1f}{b_ / n:8.1f}")
+        d[2] += pte.nrun[p] * m_ph[p]
+        d[3] += pte.nrun[p] * m_fit[p]
+    say(f"\nHELD-OUT per race: runners, production, prod+hours, selected fit ({sel})")
+    for rid, (n, a_, b_, c_) in sorted(per_race.items()):
+        say(f"  {rid:40s}{int(n):5d}{a_ / n:8.1f}{b_ / n:8.1f}{c_ / n:8.1f}")
+    say(f"  races where the fit beats production: {sum(v[3] < v[1] for v in per_race.values())}/{len(per_race)}, "
+        f"beats prod+hours: {sum(v[3] < v[2] for v in per_race.values())}/{len(per_race)}")
 
     tj = next((r for r in races if r["id"] == "utmb/transjeju_2025/100m"), None)
     g = guard(tj, {k: models[k] for k in GUARD_MODELS}) if tj else None
@@ -692,8 +718,9 @@ def main():
         say(f"  {k}: curve {dict(zip(d['knots_pct'], d['curve_at_20h']))}")
         say(f"     gamma_up {d['gamma_up']} gamma_down {d['gamma_down']}; fatigue c {d['fatigue']['c']} q {d['fatigue']['q']} r {d['fatigue']['r']} "
             f"p {d['fatigue']['p']} fresh {d['fatigue']['fresh']}; night {d['night']['night']}; terrain {d['terrain']}")
-    for lvl, cv in params["fit"]["curve_by_level_h"].items():
-        say(f"  selected fit, curve at {lvl}: {cv}")
+    for lvl, cv in params["variants"]["fit_general+level"]["curve_by_level_h"].items():
+        say(f"  fit_general+level (not selected by CV), curve at {lvl}: {cv}")
+    say(f"  selected ({sel}) integer table: {params['fit']['integer_table_20h']}")
     open(a.results, "w").write("\n".join(lines) + "\n")
     print(f"\n-> {a.params}\n-> {a.results}")
 
