@@ -53,6 +53,8 @@ def compact_track(tr: dict) -> list:
     out = []
     for seg in tr.get("segments") or []:
         for p in seg.get("segment") or []:
+            if p[0] is None or p[1] is None or not p[2] or p[2][0] is None:
+                continue  # a point without altitude or position: dropped
             out.append([int(p[0]), round(float(p[1]), 1), round(p[2][1], 5), round(p[2][0], 5), p[5] if len(p) > 5 else None])
     return out
 
