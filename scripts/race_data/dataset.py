@@ -71,7 +71,7 @@ def load_utmb(path: pathlib.Path) -> dict | None:
         cps0 = [{"km": p["distance"] / 1000, "alt": p["altitude"], "dplus": p.get("gainElevation"), "lat": p.get("latitude"), "lon": p.get("longitude")} for p in points]
         pts, surface = _profile_from_checkpoints(cps0)
         scale = 1.0
-    cps = [{"pid": p["pointId"], "name": p.get("shortName") or p.get("name"), "km": p["distance"] / 1000 * scale,
+    cps = [{"pid": p["pointId"], "name": p.get("shortName") or p.get("name"), "km": p["distance"] / 1000 * scale, "km_official": p["distance"] / 1000,
             "alt": p.get("altitude"), "dplus": p.get("gainElevation")} for p in points]
     start = _iso((d.get("info") or {}).get("startDate"))
     runners = []
