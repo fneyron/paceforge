@@ -89,8 +89,17 @@ def load_utmb(path: pathlib.Path) -> dict | None:
             dep.append((o - t0).total_seconds() if o else None)
         if arr[-1] and arr[-1] > 0:
             runners.append({"bib": bib, "sex": r.get("sex"), "index": r.get("index"), "time_s": arr[-1], "arr": arr, "dep": dep})
+    tz = ((d.get("info") or {}).get("eventTimezone") or {}).get("eventTimezone")
+    local = start
+    if start and tz:
+        try:
+            from zoneinfo import ZoneInfo
+
+            local = start.astimezone(ZoneInfo(tz))
+        except Exception:
+            local = start
     return {"id": f"utmb/{path.parent.name}/{path.stem.replace('.json', '')}", "source": "utmb", "name": d["summary"].get("name"),
-            "start": start.isoformat() if start else None, "cps": cps, "points": pts, "surface": surface,
+            "start": local.isoformat() if local else None, "cps": cps, "points": pts, "surface": surface,
             "has_track": bool(track), "runners": runners}
 
 
