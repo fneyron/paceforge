@@ -416,6 +416,75 @@ def _terrain_difficulty_factor(gradient_pct: float, elevation_gain: float, eleva
     return factor
 
 
+FINE_STEP_KM = 0.025
+FINE_WINDOW_KM = 0.1
+
+
+def _fine_terrain(course: CourseProfile, profile: AthleteGradientProfile) -> list[float] | None:
+    """One terrain multiplier per segment, from the full-resolution trace.
+
+    The gradient is read every 25 m (over 100 m, to smooth the GPS) and the
+    pace factor averaged over the segment: pace cost is convex in the
+    gradient, so a km that is flat then a 25 % wall costs far more than a
+    steady km of the same average — the average hid exactly the steep,
+    up-and-down stretches. The OpenStreetMap surface (road / track / trail),
+    when stored, multiplies it, normalised over the course so it reshapes the
+    plan without moving the calibrated total.
+
+    Returns None when the course has no usable trace (the km averages apply).
+    """
+    coords = course.route_coords or []
+    if len(coords) < 50 or len(coords[0]) < 4 or not course.segments:
+        return None
+    # resample every 25 m
+    xs: list[float] = []
+    es: list[float] = []
+    j, x, end = 0, float(coords[0][2]), float(coords[-1][2])
+    while x <= end:
+        while j < len(coords) - 2 and coords[j + 1][2] < x:
+            j += 1
+        p, n = coords[j], coords[j + 1]
+        if p[3] is None or n[3] is None:
+            return None
+        span = n[2] - p[2]
+        t = (x - p[2]) / span if span > 0 else 0.0
+        xs.append(x)
+        es.append(p[3] + t * (n[3] - p[3]))
+        x += FINE_STEP_KM
+    if len(xs) < 8:
+        return None
+
+    from app.services.surface import km_multiplier
+
+    surface = course.surface_km or None
+    half = max(1, round(FINE_WINDOW_KM / FINE_STEP_KM / 2))
+    point_factor: list[float] = []
+    point_surface: list[float] = []
+    for i in range(len(xs)):
+        a, b = max(0, i - half), min(len(xs) - 1, i + half)
+        dist_m = (xs[b] - xs[a]) * 1000
+        grade = (es[b] - es[a]) / dist_m * 100 if dist_m > 0 else 0.0
+        point_factor.append(_get_factor(profile, grade))
+        if surface:
+            k = min(int(xs[i]), len(surface) - 1)
+            point_surface.append(km_multiplier(surface[k]))
+    if surface:
+        mean_s = sum(point_surface) / len(point_surface)
+        point_factor = [f * s / mean_s for f, s in zip(point_factor, point_surface)]
+
+    out: list[float] = []
+    i = 0
+    for seg in course.segments:
+        acc, n = 0.0, 0
+        while i < len(xs) and xs[i] < seg.end_km:
+            if xs[i] >= seg.start_km:
+                acc += point_factor[i]
+                n += 1
+            i += 1
+        out.append(acc / n if n else _get_factor(profile, seg.avg_gradient_pct))
+    return out
+
+
 def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     """Penalty for running at night. Assumes race starts at start_hour.
 
@@ -446,21 +515,25 @@ def predict_course(
     total_distance = course.total_distance_km
 
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
+    fine = _fine_terrain(course, profile)
 
-    for segment in course.segments:
-        grade_factor = _get_factor(profile, segment.avg_gradient_pct)
+    for idx, segment in enumerate(course.segments):
         cumulative_gain += segment.elevation_gain
 
         # Altitude correction (>1500m)
         avg_elev = (segment.min_elevation + segment.max_elevation) / 2
         alt = _altitude_factor(avg_elev)
 
-        # Terrain difficulty
-        terrain = _terrain_difficulty_factor(
-            segment.avg_gradient_pct, segment.elevation_gain,
-            segment.elevation_loss, segment.distance_m,
-        )
-
+        if fine is not None:
+            # gradient every 25 m + surface: the steepness and the up-and-down
+            # the km thresholds below approximated are measured directly
+            grade_factor, terrain = fine[idx], 1.0
+        else:
+            grade_factor = _get_factor(profile, segment.avg_gradient_pct)
+            terrain = _terrain_difficulty_factor(
+                segment.avg_gradient_pct, segment.elevation_gain,
+                segment.elevation_loss, segment.distance_m,
+            )
 
         # Progressive fatigue (personalised tilt). Progress from the segment's
         # own end_km: reading cumulative_distance_km here used the PREVIOUS

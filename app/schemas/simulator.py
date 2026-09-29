@@ -39,6 +39,8 @@ class CourseProfile(BaseModel):
     elevation_points: list[dict]  # {"distance_km": float, "elevation": float}
     route_coords: list[list[float]] = []  # [[lat, lon, distance_km], ...] for map + hover sync
     km_markers: list[dict] = []  # [{"km": int, "lat": float, "lon": float, "elevation": float}]
+    # [road, track, trail] share per km, from OpenStreetMap (services/surface)
+    surface_km: list[list[float]] | None = None
     predicted_total_time_s: int = 0
     predicted_total_time_formatted: str = ""
 

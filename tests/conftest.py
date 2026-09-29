@@ -1,4 +1,8 @@
 import asyncio
+import os
+
+# no OpenStreetMap calls from the tests (read when app.config loads)
+os.environ.setdefault("SURFACE_FETCH", "false")
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
