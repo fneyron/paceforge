@@ -1,0 +1,4754 @@
+[
+ {
+  "edition": "100milesofistria_2023",
+  "course": "red",
+  "name": "RED ",
+  "distance_km": 168.33,
+  "elevation_gain": 6541.0,
+  "checkpoints": 11,
+  "finishers": 213
+ },
+ {
+  "edition": "100milesofistria_2023",
+  "course": "blue",
+  "name": "BLUE",
+  "distance_km": 111.46,
+  "elevation_gain": 4132.0,
+  "checkpoints": 9,
+  "finishers": 350
+ },
+ {
+  "edition": "100milesofistria_2023",
+  "course": "green",
+  "name": "GREEN",
+  "distance_km": 68.55,
+  "elevation_gain": 2473.0,
+  "checkpoints": 6,
+  "finishers": 475
+ },
+ {
+  "edition": "100milesofistria_2023",
+  "course": "yellow",
+  "name": "YELLOW",
+  "distance_km": 41.12,
+  "elevation_gain": 1088.0,
+  "checkpoints": 5,
+  "finishers": 517
+ },
+ {
+  "edition": "amazeanjungletrail_2022",
+  "course": "b100",
+  "name": "BETONG100",
+  "distance_km": 106.24,
+  "elevation_gain": 6351.0,
+  "checkpoints": 11,
+  "finishers": 38
+ },
+ {
+  "edition": "amazeanjungletrail_2022",
+  "course": "b50",
+  "name": "BETONG50",
+  "distance_km": 52.27,
+  "elevation_gain": 2721.0,
+  "checkpoints": 6,
+  "finishers": 71
+ },
+ {
+  "edition": "amizmiz_2023",
+  "course": "105km",
+  "name": "CHALLENGE 105KM",
+  "distance_km": 110.53,
+  "elevation_gain": 5793.0,
+  "checkpoints": 11,
+  "finishers": 11
+ },
+ {
+  "edition": "amizmiz_2023",
+  "course": "74KM",
+  "name": "ULTRA TRAIL AMIZMIZ 74KM",
+  "distance_km": 77.74,
+  "elevation_gain": 3547.0,
+  "checkpoints": 6,
+  "finishers": 36
+ },
+ {
+  "edition": "amizmiz_2023",
+  "course": "74relai",
+  "name": "74KM RELAIS",
+  "distance_km": 77.74,
+  "elevation_gain": 3547.0,
+  "checkpoints": 6,
+  "finishers": 4
+ },
+ {
+  "edition": "andorrabyutmb_2023",
+  "course": "105K",
+  "name": "Ultra 105K",
+  "distance_km": 105.47,
+  "elevation_gain": 6879.0,
+  "checkpoints": 12,
+  "finishers": 396
+ },
+ {
+  "edition": "andorrabyutmb_2023",
+  "course": "50K",
+  "name": "50K",
+  "distance_km": 50.78,
+  "elevation_gain": 3623.0,
+  "checkpoints": 8,
+  "finishers": 521
+ },
+ {
+  "edition": "aranbyutmb_2023",
+  "course": "vda",
+  "name": "VDA",
+  "distance_km": 163.89,
+  "elevation_gain": 10092.0,
+  "checkpoints": 22,
+  "finishers": 0
+ },
+ {
+  "edition": "aranbyutmb_2023",
+  "course": "cdh",
+  "name": "CDH",
+  "distance_km": 110.7,
+  "elevation_gain": 6263.0,
+  "checkpoints": 16,
+  "finishers": 961
+ },
+ {
+  "edition": "aranbyutmb_2023",
+  "course": "pda",
+  "name": "PDA",
+  "distance_km": 55.01,
+  "elevation_gain": 3358.0,
+  "checkpoints": 9,
+  "finishers": 1234
+ },
+ {
+  "edition": "balconcauteret_2022",
+  "course": "47km",
+  "name": "47km",
+  "distance_km": 48.24,
+  "elevation_gain": 3944.0,
+  "checkpoints": 10,
+  "finishers": 155
+ },
+ {
+  "edition": "balconcauteret_2024",
+  "course": "80km",
+  "name": "80km",
+  "distance_km": 80.39,
+  "elevation_gain": 6279.0,
+  "checkpoints": 15,
+  "finishers": 0
+ },
+ {
+  "edition": "balconcauteret_2024",
+  "course": "47km",
+  "name": "47km",
+  "distance_km": 47.4,
+  "elevation_gain": 4223.0,
+  "checkpoints": 11,
+  "finishers": 296
+ },
+ {
+  "edition": "barla_2023",
+  "course": "trail",
+  "name": "Trail du Barlatay",
+  "distance_km": 51.2,
+  "elevation_gain": 2908.0,
+  "checkpoints": 6,
+  "finishers": 106
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC12H",
+  "name": "Boucle du Calvaire 12H",
+  "distance_km": 135.33,
+  "elevation_gain": 4720.0,
+  "checkpoints": 81,
+  "finishers": 9
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC6H",
+  "name": "Boucle du Calvaire 6H",
+  "distance_km": 101.5,
+  "elevation_gain": 3540.0,
+  "checkpoints": 61,
+  "finishers": 16
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC3H",
+  "name": "Boucle du Calvaire 3H",
+  "distance_km": 67.66,
+  "elevation_gain": 2360.0,
+  "checkpoints": 41,
+  "finishers": 21
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC12X4",
+  "name": "Boucle du Calvaire 12H RELAIS à 4",
+  "distance_km": 135.33,
+  "elevation_gain": 4720.0,
+  "checkpoints": 81,
+  "finishers": 1
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC12X2",
+  "name": "Boucle du Calvaire 12H RELAIS à 2",
+  "distance_km": 135.33,
+  "elevation_gain": 4720.0,
+  "checkpoints": 81,
+  "finishers": 2
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC6X4",
+  "name": "Boucle du Calvaire 6H RELAIS à 4",
+  "distance_km": 101.5,
+  "elevation_gain": 3540.0,
+  "checkpoints": 61,
+  "finishers": 1
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC6X2",
+  "name": "Boucle du Calvaire 6H RELAIS à 2",
+  "distance_km": 101.5,
+  "elevation_gain": 3540.0,
+  "checkpoints": 61,
+  "finishers": 5
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC3X4",
+  "name": "Boucle du Calvaire 3H RELAIS à 4",
+  "distance_km": 67.66,
+  "elevation_gain": 2360.0,
+  "checkpoints": 41,
+  "finishers": 1
+ },
+ {
+  "edition": "bdc24_2024",
+  "course": "BDC3X2",
+  "name": "Boucle du Calvaire 3H RELAIS à 2",
+  "distance_km": 67.66,
+  "elevation_gain": 2360.0,
+  "checkpoints": 41,
+  "finishers": 6
+ },
+ {
+  "edition": "bk-bidarray_2022",
+  "course": "bk45",
+  "name": "BK 45",
+  "distance_km": 42.66,
+  "elevation_gain": 3121.0,
+  "checkpoints": 8,
+  "finishers": 237
+ },
+ {
+  "edition": "bk-bidarray_2024",
+  "course": "bk65",
+  "name": "BK 65",
+  "distance_km": 65.12,
+  "elevation_gain": 4785.0,
+  "checkpoints": 10,
+  "finishers": 239
+ },
+ {
+  "edition": "bub24_2024",
+  "course": "Backyar",
+  "name": "Backyard Ultra Barjots",
+  "distance_km": 213.76,
+  "elevation_gain": 1376.0,
+  "checkpoints": 65,
+  "finishers": 46
+ },
+ {
+  "edition": "bucovinaultrarocks_2023",
+  "course": "110k",
+  "name": "Ultra Rocks 110k",
+  "distance_km": 108.28,
+  "elevation_gain": 6659.0,
+  "checkpoints": 15,
+  "finishers": 49
+ },
+ {
+  "edition": "bucovinaultrarocks_2023",
+  "course": "88k",
+  "name": "4 Summits 88k",
+  "distance_km": 86.16,
+  "elevation_gain": 5575.0,
+  "checkpoints": 13,
+  "finishers": 49
+ },
+ {
+  "edition": "bucovinaultrarocks_2023",
+  "course": "48k",
+  "name": "Lady's Rocks 48k",
+  "distance_km": 47.47,
+  "elevation_gain": 3175.0,
+  "checkpoints": 9,
+  "finishers": 140
+ },
+ {
+  "edition": "capicorsu_2024",
+  "course": "solo",
+  "name": "SOLO",
+  "distance_km": 54.38,
+  "elevation_gain": 2963.0,
+  "checkpoints": 6,
+  "finishers": 125
+ },
+ {
+  "edition": "capicorsu_2024",
+  "course": "duo",
+  "name": "DUO",
+  "distance_km": 54.38,
+  "elevation_gain": 2963.0,
+  "checkpoints": 6,
+  "finishers": 33
+ },
+ {
+  "edition": "cavallsdelvent_2023",
+  "course": "open",
+  "name": "Open CDV",
+  "distance_km": 84.38,
+  "elevation_gain": 5513.0,
+  "checkpoints": 6,
+  "finishers": 60
+ },
+ {
+  "edition": "cavallsdelvent_2023",
+  "course": "relleus",
+  "name": "Relleus",
+  "distance_km": 84.38,
+  "elevation_gain": 5513.0,
+  "checkpoints": 6,
+  "finishers": 1
+ },
+ {
+  "edition": "cavallsdelvent_2023",
+  "course": "curt",
+  "name": "Cavalls 2/3",
+  "distance_km": 51.99,
+  "elevation_gain": 3250.0,
+  "checkpoints": 4,
+  "finishers": 10
+ },
+ {
+  "edition": "chiaksan_2023",
+  "course": "50k",
+  "name": "50K",
+  "distance_km": 50.63,
+  "elevation_gain": 3243.0,
+  "checkpoints": 6,
+  "finishers": 46
+ },
+ {
+  "edition": "chiltern50_2023",
+  "course": "full50",
+  "name": "Full  50km ",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 1072
+ },
+ {
+  "edition": "clujecotrail_2023",
+  "course": "50k",
+  "name": "Ultra 50k",
+  "distance_km": 50.25,
+  "elevation_gain": 1571.0,
+  "checkpoints": 10,
+  "finishers": 218
+ },
+ {
+  "edition": "cmur2023_2023",
+  "course": "CMUR",
+  "name": "Cervino Matterhorn Ultra Race",
+  "distance_km": 177.26,
+  "elevation_gain": 12973.0,
+  "checkpoints": 17,
+  "finishers": 107
+ },
+ {
+  "edition": "cmur2023_2023",
+  "course": "Trail55",
+  "name": "Trail 55 Km",
+  "distance_km": 54.13,
+  "elevation_gain": 3211.0,
+  "checkpoints": 8,
+  "finishers": 136
+ },
+ {
+  "edition": "cmv_2022",
+  "course": "3Ba2J",
+  "name": "Les 3 Ballons - 2 jours (avec ou sans option)",
+  "distance_km": 211.9,
+  "elevation_gain": 4950.0,
+  "checkpoints": 8,
+  "finishers": 320
+ },
+ {
+  "edition": "cmv_2022",
+  "course": "2Ballon",
+  "name": "Les 2 Ballons (avec ou sans option)",
+  "distance_km": 114.5,
+  "elevation_gain": 3075.0,
+  "checkpoints": 6,
+  "finishers": 194
+ },
+ {
+  "edition": "cmv_2022",
+  "course": "3Ba1J",
+  "name": "Les 3 Ballons 1 jours  (avec ou sans option)",
+  "distance_km": 211.9,
+  "elevation_gain": 4950.0,
+  "checkpoints": 7,
+  "finishers": 141
+ },
+ {
+  "edition": "cmv_2022",
+  "course": "PetitBa",
+  "name": "Le Petit Ballon 1 jour (avec ou sans option)",
+  "distance_km": 99.5,
+  "elevation_gain": 1942.0,
+  "checkpoints": 4,
+  "finishers": 76
+ },
+ {
+  "edition": "cnn_2022",
+  "course": "DDS",
+  "name": "Le Défi des Seigneurs",
+  "distance_km": 80.28,
+  "elevation_gain": 3271.0,
+  "checkpoints": 8,
+  "finishers": 156
+ },
+ {
+  "edition": "cnn_2022",
+  "course": "GDV",
+  "name": "Le Grand Défi des Vosges",
+  "distance_km": 42.17,
+  "elevation_gain": 1657.0,
+  "checkpoints": 6,
+  "finishers": 321
+ },
+ {
+  "edition": "cnn_2022",
+  "course": "UTDS",
+  "name": "UTDS",
+  "distance_km": 107.74,
+  "elevation_gain": 4363.0,
+  "checkpoints": 11,
+  "finishers": 39
+ },
+ {
+  "edition": "cnn_2024",
+  "course": "DDS",
+  "name": "Le Défi des Seigneurs",
+  "distance_km": 81.23,
+  "elevation_gain": 3000.0,
+  "checkpoints": 8,
+  "finishers": 210
+ },
+ {
+  "edition": "cnn_2024",
+  "course": "GDV",
+  "name": "Le Grand Défi des Vosges",
+  "distance_km": 42.89,
+  "elevation_gain": 1523.0,
+  "checkpoints": 6,
+  "finishers": 389
+ },
+ {
+  "edition": "cnn_2024",
+  "course": "X",
+  "name": "L'X",
+  "distance_km": 155.28,
+  "elevation_gain": 6840.0,
+  "checkpoints": 48,
+  "finishers": 80
+ },
+ {
+  "edition": "cotswoldway_2023",
+  "course": "100k",
+  "name": "Full 100K",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 296
+ },
+ {
+  "edition": "cotswoldway_2023",
+  "course": "2day",
+  "name": "Full 100k - 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 138
+ },
+ {
+  "edition": "cotswoldway_2023",
+  "course": "1stHalf",
+  "name": "First Half Challenge",
+  "distance_km": 53.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 377
+ },
+ {
+  "edition": "cotswoldway_2023",
+  "course": "2ndHalf",
+  "name": "Second Half Challenge",
+  "distance_km": 47.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 107
+ },
+ {
+  "edition": "crossingswitzerland_2022",
+  "course": "crossin",
+  "name": "crossing switzerland",
+  "distance_km": 397.13,
+  "elevation_gain": 23388.0,
+  "checkpoints": 25,
+  "finishers": 95
+ },
+ {
+  "edition": "dalmacijaultratrail_2022",
+  "course": "mount",
+  "name": "Mountain",
+  "distance_km": 122.51,
+  "elevation_gain": 5671.0,
+  "checkpoints": 12,
+  "finishers": 47
+ },
+ {
+  "edition": "dalmacijaultratrail_2022",
+  "course": "sea",
+  "name": "Sea",
+  "distance_km": 56.91,
+  "elevation_gain": 3010.0,
+  "checkpoints": 7,
+  "finishers": 109
+ },
+ {
+  "edition": "easter_2022",
+  "course": "50KM",
+  "name": "Easter Walk 50KM",
+  "distance_km": 50.0,
+  "elevation_gain": 183.0,
+  "checkpoints": 5,
+  "finishers": 739
+ },
+ {
+  "edition": "easter_2024",
+  "course": "50KM",
+  "name": "50km Challenge",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 777
+ },
+ {
+  "edition": "echappeebelle_2022",
+  "course": "149km",
+  "name": "Intégrale",
+  "distance_km": 149.91,
+  "elevation_gain": 11262.0,
+  "checkpoints": 12,
+  "finishers": 391
+ },
+ {
+  "edition": "echappeebelle_2022",
+  "course": "84km",
+  "name": "Traversée Nord",
+  "distance_km": 84.81,
+  "elevation_gain": 6141.0,
+  "checkpoints": 9,
+  "finishers": 367
+ },
+ {
+  "edition": "echappeebelle_2022",
+  "course": "64Km",
+  "name": "Parcours des crêtes",
+  "distance_km": 64.42,
+  "elevation_gain": 4768.0,
+  "checkpoints": 8,
+  "finishers": 414
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "152km",
+  "name": "L’Intégrale",
+  "distance_km": 154.94,
+  "elevation_gain": 12619.0,
+  "checkpoints": 16,
+  "finishers": 271
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "92km",
+  "name": "Traversée Nord",
+  "distance_km": 94.05,
+  "elevation_gain": 7522.0,
+  "checkpoints": 11,
+  "finishers": 286
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "63Km",
+  "name": "Parcours des crêtes",
+  "distance_km": 64.08,
+  "elevation_gain": 5181.0,
+  "checkpoints": 7,
+  "finishers": 382
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "42km",
+  "name": "42km",
+  "distance_km": 41.87,
+  "elevation_gain": 3042.0,
+  "checkpoints": 5,
+  "finishers": 409
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "pacer",
+  "name": "Pacer ",
+  "distance_km": 87.55,
+  "elevation_gain": 7473.0,
+  "checkpoints": 10,
+  "finishers": 49
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "150Shun",
+  "name": "Intégrale -  Shunt ",
+  "distance_km": 149.9,
+  "elevation_gain": 11590.0,
+  "checkpoints": 14,
+  "finishers": 67
+ },
+ {
+  "edition": "echappeebelle_2024",
+  "course": "92Shunt",
+  "name": "Traversée Nord - Shunt",
+  "distance_km": 95.6,
+  "elevation_gain": 7945.0,
+  "checkpoints": 12,
+  "finishers": 6
+ },
+ {
+  "edition": "ecoparc_2024",
+  "course": "44km",
+  "name": "44km solo",
+  "distance_km": 44.05,
+  "elevation_gain": 588.0,
+  "checkpoints": 9,
+  "finishers": 0
+ },
+ {
+  "edition": "ecoparc_2024",
+  "course": "44kmr4",
+  "name": "44km relais de 4",
+  "distance_km": 44.05,
+  "elevation_gain": 588.0,
+  "checkpoints": 9,
+  "finishers": 0
+ },
+ {
+  "edition": "ecoparc_2024",
+  "course": "44kmr2",
+  "name": "44km relais de 2",
+  "distance_km": 44.05,
+  "elevation_gain": 588.0,
+  "checkpoints": 9,
+  "finishers": 0
+ },
+ {
+  "edition": "ecotrail_2023",
+  "course": "80km",
+  "name": "Trail 80 km",
+  "distance_km": 81.41,
+  "elevation_gain": 1385.0,
+  "checkpoints": 8,
+  "finishers": 1737
+ },
+ {
+  "edition": "ecotrail_2023",
+  "course": "45km",
+  "name": "Trail 45 km",
+  "distance_km": 45.89,
+  "elevation_gain": 757.0,
+  "checkpoints": 5,
+  "finishers": 1439
+ },
+ {
+  "edition": "eigerultratrail_2024",
+  "course": "E250",
+  "name": "E250 ",
+  "distance_km": 254.56,
+  "elevation_gain": 14945.0,
+  "checkpoints": 15,
+  "finishers": 54
+ },
+ {
+  "edition": "eigerultratrail_2024",
+  "course": "E101",
+  "name": "E101",
+  "distance_km": 101.66,
+  "elevation_gain": 6541.0,
+  "checkpoints": 18,
+  "finishers": 447
+ },
+ {
+  "edition": "eigerultratrail_2024",
+  "course": "e101sho",
+  "name": "E101Short",
+  "distance_km": 62.47,
+  "elevation_gain": 3574.0,
+  "checkpoints": 9,
+  "finishers": 75
+ },
+ {
+  "edition": "eigerultratrail_2024",
+  "course": "E51",
+  "name": "E51",
+  "distance_km": 54.3,
+  "elevation_gain": 3057.0,
+  "checkpoints": 8,
+  "finishers": 878
+ },
+ {
+  "edition": "eigerultratrail_2024",
+  "course": "E51cou",
+  "name": "E51 Couples",
+  "distance_km": 54.3,
+  "elevation_gain": 3057.0,
+  "checkpoints": 8,
+  "finishers": 47
+ },
+ {
+  "edition": "epictrailcostadaurada_2024",
+  "course": "mdp90k",
+  "name": "MDP 90K",
+  "distance_km": 87.29,
+  "elevation_gain": 5012.0,
+  "checkpoints": 11,
+  "finishers": 70
+ },
+ {
+  "edition": "epictrailcostadaurada_2024",
+  "course": "cdf50k",
+  "name": "CDF 50K",
+  "distance_km": 42.37,
+  "elevation_gain": 2064.0,
+  "checkpoints": 7,
+  "finishers": 132
+ },
+ {
+  "edition": "euskal_2022",
+  "course": "ultra",
+  "name": "Ultra Trail",
+  "distance_km": 133.41,
+  "elevation_gain": 8013.0,
+  "checkpoints": 16,
+  "finishers": 297
+ },
+ {
+  "edition": "euskal_2022",
+  "course": "uduo",
+  "name": "Ultra Trail en duo",
+  "distance_km": 133.41,
+  "elevation_gain": 8013.0,
+  "checkpoints": 16,
+  "finishers": 20
+ },
+ {
+  "edition": "euskal_2022",
+  "course": "euskal",
+  "name": "Euskal Trail",
+  "distance_km": 82.69,
+  "elevation_gain": 4885.0,
+  "checkpoints": 15,
+  "finishers": 219
+ },
+ {
+  "edition": "euskal_2022",
+  "course": "gourman",
+  "name": "Trail Gourmand",
+  "distance_km": 50.75,
+  "elevation_gain": 2631.0,
+  "checkpoints": 8,
+  "finishers": 443
+ },
+ {
+  "edition": "euskal_2024",
+  "course": "ultra",
+  "name": "Ultra Trail",
+  "distance_km": 132.18,
+  "elevation_gain": 8899.0,
+  "checkpoints": 16,
+  "finishers": 244
+ },
+ {
+  "edition": "euskal_2024",
+  "course": "endur",
+  "name": "Euskal Endurance",
+  "distance_km": 66.13,
+  "elevation_gain": 5024.0,
+  "checkpoints": 12,
+  "finishers": 207
+ },
+ {
+  "edition": "euskal_2024",
+  "course": "euskal",
+  "name": "Euskal Trail",
+  "distance_km": 82.9,
+  "elevation_gain": 5577.0,
+  "checkpoints": 15,
+  "finishers": 206
+ },
+ {
+  "edition": "euskal_2024",
+  "course": "gourman",
+  "name": "Trail Gourmand",
+  "distance_km": 51.1,
+  "elevation_gain": 2664.0,
+  "checkpoints": 9,
+  "finishers": 558
+ },
+ {
+  "edition": "fiz_2023",
+  "course": "8ref",
+  "name": "Tour des 8 refuges Evadict",
+  "distance_km": 62.03,
+  "elevation_gain": 4388.0,
+  "checkpoints": 9,
+  "finishers": 346
+ },
+ {
+  "edition": "fiz_2023",
+  "course": "ultra",
+  "name": "Ultra Tour des Fiz Mountain Medic",
+  "distance_km": 87.85,
+  "elevation_gain": 6573.0,
+  "checkpoints": 4,
+  "finishers": 20
+ },
+ {
+  "edition": "fullmoontrail_2023",
+  "course": "Estello",
+  "name": "Estello - 70 kms",
+  "distance_km": 70.77,
+  "elevation_gain": 1730.0,
+  "checkpoints": 8,
+  "finishers": 349
+ },
+ {
+  "edition": "garminepictrail_2023",
+  "course": "62km",
+  "name": "62KM",
+  "distance_km": 62.28,
+  "elevation_gain": 4467.0,
+  "checkpoints": 9,
+  "finishers": 94
+ },
+ {
+  "edition": "garminepictrail_2023",
+  "course": "42km",
+  "name": "42KM",
+  "distance_km": 41.52,
+  "elevation_gain": 2923.0,
+  "checkpoints": 7,
+  "finishers": 299
+ },
+ {
+  "edition": "geoje100k_2023",
+  "course": "100K",
+  "name": "100K",
+  "distance_km": 109.09,
+  "elevation_gain": 5832.0,
+  "checkpoints": 11,
+  "finishers": 98
+ },
+ {
+  "edition": "geoje100k_2023",
+  "course": "50K",
+  "name": "50K",
+  "distance_km": 50.89,
+  "elevation_gain": 2629.0,
+  "checkpoints": 6,
+  "finishers": 201
+ },
+ {
+  "edition": "georgiadeathrace_2022",
+  "course": "GDR",
+  "name": "Georgia Death Race",
+  "distance_km": 113.76,
+  "elevation_gain": 3886.0,
+  "checkpoints": 5,
+  "finishers": 149
+ },
+ {
+  "edition": "georgiadeathrace_2024",
+  "course": "GDR",
+  "name": "Georgia Death Race",
+  "distance_km": 118.29,
+  "elevation_gain": 5870.0,
+  "checkpoints": 9,
+  "finishers": 141
+ },
+ {
+  "edition": "grandraidventoux_2024",
+  "course": "125km",
+  "name": "125Km",
+  "distance_km": 125.75,
+  "elevation_gain": 6601.0,
+  "checkpoints": 8,
+  "finishers": 104
+ },
+ {
+  "edition": "grandraidventoux_2024",
+  "course": "82km",
+  "name": "82Km",
+  "distance_km": 84.08,
+  "elevation_gain": 4434.0,
+  "checkpoints": 7,
+  "finishers": 165
+ },
+ {
+  "edition": "grandraidventoux_2024",
+  "course": "47km",
+  "name": "47Km",
+  "distance_km": 48.81,
+  "elevation_gain": 2256.0,
+  "checkpoints": 4,
+  "finishers": 234
+ },
+ {
+  "edition": "grandraidventoux_2024",
+  "course": "relais",
+  "name": "84Km Relais",
+  "distance_km": 84.08,
+  "elevation_gain": 4434.0,
+  "checkpoints": 7,
+  "finishers": 49
+ },
+ {
+  "edition": "grandsenonais_2024",
+  "course": "100km",
+  "name": "100 KM",
+  "distance_km": 104.54,
+  "elevation_gain": 2022.0,
+  "checkpoints": 7,
+  "finishers": 50
+ },
+ {
+  "edition": "grandsenonais_2024",
+  "course": "100kmd",
+  "name": "100KM DUO",
+  "distance_km": 104.54,
+  "elevation_gain": 1980.0,
+  "checkpoints": 7,
+  "finishers": 4
+ },
+ {
+  "edition": "grandsenonais_2024",
+  "course": "40km",
+  "name": "40KM",
+  "distance_km": 41.43,
+  "elevation_gain": 671.0,
+  "checkpoints": 4,
+  "finishers": 152
+ },
+ {
+  "edition": "grcathares_2023",
+  "course": "GRC",
+  "name": "Grand Raid des Cathares",
+  "distance_km": 155.12,
+  "elevation_gain": 6283.0,
+  "checkpoints": 15,
+  "finishers": 97
+ },
+ {
+  "edition": "grcathares_2023",
+  "course": "RB",
+  "name": "Raid des Bogomiles",
+  "distance_km": 101.22,
+  "elevation_gain": 3560.0,
+  "checkpoints": 9,
+  "finishers": 296
+ },
+ {
+  "edition": "grcathares_2023",
+  "course": "TH",
+  "name": "Trail des Heretiques",
+  "distance_km": 61.32,
+  "elevation_gain": 2181.0,
+  "checkpoints": 6,
+  "finishers": 307
+ },
+ {
+  "edition": "grcathares_2023",
+  "course": "TC",
+  "name": "Trail des Colombes",
+  "distance_km": 41.67,
+  "elevation_gain": 1277.0,
+  "checkpoints": 4,
+  "finishers": 465
+ },
+ {
+  "edition": "grindstone_2024",
+  "course": "100m",
+  "name": "100m",
+  "distance_km": 168.88,
+  "elevation_gain": 6329.0,
+  "checkpoints": 11,
+  "finishers": 171
+ },
+ {
+  "edition": "grindstone_2024",
+  "course": "100k",
+  "name": "100k",
+  "distance_km": 105.53,
+  "elevation_gain": 3402.0,
+  "checkpoints": 9,
+  "finishers": 212
+ },
+ {
+  "edition": "grindstone_2024",
+  "course": "50k",
+  "name": "50k",
+  "distance_km": 52.33,
+  "elevation_gain": 1526.0,
+  "checkpoints": 6,
+  "finishers": 174
+ },
+ {
+  "edition": "grp_2022",
+  "course": "UT160",
+  "name": "Ultra Tour 160",
+  "distance_km": 166.55,
+  "elevation_gain": 12564.0,
+  "checkpoints": 18,
+  "finishers": 276
+ },
+ {
+  "edition": "grp_2022",
+  "course": "TDC",
+  "name": "Tour des Cirques",
+  "distance_km": 127.18,
+  "elevation_gain": 7976.0,
+  "checkpoints": 15,
+  "finishers": 430
+ },
+ {
+  "edition": "grp_2022",
+  "course": "TDL",
+  "name": "Tour des Lacs",
+  "distance_km": 81.85,
+  "elevation_gain": 5313.0,
+  "checkpoints": 11,
+  "finishers": 979
+ },
+ {
+  "edition": "grp_2022",
+  "course": "TDM",
+  "name": "Tour du Moudang",
+  "distance_km": 63.53,
+  "elevation_gain": 4166.0,
+  "checkpoints": 7,
+  "finishers": 901
+ },
+ {
+  "edition": "grp_2022",
+  "course": "TDG",
+  "name": "Tour de la Gela",
+  "distance_km": 44.56,
+  "elevation_gain": 3786.0,
+  "checkpoints": 6,
+  "finishers": 497
+ },
+ {
+  "edition": "grp_2022",
+  "course": "TDN",
+  "name": "Tour du Néouvielle",
+  "distance_km": 43.64,
+  "elevation_gain": 2439.0,
+  "checkpoints": 5,
+  "finishers": 1083
+ },
+ {
+  "edition": "grp_2024",
+  "course": "UT160",
+  "name": "Ultra Tour 160",
+  "distance_km": 166.63,
+  "elevation_gain": 10277.0,
+  "checkpoints": 18,
+  "finishers": 238
+ },
+ {
+  "edition": "grp_2024",
+  "course": "UT160EQ",
+  "name": "Ultra Tour 160 Relais",
+  "distance_km": 166.63,
+  "elevation_gain": 10277.0,
+  "checkpoints": 18,
+  "finishers": 110
+ },
+ {
+  "edition": "grp_2024",
+  "course": "TDC",
+  "name": "Tour des Cirques",
+  "distance_km": 124.19,
+  "elevation_gain": 7587.0,
+  "checkpoints": 14,
+  "finishers": 398
+ },
+ {
+  "edition": "grp_2024",
+  "course": "TDL",
+  "name": "Tour des Lacs",
+  "distance_km": 61.92,
+  "elevation_gain": 3752.0,
+  "checkpoints": 10,
+  "finishers": 1303
+ },
+ {
+  "edition": "grp_2024",
+  "course": "TDM",
+  "name": "Tour du Moudang",
+  "distance_km": 63.91,
+  "elevation_gain": 3620.0,
+  "checkpoints": 8,
+  "finishers": 581
+ },
+ {
+  "edition": "grp_2024",
+  "course": "TDG",
+  "name": "Tour de la Gela",
+  "distance_km": 45.98,
+  "elevation_gain": 3841.0,
+  "checkpoints": 6,
+  "finishers": 405
+ },
+ {
+  "edition": "grp_2024",
+  "course": "TDN",
+  "name": "Tour du Néouvielle",
+  "distance_km": 43.7,
+  "elevation_gain": 2503.0,
+  "checkpoints": 6,
+  "finishers": 1352
+ },
+ {
+  "edition": "gtc_2022",
+  "course": "54km",
+  "name": "54KM",
+  "distance_km": 54.26,
+  "elevation_gain": 3795.0,
+  "checkpoints": 9,
+  "finishers": 64
+ },
+ {
+  "edition": "gtc_2024",
+  "course": "54km",
+  "name": "54KM",
+  "distance_km": 54.26,
+  "elevation_gain": 3795.0,
+  "checkpoints": 6,
+  "finishers": 114
+ },
+ {
+  "edition": "gtvo_2022",
+  "course": "solo",
+  "name": "GTVO SOLO",
+  "distance_km": 72.7,
+  "elevation_gain": 4835.0,
+  "checkpoints": 9,
+  "finishers": 263
+ },
+ {
+  "edition": "gtvo_2022",
+  "course": "Relais",
+  "name": "GTVO RELAIS",
+  "distance_km": 72.7,
+  "elevation_gain": 4835.0,
+  "checkpoints": 9,
+  "finishers": 162
+ },
+ {
+  "edition": "gtvo_2024",
+  "course": "solo",
+  "name": "GTVO SOLO",
+  "distance_km": 67.94,
+  "elevation_gain": 4395.0,
+  "checkpoints": 8,
+  "finishers": 339
+ },
+ {
+  "edition": "gtvo_2024",
+  "course": "Relais",
+  "name": "GTVO RELAIS",
+  "distance_km": 67.94,
+  "elevation_gain": 4395.0,
+  "checkpoints": 8,
+  "finishers": 168
+ },
+ {
+  "edition": "hallo_2022",
+  "course": "42km",
+  "name": "Marathon ",
+  "distance_km": 42.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 232
+ },
+ {
+  "edition": "harricana_2022",
+  "course": "uthc125",
+  "name": "UTHC 125km",
+  "distance_km": 123.62,
+  "elevation_gain": 4086.0,
+  "checkpoints": 13,
+  "finishers": 131
+ },
+ {
+  "edition": "harricana_2022",
+  "course": "uthc80",
+  "name": "UTHC 80km",
+  "distance_km": 78.52,
+  "elevation_gain": 1922.0,
+  "checkpoints": 7,
+  "finishers": 211
+ },
+ {
+  "edition": "harricana_2022",
+  "course": "uthc65",
+  "name": "UTHC 65km",
+  "distance_km": 63.25,
+  "elevation_gain": 1601.0,
+  "checkpoints": 6,
+  "finishers": 315
+ },
+ {
+  "edition": "harricana_2022",
+  "course": "uthc42c",
+  "name": "UTHC 42km Classic",
+  "distance_km": 43.31,
+  "elevation_gain": 1115.0,
+  "checkpoints": 5,
+  "finishers": 280
+ },
+ {
+  "edition": "harricana_2022",
+  "course": "uthc42s",
+  "name": "UTHC 42km Saint-Simeon",
+  "distance_km": 42.09,
+  "elevation_gain": 1533.0,
+  "checkpoints": 5,
+  "finishers": 154
+ },
+ {
+  "edition": "hmdsfuerteventura_2022",
+  "course": "hmds120",
+  "name": "HMDS LONG",
+  "distance_km": 97.52,
+  "elevation_gain": 1967.0,
+  "checkpoints": 13,
+  "finishers": 460
+ },
+ {
+  "edition": "hmdsfuerteventura_2022",
+  "course": "hmds100",
+  "name": "HMDS MEDIUM",
+  "distance_km": 78.96,
+  "elevation_gain": 1514.0,
+  "checkpoints": 12,
+  "finishers": 227
+ },
+ {
+  "edition": "hmdsjordan_2023",
+  "course": "hmds120",
+  "name": "HMDS 120",
+  "distance_km": 114.9,
+  "elevation_gain": 2842.0,
+  "checkpoints": 15,
+  "finishers": 205
+ },
+ {
+  "edition": "hmdsjordan_2023",
+  "course": "hmds100",
+  "name": "HMDS 100",
+  "distance_km": 94.97,
+  "elevation_gain": 2504.0,
+  "checkpoints": 13,
+  "finishers": 140
+ },
+ {
+  "edition": "hmdsjordan_2023",
+  "course": "hmds70",
+  "name": "HMDS 70",
+  "distance_km": 74.78,
+  "elevation_gain": 2216.0,
+  "checkpoints": 11,
+  "finishers": 59
+ },
+ {
+  "edition": "hmdsmorocco_2022",
+  "course": "hmds120",
+  "name": "HMDS 120 KM",
+  "distance_km": 110.57,
+  "elevation_gain": 1115.0,
+  "checkpoints": 17,
+  "finishers": 65
+ },
+ {
+  "edition": "hmdsmorocco_2022",
+  "course": "hmds100",
+  "name": "HMDS 100 KM",
+  "distance_km": 93.4,
+  "elevation_gain": 1055.0,
+  "checkpoints": 15,
+  "finishers": 34
+ },
+ {
+  "edition": "hmdsmorocco_2022",
+  "course": "hmds70",
+  "name": "HMDS 70 KM",
+  "distance_km": 69.35,
+  "elevation_gain": 723.0,
+  "checkpoints": 13,
+  "finishers": 19
+ },
+ {
+  "edition": "hmdsperu_2022",
+  "course": "hmds120",
+  "name": "HMDS 120KM",
+  "distance_km": 113.78,
+  "elevation_gain": 2562.0,
+  "checkpoints": 15,
+  "finishers": 46
+ },
+ {
+  "edition": "hmdsperu_2022",
+  "course": "hmds100",
+  "name": "HMDS 100KM",
+  "distance_km": 98.37,
+  "elevation_gain": 2234.0,
+  "checkpoints": 14,
+  "finishers": 30
+ },
+ {
+  "edition": "hmdsperu_2022",
+  "course": "hmds70",
+  "name": "HMDS 70KM",
+  "distance_km": 84.38,
+  "elevation_gain": 1900.0,
+  "checkpoints": 12,
+  "finishers": 25
+ },
+ {
+  "edition": "htv_2023",
+  "course": "T5V",
+  "name": "T5V",
+  "distance_km": 95.18,
+  "elevation_gain": 6103.0,
+  "checkpoints": 13,
+  "finishers": 19
+ },
+ {
+  "edition": "htv_2023",
+  "course": "T5VD",
+  "name": "T5VD",
+  "distance_km": 95.18,
+  "elevation_gain": 6103.0,
+  "checkpoints": 13,
+  "finishers": 12
+ },
+ {
+  "edition": "htv_2023",
+  "course": "htv",
+  "name": "High Trail Vanoise",
+  "distance_km": 72.88,
+  "elevation_gain": 4765.0,
+  "checkpoints": 11,
+  "finishers": 73
+ },
+ {
+  "edition": "htv_2023",
+  "course": "htvD",
+  "name": "High Trail Vanoise DUO",
+  "distance_km": 72.88,
+  "elevation_gain": 4765.0,
+  "checkpoints": 11,
+  "finishers": 1
+ },
+ {
+  "edition": "htv_2023",
+  "course": "htvr",
+  "name": "High Trail Vanoise Relais",
+  "distance_km": 72.88,
+  "elevation_gain": 4765.0,
+  "checkpoints": 10,
+  "finishers": 3
+ },
+ {
+  "edition": "htv_2023",
+  "course": "t6c",
+  "name": "Trail des 6 cols",
+  "distance_km": 41.3,
+  "elevation_gain": 3190.0,
+  "checkpoints": 8,
+  "finishers": 224
+ },
+ {
+  "edition": "htv_2023",
+  "course": "t6cD",
+  "name": "Trail des 6 cols DUO",
+  "distance_km": 41.3,
+  "elevation_gain": 3190.0,
+  "checkpoints": 8,
+  "finishers": 22
+ },
+ {
+  "edition": "humanitrail_2022",
+  "course": "Bhara",
+  "name": "Trail du Grand-Bharal",
+  "distance_km": 50.41,
+  "elevation_gain": 3181.0,
+  "checkpoints": 6,
+  "finishers": 126
+ },
+ {
+  "edition": "inthanon_2023",
+  "course": "100M",
+  "name": "TRANS - INT 160",
+  "distance_km": 175.47,
+  "elevation_gain": 10028.0,
+  "checkpoints": 17,
+  "finishers": 208
+ },
+ {
+  "edition": "inthanon_2023",
+  "course": "100K",
+  "name": "ELEPHANT 100",
+  "distance_km": 95.31,
+  "elevation_gain": 5860.0,
+  "checkpoints": 9,
+  "finishers": 632
+ },
+ {
+  "edition": "inthanon_2023",
+  "course": "50K",
+  "name": "HMONG 50",
+  "distance_km": 49.18,
+  "elevation_gain": 2872.0,
+  "checkpoints": 5,
+  "finishers": 1332
+ },
+ {
+  "edition": "isleofwight_2023",
+  "course": "full",
+  "name": "Full Island Challenge (Continuous)",
+  "distance_km": 106.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 460
+ },
+ {
+  "edition": "isleofwight_2023",
+  "course": "Half1",
+  "name": "1st Half Island Challenge",
+  "distance_km": 53.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 279
+ },
+ {
+  "edition": "isleofwight_2023",
+  "course": "Half2",
+  "name": "2nd Half Island Challenge",
+  "distance_km": 52.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 29
+ },
+ {
+  "edition": "isleofwight_2023",
+  "course": "2day",
+  "name": "Full Island Challenge (2 Day)",
+  "distance_km": 106.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 248
+ },
+ {
+  "edition": "jcchallenge_2022",
+  "course": "fullch",
+  "name": "Full Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 2078.0,
+  "checkpoints": 9,
+  "finishers": 471
+ },
+ {
+  "edition": "jcchallenge_2022",
+  "course": "2dayc",
+  "name": "2 Day Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 1982.0,
+  "checkpoints": 10,
+  "finishers": 288
+ },
+ {
+  "edition": "jcchallenge_2022",
+  "course": "1sthal",
+  "name": "1st Half Challenge",
+  "distance_km": 58.0,
+  "elevation_gain": 1537.0,
+  "checkpoints": 5,
+  "finishers": 440
+ },
+ {
+  "edition": "jcchallenge_2022",
+  "course": "2ndhal",
+  "name": "2nd Half Challenge",
+  "distance_km": 42.0,
+  "elevation_gain": 445.0,
+  "checkpoints": 5,
+  "finishers": 134
+ },
+ {
+  "edition": "jcchallenge_2022",
+  "course": "42km",
+  "name": "Jurassic Marathon ",
+  "distance_km": 42.0,
+  "elevation_gain": 972.0,
+  "checkpoints": 4,
+  "finishers": 184
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "fullch",
+  "name": "Full Challenge",
+  "distance_km": 100.34,
+  "elevation_gain": 2029.0,
+  "checkpoints": 9,
+  "finishers": 540
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "2dayc",
+  "name": "2 Day Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 258
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "1sthal",
+  "name": "1st Half Challenge",
+  "distance_km": 57.93,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 474
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "2ndhal",
+  "name": "2nd Half Challenge",
+  "distance_km": 42.02,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 177
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "42km",
+  "name": "Jurassic Marathon ",
+  "distance_km": 42.15,
+  "elevation_gain": 0,
+  "checkpoints": 4,
+  "finishers": 254
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "34chal",
+  "name": "3/4 Challenge",
+  "distance_km": 75.86,
+  "elevation_gain": 0,
+  "checkpoints": 7,
+  "finishers": 52
+ },
+ {
+  "edition": "jcchallenge_2024",
+  "course": "2day3",
+  "name": "2 day 3/4 Challenge",
+  "distance_km": 75.72,
+  "elevation_gain": 0,
+  "checkpoints": 8,
+  "finishers": 23
+ },
+ {
+  "edition": "julianalps_2023",
+  "course": "UTJA170",
+  "name": "I FEEL SLOVENIA ULTRA TRAIL JULIAN ALPS ",
+  "distance_km": 177.57,
+  "elevation_gain": 10720.0,
+  "checkpoints": 14,
+  "finishers": 54
+ },
+ {
+  "edition": "julianalps_2023",
+  "course": "UST100",
+  "name": "ULTRA SKY TRAIL",
+  "distance_km": 98.78,
+  "elevation_gain": 5306.0,
+  "checkpoints": 9,
+  "finishers": 318
+ },
+ {
+  "edition": "julianalps_2023",
+  "course": "ST60",
+  "name": "SKY TRAIL",
+  "distance_km": 58.11,
+  "elevation_gain": 3586.0,
+  "checkpoints": 6,
+  "finishers": 506
+ },
+ {
+  "edition": "kat100_2024",
+  "course": "100",
+  "name": "100 Miles",
+  "distance_km": 174.5,
+  "elevation_gain": 9813.0,
+  "checkpoints": 17,
+  "finishers": 50
+ },
+ {
+  "edition": "kat100_2024",
+  "course": "92",
+  "name": "Endurance Trail",
+  "distance_km": 82.03,
+  "elevation_gain": 4821.0,
+  "checkpoints": 8,
+  "finishers": 210
+ },
+ {
+  "edition": "kat100_2024",
+  "course": "48",
+  "name": "Marathon Trail",
+  "distance_km": 51.27,
+  "elevation_gain": 3222.0,
+  "checkpoints": 8,
+  "finishers": 372
+ },
+ {
+  "edition": "kentdowns50_2024",
+  "course": "50km",
+  "name": "50KM",
+  "distance_km": 50.0,
+  "elevation_gain": 932.0,
+  "checkpoints": 5,
+  "finishers": 672
+ },
+ {
+  "edition": "kentdowns50_2024",
+  "course": "ultra50",
+  "name": "ULTRA50KM",
+  "distance_km": 50.0,
+  "elevation_gain": 932.0,
+  "checkpoints": 5,
+  "finishers": 122
+ },
+ {
+  "edition": "korea50k_2022",
+  "course": "50k",
+  "name": "50K",
+  "distance_km": 53.73,
+  "elevation_gain": 3685.0,
+  "checkpoints": 6,
+  "finishers": 151
+ },
+ {
+  "edition": "korea50k_2024",
+  "course": "50k",
+  "name": "50K",
+  "distance_km": 50.488,
+  "elevation_gain": 2836.0,
+  "checkpoints": 8,
+  "finishers": 700
+ },
+ {
+  "edition": "la6000d_2022",
+  "course": "la6000d",
+  "name": "La 6000D",
+  "distance_km": 69.01,
+  "elevation_gain": 3388.0,
+  "checkpoints": 10,
+  "finishers": 820
+ },
+ {
+  "edition": "la6000d_2022",
+  "course": "relais",
+  "name": "La 6000D Relais à 2",
+  "distance_km": 67.87,
+  "elevation_gain": 3388.0,
+  "checkpoints": 10,
+  "finishers": 32
+ },
+ {
+  "edition": "la6000d_2022",
+  "course": "la6dm",
+  "name": "La 6D Marathon",
+  "distance_km": 42.64,
+  "elevation_gain": 2078.0,
+  "checkpoints": 7,
+  "finishers": 300
+ },
+ {
+  "edition": "la6000d_2024",
+  "course": "la6000d",
+  "name": "La 6000D",
+  "distance_km": 68.99,
+  "elevation_gain": 3509.0,
+  "checkpoints": 12,
+  "finishers": 1052
+ },
+ {
+  "edition": "la6000d_2024",
+  "course": "relais",
+  "name": "La 6000D Relais à 3",
+  "distance_km": 68.99,
+  "elevation_gain": 3509.0,
+  "checkpoints": 11,
+  "finishers": 53
+ },
+ {
+  "edition": "la6000d_2024",
+  "course": "la6dm",
+  "name": "La 6D Marathon",
+  "distance_km": 43.77,
+  "elevation_gain": 2375.0,
+  "checkpoints": 8,
+  "finishers": 581
+ },
+ {
+  "edition": "lakes_2023",
+  "course": "fullco",
+  "name": "Full Continuous Challenge ",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 253
+ },
+ {
+  "edition": "lakes_2023",
+  "course": "2dayc",
+  "name": "2 Day Challenge ",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 125
+ },
+ {
+  "edition": "lakes_2023",
+  "course": "2ndhal",
+  "name": "2nd Half Challenge ",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 41
+ },
+ {
+  "edition": "lakes_2023",
+  "course": "1sthal",
+  "name": "1st Half Challenge ",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 355
+ },
+ {
+  "edition": "lat_2022",
+  "course": "Ultra",
+  "name": "l'Ultra LAT",
+  "distance_km": 86.54,
+  "elevation_gain": 5492.0,
+  "checkpoints": 13,
+  "finishers": 170
+ },
+ {
+  "edition": "lat_2022",
+  "course": "R3404",
+  "name": "La Route 3404",
+  "distance_km": 67.23,
+  "elevation_gain": 4393.0,
+  "checkpoints": 10,
+  "finishers": 242
+ },
+ {
+  "edition": "lat_2022",
+  "course": "40oo",
+  "name": "40 OÔ- Pyrénées",
+  "distance_km": 41.83,
+  "elevation_gain": 2486.0,
+  "checkpoints": 9,
+  "finishers": 461
+ },
+ {
+  "edition": "lat_2022",
+  "course": "Venasq",
+  "name": "La Venasque",
+  "distance_km": 45.43,
+  "elevation_gain": 3009.0,
+  "checkpoints": 7,
+  "finishers": 375
+ },
+ {
+  "edition": "lat_2022",
+  "course": "challen",
+  "name": "CHALLENGE 2 x 40k",
+  "distance_km": 87.26,
+  "elevation_gain": 5495.0,
+  "checkpoints": 16,
+  "finishers": 118
+ },
+ {
+  "edition": "lat_2024",
+  "course": "Ultra",
+  "name": "l'Ultra LAT",
+  "distance_km": 69.58,
+  "elevation_gain": 3316.0,
+  "checkpoints": 8,
+  "finishers": 273
+ },
+ {
+  "edition": "lat_2024",
+  "course": "R3404",
+  "name": "La Route 3404",
+  "distance_km": 47.34,
+  "elevation_gain": 3307.0,
+  "checkpoints": 6,
+  "finishers": 298
+ },
+ {
+  "edition": "lat_2024",
+  "course": "challen",
+  "name": "CHALLENGE 2 x 40k",
+  "distance_km": 83.71,
+  "elevation_gain": 5043.0,
+  "checkpoints": 14,
+  "finishers": 158
+ },
+ {
+  "edition": "lat_2024",
+  "course": "Venasq",
+  "name": "La Venasque",
+  "distance_km": 45.46,
+  "elevation_gain": 3067.0,
+  "checkpoints": 7,
+  "finishers": 474
+ },
+ {
+  "edition": "lavenivici_2022",
+  "course": "70km",
+  "name": "70 KM SOLO",
+  "distance_km": 70.64,
+  "elevation_gain": 1678.0,
+  "checkpoints": 6,
+  "finishers": 291
+ },
+ {
+  "edition": "lavenivici_2022",
+  "course": "70kmREL",
+  "name": "70 KM RELAIS",
+  "distance_km": 70.65,
+  "elevation_gain": 1678.0,
+  "checkpoints": 6,
+  "finishers": 23
+ },
+ {
+  "edition": "lavenivici_2022",
+  "course": "44km",
+  "name": "44 KM",
+  "distance_km": 45.07,
+  "elevation_gain": 1291.0,
+  "checkpoints": 4,
+  "finishers": 444
+ },
+ {
+  "edition": "lavenivici_2024",
+  "course": "82km",
+  "name": "82km",
+  "distance_km": 81.95,
+  "elevation_gain": 1818.0,
+  "checkpoints": 7,
+  "finishers": 595
+ },
+ {
+  "edition": "lavenivici_2024",
+  "course": "47km",
+  "name": "47km",
+  "distance_km": 47.86,
+  "elevation_gain": 1136.0,
+  "checkpoints": 6,
+  "finishers": 1261
+ },
+ {
+  "edition": "lcdmt_2024",
+  "course": "106K",
+  "name": "Ultra Trail du Mont-Terrible",
+  "distance_km": 107.67,
+  "elevation_gain": 4943.0,
+  "checkpoints": 12,
+  "finishers": 75
+ },
+ {
+  "edition": "lcdmt_2024",
+  "course": "70K",
+  "name": "Trail de Calabri",
+  "distance_km": 71.35,
+  "elevation_gain": 3339.0,
+  "checkpoints": 8,
+  "finishers": 61
+ },
+ {
+  "edition": "lcdmt_2024",
+  "course": "Relais",
+  "name": "Relais Trail de Calabri ",
+  "distance_km": 71.35,
+  "elevation_gain": 3339.0,
+  "checkpoints": 8,
+  "finishers": 14
+ },
+ {
+  "edition": "lcdmt_2024",
+  "course": "50K",
+  "name": "Trail d'Outremont",
+  "distance_km": 51.51,
+  "elevation_gain": 2440.0,
+  "checkpoints": 6,
+  "finishers": 162
+ },
+ {
+  "edition": "london2brighton_2022",
+  "course": "100km",
+  "name": "100km Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 1348.0,
+  "checkpoints": 9,
+  "finishers": 606
+ },
+ {
+  "edition": "london2brighton_2022",
+  "course": "1sthalf",
+  "name": "First Half Challenge",
+  "distance_km": 56.0,
+  "elevation_gain": 638.0,
+  "checkpoints": 5,
+  "finishers": 104
+ },
+ {
+  "edition": "london2brighton_2022",
+  "course": "2ndhalf",
+  "name": "Second Half Challenge",
+  "distance_km": 44.0,
+  "elevation_gain": 775.0,
+  "checkpoints": 5,
+  "finishers": 85
+ },
+ {
+  "edition": "london2brighton_2022",
+  "course": "2day",
+  "name": "100 km Challenge 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 1413.0,
+  "checkpoints": 10,
+  "finishers": 167
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "100km",
+  "name": "100km Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 674
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "1sthalf",
+  "name": "First Half Challenge",
+  "distance_km": 58.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 79
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "2ndhalf",
+  "name": "Second Half Challenge (Marathon)",
+  "distance_km": 42.27,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 125
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "2day",
+  "name": "100 km Challenge 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 148
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "3quart",
+  "name": "3 Quarter Challenge",
+  "distance_km": 75.46,
+  "elevation_gain": 0,
+  "checkpoints": 8,
+  "finishers": 4
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "34cha",
+  "name": "3/4 Challenge",
+  "distance_km": 75.0,
+  "elevation_gain": 0,
+  "checkpoints": 7,
+  "finishers": 25
+ },
+ {
+  "edition": "london2brighton_2024",
+  "course": "ultram",
+  "name": "Ultra March 100km",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 72
+ },
+ {
+  "edition": "malaysia_2024",
+  "course": "MY100",
+  "name": "MALAYSIA100",
+  "distance_km": 99.0,
+  "elevation_gain": 6653.0,
+  "checkpoints": 12,
+  "finishers": 238
+ },
+ {
+  "edition": "malaysia_2024",
+  "course": "MY50",
+  "name": "MALAYSIA50",
+  "distance_km": 51.7,
+  "elevation_gain": 2847.0,
+  "checkpoints": 7,
+  "finishers": 629
+ },
+ {
+  "edition": "mallorcabyutmb_2024",
+  "course": "etm",
+  "name": "Els Tres Mils",
+  "distance_km": 47.61,
+  "elevation_gain": 3471.0,
+  "checkpoints": 8,
+  "finishers": 921
+ },
+ {
+  "edition": "mallorcabyutmb_2024",
+  "course": "sdt",
+  "name": "Serra de Tramuntana",
+  "distance_km": 89.23,
+  "elevation_gain": 3470.0,
+  "checkpoints": 10,
+  "finishers": 0
+ },
+ {
+  "edition": "mallorcabyutmb_2024",
+  "course": "m5000",
+  "name": "Mallorca 5000",
+  "distance_km": 69.45,
+  "elevation_gain": 4629.0,
+  "checkpoints": 10,
+  "finishers": 0
+ },
+ {
+  "edition": "mallorcabyutmb_2024",
+  "course": "m500re",
+  "name": "M5000 Relleus",
+  "distance_km": 69.45,
+  "elevation_gain": 4629.0,
+  "checkpoints": 10,
+  "finishers": 0
+ },
+ {
+  "edition": "maquisards_2024",
+  "course": "100K",
+  "name": "La Trace des Maquisards 100K",
+  "distance_km": 100.46,
+  "elevation_gain": 4443.0,
+  "checkpoints": 10,
+  "finishers": 277
+ },
+ {
+  "edition": "maquisards_2024",
+  "course": "Relais2",
+  "name": "La Trace des Maquisards 100K Relais à 2",
+  "distance_km": 100.46,
+  "elevation_gain": 4443.0,
+  "checkpoints": 10,
+  "finishers": 11
+ },
+ {
+  "edition": "maquisards_2024",
+  "course": "Relais4",
+  "name": "La Trace des Maquisards 100K Relais à 4",
+  "distance_km": 100.46,
+  "elevation_gain": 4443.0,
+  "checkpoints": 10,
+  "finishers": 43
+ },
+ {
+  "edition": "maquisards_2024",
+  "course": "42K",
+  "name": "La Trace des Maquisards 42K ",
+  "distance_km": 41.26,
+  "elevation_gain": 1701.0,
+  "checkpoints": 6,
+  "finishers": 433
+ },
+ {
+  "edition": "marathondessables_2022",
+  "course": "MDS",
+  "name": "36ème MARATHON DES SABLES 2022",
+  "distance_km": 231.06,
+  "elevation_gain": 0,
+  "checkpoints": 29,
+  "finishers": 801
+ },
+ {
+  "edition": "maratonscaunuldomnului_2022",
+  "course": "msd100",
+  "name": "MSD 100k",
+  "distance_km": 100.04,
+  "elevation_gain": 5986.0,
+  "checkpoints": 7,
+  "finishers": 14
+ },
+ {
+  "edition": "maratonscaunuldomnului_2022",
+  "course": "msd50k",
+  "name": "MSD 50k",
+  "distance_km": 49.89,
+  "elevation_gain": 3115.0,
+  "checkpoints": 5,
+  "finishers": 24
+ },
+ {
+  "edition": "matxicots_2023",
+  "course": "trail",
+  "name": "TRAIL",
+  "distance_km": 51.09,
+  "elevation_gain": 4388.0,
+  "checkpoints": 8,
+  "finishers": 209
+ },
+ {
+  "edition": "maxirace_2022",
+  "course": "maxirac",
+  "name": "MaXi Race",
+  "distance_km": 86.6,
+  "elevation_gain": 5391.0,
+  "checkpoints": 13,
+  "finishers": 1030
+ },
+ {
+  "edition": "maxirace_2022",
+  "course": "rrace",
+  "name": "R-Race",
+  "distance_km": 86.6,
+  "elevation_gain": 5391.0,
+  "checkpoints": 7,
+  "finishers": 0
+ },
+ {
+  "edition": "maxirace_2022",
+  "course": "marexp",
+  "name": "Marathon-Expérience",
+  "distance_km": 45.19,
+  "elevation_gain": 2410.0,
+  "checkpoints": 7,
+  "finishers": 1130
+ },
+ {
+  "edition": "maxirace_2022",
+  "course": "maxicha",
+  "name": "MaXi-Challenger",
+  "distance_km": 47.59,
+  "elevation_gain": 2531.0,
+  "checkpoints": 4,
+  "finishers": 174
+ },
+ {
+  "edition": "mbm_2022",
+  "course": "42km",
+  "name": "42km du Mont-Blanc",
+  "distance_km": 45.14,
+  "elevation_gain": 2776.0,
+  "checkpoints": 9,
+  "finishers": 2009
+ },
+ {
+  "edition": "mbm_2022",
+  "course": "90km",
+  "name": "90km du Mont-Blanc",
+  "distance_km": 91.54,
+  "elevation_gain": 6593.0,
+  "checkpoints": 18,
+  "finishers": 0
+ },
+ {
+  "edition": "mbm_2024",
+  "course": "42km",
+  "name": "42km du Mont-Blanc",
+  "distance_km": 45.43,
+  "elevation_gain": 2832.0,
+  "checkpoints": 9,
+  "finishers": 2219
+ },
+ {
+  "edition": "mbm_2024",
+  "course": "90km",
+  "name": "90km du Mont-Blanc",
+  "distance_km": 89.959,
+  "elevation_gain": 6905.0,
+  "checkpoints": 16,
+  "finishers": 676
+ },
+ {
+  "edition": "mbrace_2022",
+  "course": "MB55",
+  "name": "MB EXPLORE",
+  "distance_km": 56.33,
+  "elevation_gain": 2951.0,
+  "checkpoints": 6,
+  "finishers": 136
+ },
+ {
+  "edition": "mbrace_2022",
+  "course": "MBulti",
+  "name": "MB ULTIME",
+  "distance_km": 229.75,
+  "elevation_gain": 10841.0,
+  "checkpoints": 8,
+  "finishers": 11
+ },
+ {
+  "edition": "mbrace_2022",
+  "course": "MB140",
+  "name": "MB ULTRA SOMFY 140",
+  "distance_km": 146.69,
+  "elevation_gain": 7614.0,
+  "checkpoints": 16,
+  "finishers": 237
+ },
+ {
+  "edition": "mbrace_2022",
+  "course": "MB100",
+  "name": "MB ULTRA SOMFY 100",
+  "distance_km": 103.86,
+  "elevation_gain": 5246.0,
+  "checkpoints": 10,
+  "finishers": 320
+ },
+ {
+  "edition": "mbrace_2022",
+  "course": "MB70",
+  "name": "MB ULTRA SOMFY 70",
+  "distance_km": 72.31,
+  "elevation_gain": 3699.0,
+  "checkpoints": 6,
+  "finishers": 565
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "MB55",
+  "name": "MB EXPLORE 55",
+  "distance_km": 58.27,
+  "elevation_gain": 2752.0,
+  "checkpoints": 5,
+  "finishers": 113
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "MBber40",
+  "name": "MB eRANDO SPORTIVE 40",
+  "distance_km": 41.55,
+  "elevation_gain": 2247.0,
+  "checkpoints": 5,
+  "finishers": 150
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "MB140",
+  "name": "MB ULTRA SOMFY 140",
+  "distance_km": 142.35,
+  "elevation_gain": 7242.0,
+  "checkpoints": 14,
+  "finishers": 205
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "WC100",
+  "name": "UCI MTB XCM MEGEVE 100km",
+  "distance_km": 103.24,
+  "elevation_gain": 5140.0,
+  "checkpoints": 10,
+  "finishers": 0
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "MB100",
+  "name": "MB ULTRA SOMFY 100",
+  "distance_km": 103.24,
+  "elevation_gain": 5140.0,
+  "checkpoints": 10,
+  "finishers": 254
+ },
+ {
+  "edition": "mbrace_2024",
+  "course": "MB70",
+  "name": "MB ULTRA SOMFY 70",
+  "distance_km": 71.98,
+  "elevation_gain": 3632.0,
+  "checkpoints": 6,
+  "finishers": 386
+ },
+ {
+  "edition": "mdsjordan_2024",
+  "course": "hmds120",
+  "name": "MDS 120",
+  "distance_km": 114.99,
+  "elevation_gain": 3348.0,
+  "checkpoints": 15,
+  "finishers": 55
+ },
+ {
+  "edition": "mdsjordan_2024",
+  "course": "hmds100",
+  "name": "MDS 100",
+  "distance_km": 95.06,
+  "elevation_gain": 3045.0,
+  "checkpoints": 13,
+  "finishers": 49
+ },
+ {
+  "edition": "mdsjordan_2024",
+  "course": "hmds70",
+  "name": "MDS 70",
+  "distance_km": 74.85,
+  "elevation_gain": 2555.0,
+  "checkpoints": 11,
+  "finishers": 38
+ },
+ {
+  "edition": "megevemontblanccycling_2023",
+  "course": "M",
+  "name": "L'Originale - Cyclo 80 km",
+  "distance_km": 81.4,
+  "elevation_gain": 3126.0,
+  "checkpoints": 4,
+  "finishers": 171
+ },
+ {
+  "edition": "megevemontblanccycling_2023",
+  "course": "L",
+  "name": "L'Originale - Cyclo 105 km",
+  "distance_km": 106.64,
+  "elevation_gain": 4036.0,
+  "checkpoints": 6,
+  "finishers": 330
+ },
+ {
+  "edition": "megevemontblanccycling_2023",
+  "course": "XL",
+  "name": "L'Originale - Cyclo 135 km",
+  "distance_km": 137.2,
+  "elevation_gain": 5130.0,
+  "checkpoints": 7,
+  "finishers": 323
+ },
+ {
+  "edition": "megevenaturetrail_2022",
+  "course": "74KM",
+  "name": "LA YAUTE - 74 KM ",
+  "distance_km": 71.51,
+  "elevation_gain": 4647.0,
+  "checkpoints": 11,
+  "finishers": 45
+ },
+ {
+  "edition": "megevenaturetrail_2022",
+  "course": "46KM",
+  "name": "LA DOOBLE CIME - 46 KM ",
+  "distance_km": 46.08,
+  "elevation_gain": 2675.0,
+  "checkpoints": 10,
+  "finishers": 30
+ },
+ {
+  "edition": "megevenaturetrail_2022",
+  "course": "43KM",
+  "name": "L'AIGUILLE - 43 KM",
+  "distance_km": 43.64,
+  "elevation_gain": 2902.0,
+  "checkpoints": 6,
+  "finishers": 172
+ },
+ {
+  "edition": "menestrail-breizhchrono_2022",
+  "course": "gdmenes",
+  "name": "Le Grand Menestrail",
+  "distance_km": 56.95,
+  "elevation_gain": 1959.0,
+  "checkpoints": 9,
+  "finishers": 449
+ },
+ {
+  "edition": "menestrail-breizhchrono_2024",
+  "course": "ultra",
+  "name": "Ultra Menestrail",
+  "distance_km": 97.3,
+  "elevation_gain": 3020.0,
+  "checkpoints": 11,
+  "finishers": 122
+ },
+ {
+  "edition": "menestrail-breizhchrono_2024",
+  "course": "gdmenes",
+  "name": "Le Grand Menestrail",
+  "distance_km": 56.95,
+  "elevation_gain": 1959.0,
+  "checkpoints": 9,
+  "finishers": 517
+ },
+ {
+  "edition": "mexicotest_2022",
+  "course": "50k",
+  "name": "UTMS DESIERTO DE LOS LEONES 50k",
+  "distance_km": 49.26,
+  "elevation_gain": 2279.0,
+  "checkpoints": 3,
+  "finishers": 0
+ },
+ {
+  "edition": "millefonts_2023",
+  "course": "MDM",
+  "name": "Marathon des Millefonts",
+  "distance_km": 42.75,
+  "elevation_gain": 3239.0,
+  "checkpoints": 6,
+  "finishers": 166
+ },
+ {
+  "edition": "mogosaeveresting_2023",
+  "course": "mogosa",
+  "name": "Mogosa Everesting",
+  "distance_km": 76.46,
+  "elevation_gain": 9192.0,
+  "checkpoints": 37,
+  "finishers": 188
+ },
+ {
+  "edition": "montcalm_2023",
+  "course": "picapic",
+  "name": "PICaPICA",
+  "distance_km": 108.86,
+  "elevation_gain": 11445.0,
+  "checkpoints": 19,
+  "finishers": 116
+ },
+ {
+  "edition": "montcalm_2023",
+  "course": "marath",
+  "name": "Marathon",
+  "distance_km": 40.69,
+  "elevation_gain": 3263.0,
+  "checkpoints": 8,
+  "finishers": 484
+ },
+ {
+  "edition": "montcalm_2023",
+  "course": "picari",
+  "name": "PicAriège",
+  "distance_km": 67.01,
+  "elevation_gain": 6814.0,
+  "checkpoints": 13,
+  "finishers": 149
+ },
+ {
+  "edition": "montreuxtrail_2023",
+  "course": "MXTreme",
+  "name": "MXTreme",
+  "distance_km": 110.23,
+  "elevation_gain": 7228.0,
+  "checkpoints": 9,
+  "finishers": 91
+ },
+ {
+  "edition": "montreuxtrail_2023",
+  "course": "MXAlps",
+  "name": "MXAlps",
+  "distance_km": 73.04,
+  "elevation_gain": 5127.0,
+  "checkpoints": 7,
+  "finishers": 170
+ },
+ {
+  "edition": "mountainultratrail_2024",
+  "course": "miler",
+  "name": "MUT Miler",
+  "distance_km": 165.039,
+  "elevation_gain": 7965.0,
+  "checkpoints": 13,
+  "finishers": 47
+ },
+ {
+  "edition": "mountainultratrail_2024",
+  "course": "100k",
+  "name": "MUT 100",
+  "distance_km": 99.645,
+  "elevation_gain": 5060.0,
+  "checkpoints": 9,
+  "finishers": 67
+ },
+ {
+  "edition": "mountainultratrail_2024",
+  "course": "60k",
+  "name": "MUT 60",
+  "distance_km": 58.001,
+  "elevation_gain": 3113.0,
+  "checkpoints": 6,
+  "finishers": 175
+ },
+ {
+  "edition": "mountainultratrail_2024",
+  "course": "marat",
+  "name": "MUT Marathon",
+  "distance_km": 44.13,
+  "elevation_gain": 2437.0,
+  "checkpoints": 5,
+  "finishers": 382
+ },
+ {
+  "edition": "mozart100_2022",
+  "course": "105km",
+  "name": "mozart 100",
+  "distance_km": 105.95,
+  "elevation_gain": 5092.0,
+  "checkpoints": 13,
+  "finishers": 455
+ },
+ {
+  "edition": "mozart100_2022",
+  "course": "75km",
+  "name": "mozart Ultra",
+  "distance_km": 75.55,
+  "elevation_gain": 3950.0,
+  "checkpoints": 10,
+  "finishers": 232
+ },
+ {
+  "edition": "mozart100_2022",
+  "course": "41km",
+  "name": "mozart Marathon",
+  "distance_km": 40.86,
+  "elevation_gain": 1912.0,
+  "checkpoints": 6,
+  "finishers": 408
+ },
+ {
+  "edition": "mozart100_2022",
+  "course": "105rela",
+  "name": "mozart 100 Relay",
+  "distance_km": 105.95,
+  "elevation_gain": 5092.0,
+  "checkpoints": 13,
+  "finishers": 10
+ },
+ {
+  "edition": "mozart100_2022",
+  "course": "75relay",
+  "name": "mozart Ultra Relay",
+  "distance_km": 75.55,
+  "elevation_gain": 3950.0,
+  "checkpoints": 10,
+  "finishers": 2
+ },
+ {
+  "edition": "mozart100_2024",
+  "course": "105km",
+  "name": "mozart  100 NEW",
+  "distance_km": 106.25,
+  "elevation_gain": 6643.0,
+  "checkpoints": 15,
+  "finishers": 347
+ },
+ {
+  "edition": "mozart100_2024",
+  "course": "81km",
+  "name": "mozart Ultra NEW",
+  "distance_km": 81.68,
+  "elevation_gain": 4900.0,
+  "checkpoints": 13,
+  "finishers": 328
+ },
+ {
+  "edition": "mozart100_2024",
+  "course": "105rela",
+  "name": "mozart 100 Relay NEW",
+  "distance_km": 106.25,
+  "elevation_gain": 6643.0,
+  "checkpoints": 15,
+  "finishers": 17
+ },
+ {
+  "edition": "mozart100_2024",
+  "course": "105New",
+  "name": "Mozart 100 NEW KOPPL",
+  "distance_km": 96.19,
+  "elevation_gain": 4299.0,
+  "checkpoints": 12,
+  "finishers": 151
+ },
+ {
+  "edition": "mozart100_2024",
+  "course": "81New",
+  "name": "mozart Ultra NEW KOPPL",
+  "distance_km": 71.58,
+  "elevation_gain": 3472.0,
+  "checkpoints": 10,
+  "finishers": 51
+ },
+ {
+  "edition": "nantes-montaigu_2023",
+  "course": "103km",
+  "name": "Ultra Castle Tour",
+  "distance_km": 103.09,
+  "elevation_gain": 1383.0,
+  "checkpoints": 8,
+  "finishers": 82
+ },
+ {
+  "edition": "nantes-montaigu_2023",
+  "course": "53km",
+  "name": "Trail  de la Digue",
+  "distance_km": 46.35,
+  "elevation_gain": 197.0,
+  "checkpoints": 6,
+  "finishers": 294
+ },
+ {
+  "edition": "nicebyutmb_2022",
+  "course": "100M",
+  "name": "Ultra Trail Métropole Nice Côte d'Azur",
+  "distance_km": 166.92,
+  "elevation_gain": 8842.0,
+  "checkpoints": 16,
+  "finishers": 197
+ },
+ {
+  "edition": "nicebyutmb_2022",
+  "course": "100k",
+  "name": "Roubion - Nice ",
+  "distance_km": 110.59,
+  "elevation_gain": 5237.0,
+  "checkpoints": 12,
+  "finishers": 479
+ },
+ {
+  "edition": "nicebyutmb_2022",
+  "course": "50k",
+  "name": "Menton - Nice ",
+  "distance_km": 60.79,
+  "elevation_gain": 3153.0,
+  "checkpoints": 8,
+  "finishers": 1209
+ },
+ {
+  "edition": "nicebyutmb_2024",
+  "course": "100M",
+  "name": "Ultra Trail Métropole Nice Côte d'Azur",
+  "distance_km": 157.339,
+  "elevation_gain": 8026.0,
+  "checkpoints": 16,
+  "finishers": 399
+ },
+ {
+  "edition": "nicebyutmb_2024",
+  "course": "100k",
+  "name": "Roubion - Nice ",
+  "distance_km": 109.54,
+  "elevation_gain": 4687.0,
+  "checkpoints": 12,
+  "finishers": 897
+ },
+ {
+  "edition": "nicebyutmb_2024",
+  "course": "50k",
+  "name": "Eze - Nice ",
+  "distance_km": 54.57,
+  "elevation_gain": 2061.0,
+  "checkpoints": 7,
+  "finishers": 1835
+ },
+ {
+  "edition": "northdown50_2023",
+  "course": "50k",
+  "name": "North Down 50",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 730
+ },
+ {
+  "edition": "omumarathon_2022",
+  "course": "omumar",
+  "name": "OMU Marathon",
+  "distance_km": 41.36,
+  "elevation_gain": 2939.0,
+  "checkpoints": 9,
+  "finishers": 99
+ },
+ {
+  "edition": "omumarathon_2024",
+  "course": "omumar",
+  "name": "OMU Marathon",
+  "distance_km": 41.52,
+  "elevation_gain": 3275.0,
+  "checkpoints": 10,
+  "finishers": 150
+ },
+ {
+  "edition": "oxfamtrail_2023",
+  "course": "100k",
+  "name": "OTW 100K",
+  "distance_km": 104.39,
+  "elevation_gain": 4610.0,
+  "checkpoints": 13,
+  "finishers": 356
+ },
+ {
+  "edition": "oxfamtrail_2023",
+  "course": "50k",
+  "name": "OTW 50K",
+  "distance_km": 53.45,
+  "elevation_gain": 3128.0,
+  "checkpoints": 6,
+  "finishers": 54
+ },
+ {
+  "edition": "oxfamtrailwalkerhk_2023",
+  "course": "otw",
+  "name": "Oxfam Trailwalker 2023",
+  "distance_km": 98.36,
+  "elevation_gain": 5040.0,
+  "checkpoints": 11,
+  "finishers": 2587
+ },
+ {
+  "edition": "paraty_2024",
+  "course": "110k",
+  "name": "UTSB 110",
+  "distance_km": 107.25,
+  "elevation_gain": 4593.0,
+  "checkpoints": 7,
+  "finishers": 277
+ },
+ {
+  "edition": "paraty_2024",
+  "course": "55k",
+  "name": "PTR 55",
+  "distance_km": 58.33,
+  "elevation_gain": 3414.0,
+  "checkpoints": 6,
+  "finishers": 465
+ },
+ {
+  "edition": "patoutrail_2023",
+  "course": "maratho",
+  "name": "Marathon",
+  "distance_km": 42.65,
+  "elevation_gain": 3289.0,
+  "checkpoints": 7,
+  "finishers": 457
+ },
+ {
+  "edition": "patoutrail_2023",
+  "course": "mararel",
+  "name": "Marathon Relais",
+  "distance_km": 42.65,
+  "elevation_gain": 3289.0,
+  "checkpoints": 7,
+  "finishers": 83
+ },
+ {
+  "edition": "peakdistrict_2023",
+  "course": "100km",
+  "name": "100Km continuous challenge ",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 324
+ },
+ {
+  "edition": "peakdistrict_2023",
+  "course": "2day",
+  "name": "Full 100K - 2Days ",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 135
+ },
+ {
+  "edition": "peakdistrict_2023",
+  "course": "1stHalf",
+  "name": "First Half Challenge ",
+  "distance_km": 52.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 602
+ },
+ {
+  "edition": "peakdistrict_2023",
+  "course": "2ndHalf",
+  "name": "Second Half Challenge ",
+  "distance_km": 48.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 82
+ },
+ {
+  "edition": "penyagolosa_2023",
+  "course": "csp",
+  "name": "CSP",
+  "distance_km": 106.42,
+  "elevation_gain": 5547.0,
+  "checkpoints": 13,
+  "finishers": 360
+ },
+ {
+  "edition": "penyagolosa_2023",
+  "course": "mim",
+  "name": "MIM",
+  "distance_km": 60.35,
+  "elevation_gain": 3325.0,
+  "checkpoints": 8,
+  "finishers": 1292
+ },
+ {
+  "edition": "primavera_2024",
+  "course": "50kUTMS",
+  "name": "50k UTMS Cumbres",
+  "distance_km": 49.57,
+  "elevation_gain": 1735.0,
+  "checkpoints": 6,
+  "finishers": 59
+ },
+ {
+  "edition": "quebecmegatrail_2023",
+  "course": "QMT100M",
+  "name": "QMT 100 MILES",
+  "distance_km": 163.21,
+  "elevation_gain": 6700.0,
+  "checkpoints": 14,
+  "finishers": 70
+ },
+ {
+  "edition": "quebecmegatrail_2023",
+  "course": "QMT110",
+  "name": "QMT 110",
+  "distance_km": 110.5,
+  "elevation_gain": 4956.0,
+  "checkpoints": 11,
+  "finishers": 74
+ },
+ {
+  "edition": "quebecmegatrail_2023",
+  "course": "QMT80",
+  "name": "QMT 80",
+  "distance_km": 79.91,
+  "elevation_gain": 3556.0,
+  "checkpoints": 7,
+  "finishers": 188
+ },
+ {
+  "edition": "quebecmegatrail_2023",
+  "course": "QMT50",
+  "name": "QMT50",
+  "distance_km": 50.6,
+  "elevation_gain": 2293.0,
+  "checkpoints": 7,
+  "finishers": 385
+ },
+ {
+  "edition": "raraueveresting_2023",
+  "course": "raraue",
+  "name": "Rarau Everesting 8.848+",
+  "distance_km": 103.36,
+  "elevation_gain": 8837.0,
+  "checkpoints": 21,
+  "finishers": 94
+ },
+ {
+  "edition": "restonica_2023",
+  "course": "UTC",
+  "name": "Ultra-Trail® di Corsica",
+  "distance_km": 108.48,
+  "elevation_gain": 7211.0,
+  "checkpoints": 14,
+  "finishers": 228
+ },
+ {
+  "edition": "restonica_2023",
+  "course": "RT",
+  "name": "Restonica Trail",
+  "distance_km": 67.76,
+  "elevation_gain": 3900.0,
+  "checkpoints": 8,
+  "finishers": 343
+ },
+ {
+  "edition": "restonica_2023",
+  "course": "UTCR",
+  "name": "Relais Ultra-Trail® di Corsica",
+  "distance_km": 108.48,
+  "elevation_gain": 7211.0,
+  "checkpoints": 14,
+  "finishers": 17
+ },
+ {
+  "edition": "reventonelpaso_2022",
+  "course": "trail",
+  "name": "TRAIL RACE ELITE",
+  "distance_km": 47.73,
+  "elevation_gain": 2570.0,
+  "checkpoints": 9,
+  "finishers": 61
+ },
+ {
+  "edition": "reventonelpaso_2022",
+  "course": "maraton",
+  "name": "Reventón Maratón",
+  "distance_km": 47.73,
+  "elevation_gain": 2570.0,
+  "checkpoints": 9,
+  "finishers": 49
+ },
+ {
+  "edition": "reventonelpaso_2024",
+  "course": "ultra",
+  "name": "ULTRA TRAIL CUMBRE VIEJA",
+  "distance_km": 70.18,
+  "elevation_gain": 4063.0,
+  "checkpoints": 11,
+  "finishers": 89
+ },
+ {
+  "edition": "reventonelpaso_2024",
+  "course": "maraton",
+  "name": "MARATÓN",
+  "distance_km": 42.14,
+  "elevation_gain": 2550.0,
+  "checkpoints": 8,
+  "finishers": 113
+ },
+ {
+  "edition": "saharan_2023",
+  "course": "Marath",
+  "name": "42km Marathon",
+  "distance_km": 84.15,
+  "elevation_gain": 491.0,
+  "checkpoints": 4,
+  "finishers": 74
+ },
+ {
+  "edition": "saharan_2023",
+  "course": "50k",
+  "name": "50km ",
+  "distance_km": 93.4,
+  "elevation_gain": 588.0,
+  "checkpoints": 5,
+  "finishers": 16
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "78km",
+  "name": "SAINTÉLYON",
+  "distance_km": 78.28,
+  "elevation_gain": 2215.0,
+  "checkpoints": 8,
+  "finishers": 5950
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "156km",
+  "name": "LYONSAINTÉLYON",
+  "distance_km": 155.1,
+  "elevation_gain": 4749.0,
+  "checkpoints": 13,
+  "finishers": 229
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "rel2",
+  "name": "SAINTÉLYON RELAIS 2",
+  "distance_km": 78.28,
+  "elevation_gain": 2215.0,
+  "checkpoints": 8,
+  "finishers": 163
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "rel3",
+  "name": "SAINTÉLYON RELAIS 3",
+  "distance_km": 78.28,
+  "elevation_gain": 2215.0,
+  "checkpoints": 8,
+  "finishers": 156
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "rel4",
+  "name": "SAINTÉLYON RELAIS 4",
+  "distance_km": 78.28,
+  "elevation_gain": 2215.0,
+  "checkpoints": 8,
+  "finishers": 226
+ },
+ {
+  "edition": "saintelyon_2023",
+  "course": "44km",
+  "name": "SAINTÉXPRESS",
+  "distance_km": 44.44,
+  "elevation_gain": 1063.0,
+  "checkpoints": 5,
+  "finishers": 3332
+ },
+ {
+  "edition": "sctrail_2022",
+  "course": "111K",
+  "name": "111K",
+  "distance_km": 115.32,
+  "elevation_gain": 5166.0,
+  "checkpoints": 16,
+  "finishers": 280
+ },
+ {
+  "edition": "sctrail_2022",
+  "course": "81K",
+  "name": "81K",
+  "distance_km": 83.51,
+  "elevation_gain": 3455.0,
+  "checkpoints": 12,
+  "finishers": 230
+ },
+ {
+  "edition": "sctrail_2022",
+  "course": "51K",
+  "name": "51K",
+  "distance_km": 52.9,
+  "elevation_gain": 2339.0,
+  "checkpoints": 7,
+  "finishers": 342
+ },
+ {
+  "edition": "seoul100k_2023",
+  "course": "100k",
+  "name": "100K",
+  "distance_km": 109.73,
+  "elevation_gain": 5738.0,
+  "checkpoints": 10,
+  "finishers": 125
+ },
+ {
+  "edition": "seoul100k_2023",
+  "course": "50k",
+  "name": "50K",
+  "distance_km": 51.43,
+  "elevation_gain": 3042.0,
+  "checkpoints": 6,
+  "finishers": 248
+ },
+ {
+  "edition": "serreche_2023",
+  "course": "60km",
+  "name": "Grand Tour des Cerces",
+  "distance_km": 61.53,
+  "elevation_gain": 4030.0,
+  "checkpoints": 10,
+  "finishers": 89
+ },
+ {
+  "edition": "serreche_2023",
+  "course": "45km",
+  "name": "Marathon des Cerces",
+  "distance_km": 46.4,
+  "elevation_gain": 3268.0,
+  "checkpoints": 8,
+  "finishers": 198
+ },
+ {
+  "edition": "southcoast_2022",
+  "course": "100k",
+  "name": "Full 100k",
+  "distance_km": 100.0,
+  "elevation_gain": 2041.0,
+  "checkpoints": 9,
+  "finishers": 264
+ },
+ {
+  "edition": "southcoast_2022",
+  "course": "2day",
+  "name": "Full 100k - 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 2042.0,
+  "checkpoints": 10,
+  "finishers": 158
+ },
+ {
+  "edition": "southcoast_2022",
+  "course": "2ndHalf",
+  "name": "Second Half Challenge",
+  "distance_km": 43.0,
+  "elevation_gain": 778.0,
+  "checkpoints": 5,
+  "finishers": 66
+ },
+ {
+  "edition": "southcoast_2022",
+  "course": "1stHalf",
+  "name": "First Half Challenge",
+  "distance_km": 57.0,
+  "elevation_gain": 1185.0,
+  "checkpoints": 5,
+  "finishers": 257
+ },
+ {
+  "edition": "southcoast_2024",
+  "course": "100k",
+  "name": "Full 100k",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 368
+ },
+ {
+  "edition": "southcoast_2024",
+  "course": "2day",
+  "name": "Full 100k - 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 118
+ },
+ {
+  "edition": "southcoast_2024",
+  "course": "2ndHalf",
+  "name": "2nd Half Challenge",
+  "distance_km": 43.5,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 87
+ },
+ {
+  "edition": "southcoast_2024",
+  "course": "1stHalf",
+  "name": "1st Half Challenge",
+  "distance_km": 56.5,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 384
+ },
+ {
+  "edition": "southcoast_2024",
+  "course": "ultram",
+  "name": "Ultra March 100km",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 32
+ },
+ {
+  "edition": "southw_2022",
+  "course": "full50",
+  "name": "Full 50km ",
+  "distance_km": 50.0,
+  "elevation_gain": 1956.0,
+  "checkpoints": 5,
+  "finishers": 495
+ },
+ {
+  "edition": "southw_2024",
+  "course": "full50",
+  "name": "50 KM Loop",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 591
+ },
+ {
+  "edition": "southw_2024",
+  "course": "50UM",
+  "name": "50km Ultra March",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 53
+ },
+ {
+  "edition": "speedgoatmountainraces_2023",
+  "course": "50K",
+  "name": "Speedgoat 31 miles / 11,500 feet",
+  "distance_km": 52.83,
+  "elevation_gain": 3425.0,
+  "checkpoints": 9,
+  "finishers": 392
+ },
+ {
+  "edition": "summer_2024",
+  "course": "50KM",
+  "name": "50km Loop",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 96
+ },
+ {
+  "edition": "summer_2024",
+  "course": "ultram",
+  "name": "Ultra March 50 KM",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 83
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "grand8",
+  "name": "GRAND 8 VTT AE 2 JOURS",
+  "distance_km": 98.13,
+  "elevation_gain": 6845.0,
+  "checkpoints": 9,
+  "finishers": 14
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VAE4",
+  "name": "Double 8 VTT AE COMPLET",
+  "distance_km": 90.16,
+  "elevation_gain": 14265.0,
+  "checkpoints": 12,
+  "finishers": 44
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VAE3",
+  "name": "Double 8 VTT AE BOUCLES 1+2+3",
+  "distance_km": 77.89,
+  "elevation_gain": 12446.0,
+  "checkpoints": 9,
+  "finishers": 2
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VAE2",
+  "name": "Double 8 VTT AE BOUCLES 1+2",
+  "distance_km": 53.74,
+  "elevation_gain": 10242.0,
+  "checkpoints": 6,
+  "finishers": 13
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VTT4",
+  "name": "Double 8 VTT COMPLET",
+  "distance_km": 89.87,
+  "elevation_gain": 13748.0,
+  "checkpoints": 12,
+  "finishers": 32
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VTT3",
+  "name": "Double 8 VTT BOUCLES 1+2+3",
+  "distance_km": 77.66,
+  "elevation_gain": 12021.0,
+  "checkpoints": 9,
+  "finishers": 6
+ },
+ {
+  "edition": "super-huit_2022",
+  "course": "d8VTT2",
+  "name": "Double 8 VTT BOUCLES 1+2",
+  "distance_km": 53.74,
+  "elevation_gain": 10242.0,
+  "checkpoints": 6,
+  "finishers": 4
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "grand8",
+  "name": "GRAND 8 VTT AE 2 JOURS",
+  "distance_km": 102.74,
+  "elevation_gain": 7242.0,
+  "checkpoints": 10,
+  "finishers": 17
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VAE2",
+  "name": "Double 8 VTT AE BOUCLES 1 + 2",
+  "distance_km": 53.47,
+  "elevation_gain": 9870.0,
+  "checkpoints": 6,
+  "finishers": 3
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VAE3",
+  "name": "Double 8 VTT AE BOUCLES 1 + 2 + 3",
+  "distance_km": 75.04,
+  "elevation_gain": 8621.0,
+  "checkpoints": 9,
+  "finishers": 2
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VAE4",
+  "name": "Double 8 VTT AE COMPLET",
+  "distance_km": 86.7,
+  "elevation_gain": 9659.0,
+  "checkpoints": 12,
+  "finishers": 64
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VTT2",
+  "name": "Double 8 VTT BOUCLES 1 + 2",
+  "distance_km": 53.89,
+  "elevation_gain": 10487.0,
+  "checkpoints": 6,
+  "finishers": 6
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VTT3",
+  "name": "Double 8 VTT BOUCLES 1 + 2 + 3",
+  "distance_km": 68.93,
+  "elevation_gain": 3149.0,
+  "checkpoints": 9,
+  "finishers": 8
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "d8VTT4",
+  "name": "Double 8 VTT COMPLET",
+  "distance_km": 82.24,
+  "elevation_gain": 5598.0,
+  "checkpoints": 12,
+  "finishers": 30
+ },
+ {
+  "edition": "super-huit_2024",
+  "course": "s8VTT2",
+  "name": "Simple 8 VTT + VTT AE BOUCLES 1 + 2",
+  "distance_km": 53.89,
+  "elevation_gain": 10487.0,
+  "checkpoints": 6,
+  "finishers": 40
+ },
+ {
+  "edition": "tapalpa24_2024",
+  "course": "50kutm",
+  "name": "50k Rokosa",
+  "distance_km": 50.63,
+  "elevation_gain": 2035.0,
+  "checkpoints": 6,
+  "finishers": 141
+ },
+ {
+  "edition": "tar_2023",
+  "course": "tar",
+  "name": "TAR",
+  "distance_km": 51.17,
+  "elevation_gain": 3653.0,
+  "checkpoints": 9,
+  "finishers": 612
+ },
+ {
+  "edition": "tdddm_2023",
+  "course": "solo",
+  "name": "DDM Trail Individuel",
+  "distance_km": 59.63,
+  "elevation_gain": 4291.0,
+  "checkpoints": 8,
+  "finishers": 315
+ },
+ {
+  "edition": "tdddm_2023",
+  "course": "relais",
+  "name": "DDM Trail Relais",
+  "distance_km": 59.63,
+  "elevation_gain": 4291.0,
+  "checkpoints": 8,
+  "finishers": 70
+ },
+ {
+  "edition": "thamespathchallenge_2023",
+  "course": "100k",
+  "name": "100K Challenge",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 9,
+  "finishers": 611
+ },
+ {
+  "edition": "thamespathchallenge_2023",
+  "course": "1STHALF",
+  "name": "First Half Challenge",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 460
+ },
+ {
+  "edition": "thamespathchallenge_2023",
+  "course": "2NDHALF",
+  "name": "Second Half Challenge",
+  "distance_km": 50.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 182
+ },
+ {
+  "edition": "thamespathchallenge_2023",
+  "course": "2day",
+  "name": "100k 2 days",
+  "distance_km": 100.0,
+  "elevation_gain": 0,
+  "checkpoints": 10,
+  "finishers": 152
+ },
+ {
+  "edition": "thk_2023",
+  "course": "104Km",
+  "name": "ULTRA Trail du Haut-Koenigsbourg",
+  "distance_km": 103.31,
+  "elevation_gain": 4653.0,
+  "checkpoints": 11,
+  "finishers": 112
+ },
+ {
+  "edition": "thk_2023",
+  "course": "59Km",
+  "name": "Intersport Selestat Grand Trail du HK",
+  "distance_km": 59.22,
+  "elevation_gain": 2217.0,
+  "checkpoints": 6,
+  "finishers": 265
+ },
+ {
+  "edition": "thpwinter_2024",
+  "course": "W40",
+  "name": "W40",
+  "distance_km": 40.72,
+  "elevation_gain": 2217.0,
+  "checkpoints": 6,
+  "finishers": 133
+ },
+ {
+  "edition": "tmaurocher_2022",
+  "course": "auroche",
+  "name": "TRAIL AUROCHER",
+  "distance_km": 42.1,
+  "elevation_gain": 1721.0,
+  "checkpoints": 5,
+  "finishers": 22
+ },
+ {
+  "edition": "tnf100moganshan_2023",
+  "course": "100km",
+  "name": "100km",
+  "distance_km": 101.92,
+  "elevation_gain": 7084.0,
+  "checkpoints": 11,
+  "finishers": 110
+ },
+ {
+  "edition": "tnf100moganshan_2023",
+  "course": "50km",
+  "name": "50km",
+  "distance_km": 53.5,
+  "elevation_gain": 3769.0,
+  "checkpoints": 7,
+  "finishers": 284
+ },
+ {
+  "edition": "tnfkorea_2023",
+  "course": "100k",
+  "name": "100K",
+  "distance_km": 102.1,
+  "elevation_gain": 4270.0,
+  "checkpoints": 9,
+  "finishers": 146
+ },
+ {
+  "edition": "tnfkorea_2023",
+  "course": "50k",
+  "name": "50K",
+  "distance_km": 50.23,
+  "elevation_gain": 1690.0,
+  "checkpoints": 5,
+  "finishers": 375
+ },
+ {
+  "edition": "traildelbisaura_2022",
+  "course": "trail",
+  "name": "EL TRAIL",
+  "distance_km": 55.79,
+  "elevation_gain": 3414.0,
+  "checkpoints": 9,
+  "finishers": 304
+ },
+ {
+  "edition": "traildesforts_2022",
+  "course": "57km",
+  "name": "57Km",
+  "distance_km": 54.78,
+  "elevation_gain": 2479.0,
+  "checkpoints": 6,
+  "finishers": 474
+ },
+ {
+  "edition": "traildesforts_2022",
+  "course": "57kmREL",
+  "name": "57Km Relais2",
+  "distance_km": 54.78,
+  "elevation_gain": 2479.0,
+  "checkpoints": 6,
+  "finishers": 64
+ },
+ {
+  "edition": "trailmolieres_2022",
+  "course": "marato",
+  "name": "Maratón Molières 3010",
+  "distance_km": 44.29,
+  "elevation_gain": 4246.0,
+  "checkpoints": 7,
+  "finishers": 261
+ },
+ {
+  "edition": "trailmolieres_2024",
+  "course": "marato",
+  "name": "Maratón Molières 3010",
+  "distance_km": 44.48,
+  "elevation_gain": 4386.0,
+  "checkpoints": 7,
+  "finishers": 392
+ },
+ {
+  "edition": "trailnap_2024",
+  "course": "impe",
+  "name": "IMPERIAL TRAIL",
+  "distance_km": 42.14,
+  "elevation_gain": 2015.0,
+  "checkpoints": 8,
+  "finishers": 222
+ },
+ {
+  "edition": "trailvdj_2022",
+  "course": "51k",
+  "name": "51K",
+  "distance_km": 52.19,
+  "elevation_gain": 2384.0,
+  "checkpoints": 5,
+  "finishers": 124
+ },
+ {
+  "edition": "trailvdj_2024",
+  "course": "63k",
+  "name": "63K",
+  "distance_km": 64.64,
+  "elevation_gain": 2873.0,
+  "checkpoints": 6,
+  "finishers": 106
+ },
+ {
+  "edition": "transaubrac_2022",
+  "course": "Ultra",
+  "name": "Ultra 105km",
+  "distance_km": 106.48,
+  "elevation_gain": 3607.0,
+  "checkpoints": 10,
+  "finishers": 365
+ },
+ {
+  "edition": "transaubrac_2022",
+  "course": "50km",
+  "name": "Trail du Capuchadou 50km",
+  "distance_km": 52.76,
+  "elevation_gain": 1403.0,
+  "checkpoints": 5,
+  "finishers": 624
+ },
+ {
+  "edition": "transaubrac_2022",
+  "course": "Relais",
+  "name": "Trans Aubrac en relais par 4",
+  "distance_km": 106.54,
+  "elevation_gain": 3607.0,
+  "checkpoints": 10,
+  "finishers": 144
+ },
+ {
+  "edition": "transaubrac_2024",
+  "course": "TA105",
+  "name": "TA 105 - Ultra ",
+  "distance_km": 106.23,
+  "elevation_gain": 3418.0,
+  "checkpoints": 11,
+  "finishers": 341
+ },
+ {
+  "edition": "transaubrac_2024",
+  "course": "TA75",
+  "name": "TA 75 - Trail du Mazuc",
+  "distance_km": 74.9,
+  "elevation_gain": 2336.0,
+  "checkpoints": 7,
+  "finishers": 333
+ },
+ {
+  "edition": "transaubrac_2024",
+  "course": "TA50",
+  "name": "TA 50 - Trail du Capuchadou",
+  "distance_km": 53.23,
+  "elevation_gain": 1410.0,
+  "checkpoints": 6,
+  "finishers": 673
+ },
+ {
+  "edition": "transaubrac_2024",
+  "course": "TARx4",
+  "name": "TA Rx4 - Trans Aubrac en relais par 4",
+  "distance_km": 106.23,
+  "elevation_gain": 3418.0,
+  "checkpoints": 11,
+  "finishers": 252
+ },
+ {
+  "edition": "transgrancanaria_2022",
+  "course": "class",
+  "name": "Classic",
+  "distance_km": 127.89,
+  "elevation_gain": 6994.0,
+  "checkpoints": 12,
+  "finishers": 441
+ },
+ {
+  "edition": "transgrancanaria_2022",
+  "course": "advan",
+  "name": "Advanced",
+  "distance_km": 62.21,
+  "elevation_gain": 2837.0,
+  "checkpoints": 8,
+  "finishers": 594
+ },
+ {
+  "edition": "transgrancanaria_2022",
+  "course": "marat",
+  "name": "Maraton",
+  "distance_km": 43.3,
+  "elevation_gain": 1429.0,
+  "checkpoints": 6,
+  "finishers": 782
+ },
+ {
+  "edition": "transgrancanaria_2024",
+  "course": "classic",
+  "name": "Classic 126 KM",
+  "distance_km": 126.98,
+  "elevation_gain": 6792.0,
+  "checkpoints": 13,
+  "finishers": 498
+ },
+ {
+  "edition": "transgrancanaria_2024",
+  "course": "advance",
+  "name": "Advanced 84 KM",
+  "distance_km": 84.65,
+  "elevation_gain": 4996.0,
+  "checkpoints": 9,
+  "finishers": 568
+ },
+ {
+  "edition": "transgrancanaria_2024",
+  "course": "maraton",
+  "name": "Maraton 46 KM",
+  "distance_km": 46.75,
+  "elevation_gain": 1914.0,
+  "checkpoints": 6,
+  "finishers": 930
+ },
+ {
+  "edition": "transju_2022",
+  "course": "skate70",
+  "name": "La Transjurassienne 70",
+  "distance_km": 63.29,
+  "elevation_gain": 1094.0,
+  "checkpoints": 6,
+  "finishers": 0
+ },
+ {
+  "edition": "transju_2022",
+  "course": "skate50",
+  "name": "La Transju'Marathon 50 ",
+  "distance_km": 42.77,
+  "elevation_gain": 697.0,
+  "checkpoints": 5,
+  "finishers": 0
+ },
+ {
+  "edition": "transju_2022",
+  "course": "class50",
+  "name": "La Transju'Classic 50",
+  "distance_km": 47.99,
+  "elevation_gain": 787.0,
+  "checkpoints": 5,
+  "finishers": 0
+ },
+ {
+  "edition": "transjutrail_2022",
+  "course": "trans80",
+  "name": "LA TRANSJU’TRAIL 80 KM",
+  "distance_km": 83.31,
+  "elevation_gain": 3987.0,
+  "checkpoints": 9,
+  "finishers": 135
+ },
+ {
+  "edition": "transvulcaniabyutmb_2023",
+  "course": "ultra",
+  "name": "Ultramaratón",
+  "distance_km": 72.73,
+  "elevation_gain": 4625.0,
+  "checkpoints": 11,
+  "finishers": 612
+ },
+ {
+  "edition": "transvulcaniabyutmb_2023",
+  "course": "volca",
+  "name": "Volcanes",
+  "distance_km": 48.35,
+  "elevation_gain": 2871.0,
+  "checkpoints": 7,
+  "finishers": 453
+ },
+ {
+  "edition": "transylvania100k_2023",
+  "course": "100k",
+  "name": "Transylvania 100k",
+  "distance_km": 101.83,
+  "elevation_gain": 5960.0,
+  "checkpoints": 14,
+  "finishers": 125
+ },
+ {
+  "edition": "transylvania100k_2023",
+  "course": "80k",
+  "name": "Transylvania 80k",
+  "distance_km": 81.04,
+  "elevation_gain": 4315.0,
+  "checkpoints": 12,
+  "finishers": 67
+ },
+ {
+  "edition": "transylvania100k_2023",
+  "course": "50k",
+  "name": "Transylvania 50k",
+  "distance_km": 50.95,
+  "elevation_gain": 3155.0,
+  "checkpoints": 9,
+  "finishers": 313
+ },
+ {
+  "edition": "trencacims_2023",
+  "course": "utrail",
+  "name": "ULTRA TRAIL",
+  "distance_km": 76.31,
+  "elevation_gain": 5310.0,
+  "checkpoints": 8,
+  "finishers": 219
+ },
+ {
+  "edition": "trencacims_2023",
+  "course": "trail",
+  "name": "TRAIL",
+  "distance_km": 54.64,
+  "elevation_gain": 4125.0,
+  "checkpoints": 7,
+  "finishers": 143
+ },
+ {
+  "edition": "tri-obernai-benfeld_2024",
+  "course": "L",
+  "name": "L",
+  "distance_km": 102.78,
+  "elevation_gain": 2017.0,
+  "checkpoints": 7,
+  "finishers": 401
+ },
+ {
+  "edition": "tri-obernai-benfeld_2024",
+  "course": "Lrelai",
+  "name": "L Relais",
+  "distance_km": 102.78,
+  "elevation_gain": 2017.0,
+  "checkpoints": 7,
+  "finishers": 43
+ },
+ {
+  "edition": "tri-obernai-benfeld_2024",
+  "course": "M",
+  "name": "M",
+  "distance_km": 57.84,
+  "elevation_gain": 983.0,
+  "checkpoints": 6,
+  "finishers": 618
+ },
+ {
+  "edition": "tri-obernai-benfeld_2024",
+  "course": "Mrelai",
+  "name": "M Relais",
+  "distance_km": 57.84,
+  "elevation_gain": 983.0,
+  "checkpoints": 6,
+  "finishers": 46
+ },
+ {
+  "edition": "tsj_2022",
+  "course": "Ultra",
+  "name": "Ultra",
+  "distance_km": 125.28,
+  "elevation_gain": 5561.0,
+  "checkpoints": 12,
+  "finishers": 283
+ },
+ {
+  "edition": "tsj_2022",
+  "course": "GTSJ",
+  "name": "Grand Trail du Saint-Jacques",
+  "distance_km": 74.38,
+  "elevation_gain": 3252.0,
+  "checkpoints": 8,
+  "finishers": 472
+ },
+ {
+  "edition": "tsj_2022",
+  "course": "Mara",
+  "name": "Maratrail",
+  "distance_km": 41.11,
+  "elevation_gain": 1399.0,
+  "checkpoints": 5,
+  "finishers": 702
+ },
+ {
+  "edition": "tsj_2024",
+  "course": "Mara",
+  "name": "Maratrail",
+  "distance_km": 51.47,
+  "elevation_gain": 1482.0,
+  "checkpoints": 6,
+  "finishers": 1578
+ },
+ {
+  "edition": "tsj_2024",
+  "course": "Ultra",
+  "name": "Ultra",
+  "distance_km": 132.97,
+  "elevation_gain": 5923.0,
+  "checkpoints": 12,
+  "finishers": 694
+ },
+ {
+  "edition": "tsj_2024",
+  "course": "GTSJ",
+  "name": "Grand Trail du Saint-Jacques",
+  "distance_km": 80.15,
+  "elevation_gain": 3352.0,
+  "checkpoints": 8,
+  "finishers": 943
+ },
+ {
+  "edition": "tvsb_2022",
+  "course": "XA",
+  "name": "X-Alpine",
+  "distance_km": 141.53,
+  "elevation_gain": 9319.0,
+  "checkpoints": 18,
+  "finishers": 137
+ },
+ {
+  "edition": "tvsb_2022",
+  "course": "XT",
+  "name": "X-Traversée",
+  "distance_km": 76.94,
+  "elevation_gain": 5273.0,
+  "checkpoints": 11,
+  "finishers": 502
+ },
+ {
+  "edition": "tvsb_2022",
+  "course": "VM4000",
+  "name": "Verbier Marathon 4000",
+  "distance_km": 46.31,
+  "elevation_gain": 3985.0,
+  "checkpoints": 9,
+  "finishers": 442
+ },
+ {
+  "edition": "tvsb_2022",
+  "course": "VM",
+  "name": "Verbier Marathon",
+  "distance_km": 44.45,
+  "elevation_gain": 3666.0,
+  "checkpoints": 8,
+  "finishers": 93
+ },
+ {
+  "edition": "tvsb_2024",
+  "course": "XA",
+  "name": "X-Alpine",
+  "distance_km": 61.14,
+  "elevation_gain": 4060.0,
+  "checkpoints": 7,
+  "finishers": 359
+ },
+ {
+  "edition": "ultra_2022",
+  "course": "ultra01",
+  "name": "Ultra 170",
+  "distance_km": 172.67,
+  "elevation_gain": 7394.0,
+  "checkpoints": 10,
+  "finishers": 82
+ },
+ {
+  "edition": "ultra_2022",
+  "course": "ultra1",
+  "name": "Ultra 170 relais",
+  "distance_km": 172.67,
+  "elevation_gain": 7394.0,
+  "checkpoints": 10,
+  "finishers": 26
+ },
+ {
+  "edition": "ultra_2022",
+  "course": "ultra",
+  "name": "Ultra 100",
+  "distance_km": 97.75,
+  "elevation_gain": 4405.0,
+  "checkpoints": 7,
+  "finishers": 200
+ },
+ {
+  "edition": "ultra_2022",
+  "course": "ultra65",
+  "name": "65 KM by Pays de Gex Agglo",
+  "distance_km": 64.87,
+  "elevation_gain": 3104.0,
+  "checkpoints": 5,
+  "finishers": 177
+ },
+ {
+  "edition": "ultra_2022",
+  "course": "Ultra45",
+  "name": "45km Tiger Balm Marathon ",
+  "distance_km": 47.1,
+  "elevation_gain": 1649.0,
+  "checkpoints": 3,
+  "finishers": 240
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2022",
+  "course": "GdRaid",
+  "name": "Grand Raid",
+  "distance_km": 178.78,
+  "elevation_gain": 1104.0,
+  "checkpoints": 17,
+  "finishers": 762
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2022",
+  "course": "Raid",
+  "name": "Raid",
+  "distance_km": 97.48,
+  "elevation_gain": 514.0,
+  "checkpoints": 9,
+  "finishers": 1063
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2022",
+  "course": "Trail",
+  "name": "Trail",
+  "distance_km": 57.49,
+  "elevation_gain": 202.0,
+  "checkpoints": 6,
+  "finishers": 1485
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2022",
+  "course": "Relais",
+  "name": "Grand Relais",
+  "distance_km": 178.78,
+  "elevation_gain": 1104.0,
+  "checkpoints": 17,
+  "finishers": 173
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2022",
+  "course": "GdDefi",
+  "name": "Grand Défi Solidaire",
+  "distance_km": 178.78,
+  "elevation_gain": 1104.0,
+  "checkpoints": 18,
+  "finishers": 28
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "GdRaid",
+  "name": "Grand Raid",
+  "distance_km": 172.97,
+  "elevation_gain": 1353.0,
+  "checkpoints": 16,
+  "finishers": 1019
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "Raid",
+  "name": "Raid",
+  "distance_km": 108.79,
+  "elevation_gain": 816.0,
+  "checkpoints": 11,
+  "finishers": 1237
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "Arvor",
+  "name": "Arvor",
+  "distance_km": 58.48,
+  "elevation_gain": 468.0,
+  "checkpoints": 5,
+  "finishers": 1816
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "Relais",
+  "name": "Grand Raid en Relais",
+  "distance_km": 172.97,
+  "elevation_gain": 1353.0,
+  "checkpoints": 15,
+  "finishers": 391
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "grandd",
+  "name": "Grand Défi Solidaire",
+  "distance_km": 172.97,
+  "elevation_gain": 1353.0,
+  "checkpoints": 15,
+  "finishers": 30
+ },
+ {
+  "edition": "ultramarin-breizhchrono_2024",
+  "course": "Ducs",
+  "name": "Réveil des Ducs",
+  "distance_km": 70.42,
+  "elevation_gain": 529.0,
+  "checkpoints": 6,
+  "finishers": 825
+ },
+ {
+  "edition": "ultraninghai_2023",
+  "course": "UTNH105",
+  "name": "UTNH105",
+  "distance_km": 108.74,
+  "elevation_gain": 5891.0,
+  "checkpoints": 12,
+  "finishers": 570
+ },
+ {
+  "edition": "ultraninghai_2023",
+  "course": "CNH60",
+  "name": "CNH60",
+  "distance_km": 58.3,
+  "elevation_gain": 2361.0,
+  "checkpoints": 8,
+  "finishers": 1038
+ },
+ {
+  "edition": "ultrapirineu_2023",
+  "course": "ultra",
+  "name": "ULTRA PIRINEU 100K",
+  "distance_km": 100.87,
+  "elevation_gain": 6584.0,
+  "checkpoints": 13,
+  "finishers": 621
+ },
+ {
+  "edition": "ultrapirineu_2023",
+  "course": "marato",
+  "name": "MARATÓ PIRINEU 42K",
+  "distance_km": 42.15,
+  "elevation_gain": 2970.0,
+  "checkpoints": 8,
+  "finishers": 981
+ },
+ {
+  "edition": "ultratrailduhautgiffre_2023",
+  "course": "UTLAC",
+  "name": "Ultra Tour des Lacs aux Cimes",
+  "distance_km": 130.21,
+  "elevation_gain": 9032.0,
+  "checkpoints": 20,
+  "finishers": 160
+ },
+ {
+  "edition": "ultratrailduhautgiffre_2023",
+  "course": "UTHG",
+  "name": "Ultra-Trail® du haut-Giffre",
+  "distance_km": 98.56,
+  "elevation_gain": 6757.0,
+  "checkpoints": 16,
+  "finishers": 284
+ },
+ {
+  "edition": "ultratrailduhautgiffre_2023",
+  "course": "TDF",
+  "name": "Trail des Frahans",
+  "distance_km": 53.79,
+  "elevation_gain": 3687.0,
+  "checkpoints": 9,
+  "finishers": 724
+ },
+ {
+  "edition": "uludagpremiumultratrail_2024",
+  "course": "UPUT100",
+  "name": "Uludağ Premium Ultra Trail",
+  "distance_km": 97.95,
+  "elevation_gain": 5125.0,
+  "checkpoints": 11,
+  "finishers": 57
+ },
+ {
+  "edition": "uludagpremiumultratrail_2024",
+  "course": "UPA66K",
+  "name": "Uludağ Premium Advanced Trail",
+  "distance_km": 66.56,
+  "elevation_gain": 3898.0,
+  "checkpoints": 8,
+  "finishers": 130
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "Xtrem",
+  "name": "Ut4M 160 Xtrem",
+  "distance_km": 175.49,
+  "elevation_gain": 11925.0,
+  "checkpoints": 21,
+  "finishers": 88
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "160Chal",
+  "name": "Ut4M 160 Challenge",
+  "distance_km": 177.75,
+  "elevation_gain": 13027.0,
+  "checkpoints": 21,
+  "finishers": 243
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "Master",
+  "name": "Ut4M 100 Master",
+  "distance_km": 98.68,
+  "elevation_gain": 6420.0,
+  "checkpoints": 12,
+  "finishers": 260
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "80Chal",
+  "name": "Ut4M 80 Challenge",
+  "distance_km": 79.34,
+  "elevation_gain": 6745.0,
+  "checkpoints": 13,
+  "finishers": 245
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "40B",
+  "name": "Ut4M 40 Belledonne",
+  "distance_km": 48.85,
+  "elevation_gain": 3152.0,
+  "checkpoints": 6,
+  "finishers": 324
+ },
+ {
+  "edition": "ut4m_2022",
+  "course": "40C",
+  "name": "Ut4M 40 Chartreuse",
+  "distance_km": 41.93,
+  "elevation_gain": 3275.0,
+  "checkpoints": 6,
+  "finishers": 328
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "180X",
+  "name": "Ut4M 180 Xtrem",
+  "distance_km": 160.37,
+  "elevation_gain": 11393.0,
+  "checkpoints": 19,
+  "finishers": 205
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "100M",
+  "name": "Ut4M 100 Master",
+  "distance_km": 79.66,
+  "elevation_gain": 5645.0,
+  "checkpoints": 7,
+  "finishers": 363
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "180C",
+  "name": "Ut4M 180 Challenge",
+  "distance_km": 164.44,
+  "elevation_gain": 11239.0,
+  "checkpoints": 20,
+  "finishers": 280
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "80C",
+  "name": "Ut4M 80 Challenge",
+  "distance_km": 79.384,
+  "elevation_gain": 6426.0,
+  "checkpoints": 12,
+  "finishers": 373
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "50B",
+  "name": "Ut4M 50 Belledonne",
+  "distance_km": 45.98,
+  "elevation_gain": 2996.0,
+  "checkpoints": 6,
+  "finishers": 425
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "50T",
+  "name": "Ut4M 50 Taillefer",
+  "distance_km": 52.01,
+  "elevation_gain": 3513.0,
+  "checkpoints": 8,
+  "finishers": 226
+ },
+ {
+  "edition": "ut4m_2024",
+  "course": "40V",
+  "name": "Ut4M 40 Vercors",
+  "distance_km": 40.99,
+  "elevation_gain": 2832.0,
+  "checkpoints": 5,
+  "finishers": 226
+ },
+ {
+  "edition": "utcam-breizhchrono_2022",
+  "course": "125km",
+  "name": "125km",
+  "distance_km": 123.14,
+  "elevation_gain": 7859.0,
+  "checkpoints": 14,
+  "finishers": 85
+ },
+ {
+  "edition": "utcam-breizhchrono_2022",
+  "course": "95km",
+  "name": "95km",
+  "distance_km": 95.27,
+  "elevation_gain": 5879.0,
+  "checkpoints": 9,
+  "finishers": 36
+ },
+ {
+  "edition": "utcam-breizhchrono_2022",
+  "course": "75km",
+  "name": "75km",
+  "distance_km": 74.99,
+  "elevation_gain": 5000.0,
+  "checkpoints": 8,
+  "finishers": 91
+ },
+ {
+  "edition": "utcam-breizhchrono_2022",
+  "course": "50km",
+  "name": "50km",
+  "distance_km": 52.67,
+  "elevation_gain": 4045.0,
+  "checkpoints": 7,
+  "finishers": 179
+ },
+ {
+  "edition": "utcam-breizhchrono_2022",
+  "course": "125duo",
+  "name": "125km Relais à 2 ",
+  "distance_km": 123.47,
+  "elevation_gain": 7859.0,
+  "checkpoints": 14,
+  "finishers": 7
+ },
+ {
+  "edition": "utcam-breizhchrono_2024",
+  "course": "125km",
+  "name": "125km",
+  "distance_km": 113.97,
+  "elevation_gain": 8351.0,
+  "checkpoints": 13,
+  "finishers": 162
+ },
+ {
+  "edition": "utcam-breizhchrono_2024",
+  "course": "75km",
+  "name": "75km",
+  "distance_km": 69.31,
+  "elevation_gain": 6416.0,
+  "checkpoints": 7,
+  "finishers": 164
+ },
+ {
+  "edition": "utcam-breizhchrono_2024",
+  "course": "50km",
+  "name": "50km",
+  "distance_km": 50.45,
+  "elevation_gain": 4236.0,
+  "checkpoints": 7,
+  "finishers": 255
+ },
+ {
+  "edition": "utcam-breizhchrono_2024",
+  "course": "125duo",
+  "name": "125km Relais à 2 ",
+  "distance_km": 113.46,
+  "elevation_gain": 7195.0,
+  "checkpoints": 13,
+  "finishers": 7
+ },
+ {
+  "edition": "utcappadocia_2022",
+  "course": "CUT",
+  "name": "Salomon Cappadocia Ultra-Trail® CUT",
+  "distance_km": 119.3,
+  "elevation_gain": 3892.0,
+  "checkpoints": 12,
+  "finishers": 191
+ },
+ {
+  "edition": "utcappadocia_2022",
+  "course": "TCUT",
+  "name": "Team Games CUT",
+  "distance_km": 119.3,
+  "elevation_gain": 3892.0,
+  "checkpoints": 12,
+  "finishers": 2
+ },
+ {
+  "edition": "utcappadocia_2022",
+  "course": "CMT",
+  "name": "Salomon Cappadocia Medium Trail CMT",
+  "distance_km": 62.98,
+  "elevation_gain": 2066.0,
+  "checkpoints": 7,
+  "finishers": 555
+ },
+ {
+  "edition": "utcappadocia_2022",
+  "course": "TCMT",
+  "name": "Team Games CMT",
+  "distance_km": 62.98,
+  "elevation_gain": 2066.0,
+  "checkpoints": 7,
+  "finishers": 9
+ },
+ {
+  "edition": "utcappadocia_2024",
+  "course": "CUT",
+  "name": "Salomon Cappadocia Ultra-Trail® CUT",
+  "distance_km": 119.3,
+  "elevation_gain": 3892.0,
+  "checkpoints": 12,
+  "finishers": 172
+ },
+ {
+  "edition": "utcappadocia_2024",
+  "course": "CMT",
+  "name": "Salomon Cappadocia Medium Trail CMT",
+  "distance_km": 62.93,
+  "elevation_gain": 1942.0,
+  "checkpoints": 7,
+  "finishers": 510
+ },
+ {
+  "edition": "utcappadocia_2024",
+  "course": "TCUT",
+  "name": "Team Games CUT",
+  "distance_km": 119.3,
+  "elevation_gain": 3892.0,
+  "checkpoints": 12,
+  "finishers": 11
+ },
+ {
+  "edition": "utcappadocia_2024",
+  "course": "TCMT",
+  "name": "Team Games CMT",
+  "distance_km": 62.93,
+  "elevation_gain": 1942.0,
+  "checkpoints": 7,
+  "finishers": 19
+ },
+ {
+  "edition": "utmj_2022",
+  "course": "utmj",
+  "name": "UTMJ",
+  "distance_km": 176.72,
+  "elevation_gain": 7230.0,
+  "checkpoints": 14,
+  "finishers": 64
+ },
+ {
+  "edition": "utmj_2022",
+  "course": "franco",
+  "name": "LA FRANCO SUISSE",
+  "distance_km": 106.1,
+  "elevation_gain": 3901.0,
+  "checkpoints": 9,
+  "finishers": 238
+ },
+ {
+  "edition": "utmj_2022",
+  "course": "renarde",
+  "name": "LA RENARDE",
+  "distance_km": 78.71,
+  "elevation_gain": 2794.0,
+  "checkpoints": 6,
+  "finishers": 262
+ },
+ {
+  "edition": "utmj_2022",
+  "course": "cmm",
+  "name": "LA CMM",
+  "distance_km": 42.26,
+  "elevation_gain": 1337.0,
+  "checkpoints": 4,
+  "finishers": 434
+ },
+ {
+  "edition": "utmj_2024",
+  "course": "utmj",
+  "name": "UTMJ",
+  "distance_km": 173.64,
+  "elevation_gain": 7031.0,
+  "checkpoints": 22,
+  "finishers": 201
+ },
+ {
+  "edition": "utmj_2024",
+  "course": "utmjre",
+  "name": "UTMJ RELAIS",
+  "distance_km": 173.64,
+  "elevation_gain": 7031.0,
+  "checkpoints": 22,
+  "finishers": 62
+ },
+ {
+  "edition": "utmj_2024",
+  "course": "franco",
+  "name": "LA FRANCO SUISSE",
+  "distance_km": 105.21,
+  "elevation_gain": 4040.0,
+  "checkpoints": 15,
+  "finishers": 752
+ },
+ {
+  "edition": "utmj_2024",
+  "course": "renarde",
+  "name": "LA RENARDE",
+  "distance_km": 76.6,
+  "elevation_gain": 2957.0,
+  "checkpoints": 9,
+  "finishers": 868
+ },
+ {
+  "edition": "utmj_2024",
+  "course": "cmm",
+  "name": "LA CMM",
+  "distance_km": 41.2,
+  "elevation_gain": 1199.0,
+  "checkpoints": 6,
+  "finishers": 1306
+ },
+ {
+  "edition": "utnp_2023",
+  "course": "9peaks",
+  "name": "9 PEAKS",
+  "distance_km": 123.49,
+  "elevation_gain": 8819.0,
+  "checkpoints": 12,
+  "finishers": 98
+ },
+ {
+  "edition": "utnp_2023",
+  "course": "7peaks",
+  "name": "7 PEAKS",
+  "distance_km": 87.0,
+  "elevation_gain": 6345.0,
+  "checkpoints": 10,
+  "finishers": 62
+ },
+ {
+  "edition": "utnp_2023",
+  "course": "5peaks",
+  "name": "5 PEAKS",
+  "distance_km": 44.69,
+  "elevation_gain": 3488.0,
+  "checkpoints": 7,
+  "finishers": 362
+ },
+ {
+  "edition": "utpma_2023",
+  "course": "UTPMA",
+  "name": "L’ULTRA TRAIL DU PUY MARY AURILLAC « U.T.P.M.A. »",
+  "distance_km": 111.35,
+  "elevation_gain": 5648.0,
+  "checkpoints": 9,
+  "finishers": 478
+ },
+ {
+  "edition": "utpma_2023",
+  "course": "LIORAN",
+  "name": "Grand Trail du Lioran",
+  "distance_km": 50.54,
+  "elevation_gain": 1844.0,
+  "checkpoints": 5,
+  "finishers": 629
+ },
+ {
+  "edition": "uts_2023",
+  "course": "100m",
+  "name": "UTS 100M",
+  "distance_km": 168.5,
+  "elevation_gain": 10283.0,
+  "checkpoints": 23,
+  "finishers": 96
+ },
+ {
+  "edition": "uts_2023",
+  "course": "100k",
+  "name": "UTS 100K",
+  "distance_km": 104.91,
+  "elevation_gain": 6773.0,
+  "checkpoints": 16,
+  "finishers": 398
+ },
+ {
+  "edition": "uts_2023",
+  "course": "50k",
+  "name": "UTS 50K",
+  "distance_km": 55.19,
+  "elevation_gain": 3486.0,
+  "checkpoints": 5,
+  "finishers": 883
+ },
+ {
+  "edition": "valholl_2024",
+  "course": "125k",
+  "name": "EPIC 125K",
+  "distance_km": 123.05,
+  "elevation_gain": 5021.0,
+  "checkpoints": 14,
+  "finishers": 201
+ },
+ {
+  "edition": "valholl_2024",
+  "course": "80k",
+  "name": "ADVANCE 80K",
+  "distance_km": 80.32,
+  "elevation_gain": 3203.0,
+  "checkpoints": 8,
+  "finishers": 397
+ },
+ {
+  "edition": "valholl_2024",
+  "course": "55k",
+  "name": "CHALLENGE 55k",
+  "distance_km": 56.73,
+  "elevation_gain": 2668.0,
+  "checkpoints": 6,
+  "finishers": 667
+ },
+ {
+  "edition": "vmm2024_2024",
+  "course": "vmm160k",
+  "name": "VMM100 Miles",
+  "distance_km": 162.97,
+  "elevation_gain": 8087.0,
+  "checkpoints": 21,
+  "finishers": 106
+ },
+ {
+  "edition": "vmm2024_2024",
+  "course": "vmm100k",
+  "name": "VMM 100KM",
+  "distance_km": 102.22,
+  "elevation_gain": 5090.0,
+  "checkpoints": 13,
+  "finishers": 208
+ },
+ {
+  "edition": "vmm2024_2024",
+  "course": "vmm70k",
+  "name": "VMM 70KM",
+  "distance_km": 71.67,
+  "elevation_gain": 4099.0,
+  "checkpoints": 10,
+  "finishers": 288
+ },
+ {
+  "edition": "vmm2024_2024",
+  "course": "vmm50k",
+  "name": "VMM 50KM",
+  "distance_km": 48.5,
+  "elevation_gain": 2795.0,
+  "checkpoints": 8,
+  "finishers": 674
+ },
+ {
+  "edition": "wildstrubel_2023",
+  "course": "110k",
+  "name": "Wild 110k",
+  "distance_km": 113.152,
+  "elevation_gain": 6265.0,
+  "checkpoints": 13,
+  "finishers": 557
+ },
+ {
+  "edition": "wildstrubel_2023",
+  "course": "70k",
+  "name": "Wild 70k",
+  "distance_km": 70.21,
+  "elevation_gain": 4450.0,
+  "checkpoints": 9,
+  "finishers": 493
+ },
+ {
+  "edition": "wildstrubel_2023",
+  "course": "50k",
+  "name": "Wild 50K",
+  "distance_km": 54.98,
+  "elevation_gain": 3204.0,
+  "checkpoints": 7,
+  "finishers": 833
+ },
+ {
+  "edition": "winterwalk_2023",
+  "course": "Satfull",
+  "name": "Full Marathon Saturday",
+  "distance_km": 42.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 841
+ },
+ {
+  "edition": "winterwalk_2023",
+  "course": "sunFull",
+  "name": "Full Marathon Sunday",
+  "distance_km": 42.0,
+  "elevation_gain": 0,
+  "checkpoints": 5,
+  "finishers": 292
+ },
+ {
+  "edition": "xtrailcourchevel_2024",
+  "course": "44k",
+  "name": "XT 44km",
+  "distance_km": 44.18,
+  "elevation_gain": 3155.0,
+  "checkpoints": 5,
+  "finishers": 367
+ },
+ {
+  "edition": "xtrailcourchevel_2024",
+  "course": "55k",
+  "name": "XT 55km",
+  "distance_km": 55.62,
+  "elevation_gain": 3822.0,
+  "checkpoints": 6,
+  "finishers": 232
+ },
+ {
+  "edition": "xtrailcourchevel_2024",
+  "course": "66k",
+  "name": "XT 66km",
+  "distance_km": 66.47,
+  "elevation_gain": 4161.0,
+  "checkpoints": 7,
+  "finishers": 30
+ },
+ {
+  "edition": "yangxiantrailchallenge_2023",
+  "course": "100km",
+  "name": "100km",
+  "distance_km": 98.6,
+  "elevation_gain": 5007.0,
+  "checkpoints": 18,
+  "finishers": 91
+ },
+ {
+  "edition": "yangxiantrailchallenge_2023",
+  "course": "50km",
+  "name": "50km",
+  "distance_km": 51.3,
+  "elevation_gain": 2569.0,
+  "checkpoints": 10,
+  "finishers": 106
+ }
+]

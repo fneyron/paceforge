@@ -10,7 +10,7 @@
     {% for k in ["none","water","full","base"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-4 h-4") }}</span>{% endfor %}
 </div>
 <div id="glyph-registry-lg" hidden>
-    {% for k in ["none","water","full","base","crew","bag"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
+    {% for k in ["none","water","full","base","crew","bag","pin"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
 </div>
 {% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
 {% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
@@ -641,7 +641,7 @@ window._sim = {};
     }
 
     // ── CHECKPOINTS ──
-    function pushCheckpoint(n, km) { if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: Math.round(km * 10) / 10, elevation: interpElev(km), kind: 'none', crew: false, drop_bag: false, cutoff_clock: null }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
+    function pushCheckpoint(n, km) { if (!n || isNaN(km) || km <= 0 || km >= totalDistKm) return; checkpoints.push({ name: n, distance_km: Math.round(km * 10) / 10, elevation: interpElev(km), kind: 'none', crew: false, drop_bag: false, cutoff_clock: null, target_s: null }); checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); refresh(); recalc(); scheduleSave(); }
     function addCheckpoint() { var n = document.getElementById('cp-name').value.trim(), km = parseFloat(document.getElementById('cp-km').value); document.getElementById('cp-name').value = ''; document.getElementById('cp-km').value = ''; pushCheckpoint(n, km); }
     function addAtKm(km) { km = Math.round(km * 10) / 10; if (km <= 0 || km >= totalDistKm) return; focusKm = km; pushCheckpoint('Point', km); }
     function focusNewRow() {
@@ -677,6 +677,7 @@ window._sim = {};
         else if (field === 'stop_min') checkpoints[i].stop_s = (val === null || val === '' || isNaN(parseFloat(val))) ? null : Math.max(0, Math.round(parseFloat(val) * 60));
         else if (field === 'crew' || field === 'drop_bag') checkpoints[i][field] = !!val;
         else if (field === 'cutoff_clock') checkpoints[i].cutoff_clock = (val && /^\d{2}:\d{2}$/.test(val)) ? val : null;
+        else if (field === 'target_s') checkpoints[i].target_s = (val === null || val === undefined || isNaN(val)) ? null : Math.max(60, Math.round(val));
         recalc(); scheduleSave();
     }
     function refresh() { renderCpOnMap(); drawOverlays(); }
@@ -713,6 +714,20 @@ window._sim = {};
         if (v.wx_title) h += '<p class="-mt-2 mb-3 text-[12px] text-gray-500">Météo prévue à ton passage : ' + esc(v.wx_title.replace(/\s*·\s*/g, ', ')) + '.</p>';
         var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
         if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
+        // the time he wants to pass here: empty = the plan's own (shown as the placeholder)
+        var pt = planPoint(i), pinned = cp.target_s !== null && cp.target_s !== undefined;
+        var est = pt && pt.clock_s !== null && pt.clock_s !== undefined ? pt.clock_s : null;
+        var auto = pinned ? (pt && pt.auto_clock_s !== null && pt.auto_clock_s !== undefined ? pt.auto_clock_s : null) : est;
+        var pinAbs = pinned ? startOffset() + cp.target_s : null;
+        h += sec('Heure de passage visée') + '<div class="flex items-center gap-1.5 mb-1">'
+            + '<input type="text" data-pin-in inputmode="numeric" autocomplete="off" maxlength="5" value="' + (pinned ? fmtClock(pinAbs) : '') + '" placeholder="' + (auto !== null ? fmtClock(auto) : 'hh:mm') + '" aria-label="Heure de passage visée" class="sim-num w-20 h-9 px-2 rounded-lg border-2 ' + (pinned ? 'border-amber-500 bg-amber-50' : 'border-gray-200') + ' text-[15px] font-semibold tabular-nums text-center text-gray-900 placeholder:text-gray-400 placeholder:font-normal">'
+            + '<button type="button" data-pin-go class="h-9 px-3 rounded-lg border-2 text-[13px] ' + OFF + '">Fixer</button>'
+            + '<button type="button" data-pin-auto aria-pressed="' + !pinned + '" class="h-9 px-3 rounded-lg border-2 text-[13px] ' + (pinned ? OFF : ON) + '">Automatique</button></div>';
+        h += '<p data-pin-err class="hidden text-[11px] text-red-600 mb-1">Heure non comprise : écris-la comme 07:27.</p>';
+        if (pinned && pt && pt.pin_clamped) h += '<p class="text-[11px] text-red-700 mb-1">' + fmtClock(pinAbs) + ' est impossible à tenir depuis le point d\'avant (arrêts compris) : le plan vise ' + fmtClock(est) + '.</p>';
+        h += '<p data-pin-help class="text-[11px] text-gray-400 mb-4">' + (pinned
+            ? '<span class="inline-flex text-amber-600 align-middle">' + glyphHtml('pin').replace('w-6 h-6', 'w-3 h-3') + '</span> Fixée par toi' + (dayOf(pinAbs) ? ', ' + dayOf(pinAbs) : '') + ' à ' + fmtClock(pinAbs) + '. Les autres heures s\'ajustent autour.' + (auto !== null ? ' Automatique : ' + fmtClock(auto) + '.' : '')
+            : 'Vide = l\'heure du plan' + (est !== null ? ' (' + fmtClock(est) + ')' : '') + '. Tape l\'heure où tu veux passer ici : le reste du plan s\'ajuste autour.') + '</p>';
         var kind = cp.kind || 'none', kdesc = '';
         h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1.5 rounded-lg border-2 py-2.5 text-[12px] leading-none ' + (on ? KIND_ON[k[0]] + ' font-semibold' : 'border-gray-200 text-gray-600 bg-white') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
         h += '<p class="text-[11px] text-gray-400 mb-2 min-h-4">' + esc(kdesc) + '</p>';
@@ -730,8 +745,51 @@ window._sim = {};
             else if (t) { var f = t.getAttribute('data-toggle'); editCheckpointMeta(i, f, !checkpoints[i][f]); renderSheet(); }
             else if (st) { editCheckpointMeta(i, 'stop_min', st.getAttribute('data-stop')); renderSheet(); }
             else if (sa) { editCheckpointMeta(i, 'stop_min', null); renderSheet(); }
+            else if (ev.target.closest && ev.target.closest('[data-pin-go]')) { if (commitPin(i, p.querySelector('[data-pin-in]').value)) renderSheet(); }
+            else if (ev.target.closest && ev.target.closest('[data-pin-auto]')) { var pi = p.querySelector('[data-pin-in]'); if (pi) pi.value = ''; commitPin(i, ''); renderSheet(); }
         };
         var sc = p.querySelector('[data-stop-custom]'); if (sc) sc.addEventListener('change', function () { editCheckpointMeta(i, 'stop_min', this.value === '' ? null : this.value); renderSheet(); });
+        // typed then left: committed, the dialog redraws with the next table (a click on « Automatique » still lands)
+        var pin = p.querySelector('[data-pin-in]');
+        if (pin) {
+            pin.addEventListener('change', function () { commitPin(i, this.value); });
+            pin.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); if (commitPin(i, this.value)) { this.blur(); renderSheet(); } } });
+        }
+    }
+    function planPoint(i) { return planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] || null : null; }
+    function startOffset() { var sp = startParts(); return sp.h * 3600 + sp.m * 60; }
+    // « 07:27 », « 7h27 », « 727 », « 0727 » → seconds after midnight, null if not a time
+    function parseClock(v) {
+        var m = /^(\d{1,2})\s*[:hH.,]?\s*(\d{2})$/.exec(String(v || '').trim()); if (!m) return null;
+        var hh = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+        return (hh > 23 || mm > 59) ? null : hh * 3600 + mm * 60;
+    }
+    // a clock does not say which day: the occurrence closest to the plan's own time there, after the start
+    function pinElapsed(clockS, nearAbs) {
+        var start = startOffset(), best = null;
+        for (var d = 0; d < 8; d++) { var abs = clockS + d * 86400; if (abs <= start) continue; if (best === null || Math.abs(abs - nearAbs) < Math.abs(best - nearAbs)) best = abs; }
+        return best === null ? null : best - start;
+    }
+    // « sam. » with a race date, « jour 2 » without, nothing on the start day of an undated race
+    function dayOf(abs) {
+        var n = Math.floor(abs / 86400), d = (document.getElementById('race-date') || {}).value || '';
+        if (d) { try { return new Date(new Date(d + 'T00:00').getTime() + n * 86400e3).toLocaleDateString('fr-FR', { weekday: 'long' }); } catch (e) {} }
+        return n > 0 ? 'jour ' + (n + 1) : '';
+    }
+    // pin (or unpin, when empty) the passage time of point i; false when the text is not a time
+    function commitPin(i, raw) {
+        var cp = checkpoints[i], err = document.querySelector('#cp-sheet [data-pin-err]'); if (!cp) return false;
+        var val = null;
+        if (String(raw || '').trim() !== '') {
+            var c = parseClock(raw);
+            if (c === null) { if (err) err.classList.remove('hidden'); return false; }
+            var pt = planPoint(i), near = pt && pt.clock_s !== null && pt.clock_s !== undefined ? pt.clock_s : (predictClockAt(cp.distance_km) || startOffset());
+            val = pinElapsed(c, near);
+        }
+        if (err) err.classList.add('hidden');
+        var cur = (cp.target_s === undefined) ? null : cp.target_s;
+        if (val !== cur) editCheckpointMeta(i, 'target_s', val);
+        return true;
     }
     // planned clock at any km: linear inside the leg that contains it (rows carry cumulative time and stops)
     function predictClockAt(km) {
@@ -857,7 +915,7 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet(); fillSwitchSelect();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); fillLegends(); refreshSheet(); fillSwitchSelect(); updateHero();
     }
     // the switch-point choice follows the checkpoints
     function fillSwitchSelect() {
@@ -899,7 +957,7 @@ window._sim = {};
         var curBudget = (last.cum_s || 0) - aCum, newBudget = Math.max(60, ts - totalStops - aCum), f = curBudget > 0 ? newBudget / curBudget : 1;
         var safe = planData.scenarios ? 1 + planData.scenarios.safe_pct / 100 : null, fast = planData.scenarios ? 1 - planData.scenarios.fast_pct / 100 : null;
         document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
-            if (r.hasAttribute('data-passed')) return;
+            if (r.hasAttribute('data-passed') || r.hasAttribute('data-pinned')) return;  // a pinned time does not move with the objective
             var cum = parseFloat(r.getAttribute('data-cum')), stops = parseFloat(r.getAttribute('data-stops') || '0'); if (isNaN(cum)) return;
             var start = planData.start_offset_s + aCum, rest = cum - aCum, clk = start + rest * f + stops;
             var inp = r.querySelector('[data-cible]'); if (inp) inp.value = fmtClock(clk);
@@ -1047,10 +1105,13 @@ window._sim = {};
 
     // ── HERO / PHONE STATE ──
     function updateHero() {
-        var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : predictedTotalS);
+        // no objective but pinned times: the hero is where the pinned plan finishes
+        var pins = (!hasRealTarget() && planData && planData.pins > 0 && planData.plan_total_s) ? planData.pins : 0;
+        var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : pins ? planData.plan_total_s : predictedTotalS);
         var sub = document.getElementById('hero-sub');
         if (sub) sub.innerHTML = hasRealTarget()
             ? 'ton objectif · estimation <b class="text-gray-700 tabular-nums">' + fmtHM(predictedTotalS) + '</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="underline decoration-gray-300 hover:text-gray-900">revenir à l\'estimation</button>'
+            : pins ? 'avec ' + (pins > 1 ? 'tes ' + pins + ' heures fixées' : 'ton heure fixée') + ' · estimation <b class="text-gray-700 tabular-nums">' + fmtHM(predictedTotalS) + '</b>'
             : 'temps estimé d\'après tes courses · glisse le curseur pour fixer un objectif';
     }
     function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); }

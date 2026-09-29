@@ -42,3 +42,5 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+# in-progress downloads of the race dataset collectors
+data/races/**/*.partial.json

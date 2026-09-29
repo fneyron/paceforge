@@ -203,8 +203,10 @@ async def _passage_table_context(
     autonomy = autonomy_legs(checkpoints, course.total_distance_km, sections)
 
     from app.services.checkpoints import KINDS
-    from app.services.race_simulator import build_scenarios
+    from app.services.race_simulator import build_scenarios, is_pinned, plan_total_s
 
+    # pinned checkpoints make a plan even without an objective
+    pinned = is_pinned(sections)
     scenarios = None if replan else build_scenarios(
         sections, start_offset_s, target_time_s,
         fast_pct=float(params.get("scenario_fast_pct") or 5.0),
@@ -220,12 +222,15 @@ async def _passage_table_context(
     zones = await estimate_training_zones(db, user_id)
     dflt = default_hr_caps(zones.get("max_hr"))
     caps = {k: (int(float(params[k])) if params.get(k) not in (None, "") else dflt[k]) for k in ("hr_cap_climb", "hr_cap_flat", "hr_release_descent")}
-    guide = build_pacing_guide(course, target_time_s or course.predicted_total_time_s, walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), **caps)
-    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    guide = build_pacing_guide(
+        course, plan_total_s(sections, start_offset_s, target_time_s) or course.predicted_total_time_s,
+        walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), plan_sections=sections, **caps,
+    )
+    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
     return {
         "plan_data": _script_json(plan_data),
         "sections": sections,
-        "has_target": (target_time_s is not None) or replan is not None,
+        "has_target": (target_time_s is not None) or replan is not None or pinned,
         "replan": replan,
         "has_weather": has_weather,
         "predicted_total": course.predicted_total_time_s,
@@ -446,7 +451,7 @@ async def save_route(
                 distance_km=cp["distance_km"],
                 elevation=cp["elevation"],
                 kind=cp["kind"], crew=cp["crew"], drop_bag=cp["drop_bag"],
-                cutoff_clock=cp["cutoff_clock"], stop_s=cp.get("stop_s"),
+                cutoff_clock=cp["cutoff_clock"], stop_s=cp.get("stop_s"), target_s=cp.get("target_s"),
             ))
         await db.flush()
 
@@ -1230,7 +1235,7 @@ async def print_route_plan(
         products_by_id = {p.id: _product_dict(p) for p in prod_result.scalars().all()}
         if not products_by_id:
             products_by_id = {p["id"]: p for p in _GENERIC_PLAN_PRODUCTS}
-        duration_s = route.target_time_s or b["predicted_total_s"] or 0
+        duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
         mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
         targets = nut.get("targets") or default_targets(duration_s / 3600.0 if duration_s else 0, mean_temp)
         nplan = compute_plan(
@@ -1268,7 +1273,9 @@ async def print_route_plan(
             "course": course,
             "predicted_total_formatted": total_fmt,
             "sections": sections,
-            "has_target": route.target_time_s is not None or live_applied,
+            "has_target": route.target_time_s is not None or live_applied or b["pinned"],
+            "pinned": b["pinned"],
+            "plan_total_s": b["plan_total_s"],
             "has_weather": has_weather,
             "start_hour": start_hour,
             "start_minute": start_minute,
@@ -1416,10 +1423,10 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
             hr_cap = (route.params_json or {}).get("hr_cap_climb")
             debrief = leg_debrief(
                 act.splits_metric, plan_sections, route.total_distance_km,
-                use_target=bool(route.target_time_s), stop_s_per_aid=stop_min * 60,
+                use_target=b["use_target"], stop_s_per_aid=stop_min * 60,
                 hr_cap=int(hr_cap) if hr_cap else None,
             )
-            debrief["basis"] = "plan" if route.target_time_s else "prediction"
+            debrief["basis"] = "plan" if b["use_target"] else "prediction"
 
     rows = []
     if result and result.get("actual"):
@@ -1629,8 +1636,8 @@ async def _nutrition_card_context(request: Request, route: Route, db: AsyncSessi
     b = await _plan_bundle(route, db, user)
     start_hour, start_minute = b["start_hour"], b["start_minute"]
     cps, sections, refills = b["checkpoints"], b["sections"], b["aid_kms"]
-    # Duration used for totals: target if set, else the model prediction.
-    duration_s = route.target_time_s or b["predicted_total_s"] or 0
+    # Duration used for totals: the plan (objective or pinned times), else the model prediction.
+    duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
     nutrition = route.nutrition_json or {}
 
     mean_temp = route.weather_json.get("temperature_c") if route.weather_json else None
@@ -1773,6 +1780,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
             "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
             "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
             "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
+            "pinned": False, "plan_total_s": route.target_time_s,
             "params": route.params_json or {}, "sport": "bike",
         }
 
@@ -1788,11 +1796,17 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
     )
     sections = annotate_cutoffs(sections, cps, start_offset_s)
+    from app.services.race_simulator import is_pinned, plan_total_s
+
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
         "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
-        "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
+        # pinned checkpoints make a plan (adjusted_*) even without an objective
+        "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s) or is_pinned(sections),
+        "pinned": is_pinned(sections),
+        # the plan's finish (stops included): the objective, or where the pins lead
+        "plan_total_s": plan_total_s(sections, start_offset_s, route.target_time_s),
         "params": route.params_json or {}, "sport": "trail",
     }
 
@@ -1828,11 +1842,11 @@ async def _pacing_context(request: Request | None, route: Route, db: AsyncSessio
         "hr_release_descent": _int("hr_release_descent") or defaults["hr_release_descent"],
     }
     walk_grade = float(p.get("walk_grade") or DEFAULT_WALK_GRADE)
-    guide = build_pacing_guide(b["course"], route.target_time_s or b["course"].predicted_total_time_s, walk_grade=walk_grade, **caps)
+    guide = build_pacing_guide(b["course"], b["plan_total_s"] or b["course"].predicted_total_time_s, walk_grade=walk_grade, plan_sections=b["sections"], **caps)
     return {
         "request": request, "route": route, "route_id": route.id, "guide": guide, "caps": caps,
         "walk_grade": walk_grade, "max_hr": zones.get("max_hr"), "defaults": defaults,
-        "has_target": bool(route.target_time_s), "total_km": b["course"].total_distance_km,
+        "has_target": b["use_target"], "total_km": b["course"].total_distance_km,
         "scenario": {
             "fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0),
             "switch_km": p.get("switch_km"),
@@ -2477,7 +2491,7 @@ async def update_checkpoint(
     if cp:
         form = await request.form()
         data = cp.as_dict()
-        for key in ("name", "distance_km", "kind", "cutoff_clock"):
+        for key in ("name", "distance_km", "kind", "cutoff_clock", "target_s"):
             if key in form:
                 data[key] = form.get(key)
         for key in ("crew", "drop_bag"):
@@ -2487,6 +2501,7 @@ async def update_checkpoint(
         if n["name"] and 0 < n["distance_km"] < (route.total_distance_km or 0):
             cp.name, cp.distance_km = n["name"], n["distance_km"]
         cp.kind, cp.crew, cp.drop_bag, cp.cutoff_clock = n["kind"], n["crew"], n["drop_bag"], n["cutoff_clock"]
+        cp.target_s = n["target_s"]
         await db.flush()
     return await _render_bike_plan(request, route, db, user)
 

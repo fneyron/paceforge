@@ -1,0 +1,1992 @@
+{
+ "arcofattrition_2025": {
+  "event": "Arc of Attrition by UTMB",
+  "races": [
+   [
+    "arc100",
+    "ARC 100",
+    "FINISHED"
+   ],
+   [
+    "arc50",
+    "ARC 50",
+    "FINISHED"
+   ],
+   [
+    "arc25",
+    "ARC 25",
+    "FINISHED"
+   ]
+  ]
+ },
+ "canyons_2023": {
+  "event": "The Canyons Endurance Runs By UTMB",
+  "races": [
+   [
+    "100m",
+    "100M",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50K",
+    "FINISHED"
+   ],
+   [
+    "25k",
+    "25K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "canyons_2024": {
+  "event": "HOKA Canyons Endurance Run by UTMB",
+  "races": [
+   [
+    "100m",
+    "100M",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50K",
+    "FINISHED"
+   ],
+   [
+    "25k",
+    "25K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "canyons_2025": {
+  "event": "The Canyons Endurance Runs by UTMB",
+  "races": [
+   [
+    "100m",
+    "100M",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50K",
+    "FINISHED"
+   ],
+   [
+    "25k",
+    "25K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "chiangmai_2024": {
+  "event": "HOKA Chiang Mai Thailand by UTMB\u00ae",
+  "races": [
+   [
+    "100M",
+    "TRANS - INT 160",
+    "FINISHED"
+   ],
+   [
+    "100K",
+    "ELEPHANT 100",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "HMONG 50",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "SUTHEP 20",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "CHEDI 10",
+    "FINISHED"
+   ]
+  ]
+ },
+ "chiangmai_2025": {
+  "event": "HOKA Chiang Mai Thailand by UTMB\u00ae",
+  "races": [
+   [
+    "CHD160",
+    "CHIANG DAO 160",
+    "FINISHED"
+   ],
+   [
+    "ELP100",
+    "ELEPHANT 100",
+    "FINISHED"
+   ],
+   [
+    "HMN50D",
+    "HMONG50 DAY",
+    "FINISHED"
+   ],
+   [
+    "HMN50N",
+    "HMONG 50-NIGHT",
+    "FINISHED"
+   ],
+   [
+    "STP20D",
+    "SUTHEP 20-DAY",
+    "FINISHED"
+   ],
+   [
+    "STP20N",
+    "SUTHEP 20-NIGHT",
+    "FINISHED"
+   ],
+   [
+    "CHD20",
+    "CHEDI 20",
+    "FINISHED"
+   ],
+   [
+    "INT20",
+    "INTHANON 20",
+    "FINISHED"
+   ],
+   [
+    "INT50",
+    "INTHANON 50",
+    "FINISHED"
+   ]
+  ]
+ },
+ "chianti_2024": {
+  "event": "Chianti Ultra Trail by UTMB",
+  "races": [
+   [
+    "UTCC",
+    "Ultra Trail Chianti Castles",
+    "FINISHED"
+   ],
+   [
+    "CUT",
+    "Chianti Ultra Trail",
+    "FINISHED"
+   ],
+   [
+    "CMT",
+    "Chianti Marathon Trail",
+    "FINISHED"
+   ],
+   [
+    "CHT",
+    "Chianti Half Trail",
+    "FINISHED"
+   ],
+   [
+    "CWR",
+    "Chianti Wine Run",
+    "FINISHED"
+   ]
+  ]
+ },
+ "chianti_2025": {
+  "event": "Chianti Ultra Trail by UTMB",
+  "races": [
+   [
+    "CMT",
+    "Chianti Marathon Trail",
+    "FINISHED"
+   ],
+   [
+    "CHT",
+    "Chianti Half Trail",
+    "FINISHED"
+   ],
+   [
+    "UTCC",
+    "Ultra Trail Chianti Castles",
+    "FINISHED"
+   ],
+   [
+    "CUT",
+    "Chianti Ultra Trail",
+    "FINISHED"
+   ],
+   [
+    "CWR",
+    "Chianti Wine Run",
+    "FINISHED"
+   ]
+  ]
+ },
+ "desertrats_2023": {
+  "event": "Desert RATS trail running festival By UTMB",
+  "races": [
+   [
+    "100k",
+    "Desert RATS 100K - Alternative 50k race",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Desert RATS 50K",
+    "FINISHED"
+   ],
+   [
+    "42k",
+    "Desert RATS 42K",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "Desert RATS 21K",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "Desert RATS 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "desertrats_2024": {
+  "event": "Desert RATS trail running festival By UTMB",
+  "races": [
+   [
+    "100k",
+    "Desert RATS 100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Desert RATS 50K",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "Desert RATS 21K",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "Desert RATS 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "desertrats_2025": {
+  "event": "Desert RATS Trail running Festival by UTMB",
+  "races": [
+   [
+    "100k",
+    "Desert RATS 100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Desert RATS 50K",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "Desert RATS 21K",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "Desert RATS 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kodiak_2023": {
+  "event": "Kodiak Ultra Marathons By UTMB",
+  "races": [
+   [
+    "100m",
+    "100M",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50K",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "21K",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kodiak_2024": {
+  "event": "Kodiak Ultra Marathons by UTMB",
+  "races": [
+   [
+    "100mile",
+    "100 Mile",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100k",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50k",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "21k",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "10k",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kodiak_2025": {
+  "event": "HOKA Kodiak Ultra Marathons by UTMB MAJOR",
+  "races": [
+   [
+    "100mile",
+    "100 Mile",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "100k",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50k",
+    "FINISHED"
+   ],
+   [
+    "21k",
+    "21k",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "10k",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kosciuszko_2022": {
+  "event": "Kosciuszko By UTMB",
+  "races": [
+   [
+    "miller",
+    "Kosci Miler",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Kosci 100",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Kosci 50",
+    "FINISHED"
+   ],
+   [
+    "27k",
+    "Kosci 27",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kosciuszko_2023": {
+  "event": "Kosciuszko By UTMB",
+  "races": [
+   [
+    "miler",
+    "Kosci Miler",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Kosci 100",
+    "FINISHED"
+   ],
+   [
+    "27k",
+    "Kosci 27",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Kosci 50",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kosciuszko_2024": {
+  "event": "Kosciuszko By UTMB",
+  "races": [
+   [
+    "miler",
+    "Kosci Miler",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Kosci 100",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Kosci 50",
+    "FINISHED"
+   ],
+   [
+    "30k",
+    "Kosci 30",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kosciuszko_2025": {
+  "event": "Kosciuszko By UTMB",
+  "races": [
+   [
+    "miler",
+    "Kosci Miler",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Kosci 100",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Kosci 50",
+    "FINISHED"
+   ],
+   [
+    "30k",
+    "Kosci 30",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kullamannen_2022": {
+  "event": "Kullamannen by UTMB\u00ae 2022",
+  "races": [
+   [
+    "100M",
+    "Kullamannen 100 Miles",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Sprint Ultra 100 km",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Sibirien Ultra 50 km",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "D\u00f6dens Zon 20 km",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kullamannen_2023": {
+  "event": "Kullamannen by UTMB\u00ae 2023",
+  "races": [
+   [
+    "100M",
+    "Kullamannen 100 Miles",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Sprint Ultra 100 km",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Sibirien Ultra 50 km",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "D\u00f6dens Zon 20 km",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kullamannen_2024": {
+  "event": "Kullamannen by UTMB\u00ae 2024",
+  "races": [
+   [
+    "100M",
+    "Ultra 100 Miles",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Sprint Ultra 100km",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Seventh Seal",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "North Shore",
+    "FINISHED"
+   ]
+  ]
+ },
+ "kullamannen_2025": {
+  "event": "Kullamannen by UTMB\u00ae",
+  "races": [
+   [
+    "100M",
+    "Ultra 100 Miles",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Sprint Ultra 100km",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Seventh Seal",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "North Shore",
+    "FINISHED"
+   ]
+  ]
+ },
+ "lavaredo_2022": {
+  "event": "La Sportiva\u00ae Lavaredo Ultra Trail\u00ae by UTMB\u00ae",
+  "races": [
+   [
+    "LUT",
+    "LAVAREDO ULTRA TRAIL",
+    "FINISHED"
+   ],
+   [
+    "UD",
+    "ULTRADOLOMITES",
+    "FINISHED"
+   ],
+   [
+    "CT",
+    "CORTINA TRAIL",
+    "FINISHED"
+   ],
+   [
+    "CS",
+    "CORTINA SKYRACE",
+    "FINISHED"
+   ]
+  ]
+ },
+ "lavaredo_2023": {
+  "event": "La Sportiva Lavaredo Ultra Trail by UTMB\u00ae",
+  "races": [
+   [
+    "120K",
+    "LAVAREDO 120K",
+    "FINISHED"
+   ],
+   [
+    "80K",
+    "LAVAREDO 80K",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "LAVAREDO 50K",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "LAVAREDO 20K",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "LAVAREDO 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "lavaredo_2024": {
+  "event": "La Sportiva Lavaredo Ultra Trail by UTMB\u00ae",
+  "races": [
+   [
+    "120K",
+    "LAVAREDO 120K",
+    "FINISHED"
+   ],
+   [
+    "80K",
+    "LAVAREDO 80K",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "LAVAREDO 50K",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "LAVAREDO 20K",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "LAVAREDO 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "lavaredo_2025": {
+  "event": "La Sportiva Lavaredo Ultra Trail by UTMB\u00ae",
+  "races": [
+   [
+    "120K",
+    "LAVAREDO 120K",
+    "FINISHED"
+   ],
+   [
+    "80K",
+    "LAVAREDO 80K",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "LAVAREDO 50K",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "LAVAREDO 20K",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "LAVAREDO 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "mountyun_2023": {
+  "event": "\u4e91\u4e18\u5c71\u8d8a\u91ce\u8d5b by UTMB\u00ae",
+  "races": [
+   [
+    "DMY",
+    "DMY",
+    "FINISHED"
+   ],
+   [
+    "MMY",
+    "MMY",
+    "FINISHED"
+   ],
+   [
+    "EMY",
+    "EMY",
+    "FINISHED"
+   ]
+  ]
+ },
+ "mountyun_2024": {
+  "event": "\u4e91\u4e18\u5c71\u8d8a\u91ce\u8d5b by UTMB\u00ae",
+  "races": [
+   [
+    "UMY",
+    "UMY",
+    "FINISHED"
+   ],
+   [
+    "DMY",
+    "DMY",
+    "FINISHED"
+   ],
+   [
+    "MMY",
+    "MMY",
+    "FINISHED"
+   ],
+   [
+    "EMY",
+    "EMY",
+    "FINISHED"
+   ]
+  ]
+ },
+ "mountyun_2025": {
+  "event": "\u4e91\u4e18\u5c71\u8d8a\u91ce\u8d5b by UTMB\u00ae",
+  "races": [
+   [
+    "DMY",
+    "DMY",
+    "FINISHED"
+   ],
+   [
+    "EMY",
+    "EMY",
+    "FINISHED"
+   ],
+   [
+    "UMY",
+    "UMY",
+    "FINISHED"
+   ],
+   [
+    "MMY",
+    "MMY",
+    "FINISHED"
+   ],
+   [
+    "NMY",
+    "NMY",
+    "FINISHED"
+   ],
+   [
+    "TMY",
+    "TMY",
+    "CANCELLED"
+   ],
+   [
+    "LMY",
+    "LMY",
+    "CANCELLED"
+   ],
+   [
+    "YMY",
+    "YMY",
+    "CANCELLED"
+   ]
+  ]
+ },
+ "mut_2022": {
+  "event": "Matterhorn Ultraks Trail",
+  "races": [
+   [
+    "extre",
+    "<< EXTREME >>",
+    "FINISHED"
+   ],
+   [
+    "sky",
+    "<< SKY >>",
+    "FINISHED"
+   ],
+   [
+    "mounta",
+    "<< MOUNTAIN >>",
+    "FINISHED"
+   ],
+   [
+    "relay",
+    "<< RELAY >>",
+    "FINISHED"
+   ],
+   [
+    "active",
+    "<< ACTIVE >>",
+    "FINISHED"
+   ],
+   [
+    "verti",
+    "<< VERTINIGHT>>",
+    "FINISHED"
+   ]
+  ]
+ },
+ "mut_2024": {
+  "event": "Matterhorn Ultraks Trail",
+  "races": [
+   [
+    "extre",
+    "EXTREME",
+    "FINISHED"
+   ],
+   [
+    "sky",
+    "SKY",
+    "FINISHED"
+   ],
+   [
+    "mounta",
+    "MOUNTAIN",
+    "FINISHED"
+   ],
+   [
+    "relay",
+    "RELAY",
+    "FINISHED"
+   ],
+   [
+    "active",
+    "ACTIVE",
+    "FINISHED"
+   ],
+   [
+    "verti",
+    "VERTINIGHT",
+    "FINISHED"
+   ]
+  ]
+ },
+ "pacifictrails_2025": {
+  "event": "HOKA Pacific Trails California by UTMB",
+  "races": [
+   [
+    "25k",
+    "25k",
+    "CANCELLED"
+   ],
+   [
+    "50k",
+    "50k",
+    "CANCELLED"
+   ]
+  ]
+ },
+ "puertovallarta_2022": {
+  "event": "Puerto Vallarta Mexico by UTMB 2022",
+  "races": [
+   [
+    "100M",
+    "100M Wix\u00e1rica",
+    "FINISHED"
+   ],
+   [
+    "100K",
+    "100K Hikuri",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "50K Nakaw\u00e9",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "20K Ereno",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "10K Pata Salada",
+    "FINISHED"
+   ]
+  ]
+ },
+ "puertovallarta_2023": {
+  "event": "Puerto Vallarta Mexico by UTMB 2023",
+  "races": [
+   [
+    "33k",
+    "33K Haramara",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "20K Ereno",
+    "FINISHED"
+   ],
+   [
+    "100K",
+    "100K Hikuri",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "50K Nakaw\u00e9",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "10K Pata Salada",
+    "FINISHED"
+   ]
+  ]
+ },
+ "puertovallarta_2024": {
+  "event": "Puerto Vallarta Mexico by UTMB 2024",
+  "races": [
+   [
+    "100M",
+    "100M Wix\u00e1rika",
+    "FINISHED"
+   ],
+   [
+    "100K",
+    "100K Hikuri",
+    "FINISHED"
+   ],
+   [
+    "50K",
+    "50K Nakaw\u00e9",
+    "FINISHED"
+   ],
+   [
+    "33k",
+    "33K Haramara",
+    "FINISHED"
+   ],
+   [
+    "20K",
+    "20K Ereno",
+    "FINISHED"
+   ],
+   [
+    "10K",
+    "10K Pata Salada",
+    "FINISHED"
+   ]
+  ]
+ },
+ "puglia_2025": {
+  "event": "Puglia by Utmb",
+  "races": [
+   [
+    "SDM140",
+    "I Sassi di Matera 140km",
+    "FINISHED"
+   ],
+   [
+    "MLT85",
+    "Le Maioliche di Laterza 85km",
+    "FINISHED"
+   ],
+   [
+    "CUT50",
+    "Castellaneta Underground Trail 50km",
+    "FINISHED"
+   ],
+   [
+    "GRT35",
+    "Ginosa RivoltaTrail 35km",
+    "FINISHED"
+   ],
+   [
+    "CVT10",
+    "Costa Verde Trail 10km",
+    "FINISHED"
+   ]
+  ]
+ },
+ "tarawera_2023": {
+  "event": "Tarawera Ultramarathon By UTMB",
+  "races": [
+   [
+    "miler",
+    "TUM Miler",
+    "FINISHED"
+   ],
+   [
+    "102",
+    "TUM 102",
+    "FINISHED"
+   ],
+   [
+    "50",
+    "TUM 50",
+    "FINISHED"
+   ],
+   [
+    "21",
+    "TUM 21",
+    "FINISHED"
+   ]
+  ]
+ },
+ "tarawera_2024": {
+  "event": "Tarawera Ultra-Trail by UTMB",
+  "races": [
+   [
+    "miler",
+    "TMiler",
+    "FINISHED"
+   ],
+   [
+    "102",
+    "T102",
+    "FINISHED"
+   ],
+   [
+    "50",
+    "T50",
+    "FINISHED"
+   ],
+   [
+    "21",
+    "T21",
+    "FINISHED"
+   ]
+  ]
+ },
+ "tarawera_2025": {
+  "event": "Tarawera Ultra-Trail by UTMB",
+  "races": [
+   [
+    "TMiler",
+    "TMiler",
+    "FINISHED"
+   ],
+   [
+    "T102",
+    "T102",
+    "FINISHED"
+   ],
+   [
+    "T50",
+    "T50",
+    "FINISHED"
+   ],
+   [
+    "T21",
+    "T21",
+    "FINISHED"
+   ]
+  ]
+ },
+ "transjeju_2023": {
+  "event": "TransJeju BY UTMB",
+  "races": [
+   [
+    "100k",
+    "TransJeju by UTMB 100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "TransJeju by UTMB 50K",
+    "FINISHED"
+   ],
+   [
+    "20k",
+    "TransJeju by UTMB 20K",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "TransJeju by UTMB 10K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "transjeju_2024": {
+  "event": "TransJeju BY UTMB",
+  "races": [
+   [
+    "100k",
+    "Jeju 100K",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "Jeju 50K",
+    "FINISHED"
+   ],
+   [
+    "20k",
+    "Jeju 20K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "transjeju_2025": {
+  "event": "TransJeju BY UTMB",
+  "races": [
+   [
+    "100m",
+    "Jeju100M",
+    "FINISHED"
+   ],
+   [
+    "100k",
+    "Jeju100K",
+    "FINISHED"
+   ],
+   [
+    "70k",
+    "Jeju70K",
+    "FINISHED"
+   ],
+   [
+    "20k",
+    "Jeju20K",
+    "FINISHED"
+   ]
+  ]
+ },
+ "translantau_2022": {
+  "event": "TransLantau",
+  "races": [
+   [
+    "TL100",
+    "TransLantau 104",
+    "FINISHED"
+   ],
+   [
+    "TL50",
+    "TransLantau 53",
+    "FINISHED"
+   ],
+   [
+    "TL25",
+    "TransLantau 25",
+    "FINISHED"
+   ]
+  ]
+ },
+ "translantau_2023": {
+  "event": "TransLantau By UTMB",
+  "races": [
+   [
+    "TL140",
+    "TransLantau 140",
+    "FINISHED"
+   ],
+   [
+    "TL100",
+    "TransLantau 100",
+    "FINISHED"
+   ],
+   [
+    "TL50",
+    "TransLantau 50",
+    "FINISHED"
+   ],
+   [
+    "TL25",
+    "TransLantau 25",
+    "FINISHED"
+   ]
+  ]
+ },
+ "translantau_2024": {
+  "event": "TransLantau By UTMB",
+  "races": [
+   [
+    "TL120",
+    "TransLantau 120",
+    "FINISHED"
+   ],
+   [
+    "TL100",
+    "TransLantau 100",
+    "FINISHED"
+   ],
+   [
+    "TL50",
+    "TransLantau 50",
+    "FINISHED"
+   ],
+   [
+    "TL25",
+    "TransLantau 25",
+    "FINISHED"
+   ]
+  ]
+ },
+ "translantau_2025": {
+  "event": "TransLantau By UTMB",
+  "races": [
+   [
+    "TL50",
+    "TransLantau 50",
+    "FINISHED"
+   ],
+   [
+    "TL120",
+    "TransLantau 120",
+    "FINISHED"
+   ],
+   [
+    "TL80",
+    "TransLantau 80",
+    "FINISHED"
+   ],
+   [
+    "TL25",
+    "TransLantau 25",
+    "FINISHED"
+   ]
+  ]
+ },
+ "uta_2022": {
+  "event": "Ultra-Trail Australia by UTMB",
+  "races": [
+   [
+    "UTA100",
+    "UTA100",
+    "FINISHED"
+   ],
+   [
+    "UTA50",
+    "UTA50",
+    "FINISHED"
+   ],
+   [
+    "UTA22",
+    "UTA22",
+    "FINISHED"
+   ],
+   [
+    "UTA11",
+    "UTA11",
+    "FINISHED"
+   ]
+  ]
+ },
+ "uta_2023": {
+  "event": "Ultra-Trail Australia",
+  "races": [
+   [
+    "UTA100",
+    "UTA100",
+    "FINISHED"
+   ],
+   [
+    "UTA50",
+    "UTA50",
+    "FINISHED"
+   ],
+   [
+    "UTA22",
+    "UTA22",
+    "FINISHED"
+   ],
+   [
+    "UTA11",
+    "UTA11",
+    "FINISHED"
+   ]
+  ]
+ },
+ "uta_2024": {
+  "event": "Ultra-Trail Australia",
+  "races": [
+   [
+    "UTA100",
+    "UTA100",
+    "FINISHED"
+   ],
+   [
+    "UTA50",
+    "UTA50",
+    "FINISHED"
+   ],
+   [
+    "UTA22",
+    "UTA22",
+    "FINISHED"
+   ],
+   [
+    "UTA11",
+    "UTA11",
+    "FINISHED"
+   ]
+  ]
+ },
+ "uta_2025": {
+  "event": "Ultra-Trail Australia",
+  "races": [
+   [
+    "UTAM",
+    "UTAMiler",
+    "FINISHED"
+   ],
+   [
+    "UTA100",
+    "UTA100",
+    "FINISHED"
+   ],
+   [
+    "UTA50",
+    "UTA50",
+    "FINISHED"
+   ],
+   [
+    "UTA22",
+    "UTA22",
+    "FINISHED"
+   ],
+   [
+    "UTA11",
+    "UTA11",
+    "FINISHED"
+   ]
+  ]
+ },
+ "whistler_2024": {
+  "event": "Ultra Trail Whistler by UTMB",
+  "races": [
+   [
+    "25k",
+    "25k",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50k",
+    "FINISHED"
+   ],
+   [
+    "70k",
+    "70k",
+    "FINISHED"
+   ]
+  ]
+ },
+ "whistler_2025": {
+  "event": "Ultra Trail Whistler by UTMB",
+  "races": [
+   [
+    "100k",
+    "100k",
+    "FINISHED"
+   ],
+   [
+    "50k",
+    "50k",
+    "FINISHED"
+   ],
+   [
+    "25k",
+    "25k",
+    "FINISHED"
+   ],
+   [
+    "10k",
+    "10k",
+    "FINISHED"
+   ]
+  ]
+ },
+ "utmb_2022": {
+  "event": "UTMB\u00ae",
+  "races": [
+   [
+    "utmb",
+    "UTMB\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ccc",
+    "CCC\u00ae",
+    "FINISHED"
+   ],
+   [
+    "occ",
+    "OCC",
+    "FINISHED"
+   ],
+   [
+    "tds",
+    "TDS\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ptl",
+    "PTL\u00ae",
+    "FINISHED"
+   ],
+   [
+    "mcc",
+    "MCC",
+    "FINISHED"
+   ],
+   [
+    "etc",
+    "ETC",
+    "FINISHED"
+   ],
+   [
+    "ycc1JE",
+    "YCC Junior&Espoir",
+    "FINISHED"
+   ],
+   [
+    "ycc1C",
+    "YCC Cadet",
+    "FINISHED"
+   ],
+   [
+    "ycc1M",
+    "YCC Minime",
+    "FINISHED"
+   ],
+   [
+    "ycc2JE",
+    "YCC Junior&Espoir - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2C",
+    "YCC Cadet - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2M",
+    "YCC Minime - The Revenge",
+    "FINISHED"
+   ]
+  ]
+ },
+ "utmb_2023": {
+  "event": "UTMB\u00ae",
+  "races": [
+   [
+    "utmb",
+    "UTMB\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ccc",
+    "CCC\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ptl",
+    "PTL\u00ae",
+    "FINISHED"
+   ],
+   [
+    "occ",
+    "OCC",
+    "FINISHED"
+   ],
+   [
+    "tds",
+    "TDS\u00ae",
+    "FINISHED"
+   ],
+   [
+    "mcc",
+    "MCC",
+    "FINISHED"
+   ],
+   [
+    "etc",
+    "ETC",
+    "FINISHED"
+   ],
+   [
+    "ycc1JE",
+    "YCC Junior&Espoir",
+    "FINISHED"
+   ],
+   [
+    "ycc1C",
+    "YCC Cadet",
+    "FINISHED"
+   ],
+   [
+    "ycc1M",
+    "YCC Minime",
+    "FINISHED"
+   ],
+   [
+    "ycc2M",
+    "YCC Minime - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2C",
+    "YCC Cadet - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2JE",
+    "YCC Junior&Espoir - The Revenge",
+    "FINISHED"
+   ]
+  ]
+ },
+ "utmb_2024": {
+  "event": "Hoka UTMB\u00ae Mont-Blanc",
+  "races": [
+   [
+    "utmb",
+    "UTMB\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ccc",
+    "CCC\u00ae",
+    "FINISHED"
+   ],
+   [
+    "occ",
+    "OCC",
+    "FINISHED"
+   ],
+   [
+    "tds",
+    "TDS\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ptl",
+    "PTL\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ycc2JE",
+    "YCC Junior - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2C",
+    "YCC Cadet - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2M",
+    "YCC Minime - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "etc",
+    "ETC",
+    "FINISHED"
+   ],
+   [
+    "ycc1JE",
+    "YCC Junior",
+    "FINISHED"
+   ],
+   [
+    "ycc1C",
+    "YCC Cadet",
+    "FINISHED"
+   ],
+   [
+    "ycc1M",
+    "YCC Minime",
+    "FINISHED"
+   ],
+   [
+    "mcc",
+    "MCC",
+    "FINISHED"
+   ]
+  ]
+ },
+ "utmb_2025": {
+  "event": "Hoka UTMB\u00ae Mont-Blanc",
+  "races": [
+   [
+    "utmb",
+    "UTMB\u00ae",
+    "FINISHED"
+   ],
+   [
+    "ccc",
+    "CCC\u00ae",
+    "FINISHED"
+   ],
+   [
+    "occ",
+    "OCC",
+    "FINISHED"
+   ],
+   [
+    "tds",
+    "TDS\u00ae",
+    "FINISHED"
+   ],
+   [
+    "mcc",
+    "MCC",
+    "FINISHED"
+   ],
+   [
+    "ycc1JE",
+    "YCC Junior",
+    "FINISHED"
+   ],
+   [
+    "ycc1C",
+    "YCC Cadet",
+    "FINISHED"
+   ],
+   [
+    "ycc1M",
+    "YCC Minime",
+    "FINISHED"
+   ],
+   [
+    "etc",
+    "ETC",
+    "FINISHED"
+   ],
+   [
+    "ycc2JE",
+    "YCC Junior The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2C",
+    "YCC Cadet - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ycc2M",
+    "YCC Minime - The Revenge",
+    "FINISHED"
+   ],
+   [
+    "ptl",
+    "PTL\u00ae",
+    "FINISHED"
+   ]
+  ]
+ },
+ "templiers_2022": {
+  "event": "Festival des Templiers",
+  "races": [
+   [
+    "Templi",
+    "Grand Trail des Templiers",
+    "FINISHED"
+   ],
+   [
+    "Boffi50",
+    "Boffi Fifty",
+    "FINISHED"
+   ],
+   [
+    "MarathC",
+    "Marathon des Causses",
+    "FINISHED"
+   ],
+   [
+    "Monna",
+    "La Monna Lisa",
+    "FINISHED"
+   ],
+   [
+    "vo2",
+    "VO2 Trail",
+    "FINISHED"
+   ],
+   [
+    "troubad",
+    "Troubadours",
+    "FINISHED"
+   ],
+   [
+    "TemplF",
+    "La Templi\u00e8re",
+    "FINISHED"
+   ],
+   [
+    "kd",
+    "KD Trail",
+    "FINISHED"
+   ],
+   [
+    "trouRan",
+    "Troubadours Randonn\u00e9e",
+    "FINISHED"
+   ],
+   [
+    "tefrand",
+    "La Templi\u00e8re Rando",
+    "FINISHED"
+   ],
+   [
+    "endur",
+    "Endurance Trail",
+    "FINISHED"
+   ],
+   [
+    "integra",
+    "Int\u00e9grale des Causses",
+    "FINISHED"
+   ],
+   [
+    "MarathL",
+    "Marathon du Larzac",
+    "FINISHED"
+   ]
+  ]
+ },
+ "templiers_2023": {
+  "event": "Festival des Templiers",
+  "races": [
+   [
+    "Templi",
+    "Grand Trail des Templiers",
+    "FINISHED"
+   ],
+   [
+    "Boffi50",
+    "Boffi Fifty",
+    "FINISHED"
+   ],
+   [
+    "MarathC",
+    "Marathon des Causses",
+    "FINISHED"
+   ],
+   [
+    "vo2",
+    "VO2 Trail",
+    "FINISHED"
+   ],
+   [
+    "troubad",
+    "Troubadours",
+    "FINISHED"
+   ],
+   [
+    "TemplF",
+    "La Templi\u00e8re",
+    "FINISHED"
+   ],
+   [
+    "kd",
+    "KD Trail",
+    "FINISHED"
+   ],
+   [
+    "trouRan",
+    "Troubadours Randonn\u00e9e",
+    "FINISHED"
+   ],
+   [
+    "tefrand",
+    "La Templi\u00e8re Rando",
+    "FINISHED"
+   ],
+   [
+    "endur",
+    "Endurance Trail",
+    "FINISHED"
+   ],
+   [
+    "integra",
+    "Int\u00e9grale des Causses",
+    "FINISHED"
+   ],
+   [
+    "MarathL",
+    "Marathon du Larzac",
+    "FINISHED"
+   ],
+   [
+    "Monna",
+    "Monna Lisa",
+    "FINISHED"
+   ],
+   [
+    "dourbie",
+    "Dourbie Formi",
+    "FINISHED"
+   ]
+  ]
+ },
+ "templiers_2024": {
+  "event": "HOKA LES TEMPLIERS",
+  "races": [
+   [
+    "Templi",
+    "Grand Trail des Templiers",
+    "FINISHED"
+   ],
+   [
+    "MarathC",
+    "Marathon des Causses",
+    "FINISHED"
+   ],
+   [
+    "Boffi50",
+    "Boffi Fifty",
+    "FINISHED"
+   ],
+   [
+    "dourbie",
+    "Dourbie Formi",
+    "FINISHED"
+   ],
+   [
+    "Monna",
+    "Monna Lisa",
+    "FINISHED"
+   ],
+   [
+    "endur",
+    "Endurance Trail",
+    "FINISHED"
+   ],
+   [
+    "integra",
+    "Int\u00e9grale des Causses",
+    "FINISHED"
+   ],
+   [
+    "MarathL",
+    "Marathon du Larzac",
+    "FINISHED"
+   ],
+   [
+    "vo2",
+    "VO2 Trail",
+    "FINISHED"
+   ],
+   [
+    "troubad",
+    "Troubadours",
+    "FINISHED"
+   ],
+   [
+    "TemplF",
+    "La Templi\u00e8re",
+    "FINISHED"
+   ],
+   [
+    "kd",
+    "KD Trail",
+    "FINISHED"
+   ],
+   [
+    "trouRan",
+    "Troubadours Randonn\u00e9e",
+    "FINISHED"
+   ],
+   [
+    "tefrand",
+    "La Templi\u00e8re Rando",
+    "FINISHED"
+   ]
+  ]
+ },
+ "templiers_2025": {
+  "event": "HOKA LES TEMPLIERS",
+  "races": [
+   [
+    "Templi",
+    "Grand Trail des Templiers",
+    "FINISHED"
+   ],
+   [
+    "Boffi50",
+    "Boffi Fifty",
+    "FINISHED"
+   ],
+   [
+    "dourbie",
+    "Dourbie Formi",
+    "FINISHED"
+   ],
+   [
+    "Monna",
+    "Monna Lisa",
+    "FINISHED"
+   ],
+   [
+    "MarathC",
+    "Marathon des Causses",
+    "FINISHED"
+   ],
+   [
+    "kd",
+    "KD Trail",
+    "FINISHED"
+   ],
+   [
+    "TemplF",
+    "La Templi\u00e8re",
+    "FINISHED"
+   ],
+   [
+    "tefrand",
+    "La Templi\u00e8re Rando",
+    "FINISHED"
+   ],
+   [
+    "troubad",
+    "Troubadours",
+    "FINISHED"
+   ],
+   [
+    "trouRan",
+    "Troubadours Randonn\u00e9e",
+    "FINISHED"
+   ],
+   [
+    "vo2",
+    "VO2 Trail",
+    "FINISHED"
+   ],
+   [
+    "junior",
+    "Junior Trail",
+    "FINISHED"
+   ],
+   [
+    "endur",
+    "Endurance Trail",
+    "FINISHED"
+   ],
+   [
+    "integra",
+    "Int\u00e9grale des Causses",
+    "FINISHED"
+   ],
+   [
+    "MarathL",
+    "Marathon du Larzac",
+    "FINISHED"
+   ]
+  ]
+ }
+}

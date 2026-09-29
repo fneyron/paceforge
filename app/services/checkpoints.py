@@ -58,6 +58,15 @@ def normalize_checkpoint(cp: dict) -> dict:
         stop_s = max(0, min(4 * 3600, int(float(stop_s)))) if stop_s is not None and str(stop_s) != "" else None
     except (TypeError, ValueError):
         stop_s = None
+    # pinned passage time: seconds after the start (a 100-miler runs < 2 days,
+    # a week is a typo), None = the plan decides
+    target_s = cp.get("target_s")
+    try:
+        target_s = int(float(target_s)) if target_s is not None and str(target_s) != "" else None
+    except (TypeError, ValueError, OverflowError):
+        target_s = None
+    if target_s is not None and not (0 < target_s <= 7 * 86400):
+        target_s = None
     return {
         "name": str(cp.get("name") or "")[:100],
         "distance_km": km,
@@ -67,6 +76,7 @@ def normalize_checkpoint(cp: dict) -> dict:
         "drop_bag": bool(cp.get("drop_bag")),
         "cutoff_clock": (str(cutoff)[:5] if cutoff else None),
         "stop_s": stop_s,
+        "target_s": target_s,
     }
 
 
