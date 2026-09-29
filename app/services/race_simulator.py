@@ -108,6 +108,11 @@ _DEFAULT_GRADIENT_FACTORS = {
 }
 
 
+# How many km splits of his own an athlete needs on a gradient for them to
+# weigh as much as the generic curve (8 splits → 50 %, 40 → 83 %).
+GRADIENT_PRIOR_SPLITS = 8
+
+
 async def build_athlete_gradient_profile(
     db: AsyncSession,
     user_id: int,
@@ -197,23 +202,23 @@ async def build_athlete_gradient_profile(
     else:
         flat_pace = statistics.median([p for _, p in data_points])
 
-    # Compute gradient factors
+    # Each gradient's factor: the athlete's median, pulled towards the generic
+    # curve in proportion to how little data backs it. Steep buckets hold a
+    # handful of km splits, often hill reps run hard: taken as is (from 2 on)
+    # they made a 150 km runner climb Hallasan faster than the race winner.
     gradient_factors: dict[int, float] = {}
     for bucket, paces in buckets.items():
-        if len(paces) >= 2:
-            median_pace = statistics.median(paces)
-            factor = median_pace / flat_pace
-            gradient_factors[bucket] = round(factor, 3)
-        elif len(paces) == 1:
-            # Blend with model: 50/50
-            athlete_factor = paces[0] / flat_pace
-            model_factor = _get_default_factor(bucket)
-            gradient_factors[bucket] = round((athlete_factor + model_factor) / 2, 3)
+        own = statistics.median(paces) / flat_pace
+        w = len(paces) / (len(paces) + GRADIENT_PRIOR_SPLITS)
+        gradient_factors[bucket] = round(w * own + (1 - w) * _get_default_factor(bucket), 3)
 
     # Fill gaps with default model
     for grad in range(-20, 31):
         if grad not in gradient_factors:
             gradient_factors[grad] = _get_default_factor(grad)
+    # Climbing steeper is never cheaper.
+    for grad in range(1, 31):
+        gradient_factors[grad] = max(gradient_factors[grad], gradient_factors[grad - 1])
 
     profile = AthleteGradientProfile(
         flat_pace_s_per_km=round(flat_pace, 1),

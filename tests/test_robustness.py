@@ -183,3 +183,23 @@ async def test_gradient_profile_survives_null_split_fields(db_session, test_user
     await db_session.flush()
     profile = await build_athlete_gradient_profile(db_session, test_user.id)
     assert profile.data_points >= 10 and profile.flat_pace_s_per_km > 0
+
+
+@pytest.mark.asyncio
+async def test_sparse_steep_splits_are_pulled_towards_the_generic_curve(db_session, test_user):
+    """Two hill reps at +20 % must not make a whole ultra's climbs cheap."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.activity import Activity
+    from app.services.race_simulator import _DEFAULT_GRADIENT_FACTORS, build_athlete_gradient_profile
+
+    now = datetime.now(timezone.utc)
+    splits = [{"distance": 1000.0, "moving_time": 300, "elevation_difference": 0.0} for _ in range(30)]
+    splits += [{"distance": 1000.0, "moving_time": 400, "elevation_difference": 200.0} for _ in range(2)]
+    db_session.add(Activity(strava_activity_id=990002, user_id=test_user.id, sport_type="TrailRun", name="Côtes",
+                            start_date=now - timedelta(days=3), distance=32000.0, moving_time=9800, elapsed_time=9800,
+                            total_elevation_gain=400.0, raw_data={}, splits_metric=splits))
+    await db_session.flush()
+    f = (await build_athlete_gradient_profile(db_session, test_user.id)).gradient_factors
+    assert f[20] > 0.7 * _DEFAULT_GRADIENT_FACTORS[20]      # 2 splits at 1.33 barely move it
+    assert all(f[g] >= f[g - 1] for g in range(1, 31))      # steeper never cheaper
