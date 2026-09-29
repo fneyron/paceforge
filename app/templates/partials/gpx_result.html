@@ -117,37 +117,52 @@
         <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="mt-2 w-full h-11 lg:h-10 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-600 hover:border-gray-500 hover:text-gray-900 inline-flex items-center justify-center gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white inline-flex items-center justify-center leading-none text-base">+</span>Ajouter un point de passage</button>
     </div>
 
-    {# ── advanced ───────────────────────────────────────────────────────── #}
+    {# ── settings, in plain words: where the time comes from, stops, backup plans, trace ── #}
+    {% set lbl = "block text-[11px] font-semibold text-gray-800 mb-1" %}
+    {% set num = "sim-num w-11 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900" %}
     <details id="advanced" class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <summary class="list-none cursor-pointer select-none px-4 py-2.5 flex items-center justify-between gap-3">
-            <span class="text-sm text-gray-700">Base de la prédiction · trace GPX</span>
+            <span class="text-sm text-gray-700">Réglages du plan</span>
             <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
         </summary>
-        <div class="px-4 pb-4 pt-3 border-t border-gray-100 space-y-3 text-xs text-gray-500">
-            {% if race_calibration is defined and race_calibration %}
-            {% set rc = race_calibration %}
-            <p><b class="text-gray-800">Niveau calé sur tes courses</b> ({{ rc.n }}{% if rc.n_races %} taguée{{ 's' if rc.n_races > 1 }} « course » sur Strava{% endif %}) : {{ rc.ekm }} km-effort à <b class="text-gray-800">{{ rc.ekm_h }} km-effort/h</b> → {{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}, contre {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} d'après l'entraînement seul. {% for r in rc.races[:3] %}{{ r.name }} ({{ r.ekm_h }} km-eff/h){% if not loop.last %}, {% endif %}{% endfor %}. Meilleure perf par durée{% if rc.ignored %} · écartées : {% for r in rc.ignored[:3] %}{{ r.name }} ({{ r.why }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.</p>
-            {% endif %}
-            {% if has_data %}
-            <p>Forme du plan : allure selon la pente apprise sur <b class="text-gray-700">{{ profile.data_points }}</b> segments Strava, référence à plat {{ '%d:%02d'|format(profile.flat_pace_s_per_km // 60, profile.flat_pace_s_per_km % 60) }}/km, ajustée fatigue, altitude, terrain, nuit, chaleur.{% if not (race_calibration is defined and race_calibration) %} Tague tes courses « Course » sur Strava pour caler le niveau sur tes compétitions.{% endif %}</p>
-            {% else %}
-            <p class="text-amber-700">Aucune donnée Strava exploitable : modèle générique tant que tes activités ne sont pas synchronisées.</p>
-            {% endif %}
+        <div class="px-4 pb-4 pt-3 border-t border-gray-100 space-y-4 text-xs text-gray-600 leading-relaxed">
+            <div>
+                <span class="{{ lbl }}">D'où vient l'estimation</span>
+                {% if race_calibration is defined and race_calibration %}
+                {% set rc = race_calibration %}
+                <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-gray-900">{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
+                {% elif has_data %}
+                <p>De tes sorties Strava. Pour une estimation plus juste, indique « Course » comme type d'activité sur tes compétitions dans Strava.</p>
+                {% else %}
+                <p class="text-amber-700">Pas encore d'activités Strava : estimation générique en attendant.</p>
+                {% endif %}
+                <p class="mt-1 text-gray-500">Le temps est ensuite réparti selon la pente, le type de chemin (route ou sentier), la fatigue, la nuit et la chaleur.</p>
+            </div>
             {% if saved_route_id %}
-            <p class="pt-3 border-t border-gray-100"><b class="text-gray-700">Arrêts aux postes</b> · eau 2′ · ravito 5′ · base vie 15′ <label class="inline-flex items-center gap-1 ml-2 whitespace-nowrap">ou partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="auto" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="sim-num w-11 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900"> min</label></p>
-            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()"
-                  class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3 border-t border-gray-100" title="Les colonnes Optimiste et Sécurité du tableau, et le point où choisir entre les deux">
-                <span class="font-medium text-gray-700">Scénarios</span>
-                <label class="inline-flex items-center gap-1 whitespace-nowrap text-emerald-700">optimiste −<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus vite" class="sim-num w-9 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900"> %</label>
-                <label class="inline-flex items-center gap-1 whitespace-nowrap text-blue-700">sécurité +<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="sim-num w-9 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900"> %</label>
-                <label class="inline-flex items-center gap-1 whitespace-nowrap">bascule <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point de bascule" class="h-7 pl-1.5 pr-6 rounded-md border border-gray-200 text-xs text-gray-900 max-w-[180px]"><option value="">auto (60 % du parcours)</option></select></label>
+            <div class="pt-3 border-t border-gray-100">
+                <span class="{{ lbl }}">Temps d'arrêt aux ravitos</span>
+                <p>Par défaut 2 min aux points d'eau, 5 min aux ravitos, 15 min aux bases vie. Pour un point précis, touche-le sur le profil ou dans le tableau.</p>
+                <label class="mt-1.5 inline-flex items-center gap-1.5 whitespace-nowrap">Même durée partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="—" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="{{ num }}"> min <span class="text-gray-400">(vide = par défaut)</span></label>
+            </div>
+            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="pt-3 border-t border-gray-100">
+                <span class="{{ lbl }}">Plans de rechange</span>
+                <p>En plus de ton plan, le tableau montre un plan <span class="text-emerald-700 font-medium">Optimiste</span> (si tout va bien) et un plan <span class="text-blue-700 font-medium">Sécurité</span> (si ça coince), et le point où choisir entre les deux.</p>
+                <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus rapide" class="{{ num }} w-9"> % plus rapide</label>
+                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="{{ num }} w-9"> % plus lent</label>
+                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-7 pl-1.5 pr-6 rounded-md border border-gray-200 text-xs text-gray-900 max-w-[200px]"><option value="">automatique</option></select></label>
+                </div>
             </form>
-            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="inline">
-                <label class="h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer" title="Recharger le GPX : points, objectif et nutrition sont conservés">
-                    Mettre à jour la trace GPX
-                    <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()">
-                </label>
-            </form>
+            <div class="pt-3 border-t border-gray-100">
+                <span class="{{ lbl }}">Trace GPX</span>
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="flex flex-wrap items-center gap-2">
+                    <label class="h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer">
+                        Remplacer la trace
+                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()">
+                    </label>
+                    <span class="text-gray-400">tes points, ton objectif et ta nutrition sont gardés</span>
+                </form>
+            </div>
             {% endif %}
         </div>
     </details>
