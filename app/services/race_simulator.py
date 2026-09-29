@@ -511,7 +511,27 @@ def format_time(seconds: int) -> str:
 
 
 def _elevation_at_km(course: CourseProfile, km: float) -> float | None:
-    """Interpolate elevation (m) at a given distance from the elevation profile."""
+    """Interpolate elevation (m) at a given distance: on the full-resolution
+    trace when stored ([lat, lon, km, ele] rows), else on the coarse profile
+    (one point every few hundred metres, tens of metres off on a summit)."""
+    coords = course.route_coords or []
+    if len(coords) >= 50 and len(coords[0]) > 3 and coords[0][3] is not None:
+        lo, hi = 0, len(coords) - 1
+        if km <= coords[0][2]:
+            return round(coords[0][3])
+        if km >= coords[hi][2]:
+            return round(coords[hi][3])
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if coords[mid][2] < km:
+                lo = mid
+            else:
+                hi = mid
+        p, n = coords[lo], coords[hi]
+        if p[3] is not None and n[3] is not None:
+            span = n[2] - p[2]
+            t = (km - p[2]) / span if span > 0 else 0
+            return round(p[3] + t * (n[3] - p[3]))
     pts = course.elevation_points or []
     if not pts:
         return None
@@ -625,6 +645,7 @@ def compute_passage_times(
             "time": section_time, "base": section_base,
             "gain": section_gain, "loss": section_loss,
             "mid_cum": mid_cum, "cum": baseline_cum, "cp_index": all_cps[i + 1]["cp_index"],
+            "end_cp_elevation": all_cps[i + 1].get("elevation"),
             "start_name": all_cps[i]["name"], "end_name": all_cps[i + 1]["name"],
         })
 
@@ -703,7 +724,8 @@ def compute_passage_times(
             predicted_pace_s_per_km=round(pace, 0),
             adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
             adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
-            end_elevation=_elevation_at_km(course, r["end_km"]),
+            # the checkpoint's own altitude (the roadbook's) when it has one
+            end_elevation=round(float(r["end_cp_elevation"])) if r.get("end_cp_elevation") is not None else _elevation_at_km(course, r["end_km"]),
             clock_time_s=int(start_offset_s + cumulative + stops_acc),
             adjusted_clock_time_s=int(start_offset_s + adj_cumulative + stops_acc) if target_time_s else None,
             end_checkpoint_index=r["cp_index"],

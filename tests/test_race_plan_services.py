@@ -448,3 +448,17 @@ def test_caffeinated_gel_follows_the_caffeine_plan():
     assert all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
     assert caf_line["total_units"] == len(cf["doses"])  # one gel per dose, packed as such
     assert sum(u["units"] for l in plan["schedule"] for u in l["units"] if u["name"] == "CAF 100") == len(cf["doses"])
+
+
+def test_elevation_at_km_reads_the_full_resolution_trace():
+    """A summit between two coarse profile points keeps its altitude."""
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import _elevation_at_km
+
+    coords = [[33.0, 126.0, i * 0.01, 100.0 + (500 if 99 <= i <= 101 else 0)] for i in range(201)]
+    course = CourseProfile(name="x", total_distance_km=2.0, total_elevation_gain=500, total_elevation_loss=500,
+                           segments=[], elevation_points=[{"distance_km": 0.0, "elevation": 100.0}, {"distance_km": 2.0, "elevation": 100.0}],
+                           route_coords=coords)
+    assert _elevation_at_km(course, 1.0) == 600
+    assert _elevation_at_km(course, 0.5) == 100
+    assert _elevation_at_km(course, 5.0) == 100
