@@ -162,3 +162,24 @@ async def test_a_point_carries_its_own_stop_time(as_user: AsyncClient):
     assert r.status_code == 200 and "+10'" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}")
     assert r.status_code == 200 and '"stop_s": 600' in r.text  # persisted and handed back to the page
+
+
+@pytest.mark.asyncio
+async def test_gradient_profile_survives_null_split_fields(db_session, test_user):
+    """Strava sends explicit nulls (no altitude on a split): the race page must not 500."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.activity import Activity
+    from app.services.race_simulator import build_athlete_gradient_profile
+
+    now = datetime.now(timezone.utc)
+    splits = [{"distance": 1000.0, "moving_time": 300, "elevation_difference": 5.0} for _ in range(10)]
+    splits += [{"distance": 1000.0, "moving_time": 310, "elevation_difference": None},
+               {"distance": None, "moving_time": 300, "elevation_difference": 2.0},
+               {"distance": 1000.0, "moving_time": None, "elevation_difference": 1.0}]
+    db_session.add(Activity(strava_activity_id=990001, user_id=test_user.id, sport_type="Run", name="Tapis",
+                            start_date=now - timedelta(days=2), distance=13000.0, moving_time=3900, elapsed_time=3900,
+                            total_elevation_gain=50.0, raw_data={}, splits_metric=splits))
+    await db_session.flush()
+    profile = await build_athlete_gradient_profile(db_session, test_user.id)
+    assert profile.data_points >= 10 and profile.flat_pace_s_per_km > 0

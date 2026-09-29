@@ -147,9 +147,11 @@ async def build_athlete_gradient_profile(
         sport_types_used.add(activity.sport_type)
 
         for split in splits:
-            distance = split.get("distance", 0)
-            moving_time = split.get("moving_time", 0)
-            elevation_diff = split.get("elevation_difference", 0)
+            # Strava sends explicit nulls (a split with no altitude, e.g. a
+            # treadmill or a watch without barometer): treat them as 0.
+            distance = split.get("distance") or 0
+            moving_time = split.get("moving_time") or 0
+            elevation_diff = split.get("elevation_difference") or 0
 
             if not distance or distance < 500 or not moving_time:
                 continue
