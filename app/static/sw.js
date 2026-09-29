@@ -1,7 +1,8 @@
-const CACHE_NAME = 'paceforge-v2';
+const CACHE_NAME = 'paceforge-ui-20260929';
 const STATIC_ASSETS = [
   '/static/js/app.js',
-  '/static/css/app.css',
+  '/static/css/tailwind.css',
+  '/static/css/interface.css?v=2',
 ];
 
 self.addEventListener('install', (event) => {

@@ -3,8 +3,8 @@
     <button hx-get="/partials/activities?page={{ page + 1 }}{% if sport %}&sport={{ sport }}{% endif %}"
             hx-target="#activity-list"
             hx-swap="beforeend"
-            hx-indicator="#load-spinner"
-            class="h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 shadow-sm">
+            hx-indicator="#load-spinner" hx-disabled-elt="this"
+            class="pf-secondary-button h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 shadow-sm">
         Semaines précédentes
         <span id="load-spinner" class="htmx-indicator ml-1.5">
             <svg class="animate-spin h-3.5 w-3.5 inline" viewBox="0 0 24 24">

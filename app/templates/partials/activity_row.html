@@ -3,10 +3,10 @@
 {% set days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'] %}
 <a href="/activity/{{ activity.id }}"
    id="activity-row-{{ activity.id }}"
-   class="block rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm hover:border-gray-400 hover:shadow-md transition-all duration-200 {% if dim %}opacity-60{% endif %}">
+   class="pf-activity-row block rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm hover:border-gray-400 hover:shadow-md transition-all duration-200 {% if dim %}opacity-60{% endif %}">
     <div class="flex items-start sm:items-center justify-between gap-3">
         <div class="flex items-center gap-3 min-w-0">
-            <div class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-gray-100 text-gray-500">
+            <div class="pf-sport-icon pf-sport-{{ activity.sport_group }} shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-gray-100 text-gray-500">
                 {% if activity.sport_group == 'trail' %}
                 <i data-lucide="mountain" class="w-4 h-4"></i>
                 {% elif activity.sport_group == 'run' %}
