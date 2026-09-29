@@ -1,0 +1,1187 @@
+{
+ "about": "Fitted by scripts/race_data/fit_model.py on UTMB Live results (train events only); see fit_results.txt",
+ "train_events": [
+  "arcofattrition",
+  "canyons",
+  "chianti",
+  "desertrats",
+  "kodiak",
+  "kosciuszko",
+  "lavaredo",
+  "mountyun",
+  "mut",
+  "tarawera",
+  "templiers",
+  "translantau",
+  "uta"
+ ],
+ "test_events": [
+  "chiangmai",
+  "kullamannen",
+  "puertovallarta",
+  "transjeju",
+  "utmb",
+  "whistler"
+ ],
+ "fit": {
+  "knots_pct": [
+   -35,
+   -25,
+   -15,
+   -8,
+   -3,
+   0,
+   3,
+   8,
+   15,
+   25,
+   35
+  ],
+  "curve_at_20h": [
+   3.933,
+   1.961,
+   1.075,
+   0.823,
+   0.883,
+   1.0,
+   1.715,
+   1.742,
+   2.075,
+   3.398,
+   3.63
+  ],
+  "gamma_up": -0.244,
+  "gamma_down": -0.061,
+  "curve_by_level_h": {
+   "9h": {
+    "-35": 4.213,
+    "-25": 2.028,
+    "-15": 1.079,
+    "-8": 0.815,
+    "-3": 0.877,
+    "0": 1.0,
+    "3": 1.927,
+    "8": 1.964,
+    "15": 2.428,
+    "25": 4.422,
+    "35": 4.792
+   },
+   "15h": {
+    "-35": 4.03,
+    "-25": 1.984,
+    "-15": 1.077,
+    "-8": 0.82,
+    "-3": 0.881,
+    "0": 1.0,
+    "3": 1.784,
+    "8": 1.814,
+    "15": 2.188,
+    "25": 3.714,
+    "35": 3.988
+   },
+   "21h": {
+    "-35": 3.917,
+    "-25": 1.957,
+    "-15": 1.075,
+    "-8": 0.824,
+    "-3": 0.883,
+    "0": 1.0,
+    "3": 1.704,
+    "8": 1.731,
+    "15": 2.057,
+    "25": 3.349,
+    "35": 3.575
+   },
+   "27h": {
+    "-35": 3.836,
+    "-25": 1.937,
+    "-15": 1.074,
+    "-8": 0.826,
+    "-3": 0.885,
+    "0": 1.0,
+    "3": 1.651,
+    "8": 1.675,
+    "15": 1.971,
+    "25": 3.117,
+    "35": 3.314
+   },
+   "34h": {
+    "-35": 3.764,
+    "-25": 1.919,
+    "-15": 1.073,
+    "-8": 0.828,
+    "-3": 0.886,
+    "0": 1.0,
+    "3": 1.607,
+    "8": 1.629,
+    "15": 1.899,
+    "25": 2.929,
+    "35": 3.104
+   }
+  },
+  "fatigue": {
+   "c": 0.6663,
+   "q": 0.5177,
+   "r": 0.4836,
+   "fresh": -0.0093,
+   "formula": "1 + c*(T/10)**q*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target (predicted) finish, moving hours"
+  },
+  "night": {
+   "night": 1.0492,
+   "dusk_dawn": 1.0185
+  },
+  "terrain": {
+   "R": 1.0,
+   "F": 1.0557,
+   "T": 1.0599,
+   "T1": 1.2461,
+   "T2": 1.1734,
+   "T3": 1.9988,
+   "S": 0.9006,
+   "U": 0.9662
+  }
+ },
+ "fit_nolevel": {
+  "knots_pct": [
+   -35,
+   -25,
+   -15,
+   -8,
+   -3,
+   0,
+   3,
+   8,
+   15,
+   25,
+   35
+  ],
+  "curve_at_20h": [
+   3.938,
+   1.925,
+   1.071,
+   0.818,
+   0.878,
+   1.0,
+   1.768,
+   1.822,
+   2.174,
+   3.532,
+   4.061
+  ],
+  "gamma_up": 0.0,
+  "gamma_down": 0.0,
+  "curve_by_level_h": {
+   "9h": {
+    "-35": 3.938,
+    "-25": 1.925,
+    "-15": 1.071,
+    "-8": 0.818,
+    "-3": 0.878,
+    "0": 1.0,
+    "3": 1.768,
+    "8": 1.822,
+    "15": 2.174,
+    "25": 3.532,
+    "35": 4.061
+   },
+   "15h": {
+    "-35": 3.938,
+    "-25": 1.925,
+    "-15": 1.071,
+    "-8": 0.818,
+    "-3": 0.878,
+    "0": 1.0,
+    "3": 1.768,
+    "8": 1.822,
+    "15": 2.174,
+    "25": 3.532,
+    "35": 4.061
+   },
+   "21h": {
+    "-35": 3.938,
+    "-25": 1.925,
+    "-15": 1.071,
+    "-8": 0.818,
+    "-3": 0.878,
+    "0": 1.0,
+    "3": 1.768,
+    "8": 1.822,
+    "15": 2.174,
+    "25": 3.532,
+    "35": 4.061
+   },
+   "27h": {
+    "-35": 3.938,
+    "-25": 1.925,
+    "-15": 1.071,
+    "-8": 0.818,
+    "-3": 0.878,
+    "0": 1.0,
+    "3": 1.768,
+    "8": 1.822,
+    "15": 2.174,
+    "25": 3.532,
+    "35": 4.061
+   },
+   "34h": {
+    "-35": 3.938,
+    "-25": 1.925,
+    "-15": 1.071,
+    "-8": 0.818,
+    "-3": 0.878,
+    "0": 1.0,
+    "3": 1.768,
+    "8": 1.822,
+    "15": 2.174,
+    "25": 3.532,
+    "35": 4.061
+   }
+  },
+  "fatigue": {
+   "c": 0.6634,
+   "q": 0.5087,
+   "r": 0.4949,
+   "fresh": -0.009,
+   "formula": "1 + c*(T/10)**q*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target (predicted) finish, moving hours"
+  },
+  "night": {
+   "night": 1.0482,
+   "dusk_dawn": 1.0181
+  },
+  "terrain": {
+   "R": 1.0,
+   "F": 1.0587,
+   "T": 1.0593,
+   "T1": 1.2582,
+   "T2": 1.1752,
+   "T3": 1.9988,
+   "S": 0.9005,
+   "U": 0.9605
+  }
+ },
+ "fit_hours": {
+  "knots_pct": [
+   -35,
+   -25,
+   -15,
+   -8,
+   -3,
+   0,
+   3,
+   8,
+   15,
+   25,
+   35
+  ],
+  "curve_at_20h": [
+   4.043,
+   1.915,
+   1.075,
+   0.818,
+   0.876,
+   1.0,
+   1.779,
+   1.867,
+   2.218,
+   3.456,
+   4.104
+  ],
+  "gamma_up": 0.0,
+  "gamma_down": 0.0,
+  "curve_by_level_h": {
+   "9h": {
+    "-35": 4.043,
+    "-25": 1.915,
+    "-15": 1.075,
+    "-8": 0.818,
+    "-3": 0.876,
+    "0": 1.0,
+    "3": 1.779,
+    "8": 1.867,
+    "15": 2.218,
+    "25": 3.456,
+    "35": 4.104
+   },
+   "15h": {
+    "-35": 4.043,
+    "-25": 1.915,
+    "-15": 1.075,
+    "-8": 0.818,
+    "-3": 0.876,
+    "0": 1.0,
+    "3": 1.779,
+    "8": 1.867,
+    "15": 2.218,
+    "25": 3.456,
+    "35": 4.104
+   },
+   "21h": {
+    "-35": 4.043,
+    "-25": 1.915,
+    "-15": 1.075,
+    "-8": 0.818,
+    "-3": 0.876,
+    "0": 1.0,
+    "3": 1.779,
+    "8": 1.867,
+    "15": 2.218,
+    "25": 3.456,
+    "35": 4.104
+   },
+   "27h": {
+    "-35": 4.043,
+    "-25": 1.915,
+    "-15": 1.075,
+    "-8": 0.818,
+    "-3": 0.876,
+    "0": 1.0,
+    "3": 1.779,
+    "8": 1.867,
+    "15": 2.218,
+    "25": 3.456,
+    "35": 4.104
+   },
+   "34h": {
+    "-35": 4.043,
+    "-25": 1.915,
+    "-15": 1.075,
+    "-8": 0.818,
+    "-3": 0.876,
+    "0": 1.0,
+    "3": 1.779,
+    "8": 1.867,
+    "15": 2.218,
+    "25": 3.456,
+    "35": 4.104
+   }
+  },
+  "fatigue": {
+   "c": 0.6645,
+   "q": 0.5028,
+   "r": 0.5028,
+   "fresh": -0.0081,
+   "formula": "1 + c*(T/10)**q*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target (predicted) finish, moving hours"
+  },
+  "night": {
+   "night": 1.0488,
+   "dusk_dawn": 1.0183
+  },
+  "terrain": {
+   "R": 1.0,
+   "F": 1.0487,
+   "T": 1.0539,
+   "T1": 1.2514,
+   "T2": 1.1698,
+   "T3": 1.9988,
+   "S": 0.9005,
+   "U": 0.9595
+  }
+ },
+ "prodcurve_fitrest": {
+  "knots_pct": [
+   -35,
+   -25,
+   -15,
+   -8,
+   -3,
+   0,
+   3,
+   8,
+   15,
+   25,
+   35
+  ],
+  "curve_at_20h": [
+   1.413,
+   1.135,
+   0.92,
+   0.8,
+   0.88,
+   1.0,
+   1.16,
+   1.62,
+   2.45,
+   3.9,
+   4.7
+  ],
+  "gamma_up": 0.0,
+  "gamma_down": 0.0,
+  "curve_by_level_h": {
+   "9h": {
+    "-35": 1.413,
+    "-25": 1.135,
+    "-15": 0.92,
+    "-8": 0.8,
+    "-3": 0.88,
+    "0": 1.0,
+    "3": 1.16,
+    "8": 1.62,
+    "15": 2.45,
+    "25": 3.9,
+    "35": 4.7
+   },
+   "15h": {
+    "-35": 1.413,
+    "-25": 1.135,
+    "-15": 0.92,
+    "-8": 0.8,
+    "-3": 0.88,
+    "0": 1.0,
+    "3": 1.16,
+    "8": 1.62,
+    "15": 2.45,
+    "25": 3.9,
+    "35": 4.7
+   },
+   "21h": {
+    "-35": 1.413,
+    "-25": 1.135,
+    "-15": 0.92,
+    "-8": 0.8,
+    "-3": 0.88,
+    "0": 1.0,
+    "3": 1.16,
+    "8": 1.62,
+    "15": 2.45,
+    "25": 3.9,
+    "35": 4.7
+   },
+   "27h": {
+    "-35": 1.413,
+    "-25": 1.135,
+    "-15": 0.92,
+    "-8": 0.8,
+    "-3": 0.88,
+    "0": 1.0,
+    "3": 1.16,
+    "8": 1.62,
+    "15": 2.45,
+    "25": 3.9,
+    "35": 4.7
+   },
+   "34h": {
+    "-35": 1.413,
+    "-25": 1.135,
+    "-15": 0.92,
+    "-8": 0.8,
+    "-3": 0.88,
+    "0": 1.0,
+    "3": 1.16,
+    "8": 1.62,
+    "15": 2.45,
+    "25": 3.9,
+    "35": 4.7
+   }
+  },
+  "fatigue": {
+   "c": 0.7833,
+   "q": 0.465,
+   "r": 0.4785,
+   "fresh": -0.0201,
+   "formula": "1 + c*(T/10)**q*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target (predicted) finish, moving hours"
+  },
+  "night": {
+   "night": 1.0421,
+   "dusk_dawn": 1.0158
+  },
+  "terrain": {
+   "R": 1.0,
+   "F": 0.9724,
+   "T": 1.008,
+   "T1": 1.1468,
+   "T2": 1.0235,
+   "T3": 2.0,
+   "S": 0.9005,
+   "U": 0.8726
+  }
+ },
+ "raw_x": {
+  "fit": [
+   -0.04153352955903097,
+   -3.5912003898644405,
+   -2.954723920814102,
+   -3.8186137480217446,
+   -4.652944415479883,
+   -0.3348726238660498,
+   -3.613883110358356,
+   -1.100607543721627,
+   0.2798531560095105,
+   -1.4596834405989065,
+   -0.24425458720887291,
+   -0.0614429178627298,
+   0.6662821819020296,
+   0.5176822198023706,
+   0.48356456085643207,
+   -0.009252960040285805,
+   1.0492404267789703,
+   0.054232217720948835,
+   0.05820844299221513,
+   0.2200335645258251,
+   0.15991460695457493,
+   0.6925617646750278,
+   -0.10474662619717547,
+   -0.03436179933118678
+  ],
+  "fit_nolevel": [
+   -0.043468805079164806,
+   -3.527355660327312,
+   -2.945875094559998,
+   -3.904426605169756,
+   -4.345116954814472,
+   -0.2639948731333952,
+   -2.920821083311599,
+   -1.043022314091661,
+   0.3060446177024044,
+   -0.63686998082634,
+   0.0,
+   0.0,
+   0.6634262641381703,
+   0.5087221016760894,
+   0.49488035371741707,
+   -0.009047645757082836,
+   1.048205230788994,
+   0.05705608922881225,
+   0.05762772256718825,
+   0.22970677927278993,
+   0.16142803058926894,
+   0.6925617646750278,
+   -0.10477509977290878,
+   -0.04031548463531318
+  ],
+  "fit_hours": [
+   -0.04403744426844264,
+   -3.4971433436296873,
+   -2.941913057711766,
+   -3.976785444201493,
+   -4.077130219071275,
+   -0.250159495988722,
+   -2.424055551997534,
+   -1.0469452563899675,
+   0.21339580177878395,
+   -0.4338471542405898,
+   0.0,
+   0.0,
+   0.6645049213053856,
+   0.5027717610836581,
+   0.5027717610836581,
+   -0.008149144928658512,
+   1.0487611972656838,
+   0.0475830185729115,
+   0.05252381125658205,
+   0.2242341940724593,
+   0.1568635291807281,
+   0.6925617646750278,
+   -0.10477509977290878,
+   -0.04135604301894266
+  ],
+  "prodcurve_fitrest": [
+   -0.042611123836628295,
+   -3.748668190659882,
+   -3.2434752312533206,
+   -6.907755278982137,
+   -6.907755278982137,
+   -1.8325814637483107,
+   -0.776528789498996,
+   -0.18632957819149337,
+   0.37156355643248284,
+   -0.22314355131420943,
+   0.0,
+   0.0,
+   0.7832515665282674,
+   0.4649976903120826,
+   0.4784646359144682,
+   -0.02012017591235511,
+   1.0420961805808335,
+   -0.027974324138986175,
+   0.008014330658831868,
+   0.13696402205752534,
+   0.023244005856244285,
+   0.6931470201468286,
+   -0.10477509979409871,
+   -0.13631612726555398
+  ],
+  "names": [
+   "down_slope(0..3)",
+   "log_slope_incr(|g|=3)",
+   "log_slope_incr(|g|=8)",
+   "log_slope_incr(|g|=15)",
+   "log_slope_incr(|g|=25)",
+   "log_step(3)",
+   "log_step(8)",
+   "log_step(15)",
+   "log_step(25)",
+   "log_step(35)",
+   "gamma_up",
+   "gamma_down",
+   "c",
+   "q",
+   "r",
+   "fresh",
+   "night",
+   "log_m_F",
+   "log_m_T",
+   "log_m_T1",
+   "log_m_T2",
+   "log_m_T3",
+   "log_m_S",
+   "log_m_U"
+  ]
+ },
+ "guard_transjeju_2025_100m_16_21h": {
+  "runners": 4,
+  "median_finish_h": 17.91,
+  "checkpoints": [
+   {
+    "cp": "Healing 1",
+    "km": 6.7,
+    "production_median_signed": 5.4,
+    "production_mean_abs": 5.3,
+    "prod+hours_median_signed": 2.5,
+    "prod+hours_mean_abs": 2.2,
+    "fit_hours_median_signed": 2.4,
+    "fit_hours_mean_abs": 2.0,
+    "fit_nolevel_median_signed": 2.1,
+    "fit_nolevel_mean_abs": 1.9,
+    "fit_median_signed": 1.7,
+    "fit_mean_abs": 1.7
+   },
+   {
+    "cp": "Yeongsil E",
+    "km": 19.9,
+    "production_median_signed": 11.1,
+    "production_mean_abs": 9.6,
+    "prod+hours_median_signed": 9.9,
+    "prod+hours_mean_abs": 8.5,
+    "fit_hours_median_signed": 1.9,
+    "fit_hours_mean_abs": 4.3,
+    "fit_nolevel_median_signed": 0.9,
+    "fit_nolevel_mean_abs": 3.8,
+    "fit_median_signed": -0.3,
+    "fit_mean_abs": 3.6
+   },
+   {
+    "cp": "Eorimok En",
+    "km": 28.3,
+    "production_median_signed": 9.5,
+    "production_mean_abs": 9.1,
+    "prod+hours_median_signed": 15.4,
+    "prod+hours_mean_abs": 15.2,
+    "fit_hours_median_signed": 9.8,
+    "fit_hours_mean_abs": 9.4,
+    "fit_nolevel_median_signed": 9.1,
+    "fit_nolevel_mean_abs": 8.6,
+    "fit_median_signed": 7.4,
+    "fit_mean_abs": 7.0
+   },
+   {
+    "cp": "Gwanumsa E",
+    "km": 40.5,
+    "production_median_signed": 10.7,
+    "production_mean_abs": 10.4,
+    "prod+hours_median_signed": 23.0,
+    "prod+hours_mean_abs": 23.3,
+    "fit_hours_median_signed": 11.3,
+    "fit_hours_mean_abs": 11.1,
+    "fit_nolevel_median_signed": 10.4,
+    "fit_nolevel_mean_abs": 10.3,
+    "fit_median_signed": 9.2,
+    "fit_mean_abs": 9.7
+   },
+   {
+    "cp": null,
+    "km": 49.0
+   },
+   {
+    "cp": "Seongpanak",
+    "km": 58.3,
+    "production_median_signed": -1.1,
+    "production_mean_abs": 11.2,
+    "prod+hours_median_signed": 29.6,
+    "prod+hours_mean_abs": 33.9,
+    "fit_hours_median_signed": 62.2,
+    "fit_hours_mean_abs": 66.5,
+    "fit_nolevel_median_signed": 61.8,
+    "fit_nolevel_mean_abs": 66.1,
+    "fit_median_signed": 60.6,
+    "fit_mean_abs": 64.9
+   },
+   {
+    "cp": "Red oreum",
+    "km": 66.2,
+    "production_median_signed": -13.9,
+    "production_mean_abs": 16.8,
+    "prod+hours_median_signed": 20.3,
+    "prod+hours_mean_abs": 22.4,
+    "fit_hours_median_signed": 43.5,
+    "fit_hours_mean_abs": 46.7,
+    "fit_nolevel_median_signed": 43.5,
+    "fit_nolevel_mean_abs": 46.7,
+    "fit_median_signed": 42.8,
+    "fit_mean_abs": 46.0
+   },
+   {
+    "cp": "Gasiri",
+    "km": 85.4,
+    "production_median_signed": -9.7,
+    "production_mean_abs": 14.3,
+    "prod+hours_median_signed": 26.2,
+    "prod+hours_mean_abs": 30.3,
+    "fit_hours_median_signed": 40.7,
+    "fit_hours_mean_abs": 45.4,
+    "fit_nolevel_median_signed": 41.1,
+    "fit_nolevel_mean_abs": 45.9,
+    "fit_median_signed": 41.1,
+    "fit_mean_abs": 45.9
+   },
+   {
+    "cp": "Meochewat ",
+    "km": 102.3,
+    "production_median_signed": -11.2,
+    "production_mean_abs": 14.5,
+    "prod+hours_median_signed": 23.3,
+    "prod+hours_mean_abs": 20.8,
+    "fit_hours_median_signed": 36.9,
+    "fit_hours_mean_abs": 35.1,
+    "fit_nolevel_median_signed": 37.3,
+    "fit_nolevel_mean_abs": 35.6,
+    "fit_median_signed": 37.6,
+    "fit_mean_abs": 35.8
+   },
+   {
+    "cp": "Eseungak O",
+    "km": 112.5,
+    "production_median_signed": 3.0,
+    "production_mean_abs": 7.3,
+    "prod+hours_median_signed": 31.1,
+    "prod+hours_mean_abs": 30.3,
+    "fit_hours_median_signed": 42.9,
+    "fit_hours_mean_abs": 42.7,
+    "fit_nolevel_median_signed": 43.2,
+    "fit_nolevel_mean_abs": 43.0,
+    "fit_median_signed": 43.2,
+    "fit_mean_abs": 43.1
+   },
+   {
+    "cp": "Camping si",
+    "km": 123.5,
+    "production_median_signed": -6.2,
+    "production_mean_abs": 10.8,
+    "prod+hours_median_signed": 12.5,
+    "prod+hours_mean_abs": 10.9,
+    "fit_hours_median_signed": 18.5,
+    "fit_hours_mean_abs": 14.8,
+    "fit_nolevel_median_signed": 18.5,
+    "fit_nolevel_mean_abs": 14.8,
+    "fit_median_signed": 18.3,
+    "fit_mean_abs": 14.6
+   },
+   {
+    "cp": "Healing 2",
+    "km": 133.1,
+    "production_median_signed": -0.7,
+    "production_mean_abs": 4.7,
+    "prod+hours_median_signed": 7.6,
+    "prod+hours_mean_abs": 7.3,
+    "fit_hours_median_signed": 12.1,
+    "fit_hours_mean_abs": 11.9,
+    "fit_nolevel_median_signed": 12.0,
+    "fit_nolevel_mean_abs": 11.8,
+    "fit_median_signed": 11.6,
+    "fit_mean_abs": 11.3
+   }
+  ],
+  "mean_abs_gap_production": 10.4,
+  "mean_abs_gap_prod+hours": 18.7,
+  "mean_abs_gap_fit_hours": 26.3,
+  "mean_abs_gap_fit_nolevel": 26.2,
+  "mean_abs_gap_fit": 25.8
+ },
+ "prev_edition": {
+  "races": [
+   {
+    "race": "utmb/kullamannen_2024/100M",
+    "prev": "kullamannen_2023",
+    "matched_cps": 2,
+    "of": 14,
+    "12-18h": {
+     "prev": 9.4,
+     "production": 32.0,
+     "fit": 26.8,
+     "blend_production": 20.3,
+     "blend_fit": 17.7
+    },
+    "18-24h": {
+     "prev": 18.2,
+     "production": 34.1,
+     "fit": 30.7,
+     "blend_production": 23.1,
+     "blend_fit": 22.1
+    },
+    "24-30h": {
+     "prev": 19.0,
+     "production": 25.2,
+     "fit": 23.4,
+     "blend_production": 20.4,
+     "blend_fit": 20.0
+    },
+    "30-99h": {
+     "prev": 27.2,
+     "production": 17.4,
+     "fit": 18.1,
+     "blend_production": 19.8,
+     "blend_fit": 21.1
+    }
+   },
+   {
+    "race": "utmb/kullamannen_2024/100k",
+    "prev": "kullamannen_2023",
+    "matched_cps": 2,
+    "of": 8,
+    "0-12h": {
+     "prev": 9.3,
+     "production": 18.2,
+     "fit": 18.9,
+     "blend_production": 12.5,
+     "blend_fit": 12.7
+    },
+    "12-18h": {
+     "prev": 18.0,
+     "production": 23.8,
+     "fit": 25.9,
+     "blend_production": 20.5,
+     "blend_fit": 21.3
+    },
+    "18-24h": {
+     "prev": 22.5,
+     "production": 22.0,
+     "fit": 23.8,
+     "blend_production": 21.7,
+     "blend_fit": 21.7
+    }
+   },
+   {
+    "race": "utmb/kullamannen_2024/50k",
+    "prev": "kullamannen_2023",
+    "matched_cps": 1,
+    "of": 6,
+    "0-12h": {
+     "prev": 6.1,
+     "production": 8.0,
+     "fit": 7.8,
+     "blend_production": 6.9,
+     "blend_fit": 6.8
+    }
+   },
+   {
+    "race": "utmb/utmb_2023/utmb",
+    "prev": "utmb_2022",
+    "matched_cps": 22,
+    "of": 35,
+    "18-24h": {
+     "prev": 9.4,
+     "production": 28.6,
+     "fit": 24.9,
+     "blend_production": 17.8,
+     "blend_fit": 15.7
+    },
+    "24-30h": {
+     "prev": 16.1,
+     "production": 26.3,
+     "fit": 27.6,
+     "blend_production": 20.2,
+     "blend_fit": 20.9
+    },
+    "30-99h": {
+     "prev": 28.4,
+     "production": 35.3,
+     "fit": 39.2,
+     "blend_production": 28.9,
+     "blend_fit": 30.7
+    }
+   },
+   {
+    "race": "utmb/utmb_2024/ccc",
+    "prev": "utmb_2023",
+    "matched_cps": 11,
+    "of": 21,
+    "0-12h": {
+     "prev": 10.7,
+     "production": 14.0,
+     "fit": 9.9,
+     "blend_production": 12.1,
+     "blend_fit": 10.3
+    },
+    "12-18h": {
+     "prev": 15.0,
+     "production": 20.4,
+     "fit": 18.2,
+     "blend_production": 16.6,
+     "blend_fit": 16.2
+    },
+    "18-24h": {
+     "prev": 17.8,
+     "production": 25.3,
+     "fit": 27.6,
+     "blend_production": 19.5,
+     "blend_fit": 20.7
+    },
+    "24-30h": {
+     "prev": 21.8,
+     "production": 38.2,
+     "fit": 49.7,
+     "blend_production": 29.1,
+     "blend_fit": 34.6
+    }
+   },
+   {
+    "race": "utmb/utmb_2024/utmb",
+    "prev": "utmb_2023",
+    "matched_cps": 23,
+    "of": 36,
+    "18-24h": {
+     "prev": 12.0,
+     "production": 26.1,
+     "fit": 21.8,
+     "blend_production": 11.9,
+     "blend_fit": 11.1
+    },
+    "24-30h": {
+     "prev": 15.3,
+     "production": 26.6,
+     "fit": 27.6,
+     "blend_production": 16.2,
+     "blend_fit": 16.9
+    },
+    "30-99h": {
+     "prev": 29.6,
+     "production": 42.0,
+     "fit": 47.7,
+     "blend_production": 33.1,
+     "blend_fit": 34.9
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/ccc",
+    "prev": "utmb_2024",
+    "matched_cps": 13,
+    "of": 21,
+    "0-12h": {
+     "prev": 3.7,
+     "production": 9.1,
+     "fit": 5.5,
+     "blend_production": 5.8,
+     "blend_fit": 4.4
+    },
+    "12-18h": {
+     "prev": 14.2,
+     "production": 15.9,
+     "fit": 14.9,
+     "blend_production": 13.7,
+     "blend_fit": 13.6
+    },
+    "18-24h": {
+     "prev": 24.8,
+     "production": 18.9,
+     "fit": 19.5,
+     "blend_production": 19.7,
+     "blend_fit": 19.6
+    },
+    "24-30h": {
+     "prev": 18.7,
+     "production": 22.6,
+     "fit": 29.6,
+     "blend_production": 17.8,
+     "blend_fit": 19.1
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/tds",
+    "prev": "utmb_2024",
+    "matched_cps": 18,
+    "of": 26,
+    "18-24h": {
+     "prev": 13.6,
+     "production": 20.5,
+     "fit": 18.1,
+     "blend_production": 15.4,
+     "blend_fit": 15.0
+    },
+    "24-30h": {
+     "prev": 20.1,
+     "production": 27.8,
+     "fit": 22.8,
+     "blend_production": 21.0,
+     "blend_fit": 19.6
+    },
+    "30-99h": {
+     "prev": 27.4,
+     "production": 44.3,
+     "fit": 35.9,
+     "blend_production": 31.4,
+     "blend_fit": 29.1
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/utmb",
+    "prev": "utmb_2024",
+    "matched_cps": 22,
+    "of": 35,
+    "18-24h": {
+     "prev": 20.7,
+     "production": 39.2,
+     "fit": 33.2,
+     "blend_production": 29.9,
+     "blend_fit": 26.9
+    },
+    "24-30h": {
+     "prev": 21.6,
+     "production": 29.9,
+     "fit": 28.5,
+     "blend_production": 23.7,
+     "blend_fit": 23.4
+    },
+    "30-99h": {
+     "prev": 32.2,
+     "production": 41.5,
+     "fit": 42.6,
+     "blend_production": 32.7,
+     "blend_fit": 34.2
+    }
+   }
+  ],
+  "tot": {
+   "0-12h": {
+    "prev": [
+     184,
+     6.58053808124507
+    ],
+    "production": [
+     184,
+     9.599510052646131
+    ],
+    "fit": [
+     184,
+     9.400654539940922
+    ],
+    "blend_production": [
+     184,
+     7.743855511275071
+    ],
+    "blend_fit": [
+     184,
+     7.661209657005445
+    ]
+   },
+   "12-18h": {
+    "prev": [
+     184,
+     16.1561883689246
+    ],
+    "production": [
+     184,
+     21.807138484081335
+    ],
+    "fit": [
+     184,
+     22.056741281812094
+    ],
+    "blend_production": [
+     184,
+     18.21731695592667
+    ],
+    "blend_fit": [
+     184,
+     18.451035801914017
+    ]
+   },
+   "18-24h": {
+    "prev": [
+     329,
+     19.772417616460864
+    ],
+    "production": [
+     329,
+     26.240852659297776
+    ],
+    "fit": [
+     329,
+     25.7484309028197
+    ],
+    "blend_production": [
+     329,
+     20.70973106417594
+    ],
+    "blend_fit": [
+     329,
+     20.546470623655857
+    ]
+   },
+   "24-30h": {
+    "prev": [
+     346,
+     18.974153943301044
+    ],
+    "production": [
+     346,
+     26.93935169418658
+    ],
+    "fit": [
+     346,
+     26.664665947020847
+    ],
+    "blend_production": [
+     346,
+     20.805681239164954
+    ],
+    "blend_fit": [
+     346,
+     20.973077383081005
+    ]
+   },
+   "30-99h": {
+    "prev": [
+     1056,
+     29.378260209044203
+    ],
+    "production": [
+     1056,
+     40.0981962712377
+    ],
+    "fit": [
+     1056,
+     40.904652145010296
+    ],
+    "blend_production": [
+     1056,
+     31.266719644363093
+    ],
+    "blend_fit": [
+     1056,
+     32.00109933277714
+    ]
+   },
+   "ALL": {
+    "prev": [
+     2099,
+     23.00008723572162
+    ],
+    "production": [
+     2099,
+     31.48012139317885
+    ],
+    "fit": [
+     2099,
+     31.767833101967753
+    ],
+    "blend_production": [
+     2099,
+     24.681647883409955
+    ],
+    "blend_fit": [
+     2099,
+     25.066359061259
+    ]
+   }
+  }
+ }
+}

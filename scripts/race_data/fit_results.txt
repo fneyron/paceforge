@@ -1,0 +1,125 @@
+DATASET: 115 UTMB Live races 40-180 km with a GPS track, 21400 finishers
+  train: 71 races, 12464 finishers, events: arcofattrition, canyons, chianti, desertrats, kodiak, kosciuszko, lavaredo, mountyun, mut, tarawera, templiers, translantau, uta
+    by band (races, finishers): 40-60 km 23/3450, 60-100 km 21/3146, 100-140 km 16/3158, 140-180 km 11/2710
+  test: 44 races, 8936 finishers, events: chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler
+    by band (races, finishers): 40-60 km 14/2018, 60-100 km 6/900, 100-140 km 8/1550, 140-180 km 16/4468
+  train pairs (race x level group) 172, obs 117131; test pairs 119, obs 109525
+
+SANITY train: production (app base) 20.94, prod+hours 19.52, fast-path at production knots + hours fatigue 19.45
+
+FITTING on train
+
+TRAIN mean |gap| (min): production 20.94, prod+hours 19.52, prodcurve_fitrest 18.33, fit_hours 17.64, fit_nolevel 17.63, fit 17.57
+
+HELD-OUT mean |gap| (min) by level group
+                  runners    production    prod+hoursprodcurve_fitrest     fit_hours   fit_nolevel           fit
+0-12h                2031          10.8          10.4           9.8           8.7           8.6           8.7
+12-18h               1310          18.5          18.0          17.7          17.1          17.0          17.0
+18-24h               1343          24.4          22.7          25.8          25.2          25.0          24.7
+24-30h               1323          26.4          25.2          27.9          28.5          28.3          27.5
+30-99h               2917          39.3          33.9          35.9          37.7          37.5          37.6
+ALL                  8924          25.6          23.3          24.6          24.8          24.7          24.6
+
+HELD-OUT mean |gap| (min) by distance band
+                  runners    production    prod+hoursprodcurve_fitrest     fit_hours   fit_nolevel           fit
+40-60 km             2017          12.0          11.8          10.7           9.3           9.2           9.4
+60-100 km             897          19.1          21.0          18.9          17.0          17.0          17.1
+100-140 km           1546          22.4          21.8          25.7          27.5          27.2          26.4
+140-180 km           4464          34.2          29.4          31.6          32.5          32.3          32.3
+ALL                  8924          25.6          23.3          24.6          24.8          24.7          24.6
+  (race, group) pairs where fit beats production: 83/119
+
+HELD-OUT per race (runners, production, fit):
+  utmb/chiangmai_2024/100K                  148    21.0    18.8
+  utmb/chiangmai_2024/100M                  233    45.3    40.8
+  utmb/chiangmai_2024/50K                    67     7.8     6.1
+  utmb/chiangmai_2025/CHD160                300    33.1    30.2
+  utmb/chiangmai_2025/ELP100                150    22.5    22.1
+  utmb/chiangmai_2025/HMN50D                150    14.4     9.2
+  utmb/chiangmai_2025/HMN50N                150    16.2    11.7
+  utmb/kullamannen_2022/100M                259    22.4    21.0
+  utmb/kullamannen_2022/100k                150    17.3    17.7
+  utmb/kullamannen_2022/50k                 150     6.1     7.9
+  utmb/kullamannen_2023/100M                300    26.7    20.2
+  utmb/kullamannen_2023/100k                150    18.5    17.9
+  utmb/kullamannen_2023/50k                 150     5.1     4.8
+  utmb/kullamannen_2024/100M                300    23.5    20.2
+  utmb/kullamannen_2024/100k                149    19.2    19.4
+  utmb/kullamannen_2024/50k                 150     7.6     6.4
+  utmb/kullamannen_2025/100M                300    21.0    19.6
+  utmb/kullamannen_2025/100k                300    19.3    18.8
+  utmb/kullamannen_2025/50k                 150     7.7     6.6
+  utmb/puertovallarta_2024/100K             149    18.8    21.2
+  utmb/puertovallarta_2024/100M              74    46.5    46.6
+  utmb/puertovallarta_2024/50K              150    14.4    10.5
+  utmb/transjeju_2024/100k                  298    30.5    42.0
+  utmb/transjeju_2024/50k                   150    13.1    13.3
+  utmb/transjeju_2025/100k                  199    24.5    35.8
+  utmb/transjeju_2025/100m                  298    32.3    40.9
+  utmb/transjeju_2025/70k                   150    13.1    12.4
+  utmb/utmb_2022/ccc                        150    17.9    16.8
+  utmb/utmb_2022/mcc                        150    12.9     8.5
+  utmb/utmb_2022/occ                        150    14.3     9.7
+  utmb/utmb_2022/tds                        300    32.7    29.4
+  utmb/utmb_2022/utmb                       300    36.4    36.3
+  utmb/utmb_2023/tds                        300    36.6    32.3
+  utmb/utmb_2023/utmb                       300    33.8    37.0
+  utmb/utmb_2024/ccc                        150    26.5    29.5
+  utmb/utmb_2024/occ                        150    12.9     9.8
+  utmb/utmb_2024/tds                        300    41.0    34.7
+  utmb/utmb_2024/utmb                       300    40.0    44.3
+  utmb/utmb_2025/ccc                        150    17.8    18.7
+  utmb/utmb_2025/occ                        150     8.1     6.9
+  utmb/utmb_2025/tds                        300    46.0    34.2
+  utmb/utmb_2025/utmb                       300    40.1    40.7
+  utmb/whistler_2024/50k                    150    19.6    13.1
+  utmb/whistler_2024/70k                    150    26.3    17.0
+
+GUARD transjeju 2025 100M, finishers 16-21 h moving (4 runners, median 17.91 h)
+  mean |gap|: production 10.4, prod+hours 18.7, fit_hours 26.3, fit_nolevel 26.2, fit 25.8
+  checkpoint                km   median signed gap (pred - actual), min: production / prod+hours / fit_hours / fit_nolevel / fit   | mean |gap|
+  Healing 1                6.7      5.4 /    2.5 /    2.4 /    2.1 /    1.7   |   5.3 /   2.2 /   2.0 /   1.9 /   1.7
+  Yeongsil E              19.9     11.1 /    9.9 /    1.9 /    0.9 /   -0.3   |   9.6 /   8.5 /   4.3 /   3.8 /   3.6
+  Eorimok En              28.3      9.5 /   15.4 /    9.8 /    9.1 /    7.4   |   9.1 /  15.2 /   9.4 /   8.6 /   7.0
+  Gwanumsa E              40.5     10.7 /   23.0 /   11.3 /   10.4 /    9.2   |  10.4 /  23.3 /  11.1 /  10.3 /   9.7
+  None                    49.0      nan /    nan /    nan /    nan /    nan   |   nan /   nan /   nan /   nan /   nan
+  Seongpanak              58.3     -1.1 /   29.6 /   62.2 /   61.8 /   60.6   |  11.2 /  33.9 /  66.5 /  66.1 /  64.9
+  Red oreum               66.2    -13.9 /   20.3 /   43.5 /   43.5 /   42.8   |  16.8 /  22.4 /  46.7 /  46.7 /  46.0
+  Gasiri                  85.4     -9.7 /   26.2 /   40.7 /   41.1 /   41.1   |  14.3 /  30.3 /  45.4 /  45.9 /  45.9
+  Meochewat              102.3    -11.2 /   23.3 /   36.9 /   37.3 /   37.6   |  14.5 /  20.8 /  35.1 /  35.6 /  35.8
+  Eseungak O             112.5      3.0 /   31.1 /   42.9 /   43.2 /   43.2   |   7.3 /  30.3 /  42.7 /  43.0 /  43.1
+  Camping si             123.5     -6.2 /   12.5 /   18.5 /   18.5 /   18.3   |  10.8 /  10.9 /  14.8 /  14.8 /  14.6
+  Healing 2              133.1     -0.7 /    7.6 /   12.1 /   12.0 /   11.6   |   4.7 /   7.3 /  11.9 /  11.8 /  11.3
+
+PREVIOUS EDITION on held-out races with an earlier edition on matched checkpoints (9 races)
+  utmb/kullamannen_2024/100M <- kullamannen_2023: 2/14 intermediate checkpoints matched
+  utmb/kullamannen_2024/100k <- kullamannen_2023: 2/8 intermediate checkpoints matched
+  utmb/kullamannen_2024/50k <- kullamannen_2023: 1/6 intermediate checkpoints matched
+  utmb/utmb_2023/utmb <- utmb_2022: 22/35 intermediate checkpoints matched
+  utmb/utmb_2024/ccc <- utmb_2023: 11/21 intermediate checkpoints matched
+  utmb/utmb_2024/utmb <- utmb_2023: 23/36 intermediate checkpoints matched
+  utmb/utmb_2025/ccc <- utmb_2024: 13/21 intermediate checkpoints matched
+  utmb/utmb_2025/tds <- utmb_2024: 18/26 intermediate checkpoints matched
+  utmb/utmb_2025/utmb <- utmb_2024: 22/35 intermediate checkpoints matched
+                runners        production               fit              prev  blend_production         blend_fit
+  0-12h             184               9.6               9.4               6.6               7.7               7.7
+  12-18h            184              21.8              22.1              16.2              18.2              18.5
+  18-24h            329              26.2              25.7              19.8              20.7              20.5
+  24-30h            346              26.9              26.7              19.0              20.8              21.0
+  30-99h           1056              40.1              40.9              29.4              31.3              32.0
+  ALL              2099              31.5              31.8              23.0              24.7              25.1
+
+FITTED PARAMETERS
+  fit: curve@20h {-35: np.float64(3.933), -25: np.float64(1.961), -15: np.float64(1.075), -8: np.float64(0.823), -3: np.float64(0.883), 0: np.float64(1.0), 3: np.float64(1.715), 8: np.float64(1.742), 15: np.float64(2.075), 25: np.float64(3.398), 35: np.float64(3.63)}
+     gamma_up -0.244 gamma_down -0.061; fatigue c 0.6663 q 0.5177 r 0.4836 fresh -0.0093; night 1.0492; terrain {'R': 1.0, 'F': 1.0557, 'T': 1.0599, 'T1': 1.2461, 'T2': 1.1734, 'T3': 1.9988, 'S': 0.9006, 'U': 0.9662}
+  fit_nolevel: curve@20h {-35: np.float64(3.938), -25: np.float64(1.925), -15: np.float64(1.071), -8: np.float64(0.818), -3: np.float64(0.878), 0: np.float64(1.0), 3: np.float64(1.768), 8: np.float64(1.822), 15: np.float64(2.174), 25: np.float64(3.532), 35: np.float64(4.061)}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.6634 q 0.5087 r 0.4949 fresh -0.009; night 1.0482; terrain {'R': 1.0, 'F': 1.0587, 'T': 1.0593, 'T1': 1.2582, 'T2': 1.1752, 'T3': 1.9988, 'S': 0.9005, 'U': 0.9605}
+  fit_hours: curve@20h {-35: np.float64(4.043), -25: np.float64(1.915), -15: np.float64(1.075), -8: np.float64(0.818), -3: np.float64(0.876), 0: np.float64(1.0), 3: np.float64(1.779), 8: np.float64(1.867), 15: np.float64(2.218), 25: np.float64(3.456), 35: np.float64(4.104)}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.6645 q 0.5028 r 0.5028 fresh -0.0081; night 1.0488; terrain {'R': 1.0, 'F': 1.0487, 'T': 1.0539, 'T1': 1.2514, 'T2': 1.1698, 'T3': 1.9988, 'S': 0.9005, 'U': 0.9595}
+  prodcurve_fitrest: curve@20h {-35: np.float64(1.413), -25: np.float64(1.135), -15: np.float64(0.92), -8: np.float64(0.8), -3: np.float64(0.88), 0: np.float64(1.0), 3: np.float64(1.16), 8: np.float64(1.62), 15: np.float64(2.45), 25: np.float64(3.9), 35: np.float64(4.7)}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.7833 q 0.465 r 0.4785 fresh -0.0201; night 1.0421; terrain {'R': 1.0, 'F': 0.9724, 'T': 1.008, 'T1': 1.1468, 'T2': 1.0235, 'T3': 2.0, 'S': 0.9005, 'U': 0.8726}
+  fit curve at 9h: {-35: 4.213, -25: 2.028, -15: 1.079, -8: 0.815, -3: 0.877, 0: 1.0, 3: 1.927, 8: 1.964, 15: 2.428, 25: 4.422, 35: 4.792}
+  fit curve at 15h: {-35: 4.03, -25: 1.984, -15: 1.077, -8: 0.82, -3: 0.881, 0: 1.0, 3: 1.784, 8: 1.814, 15: 2.188, 25: 3.714, 35: 3.988}
+  fit curve at 21h: {-35: 3.917, -25: 1.957, -15: 1.075, -8: 0.824, -3: 0.883, 0: 1.0, 3: 1.704, 8: 1.731, 15: 2.057, 25: 3.349, 35: 3.575}
+  fit curve at 27h: {-35: 3.836, -25: 1.937, -15: 1.074, -8: 0.826, -3: 0.885, 0: 1.0, 3: 1.651, 8: 1.675, 15: 1.971, 25: 3.117, 35: 3.314}
+  fit curve at 34h: {-35: 3.764, -25: 1.919, -15: 1.073, -8: 0.828, -3: 0.886, 0: 1.0, 3: 1.607, 8: 1.629, 15: 1.899, 25: 2.929, 35: 3.104}
