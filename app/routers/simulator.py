@@ -620,6 +620,11 @@ async def route_detail_page(
             headers={"Cache-Control": "no-store"},
         )
 
+    # road / track / trail from OpenStreetMap, once per trace, in the background
+    from app.services.surface import schedule_surface
+
+    schedule_surface(route.id, route.course_json)
+
     ctx = await _build_route_context(route, db, user.id)
     ctx["user"] = user
     ctx["compare_activity_id"] = compare

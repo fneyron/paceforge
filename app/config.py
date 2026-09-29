@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-to-a-random-secret-key"
     APP_NAME: str = "PaceForge"
     DEBUG: bool = False
+    # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)
+    SURFACE_FETCH: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
