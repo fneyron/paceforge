@@ -81,10 +81,16 @@ def build_plan_data(
             "kind": s.get("kind") or "none", "cutoff_clock": s.get("cutoff_clock"),
             "cutoff_margin_s": s.get("cutoff_margin_s"), "temp": s.get("temperature_c"), "code": s.get("weather_code"), "wind": s.get("wind_kmh"),
             "drop_bag": bool(s.get("drop_bag")), "crew": bool(s.get("crew")),
+            # pinned passage time (the point dialog reads these)
+            "pinned": bool(s.get("pinned")), "pin_clamped": bool(s.get("pin_clamped")),
+            "pin_target_s": s.get("pin_target_s"), "auto_clock_s": s.get("auto_clock_s"),
         })
     return {
         "start_offset_s": int(start_offset_s), "total_km": float(total_km), "use_target": bool(use_target),
         "points": points,
+        # the hero shows where the pinned plan finishes when no objective is set
+        "pins": sum(1 for p in points if p["pinned"]),
+        "plan_total_s": (points[-1]["clock_s"] - int(start_offset_s)) if points and points[-1]["clock_s"] is not None else None,
         "night": night_bands_km(sections, start_offset_s, use_target),
         "blocks": [{"start_km": b["start_km"], "end_km": b["end_km"], "cls": b["cls"], "hr_cap": b.get("hr_cap"), "vam": b.get("vam_m_per_h")} for b in (blocks or [])],
         "scenarios": ({"fast_pct": scenarios["fast_pct"], "safe_pct": scenarios["safe_pct"],

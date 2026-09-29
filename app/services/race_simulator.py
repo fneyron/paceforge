@@ -1,6 +1,7 @@
 """Gradient-adjusted pace prediction from athlete Strava data."""
 
 import logging
+import math
 import statistics
 from datetime import datetime, timedelta, timezone
 
@@ -662,6 +663,16 @@ def compute_passage_times(
     terrain, fatigue and night (heat excluded, applied per section here). A
     plan on terrain alone asked for the second half faster than the first,
     which nobody runs on a 100-miler.
+
+    A checkpoint with ``target_s`` (seconds after the start) is PINNED: the plan
+    arrives there at exactly that time. Between two anchors (start, pins, the
+    finish at the objective) the time is split on the same basis; after the
+    last pin without an objective the model's own pace carries on. A pin that
+    would need a leg faster than MIN_PIN_RATIO of the model is moved later and
+    flagged (``pin_clamped``). Sections of a pinned plan carry ``pinned``,
+    ``pin_target_s``, ``pin_clamped`` and ``auto_clock_s`` (the clock the plan
+    would give there without that pin); the finish carries ``objective_s``.
+    Without pins the output is unchanged (no extra keys).
     """
     from app.schemas.simulator import PassageTimeSection
     from app.services.weather import compute_heat_factor
@@ -735,10 +746,15 @@ def compute_passage_times(
     if target_time_s:
         moving_target_s = max(target_time_s - total_stops_s, 1)
 
-    # Pass 2: apply per-section (or global) heat and accumulate final times.
-    sections = []
-    cumulative = 0.0
-    adj_cumulative = 0.0
+    # Pinned checkpoints: {section index: seconds after the start at its end}.
+    pins = {
+        i: int(all_cps[i + 1]["target_s"])
+        for i in range(len(raw) - 1)
+        if all_cps[i + 1].get("target_s") is not None
+    }
+
+    # Pass 2: apply per-section (or global) heat (the forecast hour is read on
+    # the prediction's clock, pins or not).
     stops_acc = 0
     for r in raw:
         temperature_c = None
@@ -778,16 +794,42 @@ def compute_passage_times(
         else:
             sec_heat = heat_factor
 
-        section_time = r["time"] * sec_heat
+        r["heat"] = sec_heat
+        r["wx"] = (temperature_c, weather_code, wind_kmh, humidity_pct)
+        r["model"] = r["time"] * sec_heat
+        # Stop at this arrival checkpoint? (intermediate aid stations only)
+        r["stop"] = stops.get(round(float(r["end_km"]), 1), 0) if r["cp_index"] is not None else 0
+        stops_acc += r["stop"]
+
+    # Pinned plan: an objective the athlete chose anchors the finish; the
+    # estimate the page sends when he has not moved it does not.
+    pin_plan = None
+    if pins:
+        objective = target_time_s if has_objective(target_time_s, course.predicted_total_time_s) else None
+        pin_plan = _pinned_plan(raw, pins, objective)
+
+    # Pass 3: accumulate final times.
+    sections = []
+    cumulative = 0.0
+    adj_cumulative = 0.0
+    stops_acc = 0
+    plan_on = bool(target_time_s) or pin_plan is not None
+    for idx, r in enumerate(raw):
+        temperature_c, weather_code, wind_kmh, humidity_pct = r["wx"]
+        sec_heat = r["heat"]
+        section_time = r["model"]
         cumulative += section_time
         pace = section_time / r["dist"] if r["dist"] > 0 else 0
 
-        # Plan (target): the moving budget split by the basis share.
-        adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
-        adj_cumulative += adjusted_time
+        if pin_plan is not None:
+            adjusted_time = pin_plan["times"][idx]
+            adj_cumulative = pin_plan["cums"][idx]  # exact at the pins (no float drift past the minute)
+        else:
+            # Plan (target): the moving budget split by the basis share.
+            adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
+            adj_cumulative += adjusted_time
 
-        # Stop at this arrival checkpoint? (intermediate aid stations only)
-        arrival_stop = stops.get(round(float(r["end_km"]), 1), 0) if r["cp_index"] is not None else 0
+        arrival_stop = r["stop"]
 
         sections.append(PassageTimeSection(
             start_name=r["start_name"],
@@ -800,12 +842,12 @@ def compute_passage_times(
             predicted_time_s=round(section_time, 0),
             cumulative_time_s=round(cumulative, 0),
             predicted_pace_s_per_km=round(pace, 0),
-            adjusted_time_s=round(adjusted_time, 0) if target_time_s else None,
-            adjusted_cumulative_time_s=round(adj_cumulative, 0) if target_time_s else None,
+            adjusted_time_s=round(adjusted_time, 0) if plan_on else None,
+            adjusted_cumulative_time_s=round(adj_cumulative, 0) if plan_on else None,
             # the checkpoint's own altitude (the roadbook's) when it has one
             end_elevation=round(float(r["end_cp_elevation"])) if r.get("end_cp_elevation") is not None else _elevation_at_km(course, r["end_km"]),
             clock_time_s=int(start_offset_s + cumulative + stops_acc),
-            adjusted_clock_time_s=int(start_offset_s + adj_cumulative + stops_acc) if target_time_s else None,
+            adjusted_clock_time_s=int(start_offset_s + adj_cumulative + stops_acc) if plan_on else None,
             end_checkpoint_index=r["cp_index"],
             temperature_c=temperature_c,
             heat_factor=round(sec_heat, 3) if use_hourly else None,
@@ -814,10 +856,118 @@ def compute_passage_times(
             humidity_pct=humidity_pct,
             stop_s=int(arrival_stop),
         ).model_dump())
+        if pin_plan is not None:
+            s = sections[-1]
+            s["pinned"] = idx in pins
+            s["pin_target_s"] = pins.get(idx)
+            s["pin_clamped"] = idx in pin_plan["clamped"]
+            auto = pin_plan["auto"].get(idx)
+            s["auto_clock_s"] = int(start_offset_s + auto) if auto is not None else None
 
         stops_acc += arrival_stop
 
+    if pin_plan is not None:
+        sections[-1]["objective_s"] = pin_plan["objective_s"]
     return sections
+
+
+# A pinned passage time may ask for a leg down to this share of the model's own
+# time for it (heat included), not faster: nobody runs a leg in half the time
+# his races say. Past it the pin is moved later and flagged.
+MIN_PIN_RATIO = 0.5
+
+
+def has_objective(target_time_s: int | None, predicted_total_s: int | None) -> bool:
+    """An objective the athlete chose: set, and more than a minute away from the
+    estimate (the page sends the estimate itself until he moves the objective
+    — the same rule as the hero's « ton objectif »)."""
+    if not target_time_s:
+        return False
+    return not predicted_total_s or abs(int(target_time_s) - int(predicted_total_s)) > 60
+
+
+def is_pinned(sections: list[dict] | None) -> bool:
+    return any(s.get("pinned") for s in (sections or []))
+
+
+def plan_total_s(sections: list[dict], start_offset_s: int, target_time_s: int | None) -> int | None:
+    """The plan's finish in seconds after the start, stops included: where the
+    pinned plan arrives once a checkpoint is pinned, else the objective."""
+    if is_pinned(sections):
+        clock = sections[-1].get("adjusted_clock_time_s")
+        if clock is not None:
+            return int(clock) - int(start_offset_s)
+    return target_time_s
+
+
+def _distribute(raw: list[dict], anchors: list[tuple[int, int]]) -> dict:
+    """Moving time per section between anchors [(section index, seconds after
+    the start at its end)]: each gap minus the stops inside it, split by the
+    plan basis; after the last anchor, the model's own time.
+
+    Returns {"times", "cums" (moving time up to the end of each section, exact
+    at the anchors), "arrive" (seconds after the start at the end of each
+    section), "clamped" {index: time actually planned}}.
+    """
+    n = len(raw)
+    times, cums, arrive = [0.0] * n, [0.0] * n, [0.0] * n
+    clamped: dict[int, int] = {}
+    prev_i, prev_e, prev_cum = -1, 0, 0.0
+    stops_before = [0] * n  # stops made before arriving at the end of section i
+    acc = 0
+    for i, r in enumerate(raw):
+        stops_before[i] = acc
+        acc += r["stop"]
+
+    def fill(lo: int, hi: int, budget: float, weights: list[float]) -> None:
+        tot = sum(weights)
+        cum = cums[lo - 1] if lo > 0 else 0.0
+        for k, w in zip(range(lo, hi + 1), weights, strict=True):
+            times[k] = budget * (w / tot) if tot > 0 else budget / len(weights)
+            cum += times[k]
+            cums[k] = cum
+            arrive[k] = cum + stops_before[k]
+
+    for i, e in anchors:
+        # stops at the previous anchor and at every point before this one
+        stops_between = stops_before[i] - (stops_before[prev_i] if prev_i >= 0 else 0)
+        budget = e - prev_e - stops_between
+        floor = MIN_PIN_RATIO * sum(raw[k]["model"] for k in range(prev_i + 1, i + 1))
+        if budget < floor:
+            # too early (or before the previous anchor): the earliest whole minute it can hold
+            e = int(math.ceil((prev_e + stops_between + floor) / 60.0) * 60)
+            budget = e - prev_e - stops_between
+            clamped[i] = e
+        fill(prev_i + 1, i, budget, [raw[k]["base"] for k in range(prev_i + 1, i + 1)])
+        cums[i] = prev_cum + budget  # snap: the anchor is hit to the second
+        arrive[i] = float(e)
+        prev_i, prev_e, prev_cum = i, e, cums[i]
+    if prev_i < n - 1:
+        cum = prev_cum
+        for k in range(prev_i + 1, n):
+            times[k] = raw[k]["model"]
+            cum += times[k]
+            cums[k] = cum
+            arrive[k] = cum + stops_before[k]
+    return {"times": times, "cums": cums, "arrive": arrive, "clamped": clamped}
+
+
+def _pinned_plan(raw: list[dict], pins: dict[int, int], objective_s: int | None) -> dict:
+    """The plan through the pinned checkpoints (and the objective at the finish,
+    when there is one). Also, for every pin, where the plan would pass without
+    it (``auto``: seconds after the start), for the « Automatique » hint."""
+    last = len(raw) - 1
+
+    def anchors(skip: int | None = None) -> list[tuple[int, int]]:
+        a = [(i, e) for i, e in sorted(pins.items()) if i != skip]
+        if objective_s is not None:
+            a.append((last, int(objective_s)))
+        return a
+
+    plan = _distribute(raw, anchors())
+    plan["auto"] = {i: _distribute(raw, anchors(skip=i))["arrive"][i] for i in pins}
+    plan["objective_s"] = int(objective_s) if objective_s is not None else None
+    return plan
 
 
 def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | None) -> dict:
@@ -852,6 +1002,13 @@ def replan_from_passage(
     - otherwise the plan falls back to the athlete's ACTUAL rhythm so far
       (elapsed / predicted at the anchor) and announces the projected finish.
 
+    Pinned checkpoints (see compute_passage_times): the real passage replaces
+    the pins up to it. When the next pin after it is still within reach
+    (same ``min_feasible_ratio``), only the legs up to that pin are rewritten
+    — the plan after it is the pinned plan, unchanged (mode "pin"). A pin out
+    of reach is dropped with the rest of the pins: objective, else rhythm.
+    Pins without an objective leave the finish free (no "target" mode).
+
     Rows up to the anchor are flagged ``passed``; the anchor row shows the
     real clock. Returns (new_sections, replan_summary) or (sections, None)
     when the anchor doesn't match a checkpoint.
@@ -866,7 +1023,10 @@ def replan_from_passage(
         return sections, None
 
     a = sections[idx]
-    use_plan = bool(target_time_s) and a.get("adjusted_clock_time_s") is not None
+    pinned_plan = any(s.get("pinned") for s in sections)
+    if pinned_plan and sections[-1].get("objective_s") is None:
+        target_time_s = None  # the estimate the page sends is not an objective
+    use_plan = (bool(target_time_s) or pinned_plan) and a.get("adjusted_clock_time_s") is not None
     # The plan's clock floored to the minute, as the table prints it, so the
     # delta the athlete reads matches the two clocks he compares.
     plan_clock = int(a["adjusted_clock_time_s"] if use_plan else a["clock_time_s"]) // 60 * 60
@@ -892,7 +1052,7 @@ def replan_from_passage(
     anchor_stop = stop_of(a)
     stops_remaining = anchor_stop + sum(stop_of(s) for s in remaining)
     shares = [
-        float(s["adjusted_time_s"]) if (target_time_s and s.get("adjusted_time_s")) else float(s["predicted_time_s"])
+        float(s["adjusted_time_s"]) if (use_plan and s.get("adjusted_time_s")) else float(s["predicted_time_s"])
         for s in remaining
     ]
     total_share = sum(shares) or 1.0  # = the plan's remaining moving time
@@ -901,7 +1061,18 @@ def replan_from_passage(
     projected_finish = start_offset_s + anchor_elapsed + projected_moving + stops_remaining
 
     mode, feasible, required_ratio, budget = "rhythm", None, None, projected_moving
-    if target_time_s and total_share > 0:
+    # the next pin ahead, if it can still be held
+    nxt = next((j for j, s in enumerate(remaining) if s.get("pinned")), None) if use_plan else None
+    pin_budget = pin_share = None
+    if nxt is not None:
+        pin_elapsed = int(remaining[nxt]["adjusted_clock_time_s"]) - int(start_offset_s)
+        pin_budget = pin_elapsed - anchor_elapsed - anchor_stop - sum(stop_of(s) for s in remaining[:nxt])
+        pin_share = sum(shares[:nxt + 1]) or 1.0
+        required_ratio = pin_budget / pin_share
+        feasible = pin_budget > 0 and required_ratio >= min_feasible_ratio
+        if feasible:
+            mode = "pin"
+    if mode != "pin" and target_time_s and total_share > 0:
         budget_target = target_time_s - anchor_elapsed - stops_remaining
         required_ratio = budget_target / total_share  # vs what the plan intended
         feasible = budget_target > 0 and required_ratio >= min_feasible_ratio
@@ -915,18 +1086,42 @@ def replan_from_passage(
     # stored with its day so day separators, cutoffs and the profile agree
     out[idx]["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed)
     out[idx]["adjusted_cumulative_time_s"] = int(anchor_elapsed)
+    if pinned_plan:  # the real passage wins over a pin there
+        out[idx]["pinned"] = False
+        out[idx]["pin_clamped"] = False
 
     cum = 0.0
     stops_acc = anchor_stop
-    for j, s in enumerate(remaining):
-        t = budget * shares[j] / total_share
-        cum += t
-        o = out[idx + 1 + j]
-        o["adjusted_time_s"] = round(t)
-        o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
-        o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
-        if stop_of(s) and j < len(remaining) - 1:
+    if mode == "pin":
+        # legs up to the pin share its budget; the pinned plan after it stands
+        for j in range(nxt + 1):
+            s = remaining[j]
+            t = pin_budget * shares[j] / pin_share
+            cum = cum + t if j < nxt else float(pin_budget)  # the pin, to the second
+            o = out[idx + 1 + j]
+            o["adjusted_time_s"] = round(t)
+            o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
+            o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
             stops_acc += stop_of(s)
+        # same convention as above (elapsed at the anchor + moving since) for the rows after
+        shift = out[idx + 1 + nxt]["adjusted_cumulative_time_s"] - float(remaining[nxt]["adjusted_cumulative_time_s"])
+        for o in out[idx + 2 + nxt:]:
+            o["adjusted_cumulative_time_s"] = round(float(o["adjusted_cumulative_time_s"]) + shift)
+    else:
+        for j, s in enumerate(remaining):
+            t = budget * shares[j] / total_share
+            cum += t
+            o = out[idx + 1 + j]
+            o["adjusted_time_s"] = round(t)
+            o["adjusted_cumulative_time_s"] = round(anchor_elapsed + cum)
+            o["adjusted_clock_time_s"] = int(start_offset_s + anchor_elapsed + cum + stops_acc)
+            if stop_of(s) and j < len(remaining) - 1:
+                stops_acc += stop_of(s)
+            if pinned_plan:  # the pins ahead are no longer held
+                o["pinned"] = False
+                o["pin_clamped"] = False
+    if mode == "pin":
+        projected_finish = out[-1]["adjusted_clock_time_s"]
 
     replan = {
         "anchor_name": a["end_name"],
@@ -941,6 +1136,9 @@ def replan_from_passage(
         "finish_clock_s": out[-1]["adjusted_clock_time_s"] if out else None,
         "target_time_s": target_time_s,
     }
+    if mode == "pin":
+        replan["pin_name"] = remaining[nxt]["end_name"]
+        replan["pin_clock_s"] = int(remaining[nxt]["adjusted_clock_time_s"])
     return out, replan
 
 
@@ -963,10 +1161,15 @@ def build_scenarios(
     target is set), optimiste = cible × (1 − fast_pct), sécurité = cible ×
     (1 + safe_pct). The switch checkpoint defaults to the one closest to 60 %
     of the distance — past the point where a fast start can still be paid for.
+
+    With pinned checkpoints the cible column IS the pinned plan (to the minute)
+    and the two others scale its moving time around it: they deliberately do
+    not hold the pins — they are the "faster / slower than planned" days.
     """
     if not sections:
         return None
-    use_target = bool(target_time_s) and sections[0].get("adjusted_clock_time_s") is not None
+    pinned = any(s.get("pinned") for s in sections)
+    use_target = (bool(target_time_s) or pinned) and sections[0].get("adjusted_clock_time_s") is not None
     f_fast = max(0.0, fast_pct) / 100.0
     f_safe = max(0.0, safe_pct) / 100.0
     rows = []

@@ -77,12 +77,15 @@ def build_pacing_guide(
     hr_cap_flat: int | None = None,
     hr_release_descent: int | None = None,
     walk_grade: float = DEFAULT_WALK_GRADE,
+    plan_sections: list[dict] | None = None,
 ) -> dict:
     """Return {"blocks": [...], "alerts": [...], "caps": {...}, "plan_factor": f}.
 
     Planned times per block are the even-effort plan (segment base_time share
     of the target) when a target exists, else the model prediction — so the VAM
-    and paces shown are the ones that hit the objective.
+    and paces shown are the ones that hit the objective. When checkpoints are
+    pinned (``plan_sections`` from compute_passage_times), each leg's planned
+    time is spread over its km instead: the VAM is the one that hits the pins.
     """
     segs = course.segments
     total_km = course.total_distance_km or 1.0
@@ -90,7 +93,12 @@ def build_pacing_guide(
         return {"blocks": [], "alerts": [], "caps": {}, "plan_factor": 1.0}
 
     total_base = sum((s.base_time_s or s.predicted_time_s) for s in segs) or 1.0
-    if target_time_s:
+    if plan_sections and any(s.get("pinned") for s in plan_sections):
+        pinned_times = _seg_times_from_sections(segs, plan_sections)
+
+        def seg_time(s):
+            return pinned_times[id(s)]
+    elif target_time_s:
         def seg_time(s):
             return target_time_s * ((s.base_time_s or s.predicted_time_s) / total_base)
     else:
@@ -225,6 +233,29 @@ def build_pacing_guide(
         "n_climb_km": sum(1 for r in rows if r["cls"] in ("climb", "stairs")),
         "n_stairs_km": sum(1 for r in rows if r["cls"] == "stairs"),
     }
+
+
+def _seg_times_from_sections(segs: list, sections: list[dict]) -> dict:
+    """{id(segment): planned moving seconds}: each leg's plan time split over
+    its km by their effort basis (a km cut by a checkpoint gets a share of
+    both legs). The first and last legs reach the ends of the course."""
+    out = {id(g): 0.0 for g in segs}
+    for n, sec in enumerate(sections):
+        a = float(sec["start_km"]) if n > 0 else float("-inf")
+        b = float(sec["end_km"]) if n < len(sections) - 1 else float("inf")
+        t = sec.get("adjusted_time_s")
+        t = float(t if t is not None else sec["predicted_time_s"])
+        parts = []
+        for g in segs:
+            o0, o1 = max(g.start_km, a), min(g.end_km, b)
+            length = g.end_km - g.start_km
+            if o1 <= o0 or length <= 0:
+                continue
+            parts.append((g, (g.base_time_s or g.predicted_time_s) * (o1 - o0) / length))
+        tot = sum(w for _, w in parts)
+        for g, w in parts:
+            out[id(g)] += t * w / tot if tot > 0 else t / len(parts)
+    return out
 
 
 def _alert(run: list[dict]) -> dict:

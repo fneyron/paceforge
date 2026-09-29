@@ -24,7 +24,7 @@
 {% macro rp_mode(rp) -%}
 {% set fin_day = (rp.finish_clock_s // 86400) | int %}
 {% set plan_day = ((start_offset_s + (rp.target_time_s or 0)) // 86400) | int %}
-{% if rp.mode == 'target' %}objectif tenable{% else %}à ton rythme · arrivée <span class="text-gray-600">{{ hhmm(rp.finish_clock_s) }}{% if fin_day > plan_day %} <span data-day-of="{{ fin_day }}">+{{ fin_day - plan_day }}j</span>{% endif %}</span>{% endif %}
+{% if rp.mode == 'pin' %}cap sur {{ rp.pin_name }} {{ hhmm(rp.pin_clock_s) }}{% elif rp.mode == 'target' %}objectif tenable{% else %}à ton rythme · arrivée <span class="text-gray-600">{{ hhmm(rp.finish_clock_s) }}{% if fin_day > plan_day %} <span data-day-of="{{ fin_day }}">+{{ fin_day - plan_day }}j</span>{% endif %}</span>{% endif %}
 {%- endmacro %}
 {# race day header: "Recalée ±Δ min · <mode> ×" on desktop; on the phone the mode gets its own full-width line below #}
 {% macro recalee(rp, phone=False) -%}
@@ -51,7 +51,7 @@
                 <th class="hidden lg:table-cell w-[136px] text-left py-2 px-1 font-medium" title="Type de poste, assistance, drop bag · clique la ligne pour modifier">Poste</th>
                 <th class="hidden lg:table-cell w-[112px] text-left py-2 px-1 font-medium">Barrière</th>
                 {% if sc %}<th class="hidden lg:table-cell w-16 text-right py-2 px-1 font-medium text-blue-700" title="Plan lent : +{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</th>{% endif %}
-                <th class="hidden lg:table-cell {% if rp %}w-[300px]{% else %}w-[84px]{% endif %} text-right py-2 px-1 font-medium text-gray-900 whitespace-nowrap" title="{% if rp %}{% if rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% if (rp.finish_clock_s // 86400)|int > ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int %} (+{{ (rp.finish_clock_s // 86400)|int - ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int }}j){% endif %}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}{% elif has_target %}Heure de passage si tu tiens ton objectif{% else %}Heure de passage estimée{% endif %}">{% if rp %}{{ recalee(rp) }}{% else %}Cible{% endif %}</th>
+                <th class="hidden lg:table-cell {% if rp %}w-[300px]{% else %}w-[84px]{% endif %} text-right py-2 px-1 font-medium text-gray-900 whitespace-nowrap" title="{% if rp %}{% if rp.mode == 'pin' %}heure fixée à {{ rp.pin_name }} ({{ hhmm(rp.pin_clock_s) }}) tenable : seuls les tronçons jusque-là changent{% elif rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% if (rp.finish_clock_s // 86400)|int > ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int %} (+{{ (rp.finish_clock_s // 86400)|int - ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int }}j){% endif %}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}{% elif has_target %}Heure de passage si tu tiens ton plan (objectif et heures fixées){% else %}Heure de passage estimée{% endif %}">{% if rp %}{{ recalee(rp) }}{% else %}Cible{% endif %}</th>
                 {% if sc %}<th class="hidden lg:table-cell w-[72px] text-right py-2 px-1 font-medium text-emerald-700" title="Plan rapide : −{{ sc.fast_pct|round|int }} %">Optimiste</th>{% endif %}
                 {# phone: one clock column, picked with the pill #}
                 <th class="lg:hidden {% if rp %}w-[136px]{% else %}w-[92px]{% endif %} text-right py-2 px-1 font-medium whitespace-nowrap">{% if rp %}{{ recalee(rp, phone=True) }}{% else %}<span data-scn-name class="text-gray-900">Cible</span>{% endif %}</th>
@@ -74,6 +74,7 @@
             {% set is_switch = sc and sc.switch and ci is not none and ci == sc.switch.cp_index %}
             {% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
             {% set late = (row and row.target_ok is defined and row.target_ok == false) or (cm is not none and cm < 0) %}
+            {% set pin_on = s.pinned and not s.passed %}
             {% set dist = s.end_km - s.start_km %}
             {% set pace = (sec_time / dist) if dist > 0 else 0 %}
             {% set day = (clock_val // 86400) | int %}
@@ -81,7 +82,7 @@
             <tr data-day="{{ day }}" class="h-3.5"><td colspan="{{ ncols }}"><div class="flex items-center gap-2 text-[10px] uppercase tracking-wider text-gray-400 leading-none"><span class="flex-1 border-t border-dotted border-gray-200"></span><span data-day-label>jour {{ day + 1 }}</span><span class="flex-1 border-t border-dotted border-gray-200"></span></div></td></tr>
             {% set ns.day = day %}
             {% endif %}
-            <tr data-row data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}
+            <tr data-row data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
                 class="group h-10 border-t border-gray-100 {% if s.is_anchor %}bg-amber-50{% elif s.passed %}opacity-60{% elif is_finish %}bg-red-50/60{% else %}cursor-pointer hover:bg-gray-50/70{% endif %}"{% if editable %} title="Modifier ce point"{% endif %}>
                 <td class="py-2 pl-0 pr-1">
                     {% if is_finish %}<span class="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-bold inline-flex items-center justify-center">A</span>
@@ -110,6 +111,7 @@
                 {% if sc %}<td class="col-safe hidden lg:table-cell py-2 px-1 text-right text-xs tabular-nums {% if row.safe_ok is defined and row.safe_ok == false %}text-red-600 font-semibold{% else %}text-blue-700{% endif %}" data-safe>{{ hhmm(row.safe_s) }}</td>{% endif %}
                 <td class="col-target py-2 px-1 text-right whitespace-nowrap">
                     <div class="h-6 flex items-center justify-end">
+                    {% if pin_on %}<span data-pin class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-amber-600{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3 h-3') }}</span>{% endif %}
                     {% if editable %}<span data-cible-text class="text-[15px] font-bold tabular-nums {% if late %}text-red-600{% else %}text-gray-900{% endif %}">{{ hhmm(clock_val) }}</span>{% if s.cutoff_clock %}<span class="lg:hidden inline-block w-1.5 h-1.5 rounded-full ml-1 align-middle {% if cm is not none and cm < 0 %}bg-red-600{% elif cm is not none and cm < 1800 %}bg-amber-500{% else %}bg-gray-300{% endif %}" title="barrière {{ s.cutoff_clock }}{% if cm is not none %} · {{ fmt_margin(cm) }}{% endif %}"></span>{% endif %}<svg class="lg:hidden w-3.5 h-3.5 ml-0.5 -mr-1 text-gray-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
                     {% else %}<span data-cible-text class="text-[15px] font-bold tabular-nums text-gray-900">{{ hhmm(clock_val) }}</span>{% endif %}
                     </div>
@@ -120,3 +122,9 @@
         </tbody>
     </table>
 </div>
+{# pinned times the plan could not hold: said in words, under the table #}
+{% set pin_warn = sections | selectattr('pin_clamped') | rejectattr('passed') | list if sections and sections[-1].objective_s is defined else [] %}
+{% if pin_warn %}<div data-pin-warnings class="pt-2 space-y-0.5 text-[11px] leading-snug text-red-700">
+{% for s in pin_warn %}{% set clk = s.adjusted_clock_time_s %}
+<p>{% if s.end_checkpoint_index is none %}Arrivée : ton objectif ({{ fmt_time(s.objective_s) }}) est trop court après tes heures fixées · le plan arrive à {{ hhmm(clk) }}.{% else %}{{ s.end_name }} : {{ hhmm(start_offset_s + s.pin_target_s) }} est impossible à tenir depuis le point d'avant (arrêts compris) · le plan vise {{ hhmm(clk) }}.{% endif %}</p>
+{% endfor %}</div>{% endif %}
