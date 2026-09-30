@@ -72,40 +72,22 @@ def actual_passage_times(
     return out, total_t
 
 
-# Minetti-based empirical model: gradient% -> pace multiplier relative to flat
-# These are defaults when athlete has no data for a gradient bucket
 # Generic gradient → pace multipliers (relative to flat), used when the athlete
-# has no personal split data or to fill gaps. Calibrated to a trained trail
-# runner's grade-adjusted pace (GAP): the previous table was markedly pessimistic
-# — it slowed steep climbs ~2× too much and treated moderate descents as SLOWER
-# than flat. Real strong runners climb more efficiently and gain time on
-# moderate descents. (Personal Strava splits override these where available.)
+# has no personal split data, to fill gaps, and as the prior personal buckets
+# are shrunk towards (GRADIENT_PRIOR_SPLITS). From -15 % up: fitted on 115 UTMB
+# Live races (scripts/race_data/fitted_params.json, integer_table_20h; held-out
+# events 21,6 min mean checkpoint gap vs 25,6 with the previous table, whose
+# climbs cost ~15 % too much). Below -15 % the fit was not stable across
+# subsets: the previous -20 % value is kept (vs the full fitted table: 1-4 min
+# worse on Puerto Vallarta and Whistler, 2 min better on UTMB 2024, ~0 overall).
 _DEFAULT_GRADIENT_FACTORS = {
     -20: 1.10,
-    -15: 0.92,
-    -10: 0.82,
-    -8: 0.80,
-    -6: 0.80,
-    -5: 0.82,
-    -4: 0.85,
-    -3: 0.88,
-    -2: 0.92,
-    -1: 0.96,
-    0: 1.0,
-    1: 1.05,
-    2: 1.10,
-    3: 1.16,
-    4: 1.23,
-    5: 1.31,
-    6: 1.40,
-    7: 1.50,
-    8: 1.62,
-    10: 1.85,
-    12: 2.10,
-    15: 2.45,
-    20: 3.10,
-    25: 3.90,
-    30: 4.70,
+    -15: 1.011, -14: 0.986, -13: 0.961, -12: 0.936, -11: 0.911, -10: 0.886, -9: 0.861, -8: 0.836,
+    -7: 0.848, -6: 0.86, -5: 0.872, -4: 0.884, -3: 0.896, -2: 0.93, -1: 0.965, 0: 1.0,
+    1: 1.048, 2: 1.097, 3: 1.145, 4: 1.219, 5: 1.293, 6: 1.367, 7: 1.442, 8: 1.516,
+    9: 1.594, 10: 1.673, 11: 1.751, 12: 1.83, 13: 1.908, 14: 1.987, 15: 2.065, 16: 2.171,
+    17: 2.277, 18: 2.383, 19: 2.488, 20: 2.594, 21: 2.7, 22: 2.806, 23: 2.912, 24: 3.017,
+    25: 3.123, 26: 3.2, 27: 3.277, 28: 3.354, 29: 3.431, 30: 3.508,
 }
 
 
@@ -248,7 +230,9 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
 
     The tilt is computed once at match time (see save_route_result) and stored
     in Route.result_json; here we just read the most recent one. Clamped hard —
-    one race must adjust, not dominate.
+    one race must adjust, not dominate. Only tilts measured against the
+    hours-on-course fatigue count (``fatigue_model``): older ones measured the
+    gap to the distance-scaled curve, which the fitted one already corrects.
     """
     from app.models.route import Route
 
@@ -261,7 +245,7 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
         )
         for rj in result.scalars().all():
             tilt = (rj or {}).get("fatigue_tilt")
-            if tilt is not None:
+            if tilt is not None and (rj or {}).get("fatigue_model") == FATIGUE_MODEL:
                 return max(0.05, min(float(tilt), 0.40))
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
@@ -335,53 +319,61 @@ def _get_factor(profile: AthleteGradientProfile, gradient_pct: float) -> float:
     return 1.0
 
 
-# How hard the late-race slowdown bites. Fitted on the 2025 Transjeju winner's
-# splits (145,6 km, 16:55): at 1.0 the plan for his time ran the last 30 km
-# 24 min faster than he did (15 min mean gap at the checkpoints); at 1.3 the
-# mean gap is 10 min and the last two legs are within 12 min of his. Only the shape moves for athletes with races: the race model
-# re-levels the total.
-FATIGUE_SCALE = 1.3
-# Fresh→fade reshape when the athlete has no matched race of his own. Fitted
-# with FATIGUE_SCALE on the 2025 Transjeju 1st and 3rd (Ko 16:55, Mamba
-# 18:07): mean gap at the checkpoints 7,7 and 7,8 min (0.15 gave 9,8 and 8,4).
+# Fatigue by HOURS on course: f(h) = 1 + C·(h/10)^Q − FRESH·max(0, 1 − h/3),
+# fitted on 115 UTMB Live races (scripts/race_data/fit_model.py, form "hours").
+# On the 6 held-out events it beat the previous progress × distance form on
+# 40 of 44 races; on the 2025 Transjeju 100M finishers at 16-21 h the mean
+# checkpoint gap is 8,2 min (10,4 before). The fit levels every runner on his
+# own finish: h must be read on the clock of the level planned (see
+# predict_course), and the curve only says how the pace changes, not its level.
+FATIGUE_C = 0.6347
+FATIGUE_Q = 0.5007
+FATIGUE_FRESH = 0.0146
+# Level anchor: the training flat pace is taken as the race pace after 1,5 h on
+# course, which keeps predictions from training paces where the previous model
+# put them (Transjeju 2026 at 5:00/km flat: 18h34 before, 18h28 now; the curve
+# unanchored said 23h51 — the fit sets no level, see above). On 41 dataset
+# courses at 5:30/km: 140-180 km +1 %, 20-60 km −7 %.
+FATIGUE_REF_H = 1.5
+# The fit's races start at 40 km. From 20 km (no fatigue below, as before) the
+# curve blends in over the next 20 km: switched on whole at 20 km, its sub-1
+# start took ~6 min off a 20,1 km course vs a 19,9 km one.
+FATIGUE_BLEND_KM = (20.0, 40.0)
+# Tag stored with a personal tilt (Route.result_json) measured against this curve.
+FATIGUE_MODEL = "hours"
+# Neutral personal tilt: an athlete without a matched race of his own gets
+# exactly the fitted curve; a matched race moves his tilt around this value.
 DEFAULT_FATIGUE_TILT = 0.22
 
 
+def _population_fatigue(hours: float) -> float:
+    """The fitted fatigue f(h), h = moving hours on course (1 at the start, less the fresh-legs bonus)."""
+    return 1 + FATIGUE_C * (hours / 10) ** FATIGUE_Q - FATIGUE_FRESH * max(0.0, 1 - hours / 3)
+
+
 def _fatigue_factor(
+    hours: float,
     progress: float,
     total_distance_km: float,
-    cumulative_gain: float,
     tilt: float = None,
 ) -> float:
-    """Exponential fatigue factor based on race progress and D+.
+    """Pace multiplier after ``hours`` of moving time, relative to the training flat pace.
 
-    Returns a multiplier >= 1.0 (higher = slower).
+    ``progress`` (share of the distance) carries the personal reshape: a runner
+    who faded more than the population on his matched race (tilt above
+    DEFAULT_FATIGUE_TILT) runs the start faster and the finish slower, ~total-
+    neutral like the tilt of the previous model it replaces.
     """
     if tilt is None:
         tilt = DEFAULT_FATIGUE_TILT
-    if total_distance_km < 20:
+    # Below 20 km (out of the fit's 40-180 km), the training pace stands as is.
+    lo_km, hi_km = FATIGUE_BLEND_KM
+    if total_distance_km < lo_km:
         return 1.0
-
-    # Base growth with distance, scaled by FATIGUE_SCALE (see its note).
-    k = 0.12 * FATIGUE_SCALE * (total_distance_km / 42)
-    base = 1.0 + k * (progress ** 2)
-
-    # ~Total-neutral fresh→fade reshape: fresh legs run a touch faster than the
-    # averaged gradient curve early, then decay late (validated on real race
-    # splits). ``tilt`` is per-athlete once a matched race result exists —
-    # a runner who blows up late gets a steeper tilt than the generic default.
-    base += tilt * (progress - 0.45)
-
-    # Glycogen depletion after ~30-35km
-    glycogen_threshold = min(35 / total_distance_km, 0.7)
-    if progress > glycogen_threshold:
-        base += 0.04 * FATIGUE_SCALE * ((progress - glycogen_threshold) / (1 - glycogen_threshold)) ** 1.5
-
-    # Elevation fatigue: more D+ = more fatigue (bites late on hilly ultras).
-    if cumulative_gain > 0:
-        base += (cumulative_gain / 8000) * 0.02
-
-    return max(0.85, min(base, 1.55))
+    f = _population_fatigue(max(0.0, hours)) / _population_fatigue(FATIGUE_REF_H)
+    f += (tilt - DEFAULT_FATIGUE_TILT) * (progress - 0.45)
+    w = min(1.0, (total_distance_km - lo_km) / (hi_km - lo_km))
+    return max(0.5, min(1 + w * (f - 1), 5.0))
 
 
 def _altitude_factor(avg_elevation: float) -> float:
@@ -491,6 +483,12 @@ def _fine_terrain(course: CourseProfile, profile: AthleteGradientProfile) -> lis
     return out
 
 
+# Fitted with the fatigue above (fit_model.py): once fatigue follows the hours
+# on course, the night itself costs ~3 %, not the 8 % it used to carry.
+NIGHT_FACTOR = 1.0325
+DUSK_DAWN_FACTOR = 1.0122
+
+
 def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     """Penalty for running at night. Assumes race starts at start_hour.
 
@@ -501,31 +499,31 @@ def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     current_hour = (start_hour + elapsed_hours) % 24
 
     if 21 <= current_hour or current_hour < 6:
-        return 1.08  # 8% slower at night
+        return NIGHT_FACTOR
     if 20 <= current_hour < 21 or 6 <= current_hour < 7:
-        return 1.03  # 3% slower dusk/dawn
+        return DUSK_DAWN_FACTOR
     return 1.0
 
 
-def predict_course(
+def _segment_times(
     course: CourseProfile,
     profile: AthleteGradientProfile,
-    heat_factor: float = 1.0,
-    start_hour: int = 6,
-    start_minute: int = 0,
-) -> CourseProfile:
-    """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night."""
-    start_hour_frac = start_hour + (start_minute or 0) / 60
-    cumulative_time = 0.0
-    cumulative_gain = 0.0
+    fine: list[float] | None,
+    heat_factor: float,
+    start_hour_frac: float,
+    tilt: float,
+    clock_scale: float = 1.0,
+) -> list[tuple[float, float]]:
+    """(pace s/km, moving time s) of every segment at the profile's flat pace (heat included).
+
+    Fatigue and night read the clock of the pace actually planned: the running
+    total times ``clock_scale`` (planned level / the level simulated here). At
+    1.0 it is the training level itself.
+    """
     total_distance = course.total_distance_km
-
-    tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
-    fine = _fine_terrain(course, profile)
-
+    cumulative_time = 0.0
+    out: list[tuple[float, float]] = []
     for idx, segment in enumerate(course.segments):
-        cumulative_gain += segment.elevation_gain
-
         # Altitude correction (>1500m)
         avg_elev = (segment.min_elevation + segment.max_elevation) / 2
         alt = _altitude_factor(avg_elev)
@@ -541,27 +539,90 @@ def predict_course(
                 segment.elevation_loss, segment.distance_m,
             )
 
-        # Progressive fatigue (personalised tilt). Progress from the segment's
-        # own end_km: reading cumulative_distance_km here used the PREVIOUS
-        # prediction's value (0 on a fresh course — flattening fatigue).
+        # Fatigue at the hours already run when the segment starts (as fitted);
+        # the personal tilt reads the share of the distance at its end.
+        clock_s = cumulative_time * clock_scale
         progress = segment.end_km / total_distance if total_distance > 0 else 0
         factor = grade_factor * alt * terrain
-        factor *= _fatigue_factor(progress, total_distance, cumulative_gain, tilt)
-
-        # Heat factor
+        factor *= _fatigue_factor(clock_s / 3600, progress, total_distance, tilt)
         factor *= heat_factor
-
-        # Night penalty
-        factor *= _night_penalty(cumulative_time, start_hour_frac)
+        factor *= _night_penalty(clock_s, start_hour_frac)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
-        # The basis used to split a TARGET into passage times: terrain, fatigue
-        # and night, not heat (applied per section with the forecast). A plan
-        # on terrain alone asked for the last 30 km faster than the start —
-        # faster than the 2025 Transjeju winner ran them.
-        segment.base_time_s = round(predicted_time / (heat_factor or 1.0), 1)
+        out.append((predicted_pace, predicted_time))
+        cumulative_time += predicted_time
+    return out
 
+
+# Re-simulations to put fatigue and night on the clock of another level (race
+# model, objective), until the total moves by less than a second: 6-8 passes
+# on Transjeju for a level 0,3× to 3× the first run (3 left 1 min at 2×).
+LEVEL_PASSES = 12
+
+
+def _times_at_level(
+    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float,
+) -> list:
+    """Segment (pace, time) whose clock, once re-levelled to ``total_s``, is the
+    one fatigue and night were read on: scale = total_s / (total of the run at
+    that scale), iterated from a previous run ``first``."""
+    rows = first
+    prev = sum(t for _, t in rows)
+    for _ in range(LEVEL_PASSES):
+        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0))
+        total = sum(t for _, t in rows)
+        if abs(total - prev) < 1.0:
+            break
+        prev = total
+    return rows
+
+
+def predict_course(
+    course: CourseProfile,
+    profile: AthleteGradientProfile,
+    heat_factor: float = 1.0,
+    start_hour: int = 6,
+    start_minute: int = 0,
+    plan_moving_s: float | None = None,
+) -> CourseProfile:
+    """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
+
+    Fatigue and night follow the clock: when the race model re-levels the total
+    (training 20h27 → races 18h00), the segments are re-simulated with the
+    hours of the race level, not the training one. ``plan_moving_s`` (an
+    objective's moving time, stops out) does the same for the plan basis
+    ``base_time_s`` only: the shape of an 18h30 plan is the one of an 18h30
+    race, as the fatigue was fitted (hours at the runner's own finish).
+    """
+    start_hour_frac = start_hour + (start_minute or 0) / 60
+    tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
+    fine = _fine_terrain(course, profile)
+
+    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt)
+    training_total = sum(t for _, t in rows)
+
+    # Races, not training, set the level of the prediction (see race_calibration).
+    race_model = getattr(profile, "race_model", None)
+    race_total = None
+    if race_model:
+        from app.services.race_calibration import race_level_total_s
+
+        race_total = race_level_total_s(course, race_model, training_total)
+        if race_total:
+            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total)
+
+    # The basis used to split a TARGET into passage times: terrain, fatigue
+    # and night, not heat (applied per section with the forecast). A plan
+    # on terrain alone asked for the last 30 km faster than the start —
+    # faster than the 2025 Transjeju winner ran them.
+    basis = rows
+    if plan_moving_s and plan_moving_s > 0:
+        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s)
+
+    cumulative_time = 0.0
+    for segment, (predicted_pace, predicted_time), (_, base) in zip(course.segments, rows, basis, strict=True):
+        segment.base_time_s = round(base / (heat_factor or 1.0), 1)
         segment.predicted_pace_s_per_km = round(predicted_pace, 1)
         segment.predicted_time_s = round(predicted_time, 1)
         cumulative_time += predicted_time
@@ -571,11 +632,12 @@ def predict_course(
     course.predicted_total_time_s = int(cumulative_time)
     course.predicted_total_time_formatted = format_time(int(cumulative_time))
 
-    # Races, not training, set the level of the prediction (see race_calibration).
-    if getattr(profile, "race_model", None):
+    if race_model:
         from app.services.race_calibration import apply_race_calibration
 
-        profile.race_calibration = apply_race_calibration(course, profile.race_model)
+        profile.race_calibration = (
+            apply_race_calibration(course, race_model, training_total) if race_total else None
+        )
 
     return course
 
@@ -693,8 +755,7 @@ def compute_passage_times(
     )
 
     stops = _stops_by_km(stop_s_per_aid, aid_kms, aid_stops)
-    # Aid stops apply at intermediate checkpoints only (not the finish).
-    total_stops_s = sum(stops.get(round(float(cp["distance_km"]), 1), 0) for cp in all_cps[1:-1])
+    total_stops_s = planned_stops_s(course.total_distance_km, checkpoints, stop_s_per_aid, aid_kms, aid_stops)
 
     use_hourly = bool(hourly_weather and hourly_weather.get("temps"))
     base_elev = _elevation_at_km(course, 0.0) or 0.0
@@ -968,6 +1029,31 @@ def _pinned_plan(raw: list[dict], pins: dict[int, int], objective_s: int | None)
     plan["auto"] = {i: _distribute(raw, anchors(skip=i))["arrive"][i] for i in pins}
     plan["objective_s"] = int(objective_s) if objective_s is not None else None
     return plan
+
+
+def planned_stops_s(
+    total_distance_km: float, checkpoints: list[dict], stop_s_per_aid: int = 0,
+    aid_kms: set | None = None, aid_stops: dict | None = None,
+) -> int:
+    """The aid-station stops a plan makes: at intermediate checkpoints only (not the finish)."""
+    stops = _stops_by_km(stop_s_per_aid, aid_kms, aid_stops)
+    return sum(
+        stops.get(round(float(cp["distance_km"]), 1), 0)
+        for cp in checkpoints if 0 < cp["distance_km"] < total_distance_km
+    )
+
+
+def objective_moving_s(
+    target_time_s: int | None, total_distance_km: float, checkpoints: list[dict], stop_s_per_aid: int = 0,
+    aid_kms: set | None = None, aid_stops: dict | None = None,
+) -> int | None:
+    """The moving time an objective leaves once the planned stops are out: the
+    plan's moving budget in compute_passage_times, and the clock its basis is
+    shaped on (predict_course ``plan_moving_s``)."""
+    if not target_time_s:
+        return None
+    stops_s = planned_stops_s(total_distance_km, checkpoints, stop_s_per_aid, aid_kms, aid_stops)
+    return max(int(target_time_s) - stops_s, 1)
 
 
 def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | None) -> dict:

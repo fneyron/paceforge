@@ -22,9 +22,9 @@ class CourseSegment(BaseModel):
     max_elevation: float
     predicted_pace_s_per_km: float = 0
     predicted_time_s: float = 0
-    # Terrain-difficulty time (gradient/altitude/technicality only — no fatigue,
-    # night or heat). Used to distribute a target time at EVEN effort: a pacing
-    # plan must not tell the athlete to bank time while fresh.
+    # Plan basis: terrain, fatigue and night, no heat (applied per section with
+    # the forecast), read on the objective's clock when one is set (see
+    # race_simulator.predict_course). Used to distribute a target time.
     base_time_s: float = 0
     cumulative_time_s: float = 0
     cumulative_distance_km: float = 0

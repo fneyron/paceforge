@@ -21,10 +21,10 @@ async def as_user(client: AsyncClient, test_user: User):
     return client
 
 
-async def _create_route(client: AsyncClient) -> int:
+async def _create_route(client: AsyncClient, cps: list[dict] = CPS) -> int:
     course = _course()
     r = await client.post("/api/simulator/routes", data={
-        "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS),
+        "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(cps),
         "name": "Jeju test", "target_time_s": 5 * 3600, "race_date": "2026-10-02",
         "start_hour": 21, "start_minute": 0, "sport_type": "trail", "stop_minutes": 3,
     })
@@ -147,6 +147,39 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
     assert r.status_code == 200, r.text
     assert "Débrief tronçon par tronçon" in r.text and "Raison probable" in r.text
     assert "arrêts" in r.text  # the 15-min stop at the Col is called out
+    # the personal fatigue tilt is stored with the curve it was measured against
+    from app.models.route import Route
+
+    rj = (await db_session.get(Route, route_id)).result_json
+    assert 0.05 <= rj["fatigue_tilt"] <= 0.40 and rj["fatigue_model"] == "hours"
+
+
+@pytest.mark.asyncio
+async def test_result_matches_checkpoints_by_km_not_name(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """A loop course repeats a checkpoint name (Transjeju 2026: Healing Forest at km 7 and 136):
+    the tilt and the comparison must pair each passage with its own km."""
+    from app.models.route import Route
+
+    # 9:00/km for 10 km, then 11:00/km: km 6 at 0h54, km 20 at 3h20
+    splits = [{"distance": 1000, "moving_time": 540 if k < 10 else 660, "elapsed_time": 540 if k < 10 else 660} for k in range(30)]
+    act = Activity(
+        strava_activity_id=700, user_id=test_user.id, sport_type="TrailRun", name="Boucle",
+        start_date=__import__("datetime").datetime(2026, 10, 2, 21, 0, tzinfo=__import__("datetime").timezone.utc),
+        distance=30000.0, moving_time=18600, elapsed_time=18600, total_elevation_gain=800.0,
+        raw_data={"id": 700}, splits_metric=splits,
+    )
+    db_session.add(act)
+    await db_session.flush()
+    tilts, pages = [], []
+    for last in ("Eau 1", "Eau 2"):
+        route_id = await _create_route(as_user, [CPS[0], CPS[1], {**CPS[2], "name": last}])
+        r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
+        assert r.status_code == 200, r.text
+        tilts.append((await db_session.get(Route, route_id)).result_json["fatigue_tilt"])
+        pages.append(r.text)
+    assert tilts[0] == tilts[1] and 0.05 < tilts[0] < 0.40  # not the clamp a km 6 vs km 20 mix-up gave
+    actual_cells = re.findall(r'tabular-nums text-gray-900">(\d+h\d\d)<', pages[0])
+    assert actual_cells[0] == "0h54" and "3h20" in actual_cells  # each "Eau 1" row shows its own passage
 
 
 async def _create_bike_route(client: AsyncClient) -> int:

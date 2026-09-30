@@ -21,7 +21,44 @@ import app.services.race_simulator as rs  # noqa: E402
 from app.schemas.simulator import AthleteGradientProfile, CourseProfile, GpxPoint  # noqa: E402
 from app.services.gpx import build_course_profile  # noqa: E402
 
-PROFILE = AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=rs._DEFAULT_GRADIENT_FACTORS, data_points=0, sport_types_used=[])
+# "production" in fit_results.txt is the app BEFORE it adopted the fit (hours
+# fatigue, fitted curve, night 1.0325): frozen here so the scripts keep
+# reproducing that baseline once the app has moved on.
+LEGACY_GRADIENT_FACTORS = {
+    -20: 1.10, -15: 0.92, -10: 0.82, -8: 0.80, -6: 0.80, -5: 0.82, -4: 0.85, -3: 0.88, -2: 0.92, -1: 0.96,
+    0: 1.0, 1: 1.05, 2: 1.10, 3: 1.16, 4: 1.23, 5: 1.31, 6: 1.40, 7: 1.50, 8: 1.62, 10: 1.85, 12: 2.10,
+    15: 2.45, 20: 3.10, 25: 3.90, 30: 4.70,
+}
+LEGACY_FATIGUE_SCALE = 1.3
+LEGACY_FATIGUE_TILT = 0.22
+
+
+def legacy_fatigue(progress, total_km, gain, tilt=None):
+    """The app's fatigue before the fit: progress² scaled by the distance, tilt, glycogen, D+."""
+    tilt = LEGACY_FATIGUE_TILT if tilt is None else tilt
+    if total_km < 20:
+        return 1.0
+    base = 1.0 + 0.12 * LEGACY_FATIGUE_SCALE * (total_km / 42) * progress ** 2 + tilt * (progress - 0.45)
+    glycogen = min(35 / total_km, 0.7)
+    if progress > glycogen:
+        base += 0.04 * LEGACY_FATIGUE_SCALE * ((progress - glycogen) / (1 - glycogen)) ** 1.5
+    if gain > 0:
+        base += gain / 8000 * 0.02
+    return max(0.85, min(base, 1.55))
+
+
+def legacy_night(cum_s, start_hour=6.0):
+    """The app's night penalty before the fit: 8 % at night, 3 % at dusk / dawn."""
+    h = (start_hour + cum_s / 3600) % 24
+    if h >= 21 or h < 6:
+        return 1.08
+    if 20 <= h < 21 or 6 <= h < 7:
+        return 1.03
+    return 1.0
+
+
+night_penalty = legacy_night  # what simulate() applies (fit_fatigue_duration swaps it)
+PROFILE = AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=LEGACY_GRADIENT_FACTORS, data_points=0, sport_types_used=[])
 MAX_KM = 180.0  # beyond: multi-day, sleep-dominated (PTL, Tor…)
 
 
@@ -51,7 +88,7 @@ def simulate(prep: dict, flat: float, fatigue, start_hour: float = 6.0) -> list[
     ends = []
     for d, e, g, b in zip(prep["dist"], prep["end"], prep["gain"], prep["base"]):
         gain += g
-        f = b * fatigue(e / total, total, gain, cum / 3600) * rs._night_penalty(cum, start_hour)
+        f = b * fatigue(e / total, total, gain, cum / 3600) * night_penalty(cum, start_hour)
         cum += flat * f * d
         ends.append((e, cum))
     out, j, prev_e, prev_t = [], 0, 0.0, 0.0
@@ -82,7 +119,7 @@ def start_hour(race: dict) -> float:
     if not s:
         return 6.0
     h, m = int(s[11:13]), int(s[14:16])
-    return h + m / 60  # UTC here; local offset unknown → night is approximate
+    return h + m / 60  # local (event timezone) when the archive gives one, else UTC
 
 
 GROUPS = [(0, 12), (12, 18), (18, 24), (24, 30), (30, 99)]
@@ -119,4 +156,4 @@ def score_race(race: dict, prep: dict, fatigue, groups=GROUPS) -> dict:
 
 
 def current_fatigue(progress, total_km, gain, hours, tilt=None):
-    return rs._fatigue_factor(progress, total_km, gain, tilt)
+    return legacy_fatigue(progress, total_km, gain, tilt)

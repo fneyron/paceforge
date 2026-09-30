@@ -184,27 +184,42 @@ def select_best_efforts(points: list[dict]) -> tuple[list[dict], list[dict]]:
     return chosen, ignored
 
 
-def apply_race_calibration(course, model: dict | None) -> dict | None:
+def race_level_total_s(course, model: dict | None, training_total_s: float) -> float | None:
+    """The course's moving time at the level of the athlete's races, or None
+    when the model does not apply."""
+    if not model or not course.segments or not training_total_s or training_total_s <= 0:
+        return None
+    total = predict_total_s(model, effort_km(course.total_distance_km, course.total_elevation_gain))
+    if not total or total <= 0:
+        return None
+    # A wild ratio means the races don't describe this course (e.g. a 10 km
+    # road race used to level a 100-miler): cap the correction.
+    return training_total_s * max(0.60, min(1.40, total / training_total_s))
+
+
+def apply_race_calibration(course, model: dict | None, training_total_s: float | None = None) -> dict | None:
     """Re-level the predicted segment times so the total matches the race
     model. Keeps the terrain shape. Returns a summary dict (or None if the
-    model does not apply)."""
+    model does not apply).
+
+    ``training_total_s`` is the prediction at the training level when the
+    course was already re-simulated on the race level's clock (predict_course):
+    the cap and the « training alone » figure are read against it."""
     if not model or not course.segments or not course.predicted_total_time_s:
         return None
     from app.services.race_simulator import format_time
 
     ekm = effort_km(course.total_distance_km, course.total_elevation_gain)
-    total = predict_total_s(model, ekm)
-    if not total or total <= 0:
+    before = float(training_total_s or course.predicted_total_time_s)
+    target = race_level_total_s(course, model, before)
+    if not target:
         return None
-    before = float(course.predicted_total_time_s)
-    ratio = total / before
-    # A wild ratio means the races don't describe this course (e.g. a 10 km
-    # road race used to level a 100-miler): cap the correction.
-    ratio = max(0.60, min(1.40, ratio))
+    ratio = target / before
+    step = target / sum(seg.predicted_time_s for seg in course.segments)
     cum = 0.0
     for seg in course.segments:
-        seg.predicted_time_s = round(seg.predicted_time_s * ratio, 1)
-        seg.predicted_pace_s_per_km = round(seg.predicted_pace_s_per_km * ratio, 1)
+        seg.predicted_time_s = round(seg.predicted_time_s * step, 1)
+        seg.predicted_pace_s_per_km = round(seg.predicted_pace_s_per_km * step, 1)
         cum += seg.predicted_time_s
         seg.cumulative_time_s = round(cum, 1)
     course.predicted_total_time_s = int(cum)
