@@ -7,7 +7,7 @@
 <div class="space-y-5 max-w-3xl">
     <div>
         <h1 class="text-lg font-semibold tracking-tight">Réglages</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Ton profil, tes connexions Strava, Apple Santé et COROS.</p>
+        <p class="text-sm text-gray-500 mt-0.5">Ton profil, tes connexions Strava et COROS.</p>
     </div>
 
     {% if saved is defined and saved %}
@@ -112,8 +112,6 @@
             </form>
         </details>
     </div>
-
-    {% include "partials/health_settings.html" %}
 
     {% include "partials/coros_settings.html" %}
 
