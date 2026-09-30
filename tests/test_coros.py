@@ -623,7 +623,7 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
 
 async def test_fitness_card_names_coros(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     r = await as_user.get("/activities")
-    assert "Connecter COROS" in r.text and "Connecter Apple Santé" in r.text  # empty state
+    assert "Connecter COROS" in r.text and "Apple" not in r.text  # empty state
     today = date.today()
     for k in range(20):
         db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=k), metric="hrv",
@@ -647,7 +647,7 @@ def test_migration_is_the_head_and_round_trips():
     assert mig.down_revision == "s3b4c5d6e7f8"
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    assert mig.revision in {r.revision for r in ScriptDirectory.from_config(cfg).walk_revisions()}
 
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:

@@ -1,4 +1,4 @@
-{# Fitness card ("suivi de forme"): last 7 days vs the 60 days before, from Apple Health and/or COROS #}
+{# Fitness card ("suivi de forme"): last 7 days vs the 60 days before, from COROS #}
 {% if health_card %}
 {% set f = health_card.form %}
 {% set pill = {
@@ -22,7 +22,7 @@
         {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
         {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale : tu récupères bien.
         {% elif f.status == 'ok' %}Tes indicateurs sont dans ta zone habituelle.
-        {% else %}Il faut environ 3 semaines de mesures pour connaître ta normale ({{ f.days_of_data }} jour{{ 's' if f.days_of_data != 1 }} pour l'instant). Importe ton historique ou connecte COROS dans les <a href="/settings#apple-sante" class="underline hover:text-gray-900">Réglages</a> pour aller plus vite.
+        {% else %}Il faut environ 3 semaines de mesures pour connaître ta normale ({{ f.days_of_data }} jour{{ 's' if f.days_of_data != 1 }} pour l'instant). Tes nouvelles nuits arrivent de COROS toutes les 6 h.
         {% endif %}
     </p>
 
@@ -59,10 +59,9 @@
 <div class="rounded-xl border border-dashed border-gray-200 bg-white p-5 flex flex-wrap items-center justify-between gap-3">
     <div class="min-w-0 flex-1">
         <h2 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Forme</h2>
-        <p class="text-sm text-gray-600 mt-1">Connecte Apple Santé ou ta montre COROS pour suivre ta variabilité cardiaque, ta fréquence cardiaque au repos et ton sommeil, et savoir quand lever le pied.</p>
+        <p class="text-sm text-gray-600 mt-1">Connecte ta montre COROS pour suivre ta variabilité cardiaque, ta fréquence cardiaque au repos et ton sommeil, et savoir quand lever le pied.</p>
     </div>
     <div class="flex items-center gap-2">
-        <a href="/settings#apple-sante" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 shrink-0"><i data-lucide="heart-pulse" class="w-3.5 h-3.5"></i> Connecter Apple Santé</a>
         <a href="/settings#coros" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 shrink-0"><i data-lucide="watch" class="w-3.5 h-3.5"></i> Connecter COROS</a>
     </div>
 </div>

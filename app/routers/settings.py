@@ -1,32 +1,17 @@
 import logging
-import os
-import shutil
-import tempfile
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from starlette.concurrency import run_in_threadpool
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
-from app.config import settings as app_settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.activity_dedupe import sport_group
 from app.services.coros import coros_status
-from app.services.health import (
-    METRIC_LABELS,
-    METRICS,
-    ExportError,
-    health_status,
-    new_api_key,
-    parse_export,
-    store_samples,
-)
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -80,19 +65,8 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         "families": [(f, families[f]) for f in _FAMILY_ORDER if families.get(f)],
     }
     flags.setdefault("ftp_est", ftp_est)
-    flags.setdefault("health", await health_status(db, user))
-    flags.setdefault("health_api_url", _public_base(request) + "/api/health/samples")
     flags.setdefault("coros", await coros_status(db, user.id))
     return {"request": request, "user": user, "strava_stats": strava_stats, **flags}
-
-
-def _public_base(request: Request) -> str:
-    """The address the iPhone must call: the configured public URL, or the one
-    this page was reached on (dev)."""
-    base = (app_settings.BASE_URL or "").rstrip("/")
-    if base and "localhost" not in base and "127.0.0.1" not in base:
-        return base
-    return str(request.base_url).rstrip("/")
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -101,12 +75,9 @@ async def settings_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # one-time flashes from the Apple Santé key and COROS actions (Post/Redirect/Get:
-    # a page reload must never mint a second key behind the athlete's back)
+    # one-time flashes from the COROS actions (Post/Redirect/Get)
     ctx = await _settings_context(
         request, user, db,
-        new_health_key=request.session.pop("new_health_key", None),
-        health_key_revoked=request.session.pop("health_key_revoked", False),
         coros_ok=request.session.pop("coros_ok", None),
         coros_error=request.session.pop("coros_error", None),
     )
@@ -187,107 +158,6 @@ async def update_strava_credentials(
 
     ctx = await _settings_context(request, user, db, credentials_saved=True)
     return templates.TemplateResponse(request, "settings.html", context=ctx)
-
-
-# ── Apple Santé ─────────────────────────────────────────────────────────────
-
-@router.post("/settings/health/key")
-async def generate_health_key(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """New personal key (the old one stops working). Stored hashed; the key
-    itself rides in the session to the next page view only, then is gone."""
-    key, key_hash, prefix = new_api_key()
-    user.health_key_hash = key_hash
-    user.health_key_prefix = prefix
-    user.health_key_created_at = datetime.now(timezone.utc)
-    await db.flush()
-    logger.info("Apple Health key (re)generated for user %d", user.id)
-    request.session["new_health_key"] = key
-    return RedirectResponse(url="/settings#apple-sante", status_code=303)
-
-
-@router.post("/settings/health/key/revoke")
-async def revoke_health_key(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    user.health_key_hash = None
-    user.health_key_prefix = None
-    user.health_key_created_at = None
-    await db.flush()
-    logger.info("Apple Health key revoked for user %d", user.id)
-    request.session["health_key_revoked"] = True
-    return RedirectResponse(url="/settings#apple-sante", status_code=303)
-
-
-@router.get("/settings/health/status", response_class=HTMLResponse)
-async def health_status_partial(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """The « Vérifier la réception » button: when the last push arrived."""
-    ctx = {"request": request, "health": await health_status(db, user), "checked": True}
-    return templates.TemplateResponse(request, "partials/health_status.html", context=ctx)
-
-
-MAX_EXPORT_BYTES = 2 * 1024 ** 3  # zipped exports of heavy watch users run to a few hundred MB
-_CHUNK = 1024 * 1024
-
-
-@router.post("/settings/health/import", response_class=HTMLResponse)
-async def import_health_export(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Apple Health export.zip (or export.xml): the page sends the file as the
-    raw body, streamed here to a temp file; a plain form upload works too.
-    The XML is then read as a stream in a worker thread."""
-    fd, path = tempfile.mkstemp(prefix="pf-health-", suffix=".upload")
-    error, counts, result = None, None, None
-    try:
-        size = 0
-        with os.fdopen(fd, "wb") as out:
-            if request.headers.get("content-type", "").startswith("multipart/form-data"):
-                form = await request.form(max_files=1, max_fields=5)
-                upload = form.get("file")
-                if upload is not None and hasattr(upload, "file"):
-                    await run_in_threadpool(shutil.copyfileobj, upload.file, out, _CHUNK)
-                    size = out.tell()
-            else:
-                async for chunk in request.stream():
-                    size += len(chunk)
-                    if size > MAX_EXPORT_BYTES:
-                        break
-                    out.write(chunk)
-        if size > MAX_EXPORT_BYTES:
-            error = "Fichier trop gros (2 Go max)."
-        elif size == 0:
-            error = "Aucun fichier reçu."
-        else:
-            samples, counts = await run_in_threadpool(parse_export, path)
-            result = await store_samples(db, user.id, samples)
-            logger.info("Apple Health export for user %d: %d bytes, %s", user.id, size, counts)
-    except ExportError as e:
-        error = str(e)
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-    rows = []
-    if counts is not None:
-        rows = [(METRIC_LABELS[m], counts.get(m, 0), (result or {}).get("days", {}).get(m, 0))
-                for m in METRICS]
-    ctx = {"request": request, "error": error, "rows": rows,
-           "rejected": (counts or {}).get("rejected", 0),
-           "total": sum(n for _, n, _ in rows), "result": result}
-    return templates.TemplateResponse(request, "partials/health_import_result.html", context=ctx)
 
 
 @router.post("/settings/delete-account")
