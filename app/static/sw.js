@@ -1,9 +1,8 @@
-const CACHE_NAME = 'paceforge-ui-20260930-roadbook';
+const CACHE_NAME = 'paceforge-ui-20260929';
 const STATIC_ASSETS = [
   '/static/js/app.js',
   '/static/css/tailwind.css',
-  '/static/css/interface.css',
-  '/static/css/roadbook.css',
+  '/static/css/interface.css?v=2',
 ];
 
 self.addEventListener('install', (event) => {

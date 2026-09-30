@@ -3,116 +3,149 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ route.name }} — Bande de dossard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+    <title>{{ route.name }} — Bande de course</title>
     <link rel="stylesheet" href="/static/css/tailwind.css">
-    <link rel="stylesheet" href="/static/css/roadbook.css">
     <style>
-        body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .sheet { max-width: 19cm; margin: 0 auto; padding: 16px; }
-        .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
-        .bar h1 { font: 800 26px/1 var(--cond); text-transform: uppercase; letter-spacing: .02em; margin: 0; }
-        .bar p { font: 400 13px/1.4 var(--mono); color: var(--ink2); margin: 4px 0 0; }
-        .bib { background: #FBF8F1; color: #1C1A16; border: 1.5px solid #1C1A16; border-radius: 6px; overflow: hidden; }
-        .band { background: #1C1A16; color: #FBF8F1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 14px; padding: 7px 10px; }
-        .band b { font: 800 19px/1.1 var(--cond); letter-spacing: .03em; text-transform: uppercase; }
-        .band span { font: 500 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-        .band .obj { background: #C23A17; color: #fff; padding: 1px 5px; }
-        .cells { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        .cell { padding: 6px 7px 7px; border-right: 1px solid #1C1A16; border-bottom: 1px solid #1C1A16; min-width: 0; position: relative; }
-        .cell:nth-child(6n) { border-right: 0; }
-        .cell .t { font: 700 27px/1 var(--cond); letter-spacing: -.01em; margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
-        .cell .t small { font: 500 10px/1 var(--mono); letter-spacing: 0; color: #5B5447; margin-left: 2px; }
-        .cell .t .pin { display: inline-flex; color: #B3340F; vertical-align: 5px; margin-right: 1px; }
-        .cell .n { font: 700 13.5px/1.1 var(--cond); text-transform: uppercase; letter-spacing: .02em; margin: 3px 0 0; display: flex; align-items: flex-start; gap: 4px; overflow-wrap: anywhere; }
-        .cell .n svg { margin-top: 1px; width: 12px; height: 12px; flex: none; }
-        .cell .t svg, .foot svg { width: 11px; height: 11px; display: inline-block; vertical-align: -1px; }
-        .cell .k { font: 400 10px/1.35 var(--mono); color: #5B5447; margin: 2px 0 0; }
-        .cell .k .tight { color: #B3340F; font-weight: 500; }
-        .cell .c { margin: 5px 0 0; padding-top: 4px; border-top: 1px dashed #CBC1AB; font: 600 11.5px/1.3 var(--sans); }
-        .cell .c .to { display: block; font: 500 9.5px/1.2 var(--mono); color: #5B5447; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; margin-bottom: 1px; }
-        .cell .c .hr { display: inline-block; background: #1C1A16; color: #FBF8F1; padding: 0 3px; border-radius: 2px; }
-        .cell .c .walk { display: block; font-weight: 400; color: #5B5447; font-size: 10.5px; }
-        .cell.switch { background: repeating-linear-gradient(-45deg, rgba(217,65,27,.10) 0 6px, transparent 6px 12px); }
-        .cell.switch::after { content: 'CHOIX DU PLAN'; position: absolute; top: 6px; right: 6px; font: 500 8.5px/1 var(--mono); letter-spacing: .06em; color: #B3340F; }
-        .cell.finish { background: #F1ECE0; }
-        .foot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        .foot > div { padding: 7px 9px; border-right: 1px solid #1C1A16; font: 400 10.5px/1.4 var(--mono); color: #5B5447; }
-        .foot > div:last-child { border-right: 0; }
-        .foot b { display: block; font: 700 14px/1.2 var(--cond); text-transform: uppercase; color: #1C1A16; letter-spacing: .02em; }
-        .cut { display: flex; align-items: center; gap: 8px; margin: 8px 0 18px; font: 500 10px/1 var(--mono); letter-spacing: .1em; color: #6B6456; text-transform: uppercase; }
-        .cut::after { content: ''; flex: 1; border-top: 1.5px dashed #8B8373; }
-        @media (max-width: 700px) { .cells { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cell:nth-child(6n) { border-right: 1px solid #1C1A16; } .cell:nth-child(3n) { border-right: 0; } .foot { grid-template-columns: 1fr; } .foot > div { border-right: 0; border-bottom: 1px solid #1C1A16; } }
-        @media (max-width: 500px) { .cells { grid-template-columns: 1fr; } .cell { border-right: 0 !important; display: grid; grid-template-columns: 104px minmax(0, 1fr); column-gap: 10px; } .cell .t { grid-row: 1 / span 3; } .cell .c { grid-column: 1 / -1; } .cell.switch::after { display: none; } }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        /* Sized to tuck behind a race bib: a ~18cm-wide strip you cut out. Cells
+           wrap to a second line past ~6 checkpoints instead of squeezing. */
+        .bib { width: 18cm; }
+        .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.55cm, 1fr)); gap: 3px; }
+        .cell { border: 1px solid #e5e7eb; border-radius: 4px; padding: 3px 3px 2px; text-align: center; min-width: 0; }
+        .cell .n { font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; line-height: 1.1; color: #4b5563;
+                   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 17px; }
+        .cell .k { font-size: 7.5px; color: #9ca3af; white-space: nowrap; }
+        .cell .t { font-size: 12.5px; font-weight: 800; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .cell .t sup { font-size: 7px; font-weight: 600; color: #d97706; margin-left: 1px; }
+        .cell .p { font-size: 7.5px; color: #6b7280; white-space: nowrap; }
+        .cell .c { font-size: 7px; color: #b91c1c; white-space: nowrap; }
+        .cell .d { font-size: 7px; white-space: nowrap; }
+        .cell.start { background: #f0fdf4; border-color: #bbf7d0; } .cell.start .n { color: #15803d; }
+        .cell.finish { background: #fef2f2; border-color: #fecaca; } .cell.finish .n { color: #b91c1c; }
+        .cell.full { border-color: #9ca3af; }
         @media print {
             .no-print { display: none !important; }
             @page { size: A4 portrait; margin: 1cm; }
-            body { background: #fff !important; }
-            .sheet { padding: 0; max-width: none; }
-            .cells { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+            .bib { border: 1px dashed #9ca3af; }
         }
     </style>
 </head>
-<body class="rb-paper">
+<body class="bg-gray-100 text-gray-900">
 {% import "partials/_plan_glyphs.html" as gl %}
-{% macro hhmm(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% endmacro %}
-{% macro fmt_clock(seconds) %}{{ hhmm(seconds) }}{% if (seconds // 86400) | int > 0 %}<small>{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</small>{% endif %}{% endmacro %}
+{% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %} <span class="font-normal text-[8px] text-gray-500">{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</span>{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
 {% macro fmt_hm(seconds) %}{{ (seconds // 3600) | int }}h{{ '%02d'|format(((seconds % 3600) // 60) | int) }}{% endmacro %}
-{% macro fr(x) %}{{ ('%.1f' | format(x)) | replace('.', ',') }}{% endmacro %}
-{% macro consigne(lg, to_name) -%}
-{% if lg and lg.text %}<p class="c"><span class="to">→ {{ to_name }}</span>{% if lg.hr %}<span class="hr">≤{{ lg.hr }}</span>{% endif %}{% if lg.nut and lg.nut.text %}{% if lg.hr %} · {% endif %}{{ lg.nut.text }}{% endif %}{% if lg.walks %}<span class="walk">marche km {% for w in lg.walks[:2] %}{{ fr(w.start_km) }}→{{ fr(w.end_km) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</p>{% endif %}
-{%- endmacro %}
-{% set obj_s = (sections[-1].objective_s if sections else none) if pinned else route.target_time_s %}
-{% set last = sections[-1] if sections else none %}
-{% set finish_clock = ((last.adjusted_clock_time_s if (has_target and last.adjusted_clock_time_s is not none) else last.clock_time_s) if last else none) %}
-{% set sc = scenarios if scenarios and scenarios.switch else none %}
-{% set margins = sections | selectattr('cutoff_margin_s', 'defined') | rejectattr('cutoff_margin_s', 'none') | map(attribute='cutoff_margin_s') | list %}
-{% set tightest = margins | min if margins else none %}
-<div class="sheet">
-    <div class="bar no-print">
-        <div><h1>Bande de dossard</h1><p>Imprime, découpe au pointillé, glisse-la derrière ton dossard ou plastifie-la.</p></div>
-        <button onclick="window.print()" class="rb-btn ink">Imprimer</button>
+{% macro fmt_pace(pace) %}{{ (pace // 60) | int }}:{{ '%02d'|format((pace % 60) | int) }}{% endmacro %}
+{% set kind_mark = {'water': '💧', 'full': '🍽', 'base': '🏠'} %}
+
+<div class="mx-auto p-4" style="max-width:19cm">
+    <div class="flex items-center justify-between gap-4 mb-3 no-print">
+        <p class="text-sm text-gray-500">Bande à taille de dossard — imprime, découpe le long du pointillé, glisse derrière ton dossard.</p>
+        <button onclick="window.print()" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Imprimer</button>
     </div>
 
-    <div class="bib">
-        <div class="band">
-            <b>{{ route.name }}</b>
-            <span>{{ fr(course.total_distance_km) }} km · {{ "%.0f"|format(course.total_elevation_gain) }} m D+ · départ {{ day_labels[0] ~ ' ' if day_labels else '' }}{{ '%02d:%02d'|format(start_hour, start_minute) }} · <span class="obj">{% if obj_s and plan_total_s == obj_s %}Objectif {{ fmt_hm(obj_s) }}{% elif pinned and plan_total_s %}Plan {{ fmt_hm(plan_total_s) }}{% elif route.target_time_s %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>{% if finish_clock is not none %} · arrivée {{ day_labels[(finish_clock // 86400) | int] ~ ' ' if day_labels and (finish_clock // 86400) | int < day_labels|length else '' }}{{ hhmm(finish_clock) }}{% endif %}</span>
+    <!-- The printable band (bib-sized) -->
+    <div class="bib bg-white border border-gray-300 rounded-lg p-3">
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2 mb-2">
+            <h1 class="text-base font-bold tracking-tight truncate">{{ route.name }}</h1>
+            <div class="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 shrink-0">
+                <span>{{ course.total_distance_km }} km</span>
+                <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+                <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
+                {# pinned times: « Objectif » only when the plan finishes on the objective he chose #}
+                {% set obj_s = (sections[-1].objective_s if sections else none) if pinned else route.target_time_s %}
+                <span class="font-semibold text-gray-900">{% if obj_s and plan_total_s == obj_s %}Objectif {{ fmt_hm(obj_s) }}{% elif pinned and plan_total_s %}Plan {{ fmt_hm(plan_total_s) }}{% elif route.target_time_s %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
+            </div>
         </div>
+
         <div class="cells">
             <div class="cell start">
-                <p class="t">{{ fmt_clock(start_offset_s) }}</p>
-                <p class="n">{{ gl.glyph('start', 'w-3 h-3') }}Départ</p>
+                <p class="n">Départ</p>
                 <p class="k">km 0</p>
-                {% if sections %}{{ consigne(print_legs[0] if print_legs else none, sections[0].end_name if sections|length > 1 else 'Arrivée') }}{% endif %}
+                <p class="t">{{ fmt_clock(start_offset_s) }}</p>
             </div>
             {% for s in sections %}
             {% set use_adj = has_target and s.adjusted_clock_time_s is not none %}
             {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
+            {% set sec_time = s.adjusted_time_s if (has_target and s.adjusted_time_s is not none) else s.predicted_time_s %}
+            {% set pace = (sec_time / s.distance_km) if s.distance_km and s.distance_km > 0 else 0 %}
             {% set is_finish = loop.last %}
-            {% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
-            {% set is_switch = sc and s.end_checkpoint_index is not none and s.end_checkpoint_index == sc.switch.cp_index %}
-            <div class="cell {% if is_finish %}finish{% else %}{{ s.kind or 'none' }}{% endif %}{% if is_switch %} switch{% endif %}">
-                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="pin">{{ gl.glyph('pin', 'w-3 h-3') }}</span>{% endif %}{{ fmt_clock(clock_val) }}</p>
-                <p class="n">{% if is_finish %}{{ gl.glyph('finish', 'w-3 h-3') }}Arrivée{% else %}{{ gl.glyph(s.kind or 'none', 'w-3 h-3') }}{{ s.end_name }}{% endif %}</p>
-                <p class="k">km {{ fr(s.end_km) }}{% if s.drop_bag %} · sac{% endif %}{% if s.crew %} · assistance{% endif %}{% if s.cutoff_clock %} · barr. {{ s.cutoff_clock }}{% if cm is not none and (cm < 5400 or cm == tightest) %} <span class="{% if cm < 5400 %}tight{% endif %}">{{ fmt_margin(cm) }}</span>{% endif %}{% endif %}</p>
-                {% if not is_finish %}{{ consigne(print_legs[loop.index] if print_legs|length > loop.index else none, sections[loop.index].end_name if not loop.revindex0 == 1 else 'Arrivée') }}{% endif %}
+            <div class="cell {% if is_finish %}finish{% elif s.kind in ('full', 'base') %}full{% endif %}">
+                <p class="n">{% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}</p>
+                <p class="k">km {{ s.end_km }}{% if s.kind and s.kind != 'none' %} {{ kind_mark.get(s.kind, '') }}{% endif %}{% if s.drop_bag %} 🎒{% endif %}{% if s.crew %} 👥{% endif %}</p>
+                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-amber-600{% endif %}">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span>{% endif %}{{ fmt_clock(clock_val) }}</p>
+                {% if pace %}<p class="p">{{ fmt_pace(pace) }}/km</p>{% endif %}
+                <p class="d"><span class="text-red-400">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% endif %}</span> <span class="text-blue-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></p>
+                {% if s.cutoff_clock %}<p class="c">barrière {{ s.cutoff_clock }}{% if s.cutoff_margin_s is not none %} · marge <b{% if s.cutoff_margin_s < 0 %} class="text-red-700"{% endif %}>{{ fmt_margin(s.cutoff_margin_s) }}</b>{% endif %}</p>{% endif %}
             </div>
             {% endfor %}
         </div>
-        <div class="foot">
-            {% if sc %}
-            <div><b>Choix du plan · {{ sc.switch.name }}</b>avant {{ hhmm(sc.switch.target_s) }} et frais : optimiste, arrivée {{ hhmm(start_offset_s + sc.totals.fast_s) }} · {{ (sc.switch_late_s / 60)|round|int }} min de retard : sécurité, arrivée {{ hhmm(start_offset_s + sc.totals.safe_s) }}</div>
-            {% else %}
-            <div><b>Heures de passage</b>{% if has_target %}visées, plan à effort régulier{% else %}estimées{% endif %}{% if pinned %} · <span class="pin" style="color:#B3340F">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span> fixée par toi{% endif %}</div>
-            {% endif %}
-            <div><b>Lire une case</b>l'heure au point, puis la consigne du tronçon qui en part : plafond cardio · ce que tu prends · eau{% if n_aid %} · arrêts compris{% endif %}</div>
-            <div><b>Légende</b>{{ gl.glyph('water', 'w-2.5 h-2.5') }} eau · {{ gl.glyph('full', 'w-2.5 h-2.5') }} ravito · {{ gl.glyph('base', 'w-2.5 h-2.5') }} base vie · ≤ = FC max</div>
+
+        {% if scenarios and scenarios.switch %}
+        {% set sc = scenarios %}
+        <div class="mt-2 pt-1.5 border-t border-gray-200 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[8.5px] tabular-nums">
+            <span class="font-bold uppercase tracking-wide text-gray-700">Scénarios</span>
+            <span class="text-blue-700">sécurité {{ fmt_hm(sc.totals.safe_s) }}</span>
+            <span class="font-semibold">cible {{ fmt_hm(sc.totals.target_s) }}</span>
+            <span class="text-emerald-700">optimiste {{ fmt_hm(sc.totals.fast_s) }}</span>
+            <span class="text-gray-600">· bascule à <b>{{ sc.switch.name }}</b> (km {{ sc.switch.km }}) : optimiste seulement si tu y es à {{ fmt_clock(sc.switch.target_s) }} ou avant en te sentant bien ; +{{ (sc.switch_late_s / 60)|round|int }} min de retard → sécurité.</span>
         </div>
+        {% endif %}
+
+        <p class="text-[8px] text-gray-400 mt-1.5 text-center">
+            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if pinned %} <span class="inline-flex text-amber-600 align-middle">{{ gl.glyph('pin', 'w-2 h-2') }}</span> = heure fixée par toi, le reste du plan s'ajuste autour.{% endif %}{% if n_aid %} Arrêts aux postes inclus ({% if stop_minutes %}{{ stop_minutes }} min chacun{% else %}eau 2′, ravito 5′, base vie 15′{% endif %}).{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
+        </p>
     </div>
-    <p class="cut">découpe</p>
+
+    {% if legs_rows %}
+    <!-- Pilotage: one instruction per leg between two points (what the watch shows) -->
+    <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
+            <p class="text-[11px] font-bold uppercase tracking-wide">Pilotage</p>
+            <p class="text-[9px] text-gray-500">une consigne par tronçon · FC commande, VAM et allure = garde-fous</p>
+        </div>
+        <table class="w-full text-[9.5px] tabular-nums">
+            <tbody class="divide-y divide-gray-100">
+                {% for l in legs_rows %}{% set b = l.block %}
+                <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-orange-50/60{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
+                    <td class="py-0.5 pr-2 text-gray-600">→ <b class="text-gray-900">{{ l.to_names | join(', ') }}</b></td>
+                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}{% endif %}</td>
+                    <td class="py-0.5 pr-2 whitespace-nowrap">{% if b %}{{ b.label }}{% if b.vam_m_per_h %} · {{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %} · {{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}{% endif %}</td>
+                    <td class="py-0.5 text-gray-600">{% if b %}{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} · <span class="text-red-700">escaliers km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if nutrition_schedule and nutrition_lines %}
+    <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
+    <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
+        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
+            <p class="text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
+            <p class="text-[10px] text-gray-500 tabular-nums">
+                {% for ln in nutrition_lines %}×{{ ln.total_units | int }} {{ ln.name }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </p>
+        </div>
+        <table class="w-full text-[10px]">
+            <tbody class="divide-y divide-gray-100">
+                {% for leg in nutrition_schedule %}
+                <tr>
+                    <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
+                    <td class="py-1 px-1 text-right tabular-nums text-gray-500">{% set h = (leg.leg_time_s // 3600) | int %}{% set m = ((leg.leg_time_s % 3600) // 60) | int %}{% if h %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}min{% endif %}</td>
+                    <td class="py-1 pl-2 text-gray-700">
+                        {% set ns = namespace(any=false) %}
+                        {% for u in leg.units %}{% if u.units and not u.is_water %}{% if ns.any %} · {% endif %}{{ u.name }} <b>×{{ u.units }}</b>{% set ns.any = true %}{% endif %}{% endfor %}
+                        {% if not ns.any %}<span class="text-gray-300">—</span>{% endif %}
+                    </td>
+                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500">{{ leg.carbs_real_per_h }} g/h · {{ (leg.fluid_ml/1000)|round(1) }}L</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 <script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });</script>
 </body>

@@ -93,22 +93,20 @@ async def test_generate_key_shown_once_and_stored_hashed(as_user: AsyncClient, t
     # the session cookie is Secure outside DEBUG: talk https to the same app
     async with AsyncClient(transport=as_user._transport, base_url="https://test") as c:
         r = await c.post("/settings/health/key")
-        assert r.status_code == 303 and r.headers["location"] == "/sante#apple-sante"
+        assert r.status_code == 303 and r.headers["location"] == "/settings#apple-sante"
         assert test_user.health_key_hash and "pfh_" not in r.text
-        page = await c.get("/sante")
+        page = await c.get("/settings")
         key = next(w for w in page.text.replace('"', " ").split() if w.startswith("pfh_") and len(w) > 20)
         assert test_user.health_key_hash == hash_api_key(key)
         assert "ne sera plus jamais affichée" in page.text
-        again = await c.get("/sante")  # a reload never shows it again, nor mints a new one
+        again = await c.get("/settings")  # a reload never shows it again, nor mints a new one
         assert key not in again.text and test_user.health_key_prefix in again.text
         assert test_user.health_key_hash == hash_api_key(key)
         assert "Rechercher des échantillons de santé" in again.text and "/api/health/samples" in again.text
 
         r = await c.post("/settings/health/key/revoke")
         assert r.status_code == 303 and test_user.health_key_hash is None
-        assert "Clé révoquée" in (await c.get("/sante")).text
-        settings_page = (await c.get("/settings")).text  # Réglages only points to the Santé page
-        assert 'href="/sante#apple-sante"' in settings_page and "Rechercher des échantillons de santé" not in settings_page
+        assert "Clé révoquée" in (await c.get("/settings")).text
 
 
 async def test_push_rejects_missing_or_unknown_key(client: AsyncClient, db_session: AsyncSession, test_user: User):
@@ -372,9 +370,7 @@ def test_compute_form_statuses():
 
 async def test_current_form_and_dashboard_card(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     r = await as_user.get("/activities")
-    assert "Connecter Apple Santé" in r.text and 'href="/sante"' in r.text  # one line on the activities, pointing to Santé
-    r = await as_user.get("/sante")
-    assert r.status_code == 200 and "Pas encore de mesures" in r.text and "Générer ma clé" in r.text  # empty state + the steps
+    assert "Connecter Apple Santé" in r.text  # empty state
     today = date.today()
     for metric, series in _series(today, 60, 45, 50, 56).items():
         for d, v in series.items():
@@ -384,9 +380,7 @@ async def test_current_form_and_dashboard_card(as_user: AsyncClient, db_session:
     assert form["status"] == "fatigue" and form["hrv_delta_pct"] < 0 and form["rhr_delta_bpm"] > 0
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
     r = await as_user.get("/activities")
-    assert "Fatigue probable" in r.text and "<svg" not in r.text.split("Fatigue probable")[1][:300]  # the label only
-    r = await as_user.get("/sante")
-    assert "Fatigue probable" in r.text and "<svg viewBox=\"0 0 120 30\"" in r.text and "Tendances" in r.text
+    assert "Fatigue probable" in r.text and "<svg viewBox=\"0 0 120 30\"" in r.text
     assert r.text.count("<title>") >= 90  # one hover target per day on each sparkline
 
 

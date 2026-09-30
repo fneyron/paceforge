@@ -159,7 +159,7 @@ async def test_a_point_carries_its_own_stop_time(as_user: AsyncClient):
     r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(cps), "name": "Stops"})
     assert r.status_code == 200
     r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(cps), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
-    assert r.status_code == 200 and 'data-stop="600"' in r.text and "· 10 min" in r.text
+    assert r.status_code == 200 and "+10'" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}")
     assert r.status_code == 200 and '"stop_s": 600' in r.text  # persisted and handed back to the page
 
