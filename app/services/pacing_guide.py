@@ -322,3 +322,31 @@ def leg_instructions(guide: dict, sections: list[dict]) -> list[dict]:
             "code": code, "block": best, "steep": steep,
         })
     return out
+
+
+def leg_hr_caps(guide: dict, sections: list[dict]) -> list[int | None]:
+    """The heart-rate ceiling of each leg between two checkpoints, never to go
+    past: the climb ceiling when the leg climbs, else the flat one (a leg that
+    only goes down gets the release value), brought down for fatigue at the
+    leg's own place in the race (HR_DECAY). None without caps."""
+    caps = guide.get("caps") or {}
+    blocks = guide.get("blocks") or []
+    total = max((float(s["end_km"]) for s in sections), default=0.0) or 1.0
+    out: list[int | None] = []
+    for s in sections:
+        a, b = float(s["start_km"]), float(s["end_km"])
+        kinds = {blk["cls"] for blk in blocks if min(b, blk["end_km"]) > max(a, blk["start_km"])}
+        if kinds & {"climb", "stairs"}:
+            cap = caps.get("hr_cap_climb")
+        elif "flat" in kinds or not kinds:
+            cap = caps.get("hr_cap_flat")
+        else:
+            cap = caps.get("hr_release_descent")
+        out.append(_cap_at(cap, (a + b) / 2 / total))
+    return out
+
+
+def leg_walks(guide: dict, sections: list[dict]) -> list[list[dict]]:
+    """The steep stretches (≥ walk threshold) inside each leg."""
+    alerts = guide.get("alerts") or []
+    return [[al for al in alerts if al["end_km"] > float(s["start_km"]) and al["start_km"] < float(s["end_km"])] for s in sections]

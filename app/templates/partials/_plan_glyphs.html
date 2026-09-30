@@ -1,16 +1,18 @@
 {#
-  Monochrome 14 px glyphs for the plan table: aid-station kind (none / water /
-  full / base), crew, drop bag and a few UI icons. Stroke = currentColor; the
-  kinds carry their own colour so they read the same in the table, the phone
-  row and the JS registry.
+  Roadbook legend glyphs: ring = water, ink square = full aid station, square
+  with a red core = base vie (drop bag), double ring = start / finish, dashed
+  ring = simple passage; then crew, drop bag and a few UI icons (currentColor).
+  Colours come from the page tokens so they follow the dark mode.
 #}
 {% macro glyph(kind, cls="w-3.5 h-3.5") -%}
 {%- if kind == 'water' -%}
-<svg class="{{ cls }} inline-block align-middle text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Eau"><path d="M12 3s6 6.7 6 11.2A6 6 0 0 1 6 14.2C6 9.7 12 3 12 3z"/></svg>
+<svg class="{{ cls }} rb-g shrink-0" viewBox="0 0 16 16" aria-label="Eau"><circle cx="8" cy="8" r="5.2" fill="var(--card, #fff)" stroke="var(--water, #2A6799)" stroke-width="2.6"/></svg>
 {%- elif kind == 'full' -%}
-<svg class="{{ cls }} inline-block align-middle text-amber-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Ravito complet"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
+<svg class="{{ cls }} rb-g shrink-0" viewBox="0 0 16 16" aria-label="Ravito complet"><rect x="2.5" y="2.5" width="11" height="11" fill="var(--ink, #1C1A16)"/></svg>
 {%- elif kind == 'base' -%}
-<svg class="{{ cls }} inline-block align-middle text-violet-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Base vie"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>
+<svg class="{{ cls }} rb-g shrink-0" viewBox="0 0 16 16" aria-label="Base vie"><rect x="2.5" y="2.5" width="11" height="11" fill="var(--ink, #1C1A16)"/><rect x="5.6" y="5.6" width="4.8" height="4.8" fill="var(--sig, #D9411B)"/></svg>
+{%- elif kind == 'start' or kind == 'finish' -%}
+<svg class="{{ cls }} rb-g shrink-0" viewBox="0 0 16 16" aria-label="{{ 'Départ' if kind == 'start' else 'Arrivée' }}"><circle cx="8" cy="8" r="6" fill="var(--card, #fff)" stroke="var(--ink, #1C1A16)" stroke-width="1.8"/><circle cx="8" cy="8" r="2.4" fill="var(--ink, #1C1A16)"/></svg>
 {%- elif kind == 'crew' -%}
 <svg class="{{ cls }} inline-block align-middle shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Assistance"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>
 {%- elif kind == 'bag' -%}
@@ -22,6 +24,6 @@
 {%- elif kind == 'clock' -%}
 <svg class="{{ cls }} inline-block align-middle shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
 {%- else -%}
-<svg class="{{ cls }} inline-block align-middle text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3.5 2.5" aria-label="Simple passage"><circle cx="12" cy="12" r="7"/></svg>
+<svg class="{{ cls }} rb-g shrink-0" viewBox="0 0 16 16" aria-label="Simple passage"><circle cx="8" cy="8" r="5" fill="var(--card, #fff)" stroke="var(--ink3, #6B6456)" stroke-width="1.6" stroke-dasharray="2.6 2"/></svg>
 {%- endif -%}
 {%- endmacro %}

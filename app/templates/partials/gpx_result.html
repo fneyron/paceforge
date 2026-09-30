@@ -18,154 +18,174 @@
 {% set has_data = profile is defined and profile and profile.data_points and profile.data_points > 0 %}
 {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
 {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
-<div class="space-y-3" id="simulator-root">
+<div class="rb-race" id="simulator-root">
 
-    {# ── title ─────────────────────────────────────────────────────────── #}
-    <div class="flex items-center gap-2">
-        <div class="flex-1 min-w-0 group flex items-center gap-1.5">
-            <input type="text" id="save-name" value="{{ saved_route_name | default(course.name) }}" placeholder="Nom de la course" onchange="window._sim && window._sim.onNameChange()"
-                   class="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5 text-lg font-semibold tracking-tight focus:outline-none transition-colors">
-            <svg class="w-3.5 h-3.5 text-gray-300 shrink-0 group-hover:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+    {# ── the bib: the race, the objective, the arrival ───────────────────── #}
+    <section class="rb-bib" aria-label="Dossard de la course">
+        <div class="rb-bib-band">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+                <input type="text" id="save-name" value="{{ saved_route_name | default(course.name) }}" placeholder="Nom de la course" aria-label="Nom de la course" onchange="window._sim && window._sim.onNameChange()" class="rb-title-input">
+                <span id="save-status" class="inline-flex items-center shrink-0 w-3 justify-center"></span>
+            </div>
+            <span class="rb-meta" id="race-when"></span>
         </div>
-        <span id="save-status" class="inline-flex items-center shrink-0 w-3 justify-center"></span>
-    </div>
-    <div id="reimport-error"></div>
-
-    {# ── hero: the objective, the conditions, the track ─────────────────── #}
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div class="order-1 flex flex-col justify-center h-11">
-          <div class="flex items-baseline">
-            <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" title="Objectif · clique pour le modifier"
-                    class="text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900 hover:text-gray-600 transition-colors">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</button>
-            <span id="hero-edit" class="hidden items-baseline text-4xl lg:text-[40px] font-bold tabular-nums leading-none text-gray-900">
-                <input type="number" id="target-h" min="0" max="99" value="{{ (tgt // 3600) }}" aria-label="Objectif, heures"
-                       class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] text-right bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes"
-                       class="sim-num text-4xl lg:text-[40px] font-bold tabular-nums leading-none w-[2ch] bg-transparent border-0 border-b-2 border-gray-900 p-0 focus:ring-0 focus:outline-none">
-            </span>
-          </div>
-          <p id="hero-sub" class="text-[11px] leading-none text-gray-500 whitespace-nowrap mt-1">{% if has_obj %}ton objectif · estimation <b class="text-gray-700 tabular-nums">{{ '%dh%02d'|format(course.predicted_total_time_s // 3600, (course.predicted_total_time_s % 3600) // 60) }}</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="underline decoration-gray-300 hover:text-gray-900">revenir à l'estimation</button>{% else %}temps estimé d'après tes courses · glisse le curseur pour fixer un objectif{% endif %}</p>
+        <div class="rb-bib-body">
+            <div class="rb-obj">
+                <p class="rb-lab">Objectif</p>
+                <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" title="Objectif · touche pour le modifier" class="rb-hero">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</button>
+                <span id="hero-edit" class="hidden rb-hero items-baseline">
+                    <input type="number" id="target-h" min="0" max="99" value="{{ (tgt // 3600) }}" aria-label="Objectif, heures" class="sim-num rb-hero-in w-[2ch] text-right">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes" class="sim-num rb-hero-in w-[2ch]">
+                </span>
+            </div>
+            <div class="rb-arr">
+                <p class="rb-lab">Arrivée</p>
+                <p id="hero-arrival" class="rb-arrival">—</p>
+                <p class="rb-verdict"><span id="hero-verdict" class="rb-verdict-word"></span><span id="hero-gap" class="rb-verdict-gap"></span></p>
+            </div>
+            <div class="rb-ruler">
+                <button type="button" class="rb-nudge" onclick="window._sim && window._sim.nudgeTarget(-300)" aria-label="Objectif 5 minutes plus court" title="−5 min">−5</button>
+                <div class="rb-ruler-track">
+                    <div id="obj-guard" class="lg:hidden absolute inset-0 z-10" style="touch-action: pan-y"></div>
+                    <input type="range" id="obj-slider" min="0" max="100" step="1" aria-label="Objectif" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
+                    <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="rb-est hidden" title="estimé"><span></span></button>
+                    <div id="obj-ticks" class="rb-ticks" aria-hidden="true"></div>
+                </div>
+                <button type="button" class="rb-nudge" onclick="window._sim && window._sim.nudgeTarget(300)" aria-label="Objectif 5 minutes plus long" title="+5 min">+5</button>
+            </div>
+            <p id="hero-sub" class="rb-hero-sub">{% if has_obj %}ton objectif · estimation <b>{{ '%dh%02d'|format(course.predicted_total_time_s // 3600, (course.predicted_total_time_s % 3600) // 60) }}</b>{% else %}temps estimé d'après tes courses · règle ton objectif{% endif %}</p>
         </div>
-        <div class="order-5 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-600 tabular-nums">
-            <span class="inline-flex items-center gap-x-1.5 whitespace-nowrap">
-            <span id="race-wd" class="text-gray-400 hidden"></span>
-            <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}" onchange="window._sim && window._sim.onConditionsChange()" aria-label="Date de la course" title="Date de la course"
-                   class="fit time-inline text-xs text-gray-600 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-gray-900 focus:ring-0 px-0 py-0 h-6">
-            <span class="text-gray-300">·</span>
-            <input type="time" id="start-time" step="60" value="{{ '%02d:%02d'|format(sh, sm) }}" onchange="window._sim && window._sim.setStartTime(this.value)" aria-label="Heure de départ" title="Heure de départ"
-                   class="fit time-inline text-xs text-gray-600 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-gray-900 focus:ring-0 px-0 py-0 h-6">
-            </span>
+        <div class="rb-bib-foot">
+            <span><b>{{ ('%.1f' % course.total_distance_km) | replace('.', ',') }}</b> km</span>
+            <span><b>{{ '{:,}'.format(course.total_elevation_gain | int).replace(',', ' ') }}</b> m D+</span>
+            <label class="rb-cond-in">départ <input type="date" id="race-date" value="{{ saved_race_date if saved_race_date else '' }}" onchange="window._sim && window._sim.onConditionsChange()" aria-label="Date de la course" title="Date de la course" class="fit time-inline"></label>
+            <label class="rb-cond-in"><span id="race-wd" class="hidden"></span><input type="time" id="start-time" step="60" value="{{ '%02d:%02d'|format(sh, sm) }}" onchange="window._sim && window._sim.setStartTime(this.value)" aria-label="Heure de départ" title="Heure de départ" class="fit time-inline"></label>
             <span id="weather-result" class="inline-flex items-center gap-x-1.5 whitespace-nowrap"></span>
         </div>
-        <div class="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-0.5 shrink-0">
-            {% if course.route_coords %}
-            <button id="map-toggle" type="button" onclick="window._sim && window._sim.toggleMap()" aria-pressed="false" title="Carte"
-                    class="w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/></svg>
-            </button>
-            {% endif %}
-            <details class="relative">
-                <summary class="list-none cursor-pointer select-none w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Exporter">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-                </summary>
-                <div class="absolute right-0 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-30 text-left">
-                    <p class="px-2 pt-1 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Montre</p>
-                    <button onclick="window._sim.exportPace('gpx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX horodaté</b> <span class="text-gray-400">— COROS · Garmin, heure cible et consigne à chaque point</span></button>
-                    <button onclick="window._sim.exportPace('tcx')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>TCX course</b> <span class="text-gray-400">— Garmin Virtual Partner</span></button>
-                    <button onclick="window._sim.exportPace('csv')" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>CSV</b> <span class="text-gray-400">— tableur</span></button>
-                    <div class="my-1 border-t border-gray-100"></div>
-                    <button onclick="window._sim.exportGpx()" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-50 text-xs"><b>GPX trace</b> <span class="text-gray-400">— sans temps</span></button>
-                </div>
-            </details>
-            <button type="button" onclick="window._sim.printPlan()" class="w-10 h-10 lg:w-8 lg:h-8 rounded-lg inline-flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Imprimer la bande">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
-            </button>
-        </div>
-        <div class="order-4 hidden lg:block w-full h-0 -my-2"></div>
-        <div class="order-3 lg:order-5 relative w-full lg:w-64 h-6 flex items-center">
-            <div id="obj-guard" class="lg:hidden absolute inset-0 z-10" style="touch-action: pan-y"></div>
-            <input type="range" id="obj-slider" min="0" max="100" step="1" aria-label="Objectif" oninput="window._sim && window._sim.previewObjective(this.value)" onchange="window._sim && window._sim.commitObjective(this.value)">
-            <button id="obj-est" type="button" onclick="window._sim && window._sim.resetTarget()" class="absolute top-1/2 -translate-y-1/2 w-6 h-6 -ml-3 flex items-center justify-center hidden" title="estimé"><span class="block w-0.5 h-3 bg-gray-500 rounded-sm"></span></button>
-        </div>
-        <div class="order-6 text-xs text-gray-500 tabular-nums whitespace-nowrap"><b class="text-gray-800 font-semibold">{{ course.total_distance_km }}</b> km · <span class="text-red-500">+{{ "%.0f"|format(course.total_elevation_gain) }}</span> / <span class="text-blue-500">−{{ "%.0f"|format(course.total_elevation_loss) }}</span> m</div>
+        <span class="rb-hole tl" aria-hidden="true"></span><span class="rb-hole tr" aria-hidden="true"></span><span class="rb-hole bl" aria-hidden="true"></span><span class="rb-hole br" aria-hidden="true"></span>
+    </section>
+    <div id="reimport-error"></div>
+
+    {# ── what leaves the page: the bib band on paper, the file for the watch, the map ── #}
+    <div class="rb-actions">
+        <button type="button" onclick="window._sim.printPlan()" class="rb-btn" title="Imprimer la bande de dossard">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="1"/><path d="M6 14h12v7H6z"/></svg>Bande
+        </button>
+        <details class="relative">
+            <summary class="rb-btn list-none cursor-pointer select-none" title="Exporter vers la montre">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3"/><path d="M9 6l1-3h4l1 3M9 18l1 3h4l1-3M12 10v3l2 1"/></svg>Montre
+            </summary>
+            <div class="rb-menu">
+                <p class="rb-lab px-2 pt-1 pb-1">Pour la montre · Exporter</p>
+                <button onclick="window._sim.exportPace('gpx')"><b>GPX horodaté</b><span>COROS, Garmin : heure et consigne à chaque point</span></button>
+                <button onclick="window._sim.exportPace('tcx')"><b>TCX</b><span>Garmin, partenaire virtuel</span></button>
+                <button onclick="window._sim.exportPace('csv')"><b>CSV</b><span>tableur, stratégie d'allure COROS</span></button>
+                <button onclick="window._sim.exportGpx()"><b>GPX trace</b><span>le parcours seul, sans heures</span></button>
+            </div>
+        </details>
+        {% if course.route_coords %}
+        <button id="map-toggle" type="button" onclick="window._sim && window._sim.toggleMap()" aria-pressed="false" class="rb-btn" title="Carte">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg>Carte
+        </button>
+        {% endif %}
     </div>
 
-    {# ── the band: profile with the plan on it (map on demand) ───────────── #}
+    {# ── two tabs: the roadbook (the plan) and the bags ────────────────────── #}
+    <div class="rb-tabs" role="tablist" aria-label="Vues de la course">
+        <button id="rtab-plan" role="tab" aria-selected="true" aria-controls="rpanel-plan" onclick="switchRouteTab('plan')" class="rb-tab">Roadbook<small>le plan</small></button>
+        <button id="rtab-bags" role="tab" aria-selected="false" aria-controls="rpanel-bags" onclick="switchRouteTab('bags')" class="rb-tab">Sacs<small>à préparer</small></button>
+        {% if (show_debrief is defined and show_debrief) or (compare_activity_id is defined and compare_activity_id) %}<button id="rtab-realise" role="tab" aria-selected="false" aria-controls="rpanel-realise" onclick="switchRouteTab('realise')" class="rb-tab">Bilan<small>après</small></button>{% endif %}
+    </div>
+
+    <div id="rpanel-plan" role="tabpanel" aria-labelledby="rtab-plan" class="rb-panel">
+    {# ── the profile: the spine of the roadbook (map on demand) ───────────── #}
     {% if course.route_coords %}
-    <div class="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div class="rb-profile">
         <div id="map-wrap" class="hidden relative">
-            <div id="courseMap" class="h-[220px] lg:h-[340px] map-container"></div>
-            <button type="button" onclick="window._sim && window._sim.expandMap(true)" class="map-expand lg:hidden absolute top-2 right-2 z-10 w-9 h-9 rounded-full bg-white shadow inline-flex items-center justify-center text-gray-700" aria-label="Agrandir la carte">
+            <div id="courseMap" class="h-[260px] lg:h-[360px] map-container"></div>
+            <button type="button" onclick="window._sim && window._sim.expandMap(true)" class="map-expand lg:hidden absolute top-2 right-2 z-10 w-11 h-11 rounded-full bg-white shadow inline-flex items-center justify-center text-gray-700" aria-label="Agrandir la carte">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
-            <button type="button" onclick="window._sim && window._sim.expandMap(false)" class="map-close absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white shadow items-center justify-center text-gray-700" aria-label="Réduire la carte">
+            <button type="button" onclick="window._sim && window._sim.expandMap(false)" class="map-close absolute top-3 right-3 z-10 w-11 h-11 rounded-full bg-white shadow items-center justify-center text-gray-700" aria-label="Réduire la carte">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
         </div>
-        <div id="elevChart" class="h-[150px] lg:h-[200px]"></div>
+        <div id="elevChart" class="h-[230px] lg:h-[290px]"></div>
+        <div class="rb-legend" aria-hidden="true">
+            <span>{{ gl.glyph('water', 'w-3.5 h-3.5') }} eau</span><span>{{ gl.glyph('full', 'w-3.5 h-3.5') }} ravito</span><span>{{ gl.glyph('base', 'w-3.5 h-3.5') }} base vie</span><span><i class="rb-hatch"></i> raide : marche</span>
+        </div>
     </div>
     {% endif %}
 
-    {# ── the plan: one table ─────────────────────────────────────────────── #}
-    <div>
+    {# ── the schedule: clock, point, and the consigne of the leg that leaves it ── #}
+    <div class="rb-sched-wrap">
+        <div class="rb-sched-head"><h2 class="rb-section-title">Le roadbook</h2><p class="rb-lab">heure visée · consigne du tronçon qui suit</p></div>
         <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
         <div id="cp-sheet" class="hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Point de passage">
-            <div data-sheet-bg class="absolute inset-0 bg-black/30" onclick="window._sim && window._sim.closeSheet()"></div>
-            <div data-sheet-panel class="absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl px-4 pt-3 lg:left-1/2 lg:right-auto lg:bottom-auto lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[460px] lg:max-h-[85vh] lg:rounded-2xl lg:px-6 lg:pt-5 lg:pb-6" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
+            <div data-sheet-bg class="absolute inset-0 bg-black/40" onclick="window._sim && window._sim.closeSheet()"></div>
+            <div data-sheet-panel class="rb-sheet absolute left-0 right-0 bottom-0 max-h-[88vh] overflow-y-auto px-4 pt-3 lg:left-1/2 lg:right-auto lg:bottom-auto lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[460px] lg:max-h-[85vh] lg:px-6 lg:pt-5 lg:pb-6" style="padding-bottom:max(16px, env(safe-area-inset-bottom))"></div>
         </div>
         <div id="page-error" class="hidden px-1 py-2 text-xs text-red-600"></div>
         <div id="recalc-error" class="hidden px-1 py-2 text-xs text-red-600">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
-        <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="mt-2 w-full h-11 lg:h-10 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-600 hover:border-gray-500 hover:text-gray-900 inline-flex items-center justify-center gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white inline-flex items-center justify-center leading-none text-base">+</span>Ajouter un point de passage</button>
+        <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="rb-add"><span aria-hidden="true">+</span>Ajouter un point de passage</button>
     </div>
 
-    {# ── settings, in plain words: where the time comes from, stops, backup plans, trace ── #}
-    {% set lbl = "block text-[11px] font-semibold text-gray-800 mb-1" %}
-    {% set num = "sim-num w-11 h-7 px-1 rounded-md border border-gray-200 text-xs tabular-nums text-center text-gray-900" %}
-    <details id="advanced" class="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <summary class="list-none cursor-pointer select-none px-4 py-2.5 flex items-center justify-between gap-3">
-            <span class="text-sm text-gray-700">Réglages du plan</span>
-            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </summary>
-        <div class="px-4 pb-4 pt-3 border-t border-gray-100 space-y-4 text-xs text-gray-600 leading-relaxed">
-            <div>
+    {# ── everything else, in plain words, out of the way ───────────────────── #}
+    {% set lbl = "rb-lab block mb-1.5" %}
+    {% set num = "sim-num w-14 h-11 px-1 rounded-md border text-sm tabular-nums text-center" %}
+    <details id="advanced" class="rb-details">
+        <summary class="rb-details-sum"><span class="rb-section-title">Détails</span><span class="rb-lab hidden sm:inline">estomac · cœur · arrêts · plans de rechange · météo · trace</span><svg class="w-4 h-4 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></summary>
+        <div class="rb-details-body">
+            {% if saved_route_id %}
+            <div id="rb-setup" hx-get="/partials/simulator/roadbook/{{ saved_route_id }}/setup" hx-trigger="toggle from:#advanced once" hx-swap="outerHTML"><p class="text-sm rb-muted">Chargement…</p></div>
+            <div class="rb-dblock">
+                <span class="{{ lbl }}">Temps d'arrêt aux ravitos</span>
+                <p>Par défaut : 2 min aux points d'eau, 5 min aux ravitos, 15 min aux bases vie. Pour un point précis, touche-le dans la liste.</p>
+                <label class="mt-2 flex flex-wrap items-center gap-2">Même durée partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="—" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="{{ num }}"> min <span class="rb-muted">(vide = par défaut)</span></label>
+            </div>
+            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="rb-dblock">
+                <span class="{{ lbl }}">Plans de rechange</span>
+                <p>Au point de choix, un plan optimiste si tout va bien, un plan sécurité si ça coince. Le roadbook le rappelle à ce point.</p>
+                <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <label class="inline-flex items-center gap-2 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus rapide" class="{{ num }}"> % plus vite</label>
+                    <label class="inline-flex items-center gap-2 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="{{ num }}"> % plus lent</label>
+                    <label class="inline-flex items-center gap-2 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-11 pl-2 pr-7 rounded-md border text-sm max-w-[220px]"><option value="">automatique</option></select></label>
+                </div>
+            </form>
+            <div class="rb-dblock">
+                <span class="{{ lbl }}">Météo</span>
+                <p id="weather-note">Prévision à chaque point, à l'heure de passage, dès 16 jours avant la course.</p>
+                <button type="button" onclick="window._sim && window._sim.fetchWeather()" class="rb-btn sm mt-2">Mettre à jour la météo</button>
+            </div>
+            <div class="rb-dblock">
                 <span class="{{ lbl }}">D'où vient l'estimation</span>
                 {% if race_calibration is defined and race_calibration %}
                 {% set rc = race_calibration %}
-                <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-gray-900">{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
+                <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b>{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>. <span class="rb-muted">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
                 {% elif has_data %}
                 <p>De tes sorties Strava. Pour une estimation plus juste, indique « Course » comme type d'activité sur tes compétitions dans Strava.</p>
                 {% else %}
-                <p class="text-amber-700">Pas encore d'activités Strava : estimation générique en attendant.</p>
+                <p class="rb-red">Pas encore d'activités Strava : estimation générique en attendant.</p>
                 {% endif %}
-                <p class="mt-1 text-gray-500">Le temps est ensuite réparti selon la pente, le type de chemin (route ou sentier), la fatigue, la nuit et la chaleur.</p>
+                <p class="mt-1 rb-muted">Le temps est ensuite réparti selon la pente, le type de chemin, la fatigue, la nuit et la chaleur.</p>
             </div>
-            {% if saved_route_id %}
-            <div class="pt-3 border-t border-gray-100">
-                <span class="{{ lbl }}">Temps d'arrêt aux ravitos</span>
-                <p>Par défaut 2 min aux points d'eau, 5 min aux ravitos, 15 min aux bases vie. Pour un point précis, touche-le sur le profil ou dans le tableau.</p>
-                <label class="mt-1.5 inline-flex items-center gap-1.5 whitespace-nowrap">Même durée partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="—" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="{{ num }}"> min <span class="text-gray-400">(vide = par défaut)</span></label>
-            </div>
-            <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="pt-3 border-t border-gray-100">
-                <span class="{{ lbl }}">Plans de rechange</span>
-                <p>En plus de ton plan, le tableau montre un plan <span class="text-emerald-700 font-medium">Optimiste</span> (si tout va bien) et un plan <span class="text-blue-700 font-medium">Sécurité</span> (si ça coince), et le point où choisir entre les deux.</p>
-                <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus rapide" class="{{ num }} w-9"> % plus rapide</label>
-                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="{{ num }} w-9"> % plus lent</label>
-                    <label class="inline-flex items-center gap-1 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-7 pl-1.5 pr-6 rounded-md border border-gray-200 text-xs text-gray-900 max-w-[200px]"><option value="">automatique</option></select></label>
-                </div>
-            </form>
-            <div class="pt-3 border-t border-gray-100">
+            <div class="rb-dblock">
                 <span class="{{ lbl }}">Trace GPX</span>
-                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="flex flex-wrap items-center gap-2">
-                    <label class="h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 cursor-pointer">
-                        Remplacer la trace
-                        <input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()">
-                    </label>
-                    <span class="text-gray-400">tes points, ton objectif et ta nutrition sont gardés</span>
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/reimport" hx-encoding="multipart/form-data" hx-target="#reimport-error" hx-swap="innerHTML" class="flex flex-wrap items-center gap-3">
+                    <label class="rb-btn sm cursor-pointer">Remplacer la trace<input type="file" name="gpx_file" accept=".gpx" class="hidden" onchange="this.form.requestSubmit()"></label>
+                    <span class="rb-muted">tes points, ton objectif et ta nutrition sont gardés</span>
                 </form>
             </div>
+            {% if (show_debrief is defined and show_debrief) or (compare_activity_id is defined and compare_activity_id) %}
+            <div class="rb-dblock">
+                <span class="{{ lbl }}">Après la course</span>
+                <p>Compare ta sortie Strava au plan, tronçon par tronçon.</p>
+                <button type="button" onclick="switchRouteTab('realise'); window.scrollTo({ top: 0, behavior: 'smooth' })" class="rb-btn sm mt-2">Ouvrir le bilan</button>
+            </div>
+            {% endif %}
             {% endif %}
         </div>
     </details>
+    </div>
 
     <input type="hidden" id="courseJsonData" value='{{ course_json }}'>
 </div>
@@ -187,7 +207,12 @@ window._sim = {};
     var currentRouteId = {{ saved_route_id if saved_route_id else 'null' }};
     var liveAnchor = {{ saved_live_json | safe if saved_live_json is defined and saved_live_json else 'null' }};
     var planData = null;
-    var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
+    // colours come from the page tokens (roadbook.css), so the profile follows the dark mode
+    function tok(n, dflt) { try { var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return v || dflt; } catch (e) { return dflt; } }
+    var C = {};
+    function readTokens() { C = { ink: tok('--ink', '#1C1A16'), ink2: tok('--ink2', '#5B5447'), ink3: tok('--ink3', '#6B6456'), faint: tok('--faint', '#A89F8C'), card: tok('--card', '#FBF8F1'), fill: tok('--fill', '#E2D9C4'), night: tok('--night', '#222B45'), nightText: tok('--night-text', '#E9E2CF'), sig: tok('--sig', '#D9411B'), sigText: tok('--sig-text', '#B3340F'), sigSoft: tok('--sig-soft', '#F6DDD2'), water: tok('--water', '#2A6799'), rule: tok('--rule', '#CBC1AB') }; }
+    readTokens();
+    var gridC = C.rule, mutedC = C.ink3;
     // phone state, re-applied after every table swap
     var openCp = null, focusKm = null, scn = 'target';
     try { scn = localStorage.getItem('pf.scn') || 'target'; } catch (e) {}
@@ -252,7 +277,7 @@ window._sim = {};
             onRemove: function () { ctl3dBtn = null; }
         }, 'top-left');
         var hoverEl = document.createElement('div');
-        hoverEl.style.cssText = 'width:14px;height:14px;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
+        hoverEl.style.cssText = 'width:14px;height:14px;background:#D9411B;border:2px solid #FBF8F1;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:none;';
         hoverMarker = new maplibregl.Marker({ element: hoverEl }).setLngLat([0, 0]).addTo(map);
         map.on('load', function() {
             map.addSource('dem', { type: 'raster-dem', tiles: [DEM_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
@@ -270,11 +295,11 @@ window._sim = {};
             } catch (e) { console.warn('contours off', e); }
             map.addSource('route', { type: 'geojson', lineMetrics: true, data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
             map.addLayer({ id: 'route-casing', type: 'line', source: 'route', paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
-            map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-width': 4, 'line-gradient': routeGradientExpr() }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+            map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-width': 4, 'line-color': '#D9411B' }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
             map.addSource('hi-seg', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-            map.addLayer({ id: 'hi-seg', type: 'line', source: 'hi-seg', paint: { 'line-width': 10, 'line-color': '#f59e0b', 'line-opacity': 0.5 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
-            new maplibregl.Marker({ color: '#22c55e', scale: 0.8 }).setLngLat(coords[0]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Départ</b>')).addTo(map);
-            new maplibregl.Marker({ color: '#ef4444', scale: 0.8 }).setLngLat(coords[coords.length - 1]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Arrivée</b>')).addTo(map);
+            map.addLayer({ id: 'hi-seg', type: 'line', source: 'hi-seg', paint: { 'line-width': 10, 'line-color': '#1C1A16', 'line-opacity': 0.35 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+            new maplibregl.Marker({ color: '#1C1A16', scale: 0.8 }).setLngLat(coords[0]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Départ</b>')).addTo(map);
+            new maplibregl.Marker({ color: '#D9411B', scale: 0.8 }).setLngLat(coords[coords.length - 1]).setPopup(new maplibregl.Popup({ closeButton: false }).setHTML('<b>Arrivée</b>')).addTo(map);
             renderCpOnMap();
             if (terrain3d) applyTerrain(true, false);
         });
@@ -336,7 +361,7 @@ window._sim = {};
         if (show && !wrap.classList.contains('hidden')) return;
         wrap.classList.toggle('hidden', !show);
         if (!show) { wrap.classList.remove('map-full'); document.body.style.overflow = ''; }
-        if (btn) { btn.setAttribute('aria-pressed', show ? 'true' : 'false'); btn.classList.toggle('bg-gray-100', show); btn.classList.toggle('text-gray-900', show); btn.classList.toggle('text-gray-500', !show); }
+        if (btn) btn.setAttribute('aria-pressed', show ? 'true' : 'false');
         try { localStorage.setItem('pf.map', show ? '1' : '0'); } catch (e) {}
         if (!show) { if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; } return; }
         if (!map) {
@@ -397,74 +422,65 @@ window._sim = {};
     function initChart() {
         var el = document.getElementById('elevChart');
         if (!el || !elevData.length || !el.clientWidth) return;
-        el.innerHTML = '';
-        var w = el.clientWidth || 800, h = el.clientHeight || 200, compact = w < 640;
-        prof.w = w; prof.h = h; prof.compact = compact; prof.padL = compact ? 8 : 46; prof.padR = compact ? 8 : 12;
-        prof.twoRows = pinLayout().two; prof.padT = compact ? (prof.twoRows ? 40 : 26) : (prof.twoRows ? 44 : 34); prof.padB = compact ? 24 : 34;
+        el.innerHTML = ''; readTokens();
+        var w = el.clientWidth || 800, h = el.clientHeight || 240, compact = w < 640;
+        // top: the night strip, then the aid-station glyphs above the ground; bottom: the heart-rate band, then the km axis
+        prof.w = w; prof.h = h; prof.compact = compact; prof.padL = compact ? 6 : 60; prof.padR = compact ? 6 : 12;
+        prof.sky = 16; prof.padT = prof.sky + 22; prof.hrH = compact ? 18 : 20; prof.padB = prof.hrH + 22;
         var minE = Infinity, maxE = -Infinity;
         for (var i = 0; i < elevData.length; i++) { var e = elevData[i].elevation; if (e < minE) minE = e; if (e > maxE) maxE = e; }
         var range = Math.max(1, maxE - minE), pad = Math.max(20, range * 0.06);
         prof.minE = Math.floor((minE - pad) / 50) * 50; if (minE >= 0) prof.minE = Math.max(0, prof.minE);
         prof.maxE = Math.ceil((maxE + pad) / 50) * 50;
         var base = h - prof.padB;
-        var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h });
+        var svg = mk('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, 'font-family': 'IBM Plex Mono, monospace' });
         svg.style.display = 'block'; svg.style.cursor = 'crosshair'; svg.style.touchAction = 'pan-y'; svg.style.userSelect = 'none';
+        var defs = mk('defs', {}); svg.appendChild(defs);
+        // hatches: light for 10 %+, dense where you walk (walk threshold), in ink on the ground colour
+        var hid = 'h' + Math.random().toString(36).slice(2, 7);
+        [['1', 5, 0.7, 0.5], ['2', 2.8, 1.1, 0.85]].forEach(function (d) {
+            var pt = mk('pattern', { id: hid + d[0], width: d[1], height: d[1], patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+            pt.appendChild(mk('rect', { width: d[1], height: d[1], fill: C.fill })); pt.appendChild(mk('line', { x1: 0, y1: 0, x2: 0, y2: d[1], stroke: C.ink, 'stroke-width': d[2], opacity: d[3] }));
+            defs.appendChild(pt);
+        });
+        var st = mk('pattern', { id: hid + 's', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+        st.appendChild(mk('rect', { width: 6, height: 6, fill: C.card })); st.appendChild(mk('rect', { width: 3, height: 6, fill: C.sig })); defs.appendChild(st);
+        prof.hid = hid;
         var grid = mk('g', {});
         // altitude lines on round values (500 · 1 000 · 1 500), never a negative altitude, at most three
         var step = range > 1500 ? 500 : range > 700 ? 250 : range > 300 ? 100 : 50, levels = [];
         do { levels = []; for (var lv = Math.ceil((prof.minE + 1) / step) * step; lv <= prof.maxE; lv += step) levels.push(lv); if (levels.length > 3) step *= 2; } while (levels.length > 3);
         levels.forEach(function (lvl) {
             var y = yOf(lvl);
-            grid.appendChild(mk('line', { x1: prof.padL, x2: w - prof.padR, y1: y, y2: y, stroke: gridC, 'stroke-dasharray': '3 3' }));
-            if (!compact) { var t = mk('text', { x: prof.padL - 6, y: y + 3, 'text-anchor': 'end', 'font-size': '10', fill: mutedC }); t.textContent = fmtM(lvl) + ' m'; grid.appendChild(t); }
+            grid.appendChild(mk('line', { x1: prof.padL, x2: w - prof.padR, y1: y, y2: y, stroke: C.faint, 'stroke-width': '.6', 'stroke-dasharray': '1 3' }));
+            var t = mk('text', { x: compact ? prof.padL + 2 : prof.padL - 6, y: compact ? y - 3 : y + 3, 'text-anchor': compact ? 'start' : 'end', 'font-size': '10', fill: C.ink3 }); t.textContent = fmtM(lvl) + ' m'; grid.appendChild(t);
         });
-        var stepKm = totalDistKm > 120 ? 20 : totalDistKm > 60 ? 10 : totalDistKm > 25 ? 5 : totalDistKm > 10 ? 2 : 1, lastK = 0;
-        for (var k = stepKm; k < totalDistKm; k += stepKm) lastK = k;
-        for (k = stepKm; k < totalDistKm; k += stepKm) { var tx = mk('text', { x: xOf(k), y: base + 12, 'text-anchor': 'middle', 'font-size': '10', fill: mutedC }); tx.textContent = k + (k === lastK ? ' km' : ''); grid.appendChild(tx); }
+        var stepKm = totalDistKm > 120 ? 20 : totalDistKm > 60 ? 10 : totalDistKm > 25 ? 5 : totalDistKm > 10 ? 2 : 1;
+        if (compact && totalDistKm > 60) stepKm *= 2;
+        for (var k = 0; k < totalDistKm; k += stepKm) { var tx = mk('text', { x: xOf(k), y: h - 5, 'text-anchor': k === 0 ? 'start' : 'middle', 'font-size': '10', fill: C.ink3 }); tx.textContent = k + (k === 0 ? ' km' : ''); grid.appendChild(tx); }
         svg.appendChild(grid);
-        var step = Math.max(1, Math.floor(elevData.length / 400)), pts = [];
-        for (i = 0; i < elevData.length; i += step) pts.push(elevData[i]);
+        var sstep = Math.max(1, Math.floor(elevData.length / 500)), pts = [];
+        for (i = 0; i < elevData.length; i += sstep) pts.push(elevData[i]);
         if (pts[pts.length - 1] !== elevData[elevData.length - 1]) pts.push(elevData[elevData.length - 1]);
         var d = '';
         pts.forEach(function (p, i) { d += (i ? 'L' : 'M') + xOf(p.distance_km).toFixed(1) + ' ' + yOf(p.elevation).toFixed(1) + ' '; });
-        var defs = mk('defs', {}), clip = mk('clipPath', { id: 'sky-clip' });
-        clip.appendChild(mk('path', { d: d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' 0 L' + xOf(pts[0].distance_km).toFixed(1) + ' 0 Z' }));
-        defs.appendChild(clip); svg.appendChild(defs);
-        prof.nightLayer = mk('g', { 'clip-path': 'url(#sky-clip)' }); svg.appendChild(prof.nightLayer);  // night darkens the sky only; the ground keeps its slope colours
-        // ground coloured by slope, same scale as the map: ONE path filled with a hard-stop gradient
-        // (adjacent slabs leave hairline seams), classes smoothed over ~1 km and short runs merged
-        var gid = 'slope-' + Math.random().toString(36).slice(2, 7), grad = mk('linearGradient', { id: gid, gradientUnits: 'userSpaceOnUse', x1: prof.padL, x2: w - prof.padR, y1: 0, y2: 0 });
-        var NS = Math.max(60, Math.min(360, Math.round(totalDistKm * 2))), runs = [];
-        for (var si = 0; si < NS; si++) {
-            var k0 = totalDistKm * si / NS, k1 = totalDistKm * (si + 1) / NS, km = (k0 + k1) / 2, win = 0.5;
-            var ga = elevAt(Math.max(0, km - win)), gb = elevAt(Math.min(totalDistKm, km + win)), run = (Math.min(totalDistKm, km + win) - Math.max(0, km - win)) * 1000;
-            var col = slopeColor(run > 0 ? (gb - ga) / run * 100 : 0);
-            if (runs.length && runs[runs.length - 1].c === col) runs[runs.length - 1].b = k1; else runs.push({ a: k0, b: k1, c: col });
-        }
-        // a run shorter than 0.6 % of the course takes its neighbour's colour (no confetti)
-        for (var ri = 1; ri < runs.length - 1; ri++) { if (runs[ri].b - runs[ri].a < totalDistKm * 0.006) { runs[ri - 1].b = runs[ri].b; runs.splice(ri, 1); ri--; } }
-        var span = (w - prof.padR) - prof.padL;
-        runs.forEach(function (r) {
-            var o0 = ((xOf(r.a) - prof.padL) / span * 100).toFixed(3) + '%', o1 = ((xOf(r.b) - prof.padL) / span * 100).toFixed(3) + '%';
-            grad.appendChild(mk('stop', { offset: o0, 'stop-color': r.c })); grad.appendChild(mk('stop', { offset: o1, 'stop-color': r.c }));
-        });
-        var fade = mk('linearGradient', { id: gid + 'f', x1: 0, x2: 0, y1: 0, y2: 1 });
-        fade.appendChild(mk('stop', { offset: '0%', 'stop-color': '#fff', 'stop-opacity': '1' })); fade.appendChild(mk('stop', { offset: '100%', 'stop-color': '#fff', 'stop-opacity': '0.55' }));
-        var mask = mk('mask', { id: gid + 'm' }); mask.appendChild(mk('rect', { x: 0, y: 0, width: w, height: h, fill: 'url(#' + gid + 'f)' }));
-        defs.appendChild(grad); defs.appendChild(fade); defs.appendChild(mask);
         var groundD = d + 'L' + xOf(pts[pts.length - 1].distance_km).toFixed(1) + ' ' + base + ' L' + xOf(pts[0].distance_km).toFixed(1) + ' ' + base + ' Z';
-        svg.appendChild(mk('path', { d: groundD, fill: 'url(#' + gid + ')', 'fill-opacity': isDark ? '0.6' : '0.62', mask: 'url(#' + gid + 'm)' }));
-        prof.runs = runs;
-        svg.appendChild(mk('path', { d: d, fill: 'none', stroke: isDark ? '#e5e7eb' : '#111827', 'stroke-width': '1.75', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        svg.appendChild(mk('path', { d: groundD, fill: C.fill }));
+        var clip = mk('clipPath', { id: hid + 'g' }); clip.appendChild(mk('path', { d: groundD })); defs.appendChild(clip);
+        prof.slopeLayer = mk('g', { 'clip-path': 'url(#' + hid + 'g)' }); svg.appendChild(prof.slopeLayer);
+        svg.appendChild(mk('path', { d: d, fill: 'none', stroke: C.ink, 'stroke-width': '1.6', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        svg.appendChild(mk('line', { x1: prof.padL, x2: w - prof.padR, y1: base, y2: base, stroke: C.ink, 'stroke-width': '1' }));
+        prof.nightLayer = mk('g', {}); svg.appendChild(prof.nightLayer);
+        prof.hrLayer = mk('g', {}); svg.appendChild(prof.hrLayer);
         prof.hiLayer = mk('g', {}); svg.appendChild(prof.hiLayer);
         prof.autoLayer = mk('g', {}); svg.appendChild(prof.autoLayer);
         prof.switchLayer = mk('g', {}); svg.appendChild(prof.switchLayer);
         prof.cpLayer = mk('g', {}); svg.appendChild(prof.cpLayer);
-        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT, y2: base, stroke: '#f97316', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none', 'shape-rendering': 'crispEdges' });
-        prof.dot = mk('circle', { r: 4, fill: '#f97316', stroke: '#fff', 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
+        prof.cross = mk('line', { x1: 0, x2: 0, y1: prof.padT - 4, y2: base, stroke: C.sig, 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none', 'shape-rendering': 'crispEdges' });
+        prof.dot = mk('circle', { r: 4, fill: C.sig, stroke: C.card, 'stroke-width': '1.5', visibility: 'hidden', 'pointer-events': 'none' });
         var lbl = mk('g', { visibility: 'hidden', 'pointer-events': 'none' });
-        prof.lblBox = mk('rect', { rx: 4, ry: 4, height: 18, fill: isDark ? '#f3f4f6' : '#111827' });
-        prof.lblText = mk('text', { 'font-size': '10', 'font-weight': '600', fill: isDark ? '#111827' : '#ffffff', y: 12.5 });
+        prof.lblBox = mk('rect', { rx: 2, ry: 2, height: 18, fill: C.ink });
+        prof.lblText = mk('text', { 'font-size': '10.5', 'font-weight': '500', fill: C.card, y: 12.5 });
         lbl.appendChild(prof.lblBox); lbl.appendChild(prof.lblText); prof.lbl = lbl;
         svg.appendChild(prof.cross); svg.appendChild(prof.dot); svg.appendChild(lbl);
 
@@ -569,73 +585,91 @@ window._sim = {};
         for (var i = 0; i < planData.points.length; i++) { var p = planData.points[i]; if (p.clock_s === null) continue; if (p.km >= km) { var span = p.km - prevKm; return span > 0 ? prevC + (km - prevKm) / span * (p.clock_s - prevC) : p.clock_s; } prevKm = p.km; prevC = p.clock_s; }
         return prevC;
     }
+    // walk stretches: the ground hatched where the grade reaches the walk threshold (dense) or 10 % (light)
+    function drawSlopes() {
+        var lay = prof.slopeLayer; if (!lay) return;
+        while (lay.firstChild) lay.removeChild(lay.firstChild);
+        var walk = (planData && planData.walk_grade) || 18, base = prof.h - prof.padB, NS = Math.max(80, Math.min(420, Math.round(totalDistKm * 2.5))), runs = [];
+        for (var si = 0; si < NS; si++) {
+            var k0 = totalDistKm * si / NS, k1 = totalDistKm * (si + 1) / NS, km = (k0 + k1) / 2, win = 0.35;
+            var ga = elevAt(Math.max(0, km - win)), gb = elevAt(Math.min(totalDistKm, km + win)), run = (Math.min(totalDistKm, km + win) - Math.max(0, km - win)) * 1000;
+            var g = run > 0 ? (gb - ga) / run * 100 : 0, c = g >= walk ? 2 : g >= 10 ? 1 : 0;
+            if (runs.length && runs[runs.length - 1].c === c) runs[runs.length - 1].b = k1; else runs.push({ a: k0, b: k1, c: c });
+        }
+        runs.forEach(function (r) { if (!r.c) return; lay.appendChild(mk('rect', { x: xOf(r.a).toFixed(1), y: prof.padT - 4, width: Math.max(1, xOf(r.b) - xOf(r.a)).toFixed(1), height: base - prof.padT + 4, fill: 'url(#' + prof.hid + r.c + ')' })); });
+    }
     function drawOverlays() {
         if (!prof.svg) return;
-        var lay = pinLayout();
-        if (lay.two !== prof.twoRows) { initChart(); return; }
-        var base = prof.h - prof.padB;
-        [prof.nightLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
+        var base = prof.h - prof.padB, lay = pinLayout();
+        [prof.nightLayer, prof.hrLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
+        drawSlopes();
         if (planData) {
-            planData.night.forEach(function (b) { prof.nightLayer.appendChild(mk('rect', { x: xOf(b.start_km), y: prof.padT - 4, width: Math.max(1, xOf(b.end_km) - xOf(b.start_km)), height: base - prof.padT + 4, fill: isDark ? '#020617' : '#1e293b', 'fill-opacity': isDark ? '0.55' : '0.14' })); });
-            // autonomy: every stretch without a full aid station is an amber bracket under the axis,
-            // labelled « 29,9 km · 3h32 sans ravito » when it has the room (desktop); a tap shows it on the phone
-            var yBar = prof.compact ? base + 18 : base + 17;
-            var legs = [], longest = null;  // autonomy is a nutrition-tab matter, not a bar under the profile
-            legs.forEach(function (l) {
-                var x0 = xOf(l.start_km), x1 = xOf(l.end_km), g = mk('g', { 'data-leg': '', style: 'cursor:help' }), main = l === longest;
-                g._leg = l;
-                g.appendChild(mk('rect', { x: x0, y: yBar, width: Math.max(2, x1 - x0), height: main ? 3 : 2, rx: 1, fill: '#f59e0b', 'fill-opacity': main ? '1' : '0.35' }));
-                if (main && !prof.compact && x1 - x0 >= 120) { var t = mk('text', { x: (x0 + x1) / 2, y: base + 30, 'text-anchor': 'middle', 'font-size': '9', fill: '#92400e' }); t.textContent = legLabel(l); g.appendChild(t); }
-                var tt = mk('title', {}); tt.textContent = l.from_name + ' → ' + l.to_name + ' · ' + legLabel(l) + ' complet'; g.appendChild(tt);
-                g.appendChild(mk('rect', { x: x0, y: base + 12, width: Math.max(2, x1 - x0), height: prof.padB - 12, fill: 'transparent' }));
-                g.addEventListener('mouseenter', function () { if (!isCompact()) highlightSection(l.start_km, l.end_km); });
-                g.addEventListener('mouseleave', function () { if (!legTimer) highlightSection(null, null); });
-                prof.autoLayer.appendChild(g);
+            // the night: a strip of sky above the profile, the ground stays readable
+            planData.night.forEach(function (b) {
+                var x0 = xOf(b.start_km), x1 = xOf(b.end_km);
+                prof.nightLayer.appendChild(mk('rect', { x: x0, y: 2, width: Math.max(1, x1 - x0), height: prof.sky, fill: C.night }));
+                if (x1 - x0 > 46) { var t = mk('text', { x: x0 + 6, y: 2 + prof.sky / 2 + 3.5, 'font-size': '10', 'letter-spacing': '.6', fill: C.nightText }); t.textContent = x1 - x0 > 150 ? 'NUIT · 21:00 → 06:00' : 'NUIT'; prof.nightLayer.appendChild(t); }
+            });
+            // the heart-rate ceiling, leg by leg, as a band under the profile (neighbours with the same number merge)
+            var groups = [];
+            (planData.hr_legs || []).forEach(function (l) { if (!l.hr) return; var g = groups[groups.length - 1]; if (g && g.hr === l.hr && Math.abs(g.b - l.start_km) < 0.05) g.b = l.end_km; else groups.push({ a: l.start_km, b: l.end_km, hr: l.hr }); });
+            groups.forEach(function (g, gi) {
+                var x0 = xOf(g.a), x1 = xOf(g.b), y0 = base + 3, dark = false;
+                prof.hrLayer.appendChild(mk('rect', { x: x0 + 0.5, y: y0, width: Math.max(1, x1 - x0 - 1), height: prof.hrH - 4, fill: C.card, stroke: C.ink, 'stroke-width': '1' }));
+                var label = (x1 - x0 > 64 ? 'FC ≤' : '≤') + g.hr;
+                if (x1 - x0 > label.length * 6.4 + 6) { var t = mk('text', { x: (x0 + x1) / 2, y: y0 + (prof.hrH - 4) / 2 + 3.6, 'text-anchor': 'middle', 'font-size': '10', 'font-weight': '600', fill: dark ? C.card : C.ink }); t.textContent = label; prof.hrLayer.appendChild(t); }
+                var tt = mk('title', {}); tt.textContent = 'Plafond cardio ' + g.hr + ' · km ' + fmtKm(g.a) + ' → ' + fmtKm(g.b); prof.hrLayer.lastChild.appendChild(tt);
             });
         }
+        // the point where you choose your plan: a stripe of red and white tape
         var switchIdx = (planData && planData.scenarios) ? planData.scenarios.switch_cp_index : null;
+        if (switchIdx !== null && switchIdx !== undefined && checkpoints[switchIdx]) {
+            var sx = xOf(checkpoints[switchIdx].distance_km);
+            var sw = mk('rect', { x: sx - 3, y: prof.padT - 4, width: 6, height: base - prof.padT + 4, fill: 'url(#' + prof.hid + 's)' });
+            var swt = mk('title', {}); swt.textContent = 'Choix du plan à ' + checkpoints[switchIdx].name; sw.appendChild(swt); prof.switchLayer.appendChild(sw);
+        }
         checkpoints.forEach(function (cp, i) {
             var x = lay.xs[i], pt = planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] : null;
             var late = pt && pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined && pt.cutoff_margin_s < 0;
-            var isSwitch = false;  // the switch point is told in the table, not by a different pin
-            var cy = prof.twoRows ? (lay.rows[i] ? (prof.compact ? 9 : 12) : (prof.compact ? 27 : 32)) : (prof.compact ? 14 : 22), r = lay.small[i] ? (prof.compact ? 4 : 3) : (prof.compact ? 7 : 9);
-            if (isSwitch) {
-                var badge = document.querySelector('#plan-table tr[data-switch] [title]');
-                var sl = mk('line', { 'data-switch-line': '', x1: x, x2: x, y1: prof.padT - 4, y2: base, stroke: '#111827', 'stroke-width': '2' });
-                var st = mk('title', {}); st.textContent = badge ? badge.getAttribute('title') : 'Point de bascule'; sl.appendChild(st);
-                prof.switchLayer.appendChild(sl);
-            }
+            var y = yOf(elevAt(cp.distance_km)), gy = Math.max(prof.sky + 10, y - 9), kind = cp.kind || 'none';
             var g = mk('g', { 'data-cp': i, style: 'cursor:grab' });
-            if (!isSwitch) g.appendChild(mk('line', { x1: x, x2: x, y1: cy + r, y2: base, stroke: '#9ca3af', 'stroke-width': '1', 'stroke-dasharray': '2 2' }));
-            g.appendChild(mk('circle', { cx: x, cy: cy, r: r, fill: late ? '#dc2626' : isSwitch ? '#111827' : '#f59e0b', stroke: '#fff', 'stroke-width': '1.5' }));
-            if (!lay.small[i]) { var t = mk('text', { x: x, y: cy + 3, 'text-anchor': 'middle', 'font-size': prof.compact ? '8' : '9', 'font-weight': '700', fill: '#fff', 'pointer-events': 'none' }); t.textContent = i + 1; g.appendChild(t); }
+            g.appendChild(mk('line', { x1: x, x2: x, y1: gy, y2: base, stroke: C.ink, 'stroke-width': '.7', opacity: '.55' }));
+            if (kind === 'water') g.appendChild(mk('circle', { cx: x, cy: gy, r: 4, fill: C.card, stroke: C.water, 'stroke-width': '2.2' }));
+            else if (kind === 'full' || kind === 'base') { g.appendChild(mk('rect', { x: x - 4.5, y: gy - 4.5, width: 9, height: 9, fill: C.ink })); if (kind === 'base') g.appendChild(mk('rect', { x: x - 1.8, y: gy - 1.8, width: 3.6, height: 3.6, fill: C.sig })); }
+            else g.appendChild(mk('circle', { cx: x, cy: gy, r: 3.8, fill: C.card, stroke: C.ink, 'stroke-width': '1.4', 'stroke-dasharray': '2 1.6' }));
+            if (late) g.appendChild(mk('circle', { cx: x, cy: gy, r: 8, fill: 'none', stroke: C.sig, 'stroke-width': '2' }));
             var tt = mk('title', {});
-            tt.textContent = (i + 1) + ' · ' + cp.name + ' · km ' + fmtKm(cp.distance_km) + (pt && pt.clock_s !== null ? ' · ' + fmtClock(pt.clock_s) : '') + (pt && pt.cutoff_clock ? ' · barrière ' + pt.cutoff_clock + (pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined ? ' (' + fmtMargin(pt.cutoff_margin_s) + ')' : '') : '');
+            tt.textContent = cp.name + ' · km ' + fmtKm(cp.distance_km) + (pt && pt.clock_s !== null ? ' · ' + fmtClock(pt.clock_s) : '') + (pt && pt.cutoff_clock ? ' · barrière ' + pt.cutoff_clock + (pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined ? ' (' + fmtMargin(pt.cutoff_margin_s) + ')' : '') : '') + ' · glisse pour déplacer';
             g.appendChild(tt);
-            g.appendChild(mk('rect', { x: x - 14, y: cy - 14, width: 28, height: 28, fill: 'transparent', style: 'touch-action:none' }));
+            g.appendChild(mk('rect', { x: x - 14, y: gy - 14, width: 28, height: 28, fill: 'transparent', style: 'touch-action:none' }));
             prof.cpLayer.appendChild(g);
         });
     }
     function moveCpFlag(i, km) { var g = prof.cpLayer && prof.cpLayer.querySelector('[data-cp="' + i + '"]'); if (!g) return; var x = xOf(km), old = xOf(checkpoints[i].distance_km); g.setAttribute('transform', 'translate(' + (x - old).toFixed(1) + ',0)'); }
     function highlightSection(startKm, endKm) {
-        if (prof.hiLayer) { while (prof.hiLayer.firstChild) prof.hiLayer.removeChild(prof.hiLayer.firstChild); if (startKm !== null) prof.hiLayer.appendChild(mk('rect', { x: xOf(startKm), y: prof.padT - 4, width: Math.max(2, xOf(endKm) - xOf(startKm)), height: prof.h - prof.padB - prof.padT + 4, fill: '#f59e0b', 'fill-opacity': '0.18', 'pointer-events': 'none' })); }
+        if (prof.hiLayer) { while (prof.hiLayer.firstChild) prof.hiLayer.removeChild(prof.hiLayer.firstChild); if (startKm !== null) prof.hiLayer.appendChild(mk('rect', { x: xOf(startKm), y: prof.padT - 4, width: Math.max(2, xOf(endKm) - xOf(startKm)), height: prof.h - prof.padB - prof.padT + 4, fill: C.sig, 'fill-opacity': '0.16', 'pointer-events': 'none' })); }
         mapHighlight(startKm, endKm);
     }
     var hiRow = null;
-    var rowRanges = [];
-    function cacheRows() { rowRanges = []; document.querySelectorAll('#plan-table [data-row]').forEach(function (r) { rowRanges.push([parseFloat(r.getAttribute('data-start-km')), parseFloat(r.getAttribute('data-end-km')), r]); }); }
+    var rowRanges = [], legRanges = [];
+    function cacheRows() {
+        rowRanges = []; legRanges = [];
+        document.querySelectorAll('#plan-table [data-row]').forEach(function (r) { rowRanges.push([parseFloat(r.getAttribute('data-start-km')), parseFloat(r.getAttribute('data-end-km')), r]); });
+        document.querySelectorAll('#plan-table [data-leg-line]').forEach(function (r) { legRanges.push([parseFloat(r.getAttribute('data-a')), parseFloat(r.getAttribute('data-b')), r]); });
+    }
+    // the profile under the pointer lights the leg line it belongs to
     function highlightRow(km) {
         var target = null;
-        if (km !== null) for (var ri = 0; ri < rowRanges.length; ri++) { if (km > rowRanges[ri][0] && km <= rowRanges[ri][1]) { target = rowRanges[ri][2]; break; } }
+        if (km !== null) for (var ri = 0; ri < legRanges.length; ri++) { if (km >= legRanges[ri][0] && km <= legRanges[ri][1]) { target = legRanges[ri][2]; break; } }
         if (target === hiRow) return;
-        if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.remove('bg-amber-50');
-        hiRow = target; if (hiRow && !hiRow.hasAttribute('data-anchor')) hiRow.classList.add('bg-amber-50');
+        if (hiRow) hiRow.classList.remove('hi');
+        hiRow = target; if (hiRow) hiRow.classList.add('hi');
     }
     function bindRows() {
         cacheRows();
-        document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
+        document.querySelectorAll('#plan-table [data-leg-line]').forEach(function (r) {
             if (r._pfBound) return; r._pfBound = true;  // idiomorph keeps the rows: bind once, read the attributes live
-            r.addEventListener('mouseenter', function () { if (isCompact()) return; var a = parseFloat(r.getAttribute('data-start-km')), b = parseFloat(r.getAttribute('data-end-km')); if (b > a) { highlightSection(a, b); showSectionLabel(a, b, r.getAttribute('data-gain') || 0, r.getAttribute('data-loss') || 0, parseFloat(r.getAttribute('data-sec')) || 0); } });
+            r.addEventListener('mouseenter', function () { if (isCompact()) return; var a = parseFloat(r.getAttribute('data-a')), b = parseFloat(r.getAttribute('data-b')); if (b > a) highlightSection(a, b); });
             r.addEventListener('mouseleave', function () { if (isCompact()) return; highlightSection(null, null); hideCross(); });
         });
     }
@@ -685,9 +719,9 @@ window._sim = {};
     var POSTE_KINDS = [['none', 'Passage', 'simple repère, pas d\'arrêt'], ['water', 'Eau', 'flasques, arrêt court'], ['full', 'Ravito complet', 'manger, arrêt compté, borne l\'autonomie'], ['base', 'Base vie', 'drop bag, assistance, arrêt long']];
     function glyphHtml(k) { var r = document.querySelector('#glyph-registry-lg [data-kind="' + k + '"]') || document.querySelector('#glyph-registry [data-kind="' + k + '"]'); return r ? r.innerHTML : ''; }
     var STOP_DEFAULT_MIN = { none: 0, water: 2, full: 5, base: 15 };
-    // a selected choice is tinted, never filled black: the coloured icons stay visible
-    var KIND_ON = { none: 'border-gray-500 bg-gray-100 text-gray-800', water: 'border-blue-500 bg-blue-50 text-blue-800', full: 'border-amber-500 bg-amber-50 text-amber-900', base: 'border-violet-500 bg-violet-50 text-violet-800' };
+    // a selected choice is outlined in ink on a paper tint: the glyphs stay visible
     var ON = 'border-gray-900 bg-gray-100 text-gray-900 font-semibold', OFF = 'border-gray-200 text-gray-700 bg-white';
+    var KIND_ON = { none: ON, water: ON, full: ON, base: ON };
     function stopMinOf(cp) {  // the stop this point gets: its own value, else the global override, else its kind's default
         if (cp.stop_s !== null && cp.stop_s !== undefined) return Math.round(cp.stop_s / 60);
         var ov = parseInt((document.getElementById('stop-min') || {}).value, 10);
@@ -698,45 +732,42 @@ window._sim = {};
     function sheetOpen() { var sh = document.getElementById('cp-sheet'); return !!sh && !sh.classList.contains('hidden'); }
     function sheetRowVals(i) {
         var tr = document.querySelector('#plan-table tr[data-row][data-cp="' + i + '"]'); if (!tr) return {};
-        var q = function (sel) { var e = tr.querySelector(sel); return e ? e.textContent.trim() : ''; };
-        var m = tr.querySelector('[data-margin]'), wx = tr.querySelector('[data-wx]');
-        return { wx_html: wx ? wx.innerHTML : '', wx_title: wx ? (wx.getAttribute('title') || '').replace(/\s*·\s*prévision.*$/, '') : '', target: q('[data-cible-text]'), safe: q('[data-safe]'), fast: q('[data-fast]'), leg: q('[data-leg-time]'), margin: m ? m.textContent.trim() : '', marginCls: m ? m.className.replace(/.*?(text-[a-z]+-\d+).*/, '$1') : '' };
+        var wx = tr.querySelector('[data-wx]'), txt = tr.querySelector('[data-cible-text]'), num = function (k) { var v = tr.getAttribute(k); return v === null ? null : parseFloat(v); };
+        return { wx_title: wx ? (wx.getAttribute('title') || '').replace(/\s*·\s*prévision.*$/, '') : '', target: txt ? txt.textContent.trim() : '', leg_s: num('data-sec'), stop_s: num('data-stop'), cutoff: tr.getAttribute('data-cutoff') || '', margin_s: num('data-margin-s') };
     }
     function renderSheet() {
         var p = document.querySelector('#cp-sheet [data-sheet-panel]'), cp = sheetCp !== null ? checkpoints[sheetCp] : null; if (!p || !cp) return;
-        var i = sheetCp, v = sheetRowVals(i), anchored = anchorOn(cp), sec = function (t) { return '<div class="text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-1.5">' + t + '</div>'; };
-        var h = '<div class="flex items-center gap-2 mb-2"><span class="w-6 h-6 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center shrink-0">' + (i + 1) + '</span>'
-            + '<input type="text" value="' + esc(cp.name) + '" aria-label="Nom du point" onchange="window._sim.editCheckpointName(' + i + ', this)" class="flex-1 min-w-0 text-base font-semibold text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-1">'
-            + '<button type="button" onclick="window._sim.closeSheet()" class="w-9 h-9 -mr-2 inline-flex items-center justify-center rounded-full text-gray-500 text-2xl leading-none" aria-label="Fermer">×</button></div>';
-        h += '<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-600 mb-3"><label class="inline-flex items-baseline gap-1">km <input type="number" step="0.1" min="0.1" value="' + cp.distance_km + '" aria-label="km" onchange="window._sim.editCheckpointKm(' + i + ', this.value)" class="sim-num w-14 text-[13px] tabular-nums text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5"></label>'
-            + '<span class="text-gray-300">·</span><span>' + fmtM(cp.elevation || 0) + ' m</span>'
-            + (v.wx_html ? '<span class="text-gray-300">·</span><span class="inline-flex items-center gap-1 text-[13px] text-gray-800" title="' + esc(v.wx_title) + '">' + v.wx_html + '</span>' : '') + (v.leg ? '<span class="text-gray-300">·</span><span>' + esc(v.leg.split('+')[0].trim()) + ' de course depuis le point précédent' + (v.leg.indexOf('+') > 0 ? ' · arrêt ' + esc(v.leg.split('+')[1].trim()) : '') + '</span>' : '') + '</div>';
-        if (v.wx_title) h += '<p class="-mt-2 mb-3 text-[12px] text-gray-500">Météo prévue à ton passage : ' + esc(v.wx_title.replace(/\s*·\s*/g, ', ')) + '.</p>';
-        var clocks = [['Sécurité', v.safe, 'text-blue-700'], ['Cible', v.target, 'text-gray-900'], ['Optimiste', v.fast, 'text-emerald-700']].filter(function (c) { return c[1]; });
-        if (clocks.length) h += '<div class="grid gap-2 mb-4" style="grid-template-columns:repeat(' + clocks.length + ',minmax(0,1fr))">' + clocks.map(function (c) { return '<div class="rounded-lg bg-gray-50 py-1.5 text-center"><div class="text-[10px] uppercase tracking-wider text-gray-400">' + c[0] + '</div><div class="text-lg font-bold tabular-nums ' + c[2] + '">' + esc(c[1]) + '</div></div>'; }).join('') + '</div>';
+        var i = sheetCp, v = sheetRowVals(i), sec = function (t) { return '<div class="rb-lab mb-2">' + t + '</div>'; };
+        var h = '<div class="flex items-center gap-2 mb-1"><span class="inline-flex shrink-0">' + glyphHtml(cp.kind || 'none') + '</span>'
+            + '<input type="text" value="' + esc(cp.name) + '" aria-label="Nom du point" onchange="window._sim.editCheckpointName(' + i + ', this)" class="rb-sheet-name flex-1 min-w-0 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-1">'
+            + '<button type="button" onclick="window._sim.closeSheet()" class="w-11 h-11 -mr-2 inline-flex items-center justify-center rounded-full text-gray-500 text-3xl leading-none" aria-label="Fermer">×</button></div>';
+        h += '<div class="flex flex-wrap items-center gap-x-2 gap-y-1 rb-mono text-[13px] text-gray-600 mb-1"><label class="inline-flex items-baseline gap-1">km <input type="number" step="0.1" min="0.1" value="' + cp.distance_km + '" aria-label="km" onchange="window._sim.editCheckpointKm(' + i + ', this.value)" class="sim-num w-16 text-[13px] tabular-nums text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-gray-900 focus:ring-0 px-0 py-0.5"></label>'
+            + '<span>· ' + fmtM(cp.elevation || 0) + ' m</span></div>' + (v.wx_title ? '<p class="rb-mono text-[12.5px] text-gray-600 mb-1">Météo à ton passage : ' + esc(v.wx_title.replace(/\s*·\s*/g, ', ')) + '</p>' : '');
+        if (v.target) h += '<div class="rb-sheet-clock"><span class="rb-lab">Passage prévu</span><span class="rb-time">' + esc(v.target) + '</span><span class="rb-mono text-[12.5px] text-gray-600">' + (v.leg_s ? fmtDur(v.leg_s) + ' depuis le point d\'avant' : '') + (v.stop_s ? ' · arrêt ' + Math.round(v.stop_s / 60) + ' min' : '') + '</span>'
+            + (v.cutoff ? '<span class="w-full rb-mono text-[12.5px] ' + (v.margin_s !== null && v.margin_s < 5400 ? 'text-red-600' : 'text-gray-600') + '">barrière ' + esc(v.cutoff) + (v.margin_s !== null ? ' · marge ' + fmtMargin(v.margin_s) : '') + '</span>' : '') + '</div>';
         // the time he wants to pass here: empty = the plan's own (shown as the placeholder)
         var pt = planPoint(i), pinned = cp.target_s !== null && cp.target_s !== undefined;
         var est = pt && pt.clock_s !== null && pt.clock_s !== undefined ? pt.clock_s : null;
         var auto = pinned ? (pt && pt.auto_clock_s !== null && pt.auto_clock_s !== undefined ? pt.auto_clock_s : null) : est;
         var pinAbs = pinned ? startOffset() + cp.target_s : null;
         h += sec('Heure de passage visée') + '<div class="flex items-center gap-1.5 mb-1">'
-            + '<input type="text" data-pin-in inputmode="numeric" autocomplete="off" maxlength="5" value="' + (pinned ? fmtClock(pinAbs) : '') + '" placeholder="' + (auto !== null ? fmtClock(auto) : 'hh:mm') + '" aria-label="Heure de passage visée" class="sim-num w-20 h-9 px-2 rounded-lg border-2 ' + (pinned ? 'border-amber-500 bg-amber-50' : 'border-gray-200') + ' text-[15px] font-semibold tabular-nums text-center text-gray-900 placeholder:text-gray-400 placeholder:font-normal">'
-            + '<button type="button" data-pin-go class="h-9 px-3 rounded-lg border-2 text-[13px] ' + OFF + '">Fixer</button>'
-            + '<button type="button" data-pin-auto aria-pressed="' + !pinned + '" class="h-9 px-3 rounded-lg border-2 text-[13px] ' + (pinned ? OFF : ON) + '">Automatique</button></div>';
-        h += '<p data-pin-err class="hidden text-[11px] text-red-600 mb-1">Heure non comprise : écris-la comme 07:27.</p>';
-        if (pinned && pt && pt.pin_clamped) h += '<p class="text-[11px] text-red-700 mb-1">' + fmtClock(pinAbs) + ' est impossible à tenir depuis le point d\'avant (arrêts compris) : le plan vise ' + fmtClock(est) + '.</p>';
-        h += '<p data-pin-help class="text-[11px] text-gray-400 mb-4">' + (pinned
-            ? '<span class="inline-flex text-amber-600 align-middle">' + glyphHtml('pin').replace('w-6 h-6', 'w-3 h-3') + '</span> Fixée par toi' + (dayOf(pinAbs) ? ', ' + dayOf(pinAbs) : '') + ' à ' + fmtClock(pinAbs) + '. Les autres heures s\'ajustent autour.' + (auto !== null ? ' Automatique : ' + fmtClock(auto) + '.' : '')
+            + '<input type="text" data-pin-in inputmode="numeric" autocomplete="off" maxlength="5" value="' + (pinned ? fmtClock(pinAbs) : '') + '" placeholder="' + (auto !== null ? fmtClock(auto) : 'hh:mm') + '" aria-label="Heure de passage visée" class="sim-num w-20 h-11 px-2 rounded-md border-2 ' + (pinned ? 'border-gray-900' : 'border-gray-200') + ' text-[16px] font-semibold tabular-nums text-center text-gray-900 placeholder:text-gray-400 placeholder:font-normal">'
+            + '<button type="button" data-pin-go class="h-11 px-3 rounded-md border-2 text-[13px] ' + OFF + '">Fixer</button>'
+            + '<button type="button" data-pin-auto aria-pressed="' + !pinned + '" class="h-11 px-3 rounded-md border-2 text-[13px] ' + (pinned ? OFF : ON) + '">Automatique</button></div>';
+        h += '<p data-pin-err class="hidden text-[12px] text-red-600 mb-1">Heure non comprise : écris-la comme 07:27.</p>';
+        if (pinned && pt && pt.pin_clamped) h += '<p class="text-[12px] text-red-700 mb-1">' + fmtClock(pinAbs) + ' est impossible à tenir depuis le point d\'avant (arrêts compris) : le plan vise ' + fmtClock(est) + '.</p>';
+        h += '<p data-pin-help class="text-[12.5px] text-gray-500 mb-4">' + (pinned
+            ? '<span class="inline-flex text-red-600 align-middle">' + glyphHtml('pin').replace('w-6 h-6', 'w-3 h-3') + '</span> Fixée par toi' + (dayOf(pinAbs) ? ', ' + dayOf(pinAbs) : '') + ' à ' + fmtClock(pinAbs) + '. Les autres heures s\'ajustent autour.' + (auto !== null ? ' Automatique : ' + fmtClock(auto) + '.' : '')
             : 'Vide = l\'heure du plan' + (est !== null ? ' (' + fmtClock(est) + ')' : '') + '. Tape l\'heure où tu veux passer ici : le reste du plan s\'ajuste autour.') + '</p>';
         var kind = cp.kind || 'none', kdesc = '';
-        h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1.5 rounded-lg border-2 py-2.5 text-[12px] leading-none ' + (on ? KIND_ON[k[0]] + ' font-semibold' : 'border-gray-200 text-gray-600 bg-white') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
-        h += '<p class="text-[11px] text-gray-400 mb-2 min-h-4">' + esc(kdesc) + '</p>';
+        h += sec('Type de poste') + '<div class="grid grid-cols-4 gap-1.5 mb-1.5">' + POSTE_KINDS.map(function (k) { var on = kind === k[0]; if (on) kdesc = k[2]; return '<button type="button" data-k="' + k[0] + '" aria-pressed="' + on + '" class="flex flex-col items-center gap-1.5 rounded-md border-2 min-h-16 py-2 text-[12.5px] leading-none ' + (on ? KIND_ON[k[0]] + ' font-semibold' : 'border-gray-200 text-gray-600 bg-white') + '"><span class="inline-flex">' + glyphHtml(k[0]) + '</span>' + k[1].replace('Ravito complet', 'Ravito') + '</button>'; }).join('') + '</div>';
+        h += '<p class="text-[12.5px] text-gray-500 mb-3 min-h-4">' + esc(kdesc) + '</p>';
         var own = cp.stop_s !== null && cp.stop_s !== undefined, cur = stopMinOf(cp);
-        h += sec('Temps d\'arrêt ici') + '<div class="flex flex-wrap items-center gap-1.5 mb-1">' + [0, 2, 5, 10, 15, 30].map(function (m) { var on = cur === m; return '<button type="button" data-stop="' + m + '" aria-pressed="' + on + '" class="h-9 min-w-[44px] px-2 rounded-lg border-2 text-[13px] tabular-nums ' + (on ? ON : OFF) + '">' + (m ? m + '\'' : '0') + '</button>'; }).join('')
-            + '<label class="inline-flex items-center gap-1 text-[12px] text-gray-500 ml-1">ou <input type="number" data-stop-custom inputmode="numeric" min="0" max="240" step="1" value="' + (([0, 2, 5, 10, 15, 30].indexOf(cur) < 0) ? cur : '') + '" placeholder="…" aria-label="Temps d\'arrêt en minutes" class="sim-num w-14 h-9 px-1 rounded-lg border border-gray-200 text-[13px] tabular-nums text-center text-gray-900"> min</label></div>';
-        h += '<p class="text-[11px] text-gray-400 mb-4">' + (own ? 'Réglé pour ce point · <button type="button" data-stop-auto class="underline">revenir à la valeur du type (' + (STOP_DEFAULT_MIN[kind] || 0) + '\')</button>' : 'Valeur du type de poste (eau 2′, ravito 5′, base vie 15′). Les heures qui suivent en tiennent compte.') + '</p>';
-        h += '<div class="flex gap-2 mb-5">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border-2 py-2 text-[12px] ' + (on ? ON : OFF) + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
-        h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-10 rounded-lg border border-gray-200 text-sm text-gray-500">Supprimer ce point</button>';
+        h += sec('Temps d\'arrêt ici') + '<div class="flex flex-wrap items-center gap-1.5 mb-1">' + [0, 2, 5, 10, 15, 30].map(function (m) { var on = cur === m; return '<button type="button" data-stop="' + m + '" aria-pressed="' + on + '" class="h-11 min-w-[44px] px-2 rounded-md border-2 text-[13px] tabular-nums ' + (on ? ON : OFF) + '">' + (m ? m + '\'' : '0') + '</button>'; }).join('')
+            + '<label class="inline-flex items-center gap-1 text-[12px] text-gray-500 ml-1">ou <input type="number" data-stop-custom inputmode="numeric" min="0" max="240" step="1" value="' + (([0, 2, 5, 10, 15, 30].indexOf(cur) < 0) ? cur : '') + '" placeholder="…" aria-label="Temps d\'arrêt en minutes" class="sim-num w-14 h-11 px-1 rounded-md border border-gray-200 text-[13px] tabular-nums text-center text-gray-900"> min</label></div>';
+        h += '<p class="text-[12.5px] text-gray-500 mb-4">' + (own ? 'Réglé pour ce point · <button type="button" data-stop-auto class="underline">revenir à la valeur du type (' + (STOP_DEFAULT_MIN[kind] || 0) + '\')</button>' : 'Valeur du type de poste (eau 2 min, ravito 5 min, base vie 15 min). Les heures qui suivent en tiennent compte.') + '</p>';
+        h += '<div class="flex gap-2 mb-5">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Sac (drop bag)', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border-2 min-h-11 py-2 text-[13px] ' + (on ? ON : OFF) + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
+        h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-11 rounded-md border border-gray-200 text-sm text-gray-600">Supprimer ce point</button>';
         p.innerHTML = h;
         p.onclick = function (ev) {
             var k = ev.target.closest && ev.target.closest('[data-k]'), t = ev.target.closest && ev.target.closest('[data-toggle]');
@@ -846,8 +877,8 @@ window._sim = {};
             var pt = planData ? planData.points.filter(function (p) { return p.cp_index === i; })[0] : null;
             var late = pt && pt.cutoff_margin_s !== null && pt.cutoff_margin_s !== undefined && pt.cutoff_margin_s < 0;
             var markerEl = document.createElement('div');
-            markerEl.className = 'cp-marker' + (late ? ' late' : '');
-            markerEl.textContent = i + 1; markerEl.title = cp.name;
+            markerEl.className = 'cp-marker ' + (cp.kind || 'none') + (late ? ' late' : '');
+            markerEl.title = cp.name;
             markerEl.addEventListener('mouseenter', function () { syncChart(cp.distance_km); });
             var m = new maplibregl.Marker({ element: markerEl, anchor: 'center' }).setLngLat([c[1], c[0]]).setPopup(new maplibregl.Popup({ maxWidth: '240px', offset: 14, closeButton: false }).setHTML(cpPopupHtml(cp, i, pt))).addTo(map);
             cpMarkerEls.push(m);
@@ -941,11 +972,24 @@ window._sim = {};
         sl.title = 'Objectif ' + fmtHM(ts) + ' · glisse : toutes les heures se recalculent';
         if (est) {
             var p = Math.max(0, Math.min(1, (predictedTotalS - sliderMin) / (sliderMax - sliderMin)));
-            est.style.left = 'calc(6px + ' + (p * 100).toFixed(2) + '% - ' + (p * 12).toFixed(1) + 'px)';
+            est.style.left = 'calc(8px + ' + (p * 100).toFixed(2) + '% - ' + (p * 16).toFixed(1) + 'px)';
             est.title = 'estimé ' + fmtHM(predictedTotalS) + ' · clic : revenir à l\'estimation';
             est.classList.remove('hidden'); est.classList.toggle('pointer-events-none', !hasRealTarget());
         }
+        drawTicks();
     }
+    // the ruler: a tick every half hour, the hours written (every two hours when the ruler is short)
+    function drawTicks() {
+        var el = document.getElementById('obj-ticks'); if (!el || !(sliderMax > sliderMin)) return;
+        var span = sliderMax - sliderMin, w = el.clientWidth || 300, every = (span / 3600) * 34 > w ? 2 : 1, html = '';
+        for (var t = Math.ceil(sliderMin / 1800) * 1800; t <= sliderMax; t += 1800) {
+            var pc = ((t - sliderMin) / span * 100).toFixed(2), hr = t % 3600 === 0;
+            html += '<i class="' + (hr ? 'maj' : '') + '" style="left:' + pc + '%"></i>';
+            if (hr && (t / 3600) % every === 0 && pc > 3 && pc < 97) html += '<b style="left:' + pc + '%">' + (t / 3600) + 'h</b>';
+        }
+        el.innerHTML = html;
+    }
+    function nudgeTarget(d) { var ts = (currentTargetS() || predictedTotalS) + d; if (ts < 600) return; setTarget(Math.floor(ts / 3600), Math.round((ts % 3600) / 60)); }
     function sliderToS(val) { var s = sliderMin + (parseFloat(val) / 100) * (sliderMax - sliderMin); return Math.round(s / 300) * 300; }
     function previewObjective(val) {
         var ts = sliderToS(val);
@@ -1056,17 +1100,18 @@ window._sim = {};
     function iconForCat(cat) { var reg = document.getElementById('wicon-registry'); if (!reg) return ''; var el = reg.querySelector('[data-cat="' + cat + '"]'); return el ? el.innerHTML : ''; }
     function renderWeather(w) {
         var el = document.getElementById('weather-result'); if (!el) return;
-        if (!w || w.error) { el.innerHTML = w && w.error ? '<span class="text-gray-300 hidden lg:inline">·</span><button type="button" onclick="window._sim.fetchWeather()" class="text-red-500 hover:text-red-700" title="' + w.error + ' · réessayer">météo ✕</button>' : ''; return; }
+        if (!w || w.error) { el.innerHTML = w && w.error ? '<button type="button" onclick="window._sim.fetchWeather()" class="text-red-500 hover:text-red-700 min-h-9" title="' + w.error + ' · réessayer">météo indisponible · réessayer</button>' : ''; return; }
         currentWeather = w; currentHeatFactor = w.heat_factor || 1.0; currentHourly = w.hourly || null; hourlySaved = false;
         var p = Math.round((currentHeatFactor - 1) * 100), cls = p > 5 ? 'text-red-500' : 'text-amber-500';
         var when = '';
         if (w.fetched_at) { var dt = new Date(w.fetched_at * 1000), age = (Date.now() / 1000 - w.fetched_at) / 3600; when = age < 24 ? (age < 1 ? 'à l\'instant' : 'à ' + dt.getHours() + ':' + (dt.getMinutes() < 10 ? '0' : '') + dt.getMinutes()) : ('le ' + dt.getDate() + '/' + (dt.getMonth() + 1)); }
         var scope = (currentHourly && currentHourly.points && currentHourly.points.length) ? 'à chaque point' : 'au départ';
+        var wn = document.getElementById('weather-note'); if (wn) wn.textContent = 'Prévision ' + scope + ', à l\'heure de passage' + (when ? ' · mise à jour ' + when : '') + (p > 0 ? ' · chaleur : +' + p + ' % sur le temps' : '') + '.';
         var title = 'prévision ' + scope + (when ? ' · ' + when : '') + (p > 0 ? ' · effet chaleur +' + p + ' %' : '') + ' · clique pour actualiser';
-        el.innerHTML = '<span class="text-gray-300 hidden lg:inline">·</span><button type="button" onclick="window._sim.fetchWeather()" class="inline-flex items-center gap-x-1.5 text-xs text-gray-600 hover:text-gray-900 whitespace-nowrap" title="' + title + '">'
+        el.innerHTML = '<button type="button" onclick="window._sim.fetchWeather()" class="inline-flex items-center gap-x-1.5 min-h-9 text-gray-600 hover:text-gray-900 whitespace-nowrap" title="' + title + '">'
             + (weatherStale(w) ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" title="prévision à actualiser"></span>' : '')
-            + iconForCat(wmoCategoryJs(w.weather_code)) + '<span class="text-gray-800">' + Math.round(w.temperature_c) + '°</span><span class="text-gray-300">·</span><span class="text-gray-400">' + w.humidity_pct + ' %</span>'
-            + (p > 0 ? '<span class="' + cls + ' font-medium">+' + p + ' %</span>' : '') + '</button>';
+            + iconForCat(wmoCategoryJs(w.weather_code)) + '<span class="text-gray-800">' + Math.round(w.temperature_c) + '° au départ</span>'
+            + (p > 0 ? '<span class="' + cls + '">· chaleur +' + p + ' %</span>' : '') + '</button>';
     }
     var weatherInFlight = false;
     function fetchWeather() {
@@ -1082,9 +1127,21 @@ window._sim = {};
     function maybeFetchWeather() { if (weatherStale(currentWeather)) fetchWeather(); }
     var lastDate = (document.getElementById('race-date') || {}).value || '';
     function labelWeekday() {
-        var d = (document.getElementById('race-date') || {}).value || '', el = document.getElementById('race-wd'); if (!el) return;
+        var d = (document.getElementById('race-date') || {}).value || '', el = document.getElementById('race-wd'), when = document.getElementById('race-when');
         var t = ''; if (d) { try { t = new Date(d + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'short' }); } catch (e) {} }
-        el.textContent = t; el.classList.toggle('hidden', !t);
+        if (el) { el.textContent = t; el.classList.toggle('hidden', !t); }
+        if (!when) return;
+        var sp = startParts(), clk = (sp.h < 10 ? '0' : '') + sp.h + ':' + (sp.m < 10 ? '0' : '') + sp.m, parts = [];
+        if (d) {
+            try {
+                var day = new Date(d + 'T00:00'), today = new Date(); today.setHours(0, 0, 0, 0);
+                var n = Math.round((day - today) / 86400e3);
+                if (n > 0) parts.push('J-' + n); else if (n === 0) parts.push('Jour J');
+                parts.push(day.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }));
+            } catch (e) {}
+        }
+        parts.push(clk);
+        when.textContent = parts.join(' · ');
     }
     function labelDays() {
         var d = (document.getElementById('race-date') || {}).value || '';
@@ -1104,15 +1161,33 @@ window._sim = {};
     }
 
     // ── HERO / PHONE STATE ──
+    function dayClock(abs) {  // « sam. 15:30 » with a race date, « jour 2 · 15:30 » without
+        var n = Math.floor(abs / 86400), d = (document.getElementById('race-date') || {}).value || '', wd = '';
+        if (d) { try { wd = new Date(new Date(d + 'T00:00').getTime() + n * 86400e3).toLocaleDateString('fr-FR', { weekday: 'short' }); } catch (e) {} }
+        else if (n > 0) wd = 'jour ' + (n + 1);
+        return (wd ? wd + ' ' : '') + fmtClock(abs);
+    }
     function updateHero() {
         // no objective but pinned times: the hero is where the pinned plan finishes
         var pins = (!hasRealTarget() && planData && planData.pins > 0 && planData.plan_total_s) ? planData.pins : 0;
         var t = document.getElementById('hero-time'); if (t) t.textContent = fmtHM(hasRealTarget() ? currentTargetS() : pins ? planData.plan_total_s : predictedTotalS);
         var sub = document.getElementById('hero-sub');
         if (sub) sub.innerHTML = hasRealTarget()
-            ? 'ton objectif · estimation <b class="text-gray-700 tabular-nums">' + fmtHM(predictedTotalS) + '</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="underline decoration-gray-300 hover:text-gray-900">revenir à l\'estimation</button>'
-            : pins ? 'avec ' + (pins > 1 ? 'tes ' + pins + ' heures fixées' : 'ton heure fixée') + ' · estimation <b class="text-gray-700 tabular-nums">' + fmtHM(predictedTotalS) + '</b>'
-            : 'temps estimé d\'après tes courses · glisse le curseur pour fixer un objectif';
+            ? 'ton objectif · ton estimation <b>' + fmtHM(predictedTotalS) + '</b> · <button type="button" onclick="window._sim && window._sim.resetTarget()">revenir à l\'estimation</button>'
+            : pins ? 'avec ' + (pins > 1 ? 'tes ' + pins + ' heures fixées' : 'ton heure fixée') + ' · ton estimation <b>' + fmtHM(predictedTotalS) + '</b>'
+            : 'ton estimation, d\'après tes courses · règle ton objectif avec −5 / +5';
+        var last = planData && planData.points.length ? planData.points[planData.points.length - 1] : null, arr = document.getElementById('hero-arrival');
+        if (arr) arr.textContent = last && last.clock_s !== null ? dayClock(last.clock_s) : '—';
+        var vw = document.getElementById('hero-verdict'), vg = document.getElementById('hero-gap');
+        if (vw && vg) {
+            if (hasRealTarget() && predictedTotalS) {
+                var gap = currentTargetS() - predictedTotalS, pct = -gap / predictedTotalS * 100;
+                vw.textContent = gap >= 0 ? 'prudent' : pct < 5 ? 'réaliste' : pct < 15 ? 'ambitieux' : 'hors de portée';
+                vg.textContent = (gap < 0 ? '−' : '+') + fmtHM(Math.abs(gap));
+                vw.title = vg.title = 'objectif ' + fmtHM(currentTargetS()) + ' face à ton estimation ' + fmtHM(predictedTotalS);
+            } else { vw.textContent = ''; vg.textContent = ''; }
+        }
+        labelWeekday();
     }
     function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); }
     function toggleDetail(ci) { openSheet(ci); }
@@ -1143,7 +1218,7 @@ window._sim = {};
     labelWeekday();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     fillLegends();
-    var wantMap = true; try { var pfm = localStorage.getItem('pf.map'); wantMap = pfm === null ? true : pfm === '1'; } catch (e) {}
+    var wantMap = false; try { wantMap = localStorage.getItem('pf.map') === '1'; } catch (e) {}  // the map waits behind its button
     if (wantMap) toggleMap(true);
     document.addEventListener('pointerdown', function (ev) {
         var t = ev.target;
@@ -1174,7 +1249,7 @@ window._sim = {};
     if (adv) adv.addEventListener('toggle', function () { var m = document.querySelector('main'); if (m) { m.style.overflow = 'hidden'; void m.offsetHeight; m.style.overflow = ''; } if (adv.open) setTimeout(function () { adv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 50); });
     if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
-    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, toggleMap: toggleMap, expandMap: expandMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, saveRoute: saveRoute, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, setScn: setScn, nudgeTarget: nudgeTarget, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, toggleMap: toggleMap, expandMap: expandMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>

@@ -5,11 +5,10 @@
 {% block content %}
 <div class="pf-activities space-y-5">
     <!-- Header + sync -->
-    <div class="pf-page-heading flex flex-wrap items-start justify-between gap-3">
+    <div class="rb-head">
         <div>
-            <p class="pf-eyebrow">Ton entraînement</p>
-            <h1 class="text-lg font-semibold tracking-tight">Activités</h1>
-            <p class="text-sm text-gray-500">Ton carnet d'entraînement, synchronisé depuis Strava.</p>
+            <h1>Activités</h1>
+            <p>ton carnet d'entraînement, depuis Strava</p>
         </div>
         <div class="text-right">
             <button hx-post="/api/sync" hx-target="#sync-msg" hx-swap="innerHTML" hx-indicator="#sync-spinner" hx-disabled-elt="this"
@@ -52,8 +51,11 @@
         </div>
     </div>
 
-    <!-- Fitness from Apple Health (empty state until connected) -->
-    {% include "partials/health_form.html" %}
+    <!-- Fitness from Apple Health: one line, the details on the Santé page -->
+    <a href="/sante" class="rb-frame flex items-center justify-between gap-3 px-4 min-h-12 hover:bg-gray-50">
+        <span class="text-sm text-gray-700">{% if health_card %}<span class="rb-lab">Forme</span> <b class="text-gray-900 ml-1">{{ health_card.form.label }}</b>{% else %}<b class="text-gray-900">Connecter Apple Santé</b> · pour suivre ta forme{% endif %}</span>
+        <span class="rb-lab">Santé →</span>
+    </a>
 
     <!-- Filters: four families, not thirteen sport codes -->
     <div class="pf-history-heading"><h2>Historique des activités</h2><p>Retrouve tes séances par sport.</p></div>

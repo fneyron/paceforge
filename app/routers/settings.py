@@ -19,6 +19,8 @@ from app.models.user import User
 from app.services.activity_dedupe import sport_group
 from app.services.health import (
     METRIC_LABELS,
+    form_card,
+    trends,
     METRICS,
     ExportError,
     health_status,
@@ -78,6 +80,15 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         "last_date": last_date,
         "families": [(f, families[f]) for f in _FAMILY_ORDER if families.get(f)],
     }
+    from app.routers.simulator import _catalog_for, _product_dict
+    from app.models.nutrition import NutritionProduct
+
+    prod = await db.execute(
+        select(NutritionProduct).where(NutritionProduct.user_id == user.id).order_by(NutritionProduct.created_at.desc())
+    )
+    products = [_product_dict(p) for p in prod.scalars().all()]
+    flags.setdefault("products", products)
+    flags.setdefault("catalog", _catalog_for(products))
     flags.setdefault("ftp_est", ftp_est)
     flags.setdefault("health", await health_status(db, user))
     flags.setdefault("health_api_url", _public_base(request) + "/api/health/samples")
@@ -107,6 +118,32 @@ async def settings_page(
         health_key_revoked=request.session.pop("health_key_revoked", False),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
+
+
+@router.get("/sante", response_class=HTMLResponse)
+async def health_page(
+    request: Request,
+    periode: int = 30,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Santé: the form of the moment, the trends, and the Apple Santé connection."""
+    days = 90 if periode == 90 else 30
+    try:
+        card = await form_card(db, user.id)
+        trend_rows = await trends(db, user.id, days)
+    except Exception:
+        logger.exception("Health page data failed for user %d", user.id)
+        card, trend_rows = None, []
+    ctx = {
+        "request": request, "user": user, "health_card": card, "trends": trend_rows, "days": days,
+        "health": await health_status(db, user),
+        "health_api_url": _public_base(request) + "/api/health/samples",
+        # one-time flashes from the key actions (Post/Redirect/Get: a reload never mints a second key)
+        "new_health_key": request.session.pop("new_health_key", None),
+        "health_key_revoked": request.session.pop("health_key_revoked", False),
+    }
+    return templates.TemplateResponse(request, "sante.html", context=ctx)
 
 
 @router.post("/settings", response_class=HTMLResponse)
@@ -202,7 +239,7 @@ async def generate_health_key(
     await db.flush()
     logger.info("Apple Health key (re)generated for user %d", user.id)
     request.session["new_health_key"] = key
-    return RedirectResponse(url="/settings#apple-sante", status_code=303)
+    return RedirectResponse(url="/sante#apple-sante", status_code=303)
 
 
 @router.post("/settings/health/key/revoke")
@@ -217,7 +254,7 @@ async def revoke_health_key(
     await db.flush()
     logger.info("Apple Health key revoked for user %d", user.id)
     request.session["health_key_revoked"] = True
-    return RedirectResponse(url="/settings#apple-sante", status_code=303)
+    return RedirectResponse(url="/sante#apple-sante", status_code=303)
 
 
 @router.get("/settings/health/status", response_class=HTMLResponse)
