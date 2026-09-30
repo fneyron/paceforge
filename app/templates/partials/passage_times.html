@@ -1,108 +1,130 @@
 {% import "partials/_plan_glyphs.html" as gl %}
+{% import "partials/_weather_icons.html" as wx %}
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro hhmm(seconds) %}{{ '%02d:%02d'|format(((seconds % 86400) // 3600) | int, ((seconds % 3600) // 60) | int) }}{% endmacro %}
-{% macro fmt_leg(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) / 60) | round | int %}{% if m == 60 %}{% set h = h + 1 %}{% set m = 0 %}{% endif %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
+{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span data-wx class="inline-flex items-center gap-0.5 text-[11px] text-gray-600 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
+{% macro fmt_leg(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) / 60) | round | int %}{% if m == 60 %}{% set h = h + 1 %}{% set m = 0 %}{% endif %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
-{% macro fr(x) %}{{ ('%.1f' | format(x)) | replace('.', ',') }}{% endmacro %}
-{% macro meteo(s) %}{% if s.temperature_c is not none %}<span data-wx class="rb-wx" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
-{# race day: why the finish moved or not #}
+{% macro margin_cls(sec) %}{% if sec < 0 %}text-red-600 font-semibold{% elif sec < 1800 %}text-amber-600{% else %}text-gray-400{% endif %}{% endmacro %}
+{# type of aid station = one glyph covered by a transparent native select; crew / drop bag = two toggles #}
+{% macro poste(s, ci) -%}
+{% set k = s.kind or 'none' %}{% set short = {'none': 'passage', 'water': 'eau', 'full': 'ravito', 'base': 'base vie'} %}
+{% set tone = {'none': 'text-gray-400', 'water': 'text-blue-700', 'full': 'text-amber-800', 'base': 'text-violet-700'} %}
+<button type="button" data-poste="{{ ci }}" data-kind="{{ k }}" data-crew="{{ '1' if s.crew else '0' }}" data-bag="{{ '1' if s.drop_bag else '0' }}" aria-haspopup="dialog" title="{{ short[k]|capitalize }}{% if s.crew %} · assistance{% endif %}{% if s.drop_bag %} · drop bag{% endif %} · clique pour modifier" onclick="window._sim && window._sim.openSheet({{ ci }})"
+        class="inline-flex items-center gap-1.5 h-7 text-[12px] whitespace-nowrap shrink-0 {{ tone[k] }}">
+    <span data-glyph="{{ ci }}" class="inline-flex w-6 h-6 rounded-md items-center justify-center {% if k == 'water' %}bg-blue-50{% elif k == 'full' %}bg-amber-50{% elif k == 'base' %}bg-violet-50{% else %}bg-gray-50{% endif %}">{{ gl.glyph(k, "w-4 h-4") }}</span><span>{{ short[k] }}</span>{% if s.crew %}<span class="inline-flex text-gray-700" title="Assistance">{{ gl.glyph('crew', "w-4 h-4") }}</span>{% endif %}{% if s.drop_bag %}<span class="inline-flex text-gray-700" title="Drop bag">{{ gl.glyph('bag', "w-4 h-4") }}</span>{% endif %}
+</button>
+{%- endmacro %}
+{# cutoff clock + margin, in the same cell (the margin is "secondary": the phone hides it while a delete is armed) #}
+{% macro barriere(s, ci) -%}
+{% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
+{% if s.cutoff_clock %}<span data-cutoff class="text-[11px] tabular-nums text-gray-700" title="Barrière horaire{% if cm is not none %} · marge {{ fmt_margin(cm) }}{% endif %}">{{ s.cutoff_clock }}</span>{% if cm is not none %}<span data-margin data-secondary class="ml-1 text-[11px] tabular-nums {{ margin_cls(cm) }}">{{ fmt_margin(cm) }}</span>{% endif %}{% else %}<span class="text-[11px] text-gray-300">—</span>{% endif %}
+{%- endmacro %}
+{# race day: why the finish moved or not — "objectif tenable" / "à ton rythme · arrivée 15:49 dim." #}
 {% macro rp_mode(rp) -%}
 {% set fin_day = (rp.finish_clock_s // 86400) | int %}
 {% set plan_day = ((start_offset_s + (rp.target_time_s or 0)) // 86400) | int %}
-{% if rp.mode == 'pin' %}cap sur {{ rp.pin_name }} {{ hhmm(rp.pin_clock_s) }}{% elif rp.mode == 'target' %}objectif tenable{% else %}à ton rythme · arrivée {{ hhmm(rp.finish_clock_s) }}{% if fin_day > plan_day %} <span data-day-of="{{ fin_day }}">+{{ fin_day - plan_day }}j</span>{% endif %}{% endif %}
+{% if rp.mode == 'pin' %}cap sur {{ rp.pin_name }} {{ hhmm(rp.pin_clock_s) }}{% elif rp.mode == 'target' %}objectif tenable{% else %}à ton rythme · arrivée <span class="text-gray-600">{{ hhmm(rp.finish_clock_s) }}{% if fin_day > plan_day %} <span data-day-of="{{ fin_day }}">+{{ fin_day - plan_day }}j</span>{% endif %}</span>{% endif %}
 {%- endmacro %}
-{# the consigne of one leg: heart-rate ceiling · what to take · water · caffeine; walks under it #}
-{% macro consigne(lg, sec) -%}
-{% set n = lg.nut if lg else none %}
-<div class="rb-leg-head"><span>{{ fr(sec.end_km - sec.start_km) }} km</span>{% if sec.elevation_gain >= 1 %}<span>+{{ sec.elevation_gain|int }} m</span>{% endif %}{% if sec.elevation_loss >= 1 %}<span>−{{ sec.elevation_loss|int }} m</span>{% endif %}</div>
-{% if lg and (lg.hr or (n and (n.parts or n.water))) %}
-<div class="rb-consigne">{% if lg.hr %}<span class="rb-chip hr" title="Plafond cardio sur ce tronçon">FC ≤{{ lg.hr }}</span>{% endif %}{% if n and n.parts %}<span class="rb-chip" title="À prendre sur ce tronçon">{% for c, w in n.parts %}{% if not loop.first %} · {% endif %}{{ c }} {{ w }}{% endfor %}</span>{% endif %}{% if n and n.water %}<span class="rb-chip water{% if n.dry %} alert{% endif %}" title="Eau à boire sur ce tronçon">{{ n.water }}</span>{% endif %}{% for c in (n.caffeine if n else []) %}<span class="rb-chip caf" title="Prise de caféine">café {{ c }}</span>{% endfor %}</div>
-{% endif %}
-{% if n and n.dry and n.need %}<p class="rb-note rb-red">Eau : il faut {{ n.need }} jusqu'au prochain point d'eau, tu portes {{ n.capacity }}.</p>{% endif %}
-{% if lg and lg.walks %}<p class="rb-note">Marche dans les passages raides : {% for w in lg.walks[:3] %}{% if not loop.first %}, {% endif %}km {{ fr(w.start_km) }} → {{ fr(w.end_km) }}{% endfor %}.</p>{% endif %}
+{# race day header: "Recalée ±Δ min · <mode> ×" on desktop; on the phone the mode gets its own full-width line below #}
+{% macro recalee(rp, phone=False) -%}
+{% set dm = (rp.delta_s / 60) | round | int %}
+<span class="text-gray-900">Recalée</span> <span class="normal-case tracking-normal {% if dm > 1 %}text-amber-600{% elif dm < -1 %}text-emerald-600{% else %}text-gray-400{% endif %}">{{ '+' if dm > 0 }}{{ dm }} min</span>{% if not phone %} <span data-rp-mode class="normal-case tracking-normal font-normal text-[10px] text-gray-400 whitespace-nowrap">· {{ rp_mode(rp) }}</span>{% endif %}<button type="button" onclick="window._sim && window._sim.clearPassage()" class="w-7 h-7 -mr-1 inline-flex items-center justify-center rounded text-gray-400 hover:text-gray-900 text-sm leading-none align-middle" title="Effacer le passage réel">×</button>
 {%- endmacro %}
 {% set sc = scenarios if (scenarios is defined and scenarios and not (replan is defined and replan)) else none %}
 {% set rp = replan if (replan is defined and replan) else none %}
-{% set lgs = legs if legs is defined and legs else [] %}
+{# desktop column count (the phone one is set by fixSpans() after each swap) #}
+{% set wx_on = has_weather is defined and has_weather %}
+{% set ncols = (10 if sc else 8) + (1 if wx_on else 0) %}
 {% if plan_data is defined %}<script type="application/json" id="plan-data">{{ plan_data | safe }}</script>{% endif %}
-{% if rp %}{% set dm = (rp.delta_s / 60) | round | int %}
-<div class="rb-replan"><span class="rb-lab">Recalée</span> <b class="{% if dm > 1 %}rb-red{% elif dm < -1 %}rb-ok{% endif %}">{{ '+' if dm > 0 }}{{ dm }} min</b> <span data-rp-mode class="rb-muted">· {{ rp_mode(rp) }}</span><button type="button" onclick="window._sim && window._sim.clearPassage()" class="rb-x" title="Effacer le passage réel" aria-label="Effacer le passage réel">×</button></div>
-{% endif %}
-{# the tightest cutoff margin is always told; the others only when under 1h30 #}
-{% set margins = sections | selectattr('cutoff_margin_s', 'defined') | rejectattr('cutoff_margin_s', 'none') | map(attribute='cutoff_margin_s') | list %}
-{% set tightest = margins | min if margins else none %}
-<table class="rb-sched" id="plan-table" data-scn="target">
-    <colgroup><col class="rb-col-clk"><col class="rb-col-spine"><col></colgroup>
-    <thead class="sr-only"><tr><th>Heure</th><th>Poste</th><th>Poste et consigne du tronçon qui suit</th></tr></thead>
-    <tbody>
-        {% if sections %}
-        <tr data-start class="rb-cp">
-            <td class="rb-clk"><span class="rb-time">{{ hhmm(start_offset_s) }}</span></td>
-            <td class="rb-spine start">{{ gl.glyph('start', 'w-4 h-4') }}</td>
-            <td class="rb-body"><div class="rb-namerow"><span class="rb-name">Départ</span></div><div class="rb-sub">km 0{% if start_elevation is defined and start_elevation is not none %} · {{ start_elevation|int }} m{% endif %}</div></td>
-        </tr>
-        {% set s0 = sections[0] %}{% set t0 = s0.adjusted_time_s if (has_target and s0.adjusted_time_s is not none) else s0.predicted_time_s %}
-        {% set l0 = lgs[0] if lgs else none %}
-        <tr data-leg-line data-a="{{ s0.start_km }}" data-b="{{ s0.end_km }}" class="rb-legrow{% if l0 and l0.dry %} dry{% endif %}">
-            <td class="rb-dur">{{ fmt_leg(t0) }}</td><td class="rb-spine leg"></td>
-            <td class="rb-body">{% if l0 and l0.dry_start %}<p class="rb-dryline">{{ fr(l0.dry_start.km) }} km sans ravito complet jusqu'à {{ l0.dry_start.to_name }}</p>{% endif %}{{ consigne(l0, s0) }}</td>
-        </tr>
-        {% endif %}
-        {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
-        {% for s in sections %}
-        {% set use_adj = has_target and s.adjusted_time_s is not none %}
-        {% set sec_time = s.adjusted_time_s if use_adj else s.predicted_time_s %}
-        {% set cum_val = s.adjusted_cumulative_time_s if use_adj else s.cumulative_time_s %}
-        {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
-        {% set stops_val = clock_val - start_offset_s - cum_val %}
-        {% set is_finish = loop.last %}
-        {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
-        {% set ci = s.end_checkpoint_index %}
-        {% set editable = ci is not none %}
-        {% set row = sc.rows[loop.index0] if sc else none %}
-        {% set is_switch = sc and sc.switch and ci is not none and ci == sc.switch.cp_index %}
-        {% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
-        {% set late = (row and row.target_ok is defined and row.target_ok == false) or (cm is not none and cm < 0) %}
-        {% set pin_on = s.pinned and not s.passed %}
-        {% set hour = ((clock_val % 86400) / 3600) %}
-        {% set night = hour >= 21 or hour < 6 %}
-        {% set day = (clock_val // 86400) | int %}
-        {% if day > ns.day %}
-        <tr data-day="{{ day }}" class="rb-day"><td colspan="3"><span data-day-label>jour {{ day + 1 }}</span></td></tr>
-        {% set ns.day = day %}
-        {% endif %}
-        {% set k = s.kind or 'none' %}
-        <tr data-row data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}" data-stop="{{ arr_stop|int }}"{% if cm is not none %} data-margin-s="{{ cm|int }}"{% endif %}{% if s.cutoff_clock %} data-cutoff="{{ s.cutoff_clock }}"{% endif %}{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
-            class="rb-cp{% if editable %} rb-tap{% endif %}{% if s.is_anchor %} anchor{% elif s.passed %} passed{% endif %}{% if is_finish %} finish{% endif %}"{% if editable %} title="Modifier ce point"{% endif %}>
-            <td class="rb-clk">{% if pin_on %}<span data-pin class="rb-pinmark{% if s.pin_clamped %} rb-red{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="rb-time{% if late %} late{% endif %}{% if night %} night{% endif %}">{{ hhmm(clock_val) }}</span></td>
-            <td class="rb-spine">{% if is_finish %}{{ gl.glyph('finish', 'w-4 h-4') }}{% else %}<span data-glyph="{{ ci }}" class="inline-flex">{{ gl.glyph(k, 'w-4 h-4') }}</span>{% endif %}</td>
-            <td class="rb-body">
-                <div class="rb-namerow">
-                    <span data-name-text class="rb-name">{% if is_finish %}Arrivée{% else %}{{ s.end_name }}{% endif %}</span>
-                    {{ meteo(s) }}
-                </div>
-                <div class="rb-sub"><span data-km-text>km {{ fr(s.end_km) }}</span>{% if editable %} · <button type="button" data-poste="{{ ci }}" data-kind="{{ k }}" data-crew="{{ '1' if s.crew else '0' }}" data-bag="{{ '1' if s.drop_bag else '0' }}" aria-haspopup="dialog" onclick="window._sim && window._sim.openSheet({{ ci }})" class="rb-poste" title="Modifier ce point">{{ {'none': 'passage', 'water': 'eau', 'full': 'ravito complet', 'base': 'base vie'}[k] }}{% if s.drop_bag %} · sac{% endif %}{% if s.crew %} · assistance{% endif %}{% if arr_stop > 0 %} · {{ (arr_stop / 60)|round|int }} min{% endif %}</button>{% endif %}</div>
-                {% if s.cutoff_clock and cm is not none and (cm < 5400 or cm == tightest) %}
-                <p class="rb-cut{% if cm < 5400 %} tight{% endif %}"><span data-cutoff>barrière {{ s.cutoff_clock }}</span> · <span data-margin>marge {{ fmt_margin(cm) }}</span>{% if cm == tightest and cm >= 5400 %} <span class="rb-muted">(la plus juste)</span>{% endif %}</p>
-                {% endif %}
-                {% if pin_on and s.pin_clamped and not is_finish %}<p class="rb-note rb-red">{{ hhmm(start_offset_s + s.pin_target_s) }} impossible à tenir depuis le point d'avant : le plan vise {{ hhmm(clock_val) }}.</p>{% endif %}
-                {% if is_switch %}
-                <div class="rb-switch" title="Optimiste : −{{ sc.fast_pct|round|int }} % de temps · Sécurité : +{{ sc.safe_pct|round|int }} % de temps en mouvement"><b>Choix du plan ici.</b> Avant {{ hhmm(row.target_s) }} et frais : plan optimiste, arrivée {{ hhmm(start_offset_s + sc.totals.fast_s) }}. {{ (sc.switch_late_s / 60)|round|int }} min de retard ou plus : plan sécurité, arrivée {{ hhmm(start_offset_s + sc.totals.safe_s) }}.</div>
-                {% endif %}
-            </td>
-        </tr>
-        {% if not is_finish %}
-        {% set nxt = sections[loop.index] %}
-        {% set nt = nxt.adjusted_time_s if (has_target and nxt.adjusted_time_s is not none) else nxt.predicted_time_s %}
-        {% set lg = lgs[loop.index] if lgs|length > loop.index else none %}
-        <tr data-leg-line data-a="{{ nxt.start_km }}" data-b="{{ nxt.end_km }}" class="rb-legrow{% if lg and lg.dry %} dry{% endif %}">
-            <td class="rb-dur">{{ fmt_leg(nt) }}</td><td class="rb-spine leg"></td>
-            <td class="rb-body">{% if lg and lg.dry_start %}<p class="rb-dryline">{{ fr(lg.dry_start.km) }} km sans ravito complet jusqu'à {{ lg.dry_start.to_name }}</p>{% endif %}{{ consigne(lg, nxt) }}</td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-    </tbody>
-</table>
-{# pinned times the plan could not hold at the finish: said in words, under the list #}
+{% if sc %}<div data-scn-pill class="lg:hidden flex items-center justify-between gap-2 pb-1.5 text-[11px] text-gray-500"><span>Heures de passage du plan</span><span class="inline-flex items-center rounded-full bg-gray-100 p-0.5 leading-none"><button type="button" data-scn-btn="safe" onclick="window._sim && window._sim.setScn('safe')" class="px-2.5 py-1.5 rounded-full text-gray-500" title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</button><button type="button" data-scn-btn="target" onclick="window._sim && window._sim.setScn('target')" class="px-2.5 py-1.5 rounded-full bg-white shadow-sm text-gray-900 font-medium">Cible</button><button type="button" data-scn-btn="fast" onclick="window._sim && window._sim.setScn('fast')" class="px-2.5 py-1.5 rounded-full text-gray-500" title="−{{ sc.fast_pct|round|int }} %">Optimiste</button></span></div>{% endif %}
+<div class="overflow-x-auto">
+    <table class="w-full table-fixed text-sm" id="plan-table" data-scn="target">
+        <thead>
+            <tr class="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <th class="w-6 lg:w-7 text-left py-2 pl-0 pr-1 font-medium">#</th>
+                <th data-col="point" class="text-left py-2 px-1 font-medium">Point</th>
+                <th class="w-11 lg:w-[52px] text-right py-2 px-1 font-medium">km</th>
+                {% if wx_on %}<th class="hidden lg:table-cell w-[54px] text-right py-2 px-1 font-medium" title="Prévision au point, à l'heure de passage prévue">Météo</th>{% endif %}
+                <th class="hidden lg:table-cell w-[68px] text-right py-2 px-1 font-medium whitespace-nowrap" title="Dénivelé du tronçon · survol : allure">D+ D−</th>
+                <th class="hidden lg:table-cell w-[64px] text-right py-2 px-1 font-medium whitespace-nowrap" title="Temps de course entre deux points · +x' = arrêt prévu à ce poste (réglage « '/ravito » en haut)">Tronçon</th>
+                <th class="hidden lg:table-cell w-[136px] text-left py-2 px-1 font-medium" title="Type de poste, assistance, drop bag · clique la ligne pour modifier">Poste</th>
+                <th class="hidden lg:table-cell w-[112px] text-left py-2 px-1 font-medium">Barrière</th>
+                {% if sc %}<th class="hidden lg:table-cell w-16 text-right py-2 px-1 font-medium text-blue-700" title="Plan lent : +{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</th>{% endif %}
+                <th class="hidden lg:table-cell {% if rp %}w-[300px]{% else %}w-[84px]{% endif %} text-right py-2 px-1 font-medium text-gray-900 whitespace-nowrap" title="{% if rp %}{% if rp.mode == 'pin' %}heure fixée à {{ rp.pin_name }} ({{ hhmm(rp.pin_clock_s) }}) tenable : seuls les tronçons jusque-là changent{% elif rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% if (rp.finish_clock_s // 86400)|int > ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int %} (+{{ (rp.finish_clock_s // 86400)|int - ((start_offset_s + (rp.target_time_s or 0)) // 86400)|int }}j){% endif %}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}{% elif has_target %}Heure de passage si tu tiens ton plan (objectif et heures fixées){% else %}Heure de passage estimée{% endif %}">{% if rp %}{{ recalee(rp) }}{% else %}Cible{% endif %}</th>
+                {% if sc %}<th class="hidden lg:table-cell w-[72px] text-right py-2 px-1 font-medium text-emerald-700" title="Plan rapide : −{{ sc.fast_pct|round|int }} %">Optimiste</th>{% endif %}
+                {# phone: one clock column, picked with the pill #}
+                <th class="lg:hidden {% if rp %}w-[136px]{% else %}w-[92px]{% endif %} text-right py-2 px-1 font-medium whitespace-nowrap">{% if rp %}{{ recalee(rp, phone=True) }}{% else %}<span data-scn-name class="text-gray-900">Cible</span>{% endif %}</th>
+            </tr>
+            {% if rp %}<tr class="lg:hidden"><th colspan="4" data-rp-mode class="text-right px-1 pt-0 pb-1.5 leading-none normal-case tracking-normal font-normal text-[10px] text-gray-400 whitespace-nowrap">{{ rp_mode(rp) }}</th></tr>{% endif %}
+        </thead>
+        <tbody>
+            {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
+            {% for s in sections %}
+            {% set use_adj = has_target and s.adjusted_time_s is not none %}
+            {% set sec_time = s.adjusted_time_s if use_adj else s.predicted_time_s %}
+            {% set cum_val = s.adjusted_cumulative_time_s if use_adj else s.cumulative_time_s %}
+            {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
+            {% set stops_val = clock_val - start_offset_s - cum_val %}
+            {% set is_finish = loop.last %}
+            {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
+            {% set ci = s.end_checkpoint_index %}
+            {% set editable = ci is not none %}
+            {% set row = sc.rows[loop.index0] if sc else none %}
+            {% set is_switch = sc and sc.switch and ci is not none and ci == sc.switch.cp_index %}
+            {% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
+            {% set late = (row and row.target_ok is defined and row.target_ok == false) or (cm is not none and cm < 0) %}
+            {% set pin_on = s.pinned and not s.passed %}
+            {% set dist = s.end_km - s.start_km %}
+            {% set pace = (sec_time / dist) if dist > 0 else 0 %}
+            {% set day = (clock_val // 86400) | int %}
+            {% if day > ns.day %}
+            <tr data-day="{{ day }}" class="h-3.5"><td colspan="{{ ncols }}"><div class="flex items-center gap-2 text-[10px] uppercase tracking-wider text-gray-400 leading-none"><span class="flex-1 border-t border-dotted border-gray-200"></span><span data-day-label>jour {{ day + 1 }}</span><span class="flex-1 border-t border-dotted border-gray-200"></span></div></td></tr>
+            {% set ns.day = day %}
+            {% endif %}
+            <tr data-row data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
+                class="group h-10 border-t border-gray-100 {% if s.is_anchor %}bg-amber-50{% elif s.passed %}opacity-60{% elif is_finish %}bg-red-50/60{% else %}cursor-pointer hover:bg-gray-50/70{% endif %}"{% if editable %} title="Modifier ce point"{% endif %}>
+                <td class="py-2 pl-0 pr-1">
+                    {% if is_finish %}<span class="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-bold inline-flex items-center justify-center">A</span>
+                    {% else %}<span role="button" tabindex="0" onclick="window._sim && window._sim.flyToCp({{ ci }})" onkeydown="if(event.key==='Enter'){window._sim && window._sim.flyToCp({{ ci }})}" class="w-5 h-5 rounded-full cursor-pointer bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold inline-flex items-center justify-center" title="Voir sur la carte">{{ loop.index }}</span>{% endif %}
+                </td>
+                <td class="py-2 px-1 min-w-0">
+                    {% if is_finish %}<span class="text-[13px] font-semibold text-red-800">Arrivée</span>
+                    {% else %}
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <span data-name-text class="text-[13px] font-medium min-w-0 truncate" title="km {{ s.end_km }}{% if s.end_elevation is not none %} · {{ s.end_elevation|int }} m{% endif %}">{{ s.end_name }}</span>
+                        {% if (s.kind and s.kind != 'none') or s.crew or s.drop_bag %}<span class="lg:hidden inline-flex items-center gap-1 shrink-0 text-gray-700">{% if s.kind and s.kind != 'none' %}{{ gl.glyph(s.kind, "w-4 h-4") }}{% endif %}{% if s.crew %}{{ gl.glyph('crew', "w-4 h-4") }}{% endif %}{% if s.drop_bag %}{{ gl.glyph('bag', "w-4 h-4") }}{% endif %}</span>{% endif %}{% if wx_on %}{{ meteo(s, "lg:hidden shrink-0") }}{% endif %}
+                    </div>
+                    {% endif %}
+                </td>
+                <td class="py-2 px-1 text-right">
+                    <div class="h-6 flex items-center justify-end">
+                    {% if is_finish %}<span class="text-[11px] text-gray-500 tabular-nums">{{ s.end_km }}</span>
+                    {% else %}<span data-km-text class="text-[11px] text-gray-500 tabular-nums">{{ s.end_km }}</span>{% endif %}
+                    </div>
+                </td>
+                {% if wx_on %}<td class="hidden lg:table-cell py-2 px-1 text-right"><div class="h-6 flex items-center justify-end">{{ meteo(s) }}</div></td>{% endif %}
+                <td class="hidden lg:table-cell py-2 px-1 text-right text-[11px] leading-tight tabular-nums whitespace-nowrap" data-section title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km"><span class="text-green-600">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% else %}—{% endif %}</span> <span class="text-red-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></td>
+                <td class="hidden lg:table-cell py-2 px-1 text-right text-[11px] tabular-nums whitespace-nowrap text-gray-600" data-leg-time title="{{ fmt_time(sec_time) }} de course depuis le point précédent · {{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km{% if arr_stop > 0 %} · puis {{ (arr_stop / 60)|round|int }} min d'arrêt à ce poste{% endif %}">{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %}<span class="text-gray-400"> +{{ (arr_stop / 60)|round|int }}'</span>{% endif %}</td>
+                <td class="hidden lg:table-cell py-2 px-1"><div class="flex items-center">{% if editable %}{{ poste(s, ci) }}{% endif %}</div></td>
+                <td class="hidden lg:table-cell py-2 px-1 whitespace-nowrap"><div class="h-6 flex items-center">{% if editable %}{{ barriere(s, ci) }}{% endif %}</div></td>
+                {% if sc %}<td class="col-safe hidden lg:table-cell py-2 px-1 text-right text-xs tabular-nums {% if row.safe_ok is defined and row.safe_ok == false %}text-red-600 font-semibold{% else %}text-blue-700{% endif %}" data-safe>{{ hhmm(row.safe_s) }}</td>{% endif %}
+                <td class="col-target py-2 px-1 text-right whitespace-nowrap">
+                    <div class="h-6 flex items-center justify-end">
+                    {% if pin_on %}<span data-pin class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-amber-600{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3 h-3') }}</span>{% endif %}
+                    {% if editable %}<span data-cible-text class="text-[15px] font-bold tabular-nums {% if late %}text-red-600{% else %}text-gray-900{% endif %}">{{ hhmm(clock_val) }}</span>{% if s.cutoff_clock %}<span class="lg:hidden inline-block w-1.5 h-1.5 rounded-full ml-1 align-middle {% if cm is not none and cm < 0 %}bg-red-600{% elif cm is not none and cm < 1800 %}bg-amber-500{% else %}bg-gray-300{% endif %}" title="barrière {{ s.cutoff_clock }}{% if cm is not none %} · {{ fmt_margin(cm) }}{% endif %}"></span>{% endif %}<svg class="lg:hidden w-3.5 h-3.5 ml-0.5 -mr-1 text-gray-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                    {% else %}<span data-cible-text class="text-[15px] font-bold tabular-nums text-gray-900">{{ hhmm(clock_val) }}</span>{% endif %}
+                    </div>
+                </td>
+                {% if sc %}<td class="col-fast hidden lg:table-cell py-2 px-1 text-right text-xs tabular-nums {% if sc.switch and row.km|float < sc.switch.km|float %}text-gray-300{% else %}text-emerald-700{% endif %}" data-fast>{{ hhmm(row.fast_s) }}</td>{% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{# pinned times the plan could not hold: said in words, under the table #}
 {% set pin_warn = sections | selectattr('pin_clamped') | rejectattr('passed') | list if sections and sections[-1].objective_s is defined else [] %}
-{% if pin_warn and pin_warn[-1].end_checkpoint_index is none %}{% set s = pin_warn[-1] %}<div data-pin-warnings class="rb-note rb-red">Arrivée : ton objectif ({{ fmt_time(s.objective_s) }}) est trop court après tes heures fixées · le plan arrive à {{ hhmm(s.adjusted_clock_time_s) }}.</div>{% endif %}
+{% if pin_warn %}<div data-pin-warnings class="pt-2 space-y-0.5 text-[11px] leading-snug text-red-700">
+{% for s in pin_warn %}{% set clk = s.adjusted_clock_time_s %}
+<p>{% if s.end_checkpoint_index is none %}Arrivée : ton objectif ({{ fmt_time(s.objective_s) }}) est trop court après tes heures fixées · le plan arrive à {{ hhmm(clk) }}.{% else %}{{ s.end_name }} : {{ hhmm(start_offset_s + s.pin_target_s) }} est impossible à tenir depuis le point d'avant (arrêts compris) · le plan vise {{ hhmm(clk) }}.{% endif %}</p>
+{% endfor %}</div>{% endif %}

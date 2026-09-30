@@ -5,7 +5,10 @@
 {% block content %}
 {% set input_cls = "w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent" %}
 <div class="space-y-5 max-w-3xl">
-    <div class="rb-head"><h1>Réglages</h1><p>ton profil, tes produits, Strava</p></div>
+    <div>
+        <h1 class="text-lg font-semibold tracking-tight">Réglages</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Ton profil, ta connexion Strava et Apple Santé.</p>
+    </div>
 
     {% if saved is defined and saved %}
     <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">Réglages enregistrés.</div>
@@ -37,7 +40,7 @@
 
     <!-- Profil -->
     <form method="post" action="/settings" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-        <h2 class="rb-section-title">Profil</h2>
+        <h2 class="text-sm font-semibold tracking-tight">Profil</h2>
         <div class="max-w-xs">
             <label for="weight_kg" class="block text-xs font-medium text-gray-500 mb-1.5">Poids</label>
             <div class="flex items-center gap-2">
@@ -64,7 +67,7 @@
     <!-- Strava: status + inventory; credentials tucked away -->
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
         <div class="flex items-center justify-between gap-3">
-            <h2 class="rb-section-title">Strava</h2>
+            <h2 class="text-sm font-semibold tracking-tight">Strava</h2>
             {% if user.has_own_strava_app and user.strava_credentials_valid %}
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-xs font-medium text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Connecté</span>
             {% elif user.has_own_strava_app %}
@@ -110,19 +113,7 @@
         </details>
     </div>
 
-    <!-- Mes produits: the label values the roadbook counts with -->
-    <section id="produits" class="scroll-mt-20 space-y-3">
-        <div class="rb-sched-head"><h2 class="rb-section-title">Mes produits</h2><p class="rb-lab">valeurs de l'étiquette, par unité</p></div>
-        <p class="text-sm text-gray-600">Un produit = ce qui est écrit sur l'étiquette pour une unité (un gel, une flasque préparée, une pastille). Le roadbook compte avec ces valeurs ; tu choisis ceux que tu emportes dans chaque course (Détails).</p>
-        {% include "partials/pantry.html" %}
-    </section>
-
-    <!-- Apple Santé lives on its own page -->
-    <div id="apple-sante" class="rb-frame p-4 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-gray-600"><b class="text-gray-900">Santé</b> · la connexion Apple Santé, ta forme et tes tendances ont leur page.</p>
-        <a href="/sante#apple-sante" class="rb-btn sm">Santé → connexion Apple Santé</a>
-    </div>
-    <script>if (location.hash === '#apple-sante') location.replace('/sante#apple-sante');</script>
+    {% include "partials/health_settings.html" %}
 
     <!-- Danger: collapsed, out of the way -->
     <details class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
