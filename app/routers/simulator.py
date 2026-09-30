@@ -153,14 +153,8 @@ async def _passage_table_context(
         _elevation_at_km,
         build_athlete_gradient_profile,
         compute_passage_times,
+        objective_moving_s,
         predict_course,
-    )
-
-    # Re-predict so the night penalty reflects the chosen start time.
-    # Heat is applied once, in compute_passage_times.
-    profile = profile or await build_athlete_gradient_profile(db, user_id)
-    course = predict_course(
-        course, profile, start_hour=start_hour, start_minute=start_minute
     )
 
     # Aid-station stops: refills come from the saved route's nutrition plan;
@@ -177,6 +171,17 @@ async def _passage_table_context(
         params = route_obj.params_json or {}
     aid_stops = _aid_stops(checkpoints, refills, stop_minutes)
     stop_min = stop_minutes or 0
+
+    # Re-predict so the night penalty reflects the chosen start time, and the
+    # plan's fatigue and night the objective's clock. Heat is applied once, in
+    # compute_passage_times.
+    profile = profile or await build_athlete_gradient_profile(db, user_id)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute,
+        plan_moving_s=objective_moving_s(
+            target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
+        ),
+    )
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -1399,13 +1404,18 @@ _RUN_TYPES = ["Run", "TrailRun", "VirtualRun"]
 _BIKE_TYPES = ["Ride", "VirtualRide", "GravelRide", "EBikeRide", "MountainBikeRide"]
 
 
+def _km_key(km) -> float | None:
+    """A checkpoint's key when matching plan and result: its km (names repeat on loops)."""
+    return round(float(km), 1) if km is not None else None
+
+
 async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     from app.models.activity import Activity
 
     b = await _plan_bundle(route, db, user)
     start_hour, start_minute = b["start_hour"], b["start_minute"]
     cps, plan_sections = b["checkpoints"], b["sections"]
-    predicted = {s["end_name"]: s["cumulative_time_s"] for s in plan_sections}
+    predicted = {_km_key(s["end_km"]): s["cumulative_time_s"] for s in plan_sections}
     predicted_total = b["predicted_total_s"]
     sport_types = _BIKE_TYPES if route.sport_type == "bike" else _RUN_TYPES
 
@@ -1430,12 +1440,12 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
 
     rows = []
     if result and result.get("actual"):
-        actual = {a["name"]: a["time_s"] for a in result["actual"]}
+        actual = {_km_key(a.get("km")): a["time_s"] for a in result["actual"]}
         for cp in cps:
-            n = cp["name"]
+            k = _km_key(cp["distance_km"])
             rows.append({
-                "name": n, "km": cp["distance_km"],
-                "predicted_s": predicted.get(n), "actual_s": actual.get(n),
+                "name": cp["name"], "km": cp["distance_km"],
+                "predicted_s": predicted.get(k), "actual_s": actual.get(k),
             })
         rows.append({
             "name": "Arrivée", "km": route.total_distance_km,
@@ -1547,33 +1557,43 @@ async def save_route_result(
         actual, total_actual_s = [], int(activity.moving_time or activity.elapsed_time or 0)
 
     # One-shot personal fatigue calibration: compare early residual vs final
-    # residual against the DEFAULT-tilt prediction. An athlete who is faster
-    # than predicted early but fades to (or past) the prediction late gets a
-    # steeper fresh→fade tilt. Hard-clamped: one race adjusts, never dominates.
+    # residual against the population curve (neutral tilt). An athlete who is
+    # faster than predicted early but fades to (or past) the prediction late
+    # gets a steeper fresh→fade tilt. Hard-clamped: one race adjusts, never
+    # dominates. Stored with the curve it was measured against. The curve is
+    # read on the runner's own finish, as it was fitted: on the model's clock a
+    # runner faster than predicted is compared with a more faded shape. The
+    # final residual is then 0 by construction; only the early one speaks.
     fatigue_tilt = None
     if actual and total_actual_s and route.sport_type != "bike":
         try:
             from app.schemas.simulator import CourseProfile
             from app.services.race_simulator import (
+                DEFAULT_FATIGUE_TILT,
+                FATIGUE_MODEL,
                 build_athlete_gradient_profile,
                 compute_passage_times,
                 predict_course,
             )
 
             profile = await build_athlete_gradient_profile(db, user.id)
-            base_profile = profile.model_copy(update={"fatigue_tilt": 0.15})
+            base_profile = profile.model_copy(update={"fatigue_tilt": DEFAULT_FATIGUE_TILT})
             course = CourseProfile(**route.course_json)
             sh = route.start_hour if route.start_hour is not None else 6
             sm = route.start_minute or 0
-            course = predict_course(course, base_profile, start_hour=sh, start_minute=sm)
-            secs = compute_passage_times(course, cps, None, 1.0, sh, sm, None)
-            pred = {s["end_name"]: s["cumulative_time_s"] for s in secs}
-            pred_total = course.predicted_total_time_s
-            first = next((a for a in actual if pred.get(a["name"])), None)
+            course = predict_course(
+                course, base_profile, start_hour=sh, start_minute=sm, plan_moving_s=total_actual_s,
+            )
+            secs = compute_passage_times(course, cps, total_actual_s, 1.0, sh, sm, None)
+            # By km, not name: a loop course repeats names (Transjeju 2026 passes
+            # Healing Forest at km 7 and 136), which matched km 7 to km 136.
+            pred = {_km_key(s["end_km"]): s["adjusted_cumulative_time_s"] for s in secs[:-1]}
+            pred_total = secs[-1]["adjusted_cumulative_time_s"] if secs else None
+            first = next((a for a in actual if pred.get(_km_key(a.get("km")))), None)
             if first and pred_total:
-                early = (first["time_s"] - pred[first["name"]]) / pred[first["name"]]
+                early = (first["time_s"] - pred[_km_key(first["km"])]) / pred[_km_key(first["km"])]
                 late = (total_actual_s - pred_total) / pred_total
-                fatigue_tilt = round(max(0.05, min(0.15 + 0.5 * (late - early), 0.40)), 3)
+                fatigue_tilt = round(max(0.05, min(DEFAULT_FATIGUE_TILT + 0.5 * (late - early), 0.40)), 3)
         except Exception:
             logger.exception("fatigue tilt calibration failed")
 
@@ -1584,7 +1604,7 @@ async def save_route_result(
         "activity_date": activity.start_date.strftime("%d/%m/%Y") if activity.start_date else "",
         "total_actual_s": total_actual_s,
         "actual": actual,
-        **({"fatigue_tilt": fatigue_tilt} if fatigue_tilt is not None else {}),
+        **({"fatigue_tilt": fatigue_tilt, "fatigue_model": FATIGUE_MODEL} if fatigue_tilt is not None else {}),
     }
     await db.flush()
     ctx = await _result_compare_context(request, route, db, user)
@@ -1753,6 +1773,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     from app.services.race_simulator import (
         build_athlete_gradient_profile,
         compute_passage_times,
+        objective_moving_s,
         predict_course,
     )
 
@@ -1789,7 +1810,12 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     start_offset_s = start_hour * 3600 + start_minute * 60
     course = CourseProfile(**route.course_json)
     profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+    course = predict_course(
+        course, profile, start_hour=start_hour, start_minute=start_minute,
+        plan_moving_s=objective_moving_s(
+            route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
+        ),
+    )
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,

@@ -117,7 +117,7 @@ def build(path: pathlib.Path):
     gain, fat = 0.0, []
     for s in segs:
         gain += s.elevation_gain
-        fat.append(rs._fatigue_factor(s.end_km / total, total, gain))
+        fat.append(cal.legacy_fatigue(s.end_km / total, total, gain))
     runners = []
     for r in race["runners"]:
         mv = cal.moving(r)
