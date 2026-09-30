@@ -19,7 +19,13 @@
     <p class="text-sm text-gray-500">Ta VFC, ta FC au repos, ton sommeil et ta VO2 max arrivent automatiquement depuis ta montre COROS.</p>
 
     {% if not coros.connected %}
-    <a href="/coros/connect" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors inline-flex items-center">Connecter COROS</a>
+    <div class="space-y-2">
+        <a href="/coros/connect?region=monde" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors inline-flex items-center">Connecter COROS</a>
+        <p class="text-[11px] text-gray-400">Page d'erreur chez COROS après ta connexion ? Ton compte est sur un autre serveur :
+            <a href="/coros/connect?region=europe" class="underline hover:text-gray-600">serveur Europe</a> ·
+            <a href="/coros/connect?region=chine" class="underline hover:text-gray-600">serveur Chine</a> ·
+            <a href="/coros/connect?region=monde" class="underline hover:text-gray-600">serveur Monde</a></p>
+    </div>
     {% else %}
     {% if coros.needs_reauth %}
     <div class="space-y-2.5">

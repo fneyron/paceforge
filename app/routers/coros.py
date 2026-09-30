@@ -36,16 +36,19 @@ def _back(request: Request, error: str | None = None, ok: str | None = None) -> 
 @router.get("/coros/connect")
 async def coros_connect(
     request: Request,
+    region: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Discover COROS's OAuth setup, make sure PaceForge is registered there,
     then send the athlete to the COROS login."""
     retried = bool(request.session.pop("coros_retry", False))
+    region = region if region in coros.REGIONS else request.session.get("coros_region", coros.DEFAULT_REGION)
+    request.session["coros_region"] = region
     redirect = coros.redirect_uri()
     try:
         async with coros.http_client() as client:
-            disc = await coros.discover(client)
+            disc = await coros.discover(client, region)
             client_id = await coros.client_id_for(db, client, disc, redirect)
     except (coros.CorosError, httpx.HTTPError, ValueError, KeyError, IndexError):
         logger.exception("COROS connect failed for user %d", user.id)
