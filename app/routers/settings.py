@@ -17,6 +17,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.activity_dedupe import sport_group
+from app.services.coros import coros_status
 from app.services.health import (
     METRIC_LABELS,
     METRICS,
@@ -81,6 +82,7 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("ftp_est", ftp_est)
     flags.setdefault("health", await health_status(db, user))
     flags.setdefault("health_api_url", _public_base(request) + "/api/health/samples")
+    flags.setdefault("coros", await coros_status(db, user.id))
     return {"request": request, "user": user, "strava_stats": strava_stats, **flags}
 
 
@@ -99,12 +101,14 @@ async def settings_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # one-time flashes from the Apple Santé key actions (Post/Redirect/Get: a
-    # page reload must never mint a second key behind the athlete's back)
+    # one-time flashes from the Apple Santé key and COROS actions (Post/Redirect/Get:
+    # a page reload must never mint a second key behind the athlete's back)
     ctx = await _settings_context(
         request, user, db,
         new_health_key=request.session.pop("new_health_key", None),
         health_key_revoked=request.session.pop("health_key_revoked", False),
+        coros_ok=request.session.pop("coros_ok", None),
+        coros_error=request.session.pop("coros_error", None),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
@@ -306,6 +310,7 @@ async def delete_account(
     # Delete all user data (cascades handle most, but be explicit)
     from app.models.analysis import Analysis
     from app.models.chat_message import ChatMessage
+    from app.models.coros import CorosConnection
     from app.models.generated_plan import GeneratedPlan
     from app.models.health import HealthMetric, HealthSample
     from app.models.route import Route
@@ -324,6 +329,7 @@ async def delete_account(
     await db.execute(delete(WeeklyDigest).where(WeeklyDigest.user_id == user_id))
     await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
     await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user_id))
+    await db.execute(delete(CorosConnection).where(CorosConnection.user_id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

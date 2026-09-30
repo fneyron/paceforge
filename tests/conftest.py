@@ -3,6 +3,8 @@ import os
 
 # no OpenStreetMap calls from the tests (read when app.config loads)
 os.environ.setdefault("SURFACE_FETCH", "false")
+# no background COROS syncs either (the tests call the sync themselves, mocked)
+os.environ.setdefault("COROS_SYNC", "false")
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch

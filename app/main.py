@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import activity, auth, dashboard, health, simulator, webhook
+    from app.routers import activity, auth, coros, dashboard, health, simulator, webhook
     from app.routers import settings as settings_router
 
     app.include_router(auth.router)
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(simulator.router)
     app.include_router(settings_router.router)
     app.include_router(health.router)     # Apple Health push from the iPhone Shortcut
+    app.include_router(coros.router)      # COROS link (OAuth) and sync
     app.include_router(webhook.router)
 
     # Health check
