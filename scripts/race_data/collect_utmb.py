@@ -173,6 +173,7 @@ def main() -> None:
     ap.add_argument("--only", nargs="*", help="tenant/race ids to collect (default: all)")
     ap.add_argument("--fast-share", type=float, default=0.0, help="take every runner of this fastest share of the field")
     ap.add_argument("--topup", action="store_true", help="add runners to races already stored")
+    ap.add_argument("--index-name", help="file name for the --meta-only index (default index_meta.json)")
     args = ap.parse_args()
     tenants = json.loads(pathlib.Path(args.tenants).read_text())
     index = []
@@ -185,7 +186,7 @@ def main() -> None:
             if s:
                 index.append(s)
                 print(json.dumps(s, ensure_ascii=False), flush=True)
-    out = ROOT / ("index_meta.json" if args.meta_only else "index.json")
+    out = ROOT / ((args.index_name or "index_meta.json") if args.meta_only else "index.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     if not args.meta_only and out.exists():
         old = {(x["tenant"], x["race"]): x for x in json.loads(out.read_text())}
