@@ -1,0 +1,175 @@
+{# Apple Santé: personal key, iPhone Shortcut how-to, export.zip import #}
+{% set step_cls = "flex gap-2.5" %}
+{% set num_cls = "shrink-0 w-5 h-5 rounded-full bg-gray-100 text-[10px] font-semibold text-gray-600 flex items-center justify-center mt-px" %}
+{% set copy_btn = "h-8 px-2.5 rounded-lg border border-gray-200 bg-white text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1 shrink-0" %}
+<div id="apple-sante" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4 scroll-mt-20">
+    <div class="flex items-center justify-between gap-3">
+        <h2 class="text-sm font-semibold tracking-tight">Apple Santé</h2>
+        {% if health.has_key and health.last_push_recent %}
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-xs font-medium text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Reçu {{ health.last_push_ago }}</span>
+        {% elif health.has_key %}
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-xs font-medium text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>En attente d'envoi</span>
+        {% elif health.per_metric %}
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-xs font-medium text-gray-600"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Import seul</span>
+        {% else %}
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-xs font-medium text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>À configurer</span>
+        {% endif %}
+    </div>
+    <p class="text-sm text-gray-500">Ta variabilité cardiaque (VFC), ta fréquence cardiaque au repos, ton sommeil, ton poids et ta VO2 max, depuis l'app Santé de l'iPhone. Elles alimentent le <a href="/activities" class="underline hover:text-gray-700">suivi de forme</a>.</p>
+
+    {% include "partials/health_status.html" %}
+
+    <!-- 1. key -->
+    <div class="border-t border-gray-100 pt-4 space-y-2.5">
+        <h3 class="text-xs font-semibold text-gray-700">1. Ta clé personnelle</h3>
+        {% if new_health_key is defined and new_health_key %}
+        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 space-y-2">
+            <p class="text-xs text-emerald-700 font-medium">Voici ta clé. Copie-la maintenant : elle ne sera plus jamais affichée.</p>
+            <div class="flex items-center gap-2">
+                <input type="text" readonly value="{{ new_health_key }}" id="health-key" aria-label="Ta clé Apple Santé" onclick="this.select()" class="w-full h-8 px-2.5 rounded-lg border border-gray-200 bg-white text-xs font-mono">
+                <button type="button" class="{{ copy_btn }}" data-copy="#health-key"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
+            </div>
+        </div>
+        {% elif health_key_revoked is defined and health_key_revoked %}
+        <p class="text-xs text-gray-500">Clé révoquée : le raccourci ne peut plus envoyer de données.</p>
+        {% endif %}
+        {% if health.has_key %}
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-gray-600">Clé active : <code class="font-mono text-[11px] px-1 py-0.5 rounded bg-gray-100">{{ health.key_prefix }}…</code>{% if health.key_created_at %} · créée le {{ health.key_created_at.strftime('%d/%m/%Y') }}{% endif %}</p>
+            <div class="flex items-center gap-2">
+                <form method="post" action="/settings/health/key"
+                      onsubmit="event.preventDefault(); var f = this; var msg = 'Créer une nouvelle clé ? L\'ancienne cessera de marcher : il faudra coller la nouvelle dans le raccourci.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Nouvelle clé'); } else if (confirm(msg)) { f.submit(); }">
+                    <button type="submit" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50">Régénérer</button>
+                </form>
+                <form method="post" action="/settings/health/key/revoke"
+                      onsubmit="event.preventDefault(); var f = this; var msg = 'Révoquer la clé ? Le raccourci ne pourra plus envoyer de données (celles déjà reçues restent).'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Révoquer'); } else if (confirm(msg)) { f.submit(); }">
+                    <button type="submit" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-gray-50">Révoquer</button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-xs text-gray-500">Le raccourci de l'iPhone s'identifie avec cette clé, sans mot de passe.</p>
+        <form method="post" action="/settings/health/key">
+            <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">Générer ma clé</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <!-- 2. Shortcut -->
+    <details class="border-t border-gray-100 pt-4 group"{% if health.has_key and not health.last_push_at %} open{% endif %}>
+        <summary class="cursor-pointer select-none text-xs font-semibold text-gray-700 hover:text-gray-900">2. Créer le raccourci sur l'iPhone <span class="font-normal text-gray-400">(5 min, une seule fois)</span></summary>
+        <ol class="mt-3 space-y-3 text-xs text-gray-600 leading-relaxed">
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">1</span><div>Ouvre l'app <b>Raccourcis</b>, onglet <b>Raccourcis</b>, touche <b>+</b>. Nomme-le « PaceForge Santé ».</div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">2</span><div>Ajoute l'action <b>Rechercher des échantillons de santé</b>. Règle <i>Type</i> sur <b>Variabilité du rythme cardiaque</b> et <i>Date de début</i> sur <b>dans les 7 derniers jours</b>.</div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">3</span><div>Ajoute la même action encore 4 fois, avec les types <b>Fréquence cardiaque au repos</b>, <b>Analyse du sommeil</b>, <b>Poids</b> et <b>VO2 max</b> (toujours les 7 derniers jours).</div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">4</span><div class="min-w-0 flex-1 space-y-1.5">
+                <p>Ajoute l'action <b>Obtenir le contenu de l'URL</b> et colle cette adresse :</p>
+                <div class="flex items-center gap-2">
+                    <input type="text" readonly value="{{ health_api_url }}" id="health-url" aria-label="Adresse d'envoi" onclick="this.select()" class="w-full h-8 px-2.5 rounded-lg border border-gray-200 bg-white text-[11px] font-mono">
+                    <button type="button" class="{{ copy_btn }}" data-copy="#health-url"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
+                </div>
+                <p>Touche <b>Afficher plus</b> : <i>Méthode</i> <b>POST</b> ; dans <i>En-têtes</i>, ajoute la clé <code class="font-mono text-[11px] px-1 rounded bg-gray-100">Authorization</code> avec pour valeur <code class="font-mono text-[11px] px-1 rounded bg-gray-100">Bearer</code>, un espace, puis ta clé ; <i>Corps de la requête</i> : <b>JSON</b>.</p>
+            </div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">5</span><div class="min-w-0 flex-1 space-y-1.5">
+                <p>Dans le corps JSON, ajoute ces champs de type <b>Texte</b>. Dans chacun, insère le résultat de la recherche indiquée, touche-le et choisis la propriété :</p>
+                <div class="overflow-x-auto">
+                <table class="text-[11px] tabular-nums">
+                    <thead><tr class="text-gray-400 text-left"><th class="pr-3 py-0.5 font-medium">Champ</th><th class="pr-3 py-0.5 font-medium">Recherche</th><th class="py-0.5 font-medium">Propriété</th></tr></thead>
+                    <tbody class="text-gray-600">
+                        {% for field, search, prop in [
+                            ('hrv', 'Variabilité', 'Valeur'), ('hrv_dates', 'Variabilité', 'Date de début'),
+                            ('rhr', 'FC au repos', 'Valeur'), ('rhr_dates', 'FC au repos', 'Date de début'),
+                            ('sleep', 'Sommeil', 'Valeur'), ('sleep_start', 'Sommeil', 'Date de début'), ('sleep_end', 'Sommeil', 'Date de fin'),
+                            ('weight', 'Poids', 'Valeur'), ('weight_dates', 'Poids', 'Date de début'),
+                            ('vo2max', 'VO2 max', 'Valeur'), ('vo2max_dates', 'VO2 max', 'Date de début')] %}
+                        <tr><td class="pr-3 py-0.5"><code class="font-mono px-1 rounded bg-gray-100">{{ field }}</code></td><td class="pr-3 py-0.5">{{ search }}</td><td class="py-0.5">{{ prop }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+                <p class="text-gray-500">Pour les dates, touche la variable et choisis le format <b>ISO 8601</b> avec <b>Inclure l'heure ISO 8601</b> (le format français est aussi compris). Tu n'as pas de balance connectée ? Saute simplement les champs du poids.</p>
+            </div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">6</span><div>Ajoute l'action <b>Afficher le résultat</b> (facultatif), puis touche <b>▶</b> pour le lancer une fois. Autorise l'accès à Santé quand l'iPhone le demande. Tu dois voir « PaceForge : … mesures reçues » ; ici, touche <b>Vérifier la réception</b>.</div></li>
+        </ol>
+        <h4 class="mt-4 text-xs font-semibold text-gray-700">Chaque matin, tout seul</h4>
+        <ol class="mt-2 space-y-3 text-xs text-gray-600 leading-relaxed">
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">1</span><div>Onglet <b>Automatisation</b>, touche <b>+</b> puis <b>Heure de la journée</b>.</div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">2</span><div>Choisis une heure où ton iPhone est déjà déverrouillé (par exemple <b>9:00</b>), <b>Quotidiennement</b>, puis <b>Exécuter immédiatement</b>. L'app Santé reste fermée tant que l'iPhone n'a pas été déverrouillé.</div></li>
+            <li class="{{ step_cls }}"><span class="{{ num_cls }}">3</span><div>Touche <b>Suivant</b> et choisis « PaceForge Santé ». C'est fini : un envoi par jour suffit, un envoi en double n'est jamais compté deux fois.</div></li>
+        </ol>
+    </details>
+
+    <!-- 3. export import -->
+    <details class="border-t border-gray-100 pt-4"{% if not health.per_metric %} open{% endif %}>
+        <summary class="cursor-pointer select-none text-xs font-semibold text-gray-700 hover:text-gray-900">3. Importer ton historique <span class="font-normal text-gray-400">(facultatif, pour démarrer avec 12 mois de données)</span></summary>
+        <div class="mt-3 space-y-3">
+            <ol class="space-y-2 text-xs text-gray-600 leading-relaxed">
+                <li class="{{ step_cls }}"><span class="{{ num_cls }}">1</span><div>Dans l'app <b>Santé</b>, touche ta photo en haut à droite, puis <b>Exporter toutes les données de santé</b> et <b>Exporter</b>. Compte quelques minutes.</div></li>
+                <li class="{{ step_cls }}"><span class="{{ num_cls }}">2</span><div><b>Enregistre dans Fichiers</b> le fichier <b>export.zip</b> (ou envoie-le sur ton ordinateur par AirDrop).</div></li>
+                <li class="{{ step_cls }}"><span class="{{ num_cls }}">3</span><div>Choisis-le ci-dessous. Seuls les 12 derniers mois de VFC, FC au repos, sommeil, poids et VO2 max sont gardés ; le reste de l'export est ignoré.</div></li>
+            </ol>
+            <form id="health-import-form" method="post" action="/settings/health/import" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2">
+                <input type="file" name="file" id="health-file" accept=".zip,.xml,application/zip,text/xml" required class="text-xs text-gray-600 max-w-full file:mr-2 file:h-8 file:px-3 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:font-medium file:text-gray-700">
+                <button type="submit" id="health-import-btn" class="h-8 px-3 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800">Importer</button>
+            </form>
+            <div id="health-import-progress" class="hidden space-y-1">
+                <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full bg-gray-500 transition-all" style="width:0%" data-bar></div></div>
+                <p class="text-[11px] text-gray-500 tabular-nums" data-label>Envoi…</p>
+            </div>
+            <div id="health-import-result"></div>
+        </div>
+    </details>
+</div>
+<script>
+(function () {
+    document.querySelectorAll('#apple-sante [data-copy]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var input = document.querySelector(btn.getAttribute('data-copy'));
+            if (!input) return;
+            input.select();
+            var done = function () { var t = btn.innerHTML; btn.textContent = 'Copié'; setTimeout(function () { btn.innerHTML = t; }, 1500); };
+            if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(done, function () { document.execCommand('copy'); done(); });
+            else { document.execCommand('copy'); done(); }
+        });
+    });
+    // The export is sent as the raw request body (streamed to disk on the
+    // server, no multipart parsing) with an upload progress bar.
+    var form = document.getElementById('health-import-form');
+    if (!form || !window.XMLHttpRequest) return;
+    form.addEventListener('submit', function (e) {
+        var file = document.getElementById('health-file').files[0];
+        if (!file) return;
+        e.preventDefault();
+        var box = document.getElementById('health-import-progress');
+        var bar = box.querySelector('[data-bar]'), label = box.querySelector('[data-label]');
+        var btn = document.getElementById('health-import-btn');
+        var result = document.getElementById('health-import-result');
+        var mb = function (n) { return (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', ','); };
+        result.innerHTML = '';
+        box.classList.remove('hidden');
+        btn.disabled = true;
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', form.action);
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.upload.onprogress = function (ev) {
+            if (!ev.lengthComputable) return;
+            bar.style.width = Math.round(ev.loaded / ev.total * 100) + '%';
+            label.textContent = 'Envoi ' + mb(ev.loaded) + ' / ' + mb(ev.total) + ' Mo';
+        };
+        xhr.upload.onload = function () { bar.style.width = '100%'; label.textContent = 'Lecture de l\'export… (jusqu\'à quelques minutes pour un gros fichier)'; };
+        xhr.onload = function () {
+            box.classList.add('hidden');
+            btn.disabled = false;
+            result.innerHTML = xhr.status < 400 ? xhr.responseText
+                : '<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">Échec de l\'import (erreur ' + xhr.status + '). Réessaie.</div>';
+            if (window.htmx) htmx.ajax('GET', '/settings/health/status', { target: '#health-status', swap: 'outerHTML' });
+        };
+        xhr.onerror = function () {
+            box.classList.add('hidden');
+            btn.disabled = false;
+            result.innerHTML = '<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">Connexion interrompue pendant l\'envoi. Réessaie.</div>';
+        };
+        xhr.send(file);
+    });
+})();
+</script>

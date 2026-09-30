@@ -1,0 +1,30 @@
+<div id="health-status" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-1.5">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs text-gray-700">
+            {% if health.last_push_at %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-emerald-500' if health.last_push_recent else 'bg-amber-500' }} mr-1 align-middle"></span>Dernier envoi du raccourci : <b>{{ health.last_push_ago }}</b>{% if health.last_push_count is not none %} · {{ health.last_push_count }} mesure{{ 's' if health.last_push_count != 1 }}{% endif %}
+            {% elif health.has_key %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"></span>Aucun envoi reçu pour l'instant.
+            {% else %}
+            Aucun envoi : génère d'abord ta clé.
+            {% endif %}
+        </p>
+        {% if health.has_key %}
+        <button type="button" hx-get="/settings/health/status" hx-target="#health-status" hx-swap="outerHTML" hx-indicator="#health-check-spin"
+                class="h-7 px-2.5 rounded-lg border border-gray-200 bg-white text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 shrink-0">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Vérifier la réception
+            <span id="health-check-spin" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
+        </button>
+        {% endif %}
+    </div>
+    {% if health.per_metric %}
+    <p class="text-[11px] text-gray-500 tabular-nums">
+        Données du {{ health.first.strftime('%d/%m/%Y') }} au {{ health.last.strftime('%d/%m/%Y') }} ·
+        {% for label, days in health.per_metric %}{{ label }} {{ days }} j{{ ', ' if not loop.last }}{% endfor %}
+    </p>
+    {% endif %}
+    {% if checked is defined and checked and not health.last_push_recent %}
+    <p class="text-[11px] text-amber-700">Rien de récent : lance le raccourci sur l'iPhone (bouton ▶), puis vérifie à nouveau.</p>
+    {% endif %}
+    <script>window.lucide && lucide.createIcons();</script>
+</div>

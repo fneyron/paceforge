@@ -1,0 +1,164 @@
+DATASET: 115 UTMB Live races 40-180 km with a GPS track, 21400 finishers
+  train: 71 races, 12464 finishers, events: arcofattrition, canyons, chianti, desertrats, kodiak, kosciuszko, lavaredo, mountyun, mut, tarawera, templiers, translantau, uta
+    by band (races, finishers): 40-60 km 23/3450, 60-100 km 21/3146, 100-140 km 16/3158, 140-180 km 11/2710
+  test: 44 races, 8936 finishers, events: chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler
+    by band (races, finishers): 40-60 km 14/2018, 60-100 km 6/900, 100-140 km 8/1550, 140-180 km 16/4468
+  train pairs (race x level group) 172, obs 117131; test pairs 119, obs 109525
+
+SANITY train: production (app base) 20.94, prod+hours 19.52, fast-path at production knots + hours fatigue 19.42
+
+MODEL SELECTION: 2-fold cross-validation by event inside TRAIN (test untouched)
+  inner CV folds (train events): [['templiers', 'translantau', 'uta', 'kosciuszko', 'desertrats', 'mut'], ['lavaredo', 'kodiak', 'canyons', 'chianti', 'mountyun', 'tarawera', 'arcofattrition']]
+  validation mean |gap| per fold: production [19.65, 21.98], prod+hours [19.99, 19.14]
+  hours          lam_c 0.0  lam_t 3.0  validation  19.63 [20.3, 18.96]  (fit 17.66)
+  hours          lam_c 0.03 lam_t 3.0  validation  19.81 [20.27, 19.35]  (fit 17.72)
+  hours          lam_c 0.3  lam_t 3.0  validation  19.95 [20.59, 19.3]  (fit 17.77)
+  hours          lam_c 0.03 lam_t 0.3  validation  20.15 [20.56, 19.73]  (fit 17.62)
+  hours          lam_c 0.3  lam_t 0.3  validation  20.15 [20.85, 19.45]  (fit 17.63)
+  hours          lam_c 0.0  lam_t 0.3  validation  20.19 [20.54, 19.85]  (fit 17.64)
+  general        lam_c 0.03 lam_t 3.0  validation  20.29 [20.62, 19.95]  (fit 17.60)
+  general        lam_c 0.0  lam_t 3.0  validation  20.37 [20.72, 20.02]  (fit 17.52)
+  general        lam_c 0.0  lam_t 0.3  validation  20.47 [20.79, 20.15]  (fit 17.44)
+  general        lam_c 0.03 lam_t 0.3  validation  20.52 [20.96, 20.09]  (fit 17.45)
+  general        lam_c 0.3  lam_t 0.3  validation  20.56 [21.24, 19.87]  (fit 17.47)
+  general        lam_c 0.3  lam_t 3.0  validation  20.67 [21.29, 20.04]  (fit 17.60)
+  general+level  lam_c 0.03 lam_t 3.0  validation  20.72 [20.3, 21.14]  (fit 17.20)
+  hours          lam_c 0.0  lam_t 0.0  validation  21.11 [22.25, 19.97]  (fit 17.19)
+  hours          lam_c 0.03 lam_t 0.0  validation  21.11 [21.99, 20.24]  (fit 17.22)
+  general+level  lam_c 0.03 lam_t 0.3  validation  21.21 [20.46, 21.96]  (fit 17.04)
+  general+level  lam_c 0.0  lam_t 0.3  validation  21.36 [20.51, 22.21]  (fit 17.07)
+  hours          lam_c 0.3  lam_t 0.0  validation  21.42 [22.44, 20.4]  (fit 17.19)
+  general+level  lam_c 0.0  lam_t 3.0  validation  21.43 [20.59, 22.26]  (fit 17.11)
+  general+level  lam_c 0.3  lam_t 0.3  validation  21.45 [20.77, 22.13]  (fit 17.08)
+  general+level  lam_c 0.3  lam_t 3.0  validation  21.52 [20.71, 22.33]  (fit 17.19)
+  general        lam_c 0.03 lam_t 0.0  validation  21.60 [22.29, 20.9]  (fit 16.98)
+  general        lam_c 0.0  lam_t 0.0  validation  21.66 [22.38, 20.95]  (fit 16.94)
+  general+level  lam_c 0.0  lam_t 0.0  validation  21.75 [21.64, 21.86]  (fit 16.76)
+  general+level  lam_c 0.03 lam_t 0.0  validation  21.98 [21.92, 22.04]  (fit 16.73)
+  general        lam_c 0.3  lam_t 0.0  validation  22.05 [23.06, 21.04]  (fit 16.96)
+  general+level  lam_c 0.3  lam_t 0.0  validation  22.53 [22.1, 22.96]  (fit 16.54)
+  selected: form hours, lam_c 0.0, lam_t 3.0
+
+FITTING on the whole train set
+  fit_hours: form hours lam_c 0.0 lam_t 3.0: train mean |gap| 18.25
+  fit_general: form general lam_c 0.0 lam_t 3.0: train mean |gap| 17.98
+  fit_general+level: form general+level lam_c 0.0 lam_t 3.0: train mean |gap| 17.88
+  prodcurve_fitrest: form prodcurve lam_c 0.0 lam_t 3.0: train mean |gap| 18.56
+
+TRAIN mean |gap| (min): production 20.94, prod+hours 19.52, fit_hours 18.25, fit_general 17.98, fit_general+level 17.88, prodcurve_fitrest 18.56, fit 18.25
+
+HELD-OUT mean |gap| (min) by level group
+                  runners    production    prod+hours     fit_hours   fit_generalfit_general+levelprodcurve_fitrest
+0-12h                2031          10.8          10.4           9.0           8.7           8.7           9.7
+12-18h               1310          18.5          18.0          14.8          15.2          15.0          16.0
+18-24h               1343          24.4          22.7          21.5          21.6          21.4          21.2
+24-30h               1323          26.4          25.2          23.1          23.8          23.7          22.9
+30-99h               2917          39.3          33.9          32.7          35.5          36.7          32.7
+ALL                  8924          25.6          23.3          21.6          22.6          22.9          21.8
+
+HELD-OUT mean |gap| (min) by distance band
+                  runners    production    prod+hours     fit_hours   fit_generalfit_general+levelprodcurve_fitrest
+40-60 km             2017          12.0          11.8           9.7           9.4           9.4          10.6
+60-100 km             897          19.1          21.0          17.8          17.4          17.6          19.0
+100-140 km           1546          22.4          21.8          19.4          21.2          20.3          19.8
+140-180 km           4464          34.2          29.4          28.4          30.1          31.0          28.1
+ALL                  8924          25.6          23.3          21.6          22.6          22.9          21.8
+  (race, group) pairs where the selected fit (fit_hours) beats production: 105/119, beats prod+hours: 77/119
+
+HELD-OUT per race: runners, production, prod+hours, selected fit (fit_hours)
+  utmb/chiangmai_2024/100K                  148    21.0    20.8    18.7
+  utmb/chiangmai_2024/100M                  233    45.3    36.7    34.8
+  utmb/chiangmai_2024/50K                    67     7.8     8.4     6.3
+  utmb/chiangmai_2025/CHD160                300    33.1    29.0    29.0
+  utmb/chiangmai_2025/ELP100                150    22.5    23.9    21.8
+  utmb/chiangmai_2025/HMN50D                150    14.4    16.9     9.4
+  utmb/chiangmai_2025/HMN50N                150    16.2    19.1    11.6
+  utmb/kullamannen_2022/100M                259    22.4    22.3    21.0
+  utmb/kullamannen_2022/100k                150    17.3    15.3    14.9
+  utmb/kullamannen_2022/50k                 150     6.1     8.7     8.8
+  utmb/kullamannen_2023/100M                300    26.7    18.2    20.6
+  utmb/kullamannen_2023/100k                150    18.5    17.6    15.8
+  utmb/kullamannen_2023/50k                 150     5.1     5.0     5.0
+  utmb/kullamannen_2024/100M                300    23.5    19.3    19.9
+  utmb/kullamannen_2024/100k                149    19.2    17.7    16.1
+  utmb/kullamannen_2024/50k                 150     7.6     5.5     5.6
+  utmb/kullamannen_2025/100M                300    21.0    21.0    19.5
+  utmb/kullamannen_2025/100k                300    19.3    16.9    15.5
+  utmb/kullamannen_2025/50k                 150     7.7     6.2     6.3
+  utmb/puertovallarta_2024/100K             149    18.8    26.4    23.0
+  utmb/puertovallarta_2024/100M              74    46.5    62.2    55.3
+  utmb/puertovallarta_2024/50K              150    14.4    15.9    11.5
+  utmb/transjeju_2024/100k                  298    30.5    32.5    26.3
+  utmb/transjeju_2024/50k                   150    13.1    10.8     9.9
+  utmb/transjeju_2025/100k                  199    24.5    28.1    22.7
+  utmb/transjeju_2025/100m                  298    32.3    32.3    23.9
+  utmb/transjeju_2025/70k                   150    13.1    12.3    12.6
+  utmb/utmb_2022/ccc                        150    17.9    17.4    17.1
+  utmb/utmb_2022/mcc                        150    12.9    10.2    12.1
+  utmb/utmb_2022/occ                        150    14.3    13.1    10.8
+  utmb/utmb_2022/tds                        300    32.7    27.2    26.1
+  utmb/utmb_2022/utmb                       300    36.4    30.2    29.4
+  utmb/utmb_2023/tds                        300    36.6    30.0    28.7
+  utmb/utmb_2023/utmb                       300    33.8    28.7    29.6
+  utmb/utmb_2024/ccc                        150    26.5    18.9    21.5
+  utmb/utmb_2024/occ                        150    12.9    11.8    10.3
+  utmb/utmb_2024/tds                        300    41.0    35.1    32.8
+  utmb/utmb_2024/utmb                       300    40.0    32.7    35.2
+  utmb/utmb_2025/ccc                        150    17.8    19.3    18.4
+  utmb/utmb_2025/occ                        150     8.1     7.6     8.0
+  utmb/utmb_2025/tds                        300    46.0    38.6    34.7
+  utmb/utmb_2025/utmb                       300    40.1    32.6    34.8
+  utmb/whistler_2024/50k                    150    19.6    19.3    13.4
+  utmb/whistler_2024/70k                    150    26.3    30.0    18.3
+  races where the fit beats production: 40/44, beats prod+hours: 30/44
+
+GUARD transjeju 2025 100M, finishers 16-21 h moving (4 runners, median 17.91 h)
+  mean |gap|: production 10.4, prod+hours 18.7, prodcurve_fitrest 12.3, fit_hours 8.2, fit_general 10.9, fit_general+level 10.7
+  checkpoint                km   median signed gap (pred - actual), min: production / prod+hours / prodcurve_fitrest / fit_hours / fit_general / fit_general+level   | mean |gap|
+  Healing 1                6.7      5.4 /    2.5 /    2.6 /    0.7 /    4.3 /    3.4   |   5.3 /   2.2 /   2.3 /   1.2 /   4.1 /   3.1
+  Yeongsil E              19.9     11.1 /    9.9 /    9.7 /    0.5 /    5.7 /    4.8   |   9.6 /   8.5 /   8.2 /   3.6 /   6.0 /   5.6
+  Eorimok En              28.3      9.5 /   15.4 /   11.5 /    1.5 /   10.4 /    9.6   |   9.1 /  15.2 /  11.1 /   4.2 /  10.0 /   9.1
+  Gwanumsa E              40.5     10.7 /   23.0 /   16.5 /    9.0 /   17.5 /   17.7   |  10.4 /  23.3 /  16.5 /   9.6 /  17.5 /  17.8
+  None                    49.0      nan /    nan /    nan /    nan /    nan /    nan   |   nan /   nan /   nan /   nan /   nan /   nan
+  Seongpanak              58.3     -1.1 /   29.6 /   16.5 /   -1.1 /    6.0 /    5.0   |  11.2 /  33.9 /  20.1 /  11.2 /  11.0 /  11.0
+  Red oreum               66.2    -13.9 /   20.3 /    6.2 /   -8.8 /   -4.6 /   -4.2   |  16.8 /  22.4 /  12.6 /  14.2 /  12.6 /  12.6
+  Gasiri                  85.4     -9.7 /   26.2 /   13.5 /    3.3 /    6.0 /    7.4   |  14.3 /  30.3 /  17.0 /  10.8 /  12.1 /  12.8
+  Meochewat              102.3    -11.2 /   23.3 /   13.6 /    7.0 /   10.5 /   11.7   |  14.5 /  20.8 /  11.2 /   8.1 /   9.8 /  10.3
+  Eseungak O             112.5      3.0 /   31.1 /   23.7 /   18.2 /   24.1 /   23.8   |   7.3 /  30.3 /  22.6 /  16.8 /  23.0 /  22.7
+  Camping si             123.5     -6.2 /   12.5 /    7.8 /    2.9 /    8.1 /    7.4   |  10.8 /  10.9 /   8.7 /   6.4 /   8.9 /   8.5
+  Healing 2              133.1     -0.7 /    7.6 /    5.3 /    1.3 /    5.0 /    4.1   |   4.7 /   7.3 /   5.2 /   4.6 /   5.1 /   4.6
+
+PREVIOUS EDITION on held-out races with an earlier edition on matched checkpoints (9 races)
+  utmb/kullamannen_2024/100M <- kullamannen_2023: 2/14 intermediate checkpoints matched
+  utmb/kullamannen_2024/100k <- kullamannen_2023: 2/8 intermediate checkpoints matched
+  utmb/kullamannen_2024/50k <- kullamannen_2023: 1/6 intermediate checkpoints matched
+  utmb/utmb_2023/utmb <- utmb_2022: 22/35 intermediate checkpoints matched
+  utmb/utmb_2024/ccc <- utmb_2023: 11/21 intermediate checkpoints matched
+  utmb/utmb_2024/utmb <- utmb_2023: 23/36 intermediate checkpoints matched
+  utmb/utmb_2025/ccc <- utmb_2024: 13/21 intermediate checkpoints matched
+  utmb/utmb_2025/tds <- utmb_2024: 18/26 intermediate checkpoints matched
+  utmb/utmb_2025/utmb <- utmb_2024: 22/35 intermediate checkpoints matched
+                runners        production        prod+hours               fit              prev  blend_production  blend_prod+hours         blend_fit
+  0-12h             184               9.6               6.4               6.5               6.6               7.7               6.3               6.4
+  12-18h            184              21.8              16.2              17.2              16.2              18.2              15.8              16.6
+  18-24h            329              26.2              20.5              21.8              19.8              20.7              19.8              20.0
+  24-30h            346              26.9              21.2              22.1              19.0              20.8              19.2              19.6
+  30-99h           1056              40.1              34.9              35.2              29.4              31.3              29.9              30.3
+  ALL              2099              31.5              26.2              26.8              23.0              24.7              23.3              23.6
+  (fit = the selected model; blend = mean of the model's and the previous edition's time at each matched checkpoint)
+
+FITTED PARAMETERS (curve factors relative to flat, at a 20 h level unless noted)
+  fit_hours: curve {-35: 1.794, -25: 1.34, -15: 1.011, -8: 0.836, -3: 0.896, 0: 1.0, 3: 1.145, 8: 1.516, 15: 2.065, 25: 3.123, 35: 3.893}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.6347 q 0.5007 r 0.5007 p 0.0 fresh 0.0146; night 1.0325; terrain {'R': 1.0, 'F': 1.0603, 'T': 1.1155, 'T1': 1.1189, 'T2': 1.1194, 'T3': 1.1191, 'S': 1.1184, 'U': 1.1156}
+  fit_general: curve {-35: 2.768, -25: 1.664, -15: 1.054, -8: 0.828, -3: 0.886, 0: 1.0, 3: 1.529, 8: 1.689, 15: 2.064, 25: 3.268, 35: 4.138}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.4182 q 0.8225 r 0.5816 p -0.2431 fresh 0.0805; night 1.0348; terrain {'R': 1.0, 'F': 1.0605, 'T': 1.1164, 'T1': 1.1205, 'T2': 1.1218, 'T3': 1.1202, 'S': 1.1196, 'U': 1.1185}
+  fit_general+level: curve {-35: 2.942, -25: 1.677, -15: 1.065, -8: 0.836, -3: 0.889, 0: 1.0, 3: 1.36, 8: 1.554, 15: 1.954, 25: 2.798, 35: 3.28}
+     gamma_up -0.383 gamma_down -0.083; fatigue c 0.4753 q 0.8253 r 0.5074 p -0.2902 fresh 0.0467; night 1.037; terrain {'R': 1.0, 'F': 1.0604, 'T': 1.116, 'T1': 1.1205, 'T2': 1.1216, 'T3': 1.1202, 'S': 1.1196, 'U': 1.1186}
+  prodcurve_fitrest: curve {-35: 1.413, -25: 1.135, -15: 0.92, -8: 0.8, -3: 0.88, 0: 1.0, 3: 1.16, 8: 1.62, 15: 2.45, 25: 3.9, 35: 4.7}
+     gamma_up 0.0 gamma_down 0.0; fatigue c 0.7358 q 0.7518 r 0.4433 p -0.4313 fresh -0.0736; night 1.0359; terrain {'R': 1.0, 'F': 1.0606, 'T': 1.1161, 'T1': 1.1206, 'T2': 1.1194, 'T3': 1.1202, 'S': 1.1194, 'U': 1.1182}
+  fit_general+level (not selected by CV), curve at 9h: {-35: 3.168, -25: 1.737, -15: 1.069, -8: 0.826, -3: 0.882, 0: 1.0, 3: 1.519, 8: 1.82, 15: 2.484, 25: 4.044, 35: 5.018}
+  fit_general+level (not selected by CV), curve at 15h: {-35: 3.02, -25: 1.698, -15: 1.066, -8: 0.832, -3: 0.886, 0: 1.0, 3: 1.41, 8: 1.637, 15: 2.113, 25: 3.154, 35: 3.767}
+  fit_general+level (not selected by CV), curve at 21h: {-35: 2.93, -25: 1.673, -15: 1.064, -8: 0.837, -3: 0.889, 0: 1.0, 3: 1.353, 8: 1.542, 15: 1.93, 25: 2.745, 35: 3.208}
+  fit_general+level (not selected by CV), curve at 27h: {-35: 2.865, -25: 1.656, -15: 1.063, -8: 0.84, -3: 0.892, 0: 1.0, 3: 1.316, 8: 1.482, 15: 1.817, 25: 2.502, 35: 2.883}
+  fit_general+level (not selected by CV), curve at 34h: {-35: 2.809, -25: 1.64, -15: 1.062, -8: 0.843, -3: 0.893, 0: 1.0, 3: 1.285, 8: 1.433, 15: 1.727, 25: 2.315, 35: 2.636}
+  selected (fit_hours) integer table: {-35: 1.794, -34: 1.749, -33: 1.703, -32: 1.658, -31: 1.613, -30: 1.567, -29: 1.522, -28: 1.476, -27: 1.431, -26: 1.385, -25: 1.34, -24: 1.307, -23: 1.274, -22: 1.241, -21: 1.208, -20: 1.175, -19: 1.142, -18: 1.109, -17: 1.077, -16: 1.044, -15: 1.011, -14: 0.986, -13: 0.961, -12: 0.936, -11: 0.911, -10: 0.886, -9: 0.861, -8: 0.836, -7: 0.848, -6: 0.86, -5: 0.872, -4: 0.884, -3: 0.896, -2: 0.93, -1: 0.965, 0: 1.0, 1: 1.048, 2: 1.097, 3: 1.145, 4: 1.219, 5: 1.293, 6: 1.367, 7: 1.442, 8: 1.516, 9: 1.594, 10: 1.673, 11: 1.751, 12: 1.83, 13: 1.908, 14: 1.987, 15: 2.065, 16: 2.171, 17: 2.277, 18: 2.383, 19: 2.488, 20: 2.594, 21: 2.7, 22: 2.806, 23: 2.912, 24: 3.017, 25: 3.123, 26: 3.2, 27: 3.277, 28: 3.354, 29: 3.431, 30: 3.508, 31: 3.585, 32: 3.662, 33: 3.739, 34: 3.816, 35: 3.893}
