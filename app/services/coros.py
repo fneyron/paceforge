@@ -384,9 +384,23 @@ def parse_rpc_response(content_type: str, body: str, request_id) -> dict:
     raise CorosError("COROS n'a pas répondu à la requête.")
 
 
+def _unquote(text: str) -> str:
+    """COROS sends each text as a JSON string literal ("\"Resting…\\n2026-…\""):
+    decoded, the lines are real lines again."""
+    t = text.strip()
+    if len(t) >= 2 and t[0] == '"' and t[-1] == '"':
+        try:
+            decoded = json.loads(t)
+        except ValueError:
+            return text
+        if isinstance(decoded, str):
+            return decoded
+    return text
+
+
 def tool_text(result: dict) -> str:
     """The text of a tools/call result; ToolError when the tool reported one."""
-    text = "\n".join(c.get("text", "") for c in result.get("content") or []
+    text = "\n".join(_unquote(c.get("text", "")) for c in result.get("content") or []
                      if isinstance(c, dict) and c.get("type") == "text")
     if result.get("isError"):
         raise ToolError(text[:200] or "outil en erreur")
@@ -731,8 +745,14 @@ async def _drop_stale_intervals(db: AsyncSession, user_id: int, nights, samples:
 async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     """Fetch and store; returns store_samples' counts. Raises CorosAuthError
     when the athlete must reconnect, CorosError when COROS can't be read."""
-    first = conn.last_sync_at is None
-    days = BACKFILL_DAYS if first else RECENT_DAYS
+    # the history comes once: on the first sync, or while no daily value
+    # arrived yet (a first sync that read nothing must not lose the 60 days)
+    have = (await db.execute(
+        select(func.count(HealthSample.id)).where(
+            HealthSample.user_id == conn.user_id, HealthSample.source == SOURCE,
+            HealthSample.metric.in_(("hrv", "rhr", "sleep")))
+    )).scalar()
+    days = BACKFILL_DAYS if conn.last_sync_at is None or not have else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
     async with http_client() as client:
         token = await access_token(db, conn, client)

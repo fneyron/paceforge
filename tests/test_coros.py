@@ -184,6 +184,14 @@ def test_parsers_survive_garbled_text():
     assert coros.parse_duration("—") is None
 
 
+def test_tool_text_decodes_the_json_quoted_text_coros_sends():
+    # what COROS really sends: the text is itself a JSON string literal
+    quoted = {"content": [{"type": "text", "text": json.dumps(RHR, ensure_ascii=True)}]}
+    assert coros.tool_text(quoted) == RHR
+    assert coros.parse_rhr(coros.tool_text(quoted))
+    assert coros.tool_text({"content": [{"type": "text", "text": '"broken'}]}) == '"broken'
+
+
 def test_rpc_response_json_and_sse():
     result = {"content": [{"type": "text", "text": RHR}], "isError": False}
     body = json.dumps({"jsonrpc": "2.0", "id": 3, "result": result})
@@ -668,3 +676,12 @@ def test_migration_is_the_head_and_round_trips():
         with Operations.context(MigrationContext.configure(c)):
             mig.downgrade()
         assert "coros_connections" not in sa.inspect(c).get_table_names()
+
+
+async def test_sync_backfills_again_while_no_daily_value_arrived(db_session: AsyncSession, test_user: User, fake, no_commit):
+    conn = await _link(db_session, test_user)
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)  # synced once, but read nothing
+    await db_session.flush()
+    outcome = await coros.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert len([1 for n, _ in fake.tool_calls if n == "querySleepHrv"]) == 9  # the 60 days again
