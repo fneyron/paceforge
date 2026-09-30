@@ -1,16 +1,19 @@
-"""Apple Health data: personal push key, sample parsing (iPhone Shortcut and
+"""Health data (Apple Health, COROS): personal push key, sample parsing (iPhone Shortcut and
 export.zip), one value per day and metric, and the fitness ("forme") signal.
 
 Apple Health has no web API. Data arrives two ways:
 - a daily push from an iPhone Shortcut, authenticated with a personal key;
 - an upload of the Health app's "export all data" archive.
 
-Both end up as raw samples (HealthSample, local wall-clock times) aggregated to
+COROS values arrive from app.services.coros (source "COROS").
+
+All end up as raw samples (HealthSample, local wall-clock times) aggregated to
 one value per day and metric (HealthMetric):
 - hrv    : mean of the SDNN readings taken between 22:00 the evening before and
            10:00 that morning (the watch measures overnight, at rest: the most
            comparable reading day to day); falls back to the mean of the whole
-           calendar day when no overnight reading exists.
+           calendar day when no overnight reading exists. A COROS night value
+           (overnight RMSSD, another scale) replaces the Apple readings that day.
 - rhr    : the last resting heart rate written that day (Apple rewrites it
            during the day as it learns more).
 - sleep  : minutes asleep during the night ending that morning (samples starting
@@ -651,15 +654,38 @@ def _dedupe_by_minute(samples) -> list:
     return list(seen.values())
 
 
+# HRV is not one number across devices: Apple Health stores SDNN, COROS its
+# overnight RMSSD — for the same night, often twice as high. A day therefore
+# takes one source (COROS when it has a value, stored with source "COROS";
+# Apple days keep no source), and the fitness signal compares only days on the
+# scale of the latest one (hrv_same_scale): never a COROS week against an
+# Apple baseline.
+RMSSD_SOURCES = ("COROS",)
+
+
 def _hrv_day(samples, d: date) -> dict | None:
     lo = datetime.combine(d - timedelta(days=1), time(22, 0))
     hi = datetime.combine(d, time(10, 0))
     night = [s for s in samples if lo <= s.start_at < hi]
-    pool = _dedupe_by_minute(night or [s for s in samples if s.start_at.date() == d])
+    pool = night or [s for s in samples if s.start_at.date() == d]
+    rmssd = [s for s in pool if s.source in RMSSD_SOURCES]
+    pool = _dedupe_by_minute(rmssd or pool)
     if not pool:
         return None
-    return {"value": round(statistics.fmean(s.value for s in pool), 1), "n": len(pool),
-            "details": {"window": "nuit" if night else "journée"}}
+    out = {"value": round(statistics.fmean(s.value for s in pool), 1), "n": len(pool),
+           "details": {"window": "nuit" if night else "journée"}}
+    if rmssd:
+        out["source"] = rmssd[0].source
+    return out
+
+
+def hrv_same_scale(values: dict[date, float], sources: dict[date, str | None]) -> dict[date, float]:
+    """The HRV days measured on the same scale as the latest one (see RMSSD_SOURCES)."""
+    if not values:
+        return values
+    rmssd = lambda d: sources.get(d) in RMSSD_SOURCES  # noqa: E731
+    latest = rmssd(max(values))
+    return {d: v for d, v in values.items() if rmssd(d) == latest}
 
 
 def _last_of_day(samples, d: date) -> dict | None:
@@ -834,16 +860,24 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
 
 
 async def _daily_series(db: AsyncSession, user_id: int, lo: date, hi: date,
-                        metrics=("hrv", "rhr", "sleep")) -> dict[str, dict[date, float]]:
+                        metrics=("hrv", "rhr", "sleep")) -> tuple[dict[str, dict[date, float]], set[str]]:
+    """{metric: {day: value}} (HRV on one scale only) and the sources behind it."""
     rows = await db.execute(
-        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value)
+        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.source)
         .where(HealthMetric.user_id == user_id, HealthMetric.metric.in_(metrics),
                HealthMetric.date >= lo, HealthMetric.date <= hi)
     )
     series: dict[str, dict[date, float]] = defaultdict(dict)
-    for metric, d, v in rows.all():
+    hrv_sources: dict[date, str | None] = {}
+    sources: set[str] = set()
+    for metric, d, v, source in rows.all():
         series[metric][d] = v
-    return series
+        if metric == "hrv":
+            hrv_sources[d] = source
+        sources.add("COROS" if source in RMSSD_SOURCES else "Apple Santé")
+    if "hrv" in series:
+        series["hrv"] = hrv_same_scale(series["hrv"], hrv_sources)
+    return series, sources
 
 
 def _today(latest: date | None) -> date:
@@ -865,7 +899,8 @@ async def current_form(db: AsyncSession, user_id: int, today: date | None = None
         )).scalar()
         today = _today(latest)
     lo = today - timedelta(days=RECENT_DAYS + BASELINE_DAYS)
-    return compute_form(await _daily_series(db, user_id, lo, today), today)
+    series, _ = await _daily_series(db, user_id, lo, today)
+    return compute_form(series, today)
 
 
 # ── dashboard card ──────────────────────────────────────────────────────────
@@ -938,7 +973,7 @@ def fmt_minutes(m: float | None) -> str:
 
 
 async def form_card(db: AsyncSession, user_id: int) -> dict | None:
-    """Everything the fitness card draws; None when Apple Health was never connected."""
+    """Everything the fitness card draws; None when no health data ever arrived."""
     latest = (await db.execute(
         select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id)
     )).scalar()
@@ -946,7 +981,7 @@ async def form_card(db: AsyncSession, user_id: int) -> dict | None:
         return None
     today = _today(latest)
     lo = today - timedelta(days=RECENT_DAYS + BASELINE_DAYS)
-    series = await _daily_series(db, user_id, lo, today)
+    series, sources = await _daily_series(db, user_id, lo, today)
     form = compute_form(series, today)
 
     def tone(bad: bool, mild: bool) -> str:
@@ -985,7 +1020,8 @@ async def form_card(db: AsyncSession, user_id: int) -> dict | None:
                                fmt="{:.1f} h"),
         },
     ]
-    return {"form": form, "metrics": metrics, "latest": latest}
+    return {"form": form, "metrics": metrics, "latest": latest,
+            "sources": " et ".join(sorted(sources)) or "Apple Santé"}
 
 
 # ── settings status ─────────────────────────────────────────────────────────

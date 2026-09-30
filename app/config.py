@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)
     SURFACE_FETCH: bool = True
+    # COROS: where the MCP server announces its OAuth setup, and whether syncs
+    # may run in the background (off in tests)
+    COROS_DISCOVERY_URL: str = "https://mcp.coros.com/.well-known/oauth-protected-resource/mcp"
+    COROS_SYNC: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

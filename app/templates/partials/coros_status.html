@@ -1,0 +1,35 @@
+<div id="coros-status" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-1.5">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs text-gray-700">
+            {% if coros.last_sync_at %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-amber-500' if coros.last_error else 'bg-emerald-500' }} mr-1 align-middle"></span>Connecté · dernière synchro <b>{{ coros.last_sync_ago }}</b>
+            {% elif coros.last_error %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"></span>Connecté · pas encore de synchro réussie
+            {% else %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"></span>Connecté · première synchro en cours…
+            {% endif %}
+        </p>
+        <button type="button" hx-post="/settings/coros/sync" hx-target="#coros-status" hx-swap="outerHTML" hx-indicator="#coros-sync-spin"
+                class="h-7 px-2.5 rounded-lg border border-gray-200 bg-white text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 shrink-0">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Synchroniser maintenant
+            <span id="coros-sync-spin" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
+        </button>
+    </div>
+    {% if coros.per_metric %}
+    <p class="text-[11px] text-gray-500 tabular-nums">
+        Reçu de COROS : {% for label, days in coros.per_metric %}{{ label }} {{ days }} j{{ ', ' if not loop.last }}{% endfor %}
+    </p>
+    {% endif %}
+    {% if outcome is defined and outcome %}
+    {% if outcome.busy %}
+    <p class="text-[11px] text-gray-500">Une synchro est déjà en cours : réessaie dans une minute.</p>
+    {% elif outcome.ok %}
+    {% set n = outcome.result.inserted + outcome.result.updated %}
+    <p class="text-[11px] text-emerald-700">Synchro terminée : {% if n %}{{ n }} mesure{{ 's' if n != 1 }} nouvelle{{ 's' if n != 1 }} ou mise{{ 's' if n != 1 }} à jour{% else %}rien de nouveau{% endif %}.</p>
+    {% endif %}
+    {% endif %}
+    {% if coros.last_error %}
+    <p class="text-[11px] text-amber-700">Dernière synchro échouée : {{ coros.last_error }}</p>
+    {% endif %}
+    <script>window.lucide && lucide.createIcons();</script>
+</div>
