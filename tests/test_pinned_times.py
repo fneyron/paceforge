@@ -281,7 +281,10 @@ def test_migration_adds_and_drops_target_s_and_is_the_head():
     root = pathlib.Path(__file__).resolve().parents[1]
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    # in the chain (later migrations stack on it), with a single head overall
+    script = ScriptDirectory.from_config(cfg)
+    assert mig.revision in {s.revision for s in script.walk_revisions()}
+    assert len(script.get_heads()) == 1
 
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:

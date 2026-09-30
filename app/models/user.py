@@ -70,6 +70,20 @@ class User(Base):
     # FTP typed by the athlete (W); overrides the Strava-based estimate when set
     ftp_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Apple Health push from the iPhone Shortcut: personal key, only its sha256
+    # is stored (the key itself is shown once), plus what the last push brought
+    health_key_hash: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
+    health_key_prefix: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    health_key_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    health_last_push_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    health_last_push_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Race goal
     race_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     race_date: Mapped[datetime | None] = mapped_column(
