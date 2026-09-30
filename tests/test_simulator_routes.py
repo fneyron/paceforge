@@ -38,7 +38,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "Pilotage" in html and "exportPace(" in html
+    assert "Roadbook" in html and "Sacs" in html and "Pilotage" not in html and "exportPace(" in html
     assert '"kind": "full"' in html and '"drop_bag": true' in html  # checkpoint metadata round-trips to the page
 
     course = _course()
@@ -48,12 +48,15 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     })
     assert r.status_code == 200, r.text
     t = r.text
-    assert "Sécurité" in t  # one table: scenario columns live in the passage table
-    assert "Sécurité" in t and "Optimiste" in t and "bascule" not in t  # scenario columns, no switch marker in the table
-    assert ">10:30</span>" in t  # cutoff shown read-only
-    assert 'data-kind="full"' in t and 'data-bag="1"' in t and "Drop bag" in t  # the poste chip carries kind, crew and drop bag
-    # v4: day separator, no "+1j" suffix, no start row, switch row flagged, autonomy legs in the plan data
-    assert 'data-day="1"' in t and "+1j" not in t and ">Départ<" not in t and "data-switch" not in t and '"autonomy"' in t
+    # roadbook: one decision point tells the optimistic and safe plans, no scenario columns
+    assert "Choix du plan ici" in t and "Sécurité" in t and "Optimiste" in t and "bascule" not in t
+    assert 'data-cutoff="10:30"' in t and "(la plus juste)" in t  # cutoffs carried by the rows, the tightest margin told
+    assert 'data-kind="full"' in t and 'data-bag="1"' in t and "· sac" in t  # the poste chip carries kind, crew and drop bag
+    # day separator, no "+1j" suffix, the list starts at the start, autonomy legs in the plan data
+    assert 'data-day="1"' in t and "+1j" not in t and ">Départ<" in t and "data-switch" not in t and '"autonomy"' in t
+    # one consigne line per leg, the leg that leaves the point, in whole units (default products);
+    # no heart-rate data for this athlete: no ceiling is invented
+    assert t.count("data-leg-line") == 4 and re.search(r"\d gels?", t) and re.search(r"\d boissons?", t) and "FC ≤" not in t
 
     # race day, passage after midnight at Village (km 20): the day separator still precedes the anchor row,
     # the header carries the delta, the cutoff margin is the one against the real clock
@@ -65,7 +68,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     assert r.status_code == 200, r.text
     t = r.text
     assert "Recalée" in t and "Sécurité" not in t
-    assert t.index('data-day="1"') < t.index('bg-amber-50" title=')  # separator before the anchor row
+    assert t.index('data-day="1"') < t.index(' data-anchor')  # separator before the anchor row
     plan = json.loads(t.split('id="plan-data">')[1].split("</script>")[0])
     village = next(p for p in plan["points"] if p["name"] == "Village")
     assert village["clock_s"] == 86400 + 58 * 60
@@ -232,6 +235,7 @@ async def test_trail_export_carries_pacing_points_and_courses_page_has_no_triath
     assert gpx.text.count("<wpt") == 5  # DEP + 3 CPs + ARR
     assert "DEP 21:00 | PLAT" in gpx.text and "| ESCAL marche" in gpx.text and "LIBRE" not in gpx.text
     print_page = await as_user.get(f"/simulator/routes/{route_id}/print")
-    assert "Pilotage" in print_page.text and "mains sur les cuisses" in print_page.text
+    # the bib band carries the consigne of each leg: where to walk, what to take
+    assert "Pilotage" not in print_page.text and "marche km" in print_page.text and "→ Village" in print_page.text and re.search(r"\d\u00a0gels?", print_page.text)
     courses = await as_user.get("/simulator")
     assert courses.status_code == 200 and "tab-tri" not in courses.text and "mono-segment" not in courses.text

@@ -5,21 +5,21 @@
 {% block head %}
 <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
 <style>
-.maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
-.maplibregl-popup-content { font-size: 12px; line-height: 1.35; }
+.maplibregl-popup-content { font-family: var(--sans); border-radius: 6px; padding: 12px; font-size: 13px; line-height: 1.35; color: #1C1A16; background: #FBF8F1; border: 1.5px solid #1C1A16; }
 /* phone: the map opens full screen (a pitched 3D map cannot live in a 200 px strip) */
-#map-wrap.map-full { position: fixed; inset: 0; z-index: 60; background: #fff; height: 100dvh; }
+#map-wrap.map-full { position: fixed; inset: 0; z-index: 60; background: var(--paper); height: 100dvh; }
 #map-wrap.map-full #courseMap { height: 100%; }
 @media (pointer: coarse) { #simulator-root input, #simulator-root select { font-size: 16px; } }
 #map-wrap .map-close { display: none; }
 #map-wrap.map-full .map-close { display: inline-flex; }
 #map-wrap.map-full .map-expand { display: none; }
-.map-ctl { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); font: 600 12px/1 Inter, system-ui, sans-serif; color: #111827; padding: 0 9px; height: 29px; display: inline-flex; align-items: center; cursor: pointer; }
-.map-ctl[aria-pressed="true"] { background: #111827; color: #fff; }
-.dark #map-wrap.map-full { background: #111827; }
-.cp-marker { width: 24px; height: 24px; border-radius: 50%; background: #f59e0b; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; font: 700 11px/1 Inter, system-ui, sans-serif; cursor: pointer; }
-.cp-marker.late { background: #dc2626; } .cp-marker.switch { background: #111827; }
-
+.map-ctl { background: #FBF8F1; border-radius: 4px; border: 1.5px solid #1C1A16; font: 600 12px/1 var(--mono); color: #1C1A16; padding: 0 9px; height: 29px; display: inline-flex; align-items: center; cursor: pointer; }
+.map-ctl[aria-pressed="true"] { background: #1C1A16; color: #FBF8F1; }
+.cp-marker { width: 16px; height: 16px; background: #1C1A16; border: 2px solid #FBF8F1; box-shadow: 0 1px 3px rgba(0,0,0,.35); cursor: pointer; }
+.cp-marker.water { background: #FBF8F1; border: 3px solid #2A6799; border-radius: 50%; }
+.cp-marker.base::after { content: ''; display: block; width: 6px; height: 6px; margin: 3px; background: #D9411B; }
+.cp-marker.none { background: #FBF8F1; border: 2px dashed #1C1A16; border-radius: 50%; }
+.cp-marker.late { outline: 3px solid #D9411B; }
 .map-container { position: relative; z-index: 0; overflow: hidden; }
 /* Hide native number spinners so narrow time inputs don't truncate their value. */
 .sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -29,71 +29,23 @@ summary::-webkit-details-marker { display: none; }
 .time-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .time-inline { -webkit-appearance: none; appearance: none; }
 input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none; }
-/* An empty cutoff shows a dash on the phone detail line and when its desktop row is hovered — never a column of dashes. */
-.time-empty:not(:focus)::-webkit-datetime-edit { color: transparent; }
-.time-empty:not(:focus)::before { content: '—'; color: #d1d5db; line-height: 1.5rem; }
-.time-empty:not(:focus) { display: inline-flex; align-items: center; }
-@media (min-width: 1024px) { #plan-table tr[data-row]:not(:hover) .time-empty:not(:focus)::before { content: ''; } }
-/* Hero conditions: date / start / minutes take the width of their value, so the separators sit next to them. */
 .fit { field-sizing: content; }
-/* Objective: a 2 px track under the hero number, a 12 px black thumb. */
-#obj-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; margin: 0; outline: none; display: block; cursor: pointer; }
-#obj-slider::-webkit-slider-runnable-track { height: 2px; background: #e5e7eb; border-radius: 1px; }
-#obj-slider::-moz-range-track { height: 2px; background: #e5e7eb; border-radius: 1px; }
-#obj-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: #111827; border: 2px solid #fff; box-shadow: 0 0 0 1px #111827; cursor: grab; }
-#obj-slider::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #111827; border: 2px solid #fff; box-shadow: 0 0 0 1px #111827; cursor: grab; }
-#obj-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(17, 24, 39, .2); }
-#plan-table tr[data-day] td { padding: 0; }
-/* Phone / tablet: one clock column, picked with the pill in the header. */
-@media (max-width: 1023px) {
-  #plan-table td.col-safe, #plan-table td.col-fast { display: none; }
-  #plan-table[data-scn=safe] td.col-safe, #plan-table[data-scn=fast] td.col-fast { display: table-cell; }
-  #plan-table[data-scn=safe] td.col-target, #plan-table[data-scn=fast] td.col-target { display: none; }
-}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="space-y-4">
-    <a href="/simulator" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
-        Mes courses
-    </a>
+    <a href="/simulator" class="rb-back">‹ Courses</a>
 
-    <!-- Tabs: the page mixes three jobs — planning, fueling, debrief -->
-    <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
-        <button id="rtab-plan" onclick="switchRouteTab('plan')"
-                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm"><span class="sm:hidden">Plan</span><span class="hidden sm:inline">Plan de course</span></button>
-        <button id="rtab-pacing" onclick="switchRouteTab('pacing')"
-                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Pilotage</button>
-        <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')"
-                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
-        {% if show_debrief or compare_activity_id %}<button id="rtab-realise" onclick="switchRouteTab('realise')"
-                class="flex-1 whitespace-nowrap px-2 sm:px-4 py-2 rounded-md text-[13px] sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>{% endif %}
-    </div>
+    {% include "partials/gpx_result.html" %}
 
-    <div id="rpanel-plan">
-        {% include "partials/gpx_result.html" %}
-    </div>
-
-    <div id="rpanel-pacing" class="hidden">
-        <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="intersect once" hx-swap="innerHTML">
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Consignes de pilotage…</div>
+    <div id="rpanel-bags" role="tabpanel" aria-labelledby="rtab-bags" class="rb-panel hidden">
+        <div id="bags-wrap" hx-get="/partials/simulator/roadbook/{{ saved_route_id }}/bags" hx-trigger="intersect once" hx-swap="innerHTML">
+            <p class="text-sm rb-muted py-6">Préparation des sacs…</p>
         </div>
     </div>
 
-    <div id="rpanel-nutrition" class="hidden">
-        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="intersect once" hx-swap="innerHTML">
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div class="flex items-center gap-2 text-sm text-gray-400">
-                    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Plan nutritionnel…
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="rpanel-realise" class="hidden space-y-4">
+    <div id="rpanel-realise" role="tabpanel" aria-labelledby="rtab-realise" class="rb-panel hidden space-y-4">
         <div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="intersect once" hx-swap="innerHTML"></div>
     </div>
 </div>
@@ -102,18 +54,15 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
 {% block scripts %}
 <script>
 function switchRouteTab(tab) {
-    ['plan', 'pacing', 'nutrition', 'realise'].forEach(function(t) {
+    ['plan', 'bags', 'realise'].forEach(function(t) {
         var panel = document.getElementById('rpanel-' + t), btn = document.getElementById('rtab-' + t);
-        if (!panel || !btn) return;  // the Débrief tab only exists once the race is run
+        if (!panel || !btn) return;
         panel.classList.toggle('hidden', t !== tab);
-        btn.classList.toggle('bg-white', t === tab);
-        btn.classList.toggle('text-gray-900', t === tab);
-        btn.classList.toggle('shadow-sm', t === tab);
-        btn.classList.toggle('text-gray-500', t !== tab);
+        btn.setAttribute('aria-selected', t === tab ? 'true' : 'false');
     });
     // a tab reloads only when the plan changed since it was last loaded (planVersion from the plan page)
     var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    var urls = { pacing: ['/partials/simulator/pacing/{{ saved_route_id }}?v=1', '#pacing-wrap'], nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=16', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
+    var urls = { bags: ['/partials/simulator/roadbook/{{ saved_route_id }}/bags', '#bags-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
     if (urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv) {
         window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
@@ -123,9 +72,14 @@ function switchRouteTab(tab) {
 var tabLoadedAt = {};
 document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    if (id === 'pacing-wrap') tabLoadedAt.pacing = pv; else if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
+    if (id === 'bags-wrap') tabLoadedAt.bags = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-document.addEventListener('DOMContentLoaded', function () { var h = (location.hash || '').slice(1); if (['pacing', 'nutrition', 'realise'].indexOf(h) >= 0 && document.getElementById('rtab-' + h)) switchRouteTab(h); });
+// Détails changed the nutrition or the heart-rate ceilings: the consigne lines and the bags follow
+document.body.addEventListener('pf-plan-changed', function () { if (window._sim && window._sim.recalc) window._sim.recalc(); });
+document.addEventListener('DOMContentLoaded', function () {
+    var h = (location.hash || '').slice(1);
+    if (['bags', 'realise'].indexOf(h) >= 0) switchRouteTab(h);
+});
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief tab.
 document.addEventListener('DOMContentLoaded', function () { switchRouteTab('realise'); });

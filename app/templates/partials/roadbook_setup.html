@@ -1,0 +1,52 @@
+{# « Détails » of the roadbook: the stomach, the products, the heart. A change re-renders this block and recomputes the roadbook. #}
+{% set gut_values = gut_levels | map('first') | list %}
+<div id="rb-setup">
+<form hx-post="/partials/simulator/roadbook/{{ route_id }}/setup" hx-target="#rb-setup" hx-swap="outerHTML" hx-trigger="change delay:250ms" novalidate>
+    <input type="hidden" name="nut" value="1">
+    <div class="rb-dblock" style="border-top:0">
+        <span class="rb-lab block mb-1.5">Ton estomac</span>
+        <p>Combien de sucres par heure ton ventre accepte. Dans le doute : Normal.</p>
+        <div class="rb-seg mt-2" role="radiogroup" aria-label="Ton estomac">
+            {% for g, label in gut_levels %}
+            <label class="cursor-pointer"><input type="radio" name="gut" value="{{ g }}" class="sr-only"{% if setup.gut == g %} checked{% endif %}><span class="rb-cond text-[17px] font-bold uppercase">{{ label }}</span><small class="rb-mono text-[11px]">{{ g }} g/h</small></label>
+            {% endfor %}
+        </div>
+        {% if setup.gut not in gut_values %}<p class="mt-1 rb-muted">Réglé à {{ setup.gut }} g/h pour l'instant.</p>{% endif %}
+    </div>
+    <div class="rb-dblock">
+        <span class="rb-lab block mb-1.5">Ce que tu emportes</span>
+        <p>Coche ce que tu prends en course : le roadbook compte les unités entières, tronçon par tronçon.{% if setup.auto %} Sans choix de ta part, il part sur un gel, une boisson et du sel.{% endif %}</p>
+        {% if generic %}<p class="mt-1 rb-muted">Produits génériques pour l'instant : ajoute les tiens ci-dessous.</p>{% endif %}
+        <ul class="mt-2">
+            {% for p in products %}
+            <li class="rb-dot-b"><label class="flex items-center gap-3 min-h-12 py-1 cursor-pointer">
+                <input type="checkbox" name="use_{{ p.id }}" value="1"{% if p.ticked %} checked{% endif %} class="w-5 h-5 shrink-0">
+                <span class="min-w-0"><span class="block text-[15px] font-semibold" style="color:var(--ink)">{{ p.name }}</span><span class="block rb-mono text-[12px] rb-muted">{{ p.label }}</span></span>
+            </label></li>
+            {% endfor %}
+        </ul>
+        {% if catalog %}
+        <details class="mt-3">
+            <summary class="rb-btn sm cursor-pointer list-none inline-flex">+ Ajouter un produit du commerce</summary>
+            <div class="mt-2 flex flex-wrap gap-2">
+                {% for c in catalog %}
+                <button type="button" hx-post="/partials/simulator/roadbook/{{ route_id }}/catalog/{{ c.key }}" hx-target="#rb-setup" hx-swap="outerHTML" hx-params="none" class="rb-btn sm normal-case tracking-normal" style="text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:13.5px">{{ c.name }}</button>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+        <p class="mt-3 text-[13px]"><a href="/settings#produits" class="rb-link">Corriger les valeurs d'un produit</a></p>
+        <label class="mt-3 flex flex-wrap items-center gap-2">Tu portes <input name="flask_l" type="number" inputmode="decimal" min="0.25" max="5" step="0.25" value="{{ '%g' | format(setup.flask_capacity_ml / 1000) }}" aria-label="Eau que tu portes, en litres" class="sim-num w-16 h-11 px-1 rounded-md border text-sm tabular-nums text-center"> L d'eau <span class="rb-muted">(flasques ou poche)</span></label>
+    </div>
+    <div class="rb-dblock">
+        <span class="rb-lab block mb-1.5">Ton cœur</span>
+        <p>Deux plafonds, en battements par minute. Le roadbook les baisse un peu au fil de la course, avec la fatigue.{% if max_hr %} Ta fréquence max vue sur Strava : {{ max_hr }}.{% endif %}</p>
+        <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <label class="inline-flex items-center gap-2">En montée <input name="hr_cap_climb" type="number" inputmode="numeric" min="80" max="220" value="{{ hr_climb or '' }}" placeholder="—" aria-label="Plafond cardio en montée" class="sim-num w-16 h-11 px-1 rounded-md border text-sm tabular-nums text-center"></label>
+            <label class="inline-flex items-center gap-2">Sur le plat <input name="hr_cap_flat" type="number" inputmode="numeric" min="80" max="220" value="{{ hr_flat or '' }}" placeholder="—" aria-label="Plafond cardio sur le plat" class="sim-num w-16 h-11 px-1 rounded-md border text-sm tabular-nums text-center"></label>
+            <label class="inline-flex items-center gap-2">Je marche dès <input name="walk_grade" type="number" inputmode="numeric" min="8" max="40" step="1" value="{{ walk_grade }}" aria-label="Pente où tu marches, en %" class="sim-num w-14 h-11 px-1 rounded-md border text-sm tabular-nums text-center"> % de pente</label>
+        </div>
+    </div>
+    {% if saved %}<p class="pb-2 text-[13px] rb-ok" role="status">Enregistré. Le roadbook et les sacs sont à jour.</p>{% endif %}
+</form>
+</div>

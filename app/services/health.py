@@ -875,7 +875,8 @@ SPARK_W, SPARK_H = 120, 30
 
 
 def sparkline(series: dict[date, float], today: date, baseline: float | None = None,
-              sd: float | None = None, days: int = SPARK_DAYS, fmt: str = "{:.0f}") -> dict | None:
+              sd: float | None = None, days: int = SPARK_DAYS, fmt: str = "{:.0f}",
+              measured: dict[date, float] | None = None) -> dict | None:
     """Plain-SVG geometry for one metric over the last `days` days: the line
     (broken where a day is missing), the last 7 days drawn heavier, the
     baseline and its ±1 SD band, one hover target per day."""
@@ -925,6 +926,8 @@ def sparkline(series: dict[date, float], today: date, baseline: float | None = N
     step = SPARK_W / (days - 1)
     for i, v in pts:
         d = lo_day + timedelta(days=i)
+        if measured is not None:  # hover labels tell measures only, never the drawn joins
+            v = measured.get(d)
         label = d.strftime("%d/%m") + " · " + (fmt.format(v) if v is not None else "—")
         out["hits"].append((round(max(0, i * step - step / 2), 1), round(step, 1), label))
     return out
@@ -986,6 +989,69 @@ async def form_card(db: AsyncSession, user_id: int) -> dict | None:
         },
     ]
     return {"form": form, "metrics": metrics, "latest": latest}
+
+
+# ── trends (the Santé page) ─────────────────────────────────────────────────
+
+TRENDS = (
+    ("hrv", "VFC", "ms", "variabilité cardiaque la nuit · plus haut = mieux récupéré"),
+    ("rhr", "FC au repos", "bpm", "plus bas = mieux"),
+    ("sleep", "Sommeil", "", "par nuit"),
+    ("weight", "Poids", "kg", ""),
+    ("vo2max", "VO2 max", "", "estimée par la montre"),
+)
+
+
+def _fmt_metric(metric: str, v: float | None) -> str:
+    if v is None:
+        return "—"
+    if metric == "sleep":
+        return fmt_minutes(v)
+    if metric in ("weight", "vo2max"):
+        return f"{v:.1f}".replace(".", ",")
+    return f"{v:.0f}"
+
+
+async def trends(db: AsyncSession, user_id: int, days: int = 30) -> list[dict]:
+    """Each metric over the last `days` days: the last value, the average,
+    the change from the first week to the last one, and a sparkline."""
+    latest = (await db.execute(
+        select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id)
+    )).scalar()
+    if latest is None:
+        return []
+    today = _today(latest)
+    series = await _daily_series(db, user_id, today - timedelta(days=days - 1), today, metrics=METRICS)
+    out = []
+    for metric, label, unit, hint in TRENDS:
+        s = series.get(metric, {})
+        if not s:
+            out.append({"key": metric, "label": label, "unit": unit, "hint": hint, "value": "—", "n": 0})
+            continue
+        days_sorted = sorted(s)
+        avg = statistics.fmean(s.values())
+        first = [s[d] for d in days_sorted if d <= days_sorted[0] + timedelta(days=6)]
+        last = [s[d] for d in days_sorted if d >= days_sorted[-1] - timedelta(days=6)]
+        delta = statistics.fmean(last) - statistics.fmean(first) if len(days_sorted) >= 10 else None
+        scale = (lambda v: v / 60) if metric == "sleep" else (lambda v: v)
+        # weight and VO2 max come every few days: the line joins the measures (up to two weeks apart)
+        drawn = dict(s)
+        for d0, d1 in zip(days_sorted, days_sorted[1:], strict=False):
+            gap = (d1 - d0).days
+            if 1 < gap <= 14:
+                for k in range(1, gap):
+                    drawn[d0 + timedelta(days=k)] = s[d0] + (s[d1] - s[d0]) * k / gap
+        out.append({
+            "key": metric, "label": label, "unit": unit, "hint": hint, "n": len(s),
+            "value": _fmt_metric(metric, s[days_sorted[-1]]), "last_day": days_sorted[-1],
+            "avg": _fmt_metric(metric, avg),
+            "delta": None if delta is None else ("stable" if _fmt_metric(metric, abs(delta)) in ("0", "0,0", "0h00") else ("+" if delta >= 0 else "−") + (
+                f"{abs(delta):.0f} min" if metric == "sleep" else _fmt_metric(metric, abs(delta)) + (f" {unit}" if unit else ""))),
+            "spark": sparkline({d: scale(v) for d, v in drawn.items()}, today, scale(avg), days=days,
+                               fmt="{:.1f} h" if metric == "sleep" else ("{:.1f}" if metric in ("weight", "vo2max") else "{:.0f}"),
+                               measured={d: scale(v) for d, v in s.items()}),
+        })
+    return out
 
 
 # ── settings status ─────────────────────────────────────────────────────────

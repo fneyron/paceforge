@@ -49,12 +49,31 @@ async def simulator_page(
         except ValueError:
             rt.days_to = None
     saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
+    # the next race gets the big bib, with its profile drawn small
+    nxt = next((rt for rt in saved_routes if rt.days_to is not None and rt.days_to >= 0 and rt.sport_type != "triathlon"), None)
+    next_profile = _mini_profile(nxt.course_json) if nxt and nxt.course_json else None
 
     return templates.TemplateResponse(
         request,
         "simulator.html",
-        context={"user": user, "saved_routes": saved_routes},
+        context={"user": user, "saved_routes": saved_routes, "next_route": nxt, "next_profile": next_profile},
     )
+
+
+def _mini_profile(course_json: dict, w: int = 320, h: int = 64) -> dict | None:
+    """SVG paths of the elevation profile, ~160 points: the line and the ground under it."""
+    pts = (course_json or {}).get("elevation_points") or []
+    if len(pts) < 2:
+        return None
+    step = max(1, len(pts) // 160)
+    sample = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
+    total = float(sample[-1]["distance_km"]) or 1.0
+    lo = min(p["elevation"] for p in sample)
+    hi = max(p["elevation"] for p in sample)
+    span = (hi - lo) or 1.0
+    xy = [(round(p["distance_km"] / total * w, 1), round(3 + (1 - (p["elevation"] - lo) / span) * (h - 6), 1)) for p in sample]
+    line = "M" + " L".join(f"{x} {y}" for x, y in xy)
+    return {"w": w, "h": h, "line": line, "ground": f"{line} L{w} {h} L0 {h} Z"}
 
 
 @router.post("/partials/simulator/gpx-upload", response_class=HTMLResponse)
@@ -139,6 +158,46 @@ def _clock_to_s(clock: str) -> int | None:
         return int(hh) * 3600 + int(mm) * 60
     except (ValueError, AttributeError):
         return None
+
+
+async def _roadbook_legs(db: AsyncSession, user_id: int, route_obj: Route | None, checkpoints: list[dict], sections: list[dict],
+                         start_offset_s: int, target_time_s: int | None, aid_kms, guide: dict, autonomy: list[dict]) -> list[dict]:
+    """One consigne per leg (same order as the sections): heart-rate ceiling,
+    whole units to eat, water, caffeine, where to walk, and whether the leg
+    starts a long stretch without a full aid station. Values that are not
+    computed are left out, never guessed."""
+    from app.services.pacing_guide import leg_hr_caps, leg_walks
+    from app.services.race_simulator import plan_total_s
+
+    hr = leg_hr_caps(guide, sections)
+    walks = leg_walks(guide, sections)
+    lines: list[dict] = []
+    try:
+        duration = plan_total_s(sections, start_offset_s, target_time_s) or (
+            (sections[-1].get("cumulative_time_s") or 0) if sections else 0)
+        nut = await _roadbook_nutrition(db, user_id, route_obj, checkpoints, sections, start_offset_s, duration, aid_kms)
+        lines = nut["lines"]
+    except Exception:
+        logger.exception("Roadbook nutrition failed; the legs show without it")
+    dry_starts = {round(float(a["from_km"]), 1): a for a in autonomy or [] if a.get("alert")}
+    dry_spans = [(float(a["from_km"]), float(a["to_km"])) for a in autonomy or [] if a.get("alert")]
+    out = []
+    for i, sec in enumerate(sections):
+        a, b = float(sec["start_km"]), float(sec["end_km"])
+        line = lines[i] if i < len(lines) else None
+        parts = [f"≤{hr[i]}"] if hr[i] else []
+        if line and line["text"]:
+            parts.append(line["text"])
+        wk = walks[i]
+        if wk:
+            parts.append("marche km " + ", ".join(f"{w['start_km']:g}→{w['end_km']:g}".replace(".", ",") for w in wk[:2]))
+        out.append({
+            "hr": hr[i], "nut": line, "walks": wk,
+            "dry": any(x0 - 1e-6 <= a and b <= x1 + 1e-6 for x0, x1 in dry_spans),
+            "dry_start": dry_starts.get(round(a, 1)),
+            "text": " · ".join(parts),
+        })
+    return out
 
 
 async def _passage_table_context(
@@ -232,7 +291,12 @@ async def _passage_table_context(
         walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), plan_sections=sections, **caps,
     )
     plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    legs = await _roadbook_legs(db, user_id, route_obj, checkpoints, sections, start_offset_s, target_time_s, aid_kms, guide, autonomy)
+    plan_data["hr_legs"] = [{"start_km": sec["start_km"], "end_km": sec["end_km"], "hr": lg["hr"]} for sec, lg in zip(sections, legs, strict=False)]
+    plan_data["walks"] = [{"start_km": a["start_km"], "end_km": a["end_km"]} for a in guide.get("alerts") or []]
+    plan_data["walk_grade"] = float(params.get("walk_grade") or DEFAULT_WALK_GRADE)
     return {
+        "legs": legs,
         "plan_data": _script_json(plan_data),
         "sections": sections,
         "has_target": (target_time_s is not None) or replan is not None or pinned,
@@ -1253,6 +1317,13 @@ async def print_route_plan(
         nutrition_lines = [ln for ln in nplan["lines"] if ln.get("total_units") and not ln.get("is_water")]
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
+    # the bib band: one consigne per leg, the same line as on the roadbook
+    print_legs = []
+    if guide:
+        from app.services.checkpoints import autonomy_legs
+
+        print_legs = await _roadbook_legs(db, user.id, route, cps, sections, start_offset_s, route.target_time_s, aid_kms, guide,
+                                          autonomy_legs(cps, course.total_distance_km, sections))
     legs_guide = None
     if guide:
         from app.services.pacing_guide import leg_instructions
@@ -1274,6 +1345,7 @@ async def print_route_plan(
         context={
             "day_labels": _day_labels(route.race_date),
             "legs_rows": legs_rows,
+            "print_legs": print_legs,
             "route": route,
             "course": course,
             "predicted_total_formatted": total_fmt,
@@ -1636,6 +1708,36 @@ def _product_dict(p: NutritionProduct) -> dict:
         "carbs_g": p.carbs_g, "sodium_mg": p.sodium_mg,
         "kcal": p.kcal, "caffeine_mg": p.caffeine_mg, "volume_ml": p.volume_ml,
     }
+
+
+async def _pantry_products(db: AsyncSession, user_id: int) -> tuple[list[dict], bool]:
+    """The athlete's products, newest first; the generic ones when the pantry is empty (flag True)."""
+    res = await db.execute(
+        select(NutritionProduct).where(NutritionProduct.user_id == user_id).order_by(NutritionProduct.created_at.desc())
+    )
+    products = [_product_dict(p) for p in res.scalars().all()]
+    return (products, False) if products else ([dict(p) for p in _GENERIC_PLAN_PRODUCTS], True)
+
+
+async def _roadbook_nutrition(db: AsyncSession, user_id: int, route: Route | None, checkpoints: list[dict],
+                              sections: list[dict], start_offset_s: int, duration_s: float, aid_kms) -> dict:
+    """The nutrition plan the roadbook reads (consigne lines, bags, shopping
+    list): the saved setup, or the defaults when none was made."""
+    from app.services.nutrition import compute_plan, effective_setup, leg_lines
+
+    products, generic = await _pantry_products(db, user_id)
+    nut = (route.nutrition_json if route else None) or {}
+    mean_temp = (route.weather_json or {}).get("temperature_c") if route and route.weather_json else None
+    setup = effective_setup(nut, products, (duration_s or 0) / 3600.0, mean_temp)
+    user = await db.get(User, user_id)
+    refills = set(aid_kms or set())
+    plan = compute_plan(
+        duration_s or 0, setup["targets"], setup["items"], {p["id"]: p for p in products}, sections,
+        flask_capacity_ml=setup["flask_capacity_ml"], refill_kms=refills,
+        resupply_points=[{"km": cp["distance_km"], "name": cp["name"]} for cp in checkpoints if cp.get("drop_bag") or cp.get("crew")],
+        caffeine=setup["caffeine"], start_offset_s=start_offset_s, weight_kg=user.weight_kg if user else None,
+    )
+    return {"plan": plan, "setup": setup, "products": products, "generic": generic, "lines": leg_lines(plan)}
 
 
 async def _nutrition_card_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
@@ -2548,3 +2650,189 @@ async def delete_checkpoint(
         await db.delete(cp)
         await db.flush()
     return await _render_bike_plan(request, route, db, user)
+
+
+# ── Roadbook: the bags, and the short setup in « Détails » ──
+
+async def _materialize_generic(db: AsyncSession, user: User) -> dict[int, int]:
+    """An empty pantry plans on generic products (negative ids, never saved).
+    Before the athlete changes anything, they become real products of his:
+    {generic id: new id}."""
+    res = await db.execute(select(NutritionProduct.id).where(NutritionProduct.user_id == user.id).limit(1))
+    if res.first():
+        return {}
+    mapping = {}
+    for g in _GENERIC_PLAN_PRODUCTS:
+        p = NutritionProduct(user_id=user.id, name=g["name"], kind=g["kind"], carbs_g=g["carbs_g"], sodium_mg=g["sodium_mg"],
+                             kcal=g.get("kcal"), caffeine_mg=g.get("caffeine_mg"), volume_ml=g.get("volume_ml"))
+        db.add(p)
+        await db.flush()
+        mapping[g["id"]] = p.id
+    return mapping
+
+
+async def _roadbook_setup_context(request: Request, route: Route, db: AsyncSession, user: User, saved: bool = False) -> dict:
+    from app.services.nutrition import GUT_LEVELS, effective_setup
+    from app.services.pacing_guide import DEFAULT_WALK_GRADE, default_hr_caps
+    from app.services.training_zones import estimate_training_zones
+
+    b = await _plan_bundle(route, db, user)
+    products, generic = await _pantry_products(db, user.id)
+    duration = b["plan_total_s"] or b["predicted_total_s"] or 0
+    mean_temp = (route.weather_json or {}).get("temperature_c") if route.weather_json else None
+    setup = effective_setup(route.nutrition_json, products, duration / 3600.0, mean_temp)
+    ticked = {it["product_id"] for it in setup["items"]}
+    kind_word = {"gel": "gel", "drink": "boisson", "bar": "barre", "solid": "solide", "salt": "sel"}
+    for p in products:
+        p["ticked"] = p["id"] in ticked
+        bits = [kind_word.get(p["kind"], p["kind"])]
+        if p.get("carbs_g"):
+            bits.append(f"{p['carbs_g']:.0f} g de sucres")
+        if p.get("sodium_mg"):
+            bits.append(f"{p['sodium_mg']:.0f} mg de sel")
+        if p.get("caffeine_mg"):
+            bits.append(f"{p['caffeine_mg']:.0f} mg de caféine")
+        p["label"] = " · ".join(bits)
+    params = route.params_json or {}
+    zones = await estimate_training_zones(db, user.id)
+    dflt = default_hr_caps(zones.get("max_hr"))
+
+    def cap(key):
+        try:
+            return int(float(params[key])) if params.get(key) not in (None, "") else dflt[key]
+        except (TypeError, ValueError):
+            return dflt[key]
+
+    return {
+        "request": request, "route_id": route.id, "products": products, "generic": generic, "setup": setup,
+        "gut_levels": GUT_LEVELS, "catalog": _catalog_for([] if generic else products), "saved": saved,
+        "hr_climb": cap("hr_cap_climb"), "hr_flat": cap("hr_cap_flat"), "max_hr": zones.get("max_hr"),
+        "walk_grade": int(round(float(params.get("walk_grade") or DEFAULT_WALK_GRADE))),
+    }
+
+
+def _save_nutrition_choice(route: Route, setup: dict, products: list[dict], gut: int, ticked: set[int]) -> None:
+    """Stomach level + ticked products → per-hour rates (shared out to meet the
+    target), caffeine on when a caffeinated product is ticked with a plain one."""
+    from app.services.nutrition import auto_rates
+
+    selected = [p for p in products if p["id"] in ticked]
+    targets = {**setup["targets"], "carbs_g_per_h": gut}
+    rates = auto_rates(gut, targets.get("sodium_mg_per_h") or 0, selected) if selected else {}
+    plain = any((p.get("carbs_g") or 0) > 0 and not (p.get("caffeine_mg") or 0) for p in selected)
+    caf = any((p.get("caffeine_mg") or 0) > 0 for p in selected)
+    prev = dict(route.nutrition_json or {})
+    route.nutrition_json = {
+        **prev, "targets": targets, "manual": True,
+        "items": [{"product_id": pid, "per_hour": round(r, 2)} for pid, r in rates.items() if r > 0],
+        "caffeine": {**setup["caffeine"], "enabled": bool(caf and plain)},
+        "flask_capacity_ml": setup["flask_capacity_ml"], "refills": prev.get("refills") or [],
+    }
+
+
+@router.get("/partials/simulator/roadbook/{route_id}/setup", response_class=HTMLResponse)
+@router.post("/partials/simulator/roadbook/{route_id}/setup", response_class=HTMLResponse)
+async def roadbook_setup(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """« Détails »: stomach level, products, heart-rate ceilings, walk grade.
+    A change re-renders the block and tells the page to recompute the roadbook."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    headers = {"Cache-Control": "no-store"}
+    if request.method == "POST":
+        form = await request.form()
+        ctx = await _roadbook_setup_context(request, route, db, user)
+        setup, products = ctx["setup"], ctx["products"]
+        try:
+            gut = int(form.get("gut") or setup["gut"])
+        except ValueError:
+            gut = setup["gut"]
+        ticked = set()
+        for key in form.keys():
+            if key.startswith("use_"):
+                try:
+                    ticked.add(int(key[4:]))
+                except ValueError:
+                    pass
+        before = {it["product_id"] for it in setup["items"]}
+        if form.get("nut") and (gut != setup["gut"] or ticked != before):
+            mapping = await _materialize_generic(db, user) if ctx["generic"] else {}
+            if mapping:
+                ticked = {mapping.get(i, i) for i in ticked}
+                products, _ = await _pantry_products(db, user.id)
+            _save_nutrition_choice(route, setup, products, gut, ticked)
+        flask = _form_num(form, "flask_l", 0.25, 5)
+        if flask is not None and round(flask * 1000) != round(setup["flask_capacity_ml"]):
+            route.nutrition_json = {**(route.nutrition_json or {}), "flask_capacity_ml": int(round(flask * 1000))}
+        p = dict(route.params_json or {})
+        for key in ("hr_cap_climb", "hr_cap_flat"):
+            if key in form:
+                p[key] = _form_num(form, key, 80, 220, int)
+        if "walk_grade" in form:
+            p["walk_grade"] = _form_num(form, "walk_grade", 8, 40) or 18.0
+        route.params_json = p
+        await db.flush()
+        headers["HX-Trigger"] = "pf-plan-changed"
+        ctx = await _roadbook_setup_context(request, route, db, user, saved=True)
+    else:
+        ctx = await _roadbook_setup_context(request, route, db, user)
+    return templates.TemplateResponse(request, "partials/roadbook_setup.html", context=ctx, headers=headers)
+
+
+@router.post("/partials/simulator/roadbook/{route_id}/catalog/{key}", response_class=HTMLResponse)
+async def roadbook_add_catalog(
+    route_id: int,
+    key: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a product from the catalogue and tick it: the roadbook uses it at once."""
+    from app.services.nutrition import CATALOG_BY_KEY
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json or key not in CATALOG_BY_KEY:
+        return HTMLResponse("", status_code=404)
+    ctx = await _roadbook_setup_context(request, route, db, user)
+    ticked = {it["product_id"] for it in ctx["setup"]["items"]}
+    mapping = await _materialize_generic(db, user) if ctx["generic"] else {}
+    ticked = {mapping.get(i, i) for i in ticked}
+    await _add_from_catalog(key, db, user)
+    products, _ = await _pantry_products(db, user.id)
+    new = next((p for p in products if p["name"].lower() == CATALOG_BY_KEY[key]["name"].lower()), None)
+    if new:
+        ticked.add(new["id"])
+    _save_nutrition_choice(route, ctx["setup"], products, ctx["setup"]["gut"], ticked)
+    await db.flush()
+    ctx = await _roadbook_setup_context(request, route, db, user, saved=True)
+    return templates.TemplateResponse(request, "partials/roadbook_setup.html", context=ctx,
+                                      headers={"Cache-Control": "no-store", "HX-Trigger": "pf-plan-changed"})
+
+
+@router.get("/partials/simulator/roadbook/{route_id}/bags", response_class=HTMLResponse)
+async def roadbook_bags(
+    route_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """« Sacs »: what goes on you at the start, in each drop bag, and what to buy."""
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json:
+        return HTMLResponse("", status_code=404)
+    b = await _plan_bundle(route, db, user)
+    duration = b["plan_total_s"] or b["predicted_total_s"] or 0
+    nut = await _roadbook_nutrition(db, user.id, route, b["checkpoints"], b["sections"], b["start_offset_s"], duration, b["aid_kms"])
+    plan = nut["plan"]
+    kinds = {p["id"]: p for p in nut["products"]}
+    for ln in plan["lines"]:
+        ln["caffeinated"] = bool((kinds.get(ln["product_id"]) or {}).get("caffeine_mg"))
+    return templates.TemplateResponse(request, "partials/roadbook_bags.html", context={
+        "request": request, "route_id": route.id, "plan": plan, "generic": nut["generic"], "setup": nut["setup"],
+        "has_bags": any(not g["is_start"] for g in plan["packing"]),
+    }, headers={"Cache-Control": "no-store"})

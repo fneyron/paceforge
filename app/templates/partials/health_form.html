@@ -1,66 +1,39 @@
-{# Fitness card ("suivi de forme"): last 7 days vs the 60 days before, from Apple Health #}
+{# The form of the moment: last 7 days against the 60 before, from Apple Santé (the Santé page). #}
 {% if health_card %}
 {% set f = health_card.form %}
-{% set pill = {
-    'fresh': ('bg-emerald-50 text-emerald-700', 'smile'),
-    'ok': ('bg-gray-100 text-gray-600', 'check'),
-    'watch': ('bg-amber-50 text-amber-700', 'eye'),
-    'fatigue': ('bg-red-50 text-red-700', 'battery-low'),
-    'unknown': ('bg-gray-100 text-gray-500', 'hourglass'),
-}[f.status] %}
-<div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-    <div class="flex flex-wrap items-start justify-between gap-2">
-        <div>
-            <h2 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Forme</h2>
-            <p class="text-[11px] text-gray-400 mt-0.5">7 derniers jours comparés à tes 60 jours précédents · Apple Santé</p>
-        </div>
-        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium {{ pill[0] }}"><i data-lucide="{{ pill[1] }}" class="w-3.5 h-3.5"></i>{{ f.label }}</span>
-    </div>
-
-    <p class="text-sm text-gray-700">
-        {% if f.status == 'fatigue' %}Ton corps récupère moins bien que d'habitude ({{ f.reasons|join(', ') }}). Privilégie des séances faciles ou un jour de repos.
-        {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
+{% set tone = {'fresh': 'rb-ok', 'ok': '', 'watch': 'rb-warn', 'fatigue': 'rb-red', 'unknown': 'rb-muted'}[f.status] %}
+<section class="rb-frame p-4 sm:p-5" aria-labelledby="forme-title">
+    <p class="rb-lab" id="forme-title">Ta forme · 7 derniers jours</p>
+    <p class="rb-form-word {{ tone }}">{{ f.label }}</p>
+    <p class="rb-note" style="margin-top:6px">
+        {% if f.status == 'fatigue' %}Ton corps récupère moins bien que d'habitude ({{ f.reasons|join(', ') }}). Des séances faciles ou un jour de repos.
+        {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais n'enchaîne pas les séances dures.
         {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale : tu récupères bien.
-        {% elif f.status == 'ok' %}Tes indicateurs sont dans ta zone habituelle.
-        {% else %}Il faut environ 3 semaines de mesures pour connaître ta normale ({{ f.days_of_data }} jour{{ 's' if f.days_of_data != 1 }} pour l'instant). Importe ton historique dans les <a href="/settings#apple-sante" class="underline hover:text-gray-900">Réglages</a> pour aller plus vite.
+        {% elif f.status == 'ok' %}Tes mesures sont dans ta zone habituelle.
+        {% else %}Il faut environ 3 semaines de mesures pour connaître ta normale ({{ f.days_of_data }} jour{{ 's' if f.days_of_data != 1 }} pour l'instant). Importe ton historique plus bas pour aller plus vite.
         {% endif %}
     </p>
-
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="rb-form-grid">
         {% for m in health_card.metrics %}
-        {% set delta_cls = {'bad': 'text-red-600', 'mild': 'text-amber-600', 'neutral': 'text-gray-500'}[m.tone] %}
-        <div class="min-w-0 flex sm:block items-end gap-4">
-            <div class="min-w-0 sm:mb-2 flex-1">
-                <p class="text-[10px] text-gray-400">{{ m.label }} <span class="text-gray-300">· {{ m.hint }}</span></p>
-                <p class="text-2xl font-bold tabular-nums">{{ m.value }}{% if m.unit %}<span class="text-xs font-normal text-gray-400 ml-1">{{ m.unit }}</span>{% endif %}</p>
-                <p class="text-[11px] tabular-nums text-gray-400">
-                    {% if m.delta %}<span class="{{ delta_cls }} font-medium">{{ m.delta }}</span> vs {{ m.base }}{% elif m.value != '—' %}référence en cours{% else %}pas de mesure cette semaine{% endif %}
-                </p>
-            </div>
+        {% set delta_cls = {'bad': 'rb-red', 'mild': 'rb-warn', 'neutral': 'rb-muted'}[m.tone] %}
+        <div class="min-w-0">
+            <p class="rb-lab">{{ m.label }}</p>
+            <p class="rb-form-val">{{ m.value }}{% if m.unit %}<small>{{ m.unit }}</small>{% endif %}</p>
+            <p class="rb-mono text-[12px] rb-muted">{% if m.delta %}<span class="{{ delta_cls }}">{{ m.delta }}</span> face à {{ m.base }}{% elif m.value != '—' %}ta normale se construit{% else %}pas de mesure cette semaine{% endif %}</p>
             {% if m.spark %}{% set s = m.spark %}
-            <svg viewBox="0 0 {{ s.w }} {{ s.h }}" preserveAspectRatio="none" class="w-32 sm:w-full h-8 shrink-0 text-gray-400 overflow-visible" role="img" aria-label="{{ m.label }}, 30 derniers jours">
-                <rect x="{{ s.recent_x }}" y="0" width="{{ s.w - s.recent_x }}" height="{{ s.h }}" fill="currentColor" opacity="0.08"/>
-                {% if s.band %}<rect x="0" y="{{ s.band[0] }}" width="{{ s.w }}" height="{{ s.band[1] }}" fill="currentColor" opacity="0.14"/>{% endif %}
-                {% if s.base_y is defined %}<line x1="0" x2="{{ s.w }}" y1="{{ s.base_y }}" y2="{{ s.base_y }}" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>{% endif %}
-                <path d="{{ s.all }}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-                <g class="text-gray-900">
-                    <path d="{{ s.recent }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-                    <path d="M{{ s.last[0] }} {{ s.last[1] }} l0 0" stroke="currentColor" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-                </g>
+            <svg viewBox="0 0 {{ s.w }} {{ s.h }}" preserveAspectRatio="none" class="rb-spark" role="img" aria-label="{{ m.label }}, 30 derniers jours">
+                <rect x="{{ s.recent_x }}" y="0" width="{{ s.w - s.recent_x }}" height="{{ s.h }}" fill="var(--paper2)"/>
+                {% if s.band %}<rect x="0" y="{{ s.band[0] }}" width="{{ s.w }}" height="{{ s.band[1] }}" fill="var(--rule2)"/>{% endif %}
+                {% if s.base_y is defined %}<line x1="0" x2="{{ s.w }}" y1="{{ s.base_y }}" y2="{{ s.base_y }}" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>{% endif %}
+                <path d="{{ s.all }}" fill="none" stroke="var(--ink3)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+                <path d="{{ s.recent }}" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+                <path d="M{{ s.last[0] }} {{ s.last[1] }} l0 0" stroke="var(--sig)" stroke-width="6" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
                 {% for x, w, label in s.hits %}<rect x="{{ x }}" y="0" width="{{ w }}" height="{{ s.h }}" fill="transparent"><title>{{ label }}</title></rect>{% endfor %}
             </svg>
             {% endif %}
         </div>
         {% endfor %}
     </div>
-    <p class="text-[10px] text-gray-400">Courbes : 30 derniers jours, la dernière semaine en foncé. Pointillés : ta moyenne de référence{% if health_card.metrics[0].spark and health_card.metrics[0].spark.band %} ; bande grise (VFC) : ta zone normale{% endif %}. Dernière mesure le {{ health_card.latest.strftime('%d/%m') }}.</p>
-</div>
-{% else %}
-<div class="rounded-xl border border-dashed border-gray-200 bg-white p-5 flex flex-wrap items-center justify-between gap-3">
-    <div class="min-w-0 flex-1">
-        <h2 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Forme</h2>
-        <p class="text-sm text-gray-600 mt-1">Connecte Apple Santé pour suivre ta variabilité cardiaque, ta fréquence cardiaque au repos et ton sommeil, et savoir quand lever le pied.</p>
-    </div>
-    <a href="/settings#apple-sante" class="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 shrink-0"><i data-lucide="heart-pulse" class="w-3.5 h-3.5"></i> Connecter Apple Santé</a>
-</div>
+    <p class="rb-mono text-[11.5px] rb-muted mt-3">30 derniers jours, la dernière semaine sur fond grisé. Pointillés : ta moyenne de référence{% if health_card.metrics[0].spark and health_card.metrics[0].spark.band %}, bande : ta zone normale de VFC{% endif %}. Dernière mesure le {{ health_card.latest.strftime('%d/%m') }}.</p>
+</section>
 {% endif %}
