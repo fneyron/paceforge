@@ -24,9 +24,9 @@
     <link rel="stylesheet" href="/static/css/tailwind.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
     <script>
         // Apply dark mode before render to avoid flash
-        if (localStorage.getItem('darkMode') === 'true') {
-            document.documentElement.classList.add('dark');
-        }
+        try {
+            if (localStorage.getItem('darkMode') === 'true') document.documentElement.classList.add('dark');
+        } catch (_) { /* Storage may be unavailable in private browsers. */ }
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>htmx.config.allowScriptTags = true;</script>
@@ -125,32 +125,36 @@
         .dark ::-webkit-scrollbar { background: #111; }
         .dark ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
     </style>
+    <link rel="stylesheet" href="/static/css/interface.css?v=2">
     {% block head %}{% endblock %}
 </head>
-<body class="h-full bg-white text-gray-900 antialiased">
+<body class="h-full bg-white text-gray-900 antialiased{% if user is defined and user %} pf-app{% endif %}">
     {% if user is defined and user %}
+    <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
     <div class="flex h-full">
         <!-- Sidebar -->
-        <aside class="hidden md:flex w-56 h-screen border-r bg-gray-50/30 flex-col shrink-0 sticky top-0">
-            <div class="p-4 border-b">
-                <a href="/landing" class="flex items-center gap-2">
+        <aside class="pf-sidebar hidden md:flex w-56 h-screen border-r bg-gray-50/30 flex-col shrink-0 sticky top-0">
+            <div class="pf-brand-block p-4 border-b">
+                <a href="/simulator" class="pf-brand flex items-center gap-2" aria-label="PaceForge — accueil">
+                    <img src="/static/img/logo.svg" alt="" width="32" height="32">
                     <span class="text-xl font-bold tracking-tight">PaceForge</span>
                 </a>
             </div>
-            <nav class="flex-1 p-2 space-y-1">
-                <a href="/simulator"
+            <nav aria-label="Navigation principale" class="pf-navigation flex-1 p-2 space-y-1">
+                <p class="pf-nav-caption">Ton espace sportif</p>
+                <a href="/simulator" {% if request.url.path.startswith('/simulator') %}aria-current="page"{% endif %}
                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                           {% if request.url.path.startswith('/simulator') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
                     <i data-lucide="route" class="h-4 w-4"></i>
                     Courses
                 </a>
-                <a href="/activities"
+                <a href="/activities" {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}aria-current="page"{% endif %}
                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                           {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
                     <i data-lucide="history" class="h-4 w-4"></i>
                     Activités
                 </a>
-                <a href="/settings"
+                <a href="/settings" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}
                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                           {% if request.url.path == '/settings' %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
                     <i data-lucide="settings" class="h-4 w-4"></i>
@@ -158,13 +162,13 @@
                 </a>
             </nav>
             <div class="p-3 border-t space-y-2">
-                <button onclick="toggleDarkMode()" class="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+                <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
                     <i id="dark-icon-sun" data-lucide="sun" class="h-4 w-4 hidden"></i>
                     <i id="dark-icon-moon" data-lucide="moon" class="h-4 w-4"></i>
                     <span id="dark-label">Mode sombre</span>
                 </button>
                 <div class="flex items-center gap-2">
-                    <a href="#" class="flex items-center gap-2 flex-1 min-w-0">
+                    <a href="/settings" class="flex items-center gap-2 flex-1 min-w-0" aria-label="Mon profil">
                         {% if user.profile_picture_url %}
                         <img src="{{ user.profile_picture_url }}" alt="" class="w-8 h-8 rounded-full">
                         {% else %}
@@ -177,7 +181,7 @@
                             <p class="text-[10px] text-gray-400">Connecté</p>
                         </div>
                     </a>
-                    <a href="/auth/logout" class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" title="Se déconnecter">
+                    <a href="/auth/logout" class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" title="Se déconnecter" aria-label="Se déconnecter">
                         <i data-lucide="log-out" class="h-4 w-4"></i>
                     </a>
                 </div>
@@ -185,20 +189,21 @@
         </aside>
 
         <!-- Mobile header -->
-        <div class="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b px-4 py-3 flex items-center justify-between">
-            <a href="/landing" class="text-lg font-bold tracking-tight">PaceForge</a>
+        <div class="pf-mobile-header md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b px-4 py-3 flex items-center justify-between">
+            <a href="/simulator" class="pf-brand text-lg font-bold tracking-tight"><img src="/static/img/logo.svg" alt="" width="28" height="28">PaceForge</a>
             <div class="flex items-center gap-3">
+                <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="pf-icon-button"><i data-lucide="sun-moon" class="h-5 w-5"></i></button>
                 {% if user.profile_picture_url %}
                 <img src="{{ user.profile_picture_url }}" alt="" class="w-7 h-7 rounded-full">
                 {% endif %}
-                <a href="/auth/logout" class="text-gray-400 hover:text-gray-600">
+                <a href="/auth/logout" class="pf-icon-button text-gray-400 hover:text-gray-600" aria-label="Se déconnecter">
                     <i data-lucide="log-out" class="h-5 w-5"></i>
                 </a>
             </div>
         </div>
 
         <!-- Main content -->
-        <main class="flex-1 overflow-auto">
+        <main id="main-content" tabindex="-1" class="pf-main flex-1 overflow-auto">
             <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-8 mt-14 md:mt-0 pb-24 md:pb-8">
                 {% block content %}{% endblock %}
             </div>
@@ -206,17 +211,17 @@
     </div>
 
     <!-- Mobile bottom nav -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 safe-area-bottom">
+    <nav aria-label="Navigation mobile" class="pf-mobile-nav md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 safe-area-bottom">
         <div class="flex items-center justify-around h-14">
-            <a href="/simulator" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/simulator') %}text-gray-900{% else %}text-gray-400{% endif %}">
+            <a href="/simulator" {% if request.url.path.startswith('/simulator') %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/simulator') %}text-gray-900{% else %}text-gray-400{% endif %}">
                 <i data-lucide="route" class="h-5 w-5"></i>
                 <span class="text-[9px] font-medium">Courses</span>
             </a>
-            <a href="/activities" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}text-gray-900{% else %}text-gray-400{% endif %}">
+            <a href="/activities" {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}text-gray-900{% else %}text-gray-400{% endif %}">
                 <i data-lucide="history" class="h-5 w-5"></i>
                 <span class="text-[9px] font-medium">Activités</span>
             </a>
-            <a href="/settings" class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path == '/settings' %}text-gray-900{% else %}text-gray-400{% endif %}">
+            <a href="/settings" {% if request.url.path == '/settings' %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path == '/settings' %}text-gray-900{% else %}text-gray-400{% endif %}">
                 <i data-lucide="settings" class="h-5 w-5"></i>
                 <span class="text-[9px] font-medium">Réglages</span>
             </a>
@@ -230,10 +235,14 @@
     function toggleDarkMode() {
         const html = document.documentElement;
         const isDark = html.classList.toggle('dark');
-        localStorage.setItem('darkMode', isDark);
+        try { localStorage.setItem('darkMode', isDark); } catch (_) {}
         updateDarkModeUI(isDark);
     }
     function updateDarkModeUI(isDark) {
+        document.querySelectorAll('[data-theme-toggle]').forEach(function(button) {
+            button.setAttribute('aria-pressed', String(isDark));
+            button.setAttribute('aria-label', isDark ? 'Activer le mode clair' : 'Activer le mode sombre');
+        });
         const sun = document.getElementById('dark-icon-sun');
         const moon = document.getElementById('dark-icon-moon');
         const label = document.getElementById('dark-label');
