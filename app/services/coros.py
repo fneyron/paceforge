@@ -115,11 +115,26 @@ def _well_known(issuer: str, name: str) -> str:
     return f"{parts.scheme}://{parts.netloc}/.well-known/{name}{parts.path.rstrip('/')}"
 
 
-async def discover(client: httpx.AsyncClient) -> dict:
+# A COROS account lives on one regional server, and only that one can log it
+# in: the athlete picks it (mcp.coros.com just answers with the server nearest
+# to PaceForge, which is not the athlete's).
+REGIONS = {
+    "monde": ("Monde", "https://mcpus.coros.com"),
+    "europe": ("Europe", "https://mcpeu.coros.com"),
+    "chine": ("Chine", "https://mcpcn.coros.com"),
+}
+DEFAULT_REGION = "monde"
+
+
+def region_server(region: str | None) -> str:
+    return REGIONS.get(region or "", REGIONS[DEFAULT_REGION])[1]
+
+
+async def discover(client: httpx.AsyncClient, region: str | None = None) -> dict:
     """{issuer, resource, authorization_endpoint, token_endpoint,
-    registration_endpoint, revocation_endpoint} from the MCP server's
+    registration_endpoint, revocation_endpoint} from the region's MCP server
     protected-resource document, then its authorization server's metadata."""
-    r = await client.get(settings.COROS_DISCOVERY_URL)
+    r = await client.get(f"{region_server(region)}/.well-known/oauth-protected-resource/mcp")
     r.raise_for_status()
     prm = r.json()
     resource = _https(prm.get("resource"), "du serveur")

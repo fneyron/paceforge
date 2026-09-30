@@ -415,6 +415,21 @@ async def _link(db: AsyncSession, user: User, access="at-1", refresh="rt-1", exp
 
 # ── OAuth ───────────────────────────────────────────────────────────────────
 
+async def test_connect_uses_the_chosen_region(as_user: AsyncClient, fake, monkeypatch):
+    seen = []
+    orig = fake.handler
+
+    def spy(request):
+        seen.append(str(request.url))
+        return orig(request)
+    monkeypatch.setattr(coros, "_transport", httpx.MockTransport(spy))
+    await as_user.get("/coros/connect?region=europe")
+    assert seen[0] == "https://mcpeu.coros.com/.well-known/oauth-protected-resource/mcp"
+    seen.clear()
+    await as_user.get("/coros/connect?region=nowhere")  # unknown: the last choice stays
+    assert seen[0].startswith("https://mcpeu.coros.com/")
+
+
 async def test_connect_redirects_to_coros_with_pkce_state_and_resource(as_user: AsyncClient, db_session: AsyncSession, fake):
     r = await as_user.get("/coros/connect")
     assert r.status_code == 302
@@ -588,7 +603,7 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
                                                          test_user: User, fake):
     page = (await as_user.get("/settings")).text
     assert "Ta VFC, ta FC au repos, ton sommeil et ta VO2 max arrivent automatiquement depuis ta montre COROS." in page
-    assert 'href="/coros/connect"' in page and "Connecter COROS" in page
+    assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 
     await _link(db_session, test_user)
     r = await as_user.post("/settings/coros/sync")
