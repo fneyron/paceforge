@@ -1,0 +1,22 @@
+{
+  "updated": "2026-10-04",
+  "dataset": {
+    "races": 995,
+    "events": 395,
+    "finisher_results": 119512,
+    "checkpoint_passages": 1175720,
+    "sources": {"utmb_live": 174, "livetrail": 821}
+  },
+  "fit": {
+    "races": 115,
+    "finisher_results": 21400,
+    "note": "gradient + fatigue curve fitted on UTMB Live races 40-180 km with a GPS track"
+  },
+  "validation": {
+    "held_out_races": 44,
+    "held_out_events": 6,
+    "mean_abs_gap_min_before": 25.6,
+    "mean_abs_gap_min_after": 21.5,
+    "races_improved": 40
+  }
+}
