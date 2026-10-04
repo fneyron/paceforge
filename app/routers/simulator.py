@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
+from app.features import cycling_enabled, hidden_sports, require_cycling, sport_hidden
 from app.models.nutrition import NutritionProduct
 from app.models.route import Route, RouteCheckpoint
 from app.models.user import User
@@ -21,6 +22,7 @@ from app.services.weather import WMO_LABELS, wmo_category  # noqa: E402
 
 templates.env.globals["wmo_category"] = wmo_category
 templates.env.globals["wmo_label"] = lambda code: WMO_LABELS.get(wmo_category(code), "")
+templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["simulator"])
 
@@ -31,13 +33,11 @@ async def simulator_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Saved routes
-    result = await db.execute(
-        select(Route)
-        .where(Route.user_id == user.id)
-        .order_by(Route.created_at.desc())
-        .limit(40)
-    )
+    # Saved routes (bike / triathlon ones stay out while cycling is off)
+    query = select(Route).where(Route.user_id == user.id)
+    if hidden_sports():
+        query = query.where(Route.sport_type.notin_(hidden_sports()))
+    result = await db.execute(query.order_by(Route.created_at.desc()).limit(40))
     saved_routes = list(result.scalars().all())
     # upcoming races first (soonest), then past ones (most recent first), then undated
     from datetime import date as _date
@@ -278,7 +278,7 @@ async def passage_times(
             r_res = await db.execute(
                 select(Route).where(Route.id == route_id, Route.user_id == user.id)
             )
-            route_obj = r_res.scalar_one_or_none()
+            route_obj = _visible(r_res.scalar_one_or_none())
         if course_json:
             course = CourseProfile(**json.loads(course_json))
         elif route_obj and route_obj.course_json:
@@ -302,7 +302,7 @@ async def passage_times(
         return HTMLResponse("", status_code=500)  # the page keeps its last table and offers « réessayer »
 
 
-@router.post("/partials/simulator/bike-gpx-upload", response_class=HTMLResponse)
+@router.post("/partials/simulator/bike-gpx-upload", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def bike_gpx_upload(
     request: Request,
     gpx_file: UploadFile,
@@ -389,6 +389,8 @@ async def save_route(
     weather_json: str | None = Form(default=None),
     stop_minutes: int | None = Form(default=None),
 ):
+    if sport_hidden(sport_type):
+        sport_type = "trail"  # no new bike / triathlon routes while cycling is off
     try:
         course_data = json.loads(course_json) if course_json else None
         cps = json.loads(checkpoints_json)
@@ -400,7 +402,7 @@ async def save_route(
             result = await db.execute(
                 select(Route).where(Route.id == route_id, Route.user_id == user.id)
             )
-            route = result.scalar_one_or_none()
+            route = _visible(result.scalar_one_or_none())
 
         if route:
             # Update existing (the course itself is re-sent only for a fresh import)
@@ -608,7 +610,7 @@ async def route_detail_page(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if not route:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
@@ -655,7 +657,7 @@ async def load_route(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if not route or not route.course_json:
         return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
 
@@ -673,7 +675,7 @@ async def rename_route(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if not route:
         return JSONResponse({"error": "Parcours non trouve"}, status_code=404)
     route.name = name.strip() or route.name
@@ -694,7 +696,7 @@ async def export_route_gpx(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if not route or not route.course_json:
         return JSONResponse({"error": "Parcours non trouvé"}, status_code=404)
 
@@ -892,7 +894,7 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     }
 
 
-@router.post("/api/simulator/routes/{route_id}/bike", response_class=HTMLResponse)
+@router.post("/api/simulator/routes/{route_id}/bike", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def save_bike_plan(
     route_id: int,
     request: Request,
@@ -1002,7 +1004,7 @@ _POWER_ZONES = [("Z1 Récupération", 0.0, 0.55), ("Z2 Endurance", 0.56, 0.75), 
                 ("Z4 Seuil", 0.91, 1.05), ("Z5 VO2max", 1.06, 1.20), ("Z6 Anaérobie", 1.21, 1.50)]
 
 
-@router.post("/api/simulator/triathlon", response_class=HTMLResponse)
+@router.post("/api/simulator/triathlon", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def create_triathlon(
     request: Request,
     user: User = Depends(get_current_user),
@@ -1144,7 +1146,7 @@ async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, us
     }
 
 
-@router.post("/api/simulator/routes/{route_id}/tri", response_class=HTMLResponse)
+@router.post("/api/simulator/routes/{route_id}/tri", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def save_tri_plan(
     route_id: int,
     request: Request,
@@ -1197,7 +1199,7 @@ async def print_route_plan(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if not route or not route.course_json:
         return HTMLResponse("Parcours non trouvé", status_code=404)
 
@@ -1309,7 +1311,7 @@ async def delete_route(
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    route = result.scalar_one_or_none()
+    route = _visible(result.scalar_one_or_none())
     if route:
         await db.delete(route)
         await db.flush()
@@ -1729,11 +1731,16 @@ def _nutrition_status(value: float, target: float) -> str:
     return _status(float(value or 0), float(target or 0))
 
 
+def _visible(route: Route | None) -> Route | None:
+    """The route, or None when its sport is hidden (bike / triathlon while cycling is off)."""
+    return None if route is None or sport_hidden(route.sport_type) else route
+
+
 async def _get_owned_route(route_id: int, user: User, db: AsyncSession) -> Route | None:
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
     )
-    return result.scalar_one_or_none()
+    return _visible(result.scalar_one_or_none())
 
 
 def _aid_kms_from_checkpoints(cps: list[dict]) -> set:
@@ -2477,7 +2484,7 @@ async def _render_bike_plan(request: Request, route: Route, db: AsyncSession, us
     return templates.TemplateResponse(request, "partials/bike_plan.html", context=ctx, headers={"Cache-Control": "no-store"})
 
 
-@router.post("/api/simulator/routes/{route_id}/checkpoints", response_class=HTMLResponse)
+@router.post("/api/simulator/routes/{route_id}/checkpoints", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def add_checkpoint(
     route_id: int,
     request: Request,
@@ -2500,7 +2507,7 @@ async def add_checkpoint(
     return await _render_bike_plan(request, route, db, user)
 
 
-@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}", response_class=HTMLResponse)
+@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def update_checkpoint(
     route_id: int,
     cp_id: int,
@@ -2532,7 +2539,7 @@ async def update_checkpoint(
     return await _render_bike_plan(request, route, db, user)
 
 
-@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}/delete", response_class=HTMLResponse)
+@router.post("/api/simulator/routes/{route_id}/checkpoints/{cp_id}/delete", response_class=HTMLResponse, dependencies=[Depends(require_cycling)])
 async def delete_checkpoint(
     route_id: int,
     cp_id: int,

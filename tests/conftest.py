@@ -144,3 +144,11 @@ def authenticated_client(client: AsyncClient, test_user: User):
     """Client with session cookie set."""
     client.cookies.set("paceforge_session", "test_session")
     return client
+
+
+@pytest.fixture
+def cycling_on(monkeypatch):
+    """Bike / triathlon planning is hidden by default: switch it on for one test."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "CYCLING_ENABLED", True)

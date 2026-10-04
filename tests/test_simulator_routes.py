@@ -193,7 +193,7 @@ async def _create_bike_route(client: AsyncClient) -> int:
 
 
 @pytest.mark.asyncio
-async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncClient):
+async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncClient, cycling_on):
     route_id = await _create_bike_route(as_user)
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200

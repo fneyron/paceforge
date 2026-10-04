@@ -8,6 +8,7 @@ from starlette.templating import Jinja2Templates
 
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
+from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.activity_dedupe import sport_group
@@ -15,6 +16,7 @@ from app.services.coros import coros_status
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["settings"])
 
@@ -39,13 +41,14 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         ).where(Activity.user_id == user.id)
     )
     total, with_splits, first_date, last_date = stats_q.one()
-    from app.services.power_calculator import ftp_for_user
+    ftp_est = None
+    if cycling_enabled():  # the FTP field only shows with the bike planner
+        from app.services.power_calculator import ftp_for_user
 
-    try:
-        ftp_est = await ftp_for_user(db, user)
-    except Exception:
-        logger.exception("FTP estimate failed on the settings page")
-        ftp_est = None
+        try:
+            ftp_est = await ftp_for_user(db, user)
+        except Exception:
+            logger.exception("FTP estimate failed on the settings page")
 
     by_sport_q = await db.execute(
         select(Activity.sport_type, func.count(Activity.id))
@@ -93,9 +96,12 @@ async def save_settings(
     ftp_watts: str = Form(default=""),
 ):
     user.weight_kg = _to_float(weight_kg)
-    ftp = _to_float(ftp_watts)
-    ftp_bad = bool(ftp) and not (50 <= ftp <= 600)
-    user.ftp_watts = ftp if ftp and 50 <= ftp <= 600 else None
+    ftp_bad = False
+    # Without the FTP field (cycling off) the form doesn't send it: keep the saved value.
+    if cycling_enabled():
+        ftp = _to_float(ftp_watts)
+        ftp_bad = bool(ftp) and not (50 <= ftp <= 600)
+        user.ftp_watts = ftp if ftp and 50 <= ftp <= 600 else None
     await db.flush()
     logger.info("Settings updated for user %d", user.id)
 
