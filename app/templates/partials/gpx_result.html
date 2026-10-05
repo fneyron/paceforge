@@ -1,12 +1,6 @@
-{% import "partials/_weather_icons.html" as wx %}
 {% import "partials/_plan_glyphs.html" as gl %}
 {% import "partials/_icons.html" as ic %}
-{# Hidden registries: JS clones the matching icon for the weather and the point dialog's glyphs. #}
-<div id="wicon-registry" hidden>
-    {% for c in ["clear","mostly-clear","partly-cloudy","overcast","fog","drizzle","rain","snow","storm","unknown"] %}
-    <span data-cat="{{ c }}">{{ wx.wicon(c, "w-4 h-4") }}</span>
-    {% endfor %}
-</div>
+{# Hidden registries: the point dialog clones its glyphs from here. #}
 <div id="glyph-registry" hidden>
     {% for k in ["none","water","full","base"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-4 h-4") }}</span>{% endfor %}
 </div>
@@ -110,7 +104,7 @@
     {% endif %}
 
     {# ── passages ────────────────────────────────────────────────────────── #}
-    <div id="scn-chip" class="pf-scn-chip hidden"><span id="scn-chip-text">Plan Cible affiché</span><span aria-hidden="true">·</span><button type="button" onclick="window._sim && window._sim.setScn('target')">revenir à Cible</button></div>
+    <div id="scn-chip" class="pf-scn-chip hidden"><span id="scn-chip-text">Plan Cible affiché</span> <span aria-hidden="true">·</span> <button type="button" onclick="window._sim && window._sim.setScn('target')">revenir à Cible</button></div>
     <h2 class="pf-h2 pf-pass-h">Passages</h2>
     <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
     <div id="page-error" class="hidden py-2 text-sm text-danger"></div>
@@ -527,6 +521,8 @@ window._sim = {};
                 if (!dg.moved && map && checkpoints[dg.i] && mapOpen()) { var c = findCoordAtKm(checkpoints[dg.i].distance_km); if (c) map.flyTo({ center: [c[1], c[0]], zoom: 13 }); if (cpMarkerEls[dg.i]) cpMarkerEls[dg.i].togglePopup(); }
                 return;
             }
+            // a quick tap on a point (touch): open its row; holding it first starts a drag (above)
+            if (press && press.i !== null && press.i !== undefined) { var pi = press.i; press = null; hideCross(); openDetail(pi, true); return; }
             if (press && press.touch) { var pz = press; press = null; if (touchHideT) clearTimeout(touchHideT); touchHideT = setTimeout(function () { hideCross(); highlightRow(null); if (hoverMarker) hoverMarker.getElement().style.display = 'none'; }, pz.scrub ? 2500 : 4000); return; }
             press = null;
         });
@@ -673,17 +669,11 @@ window._sim = {};
     function removeCheckpoint(i) { if (!checkpoints[i]) return; if (anchorOn(checkpoints[i])) { liveAnchor = null; persistLive(); } checkpoints.splice(i, 1); if (openCp === i) openCp = null; else if (openCp !== null && openCp > i) openCp -= 1; if (sheetCp === i) closeSheet(); else if (sheetCp !== null && sheetCp > i) sheetCp -= 1; refresh(); recalc(); scheduleSave(); }
     function confirmRemove(btn, i) {
         if (btn.getAttribute('data-armed')) { removeCheckpoint(i); return; }
-        var html = btn.innerHTML, cls = btn.className, det = btn.closest('[data-detail]'), hid = [];
+        // the point dialog's « Supprimer ce point »: a second tap within 1,5 s deletes
+        var html = btn.innerHTML, cls = btn.className;
         btn.setAttribute('data-armed', '1'); btn.innerHTML = 'Supprimer ?';
-        if (btn.closest('#cp-sheet')) { btn.className = cls + ' border-red-300 text-danger font-semibold'; }
-        else if (det) {
-            // phone detail line: the margin / temperature step aside for 1,5 s, nothing is covered
-            det.querySelectorAll('[data-secondary]').forEach(function (el) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); hid.push(el); } });
-            btn.className = cls + ' text-danger font-semibold';
-        } else {
-            btn.className = cls + ' text-danger font-semibold';
-        }
-        setTimeout(function () { if (btn.getAttribute('data-armed')) { btn.removeAttribute('data-armed'); btn.innerHTML = html; btn.className = cls; hid.forEach(function (el) { el.classList.remove('hidden'); }); } }, 1500);
+        btn.className = cls + ' border-red-300 text-danger font-semibold';
+        setTimeout(function () { if (btn.getAttribute('data-armed')) { btn.removeAttribute('data-armed'); btn.innerHTML = html; btn.className = cls; } }, 1500);
     }
     function editCheckpointName(i, el) { if (!checkpoints[i]) return; recalcSeq++; var val = (el && el.value !== undefined) ? el.value : el; checkpoints[i].name = (val || '').trim() || checkpoints[i].name; if (el && el.value !== undefined) el.value = checkpoints[i].name; var nt = document.querySelector('#plan-table [data-row][data-cp="' + i + '"] [data-name-text]'); if (nt) nt.textContent = checkpoints[i].name; refresh(); scheduleSave(); }
     function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } var cp = checkpoints[i], wasAnchor = anchorOn(cp); cp.distance_km = Math.round(km * 10) / 10; cp.elevation = interpElev(km); if (wasAnchor) { liveAnchor.anchor_km = cp.distance_km; persistLive(); } checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); if (openCp === i) openCp = checkpoints.indexOf(cp); if (sheetCp === i) sheetCp = checkpoints.indexOf(cp); refresh(); recalc(); scheduleSave(); }
@@ -1068,7 +1058,6 @@ window._sim = {};
     function persistLive() { if (!currentRouteId) return; var b = new URLSearchParams(); if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); b.append('anchor_name', liveAnchor.anchor_name || ''); } fetch('/api/simulator/routes/' + currentRouteId + '/live', { method: 'POST', body: b }).catch(function () {}); }
 
     // ── WEATHER: per point in the rows, the heat under the arrival, the refresh in Réglages ──
-    function wmoCategoryJs(code) { if (code === null || code === undefined) return 'unknown'; if (code === 0) return 'clear'; if (code === 1) return 'mostly-clear'; if (code === 2) return 'partly-cloudy'; if (code === 3) return 'overcast'; if (code === 45 || code === 48) return 'fog'; if ([51,53,55,56,57].indexOf(code) >= 0) return 'drizzle'; if ([61,63,65,66,67,80,81,82].indexOf(code) >= 0) return 'rain'; if ([71,73,75,77,85,86].indexOf(code) >= 0) return 'snow'; if (code >= 95) return 'storm'; return 'unknown'; }
     function renderHeat() {
         var el = document.getElementById('heat-line'); if (!el) return;
         var p = Math.round((currentHeatFactor - 1) * 100), on = !!raceDate && p >= 3;
@@ -1094,17 +1083,17 @@ window._sim = {};
         }
     }
     var weatherInFlight = false;
-    // true when a fetch started (it recalculates and saves once back)
+    // fetches the forecast for the race date (recalculates and saves once back); a date changed meanwhile fetches again
     function fetchWeather() {
-        var d = raceDate; if (!d || !routeCoords.length || weatherInFlight) return false;
+        var d = raceDate; if (!d || !routeCoords.length || weatherInFlight) return;
         weatherInFlight = true;
         var b = new URLSearchParams(); b.append('lat', routeCoords[0][0]); b.append('lon', routeCoords[0][1]); b.append('date', d);
         var pts = checkpoints.map(function (cp) { var c = findCoordAtKm(cp.distance_km); return c ? [c[0], c[1], cp.distance_km] : null; }).filter(Boolean);
         var last = routeCoords[routeCoords.length - 1]; pts.push([last[0], last[1], last[2]]); b.append('points_json', JSON.stringify(pts));
         var rb = document.getElementById('wx-refresh'); if (rb) rb.disabled = true;
         var ww = document.getElementById('wx-when'); if (ww) ww.textContent = 'Mise à jour de la météo…';
-        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(function(w) { weatherInFlight = false; renderWeather(w); recalc(); scheduleSave(); }).catch(function() { weatherInFlight = false; renderWeather({ error: 'météo indisponible' }); recalc(); scheduleSave(); });
-        return true;
+        var done = function (w) { weatherInFlight = false; if (raceDate !== d) { fetchWeather(); return; } renderWeather(w); recalc(); scheduleSave(); };
+        fetch('/api/simulator/weather', { method: 'POST', body: b }).then(function(r) { return r.json(); }).then(done).catch(function() { done({ error: 'météo indisponible' }); });
     }
     function weatherStale(w) { var d = raceDate; if (!d) return false; if (!w || w.date !== d || !w.fetched_at) return true; return (Date.now() / 1000 - w.fetched_at) > ((w.source === 'prevision') ? 3 * 3600 : 24 * 3600); }
     function maybeFetchWeather() { if (weatherStale(currentWeather)) fetchWeather(); }
@@ -1140,7 +1129,11 @@ window._sim = {};
     function onConditionsChange() {
         var d = raceDate;
         updateMeta();
-        if (d !== lastDate) { lastDate = d; if (d && fetchWeather()) return; if (!d) { currentWeather = null; currentHourly = null; currentHeatFactor = 1.0; renderHeat(); } }
+        if (d !== lastDate) {
+            // the old date's weather no longer applies; the new one comes back with its own recalculation
+            lastDate = d; currentWeather = null; currentHourly = null; currentHeatFactor = 1.0; renderHeat();
+            if (d) fetchWeather();
+        }
         recalc(); scheduleSave();
     }
     // ── « Nom, date et départ »: the one place to edit them ──
@@ -1173,7 +1166,7 @@ window._sim = {};
         if (f.t) f.t.value = st;
         document.getElementById('race-sheet').classList.add('hidden');
         updateMeta();
-        if (dateChanged) onConditionsChange();
+        if (dateChanged) onConditionsChange();  // labels, weather, recalculation, save
         else if (startChanged) { recalc(); scheduleSave(); }
         else if (nameChanged) onNameChange();
     }
@@ -1288,7 +1281,6 @@ window._sim = {};
     try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     updateMeta();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
-    try { localStorage.removeItem('pf.map'); } catch (e) {}  // nothing opens by itself: the old « map was open » memory goes
     document.addEventListener('pointerdown', function (ev) {
         var t = ev.target;
         if (!(t.closest && t.closest('#elevChart'))) { if (ev.pointerType === 'touch') { hideCross(); highlightRow(null); } }

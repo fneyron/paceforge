@@ -92,7 +92,7 @@
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {% if lg and lg.units %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>Sur ce tronçon : {{ lg.units|join(', ') }}.</span></p>{% endif %}
+            {% if editable and lg and lg.units %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>Sur ce tronçon : {{ lg.units|join(', ') }}.</span></p>{% endif %}
             {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b> : {% if lg.bag.units %}{{ lg.bag.units|join(', ') }}{% else %}rien de prévu en nutrition{% endif %} jusqu'à {{ lg.bag.until }}.</span></p>
             {% elif s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
