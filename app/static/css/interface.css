@@ -467,3 +467,5 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .dark .pf-hero-in { border-bottom-color: rgb(var(--pf-accent)); }
 .dark .pf-seg > [aria-pressed="true"], .dark .pf-seg > [aria-current] { background: rgb(var(--pf-gray-200)); }
 .pf-health-load, .pf-health-fitness { margin-top: 48px; }
+.pf-courses-cols > div > .pf-sechead:first-child { margin-top: 28px; }
+@media (max-width: 899px) { .pf-ring { width: 108px; height: 108px; } .pf-ring-v b { font-size: 34px; } .pf-health-rec { gap: 18px; align-items: flex-start; } }
