@@ -1,249 +1,258 @@
-{% macro fmt_hm(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
-{% macro clock(seconds) %}{{ '%02d:%02d'|format((seconds % 86400) // 3600, (seconds % 3600) // 60) }}{% endmacro %}
-{% macro qty(x) %}{% if x == (x | int) %}{{ x | int }}{% else %}{{ ('%.1f' | format(x)).replace('.', ',') }}{% endif %}{% endmacro %}
-{% macro per_hour_words(x) %}{% if x >= 1 and x == (x | int) %}{{ x | int }} par heure{% elif x == 0.5 %}1 toutes les 2 h{% elif x < 1 %}{{ qty(x) }} par heure{% else %}{{ qty(x) }} par heure{% endif %}{% endmacro %}
-{% set kind_labels = {'gel':'gel','drink':'boisson','bar':'barre','solid':'solide','salt':'sel'} %}
-{% set used = products | selectattr('used') | list %}
-{% set hours = plan.hours if plan and plan.hours else 0 %}
-{% set gel_eq = (targets.carbs_g_per_h / 25) | round | int %}
-<div id="nutrition-card" class="space-y-3">
+{% import "partials/_icons.html" as ic %}
+{# « Ravitaillement »: what you eat, drink and put in each bag. Everything is
+   computed; the athlete only taps (stomach, products, drop bags). #}
+{% macro rv_icon(name, cls="w-[18px] h-[18px]") -%}
+<svg class="{{ cls }} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'gel' -%}<path d="M9 3h6l-1 3v1.5c2.2.9 3.5 3 3.5 5.5v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-6c0-2.5 1.3-4.6 3.5-5.5V6z"/><path d="M8 14h8"/>
+{%- elif name == 'drink' -%}<path d="M10 2h4v3l1.5 2.2A3 3 0 0 1 16 9v11a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9a3 3 0 0 1 .5-1.8L10 5z"/><path d="M8 12h8"/>
+{%- elif name == 'salt' -%}<rect x="2.5" y="8" width="19" height="8" rx="4"/><path d="M12 8v8"/>
+{%- elif name == 'bolt' -%}<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>
+{%- elif name == 'bar' -%}<rect x="3" y="8" width="18" height="8" rx="2"/><path d="M8 8v8M16 8v8"/>
+{%- elif name == 'drop' -%}<path d="M12 3s6 6.7 6 11.2A6 6 0 0 1 6 14.2C6 9.7 12 3 12 3z"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+{% macro chip(c) -%}
+<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" title="{{ c.title or c.label }}" hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-vals='{"op":"toggle","v":"{{ c.id }}"}'>{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl">{{ c.label }}</span></button>
+{%- endmacro %}
+{# p = a product to edit; v = what was typed (an « un produit à toi » sent without a name) #}
+{% macro product_form(p=none, v=none) -%}
+{% set k = (p.kind if p else (v.kind if v else 'gel')) %}{% set k = 'bar' if k == 'solid' else k %}
+<form hx-post="/partials/simulator/nutrition/{{ route_id }}/products{% if p %}/{{ p.id }}{% endif %}" class="pf-rv-form">
+    {% if p %}<input type="hidden" name="open" value="adjust">{% endif %}
+    <input type="hidden" name="kind" value="{{ k }}">
+    <div class="pf-seg pf-seg-sm" role="group" aria-label="Type de produit">
+        {% for val, lbl in [('gel', 'Gel'), ('bar', 'Barre'), ('drink', 'Boisson'), ('salt', 'Sel')] %}<button type="button" data-kind="{{ val }}" aria-pressed="{{ 'true' if k == val else 'false' }}" onclick="pfRvKind(this)">{{ lbl }}</button>{% endfor %}
+    </div>
+    <label>Nom<input name="name" type="text" maxlength="100" required value="{{ p.name if p else '' }}" autocomplete="off"{% if v and v.error %} aria-invalid="true" autofocus{% endif %}>{% if v and v.error %}<small class="pf-rv-err">{{ v.error }}</small>{% endif %}</label>
+    <div class="pf-rv-form-row">
+        <label>Glucides<span class="pf-rv-unitin"><input name="carbs_g" type="number" inputmode="decimal" min="0" step="any" value="{{ p.carbs_in if p else (v.carbs_g if v else '') }}"> g</span><small data-drink-hint{% if k != 'drink' %} hidden{% endif %}>par flasque de 500 ml</small></label>
+        <label>Sodium<span class="pf-rv-unitin"><input name="sodium_mg" type="number" inputmode="decimal" min="0" step="any" value="{{ p.sodium_in if p else (v.sodium_mg if v else '') }}"> mg</span><small>{% if k == 'drink' %}par flasque de 500 ml{% else %}sur l'étiquette{% endif %}</small></label>
+        <label>Caféine<span class="pf-rv-unitin"><input name="caffeine_mg" type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="{{ p.caffeine_in if p else (v.caffeine_mg if v else '') }}"> mg</span></label>
+    </div>
+    <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">{{ 'Enregistrer' if p else 'Ajouter' }}</button>
+</form>
+{%- endmacro %}
+{% set P = '/partials/simulator/nutrition/' ~ route_id %}
+<div id="nutrition-card" class="pf-rv" hx-target="this" hx-swap="outerHTML" hx-sync="this:queue all">
 {% if not has_duration %}
-<div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-500">Définis un objectif de temps (ou laisse l'estimation) pour calculer ton plan.</div>
+<p class="pf-label">Indique un objectif de temps, ou garde l'estimation, pour calculer ton plan.</p>
 {% else %}
-<form hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:250ms, submit" novalidate hx-validate="false" class="space-y-3">
-    <input type="hidden" name="settings_open" id="settings-open" value="{{ '1' if settings_open else '' }}">
+<div class="pf-rv-cols lg:grid lg:grid-cols-2 lg:gap-10 lg:items-start">
+<div class="pf-rv-col">
+    <p class="pf-label pf-rv-context">{{ context_line }}</p>
 
-    {# ── 1. The objective, in words a first-timer understands ─────────────── #}
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">1</span><h3 class="text-sm font-semibold tracking-tight">Combien manger</h3></div>
-        <p class="text-[13px] text-gray-600 mb-3">Sur une course longue, le corps a besoin de sucres toutes les heures. La question est simple : <b class="text-gray-900">combien de grammes de glucides par heure</b> ton estomac accepte.</p>
-        <div class="grid grid-cols-3 gap-2 mb-3">
-            {% for c, lbl, desc in [(60, 'Prudent', 'estomac fragile, peu entraîné à manger'), (75, 'Habitué', 'tu manges déjà en course sans souci'), (90, 'Entraîné', 'gros volume, estomac entraîné')] %}
-            <button type="button" onclick="var f=this.form;f.querySelector('[name=carbs_g_per_h]').value={{ c }};f.requestSubmit()"
-                    class="rounded-lg border p-2.5 text-left {% if targets.carbs_g_per_h == c %}border-accent bg-accent text-accent-ink{% else %}border-gray-200 text-gray-700 hover:border-gray-400{% endif %}">
-                <span class="block text-lg font-bold tabular-nums leading-none">{{ c }} <span class="text-[10px] font-normal opacity-70">g/h</span></span>
-                <span class="block text-[11px] font-medium mt-1">{{ lbl }}</span>
-                <span class="block text-[10px] mt-0.5 leading-snug {% if targets.carbs_g_per_h == c %}text-gray-300{% else %}text-gray-400{% endif %}">{{ desc }}</span>
-            </button>
+    {# ── 3.1 Ta règle ─────────────────────────────────────────────────── #}
+    <section id="rv-rule" class="pf-panel pf-rv-rule" aria-labelledby="rv-rule-t">
+        <h2 id="rv-rule-t" class="pf-rv-rule-title">Ta règle pour toute la course</h2>
+        <ul class="pf-rv-rules">
+            {% for r in rules %}<li><span class="pf-rv-ic">{{ rv_icon(r.icon) }}</span><span>{{ r.html | safe }}</span></li>{% endfor %}
+        </ul>
+        <p class="pf-rv-tip">Commence dès la première demi-heure, sans attendre d'avoir faim.</p>
+        {% for w in warnings %}<p class="pf-rv-warn is-{{ w.tone }}">{% if w.tone in ('warn', 'alert') %}{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}{% endif %}<span>{{ w.text }}</span></p>{% endfor %}
+        {% if hand_set %}<p class="pf-rv-hand"><span class="pf-pill pf-pill-soft">réglé à la main</span><button type="button" class="pf-link pf-rv-hit" hx-post="{{ P }}/plan" hx-vals='{"op":"reset"}'>Revenir au calcul auto</button></p>{% endif %}
+    </section>
+
+    {# ── 3.2 Ton estomac ──────────────────────────────────────────────── #}
+    <section id="rv-stomach" aria-labelledby="rv-stomach-t">
+        <h2 id="rv-stomach-t" class="pf-rv-h">Ton estomac en course</h2>
+        <div class="pf-seg pf-rv-seg" role="group" aria-labelledby="rv-stomach-t">
+            {% for key, lbl, g in [('fragile', 'Fragile', 60), ('normal', 'Normal', 75), ('solide', 'Solide', 90)] %}
+            <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"level","v":"{{ key }}"}' aria-pressed="{{ 'true' if level == key else 'false' }}">{{ lbl }}<small>{{ g }} g/h</small></button>
             {% endfor %}
+            {% if not level %}<button type="button" aria-pressed="true" tabindex="-1">Ton réglage<small>{{ custom_carbs }} g/h</small></button>{% endif %}
         </div>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-gray-600">
-            <label class="inline-flex items-center gap-1.5">ou <input type="number" name="carbs_g_per_h" min="0" max="150" step="5" value="{{ targets.carbs_g_per_h }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900"> g/h</label>
-            <span class="text-gray-400">·</span>
-            <span>Sur <b class="text-gray-800">{{ fmt_hm(plan.duration_s) }}</b>, ça fait <b class="text-gray-800">{{ (targets.carbs_g_per_h * hours) | round | int }} g</b> en tout : environ <b class="text-gray-800">{{ gel_eq }} gel{{ 's' if gel_eq > 1 }}</b> de 25 g par heure, ou un mélange gels, boisson et barres.</span>
-        </div>
-    </div>
+        <p class="pf-rv-help">{% if level == 'fragile' %}Estomac sensible ou première fois : on y va doucement.{% elif level == 'normal' %}Tu as déjà mangé en courant, sans souci.{% elif level == 'solide' %}Tu t'entraînes à manger beaucoup en courant.{% else %}Ta valeur à toi. Touche un niveau pour revenir au calcul auto.{% endif %}</p>
+    </section>
 
-    {# ── 2. What you carry: tick, and each product gets its share in words ───── #}
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-            <div class="flex items-baseline gap-2"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">2</span><h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3></div>
-            {% if used %}<button type="submit" name="auto" value="1" class="text-[11px] text-gray-500 hover:text-gray-900 underline decoration-gray-300" title="Répartir la cible entre les produits cochés">répartir automatiquement pour {{ targets.carbs_g_per_h }} g/h</button>{% endif %}
-        </div>
-        <p class="text-[13px] text-gray-600 mb-3">Coche les produits que tu comptes vraiment emporter. Chacun reçoit sa part de la cible, tu ajustes la quantité par heure si tu veux.</p>
-        {% if using_generic %}<p class="text-[12px] text-amber-700 mb-2">Ce sont des produits génériques. Ajoute les tiens depuis le catalogue ci-dessous, le plan sera calculé sur leurs vraies valeurs.</p>{% endif %}
-        <div class="divide-y divide-gray-50">
-            {% for p in products %}
-            <label class="flex items-center gap-3 py-2.5 cursor-pointer {% if not p.used %}text-gray-400{% endif %}">
-                <input type="checkbox" name="use_{{ p.id }}" value="1" {% if p.used %}checked{% endif %} class="h-5 w-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900">
-                <span class="flex-1 min-w-0">
-                    <span class="block text-sm font-medium {% if p.used %}text-gray-900{% endif %}">{{ p.name }}</span>
-                    <span class="block text-[11px] text-gray-400">{{ kind_labels.get(p.kind, p.kind) }} · {{ p.carbs_g|round|int }} g de glucides{% if p.sodium_mg %} · {{ p.sodium_mg|round|int }} mg de sel{% endif %}{% if p.caffeine_mg %} · {{ p.caffeine_mg|round|int }} mg de caféine{% endif %} par unité</span>
-                </span>
-                {% if p.by_caffeine %}
-                <span class="text-right text-xs text-amber-700 shrink-0" title="Un gel par prise de caféine, placé par le planning caféine">
-                    <input type="hidden" name="qty_{{ p.id }}" value="1">aux heures<br>de caféine
-                </span>
-                {% else %}
-                <span class="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
-                    <input type="number" name="qty_{{ p.id }}" min="0" max="12" step="0.5" value="{% if p.used %}{{ qty(p.per_hour) | replace(',', '.') }}{% endif %}" placeholder="—" {% if not p.used %}disabled{% endif %} aria-label="{{ p.name }} par heure"
-                           class="sim-num w-14 h-9 px-1 rounded-lg border border-gray-200 text-sm font-semibold tabular-nums text-center text-gray-900 disabled:bg-gray-50 disabled:text-gray-300">
-                    <span class="w-[74px] leading-tight {% if p.used %}text-gray-700{% else %}text-gray-300{% endif %}">par heure{% if p.used and p.carbs_per_h %}<span class="block text-[10px] text-gray-400 tabular-nums">= {{ p.carbs_per_h }} g/h</span>{% endif %}</span>
-                </span>
-                {% endif %}
-            </label>
-            {% endfor %}
-        </div>
-        {% if used %}
-        <p class="mt-3 text-[13px] rounded-lg px-3 py-2 {% if kpi.carbs_status == 'under' %}bg-red-50 text-red-800{% elif kpi.carbs_status == 'over' %}bg-amber-50 text-amber-800{% else %}bg-emerald-50 text-emerald-800{% endif %}">
-            Avec ça : <b>{{ kpi.carbs_real }} g/h</b> de glucides{% if kpi.carbs_status == 'under' %} — en dessous des {{ targets.carbs_g_per_h }} g/h visés : coche un produit de plus ou monte une quantité.{% elif kpi.carbs_status == 'over' %} — plus que les {{ targets.carbs_g_per_h }} g/h visés : baisse une quantité si ton estomac n'est pas entraîné.{% else %} — c'est la cible, parfait.{% endif %}
-            {% if has_sodium %}<span class="block text-[11px] mt-0.5 opacity-80">Sel : {{ kpi.sodium_real }} mg/h{% if kpi.sodium_status == 'under' %}, un peu juste pour {{ targets.sodium_mg_per_h }} mg/h visés (pastilles ou boisson salée){% else %} pour {{ targets.sodium_mg_per_h }} mg/h visés{% endif %}.</span>{% endif %}
-        </p>
-        {% endif %}
-        {% if catalog %}
-        <details class="mt-3"{% if using_generic %} open{% endif %}>
-            <summary class="list-none cursor-pointer select-none text-[12px] text-gray-600 hover:text-gray-900 inline-flex items-center gap-1.5"><span class="w-5 h-5 rounded-full border border-dashed border-gray-400 inline-flex items-center justify-center leading-none">+</span>Ajouter un produit du commerce (catalogue)</summary>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-                {% for c in catalog %}
-                <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/catalog/{{ c.key }}" hx-target="#nutrition-card" hx-swap="outerHTML" hx-params="none"
-                        class="inline-flex items-center gap-1 h-9 px-3 rounded-lg border border-gray-200 text-[12px] text-gray-700 hover:border-gray-900 hover:bg-gray-50"
-                        title="{{ c.carbs_g }} g glucides{% if c.sodium_mg %} · {{ c.sodium_mg }} mg sodium{% endif %}{% if c.caffeine_mg %} · {{ c.caffeine_mg }} mg caféine{% endif %} · modifiable ensuite dans « Mes produits »">
-                    {{ c.name }}<span class="text-gray-400">{% if c.carbs_g %}{{ c.carbs_g }} g{% else %}{{ c.sodium_mg }} mg Na{% endif %}{% if c.caffeine_mg %} · caf{% endif %}</span>
-                </button>
-                {% endfor %}
-            </div>
-        </details>
-        {% endif %}
-    </div>
-
-    {# ── 3. The plan: one line per leg, in words ──────────────────────────── #}
-    {% if used and plan.schedule %}
-    {% set hy = plan.hydration %}
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">3</span><h3 class="text-sm font-semibold tracking-tight">Ton plan, ravito par ravito</h3></div>
-        <p class="text-[13px] text-gray-600 mb-3">Entre deux points de passage, voilà ce que tu prends. Unités entières : ce que tu sors réellement de la poche.{% if n_aid %} L'eau se recharge aux {{ n_aid }} ravito{{ 's' if n_aid > 1 }}.{% else %} Type tes points de passage (eau / ravito) dans le plan pour placer les recharges d'eau.{% endif %}</p>
-        <div class="hidden sm:block overflow-x-auto -mx-1">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
-                        <th class="text-left py-2 pr-2 font-medium">Jusqu'à</th>
-                        <th class="text-right py-2 px-2 font-medium">Durée</th>
-                        <th class="text-left py-2 pl-3 font-medium">À prendre</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Glucides réels par heure avec les unités entières du tronçon">g/h</th>
-                        <th class="text-right py-2 px-2 font-medium" title="Eau à boire sur le tronçon">Eau</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">
-                    {% for leg in plan.schedule %}
-                    <tr class="{% if loop.last %}bg-gray-50/50{% endif %}">
-                        <td class="py-2 pr-2"><span class="font-medium text-gray-800">{{ leg.to_name }}</span>{% if leg.night %} <span class="text-[10px]" title="de nuit">🌙</span>{% endif %}<span class="block text-[10px] text-gray-400 tabular-nums">{{ clock(leg.start_clock_s) }} → {{ clock(leg.clock_s) }}</span></td>
-                        <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ fmt_hm(leg.leg_time_s) }}</td>
-                        <td class="py-2 pl-3"><div class="flex flex-wrap gap-1">{% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700"><b>{{ u.units }}</b> {{ u.name }}</span>{% endif %}{% endfor %}</div></td>
-                        <td class="text-right py-2 px-2 tabular-nums font-semibold {% if leg.carbs_status == 'under' %}text-red-600{% elif leg.carbs_status == 'over' %}text-amber-600{% else %}text-emerald-600{% endif %}">{{ leg.carbs_real_per_h }}</td>
-                        <td class="text-right py-2 px-2 tabular-nums {% if leg.dry %}text-red-500{% else %}text-gray-500{% endif %}">{{ (leg.fluid_ml/1000)|round(1) }} L{% if leg.dry %} ⚠{% endif %}</td>
-                    </tr>
+    {# ── 3.3 Ce que tu emportes ───────────────────────────────────────── #}
+    <section id="rv-picks" aria-labelledby="rv-picks-t">
+        <h2 id="rv-picks-t" class="pf-rv-h">Ce que tu emportes</h2>
+        <div class="pf-rv-chips">
+            {% for c in chips %}{{ chip(c) }}{% endfor %}
+            <details id="rv-brands" class="pf-rv-more"{% if open == 'brands' %} open{% endif %}>
+                <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Marque</summary>
+                <div class="pf-rv-panel">
+                    {% for label, items in brand_groups %}
+                    <p class="pf-rv-sublabel">{{ label }}</p>
+                    <div class="pf-rv-chips">{% for c in items %}<button type="button" class="pf-chip-lg" aria-pressed="false" title="{{ c.name }}" hx-post="{{ P }}/catalog/{{ c.key }}"><span class="pf-chip-lbl">{{ c.short }}</span></button>{% endfor %}</div>
                     {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <ol class="sm:hidden divide-y divide-gray-100">
-            {% for leg in plan.schedule %}
-            <li class="py-2.5">
-                <div class="flex items-baseline justify-between gap-2">
-                    <span class="text-sm font-medium text-gray-900 truncate">→ {{ leg.to_name }}{% if leg.night %} 🌙{% endif %}</span>
-                    <span class="text-[11px] text-gray-400 tabular-nums shrink-0">{{ fmt_hm(leg.leg_time_s) }} · {{ clock(leg.clock_s) }}</span>
+                    {% if pantry_more %}
+                    <p class="pf-rv-sublabel">Tes autres produits</p>
+                    <div class="pf-rv-chips">{% for c in pantry_more %}{{ chip(c) }}{% endfor %}</div>
+                    {% endif %}
+                    <details class="pf-rv-own"{% if own_form %} open{% endif %}>
+                        <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Un produit à toi</summary>
+                        {{ product_form(none, own_form) }}
+                    </details>
                 </div>
-                <div class="mt-1 flex flex-wrap gap-1">{% for u in leg.units %}{% if u.units and not u.is_water %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[12px] text-gray-800"><b>{{ u.units }}</b> {{ u.name }}</span>{% endif %}{% endfor %}<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[12px] {% if leg.dry %}bg-red-50 text-red-700{% else %}bg-sky-50 text-sky-800{% endif %}">{{ (leg.fluid_ml/1000)|round(1) }} L d'eau{% if leg.dry %} ⚠{% endif %}</span></div>
-                <p class="mt-0.5 text-[11px] {% if leg.carbs_status == 'under' %}text-red-600{% elif leg.carbs_status == 'over' %}text-amber-600{% else %}text-gray-400{% endif %}">{{ leg.carbs_real_per_h }} g/h{% if leg.carbs_status == 'under' %} · un peu léger sur ce tronçon{% elif leg.carbs_status == 'over' %} · copieux sur ce tronçon{% endif %}</p>
-            </li>
-            {% endfor %}
-        </ol>
-        {% if hy and hy.has_refills and not hy.feasible %}
-        <p class="mt-2 text-[12px] rounded-lg bg-red-50 px-3 py-2 text-red-800">Eau : {{ (hy.capacity_ml/1000)|round(1) }} L portés ne suffisent pas sur {{ hy.dry_count }} portion{{ 's' if hy.dry_count > 1 }}{% if hy.worst_segment %} (la pire : <b>{{ hy.worst_segment.from_name }} → {{ hy.worst_segment.to_name }}</b>, {{ (hy.worst_segment.need_ml/1000)|round(1) }} L){% endif %}. Porte environ {{ (hy.suggested_capacity_ml/1000)|round(1) }} L, ou baisse la cible d'eau dans les réglages.</p>
-        {% endif %}
-    </div>
+            </details>
+        </div>
+        {% if source %}<p class="pf-rv-help">Repris de « {{ source }} »</p>{% endif %}
+    </section>
 
-    {# ── 4. What goes in which bag ───────────────────────────────────────── #}
-    <div id="packing" data-packing class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm scroll-mt-24">
-        <h3 class="text-sm font-semibold tracking-tight mb-1">À emporter</h3>
-        {% if plan.packing and plan.packing|length > 1 %}
-        <p class="text-[13px] text-gray-600 mb-3">Ce que tu mets dans ton sac au départ, et ce que tu laisses dans chaque drop bag.</p>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {% for g in plan.packing %}
-            <div class="rounded-lg border {% if g.is_start %}border-accent{% else %}border-gray-200{% endif %} p-3">
-                <p class="text-[12px] font-semibold text-gray-800">{% if g.is_start %}Sac au départ{% else %}Drop bag · {{ g.at }}{% endif %} <span class="text-gray-400 font-normal">→ {{ g.until }}</span></p>
-                <div class="mt-1.5 flex flex-wrap gap-1">
-                    {% for u in g.units %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[12px] text-gray-700"><b>{{ u.units }}</b> {{ u.name }}</span>{% endfor %}
-                    {% if not g.units %}<span class="text-[11px] text-gray-300">rien</span>{% endif %}
+    {# ── 3.7 Ajuster (last on the phone, under the choices on a desktop) ── #}
+    <details id="rv-adjust" class="pf-rv-disc pf-rv-adjust"{% if open == 'adjust' %} open{% endif %}>
+        <summary><span><b>Ajuster</b><small>{{ summary }}</small></span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
+        <div class="pf-rv-adj">
+            <div>
+                <h3 id="rv-sweat-t">Tu transpires</h3>
+                <div class="pf-seg pf-rv-seg" role="group" aria-labelledby="rv-sweat-t">
+                    {% for key, lbl in [('peu', 'Peu'), ('normal', 'Normal'), ('beaucoup', 'Beaucoup')] %}<button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"sweat","v":"{{ key }}","open":"adjust"}' aria-pressed="{{ 'true' if sweat == key else 'false' }}">{{ lbl }}</button>{% endfor %}
+                    {% if not sweat %}<button type="button" aria-pressed="true" tabindex="-1">Ton réglage</button>{% endif %}
                 </div>
+                <p class="pf-rv-help">{{ sweat_info }}</p>
             </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="text-[13px] text-gray-600 mb-3">Le total à mettre dans le sac au départ.</p>
-        <div class="flex flex-wrap gap-2">
-            {% for ln in plan.lines %}{% if ln.total_units and not ln.is_water %}
-            <span class="inline-flex items-baseline gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"><b class="tabular-nums text-gray-900">{{ ln.total_units | int }}</b><span class="text-gray-600">{{ ln.name }}</span></span>
-            {% endif %}{% endfor %}
-        </div>
-        <p class="mt-2 text-[11px] text-gray-400">Avec un drop bag ou une assistance sur un point de passage (dans le plan), la liste se découpe entre ton sac et chaque drop bag.</p>
-        {% endif %}
-    </div>
-
-    {# ── 5. Caffeine, only when planned ─────────────────────────────────── #}
-    {% set cfp = plan.caffeine %}
-    {% if cfp and cfp.doses %}
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 class="text-sm font-semibold tracking-tight mb-1">Caféine</h3>
-        <p class="text-[13px] text-gray-600 mb-2">{{ cfp.total_mg }} mg en {{ cfp.doses|length }} prises, petites doses régulières et une dose pleine à l'aube.{% if cfp.over %} <span class="text-red-600">C'est au-dessus des {{ cfp.max_mg }} mg conseillés : espace les prises.</span>{% endif %}</p>
-        <div class="flex flex-wrap gap-1.5">
-            {% for d in cfp.doses %}
-            <span class="inline-flex items-center gap-1.5 rounded-lg border {% if d.label.startswith('dose pleine') %}border-amber-300 bg-amber-50{% else %}border-gray-200{% endif %} px-2.5 py-1 text-[12px]"><b class="tabular-nums">{{ clock(d.clock_s) }}</b><span class="text-gray-500">{{ d.mg }} mg</span><span class="text-gray-400">→ {{ d.leg_to }}</span>{% if d.label.startswith('dose pleine') %}<span class="text-amber-700">aube</span>{% endif %}</span>
-            {% endfor %}
-        </div>
-        {% if not has_caffeine_product %}<p class="mt-1.5 text-[11px] text-gray-400">Aucun produit caféiné coché : prévois un gel caféiné ou des comprimés en plus.</p>{% elif cfp.doses and cfp.doses[0].product %}<p class="mt-1.5 text-[11px] text-gray-500">Chaque prise = 1 {{ cfp.doses[0].product }}, déjà compté dans les glucides du tronçon.</p>{% endif %}
-    </div>
-    {% endif %}
-    {% endif %}
-
-    {# ── 6. Settings, out of the way, explained ──────────────────────────── #}
-    <details class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if settings_open %} open{% endif %} ontoggle="var f=document.getElementById('settings-open'); if(f) f.value=this.open?'1':''">
-        <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
-            <span class="text-sm text-gray-700">Eau, sel, caféine</span>
-            <span class="text-xs text-gray-400 truncate">{{ (targets.fluid_ml_per_h / 1000) | round(1) }} L/h · {{ targets.sodium_mg_per_h }} mg de sel/h · {{ (flask_capacity_ml/1000)|round(1) }} L portés · caféine {% if caffeine_cfg.enabled %}oui{% else %}non{% endif %}</span>
-        </summary>
-        <div class="px-5 pb-5 pt-4 border-t border-gray-100 space-y-4 text-[13px] text-gray-600">
-            <p>Valeurs proposées d'après la durée et la météo prévue. Change-les seulement si tu sais que tu bois ou transpires plus que la moyenne.</p>
-            <div class="flex flex-wrap gap-4">
-                <label class="text-xs text-gray-500">Eau à boire<div class="mt-1 flex items-center gap-1"><input name="fluid_ml_per_h" type="number" min="0" step="any" value="{{ targets.fluid_ml_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">ml par heure</span></div></label>
-                <label class="text-xs text-gray-500">Sel (sodium)<div class="mt-1 flex items-center gap-1"><input name="sodium_mg_per_h" type="number" min="0" step="any" value="{{ targets.sodium_mg_per_h }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">mg par heure</span></div></label>
-                <label class="text-xs text-gray-500">Eau que tu portes (flasques)<div class="mt-1 flex items-center gap-1"><input name="flask_capacity_ml" type="number" min="0" step="100" value="{{ flask_capacity_ml }}" class="sim-num w-20 h-9 px-2 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"><span class="text-gray-400">ml</span></div></label>
-            </div>
-            {% set cf = caffeine_cfg %}
-            <div class="space-y-2">
-                <label class="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" name="caffeine_enabled" value="1" {% if cf.enabled %}checked{% endif %} class="h-4 w-4 rounded border-gray-300">
-                    <span class="text-gray-700">Planifier la caféine</span><span class="text-[11px] text-gray-400">utile la nuit et en fin de course</span>
-                </label>
-                {% if cf.enabled %}
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 pl-6">
-                    <label class="inline-flex items-center gap-1">à partir de <input name="caffeine_from_h" type="number" min="0" max="30" step="0.5" value="{{ cf.from_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> h de course</label>
-                    <label class="inline-flex items-center gap-1">toutes les <input name="caffeine_every_h" type="number" min="0.5" max="6" step="0.5" value="{{ cf.every_h }}" class="sim-num w-14 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> h</label>
-                    <label class="inline-flex items-center gap-1"><input name="caffeine_dose_mg" type="number" min="0" max="200" step="10" value="{{ cf.dose_mg|round|int }}" class="sim-num w-16 h-8 px-1 rounded-lg border border-gray-200 text-sm tabular-nums text-center text-gray-900"> mg par prise</label>
-                    <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" name="caffeine_boost_dawn" value="1" {% if cf.boost_dawn %}checked{% endif %} class="rounded border-gray-300"> dose double à l'aube</label>
+            <div>
+                <h3 id="rv-carry-t">Eau que tu portes</h3>
+                <div class="pf-seg pf-rv-seg" role="group" aria-labelledby="rv-carry-t">
+                    {% for val, lbl, on in carry_opts %}<button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"carry","v":"{{ val }}","open":"adjust"}' aria-pressed="{{ 'true' if on else 'false' }}">{{ lbl }}</button>{% endfor %}
                 </div>
-                {% endif %}
+                {% if not carry %}<p class="pf-rv-help">On te dit combien porter à chaque départ.</p>{% endif %}
             </div>
+            <div>
+                <h3>Quantités par heure</h3>
+                <ul class="pf-rv-qtys">
+                    {% for q in qty_rows %}
+                    <li class="pf-rv-qty">
+                        <span class="pf-rv-qty-name"><b title="{{ q.label }}">{{ q.label }}</b>{% if q.caf %}<small>aux heures de caféine</small>{% else %}<small class="{{ 'is-hand' if q.manual else '' }}">{{ 'à la main' if q.manual else 'auto' }}</small>{% endif %}</span>
+                        {% if not q.caf %}
+                        <span class="pf-rv-stepper">
+                            <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"step","pid":"{{ q.id }}","step":"-0.5","open":"adjust"}' aria-label="Moins de {{ q.label }}">−</button>
+                            <b>{{ q.rate }}</b>
+                            <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"step","pid":"{{ q.id }}","step":"0.5","open":"adjust"}' aria-label="Plus de {{ q.label }}">+</button>
+                        </span>
+                        <span class="pf-rv-perh">/ h</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p class="pf-rv-help">Changer d'estomac ou de produits recalcule tout.</p>
+            </div>
+            {% if caf_line %}
+            <div>
+                <h3>Caféine</h3>
+                <p class="pf-rv-text">{{ caf_line }}</p>
+            </div>
+            {% endif %}
+            <div>
+                <h3>Tes produits <small class="pf-rv-help">Ils servent pour toutes tes courses</small></h3>
+                {% if my_products %}
+                <ul class="pf-rv-prods">
+                    {% for p in my_products %}
+                    <li class="pf-rv-prod">
+                        <span class="pf-rv-prod-main"><b title="{{ p.name }}">{{ p.label }}</b><small>{{ p.detail }}</small></span>
+                        <button type="button" class="pf-btn pf-btn-ghost pf-btn-sm" aria-expanded="false" aria-controls="rv-edit-{{ p.id }}" onclick="pfRvEdit(this)">Modifier</button>
+                        <button type="button" class="pf-ibtn" aria-label="Supprimer {{ p.label }}" title="Supprimer" hx-post="{{ P }}/products/{{ p.id }}/delete" hx-vals='{"open":"adjust"}' hx-confirm="Supprimer « {{ p.name }} » ?">×</button>
+                        <div id="rv-edit-{{ p.id }}" class="pf-rv-editform" hidden>{{ product_form(p) }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}<p class="pf-rv-help">Pas encore de produit à toi : « + Marque » pour en ajouter.</p>{% endif %}
+            </div>
+            {% if hand_set %}<div><button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" hx-post="{{ P }}/plan" hx-vals='{"op":"reset","open":"adjust"}'>Revenir au calcul auto</button></div>{% endif %}
+            <p class="pf-rv-fine">Repères généraux, pas un avis médical. Teste tes produits à l'entraînement.</p>
         </div>
     </details>
-</form>
-{% endif %}
-
-{# ── 7. The products themselves: label values, editable here (a change recomputes the plan) ── #}
-{% set pf = "sim-num h-8 px-1.5 rounded-lg border border-gray-200 text-sm tabular-nums text-center w-full text-gray-900" %}
-{% macro numfields(p) -%}
-<div class="col-span-3 sm:contents grid grid-cols-4 gap-2">
-    {% for name, lbl, step, ph, val in [('carbs_g', 'glucides g', '1', '0', (p.carbs_g|round|int) if p else ''), ('sodium_mg', 'sodium mg', '1', '0', (p.sodium_mg|round|int) if p else ''), ('volume_ml', 'volume ml', 'any', '—', (p.volume_ml|round|int) if p and p.volume_ml else ''), ('caffeine_mg', 'caféine mg', '5', '—', (p.caffeine_mg|round|int) if p and p.caffeine_mg else '')] %}
-    <label class="sm:contents text-[10px] text-gray-400"><span class="sm:hidden block mb-0.5">{{ lbl }}</span><input name="{{ name }}" type="number" step="{{ step }}" min="0" value="{{ val }}" placeholder="{{ ph }}" aria-label="{{ lbl }}" class="{{ pf }}"></label>
-    {% endfor %}
 </div>
-{%- endmacro %}
-<details id="pantry-box" class="rounded-xl border border-gray-200 bg-white shadow-sm"{% if pantry_open %} open{% endif %}>
-    <summary class="list-none cursor-pointer select-none px-5 py-3 flex items-center justify-between gap-3">
-        <span class="text-sm text-gray-700">Mes produits</span>
-        <span class="text-xs text-gray-400 truncate">{{ pantry|length }} produit{{ 's' if pantry|length != 1 }} · valeurs de l'étiquette, par unité</span>
-    </summary>
-    <div class="px-5 pb-5 pt-3 border-t border-gray-100">
-        <p class="text-[12px] text-gray-500 mb-2">Un produit = ce qui est écrit sur l'étiquette pour une unité (un gel, une flasque préparée, une pastille). Corrige une valeur et le plan se recalcule.</p>
-        <div class="hidden sm:grid grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 text-[10px] text-gray-400 uppercase tracking-wider mb-1 px-0.5"><span>Produit</span><span>Type</span><span class="text-center">Gluc. g</span><span class="text-center">Na mg</span><span class="text-center">ml</span><span class="text-center">Caf. mg</span><span></span></div>
-        <div class="divide-y divide-gray-50">
-        {% for p in pantry %}
-        <form hx-post="/partials/simulator/nutrition/{{ route_id }}/products/{{ p.id }}" hx-target="#nutrition-card" hx-swap="outerHTML" hx-trigger="change delay:300ms, submit" novalidate
-              class="py-1.5 grid grid-cols-[minmax(0,1fr)_88px_28px] sm:grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 items-center">
-            <input name="name" value="{{ p.name }}" aria-label="Nom du produit" class="h-8 px-2 rounded-lg border border-gray-200 text-sm font-medium min-w-0 w-full">
-            <select name="kind" aria-label="Type" class="h-8 pl-1.5 pr-5 rounded-lg border border-gray-200 text-xs w-full">{% for val, lbl in [('gel','Gel'),('drink','Boisson'),('bar','Barre'),('solid','Solide'),('salt','Sel')] %}<option value="{{ val }}" {% if p.kind == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>
-            <button type="button" hx-post="/partials/simulator/nutrition/{{ route_id }}/products/{{ p.id }}/delete" hx-target="#nutrition-card" hx-swap="outerHTML" hx-confirm="Supprimer « {{ p.name }} » ?" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg text-gray-300 hover:text-red-600 hover:bg-gray-50 text-lg leading-none" title="Supprimer">×</button>
-            {{ numfields(p) }}
-        </form>
-        {% endfor %}
+
+<div class="pf-rv-col">
+    {# ── 3.4 Tes sacs ─────────────────────────────────────────────────── #}
+    <section id="bags" data-packing class="scroll-mt-24" aria-labelledby="rv-bags-t">
+        <div class="pf-rv-head"><h2 id="rv-bags-t" class="pf-rv-h !mb-0">Tes sacs</h2>{% if spare_noun %}<small>{{ spare_noun }} de secours compté par sac</small>{% endif %}</div>
+        {% if not is_bike %}
+        {% if bag_chips %}
+        <p class="pf-rv-sublabel">Drop bag à :</p>
+        <div class="pf-rv-chips">
+            {% for c in bag_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
         </div>
-        <form hx-post="/partials/simulator/nutrition/{{ route_id }}/products" hx-target="#nutrition-card" hx-swap="outerHTML" novalidate
-              class="mt-2 pt-2 border-t border-dashed border-gray-200 grid grid-cols-[minmax(0,1fr)_88px_28px] sm:grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 items-center">
-            <input name="name" placeholder="Nouveau produit" aria-label="Nom du nouveau produit" class="h-8 px-2 rounded-lg border border-gray-200 text-sm min-w-0 w-full">
-            <select name="kind" aria-label="Type" class="h-8 pl-1.5 pr-5 rounded-lg border border-gray-200 text-xs w-full"><option value="gel">Gel</option><option value="drink">Boisson</option><option value="bar">Barre</option><option value="solid">Solide</option><option value="salt">Sel</option></select>
-            <button type="submit" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg bg-accent text-accent-ink text-lg leading-none" title="Ajouter">+</button>
-            {{ numfields(none) }}
-        </form>
-    </div>
-</details>
+        {% if water_chips %}
+        <p class="pf-rv-sublabel">Eau à :</p>
+        <div class="pf-rv-chips">
+            {% for c in water_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'water')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
+        </div>
+        {% endif %}
+        {% elif no_points %}
+        <p class="pf-rv-help">Pas encore de point dans ton plan : ajoute les ravitos pour y mettre un drop bag.</p>
+        {% endif %}
+        {% endif %}
+        <div class="pf-rv-bags">
+            {% for c in cards %}
+            <article class="pf-rv-bag{% if c.is_start %} is-start{% endif %}">
+                <h3 class="pf-rv-bag-title">{{ ic.icon('bag', 'w-[18px] h-[18px]') }}{{ c.title }}</h3>
+                <p class="pf-rv-bag-sub">{{ c.sub }}</p>
+                {% if c.chips %}<div class="pf-rv-units">{% for x in c.chips %}<span class="pf-rv-unit">{{ x }}</span>{% endfor %}</div>{% endif %}
+                {% if c.water %}<p class="pf-rv-water{% if c.water.alert %} is-alert{% endif %}">{{ rv_icon('drop', 'w-4 h-4 mt-0.5') }}<span>{{ c.water.text }}</span></p>{% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    {# ── 3.5 À acheter ────────────────────────────────────────────────── #}
+    <section id="rv-shop" aria-labelledby="rv-shop-t">
+        <div class="pf-rv-head"><h2 id="rv-shop-t" class="pf-rv-h !mb-0">À acheter</h2><button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="pfRvCopy(this)">Copier la liste</button></div>
+        <ul class="pf-rv-shop">
+            {% for it in shop %}<li><b>{{ it.n }}</b><span>{{ it.noun }}</span><small>{{ it.note }}</small></li>{% endfor %}
+        </ul>
+        {% if caf_over %}<p class="pf-rv-warn is-alert">Caféine : {{ caf_over.total_mg }} mg, au-dessus des {{ caf_over.max_mg }} mg conseillés pour toi. {{ caf_over.fix }}</p>{% endif %}
+        <pre id="rv-shop-text" class="pf-rv-copytext" hidden>{{ copy_text }}</pre>
+    </section>
+
+    {# ── 3.6 Tronçon par tronçon ──────────────────────────────────────── #}
+    <details id="rv-legs" class="pf-rv-disc">
+        <summary><span><b>Tronçon par tronçon</b><small>aussi dans chaque point du plan</small></span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
+        <ol class="pf-rv-legs">
+            {% for l in legs %}
+            <li><div class="pf-rv-leg-top"><b>{{ l.clock }}</b><span class="pf-rv-leg-to">→ {{ l.to }}</span><span class="pf-rv-leg-t">{{ l.time }}</span></div>{% if l.text %}<p>{{ l.text }}</p>{% endif %}</li>
+            {% endfor %}
+        </ol>
+    </details>
+</div>
+</div>
+<script>
+// a drop bag is a checkpoint flag: flip it in the plan's own list (the plan
+// autosaves that list), save, then reload this card
+// what = 'bag' (drop bag) or 'water' (a water point). After the save the card
+// comes back through « keep »: a plan still taken from another race becomes
+// this race's own, so a later change there never rewrites these bags.
+window.pfRvPoint = function (btn, what) {
+    var P = '/partials/simulator/nutrition/{{ route_id }}', wrap = document.getElementById('nutrition-wrap');
+    var reload = function () { if (window.htmx) window.htmx.ajax('GET', P + '?v=' + Date.now(), wrap ? { target: '#nutrition-wrap', swap: 'innerHTML' } : { target: '#nutrition-card', swap: 'outerHTML' }); };
+    var keep = function () { if (window.htmx) window.htmx.ajax('POST', P + '/plan', { target: '#nutrition-card', swap: 'outerHTML', values: { op: 'keep' } }); };
+    var ci = btn.getAttribute('data-ci'), km = parseFloat(btn.getAttribute('data-km')), kind = btn.getAttribute('data-kind') || 'none';
+    var row = document.querySelector('#plan-table [data-row][data-cp="' + ci + '"]'), sim = window._sim;
+    if (!row || !sim || !sim.editCheckpointMeta || !sim.saveRoute || Math.abs(parseFloat(row.getAttribute('data-end-km')) - km) > 0.05) { reload(); return; }
+    var on = btn.getAttribute('aria-pressed') !== 'true', i = parseInt(ci, 10);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false'); btn.disabled = true;
+    if (what === 'water') sim.editCheckpointMeta(i, 'kind', on ? 'water' : 'none');
+    else {
+        if (on && kind === 'none') sim.editCheckpointMeta(i, 'kind', 'base');  // a bag on a bare point: it is a base vie
+        sim.editCheckpointMeta(i, 'drop_bag', on);
+    }
+    var p = sim.saveRoute();
+    if (p && p.then) p.then(keep, reload); else keep();
+};
+window.pfRvBag = function (btn) { window.pfRvPoint(btn, 'bag'); };
+window.pfRvEdit = function (btn) {
+    var f = document.getElementById(btn.getAttribute('aria-controls')); if (!f) return;
+    var open = f.hidden; f.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? 'Fermer' : 'Modifier';
+};
+window.pfRvCopy = function (btn) {
+    var pre = document.getElementById('rv-shop-text'); if (!pre) return;
+    var done = function () { var t = btn.textContent; btn.textContent = 'Copié'; setTimeout(function () { btn.textContent = t; }, 2000); };
+    var select = function () { pre.hidden = false; var r = document.createRange(); r.selectNodeContents(pre); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.textContent).then(done, select); else select();
+};
+window.pfRvKind = function (btn) {
+    var f = btn.closest('form'); if (!f) return;
+    var k = btn.getAttribute('data-kind');
+    f.querySelector('[name=kind]').value = k;
+    btn.parentNode.querySelectorAll('[data-kind]').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+    // a drink's label values are per 500 ml flask
+    var h = f.querySelector('[data-drink-hint]'); if (h) h.hidden = k !== 'drink';
+    var sm = f.querySelector('[name=sodium_mg]'), note = sm && sm.closest('label').querySelector('small'); if (note) note.textContent = k === 'drink' ? 'par flasque de 500 ml' : "sur l'étiquette";
+};
+</script>
+{% endif %}
 </div>
