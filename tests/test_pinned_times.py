@@ -237,8 +237,8 @@ async def test_pinned_time_round_trips_through_the_endpoints(as_user: AsyncClien
     rid = await _save(as_user, _cps(Col=7200))
     page = (await as_user.get(f"/simulator/routes/{rid}")).text
     assert '"target_s": 7200' in page  # back to the page's checkpoint objects
-    table = page.split('id="passage-times-result">')[1].split("</table>")[0]
-    row = table.split("data-pinned")[1].split("</tr>")[0]
+    table = page.split('id="passage-times-result">')[1].split('id="page-error"')[0]
+    row = table.split("data-pinned")[1].split("data-row")[0]
     assert ">23:00<" in row and "heure fixée par toi" in row
     assert table.count("data-pinned") == 1
 
@@ -260,7 +260,7 @@ async def test_pinned_time_round_trips_through_the_endpoints(as_user: AsyncClien
     # « Automatique »: saved without the pin, the model time is back
     await _save(as_user, _cps(), route_id=rid)
     page = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert '"target_s": null' in page and "data-pinned" not in page.split('id="passage-times-result">')[1].split("</table>")[0]
+    assert '"target_s": null' in page and "data-pinned" not in page.split('id="passage-times-result">')[1].split('id="page-error"')[0]
 
 
 # ── migration ──

@@ -37,7 +37,7 @@
     <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script><script defer src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
 </head>
-<body class="h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
+<body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
     {% if user is defined and user %}
     <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
     <header class="pf-top">

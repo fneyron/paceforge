@@ -141,6 +141,55 @@ def _clock_to_s(clock: str) -> int | None:
         return None
 
 
+async def _leg_details(
+    db: AsyncSession, user_id: int, route_obj: Route | None, guide: dict, sections: list[dict],
+    checkpoints: list[dict], aid_kms: set, start_offset_s: int,
+) -> list[dict]:
+    """What a passage row shows once opened, one entry per section (the leg that ENDS
+    at that point): the heart-rate ceiling of its main terrain, the carbs and water to
+    take on it, and — at a drop bag or crew point — what to leave there for the next
+    stretch. Never fails the table: on any error the rows open without these numbers."""
+    try:
+        from app.services.nutrition import CAFFEINE_DEFAULTS, compute_plan, default_targets
+        from app.services.pacing_guide import leg_instructions
+
+        hr = [((li.get("block") or {}).get("hr_cap"), (li.get("block") or {}).get("label")) for li in leg_instructions(guide, sections)]
+        nut = (route_obj.nutrition_json or {}) if route_obj else {}
+        items = nut.get("items") or []
+        products_by_id: dict = {}
+        if items:
+            res = await db.execute(select(NutritionProduct).where(NutritionProduct.user_id == user_id))
+            products_by_id = {p.id: _product_dict(p) for p in res.scalars().all()} or {p["id"]: p for p in _GENERIC_PLAN_PRODUCTS}
+        last = sections[-1] if sections else {}
+        cum = last.get("adjusted_cumulative_time_s") or last.get("cumulative_time_s") or 0
+        mean_temp = (route_obj.weather_json or {}).get("temperature_c") if route_obj and route_obj.weather_json else None
+        targets = {**default_targets(cum / 3600.0, mean_temp), **{k: v for k, v in (nut.get("targets") or {}).items() if v is not None}}
+        resupply = [{"km": cp["distance_km"], "name": cp["name"]} for cp in checkpoints if cp.get("drop_bag") or cp.get("crew")]
+        plan = compute_plan(
+            cum, targets, items, products_by_id, sections, flask_capacity_ml=nut.get("flask_capacity_ml") or 1000,
+            refill_kms=aid_kms, resupply_points=resupply, caffeine={**CAFFEINE_DEFAULTS, **(nut.get("caffeine") or {})},
+            start_offset_s=start_offset_s,
+        )
+        bags = {round(float(g["km"]), 1): g for g in plan.get("packing") or [] if not g.get("is_start")}
+        out = []
+        for i, leg in enumerate(plan["schedule"]):
+            hours = leg["leg_time_s"] / 3600.0
+            carbs = leg["carbs_real_g"] if items else round(float(targets.get("carbs_g_per_h") or 0) * hours)
+            units = [f"{u['units']:g} {u['name'].lower()}" for u in leg["units"] if u["units"] and not u["is_water"]]
+            km = round(float(leg["km"] or 0), 1)
+            bag = bags.get(km)
+            out.append({
+                "hr_cap": hr[i][0] if i < len(hr) else None, "terrain": hr[i][1] if i < len(hr) else None,
+                "carbs_g": carbs, "carbs_planned": bool(items), "fluid_ml": leg["fluid_ml"], "units": units,
+                "bag": ({"until": bag.get("until"), "units": [f"{u['units']:g} {u['name'].lower()}" for u in bag["units"]],
+                         "carbs_g": bag.get("carbs_g") or 0} if bag else None),
+            })
+        return out
+    except Exception:
+        logger.exception("leg details failed")
+        return []
+
+
 async def _passage_table_context(
     db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
     start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
@@ -232,7 +281,9 @@ async def _passage_table_context(
         walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), plan_sections=sections, **caps,
     )
     plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    legs = await _leg_details(db, user_id, route_obj, guide, sections, checkpoints, aid_kms, start_offset_s)
     return {
+        "legs": legs,
         "plan_data": _script_json(plan_data),
         "sections": sections,
         "has_target": (target_time_s is not None) or replan is not None or pinned,
