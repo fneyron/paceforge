@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import activity, auth, coros, dashboard, simulator, webhook
+    from app.routers import activity, auth, coros, dashboard, sante, simulator, webhook
     from app.routers import settings as settings_router
 
     app.include_router(auth.router)
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(simulator.router)
     app.include_router(settings_router.router)
     app.include_router(coros.router)      # COROS link (OAuth) and sync
+    app.include_router(sante.router)      # Santé: recovery, load, trends from COROS
     app.include_router(webhook.router)
 
     # Health check

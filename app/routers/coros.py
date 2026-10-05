@@ -1,10 +1,11 @@
-"""COROS link from Réglages: OAuth connect/callback, manual sync, disconnect.
+"""COROS link from Réglages and Santé: OAuth connect/callback, manual sync, disconnect.
 
 The OAuth state and PKCE verifier ride in the (signed) session cookie between
 /coros/connect and /coros/callback, like the Strava setup credentials do.
 """
 import logging
 import secrets
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -127,7 +128,11 @@ async def coros_sync_now(
     outcome = await coros.run_sync(db, conn) if conn else None
     ctx = {"request": request, "coros": await coros.coros_status(db, user.id),
            "outcome": outcome or {"busy": True}}
-    return templates.TemplateResponse(request, "partials/coros_status.html", context=ctx)
+    response = templates.TemplateResponse(request, "partials/coros_status.html", context=ctx)
+    # from the Santé page: reload it, so the new values show
+    if outcome and outcome.get("ok") and urlsplit(request.headers.get("HX-Current-URL", "")).path == "/sante":
+        response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @router.post("/settings/coros/disconnect")

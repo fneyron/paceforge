@@ -14,6 +14,16 @@ one value per day and metric (HealthMetric):
 - weight : last weigh-in of the day (kg).
 - vo2max : last estimate of the day.
 
+COROS also gives values that are already daily: they go straight to
+HealthMetric (store_daily, source "COROS"), the extras in `details`:
+- load      : short-term training load; {long, ratio, comment}
+- recovery  : recovery % (today only); {level, full_h}
+- hr_day    : average heart rate of the day; {min, max}
+- stress    : average stress of the day (0–100)
+- steps     : steps of the day; {kcal, exercise (min)}
+- fitness   : running level; {vo2max, level, threshold_s, pred: {5k, 10k, half, marathon} (s)}
+- hrv_norm  : HRV baseline of the night (ms); {lo, hi} its normal range
+
 Older rows may come from the Apple Health import PaceForge had before.
 """
 import logging
@@ -37,6 +47,10 @@ METRIC_LABELS = {
     "weight": "Poids",
     "vo2max": "VO2 max",
 }
+# daily values COROS gives as such (store_daily), with what Réglages lists
+DAILY_METRICS = ("load", "recovery", "hr_day", "stress", "steps", "fitness", "hrv_norm")
+DAILY_LABELS = {"load": "Charge", "recovery": "Récupération", "hr_day": "FC du jour",
+                "stress": "Stress", "steps": "Pas", "fitness": "Niveau"}
 
 
 @dataclass
@@ -130,6 +144,40 @@ async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -
         "by_metric": {m: len(v) for m, v in by_metric.items()},
         "days": days,
     }
+
+
+@dataclass
+class Daily:
+    metric: str  # one of DAILY_METRICS
+    day: date
+    value: float
+    details: dict | None = None
+
+
+async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source: str) -> dict:
+    """Idempotent upsert of values that are already one per day (key: metric,
+    day). Returns {inserted, updated, by_metric}."""
+    keyed = {(r.metric, r.day): r for r in rows}
+    inserted = updated = 0
+    by_metric: dict[str, int] = defaultdict(int)
+    for metric in sorted({m for m, _ in keyed}):
+        items = [r for (m, _), r in keyed.items() if m == metric]
+        by_metric[metric] = len(items)
+        existing = {m.date: m for m in (await db.execute(select(HealthMetric).where(
+            HealthMetric.user_id == user_id, HealthMetric.metric == metric,
+            HealthMetric.date >= min(r.day for r in items),
+            HealthMetric.date <= max(r.day for r in items)))).scalars()}
+        for r in items:
+            row = existing.get(r.day)
+            if row is None:
+                db.add(HealthMetric(user_id=user_id, date=r.day, metric=metric, value=r.value,
+                                    source=source, details=r.details, n_samples=1))
+                inserted += 1
+            elif abs(row.value - r.value) > 1e-6 or row.details != r.details or row.source != source:
+                row.value, row.details, row.source = r.value, r.details, source
+                updated += 1
+    await db.flush()
+    return {"inserted": inserted, "updated": updated, "by_metric": dict(by_metric)}
 
 
 async def reaggregate(db: AsyncSession, user_id: int, affected: dict[str, set[date]]) -> dict[str, int]:
@@ -361,9 +409,10 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
             reasons.append(f"FC au repos +{delta:.0f} bpm")
 
     recent, base = split("sleep")
-    if len(recent) >= MIN_RECENT_DAYS:
+    if recent:  # shown from one night on, like HRV and resting HR
+        out["sleep_avg_min"] = round(statistics.fmean(recent))
+    if len(recent) >= MIN_RECENT_DAYS:  # …but a signal only from three
         avg = statistics.fmean(recent)
-        out["sleep_avg_min"] = round(avg)
         base_mean = statistics.fmean(base) if len(base) >= MIN_BASELINE_DAYS else None
         if base_mean is not None:
             out.update(sleep_baseline_min=round(base_mean), sleep_delta_min=round(avg - base_mean))
@@ -385,8 +434,11 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
     seen = set()
     for metric in ("hrv", "rhr", "sleep"):
         seen.update(d for d in days.get(metric, {}) if base_lo <= d <= today)
+    # what the verdict waits for: the best of HRV and resting HR
+    nights = [split(m) for m in ("hrv", "rhr")]
     out.update(status=status, label=FORM_LABELS[status], reasons=reasons,
-               days_of_data=len(seen), as_of=today)
+               days_of_data=len(seen), as_of=today,
+               nights_recent=max(len(r) for r, _ in nights), nights_base=max(len(b) for _, b in nights))
     return out
 
 
@@ -434,125 +486,11 @@ async def current_form(db: AsyncSession, user_id: int, today: date | None = None
     return compute_form(series, today)
 
 
-# ── dashboard card ──────────────────────────────────────────────────────────
-
-SPARK_DAYS = 30
-SPARK_W, SPARK_H = 120, 30
-
-
-def sparkline(series: dict[date, float], today: date, baseline: float | None = None,
-              sd: float | None = None, days: int = SPARK_DAYS, fmt: str = "{:.0f}") -> dict | None:
-    """Plain-SVG geometry for one metric over the last `days` days: the line
-    (broken where a day is missing), the last 7 days drawn heavier, the
-    baseline and its ±1 SD band, one hover target per day."""
-    lo_day = today - timedelta(days=days - 1)
-    pts = [(i, series.get(lo_day + timedelta(days=i))) for i in range(days)]
-    vals = [v for _, v in pts if v is not None]
-    if len(vals) < 2:
-        return None
-    lo, hi = min(vals), max(vals)
-    if baseline is not None:
-        band = sd or 0
-        lo, hi = min(lo, baseline - band), max(hi, baseline + band)
-    span = (hi - lo) or 1
-    pad = 3
-
-    def xy(i, v):
-        x = i * (SPARK_W / (days - 1))
-        y = pad + (1 - (v - lo) / span) * (SPARK_H - 2 * pad)
-        return round(x, 1), round(y, 1)
-
-    def path(from_i: int) -> str:
-        d, pen = [], False
-        for i, v in pts:
-            if i < from_i or v is None:
-                pen = False
-                continue
-            x, y = xy(i, v)
-            d.append(f"{'L' if pen else 'M'}{x} {y}")
-            pen = True
-        return " ".join(d)
-
-    recent_from = days - RECENT_DAYS
-    out = {
-        "w": SPARK_W, "h": SPARK_H,
-        "all": path(0),
-        "recent": path(recent_from - 1 if pts[recent_from - 1][1] is not None else recent_from),
-        "recent_x": round(recent_from * SPARK_W / (days - 1), 1),
-        "hits": [],
-    }
-    last_i = max(i for i, v in pts if v is not None)
-    out["last"] = xy(last_i, pts[last_i][1])
-    if baseline is not None:
-        out["base_y"] = xy(0, baseline)[1]
-        if sd:
-            y_top, y_bot = xy(0, baseline + sd)[1], xy(0, baseline - sd)[1]
-            out["band"] = (y_top, round(y_bot - y_top, 1))
-    step = SPARK_W / (days - 1)
-    for i, v in pts:
-        d = lo_day + timedelta(days=i)
-        label = d.strftime("%d/%m") + " · " + (fmt.format(v) if v is not None else "—")
-        out["hits"].append((round(max(0, i * step - step / 2), 1), round(step, 1), label))
-    return out
-
-
 def fmt_minutes(m: float | None) -> str:
     if m is None:
         return "—"
     m = int(round(m))
     return f"{m // 60}h{m % 60:02d}"
-
-
-async def form_card(db: AsyncSession, user_id: int) -> dict | None:
-    """Everything the fitness card draws; None when no health data ever arrived."""
-    latest = (await db.execute(
-        select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id)
-    )).scalar()
-    if latest is None:
-        return None
-    today = _today(latest)
-    lo = today - timedelta(days=RECENT_DAYS + BASELINE_DAYS)
-    series, sources = await _daily_series(db, user_id, lo, today)
-    form = compute_form(series, today)
-
-    def tone(bad: bool, mild: bool) -> str:
-        return "bad" if bad else ("mild" if mild else "neutral")
-
-    hrv_d, rhr_d, sl_d = form["hrv_delta_pct"], form["rhr_delta_bpm"], form["sleep_delta_min"]
-    sd_pct = (form["hrv_sd"] / form["hrv_baseline"] * 100) if form["hrv_sd"] and form["hrv_baseline"] else None
-    metrics = [
-        {
-            "key": "hrv", "label": "VFC", "hint": "variabilité cardiaque, la nuit",
-            "value": f"{form['hrv_7d']:.0f}" if form["hrv_7d"] is not None else "—", "unit": "ms",
-            "base": f"{form['hrv_baseline']:.0f} ms" if form["hrv_baseline"] is not None else None,
-            "delta": f"{hrv_d:+.0f} %" if hrv_d is not None else None,
-            "tone": tone(sd_pct is not None and hrv_d < -sd_pct,
-                         sd_pct is not None and hrv_d < -sd_pct / 2),
-            "spark": sparkline(series.get("hrv", {}), today, form["hrv_baseline"], form["hrv_sd"]),
-        },
-        {
-            "key": "rhr", "label": "FC au repos", "hint": "plus bas = mieux",
-            "value": f"{form['rhr_7d']:.0f}" if form["rhr_7d"] is not None else "—", "unit": "bpm",
-            "base": f"{form['rhr_baseline']:.0f} bpm" if form["rhr_baseline"] is not None else None,
-            "delta": f"{rhr_d:+.0f} bpm" if rhr_d is not None else None,
-            "tone": tone(rhr_d is not None and rhr_d >= 5, rhr_d is not None and rhr_d >= 3),
-            "spark": sparkline(series.get("rhr", {}), today, form["rhr_baseline"]),
-        },
-        {
-            "key": "sleep", "label": "Sommeil", "hint": "par nuit",
-            "value": fmt_minutes(form["sleep_avg_min"]) if form["sleep_avg_min"] is not None else "—",
-            "unit": "",
-            "base": fmt_minutes(form["sleep_baseline_min"]) if form["sleep_baseline_min"] is not None else None,
-            "delta": (("+" if sl_d >= 0 else "−") + f"{abs(sl_d)} min") if sl_d is not None else None,
-            "tone": tone(False, form["sleep_avg_min"] is not None and (
-                form["sleep_avg_min"] < SHORT_SLEEP_MIN or (sl_d is not None and sl_d < -45))),
-            "spark": sparkline({d: v / 60 for d, v in series.get("sleep", {}).items()}, today,
-                               form["sleep_baseline_min"] / 60 if form["sleep_baseline_min"] else None,
-                               fmt="{:.1f} h"),
-        },
-    ]
-    return {"form": form, "metrics": metrics, "latest": latest,
-            "sources": " et ".join(sorted(sources)) or "Apple Santé"}
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────

@@ -128,6 +128,78 @@ VO2max: 61
 Running Level: 97
 Threshold Pace: 3:20 /km
 5 km Prediction: 15:50
+10 km Prediction: 32:34
+Half Marathon Prediction: 1:10:54
+Marathon Prediction: 2:25:03
+"""
+
+# captured 2026-10-05
+RECOVERY = """Recovery Status
+========================
+
+Recovery: 84%
+Level: Moderate training recommended
+Estimated Full Recovery: 45h
+"""
+
+LOAD = """Training Load Assessment
+========================
+
+2026-10-05
+Comment: Excessive
+Short-Term Load: 179
+Long-Term Load: 109
+Load Ratio: 1.64
+
+2026-10-04
+Comment: Excessive
+Short-Term Load: 208
+Long-Term Load: 112
+Load Ratio: 1.85
+
+2026-10-02
+Comment: Maintaining
+Short-Term Load: 105
+Long-Term Load: 114
+Load Ratio: 0.92
+
+2026-10-01
+Comment: Performance
+Short-Term Load: 69
+Long-Term Load: 109
+Load Ratio: 0.63
+
+2026-09-23
+Comment: Optimized
+Short-Term Load: 128
+Long-Term Load: 123
+Load Ratio: 1.04
+"""
+
+AVG_HR = """Average Heart Rate — Last 10 days
+========================
+
+2026-10-04: 53 bpm (Min: 36, Max: 98)
+2026-10-03: 119 bpm (Min: 54, Max: 142)
+2026-10-02: 90 bpm (Min: 39, Max: 141)
+"""
+
+DAILY_60 = """Daily Health Data — Last 60 days | Resting HR: 35 bpm | HRV Baseline: 42 ms
+Note: sleep entries are dated by their wake-up day.
+
+--- 20260802 ---
+Steps: 19,835 | Calories: 1,474 kcal | Exercise: 1h 46min
+Stress: Avg 59
+
+--- 20260810 ---
+Steps: 0 | Calories: 0 kcal | Exercise: 0 min
+
+--- 20260925 ---
+Steps: 12,103 | Calories: 363 kcal | Exercise: 3 min
+Stress: Avg 28
+Sleep Summary:
+  Total: 1h 29min | Deep: 10 min | Light: 59 min | REM: 13 min | Awake: 7 min
+  Sleep HR: Avg 34 bpm | Min 31 bpm | Max 44 bpm
 """
 
 D30, D29, D28 = date(2026, 9, 30), date(2026, 9, 29), date(2026, 9, 28)
@@ -173,11 +245,65 @@ def test_parse_sleep_overview_and_daily_stages():
     assert coros.parse_vo2max(FITNESS) == 61
 
 
+def test_parse_training_load():
+    load = coros.parse_training_load(LOAD)
+    assert sorted(load) == [date(2026, 9, 23), date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 4),
+                            date(2026, 10, 5)]  # days without a value are simply absent
+    assert load[date(2026, 10, 5)] == {"short": 179, "long": 109, "ratio": 1.64, "comment": "Excessive"}
+    assert load[date(2026, 10, 1)]["comment"] == "Performance"
+    no_ratio = LOAD.replace("Load Ratio: 1.64\n", "")
+    assert coros.parse_training_load(no_ratio)[date(2026, 10, 5)]["ratio"] == 1.64  # computed
+
+
+def test_parse_recovery_avg_hr_daily_activity_fitness():
+    assert coros.parse_recovery(RECOVERY) == {"pct": 84, "level": "Moderate training recommended", "full_h": 45}
+    assert coros.parse_recovery("Recovery: 100%\nLevel: Full\nEstimated Full Recovery: 0h")["full_h"] == 0
+    hr = coros.parse_avg_hr(AVG_HR)
+    assert hr[date(2026, 10, 4)] == {"avg": 53, "min": 36, "max": 98} and len(hr) == 3
+    assert coros.parse_avg_hr("2026-10-04: 53 bpm") == {date(2026, 10, 4): {"avg": 53, "min": None, "max": None}}
+    act = coros.parse_daily_activity(DAILY_60)
+    assert act[date(2026, 8, 2)] == {"steps": 19835, "kcal": 1474, "exercise": 106, "stress": 59}
+    assert act[date(2026, 8, 10)] == {"steps": 0, "kcal": 0, "exercise": 0}  # no stress line
+    assert coros.parse_daily_activity(DAILY)[D29] == {"steps": 18055, "kcal": 786, "exercise": 39, "stress": 23}
+    assert coros.parse_fitness(FITNESS) == {"vo2max": 61, "level": 97, "threshold_s": 200, "pred": {
+        "5k": 950, "10k": 1954, "half": 4254, "marathon": 8703}}
+    one_line = "VO2max: 61 / Running Level: 97 / Half Marathon Prediction: 1:10:54 / Marathon Prediction: 2:25:03"
+    assert coros.parse_fitness(one_line)["pred"] == {"half": 4254, "marathon": 8703}
+    assert coros.parse_hrv_range(HRV) == {D30: {"lo": 70, "hi": 84, "base": 77}, D29: {"lo": 70, "hi": 84, "base": 77}}
+
+
+def test_build_daily_keeps_plausible_values_only():
+    today = date(2026, 10, 5)
+    data = {"load": coros.parse_training_load(LOAD), "recovery": coros.parse_recovery(RECOVERY),
+            "hr_day": coros.parse_avg_hr(AVG_HR), "activity": coros.parse_daily_activity(DAILY_60),
+            "hrv_range": coros.parse_hrv_range(HRV), "fitness": coros.parse_fitness(FITNESS)}
+    rows = {(r.metric, r.day): r for r in coros.build_daily(data, today)}
+    assert rows[("load", today)].value == 179
+    assert rows[("load", today)].details == {"long": 109, "ratio": 1.64, "comment": "Excessive"}
+    assert rows[("recovery", today)].value == 84 and rows[("recovery", today)].details["full_h"] == 45
+    assert rows[("hr_day", date(2026, 10, 3))].details == {"min": 54, "max": 142}
+    assert rows[("steps", date(2026, 8, 2))].details == {"kcal": 1474, "exercise": 106}
+    assert ("steps", date(2026, 8, 10)) not in rows and ("stress", date(2026, 8, 10)) not in rows  # not worn
+    assert rows[("stress", date(2026, 9, 25))].value == 28
+    assert rows[("hrv_norm", D30)].value == 77 and rows[("hrv_norm", D30)].details == {"lo": 70, "hi": 84}
+    fit = rows[("fitness", today)]
+    assert fit.value == 97 and fit.details["threshold_s"] == 200 and fit.details["pred"]["marathon"] == 8703
+    assert all(len(r.metric) <= 12 for r in rows.values())  # HealthMetric.metric is String(12)
+    odd = coros.build_daily({"recovery": {"pct": 840, "level": None, "full_h": None},
+                             "hr_day": {today: {"avg": 999, "min": None, "max": None}},
+                             "fitness": {"threshold_s": 5, "pred": {"5k": 3}}}, today)
+    assert odd == []
+
+
 def test_parsers_survive_garbled_text():
     junk = "Erreur interne\n2026-13-45: 39 bpm\n2026-09-30:\n  HRV Avg: n/a\n--- 2026 ---\nVO2max: —"
     assert coros.parse_rhr(junk) == {} and coros.parse_hrv(junk) == {}
     assert coros.parse_sleep_overview(junk) == {} and coros.parse_daily_sleep(junk) == {}
     assert coros.parse_vo2max(junk) is None and coros.parse_rhr("") == {}
+    assert coros.parse_training_load(junk) == {} and coros.parse_recovery(junk) is None
+    assert coros.parse_avg_hr(junk) == {} and coros.parse_daily_activity(junk) == {}
+    assert coros.parse_fitness(junk) == {} and coros.parse_hrv_range(junk) == {}
+    assert coros.parse_training_load("2026-10-05\nComment: Excessive\nShort-Term Load: n/a") == {}
     bad_window = SLEEP_OVERVIEW.replace("2026-09-30 09:54", "2026-09-29 09:54")  # ends before it starts
     assert set(coros.parse_sleep_overview(bad_window)) == {D29}
     assert coros.parse_duration("9h 48min") == 588 and coros.parse_duration("14 min") == 14
@@ -298,7 +424,12 @@ class FakeCoros:
     def __init__(self, shift_days: int = 0):
         self.texts = {name: _shift(t, shift_days) for name, t in (
             ("queryRestingHeartRate", RHR), ("querySleepHrv", HRV), ("querySleepOverview", SLEEP_OVERVIEW),
-            ("queryDailyHealthData", DAILY), ("queryFitnessAssessmentOverview", FITNESS))}
+            ("queryDailyHealthData", DAILY), ("queryFitnessAssessmentOverview", FITNESS),
+            ("queryRecoveryStatus", RECOVERY), ("queryTrainingLoadAssessment", LOAD),
+            ("queryAvgHeartRate", AVG_HR))}
+        # the load and heart-rate texts were captured on 10-05, the others on 09-30
+        for name in ("queryTrainingLoadAssessment", "queryAvgHeartRate"):
+            self.texts[name] = _shift(self.texts[name], -5)
         self.n = 1
         self.access, self.refresh = "at-1", "rt-1"
         self.registrations = 0
@@ -534,7 +665,8 @@ async def test_invalid_grant_asks_to_reconnect(as_user: AsyncClient, db_session:
 # ── sync ────────────────────────────────────────────────────────────────────
 
 async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, test_user: User, fake, no_commit):
-    fake.max_days = {"queryRestingHeartRate": 7, "queryDailyHealthData": 7}  # refuses 60: falls back to 7
+    fake.max_days = {"queryRestingHeartRate": 7, "queryDailyHealthData": 7,  # refuse 60: fall back to 7
+                     "queryTrainingLoadAssessment": 14}
     conn = await _link(db_session, test_user)
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
@@ -542,6 +674,9 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     assert len(hrv_calls) == 9 and all(a["days"] <= 7 for a in hrv_calls)  # 60 days, 7 per call
     assert [a for n, a in fake.tool_calls if n == "queryRestingHeartRate"] == [{"days": 60}, {"days": 7}]
     assert len([1 for n, _ in fake.tool_calls if n == "querySleepOverview"]) == 2
+    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}, {"days": 14}]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 60}]
+    assert [a for n, a in fake.tool_calls if n == "queryRecoveryStatus"] == [{}]
     assert len(fake.tool_calls) <= coros.MAX_CALLS
     assert conn.last_sync_at is not None and conn.last_error is None and conn.sync_claimed_at is None
 
@@ -553,13 +688,28 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     assert by["rhr"].value == 39 and by["vo2max"].value == 61
     assert by["sleep"].value == 588 and by["sleep"].details["bedtime"] == "23:52"
     assert by["sleep"].details["wake"] == "09:54" and by["sleep"].source == "COROS"
+    # the daily values, straight from COROS
+    assert by["load"].value == 179 and by["load"].details == {"long": 109, "ratio": 1.64, "comment": "Excessive"}
+    assert by["recovery"].value == 84 and by["recovery"].details == {
+        "level": "Moderate training recommended", "full_h": 45}
+    assert by["steps"].value == 1487 and by["steps"].details == {"kcal": 92, "exercise": 0}
+    assert by["stress"].value == 13 and by["hrv_norm"].details == {"lo": 70, "hi": 84}
+    assert by["fitness"].details["level"] == 97 and by["fitness"].details["pred"]["10k"] == 1954
+    assert all(m.source == "COROS" for m in rows)
+    hr = (await db_session.execute(select(HealthMetric).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "hr_day"))).scalars().all()
+    assert {m.date: (m.value, m.details["max"]) for m in hr}[today - timedelta(days=1)] == (53, 98)
+    loads = (await db_session.execute(select(func.count(HealthMetric.id)).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "load"))).scalar()
+    assert loads == 5
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
 
     fake.tool_calls.clear()
     fake.sse = True  # same answers as server-sent events
     outcome = await coros.run_sync(db_session, conn)
-    assert outcome["ok"] and outcome["result"]["inserted"] == 0
+    assert outcome["ok"] and outcome["result"]["inserted"] == 0 and outcome["result"]["updated"] == 0
     assert [a for nm, a in fake.tool_calls if nm == "queryRestingHeartRate"] == [{"days": 7}]
+    assert [a for nm, a in fake.tool_calls if nm == "queryTrainingLoadAssessment"] == [{"days": 7}]
     assert len([1 for nm, _ in fake.tool_calls if nm == "querySleepHrv"]) == 1
     n2 = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
     assert n == n2
@@ -610,13 +760,18 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
                                                          test_user: User, fake):
     page = (await as_user.get("/settings")).text
-    assert "Ta VFC, ta FC au repos, ton sommeil et ta VO2 max arrivent automatiquement depuis ta montre COROS." in page
+    assert "ta VFC, ton sommeil, tes pas et ta VO2 max arrivent automatiquement depuis ta montre COROS." in page
+    assert 'href="/sante"' in page
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 
     await _link(db_session, test_user)
     r = await as_user.post("/settings/coros/sync")
     assert r.status_code == 200 and 'id="coros-status"' in r.text
     assert "Synchro terminée" in r.text and "dernière synchro" in r.text and "Reçu de COROS : VFC 2 j" in r.text
+    assert "Charge 5 j" in r.text and "HX-Refresh" not in r.headers
+    # from the Santé page, a finished sync reloads it to show the new values
+    r = await as_user.post("/settings/coros/sync", headers={"HX-Request": "true", "HX-Current-URL": "https://test/sante"})
+    assert r.headers.get("HX-Refresh") == "true"
 
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/coros/disconnect")
@@ -629,16 +784,20 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
     assert "COROS déconnecté" in page and "Connecter COROS" in page
 
 
-async def test_fitness_card_names_coros(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    r = await as_user.get("/activities")
-    assert "Connecter COROS" in r.text and "Apple" not in r.text  # empty state
-    today = date.today()
-    for k in range(20):
-        db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=k), metric="hrv",
-                                    value=80 + k % 3, source="COROS", n_samples=1))
+async def test_link_made_before_the_daily_values_backfills_them(db_session: AsyncSession, test_user: User,
+                                                                fake, no_commit):
+    """A link that already has its nights (synced before the daily values were
+    read) gets the 60 days of load, steps… once."""
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=7))
+    db_session.add(HealthSample(user_id=test_user.id, metric="hrv", kind="", source="COROS", value=80,
+                                start_at=datetime.now() - timedelta(days=3), end_at=datetime.now() - timedelta(days=3)))
     await db_session.flush()
-    r = await as_user.get("/activities")
-    assert "60 jours précédents · COROS" in r.text
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}]
+    fake.tool_calls.clear()
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 7}]
 
 
 # ── migration ───────────────────────────────────────────────────────────────

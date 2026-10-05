@@ -1,4 +1,4 @@
-"""COROS: HRV, resting heart rate, sleep and VO2 max from the athlete's watch.
+"""COROS: what the athlete's watch knows about recovery and fitness.
 
 COROS publishes its data as an MCP server (https://mcp.coros.com/mcp) behind
 OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
@@ -12,9 +12,12 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
 - Tokens are Fernet-encrypted. The refresh token ROTATES on each use (the old
   one is then rejected), so the new pair is committed before anything else, and
   one refresh at a time per athlete (row lock + per-process lock).
-- Sync → HealthSample rows (source "COROS") through health.store_samples: 60
-  days the first time, then the last 7 days, at most every 6 hours (Celery beat,
-  app.tasks.coros_sync), right after connecting and on demand.
+- Sync → HRV, resting HR, sleep and VO2 max as HealthSample rows (source
+  "COROS") through health.store_samples; the values COROS already gives per day
+  (training load, recovery, daily heart rate, stress, steps, fitness
+  assessment, HRV normal range) straight to HealthMetric (health.store_daily).
+  60 days the first time, then the last 7 days, at most every 6 hours (Celery
+  beat, app.tasks.coros_sync), right after connecting and on demand.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.
 """
@@ -37,15 +40,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.crypto import decrypt_secret, encrypt_secret
 from app.models.coros import CorosConnection, OAuthClient
-from app.models.health import HealthSample
+from app.models.health import HealthMetric, HealthSample
 from app.services.health import (
     _RANGES,
+    DAILY_LABELS,
+    DAILY_METRICS,
     METRIC_LABELS,
     METRICS,
+    Daily,
     Sample,
     _ago,
     _today,
     reaggregate,
+    store_daily,
     store_samples,
 )
 
@@ -64,7 +71,8 @@ SYNC_EVERY = timedelta(hours=6)
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
-MAX_CALLS = 24
+MAX_CALLS = 30  # a 60-day backfill takes 21 at most
+LOAD_FALLBACK_DAYS = 14  # what queryTrainingLoadAssessment is known to take
 
 # tests swap in an httpx.MockTransport here
 _transport: httpx.AsyncBaseTransport | None = None
@@ -579,6 +587,137 @@ def parse_vo2max(text: str) -> float | None:
     return _num(m.group(1)) if m else None
 
 
+def _int(s: str) -> int:
+    """'18,055' → 18055 (thousands separators: comma, space, narrow space)."""
+    return int(re.sub(r"[,\s  ]", "", s))
+
+
+def _clock(s: str | None) -> int | None:
+    """'15:50' → 950 s, '1:10:54' → 4254 s."""
+    m = re.match(r"\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b", s or "")
+    if not m:
+        return None
+    a, b, c = int(m.group(1)), int(m.group(2)), m.group(3)
+    return a * 3600 + b * 60 + int(c) if c is not None else a * 60 + b
+
+
+def _day_blocks(text: str, head: str):
+    """(day, block) for each block of `text` headed by a line matching `head`
+    (three groups: year, month, day)."""
+    heads = list(re.finditer(head, text or "", re.M))
+    for i, h in enumerate(heads):
+        day = _date(*h.groups()[:3])
+        if day:
+            yield day, text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+
+
+def _field(block: str, label: str) -> float | None:
+    m = re.search(r"\b" + label + r":\s*" + _NUM, block, re.I)
+    return _num(m.group(1)) if m else None
+
+
+def parse_hrv_range(text: str) -> dict[date, dict]:
+    """querySleepHrv: each wake-up day's normal range and baseline (ms)."""
+    head = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)[0]
+    out = {}
+    for day, block in _day_blocks(head, r"^\s*(\d{4})-(\d{2})-(\d{2}):\s*$"):
+        m = re.search(r"Normal Range:\s*" + _NUM + r"\s*-\s*" + _NUM, block)
+        if m:
+            out[day] = {"lo": _num(m.group(1)), "hi": _num(m.group(2)), "base": _field(block, "Baseline")}
+    return out
+
+
+def parse_training_load(text: str) -> dict[date, dict]:
+    """queryTrainingLoadAssessment, per day: short- and long-term load, their
+    ratio and COROS's one-word comment (Excessive, Optimized…)."""
+    out = {}
+    for day, block in _day_blocks(text, r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$"):
+        short, long_ = _field(block, "Short-Term Load"), _field(block, "Long-Term Load")
+        if short is None or long_ is None:
+            continue
+        ratio = _field(block, "Load Ratio")
+        if ratio is None and long_ > 0:
+            ratio = round(short / long_, 2)
+        m = re.search(r"^\s*Comment:\s*([A-Za-z][A-Za-z \-]*?)\s*$", block, re.M)
+        out[day] = {"short": short, "long": long_, "ratio": ratio, "comment": m.group(1) if m else None}
+    return out
+
+
+def parse_recovery(text: str) -> dict | None:
+    """queryRecoveryStatus (today only): {pct, level, full_h}."""
+    m = re.search(r"Recovery:\s*" + _NUM + r"\s*%", text or "")
+    if not m:
+        return None
+    level = re.search(r"^\s*Level:\s*(.+?)\s*$", text, re.M)
+    full = re.search(r"Full Recovery:\s*([^\n]+)", text)
+    full_min = parse_duration(full.group(1)) if full else None
+    return {"pct": _num(m.group(1)), "level": level.group(1) if level else None,
+            "full_h": round(full_min / 60, 1) if full_min is not None else None}
+
+
+def parse_avg_hr(text: str) -> dict[date, dict]:
+    """queryAvgHeartRate: '2026-10-04: 53 bpm (Min: 36, Max: 98)' lines."""
+    out = {}
+    for m in re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2}):\s*(\d+)\s*bpm(?:\s*\(Min:\s*(\d+),\s*Max:\s*(\d+)\))?",
+                         text or "", re.M):
+        d = _date(*m.groups()[:3])
+        if d:
+            out[d] = {"avg": float(m.group(4)),
+                      "min": int(m.group(5)) if m.group(5) else None,
+                      "max": int(m.group(6)) if m.group(6) else None}
+    return out
+
+
+def parse_daily_activity(text: str) -> dict[date, dict]:
+    """queryDailyHealthData, per day: steps, calories (kcal), exercise minutes
+    and average stress (absent when the watch wasn't worn)."""
+    out = {}
+    for day, block in _day_blocks(text, r"^\s*---\s*(\d{4})(\d{2})(\d{2})\s*---\s*$"):
+        row: dict = {}
+        m = re.search(r"Steps:\s*([\d,\s  ]*\d)", block)
+        if m:
+            row["steps"] = _int(m.group(1))
+        m = re.search(r"Calories:\s*([\d,\s  ]*\d)\s*kcal", block)
+        if m:
+            row["kcal"] = _int(m.group(1))
+        m = re.search(r"Exercise:\s*([^|\n]+)", block)
+        if m and parse_duration(m.group(1)) is not None:
+            row["exercise"] = parse_duration(m.group(1))
+        m = re.search(r"Stress:\s*Avg\s*(\d+)", block)
+        if m:
+            row["stress"] = int(m.group(1))
+        if row:
+            out[day] = row
+    return out
+
+
+_PREDICTIONS = (("5k", r"\b5\s*km"), ("10k", r"\b10\s*km"), ("half", r"\bHalf\s+Marathon"),
+                ("marathon", r"(?<!Half )\bMarathon"))
+
+
+def parse_fitness(text: str) -> dict:
+    """queryFitnessAssessmentOverview: VO2max, running level, threshold pace
+    (s/km) and race predictions (s). Missing lines are left out."""
+    out: dict = {}
+    vo2 = parse_vo2max(text)
+    if vo2 is not None:
+        out["vo2max"] = vo2
+    level = _field(text or "", "Running Level")
+    if level is not None:
+        out["level"] = level
+    m = re.search(r"Threshold Pace:\s*(\d{1,2}:\d{2})\s*/\s*km", text or "")
+    if m:
+        out["threshold_s"] = _clock(m.group(1))
+    preds = {}
+    for key, label in _PREDICTIONS:
+        m = re.search(label + r"\s*Prediction:\s*([\d:]+)", text or "", re.I)
+        if m and _clock(m.group(1)):
+            preds[key] = _clock(m.group(1))
+    if preds:
+        out["pred"] = preds
+    return out
+
+
 # ── samples ─────────────────────────────────────────────────────────────────
 
 HRV_AT = time(5, 0)  # inside the 22:00 → 10:00 night window of health._hrv_day
@@ -638,6 +777,54 @@ def _point(metric: str, day: date, at: time, value: float) -> Sample | None:
     return Sample(metric, "", t, t, round(value, 3), SOURCE)
 
 
+def _ok(value, lo: float, hi: float) -> bool:
+    return isinstance(value, (int, float)) and lo <= value <= hi
+
+
+def build_daily(data: dict, today: date) -> list[Daily]:
+    """The per-day values, implausible ones left out (an odd wording must not
+    write a 0 % recovery or a 50 000 bpm day)."""
+    out: list[Daily] = []
+    for d, v in (data.get("load") or {}).items():
+        if _ok(v["short"], 0, 3000) and _ok(v["long"], 0, 3000):
+            ratio = v["ratio"] if _ok(v.get("ratio"), 0, 20) else None
+            out.append(Daily("load", d, v["short"], {"long": v["long"], "ratio": ratio, "comment": v["comment"]}))
+    rec = data.get("recovery")
+    if rec and _ok(rec["pct"], 0, 100):
+        full = rec["full_h"] if _ok(rec.get("full_h"), 0, 500) else None
+        out.append(Daily("recovery", today, rec["pct"], {"level": rec["level"], "full_h": full}))
+    for d, v in (data.get("hr_day") or {}).items():
+        if _ok(v["avg"], 25, 230):
+            out.append(Daily("hr_day", d, v["avg"], {"min": v["min"], "max": v["max"]}))
+    for d, v in (data.get("activity") or {}).items():
+        if _ok(v.get("stress"), 1, 100):
+            out.append(Daily("stress", d, v["stress"]))
+        # 0 steps and 0 kcal: the watch wasn't worn that day
+        if _ok(v.get("steps"), 1, 200_000) or _ok(v.get("kcal"), 1, 20_000):
+            out.append(Daily("steps", d, v.get("steps") or 0,
+                             {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
+    for d, v in (data.get("hrv_range") or {}).items():
+        if _ok(v["lo"], 5, 300) and _ok(v["hi"], v["lo"], 300):
+            base = v["base"] if _ok(v.get("base"), 5, 300) else round((v["lo"] + v["hi"]) / 2, 1)
+            out.append(Daily("hrv_norm", d, base, {"lo": v["lo"], "hi": v["hi"]}))
+    fit = dict(data.get("fitness") or {})
+    if fit:
+        if not _ok(fit.get("vo2max"), 10, 95):
+            fit.pop("vo2max", None)
+        if not _ok(fit.get("level"), 1, 200):
+            fit.pop("level", None)
+        if not _ok(fit.get("threshold_s"), 120, 900):
+            fit.pop("threshold_s", None)
+        preds = {k: s for k, s in (fit.get("pred") or {}).items() if _ok(s, 600, 12 * 3600)}
+        if preds:
+            fit["pred"] = preds
+        else:
+            fit.pop("pred", None)
+        if fit:
+            out.append(Daily("fitness", today, fit.get("level") or 0, fit))
+    return out
+
+
 def build_samples(hrv: dict[date, float], rhr: dict[date, float], overview: dict[date, dict],
                   daily: dict[date, dict[str, int]], vo2max: float | None, today: date) -> list[Sample]:
     out: list[Sample] = []
@@ -689,11 +876,11 @@ class _Fetcher:
             logger.info("COROS %s %s failed: %s", tool, args, e)
             return None
 
-    async def recent(self, tool: str, days: int) -> str | None:
-        """A `days`-only tool: all at once, else the default week."""
+    async def recent(self, tool: str, days: int, fallback: int = RECENT_DAYS) -> str | None:
+        """A `days`-only tool: all at once, else the last `fallback` days."""
         text = await self(tool, {"days": days})
-        if text is None and days > RECENT_DAYS:
-            text = await self(tool, {"days": RECENT_DAYS})
+        if text is None and days > fallback:
+            text = await self(tool, {"days": fallback})
         return text
 
 
@@ -709,20 +896,25 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     await mcp.initialize()
     call = _Fetcher(mcp)
     lo = today - timedelta(days=days - 1)
-    data: dict = {"hrv": {}, "rhr": {}, "overview": {}, "daily": {}, "vo2max": None}
+    data: dict = {"hrv": {}, "hrv_range": {}, "rhr": {}, "overview": {}, "daily": {}, "vo2max": None}
+    # the daily values first: every athlete has them, night data is optional
+    data["load"] = _parsed(parse_training_load, await call.recent(
+        "queryTrainingLoadAssessment", days, LOAD_FALLBACK_DAYS))
+    data["recovery"] = _parsed(parse_recovery, await call("queryRecoveryStatus", {})) or None
+    data["hr_day"] = _parsed(parse_avg_hr, await call.recent("queryAvgHeartRate", days))
+    text = await call.recent("queryDailyHealthData", days)
+    data["daily"] = _parsed(parse_daily_sleep, text)
+    data["activity"] = _parsed(parse_daily_activity, text)
+    data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
+    data["vo2max"] = data["fitness"].get("vo2max")
+    data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
     for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
         data["hrv"].update(_parsed(parse_hrv, text))
-    data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
+        data["hrv_range"].update(_parsed(parse_hrv_range, text))
     for a, b in _ranges(lo, today, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
         data["overview"].update(_parsed(parse_sleep_overview, text))
-    data["daily"] = _parsed(parse_daily_sleep, await call.recent("queryDailyHealthData", days))
-    text = await call("queryFitnessAssessmentOverview", {})
-    try:
-        data["vo2max"] = parse_vo2max(text) if text else None
-    except Exception:
-        logger.exception("COROS VO2max text not understood")
     return data, call.calls, call.failed
 
 
@@ -746,11 +938,12 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     """Fetch and store; returns store_samples' counts. Raises CorosAuthError
     when the athlete must reconnect, CorosError when COROS can't be read."""
     # the history comes once: on the first sync, or while no daily value
-    # arrived yet (a first sync that read nothing must not lose the 60 days)
+    # arrived yet (a first sync that read nothing must not lose the 60 days;
+    # a link made before the daily values were read gets them too)
     have = (await db.execute(
-        select(func.count(HealthSample.id)).where(
-            HealthSample.user_id == conn.user_id, HealthSample.source == SOURCE,
-            HealthSample.metric.in_(("hrv", "rhr", "sleep")))
+        select(func.count(HealthMetric.id)).where(
+            HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
+            HealthMetric.metric.in_(("load", "hr_day", "steps")))
     )).scalar()
     days = BACKFILL_DAYS if conn.last_sync_at is None or not have else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
@@ -770,12 +963,19 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     if calls and failed == calls:
         raise CorosError("COROS n'a renvoyé aucune donnée lisible.")
 
-    latest = max([*data["hrv"], *data["rhr"], *data["overview"]], default=None)
+    # the athlete's today (a day ahead of the server's in Asia mornings)
+    latest = max([*data["hrv"], *data["rhr"], *data["overview"], *data["activity"],
+                  *data["load"], *data["hr_day"]], default=None)
+    today = _today(latest)
     samples = build_samples(data["hrv"], data["rhr"], data["overview"], data["daily"],
-                            data["vo2max"], _today(latest))
+                            data["vo2max"], today)
     await _drop_stale_intervals(db, conn.user_id, data["overview"], samples)
     result = await store_samples(db, conn.user_id, samples) if samples else {
         "received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
+    daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE)
+    result["inserted"] += daily["inserted"]
+    result["updated"] += daily["updated"]
+    result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
     logger.info("COROS sync user %d (%d days, %d calls, %d failed): %s",
                 conn.user_id, days, calls, failed, result["by_metric"])
     return result
@@ -879,6 +1079,12 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         .where(HealthSample.user_id == user_id, HealthSample.source == SOURCE)
         .group_by(HealthSample.metric))
     days = dict(rows.all())
+    rows = await db.execute(
+        select(HealthMetric.metric, func.count(HealthMetric.id))
+        .where(HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
+               HealthMetric.metric.in_(DAILY_METRICS))
+        .group_by(HealthMetric.metric))
+    daily = dict(rows.all())
     claimed = _as_utc(conn.sync_claimed_at)
     return {
         "connected": True,
@@ -887,5 +1093,6 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "last_sync_ago": _ago(conn.last_sync_at),
         "syncing": bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
-        "per_metric": [(METRIC_LABELS[m], days[m]) for m in METRICS if days.get(m)],
+        "per_metric": [(METRIC_LABELS[m], days[m]) for m in METRICS if days.get(m)]
+                      + [(DAILY_LABELS[m], daily[m]) for m in DAILY_LABELS if daily.get(m)],
     }
