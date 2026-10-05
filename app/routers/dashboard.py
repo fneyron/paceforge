@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
 from app.services.health import form_card
+from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
 
@@ -38,7 +39,7 @@ async def landing(
     if user:
         return RedirectResponse(url="/simulator", status_code=302)
     return templates.TemplateResponse(
-        request, "login.html", context={"error": error}
+        request, "login.html", context={"error": error, "stats": load_model_stats()}
     )
 
 
@@ -46,7 +47,21 @@ async def landing(
 async def landing_page(request: Request, error: str | None = None):
     """Page marketing, accessible même connecté."""
     return templates.TemplateResponse(
-        request, "login.html", context={"error": error, "force_public": True}
+        request, "login.html",
+        context={"error": error, "force_public": True, "stats": load_model_stats()},
+    )
+
+
+@router.get("/methode", response_class=HTMLResponse)
+async def methode_page(request: Request, user: User | None = Depends(get_optional_user)):
+    """How the plan is computed: data, model, validation, limits. Public.
+
+    Always the public layout; ``viewer`` (not ``user``, which would switch
+    base.html to the app shell) only changes the header link.
+    """
+    return templates.TemplateResponse(
+        request, "methode.html",
+        context={"viewer": user, "stats": load_model_stats()},
     )
 
 

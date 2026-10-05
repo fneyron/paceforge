@@ -11,16 +11,18 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
     <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
-    <meta property="og:title" content="PaceForge — Le coach IA qui ne te fait aucun cadeau">
-    <meta property="og:description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Analyse automatique, feedback cash, zéro langue de bois.">
+    {% set _meta_title %}{% block meta_title %}PaceForge · Ton plan de course trail, calé sur de vraies courses{% endblock meta_title %}{% endset %}
+    {% set _meta_desc %}{% block meta_description %}Importe le GPX de ta course : heures de passage calées sur de vraies courses de trail et sur ton niveau en course. Export montre, bande dossard, nutrition.{% endblock meta_description %}{% endset %}
+    <meta property="og:title" content="{{ _meta_title | trim }}">
+    <meta property="og:description" content="{{ _meta_desc | trim }}">
     <meta property="og:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta property="og:url" content="https://paceforge.fr">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="PaceForge — Le coach IA qui ne te fait aucun cadeau">
-    <meta name="twitter:description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Feedback cash, zéro langue de bois.">
+    <meta name="twitter:title" content="{{ _meta_title | trim }}">
+    <meta name="twitter:description" content="{{ _meta_desc | trim }}">
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
-    <meta name="description" content="Strava te montre des chiffres. PaceForge te dit ce qu'ils signifient vraiment. Analyse automatique, feedback cash, zéro langue de bois.">
+    <meta name="description" content="{{ _meta_desc | trim }}">
     <link rel="stylesheet" href="/static/css/tailwind.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
     <script>
         // Apply dark mode before render to avoid flash
