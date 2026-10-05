@@ -11,26 +11,30 @@ runtime by the app. No names: bib, sex, category/age, rank and times only.
   (livetrail.net/histo): checkpoints (km, D+, altitude, position, cutoff),
   finishers' arrival and departure times. No GPS track, no start clock.
 
-Races of 40 km or more. Finishers per race: UTMB Live up to ~680 (the
-fastest third of the field whole, then an even sample by rank; all of them
-on smaller fields), LiveTrail up to 80, sampled evenly by rank.
+Races of 40 km or more. Finishers per race: UTMB Live up to ~680 (most
+races: the fastest third of the field whole, then an even sample by rank, or
+all of them on smaller fields; the 47 races collected first, such as UTMB
+Mont-Blanc 2022-2025 with its CCC and OCC, UTA, Translantau and Whistler,
+still hold an even sample of 150-450 by rank), LiveTrail up to 80, sampled
+evenly by rank.
 
-## What is in it (committed, 2026-10-04)
+## What is in it (committed, 2026-10-05)
 
 | | stored | solo running races kept | finishers | checkpoint passages |
 |---|---|---|---|---|
 | UTMB Live | 175 races | 169 (124 with a GPS track) | 60 981 | 578 348 |
-| LiveTrail | 821 courses | 613 | 45 606 | 348 817 |
-| total | 996 | 782 races, 165 events (347 editions) | 106 587 | 927 165 |
+| LiveTrail | 821 courses | 601 | 44 762 | 341 138 |
+| total | 996 | 770 races, 162 events (342 editions) | 105 743 | 919 486 |
 
 Left out of every count and fit (`scripts/race_data/dataset_stats.py --list`
 names each one):
 
 - not a solo running race, by name / course / edition (`dataset.is_running`):
-  mountain bike, cyclo, gravel, e-bike, triathlon / duathlon, relays, duos and
-  teams, walks and marches, stage races (MDS, Saharan, "2 days"), time-limited
-  formats (backyard, 3 h / 6 h), everesting, PTL (team, 300 km) — 4 UTMB Live
-  races, 200 LiveTrail courses;
+  mountain bike, cyclo, gravel, e-bike, triathlon / duathlon, relays (relais,
+  relevos, staffel…), duos, couples and teams, walks, hikes and marches (Oxfam
+  Trailwalker / OTW), stage races (MDS, Saharan, "2 days", "3 días"),
+  time-limited formats (backyard, 3 h / 6 h), everesting, PTL (team, 300 km) —
+  4 UTMB Live races, 212 LiveTrail courses;
 - a median finisher effort speed (km + D+/100 per hour) above 12.5, which no
   running field reaches (bikes, broken timings): 3 LiveTrail courses;
 - fewer than 10 finishers (5 LiveTrail courses) or no checkpoint distances
@@ -45,11 +49,16 @@ names each one):
   Transjeju 2026 100M joined the test side). On 2026-10-04: 121 races
   (43 714 finishers; train 74 races / 29 596), test 47 races; the refit did
   not beat the app on the held-out events (18.59 vs 18.61 min mean checkpoint
-  gap, 23/47 races, Transjeju guard worse) and was not adopted. See
-  `scripts/race_data/fit_results.txt`.
-- **Extra validation**: the LiveTrail courses of 40-180 km, whose profile is
-  rebuilt from each section's D+ / D- — never used to fit or to choose the
-  model, night not scored (no start clock).
+  gap, 23/47 races, Transjeju guard worse) and was not adopted. Its selected
+  form keeps the current curve as projected on the knot form: equal to the
+  app's table from -15 to 25 %, not at -20..-16 % and 26..30 %. See
+  `scripts/race_data/fit_results.txt`; a refit writes `refit_params.json`,
+  and `fitted_params.json` (the fit the app's constants come from) changes
+  only when a refit is adopted.
+- **Extra validation**: the LiveTrail running courses of 40-180 km (595
+  courses, 44 321 finishers), whose profile is rebuilt from each section's
+  D+ / D- — never used to fit or to choose the model, night not scored (no
+  start clock). The app: 18.58 min mean checkpoint gap (legacy 21.48).
 
 Scripts: `scripts/race_data/collect_utmb.py`, `collect_livetrail.py`
 (collection, resumable; `collect_utmb.py --retrack` fetches a track lost to a

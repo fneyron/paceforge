@@ -1,25 +1,35 @@
 REFIT 2026-10-04 on the enlarged dataset — NOT ADOPTED, the app keeps its constants
 
-  Run:  fit_data.py; fit_data.py --livetrail; fit_model.py --params scripts/race_data/refit_params.json
+  Run:  fit_data.py; fit_data.py --livetrail; fit_model.py (writes refit_params.json)
   "current" below is the app as it stands (curve, fatigue by hours, night 1.0325
   fitted in the first fit on 115 races; see git history of this file and
   fitted_params.json, which still hold that fit). Same 6 held-out events as the
   first fit; the 47 test races now carry up to 614 finishers each (the fastest
-  third whole), hence lower gaps than the first fit's 21.5 on 300-runner samples.
+  third whole, then an even sample by rank; 23 of them, collected first, hold
+  an even sample of 150-300 by rank: UTMB Mont-Blanc 2022-2025, Whistler 2024,
+  Transjeju 2024-2025), hence lower gaps than the first fit's 21.5 on
+  300-runner samples.
 
   held-out mean |gap| at checkpoints: current 18.61 min, selected refit
-  (curcurve_fitrest: current curve kept, fatigue / night / terrain refitted)
+  (curcurve_fitrest: the current curve projected on the knot form, fatigue /
+  night / terrain refitted; the projection equals the app's table from -15 to
+  25 % but not at -20..-16 % and 26..30 %, see the integer table at the end)
   18.59 — 23 of 47 races better; best other form fit_hours 18.71.
   Transjeju 2025 100M guard (16-21 h): 8.0 -> 8.3 (worse); 2026 100M (16-21 h,
   12 runners): 9.9 -> 10.2 (worse).
-  LiveTrail extra validation (607 courses, no track): 18.74 -> 18.68.
+  LiveTrail extra validation (595 courses, no track): 18.58 -> 18.53.
+  (2026-10-05: 12 LiveTrail courses that are not solo running races, a relay,
+  Oxfam Trailwalker, a pairs race, a 3-day stage race and a hike, now left out
+  by dataset.is_running; the LiveTrail block below is rescored on the 595
+  courses left with the same models. The UTMB Live fit and held-out sets do
+  not change.)
   Rule: adopt only if the held-out gap improves and the guard does not get
   worse. A 0.02 min gain on fewer than half the races with a worse guard is
   no evidence: production kept. The enlarged data confirm the production
   model rather than move it (the refitted fatigue c 0.65 / q 0.56 and curve
   sit on top of the current ones).
 
-DATASET: 121 UTMB Live running races 40-180 km with a GPS track, 43714 finishers (all those stored: up to 676 per race, the fastest third whole then an even sample by rank)
+DATASET: 121 UTMB Live running races 40-180 km with a GPS track, 43714 finishers (all those stored: up to 676 per race; the fastest third whole then an even sample by rank, or an even sample by rank on the races collected first)
   train: 74 races, 29596 finishers, events: arcofattrition, canyons, chianti, desertrats, kodiak, kosciuszko, lavaredo, mountyun, mut, puglia, tarawera, templiers, translantau, uta
     by band (races, finishers): 40-60 km 24/11083, 60-100 km 22/8878, 100-140 km 16/6447, 140-180 km 12/3188
   test: 47 races, 14118 finishers, events: chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler
@@ -186,25 +196,25 @@ OWNER utmb/transjeju_2026/100m bib 10: official 16.89 h, moving 16.89 h; plan sh
   utmb/transjeju_2026/100m all finishers by level group: legacy 36.1, current 30.1, fit_hours 29.2, fit_general 32.9, fit_general+level 28.1, curcurve_fitrest 29.3, fit 29.3
 
 LIVETRAIL (extra validation, never used for selection: no GPS track, profile from section D+/D-, night not scored)
-  607 courses, 45164 finishers, 1258 (course, level group) pairs, 294973 checkpoint passages scored; events: 143
+  595 courses, 44321 finishers, 1225 (course, level group) pairs, 288179 checkpoint passages scored; events: 140
 
 LIVETRAIL mean |gap| (min) by level group
                   runners        legacy       current     fit_hours   fit_generalcurcurve_fitrest
-0-12h               23233          12.4          10.8          10.8          11.1          10.8
-12-18h              10756          22.2          19.2          19.2          19.3          19.2
-18-24h               4391          32.7          28.4          28.3          28.3          28.3
-24-30h               3316          39.3          33.2          33.1          32.7          33.0
-30-99h               3274          53.2          46.0          45.6          44.9          45.5
-ALL                 44970          21.7          18.7          18.7          18.8          18.7
+0-12h               22884          12.4          10.8          10.8          11.1          10.8
+12-18h              10535          22.0          19.1          19.2          19.2          19.1
+18-24h               4324          32.3          27.9          27.8          27.8          27.8
+24-30h               3216          38.9          32.8          32.7          32.3          32.7
+30-99h               3170          52.8          45.8          45.4          44.7          45.4
+ALL                 44129          21.5          18.6          18.6          18.6          18.5
 
 LIVETRAIL mean |gap| (min) by distance band
                   runners        legacy       current     fit_hours   fit_generalcurcurve_fitrest
-40-60 km            21872          13.4          11.7          11.7          12.0          11.7
-60-100 km           11397          24.2          21.0          20.9          20.9          20.9
-100-140 km           8799          31.9          26.8          26.6          26.4          26.6
+40-60 km            21475          13.2          11.6          11.6          11.9          11.6
+60-100 km           11271          24.1          20.9          20.8          20.8          20.8
+100-140 km           8481          31.4          26.4          26.2          26.0          26.2
 140-180 km           2902          43.7          38.5          38.8          38.6          38.7
-ALL                 44970          21.7          18.7          18.7          18.8          18.7
-  courses where each model beats current: legacy 97/605, fit_hours 305/605, fit_general 282/605, curcurve_fitrest 298/605
+ALL                 44129          21.5          18.6          18.6          18.6          18.5
+  courses where each model beats current: legacy 96/593, fit_hours 297/593, fit_general 276/593, curcurve_fitrest 290/593
 
 PREVIOUS EDITION on held-out races with an earlier edition on matched checkpoints (11 races)
   utmb/kullamannen_2024/100M <- kullamannen_2023: 2/14 intermediate checkpoints matched
@@ -242,3 +252,4 @@ FITTED PARAMETERS (curve factors relative to flat, at a 20 h level unless noted;
   fit_general+level, curve at 27h: {-35: 1.44, -25: 1.44, -15: 1.107, -8: 0.891, -3: 0.922, 0: 1.0, 3: 1.296, 8: 1.524, 15: 1.997, 25: 2.889, 35: 3.167}
   fit_general+level, curve at 34h: {-35: 1.394, -25: 1.394, -15: 1.097, -8: 0.9, -3: 0.928, 0: 1.0, 3: 1.276, 8: 1.485, 15: 1.914, 25: 2.707, 35: 2.95}
   selected (curcurve_fitrest) integer table: {-20: 1.175, -19: 1.142, -18: 1.11, -17: 1.077, -16: 1.044, -15: 1.011, -14: 0.986, -13: 0.961, -12: 0.936, -11: 0.911, -10: 0.886, -9: 0.861, -8: 0.836, -7: 0.848, -6: 0.86, -5: 0.872, -4: 0.884, -3: 0.896, -2: 0.931, -1: 0.965, 0: 1.0, 1: 1.048, 2: 1.097, 3: 1.145, 4: 1.219, 5: 1.293, 6: 1.368, 7: 1.442, 8: 1.516, 9: 1.594, 10: 1.673, 11: 1.751, 12: 1.83, 13: 1.908, 14: 1.987, 15: 2.065, 16: 2.171, 17: 2.277, 18: 2.382, 19: 2.488, 20: 2.594, 21: 2.7, 22: 2.806, 23: 2.911, 24: 3.017, 25: 3.123, 26: 3.162, 27: 3.2, 28: 3.239, 29: 3.277, 30: 3.316}
+  (the current curve projected on the knot form: equal to race_simulator._DEFAULT_GRADIENT_FACTORS from -15 to 25 %, but -20..-16 % and 26..30 % differ, e.g. -20: 1.175 vs 1.1, 30: 3.316 vs 3.508; adopting it means taking this table, not only the fatigue / night / terrain constants)

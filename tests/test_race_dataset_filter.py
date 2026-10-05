@@ -18,7 +18,11 @@ def test_running_filter_drops_bikes_relays_teams_and_stage_races():
             ("SAINTÉLYON RELAIS 2", "rel2.json.gz", "saintelyon_2024"), ("Trail du Barlatay en duo", "duotrai.json.gz", "barla_2024"),
             ("MDS 100", "hmds100.json.gz", "mdsjordan_2024"), ("Full 100K - 2Days", "2day.json.gz", "peakdistrict_2023"),
             ("PTL®", "ptl.json.gz", "utmb_2024"), ("Backyard Ultra Barjots", "Backyar.json.gz", "bub24_2024"),
-            ("MB ULTRA SOMFY 100", "MB100.json.gz", "mbrace_2024"), ("L'Originale - Cyclo 100 km", "L.json.gz", "megevemontblanccycling_2022")]
+            ("MB ULTRA SOMFY 100", "MB100.json.gz", "mbrace_2024"), ("L'Originale - Cyclo 100 km", "L.json.gz", "megevemontblanccycling_2022"),
+            ("RELEVOS GRAN VUELTA VALLE DEL GENAL", "relevos.json.gz", "granvueltavalledelgenal_2018"),
+            ("OXFAM 100K", "100k.json.gz", "oxfamtrail_2022"), ("OTW 50K", "50k.json.gz", "oxfamtrail_2023"),
+            ("3 días Ultra", "ultra.json.gz", "3diastrailibiza_2024"), ("E51 Couples", "E51cou.json.gz", "eigerultratrail_2024"),
+            ("Marathon", "maratho.json.gz", "londonhike_2018")]
     assert all(dataset.is_running(*x) for x in keep)
     assert not any(dataset.is_running(*x) for x in drop)
 
@@ -43,3 +47,9 @@ def test_model_stats_keep_the_published_keys():
         assert k in s["validation"]
     assert s["dataset"]["races"] == sum(s["dataset"]["sources"].values())
     assert s["validation"]["transjeju_2026"]["actual_s"] == 16 * 3600 + 53 * 60 + 17
+    # the public page reads these: a race-level gap says how many finishers it covers (one
+    # runner's gap lives under bib_*), and a before / after comparison is never "0 races better"
+    tj = s["validation"]["transjeju_2026"]
+    assert tj["runners"] > 1 and "bib_mean_abs_gap_min" in tj
+    assert s["validation"]["mean_abs_gap_min_before"] != s["validation"]["mean_abs_gap_min_after"]
+    assert s["validation"]["races_improved"] > 0

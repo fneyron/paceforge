@@ -22,6 +22,8 @@ ROAD, TRACK = {"R"}, {"F"}
 NOT_RUNNING = re.compile(
     r"vtt|\bvae\b|\bae\b|cyclo|cycling|gravel|\bbike\b|v[ée]lo|triath|duathl|swimrun|relais|relay|\brel\d|\bduo\b|[ée]quipe|"
     r"\bteam\b|everesting|backyard|\b\d+\s?h\b|e-?rando|\bwalk|trailwalker|\bstage|2\s?days?\b|2\s?jours|bivouac|"
+    # relays (es / de / it / pt), pairs, Oxfam Trailwalker (team walk, also "OTW"), hikes, multi-day stage races
+    r"relevos?\b|staffel|staffetta|estafeta|\bcouples?\b|\boxfam|\botw\b|\bhike|londonhike|\d\s?d[ií]as|\d\s?jours|tappe|"
     r"\bptl\b|\bmarch\b|newcastle2|l2p24|\bmds|hmds|marathondessables|saharan|tri-obernai|"
     # bike events whose race names do not say so (MB Race, Iron Bike, Evergreen, GTJ 200, CMV, EBC, Bergi)
     r"\bmbrace|\bironb|\bevergreen|\bgtj200|\bcmv_|\bebc_|\bbergi_|megevemontblanccycling|super-huit",
@@ -29,8 +31,8 @@ NOT_RUNNING = re.compile(
 )
 # Faster than any running field's median: a bike, or broken timing. Median
 # finisher effort speed, effort-km (km + D+/100) per hour, of the runners
-# stored (samples hold the fastest third whole, so their median is fast: the
-# quickest running fields stored reach 12.1).
+# stored (many UTMB Live samples hold the fastest third whole, so their
+# median is fast: the quickest running fields stored reach 12.1).
 MAX_MEDIAN_EFFORT_KMH = 12.5
 
 

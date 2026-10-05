@@ -1183,22 +1183,22 @@
    "fit": 29.3
   },
   "livetrail": {
-   "courses": 607,
-   "finishers": 45164,
-   "events": 143,
-   "passages_scored": 294973,
+   "courses": 595,
+   "finishers": 44321,
+   "events": 140,
+   "passages_scored": 288179,
    "mean_abs_gap": {
-    "legacy": 21.67,
-    "current": 18.74,
-    "fit_hours": 18.7,
-    "fit_general": 18.79,
-    "curcurve_fitrest": 18.68
+    "legacy": 21.48,
+    "current": 18.58,
+    "fit_hours": 18.55,
+    "fit_general": 18.63,
+    "curcurve_fitrest": 18.53
    },
-   "courses_improved_legacy_vs_current": 97.0,
-   "courses_improved_fit_hours_vs_current": 305.0,
-   "courses_improved_fit_general_vs_current": 282.0,
-   "courses_improved_curcurve_fitrest_vs_current": 298.0,
-   "courses_scored": 605
+   "courses_improved_legacy_vs_current": 96.0,
+   "courses_improved_fit_hours_vs_current": 297.0,
+   "courses_improved_fit_general_vs_current": 276.0,
+   "courses_improved_curcurve_fitrest_vs_current": 290.0,
+   "courses_scored": 593
   },
   "per_race": {
    "utmb/chiangmai_2024/100K": {

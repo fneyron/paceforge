@@ -5,7 +5,7 @@ Pipeline (end to end, ~1 h on 4 cores, most of it the model-selection CV):
 
   .venv/bin/python scripts/race_data/fit_data.py              # once: per-race precompute with the app's code
   .venv/bin/python scripts/race_data/fit_data.py --livetrail  # once: LiveTrail courses (extra validation only)
-  .venv/bin/python scripts/race_data/fit_model.py             # CV on TRAIN, fit on TRAIN, score held-out TEST
+  .venv/bin/python scripts/race_data/fit_model.py             # CV on TRAIN, fit on TRAIN, score held-out TEST -> refit_params.json
   .venv/bin/python scripts/race_data/fit_model.py --form hours --lam-c 0 --lam-t 3   # skip the CV
 
 numpy/scipy are not in the app venv; install them aside and point PACEFORGE_PYLIB at
@@ -52,7 +52,9 @@ MODELS
      hours          r = q, p = 0: fatigue by hours on course only
      general        q, r, p free (nests progress-based fatigue as in production)
      general+level  + level term log F(g, T) = log F(g) (T/20)^gamma (gamma_up / gamma_down)
-     curcurve       the current curve kept, fatigue / night / terrain fitted
+     curcurve       the current curve as projected on the knot form (equal to the
+                    app's table from -15 to 25 %, not at -20..-16 % and 26..30 %),
+                    fatigue / night / terrain fitted
   Penalties: lam_c x curvature of the curve, lam_t x (terrain - production)^2.
   Every fit starts from the current app (its curve projected on the form).
   The form and (lam_c, lam_t) are chosen by 2-fold cross-validation over TRAIN
@@ -67,9 +69,9 @@ ADOPTION: a refit goes into race_simulator.py only if it lowers the held-out
 mean |gap| against "current" and the Transjeju guard does not get worse; then
 validate_app.py re-scores the app's own path before / after.
 
-Outputs: scripts/race_data/fitted_params.json (the fit the app's constants come
-from; pass --params scripts/race_data/refit_params.json for a refit not
-adopted, as on 2026-10-04), scripts/race_data/fit_results.txt
+Outputs: scripts/race_data/refit_params.json (default --params) and
+scripts/race_data/fit_results.txt. fitted_params.json is the fit the app's
+constants come from: copy a refit over it only when the refit is adopted.
 """
 from __future__ import annotations
 
@@ -153,7 +155,7 @@ FORMS = {  # which parameters each model form fits (the rest stay at x0)
     "hours": [i for i in range(25) if i not in (10, 11, I_R, I_P)],  # r tied to q, p = 0: fatigue by hours on course
     "general": [i for i in range(25) if i not in (10, 11)],
     "general+level": list(range(25)),
-    "curcurve": list(range(12, 25)),  # the current gradient curve kept
+    "curcurve": list(range(12, 25)),  # the current gradient curve, as projected on the knots, kept
 }
 
 
@@ -688,7 +690,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=FIT_DIR + "/fitdata.pkl")
     ap.add_argument("--livetrail", default=FIT_DIR + "/livetrail.pkl", help="LiveTrail courses (fit_data.py --livetrail); scored last")
-    ap.add_argument("--params", default=str(HERE / "fitted_params.json"))
+    # never fitted_params.json by default: that file holds the fit the app's constants come from
+    ap.add_argument("--params", default=str(HERE / "refit_params.json"))
     ap.add_argument("--results", default=str(HERE / "fit_results.txt"))
     ap.add_argument("--form", choices=list(FORMS), help="skip the CV: fit this form with --lam-c / --lam-t")
     ap.add_argument("--lam-c", type=float, default=0.3)
@@ -712,7 +715,8 @@ def main():
         return out
 
     say(f"DATASET: {len(races)} UTMB Live running races 40-180 km with a GPS track, {sum(len(r['runners']) for r in races)} finishers "
-        f"(all those stored: up to {max(len(r['runners']) for r in races)} per race, the fastest third whole then an even sample by rank)")
+        f"(all those stored: up to {max(len(r['runners']) for r in races)} per race; the fastest third whole then an even sample by rank, "
+        "or an even sample by rank on the races collected first)")
     for nm, s in (("train", train), ("test", test)):
         say(f"  {nm}: {len(s)} races, {sum(len(r['runners']) for r in s)} finishers, events: {', '.join(sorted({r['event'] for r in s}))}")
         say("    by band (races, finishers): " + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in band_counts(s).items()))
@@ -838,6 +842,11 @@ def main():
     for lvl, cv in params["variants"]["fit_general+level"]["curve_by_level_h"].items():
         say(f"  fit_general+level, curve at {lvl}: {cv}")
     say(f"  selected ({sel}) integer table: {params['fit']['integer_table_20h']}")
+    if sel == "curcurve_fitrest":
+        off = {g: (v, rs._DEFAULT_GRADIENT_FACTORS[g]) for g, v in params["fit"]["integer_table_20h"].items()
+               if g in rs._DEFAULT_GRADIENT_FACTORS and abs(v - rs._DEFAULT_GRADIENT_FACTORS[g]) > 0.005}
+        say(f"  (the current curve projected on the knot form; differs from race_simulator._DEFAULT_GRADIENT_FACTORS at {off}: "
+            "adopting it means taking this table, not only the fatigue / night / terrain constants)")
     open(a.results, "w").write("\n".join(lines) + "\n")
     print(f"\n-> {a.params}\n-> {a.results}")
 
