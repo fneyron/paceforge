@@ -152,6 +152,7 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
 
     rj = (await db_session.get(Route, route_id)).result_json
     assert 0.05 <= rj["fatigue_tilt"] <= 0.40 and rj["fatigue_model"] == "hours"
+    assert rj["fatigue_tilt_cps"] >= 1  # fitted on every matched checkpoint, not the first only
 
 
 @pytest.mark.asyncio

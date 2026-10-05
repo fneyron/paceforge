@@ -229,27 +229,42 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
     """Personal fresh→fade tilt, calibrated when a matched race result exists.
 
     The tilt is computed once at match time (see save_route_result) and stored
-    in Route.result_json; here we just read the most recent one. Clamped hard —
-    one race must adjust, not dominate. Only tilts measured against the
-    hours-on-course fatigue count (``fatigue_model``): older ones measured the
-    gap to the distance-scaled curve, which the fitted one already corrects.
+    in Route.result_json; here the median of the most recent ones (up to
+    PERSONAL_TILT_RACES, by race date): one race reads a bad day or a good one,
+    a few say how the athlete fades. Clamped hard. Only tilts measured against
+    the hours-on-course fatigue count (``fatigue_model``): older ones measured
+    the gap to the distance-scaled curve, which the fitted one already corrects.
     """
     from app.models.route import Route
 
     try:
         result = await db.execute(
-            select(Route.result_json)
+            select(Route.id, Route.result_json)
             .where(Route.user_id == user_id, Route.result_json.is_not(None))
             .order_by(Route.id.desc())
-            .limit(5)
+            .limit(30)
         )
-        for rj in result.scalars().all():
-            tilt = (rj or {}).get("fatigue_tilt")
-            if tilt is not None and (rj or {}).get("fatigue_model") == FATIGUE_MODEL:
-                return max(0.05, min(float(tilt), 0.40))
+        measured = []
+        for route_id, rj in result.all():
+            rj = rj or {}
+            tilt = rj.get("fatigue_tilt")
+            if tilt is None or rj.get("fatigue_model") != FATIGUE_MODEL:
+                continue
+            try:
+                day = datetime.strptime(rj.get("activity_date") or "", "%d/%m/%Y")
+            except ValueError:
+                day = datetime.min
+            measured.append((day, route_id, float(tilt)))
+        if measured:
+            measured.sort(reverse=True)  # most recent race first (then most recent match)
+            tilt = statistics.median(t for _, _, t in measured[:PERSONAL_TILT_RACES])
+            return max(0.05, min(tilt, 0.40))
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
     return DEFAULT_FATIGUE_TILT
+
+
+PERSONAL_TILT_RACES = 3
 
 
 async def _estimate_flat_pace_from_activities(

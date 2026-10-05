@@ -7,7 +7,7 @@ import pytest
 from app.models.route import Route
 from app.schemas.simulator import AthleteGradientProfile
 from app.services import race_simulator as rs
-from app.services.race_calibration import effort_km
+from app.services.race_calibration import course_dplus, effort_km
 from tests.test_race_plan_services import _course
 
 
@@ -102,7 +102,7 @@ def test_night_costs_what_the_fit_says():
 def _race_model(course, total_s):
     """An effort model whose total for this course is ``total_s``."""
     b = 0.08
-    return {"a": effort_km(course.total_distance_km, course.total_elevation_gain) / (total_s / 3600) ** (1 - b), "b": b}
+    return {"a": effort_km(course.total_distance_km, course_dplus(course)) / (total_s / 3600) ** (1 - b), "b": b}
 
 
 def test_fatigue_reads_the_race_level_clock():

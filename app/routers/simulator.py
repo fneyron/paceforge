@@ -1556,44 +1556,25 @@ async def save_route_result(
         # no splits → compare the total only (still useful)
         actual, total_actual_s = [], int(activity.moving_time or activity.elapsed_time or 0)
 
-    # One-shot personal fatigue calibration: compare early residual vs final
-    # residual against the population curve (neutral tilt). An athlete who is
-    # faster than predicted early but fades to (or past) the prediction late
-    # gets a steeper fresh→fade tilt. Hard-clamped: one race adjusts, never
-    # dominates. Stored with the curve it was measured against. The curve is
-    # read on the runner's own finish, as it was fitted: on the model's clock a
-    # runner faster than predicted is compared with a more faded shape. The
-    # final residual is then 0 by construction; only the early one speaks.
-    fatigue_tilt = None
+    # One-shot personal fatigue calibration, on every matched checkpoint: the
+    # fresh→fade tilt whose plan, run on the runner's own finish time (as the
+    # curve was fitted), best reproduces his cumulative passage times. Shrunk
+    # toward the neutral tilt with few checkpoints and hard-clamped: one race
+    # adjusts, never dominates. Stored with the curve it was measured against.
+    # (The first checkpoint alone read +4 % at km 7 of the 2026 Transjeju and
+    # missed the +31 min at km 58 that the runner then made up.)
+    fatigue_tilt = fatigue_tilt_n = None
     if actual and total_actual_s and route.sport_type != "bike":
         try:
-            from app.schemas.simulator import CourseProfile
-            from app.services.race_simulator import (
-                DEFAULT_FATIGUE_TILT,
-                FATIGUE_MODEL,
-                build_athlete_gradient_profile,
-                compute_passage_times,
-                predict_course,
-            )
+            from app.services.race_calibration import measure_fatigue_tilt
+            from app.services.race_simulator import FATIGUE_MODEL, build_athlete_gradient_profile
 
             profile = await build_athlete_gradient_profile(db, user.id)
-            base_profile = profile.model_copy(update={"fatigue_tilt": DEFAULT_FATIGUE_TILT})
-            course = CourseProfile(**route.course_json)
             sh = route.start_hour if route.start_hour is not None else 6
             sm = route.start_minute or 0
-            course = predict_course(
-                course, base_profile, start_hour=sh, start_minute=sm, plan_moving_s=total_actual_s,
-            )
-            secs = compute_passage_times(course, cps, total_actual_s, 1.0, sh, sm, None)
-            # By km, not name: a loop course repeats names (Transjeju 2026 passes
-            # Healing Forest at km 7 and 136), which matched km 7 to km 136.
-            pred = {_km_key(s["end_km"]): s["adjusted_cumulative_time_s"] for s in secs[:-1]}
-            pred_total = secs[-1]["adjusted_cumulative_time_s"] if secs else None
-            first = next((a for a in actual if pred.get(_km_key(a.get("km")))), None)
-            if first and pred_total:
-                early = (first["time_s"] - pred[_km_key(first["km"])]) / pred[_km_key(first["km"])]
-                late = (total_actual_s - pred_total) / pred_total
-                fatigue_tilt = round(max(0.05, min(DEFAULT_FATIGUE_TILT + 0.5 * (late - early), 0.40)), 3)
+            measured = measure_fatigue_tilt(route.course_json, profile, cps, actual, total_actual_s, sh, sm)
+            if measured:
+                fatigue_tilt, fatigue_tilt_n = measured["tilt"], measured["n"]
         except Exception:
             logger.exception("fatigue tilt calibration failed")
 
@@ -1604,7 +1585,8 @@ async def save_route_result(
         "activity_date": activity.start_date.strftime("%d/%m/%Y") if activity.start_date else "",
         "total_actual_s": total_actual_s,
         "actual": actual,
-        **({"fatigue_tilt": fatigue_tilt, "fatigue_model": FATIGUE_MODEL} if fatigue_tilt is not None else {}),
+        **({"fatigue_tilt": fatigue_tilt, "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": fatigue_tilt_n}
+           if fatigue_tilt is not None else {}),
     }
     await db.flush()
     ctx = await _result_compare_context(request, route, db, user)
