@@ -39,13 +39,14 @@ LONG_EFFORT_KM = 40.0         # untagged very long efforts used as fallback (wei
 MODEL_MONTHS = 30             # races older than this are not read
 
 # ── D+: one algorithm for the course and for the athlete's past races ──
-# Strava's own total (another algorithm, on the watch's data) read 0,6-12 %
-# above the course algorithm on the same stream (median ~2,5 %) on six of the
-# owner's races: the race rate and the course effort-km were not measured with
-# the same ruler. A past race's D+ is recomputed from its altitude stream with
-# gpx.profile_elevation_gain (fetched once from Strava, cached in raw_data);
-# without a stream, Strava's total × this factor (median of those six races).
-STRAVA_DPLUS_FACTOR = 0.975
+# Strava's own total (another algorithm, on the watch's data) read 2,5-12 %
+# above gpx.profile_elevation_gain on the same stream (median ~4,6 %) on six
+# of the owner's races: the race rate and the course effort-km were not
+# measured with the same ruler. A past race's D+ is recomputed from its
+# altitude stream with gpx.profile_elevation_gain (fetched once from Strava,
+# cached in raw_data); without a stream, Strava's total × this factor (median
+# ratio profile_elevation_gain / Strava on those six races: 0,893-0,975).
+STRAVA_DPLUS_FACTOR = 0.956
 DPLUS_CACHE_KEY = "paceforge_dplus"
 DPLUS_CACHE_VERSION = 1
 
@@ -54,29 +55,45 @@ def effort_km(distance_km: float, elevation_gain_m: float) -> float:
     return float(distance_km) + float(elevation_gain_m or 0) / 100.0
 
 
-def course_dplus(course) -> float:
-    """The course's D+ for the race calibration (same algorithm as the races).
+def dplus_from_route_coords(coords: list | None, total_elevation_gain: float | None = None) -> float | None:
+    """The effort D+ of a full-resolution trace ([lat, lon, km, ele] rows), or
+    None when the trace carries no usable elevation."""
+    rows = [c for c in coords or [] if len(c) > 3 and c[3] is not None]
+    if len(rows) < 2:
+        return None
+    from app.services.gpx import profile_elevation_gain
 
-    Courses saved before carry no ``dplus_effort``: computed once from the
-    full-resolution trace ([lat, lon, km, ele] rows) and kept on the course;
-    without elevations on the trace, the displayed total."""
+    gain, _ = profile_elevation_gain([c[2] * 1000 for c in rows], [c[3] for c in rows])
+    gain = float(round(gain, 0))
+    if gain <= 0 and total_elevation_gain:
+        return None  # a flat-lined trace: the displayed total says more
+    return gain
+
+
+def course_dplus_src(course) -> tuple[float, str]:
+    """(D+, source) of the course for the race calibration: « effort » when
+    measured with the races' algorithm, « total » for the displayed per-km
+    total (a trace without elevations).
+
+    Courses saved before carry no ``dplus_effort`` (migration v6e7f8a9b0c1
+    stores it on the saved routes): computed from the trace and kept on this
+    object, so the calls of one prediction pay it once."""
     dp = getattr(course, "dplus_effort", None)
     if dp is not None:
-        return float(dp)
-    coords = getattr(course, "route_coords", None) or []
-    rows = [c for c in coords if len(c) > 3 and c[3] is not None]
-    if len(rows) >= 2:
-        from app.services.gpx import profile_elevation_gain
+        return float(dp), "effort"
+    gain = dplus_from_route_coords(getattr(course, "route_coords", None), course.total_elevation_gain)
+    if gain is not None:
+        try:
+            course.dplus_effort = gain
+        except Exception:  # an object without the field: just don't cache
+            pass
+        return gain, "effort"
+    return float(course.total_elevation_gain or 0), "total"
 
-        gain, _ = profile_elevation_gain([c[2] * 1000 for c in rows], [c[3] for c in rows])
-        gain = float(round(gain, 0))
-        if gain > 0 or not course.total_elevation_gain:
-            try:
-                course.dplus_effort = gain
-            except Exception:  # an object without the field: just don't cache
-                pass
-            return gain
-    return float(course.total_elevation_gain or 0)
+
+def course_dplus(course) -> float:
+    """The course's D+ for the race calibration (same algorithm as the races)."""
+    return course_dplus_src(course)[0]
 
 
 def dplus_from_streams(streams: dict | None, distance_m: float | None = None) -> float | None:
@@ -212,9 +229,11 @@ def race_point(name: str, km: float, dplus: float, hours: float, is_race: bool,
 
 def model_from_points(points: list[dict], today: date | None = None) -> dict | None:
     """Selection + fit on prepared points (see race_point): the tagged races
-    when there are two or more, else the long untagged efforts help."""
+    when two or more of them are real races (not a triathlon or relay leg, an
+    abandon, a hike…), else the long untagged efforts help."""
     races = [p for p in points if p.get("is_race")]
-    pts = races if len(races) >= 2 else points
+    real = [p for p in races if not_a_race_reason(p.get("name")) is None]
+    pts = races if len(real) >= 2 else points
     if not pts:
         return None
     used, ignored = select_best_efforts(pts)
@@ -224,6 +243,8 @@ def model_from_points(points: list[dict], today: date | None = None) -> dict | N
     model = fit_effort_model(used)
     if not model:
         return None
+    # every race's D+ measured like the course's (from its altitude stream)?
+    model["dplus_all_stream"] = all(p.get("dplus_src") == "stream" for p in used)
     model["races"] = sorted(used, key=lambda p: -p["hours"])[:8]
     model["ignored"] = sorted(ignored, key=lambda p: -p["hours"])[:6]
     model["n_races"] = len(races)
@@ -232,11 +253,11 @@ def model_from_points(points: list[dict], today: date | None = None) -> dict | N
 
 
 # Recency: a race weighs 0.5 ** (age / half-life) in the fit (None = off): the
-# athlete of two years ago is not today's. Replayed on the owner's races (each
-# ultra predicted from the strictly earlier ones, D+ fix and selection on), an
-# 18-month half-life took the median error from 10.1 % to 9.9 % (mean 9.1 %
-# either way) and his 2026 Transjeju replay from 17h05 to 16h52 (real 16h04):
-# a small gain, kept because it never made a race worse by more than 3 min.
+# athlete of two years ago is not today's. A prior, not a measured gain:
+# replayed on the owner's six ultras (each predicted from the strictly earlier
+# races), an 18-month half-life moved the median error by -0,15 point and the
+# mean by -0,01 point, i.e. noise: the latest race 4 min closer, one 2 min
+# closer, two 1-2 min further. To validate on more runners.
 RECENCY_HALF_LIFE_DAYS: float | None = 548.0
 
 
@@ -257,10 +278,12 @@ _NOT_A_RACE = ("hik", "rando", "randon", "marche", "walk", "trek", "balade", "re
 # run leg of a triathlon (run on legs tired by the swim and the bike), one leg
 # of a relay, a race not finished. Word-bounded so that « Cap Corse Trail »,
 # « Trail du Cap », « Imperial Trail » or « Relaxe Run » stay races; « CAP »
-# only as the suffix of a multisport file (« Alpsman - CAP »).
+# only as the suffix of a multisport file (« Alpsman - CAP »); « IM » only in
+# capitals before a distance or a year (« IM 70.3 », « IM 2025 »): the German
+# « im » (« Trailrun im Allgäu ») is a race.
 _NOT_STANDALONE = (
     (re.compile(
-        r"\b70[.,]3\b|\biron ?man\b|\bhalf[ -]?im\b|\bim\b|\btriath?lon|\bduathlon|\bswim ?run\b"
+        r"\b70[.,]3\b|\biron ?man\b|\bhalf[ -]?im\b|(?-i:\bIM\s?\d)|\btriath?lon|\bduathlon|\bswim ?run\b"
         r"|[-–—:|]\s*c\.?a\.?p\.?\s*$",
         re.IGNORECASE,
     ), "course d'un triathlon"),
@@ -357,7 +380,8 @@ def apply_race_calibration(course, model: dict | None, training_total_s: float |
         return None
     from app.services.race_simulator import format_time
 
-    ekm = effort_km(course.total_distance_km, course_dplus(course))
+    dplus, dplus_src = course_dplus_src(course)
+    ekm = effort_km(course.total_distance_km, dplus)
     before = float(training_total_s or course.predicted_total_time_s)
     target = race_level_total_s(course, model, before)
     if not target:
@@ -380,6 +404,8 @@ def apply_race_calibration(course, model: dict | None, training_total_s: float |
         "races": model.get("races", []),
         "ignored": model.get("ignored", []),
         "n_used": model.get("n_used", model.get("n", 0)),
+        # the course and every race used have their D+ by the same algorithm
+        "dplus_same_ruler": bool(model.get("dplus_all_stream")) and dplus_src == "effort",
     }
 
 
@@ -390,6 +416,9 @@ def apply_race_calibration(course, model: dict | None, training_total_s: float |
 # checkpoints: the tilt whose plan, run on the athlete's own finish time,
 # best reproduces his cumulative passage times. Shrunk toward the neutral
 # value with few checkpoints (one race adjusts, never dominates), clamped.
+# Checked in-sample only (the 2026 Transjeju's own 11 checkpoints fit better,
+# by construction); whether a tilt read on one race predicts the checkpoints of
+# the next one better than the neutral value is not measured yet.
 TILT_MIN, TILT_MAX = 0.05, 0.40
 TILT_GRID_STEP = 0.01
 TILT_PRIOR_CPS = 4        # weight of the measured tilt = n / (n + 4) checkpoints
@@ -406,6 +435,7 @@ def measure_fatigue_tilt(course_json: dict, profile, checkpoints: list[dict], ac
     from app.schemas.simulator import CourseProfile
     from app.services.race_simulator import (
         DEFAULT_FATIGUE_TILT,
+        _fine_terrain,
         compute_passage_times,
         predict_course,
     )
@@ -420,10 +450,19 @@ def measure_fatigue_tilt(course_json: dict, profile, checkpoints: list[dict], ac
     if not real:
         return None
 
+    # Parsed once (a long trace takes a while to validate) and copied per grid
+    # step: predict_course writes into the segments only. The race level is
+    # left out: the plan basis is set by the runner's own finish time. The
+    # 25 m terrain does not depend on the tilt: computed once.
+    base = CourseProfile(**course_json)
+    base_profile = profile.model_copy(update={"race_model": None, "race_calibration": None})
+    fine = _fine_terrain(base, base_profile)
+
     def gaps(tilt: float) -> list[float]:
-        prof = profile.model_copy(update={"fatigue_tilt": tilt})
-        course = predict_course(CourseProfile(**course_json), prof, start_hour=start_hour,
-                                start_minute=start_minute, plan_moving_s=total_actual_s)
+        prof = base_profile.model_copy(update={"fatigue_tilt": tilt})
+        course = base.model_copy(update={"segments": [s.model_copy() for s in base.segments]})
+        course = predict_course(course, prof, start_hour=start_hour, start_minute=start_minute,
+                                plan_moving_s=total_actual_s, fine_terrain=fine)
         secs = compute_passage_times(course, checkpoints, int(total_actual_s), 1.0, start_hour, start_minute, None)
         # by km, not name: a loop course repeats names
         pred = {round(float(s["end_km"]), 1): s["adjusted_cumulative_time_s"] for s in secs[:-1]}

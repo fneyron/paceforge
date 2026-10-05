@@ -234,6 +234,9 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
     a few say how the athlete fades. Clamped hard. Only tilts measured against
     the hours-on-course fatigue count (``fatigue_model``): older ones measured
     the gap to the distance-scaled curve, which the fitted one already corrects.
+    Tilts fitted on every checkpoint (``fatigue_tilt_cps``) replace the ones
+    read on the first checkpoint alone as soon as one exists: matching a race
+    again re-measures it.
     """
     from app.models.route import Route
 
@@ -254,10 +257,11 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
                 day = datetime.strptime(rj.get("activity_date") or "", "%d/%m/%Y")
             except ValueError:
                 day = datetime.min
-            measured.append((day, route_id, float(tilt)))
+            measured.append((day, route_id, float(tilt), rj.get("fatigue_tilt_cps") is not None))
+        measured = [m for m in measured if m[3]] or measured
         if measured:
             measured.sort(reverse=True)  # most recent race first (then most recent match)
-            tilt = statistics.median(t for _, _, t in measured[:PERSONAL_TILT_RACES])
+            tilt = statistics.median(m[2] for m in measured[:PERSONAL_TILT_RACES])
             return max(0.05, min(tilt, 0.40))
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
@@ -600,6 +604,7 @@ def predict_course(
     start_hour: int = 6,
     start_minute: int = 0,
     plan_moving_s: float | None = None,
+    fine_terrain: list[float] | None = None,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
 
@@ -609,10 +614,13 @@ def predict_course(
     objective's moving time, stops out) does the same for the plan basis
     ``base_time_s`` only: the shape of an 18h30 plan is the one of an 18h30
     race, as the fatigue was fitted (hours at the runner's own finish).
+
+    ``fine_terrain``: ``_fine_terrain(course, profile)`` already computed, for
+    repeated runs on the same course and gradient profile.
     """
     start_hour_frac = start_hour + (start_minute or 0) / 60
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
-    fine = _fine_terrain(course, profile)
+    fine = fine_terrain if fine_terrain is not None else _fine_terrain(course, profile)
 
     rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt)
     training_total = sum(t for _, t in rows)

@@ -107,7 +107,7 @@ def test_activity_dplus_cache_then_stream_then_strava_factor():
     # a stream that had no altitude is cached as « none »: Strava's total × the factor
     none = _act(raw_data={"workout_type": 1, rc.DPLUS_CACHE_KEY: {"v": 1, "gain": None, "src": "none"}})
     assert rc.activity_dplus(none) == (1000.0 * rc.STRAVA_DPLUS_FACTOR, "strava")
-    assert rc.activity_dplus(_act()) == (975.0, "strava")
+    assert rc.activity_dplus(_act()) == (pytest.approx(1000.0 * rc.STRAVA_DPLUS_FACTOR), "strava")
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,8 @@ async def test_race_model_reads_the_recomputed_dplus(db_session, test_user):
     model = await rc.build_race_effort_model(db_session, test_user.id)
     by_name = {p["name"]: p for p in model["races"]}
     assert by_name["Ultra A"]["dplus"] == 5000 and by_name["Ultra A"]["dplus_src"] == "stream"
-    assert by_name["Trail B"]["dplus"] == 1950 and by_name["Trail B"]["dplus_src"] == "strava"
+    assert by_name["Trail B"]["dplus"] == round(2000 * rc.STRAVA_DPLUS_FACTOR)
+    assert by_name["Trail B"]["dplus_src"] == "strava"
     assert by_name["Ultra A"]["ekm"] == 150.0
 
 
@@ -192,6 +193,8 @@ async def test_backfill_stops_on_the_rate_limit_and_skips_transient_errors(db_se
     ("Lavaredo DNF km 80", "abandon"),
     ("UTMB (abandon Champex)", "abandon"),
     ("Fast Hiking - TMB", "pas une course"),
+    ("IM 2025 Frankfurt - Run", "course d'un triathlon"),
+    ("IM70.3 Aix", "course d'un triathlon"),
 ])
 def test_efforts_that_are_not_a_standalone_race(name, why):
     assert rc.not_a_race_reason(name) == why
@@ -201,6 +204,7 @@ def test_efforts_that_are_not_a_standalone_race(name, why):
     "Cap Corse Trail", "Trail du Cap Fréhel", "Ultra Trail du Cap", "Escapade", "Capitale Trail",
     "UTMB Transjeju 100M - 2eme", "Imperial Trail", "Marathon de Paris", "Semi Pollencia", "Maxi Race",
     "Trail des Relaisiens", "Grand Raid", "Swimrunner's Trail", "Marathon du mont blanc 90km",
+    "Trailrun im Allgäu", "Ultratrail im Schwarzwald", "Marathon im Harz", "Berglauf im Pitztal", "Lauf im Park",
 ])
 def test_real_races_are_kept(name):
     assert rc.not_a_race_reason(name) is None
@@ -217,6 +221,46 @@ def test_triathlon_legs_and_relays_never_come_back():
     # one race left: the recce still helps, the tri leg and the relay don't
     assert {p["name"] for p in used} == {"UTMB", "Reco CCC"}
     assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais"}
+
+
+def test_long_efforts_help_when_the_tagged_races_are_all_excluded():
+    d = date(2026, 6, 1)
+    long_runs = [rc.race_point("Long run", 45, 2500, 6.5, False, day=d),
+                 rc.race_point("Sortie longue", 60, 3500, 9.5, False, day=d),
+                 rc.race_point("Sortie longue 2", 80, 4500, 14, False, day=d)]
+    # two tagged races, both a relay or a triathlon leg: the long efforts carry the model
+    legs = [rc.race_point("SaintéLyon relais", 44, 1500, 4.5, True, day=d),
+            rc.race_point("Ironman 70.3 Nice", 21, 200, 1.9, True, day=d)]
+    model = rc.model_from_points(legs + long_runs, today=date(2026, 10, 1))
+    assert model and model["n_used"] >= 2
+    assert {p["name"] for p in model["races"]} <= {p["name"] for p in long_runs}
+    assert {p["name"] for p in model["ignored"]} >= {"SaintéLyon relais", "Ironman 70.3 Nice"}
+    # one real race left: still with the long efforts
+    one = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), legs[0]]
+    model = rc.model_from_points(one + long_runs, today=date(2026, 10, 1))
+    assert model["n_used"] >= 2 and "Trail X" in {p["name"] for p in model["races"]}
+    # two real races: the tagged races alone
+    two = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), rc.race_point("Ultra Y", 100, 6000, 17, True, day=d)]
+    model = rc.model_from_points(two + long_runs, today=date(2026, 10, 1))
+    assert {p["name"] for p in model["races"]} == {"Trail X", "Ultra Y"}
+
+
+def test_dplus_same_ruler_only_when_course_and_races_are_measured_alike():
+    d = date(2026, 6, 1)
+
+    def model(*srcs):
+        return rc.model_from_points([
+            rc.race_point(f"Ultra {i}", 50 + 30 * i, 3000 + 1500 * i, 7 + 5 * i, True, day=d, dplus_src=src)
+            for i, src in enumerate(srcs)], today=date(2026, 10, 1))
+
+    def ruler(m, course):
+        prof = _prof(race_model=m)
+        rs.predict_course(course, prof)
+        return prof.race_calibration["dplus_same_ruler"]
+
+    assert ruler(model("stream", "stream"), _course_without_effort_dplus()) is True
+    assert ruler(model("stream", "strava"), _course_without_effort_dplus()) is False
+    assert ruler(model("stream", "stream"), _course_without_effort_dplus(with_ele=False)) is False
 
 
 OWNER_RACES = [  # the owner's tagged races (name, date, km, Strava D+, moving h)
@@ -346,6 +390,19 @@ def test_tilt_with_one_checkpoint_moves_little_and_none_without():
                                    [{"km": 59.5, "time_s": total - 60}], total, 6, 0) is None
 
 
+def test_tilt_ignores_the_race_level_and_a_missing_effort_dplus():
+    cj = _hilly()
+    cps = [{"name": f"CP{k}", "distance_km": float(k)} for k in (10, 20, 30, 40, 50)]
+    total = 8 * 3600
+    actual = _passages(cj, cps, 0.30, total)
+    plain = rc.measure_fatigue_tilt(cj, _prof(), cps, actual, total, 6, 0)
+    d = date(2026, 1, 1)
+    m = rc.model_from_points([rc.race_point("A", 50, 3000, 7, True, day=d), rc.race_point("B", 100, 6000, 17, True, day=d)])
+    leveled = rc.measure_fatigue_tilt({**cj, "dplus_effort": None}, _prof(race_model=m), cps, actual, total, 6, 0)
+    assert leveled == plain
+    assert cj.get("dplus_effort") is None  # the stored course is not touched
+
+
 def test_tilt_is_clamped():
     cj = _hilly()
     cps = [{"name": f"CP{k}", "distance_km": float(k)} for k in range(5, 60, 5)]
@@ -375,8 +432,56 @@ async def test_personal_tilt_is_the_median_of_the_three_latest_races(db_session,
 
 
 @pytest.mark.asyncio
+async def test_personal_tilt_prefers_the_tilts_fitted_on_every_checkpoint(db_session, test_user):
+    def route(name, tilt, day, cps=None):
+        rj = {"fatigue_tilt": tilt, "fatigue_model": rs.FATIGUE_MODEL, "activity_date": day}
+        if cps is not None:
+            rj["fatigue_tilt_cps"] = cps
+        return Route(user_id=test_user.id, name=name, total_distance_km=100, result_json=rj)
+    db_session.add_all([
+        route("first CP 2026", 0.30, "02/10/2026"),    # measured on the first checkpoint only
+        route("first CP 2025b", 0.35, "25/08/2025"),
+        route("all CPs 2025a", 0.12, "05/12/2025", cps=9),
+    ])
+    await db_session.flush()
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.12)
+
+
+@pytest.mark.asyncio
 async def test_personal_tilt_single_race_and_clamp(db_session, test_user):
     db_session.add(Route(user_id=test_user.id, name="r", total_distance_km=100,
                          result_json={"fatigue_tilt": 0.9, "fatigue_model": rs.FATIGUE_MODEL, "activity_date": ""}))
     await db_session.flush()
     assert await rs._personal_fatigue_tilt(db_session, test_user.id) == 0.40
+
+
+# ── migration: the effort D+ stored on the courses saved before ──
+
+def test_migration_stores_the_effort_dplus_on_old_courses():
+    import importlib.util
+    import pathlib
+
+    import sqlalchemy as sa
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions" / "v6e7f8a9b0c1_course_dplus_effort.py"
+    spec = importlib.util.spec_from_file_location("mig_dplus", path)
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert mig.down_revision == "u5d6e7f8a9b0"
+
+    old = _course_without_effort_dplus().model_dump()
+    flat = _course_without_effort_dplus(with_ele=False).model_dump()
+    new = {**old, "dplus_effort": 777.0}
+    eng = sa.create_engine("sqlite://")
+    routes = sa.table("routes", sa.column("id", sa.Integer), sa.column("course_json", sa.JSON))
+    with eng.begin() as c:
+        c.execute(sa.text("CREATE TABLE routes (id INTEGER PRIMARY KEY, course_json JSON)"))
+        for i, cj in enumerate([old, flat, new, None], start=1):
+            c.execute(routes.insert().values(id=i, course_json=cj))
+        assert mig.apply(c) == 1
+        got = dict(c.execute(sa.select(routes.c.id, routes.c.course_json)).all())
+        assert got[1]["dplus_effort"] == pytest.approx(1000, rel=0.03)
+        assert got[1]["route_coords"] == old["route_coords"]  # the rest kept
+        assert got[2].get("dplus_effort") is None  # no elevation on the trace: the displayed total applies
+        assert got[3]["dplus_effort"] == 777.0 and got[4] is None
+        assert mig.apply(c) == 0  # idempotent

@@ -132,7 +132,7 @@
                 {% set rc = race_calibration %}
                 <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-gray-900">{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
                 {% set skipped = rc.ignored|default([])|selectattr('why', 'in', ["relais", "course d'un triathlon", "abandon"])|list %}
-                <p class="mt-1 text-gray-500">Tes courses récentes comptent plus que les anciennes. Le D+ de tes courses est mesuré comme celui de ce parcours.{% if skipped %} Pas prises en compte : {% for r in skipped[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %} (relais, triathlon ou abandon).{% endif %}</p>
+                <p class="mt-1 text-gray-500">Tes courses récentes comptent plus que les anciennes.{% if rc.dplus_same_ruler %} Le D+ de tes courses est mesuré comme celui de ce parcours.{% endif %}{% if skipped %} Pas prises en compte : {% for r in skipped[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %} (relais, triathlon ou abandon).{% endif %}</p>
                 {% elif has_data %}
                 <p>De tes sorties Strava. Pour une estimation plus juste, indique « Course » comme type d'activité sur tes compétitions dans Strava.</p>
                 {% else %}
