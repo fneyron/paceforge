@@ -41,6 +41,10 @@ class CourseProfile(BaseModel):
     km_markers: list[dict] = []  # [{"km": int, "lat": float, "lon": float, "elevation": float}]
     # [road, track, trail] share per km, from OpenStreetMap (services/surface)
     surface_km: list[list[float]] | None = None
+    # D+ by the effort algorithm shared with the athlete's past races
+    # (gpx.profile_elevation_gain), used by the race calibration only; the
+    # displayed total stays the per-km sum above. None on courses saved before.
+    dplus_effort: float | None = None
     predicted_total_time_s: int = 0
     predicted_total_time_formatted: str = ""
 

@@ -121,6 +121,56 @@ def _gain_loss_hysteresis(elevations: list[float], threshold: float = 3.0) -> tu
     return gain, loss
 
 
+# Effort D+ (race calibration): one algorithm for the course and for the
+# athlete's past races, robust to how noisy the elevation is. Resampled on a
+# 20 m distance grid, 100 m moving average, 2 m hysteresis. On 113 UTMB Live
+# tracks: median 0.975 of the official D+, 88 % within ±10 % (the per-km raw
+# hysteresis above: median 1.026 but 57 %, noisy tracks reading +20-50 %).
+# On a watch stream it barely depends on the sampling (Chiang Mai 100k: 4612 m
+# at 18 m spacing, 4579 at 37 m, 4503 at 74 m).
+DPLUS_GRID_M = 20.0
+DPLUS_WINDOW = 5
+DPLUS_THRESHOLD_M = 2.0
+
+
+def profile_elevation_gain(dist_m: list, alt_m: list) -> tuple[float, float]:
+    """(gain, loss) in metres of an elevation profile given as cumulative
+    distance (m) and altitude (m) lists. Points with a missing value or a
+    distance going backwards are skipped; fewer than 2 points → (0, 0)."""
+    pts: list[tuple[float, float]] = []
+    for d, a in zip(dist_m or [], alt_m or [], strict=False):
+        if d is None or a is None:
+            continue
+        d, a = float(d), float(a)
+        if pts and d < pts[-1][0]:
+            continue
+        pts.append((d, a))
+    if len(pts) < 2 or pts[-1][0] <= pts[0][0]:
+        return 0.0, 0.0
+    # linear resample on the distance grid
+    grid: list[float] = []
+    j, t, end, n = 0, pts[0][0], pts[-1][0], len(pts)
+    while t <= end:
+        while j < n - 2 and pts[j + 1][0] < t:
+            j += 1
+        (d0, a0), (d1, a1) = pts[j], pts[j + 1]
+        f = (t - d0) / (d1 - d0) if d1 > d0 else 0.0
+        grid.append(a0 + min(max(f, 0.0), 1.0) * (a1 - a0))
+        t += DPLUS_GRID_M
+    if grid and end - (t - DPLUS_GRID_M) > 1e-6:
+        grid.append(pts[-1][1])
+    # centred moving average (truncated at the ends)
+    half, m = DPLUS_WINDOW // 2, len(grid)
+    csum = [0.0]
+    for v in grid:
+        csum.append(csum[-1] + v)
+    smooth = [
+        (csum[min(m, i + half + 1)] - csum[max(0, i - half)]) / (min(m, i + half + 1) - max(0, i - half))
+        for i in range(m)
+    ]
+    return _gain_loss_hysteresis(smooth, DPLUS_THRESHOLD_M)
+
+
 def _smooth_elevations(points: list[GpxPoint], window: int = 5) -> list[float]:
     """Apply moving average to smooth GPS elevation noise."""
     elevations = [p.elevation for p in points]
@@ -215,6 +265,7 @@ def build_course_profile(
 
     total_gain = sum(s.elevation_gain for s in segments)
     total_loss = sum(s.elevation_loss for s in segments)
+    dplus_effort, _ = profile_elevation_gain([p.distance_from_start for p in points], [p.elevation for p in points])
 
     return CourseProfile(
         name=name,
@@ -225,6 +276,7 @@ def build_course_profile(
         elevation_points=elevation_points,
         route_coords=route_coords,
         km_markers=km_markers,
+        dplus_effort=round(dplus_effort, 0),
     )
 
 

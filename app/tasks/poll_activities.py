@@ -118,6 +118,16 @@ async def _run_poll() -> dict:
                     )
                     new_activities += 1
 
+                # The races' D+ from their altitude stream, a few per poll
+                # (new races, and the backlog of athletes synced before)
+                try:
+                    from app.services.race_calibration import backfill_race_dplus
+
+                    await db.flush()
+                    await backfill_race_dplus(db, user, strava, limit=3)
+                except Exception:
+                    logger.warning("Race D+ backfill failed for user %d", user.id, exc_info=True)
+
                 # Update poll timestamp
                 user.last_activity_poll_at = datetime.now(timezone.utc)
                 users_checked += 1

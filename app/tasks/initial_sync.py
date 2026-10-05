@@ -170,6 +170,15 @@ async def _run_initial_sync(user_id: int) -> dict:
                         strava_id, user_id,
                     )
 
+            # Phase 3: the races' D+ from their altitude stream (one request
+            # per race; what a rate limit leaves is picked up by the poll)
+            try:
+                from app.services.race_calibration import backfill_race_dplus
+
+                await backfill_race_dplus(db, user, strava, limit=40)
+            except Exception:
+                logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
+
             # Mark initial sync as done
             user.initial_sync_done = True
             await db.commit()
