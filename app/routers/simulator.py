@@ -1975,7 +1975,7 @@ async def _nutrition_card_context(
         "rules": N.rule_lines(plan, picks, products, has_refills),
         "warnings": N.rule_warnings(plan, picks, products, has_refills),
         "hand_set": inp["hand_set"],
-        "level": inp["level"], "custom_carbs": custom.get("carbs_g_per_h"),
+        "level": inp["level"], "custom_carbs": t["carbs_g_per_h"],
         "picked": picked, "generics": generics, "pantry_chips": others[:4], "pantry_more": others[4:],
         "brand_groups": [(lbl, items) for lbl, items in brand_groups if items],
         "source": inp["source"],
