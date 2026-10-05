@@ -64,6 +64,13 @@ def create_app() -> FastAPI:
     app.include_router(sante.router)      # Santé: recovery, load, trends from COROS
     app.include_router(webhook.router)
 
+    # Browsers ask for /favicon.ico at the root, whatever the page links to
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        from fastapi.responses import FileResponse
+        return FileResponse("app/static/favicon.ico", media_type="image/x-icon",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
     # Health check
     @app.get("/health")
     async def health_check():
