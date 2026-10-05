@@ -15,11 +15,6 @@
             <span id="coros-sync-spin" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
         </button>
     </div>
-    {% if coros.per_metric %}
-    <p class="text-[12px] text-gray-500 tabular-nums">
-        Reçu de COROS : {% for label, days in coros.per_metric %}{{ label }} {{ days }} j{{ ', ' if not loop.last }}{% endfor %}
-    </p>
-    {% endif %}
     {% if outcome is defined and outcome %}
     {% if outcome.busy %}
     <p class="text-[12px] text-gray-500">Une synchro est déjà en cours : réessaie dans une minute.</p>

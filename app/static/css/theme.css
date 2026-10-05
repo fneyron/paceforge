@@ -13,46 +13,44 @@
  * @font-face block and put the family first in --pf-font-display / --pf-font-text.
  */
 
-/* ── font slot (self-hosted, no CDN) ─────────────────────────────────────
-@font-face {
-    font-family: "PF Display";
-    src: url("/static/fonts/display-variable.woff2") format("woff2");
-    font-weight: 100 900;
-    font-display: swap;
-}
-@font-face {
-    font-family: "PF Text";
-    src: url("/static/fonts/text-variable.woff2") format("woff2");
-    font-weight: 100 900;
-    font-display: swap;
-}
-──────────────────────────────────────────────────────────────────────── */
+/* ── fonts (self-hosted, SIL OFL 1.1: app/static/fonts/licenses) ──────────
+ * Sora (Jonathan Barnbrook, Julián Moncada) for titles and numbers,
+ * Figtree (Erik Kennedy) for text. Variable weight, latin + latin-ext. */
+@font-face { font-family: "Sora"; src: url("/static/fonts/sora-latin-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Sora"; src: url("/static/fonts/sora-latin-ext-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Figtree"; src: url("/static/fonts/figtree-latin-wght-normal.woff2") format("woff2"); font-weight: 300 900; font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Figtree"; src: url("/static/fonts/figtree-latin-ext-wght-normal.woff2") format("woff2"); font-weight: 300 900; font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
 :root {
-    /* brand (placeholder: pine green, system font — final choice pending) */
-    --pf-accent: 47 107 79;          /* #2F6B4F  buttons, active tab, profile line, links */
+    /* brand: « Glacier » — petrol + ice, Sora + Figtree */
+    --pf-accent: 11 95 110;          /* #0B5F6E  petrol: buttons, active tab, profile line, links (white on it 7.3:1) */
     --pf-accent-ink: 255 255 255;    /* text and icons ON the accent */
-    --pf-accent-soft: 232 242 236;   /* #E8F2EC  tinted backgrounds, selected rings */
-    --pf-accent-strong: 36 86 63;    /* #24563F  pressed / hover */
+    --pf-accent-soft: 230 242 244;   /* #E6F2F4  ice tint: tinted backgrounds, selected rings */
+    --pf-accent-strong: 8 71 84;     /* #084754  pressed / hover, small accent text */
+    --pf-mark-line: 189 231 238;     /* #BDE7EE  ice: the profile line of the logo */
 
-    --pf-font-display: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --pf-font-text: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --pf-font-display: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --pf-font-text: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
     /* status */
-    --pf-ok: 14 122 70;              /* #0E7A46 */
-    --pf-ok-soft: 230 245 236;
-    --pf-warn: 168 83 7;             /* #A85307 */
-    --pf-warn-soft: 253 241 224;
-    --pf-danger: 196 40 28;          /* #C4281C */
+    --pf-ok: 46 125 50;              /* #0E7A46 */
+    --pf-ok-soft: 232 244 232;
+    --pf-warn: 163 90 0;             /* #A85307 */
+    --pf-warn-soft: 252 241 223;
+    --pf-danger: 191 42 34;          /* #C4281C */
     --pf-danger-soft: 253 236 234;
 
     /* neutrals: page, surfaces, ink. Tailwind's gray-* classes read this ramp. */
     --pf-bg: 255 255 255;            /* page */
     --pf-surface: 255 255 255;       /* cards, sheets, inputs */
-    --pf-soft: 245 245 246;          /* soft fills: segmented control, open row, secondary button */
-    --pf-line: 236 236 238;          /* hairlines */
-    --pf-ink: 11 11 12;              /* main text */
-    --pf-night: 243 243 245;         /* night band on the profile */
+    --pf-soft: 242 246 247;          /* soft fills: segmented control, open row, secondary button */
+    --pf-line: 228 235 237;          /* hairlines */
+    --pf-ink: 11 26 31;              /* main text */
+    --pf-night: 234 242 244;         /* night band on the profile */
 
     --pf-gray-50: 247 247 248;
     --pf-gray-100: 241 241 243;
@@ -63,17 +61,18 @@
     --pf-gray-600: 75 75 82;
     --pf-gray-700: 58 58 64;
     --pf-gray-800: 35 35 39;
-    --pf-gray-900: 11 11 12;
+    --pf-gray-900: 11 26 31;
     --pf-gray-950: 5 5 6;
 
     color-scheme: light;
 }
 
 .dark {
-    --pf-accent: 120 196 155;        /* #78C49B */
-    --pf-accent-ink: 8 20 14;
-    --pf-accent-soft: 26 48 37;
-    --pf-accent-strong: 150 214 178;
+    --pf-accent: 92 195 209;
+    --pf-accent-ink: 4 22 26;
+    --pf-accent-soft: 13 44 50;
+    --pf-accent-strong: 132 214 224;
+    --pf-mark-line: 4 22 26;
 
     --pf-ok: 98 204 145;
     --pf-ok-soft: 18 46 31;

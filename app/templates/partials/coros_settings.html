@@ -27,10 +27,11 @@
         <a href="/coros/connect" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter</a>
     </div>
     {% else %}
-    {% include "partials/coros_status.html" %}
+    <p class="pf-label"><span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if coros.last_error else 'bg-ok' }} mr-1 align-middle"></span>{% if coros.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ coros.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
+    {% if coros.last_error %}<p class="text-[12px] text-warn">Dernière synchro échouée : {{ coros.last_error }}</p>{% endif %}
     {% endif %}
     <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-[13px] text-gray-500">Synchro automatique toutes les 6 h. Tout est sur la page <a href="/sante" class="underline hover:text-gray-600">Santé</a>.</p>
+        <p class="text-[13px] text-gray-500">Synchro automatique toutes les 6 h, ou à la demande sur la page <a href="/sante" class="underline hover:text-gray-600">Santé</a>.</p>
         <form method="post" action="/settings/coros/disconnect"
               onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter COROS ? Les données déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
             <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>

@@ -49,12 +49,12 @@
     <section class="pf-health-connect pf-panel space-y-3">
         <h2 class="pf-h2">Ta montre COROS</h2>
         <p class="text-[15px] text-gray-600">Connecte ta montre COROS : ta récupération, ta charge d'entraînement, ton sommeil et ta forme s'afficheront ici.</p>
-        {% include "partials/coros_connect.html" %}
+        <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS dans les réglages</a>
     </section>
     {% elif coros.needs_reauth %}
     <section class="pf-health-connect pf-panel space-y-3">
         <p class="text-[15px] text-gray-700">{{ coros.last_error or "La connexion à COROS a expiré : reconnecte-toi." }} Les données déjà reçues restent.</p>
-        <a href="/coros/connect" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter</a>
+        <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter dans les réglages</a>
     </section>
     {% endif %}
 

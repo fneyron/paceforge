@@ -27,7 +27,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .pf-top { position: sticky; top: 0; z-index: 40; background: rgb(var(--pf-bg) / .88); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border-bottom: 1px solid rgb(var(--pf-line)); padding-top: env(safe-area-inset-top, 0px); }
 .pf-top-in { height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .pf-logo { display: inline-flex; align-items: center; gap: 10px; font-family: var(--pf-font-display); font-weight: 700; font-size: 18px; letter-spacing: -.02em; color: rgb(var(--pf-ink)); }
-.pf-mark { width: 28px; height: 28px; border-radius: 8px; background: rgb(var(--pf-accent)); color: rgb(var(--pf-accent-ink)); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.pf-mark { width: 28px; height: 28px; border-radius: 8px; background: rgb(var(--pf-accent)); color: rgb(var(--pf-mark-line)); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .pf-nav { display: none; gap: 4px; }
 .pf-nav a { padding: 8px 14px; border-radius: 999px; font-size: 15px; font-weight: 500; color: rgb(var(--pf-gray-600)); }
 .pf-nav a:hover { color: rgb(var(--pf-ink)); }
