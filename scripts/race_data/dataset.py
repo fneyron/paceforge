@@ -11,10 +11,44 @@ from __future__ import annotations
 import gzip
 import json
 import pathlib
+import re
 from datetime import datetime
 
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "data" / "races"
 ROAD, TRACK = {"R"}, {"F"}
+
+# Not a solo running race: bike / triathlon / relay / team / walk / stage or
+# time-limited formats. Matched on the race name, its course id and the edition.
+NOT_RUNNING = re.compile(
+    r"vtt|\bvae\b|\bae\b|cyclo|cycling|gravel|\bbike\b|v[ée]lo|triath|duathl|swimrun|relais|relay|\brel\d|\bduo\b|[ée]quipe|"
+    r"\bteam\b|everesting|backyard|\b\d+\s?h\b|e-?rando|\bwalk|trailwalker|\bstage|2\s?days?\b|2\s?jours|bivouac|"
+    # relays (es / de / it / pt), pairs, Oxfam Trailwalker (team walk, also "OTW"), hikes, multi-day stage races
+    r"relevos?\b|staffel|staffetta|estafeta|\bcouples?\b|\boxfam|\botw\b|\bhike|londonhike|\d\s?d[ií]as|\d\s?jours|tappe|"
+    r"\bptl\b|\bmarch\b|newcastle2|l2p24|\bmds|hmds|marathondessables|saharan|tri-obernai|"
+    # bike events whose race names do not say so (MB Race, Iron Bike, Evergreen, GTJ 200, CMV, EBC, Bergi)
+    r"\bmbrace|\bironb|\bevergreen|\bgtj200|\bcmv_|\bebc_|\bbergi_|megevemontblanccycling|super-huit",
+    re.I,
+)
+# Faster than any running field's median: a bike, or broken timing. Median
+# finisher effort speed, effort-km (km + D+/100) per hour, of the runners
+# stored (many UTMB Live samples hold the fastest third whole, so their
+# median is fast: the quickest running fields stored reach 12.1).
+MAX_MEDIAN_EFFORT_KMH = 12.5
+
+
+def is_running(*labels: str | None) -> bool:
+    """False when the race name / course id / edition says bike, relay, team, walk, stage race…"""
+    return not NOT_RUNNING.search(" ".join(x for x in labels if x))
+
+
+def plausible_running(race: dict, dplus: float | None) -> bool:
+    """Median finisher effort speed a running field can hold (bikes and broken timings out)."""
+    ts = sorted(r["time_s"] for r in race["runners"] if r.get("time_s"))
+    if not ts:
+        return False
+    km = race["cps"][-1].get("km_official", race["cps"][-1]["km"])
+    med = ts[len(ts) // 2] / 3600
+    return (km + (dplus or 0) / 100) / med <= MAX_MEDIAN_EFFORT_KMH
 
 
 def _iso(s):

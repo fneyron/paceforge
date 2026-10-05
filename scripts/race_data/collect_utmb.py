@@ -25,7 +25,9 @@ MIN_KM = 40.0
 
 
 def get(url: str, tenant: str | None = None, delay: float = 0.5) -> dict | None:
-    cmd = ["curl", "-s", "-m", "60", "-A", "PaceForge research (paceforge.fr)"]
+    # --compressed: the track files on the CDN come gzip-encoded (2026 on), which
+    # plain curl hands over undecoded (the 2026 Transjeju track was lost that way)
+    cmd = ["curl", "-s", "--compressed", "-m", "60", "-A", "PaceForge research (paceforge.fr)"]
     if tenant:
         cmd += ["-H", f"x-tenant: {tenant}"]
     for attempt in range(3):
@@ -111,11 +113,29 @@ def topup_race(path: pathlib.Path, tenant: str, race_id: str, max_runners: int, 
     return record["summary"] | {"added": added}
 
 
+def retrack_race(path: pathlib.Path, tenant: str, race_id: str, delay: float) -> dict:
+    """Fetch the GPS track of a race stored without one (a failed download)."""
+    record = json.loads(gzip.decompress(path.read_bytes()))
+    if record.get("track"):
+        return record["summary"]
+    st = get(f"{API}/races/{race_id}/static", tenant, delay) or {}
+    url = (st.get("info") or {}).get("track")
+    track = get(url, None, delay) if url else None
+    if track:
+        record["track"] = compact_track(track)
+        record["track_stats"] = track.get("stats")
+        path.write_bytes(gzip.compress(json.dumps(record, separators=(",", ":")).encode()))
+    print(f"{tenant}/{race_id}: track {len(record.get('track') or [])} points", flush=True)
+    return record["summary"]
+
+
 def collect_race(tenant: str, race_id: str, max_runners: int, delay: float, meta_only: bool,
-                 fast_share: float = 0.0, topup: bool = False) -> dict | None:
+                 fast_share: float = 0.0, topup: bool = False, retrack: bool = False) -> dict | None:
     path = ROOT / tenant / f"{race_id}.json.gz"
     partial = ROOT / tenant / f"{race_id}.partial.json"
     if path.exists():
+        if retrack:
+            return retrack_race(path, tenant, race_id, delay)
         if topup:
             return topup_race(path, tenant, race_id, max_runners, fast_share, delay)
         return json.loads(gzip.decompress(path.read_bytes()))["summary"]
@@ -173,6 +193,7 @@ def main() -> None:
     ap.add_argument("--only", nargs="*", help="tenant/race ids to collect (default: all)")
     ap.add_argument("--fast-share", type=float, default=0.0, help="take every runner of this fastest share of the field")
     ap.add_argument("--topup", action="store_true", help="add runners to races already stored")
+    ap.add_argument("--retrack", action="store_true", help="fetch the GPS track of races stored without one")
     ap.add_argument("--index-name", help="file name for the --meta-only index (default index_meta.json)")
     args = ap.parse_args()
     tenants = json.loads(pathlib.Path(args.tenants).read_text())
@@ -182,7 +203,7 @@ def main() -> None:
         todo = [tuple(x.split("/", 1)) for x in args.only]
     for tenant, race_id in todo:
         if True:
-            s = collect_race(tenant, race_id, args.max_runners, args.delay, args.meta_only, args.fast_share, args.topup)
+            s = collect_race(tenant, race_id, args.max_runners, args.delay, args.meta_only, args.fast_share, args.topup, args.retrack)
             if s:
                 index.append(s)
                 print(json.dumps(s, ensure_ascii=False), flush=True)

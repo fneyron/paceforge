@@ -1,22 +1,67 @@
 {
-  "updated": "2026-10-04",
+  "updated": "2026-10-05",
   "dataset": {
-    "races": 995,
-    "events": 395,
-    "finisher_results": 119512,
-    "checkpoint_passages": 1175720,
-    "sources": {"utmb_live": 174, "livetrail": 821}
+    "races": 770,
+    "events": 162,
+    "editions": 342,
+    "finisher_results": 105743,
+    "checkpoint_passages": 919486,
+    "races_with_gps_track": 124,
+    "sources": {"utmb_live": 169, "livetrail": 601},
+    "stored": {"utmb_live": 175, "livetrail": 821},
+    "note": "solo running races only (scripts/race_data/dataset_stats.py): left out 216 bike / triathlon / relay / duo / pairs / team / walk / hike / stage / time-limited formats and PTL by name, 3 courses whose median finisher effort speed is a bike's or broken timing, 5 with fewer than 10 finishers, 2 without checkpoint distances. events = event series (an event's editions count once); finishers are those stored (UTMB Live up to 676 per race; of the 175 races stored, all finishers on 68, the fastest third whole then an even sample by rank on 60, an even sample of 150-450 by rank on the 47 collected first; LiveTrail up to 80, an even sample by rank)"
   },
   "fit": {
     "races": 115,
     "finisher_results": 21400,
-    "note": "gradient + fatigue curve fitted on UTMB Live races 40-180 km with a GPS track"
+    "note": "gradient curve + fatigue by hours + night in the app: fitted on UTMB Live races 40-180 km with a GPS track (train events: 71 races, 12464 finishers). Refit on 2026-10-04 on 121 running races with a track (43714 finishers; train events 74 races, 29596 finishers): no gain on the held-out events, not adopted",
+    "refit": {
+      "races": 121,
+      "finisher_results": 43714,
+      "train_races": 74,
+      "train_finisher_results": 29596,
+      "selected_form": "the current curve projected on the knot form (equal to the app's table from -15 to 25 %, not at -20..-16 % and 26..30 %), fatigue / night / terrain refitted (2-fold CV by event on train)",
+      "adopted": false
+    }
   },
   "validation": {
-    "held_out_races": 44,
+    "held_out_races": 47,
     "held_out_events": 6,
-    "mean_abs_gap_min_before": 25.6,
-    "mean_abs_gap_min_after": 21.5,
-    "races_improved": 40
+    "held_out_finishers": 14100,
+    "mean_abs_gap_min_before": 21.92,
+    "mean_abs_gap_min_after": 18.61,
+    "races_improved": 42,
+    "legacy_mean_abs_gap_min": 21.92,
+    "races_improved_vs_legacy": 42,
+    "refit_mean_abs_gap_min": 18.59,
+    "refit_races_improved": 23,
+    "transjeju_2025_guard": {"runners": 4, "finish_h": "16-21", "mean_abs_gap_min": 8.0, "refit_mean_abs_gap_min": 8.3},
+    "transjeju_2026": {
+      "runners": 362,
+      "mean_abs_gap_min": 30.1,
+      "legacy_mean_abs_gap_min": 36.1,
+      "refit_mean_abs_gap_min": 29.3,
+      "all_finishers": 362,
+      "all_finishers_mean_abs_gap_min": 30.1,
+      "guard_16_21h_runners": 12,
+      "guard_16_21h_mean_abs_gap_min": 9.9,
+      "guard_16_21h_refit_mean_abs_gap_min": 10.2,
+      "bib": "10",
+      "actual_s": 60797,
+      "predicted_s": null,
+      "bib_mean_abs_gap_min": 9.9,
+      "bib_refit_mean_abs_gap_min": 8.8,
+      "note": "held-out race. mean_abs_gap_min: over its finishers, each planned at his own finish (362 of the 364 finishers stored: level groups of 3 runners or more). guard_16_21h: the finishers in 16-21 h. bib_*: bib 10 alone, planned at his own finish (the population model sets the shape; the level comes from the athlete's race model, so it gives no predicted_s)"
+    },
+    "livetrail": {
+      "courses": 595,
+      "finishers": 44321,
+      "events": 140,
+      "mean_abs_gap_min": 18.58,
+      "refit_mean_abs_gap_min": 18.53,
+      "legacy_mean_abs_gap_min": 21.48,
+      "note": "extra validation, never used to fit or select: LiveTrail running courses 40-180 km without GPS track (profile from section D+/D-), night not scored"
+    },
+    "note": "mean |gap| between the plan and the finishers' times at the checkpoints, each finisher planned at his own finish, on 6 events held out since the first fit (chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler). before = legacy = the app before the first fit; after = the app as it ships; races_improved = races where the app beats legacy. refit_* = the 2026-10-04 refit, not adopted (18.59 vs 18.61, better on 23/47 races, Transjeju guard worse)"
   }
 }
