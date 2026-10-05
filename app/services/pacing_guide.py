@@ -36,6 +36,41 @@ def default_hr_caps(max_hr: int | None) -> dict:
     return {"hr_cap_climb": climb, "hr_cap_flat": climb - 4, "hr_release_descent": climb - 10}
 
 
+def resolve_hr_caps(params: dict | None, max_hr: int | None) -> dict:
+    """The ceilings the plan uses, from ONE optional setting.
+
+    climb   = « Plafond cardio en montée » when set, else 75 % of the max HR
+              seen in the activities (≥ 120), else none;
+    flat    = an old explicit value, else climb − 4;
+    descent = an old explicit value, else climb − 10;
+    walk    = an old explicit walk_grade, else 18 %.
+    """
+    p = params or {}
+
+    def num(key):
+        v = p.get(key)
+        if v in (None, ""):
+            return None
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+    own = num("hr_cap_climb")
+    if own:
+        climb, source = own, "toi"
+    elif max_hr and max_hr >= 120:
+        climb, source = int(round(max_hr * 0.75)), "activités"
+    else:
+        climb, source = None, None
+    flat = num("hr_cap_flat") or (climb - 4 if climb else None)
+    descent = num("hr_release_descent") or (climb - 10 if climb else None)
+    try:
+        walk = float(p.get("walk_grade") or 0) or float(DEFAULT_WALK_GRADE)
+    except (TypeError, ValueError):
+        walk = float(DEFAULT_WALK_GRADE)
+    return {"climb": climb, "flat": flat, "descent": descent, "walk_grade": walk, "source": source}
+
+
 def _cap_at(cap: int | None, progress: float) -> int | None:
     """The ceiling at this point of the race (see HR_DECAY)."""
     if not cap:
@@ -90,7 +125,7 @@ def build_pacing_guide(
     segs = course.segments
     total_km = course.total_distance_km or 1.0
     if not segs:
-        return {"blocks": [], "alerts": [], "caps": {}, "plan_factor": 1.0}
+        return {"blocks": [], "alerts": [], "caps": {}, "plan_factor": 1.0, "total_km": total_km}
 
     total_base = sum((s.base_time_s or s.predicted_time_s) for s in segs) or 1.0
     if plan_sections and any(s.get("pinned") for s in plan_sections):
@@ -230,6 +265,7 @@ def build_pacing_guide(
             "hr_release_descent": hr_release_descent, "walk_grade": walk_grade,
         },
         "hr_decay": HR_DECAY,
+        "total_km": total_km,
         "n_climb_km": sum(1 for r in rows if r["cls"] in ("climb", "stairs")),
         "n_stairs_km": sum(1 for r in rows if r["cls"] == "stairs"),
     }
@@ -269,13 +305,15 @@ def _alert(run: list[dict]) -> dict:
     }
 
 
-def instruction_code(block: dict) -> str:
+def instruction_code(block: dict, hr_cap: int | None = None) -> str:
     """Short watch-friendly code for a block: 'MONT FC135 650m/h', 'ESCAL marche',
-    'DESC FC125', 'PLAT FC131 5:45', 'LIBRE course'."""
+    'DESC FC125', 'PLAT FC131 5:45', 'LIBRE course'. ``hr_cap`` = the leg's
+    own ceiling (see leg_instructions), so the watch shows the row's number."""
     if block.get("hr_free"):
         return "LIBRE course"
     parts = []
-    hr = f"FC{block['hr_cap']}" if block.get("hr_cap") else ""
+    cap = hr_cap if hr_cap is not None else block.get("hr_cap")
+    hr = f"FC{cap}" if cap else ""
     cls = block["cls"]
     if cls == "stairs":
         parts = ["ESCAL", "marche", hr]
@@ -298,6 +336,10 @@ def leg_instructions(guide: dict, sections: list[dict]) -> list[dict]:
     """
     blocks = guide.get("blocks") or []
     alerts = guide.get("alerts") or []
+    caps = guide.get("caps") or {}
+    total_km = float(guide.get("total_km") or (float(sections[-1]["end_km"]) if sections else 0) or 1.0)
+    base = {"climb": caps.get("hr_cap_climb"), "stairs": caps.get("hr_cap_climb"),
+            "flat": caps.get("hr_cap_flat"), "descent": caps.get("hr_release_descent")}
     out = []
     for s in sections:
         a, b = float(s["start_km"]), float(s["end_km"])
@@ -312,13 +354,52 @@ def leg_instructions(guide: dict, sections: list[dict]) -> list[dict]:
                 best, best_w = blk, w
         steep = [al for al in alerts if al["end_km"] > a and al["start_km"] < b]
         if best is None:
-            out.append({"from_name": s["start_name"], "to_name": s["end_name"], "code": "", "block": None, "steep": steep})
+            out.append({"from_name": s["start_name"], "to_name": s["end_name"], "code": "", "block": None, "steep": steep,
+                        "hr_cap": None, "cls": None})
             continue
-        code = instruction_code(best)
+        # the leg's OWN ceiling: its terrain's cap, lowered at the leg's midpoint
+        hr = _cap_at(base.get(best["cls"]), ((a + b) / 2) / total_km)
+        code = instruction_code(best, hr_cap=hr)
         if steep and best["cls"] != "stairs":
             code += " · ESCAL km " + "/".join(f"{al['start_km']:g}" for al in steep[:2])
         out.append({
             "from_name": s["start_name"], "to_name": s["end_name"], "start_km": a, "end_km": b,
-            "code": code, "block": best, "steep": steep,
+            "code": code, "block": best, "steep": steep, "hr_cap": hr, "cls": best["cls"],
         })
     return out
+
+
+def effort_sentence(cls: str | None, hr_cap: int | None, walk_grade: float = DEFAULT_WALK_GRADE) -> str | None:
+    """What to do on a leg, in one line (HTML: the heart-rate part in bold)."""
+    if not cls:
+        return None
+    walk = int(round(walk_grade or DEFAULT_WALK_GRADE))
+    text = {
+        "flat": "roulant : cours régulier, mange et bois.",
+        "climb": f"montée : marche dès que ça dépasse {walk} %, cours le reste.",
+        "stairs": "très raide : marche, mains sur les cuisses.",
+        "descent": "descente : relâché, sans freiner. Mange avant, en haut.",
+    }[cls]
+    if not hr_cap:
+        return text[0].upper() + text[1:]
+    return f"<b>Cardio {'vers' if cls == 'descent' else 'sous'} {int(hr_cap)}</b> · {text}"
+
+
+def _km_fr(km: float) -> str:
+    return f"{round(float(km), 1):g}".replace(".", ",")
+
+
+def steep_on_leg(steep: list[dict], a: float, b: float) -> list[dict]:
+    """The steep stretches of a leg, clipped to it."""
+    return [{"start_km": round(max(a, al["start_km"]), 1), "end_km": round(min(b, al["end_km"]), 1), "max_grade": al.get("max_grade")}
+            for al in steep or [] if min(b, al["end_km"]) > max(a, al["start_km"])]
+
+
+def steep_sentence(steep: list[dict]) -> str | None:
+    """'Raide km 98 → 100, jusqu'à 24 % : marche, mains sur les cuisses.'"""
+    if not steep:
+        return None
+    parts = [f"km {_km_fr(s['start_km'])} → {_km_fr(s['end_km'])}" for s in steep]
+    where = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " et " + parts[-1]
+    top = max((s.get("max_grade") or 0) for s in steep)
+    return f"Raide {where}" + (f", jusqu'à {int(round(top))} %" if top else "") + " : marche, mains sur les cuisses."
