@@ -125,5 +125,5 @@ async def test_flag_on_brings_everything_back(as_user: AsyncClient, db_session, 
     assert (await as_user.get(f"/simulator/routes/{bike.id}")).status_code == 200
     settings_page = await as_user.get("/settings")
     assert "FTP" in settings_page.text and "Puissance (vélo)" in settings_page.text
-    landing = await as_user.get("/landing")
-    assert landing.status_code == 200 and "CdA" in landing.text and "<span>Vélo</span>" in landing.text
+    # the landing page no longer markets the bike planner, flag or not
+    assert (await as_user.get("/landing")).status_code == 200
