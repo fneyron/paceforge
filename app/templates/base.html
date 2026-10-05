@@ -16,7 +16,7 @@
     <meta property="og:title" content="{{ _meta_title | trim }}">
     <meta property="og:description" content="{{ _meta_desc | trim }}">
     <meta property="og:image" content="https://paceforge.fr/static/img/og-image.png">
-    <meta property="og:url" content="https://paceforge.fr">
+    <meta property="og:url" content="https://paceforge.fr{% if request is defined and request %}{{ request.url.path }}{% endif %}">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ _meta_title | trim }}">
@@ -122,6 +122,15 @@
 
         /* Dark mode — Strava orange stays */
         .dark .bg-strava { background-color: #FC4C02 !important; }
+
+        /* Dark mode — dark bands (bg-gray-900) keep their light-mode look: white buttons, light text */
+        .dark .bg-gray-900 .bg-white { background-color: #fff !important; }
+        .dark .bg-gray-900 .bg-white:hover { background-color: #f3f4f6 !important; }
+        .dark .bg-gray-900 .bg-white.text-gray-900 { color: #111827 !important; }
+        .dark .bg-gray-900 .text-gray-300 { color: #d1d5db !important; }
+        .dark .bg-gray-900 .text-gray-400 { color: #9ca3af !important; }
+        .dark .bg-green-50 .text-green-800, .dark .bg-green-50.text-green-800 { color: #86efac !important; }
+        .dark .bg-red-50 .text-red-800, .dark .bg-red-50.text-red-800 { color: #fca5a5 !important; }
 
         /* Dark mode — Scrollbar */
         .dark ::-webkit-scrollbar { background: #111; }

@@ -99,19 +99,36 @@ def _km_range(note: Any) -> tuple[str, str]:
     return (m.group(1), m.group(2)) if m else ("", "")
 
 
+def _train_split(fit: dict) -> tuple[Any, Any]:
+    """Races and finishers the curve was fitted on (the held-out races excluded).
+
+    Read from fit.train_races / fit.train_finisher_results, else from the note
+    ('... train events: 71 races, 12464 finishers ...'). (None, None) if absent:
+    fit.races counts the training and the test races together, so it is never
+    shown as the training base.
+    """
+    races, finishers = fit.get("train_races"), fit.get("train_finisher_results")
+    if _num(races) and _num(finishers):
+        return races, finishers
+    m = re.search(r"train[^:()]*:\s*(\d+)\s*races?,\s*(\d+)\s*finishers", str(fit.get("note") or ""))
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
+
 def _transjeju(val: dict) -> dict | None:
-    """Optional single-race check on the Trans Jeju 2026, shown only with a gap figure."""
+    """Optional check on the Trans Jeju 2026, shown only with an all-finishers gap.
+
+    A single runner's gap (validation.transjeju_2026.mean_abs_gap_min, for one
+    bib) is never shown as the race's mean gap.
+    """
     tj = val.get("transjeju_2026")
     if not isinstance(tj, dict):
         return None
-    after = _num(tj.get("mean_abs_gap_min_after", tj.get("mean_abs_gap_min")))
-    if after is None:
+    gap = _num(tj.get("all_finishers_mean_abs_gap_min"))
+    if gap is None:
         return None
-    before = _num(tj.get("mean_abs_gap_min_before"))
-    runners = _num(tj.get("finisher_results", tj.get("finishers", tj.get("runners"))))
+    runners = _num(tj.get("all_finishers", tj.get("finisher_results", tj.get("finishers"))))
     return {
-        "gap_after": fmt_dec(after),
-        "gap_before": fmt_dec(before) if before is not None else "",
+        "gap_after": fmt_dec(gap),
         "finishers": fmt_int(runners) if runners else "",
     }
 
@@ -122,6 +139,16 @@ def load_model_stats(path: Path | None = None) -> dict:
     ds, fit, val = _section(raw, "dataset"), _section(raw, "fit"), _section(raw, "validation")
     src = ds.get("sources") if isinstance(ds.get("sources"), dict) else {}
     km_min, km_max = _km_range(fit.get("note"))
+    train_races, train_finishers = _train_split(fit)
+    # "before" = the app before the fitted model. Newer files name it legacy_*
+    # (there, *_before equals *_after: both are the app as it ships).
+    before = _num(val.get("legacy_mean_abs_gap_min", val.get("mean_abs_gap_min_before")))
+    after = _num(val.get("mean_abs_gap_min_after"))
+    improved = _num(val.get("races_improved_vs_legacy", val.get("races_improved")))
+    if before is not None and after is not None and round(before, 1) == round(after, 1):
+        before = None  # same figure twice: no "previous version" bar
+    if not before or not improved:
+        improved = None  # "better on 0 races" says nothing
 
     stats = {
         "updated": fmt_date(raw.get("updated")),
@@ -136,23 +163,24 @@ def load_model_stats(path: Path | None = None) -> dict:
         "fit": {
             "races": fmt_int(fit.get("races")),
             "finisher_results": fmt_int(fit.get("finisher_results")),
+            "train_races": fmt_int(train_races),
+            "train_finisher_results": fmt_int(train_finishers),
             "km_min": km_min,
             "km_max": km_max,
         },
         "validation": {
             "held_out_races": fmt_int(val.get("held_out_races")),
             "held_out_events": fmt_int(val.get("held_out_events")),
-            "gap_before": fmt_dec(val.get("mean_abs_gap_min_before")),
-            "gap_after": fmt_dec(val.get("mean_abs_gap_min_after")),
-            "races_improved": fmt_int(val.get("races_improved")),
+            "gap_before": fmt_dec(before),
+            "gap_after": fmt_dec(after),
+            "races_improved": fmt_int(improved),
             "transjeju_2026": _transjeju(val),
         },
     }
-    # width of the "after" bar relative to the "before" one (method page)
-    before, after = _num(val.get("mean_abs_gap_min_before")), _num(val.get("mean_abs_gap_min_after"))
-    stats["validation"]["bar_after_pct"] = (
-        max(5, min(100, round(after / before * 100))) if before and after and before > 0 else 0
-    )
+    # bar widths on the method page, relative to the larger of the two gaps
+    top = max(before or 0, after or 0)
+    stats["validation"]["bar_before_pct"] = max(5, round(before / top * 100)) if before and top else 0
+    stats["validation"]["bar_after_pct"] = max(5, round(after / top * 100)) if after and top else 0
     stats["has_dataset"] = bool(stats["dataset"]["races"] and stats["dataset"]["finisher_results"])
     v = stats["validation"]
     stats["has_validation"] = bool(v["gap_after"] and v["held_out_races"])

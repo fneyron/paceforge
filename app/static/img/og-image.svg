@@ -1,14 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="#111827"/>
-  <!-- Logo centered -->
-  <circle cx="460" cy="315" r="120" fill="#1e293b"/>
-  <rect x="396" y="308" width="128" height="13" rx="3" fill="white"/>
-  <rect x="432" y="321" width="56" height="26" fill="white"/>
-  <rect x="415" y="347" width="90" height="13" rx="3" fill="white"/>
-  <rect x="450" y="275" width="11" height="11" rx="1" fill="#F59E0B" transform="rotate(45 455.5 280.5)"/>
-  <circle cx="441" cy="288" r="2.5" fill="#F59E0B"/>
-  <circle cx="473" cy="285" r="2" fill="#F59E0B"/>
-  <!-- Text -->
-  <text x="620" y="295" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white">PaceForge</text>
-  <text x="620" y="355" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#9ca3af">Ton coach IA qui connaît tes données</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#000000"/>
+  <!-- Logo (app/static/img/logo.svg) on a white disc -->
+  <circle cx="600" cy="236" r="66" fill="#ffffff"/>
+  <g transform="translate(540 176) scale(0.234375)">
+    <circle cx="256" cy="256" r="256" fill="#000000"/>
+    <path d="M300 80 L200 260 H260 L220 432 L360 240 H288 Z" fill="white" fill-rule="evenodd"/>
+  </g>
+  <text x="600" y="392" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="56" font-weight="600" fill="#ffffff">PaceForge</text>
+  <text x="600" y="440" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="24" fill="#9ca3af">Tes temps de passage, calés sur de vraies courses</text>
 </svg>

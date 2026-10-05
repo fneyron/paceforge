@@ -23,7 +23,10 @@ FAKE = {
         "checkpoint_passages": 2345678,
         "sources": {"utmb_live": 234, "livetrail": 1000},
     },
-    "fit": {"races": 131, "finisher_results": 23456, "note": "curve fitted on UTMB Live races 50-170 km with a GPS track"},
+    "fit": {
+        "races": 131, "finisher_results": 23456, "train_races": 84, "train_finisher_results": 15432,
+        "note": "curve fitted on UTMB Live races 50-170 km with a GPS track",
+    },
     "validation": {
         "held_out_races": 47,
         "held_out_events": 7,
@@ -120,11 +123,14 @@ async def test_landing_numbers_come_from_the_json(client: AsyncClient, stats_fil
         f"2{NNBSP}345{NNBSP}678",     # dataset.checkpoint_passages
         "17,4&nbsp;min",              # validation.mean_abs_gap_min_after
         "sur 47 courses jamais vues",  # validation.held_out_races
-        f"23{NNBSP}456",              # fit.finisher_results
+        f"15{NNBSP}432",              # fit.train_finisher_results
+        ">84<",                       # fit.train_races
         "de 50 à 170&nbsp;km",        # fit.note
         "7 mars 2026",                # updated
     ):
         assert expected in html, expected
+    # fit.races / fit.finisher_results count the test races too: never shown as the training base
+    assert f"23{NNBSP}456" not in html and ">131<" not in html
     # the real numbers are not hard-coded in the template
     assert "995" not in html and f"119{NNBSP}512" not in html and "21,5" not in html
 
@@ -139,26 +145,117 @@ async def test_methode_numbers_come_from_the_json(client: AsyncClient, stats_fil
     for expected in (
         f"1{NNBSP}234", "456 événements", f"98{NNBSP}765", f"2{NNBSP}345{NNBSP}678",
         ">234<", f">1{NNBSP}000<",            # sources
-        ">131<", f">23{NNBSP}456<",            # fit
+        ">84<", f">15{NNBSP}432<",             # fit (training races only)
         ">7<", ">47<",                         # held-out events / races
         "30,8&nbsp;min", "17,4&nbsp;min", ">39<",
         "de 50 à 170&nbsp;km",
     ):
         assert expected in html, expected
     assert "data-transjeju" not in html
+    assert ">131<" not in html and f"23{NNBSP}456" not in html
     assert "995" not in html and "21,5" not in html
+    assert "jamais vues pendant le réglage" in html
 
 
 @pytest.mark.asyncio
-async def test_methode_shows_transjeju_only_when_present(client: AsyncClient, stats_file):
+async def test_methode_shows_transjeju_only_with_an_all_finishers_gap(client: AsyncClient, stats_file):
     data = json.loads(json.dumps(FAKE))
-    data["validation"]["transjeju_2026"] = {
-        "mean_abs_gap_min_before": 14.2, "mean_abs_gap_min_after": 9.6, "finisher_results": 812,
-    }
+    data["validation"]["transjeju_2026"] = {"bib": "10", "mean_abs_gap_min": 9.9}  # one runner
+    stats_file(data)
+    html = (await client.get("/methode")).text
+    assert "data-transjeju" not in html and "9,9" not in html
+
+    data["validation"]["transjeju_2026"]["all_finishers_mean_abs_gap_min"] = 30.1
+    data["validation"]["transjeju_2026"]["finisher_results"] = 364
     stats_file(data)
     html = (await client.get("/methode")).text
     assert "data-transjeju" in html
-    assert "Trans Jeju 2026" in html and "9,6&nbsp;min" in html and "14,2&nbsp;min" in html and "812 finishers" in html
+    assert "Trans Jeju 2026" in html and "30,1&nbsp;min" in html and "364 finishers" in html
+    assert "9,9" not in html
+
+
+# Shape written by the refit scripts (scripts/race_data): mean_abs_gap_min_before
+# equals _after (both = the app as it ships), the previous version is legacy_*,
+# the training split only sits in the fit note, Trans Jeju carries one bib's gap.
+REFIT_SHAPE = {
+    "updated": "2026-10-04",
+    "dataset": {
+        "races": 782, "events": 165, "finisher_results": 106587, "checkpoint_passages": 927165,
+        "sources": {"utmb_live": 169, "livetrail": 613},
+    },
+    "fit": {
+        "races": 115, "finisher_results": 21400,
+        "note": "fitted on UTMB Live races 40-180 km with a GPS track (train events: 71 races, 12464 finishers)."
+                " Refit on 121 races (train events 74 races, 29596 finishers): not adopted",
+    },
+    "validation": {
+        "held_out_races": 47, "held_out_events": 6,
+        "mean_abs_gap_min_before": 18.61, "mean_abs_gap_min_after": 18.61, "races_improved": 0,
+        "legacy_mean_abs_gap_min": 21.92, "races_improved_vs_legacy": 42,
+        "transjeju_2026": {"bib": "10", "mean_abs_gap_min": 9.9, "all_finishers_mean_abs_gap_min": 30.1},
+    },
+}
+
+
+def test_loader_reads_the_refit_shape(stats_file):
+    stats_file(REFIT_SHAPE)
+    s = load_model_stats()
+    assert s["fit"]["train_races"] == "71" and s["fit"]["train_finisher_results"] == f"12{NNBSP}464"
+    v = s["validation"]
+    assert v["gap_before"] == "21,9" and v["gap_after"] == "18,6" and v["races_improved"] == "42"
+    assert v["bar_before_pct"] == 100 and v["bar_after_pct"] == 85
+    assert v["transjeju_2026"] == {"gap_after": "30,1", "finishers": ""}
+
+
+def test_loader_hides_an_empty_comparison(stats_file):
+    data = json.loads(json.dumps(REFIT_SHAPE))
+    for k in ("legacy_mean_abs_gap_min", "races_improved_vs_legacy"):
+        del data["validation"][k]
+    stats_file(data)
+    v = load_model_stats()["validation"]
+    assert v["gap_before"] == "" and v["races_improved"] == "" and v["gap_after"] == "18,6"
+
+
+@pytest.mark.asyncio
+async def test_methode_with_the_refit_shape(client: AsyncClient, stats_file):
+    stats_file(REFIT_SHAPE)
+    html = (await client.get("/methode")).text
+    text = re.sub(r"[ \t\r\n]+", " ", re.sub(r"<[^>]+>", " ", html))
+    assert "Version précédente de PaceForge 21,9&nbsp;min" in text
+    assert "Modèle actuel 18,6&nbsp;min" in text
+    assert "fait mieux sur 42 courses sur 47" in text
+    assert "réglée sur 71 courses UTMB Live de 40 à 180&nbsp;km" in text and f"12{NNBSP}464 finishers" in text
+    assert "30,1&nbsp;min" in text and "9,9" not in text
+
+    data = json.loads(json.dumps(REFIT_SHAPE))
+    for k in ("legacy_mean_abs_gap_min", "races_improved_vs_legacy"):
+        del data["validation"][k]
+    stats_file(data)
+    text = re.sub(r"[ \t\r\n]+", " ", re.sub(r"<[^>]+>", " ", (await client.get("/methode")).text))
+    assert "Version précédente" not in text and "fait mieux sur" not in text
+    assert "Modèle actuel 18,6&nbsp;min" in text
+
+
+@pytest.mark.asyncio
+async def test_landing_teaser_shows_the_training_split(client: AsyncClient, stats_file):
+    stats_file(REFIT_SHAPE)
+    text = re.sub(r"[ \t\r\n]+", " ", re.sub(r"<[^>]+>", " ", (await client.get("/")).text))
+    assert f"réglées sur 12{NNBSP}464 finishers de 71 courses, puis testées sur 47 autres courses" in text
+    assert f"21{NNBSP}400" not in text and "115 courses" not in text
+
+
+@pytest.mark.asyncio
+async def test_landing_meta_makes_no_dataset_claim(client: AsyncClient, stats_file):
+    stats_file(REFIT_SHAPE)
+    html = (await client.get("/")).text
+    meta = " ".join(re.findall(r'<meta[^>]+content="([^"]*)"', html))
+    assert "782" not in meta and "de vraies courses" in meta
+
+
+@pytest.mark.asyncio
+async def test_og_url_follows_the_page(client: AsyncClient):
+    html = (await client.get("/methode")).text
+    assert '<meta property="og:url" content="https://paceforge.fr/methode">' in html
 
 
 @pytest.mark.asyncio
@@ -197,7 +294,7 @@ def _visible_and_meta(html: str) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", PUBLIC_PATHS)
+@pytest.mark.parametrize("path", PUBLIC_PATHS + ("/privacy",))
 async def test_public_pages_make_no_ai_or_bike_claims(client: AsyncClient, path):
     html = (await client.get(path)).text
     text = _visible_and_meta(html)
@@ -214,3 +311,11 @@ async def test_public_footer_links(client: AsyncClient, path):
     html = (await client.get(path)).text
     footer = html[html.rfind("<footer"):]
     assert 'href="/methode"' in footer and 'href="/privacy"' in footer
+
+
+def test_manifest_and_share_image_make_no_ai_claim():
+    from pathlib import Path
+
+    static = Path(model_stats.__file__).resolve().parent.parent / "static"
+    assert "IA" not in json.loads((static / "manifest.json").read_text(encoding="utf-8"))["description"]
+    assert not re.search(r"\bIA\b", (static / "img" / "og-image.svg").read_text(encoding="utf-8"))

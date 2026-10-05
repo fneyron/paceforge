@@ -41,7 +41,7 @@
         <div class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div class="rounded-2xl border border-gray-200 p-5">
                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">1 · La forme du plan</p>
-                <p class="mt-2 text-sm text-gray-600 leading-relaxed"><b class="font-semibold text-gray-900">Où part le temps</b> sur le parcours : montées, descentes, terrain, nuit, fatigue. Réglée sur les temps de passage de vraies courses.</p>
+                <p class="mt-2 text-sm text-gray-600 leading-relaxed"><b class="font-semibold text-gray-900">Où part le temps</b> sur le parcours : montées, descentes, terrain, nuit, fatigue. Partie des temps de passage de vraies courses, puis ajustée à tes sorties.</p>
             </div>
             <div class="rounded-2xl border border-gray-200 p-5">
                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">2 · Ton niveau</p>
@@ -84,8 +84,9 @@
             {% endif %}
             <div class="mt-6 space-y-3 text-sm sm:text-base text-gray-600 leading-relaxed">
                 <p>Ce sont des résultats publics d'UTMB Live et de LiveTrail : dossard, sexe, catégorie, classement et temps. <b class="font-semibold text-gray-900">Aucun nom.</b> Sans nom, un même coureur peut compter sur plusieurs courses.</p>
-                {% if ft.races and ft.finisher_results %}
-                <p>La courbe est réglée sur <b class="font-semibold text-gray-900 tabular-nums">{{ ft.races }}</b> courses UTMB Live{% if ft.km_min and ft.km_max %} de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km{% endif %} qui ont une trace GPS, soit <b class="font-semibold text-gray-900 tabular-nums">{{ ft.finisher_results }}</b> finishers. Les courses LiveTrail n'ont pas de trace détaillée : elles ne servent pas à ce réglage.</p>
+                <p>Ce sont des courses à pied en solo : les relais, les courses en équipe, la marche et les courses par étapes sont laissés de côté.</p>
+                {% if ft.train_races and ft.train_finisher_results %}
+                <p>La courbe est réglée sur <b class="font-semibold text-gray-900 tabular-nums">{{ ft.train_races }}</b> courses UTMB Live{% if ft.km_min and ft.km_max %} de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km{% endif %} qui ont une trace GPS, soit <b class="font-semibold text-gray-900 tabular-nums">{{ ft.train_finisher_results }}</b> finishers. D'autres courses avec trace sont gardées pour le test (plus bas). Les courses LiveTrail n'ont pas de trace détaillée : elles ne servent pas à ce réglage.</p>
                 {% endif %}
                 {% if stats and stats.updated %}<p class="text-xs text-gray-400">Chiffres mis à jour le {{ stats.updated }}.</p>{% endif %}
             </div>
@@ -96,11 +97,11 @@
     <section class="py-12 sm:py-14" aria-labelledby="modele">
         <div class="max-w-3xl mx-auto px-5 sm:px-6">
             <h2 id="modele" class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Ce que le plan prend en compte</h2>
-            <p class="mt-3 text-sm sm:text-base text-gray-600 leading-relaxed">La pente, la fatigue et la nuit sont réglées sur les courses de la base. Le terrain, la météo et les arrêts viennent de ton parcours et de tes réglages.</p>
+            <p class="mt-3 text-sm sm:text-base text-gray-600 leading-relaxed">La pente, la fatigue et la nuit partent des courses de la base. Le terrain, la météo et les arrêts viennent de ton parcours et de tes réglages.</p>
             <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div class="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
                     <h3 class="font-semibold text-gray-900">La pente{{ tag() }}</h3>
-                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Lue tous les 25&nbsp;m. Une montée raide, une descente cassante et un faux plat n'ont pas le même coût.</p>
+                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Lue tous les 25&nbsp;m. Une montée raide, une descente cassante et un faux plat n'ont pas le même coût. On part de cette courbe, puis on l'ajuste à tes sorties Strava là où tu as assez de kilomètres.</p>
                 </div>
                 <div class="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
                     <h3 class="font-semibold text-gray-900">La fatigue{{ tag() }}</h3>
@@ -126,7 +127,7 @@
 
             <h3 class="mt-10 text-lg font-bold tracking-tight text-gray-900">Puis ton niveau</h3>
             <div class="mt-4 space-y-4 text-sm sm:text-base text-gray-600 leading-relaxed">
-                <p><b class="font-semibold text-gray-900">Tes courses.</b> PaceForge prend tes courses Strava marquées «&nbsp;Course&nbsp;» et mesure ce que tu tiens en km-effort par heure : 1&nbsp;km plus 100&nbsp;m de D+ égale 1&nbsp;km-effort. Ce rythme baisse quand la course s'allonge. Avec une course, on prend une baisse type. Avec deux ou plus, c'est la tienne. Le plan est ensuite mis à ce niveau, sans changer sa forme.</p>
+                <p><b class="font-semibold text-gray-900">Tes courses.</b> PaceForge prend tes courses Strava marquées «&nbsp;Course&nbsp;» et mesure ce que tu tiens en km-effort par heure : 1&nbsp;km à plat ou 100&nbsp;m de D+ valent chacun 1&nbsp;km-effort. Ce rythme baisse quand la course s'allonge. Avec une course, on prend une baisse type. Avec deux ou plus, c'est la tienne. Le plan est ensuite mis à ce niveau, puis la fatigue et la nuit sont recalculées sur ces nouvelles heures.</p>
                 <p><b class="font-semibold text-gray-900">Ta façon de finir.</b> Après une course, associe ton activité au plan. Si tu as fini plus fort ou plus faible que prévu, le plan suivant en tient compte.</p>
             </div>
         </div>
@@ -138,7 +139,7 @@
         <div class="max-w-3xl mx-auto px-5 sm:px-6">
             <h2 id="test" class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Comment on le teste</h2>
             <div class="mt-4 space-y-3 text-sm sm:text-base text-gray-600 leading-relaxed">
-                <p>On a mis de côté {% if va.held_out_events %}<b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_events }}</b> événements, soit {% endif %}<b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_races }}</b> courses, que le modèle n'a jamais vus pendant le réglage.</p>
+                <p>On a gardé de côté <b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_races }}</b> courses{% if va.held_out_events %} (<b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_events }}</b> événements){% endif %} que le modèle n'a jamais vues pendant le réglage.</p>
                 <p>Pour chaque coureur, on part de son temps final réel et on regarde où le plan le fait passer aux points intermédiaires.</p>
             </div>
 
@@ -151,7 +152,7 @@
                             <span class="text-gray-500">Version précédente de PaceForge</span>
                             <span class="tabular-nums font-semibold text-gray-500 whitespace-nowrap">{{ va.gap_before }}&nbsp;min</span>
                         </div>
-                        <div class="mt-1.5 h-2.5 rounded-full bg-gray-100"><div class="h-2.5 rounded-full bg-gray-300" style="width: 100%"></div></div>
+                        <div class="mt-1.5 h-2.5 rounded-full bg-gray-100"><div class="h-2.5 rounded-full bg-gray-300 dark:bg-gray-500" style="width: {{ va.bar_before_pct or 100 }}%"></div></div>
                     </div>
                     {% endif %}
                     <div>
@@ -159,18 +160,18 @@
                             <span class="text-gray-900 font-medium">Modèle actuel</span>
                             <span class="tabular-nums font-bold text-gray-900 whitespace-nowrap">{{ va.gap_after }}&nbsp;min</span>
                         </div>
-                        <div class="mt-1.5 h-2.5 rounded-full bg-gray-100"><div class="h-2.5 rounded-full bg-gray-900" style="width: {{ va.bar_after_pct or 100 }}%"></div></div>
+                        <div class="mt-1.5 h-2.5 rounded-full bg-gray-100"><div class="h-2.5 rounded-full bg-gray-900 dark:bg-gray-200" style="width: {{ va.bar_after_pct or 100 }}%"></div></div>
                     </div>
                 </div>
                 {% if va.races_improved %}
                 <p class="mt-4 text-sm text-gray-600">Le modèle actuel fait mieux sur <b class="font-semibold text-gray-900 tabular-nums">{{ va.races_improved }}</b> courses sur <b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_races }}</b>.</p>
                 {% endif %}
                 {% if tj %}
-                <p class="mt-3 text-sm text-gray-600" data-transjeju>Trans Jeju 2026 : écart moyen de <b class="font-semibold text-gray-900 tabular-nums">{{ tj.gap_after }}&nbsp;min</b>{% if tj.gap_before %}, contre {{ tj.gap_before }}&nbsp;min avant{% endif %}{% if tj.finishers %}, sur {{ tj.finishers }} finishers{% endif %}.</p>
+                <p class="mt-3 text-sm text-gray-600" data-transjeju>Trans Jeju 2026, l'une des courses de test : écart moyen de <b class="font-semibold text-gray-900 tabular-nums">{{ tj.gap_after }}&nbsp;min</b> sur {% if tj.finishers %}ses {{ tj.finishers }} finishers{% else %}l'ensemble de ses finishers{% endif %}.</p>
                 {% endif %}
             </div>
 
-            <p class="mt-5 text-sm text-gray-500 leading-relaxed">Ce test mesure comment le temps se répartit sur le parcours. Il ne mesure pas la prédiction de ton temps final : celle-ci dépend de tes courses.</p>
+            <p class="mt-5 text-sm text-gray-500 leading-relaxed">Ce test mesure comment le temps se répartit sur le parcours. Il utilise la courbe commune, sans l'ajustement à tes sorties. Il ne mesure pas la prédiction de ton temps final : celle-ci dépend de tes courses.</p>
         </div>
     </section>
     {% endif %}
@@ -180,15 +181,15 @@
         <div class="max-w-3xl mx-auto px-5 sm:px-6">
             <h2 id="limites" class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Les limites, franchement</h2>
             <ul class="mt-5 space-y-3 text-sm sm:text-base text-gray-600 leading-relaxed">
-                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span><span>Pas de course marquée dans Strava ? L'estimation vient de tes entraînements (souvent trop prudente) ou d'un profil générique.</span></li>
+                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><span>Pas de course marquée dans Strava ? L'estimation vient de tes entraînements (souvent trop prudente) ou d'un profil générique.</span></li>
                 {% if ft.km_min and ft.km_max %}
-                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span><span>Réglé sur des courses de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km. Plus court ou plus long, c'est moins testé.</span></li>
+                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><span>Réglé sur des courses de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km. Plus court ou plus long, c'est moins testé.</span></li>
                 {% endif %}
                 {% if has_validation %}
-                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span><span>{{ va.gap_after }}&nbsp;min, c'est une moyenne. Sur une longue course, certains écarts sont bien plus grands.</span></li>
+                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><span>{{ va.gap_after }}&nbsp;min, c'est une moyenne. Sur une longue course, certains écarts sont bien plus grands.</span></li>
                 {% endif %}
-                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span><span>Le modèle ne voit pas ta forme du jour, ton estomac, une chute ou un orage imprévu. Prends le plan Sécurité au sérieux.</span></li>
-                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 shrink-0"></span><span>Mêmes données, même plan : les calculs sont reproductibles, pas de boîte noire.</span></li>
+                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><span>Le modèle ne voit pas ta forme du jour, ton estomac, une chute ou un orage imprévu. Prends le plan Sécurité au sérieux.</span></li>
+                <li class="flex gap-3"><span class="mt-2.5 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><span>Mêmes données, même plan : les calculs sont reproductibles, pas de boîte noire.</span></li>
             </ul>
         </div>
     </section>
