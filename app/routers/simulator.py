@@ -363,6 +363,7 @@ async def _passage_table_context(
         "scenarios": scenarios,
         "kinds": KINDS,
         "route_id": route_id,
+        "has_coords": bool(course.route_coords),  # « Voir sur la carte » only when there is a map
     }
 
 
@@ -633,6 +634,47 @@ async def reimport_route_gpx(
         )
 
 
+_FR_WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
+_FR_MONTHS = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
+
+
+def fr_date_label(iso: str | None, today=None) -> str:
+    """« sam. 17 oct. » (the year only when it is not this year), whatever the browser's locale.
+    The plan page's script writes the same text after an edit."""
+    from datetime import date as _date
+
+    if not iso:
+        return ""
+    try:
+        d = _date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return ""
+    today = today or _date.today()
+    label = f"{_FR_WEEKDAYS[d.weekday()]} {d.day} {_FR_MONTHS[d.month - 1]}"
+    return label if d.year == today.year else f"{label} {d.year}"
+
+
+def debrief_mode(race_date: str | None, has_result: bool, today=None) -> str | None:
+    """Where the debrief lives on the plan page: "primary" once the race is run (the main
+    button), "menu" when the race has no date or is today, None before a dated race."""
+    from datetime import date as _date
+
+    if has_result:
+        return "primary"
+    if not race_date:
+        return "menu"
+    try:
+        d = _date.fromisoformat(str(race_date)[:10])
+    except ValueError:
+        return "menu"
+    today = today or _date.today()
+    if d < today:
+        return "primary"
+    if d == today:
+        return "menu"
+    return None
+
+
 async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
     """Shared context for the route detail page and its partial."""
     from app.schemas.simulator import CourseProfile
@@ -680,17 +722,16 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         logger.exception("Initial passage table failed; the page will ask for it")
 
     p = route.params_json or {}
-    from datetime import date as _date
-
-    try:
-        race_passed = bool(route.race_date) and _date.fromisoformat(str(route.race_date)[:10]) <= _date.today()
-    except ValueError:
-        race_passed = False
+    mode = debrief_mode(route.race_date, bool(route.result_json))
     return {
         "course": course,
         "profile": profile,
         "initial_table_html": initial_table_html,
-        "show_debrief": race_passed or bool(route.result_json) or not route.race_date,
+        # the debrief is reachable (primary button or menu) in every mode but "before a dated race"
+        "debrief_mode": mode,
+        "show_debrief": mode is not None,
+        "race_date_label": fr_date_label(route.race_date),
+        "start_label": "%02d:%02d" % (route.start_hour if route.start_hour is not None else 6, route.start_minute or 0),
         "scenario": {"fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0), "switch_km": p.get("switch_km")},
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
@@ -756,6 +797,9 @@ async def route_detail_page(
     ctx = await _build_route_context(route, db, user.id)
     ctx["user"] = user
     ctx["compare_activity_id"] = compare
+    if compare:  # arrived from an activity: the debrief is the main action
+        ctx["debrief_mode"] = "primary"
+        ctx["show_debrief"] = True
     # Don't let the browser serve a stale page (kept hiding UI updates).
     return templates.TemplateResponse(
         request, "simulator_route.html", context=ctx,

@@ -2,25 +2,15 @@
 {% import "partials/_weather_icons.html" as wx %}
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro hhmm(seconds) %}{{ '%02d:%02d'|format(((seconds % 86400) // 3600) | int, ((seconds % 3600) // 60) | int) }}{% endmacro %}
-{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span data-wx class="inline-flex items-center gap-0.5 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
+{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span data-wx class="inline-flex items-center gap-1 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
 {% macro fmt_leg(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) / 60) | round | int %}{% if m == 60 %}{% set h = h + 1 %}{% set m = 0 %}{% endif %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
-{% macro margin_cls(sec) %}{% if sec < 0 %}text-danger font-semibold{% elif sec < 1800 %}text-warn{% else %}text-gray-500{% endif %}{% endmacro %}
+{# under an hour ahead reads in minutes; late or comfortable reads ±h:mm #}
+{% macro margin_txt(sec) %}{% if sec >= 0 and sec < 3600 %}{{ (sec // 60) | int }} min{% else %}{{ fmt_margin(sec) }}{% endif %}{% endmacro %}
+{% macro margin_cls(sec) %}{% if sec < 0 %}text-danger font-semibold{% elif sec < 3600 %}text-warn{% else %}text-gray-500{% endif %}{% endmacro %}
 {% macro fr(x) %}{{ ('%s' % x) | replace('.', ',') }}{% endmacro %}
+{% macro km1(x) %}{% set t = '%.1f' | format(x) %}{{ (t[:-2] if t.endswith('.0') else t) | replace('.', ',') }}{% endmacro %}
 {% macro thousands(x) %}{{ '{:,}'.format(x|int).replace(',', ' ') }}{% endmacro %}
-{# type of aid station, crew, drop bag: one chip, a click opens the point dialog #}
-{% macro poste(s, ci) -%}
-{% set k = s.kind or 'none' %}{% set short = {'none': 'passage', 'water': 'eau', 'full': 'ravito', 'base': 'base vie'} %}
-<button type="button" data-poste="{{ ci }}" data-kind="{{ k }}" data-crew="{{ '1' if s.crew else '0' }}" data-bag="{{ '1' if s.drop_bag else '0' }}" aria-haspopup="dialog" title="{{ short[k]|capitalize }}{% if s.crew %} · assistance{% endif %}{% if s.drop_bag %} · drop bag{% endif %} · modifier" onclick="window._sim && window._sim.openSheet({{ ci }})"
-        class="pf-chip">
-    <span data-glyph="{{ ci }}" class="inline-flex">{{ gl.glyph(k, "w-4 h-4") }}</span><span>{{ short[k] }}</span>{% if s.crew %}<span class="inline-flex" title="Assistance">{{ gl.glyph('crew', "w-4 h-4") }}</span>{% endif %}{% if s.drop_bag %}<span class="inline-flex" title="Drop bag">{{ gl.glyph('bag', "w-4 h-4") }}</span>{% endif %}
-</button>
-{%- endmacro %}
-{# cutoff clock + margin (the margin is "secondary": it steps aside while a delete is armed) #}
-{% macro barriere(s, ci) -%}
-{% set cm = s.cutoff_margin_s if (s.cutoff_margin_s is defined and s.cutoff_margin_s is not none) else none %}
-{% if s.cutoff_clock %}<span data-cutoff class="tabular-nums" title="Barrière horaire{% if cm is not none %} · marge {{ fmt_margin(cm) }}{% endif %}">{{ s.cutoff_clock }}</span>{% if cm is not none %}<span data-margin data-secondary class="ml-1.5 tabular-nums {{ margin_cls(cm) }}">marge {{ fmt_margin(cm) }}</span>{% endif %}{% else %}<span class="text-gray-400">aucune</span>{% endif %}
-{%- endmacro %}
 {# race day: why the finish moved or not #}
 {% macro rp_mode(rp) -%}
 {% set fin_day = (rp.finish_clock_s // 86400) | int %}
@@ -31,13 +21,22 @@
 {% set rp = replan if (replan is defined and replan) else none %}
 {% set wx_on = has_weather is defined and has_weather %}
 {% set legs = legs if legs is defined and legs else [] %}
+{% set kind_word = {'water': "Point d'eau", 'full': 'Ravito', 'base': 'Base vie'} %}
+{% set coords_on = has_coords if has_coords is defined else true %}
 {% if plan_data is defined %}<script type="application/json" id="plan-data">{{ plan_data | safe }}</script>{% endif %}
-{# the three plans: read by the segmented control above the profile #}
+{# the three plans' finish times: read by « Plan affiché » in the objective editor #}
 {% if sc %}<div data-scn-pill hidden data-end-fast="{{ fmt_time(sc.totals.fast_s) }}" data-end-target="{{ fmt_time(sc.totals.target_s) }}" data-end-safe="{{ fmt_time(sc.totals.safe_s) }}"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span>Cible</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></div>{% endif %}
 {% if rp %}{% set dm = (rp.delta_s / 60) | round | int %}
 <div data-replan class="pf-replan" title="{% if rp.mode == 'pin' %}heure fixée à {{ rp.pin_name }} ({{ hhmm(rp.pin_clock_s) }}) tenable : seuls les tronçons jusque-là changent{% elif rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}">
     <span><b>Recalée</b> <span class="tabular-nums {% if dm > 1 %}text-warn{% elif dm < -1 %}text-ok{% else %}text-gray-500{% endif %}">{{ '+' if dm > 0 }}{{ dm }} min</span> <span data-rp-mode class="text-gray-500">· {{ rp_mode(rp) }}</span></span>
     <button type="button" onclick="window._sim && window._sim.clearPassage()" class="pf-ibtn" title="Effacer le passage réel" aria-label="Effacer le passage réel">×</button>
+</div>
+{% endif %}
+{# no point yet: say what they are for, with the way to add one (the link under the list steps aside) #}
+{% if sections and sections|length == 1 %}
+<div data-empty-state class="pf-empty-cps">
+    <p>Ajoute tes ravitos pour avoir ton heure de passage à chacun.</p>
+    <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
 </div>
 {% endif %}
 <div id="plan-table" class="pf-pass" data-scn="target" role="list" aria-label="Heures de passage">
@@ -50,6 +49,7 @@
     {% set stops_val = clock_val - start_offset_s - cum_val %}
     {% set is_finish = loop.last %}
     {% set arr_stop = (s.stop_s if s.stop_s is defined and s.stop_s else 0) if not is_finish else 0 %}
+    {% set stop_min = (arr_stop / 60) | round | int %}
     {% set ci = s.end_checkpoint_index %}
     {% set editable = ci is not none %}
     {% set key = ci if editable else -1 %}
@@ -62,6 +62,8 @@
     {% set day = (clock_val // 86400) | int %}
     {% set lg = legs[loop.index0] if legs|length > loop.index0 else none %}
     {% set k = s.kind or 'none' %}
+    {# the cutoff shows on the closed row only when it is close (under an hour) or missed #}
+    {% set bar_close = s.cutoff_clock and cm is not none and cm < 3600 %}
     {% if day > ns.day %}
     <div data-day="{{ day }}" class="pf-day" role="presentation"><span data-day-label>jour {{ day + 1 }}</span></div>
     {% set ns.day = day %}
@@ -71,35 +73,32 @@
         <div class="pf-prow-head" role="button" tabindex="0" aria-expanded="false" aria-controls="cp-det-{{ key }}">
             <span class="pf-clk">{% if pin_on %}<span data-pin class="pf-pin {% if s.pin_clamped %}text-danger{% else %}text-accent{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="{% if late %}text-danger{% endif %}">{{ hhmm(clock_val) }}</span>{% if sc %}<span data-safe class="{% if row.safe_ok is defined and row.safe_ok == false %}text-danger{% endif %}">{{ hhmm(row.safe_s) }}</span><span data-fast>{{ hhmm(row.fast_s) }}</span>{% endif %}</span>
             <span class="pf-prow-main">
-                <span class="pf-prow-name">{% if is_finish %}<span>Arrivée</span>{% else %}<span data-name-text class="pf-name" title="km {{ s.end_km }}{% if s.end_elevation is not none %} · {{ s.end_elevation|int }} m{% endif %}">{{ s.end_name }}</span>{% if k == 'base' %}<span class="pf-tag">Base vie</span>{% elif k == 'full' %}<span class="pf-kind" title="Ravito complet">{{ gl.glyph('full', 'w-3.5 h-3.5') }}</span>{% elif k == 'water' %}<span class="pf-kind" title="Point d'eau">{{ gl.glyph('water', 'w-3.5 h-3.5') }}</span>{% endif %}{% if s.drop_bag and k != 'base' %}<span class="pf-kind" title="Drop bag">{{ gl.glyph('bag', 'w-3.5 h-3.5') }}</span>{% endif %}{% endif %}</span>
-                <span class="pf-prow-sub tabular-nums">km <span data-km-text>{{ fr(s.end_km) }}</span><span class="pf-sm-down"> · +{{ thousands(s.elevation_gain) }} m</span>{% if wx_on %}<span class="pf-sm-up"> · {{ meteo(s) }}</span>{% endif %}{% if s.cutoff_clock %} · <span class="{% if cm is not none %}{{ margin_cls(cm) }}{% endif %}" title="barrière {{ s.cutoff_clock }}{% if cm is not none %} · marge {{ fmt_margin(cm) }}{% endif %}">barrière {{ s.cutoff_clock }}</span>{% endif %}</span>
+                <span class="pf-prow-name">{% if is_finish %}<span>Arrivée</span>{% else %}<span data-name-text class="pf-name">{{ s.end_name }}</span>{% endif %}{% if bar_close %}<span class="pf-bar-d {{ margin_cls(cm) }}">barrière {{ s.cutoff_clock }} · marge {{ margin_txt(cm) }}</span>{% endif %}</span>
+                <span class="pf-prow-sub tabular-nums">km <span data-km-text>{{ fr(s.end_km) }}</span>{% if bar_close %}<span class="pf-bar-m {{ margin_cls(cm) }}"> · barrière {{ s.cutoff_clock }} · marge {{ margin_txt(cm) }}</span>{% endif %}</span>
             </span>
-            <span class="pf-prow-col pf-sm-up tabular-nums" data-section title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km · −{{ s.elevation_loss|int }} m">+{{ thousands(s.elevation_gain) }} m</span>
-            <span class="pf-prow-col pf-sm-up tabular-nums">{% if lg and lg.hr_cap %}FC ≤ {{ lg.hr_cap }}{% endif %}</span>
-            <span class="pf-prow-leg tabular-nums" data-leg-time title="{{ fmt_time(sec_time) }} de course depuis le point précédent · {{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km{% if arr_stop > 0 %} · puis {{ (arr_stop / 60)|round|int }} min d'arrêt à ce poste{% endif %}">{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %}<span class="pf-stop text-gray-400"> +{{ (arr_stop / 60)|round|int }}'</span>{% endif %}</span>
             <svg class="pf-prow-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
+            <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} depuis {% if loop.first %}le départ{% else %}{{ s.start_name }}{% endif %} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
             <div class="pf-tiles">
-                <div><b class="tabular-nums">{% if lg and lg.hr_cap %}≤ {{ lg.hr_cap }}{% else %}—{% endif %}</b><span>FC max · bpm{% if lg and lg.terrain %} · {{ lg.terrain|lower }}{% endif %}</span></div>
-                <div><b class="tabular-nums">{% if lg %}{{ lg.carbs_g }} g{% else %}—{% endif %}</b><span>glucides{% if lg and not lg.carbs_planned %} conseillés{% endif %}</span></div>
+                <div><b class="tabular-nums">{% if lg and lg.hr_cap %}≤ {{ lg.hr_cap }}{% else %}—{% endif %}</b><span>FC max</span></div>
+                <div><b class="tabular-nums">{% if lg %}{{ lg.carbs_g }} g{% else %}—{% endif %}</b><span>glucides</span></div>
                 <div><b class="tabular-nums">{% if lg %}{{ fr('%.1f'|format(lg.fluid_ml / 1000)) }} L{% else %}—{% endif %}</b><span>eau</span></div>
             </div>
+            {% set has_kind = k in kind_word %}
+            {% set has_wx = wx_on and s.temperature_c is not none %}
+            {% if has_kind or s.crew or stop_min > 0 or s.cutoff_clock or has_wx %}
+            <p class="pf-factline">{% set sep = joiner(' · ') %}{% if has_kind %}{{ sep() }}<span>{{ kind_word[k] }}</span>{% endif %}{% if s.crew %}{{ sep() }}<span>assistance</span>{% endif %}{% if stop_min > 0 %}{{ sep() }}<span class="tabular-nums">arrêt {{ stop_min }} min</span>{% endif %}{% if s.cutoff_clock %}{{ sep() }}<span class="tabular-nums" data-cutoff>barrière {{ s.cutoff_clock }}</span>{% if cm is not none %} · <span data-margin class="tabular-nums {{ margin_cls(cm) }}">marge {{ margin_txt(cm) }}</span>{% endif %}{% endif %}{% if has_wx %}{{ sep() }}{{ meteo(s) }}{% endif %}</p>
+            {% endif %}
+            {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
+            {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
             {% if lg and lg.units %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>Sur ce tronçon : {{ lg.units|join(', ') }}.</span></p>{% endif %}
-            {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b> — {% if lg.bag.units %}{{ lg.bag.units|join(', ') }}{% else %}rien de prévu en nutrition{% endif %} jusqu'à {{ lg.bag.until }}.</span></p>{% endif %}
+            {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b> : {% if lg.bag.units %}{{ lg.bag.units|join(', ') }}{% else %}rien de prévu en nutrition{% endif %} jusqu'à {{ lg.bag.until }}.</span></p>
+            {% elif s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
-            <dl class="pf-facts">
-                <div><dt>Poste</dt><dd>{{ poste(s, ci) }}</dd></div>
-                <div><dt>Arrêt</dt><dd class="tabular-nums">{% if arr_stop > 0 %}{{ (arr_stop / 60)|round|int }} min{% else %}aucun{% endif %}</dd></div>
-                <div><dt>Barrière</dt><dd>{{ barriere(s, ci) }}</dd></div>
-                {% if sc %}<div><dt>Plans</dt><dd class="tabular-nums">optimiste {{ hhmm(row.fast_s) }} · cible {{ hhmm(clock_val) }} · sécurité {{ hhmm(row.safe_s) }}</dd></div>{% endif %}
-                {% if pin_on %}<div><dt>Heure</dt><dd><span class="text-accent">fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</dd></div>{% endif %}
-            </dl>
             <div class="pf-det-actions">
-                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="window._sim && window._sim.openSheet({{ ci }})">Modifier le poste</button>
-                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="window._sim && window._sim.openSheet({{ ci }}, 'pin')">{% if pin_on %}Changer l'heure{% else %}Fixer l'heure{% endif %}</button>
-                <button type="button" class="pf-btn pf-btn-ghost pf-btn-sm" onclick="window._sim && window._sim.flyToCp({{ ci }})">Voir sur la carte</button>
-                <button type="button" class="pf-btn pf-btn-ghost pf-btn-sm text-danger" onclick="window._sim && window._sim.confirmRemove(this, {{ ci }})">Supprimer</button>
+                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="window._sim && window._sim.openSheet({{ ci }})">Modifier ce point</button>
+                {% if coords_on %}<button type="button" class="pf-btn pf-btn-ghost pf-btn-sm pf-maplink" onclick="window._sim && window._sim.flyToCp({{ ci }})">Voir sur la carte</button>{% endif %}
             </div>
             {% endif %}
         </div>
