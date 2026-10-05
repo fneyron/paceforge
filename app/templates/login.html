@@ -111,6 +111,7 @@
                     <h3 class="font-semibold text-gray-900 mb-1.5">Export & impression</h3>
                     <p class="text-sm text-gray-500 leading-relaxed">Exporte le tracé en GPX avec tes points de passage pour ta montre, ou imprime ta timeline pour le jour J.</p>
                 </div>
+                {% if cycling_enabled() %}
                 <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
                     <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
                         <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
@@ -118,6 +119,7 @@
                     <h3 class="font-semibold text-gray-900 mb-1.5">Stratégie IA & vélo</h3>
                     <p class="text-sm text-gray-500 leading-relaxed">Une stratégie de course détaillée générée par l'IA. Et pour le vélo : estimation de temps par la puissance, le CdA et le vent.</p>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -161,8 +163,10 @@
                 <span>Ultra</span>
                 <span class="text-gray-200">·</span>
                 <span>Course sur route</span>
+                {% if cycling_enabled() %}
                 <span class="text-gray-200">·</span>
                 <span>Vélo</span>
+                {% endif %}
             </div>
         </div>
     </div>

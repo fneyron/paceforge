@@ -2,7 +2,7 @@ import json
 import re
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -612,7 +612,7 @@ async def route_detail_page(
     )
     route = _visible(result.scalar_one_or_none())
     if not route:
-        return HTMLResponse("Parcours non trouvé", status_code=404)
+        raise HTTPException(status_code=404)  # full page: the app's 404 page
 
     if route.sport_type == "triathlon":
         ctx = await _tri_plan_context(request, route, db, user)
@@ -623,7 +623,7 @@ async def route_detail_page(
         )
 
     if not route.course_json:
-        return HTMLResponse("Parcours non trouvé", status_code=404)
+        raise HTTPException(status_code=404)
 
     if route.sport_type == "bike":
         ctx = await _bike_plan_context(request, route, db, user)
@@ -1201,7 +1201,7 @@ async def print_route_plan(
     )
     route = _visible(result.scalar_one_or_none())
     if not route or not route.course_json:
-        return HTMLResponse("Parcours non trouvé", status_code=404)
+        raise HTTPException(status_code=404)
 
     b = await _plan_bundle(route, db, user)
     course, sections, cps = b["course"], b["sections"], b["checkpoints"]

@@ -62,7 +62,8 @@ async def test_bike_and_tri_routes_and_endpoints_404(as_user: AsyncClient, db_se
     tri = await _route(db_session, test_user, "triathlon", "Tri")
 
     for rid in (bike.id, tri.id):
-        assert (await as_user.get(f"/simulator/routes/{rid}")).status_code == 404
+        page = await as_user.get(f"/simulator/routes/{rid}")
+        assert page.status_code == 404 and "Page non trouvée" in page.text  # the app's 404 page
         assert (await as_user.get(f"/simulator/routes/{rid}/print")).status_code == 404
         assert (await as_user.get(f"/partials/simulator/nutrition/{rid}")).status_code == 404
         assert (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=gpx")).status_code == 404
@@ -82,6 +83,13 @@ async def test_bike_and_tri_routes_and_endpoints_404(as_user: AsyncClient, db_se
     # the data is kept: deleting through the API doesn't touch a hidden route
     await as_user.delete(f"/api/simulator/routes/{bike.id}")
     assert await db_session.get(Route, bike.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_landing_page_does_not_sell_the_bike(client: AsyncClient):
+    page = await client.get("/")
+    assert page.status_code == 200
+    assert "CdA" not in page.text and "Vélo" not in page.text and "vélo" not in page.text
 
 
 @pytest.mark.asyncio
@@ -117,3 +125,5 @@ async def test_flag_on_brings_everything_back(as_user: AsyncClient, db_session, 
     assert (await as_user.get(f"/simulator/routes/{bike.id}")).status_code == 200
     settings_page = await as_user.get("/settings")
     assert "FTP" in settings_page.text and "Puissance (vélo)" in settings_page.text
+    landing = await as_user.get("/landing")
+    assert landing.status_code == 200 and "CdA" in landing.text and "<span>Vélo</span>" in landing.text
