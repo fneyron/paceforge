@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ route.name }} — Bande de course</title>
     <link rel="stylesheet" href="/static/css/tailwind.css">
+    <link rel="stylesheet" href="/static/css/theme.css">
     <style>
-        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: var(--pf-font-text); }
+        h1, h2, .cell .t { font-family: var(--pf-font-display); }
         /* Sized to tuck behind a race bib: a ~18cm-wide strip you cut out. Cells
            wrap to a second line past ~6 checkpoints instead of squeezing. */
         .bib { width: 18cm; }
@@ -16,12 +18,12 @@
                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 17px; }
         .cell .k { font-size: 7.5px; color: #9ca3af; white-space: nowrap; }
         .cell .t { font-size: 12.5px; font-weight: 800; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
-        .cell .t sup { font-size: 7px; font-weight: 600; color: #d97706; margin-left: 1px; }
+        .cell .t sup { font-size: 7px; font-weight: 600; color: rgb(var(--pf-accent)); margin-left: 1px; }
         .cell .p { font-size: 7.5px; color: #6b7280; white-space: nowrap; }
         .cell .c { font-size: 7px; color: #b91c1c; white-space: nowrap; }
         .cell .d { font-size: 7px; white-space: nowrap; }
-        .cell.start { background: #f0fdf4; border-color: #bbf7d0; } .cell.start .n { color: #15803d; }
-        .cell.finish { background: #fef2f2; border-color: #fecaca; } .cell.finish .n { color: #b91c1c; }
+        .cell.start { background: rgb(var(--pf-accent-soft)); border-color: rgb(var(--pf-accent) / .35); } .cell.start .n { color: rgb(var(--pf-accent)); }
+        .cell.finish { background: rgb(var(--pf-accent)); border-color: rgb(var(--pf-accent)); color: rgb(var(--pf-accent-ink)); } .cell.finish .n, .cell.finish .k, .cell.finish .p { color: rgb(var(--pf-accent-ink)); }
         .cell.full { border-color: #9ca3af; }
         @media print {
             .no-print { display: none !important; }
@@ -30,7 +32,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-900">
+<body class="bg-gray-100 text-ink">
 {% import "partials/_plan_glyphs.html" as gl %}
 {% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %} <span class="font-normal text-[8px] text-gray-500">{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</span>{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
@@ -41,7 +43,7 @@
 <div class="mx-auto p-4" style="max-width:19cm">
     <div class="flex items-center justify-between gap-4 mb-3 no-print">
         <p class="text-sm text-gray-500">Bande à taille de dossard — imprime, découpe le long du pointillé, glisse derrière ton dossard.</p>
-        <button onclick="window.print()" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Imprimer</button>
+        <button onclick="window.print()" class="h-9 px-4 rounded-lg bg-accent text-accent-ink text-sm font-medium hover:bg-accent-strong">Imprimer</button>
     </div>
 
     <!-- The printable band (bib-sized) -->
@@ -73,7 +75,7 @@
             <div class="cell {% if is_finish %}finish{% elif s.kind in ('full', 'base') %}full{% endif %}">
                 <p class="n">{% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}</p>
                 <p class="k">km {{ s.end_km }}{% if s.kind and s.kind != 'none' %} {{ kind_mark.get(s.kind, '') }}{% endif %}{% if s.drop_bag %} 🎒{% endif %}{% if s.crew %} 👥{% endif %}</p>
-                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-amber-600{% endif %}">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span>{% endif %}{{ fmt_clock(clock_val) }}</p>
+                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-accent{% endif %}">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span>{% endif %}{{ fmt_clock(clock_val) }}</p>
                 {% if pace %}<p class="p">{{ fmt_pace(pace) }}/km</p>{% endif %}
                 <p class="d"><span class="text-red-400">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% endif %}</span> <span class="text-blue-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></p>
                 {% if s.cutoff_clock %}<p class="c">barrière {{ s.cutoff_clock }}{% if s.cutoff_margin_s is not none %} · marge <b{% if s.cutoff_margin_s < 0 %} class="text-red-700"{% endif %}>{{ fmt_margin(s.cutoff_margin_s) }}</b>{% endif %}</p>{% endif %}
@@ -93,7 +95,7 @@
         {% endif %}
 
         <p class="text-[8px] text-gray-400 mt-1.5 text-center">
-            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if pinned %} <span class="inline-flex text-amber-600 align-middle">{{ gl.glyph('pin', 'w-2 h-2') }}</span> = heure fixée par toi, le reste du plan s'ajuste autour.{% endif %}{% if n_aid %} Arrêts aux postes inclus ({% if stop_minutes %}{{ stop_minutes }} min chacun{% else %}eau 2′, ravito 5′, base vie 15′{% endif %}).{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
+            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if pinned %} <span class="inline-flex text-accent align-middle">{{ gl.glyph('pin', 'w-2 h-2') }}</span> = heure fixée par toi, le reste du plan s'ajuste autour.{% endif %}{% if n_aid %} Arrêts aux postes inclus ({% if stop_minutes %}{{ stop_minutes }} min chacun{% else %}eau 2′, ravito 5′, base vie 15′{% endif %}).{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
         </p>
     </div>
 
@@ -107,7 +109,7 @@
         <table class="w-full text-[9.5px] tabular-nums">
             <tbody class="divide-y divide-gray-100">
                 {% for l in legs_rows %}{% set b = l.block %}
-                <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-orange-50/60{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
+                <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-warn-soft{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
                     <td class="py-0.5 pr-2 text-gray-600">→ <b class="text-gray-900">{{ l.to_names | join(', ') }}</b></td>
                     <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}{% endif %}</td>
                     <td class="py-0.5 pr-2 whitespace-nowrap">{% if b %}{{ b.label }}{% if b.vam_m_per_h %} · {{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %} · {{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}{% endif %}</td>

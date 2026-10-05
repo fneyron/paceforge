@@ -64,7 +64,7 @@
                 <label class="flex flex-col gap-1 text-[11px] font-medium text-gray-500" title="Base glucides par heure (vélo = base + 10, course = base − 10). Vide = automatique selon la durée.">Glucides
                     <span class="flex items-center gap-1"><input type="number" name="carbs_g_per_h" value="{{ params.carbs_g_per_h|int if params.carbs_g_per_h else '' }}" placeholder="{{ nutrition.base_g_per_h }}" step="5" min="30" max="120" class="{{ input_cls }} w-16 font-normal"><span class="text-xs text-gray-400 font-normal">g/h</span></span>
                 </label>
-                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Recalculer</button>
+                <button type="submit" class="h-9 px-4 rounded-lg bg-accent text-accent-ink text-sm font-medium hover:bg-accent-strong">Recalculer</button>
             </div>
             <p class="text-[11px] text-gray-400">La puissance vélo, le vent et l'objectif course se règlent sur les plans de chaque étape (liens dans la ligne de temps). Le vélo est calculé avec le vent prévu à son heure réelle de passage, après la natation et T1.</p>
         </form>

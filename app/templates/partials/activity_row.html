@@ -3,62 +3,39 @@
 {% set days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'] %}
 <a href="/activity/{{ activity.id }}"
    id="activity-row-{{ activity.id }}"
-   class="pf-activity-row block rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm hover:border-gray-400 hover:shadow-md transition-all duration-200 {% if dim %}opacity-60{% endif %}">
-    <div class="flex items-start sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-            <div class="pf-sport-icon pf-sport-{{ activity.sport_group }} shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-gray-100 text-gray-500">
-                {% if activity.sport_group == 'trail' %}
-                <i data-lucide="mountain" class="w-4 h-4"></i>
-                {% elif activity.sport_group == 'run' %}
-                <i data-lucide="footprints" class="w-4 h-4"></i>
-                {% elif activity.sport_group == 'bike' %}
-                <i data-lucide="bike" class="w-4 h-4"></i>
-                {% elif activity.sport_type == 'Swim' %}
-                <i data-lucide="waves" class="w-4 h-4"></i>
-                {% else %}
-                <i data-lucide="activity" class="w-4 h-4"></i>
-                {% endif %}
-            </div>
-            <div class="min-w-0">
-                <p class="text-sm font-medium truncate">
-                    {{ activity.name }}
-                    {% if activity.is_duplicate %}
-                    <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-normal"
-                          title="Même sortie enregistrée deux fois (montre + téléphone). Ignorée dans les totaux et dans le profil de prédiction.">doublon</span>
-                    {% elif activity.is_false_start %}
-                    <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-normal"
-                          title="Enregistrement très court">faux départ</span>
-                    {% endif %}
-                </p>
-                <p class="text-xs text-gray-400">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }} · {{ activity.start_date.strftime('%H:%M') }}</p>
-                {# Mobile: the numbers that matter, inline under the name #}
-                <p class="sm:hidden mt-1 text-xs text-gray-600 tabular-nums">
-                    <b class="text-gray-900">{{ activity.distance_km }} km</b>{% if activity.elevation_m %} · <span class="text-red-500">+{{ activity.elevation_m }} m</span>{% endif %} · {{ activity.duration_formatted }}{% if activity.pace_formatted %} · {{ activity.pace_formatted }}{% endif %}
-                </p>
-            </div>
-        </div>
-
-        <div class="hidden sm:flex items-center gap-5 text-sm shrink-0">
-            <div class="text-right w-16">
-                <p class="font-medium tabular-nums">{{ activity.distance_km }}</p>
-                <p class="text-[10px] text-gray-400">km</p>
-            </div>
-            <div class="text-right w-14">
-                <p class="font-medium tabular-nums {% if activity.elevation_m %}text-red-500{% else %}text-gray-300{% endif %}">{% if activity.elevation_m %}+{{ activity.elevation_m }}{% else %}—{% endif %}</p>
-                <p class="text-[10px] text-gray-400">D+</p>
-            </div>
-            <div class="text-right w-16">
-                <p class="font-medium tabular-nums">{{ activity.duration_formatted }}</p>
-                <p class="text-[10px] text-gray-400">durée</p>
-            </div>
-            <div class="hidden md:block text-right w-20">
-                <p class="font-medium tabular-nums">{{ activity.pace_formatted or '—' }}</p>
-                <p class="text-[10px] text-gray-400">{% if activity.sport_group == 'bike' %}vitesse{% else %}allure{% endif %}</p>
-            </div>
-            <div class="hidden lg:block text-right w-12">
-                <p class="font-medium tabular-nums">{% if activity.average_heartrate %}{{ activity.average_heartrate|int }}{% else %}—{% endif %}</p>
-                <p class="text-[10px] text-gray-400">bpm</p>
-            </div>
-        </div>
-    </div>
+   class="pf-activity-row {% if dim %}opacity-60{% endif %}">
+    <span class="pf-sport-icon pf-sport-{{ activity.sport_group }}">
+        {% if activity.sport_group == 'trail' %}
+        <i data-lucide="mountain" class="w-[18px] h-[18px]"></i>
+        {% elif activity.sport_group == 'run' %}
+        <i data-lucide="footprints" class="w-[18px] h-[18px]"></i>
+        {% elif activity.sport_group == 'bike' %}
+        <i data-lucide="bike" class="w-[18px] h-[18px]"></i>
+        {% elif activity.sport_type == 'Swim' %}
+        <i data-lucide="waves" class="w-[18px] h-[18px]"></i>
+        {% else %}
+        <i data-lucide="activity" class="w-[18px] h-[18px]"></i>
+        {% endif %}
+    </span>
+    <span class="pf-item-main">
+        <span class="pf-item-title block truncate">
+            {{ activity.name }}
+            {% if activity.is_duplicate %}
+            <span class="ml-1 align-middle pf-pill pf-pill-soft !text-[11px] font-normal"
+                  title="Même sortie enregistrée deux fois (montre + téléphone). Ignorée dans les totaux et dans le profil de prédiction.">doublon</span>
+            {% elif activity.is_false_start %}
+            <span class="ml-1 align-middle pf-pill pf-pill-soft !text-[11px] font-normal"
+                  title="Enregistrement très court">faux départ</span>
+            {% endif %}
+        </span>
+        <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }} · {{ activity.start_date.strftime('%H:%M') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
+    </span>
+    <span class="sm:hidden pf-item-end"><b>{{ activity.distance_km }}<small class="text-[13px] font-medium text-gray-500"> km</small></b></span>
+    <span class="hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">
+        <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km }}</b><span class="pf-label">km</span></span>
+        <span class="w-14"><b class="block text-[16px] font-semibold {% if activity.elevation_m %}text-ink{% else %}text-gray-300{% endif %}">{% if activity.elevation_m %}+{{ activity.elevation_m }}{% else %}—{% endif %}</b><span class="pf-label">D+</span></span>
+        <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.duration_formatted }}</b><span class="pf-label">durée</span></span>
+        <span class="hidden md:block w-20"><b class="block text-[16px] font-semibold text-ink">{{ activity.pace_formatted or '—' }}</b><span class="pf-label">{% if activity.sport_group == 'bike' %}vitesse{% else %}allure{% endif %}</span></span>
+        <span class="hidden lg:block w-12"><b class="block text-[16px] font-semibold text-ink">{% if activity.average_heartrate %}{{ activity.average_heartrate|int }}{% else %}—{% endif %}</b><span class="pf-label">bpm</span></span>
+    </span>
 </a>
