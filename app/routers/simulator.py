@@ -1995,12 +1995,6 @@ async def _nutrition_card_context(
     }
 
 
-def _nutrition_status(value: float, target: float) -> str:
-    from app.services.nutrition import _status
-
-    return _status(float(value or 0), float(target or 0))
-
-
 def _visible(route: Route | None) -> Route | None:
     """The route, or None when its sport is hidden (bike / triathlon while cycling is off)."""
     return None if route is None or sport_hidden(route.sport_type) else route
