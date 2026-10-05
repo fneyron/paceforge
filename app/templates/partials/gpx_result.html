@@ -114,13 +114,12 @@
     <div id="recalc-error" class="hidden py-2 text-sm text-danger">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
     <button type="button" id="add-pt" onclick="window._sim && window._sim.openAddSheet()" class="pf-addpt">{{ ic.icon('plus', 'w-4 h-4', '2.4') }}Ajouter un point</button>
 
-    {# ── Préparer: the two preparation tools ─────────────────────────────── #}
+    {# ── Préparer: what to eat, drink and leave in the bags ───────────────── #}
     {% if saved_route_id %}
     <section class="pf-prep" aria-labelledby="prep-title">
         <h2 id="prep-title" class="pf-h2">Préparer</h2>
         <div class="pf-tools">
-            <button type="button" class="pf-tool" id="rtab-nutrition" onclick="window.switchRouteTab && window.switchRouteTab('nutrition')"><span>{{ ic.icon('utensils') }}<span>Nutrition et sacs</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</button>
-            <button type="button" class="pf-tool" id="rtab-pacing" onclick="window.switchRouteTab && window.switchRouteTab('pacing')"><span>{{ ic.icon('heart') }}<span>Pilotage</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</button>
+            <button type="button" class="pf-tool" id="rtab-nutrition" onclick="window.switchRouteTab && window.switchRouteTab('nutrition')"><span>{{ ic.icon('bag') }}<span>Ravitaillement<small id="nutri-sub">ce que tu manges, bois et mets dans tes sacs</small></span></span>{{ ic.icon('chev-r', 'pf-chev') }}</button>
         </div>
     </section>
     {% endif %}
@@ -203,6 +202,11 @@
                         <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="{{ num }}"> % plus lent</label>
                         <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-9 pl-2 pr-7 rounded-lg border border-gray-200 text-sm text-ink bg-surface max-w-[190px]"><option value="">automatique</option></select></label>
                     </div>
+                </form>
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/params" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="pt-4 border-t border-line">
+                    <span class="{{ lbl }}">Plafond cardio en montée</span>
+                    <p>{% if hr_cap_default %}Vide = 75 % de ta FC max ({{ max_hr }}, vue dans tes activités).{% else %}Pas de cardio dans tes activités : indique-le pour avoir un plafond par tronçon.{% endif %} Plat&nbsp;−4, descente&nbsp;−10, et il baisse avec la fatigue.</p>
+                    <label class="mt-2 inline-flex items-center gap-1.5"><input name="hr_cap_climb" type="number" inputmode="numeric" min="80" max="220" value="{{ hr_cap_climb or '' }}" placeholder="{{ hr_cap_default or '—' }}" aria-label="Plafond cardio en montée, en bpm" class="{{ num }}"> bpm</label>
                 </form>
                 <div id="wx-block" class="pt-4 border-t border-line{% if not has_date %} hidden{% endif %}">
                     <span class="{{ lbl }}">Météo</span>
@@ -715,7 +719,10 @@ window._sim = {};
     function editCheckpointKm(i, val) { if (!checkpoints[i]) return; var km = parseFloat(val); if (isNaN(km) || km <= 0 || km >= totalDistKm) { recalc(); return; } var cp = checkpoints[i], wasAnchor = anchorOn(cp); cp.distance_km = Math.round(km * 10) / 10; cp.elevation = interpElev(km); if (wasAnchor) { liveAnchor.anchor_km = cp.distance_km; persistLive(); } checkpoints.sort(function(a, b) { return a.distance_km - b.distance_km; }); if (openCp === i) openCp = checkpoints.indexOf(cp); if (sheetCp === i) sheetCp = checkpoints.indexOf(cp); refresh(); recalc(); scheduleSave(); }
     function editCheckpointMeta(i, field, val) {
         if (!checkpoints[i]) return;
-        if (field === 'kind') checkpoints[i].kind = val || 'none';
+        if (field === 'kind') {
+            if (val === 'base' && checkpoints[i].kind !== 'base') checkpoints[i].drop_bag = true;  // a base vie has a drop bag (untick it in the dialog)
+            checkpoints[i].kind = val || 'none';
+        }
         else if (field === 'stop_min') checkpoints[i].stop_s = (val === null || val === '' || isNaN(parseFloat(val))) ? null : Math.max(0, Math.round(parseFloat(val) * 60));
         else if (field === 'crew' || field === 'drop_bag') checkpoints[i][field] = !!val;
         else if (field === 'cutoff_clock') checkpoints[i].cutoff_clock = (val && /^\d{2}:\d{2}$/.test(val)) ? val : null;
@@ -958,7 +965,12 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
-        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); refreshSheet(); fillSwitchSelect(); updateHero();
+        drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); refreshSheet(); fillSwitchSelect(); updateHero(); updateToolSubs();
+    }
+    // « Ravitaillement » under the passages: how many drop bags the plan has
+    function updateToolSubs() {
+        var n = checkpoints.filter(function (c) { return c.drop_bag; }).length, ns = document.getElementById('nutri-sub');
+        if (ns) ns.textContent = n ? n + (n > 1 ? ' drop bags' : ' drop bag') + ' · ce que tu manges et bois' : 'ce que tu manges, bois et mets dans tes sacs';
     }
     // the switch-point choice follows the checkpoints
     function fillSwitchSelect() {
@@ -1081,7 +1093,7 @@ window._sim = {};
     }
     var saveRetried = false, hourlySaved = false;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=17', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
+    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=18', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }

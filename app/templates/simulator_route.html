@@ -49,17 +49,11 @@ summary::-webkit-details-marker { display: none; }
         </button>
         <h1 id="tool-title" class="pf-h1 mb-6" tabindex="-1"></h1>
 
-        <div id="rpanel-pacing" class="hidden">
-            <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="intersect once" hx-swap="innerHTML">
-                <p class="text-sm text-gray-500">Consignes de pilotage…</p>
-            </div>
-        </div>
-
         <div id="rpanel-nutrition" class="hidden">
-            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="intersect once" hx-swap="innerHTML">
+            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=18" hx-trigger="intersect once" hx-swap="innerHTML">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Plan nutritionnel…
+                    Ravitaillement…
                 </div>
             </div>
         </div>
@@ -77,10 +71,10 @@ summary::-webkit-details-marker { display: none; }
 
 {% block scripts %}
 <script>
-var TOOL_TITLES = { pacing: 'Pilotage', nutrition: 'Nutrition et sacs', realise: 'Débrief', reference: 'Finisher de référence' };
+var TOOL_TITLES = { nutrition: 'Ravitaillement', realise: 'Débrief', reference: 'Finisher de référence' };
 var planScrollY = 0;
 function switchRouteTab(tab, anchor) {
-    var tools = ['pacing', 'nutrition', 'realise', 'reference'];
+    var tools = ['nutrition', 'realise', 'reference'];
     if (tab !== 'plan' && tools.indexOf(tab) < 0) tab = 'plan';
     if (tab !== 'plan' && !document.getElementById('rpanel-' + tab)) tab = 'plan';
     var plan = document.getElementById('rpanel-plan'), tool = document.getElementById('rpanel-tool'), back = document.getElementById('back-courses');
@@ -98,7 +92,7 @@ function switchRouteTab(tab, anchor) {
     }
     // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
     var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    var urls = { pacing: ['/partials/simulator/pacing/{{ saved_route_id }}?v=1', '#pacing-wrap'], nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=16', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
+    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=18', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
     if (urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv) {
         window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
@@ -108,9 +102,15 @@ function switchRouteTab(tab, anchor) {
 var tabLoadedAt = {};
 document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    if (id === 'pacing-wrap') tabLoadedAt.pacing = pv; else if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
+    if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-document.addEventListener('DOMContentLoaded', function () { var h = (location.hash || '').slice(1); if (['pacing', 'nutrition', 'realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h); });
+// old links: #pacing (now in the passage rows) opens the plan; #nutrition, #ravito and #bags open Ravitaillement
+document.addEventListener('DOMContentLoaded', function () {
+    var h = (location.hash || '').slice(1);
+    if (h === 'pacing') switchRouteTab('plan');
+    else if (h === 'nutrition' || h === 'ravito' || h === 'bags') switchRouteTab('nutrition', h === 'bags' ? 'bags' : undefined);
+    else if (['realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h);
+});
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief.
 document.addEventListener('DOMContentLoaded', function () { switchRouteTab('realise'); });

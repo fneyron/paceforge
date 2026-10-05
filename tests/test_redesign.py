@@ -109,19 +109,22 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     # no « Outils » column, no sticky side column, no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
-    # Préparer: exactly two rows, no subtitles
+    # Préparer: one row, « Ravitaillement », with the drop-bag count as its subtitle (Pilotage lives in the rows now)
     prep = html.split('class="pf-prep"')[1].split("</section>")[0]
-    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)</span>', prep, flags=re.S) == ["Nutrition et sacs", "Pilotage"]
-    assert "<small" not in prep
+    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Ravitaillement"]
+    assert prep.count("<small") == 1 and 'id="nutri-sub"' in prep
     # nothing explains the obvious, nothing duplicated
     for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
-                 "Renommer", "Fixer l'heure", "Changer l'heure", "Glisse ou tape", "de jour", "de nuit", "Ton rythme", "Sacs et drop bags"):
+                 "Renommer", "Fixer l'heure", "Changer l'heure", "Glisse ou tape", "de jour", "de nuit", "Ton rythme", "Sacs et drop bags",
+                 "Pilotage", "Nutrition et sacs"):
         assert gone not in text, gone
     # the hooks the tools and scripts rely on are all still there
-    for hook in ('id="rtab-nutrition"', 'id="rtab-pacing"', 'id="rtab-reference"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
+    for hook in ('id="rtab-nutrition"', 'id="rtab-reference"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
                  'id="race-sheet"', 'id="save-name"', 'id="race-date"', 'id="start-time"', 'name="scenario_fast_pct"', "/reimport",
-                 'id="rpanel-nutrition"', 'id="rpanel-pacing"', 'id="rpanel-reference"', 'class="pf-carte"', 'id="wx-block"'):
+                 'id="rpanel-nutrition"', 'id="rpanel-reference"', 'class="pf-carte"', 'id="wx-block"'):
         assert hook in html, hook
+    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"'):
+        assert gone not in html, gone
     # the map is an overlay, closed on load, never restored from a remembered state
     assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
     assert "getItem('pf.map')" not in html and "pf.map3d" in html
@@ -310,13 +313,15 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_an_opened_row_has_the_leg_three_tiles_one_line_of_facts_and_two_actions(as_user: AsyncClient):
+async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two_actions(as_user: AsyncClient):
     rid = await _route(as_user)
     t = await _rows(as_user, rid, CPS)
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
     assert re.search(r"\d+ ?(h\d\d|min) depuis Eau 1 · 4 km · \+[\d ]+ m −[\d ]+ m", text), text
-    assert ">FC max<" in det and ">glucides<" in det and ">eau<" in det and "conseillés" not in det
+    # how to run the leg (cardio + terrain) and what was eaten on it, in sentences: no tiles
+    assert "pf-tiles" not in t and re.search(r"(Cardio (sous|vers) \d+ · )?(Roulant|roulant|Montée|montée|Très raide|très raide|Descente|descente) :", text), text
+    assert "Depuis Eau 1 :" in text, text
     assert re.search(r"Ravito · assistance · arrêt 3 min · barrière 10:30 · marge [+−]\d+h\d\d", text), text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
     assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »
@@ -328,7 +333,7 @@ async def test_an_opened_row_has_the_leg_three_tiles_one_line_of_facts_and_two_a
     # gone from the row: the poste chip, the plans line, pinning and deleting (all in the point dialog)
     for gone in ("data-poste", "Modifier le poste", "Fixer l'heure", "Changer l'heure", ">Supprimer<", "Plans</dt>", "<dl", "aucune"):
         assert gone not in unescape(t), gone
-    # the finish row: the leg and the tiles, no actions
+    # the finish row: the leg and how to run it, no actions
     fin = t.split('data-detail="-1"')[1]
     assert "depuis Village" in fin and "pf-det-actions" not in fin
 

@@ -80,11 +80,10 @@
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
             <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} depuis {% if loop.first %}le départ{% else %}{{ s.start_name }}{% endif %} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
-            <div class="pf-tiles">
-                <div><b class="tabular-nums">{% if lg and lg.hr_cap %}≤ {{ lg.hr_cap }}{% else %}—{% endif %}</b><span>FC max</span></div>
-                <div><b class="tabular-nums">{% if lg %}{{ lg.carbs_g }} g{% else %}—{% endif %}</b><span>glucides</span></div>
-                <div><b class="tabular-nums">{% if lg %}{{ fr('%.1f'|format(lg.fluid_ml / 1000)) }} L{% else %}—{% endif %}</b><span>eau</span></div>
-            </div>
+            {# the leg that ends here: how to run it, what was eaten on it #}
+            {% if lg and lg.effort %}<p class="pf-detnote">{{ gl.glyph('heart', 'w-4 h-4') }}<span>{{ lg.effort }}</span></p>{% endif %}
+            {% if lg and lg.steep_text %}<p class="pf-detnote is-alert">{{ gl.glyph('alert', 'w-4 h-4') }}<span>{{ lg.steep_text }}</span></p>{% endif %}
+            {% if lg and lg.units_text %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>{{ lg.units_text }}</span></p>{% endif %}
             {% set has_kind = k in kind_word %}
             {% set has_wx = wx_on and s.temperature_c is not none %}
             {% if has_kind or s.crew or stop_min > 0 or s.cutoff_clock or has_wx %}
@@ -92,8 +91,9 @@
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {% if editable and lg and lg.units %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>Sur ce tronçon : {{ lg.units|join(', ') }}.</span></p>{% endif %}
-            {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>{% if lg.bag.units %} : {{ lg.bag.units|join(', ') }} jusqu'à {{ lg.bag.until }}{% endif %}.</span></p>
+            {# what to do here for the next stretch: water, the drop bag #}
+            {% if lg and lg.water_note %}<p class="pf-detnote{% if lg.water_alert %} is-alert{% endif %}">{{ gl.glyph('water', 'w-4 h-4') }}<span>{{ lg.water_note }}</span></p>{% endif %}
+            {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>{{ lg.bag.head }}</b> : {% if lg.bag.units %}reprends {{ lg.bag.units|join(', ') }}{% else %}rien de prévu en nutrition{% endif %} jusqu'à {{ lg.bag.until }}.</span></p>
             {% elif s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">

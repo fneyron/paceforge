@@ -99,7 +99,7 @@
             {% if db.summary.gained %}<div class="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-emerald-900"><p class="font-semibold mb-1">Où tu as gagné</p><ul class="space-y-0.5">{% for l in db.summary.gained %}<li><b>{{ l.from_name }} → {{ l.to_name }}</b> : {{ (l.delta_s / 60)|round|int }} min — {{ l.reason }}</li>{% endfor %}</ul></div>{% endif %}
         </div>
         {% endif %}
-        <p class="text-[11px] text-gray-400">La FC est la moyenne des splits Strava sur le tronçon ; « plafond » = ta FC plafond montée (onglet Pilotage). Les arrêts = temps écoulé − temps en mouvement, tels que Strava les mesure.</p>
+        <p class="text-[11px] text-gray-400">La FC est la moyenne des splits Strava sur le tronçon ; « plafond » = ta FC plafond montée (Réglages du plan). Les arrêts = temps écoulé − temps en mouvement, tels que Strava les mesure.</p>
     </div>
     {% endif %}
 

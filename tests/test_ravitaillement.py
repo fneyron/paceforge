@@ -337,7 +337,7 @@ async def test_rows_and_watch_codes_carry_the_same_ceiling(as_user: AsyncClient)
     t = (await as_user.post("/partials/simulator/passage-times", data={
         "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid, "stop_minutes": 3,
     })).text
-    row_caps = [int(x) for x in re.findall(r"FC [≤≈] (\d+)", t)]  # ≈ on a descent (a target, not a ceiling)
+    row_caps = [int(x) for x in re.findall(r"Cardio (?:sous|vers) (\d+)", t)]  # « vers » on a descent (a target, not a ceiling)
     csv = (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=csv")).text
     codes = [int(x) for x in re.findall(r"FC(\d+)", csv)]
     assert row_caps and row_caps == codes[:len(row_caps)]

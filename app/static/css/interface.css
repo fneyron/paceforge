@@ -315,13 +315,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 #plan-table [data-safe], #plan-table [data-fast] { display: none; }
 #plan-table[data-scn="safe"] [data-cible-text], #plan-table[data-scn="fast"] [data-cible-text] { display: none; }
 #plan-table[data-scn="safe"] [data-safe], #plan-table[data-scn="fast"] [data-fast] { display: inline; }
-/* the open row: the leg, three tiles, one line of facts, the actions */
+/* the open row: the leg and how to run it, one line of facts, water and bag, the actions */
 .pf-legline { font-size: 14px; color: rgb(var(--pf-gray-700)); margin-top: -2px; }
-.pf-det-actions, .pf-tiles, .pf-detnote { margin-top: 10px; }
-.pf-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.pf-tiles > div { background: rgb(var(--pf-surface)); border-radius: 12px; padding: 10px 12px; min-width: 0; }
-.pf-tiles b { display: block; font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); }
-.pf-tiles span { display: block; font-size: 12px; color: rgb(var(--pf-gray-500)); line-height: 1.3; }
+.pf-det-actions, .pf-detnote { margin-top: 10px; }
+.pf-detnote + .pf-detnote { margin-top: 6px; }
 .pf-factline { margin-top: 10px; font-size: 13px; line-height: 1.5; color: rgb(var(--pf-gray-600)); }
 .pf-factline [data-wx] { vertical-align: -2px; }
 .pf-rangeline { margin-top: 4px; font-size: 13px; color: rgb(var(--pf-gray-600)); }
