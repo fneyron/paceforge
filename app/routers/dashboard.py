@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db, get_optional_user
+from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
@@ -18,6 +19,7 @@ from app.services.training_load import calculate_training_load
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["dashboard"])
 

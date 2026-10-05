@@ -53,7 +53,7 @@ async def activity_detail(
     if sport_group(activity.sport_type) in ("run", "trail") and activity.distance:
         dist_km = activity.distance / 1000
         routes_q = await db.execute(
-            select(Route).where(Route.user_id == user.id, Route.sport_type != "bike")
+            select(Route).where(Route.user_id == user.id, Route.sport_type.notin_(("bike", "triathlon")))
         )
         candidates = [
             r for r in routes_q.scalars().all()

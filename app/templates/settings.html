@@ -47,8 +47,9 @@
                 <input type="number" id="weight_kg" name="weight_kg" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">kg</span>
             </div>
-            <p class="text-[11px] text-gray-400 mt-1">Puissance (vélo) et plafond de caféine (nutrition).</p>
+            <p class="text-[11px] text-gray-400 mt-1">{% if cycling_enabled() %}Puissance (vélo) et plafond de caféine (nutrition).{% else %}Plafond de caféine (nutrition).{% endif %}</p>
         </div>
+        {% if cycling_enabled() %}
         <div class="max-w-xs">
             <label for="ftp_watts" class="block text-xs font-medium text-gray-500 mb-1.5">FTP</label>
             <div class="flex items-center gap-2">
@@ -59,6 +60,7 @@
             {% if ftp_est and ftp_est.method != 'saisie' %}<p class="text-[11px] text-gray-500 mt-1">Estimation actuelle : <b class="text-gray-800">{{ ftp_est.estimated_ftp|int }} W</b> · {{ ftp_est.method }}, fiabilité {{ ftp_est.confidence|lower }}{% if ftp_est.rides_used %}, {{ ftp_est.rides_used }} sortie{{ 's' if ftp_est.rides_used > 1 }} avec capteur{% endif %}{% if ftp_est.activity_name %} · d'après « {{ ftp_est.activity_name }} »{% endif %}{% if ftp_est.is_stale %} · <span class="text-amber-600">il y a {{ ftp_est.age_months }} mois, probablement dépassée</span>{% endif %}</p>
             {% elif not ftp_est %}<p class="text-[11px] text-amber-600 mt-1">Aucune sortie avec capteur de puissance : saisis ta FTP pour planifier à la puissance.</p>{% endif %}{% if ftp_bad %}<p class="text-[11px] text-red-600 mt-1">FTP non enregistrée : entre 50 et 600 W.</p>{% endif %}
         </div>
+        {% endif %}
         <div>
             <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">Enregistrer</button>
         </div>
