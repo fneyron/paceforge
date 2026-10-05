@@ -111,7 +111,7 @@
 
     {# ── training load ── #}
     <section class="pf-health-load" aria-labelledby="h-load">
-        <div class="pf-sechead mt-12">
+        <div class="pf-sechead">
             <h2 id="h-load" class="pf-h2">Charge d'entraînement</h2>
             <nav aria-label="Période" class="pf-seg pf-seg-sm">
                 {% for n in periods %}<a href="/sante?jours={{ n }}" {% if days == n %}aria-current="true"{% endif %}>{{ n }} j</a>{% endfor %}
@@ -151,7 +151,7 @@
 
     {# ── fitness assessment ── #}
     <section aria-labelledby="h-fitness" class="pf-health-fitness">
-        <div class="pf-sechead mt-12">
+        <div class="pf-sechead">
             <h2 id="h-fitness" class="pf-h2">Niveau</h2>
             {% if fi %}<span class="pf-label">évaluation COROS {{ fi.when }}</span>{% endif %}
         </div>

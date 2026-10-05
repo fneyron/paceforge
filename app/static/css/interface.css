@@ -459,3 +459,11 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-legal { max-width: 42rem; margin: 0 auto; padding: 24px 20px 56px; }
 .pf-legal h1 { font-family: var(--pf-font-display); font-size: 34px; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; }
 .pf-legal h2 { font-family: var(--pf-font-display); font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+/* component classes set a display: keep Tailwind's .hidden (toggled by scripts) winning over them */
+:is(.pf-back, .pf-seg, .pf-btn, .pf-tool, .pf-pill, .pf-ibtn, .pf-note, .pf-chip).hidden { display: none; }
+#tool-title:focus { outline: none; }
+.dark :is(.pf-title-input, .pf-meta-input, .pf-hero-in) { background-color: transparent; border-color: transparent; }
+.dark :is(.pf-title-input, .pf-meta-input):focus { border-bottom-color: rgb(var(--pf-accent)); }
+.dark .pf-hero-in { border-bottom-color: rgb(var(--pf-accent)); }
+.dark .pf-seg > [aria-pressed="true"], .dark .pf-seg > [aria-current] { background: rgb(var(--pf-gray-200)); }
+.pf-health-load, .pf-health-fitness { margin-top: 48px; }

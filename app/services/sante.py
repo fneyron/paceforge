@@ -292,7 +292,7 @@ def _trends(series, details, today, days) -> dict:
             band = (nd["lo"], nd["hi"])
     add("hrv", "VFC (variabilité cardiaque)", _NIGHT_HINT, hrv, f"{hrv[max(hrv)]:.0f} ms" if hrv else "—",
         sub=f"zone normale {band[0]:.0f}–{band[1]:.0f} ms" if band else None,
-        note="Dans ta zone normale (bande grise) = bien récupéré ; en dessous = fatigue." if band else
+        note="Dans ta zone normale (bande verte) = bien récupéré ; en dessous = fatigue." if band else
         "Plus haut que d'habitude = bien récupéré.", band=band)
 
     sleep = {d: v / 60 for d, v in window("sleep").items()}

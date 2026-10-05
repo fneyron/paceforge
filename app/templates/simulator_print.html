@@ -12,6 +12,7 @@
         /* Sized to tuck behind a race bib: a ~18cm-wide strip you cut out. Cells
            wrap to a second line past ~6 checkpoints instead of squeezing. */
         .bib { width: 18cm; }
+        @media screen and (max-width: 720px) { .bib { width: 100%; } .bib-head { flex-wrap: wrap; } .bib-head > div { flex-wrap: wrap; } }
         .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.55cm, 1fr)); gap: 3px; }
         .cell { border: 1px solid #e5e7eb; border-radius: 4px; padding: 3px 3px 2px; text-align: center; min-width: 0; }
         .cell .n { font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; line-height: 1.1; color: #4b5563;
@@ -48,11 +49,11 @@
 
     <!-- The printable band (bib-sized) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3">
-        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2 mb-2">
+        <div class="bib-head flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2 mb-2">
             <h1 class="text-base font-bold tracking-tight truncate">{{ route.name }}</h1>
             <div class="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 shrink-0">
                 <span>{{ course.total_distance_km }} km</span>
-                <span class="text-red-500">D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
+                <span>D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
                 <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
                 {# pinned times: « Objectif » only when the plan finishes on the objective he chose #}
                 {% set obj_s = (sections[-1].objective_s if sections else none) if pinned else route.target_time_s %}
