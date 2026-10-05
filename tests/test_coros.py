@@ -607,7 +607,8 @@ async def test_callback_stores_encrypted_tokens_and_starts_the_sync(as_user: Asy
     assert conn.resource_url == "https://mcpus.coros.com/mcp" and conn.token_endpoint.endswith("/oauth2/token")
     assert conn.expires_at is not None and not conn.needs_reauth
     page = (await as_user.get("/settings")).text
-    assert "COROS connecté" in page and "première synchro en cours" in page and "Synchroniser maintenant" in page
+    # Réglages manage the link only; syncing on demand lives on the Santé page
+    assert "Connecté" in page and "Première synchro en cours" in page and "Synchroniser maintenant" not in page
     # the state is single use
     r = await as_user.get(f"/coros/callback?code=the-code&state={state}")
     assert "expiré" in (await as_user.get("/settings")).text
@@ -767,8 +768,10 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
     await _link(db_session, test_user)
     r = await as_user.post("/settings/coros/sync")
     assert r.status_code == 200 and 'id="coros-status"' in r.text
-    assert "Synchro terminée" in r.text and "dernière synchro" in r.text and "Reçu de COROS : VFC 2 j" in r.text
-    assert "Charge 5 j" in r.text and "HX-Refresh" not in r.headers
+    assert "Synchro terminée" in r.text and "dernière synchro" in r.text and "HX-Refresh" not in r.headers
+    settings_page = (await as_user.get("/settings")).text
+    assert "Dernière synchro" in settings_page and "Synchroniser maintenant" not in settings_page
+    assert "Synchroniser maintenant" in (await as_user.get("/sante")).text
     # from the Santé page, a finished sync reloads it to show the new values
     r = await as_user.post("/settings/coros/sync", headers={"HX-Request": "true", "HX-Current-URL": "https://test/sante"})
     assert r.headers.get("HX-Refresh") == "true"

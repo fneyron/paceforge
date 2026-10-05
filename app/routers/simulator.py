@@ -49,12 +49,77 @@ async def simulator_page(
         except ValueError:
             rt.days_to = None
     saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
+    for rt in saved_routes:
+        rt.card = _route_card(rt)
 
     return templates.TemplateResponse(
         request,
         "simulator.html",
         context={"user": user, "saved_routes": saved_routes},
     )
+
+
+_DAYS_FR = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+_MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+
+
+def _hm(s: int) -> str:
+    return f"{s // 3600}h{(s % 3600) // 60:02d}"
+
+
+def _route_card(rt: Route) -> dict:
+    """What « Mes courses » shows for a race: the date in words, the objective and the
+    arrival clock, the real time against the plan once run, and a mini profile."""
+    from datetime import date as _date
+
+    out: dict = {"date": None, "when": None, "objective": None, "arrival": None, "real": None, "diff": None, "good": None, "profile": None}
+    d = None
+    try:
+        d = _date.fromisoformat(str(rt.race_date)[:10]) if rt.race_date else None
+    except ValueError:
+        d = None
+    year = f" {d.year}" if d and (d.year != _date.today().year or d < _date.today()) else ""  # past races carry their year
+    if d:
+        out["date"] = f"{_DAYS_FR[d.weekday()]} {d.day} {_MONTHS_FR[d.month - 1]}{year}"
+    days = getattr(rt, "days_to", None)
+    if days is not None and days >= 0:
+        out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
+                       else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
+    sh = rt.start_hour if rt.start_hour is not None else 6
+    sm = rt.start_minute or 0
+    out["start"] = f"{sh:02d}:{sm:02d}"
+    if rt.target_time_s:
+        out["objective"] = _hm(rt.target_time_s)
+        fin = sh * 3600 + sm * 60 + rt.target_time_s
+        n = fin // 86400
+        clock = f"{(fin % 86400) // 3600:02d}:{(fin % 3600) // 60:02d}"
+        if d and n:
+            from datetime import timedelta as _td
+
+            out["arrival"] = f"{_DAYS_FR[(d + _td(days=n)).weekday()]} {clock}"
+        else:
+            out["arrival"] = (f"J+{n} " if n else "") + clock
+    res = rt.result_json or {}
+    if res.get("total_actual_s"):
+        real = int(res["total_actual_s"])
+        out["real"] = _hm(real)
+        if rt.target_time_s:
+            diff = round((real - rt.target_time_s) / 60)
+            out["diff"] = ("−" if diff < 0 else "+") + (f"{abs(diff)} min" if abs(diff) < 60 else _hm(abs(diff) * 60))
+            out["good"] = diff <= 0
+    # mini profile: 80 points, 400 × 70 viewBox
+    pts = (rt.course_json or {}).get("elevation_points") or []
+    if len(pts) > 2:
+        step = max(1, len(pts) // 80)
+        sample = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
+        total = float(sample[-1]["distance_km"]) or 1.0
+        lo = min(p["elevation"] for p in sample)
+        hi = max(p["elevation"] for p in sample)
+        span = (hi - lo) or 1.0
+        coords = [(round(p["distance_km"] / total * 400, 1), round(66 - (p["elevation"] - lo) / span * 60, 1)) for p in sample]
+        line = "M" + " L".join(f"{x} {y}" for x, y in coords)
+        out["profile"] = {"line": line, "area": line + " L400 70 L0 70 Z"}
+    return out
 
 
 @router.post("/partials/simulator/gpx-upload", response_class=HTMLResponse)
@@ -139,6 +204,55 @@ def _clock_to_s(clock: str) -> int | None:
         return int(hh) * 3600 + int(mm) * 60
     except (ValueError, AttributeError):
         return None
+
+
+async def _leg_details(
+    db: AsyncSession, user_id: int, route_obj: Route | None, guide: dict, sections: list[dict],
+    checkpoints: list[dict], aid_kms: set, start_offset_s: int,
+) -> list[dict]:
+    """What a passage row shows once opened, one entry per section (the leg that ENDS
+    at that point): the heart-rate ceiling of its main terrain, the carbs and water to
+    take on it, and — at a drop bag or crew point — what to leave there for the next
+    stretch. Never fails the table: on any error the rows open without these numbers."""
+    try:
+        from app.services.nutrition import CAFFEINE_DEFAULTS, compute_plan, default_targets
+        from app.services.pacing_guide import leg_instructions
+
+        hr = [((li.get("block") or {}).get("hr_cap"), (li.get("block") or {}).get("label")) for li in leg_instructions(guide, sections)]
+        nut = (route_obj.nutrition_json or {}) if route_obj else {}
+        items = nut.get("items") or []
+        products_by_id: dict = {}
+        if items:
+            res = await db.execute(select(NutritionProduct).where(NutritionProduct.user_id == user_id))
+            products_by_id = {p.id: _product_dict(p) for p in res.scalars().all()} or {p["id"]: p for p in _GENERIC_PLAN_PRODUCTS}
+        last = sections[-1] if sections else {}
+        cum = last.get("adjusted_cumulative_time_s") or last.get("cumulative_time_s") or 0
+        mean_temp = (route_obj.weather_json or {}).get("temperature_c") if route_obj and route_obj.weather_json else None
+        targets = {**default_targets(cum / 3600.0, mean_temp), **{k: v for k, v in (nut.get("targets") or {}).items() if v is not None}}
+        resupply = [{"km": cp["distance_km"], "name": cp["name"]} for cp in checkpoints if cp.get("drop_bag") or cp.get("crew")]
+        plan = compute_plan(
+            cum, targets, items, products_by_id, sections, flask_capacity_ml=nut.get("flask_capacity_ml") or 1000,
+            refill_kms=aid_kms, resupply_points=resupply, caffeine={**CAFFEINE_DEFAULTS, **(nut.get("caffeine") or {})},
+            start_offset_s=start_offset_s,
+        )
+        bags = {round(float(g["km"]), 1): g for g in plan.get("packing") or [] if not g.get("is_start")}
+        out = []
+        for i, leg in enumerate(plan["schedule"]):
+            hours = leg["leg_time_s"] / 3600.0
+            carbs = leg["carbs_real_g"] if items else round(float(targets.get("carbs_g_per_h") or 0) * hours)
+            units = [f"{u['units']:g} {u['name'].lower()}" for u in leg["units"] if u["units"] and not u["is_water"]]
+            km = round(float(leg["km"] or 0), 1)
+            bag = bags.get(km)
+            out.append({
+                "hr_cap": hr[i][0] if i < len(hr) else None, "terrain": hr[i][1] if i < len(hr) else None,
+                "carbs_g": carbs, "carbs_planned": bool(items), "fluid_ml": leg["fluid_ml"], "units": units,
+                "bag": ({"until": bag.get("until"), "units": [f"{u['units']:g} {u['name'].lower()}" for u in bag["units"]],
+                         "carbs_g": bag.get("carbs_g") or 0} if bag else None),
+            })
+        return out
+    except Exception:
+        logger.exception("leg details failed")
+        return []
 
 
 async def _passage_table_context(
@@ -232,7 +346,9 @@ async def _passage_table_context(
         walk_grade=float(params.get("walk_grade") or DEFAULT_WALK_GRADE), plan_sections=sections, **caps,
     )
     plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    legs = await _leg_details(db, user_id, route_obj, guide, sections, checkpoints, aid_kms, start_offset_s)
     return {
+        "legs": legs,
         "plan_data": _script_json(plan_data),
         "sections": sections,
         "has_target": (target_time_s is not None) or replan is not None or pinned,

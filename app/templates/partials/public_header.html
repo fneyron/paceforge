@@ -1,0 +1,13 @@
+{# Public top bar (landing, méthode, legal pages): logo, the method, sign in / my races #}
+<header class="pf-wrap pf-pubtop">
+    <a href="/" class="pf-logo" aria-label="PaceForge, accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
+    <nav class="flex items-center gap-1" aria-label="Liens">
+        <a href="/methode" class="pf-publink pf-hide-xs">La méthode</a>
+        {% if viewer is defined and viewer %}
+        <a href="/simulator" class="pf-btn pf-btn-primary pf-btn-sm">Mes courses</a>
+        {% else %}
+        <a href="/auth/login" class="pf-publink{% if show_register is defined and show_register %} pf-hide-xs{% endif %}">Se connecter</a>
+        {% if show_register is defined and show_register %}<a href="/auth/register" class="pf-btn pf-btn-primary pf-btn-sm">Créer mon plan</a>{% endif %}
+        {% endif %}
+    </nav>
+</header>
