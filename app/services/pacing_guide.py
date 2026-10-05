@@ -375,7 +375,7 @@ def effort_sentence(cls: str | None, hr_cap: int | None, walk_grade: float = DEF
         return None
     walk = int(round(walk_grade or DEFAULT_WALK_GRADE))
     text = {
-        "flat": "roulant : cours régulier, mange et bois.",
+        "flat": "roulant : cours régulier.",  # what to eat is the next line
         "climb": f"montée : marche dès que ça dépasse {walk} %, cours le reste.",
         "stairs": "très raide : marche, mains sur les cuisses.",
         "descent": "descente : relâché, sans freiner. Mange avant, en haut.",

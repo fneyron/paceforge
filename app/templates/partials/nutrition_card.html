@@ -12,22 +12,23 @@
 {%- endif -%}
 </svg>
 {%- endmacro %}
-{% macro chip(c, pressed, vals, extra="") -%}
-<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if pressed else 'false' }}" title="{{ c.title or c.label }}" hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-vals='{{ vals }}'{{ extra }}>{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl">{{ c.label }}</span></button>
+{% macro chip(c) -%}
+<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" title="{{ c.title or c.label }}" hx-post="/partials/simulator/nutrition/{{ route_id }}/plan" hx-vals='{"op":"toggle","v":"{{ c.id }}"}'>{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl">{{ c.label }}</span></button>
 {%- endmacro %}
-{% macro product_form(p=none) -%}
-{% set k = (p.kind if p else 'gel') %}{% set k = 'bar' if k == 'solid' else k %}
-<form hx-post="/partials/simulator/nutrition/{{ route_id }}/products{% if p %}/{{ p.id }}{% endif %}" class="pf-rv-form" novalidate>
+{# p = a product to edit; v = what was typed (an « un produit à toi » sent without a name) #}
+{% macro product_form(p=none, v=none) -%}
+{% set k = (p.kind if p else (v.kind if v else 'gel')) %}{% set k = 'bar' if k == 'solid' else k %}
+<form hx-post="/partials/simulator/nutrition/{{ route_id }}/products{% if p %}/{{ p.id }}{% endif %}" class="pf-rv-form">
     {% if p %}<input type="hidden" name="open" value="adjust">{% endif %}
     <input type="hidden" name="kind" value="{{ k }}">
     <div class="pf-seg pf-seg-sm" role="group" aria-label="Type de produit">
         {% for val, lbl in [('gel', 'Gel'), ('bar', 'Barre'), ('drink', 'Boisson'), ('salt', 'Sel')] %}<button type="button" data-kind="{{ val }}" aria-pressed="{{ 'true' if k == val else 'false' }}" onclick="pfRvKind(this)">{{ lbl }}</button>{% endfor %}
     </div>
-    <label>Nom<input name="name" type="text" maxlength="100" value="{{ p.name if p else '' }}" autocomplete="off"></label>
+    <label>Nom<input name="name" type="text" maxlength="100" required value="{{ p.name if p else '' }}" autocomplete="off"{% if v and v.error %} aria-invalid="true" autofocus{% endif %}>{% if v and v.error %}<small class="pf-rv-err">{{ v.error }}</small>{% endif %}</label>
     <div class="pf-rv-form-row">
-        <label>Glucides<span class="pf-rv-unitin"><input name="carbs_g" type="number" inputmode="decimal" min="0" step="any" value="{{ (p.carbs_g|round(1)) if p and p.carbs_g else '' }}"> g</span></label>
-        <label>Sodium<span class="pf-rv-unitin"><input name="sodium_mg" type="number" inputmode="decimal" min="0" step="any" value="{{ (p.sodium_mg|round|int) if p and p.sodium_mg else '' }}"> mg</span><small>sur l'étiquette</small></label>
-        <label>Caféine<span class="pf-rv-unitin"><input name="caffeine_mg" type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="{{ (p.caffeine_mg|round|int) if p and p.caffeine_mg else '' }}"> mg</span></label>
+        <label>Glucides<span class="pf-rv-unitin"><input name="carbs_g" type="number" inputmode="decimal" min="0" step="any" value="{{ p.carbs_in if p else (v.carbs_g if v else '') }}"> g</span><small data-drink-hint{% if k != 'drink' %} hidden{% endif %}>par flasque de 500 ml</small></label>
+        <label>Sodium<span class="pf-rv-unitin"><input name="sodium_mg" type="number" inputmode="decimal" min="0" step="any" value="{{ p.sodium_in if p else (v.sodium_mg if v else '') }}"> mg</span><small>{% if k == 'drink' %}par flasque de 500 ml{% else %}sur l'étiquette{% endif %}</small></label>
+        <label>Caféine<span class="pf-rv-unitin"><input name="caffeine_mg" type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="{{ p.caffeine_in if p else (v.caffeine_mg if v else '') }}"> mg</span></label>
     </div>
     <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">{{ 'Enregistrer' if p else 'Ajouter' }}</button>
 </form>
@@ -48,8 +49,8 @@
             {% for r in rules %}<li><span class="pf-rv-ic">{{ rv_icon(r.icon) }}</span><span>{{ r.html | safe }}</span></li>{% endfor %}
         </ul>
         <p class="pf-rv-tip">Commence dès la première demi-heure, sans attendre d'avoir faim.</p>
-        {% for w in warnings %}<p class="pf-rv-warn is-{{ w.tone }}">{% if w.tone == 'warn' %}{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}{% endif %}<span>{{ w.text }}</span></p>{% endfor %}
-        {% if hand_set %}<p class="pf-rv-hand"><span class="pf-pill pf-pill-soft">réglé à la main</span><button type="button" class="pf-link" hx-post="{{ P }}/plan" hx-vals='{"op":"reset"}'>Revenir au calcul auto</button></p>{% endif %}
+        {% for w in warnings %}<p class="pf-rv-warn is-{{ w.tone }}">{% if w.tone in ('warn', 'alert') %}{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}{% endif %}<span>{{ w.text }}</span></p>{% endfor %}
+        {% if hand_set %}<p class="pf-rv-hand"><span class="pf-pill pf-pill-soft">réglé à la main</span><button type="button" class="pf-link pf-rv-hit" hx-post="{{ P }}/plan" hx-vals='{"op":"reset"}'>Revenir au calcul auto</button></p>{% endif %}
     </section>
 
     {# ── 3.2 Ton estomac ──────────────────────────────────────────────── #}
@@ -68,9 +69,7 @@
     <section id="rv-picks" aria-labelledby="rv-picks-t">
         <h2 id="rv-picks-t" class="pf-rv-h">Ce que tu emportes</h2>
         <div class="pf-rv-chips">
-            {% for c in picked %}{{ chip(c, true, '{"op":"toggle","v":"' ~ c.id ~ '"}') }}{% endfor %}
-            {% for c in generics %}{{ chip(c, false, '{"op":"toggle","v":"' ~ c.id ~ '"}') }}{% endfor %}
-            {% for c in pantry_chips %}{{ chip(c, false, '{"op":"toggle","v":"' ~ c.id ~ '"}') }}{% endfor %}
+            {% for c in chips %}{{ chip(c) }}{% endfor %}
             <details id="rv-brands" class="pf-rv-more"{% if open == 'brands' %} open{% endif %}>
                 <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Marque</summary>
                 <div class="pf-rv-panel">
@@ -80,11 +79,11 @@
                     {% endfor %}
                     {% if pantry_more %}
                     <p class="pf-rv-sublabel">Tes autres produits</p>
-                    <div class="pf-rv-chips">{% for c in pantry_more %}{{ chip(c, false, '{"op":"toggle","v":"' ~ c.id ~ '"}') }}{% endfor %}</div>
+                    <div class="pf-rv-chips">{% for c in pantry_more %}{{ chip(c) }}{% endfor %}</div>
                     {% endif %}
-                    <details class="pf-rv-own">
+                    <details class="pf-rv-own"{% if own_form %} open{% endif %}>
                         <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Un produit à toi</summary>
-                        {{ product_form() }}
+                        {{ product_form(none, own_form) }}
                     </details>
                 </div>
             </details>
@@ -116,15 +115,14 @@
                 <ul class="pf-rv-qtys">
                     {% for q in qty_rows %}
                     <li class="pf-rv-qty">
-                        <span class="pf-rv-qty-name" title="{{ q.label }}">{{ q.label }}</span>
-                        {% if q.caf %}<span class="pf-rv-help !mt-0">aux heures de caféine</span>{% else %}
+                        <span class="pf-rv-qty-name"><b title="{{ q.label }}">{{ q.label }}</b>{% if q.caf %}<small>aux heures de caféine</small>{% else %}<small class="{{ 'is-hand' if q.manual else '' }}">{{ 'à la main' if q.manual else 'auto' }}</small>{% endif %}</span>
+                        {% if not q.caf %}
                         <span class="pf-rv-stepper">
                             <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"step","pid":"{{ q.id }}","step":"-0.5","open":"adjust"}' aria-label="Moins de {{ q.label }}">−</button>
                             <b>{{ q.rate }}</b>
                             <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"step","pid":"{{ q.id }}","step":"0.5","open":"adjust"}' aria-label="Plus de {{ q.label }}">+</button>
                         </span>
-                        <span class="pf-rv-help !mt-0">par heure</span>
-                        <span class="pf-pill {{ 'pf-pill-warn' if q.manual else 'pf-pill-soft' }}">{{ 'à la main' if q.manual else 'auto' }}</span>
+                        <span class="pf-rv-perh">/ h</span>
                         {% endif %}
                     </li>
                     {% endfor %}
@@ -144,11 +142,9 @@
                     {% for p in my_products %}
                     <li class="pf-rv-prod">
                         <span class="pf-rv-prod-main"><b title="{{ p.name }}">{{ p.label }}</b><small>{{ p.detail }}</small></span>
-                        <details class="pf-rv-edit">
-                            <summary class="pf-btn pf-btn-ghost pf-btn-sm">Modifier</summary>
-                            {{ product_form(p) }}
-                        </details>
+                        <button type="button" class="pf-btn pf-btn-ghost pf-btn-sm" aria-expanded="false" aria-controls="rv-edit-{{ p.id }}" onclick="pfRvEdit(this)">Modifier</button>
                         <button type="button" class="pf-ibtn" aria-label="Supprimer {{ p.label }}" title="Supprimer" hx-post="{{ P }}/products/{{ p.id }}/delete" hx-vals='{"open":"adjust"}' hx-confirm="Supprimer « {{ p.name }} » ?">×</button>
+                        <div id="rv-edit-{{ p.id }}" class="pf-rv-editform" hidden>{{ product_form(p) }}</div>
                     </li>
                     {% endfor %}
                 </ul>
@@ -168,10 +164,16 @@
         {% if bag_chips %}
         <p class="pf-rv-sublabel">Drop bag à :</p>
         <div class="pf-rv-chips">
-            {% for c in bag_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" title="{{ c.label }}" onclick="pfRvBag(this)">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
+            {% for c in bag_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
         </div>
-        {% else %}
-        <p class="pf-rv-help">Pas encore de ravito dans ton plan : ouvre un point du plan pour dire où sont les ravitos.</p>
+        {% if water_chips %}
+        <p class="pf-rv-sublabel">Eau à :</p>
+        <div class="pf-rv-chips">
+            {% for c in water_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'water')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
+        </div>
+        {% endif %}
+        {% elif no_points %}
+        <p class="pf-rv-help">Pas encore de point dans ton plan : ajoute les ravitos pour y mettre un drop bag.</p>
         {% endif %}
         {% endif %}
         <div class="pf-rv-bags">
@@ -192,7 +194,7 @@
         <ul class="pf-rv-shop">
             {% for it in shop %}<li><b>{{ it.n }}</b><span>{{ it.noun }}</span><small>{{ it.note }}</small></li>{% endfor %}
         </ul>
-        {% if caf_over %}<p class="pf-rv-warn is-alert">Caféine : {{ caf_over.total_mg }} mg, au-dessus des {{ caf_over.max_mg }} mg conseillés pour toi. Retire une prise.</p>{% endif %}
+        {% if caf_over %}<p class="pf-rv-warn is-alert">Caféine : {{ caf_over.total_mg }} mg, au-dessus des {{ caf_over.max_mg }} mg conseillés pour toi. {{ caf_over.fix }}</p>{% endif %}
         <pre id="rv-shop-text" class="pf-rv-copytext" hidden>{{ copy_text }}</pre>
     </section>
 
@@ -210,17 +212,31 @@
 <script>
 // a drop bag is a checkpoint flag: flip it in the plan's own list (the plan
 // autosaves that list), save, then reload this card
-window.pfRvBag = function (btn) {
-    var url = '/partials/simulator/nutrition/{{ route_id }}?v=' + Date.now(), wrap = document.getElementById('nutrition-wrap');
-    var reload = function () { if (window.htmx) window.htmx.ajax('GET', url, wrap ? { target: '#nutrition-wrap', swap: 'innerHTML' } : { target: '#nutrition-card', swap: 'outerHTML' }); };
-    var ci = btn.getAttribute('data-ci'), km = parseFloat(btn.getAttribute('data-km'));
+// what = 'bag' (drop bag) or 'water' (a water point). After the save the card
+// comes back through « keep »: a plan still taken from another race becomes
+// this race's own, so a later change there never rewrites these bags.
+window.pfRvPoint = function (btn, what) {
+    var P = '/partials/simulator/nutrition/{{ route_id }}', wrap = document.getElementById('nutrition-wrap');
+    var reload = function () { if (window.htmx) window.htmx.ajax('GET', P + '?v=' + Date.now(), wrap ? { target: '#nutrition-wrap', swap: 'innerHTML' } : { target: '#nutrition-card', swap: 'outerHTML' }); };
+    var keep = function () { if (window.htmx) window.htmx.ajax('POST', P + '/plan', { target: '#nutrition-card', swap: 'outerHTML', values: { op: 'keep' } }); };
+    var ci = btn.getAttribute('data-ci'), km = parseFloat(btn.getAttribute('data-km')), kind = btn.getAttribute('data-kind') || 'none';
     var row = document.querySelector('#plan-table [data-row][data-cp="' + ci + '"]'), sim = window._sim;
     if (!row || !sim || !sim.editCheckpointMeta || !sim.saveRoute || Math.abs(parseFloat(row.getAttribute('data-end-km')) - km) > 0.05) { reload(); return; }
-    var on = btn.getAttribute('aria-pressed') !== 'true';
+    var on = btn.getAttribute('aria-pressed') !== 'true', i = parseInt(ci, 10);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false'); btn.disabled = true;
-    sim.editCheckpointMeta(parseInt(ci, 10), 'drop_bag', on);
+    if (what === 'water') sim.editCheckpointMeta(i, 'kind', on ? 'water' : 'none');
+    else {
+        if (on && kind === 'none') sim.editCheckpointMeta(i, 'kind', 'base');  // a bag on a bare point: it is a base vie
+        sim.editCheckpointMeta(i, 'drop_bag', on);
+    }
     var p = sim.saveRoute();
-    if (p && p.then) p.then(reload, reload); else reload();
+    if (p && p.then) p.then(keep, reload); else keep();
+};
+window.pfRvBag = function (btn) { window.pfRvPoint(btn, 'bag'); };
+window.pfRvEdit = function (btn) {
+    var f = document.getElementById(btn.getAttribute('aria-controls')); if (!f) return;
+    var open = f.hidden; f.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? 'Fermer' : 'Modifier';
 };
 window.pfRvCopy = function (btn) {
     var pre = document.getElementById('rv-shop-text'); if (!pre) return;
@@ -230,8 +246,12 @@ window.pfRvCopy = function (btn) {
 };
 window.pfRvKind = function (btn) {
     var f = btn.closest('form'); if (!f) return;
-    f.querySelector('[name=kind]').value = btn.getAttribute('data-kind');
+    var k = btn.getAttribute('data-kind');
+    f.querySelector('[name=kind]').value = k;
     btn.parentNode.querySelectorAll('[data-kind]').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+    // a drink's label values are per 500 ml flask
+    var h = f.querySelector('[data-drink-hint]'); if (h) h.hidden = k !== 'drink';
+    var sm = f.querySelector('[name=sodium_mg]'), note = sm && sm.closest('label').querySelector('small'); if (note) note.textContent = k === 'drink' ? 'par flasque de 500 ml' : "sur l'étiquette";
 };
 </script>
 {% endif %}

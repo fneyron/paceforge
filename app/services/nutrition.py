@@ -179,17 +179,29 @@ def _hm_words(minutes: float) -> str:
 
 
 def interval_words(rate: float) -> str:
-    """Units per hour → words: 0.5 'toutes les 2 h', 1 'par heure', 3 'toutes les 20 min'."""
+    """Units per hour → words: 0.5 'toutes les 2 h', 1 'par heure', 3 'toutes les 20 min'.
+
+    A round interval (5 min, or 10 min above an hour) is used only when it is
+    within 5 % of the real one, and never when it would mean noticeably MORE
+    units than are packed: 3,5 an hour is « toutes les 17 min », not 15."""
     rate = float(rate or 0)
     if rate <= 0:
         return ""
-    if rate > 4:
+    if rate > 4 + 1e-9:
         return f"{_fr(rate)} par heure"
-    if rate == 1:
+    if abs(rate - 1) < 1e-9:
         return "par heure"
-    if rate > 1:
-        return f"toutes les {int(5 * math.floor(60 / rate / 5 + 0.5))} min"
-    return "toutes les " + _hm_words(10 * math.floor(60 / rate / 10 + 0.5))
+    m = 60.0 / rate
+    step = 5 if rate > 1 else 10
+    nice = step * math.floor(m / step + 0.5)
+    # a shorter interval means more units than packed: only a hair of it is fine
+    ok = nice > 0 and ((nice >= m and nice - m <= 0.05 * m) or (nice < m and m - nice <= 0.02 * m))
+    if not ok:
+        nice = 5 * math.floor(m / 5 + 0.5) if rate < 1 else int(math.floor(m + 0.5))
+        if rate < 1 and abs(nice - m) > 0.05 * m:
+            nice = int(math.floor(m + 0.5))
+    nice = int(nice)
+    return f"toutes les {nice} min" if rate > 1 else "toutes les " + _hm_words(nice)
 
 
 def liters(ml: float, step: int = 50) -> str:
@@ -208,6 +220,19 @@ def ceil_half_l(ml: float) -> float:
 CAFFEINE_DEFAULTS = {"enabled": False, "from_h": 3.0, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True}
 CAFFEINE_MAX_MG = 400
 CAFFEINE_MAX_MG_PER_KG = 6.0
+
+
+def alternation_groups(lines: list[dict], products_by_id: dict) -> list[list]:
+    """Gels and bars taken at the same hourly rate (two or more): one stream
+    taken in turns. The rule says it in one line, the legs hand them out in turn."""
+    groups: dict = {}
+    for ln in lines:
+        if ln.get("by_caffeine") or ln.get("is_water") or float(ln.get("per_hour") or 0) <= 0:
+            continue
+        if role(products_by_id.get(ln["product_id"]) or {"kind": ln.get("kind")}) not in ("gel", "bar"):
+            continue
+        groups.setdefault(round(float(ln["per_hour"]), 3), []).append(ln["product_id"])
+    return [pids for pids in groups.values() if len(pids) >= 2]
 
 
 def caffeine_schedule(
@@ -254,7 +279,10 @@ def caffeine_schedule(
 
     doses, t, total = [], from_s, 0.0
     dawn_done = False
-    while t < duration_s - 20 * 60:  # no point dosing in the last 20 min
+    # t is MOVING time (the legs' cum_s); the duration may include the stops,
+    # so the last leg's moving total is the real end
+    end_s = min(float(duration_s), float(legs[-1]["cum_s"])) if legs else float(duration_s)
+    while t < end_s - 20 * 60:  # no point dosing in the last 20 min
         clk = clock_at(t)
         mg = dose
         label = "petite dose"
@@ -391,6 +419,13 @@ def compute_plan(
     schedule = []
     line_totals = [0] * len(lines)
     line_due = [0.0] * len(lines)  # units owed so far = rate × elapsed hours
+    # gels / bars taken at the same rate are ONE stream, in turns (« 1 gel
+    # toutes les 40 min, en alternant… »): the k-th of n starts a k/n step later,
+    # so three gels at ½ an hour come every 40 min, not all three every 2 h
+    pos = {ln["product_id"]: i for i, ln in enumerate(lines)}
+    for grp in alternation_groups(lines, products_by_id):
+        for k, pid in enumerate(grp):
+            line_due[pos[pid]] = 0.5 - (k + 0.5) / len(grp)
     prev_cum_s = 0.0
     prev_clock_s = float(start_offset_s)
     prev_name = "Départ"
@@ -490,9 +525,13 @@ def compute_plan(
         resupply = {round(float(r.get("km") or 0), 1): r.get("name", "") for r in (resupply_points or []) if r.get("km")}
 
         def _group(at: str, km: float) -> dict:
-            return {"at": at, "km": km, "until": None, "until_km": None, "legs": 0, "fluid_ml": 0, "units": {}, "carbs_g": 0, "time_s": 0}
+            return {"at": at, "km": km, "until": None, "until_km": None, "legs": 0, "fluid_ml": 0, "units": {}, "carbs_g": 0, "time_s": 0,
+                    "start_clock_s": None, "end_clock_s": None}
         group = _group("Départ", 0.0)
         for leg in schedule:
+            if group["start_clock_s"] is None:
+                group["start_clock_s"] = leg["start_clock_s"]
+            group["end_clock_s"] = leg["clock_s"]  # clocks include the stops, like the rows
             group["legs"] += 1
             group["fluid_ml"] += leg["fluid_ml"]
             group["carbs_g"] += leg["carbs_real_g"]
@@ -645,20 +684,65 @@ def _legacy_auto_rates(target_carbs_per_h: float, target_sodium_per_h: float, pr
 # caffeine times, bags, shopping list) is computed here, one way, for the
 # Ravitaillement card, the passage rows, the print band and the watch export.
 
-def _fill_carbs(target: float, prods: list[dict]) -> dict[int, float]:
+def _fill_carbs(target: float, prods: list[dict], band: tuple[float, float] | None = None) -> dict[int, float]:
     """Every product at least ½ per hour, then halves where they bring the
-    total closest to the target (small products fine-tune)."""
+    total closest to the target (small products fine-tune).
+
+    ``band`` = (lo, hi) carbs these products may bring so the WHOLE plan stays
+    in the stomach's range (no « too much » / « not enough » on a plan we
+    computed). When the halves land outside it, the closest in-band mix is
+    taken instead, with quarter steps as a last resort for a big unit (PF 90
+    at Normal: 1 every 1h20 rather than 45 or 90 g)."""
     cr = {p["id"]: 0.5 for p in prods}
 
-    def total() -> float:
-        return sum(cr[p["id"]] * float(p.get("carbs_g") or 0) for p in prods)
+    def carbs(p: dict) -> float:
+        return float(p.get("carbs_g") or 0)
+
+    def total(rates: dict) -> float:
+        return sum(rates[p["id"]] * carbs(p) for p in prods)
     for _ in range(60):
-        gap = target - total()
-        best = min(prods, key=lambda p: abs(gap - 0.5 * float(p.get("carbs_g") or 0)))
-        if abs(gap - 0.5 * float(best.get("carbs_g") or 0)) >= abs(gap):
+        gap = target - total(cr)
+        best = min(prods, key=lambda p: abs(gap - 0.5 * carbs(p)))
+        if abs(gap - 0.5 * carbs(best)) >= abs(gap):
             break
         cr[best["id"]] += 0.5
-    return cr
+    if not band or not prods or len(prods) > 4:
+        return cr
+    lo, hi = band
+    if lo - 1e-6 <= total(cr) <= hi + 1e-6 or hi <= 0:
+        return cr
+    import itertools
+
+    want = max(target, 1.0)
+
+    def make_grids(step: float) -> list[list[float]]:
+        out = []
+        for p in prods:
+            top = min(8.0, max(0.5, math.ceil(hi / max(carbs(p), 1.0) / step) * step))
+            grid = [0.5 + k * step for k in range(int(round((top - 0.5) / step)) + 1)]
+            if step == 0.25:
+                grid.append(2 / 3)  # 1 every 1h30: a 90 g gel at 60 g/h
+            out.append(grid)
+        return out
+    grids = make_grids(0.25)
+    if math.prod(len(g) for g in grids) > 4000:  # keep the search small: halves only
+        grids = make_grids(0.5)
+        if math.prod(len(g) for g in grids) > 4000:
+            return cr
+    best_r, best_key = None, None
+    for combo in itertools.product(*grids):
+        rates = {p["id"]: r for p, r in zip(prods, combo, strict=True)}
+        got = total(rates)
+        if not (lo - 1e-6 <= got <= hi + 1e-6):
+            continue
+        # closest to the target; a quarter step (1 every 1h20, 50 min…) only
+        # when it is clearly closer than the halves; then nearest the halves' mix
+        quarters = sum(1 for r in combo if (r * 2) % 1)
+        key = (round(abs(math.log(max(got, 1.0) / want)) + 0.08 * quarters, 3),
+               sum(abs(r - cr[p["id"]]) for p, r in zip(prods, combo, strict=True)))
+        if best_key is None or key < best_key:
+            best_r, best_key = rates, key
+    return best_r or cr
 
 
 def _fill_salt(target_sodium: float, covered: float, salts: list[dict]) -> dict[int, float]:
@@ -680,27 +764,36 @@ def _fill_salt(target_sodium: float, covered: float, salts: list[dict]) -> dict[
     return out
 
 
+PLAN_BAND = (0.88, 1.17)  # what auto aims for; the warnings fire outside 0.85–1.2
+
+
 def auto_rates(
     target_carbs_per_h: float, target_sodium_per_h: float, products: list[dict],
     fluid_ml_per_h: float | None = None, manual: dict | None = None,
+    caffeine_per_h: dict | None = None,
 ) -> dict[int, float]:
     """Units/h per product so the SELECTED products meet the targets together.
 
     Called with the three historical arguments it keeps its old behaviour. With
     a fluid target and/or a manual map (the Ravitaillement plan):
-      1. manual products keep their rate; their carbs and sodium come off the targets;
+      1. manual products keep their rate; their carbs and sodium come off the targets,
+         and so do the caffeinated units the caffeine plan will place
+         (``caffeine_per_h`` = {"carbs", "sodium"} they bring per hour);
       2. caffeinated products get no hourly rate (the caffeine plan places them,
          1.0 is only a "picked" marker that compute_plan zeroes);
       3. drinks: as many doses as the fluid target allows, never above it;
       4. bars: ½ per hour each next to a gel or a drink, else they fill like gels;
-      5. gels fill the remaining carbs (each at least ½ per hour);
+      5. gels fill the remaining carbs (each at least ½ per hour), keeping the
+         whole plan inside the stomach's range when a mix allows it;
       6. salt fills the remaining sodium.
     """
     if fluid_ml_per_h is None and manual is None:
         return _legacy_auto_rates(target_carbs_per_h, target_sodium_per_h, products)
     manual = {int(k): float(v) for k, v in (manual or {}).items()}
     rates: dict[int, float] = {}
-    got_carbs = got_sodium = got_fluid = 0.0
+    got_carbs = float((caffeine_per_h or {}).get("carbs") or 0)
+    got_sodium = float((caffeine_per_h or {}).get("sodium") or 0)
+    got_fluid = 0.0
     auto = []
     for p in products:
         if p["id"] in manual:
@@ -736,7 +829,9 @@ def auto_rates(
     else:
         fill = gels + bars
     if fill:
-        for pid, r in _fill_carbs(float(target_carbs_per_h or 0) - got_carbs, fill).items():
+        tc = float(target_carbs_per_h or 0)
+        band = (PLAN_BAND[0] * tc - got_carbs, PLAN_BAND[1] * tc - got_carbs) if tc > 0 else None
+        for pid, r in _fill_carbs(tc - got_carbs, fill, band).items():
             rates[pid] = r
             got_sodium += r * float(next(p for p in fill if p["id"] == pid).get("sodium_mg") or 0)
     rates.update(_fill_salt(target_sodium_per_h, got_sodium, of("salt")))
@@ -751,12 +846,40 @@ def auto_caffeine(duration_s: float, unit_mg: float | None, weight_kg: float | N
     """One caffeinated unit per dose from 3 h, spaced so the doses the cap
     allows cover the race (100 mg gels on 19 h: 3 h, 8 h, 13 h, 18 h), double
     at dawn with small units. The spacing is floored to the half hour so the
-    last allowed dose still lands before the finish."""
+    last allowed dose still lands before the finish. ``duration_s`` is the
+    MOVING time: the doses are placed on it, the stops come on top."""
     unit = float(unit_mg or 0) or 50.0
     n = int(caffeine_cap_mg(weight_kg) // unit)
     hours = max(0.0, float(duration_s or 0) / 3600.0)
     every = max(2.5, math.floor((hours - 3.5) / max(1, n - 1) * 2) / 2)
     return {"enabled": True, "from_h": 3.0, "every_h": every, "dose_mg": unit, "boost_dawn": True, "by_unit": True}
+
+
+def caffeine_units_estimate(caffeine: dict | None, unit_mg: float | None, moving_s: float, weight_kg: float | None,
+                            start_offset_s: float | None = None) -> int:
+    """How many caffeinated units the caffeine plan will place over the race
+    (with the dawn extra when the start time is known, stops left aside):
+    their carbs count before the gels fill the rest."""
+    cfg = {**CAFFEINE_DEFAULTS, **(caffeine or {})}
+    unit = float(unit_mg or 0)
+    if not cfg.get("enabled") or unit <= 0 or moving_s <= 0:
+        return 0
+    from_s = max(0.0, float(cfg.get("from_h") or 0)) * 3600
+    every_s = max(0.5, float(cfg.get("every_h") or 2.5)) * 3600
+    per_dose = max(1, int(round(float(cfg.get("dose_mg") or unit) / unit)))
+    cap = caffeine_cap_mg(weight_kg)
+    n, total, t, dawn_done = 0, 0.0, from_s, False
+    while t < moving_s - 20 * 60:
+        k = per_dose
+        if (start_offset_s is not None and cfg.get("boost_dawn") and not dawn_done and unit < 100
+                and 5.0 <= _clock_hour(float(start_offset_s) + t) < 7.5):
+            k, dawn_done = per_dose * 2, True
+        if total + k * unit > cap + 1:
+            break
+        n += k
+        total += k * unit
+        t += every_s
+    return n
 
 
 def _carry(v) -> int | None:
@@ -810,7 +933,9 @@ def upgrade_legacy(nj: dict) -> dict:
             st["picks"].append(pid)
             st["manual"][pid] = float(it.get("per_hour") or 0)
     _legacy_targets_into(st, nj)
-    if nj.get("caffeine") is not None:
+    # the old form saved its caffeine block on every save, switched off by
+    # default: only a caffeine plan the athlete turned on is « his setting »
+    if isinstance(nj.get("caffeine"), dict) and nj["caffeine"].get("enabled"):
         st["custom"]["caffeine"] = dict(nj["caffeine"])
     st["carry_ml"] = _carry(nj.get("flask_capacity_ml")) or 1000
     return st
@@ -850,13 +975,16 @@ def read_state(nj: dict | None) -> dict:
 
 def resolve_inputs(
     nutrition_json: dict | None, pantry_by_id: dict, duration_s: float, mean_temp: float | None,
-    weight_kg: float | None, default_from: dict | None = None,
+    weight_kg: float | None, default_from: dict | None = None, moving_s: float | None = None,
+    start_offset_s: float | None = None,
 ) -> dict:
     """Everything compute_plan needs, from what is stored on the route.
 
     No plan yet → a virtual default (never saved by a read): the products of
     the athlete's newest other race that has some (``default_from`` =
     {"name", "nutrition_json"}), else Gel + Sel (+ Gel caféiné from 8 h).
+    ``moving_s`` (the plan without its stops) places the caffeine doses; the
+    duration is used when it is not known.
     """
     products = with_generics(pantry_by_id or {})
     st = read_state(nutrition_json)
@@ -876,7 +1004,9 @@ def resolve_inputs(
                 level = src["level"]
             if sweat is None and "fluid_ml_per_h" not in custom and "sodium_mg_per_h" not in custom:
                 sweat = src["sweat"]
-            if carry is None:
+            # an old plan's flask (1 L: the old form's default) is not a choice
+            # to spread to a new race: only a carry picked in the new view is
+            if carry is None and not src["legacy"]:
                 carry = src["carry_ml"]
         else:
             picks = [-1, -3] + ([-4] if (duration_s or 0) >= 8 * 3600 else [])
@@ -894,14 +1024,22 @@ def resolve_inputs(
         items = [{"product_id": pid, "per_hour": manual.get(pid, 0.0)} for pid in picks]
         caffeine = {**CAFFEINE_DEFAULTS, **(custom.get("caffeine") or {})}
     else:
-        rates = auto_rates(carbs, sodium, sel, fluid_ml_per_h=fluid, manual=manual)
-        items = [{"product_id": pid, "per_hour": round(rates[pid], 2)} for pid in picks if rates.get(pid, 0) > 0]
+        moving = float(moving_s or duration_s or 0)
         if custom.get("caffeine"):
             caffeine = {**CAFFEINE_DEFAULTS, **custom["caffeine"], "enabled": bool(caf), "by_unit": True}
         elif caf:
-            caffeine = auto_caffeine(duration_s, caf[0].get("caffeine_mg"), weight_kg)
+            caffeine = auto_caffeine(moving, caf[0].get("caffeine_mg"), weight_kg)
         else:
             caffeine = {**CAFFEINE_DEFAULTS, "enabled": False}
+        # the caffeinated gels are gels too: their carbs (and sodium) count
+        # before the plain products fill the rest
+        caf_h = None
+        if caf and caffeine.get("enabled") and moving > 0:
+            n = caffeine_units_estimate(caffeine, caf[0].get("caffeine_mg"), moving, weight_kg, start_offset_s)
+            caf_h = {"carbs": n * float(caf[0].get("carbs_g") or 0) / (moving / 3600.0),
+                     "sodium": n * float(caf[0].get("sodium_mg") or 0) / (moving / 3600.0)}
+        rates = auto_rates(carbs, sodium, sel, fluid_ml_per_h=fluid, manual=manual, caffeine_per_h=caf_h)
+        items = [{"product_id": pid, "per_hour": round(rates[pid], 2)} for pid in picks if rates.get(pid, 0) > 0]
     sweat_eff = None if ("fluid_ml_per_h" in custom or "sodium_mg_per_h" in custom) else (sweat or "normal")
     level_eff = None if "carbs_g_per_h" in custom else CARBS_LEVEL.get(carbs)
     return {
@@ -1081,10 +1219,11 @@ def caffeine_words(cfp: dict | None, noun: str) -> str | None:
     if len(doses) <= 6:
         parts = [_clock(d["clock_s"]) + (f" (×{d['units']})" if (d.get("units") or 1) > 1 else "") for d in doses]
         return f"<b>{escape(noun)}</b> à {_join(parts)}"
+    # spaced on moving time: the clocks add the stops, hence « environ »
     every = _hm_words(float((cfp.get("settings") or {}).get("every_h") or 2.5) * 60)
-    dawn2 = any((d.get("units") or 1) > 1 for d in doses)
-    return (f"<b>{escape(noun)}</b> toutes les {every}, de {_clock(doses[0]['clock_s'])} à {_clock(doses[-1]['clock_s'])}"
-            + (", 2 à l'aube" if dawn2 else ""))
+    dawn2 = next((d for d in doses if (d.get("units") or 1) > 1), None)
+    return (f"<b>{escape(noun)}</b> environ toutes les {every}, de {_clock(doses[0]['clock_s'])} à {_clock(doses[-1]['clock_s'])}"
+            + (f" ({dawn2['units']} vers {_clock(dawn2['clock_s'])})" if dawn2 else ""))
 
 
 def rule_lines(plan: dict, picks: list[int], products_by_id: dict, has_refills: bool) -> list[dict]:
@@ -1102,11 +1241,13 @@ def rule_lines(plan: dict, picks: list[int], products_by_id: dict, has_refills: 
             entries.append(("caf", pid))
         elif ln["per_hour"] > 0:
             entries.append(("rate", pid))
-    groups: dict = {}
-    for kind, pid in entries:
-        if kind == "rate" and role(products_by_id[pid]) in ("gel", "bar"):
-            groups.setdefault(by_pid[pid]["per_hour"], []).append(pid)
-    merged = {r: pids for r, pids in groups.items() if len(pids) >= 2}
+    # the same groups compute_plan hands out in turns
+    picked = set(picks)
+    merged = {}
+    for grp in alternation_groups(plan.get("lines") or [], products_by_id):
+        grp = [x for x in grp if x in picked]
+        if len(grp) >= 2:
+            merged[by_pid[grp[0]]["per_hour"]] = grp
     out, done = [], set()
     for kind, pid in entries:
         if pid in done:
@@ -1122,7 +1263,8 @@ def rule_lines(plan: dict, picks: list[int], products_by_id: dict, has_refills: 
         if r in ("gel", "bar") and pid in merged.get(rate, []):
             pids = merged[rate]
             done.update(pids)
-            noun = "1 gel" if any(role(products_by_id[x]) == "gel" for x in pids) else "1 barre"
+            kinds = {role(products_by_id[x]) for x in pids}
+            noun = "1 gel ou 1 barre" if len(kinds) > 1 else ("1 barre" if kinds == {"bar"} else "1 gel")
             names = _join([str(escape(short_label(products_by_id[x]))) for x in pids])
             out.append({"icon": "gel", "html": f"<b>{noun}</b> {interval_words(rate * len(pids))}, en alternant {names}"})
             continue
@@ -1159,7 +1301,17 @@ def plan_real_rates(plan: dict) -> tuple[float, float]:
     return carbs, sodium
 
 
-def rule_warnings(plan: dict, picks: list[int], products_by_id: dict, has_refills: bool) -> list[dict]:
+def plan_caffeine_mg(plan: dict) -> int:
+    """All the caffeine the plan has you take: every caffeinated unit on the
+    legs (per hour or at the caffeine times), plus doses with no product."""
+    total = sum(float(lg.get("caffeine_mg") or 0) for lg in plan.get("schedule") or [])
+    cfp = plan.get("caffeine")
+    if cfp and cfp.get("doses") and not any(ln.get("by_caffeine") for ln in plan.get("lines") or []):
+        total += float(cfp.get("total_mg") or 0)
+    return int(round(total))
+
+
+def rule_warnings(plan: dict, picks: list[int], products_by_id: dict, has_refills: bool, water_hint: str | None = None) -> list[dict]:
     """Only what the runner can act on, with the fix in the same line."""
     t = plan.get("targets") or {}
     carbs, sodium = plan_real_rates(plan)
@@ -1167,15 +1319,17 @@ def rule_warnings(plan: dict, picks: list[int], products_by_id: dict, has_refill
     sel = [products_by_id[p] for p in picks if p in products_by_id]
     out = []
     if tc > 0 and carbs < 0.85 * tc:
-        out.append({"tone": "warn", "text": "Pas assez de glucides avec ça : ajoute un gel ou une boisson."})
+        # a drink is capped by the water you drink: more of it cannot help
+        more = "un gel ou une barre" if any(role(p) == "drink" for p in sel) else "un gel ou une boisson"
+        out.append({"tone": "warn", "text": f"Pas assez de glucides avec ça : ajoute {more}."})
     elif tc > 0 and carbs > 1.2 * tc:
-        out.append({"tone": "warn", "text": "Un peu trop pour ton estomac : retire un produit."})
+        out.append({"tone": "warn", "text": "Un peu trop pour ton estomac : retire un produit ou baisse une quantité."})
     if ts > 0 and sodium < 0.5 * ts:
         out.append({"tone": "muted", "text": "Pas de sel dans tes produits : ajoute « Sel »."})
     if any(role(p) == "caf" for p in sel) and not any(role(p) in ("gel", "drink", "bar") and (p.get("carbs_g") or 0) > 0 for p in sel):
         out.append({"tone": "warn", "text": "Ajoute un gel sans caféine : la caféine ne se prend pas toutes les heures."})
     if not has_refills:
-        out.append({"tone": "muted", "text": "Indique les points d'eau dans le plan (ouvre un point › Type de poste) pour savoir combien d'eau porter."})
+        out.append({"tone": "muted", "text": water_hint or "Indique les points d'eau dans le plan (ouvre un point › Type de poste) pour savoir combien d'eau porter."})
     return out
 
 

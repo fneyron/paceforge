@@ -336,8 +336,10 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 }
 body.pf-app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 body.pf-app > .pf-main { flex: 1 0 auto; }
+/* one gray for every note glyph, in both themes (.dark :is(.text-amber-600…) would tint some) */
+.dark .pf-detnote svg { color: rgb(var(--pf-gray-500)) !important; }
 .pf-detnote.is-alert { color: rgb(var(--pf-danger)); }
-.pf-detnote.is-alert svg { color: rgb(var(--pf-danger)) !important; }
+.pf-detnote.is-alert svg, .dark .pf-detnote.is-alert svg { color: rgb(var(--pf-danger)) !important; }
 
 /* ── Ravitaillement: what you eat, drink and put in each bag ──────────── */
 /* big tap chips (44 px): a product, a drop bag. Pressed = tinted + check */
@@ -354,8 +356,8 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-chip-dash { border-style: dashed; color: rgb(var(--pf-gray-600)); }
 .pf-rv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .pf-rv-more[open], .pf-rv-own[open] { flex-basis: 100%; }
-.pf-rv-more > summary, .pf-rv-own > summary, .pf-rv-edit > summary, .pf-rv-disc > summary { list-style: none; cursor: pointer; }
-:is(.pf-rv-more, .pf-rv-own, .pf-rv-edit, .pf-rv-disc) > summary::-webkit-details-marker { display: none; }
+.pf-rv-more > summary, .pf-rv-own > summary, .pf-rv-disc > summary { list-style: none; cursor: pointer; }
+:is(.pf-rv-more, .pf-rv-own, .pf-rv-disc) > summary::-webkit-details-marker { display: none; }
 .pf-rv-more[open] > summary, .pf-rv-own[open] > summary { border-color: rgb(var(--pf-accent)); color: rgb(var(--pf-accent)); }
 .pf-rv-panel { margin-top: 10px; padding: 16px; border-radius: 20px; background: rgb(var(--pf-soft)); }
 .pf-rv-panel .pf-rv-own { margin-top: 14px; }
@@ -371,7 +373,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-rv-col { display: contents; }
     .pf-rv-col > * + * { margin-top: 0; }
     .pf-rv-context { margin-bottom: -16px; }
-    .pf-rv-adjust { order: 10; }
+    .pf-rv-adjust { order: 10; margin-top: -33px; }  /* right under « Tronçon par tronçon »: one list, one rule between */
 }
 
 /* « Ta règle »: whole units, plain intervals */
@@ -386,7 +388,9 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4; margin-top: 10px; color: rgb(var(--pf-gray-600)); }
 .pf-rv-warn.is-warn { color: rgb(var(--pf-warn)); }
 .pf-rv-warn.is-alert { color: rgb(var(--pf-danger)); }
-.pf-rv-hand { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; font-size: 14px; }
+.pf-rv-hand { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; margin-top: 4px; font-size: 14px; }
+.pf-rv-hit { display: inline-flex; align-items: center; min-height: 44px; }
+.pf-rv .pf-btn-sm { min-height: 44px; }
 .pf-rv-h { font-family: var(--pf-font-display); font-size: 18px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); margin-bottom: 12px; }
 .pf-rv-help { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 8px; font-weight: 400; }
 .pf-rv-text { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-700)); }
@@ -431,8 +435,12 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-adj > div + div, .pf-rv-adj > p { border-top: 1px solid rgb(var(--pf-line)); padding-top: 18px; margin-top: 18px; }
 .pf-rv-adj h3 { font-size: 15px; font-weight: 600; color: rgb(var(--pf-ink)); margin-bottom: 10px; }
 .pf-rv-adj h3 small { display: block; margin-top: 0; }
-.pf-rv-qty { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; }
-.pf-rv-qty-name { flex: 1 1 8ch; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--pf-ink)); }
+.pf-rv-qty { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 6px 0; }
+.pf-rv-qty-name { min-width: 0; }
+.pf-rv-qty-name b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--pf-ink)); }
+.pf-rv-qty-name small { display: block; font-size: 12px; color: rgb(var(--pf-gray-500)); }
+.pf-rv-qty-name small.is-hand { color: rgb(var(--pf-warn)); font-weight: 600; }
+.pf-rv-perh { font-size: 13px; color: rgb(var(--pf-gray-500)); white-space: nowrap; }
 .pf-rv-stepper { display: inline-flex; align-items: center; gap: 2px; background: rgb(var(--pf-soft)); border-radius: 999px; padding: 2px; }
 .pf-rv-stepper button { width: 44px; height: 44px; border-radius: 999px; font-size: 20px; line-height: 1; color: rgb(var(--pf-ink)); }
 .pf-rv-stepper button:hover { background: rgb(var(--pf-surface)); }
@@ -442,13 +450,17 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-prod-main { flex: 1 1 12ch; min-width: 0; }
 .pf-rv-prod-main b { display: block; font-weight: 600; color: rgb(var(--pf-ink)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-rv-prod-main small { display: block; font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-rv-edit[open] { flex-basis: 100%; order: 3; }
+.pf-rv-editform { flex-basis: 100%; }
+.pf-rv-editform[hidden] { display: none; }
 .pf-rv-fine { font-size: 12px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
 
 /* « un produit à toi »: name, carbs, sodium, caffeine */
 .pf-rv-form { display: grid; gap: 12px; margin-top: 12px; }
 .pf-rv-form label { display: grid; align-content: start; gap: 4px; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-600)); min-width: 0; }
 .pf-rv-form label small { font-size: 12px; font-weight: 400; color: rgb(var(--pf-gray-500)); }
+.pf-rv-form label small[hidden] { display: none; }
+.pf-rv-form label small.pf-rv-err { color: rgb(var(--pf-danger)); font-weight: 500; }
+.pf-rv-form input[aria-invalid="true"] { border-color: rgb(var(--pf-danger)); }
 .pf-rv-form input:not([type=hidden]) { width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-200)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 16px; }
 .pf-rv-form input:focus { outline: none; border-color: rgb(var(--pf-accent)); box-shadow: 0 0 0 3px rgb(var(--pf-accent) / .18); }
 .pf-rv-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
