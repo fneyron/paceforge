@@ -1,20 +1,24 @@
 """Fit PaceForge's plan shape (gradient curve, fatigue, night, terrain) on real
 race results and validate it on held-out events.
 
-Pipeline (end to end, ~30 min on 4 cores, most of it the model-selection CV):
+Pipeline (end to end, ~1 h on 4 cores, most of it the model-selection CV):
 
-  .venv/bin/python scripts/race_data/fit_data.py      # once, ~15 s: per-race precompute with the app's code
-  .venv/bin/python scripts/race_data/fit_model.py     # CV on TRAIN, fit on TRAIN, score held-out TEST
+  .venv/bin/python scripts/race_data/fit_data.py              # once: per-race precompute with the app's code
+  .venv/bin/python scripts/race_data/fit_data.py --livetrail  # once: LiveTrail courses (extra validation only)
+  .venv/bin/python scripts/race_data/fit_model.py             # CV on TRAIN, fit on TRAIN, score held-out TEST
   .venv/bin/python scripts/race_data/fit_model.py --form hours --lam-c 0 --lam-t 3   # skip the CV
 
 numpy/scipy are not in the app venv; install them aside and point PACEFORGE_PYLIB at
 them (default <PACEFORGE_FIT_DIR>/pylib):
   uv pip install --python .venv/bin/python --target <dir> numpy scipy
 
-DATA: UTMB Live races of 40-180 km WITH a GPS track (LiveTrail terrain classes);
-races without a track (profile rebuilt from checkpoint D+) are left out, their
-gradient composition being synthetic. A track labelled > 80 % road on a trail
-race (Translantau) is treated as unlabelled (class U).
+DATA: UTMB Live running races of 40-180 km WITH a GPS track (LiveTrail terrain
+classes); races without a track (profile rebuilt from checkpoint D+) are left
+out of the fit, their gradient composition being synthetic. A track labelled
+> 80 % road on a trail race (Translantau) is treated as unlabelled (class U).
+LiveTrail archives (no track) are scored once at the end as an extra
+validation set, never in the selection; night is not scored there (the
+archives give no start clock).
 
 WHAT IS SCORED (same metric as calibrate.score_race): for each race and level
 group (finish 0-12, 12-18, 18-24, 24-30, 30+ h of MOVING time, stops removed
@@ -32,12 +36,14 @@ gradient curve x terrain multipliers is one matrix product; the sequential
 fatigue/night replay is vectorised over all (race, group) pairs (~25 ms/eval).
 
 MODELS
-  production   the app today: _DEFAULT_GRADIENT_FACTORS on _fine_terrain, OSM-like
-               surface (road 1, track 1.06, trail 1.12), altitude, _fatigue_factor
-               (progress, D+), _night_penalty (1.08 night / 1.03 dusk-dawn).
-  prod+hours   production terrain, fatigue f = 1 + c (h/10)^q - fresh max(0, 1-h/3),
-               c=.3 q=.75 fresh=.15 (the earlier 35-race finding).
-  fitted forms gradient curve with knots -35 -25 -15 -8 -3 0 3 8 15 25 35 %
+  legacy       the app before the first fit (calibrate.LEGACY_*): its gradient
+               table, progress x distance fatigue, night 1.08 / dusk-dawn 1.03.
+  current      the app as it stands (race_simulator: _DEFAULT_GRADIENT_FACTORS on
+               _fine_terrain, surface road 1 / track 1.06 / trail 1.12, altitude,
+               fatigue by hours FATIGUE_C / Q / FRESH, NIGHT_FACTOR): the
+               "before" of a refit.
+  fitted forms gradient curve with knots -35 -25 -15 -8 -3 0 3 8 15 25 35 %,
+               read at the gradient clamped to -20..30 % as the app reads it
                (uphill monotone; downhill log-factor convex in |g|: gains, then
                costs as the descent steepens), night multiplier, LiveTrail
                multipliers (R = 1; F, T, T1, T2, T3, S, U), altitude as production,
@@ -46,15 +52,24 @@ MODELS
      hours          r = q, p = 0: fatigue by hours on course only
      general        q, r, p free (nests progress-based fatigue as in production)
      general+level  + level term log F(g, T) = log F(g) (T/20)^gamma (gamma_up / gamma_down)
-     prodcurve      production curve kept, fatigue / night / terrain fitted
+     curcurve       the current curve kept, fatigue / night / terrain fitted
   Penalties: lam_c x curvature of the curve, lam_t x (terrain - production)^2.
+  Every fit starts from the current app (its curve projected on the form).
   The form and (lam_c, lam_t) are chosen by 2-fold cross-validation over TRAIN
   events; the test events are only scored once, at the end.
 
-SPLIT: by EVENT (all editions and distances of an event on the same side),
-seeded shuffle, Transjeju forced into TEST (the guard runs there).
+SPLIT: by EVENT (all editions and distances of an event on the same side).
+The test events are FIXED (TEST_EVENTS, those of the first fit) so that a refit
+is scored on the same events as the model it would replace; events added to
+the dataset since then go to train.
 
-Outputs: scripts/race_data/fitted_params.json, scripts/race_data/fit_results.txt
+ADOPTION: a refit goes into race_simulator.py only if it lowers the held-out
+mean |gap| against "current" and the Transjeju guard does not get worse; then
+validate_app.py re-scores the app's own path before / after.
+
+Outputs: scripts/race_data/fitted_params.json (the fit the app's constants come
+from; pass --params scripts/race_data/refit_params.json for a refit not
+adopted, as on 2026-10-04), scripts/race_data/fit_results.txt
 """
 from __future__ import annotations
 
@@ -95,24 +110,25 @@ DOWN, UP = KNOTS[KNOTS < 0], KNOTS[KNOTS > 0]
 REF_H = np.array([9.0, 15.0, 21.0, 27.0, 34.0])  # levels the curve is evaluated at (interpolated per group)
 TERRAIN = ["F", "T", "T1", "T2", "T3", "S", "U"]  # multipliers fitted, R = 1
 TER_PROD = [1.06, 1.12, 1.12, 1.12, 1.12, 1.12, 1.12]  # production (surface.py: track +6 %, trail +12 %)
+APP_CLAMP = (-20, 30)  # race_simulator._get_factor reads the integer gradient clamped to this range
 BOGUS_ROAD_SHARE = 0.8  # a trail race whose track is > 80 % "R" has unusable labels (Translantau): all -> U
 SEED = 7
-TEST_FORCED = {"transjeju"}
-TEST_SHARE = 0.35
-GUARD_MODELS = ("production", "prod+hours", "prodcurve_fitrest", "fit_hours", "fit_general", "fit_general+level")
+TEST_EVENTS = ["chiangmai", "kullamannen", "puertovallarta", "transjeju", "utmb", "whistler"]
+GUARD_MODELS = ("legacy", "current", "curcurve_fitrest", "fit_hours", "fit_general", "fit_general+level")
+OWNER_RACE, OWNER_BIB = "utmb/transjeju_2026/100m", "10"
 ITER = 4  # flat-pace re-levelling passes (calibrate.score_race uses 3; 4 converges with hours fatigue)
 
 # ---------------------------------------------------------------- parameters
 
 
 def default_curve(g):
-    """Production curve read like _get_factor (integer, clamped -20..30)."""
-    return rs._get_factor(cal.PROFILE, max(-20, min(30, g)))
+    """The current app curve read like _get_factor (integer, clamped -20..30)."""
+    return rs._get_factor(fit_data.CURRENT_PROFILE, max(APP_CLAMP[0], min(APP_CLAMP[1], g)))
 
 
 def x0_from_production():
-    """Parameter vector reproducing production's curve (projected on the convex downhill
-    form) and terrain, with the hours fatigue c .3, q = r .75, p 0, fresh .15."""
+    """Parameter vector reproducing the current app: its curve (projected on the convex
+    downhill form), production terrain, fatigue by hours and night as in race_simulator."""
     lv = [0.0] + [math.log(default_curve(g)) for g in DOWN[::-1]]  # at |g| = 0, 3, 8, 15, 25, 35
     u = np.concatenate([[0.0], -DOWN[::-1]])
     slopes = np.diff(lv) / np.diff(u)
@@ -122,7 +138,8 @@ def x0_from_production():
         v = default_curve(g)
         up.append(math.log(max(v - prev, 1e-3)))
         prev = v
-    return np.array(down + up + [0.0, 0.0] + [0.3, 0.75, 0.75, 0.0, 0.15] + [1.08] + list(np.log(TER_PROD)))
+    return np.array(down + up + [0.0, 0.0] + [rs.FATIGUE_C, rs.FATIGUE_Q, rs.FATIGUE_Q, 0.0, rs.FATIGUE_FRESH]
+                    + [rs.NIGHT_FACTOR] + list(np.log(TER_PROD)))
 
 
 NAMES = (["down_slope(0..3)"] + [f"log_slope_incr(|g|={int(-g)})" for g in DOWN[::-1][:-1]] + [f"log_step({int(g)})" for g in UP] +
@@ -136,7 +153,7 @@ FORMS = {  # which parameters each model form fits (the rest stay at x0)
     "hours": [i for i in range(25) if i not in (10, 11, I_R, I_P)],  # r tied to q, p = 0: fatigue by hours on course
     "general": [i for i in range(25) if i not in (10, 11)],
     "general+level": list(range(25)),
-    "prodcurve": list(range(12, 25)),  # production gradient curve kept
+    "curcurve": list(range(12, 25)),  # the current gradient curve kept
 }
 
 
@@ -154,7 +171,7 @@ def knot_values(x):
 def curves(x):
     """(NG x len(REF_H)) factor on the integer gradient grid, one column per level."""
     kv = knot_values(x)
-    base = np.log(np.interp(GRID, KNOTS, kv))  # clamped flat beyond the end knots
+    base = np.log(np.interp(np.clip(GRID, *APP_CLAMP), KNOTS, kv))  # read as the app reads it
     gu, gd = x[I_GAM]
     s_up = (REF_H / 20.0) ** gu
     s_dn = (REF_H / 20.0) ** gd
@@ -180,9 +197,9 @@ def describe(x):
                                "T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"},
         "night": {"night": round(float(x[I_NIGHT]), 4), "dusk_dawn": round(1 + (float(x[I_NIGHT]) - 1) * 0.375, 4)},
         "terrain": dict(zip(["R"] + TERRAIN, [round(float(v), 4) for v in terrain(x)])),
-        # drop-in for race_simulator._DEFAULT_GRADIENT_FACTORS (the app reads integer %, clamped to -20..30;
-        # the fitted curve keeps rising below -20 %, which the app's clamp would cut)
-        "integer_table_20h": {int(g): round(float(v), 3) for g, v in zip(GRID, c[:, 2]) if -35 <= g <= 35},
+        # drop-in for race_simulator._DEFAULT_GRADIENT_FACTORS (the app reads integer %, clamped to
+        # -20..30, and so did the fit)
+        "integer_table_20h": {int(g): round(float(v), 3) for g, v in zip(GRID, c[:, 2]) if APP_CLAMP[0] <= g <= APP_CLAMP[1]},
     }
     return out
 
@@ -193,9 +210,9 @@ def describe(x):
 class Problem:
     """All (race, level group) pairs of a race set, as padded numpy arrays."""
 
-    def __init__(self, races, groups=GROUPS, runner_filter=None):
+    def __init__(self, races, groups=GROUPS, runner_filter=None, min_members=3):
         self.races = races
-        H, alt, bprod = [], [], []
+        H, alt, bprod, bcur = [], [], [], []
         off = []
         n = 0
         for r in races:
@@ -209,16 +226,21 @@ class Problem:
             H.append(h)
             alt.extend(r["alt"])
             bprod.extend(r["prep"]["base"])
+            bcur.extend(r["prep"]["base_cur"])
             off.append(n)
             n += len(r["hist"])
         self.H = np.vstack(H + [np.zeros((1, NG * NC))])
         self.alt = np.array(alt + [0.0])
         self.base_prod_seg = np.array(bprod + [0.0])
+        self.base_cur_seg = np.array(bcur + [0.0])
+        # "current" = the app the records were built with (base_cur and these constants)
+        self.app = races[0].get("app") or {"fatigue_c": rs.FATIGUE_C, "fatigue_q": rs.FATIGUE_Q,
+                                           "fatigue_fresh": rs.FATIGUE_FRESH, "night": rs.NIGHT_FACTOR}
         pairs = []
         for ri, r in enumerate(races):
             for lo, hi in groups:
                 mem = [x for x in r["runners"] if lo * 3600 <= x["mv"][-1] < hi * 3600 and (runner_filter is None or runner_filter(r, x))]
-                if len(mem) >= 3:
+                if len(mem) >= min_members:
                     pairs.append((ri, lo, hi, mem))
         self.pairs = pairs
         P = len(pairs)
@@ -232,6 +254,7 @@ class Problem:
         self.last = np.zeros(P, dtype=int)
         self.med = np.zeros(P)
         self.sh = np.zeros(P)
+        self.clock = np.ones(P, dtype=bool)  # False: no start clock (LiveTrail), night not applied
         self.nrun = np.zeros(P)
         self.km = np.zeros(P)
         op, oi, oT, oa = [], [], [], []
@@ -256,6 +279,7 @@ class Problem:
             self.last[p] = nc - 1
             self.med[p] = statistics.median(x["mv"][-1] for x in mem)
             self.sh[p] = r["start_hour"]
+            self.clock[p] = r.get("has_clock", True)
             self.nrun[p] = len(mem)
             self.km[p] = r["km"]
             for x in mem:
@@ -288,12 +312,15 @@ class Problem:
             base = self.base(x)
             c, q, rr, pp, fresh = x[I_C], x[I_Q], x[I_R], x[I_P], x[I_FRESH]
             night = x[I_NIGHT]
-        else:
+        elif mode == "current":
+            base = self.base_cur_seg[self.IDX]
+            ap_ = self.app
+            c, q, rr, pp, fresh = ap_["fatigue_c"], ap_["fatigue_q"], ap_["fatigue_q"], 0.0, ap_["fatigue_fresh"]
+            night = ap_["night"]
+        else:  # legacy
             base = self.base_prod_seg[self.IDX]
             night = 1.08
-            if mode == "prod+hours":
-                c, q, rr, pp, fresh = 0.3, 0.75, 0.75, 0.0, 0.15
-        hours_fat = mode != "production"
+        hours_fat = mode != "legacy"
         th = self.med / 3600  # the group's (target) finish, moving hours
         if hours_fat:
             scale = c * (th / 10) ** q * (self.km / 100) ** pp
@@ -311,6 +338,7 @@ class Problem:
                     fat = self.fat_prod[:, s]
                 hr = (self.sh + t / 3600) % 24
                 nf = np.where((hr >= 21) | (hr < 6), night, np.where(((hr >= 20) & (hr < 21)) | ((hr >= 6) & (hr < 7)), 1 + (night - 1) * 0.375, 1.0))
+                nf = np.where(self.clock, nf, 1.0)
                 t = t + flat * base[:, s] * fat * nf * self.dist[:, s]
                 cum[:, s] = t
             prev = np.where(self.cpj > 0, cum[rows[:, None], np.maximum(self.cpj - 1, 0)], 0.0)
@@ -461,13 +489,14 @@ def cross_validate(train, say):
         probs.append((Problem(tr), Problem(va)))
     _CV["folds"] = probs
     jobs = [(f, lc, lt, i) for f in CV_FORMS for lc in CV_LAM_C for lt in CV_LAM_T for i in range(len(folds))]
+    jobs += [("curcurve", 0.0, lt, i) for lt in CV_LAM_T for i in range(len(folds))]  # the curve is not fitted: no lam_c
     with mp.get_context("fork").Pool(min(4, os.cpu_count() or 1)) as pool:
         out = pool.map(_cv_job, jobs)
     res = {}
     for (f, lc, lt, i), va, tr in out:
         res.setdefault((f, lc, lt), []).append((va, tr))
-    base = [(p[1].score(p[1].predict(None, "production")), p[1].score(p[1].predict(None, "prod+hours"))) for p in probs]
-    say(f"  validation mean |gap| per fold: production {[round(b[0], 2) for b in base]}, prod+hours {[round(b[1], 2) for b in base]}")
+    base = [(p[1].score(p[1].predict(None, "legacy")), p[1].score(p[1].predict(None, "current"))) for p in probs]
+    say(f"  validation mean |gap| per fold: legacy {[round(b[0], 2) for b in base]}, current {[round(b[1], 2) for b in base]}")
     for key, v in sorted(res.items(), key=lambda kv: statistics.mean(a for a, _ in kv[1])):
         say(f"  {key[0]:14s} lam_c {key[1]:<4} lam_t {key[2]:<4} validation {statistics.mean(a for a, _ in v):6.2f} {[round(a, 2) for a, _ in v]}  (fit {statistics.mean(b for _, b in v):.2f})")
     best = min(res, key=lambda k: statistics.mean(a for a, _ in res[k]))
@@ -483,15 +512,7 @@ def _final_job(job):
 
 
 def split(races):
-    events = sorted({r["event"] for r in races})
-    rnd = random.Random(SEED)
-    rnd.shuffle(events)
-    test = set(TEST_FORCED)
-    count = lambda evs: sum(1 for r in races if r["event"] in evs)  # noqa: E731
-    for e in events:
-        if count(test) >= TEST_SHARE * len(races):
-            break
-        test.add(e)
+    test = set(TEST_EVENTS)
     return [r for r in races if r["event"] not in test], [r for r in races if r["event"] in test], sorted(test)
 
 
@@ -514,10 +535,13 @@ def compare(prob, preds, how):
     return rows
 
 
-def guard(race, xs):
-    """Transjeju 2025 100M finishers at 16-21 h: gaps per checkpoint, each model."""
-    prob = Problem([race], groups=[(16, 21)])
-    out = {"runners": int(prob.nrun[0]), "median_finish_h": round(prob.med[0] / 3600, 2), "checkpoints": []}
+def guard(race, xs, group=(16, 21)):
+    """Finishers of one race in a finish band (moving hours): gaps per checkpoint, each model."""
+    prob = Problem([race], groups=[group])
+    if not prob.pairs:
+        return None
+    out = {"race": race["id"], "group_h": list(group), "runners": int(prob.nrun[0]),
+           "median_finish_h": round(prob.med[0] / 3600, 2), "checkpoints": []}
     per = {}
     for name, (x, mode) in xs.items():
         pred = prob.predict(x, mode)
@@ -532,6 +556,39 @@ def guard(race, xs):
             if g:
                 row[f"{name}_median_signed"] = round(statistics.median(g), 1)
                 row[f"{name}_mean_abs"] = round(statistics.mean(abs(v) for v in g), 1)
+        out["checkpoints"].append(row)
+    return out
+
+
+def say_guard(say, g, models):
+    say(f"  mean |gap|: " + ", ".join(f"{k} {g[f'mean_abs_gap_{k}']}" for k in models))
+    say(f"  {'checkpoint':22s}{'km':>6s}   median signed gap (pred - actual), min: " + " / ".join(models) + "   | mean |gap|")
+    for c in g["checkpoints"]:
+        say(f"  {str(c['cp']):22s}{c['km']:6.1f}   " + " / ".join(f"{c.get(k + '_median_signed', float('nan')):6.1f}" for k in models)
+            + "   | " + " / ".join(f"{c.get(k + '_mean_abs', float('nan')):5.1f}" for k in models))
+
+
+def owner_runner(race, xs):
+    """One runner (the owner's bib) planned at his OWN finish: the population model sets the
+    shape only (the level comes from the athlete's race model), so the predicted finish is
+    his by construction; what is scored is the time at each checkpoint."""
+    prob = Problem([race], groups=[(0, 99)], runner_filter=lambda r, x: x["bib"] == OWNER_BIB, min_members=1)
+    if not prob.pairs:
+        return None
+    x_run = prob.pairs[0][3][0]
+    out = {"race": race["id"], "bib": OWNER_BIB, "actual_s": int(x_run["time_s"]), "moving_s": int(x_run["mv"][-1]), "checkpoints": []}
+    preds = {}
+    for name, (x, mode) in xs.items():
+        pred = prob.predict(x, mode)[0]
+        preds[name] = pred
+        out[f"mean_abs_gap_{name}"] = round(prob.score(prob.predict(x, mode)), 1)
+    for i, c in enumerate(race["cps"][1:-1], start=1):
+        a = x_run["mv"][i]
+        if a is None:
+            continue
+        row = {"cp": c["name"], "km": round(c["km_official"], 1), "actual_moving_s": int(a)}
+        for name, pred in preds.items():
+            row[f"{name}_s"] = int(round(pred[i]))
         out["checkpoints"].append(row)
     return out
 
@@ -590,12 +647,47 @@ def prev_edition_eval(test_races, xs):
     return res
 
 
+def per_race(prob, preds):
+    """{race id: (runners, {model: mean |gap|})} over the race's level groups (runner-weighted)."""
+    gaps = {k: prob.pair_gaps(p)[0] for k, p in preds.items()}
+    out = {}
+    for p in np.where(prob.has_obs)[0]:
+        rid = prob.races[prob.pairs[p][0]]["id"]
+        d = out.setdefault(rid, [0.0, {k: 0.0 for k in preds}])
+        d[0] += prob.nrun[p]
+        for k in preds:
+            d[1][k] += prob.nrun[p] * gaps[k][p]
+    return {rid: (int(n), {k: v / n for k, v in s.items()}) for rid, (n, s) in out.items()}
+
+
+def livetrail_eval(lt_races, models, say):
+    """The models on LiveTrail courses (no GPS track: profile from section D+ / D-, no clock)."""
+    prob = Problem(lt_races)
+    preds = {k: prob.predict(x, m) for k, (x, m) in models.items()}
+    cols = list(models)
+    say(f"  {len(lt_races)} courses, {sum(len(r['runners']) for r in lt_races)} finishers, {len(prob.pairs)} (course, level group) pairs, "
+        f"{len(prob.op)} checkpoint passages scored; events: {len({r['event'] for r in lt_races})}")
+    say("\n" + fmt_table("LIVETRAIL mean |gap| (min) by level group", cols, compare(prob, preds, "by_group")))
+    say("\n" + fmt_table("LIVETRAIL mean |gap| (min) by distance band", cols, compare(prob, preds, "by_band")))
+    pr = per_race(prob, preds)
+    res = {"courses": len(lt_races), "finishers": sum(len(r["runners"]) for r in lt_races), "events": len({r["event"] for r in lt_races}),
+           "passages_scored": int(len(prob.op)), "mean_abs_gap": {k: round(prob.score(p), 2) for k, p in preds.items()}}
+    if "current" in models:
+        for k in models:
+            if k != "current":
+                res[f"courses_improved_{k}_vs_current"] = sum(v[k] < v["current"] for _, v in pr.values())
+        say("  courses where each model beats current: " + ", ".join(f"{k} {res[f'courses_improved_{k}_vs_current']}/{len(pr)}" for k in models if k != "current"))
+    res["courses_scored"] = len(pr)
+    return res
+
+
 # ---------------------------------------------------------------- main
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=FIT_DIR + "/fitdata.pkl")
+    ap.add_argument("--livetrail", default=FIT_DIR + "/livetrail.pkl", help="LiveTrail courses (fit_data.py --livetrail); scored last")
     ap.add_argument("--params", default=str(HERE / "fitted_params.json"))
     ap.add_argument("--results", default=str(HERE / "fit_results.txt"))
     ap.add_argument("--form", choices=list(FORMS), help="skip the CV: fit this form with --lam-c / --lam-t")
@@ -619,7 +711,8 @@ def main():
             out[f"{lo}-{min(hi, 180)} km"] = (len(sel), sum(len(r["runners"]) for r in sel))
         return out
 
-    say(f"DATASET: {len(races)} UTMB Live races 40-180 km with a GPS track, {sum(len(r['runners']) for r in races)} finishers")
+    say(f"DATASET: {len(races)} UTMB Live running races 40-180 km with a GPS track, {sum(len(r['runners']) for r in races)} finishers "
+        f"(all those stored: up to {max(len(r['runners']) for r in races)} per race, the fastest third whole then an even sample by rank)")
     for nm, s in (("train", train), ("test", test)):
         say(f"  {nm}: {len(s)} races, {sum(len(r['runners']) for r in s)} finishers, events: {', '.join(sorted({r['event'] for r in s}))}")
         say("    by band (races, finishers): " + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in band_counts(s).items()))
@@ -628,9 +721,9 @@ def main():
     say(f"  train pairs (race x level group) {len(ptr.pairs)}, obs {len(ptr.op)}; test pairs {len(pte.pairs)}, obs {len(pte.op)}")
 
     x0 = x0_from_production()
-    # sanity: the fast path with production knots is close to the app's own production path
-    say(f"\nSANITY train: production (app base) {ptr.score(ptr.predict(None, 'production')):.2f}, "
-        f"prod+hours {ptr.score(ptr.predict(None, 'prod+hours')):.2f}, fast-path at production knots + hours fatigue {ptr.score(ptr.predict(x0)):.2f}")
+    # sanity: the fast path at the current app's parameters is close to the app's own path
+    say(f"\nSANITY train: legacy {ptr.score(ptr.predict(None, 'legacy')):.2f}, current (app path) {ptr.score(ptr.predict(None, 'current')):.2f}, "
+        f"fast path at the current parameters {ptr.score(ptr.predict(x0)):.2f}")
 
     if a.form:
         best = (a.form, a.lam_c, a.lam_t)
@@ -643,15 +736,15 @@ def main():
 
     say("\nFITTING on the whole train set")
     _CV["train"] = ptr
-    jobs = [("hours", lam_c, lam_t), ("general", lam_c, lam_t), ("general+level", lam_c, lam_t), ("prodcurve", 0.0, lam_t)]
+    jobs = [("hours", lam_c, lam_t), ("general", lam_c, lam_t), ("general+level", lam_c, lam_t), ("curcurve", 0.0, lam_t)]
     import multiprocessing as mp
 
     with mp.get_context("fork").Pool(4) as pool:
-        xs = dict(zip(["fit_hours", "fit_general", "fit_general+level", "prodcurve_fitrest"], pool.map(_final_job, jobs)))
+        xs = dict(zip(["fit_hours", "fit_general", "fit_general+level", "curcurve_fitrest"], pool.map(_final_job, jobs)))
     for k, (f_, lc, lt) in zip(xs, jobs):
         say(f"  {k}: form {f_} lam_c {lc} lam_t {lt}: train mean |gap| {ptr.score(ptr.predict(xs[k])):.2f}")
-    sel = {"hours": "fit_hours", "general": "fit_general", "general+level": "fit_general+level"}[form]
-    models = {"production": (None, "production"), "prod+hours": (None, "prod+hours")}
+    sel = {"hours": "fit_hours", "general": "fit_general", "general+level": "fit_general+level", "curcurve": "curcurve_fitrest"}[form]
+    models = {"legacy": (None, "legacy"), "current": (None, "current")}
     models.update({k: (x, "fit") for k, x in xs.items()})
     models["fit"] = models[sel]
     x_fit = xs[sel]
@@ -661,46 +754,69 @@ def main():
     cols = [k for k in models if k != "fit"]
     say("\n" + fmt_table("HELD-OUT mean |gap| (min) by level group", cols, compare(pte, preds, "by_group")))
     say("\n" + fmt_table("HELD-OUT mean |gap| (min) by distance band", cols, compare(pte, preds, "by_band")))
-    m_prod, _ = pte.pair_gaps(preds["production"])
-    m_ph, _ = pte.pair_gaps(preds["prod+hours"])
+    m_cur, _ = pte.pair_gaps(preds["current"])
     m_fit, _ = pte.pair_gaps(preds["fit"])
     ok = pte.has_obs
-    say(f"  (race, group) pairs where the selected fit ({sel}) beats production: {int(np.sum(m_fit[ok] < m_prod[ok]))}/{int(ok.sum())}, "
-        f"beats prod+hours: {int(np.sum(m_fit[ok] < m_ph[ok]))}/{int(ok.sum())}")
-    per_race = {}
-    for p in np.where(ok)[0]:
-        rid = pte.races[pte.pairs[p][0]]["id"]
-        d = per_race.setdefault(rid, [0, 0.0, 0.0, 0.0])
-        d[0] += pte.nrun[p]
-        d[1] += pte.nrun[p] * m_prod[p]
-        d[2] += pte.nrun[p] * m_ph[p]
-        d[3] += pte.nrun[p] * m_fit[p]
-    say(f"\nHELD-OUT per race: runners, production, prod+hours, selected fit ({sel})")
-    for rid, (n, a_, b_, c_) in sorted(per_race.items()):
-        say(f"  {rid:40s}{int(n):5d}{a_ / n:8.1f}{b_ / n:8.1f}{c_ / n:8.1f}")
-    say(f"  races where the fit beats production: {sum(v[3] < v[1] for v in per_race.values())}/{len(per_race)}, "
-        f"beats prod+hours: {sum(v[3] < v[2] for v in per_race.values())}/{len(per_race)}")
+    say(f"  (race, group) pairs where the selected fit ({sel}) beats current: {int(np.sum(m_fit[ok] < m_cur[ok]))}/{int(ok.sum())}")
+    pr = per_race(pte, {k: preds[k] for k in ("legacy", "current", "fit")})
+    say(f"\nHELD-OUT per race: runners, legacy, current, selected fit ({sel})")
+    for rid, (n, v) in sorted(pr.items()):
+        say(f"  {rid:40s}{n:5d}{v['legacy']:8.1f}{v['current']:8.1f}{v['fit']:8.1f}")
+    improved = sum(v["fit"] < v["current"] for _, v in pr.values())
+    say(f"  races where the fit beats current: {improved}/{len(pr)}; beats legacy: {sum(v['fit'] < v['legacy'] for _, v in pr.values())}/{len(pr)}")
 
-    tj = next((r for r in races if r["id"] == "utmb/transjeju_2025/100m"), None)
-    g = guard(tj, {k: models[k] for k in GUARD_MODELS}) if tj else None
-    if g:
-        say(f"\nGUARD transjeju 2025 100M, finishers 16-21 h moving ({g['runners']} runners, median {g['median_finish_h']} h)")
-        say("  mean |gap|: " + ", ".join(f"{k} {g[f'mean_abs_gap_{k}']}" for k in GUARD_MODELS))
-        say(f"  {'checkpoint':22s}{'km':>6s}   median signed gap (pred - actual), min: " + " / ".join(GUARD_MODELS) + "   | mean |gap|")
-        for c in g["checkpoints"]:
-            say(f"  {str(c['cp']):22s}{c['km']:6.1f}   " + " / ".join(f"{c.get(k + '_median_signed', float('nan')):6.1f}" for k in GUARD_MODELS)
-                + "   | " + " / ".join(f"{c.get(k + '_mean_abs', float('nan')):5.1f}" for k in GUARD_MODELS))
+    gmodels = {k: models[k] for k in GUARD_MODELS}
+    guards = {}
+    for rid in ("utmb/transjeju_2025/100m", OWNER_RACE):
+        race = next((r for r in races if r["id"] == rid), None)
+        g = guard(race, gmodels) if race else None
+        if g:
+            guards[rid] = g
+            say(f"\nGUARD {rid}, finishers 16-21 h moving ({g['runners']} runners, median {g['median_finish_h']} h)")
+            say_guard(say, g, GUARD_MODELS)
 
-    pv = prev_edition_eval(test, {k: models[k] for k in ("production", "prod+hours", "fit")})
+    own_race = next((r for r in races if r["id"] == OWNER_RACE), None)
+    own = owner_runner(own_race, {k: models[k] for k in ("legacy", "current", "fit")}) if own_race else None
+    if own:
+        say(f"\nOWNER {OWNER_RACE} bib {OWNER_BIB}: official {own['actual_s'] / 3600:.2f} h, moving {own['moving_s'] / 3600:.2f} h; "
+            "plan shape at his own finish, mean |gap| at checkpoints: "
+            + ", ".join(f"{k} {own[f'mean_abs_gap_{k}']}" for k in ("legacy", "current", "fit")))
+        for c in own["checkpoints"]:
+            say(f"  {str(c['cp']):22s}{c['km']:6.1f}  actual {c['actual_moving_s'] / 3600:6.2f} h  "
+                + "  ".join(f"{k} {(c[f'{k}_s'] - c['actual_moving_s']) / 60:+6.1f}" for k in ("legacy", "current", "fit")))
+    tj26 = next((r for r in races if r["id"] == OWNER_RACE), None)
+    tj26_all = None
+    if tj26:
+        p26 = Problem([tj26])
+        tj26_all = {k: round(p26.score(p26.predict(x, m)), 1) for k, (x, m) in models.items()}
+        say(f"  {OWNER_RACE} all finishers by level group: " + ", ".join(f"{k} {v}" for k, v in tj26_all.items()))
+
+    lt = None
+    if a.livetrail and os.path.exists(a.livetrail):
+        say("\nLIVETRAIL (extra validation, never used for selection: no GPS track, profile from section D+/D-, night not scored)")
+        lt_races = pickle.load(open(a.livetrail, "rb"))
+        lt = livetrail_eval(lt_races, {k: models[k] for k in ("legacy", "current", "fit_hours", "fit_general", "curcurve_fitrest")}, say)
+
+    pv = prev_edition_eval(test, {k: models[k] for k in ("current", "fit")})
     say(f"\nPREVIOUS EDITION on held-out races with an earlier edition on matched checkpoints ({len(pv['races'])} races)")
     for e in pv["races"]:
         say(f"  {e['race']} <- {e['prev']}: {e['matched_cps']}/{e['of']} intermediate checkpoints matched")
-    ks = ["production", "prod+hours", "fit", "prev", "blend_production", "blend_prod+hours", "blend_fit"]
+    ks = ["current", "fit", "prev", "blend_current", "blend_fit"]
     say(f"  {'':12s}{'runners':>9s}" + "".join(f"{k:>18s}" for k in ks))
     for lab, v in pv["tot"].items():
         say(f"  {lab:12s}{v['prev'][0]:9d}" + "".join(f"{v[k][1]:18.1f}" for k in ks))
     say("  (fit = the selected model; blend = mean of the model's and the previous edition's time at each matched checkpoint)")
 
+    summary = {
+        "test_events": test_events, "held_out_races": len(pr), "held_out_runners": int(pte.nrun[pte.has_obs].sum()),
+        "train_races": len(train), "train_finishers": sum(len(r["runners"]) for r in train),
+        "fit_races": len(races), "fit_finishers": sum(len(r["runners"]) for r in races),
+        "mean_abs_gap": {k: round(pte.score(p), 2) for k, p in preds.items()},
+        "races_improved_vs_current": improved,
+        "guards": {rid: {k: g[f"mean_abs_gap_{k}"] for k in GUARD_MODELS} | {"runners": g["runners"]} for rid, g in guards.items()},
+        "owner": own, "transjeju_2026_all": tj26_all, "livetrail": lt,
+        "per_race": {rid: {"runners": n} | {k: round(v_, 2) for k, v_ in v.items()} for rid, (n, v) in pr.items()},
+    }
     params = {
         "about": "Fitted by scripts/race_data/fit_model.py on UTMB Live results (train events only); see fit_results.txt",
         "train_events": sorted({r["event"] for r in train}), "test_events": test_events,
@@ -708,18 +824,19 @@ def main():
         "fit": describe(x_fit),
         "variants": {k: describe(x) for k, x in xs.items()},
         "raw_x": {**{k: x.tolist() for k, x in xs.items()}, "names": NAMES},
-        "guard_transjeju_2025_100m_16_21h": g,
+        "validation": summary,
+        "guards_16_21h": guards,
         "prev_edition": pv,
     }
     json.dump(params, open(a.params, "w"), indent=1, default=float)
-    say("\nFITTED PARAMETERS (curve factors relative to flat, at a 20 h level unless noted)")
+    say("\nFITTED PARAMETERS (curve factors relative to flat, at a 20 h level unless noted; read at -20..30 %)")
     for k, x in xs.items():
         d = describe(x)
         say(f"  {k}: curve {dict(zip(d['knots_pct'], d['curve_at_20h']))}")
         say(f"     gamma_up {d['gamma_up']} gamma_down {d['gamma_down']}; fatigue c {d['fatigue']['c']} q {d['fatigue']['q']} r {d['fatigue']['r']} "
             f"p {d['fatigue']['p']} fresh {d['fatigue']['fresh']}; night {d['night']['night']}; terrain {d['terrain']}")
     for lvl, cv in params["variants"]["fit_general+level"]["curve_by_level_h"].items():
-        say(f"  fit_general+level (not selected by CV), curve at {lvl}: {cv}")
+        say(f"  fit_general+level, curve at {lvl}: {cv}")
     say(f"  selected ({sel}) integer table: {params['fit']['integer_table_20h']}")
     open(a.results, "w").write("\n".join(lines) + "\n")
     print(f"\n-> {a.params}\n-> {a.results}")
