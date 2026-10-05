@@ -1,7 +1,7 @@
 {
   "name": "PaceForge",
   "short_name": "PaceForge",
-  "description": "Coach IA pour sportifs d'endurance",
+  "description": "Ton plan de course trail et ultra",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",

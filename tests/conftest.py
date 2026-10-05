@@ -5,6 +5,8 @@ import os
 os.environ.setdefault("SURFACE_FETCH", "false")
 # no background COROS syncs either (the tests call the sync themselves, mocked)
 os.environ.setdefault("COROS_SYNC", "false")
+# bike/triathlon off, whatever .env or the shell says (the cycling_on fixture turns it on)
+os.environ["CYCLING_ENABLED"] = "false"
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -144,3 +146,11 @@ def authenticated_client(client: AsyncClient, test_user: User):
     """Client with session cookie set."""
     client.cookies.set("paceforge_session", "test_session")
     return client
+
+
+@pytest.fixture
+def cycling_on(monkeypatch):
+    """Bike / triathlon planning is hidden by default: switch it on for one test."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "CYCLING_ENABLED", True)

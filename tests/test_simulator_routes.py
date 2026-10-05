@@ -152,6 +152,7 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
 
     rj = (await db_session.get(Route, route_id)).result_json
     assert 0.05 <= rj["fatigue_tilt"] <= 0.40 and rj["fatigue_model"] == "hours"
+    assert rj["fatigue_tilt_cps"] >= 1  # fitted on every matched checkpoint, not the first only
 
 
 @pytest.mark.asyncio
@@ -193,7 +194,7 @@ async def _create_bike_route(client: AsyncClient) -> int:
 
 
 @pytest.mark.asyncio
-async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncClient):
+async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncClient, cycling_on):
     route_id = await _create_bike_route(as_user)
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200

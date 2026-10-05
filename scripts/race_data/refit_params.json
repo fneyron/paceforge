@@ -1,0 +1,2333 @@
+{
+ "about": "Fitted by scripts/race_data/fit_model.py on UTMB Live results (train events only); see fit_results.txt",
+ "train_events": [
+  "arcofattrition",
+  "canyons",
+  "chianti",
+  "desertrats",
+  "kodiak",
+  "kosciuszko",
+  "lavaredo",
+  "mountyun",
+  "mut",
+  "puglia",
+  "tarawera",
+  "templiers",
+  "translantau",
+  "uta"
+ ],
+ "test_events": [
+  "chiangmai",
+  "kullamannen",
+  "puertovallarta",
+  "transjeju",
+  "utmb",
+  "whistler"
+ ],
+ "selected": {
+  "model": "curcurve_fitrest",
+  "form": "curcurve",
+  "lam_c": 0.0,
+  "lam_t": 3.0
+ },
+ "fit": {
+  "knots_pct": [
+   -35,
+   -25,
+   -15,
+   -8,
+   -3,
+   0,
+   3,
+   8,
+   15,
+   25,
+   35
+  ],
+  "curve_at_20h": [
+   1.793,
+   1.34,
+   1.011,
+   0.836,
+   0.896,
+   1.0,
+   1.145,
+   1.516,
+   2.065,
+   3.123,
+   3.508
+  ],
+  "gamma_up": 0.0,
+  "gamma_down": 0.0,
+  "curve_by_level_h": {
+   "9h": {
+    "-35": 1.175,
+    "-25": 1.175,
+    "-15": 1.011,
+    "-8": 0.836,
+    "-3": 0.896,
+    "0": 1.0,
+    "3": 1.145,
+    "8": 1.516,
+    "15": 2.065,
+    "25": 3.123,
+    "35": 3.316
+   },
+   "15h": {
+    "-35": 1.175,
+    "-25": 1.175,
+    "-15": 1.011,
+    "-8": 0.836,
+    "-3": 0.896,
+    "0": 1.0,
+    "3": 1.145,
+    "8": 1.516,
+    "15": 2.065,
+    "25": 3.123,
+    "35": 3.316
+   },
+   "21h": {
+    "-35": 1.175,
+    "-25": 1.175,
+    "-15": 1.011,
+    "-8": 0.836,
+    "-3": 0.896,
+    "0": 1.0,
+    "3": 1.145,
+    "8": 1.516,
+    "15": 2.065,
+    "25": 3.123,
+    "35": 3.316
+   },
+   "27h": {
+    "-35": 1.175,
+    "-25": 1.175,
+    "-15": 1.011,
+    "-8": 0.836,
+    "-3": 0.896,
+    "0": 1.0,
+    "3": 1.145,
+    "8": 1.516,
+    "15": 2.065,
+    "25": 3.123,
+    "35": 3.316
+   },
+   "34h": {
+    "-35": 1.175,
+    "-25": 1.175,
+    "-15": 1.011,
+    "-8": 0.836,
+    "-3": 0.896,
+    "0": 1.0,
+    "3": 1.145,
+    "8": 1.516,
+    "15": 2.065,
+    "25": 3.123,
+    "35": 3.316
+   }
+  },
+  "fatigue": {
+   "c": 0.6524,
+   "q": 0.5592,
+   "r": 0.4945,
+   "p": -0.0595,
+   "fresh": -0.0046,
+   "formula": "1 + c*(T/10)**q*(D/100)**p*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"
+  },
+  "night": {
+   "night": 1.0429,
+   "dusk_dawn": 1.0161
+  },
+  "terrain": {
+   "R": 1.0,
+   "F": 1.0614,
+   "T": 1.1208,
+   "T1": 1.1203,
+   "T2": 1.1207,
+   "T3": 1.1202,
+   "S": 1.1198,
+   "U": 1.1182
+  },
+  "integer_table_20h": {
+   "-20": 1.175,
+   "-19": 1.142,
+   "-18": 1.11,
+   "-17": 1.077,
+   "-16": 1.044,
+   "-15": 1.011,
+   "-14": 0.986,
+   "-13": 0.961,
+   "-12": 0.936,
+   "-11": 0.911,
+   "-10": 0.886,
+   "-9": 0.861,
+   "-8": 0.836,
+   "-7": 0.848,
+   "-6": 0.86,
+   "-5": 0.872,
+   "-4": 0.884,
+   "-3": 0.896,
+   "-2": 0.931,
+   "-1": 0.965,
+   "0": 1.0,
+   "1": 1.048,
+   "2": 1.097,
+   "3": 1.145,
+   "4": 1.219,
+   "5": 1.293,
+   "6": 1.368,
+   "7": 1.442,
+   "8": 1.516,
+   "9": 1.594,
+   "10": 1.673,
+   "11": 1.751,
+   "12": 1.83,
+   "13": 1.908,
+   "14": 1.987,
+   "15": 2.065,
+   "16": 2.171,
+   "17": 2.277,
+   "18": 2.382,
+   "19": 2.488,
+   "20": 2.594,
+   "21": 2.7,
+   "22": 2.806,
+   "23": 2.911,
+   "24": 3.017,
+   "25": 3.123,
+   "26": 3.162,
+   "27": 3.2,
+   "28": 3.239,
+   "29": 3.277,
+   "30": 3.316
+  }
+ },
+ "variants": {
+  "fit_hours": {
+   "knots_pct": [
+    -35,
+    -25,
+    -15,
+    -8,
+    -3,
+    0,
+    3,
+    8,
+    15,
+    25,
+    35
+   ],
+   "curve_at_20h": [
+    1.945,
+    1.419,
+    1.045,
+    0.85,
+    0.901,
+    1.0,
+    1.146,
+    1.52,
+    2.072,
+    3.137,
+    3.522
+   ],
+   "gamma_up": 0.0,
+   "gamma_down": 0.0,
+   "curve_by_level_h": {
+    "9h": {
+     "-35": 1.232,
+     "-25": 1.232,
+     "-15": 1.045,
+     "-8": 0.85,
+     "-3": 0.901,
+     "0": 1.0,
+     "3": 1.146,
+     "8": 1.52,
+     "15": 2.072,
+     "25": 3.137,
+     "35": 3.329
+    },
+    "15h": {
+     "-35": 1.232,
+     "-25": 1.232,
+     "-15": 1.045,
+     "-8": 0.85,
+     "-3": 0.901,
+     "0": 1.0,
+     "3": 1.146,
+     "8": 1.52,
+     "15": 2.072,
+     "25": 3.137,
+     "35": 3.329
+    },
+    "21h": {
+     "-35": 1.232,
+     "-25": 1.232,
+     "-15": 1.045,
+     "-8": 0.85,
+     "-3": 0.901,
+     "0": 1.0,
+     "3": 1.146,
+     "8": 1.52,
+     "15": 2.072,
+     "25": 3.137,
+     "35": 3.329
+    },
+    "27h": {
+     "-35": 1.232,
+     "-25": 1.232,
+     "-15": 1.045,
+     "-8": 0.85,
+     "-3": 0.901,
+     "0": 1.0,
+     "3": 1.146,
+     "8": 1.52,
+     "15": 2.072,
+     "25": 3.137,
+     "35": 3.329
+    },
+    "34h": {
+     "-35": 1.232,
+     "-25": 1.232,
+     "-15": 1.045,
+     "-8": 0.85,
+     "-3": 0.901,
+     "0": 1.0,
+     "3": 1.146,
+     "8": 1.52,
+     "15": 2.072,
+     "25": 3.137,
+     "35": 3.329
+    }
+   },
+   "fatigue": {
+    "c": 0.6437,
+    "q": 0.5211,
+    "r": 0.5211,
+    "p": 0.0,
+    "fresh": -0.0062,
+    "formula": "1 + c*(T/10)**q*(D/100)**p*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"
+   },
+   "night": {
+    "night": 1.0465,
+    "dusk_dawn": 1.0174
+   },
+   "terrain": {
+    "R": 1.0,
+    "F": 1.0608,
+    "T": 1.1192,
+    "T1": 1.1193,
+    "T2": 1.1192,
+    "T3": 1.1194,
+    "S": 1.1189,
+    "U": 1.117
+   },
+   "integer_table_20h": {
+    "-20": 1.232,
+    "-19": 1.195,
+    "-18": 1.157,
+    "-17": 1.12,
+    "-16": 1.083,
+    "-15": 1.045,
+    "-14": 1.018,
+    "-13": 0.99,
+    "-12": 0.962,
+    "-11": 0.934,
+    "-10": 0.906,
+    "-9": 0.878,
+    "-8": 0.85,
+    "-7": 0.86,
+    "-6": 0.871,
+    "-5": 0.881,
+    "-4": 0.891,
+    "-3": 0.901,
+    "-2": 0.934,
+    "-1": 0.967,
+    "0": 1.0,
+    "1": 1.049,
+    "2": 1.097,
+    "3": 1.146,
+    "4": 1.221,
+    "5": 1.295,
+    "6": 1.37,
+    "7": 1.445,
+    "8": 1.52,
+    "9": 1.599,
+    "10": 1.678,
+    "11": 1.757,
+    "12": 1.836,
+    "13": 1.915,
+    "14": 1.994,
+    "15": 2.072,
+    "16": 2.179,
+    "17": 2.285,
+    "18": 2.392,
+    "19": 2.498,
+    "20": 2.605,
+    "21": 2.711,
+    "22": 2.817,
+    "23": 2.924,
+    "24": 3.03,
+    "25": 3.137,
+    "26": 3.175,
+    "27": 3.214,
+    "28": 3.252,
+    "29": 3.291,
+    "30": 3.329
+   }
+  },
+  "fit_general": {
+   "knots_pct": [
+    -35,
+    -25,
+    -15,
+    -8,
+    -3,
+    0,
+    3,
+    8,
+    15,
+    25,
+    35
+   ],
+   "curve_at_20h": [
+    27.795,
+    2.063,
+    1.132,
+    0.87,
+    0.906,
+    1.0,
+    1.328,
+    1.725,
+    2.252,
+    3.48,
+    5.088
+   ],
+   "gamma_up": 0.0,
+   "gamma_down": 0.0,
+   "curve_by_level_h": {
+    "9h": {
+     "-35": 1.598,
+     "-25": 1.598,
+     "-15": 1.132,
+     "-8": 0.87,
+     "-3": 0.906,
+     "0": 1.0,
+     "3": 1.328,
+     "8": 1.725,
+     "15": 2.252,
+     "25": 3.48,
+     "35": 4.284
+    },
+    "15h": {
+     "-35": 1.598,
+     "-25": 1.598,
+     "-15": 1.132,
+     "-8": 0.87,
+     "-3": 0.906,
+     "0": 1.0,
+     "3": 1.328,
+     "8": 1.725,
+     "15": 2.252,
+     "25": 3.48,
+     "35": 4.284
+    },
+    "21h": {
+     "-35": 1.598,
+     "-25": 1.598,
+     "-15": 1.132,
+     "-8": 0.87,
+     "-3": 0.906,
+     "0": 1.0,
+     "3": 1.328,
+     "8": 1.725,
+     "15": 2.252,
+     "25": 3.48,
+     "35": 4.284
+    },
+    "27h": {
+     "-35": 1.598,
+     "-25": 1.598,
+     "-15": 1.132,
+     "-8": 0.87,
+     "-3": 0.906,
+     "0": 1.0,
+     "3": 1.328,
+     "8": 1.725,
+     "15": 2.252,
+     "25": 3.48,
+     "35": 4.284
+    },
+    "34h": {
+     "-35": 1.598,
+     "-25": 1.598,
+     "-15": 1.132,
+     "-8": 0.87,
+     "-3": 0.906,
+     "0": 1.0,
+     "3": 1.328,
+     "8": 1.725,
+     "15": 2.252,
+     "25": 3.48,
+     "35": 4.284
+    }
+   },
+   "fatigue": {
+    "c": 0.7502,
+    "q": 0.7291,
+    "r": 0.4004,
+    "p": -0.2085,
+    "fresh": -0.0414,
+    "formula": "1 + c*(T/10)**q*(D/100)**p*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"
+   },
+   "night": {
+    "night": 1.0469,
+    "dusk_dawn": 1.0176
+   },
+   "terrain": {
+    "R": 1.0,
+    "F": 1.062,
+    "T": 1.1186,
+    "T1": 1.1201,
+    "T2": 1.12,
+    "T3": 1.1202,
+    "S": 1.1198,
+    "U": 1.1181
+   },
+   "integer_table_20h": {
+    "-20": 1.598,
+    "-19": 1.505,
+    "-18": 1.411,
+    "-17": 1.318,
+    "-16": 1.225,
+    "-15": 1.132,
+    "-14": 1.094,
+    "-13": 1.057,
+    "-12": 1.019,
+    "-11": 0.982,
+    "-10": 0.945,
+    "-9": 0.907,
+    "-8": 0.87,
+    "-7": 0.877,
+    "-6": 0.884,
+    "-5": 0.891,
+    "-4": 0.898,
+    "-3": 0.906,
+    "-2": 0.937,
+    "-1": 0.969,
+    "0": 1.0,
+    "1": 1.109,
+    "2": 1.218,
+    "3": 1.328,
+    "4": 1.407,
+    "5": 1.486,
+    "6": 1.566,
+    "7": 1.645,
+    "8": 1.725,
+    "9": 1.8,
+    "10": 1.875,
+    "11": 1.951,
+    "12": 2.026,
+    "13": 2.101,
+    "14": 2.177,
+    "15": 2.252,
+    "16": 2.375,
+    "17": 2.497,
+    "18": 2.62,
+    "19": 2.743,
+    "20": 2.866,
+    "21": 2.989,
+    "22": 3.111,
+    "23": 3.234,
+    "24": 3.357,
+    "25": 3.48,
+    "26": 3.64,
+    "27": 3.801,
+    "28": 3.962,
+    "29": 4.123,
+    "30": 4.284
+   }
+  },
+  "fit_general+level": {
+   "knots_pct": [
+    -35,
+    -25,
+    -15,
+    -8,
+    -3,
+    0,
+    3,
+    8,
+    15,
+    25,
+    35
+   ],
+   "curve_at_20h": [
+    23.708,
+    1.898,
+    1.121,
+    0.878,
+    0.912,
+    1.0,
+    1.325,
+    1.581,
+    2.12,
+    3.166,
+    3.829
+   ],
+   "gamma_up": -0.275,
+   "gamma_down": -0.406,
+   "curve_by_level_h": {
+    "9h": {
+     "-35": 1.767,
+     "-25": 1.767,
+     "-15": 1.172,
+     "-8": 0.835,
+     "-3": 0.88,
+     "0": 1.0,
+     "3": 1.421,
+     "8": 1.769,
+     "15": 2.55,
+     "25": 4.203,
+     "35": 4.759
+    },
+    "15h": {
+     "-35": 1.588,
+     "-25": 1.588,
+     "-15": 1.137,
+     "-8": 0.864,
+     "-3": 0.902,
+     "0": 1.0,
+     "3": 1.357,
+     "8": 1.641,
+     "15": 2.255,
+     "25": 3.481,
+     "35": 3.878
+    },
+    "21h": {
+     "-35": 1.497,
+     "-25": 1.497,
+     "-15": 1.119,
+     "-8": 0.88,
+     "-3": 0.914,
+     "0": 1.0,
+     "3": 1.32,
+     "8": 1.571,
+     "15": 2.099,
+     "25": 3.117,
+     "35": 3.439
+    },
+    "27h": {
+     "-35": 1.44,
+     "-25": 1.44,
+     "-15": 1.107,
+     "-8": 0.891,
+     "-3": 0.922,
+     "0": 1.0,
+     "3": 1.296,
+     "8": 1.524,
+     "15": 1.997,
+     "25": 2.889,
+     "35": 3.167
+    },
+    "34h": {
+     "-35": 1.394,
+     "-25": 1.394,
+     "-15": 1.097,
+     "-8": 0.9,
+     "-3": 0.928,
+     "0": 1.0,
+     "3": 1.276,
+     "8": 1.485,
+     "15": 1.914,
+     "25": 2.707,
+     "35": 2.95
+    }
+   },
+   "fatigue": {
+    "c": 0.6519,
+    "q": 0.6315,
+    "r": 0.4667,
+    "p": -0.1047,
+    "fresh": -0.0191,
+    "formula": "1 + c*(T/10)**q*(D/100)**p*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"
+   },
+   "night": {
+    "night": 1.0462,
+    "dusk_dawn": 1.0173
+   },
+   "terrain": {
+    "R": 1.0,
+    "F": 1.0612,
+    "T": 1.1182,
+    "T1": 1.1201,
+    "T2": 1.1205,
+    "T3": 1.1202,
+    "S": 1.1198,
+    "U": 1.1186
+   },
+   "integer_table_20h": {
+    "-20": 1.497,
+    "-19": 1.422,
+    "-18": 1.346,
+    "-17": 1.271,
+    "-16": 1.195,
+    "-15": 1.119,
+    "-14": 1.085,
+    "-13": 1.051,
+    "-12": 1.017,
+    "-11": 0.983,
+    "-10": 0.948,
+    "-9": 0.914,
+    "-8": 0.88,
+    "-7": 0.887,
+    "-6": 0.893,
+    "-5": 0.9,
+    "-4": 0.907,
+    "-3": 0.914,
+    "-2": 0.942,
+    "-1": 0.971,
+    "0": 1.0,
+    "1": 1.107,
+    "2": 1.214,
+    "3": 1.32,
+    "4": 1.371,
+    "5": 1.421,
+    "6": 1.471,
+    "7": 1.521,
+    "8": 1.571,
+    "9": 1.646,
+    "10": 1.722,
+    "11": 1.797,
+    "12": 1.873,
+    "13": 1.948,
+    "14": 2.023,
+    "15": 2.099,
+    "16": 2.201,
+    "17": 2.303,
+    "18": 2.405,
+    "19": 2.507,
+    "20": 2.609,
+    "21": 2.711,
+    "22": 2.812,
+    "23": 2.914,
+    "24": 3.016,
+    "25": 3.117,
+    "26": 3.182,
+    "27": 3.246,
+    "28": 3.311,
+    "29": 3.375,
+    "30": 3.439
+   }
+  },
+  "curcurve_fitrest": {
+   "knots_pct": [
+    -35,
+    -25,
+    -15,
+    -8,
+    -3,
+    0,
+    3,
+    8,
+    15,
+    25,
+    35
+   ],
+   "curve_at_20h": [
+    1.793,
+    1.34,
+    1.011,
+    0.836,
+    0.896,
+    1.0,
+    1.145,
+    1.516,
+    2.065,
+    3.123,
+    3.508
+   ],
+   "gamma_up": 0.0,
+   "gamma_down": 0.0,
+   "curve_by_level_h": {
+    "9h": {
+     "-35": 1.175,
+     "-25": 1.175,
+     "-15": 1.011,
+     "-8": 0.836,
+     "-3": 0.896,
+     "0": 1.0,
+     "3": 1.145,
+     "8": 1.516,
+     "15": 2.065,
+     "25": 3.123,
+     "35": 3.316
+    },
+    "15h": {
+     "-35": 1.175,
+     "-25": 1.175,
+     "-15": 1.011,
+     "-8": 0.836,
+     "-3": 0.896,
+     "0": 1.0,
+     "3": 1.145,
+     "8": 1.516,
+     "15": 2.065,
+     "25": 3.123,
+     "35": 3.316
+    },
+    "21h": {
+     "-35": 1.175,
+     "-25": 1.175,
+     "-15": 1.011,
+     "-8": 0.836,
+     "-3": 0.896,
+     "0": 1.0,
+     "3": 1.145,
+     "8": 1.516,
+     "15": 2.065,
+     "25": 3.123,
+     "35": 3.316
+    },
+    "27h": {
+     "-35": 1.175,
+     "-25": 1.175,
+     "-15": 1.011,
+     "-8": 0.836,
+     "-3": 0.896,
+     "0": 1.0,
+     "3": 1.145,
+     "8": 1.516,
+     "15": 2.065,
+     "25": 3.123,
+     "35": 3.316
+    },
+    "34h": {
+     "-35": 1.175,
+     "-25": 1.175,
+     "-15": 1.011,
+     "-8": 0.836,
+     "-3": 0.896,
+     "0": 1.0,
+     "3": 1.145,
+     "8": 1.516,
+     "15": 2.065,
+     "25": 3.123,
+     "35": 3.316
+    }
+   },
+   "fatigue": {
+    "c": 0.6524,
+    "q": 0.5592,
+    "r": 0.4945,
+    "p": -0.0595,
+    "fresh": -0.0046,
+    "formula": "1 + c*(T/10)**q*(D/100)**p*(h/T)**r - fresh*max(0, 1 - h/3); h = moving hours on course, T = target finish (moving hours), D = race km; r = q and p = 0 is fatigue by hours only"
+   },
+   "night": {
+    "night": 1.0429,
+    "dusk_dawn": 1.0161
+   },
+   "terrain": {
+    "R": 1.0,
+    "F": 1.0614,
+    "T": 1.1208,
+    "T1": 1.1203,
+    "T2": 1.1207,
+    "T3": 1.1202,
+    "S": 1.1198,
+    "U": 1.1182
+   },
+   "integer_table_20h": {
+    "-20": 1.175,
+    "-19": 1.142,
+    "-18": 1.11,
+    "-17": 1.077,
+    "-16": 1.044,
+    "-15": 1.011,
+    "-14": 0.986,
+    "-13": 0.961,
+    "-12": 0.936,
+    "-11": 0.911,
+    "-10": 0.886,
+    "-9": 0.861,
+    "-8": 0.836,
+    "-7": 0.848,
+    "-6": 0.86,
+    "-5": 0.872,
+    "-4": 0.884,
+    "-3": 0.896,
+    "-2": 0.931,
+    "-1": 0.965,
+    "0": 1.0,
+    "1": 1.048,
+    "2": 1.097,
+    "3": 1.145,
+    "4": 1.219,
+    "5": 1.293,
+    "6": 1.368,
+    "7": 1.442,
+    "8": 1.516,
+    "9": 1.594,
+    "10": 1.673,
+    "11": 1.751,
+    "12": 1.83,
+    "13": 1.908,
+    "14": 1.987,
+    "15": 2.065,
+    "16": 2.171,
+    "17": 2.277,
+    "18": 2.382,
+    "19": 2.488,
+    "20": 2.594,
+    "21": 2.7,
+    "22": 2.806,
+    "23": 2.911,
+    "24": 3.017,
+    "25": 3.123,
+    "26": 3.162,
+    "27": 3.2,
+    "28": 3.239,
+    "29": 3.277,
+    "30": 3.316
+   }
+  }
+ },
+ "raw_x": {
+  "fit_hours": [
+   -0.03458395019941023,
+   -3.778635843704649,
+   -3.187430159309523,
+   -6.907650397705754,
+   -6.907755278982137,
+   -1.926138643011015,
+   -0.9831603775781389,
+   -0.5930593708811114,
+   0.06229360623769208,
+   -0.9537237435468955,
+   0.0,
+   0.0,
+   0.643702432668483,
+   0.521120381893049,
+   0.521120381893049,
+   0.0,
+   -0.0062076141722748855,
+   1.0464844959897368,
+   0.05906220663125831,
+   0.11265253149908261,
+   0.11268572563947413,
+   0.11263406154557451,
+   0.11275975252714905,
+   0.11239031666410669,
+   0.11061010016808302
+  ],
+  "fit_general": [
+   -0.03306806626895379,
+   -3.6910314663731327,
+   -3.0834187748889437,
+   -3.80030478873643,
+   -1.6094394492202246,
+   -1.1156731351159366,
+   -0.9242240345072646,
+   -0.639970912741758,
+   0.2052130180019792,
+   0.4750357285120156,
+   0.0,
+   0.0,
+   0.7501558813444219,
+   0.729113558371118,
+   0.40042946100666366,
+   -0.20850393935537806,
+   -0.04139042689018563,
+   1.0469031824764925,
+   0.06013240858369137,
+   0.11210762709949681,
+   0.11338907779455526,
+   0.11330653924846171,
+   0.11350122858286232,
+   0.11313738863822038,
+   0.11167451509025424
+  ],
+  "fit_general+level": [
+   -0.030738107669904844,
+   -3.767339603731159,
+   -3.1558330817941402,
+   -4.037933289234273,
+   -1.6099175967846204,
+   -1.1226429490354164,
+   -1.3659263619011424,
+   -0.6173941901005349,
+   0.04474974245032005,
+   -0.41009393019828133,
+   -0.2754599824381258,
+   -0.40566422816530995,
+   0.6518979490367007,
+   0.6315081866800186,
+   0.4666789004749441,
+   -0.10467204811187822,
+   -0.019078349467923444,
+   1.0462179335083943,
+   0.05936792732624088,
+   0.11167566846919608,
+   0.1133944896969489,
+   0.1138104506268989,
+   0.11350231936954017,
+   0.11315528597130509,
+   0.11204889231985171
+  ],
+  "curcurve_fitrest": [
+   -0.036604955335735524,
+   -3.7835156653477613,
+   -3.1938239535364352,
+   -6.907755278982137,
+   -6.907755278982137,
+   -1.9310215365615626,
+   -0.991553216374702,
+   -0.5996568374726066,
+   0.0563803334361079,
+   -0.9545119446943534,
+   0.0,
+   0.0,
+   0.6523757171746795,
+   0.5592052610621089,
+   0.4945494004896295,
+   -0.05946452918788417,
+   -0.004591185307333986,
+   1.0428915983595868,
+   0.059556750874895995,
+   0.11403656220892727,
+   0.11355557762846408,
+   0.11392650925685666,
+   0.11351229843786204,
+   0.11319380225673638,
+   0.11168446052030315
+  ],
+  "names": [
+   "down_slope(0..3)",
+   "log_slope_incr(|g|=3)",
+   "log_slope_incr(|g|=8)",
+   "log_slope_incr(|g|=15)",
+   "log_slope_incr(|g|=25)",
+   "log_step(3)",
+   "log_step(8)",
+   "log_step(15)",
+   "log_step(25)",
+   "log_step(35)",
+   "gamma_up",
+   "gamma_down",
+   "c",
+   "q",
+   "r",
+   "p",
+   "fresh",
+   "night",
+   "log_m_F",
+   "log_m_T",
+   "log_m_T1",
+   "log_m_T2",
+   "log_m_T3",
+   "log_m_S",
+   "log_m_U"
+  ]
+ },
+ "validation": {
+  "test_events": [
+   "chiangmai",
+   "kullamannen",
+   "puertovallarta",
+   "transjeju",
+   "utmb",
+   "whistler"
+  ],
+  "held_out_races": 47,
+  "held_out_runners": 14100,
+  "train_races": 74,
+  "train_finishers": 29596,
+  "fit_races": 121,
+  "fit_finishers": 43714,
+  "mean_abs_gap": {
+   "legacy": 21.92,
+   "current": 18.61,
+   "fit_hours": 18.71,
+   "fit_general": 18.93,
+   "fit_general+level": 18.88,
+   "curcurve_fitrest": 18.59,
+   "fit": 18.59
+  },
+  "races_improved_vs_current": 23.0,
+  "guards": {
+   "utmb/transjeju_2025/100m": {
+    "legacy": 10.4,
+    "current": 8.0,
+    "curcurve_fitrest": 8.3,
+    "fit_hours": 8.1,
+    "fit_general": 11.3,
+    "fit_general+level": 9.5,
+    "runners": 4
+   },
+   "utmb/transjeju_2026/100m": {
+    "legacy": 11.1,
+    "current": 9.9,
+    "curcurve_fitrest": 10.2,
+    "fit_hours": 10.1,
+    "fit_general": 13.9,
+    "fit_general+level": 11.2,
+    "runners": 12
+   }
+  },
+  "owner": {
+   "race": "utmb/transjeju_2026/100m",
+   "bib": "10",
+   "actual_s": 60797,
+   "moving_s": 60797,
+   "checkpoints": [
+    {
+     "cp": "Healing 1",
+     "km": 7.2,
+     "actual_moving_s": 2229,
+     "legacy_s": 2465,
+     "current_s": 2215,
+     "fit_s": 2230
+    },
+    {
+     "cp": "Yeongsil E",
+     "km": 20.3,
+     "actual_moving_s": 7876,
+     "legacy_s": 8016,
+     "current_s": 7506,
+     "fit_s": 7558
+    },
+    {
+     "cp": "Eorimok En",
+     "km": 28.7,
+     "actual_moving_s": 11977,
+     "legacy_s": 11648,
+     "current_s": 11125,
+     "fit_s": 11197
+    },
+    {
+     "cp": "Gwanumsa E",
+     "km": 40.8,
+     "actual_moving_s": 15640,
+     "legacy_s": 14832,
+     "current_s": 14683,
+     "fit_s": 14760
+    },
+    {
+     "cp": "Seongpanak",
+     "km": 58.6,
+     "actual_moving_s": 26083,
+     "legacy_s": 24369,
+     "current_s": 24189,
+     "fit_s": 24295
+    },
+    {
+     "cp": "Jeongseok Av",
+     "km": 74.3,
+     "actual_moving_s": 30770,
+     "legacy_s": 29138,
+     "current_s": 29467,
+     "fit_s": 29591
+    },
+    {
+     "cp": "Gasiri",
+     "km": 87.0,
+     "actual_moving_s": 35297,
+     "legacy_s": 34001,
+     "current_s": 34525,
+     "fit_s": 34665
+    },
+    {
+     "cp": "Meochewat ",
+     "km": 106.7,
+     "actual_moving_s": 42704,
+     "legacy_s": 41229,
+     "current_s": 42018,
+     "fit_s": 42104
+    },
+    {
+     "cp": "Eseungak O",
+     "km": 116.9,
+     "actual_moving_s": 46599,
+     "legacy_s": 45953,
+     "current_s": 46601,
+     "fit_s": 46663
+    },
+    {
+     "cp": "Camping si",
+     "km": 127.9,
+     "actual_moving_s": 52011,
+     "legacy_s": 51512,
+     "current_s": 51764,
+     "fit_s": 51795
+    },
+    {
+     "cp": "Healing 2",
+     "km": 137.4,
+     "actual_moving_s": 56505,
+     "legacy_s": 56370,
+     "current_s": 56237,
+     "fit_s": 56240
+    }
+   ],
+   "mean_abs_gap_legacy": 13.5,
+   "mean_abs_gap_current": 9.9,
+   "mean_abs_gap_fit": 8.8
+  },
+  "transjeju_2026_all": {
+   "legacy": 36.1,
+   "current": 30.1,
+   "fit_hours": 29.2,
+   "fit_general": 32.9,
+   "fit_general+level": 28.1,
+   "curcurve_fitrest": 29.3,
+   "fit": 29.3
+  },
+  "livetrail": {
+   "courses": 595,
+   "finishers": 44321,
+   "events": 140,
+   "passages_scored": 288179,
+   "mean_abs_gap": {
+    "legacy": 21.48,
+    "current": 18.58,
+    "fit_hours": 18.55,
+    "fit_general": 18.63,
+    "curcurve_fitrest": 18.53
+   },
+   "courses_improved_legacy_vs_current": 96.0,
+   "courses_improved_fit_hours_vs_current": 297.0,
+   "courses_improved_fit_general_vs_current": 276.0,
+   "courses_improved_curcurve_fitrest_vs_current": 290.0,
+   "courses_scored": 593
+  },
+  "per_race": {
+   "utmb/chiangmai_2024/100K": {
+    "runners": 556,
+    "legacy": 19.5,
+    "current": 17.86,
+    "fit": 17.21
+   },
+   "utmb/chiangmai_2024/100M": {
+    "runners": 233,
+    "legacy": 45.29,
+    "current": 33.69,
+    "fit": 34.93
+   },
+   "utmb/chiangmai_2024/50K": {
+    "runners": 532,
+    "legacy": 5.17,
+    "current": 4.49,
+    "fit": 4.48
+   },
+   "utmb/chiangmai_2025/CHD160": {
+    "runners": 377,
+    "legacy": 33.58,
+    "current": 29.87,
+    "fit": 31.14
+   },
+   "utmb/chiangmai_2025/ELP100": {
+    "runners": 573,
+    "legacy": 18.66,
+    "current": 19.14,
+    "fit": 18.21
+   },
+   "utmb/chiangmai_2025/HMN50D": {
+    "runners": 614,
+    "legacy": 8.49,
+    "current": 6.56,
+    "fit": 6.49
+   },
+   "utmb/chiangmai_2025/HMN50N": {
+    "runners": 222,
+    "legacy": 17.17,
+    "current": 13.08,
+    "fit": 12.22
+   },
+   "utmb/kullamannen_2022/100M": {
+    "runners": 259,
+    "legacy": 22.41,
+    "current": 21.12,
+    "fit": 21.16
+   },
+   "utmb/kullamannen_2022/100k": {
+    "runners": 239,
+    "legacy": 16.45,
+    "current": 13.96,
+    "fit": 13.89
+   },
+   "utmb/kullamannen_2022/50k": {
+    "runners": 368,
+    "legacy": 6.6,
+    "current": 9.21,
+    "fit": 9.28
+   },
+   "utmb/kullamannen_2023/100M": {
+    "runners": 435,
+    "legacy": 26.52,
+    "current": 20.62,
+    "fit": 20.57
+   },
+   "utmb/kullamannen_2023/100k": {
+    "runners": 390,
+    "legacy": 18.76,
+    "current": 15.86,
+    "fit": 15.91
+   },
+   "utmb/kullamannen_2023/50k": {
+    "runners": 461,
+    "legacy": 5.57,
+    "current": 5.45,
+    "fit": 5.49
+   },
+   "utmb/kullamannen_2024/100M": {
+    "runners": 474,
+    "legacy": 23.21,
+    "current": 19.67,
+    "fit": 19.55
+   },
+   "utmb/kullamannen_2024/100k": {
+    "runners": 420,
+    "legacy": 19.78,
+    "current": 16.59,
+    "fit": 16.64
+   },
+   "utmb/kullamannen_2024/50k": {
+    "runners": 415,
+    "legacy": 7.65,
+    "current": 5.81,
+    "fit": 5.81
+   },
+   "utmb/kullamannen_2025/100M": {
+    "runners": 314,
+    "legacy": 21.12,
+    "current": 19.76,
+    "fit": 19.83
+   },
+   "utmb/kullamannen_2025/100k": {
+    "runners": 343,
+    "legacy": 18.83,
+    "current": 15.16,
+    "fit": 15.11
+   },
+   "utmb/kullamannen_2025/50k": {
+    "runners": 439,
+    "legacy": 8.09,
+    "current": 6.61,
+    "fit": 6.57
+   },
+   "utmb/puertovallarta_2024/100K": {
+    "runners": 153,
+    "legacy": 19.01,
+    "current": 24.94,
+    "fit": 23.46
+   },
+   "utmb/puertovallarta_2024/100M": {
+    "runners": 74,
+    "legacy": 46.45,
+    "current": 59.08,
+    "fit": 55.61
+   },
+   "utmb/puertovallarta_2024/50K": {
+    "runners": 344,
+    "legacy": 14.41,
+    "current": 12.27,
+    "fit": 11.97
+   },
+   "utmb/transjeju_2024/100k": {
+    "runners": 298,
+    "legacy": 30.49,
+    "current": 25.85,
+    "fit": 24.48
+   },
+   "utmb/transjeju_2024/50k": {
+    "runners": 150,
+    "legacy": 13.12,
+    "current": 10.21,
+    "fit": 10.19
+   },
+   "utmb/transjeju_2025/100k": {
+    "runners": 559,
+    "legacy": 23.54,
+    "current": 20.51,
+    "fit": 19.53
+   },
+   "utmb/transjeju_2025/100m": {
+    "runners": 298,
+    "legacy": 32.31,
+    "current": 23.62,
+    "fit": 23.32
+   },
+   "utmb/transjeju_2025/70k": {
+    "runners": 150,
+    "legacy": 13.11,
+    "current": 12.6,
+    "fit": 12.62
+   },
+   "utmb/transjeju_2026/100m": {
+    "runners": 362,
+    "legacy": 36.1,
+    "current": 30.05,
+    "fit": 29.3
+   },
+   "utmb/utmb_2022/ccc": {
+    "runners": 150,
+    "legacy": 17.95,
+    "current": 17.49,
+    "fit": 17.47
+   },
+   "utmb/utmb_2022/mcc": {
+    "runners": 150,
+    "legacy": 12.85,
+    "current": 12.19,
+    "fit": 12.67
+   },
+   "utmb/utmb_2022/occ": {
+    "runners": 150,
+    "legacy": 14.27,
+    "current": 11.17,
+    "fit": 11.13
+   },
+   "utmb/utmb_2022/tds": {
+    "runners": 300,
+    "legacy": 32.68,
+    "current": 25.67,
+    "fit": 26.16
+   },
+   "utmb/utmb_2022/utmb": {
+    "runners": 300,
+    "legacy": 36.43,
+    "current": 28.53,
+    "fit": 29.53
+   },
+   "utmb/utmb_2023/ccc": {
+    "runners": 148,
+    "legacy": 19.95,
+    "current": 16.35,
+    "fit": 17.13
+   },
+   "utmb/utmb_2023/occ": {
+    "runners": 150,
+    "legacy": 8.37,
+    "current": 7.29,
+    "fit": 7.47
+   },
+   "utmb/utmb_2023/tds": {
+    "runners": 300,
+    "legacy": 36.64,
+    "current": 28.23,
+    "fit": 28.57
+   },
+   "utmb/utmb_2023/utmb": {
+    "runners": 300,
+    "legacy": 33.77,
+    "current": 28.51,
+    "fit": 29.27
+   },
+   "utmb/utmb_2024/ccc": {
+    "runners": 150,
+    "legacy": 26.53,
+    "current": 20.51,
+    "fit": 22.65
+   },
+   "utmb/utmb_2024/occ": {
+    "runners": 150,
+    "legacy": 12.93,
+    "current": 10.82,
+    "fit": 10.96
+   },
+   "utmb/utmb_2024/tds": {
+    "runners": 300,
+    "legacy": 41.04,
+    "current": 33.25,
+    "fit": 33.27
+   },
+   "utmb/utmb_2024/utmb": {
+    "runners": 300,
+    "legacy": 40.01,
+    "current": 32.84,
+    "fit": 34.29
+   },
+   "utmb/utmb_2025/ccc": {
+    "runners": 150,
+    "legacy": 17.83,
+    "current": 19.12,
+    "fit": 18.5
+   },
+   "utmb/utmb_2025/occ": {
+    "runners": 150,
+    "legacy": 8.06,
+    "current": 7.96,
+    "fit": 8.04
+   },
+   "utmb/utmb_2025/tds": {
+    "runners": 300,
+    "legacy": 46.01,
+    "current": 34.88,
+    "fit": 35.24
+   },
+   "utmb/utmb_2025/utmb": {
+    "runners": 300,
+    "legacy": 40.15,
+    "current": 33.87,
+    "fit": 35.0
+   },
+   "utmb/whistler_2024/50k": {
+    "runners": 150,
+    "legacy": 19.63,
+    "current": 14.79,
+    "fit": 14.44
+   },
+   "utmb/whistler_2024/70k": {
+    "runners": 150,
+    "legacy": 26.32,
+    "current": 19.93,
+    "fit": 19.39
+   }
+  }
+ },
+ "guards_16_21h": {
+  "utmb/transjeju_2025/100m": {
+   "race": "utmb/transjeju_2025/100m",
+   "group_h": [
+    16,
+    21
+   ],
+   "runners": 4,
+   "median_finish_h": 17.91,
+   "checkpoints": [
+    {
+     "cp": "Healing 1",
+     "km": 6.7,
+     "legacy_median_signed": 5.4,
+     "legacy_mean_abs": 5.3,
+     "current_median_signed": 0.9,
+     "current_mean_abs": 1.3,
+     "curcurve_fitrest_median_signed": 1.2,
+     "curcurve_fitrest_mean_abs": 1.4,
+     "fit_hours_median_signed": 1.2,
+     "fit_hours_mean_abs": 1.4,
+     "fit_general_median_signed": 2.0,
+     "fit_general_mean_abs": 1.8,
+     "fit_general+level_median_signed": 2.2,
+     "fit_general+level_mean_abs": 1.9
+    },
+    {
+     "cp": "Yeongsil E",
+     "km": 19.9,
+     "legacy_median_signed": 11.1,
+     "legacy_mean_abs": 9.6,
+     "current_median_signed": 1.4,
+     "current_mean_abs": 4.0,
+     "curcurve_fitrest_median_signed": 2.2,
+     "curcurve_fitrest_mean_abs": 4.4,
+     "fit_hours_median_signed": 1.7,
+     "fit_hours_mean_abs": 4.1,
+     "fit_general_median_signed": 5.2,
+     "fit_general_mean_abs": 5.8,
+     "fit_general+level_median_signed": 3.9,
+     "fit_general+level_mean_abs": 5.2
+    },
+    {
+     "cp": "Eorimok En",
+     "km": 28.3,
+     "legacy_median_signed": 9.5,
+     "legacy_mean_abs": 9.1,
+     "current_median_signed": -0.4,
+     "current_mean_abs": 3.8,
+     "curcurve_fitrest_median_signed": 0.8,
+     "curcurve_fitrest_mean_abs": 3.8,
+     "fit_hours_median_signed": 0.6,
+     "fit_hours_mean_abs": 3.8,
+     "fit_general_median_signed": 9.3,
+     "fit_general_mean_abs": 8.7,
+     "fit_general+level_median_signed": 6.0,
+     "fit_general+level_mean_abs": 6.3
+    },
+    {
+     "cp": "Gwanumsa E",
+     "km": 40.5,
+     "legacy_median_signed": 10.7,
+     "legacy_mean_abs": 10.4,
+     "current_median_signed": 7.4,
+     "current_mean_abs": 8.8,
+     "curcurve_fitrest_median_signed": 8.6,
+     "curcurve_fitrest_mean_abs": 9.4,
+     "fit_hours_median_signed": 8.5,
+     "fit_hours_mean_abs": 9.4,
+     "fit_general_median_signed": 16.2,
+     "fit_general_mean_abs": 16.2,
+     "fit_general+level_median_signed": 13.3,
+     "fit_general+level_mean_abs": 13.2
+    },
+    {
+     "cp": null,
+     "km": 49.0
+    },
+    {
+     "cp": "Seongpanak",
+     "km": 58.3,
+     "legacy_median_signed": -1.1,
+     "legacy_mean_abs": 11.2,
+     "current_median_signed": -4.8,
+     "current_mean_abs": 11.3,
+     "curcurve_fitrest_median_signed": -2.9,
+     "curcurve_fitrest_mean_abs": 11.3,
+     "fit_hours_median_signed": -2.4,
+     "fit_hours_mean_abs": 11.3,
+     "fit_general_median_signed": 13.5,
+     "fit_general_mean_abs": 17.0,
+     "fit_general+level_median_signed": 6.3,
+     "fit_general+level_mean_abs": 11.0
+    },
+    {
+     "cp": "Red oreum",
+     "km": 66.2,
+     "legacy_median_signed": -13.9,
+     "legacy_mean_abs": 16.8,
+     "current_median_signed": -12.1,
+     "current_mean_abs": 15.9,
+     "curcurve_fitrest_median_signed": -10.1,
+     "curcurve_fitrest_mean_abs": 14.9,
+     "fit_hours_median_signed": -9.6,
+     "fit_hours_mean_abs": 14.6,
+     "fit_general_median_signed": 3.9,
+     "fit_general_mean_abs": 12.3,
+     "fit_general+level_median_signed": -2.5,
+     "fit_general+level_mean_abs": 12.6
+    },
+    {
+     "cp": "Gasiri",
+     "km": 85.4,
+     "legacy_median_signed": -9.7,
+     "legacy_mean_abs": 14.3,
+     "current_median_signed": 0.7,
+     "current_mean_abs": 9.6,
+     "curcurve_fitrest_median_signed": 2.7,
+     "curcurve_fitrest_mean_abs": 10.5,
+     "fit_hours_median_signed": 2.9,
+     "fit_hours_mean_abs": 10.6,
+     "fit_general_median_signed": 11.9,
+     "fit_general_mean_abs": 15.3,
+     "fit_general+level_median_signed": 7.7,
+     "fit_general+level_mean_abs": 12.9
+    },
+    {
+     "cp": "Meochewat ",
+     "km": 102.3,
+     "legacy_median_signed": -11.2,
+     "legacy_mean_abs": 14.5,
+     "current_median_signed": 4.9,
+     "current_mean_abs": 7.2,
+     "curcurve_fitrest_median_signed": 6.4,
+     "curcurve_fitrest_mean_abs": 7.8,
+     "fit_hours_median_signed": 6.1,
+     "fit_hours_mean_abs": 7.7,
+     "fit_general_median_signed": 12.8,
+     "fit_general_mean_abs": 10.9,
+     "fit_general+level_median_signed": 10.2,
+     "fit_general+level_mean_abs": 9.6
+    },
+    {
+     "cp": "Eseungak O",
+     "km": 112.5,
+     "legacy_median_signed": 3.0,
+     "legacy_mean_abs": 7.3,
+     "current_median_signed": 16.8,
+     "current_mean_abs": 15.4,
+     "curcurve_fitrest_median_signed": 17.8,
+     "curcurve_fitrest_mean_abs": 16.4,
+     "fit_hours_median_signed": 17.2,
+     "fit_hours_mean_abs": 15.8,
+     "fit_general_median_signed": 23.7,
+     "fit_general_mean_abs": 22.6,
+     "fit_general+level_median_signed": 21.3,
+     "fit_general+level_mean_abs": 20.1
+    },
+    {
+     "cp": "Camping si",
+     "km": 123.5,
+     "legacy_median_signed": -6.2,
+     "legacy_mean_abs": 10.8,
+     "current_median_signed": 1.9,
+     "current_mean_abs": 5.9,
+     "curcurve_fitrest_median_signed": 2.7,
+     "curcurve_fitrest_mean_abs": 6.3,
+     "fit_hours_median_signed": 2.1,
+     "fit_hours_mean_abs": 6.0,
+     "fit_general_median_signed": 7.9,
+     "fit_general_mean_abs": 8.7,
+     "fit_general+level_median_signed": 5.6,
+     "fit_general+level_mean_abs": 7.7
+    },
+    {
+     "cp": "Healing 2",
+     "km": 133.1,
+     "legacy_median_signed": -0.7,
+     "legacy_mean_abs": 4.7,
+     "current_median_signed": 0.9,
+     "current_mean_abs": 4.7,
+     "curcurve_fitrest_median_signed": 1.4,
+     "curcurve_fitrest_mean_abs": 4.6,
+     "fit_hours_median_signed": 1.0,
+     "fit_hours_mean_abs": 4.7,
+     "fit_general_median_signed": 5.2,
+     "fit_general_mean_abs": 5.1,
+     "fit_general+level_median_signed": 3.5,
+     "fit_general+level_mean_abs": 4.5
+    }
+   ],
+   "mean_abs_gap_legacy": 10.4,
+   "mean_abs_gap_current": 8.0,
+   "mean_abs_gap_curcurve_fitrest": 8.3,
+   "mean_abs_gap_fit_hours": 8.1,
+   "mean_abs_gap_fit_general": 11.3,
+   "mean_abs_gap_fit_general+level": 9.5
+  },
+  "utmb/transjeju_2026/100m": {
+   "race": "utmb/transjeju_2026/100m",
+   "group_h": [
+    16,
+    21
+   ],
+   "runners": 12,
+   "median_finish_h": 19.96,
+   "checkpoints": [
+    {
+     "cp": "Healing 1",
+     "km": 7.2,
+     "legacy_median_signed": 9.1,
+     "legacy_mean_abs": 9.5,
+     "current_median_signed": 3.2,
+     "current_mean_abs": 3.8,
+     "curcurve_fitrest_median_signed": 3.4,
+     "curcurve_fitrest_mean_abs": 4.0,
+     "fit_hours_median_signed": 3.4,
+     "fit_hours_mean_abs": 4.0,
+     "fit_general_median_signed": 3.9,
+     "fit_general_mean_abs": 4.4,
+     "fit_general+level_median_signed": 4.2,
+     "fit_general+level_mean_abs": 4.7
+    },
+    {
+     "cp": "Yeongsil E",
+     "km": 20.3,
+     "legacy_median_signed": 15.5,
+     "legacy_mean_abs": 17.6,
+     "current_median_signed": 3.2,
+     "current_mean_abs": 7.1,
+     "curcurve_fitrest_median_signed": 4.0,
+     "curcurve_fitrest_mean_abs": 7.5,
+     "fit_hours_median_signed": 3.5,
+     "fit_hours_mean_abs": 7.2,
+     "fit_general_median_signed": 6.4,
+     "fit_general_mean_abs": 9.4,
+     "fit_general+level_median_signed": 4.6,
+     "fit_general+level_mean_abs": 8.0
+    },
+    {
+     "cp": "Eorimok En",
+     "km": 28.7,
+     "legacy_median_signed": 12.4,
+     "legacy_mean_abs": 14.2,
+     "current_median_signed": -0.5,
+     "current_mean_abs": 7.8,
+     "curcurve_fitrest_median_signed": 0.6,
+     "curcurve_fitrest_mean_abs": 7.9,
+     "fit_hours_median_signed": 0.4,
+     "fit_hours_mean_abs": 7.8,
+     "fit_general_median_signed": 8.5,
+     "fit_general_mean_abs": 11.3,
+     "fit_general+level_median_signed": 4.1,
+     "fit_general+level_mean_abs": 8.7
+    },
+    {
+     "cp": "Gwanumsa E",
+     "km": 40.8,
+     "legacy_median_signed": 10.3,
+     "legacy_mean_abs": 15.6,
+     "current_median_signed": 4.1,
+     "current_mean_abs": 11.6,
+     "curcurve_fitrest_median_signed": 5.3,
+     "curcurve_fitrest_mean_abs": 12.2,
+     "fit_hours_median_signed": 5.3,
+     "fit_hours_mean_abs": 12.2,
+     "fit_general_median_signed": 12.3,
+     "fit_general_mean_abs": 17.0,
+     "fit_general+level_median_signed": 8.7,
+     "fit_general+level_mean_abs": 14.5
+    },
+    {
+     "cp": null,
+     "km": 49.4
+    },
+    {
+     "cp": "Seongpanak",
+     "km": 58.6,
+     "legacy_median_signed": 0.4,
+     "legacy_mean_abs": 9.7,
+     "current_median_signed": -6.3,
+     "current_mean_abs": 12.1,
+     "curcurve_fitrest_median_signed": -4.4,
+     "curcurve_fitrest_mean_abs": 11.1,
+     "fit_hours_median_signed": -3.9,
+     "fit_hours_mean_abs": 10.8,
+     "fit_general_median_signed": 11.4,
+     "fit_general_mean_abs": 14.6,
+     "fit_general+level_median_signed": 0.9,
+     "fit_general+level_mean_abs": 9.7
+    },
+    {
+     "cp": "Jeongseok Av",
+     "km": 74.3,
+     "legacy_median_signed": -3.4,
+     "legacy_mean_abs": 9.4,
+     "current_median_signed": 0.3,
+     "current_mean_abs": 9.0,
+     "curcurve_fitrest_median_signed": 2.7,
+     "curcurve_fitrest_mean_abs": 9.3,
+     "fit_hours_median_signed": 3.3,
+     "fit_hours_mean_abs": 9.4,
+     "fit_general_median_signed": 14.0,
+     "fit_general_mean_abs": 14.8,
+     "fit_general+level_median_signed": 6.5,
+     "fit_general+level_mean_abs": 9.9
+    },
+    {
+     "cp": "Gasiri",
+     "km": 87.0,
+     "legacy_median_signed": -4.3,
+     "legacy_mean_abs": 10.7,
+     "current_median_signed": 6.4,
+     "current_mean_abs": 11.3,
+     "curcurve_fitrest_median_signed": 8.8,
+     "curcurve_fitrest_mean_abs": 12.0,
+     "fit_hours_median_signed": 9.0,
+     "fit_hours_mean_abs": 12.1,
+     "fit_general_median_signed": 19.1,
+     "fit_general_mean_abs": 19.8,
+     "fit_general+level_median_signed": 12.9,
+     "fit_general+level_mean_abs": 14.3
+    },
+    {
+     "cp": "Meochewat ",
+     "km": 106.7,
+     "legacy_median_signed": -5.3,
+     "legacy_mean_abs": 9.3,
+     "current_median_signed": 12.0,
+     "current_mean_abs": 13.1,
+     "curcurve_fitrest_median_signed": 13.3,
+     "curcurve_fitrest_mean_abs": 14.0,
+     "fit_hours_median_signed": 13.0,
+     "fit_hours_mean_abs": 13.8,
+     "fit_general_median_signed": 20.2,
+     "fit_general_mean_abs": 20.2,
+     "fit_general+level_median_signed": 16.6,
+     "fit_general+level_mean_abs": 17.0
+    },
+    {
+     "cp": "Eseungak O",
+     "km": 116.9,
+     "legacy_median_signed": 6.5,
+     "legacy_mean_abs": 9.7,
+     "current_median_signed": 21.6,
+     "current_mean_abs": 20.2,
+     "curcurve_fitrest_median_signed": 22.7,
+     "curcurve_fitrest_mean_abs": 21.3,
+     "fit_hours_median_signed": 22.0,
+     "fit_hours_mean_abs": 20.6,
+     "fit_general_median_signed": 29.2,
+     "fit_general_mean_abs": 28.1,
+     "fit_general+level_median_signed": 26.0,
+     "fit_general+level_mean_abs": 24.7
+    },
+    {
+     "cp": "Camping si",
+     "km": 127.9,
+     "legacy_median_signed": -8.4,
+     "legacy_mean_abs": 10.2,
+     "current_median_signed": -1.1,
+     "current_mean_abs": 7.3,
+     "curcurve_fitrest_median_signed": -0.4,
+     "curcurve_fitrest_mean_abs": 7.3,
+     "fit_hours_median_signed": -1.1,
+     "fit_hours_mean_abs": 7.3,
+     "fit_general_median_signed": 5.5,
+     "fit_general_mean_abs": 8.8,
+     "fit_general+level_median_signed": 2.2,
+     "fit_general+level_mean_abs": 7.5
+    },
+    {
+     "cp": "Healing 2",
+     "km": 137.4,
+     "legacy_median_signed": -3.4,
+     "legacy_mean_abs": 6.5,
+     "current_median_signed": -2.3,
+     "current_mean_abs": 5.6,
+     "curcurve_fitrest_median_signed": -1.9,
+     "curcurve_fitrest_mean_abs": 5.2,
+     "fit_hours_median_signed": -2.3,
+     "fit_hours_mean_abs": 5.6,
+     "fit_general_median_signed": 2.3,
+     "fit_general_mean_abs": 4.9,
+     "fit_general+level_median_signed": -0.2,
+     "fit_general+level_mean_abs": 4.3
+    }
+   ],
+   "mean_abs_gap_legacy": 11.1,
+   "mean_abs_gap_current": 9.9,
+   "mean_abs_gap_curcurve_fitrest": 10.2,
+   "mean_abs_gap_fit_hours": 10.1,
+   "mean_abs_gap_fit_general": 13.9,
+   "mean_abs_gap_fit_general+level": 11.2
+  }
+ },
+ "prev_edition": {
+  "races": [
+   {
+    "race": "utmb/kullamannen_2024/100M",
+    "prev": "kullamannen_2023",
+    "matched_cps": 2,
+    "of": 14,
+    "12-18h": {
+     "prev": 9.1,
+     "current": 17.0,
+     "fit": 16.1,
+     "blend_current": 12.7,
+     "blend_fit": 12.3
+    },
+    "18-24h": {
+     "prev": 17.7,
+     "current": 22.5,
+     "fit": 22.2,
+     "blend_current": 19.2,
+     "blend_fit": 19.1
+    },
+    "24-30h": {
+     "prev": 19.3,
+     "current": 20.6,
+     "fit": 20.7,
+     "blend_current": 19.7,
+     "blend_fit": 19.7
+    },
+    "30-99h": {
+     "prev": 27.1,
+     "current": 27.3,
+     "fit": 25.9,
+     "blend_current": 27.1,
+     "blend_fit": 26.3
+    }
+   },
+   {
+    "race": "utmb/kullamannen_2024/100k",
+    "prev": "kullamannen_2023",
+    "matched_cps": 2,
+    "of": 8,
+    "0-12h": {
+     "prev": 9.3,
+     "current": 10.4,
+     "fit": 10.0,
+     "blend_current": 9.7,
+     "blend_fit": 9.5
+    },
+    "12-18h": {
+     "prev": 17.4,
+     "current": 18.3,
+     "fit": 18.1,
+     "blend_current": 17.8,
+     "blend_fit": 17.7
+    },
+    "18-24h": {
+     "prev": 21.8,
+     "current": 22.2,
+     "fit": 22.3,
+     "blend_current": 21.8,
+     "blend_fit": 21.9
+    },
+    "24-30h": {
+     "prev": 18.4,
+     "current": 23.1,
+     "fit": 21.9,
+     "blend_current": 20.1,
+     "blend_fit": 19.5
+    }
+   },
+   {
+    "race": "utmb/kullamannen_2024/50k",
+    "prev": "kullamannen_2023",
+    "matched_cps": 1,
+    "of": 6,
+    "0-12h": {
+     "prev": 6.5,
+     "current": 6.4,
+     "fit": 6.5,
+     "blend_current": 6.3,
+     "blend_fit": 6.3
+    }
+   },
+   {
+    "race": "utmb/transjeju_2026/100m",
+    "prev": "transjeju_2025",
+    "matched_cps": 8,
+    "of": 12,
+    "18-24h": {
+     "prev": 12.5,
+     "current": 12.9,
+     "fit": 13.0,
+     "blend_current": 12.1,
+     "blend_fit": 12.3
+    },
+    "24-30h": {
+     "prev": 26.1,
+     "current": 25.5,
+     "fit": 25.4,
+     "blend_current": 25.1,
+     "blend_fit": 25.1
+    },
+    "30-99h": {
+     "prev": 29.1,
+     "current": 32.1,
+     "fit": 31.0,
+     "blend_current": 29.6,
+     "blend_fit": 29.2
+    }
+   },
+   {
+    "race": "utmb/utmb_2023/ccc",
+    "prev": "utmb_2022",
+    "matched_cps": 11,
+    "of": 21,
+    "12-18h": {
+     "prev": 13.3,
+     "current": 12.9,
+     "fit": 12.7,
+     "blend_current": 12.4,
+     "blend_fit": 12.2
+    },
+    "18-24h": {
+     "prev": 16.2,
+     "current": 17.0,
+     "fit": 18.4,
+     "blend_current": 15.4,
+     "blend_fit": 15.9
+    },
+    "24-30h": {
+     "prev": 19.0,
+     "current": 20.9,
+     "fit": 24.3,
+     "blend_current": 19.2,
+     "blend_fit": 20.4
+    }
+   },
+   {
+    "race": "utmb/utmb_2023/utmb",
+    "prev": "utmb_2022",
+    "matched_cps": 22,
+    "of": 35,
+    "18-24h": {
+     "prev": 9.4,
+     "current": 16.7,
+     "fit": 15.9,
+     "blend_current": 12.3,
+     "blend_fit": 11.9
+    },
+    "24-30h": {
+     "prev": 16.1,
+     "current": 20.0,
+     "fit": 19.5,
+     "blend_current": 17.7,
+     "blend_fit": 17.5
+    },
+    "30-99h": {
+     "prev": 28.4,
+     "current": 30.5,
+     "fit": 31.5,
+     "blend_current": 28.2,
+     "blend_fit": 28.4
+    }
+   },
+   {
+    "race": "utmb/utmb_2024/ccc",
+    "prev": "utmb_2023",
+    "matched_cps": 11,
+    "of": 21,
+    "0-12h": {
+     "prev": 10.7,
+     "current": 6.2,
+     "fit": 6.9,
+     "blend_current": 8.4,
+     "blend_fit": 8.8
+    },
+    "12-18h": {
+     "prev": 15.0,
+     "current": 14.8,
+     "fit": 15.6,
+     "blend_current": 14.7,
+     "blend_fit": 15.1
+    },
+    "18-24h": {
+     "prev": 17.8,
+     "current": 19.9,
+     "fit": 21.9,
+     "blend_current": 18.3,
+     "blend_fit": 19.0
+    },
+    "24-30h": {
+     "prev": 21.8,
+     "current": 32.1,
+     "fit": 37.4,
+     "blend_current": 26.3,
+     "blend_fit": 28.7
+    }
+   },
+   {
+    "race": "utmb/utmb_2024/utmb",
+    "prev": "utmb_2023",
+    "matched_cps": 23,
+    "of": 36,
+    "18-24h": {
+     "prev": 12.0,
+     "current": 15.2,
+     "fit": 14.5,
+     "blend_current": 9.4,
+     "blend_fit": 9.5
+    },
+    "24-30h": {
+     "prev": 15.3,
+     "current": 19.1,
+     "fit": 18.9,
+     "blend_current": 14.6,
+     "blend_fit": 14.6
+    },
+    "30-99h": {
+     "prev": 29.6,
+     "current": 35.3,
+     "fit": 36.9,
+     "blend_current": 30.9,
+     "blend_fit": 31.4
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/ccc",
+    "prev": "utmb_2024",
+    "matched_cps": 13,
+    "of": 21,
+    "0-12h": {
+     "prev": 3.7,
+     "current": 4.6,
+     "fit": 4.5,
+     "blend_current": 3.7,
+     "blend_fit": 3.7
+    },
+    "12-18h": {
+     "prev": 14.2,
+     "current": 14.9,
+     "fit": 14.5,
+     "blend_current": 14.4,
+     "blend_fit": 14.1
+    },
+    "18-24h": {
+     "prev": 24.8,
+     "current": 22.9,
+     "fit": 21.3,
+     "blend_current": 23.4,
+     "blend_fit": 22.1
+    },
+    "24-30h": {
+     "prev": 18.7,
+     "current": 18.8,
+     "fit": 20.9,
+     "blend_current": 17.2,
+     "blend_fit": 17.2
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/tds",
+    "prev": "utmb_2024",
+    "matched_cps": 18,
+    "of": 26,
+    "18-24h": {
+     "prev": 13.6,
+     "current": 16.3,
+     "fit": 16.6,
+     "blend_current": 14.2,
+     "blend_fit": 14.3
+    },
+    "24-30h": {
+     "prev": 20.1,
+     "current": 21.5,
+     "fit": 22.0,
+     "blend_current": 19.0,
+     "blend_fit": 19.1
+    },
+    "30-99h": {
+     "prev": 27.4,
+     "current": 36.4,
+     "fit": 36.5,
+     "blend_current": 29.0,
+     "blend_fit": 29.1
+    }
+   },
+   {
+    "race": "utmb/utmb_2025/utmb",
+    "prev": "utmb_2024",
+    "matched_cps": 22,
+    "of": 35,
+    "18-24h": {
+     "prev": 20.7,
+     "current": 27.6,
+     "fit": 27.0,
+     "blend_current": 24.1,
+     "blend_fit": 23.8
+    },
+    "24-30h": {
+     "prev": 21.6,
+     "current": 24.1,
+     "fit": 23.9,
+     "blend_current": 21.8,
+     "blend_fit": 21.8
+    },
+    "30-99h": {
+     "prev": 32.2,
+     "current": 35.4,
+     "fit": 36.7,
+     "blend_current": 31.8,
+     "blend_fit": 32.2
+    }
+   }
+  ],
+  "tot": {
+   "0-12h": {
+    "prev": [
+     495,
+     6.872639131271112
+    ],
+    "current": [
+     495,
+     6.979332162562422
+    ],
+    "fit": [
+     495,
+     6.9657768555184765
+    ],
+    "blend_current": [
+     495,
+     6.799434922400152
+    ],
+    "blend_fit": [
+     495,
+     6.770207550452197
+    ]
+   },
+   "12-18h": {
+    "prev": [
+     411,
+     16.214207431146423
+    ],
+    "current": [
+     411,
+     17.08305819711431
+    ],
+    "fit": [
+     411,
+     16.938224786546577
+    ],
+    "blend_current": [
+     411,
+     16.497479979500767
+    ],
+    "blend_fit": [
+     411,
+     16.401003099146887
+    ]
+   },
+   "18-24h": {
+    "prev": [
+     549,
+     18.548745060221016
+    ],
+    "current": [
+     549,
+     20.41406517026877
+    ],
+    "fit": [
+     549,
+     20.611620321450605
+    ],
+    "blend_current": [
+     549,
+     18.754628890909864
+    ],
+    "blend_fit": [
+     549,
+     18.706042902045095
+    ]
+   },
+   "24-30h": {
+    "prev": [
+     581,
+     20.539945394510774
+    ],
+    "current": [
+     581,
+     22.17882148423357
+    ],
+    "fit": [
+     581,
+     22.565195719572632
+    ],
+    "blend_current": [
+     581,
+     20.622533748716126
+    ],
+    "blend_fit": [
+     581,
+     20.767168736369033
+    ]
+   },
+   "30-99h": {
+    "prev": [
+     1283,
+     29.29555504093286
+    ],
+    "current": [
+     1283,
+     33.764411031630814
+    ],
+    "fit": [
+     1283,
+     34.31907132149684
+    ],
+    "blend_current": [
+     1283,
+     29.82143747190411
+    ],
+    "blend_fit": [
+     1283,
+     29.9917983002832
+    ]
+   },
+   "ALL": {
+    "prev": [
+     3319,
+     21.021139516110075
+    ],
+    "current": [
+     3319,
+     23.46756937447484
+    ],
+    "fit": [
+     3319,
+     23.762337061096957
+    ],
+    "blend_current": [
+     3319,
+     21.297099187625623
+    ],
+    "blend_fit": [
+     3319,
+     21.36393034635123
+    ]
+   }
+  }
+ }
+}

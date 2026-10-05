@@ -33,7 +33,7 @@
   "finishers": 391,
   "checkpoints": 13,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 391
  },
  {
   "tenant": "canyons_2023",
@@ -273,7 +273,19 @@
   "finishers": 163,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 163
+ },
+ {
+  "tenant": "kodiak_2023",
+  "race": "100m",
+  "name": "100M",
+  "date": "2023-10-13",
+  "distance_km": 160.9,
+  "elevation_gain": 5181,
+  "finishers": 148,
+  "checkpoints": 14,
+  "track": false,
+  "runners_sampled": 148
  },
  {
   "tenant": "kodiak_2023",
@@ -285,7 +297,7 @@
   "finishers": 426,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 426
  },
  {
   "tenant": "kodiak_2024",
@@ -345,7 +357,7 @@
   "finishers": 456,
   "checkpoints": 13,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 456
  },
  {
   "tenant": "kosciuszko_2022",
@@ -357,7 +369,19 @@
   "finishers": 508,
   "checkpoints": 9,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 500
+ },
+ {
+  "tenant": "kosciuszko_2022",
+  "race": "miller",
+  "name": "Kosci Miler",
+  "date": "2022-12-15",
+  "distance_km": 164,
+  "elevation_gain": 5185,
+  "finishers": 179,
+  "checkpoints": 24,
+  "track": false,
+  "runners_sampled": 179
  },
  {
   "tenant": "kosciuszko_2023",
@@ -369,7 +393,7 @@
   "finishers": 490,
   "checkpoints": 14,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 490
  },
  {
   "tenant": "kosciuszko_2023",
@@ -381,7 +405,19 @@
   "finishers": 881,
   "checkpoints": 12,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 564
+ },
+ {
+  "tenant": "kosciuszko_2023",
+  "race": "miler",
+  "name": "Kosci Miler",
+  "date": "2023-12-07",
+  "distance_km": 164,
+  "elevation_gain": 5185,
+  "finishers": 160,
+  "checkpoints": 22,
+  "track": false,
+  "runners_sampled": 160
  },
  {
   "tenant": "kosciuszko_2024",
@@ -525,7 +561,19 @@
   "finishers": 1426,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 599
+ },
+ {
+  "tenant": "lavaredo_2022",
+  "race": "LUT",
+  "name": "LAVAREDO ULTRA TRAIL",
+  "date": "2022-06-24",
+  "distance_km": 120,
+  "elevation_gain": 5800,
+  "finishers": 1136,
+  "checkpoints": 18,
+  "track": false,
+  "runners_sampled": 667
  },
  {
   "tenant": "lavaredo_2022",
@@ -537,7 +585,7 @@
   "finishers": 812,
   "checkpoints": 13,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 560
  },
  {
   "tenant": "lavaredo_2023",
@@ -549,7 +597,7 @@
   "finishers": 1405,
   "checkpoints": 8,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 596
  },
  {
   "tenant": "lavaredo_2023",
@@ -621,7 +669,7 @@
   "finishers": 304,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 304
  },
  {
   "tenant": "mountyun_2023",
@@ -633,7 +681,7 @@
   "finishers": 851,
   "checkpoints": 6,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 563
  },
  {
   "tenant": "mountyun_2024",
@@ -645,7 +693,7 @@
   "finishers": 596,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 525
  },
  {
   "tenant": "mountyun_2024",
@@ -657,7 +705,7 @@
   "finishers": 1316,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 592
  },
  {
   "tenant": "mountyun_2025",
@@ -693,7 +741,7 @@
   "finishers": 576,
   "checkpoints": 9,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 520
  },
  {
   "tenant": "mut_2024",
@@ -717,7 +765,19 @@
   "finishers": 252,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 252
+ },
+ {
+  "tenant": "puertovallarta_2022",
+  "race": "100M",
+  "name": "100M Wixárica",
+  "date": "2022-10-28",
+  "distance_km": 180,
+  "elevation_gain": 6450,
+  "finishers": 65,
+  "checkpoints": 19,
+  "track": false,
+  "runners_sampled": 65
  },
  {
   "tenant": "puertovallarta_2022",
@@ -729,7 +789,7 @@
   "finishers": 653,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 534
  },
  {
   "tenant": "puertovallarta_2023",
@@ -741,7 +801,7 @@
   "finishers": 176,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 176
  },
  {
   "tenant": "puertovallarta_2023",
@@ -753,7 +813,7 @@
   "finishers": 384,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 384
  },
  {
   "tenant": "puertovallarta_2024",
@@ -789,7 +849,7 @@
   "finishers": 654,
   "checkpoints": 6,
   "track": true,
-  "runners_sampled": 150
+  "runners_sampled": 535
  },
  {
   "tenant": "puglia_2025",
@@ -801,7 +861,19 @@
   "finishers": 439,
   "checkpoints": 10,
   "track": true,
-  "runners_sampled": 150
+  "runners_sampled": 439
+ },
+ {
+  "tenant": "puglia_2025",
+  "race": "SDM140",
+  "name": "I Sassi di Matera 140km",
+  "date": "2025-11-07",
+  "distance_km": 144,
+  "elevation_gain": 3800,
+  "finishers": 142,
+  "checkpoints": 14,
+  "track": true,
+  "runners_sampled": 142
  },
  {
   "tenant": "tarawera_2023",
@@ -813,7 +885,7 @@
   "finishers": 680,
   "checkpoints": 12,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 540
  },
  {
   "tenant": "tarawera_2023",
@@ -825,7 +897,19 @@
   "finishers": 1465,
   "checkpoints": 7,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 599
+ },
+ {
+  "tenant": "tarawera_2023",
+  "race": "miler",
+  "name": "TUM Miler",
+  "date": "2023-02-10",
+  "distance_km": 165.2,
+  "elevation_gain": 5470,
+  "finishers": 351,
+  "checkpoints": 18,
+  "track": false,
+  "runners_sampled": 351
  },
  {
   "tenant": "tarawera_2024",
@@ -837,7 +921,7 @@
   "finishers": 645,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 534
  },
  {
   "tenant": "tarawera_2024",
@@ -849,7 +933,19 @@
   "finishers": 1545,
   "checkpoints": 8,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 601
+ },
+ {
+  "tenant": "tarawera_2024",
+  "race": "miler",
+  "name": "TMiler",
+  "date": "2024-02-16",
+  "distance_km": 165.2,
+  "elevation_gain": 5470,
+  "finishers": 330,
+  "checkpoints": 12,
+  "track": false,
+  "runners_sampled": 330
  },
  {
   "tenant": "tarawera_2025",
@@ -897,7 +993,19 @@
   "finishers": 2125,
   "checkpoints": 18,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 614
+ },
+ {
+  "tenant": "templiers_2022",
+  "race": "endur",
+  "name": "Endurance Trail",
+  "date": "2022-10-21",
+  "distance_km": 104.6,
+  "elevation_gain": 4550,
+  "finishers": 809,
+  "checkpoints": 19,
+  "track": false,
+  "runners_sampled": 615
  },
  {
   "tenant": "templiers_2022",
@@ -1077,7 +1185,7 @@
   "finishers": 1142,
   "checkpoints": 6,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 586
  },
  {
   "tenant": "transjeju_2024",
@@ -1116,6 +1224,18 @@
   "runners_sampled": 150
  },
  {
+  "tenant": "transjeju_2026",
+  "race": "100m",
+  "name": "Jeju100M",
+  "date": "2026-10-02",
+  "distance_km": 148,
+  "elevation_gain": 5000,
+  "finishers": 364,
+  "checkpoints": 14,
+  "track": true,
+  "runners_sampled": 364
+ },
+ {
   "tenant": "translantau_2022",
   "race": "TL100",
   "name": "TransLantau 104",
@@ -1125,7 +1245,7 @@
   "finishers": 424,
   "checkpoints": 11,
   "track": false,
-  "runners_sampled": 150
+  "runners_sampled": 424
  },
  {
   "tenant": "translantau_2022",
@@ -1150,6 +1270,18 @@
   "checkpoints": 12,
   "track": false,
   "runners_sampled": 150
+ },
+ {
+  "tenant": "translantau_2023",
+  "race": "TL140",
+  "name": "TransLantau 140",
+  "date": "2023-11-10",
+  "distance_km": 129,
+  "elevation_gain": 6700,
+  "finishers": 244,
+  "checkpoints": 15,
+  "track": false,
+  "runners_sampled": 244
  },
  {
   "tenant": "translantau_2023",

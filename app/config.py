@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     SURFACE_FETCH: bool = True
     # COROS: whether syncs may run in the background (off in tests)
     COROS_SYNC: bool = True
+    # Bike and triathlon planning: hidden for now (code kept, routes and data untouched)
+    CYCLING_ENABLED: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
