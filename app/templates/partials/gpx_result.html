@@ -7,9 +7,11 @@
 <div id="glyph-registry-lg" hidden>
     {% for k in ["none","water","full","base","crew","bag","pin"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
 </div>
-{% set tgt = saved_target_time_s if saved_target_time_s is defined and saved_target_time_s else course.predicted_total_time_s %}
+{# every time on this page is rounded to the minute the way the script does it (fmtHM): one estimate, one number #}
+{% set est_s = ((course.predicted_total_time_s + 30) // 60 * 60) | int %}
+{% set tgt = (((saved_target_time_s + 30) // 60 * 60) | int) if saved_target_time_s is defined and saved_target_time_s else est_s %}
 {% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
-{% set hero_s = saved_target_time_s if has_obj else course.predicted_total_time_s %}
+{% set hero_s = tgt if has_obj else est_s %}
 {% set has_data = profile is defined and profile and profile.data_points and profile.data_points > 0 %}
 {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
 {% set sm = saved_start_minute if saved_start_minute is not none else 0 %}
@@ -17,7 +19,7 @@
 {# the debrief: main button once the race is run, in the menu when undated or on race day, nowhere before #}
 {% set dmode = 'primary' if (compare_activity_id is defined and compare_activity_id) else (debrief_mode if debrief_mode is defined else none) %}
 {% set deb_primary = dmode == 'primary' and saved_route_id %}
-{% set est_hm = '%dh%02d'|format(course.predicted_total_time_s // 3600, (course.predicted_total_time_s % 3600) // 60) %}
+{% set est_hm = '%dh%02d'|format(est_s // 3600, (est_s % 3600) // 60) %}
 <div id="simulator-root" class="pf-plan">
 
     {# ── title: name, then date · start · km · D+ as plain text (edited in « Nom, date et départ ») ── #}
@@ -25,12 +27,12 @@
         <div class="min-w-0 flex-1">
             <h1 id="race-name" class="pf-h1-plan">{{ saved_route_name | default(course.name) }}</h1>
             <p id="save-status" class="pf-save-err hidden" data-state="saved"></p>
-            <p class="pf-meta tabular-nums">
-                <span id="meta-when" class="pf-meta-when{% if not has_date %} hidden{% endif %}"><span id="meta-date">{{ race_date_label if race_date_label is defined else '' }}</span><span class="pf-sep">·</span><span id="meta-start">{{ start_label if start_label is defined else '%02d:%02d'|format(sh, sm) }}</span><span class="pf-sep">·</span></span>
+            {# each item carries its own « · » before it; the one that starts a line is clipped (no dot left hanging at a line end) #}
+            <div class="pf-meta"><p class="pf-meta-in tabular-nums">
+                <span id="meta-when" class="pf-meta-when{% if not has_date %} hidden{% endif %}"><span id="meta-date">{{ race_date_label if race_date_label is defined else '' }}</span><span id="meta-start">{{ start_label if start_label is defined else '%02d:%02d'|format(sh, sm) }}</span></span>
                 <span>{{ ('%.1f'|format(course.total_distance_km)).replace('.', ',') }} km</span>
-                <span class="pf-sep">·</span>
                 <span title="−{{ '{:,}'.format(course.total_elevation_loss|int).replace(',', ' ') }} m de descente">{{ '{:,}'.format(course.total_elevation_gain|int).replace(',', ' ') }} m D+</span>
-            </p>
+            </p></div>
             <button type="button" id="date-pill" class="pf-date-pill{% if has_date %} hidden{% endif %}" onclick="window._sim && window._sim.openRaceSheet()">{{ ic.icon('calendar', 'w-4 h-4') }}Ajoute la date et l'heure de départ</button>
         </div>
         <details class="relative shrink-0" id="plan-more">
@@ -62,7 +64,7 @@
             <div class="pf-label" id="hero-label">{% if has_obj %}Objectif{% else %}Estimation{% endif %}</div>
             <button id="hero-time" type="button" onclick="window._sim && window._sim.heroEdit()" aria-label="{% if has_obj %}Modifier l'objectif{% else %}Fixer un objectif{% endif %}" class="pf-hero-btn"><span id="hero-num" class="pf-big pf-hero-num">{{ '%dh%02d'|format(hero_s // 3600, (hero_s % 3600) // 60) }}</span>{{ ic.icon('pencil', 'pf-hero-pen', '2.2') }}</button>
             <span id="hero-edit" class="hidden items-baseline pf-big pf-hero-num">
-                <input type="number" id="target-h" min="0" max="99" value="{{ (tgt // 3600) }}" aria-label="Objectif, heures" class="sim-num pf-hero-in w-[2ch] text-right">h<input type="number" id="target-m" min="0" max="59" value="{{ ((tgt % 3600) // 60) }}" aria-label="Objectif, minutes" class="sim-num pf-hero-in w-[2ch]">
+                <input type="number" id="target-h" min="0" max="99" value="{{ tgt // 3600 }}" aria-label="Objectif, heures" class="sim-num pf-hero-in w-[2ch] text-right">h<input type="number" id="target-m" min="0" max="59" value="{{ '%02d'|format((tgt % 3600) // 60) }}" aria-label="Objectif, minutes" class="sim-num pf-hero-in w-[2ch]">
             </span>
             <div id="obj-panel" class="pf-objpanel hidden">
                 <div class="relative w-full h-6 flex items-center">
@@ -72,7 +74,7 @@
                 </div>
                 <div class="pf-objline">
                     <span id="obj-est-line">Ton estimation : <b class="tabular-nums">{{ est_hm }}</b><span id="obj-reset"{% if not has_obj %} class="hidden"{% endif %}> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="pf-objlink">Revenir à l'estimation</button></span></span>
-                    <button type="button" class="pf-objok" onclick="window._sim && window._sim.heroClose(true)">OK</button>
+                    <button type="button" class="pf-objok" onclick="window._sim && window._sim.heroClose(true, true)">OK</button>
                 </div>
                 <div id="scn-wrap" class="pf-scnwrap hidden">
                     <div class="pf-label">Plan affiché</div>
@@ -85,7 +87,8 @@
             </div>
             <p class="pf-arr"><span class="pf-arr-l">Arrivée</span><b id="hero-arrival" class="pf-arr-v">—</b><span id="hero-verdict" class="pf-arr-pill"></span></p>
         </div>
-        <p id="heat-line" class="pf-heat hidden"></p>
+        {# the forecast heat matters before the race, not once it is run #}
+        {% if not deb_primary %}<p id="heat-line" class="pf-heat hidden"></p>{% endif %}
         <div class="pf-plan-actions">
             {% if deb_primary %}
             <button type="button" id="rtab-realise" data-primary-debrief onclick="window.switchRouteTab && window.switchRouteTab('realise')" class="pf-btn pf-btn-primary">{{ ic.icon('chart') }}Voir le débrief</button>
@@ -176,7 +179,8 @@
                     <span class="{{ lbl }}">D'où vient l'estimation</span>
                     {% if race_calibration is defined and race_calibration %}
                     {% set rc = race_calibration %}
-                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc.total_s // 3600, (rc.total_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc.training_total_s // 3600, (rc.training_total_s % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
+                    {% set rc_s = ((rc.total_s + 30) // 60 * 60) | int %}{% set rc_t = ((rc.training_total_s + 30) // 60 * 60) | int %}
+                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc_s // 3600, (rc_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc_t // 3600, (rc_t % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
                     {% set skipped = rc.ignored|default([])|selectattr('why', 'in', ["relais", "course d'un triathlon", "abandon"])|list %}
                     <p class="mt-1 text-gray-500">Tes courses récentes comptent plus que les anciennes.{% if rc.dplus_same_ruler %} Le D+ de tes courses est mesuré comme celui de ce parcours.{% endif %}{% if skipped %} Pas prises en compte : {% for r in skipped[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %} (relais, triathlon ou abandon).{% endif %}</p>
                     {% elif has_data %}
@@ -338,7 +342,7 @@ window._sim = {};
         map.on('mouseout', function() { if (hoverMarker) hoverMarker.getElement().style.display = 'none'; clearChart(); });
         map.on('webglcontextlost', function () { try { el.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-500">Carte interrompue par le navigateur · <button type="button" class="underline ml-1" onclick="window._sim.reopenMap()">recharger</button></div>'; } catch (e) {} map = null; cpMarkerEls = []; hoverMarker = null; });
     }
-    function reopenMap() { cleanup(); toggleMap(true); }
+    function reopenMap() { if (map) { try { map.remove(); } catch (e) {} map = null; } hoverMarker = null; cpMarkerEls = []; if (mapOpen()) mountMap(); else toggleMap(true); }
     function applyTerrain(on, animate) {
         if (!map || !map.getSource || !map.getSource('dem')) return;
         try {
@@ -366,6 +370,7 @@ window._sim = {};
     }
     function flyNow(i) {
         var cp = checkpoints[i], c = cp ? findCoordAtKm(cp.distance_km) : null; if (!c || !map) return;
+        cpMarkerEls.forEach(function (m) { var pp = m.getPopup(); if (pp && pp.isOpen()) m.togglePopup(); });  // one popup at a time
         map.flyTo({ center: [c[1], c[0]], zoom: Math.max(map.getZoom(), 12.5), duration: 900 });
         setTimeout(function () { if (cpMarkerEls[i] && !cpMarkerEls[i].getPopup().isOpen()) cpMarkerEls[i].togglePopup(); }, 950);
     }
@@ -381,18 +386,40 @@ window._sim = {};
     }
     // the map is never inline: an overlay, full screen on the phone, a centred modal on desktop; always closed on load
     function mapOpen() { var w = document.getElementById('map-wrap'); return !!w && !w.classList.contains('hidden'); }
+    var mapOpener = null;  // the chip or « Voir sur la carte » that opened the map: focus goes back to it on close
     function toggleMap(force) {
         var wrap = document.getElementById('map-wrap'); if (!wrap) return;
         var show = (force === undefined) ? wrap.classList.contains('hidden') : !!force;
         if (show && !wrap.classList.contains('hidden')) return;
+        if (!show && wrap.classList.contains('hidden')) return;
+        if (show) { var ae = document.activeElement; mapOpener = (ae && ae !== document.body && !wrap.contains(ae)) ? ae : null; }
         wrap.classList.toggle('hidden', !show);
         document.body.style.overflow = show ? 'hidden' : '';
-        if (!show) { pendingFly = null; if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; } return; }
+        if (!show) {
+            pendingFly = null;
+            if (isCompact() && map) { try { map.remove(); } catch (e) {} map = null; hoverMarker = null; cpMarkerEls = []; }
+            var op = mapOpener; mapOpener = null;
+            if (op && document.contains(op) && op.offsetParent !== null) { try { op.focus({ preventScroll: true }); } catch (e) {} }
+            return;
+        }
         setTimeout(function () { var x = wrap.querySelector('.pf-mapov-x'); if (x) { try { x.focus({ preventScroll: true }); } catch (e) {} } }, 30);
         if (!map) {
             if (!window.maplibregl) { loadMapLib(function () { if (window.maplibregl) mountMap(); else document.getElementById('courseMap').innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400">Carte indisponible (script non chargé)</div>'; }); return; }
             mountMap();
-        } else { setTimeout(function () { try { map.resize(); } catch (e) {} }, 0); }
+        } else {
+            // closed, the map fell back to a default-size canvas: size it to the panel now, before any flyTo centres on a point
+            try { map.resize(); } catch (e) {}
+        }
+    }
+    // the open map keeps the keyboard: Tab cycles inside the panel
+    function trapMapTab(ev) {
+        var panel = document.querySelector('#map-wrap .pf-mapov-panel'); if (!panel) return;
+        var f = Array.prototype.filter.call(panel.querySelectorAll('button, [href], input, select, [tabindex]:not([tabindex="-1"])'), function (el) { return !el.disabled && el.offsetParent !== null; });
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1], ae = document.activeElement;
+        if (!panel.contains(ae)) { ev.preventDefault(); first.focus(); }
+        else if (ev.shiftKey && ae === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && ae === last) { ev.preventDefault(); first.focus(); }
     }
     // the map is built once its script is here and the panel is still open
     function mountMap() {
@@ -441,7 +468,8 @@ window._sim = {};
         el.innerHTML = '';
         var w = el.clientWidth || 800, h = el.clientHeight || 200, compact = w < 640;
         // no altitude axis, no gridlines: the line, the night, the points. A ~34 px band on top holds the night label and the Carte chip
-        prof.w = w; prof.h = h; prof.compact = compact; prof.padL = 6; prof.padR = compact ? 6 : 8;
+        // flush left with the title and the rows (no point sits at km 0); the right pad keeps the finish dot whole
+        prof.w = w; prof.h = h; prof.compact = compact; prof.padL = 0; prof.padR = compact ? 6 : 8;
         prof.twoRows = false; prof.padT = 34; prof.padB = compact ? 20 : 22;
         var minE = Infinity, maxE = -Infinity;
         for (var i = 0; i < elevData.length; i++) { var e = elevData[i].elevation; if (e < minE) minE = e; if (e > maxE) maxE = e; }
@@ -456,8 +484,8 @@ window._sim = {};
         var axis = mk('g', {}), totX = xOf(totalDistKm);
         var axLabel = function (x, text, anchor) { var t = mk('text', { x: x, y: base + 14, 'text-anchor': anchor, 'class': 'pfp-ax' }); t.textContent = text; axis.appendChild(t); };
         axLabel(prof.padL, '0', 'start');
-        for (var k = stepKm; k < totalDistKm; k += stepKm) { if (totX - xOf(k) < 44) break; axLabel(xOf(k), String(k), 'middle'); }
-        axLabel(totX, Math.round(totalDistKm) + ' km', 'end');
+        for (var k = stepKm; k < totalDistKm; k += stepKm) { if (totX - xOf(k) < 56) break; axLabel(xOf(k), String(k), 'middle'); }
+        axLabel(totX, fmtKm(totalDistKm).replace(/,0$/, '') + ' km', 'end');  // the same distance as the meta line: 145,6 km
         svg.appendChild(axis);
         var step = Math.max(1, Math.floor(elevData.length / 400)), pts = [];
         for (i = 0; i < elevData.length; i += step) pts.push(elevData[i]);
@@ -601,14 +629,22 @@ window._sim = {};
         var base = prof.h - prof.padB;
         [prof.nightLayer, prof.autoLayer, prof.switchLayer, prof.cpLayer].forEach(function (l) { while (l.firstChild) l.removeChild(l.firstChild); });
         if (planData) {
-            // night: a soft band behind the ground, up into the top band where its label sits (left), clear of the Carte chip (right)
+            // night: a soft band behind the ground, up into the top band where its label sits (left), clear of the Carte chip (right).
+            // A band that starts under the chip (a night at the end of the race) carries its label inside, just under the top band: never unlabelled.
             var chipX = prof.w - 96;
             planData.night.forEach(function (b) {
-                var x0 = xOf(b.start_km), x1 = xOf(b.end_km);
-                prof.nightLayer.appendChild(mk('rect', { x: x0, y: 0, width: Math.max(1, x1 - x0), height: base, 'class': 'pfp-night' }));
-                var c0 = clockAtKm(b.start_km), c1 = clockAtKm(b.end_km), room = Math.min(x1, chipX) - x0 - 10;
-                var label = (room >= 120 && c0 !== null && c1 !== null) ? 'Nuit · ' + fmtClock(c0) + ' → ' + fmtClock(c1) : (room >= 34 ? 'Nuit' : '');
-                if (label) { var t = mk('text', { x: x0 + 7, y: 21, 'text-anchor': 'start', 'class': 'pfp-nightlbl' }); t.textContent = label; prof.nightLayer.appendChild(t); }
+                var x0 = xOf(b.start_km), x1 = xOf(b.end_km), bw = x1 - x0;
+                prof.nightLayer.appendChild(mk('rect', { x: x0, y: 0, width: Math.max(1, bw), height: base, 'class': 'pfp-night' }));
+                var c0 = clockAtKm(b.start_km), c1 = clockAtKm(b.end_km), full = (c0 !== null && c1 !== null) ? 'Nuit · ' + fmtClock(c0) + ' → ' + fmtClock(c1) : 'Nuit';
+                var room = Math.min(x1, chipX) - x0 - 10, t;
+                if (room >= 34) { t = mk('text', { x: x0 + 7, y: 21, 'text-anchor': 'start', 'class': 'pfp-nightlbl' }); t.textContent = room >= 120 ? full : 'Nuit'; }
+                else {
+                    var inner = bw - 12, txt = inner >= 120 ? full : 'Nuit';
+                    // narrow band: right-aligned on its end, spilling left if it must
+                    t = inner >= 26 ? mk('text', { x: x0 + 6, y: prof.padT + 12, 'text-anchor': 'start', 'class': 'pfp-nightlbl pfp-nightin' }) : mk('text', { x: x1 - 4, y: prof.padT + 12, 'text-anchor': 'end', 'class': 'pfp-nightlbl pfp-nightin' });
+                    t.textContent = txt;
+                }
+                prof.nightLayer.appendChild(t);
             });
         }
         // the open point: a dotted line down to the axis and a soft ring
@@ -996,22 +1032,28 @@ window._sim = {};
         });
         guard.addEventListener('pointercancel', function () { g = null; });
     })();
+    // heroPrev: the objective last committed (on opening, then by the slider or « Revenir à l'estimation » while open)
     var heroPrev = null;
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function heroOpen() { var e = document.getElementById('hero-edit'); return !!e && !e.classList.contains('hidden'); }
     function heroEdit() {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
-        heroPrev = { h: th.value, m: document.getElementById('target-m').value };
+        heroPrev = { h: parseInt(th.value, 10) || 0, m: parseInt(document.getElementById('target-m').value, 10) || 0 };
         b.classList.add('hidden'); e.classList.remove('hidden'); e.classList.add('inline-flex');
         var op = document.getElementById('obj-panel'); if (op) { op.classList.remove('hidden'); syncSlider(); }
         try { th.focus(); th.select(); } catch (err) {}
     }
-    function heroClose(commit) {
+    // commit: keep what is typed (else back to the last committed value); refocus: the number button gets the focus back (keyboard, OK)
+    function heroClose(commit, refocus) {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'); if (!e || e.classList.contains('hidden')) return;
         e.classList.add('hidden'); e.classList.remove('inline-flex'); b.classList.remove('hidden');
         var op = document.getElementById('obj-panel'); if (op) op.classList.add('hidden');
         var th = document.getElementById('target-h'), tm = document.getElementById('target-m');
         var h = parseInt(th.value, 10), m = parseInt(tm.value, 10), valid = !isNaN(h) && h >= 0 && h < 100 && (tm.value === '' || (!isNaN(m) && m >= 0 && m < 60)) && (h > 0 || m > 0);
-        if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = m; if (!heroPrev || String(h) !== String(heroPrev.h) || String(m) !== String(heroPrev.m)) setTarget(h, m); }
-        else if (heroPrev) { th.value = heroPrev.h; tm.value = heroPrev.m; }
+        if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = pad2(m); if (!heroPrev || h !== heroPrev.h || m !== heroPrev.m) setTarget(h, m); }
+        else if (heroPrev) { th.value = heroPrev.h; tm.value = pad2(heroPrev.m); }
+        heroPrev = null;
+        if (refocus) { try { b.focus({ preventScroll: true }); } catch (err) {} }
     }
 
     // ── SAVE ──
@@ -1050,7 +1092,12 @@ window._sim = {};
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
     // ── START / OBJECTIVE / PASSAGE ──
-    function setTarget(h, m) { h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59; document.getElementById('target-h').value = h; document.getElementById('target-m').value = m; recalc(); scheduleSave(); }
+    function setTarget(h, m) {
+        h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59;
+        document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m);
+        if (heroOpen()) heroPrev = { h: h, m: m };  // committed while the editor is open: a later OK or Escape compares with this one
+        recalc(); scheduleSave();
+    }
     function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
     function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; startVal = v; var el = document.getElementById('start-time'); if (el) el.value = v; updateMeta(); recalc(); scheduleSave(); }
     function setPassage(cpIndex, km, clock) { if (!clock || !/^\d{2}:\d{2}$/.test(clock)) return; var cp = checkpoints[cpIndex]; liveAnchor = { anchor_km: km, anchor_clock: clock, anchor_name: cp ? cp.name : ('km ' + km) }; recalc(); persistLive(); }
@@ -1179,7 +1226,9 @@ window._sim = {};
         var t = document.getElementById('hero-num'); if (t) t.textContent = fmtHM(total);
         var lab = document.getElementById('hero-label'); if (lab) lab.textContent = real ? 'Objectif' : pins ? 'Avec tes heures fixées' : 'Estimation';
         var hb = document.getElementById('hero-time'); if (hb) hb.setAttribute('aria-label', real ? 'Modifier l\'objectif' : 'Fixer un objectif');
-        var rs = document.getElementById('obj-reset'); if (rs) rs.classList.toggle('hidden', !real);
+        var rs = document.getElementById('obj-reset');
+        if (rs) { if (!real && rs.contains(document.activeElement)) { try { document.getElementById('target-h').focus({ preventScroll: true }); } catch (e) {} } rs.classList.toggle('hidden', !real); }
+        var eb = document.querySelector('#obj-est-line b'); if (eb) eb.textContent = fmtHM(predictedTotalS);  // the same estimate as the tick and the reset
         // arrival: always the objective's (Cible's) finish; the plan shown only moves the list and the profile
         var arr = document.getElementById('hero-arrival');
         var finAbs = planData && planData.points.length ? planData.points[planData.points.length - 1].clock_s : null;
@@ -1290,7 +1339,10 @@ window._sim = {};
     var menu = document.querySelector('#plan-more .pf-menu');
     if (menu) menu.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('button, label')) setTimeout(closeMenus, 0); });
     document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Tab' && mapOpen()) { trapMapTab(ev); return; }
         if (ev.key !== 'Escape') return;
+        // the objective editor closes from any of its controls (inputs, slider, estimate line, « Plan affiché »)
+        if (heroOpen()) { ev.preventDefault(); heroClose(false, true); }
         closeMenus(); closeSheet(); closeExport(); closeRaceSheet(); closeSettings();
         if (mapOpen()) toggleMap(false);
     });
@@ -1311,14 +1363,22 @@ window._sim = {};
     });
     var he = document.getElementById('hero-edit');
     if (he) {
-        he.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); heroClose(true); } else if (ev.key === 'Escape') { ev.preventDefault(); heroClose(false); } });
-        // the slider, the estimate line and « Plan affiché » belong to the same edit: leaving the inputs for them keeps it open
-        var op = document.getElementById('obj-panel'), opPress = false;
-        if (op) { op.addEventListener('pointerdown', function () { opPress = true; setTimeout(function () { opPress = false; }, 600); }); }
-        var maybeClose = function () { setTimeout(function () { var ae = document.activeElement; if (opPress || he.contains(ae) || (op && op.contains(ae))) return; heroClose(true); }, 0); };
+        he.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); heroClose(true, true); } });  // Escape: the page's handler
+        // the slider, the estimate line and « Plan affiché » belong to the same edit: moving between them keeps it open
+        var op = document.getElementById('obj-panel');
+        var inEditor = function (t) { return !!t && t.nodeType === 1 && (he.contains(t) || (op && op.contains(t)) || !!(t.closest && t.closest('#hero-time'))); };
+        // a press elsewhere closes the editor on the click that follows, once that click has done its own job:
+        // closing on the press itself moved the page up under the pointer and the click landed somewhere else
+        var pressing = false;
+        document.addEventListener('pointerdown', function () { pressing = heroOpen(); }, true);
+        document.addEventListener('pointerup', function () { setTimeout(function () { pressing = false; }, 0); }, true);
+        document.addEventListener('pointercancel', function () { pressing = false; }, true);
+        document.addEventListener('click', function (ev) { if (!heroOpen() || inEditor(ev.target)) return; heroClose(true); });
+        // the keyboard: tabbing out of the editor closes it (a press is left to its click, above)
+        // (focus that simply drops to the page, as when « Revenir à l'estimation » hides itself, is not leaving)
+        var maybeClose = function () { setTimeout(function () { var ae = document.activeElement; if (pressing || !heroOpen() || !ae || ae === document.body || inEditor(ae)) return; heroClose(true); }, 0); };
         he.addEventListener('focusout', maybeClose);
         if (op) op.addEventListener('focusout', maybeClose);
-        document.addEventListener('pointerdown', function (ev) { if (he.classList.contains('hidden')) return; var t = ev.target; if (he.contains(t) || (op && op.contains(t)) || (t.closest && t.closest('#hero-time'))) return; heroClose(true); });
     }
     var st = document.getElementById('start-time');
     if (st) st.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); saveRaceSheet(); } });

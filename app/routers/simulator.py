@@ -712,8 +712,12 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
 
         w = route.weather_json or {}
         live = route.live_json or {}
+        # No objective: the plan runs on the estimate, to the minute, exactly as the page's own recalculations
+        # do (they send the objective field, which then holds the estimate). The first render and the next
+        # ones agree, and the hero's « Estimation » plus the start gives the arrival shown under it.
+        table_target = route.target_time_s or (int((course.predicted_total_time_s + 30) // 60) * 60 if course.predicted_total_time_s else None)
         tctx = await _passage_table_context(
-            db, user_id, CourseProfile(**route.course_json), [normalize_checkpoint(c) for c in cps], route.target_time_s,
+            db, user_id, CourseProfile(**route.course_json), [normalize_checkpoint(c) for c in cps], table_target,
             float(w.get("heat_factor") or 1.0), route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
             w.get("hourly"), route, route.stop_minutes, live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
         )

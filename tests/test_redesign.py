@@ -162,6 +162,50 @@ async def test_title_and_meta_are_plain_french_text(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_meta_line_wraps_without_a_hanging_dot(as_user: AsyncClient):
+    rid = await _route(as_user, race_date="2099-10-17")
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    head = html.split('class="pf-plan-title"')[1].split('id="plan-more"')[0]
+    # no separator elements: each item draws its own « · » before it, and the one that starts a line is clipped
+    assert "pf-sep" not in head and "·" not in _visible(head)
+    meta = head.split('class="pf-meta"')[1].split("</div>")[0]
+    items = [i.strip() for i in re.findall(r">([^<>]+)</span>", meta)]
+    assert items[:2] == ["sam. 17 oct. 2099", "21:00"] and len(items) == 4
+    assert items[2].endswith(" km") and items[3].endswith(" m D+")
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    assert re.search(r"\.pf-meta \{ overflow: hidden;", css) and re.search(r"\.pf-meta-in \{[^}]*margin-left: -16px;", css)
+    assert re.search(r'::before \{ content: "·"; display: inline-block; width: 16px;', css)
+
+
+@pytest.mark.asyncio
+async def test_without_objective_one_estimate_and_the_arrival_follows_it(as_user: AsyncClient):
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Sans objectif",
+        "race_date": "", "start_hour": 21, "start_minute": 0, "sport_type": "trail", "stop_minutes": 3,
+    })
+    rid = r.json()["id"]
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    hero = re.search(r'id="hero-num"[^>]*>(\d+)h(\d\d)<', html).groups()
+    # the editor says the same estimate, its inputs hold it (minutes on two digits)
+    assert re.search(r'Ton estimation : <b[^>]*>(\d+)h(\d\d)</b>', html).groups() == hero
+    th = re.search(r'id="target-h"[^>]*value="(\d+)"', html).group(1)
+    tm = re.search(r'id="target-m"[^>]*value="(\d+)"', html).group(1)
+    assert (th, tm) == hero and len(tm) == 2
+    # the first table already runs on that estimate, stops included: start + number = arrival
+    # (the page's own recalculations send the same value, so nothing jumps once it loads)
+    plan = json.loads(html.split('id="plan-data">')[1].split("</script>")[0])
+    assert plan["plan_total_s"] == int(hero[0]) * 3600 + int(hero[1]) * 60
+    # every time on the page is rounded the way the script's fmtHM rounds (no 20h06 beside 20h07)
+    gpx = (ROOT / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
+    assert "(course.predicted_total_time_s + 30) // 60 * 60" in gpx and "rc.total_s + 30" in gpx
+
+
+def test_phone_anti_zoom_rule_spares_the_objective_inputs():
+    route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
+    assert "#simulator-root input:not(.pf-hero-in), #simulator-root select { font-size: 16px; }" in route
+
+
+@pytest.mark.asyncio
 async def test_missing_date_shows_the_pill_instead_of_date_and_start(as_user: AsyncClient):
     rid = await _route(as_user, race_date="")
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
@@ -213,6 +257,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date='2020-10-02')}")).text
     assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
     assert _surface(html).count("pf-btn-primary") == 1
+    assert 'id="heat-line"' not in html  # the forecast heat is for before the race
     assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable", "Finisher de référence",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
@@ -274,7 +319,7 @@ async def test_an_opened_row_has_the_leg_three_tiles_one_line_of_facts_and_two_a
     assert ">FC max<" in det and ">glucides<" in det and ">eau<" in det and "conseillés" not in det
     assert re.search(r"Ravito · assistance · arrêt 3 min · barrière 10:30 · marge [+−]\d+h\d\d", text), text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
-    assert "Drop bag ici" in det
+    assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »
     actions = re.findall(r"<button[^>]*>([^<]+)</button>", det.split('class="pf-det-actions"')[1])
     assert actions == ["Modifier ce point", "Voir sur la carte"]
     assert "openSheet(1)" in det and "flyToCp(1)" in det
@@ -300,10 +345,13 @@ async def test_a_close_or_missed_cutoff_shows_on_the_closed_row(as_user: AsyncCl
         s %= 86400
         return "%02d:%02d" % (s // 3600, s % 3600 // 60)
 
-    # 30 min ahead: amber, on the closed row
+    # 30 min ahead: amber, on the closed row (on the phone on its own line under the km: never cut by the ellipsis)
     cps[0]["cutoff_clock"] = hhmm(clk + 30 * 60)
     head = _heads(await _rows(as_user, rid, cps))[0]
     assert f"barrière {hhmm(clk + 30 * 60)} · marge 30 min" in head and "text-warn" in head and "text-danger" not in head
+    assert re.search(r'class="pf-bar-m text-warn">barrière', head)  # no leading « · » before it
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    assert ".pf-bar-m { display: block;" in css and ".pf-prow.is-open :is(.pf-bar-m, .pf-bar-d) { display: none; }" in css
     # missed by 15 min: red, and the clock too
     cps[0]["cutoff_clock"] = hhmm(clk - 15 * 60)
     head = _heads(await _rows(as_user, rid, cps))[0]
