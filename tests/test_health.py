@@ -97,8 +97,20 @@ def test_compute_form_statuses():
     assert young["status"] == "unknown" and young["days_of_data"] == 12
 
 
-async def test_current_form_and_dashboard_card(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    r = await as_user.get("/activities")
+def test_sleep_average_shows_from_one_night():
+    """It used to need 3 nights: an athlete with 2 nights this week read
+    "Sommeil — · pas de mesure cette semaine" (the owner's case)."""
+    today = date(2026, 10, 5)
+    form = compute_form({"sleep": {today - timedelta(days=5): 526, today - timedelta(days=4): 588}}, today)
+    assert form["sleep_avg_min"] == 557
+    assert form["reasons"] == [] and form["sleep_delta_min"] is None  # a signal still needs 3 nights
+    short = compute_form({"sleep": {today - timedelta(days=k): 300 for k in range(2)}}, today)
+    assert "nuits courtes" not in short["reasons"]
+    assert form["nights_recent"] == 0 and form["nights_base"] == 0
+
+
+async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    r = await as_user.get("/sante")
     assert "Connecter COROS" in r.text  # empty state
     today = date.today()
     for metric, series in _series(today, 60, 45, 50, 56).items():
@@ -108,9 +120,10 @@ async def test_current_form_and_dashboard_card(as_user: AsyncClient, db_session:
     form = await current_form(db_session, test_user.id, today)
     assert form["status"] == "fatigue" and form["hrv_delta_pct"] < 0 and form["rhr_delta_bpm"] > 0
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
-    r = await as_user.get("/activities")
-    assert "Fatigue probable" in r.text and "<svg viewBox=\"0 0 120 30\"" in r.text
-    assert r.text.count("<title>") >= 90  # one hover target per day on each sparkline
+    assert form["nights_recent"] == 7 and form["nights_base"] == 60
+    r = await as_user.get("/sante")
+    assert "Fatigue probable" in r.text and '<svg viewBox="0 0 300 64"' in r.text
+    assert r.text.count("<title>") >= 90  # one hover target per day on each chart
 
 
 # ── migration ───────────────────────────────────────────────────────────────

@@ -13,7 +13,6 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
-from app.services.health import form_card
 from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
@@ -88,11 +87,6 @@ async def activities_page(
     weeks, has_more = await _week_groups(db, user.id, page, sport)
     week = await _this_week_summary(db, user.id, now)
     training_load = await calculate_training_load(db, user.id, now)
-    try:
-        health_card = await form_card(db, user.id)
-    except Exception:
-        logger.exception("Fitness card failed for user %d", user.id)
-        health_card = None
 
     return templates.TemplateResponse(
         request, "activities.html",
@@ -105,7 +99,6 @@ async def activities_page(
             "filters": FILTERS,
             "week": week,
             "training_load": training_load,
-            "health_card": health_card,
             "last_sync": _humanize_since(user.last_activity_poll_at, now),
         },
     )
