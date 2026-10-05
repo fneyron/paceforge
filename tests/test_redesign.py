@@ -1,9 +1,10 @@
 """The A redesign: identity tokens in one place, the app shell, and the race plan
-reorganised in three blocks (objective, profile, passages) with everything else
-in « Outils »."""
+simplified: one number, one arrival line, one button, the passages (clock, name, km),
+two « Préparer » rows; everything else one tap away (the … menu, the sheets, an opened row)."""
 
 import json
 import re
+from html import unescape
 from pathlib import Path
 
 import pytest
@@ -66,63 +67,308 @@ async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
 
 # ── race plan ───────────────────────────────────────────────────────────────
 
+def _visible(html: str) -> str:
+    """The page as text a reader can see: no scripts, no JSON, no tags, no attributes."""
+    html = re.sub(r"<script\b.*?</script>", " ", html, flags=re.S)
+    html = re.sub(r"<style\b.*?</style>", " ", html, flags=re.S)
+    html = re.sub(r"<input type=\"hidden\"[^>]*>", " ", html)
+    return unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)))
+
+
+def _menu_items(html: str) -> list[str]:
+    menu = html.split('id="plan-more"')[1].split("</details>")[0]
+    items = re.findall(r'role="menuitem"[^>]*>(.*?)</(?:button|label)>', menu, flags=re.S)
+    return [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", i)).strip()) for i in items]
+
+
+def _surface(html: str) -> str:
+    """The plan as it opens: everything before the overlays (map, sheets)."""
+    return html.split('id="cp-sheet"')[0]
+
+
 @pytest.mark.asyncio
-async def test_race_plan_has_one_primary_action_a_plan_selector_and_the_tools(as_user: AsyncClient):
+async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_column(as_user: AsyncClient):
     rid = await _route(as_user)
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    # hero: objective, arrival, verdict
+    text = _visible(html)
+    # hero: objective, arrival, verdict; the number is the button (pencil inside), no « Modifier » link
     assert 'id="hero-time"' in html and 'id="hero-arrival"' in html and 'id="hero-verdict"' in html
-    # ONE primary action, and it leads to the existing exports
-    assert html.count("data-primary-export") == 1 and "Envoyer à la montre" in html
+    assert 'class="pf-edit"' not in html and "hero-arrival-sub" not in html
+    # ONE primary action on the surface, no print icon beside it; it leads to the four exports
+    surface = _surface(html)
+    assert surface.count("pf-btn-primary") == 1 and html.count("data-primary-export") == 1 and "Envoyer à la montre" in html
+    assert "pf-btn-icon" not in surface
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
         assert call in html, call
-    # Optimiste / Cible / Sécurité as a segmented control
+    # Optimiste / Cible / Sécurité: « Plan affiché » inside the objective editor, not on the surface
     seg = html.split('id="scn-seg"')[1].split("</div>")[0]
-    assert [b for b in re.findall(r'data-scn-btn="(\w+)"', seg)] == ["fast", "target", "safe"]
-    # everything else in « Outils »
-    tools = html.split('aria-label="Outils"')[1]
-    for label in ("Partager le plan", "Bande imprimable", "Sacs et drop bags", "Nutrition", "Pilotage", "Carte du parcours",
-                  "Finisher de référence", "Exporter", "Réglages du plan", "Remplacer la trace GPX"):
-        assert label in tools, label
-    for hook in ('id="rtab-nutrition"', 'id="rtab-pacing"', 'id="map-toggle"', 'id="advanced"', 'id="stop-min"',
-                 'name="scenario_fast_pct"', "/reimport", 'id="rpanel-nutrition"', 'id="rpanel-pacing"', 'id="rpanel-reference"'):
+    assert re.findall(r'data-scn-btn="(\w+)"', seg) == ["fast", "target", "safe"]
+    panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
+    assert 'id="scn-seg"' in panel and "Plan affiché" in panel and "Ton estimation" in panel and "pf-objok" in panel
+    assert 'id="scn-chip"' in html  # « Plan Sécurité affiché · revenir à Cible », shown by the script when it applies
+    # no « Outils » column, no sticky side column, no legend, no weather chip in the meta line
+    assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
+    assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
+    # Préparer: exactly two rows, no subtitles
+    prep = html.split('class="pf-prep"')[1].split("</section>")[0]
+    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)</span>', prep, flags=re.S) == ["Nutrition et sacs", "Pilotage"]
+    assert "<small" not in prep
+    # nothing explains the obvious, nothing duplicated
+    for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
+                 "Renommer", "Fixer l'heure", "Changer l'heure", "Glisse ou tape", "de jour", "de nuit", "Ton rythme", "Sacs et drop bags"):
+        assert gone not in text, gone
+    # the hooks the tools and scripts rely on are all still there
+    for hook in ('id="rtab-nutrition"', 'id="rtab-pacing"', 'id="rtab-reference"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
+                 'id="race-sheet"', 'id="save-name"', 'id="race-date"', 'id="start-time"', 'name="scenario_fast_pct"', "/reimport",
+                 'id="rpanel-nutrition"', 'id="rpanel-pacing"', 'id="rpanel-reference"', 'class="pf-carte"', 'id="wx-block"'):
         assert hook in html, hook
+    # the map is an overlay, closed on load, never restored from a remembered state
+    assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
+    assert "getItem('pf.map')" not in html and "pf.map3d" in html
     # the old tab strip is gone, the debrief waits for race day
     assert "rtab-plan" not in html and 'id="rtab-realise"' not in html
 
 
+def test_plan_column_css_is_single_and_centred():
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
+    assert "pf-plan-tools" not in css and "pf-plan-grid" not in css and "position: sticky; top: 88px" not in css
+    route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
+    assert 'id="rpanel-plan" class="pf-col"' in route
+
+
 @pytest.mark.asyncio
-async def test_debrief_joins_the_tools_once_the_race_is_run(as_user: AsyncClient):
-    rid = await _route(as_user, race_date="2020-10-02")
+async def test_title_and_meta_are_plain_french_text(as_user: AsyncClient):
+    from app.routers.simulator import fr_date_label
+
+    rid = await _route(as_user, race_date="2099-10-17")
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert 'id="rtab-realise"' in html and "Débrief" in html.split('aria-label="Outils"')[1]
+    head = html.split('class="pf-plan-title"')[1].split('id="plan-more"')[0]
+    assert "<input" not in head and "<select" not in head  # the fields live in « Nom, date et départ »
+    assert '<h1 id="race-name"' in head and ">Jeju test</h1>" in head
+    assert '<span id="meta-date">sam. 17 oct. 2099</span>' in head and '<span id="meta-start">21:00</span>' in head
+    assert 'id="date-pill" class="pf-date-pill hidden"' in head
+    # the start time is typed as hh:mm (no AM/PM picker), the date as a date
+    sheet = html.split('id="race-sheet"')[1].split('id="settings-sheet"')[0]
+    assert 'type="text" id="start-time" inputmode="numeric"' in sheet and 'maxlength="5"' in sheet and 'value="21:00"' in sheet
+    assert 'type="date" id="race-date"' in sheet and "Ta course" in sheet and "Enregistrer" in sheet
+    # the server writes the same French text the script does, whatever the browser's language
+    from datetime import date
+    today = date(2026, 10, 5)
+    assert fr_date_label("2026-10-17", today=today) == "sam. 17 oct."
+    assert fr_date_label("2027-02-01", today=today) == "lun. 1 févr. 2027"
+    assert fr_date_label("2026-08-15", today=today) == "sam. 15 août"
+    assert fr_date_label(None) == "" and fr_date_label("pas une date") == ""
 
 
 @pytest.mark.asyncio
-async def test_passages_are_a_list_whose_rows_open_with_the_point_details(as_user: AsyncClient):
+async def test_meta_line_wraps_without_a_hanging_dot(as_user: AsyncClient):
+    rid = await _route(as_user, race_date="2099-10-17")
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    head = html.split('class="pf-plan-title"')[1].split('id="plan-more"')[0]
+    # no separator elements: each item draws its own « · » before it, and the one that starts a line is clipped
+    assert "pf-sep" not in head and "·" not in _visible(head)
+    meta = head.split('class="pf-meta"')[1].split("</div>")[0]
+    items = [i.strip() for i in re.findall(r">([^<>]+)</span>", meta)]
+    assert items[:2] == ["sam. 17 oct. 2099", "21:00"] and len(items) == 4
+    assert items[2].endswith(" km") and items[3].endswith(" m D+")
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    assert re.search(r"\.pf-meta \{ overflow: hidden;", css) and re.search(r"\.pf-meta-in \{[^}]*margin-left: -16px;", css)
+    assert re.search(r'::before \{ content: "·"; display: inline-block; width: 16px;', css)
+
+
+@pytest.mark.asyncio
+async def test_without_objective_one_estimate_and_the_arrival_follows_it(as_user: AsyncClient):
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Sans objectif",
+        "race_date": "", "start_hour": 21, "start_minute": 0, "sport_type": "trail", "stop_minutes": 3,
+    })
+    rid = r.json()["id"]
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    hero = re.search(r'id="hero-num"[^>]*>(\d+)h(\d\d)<', html).groups()
+    # the editor says the same estimate, its inputs hold it (minutes on two digits)
+    assert re.search(r'Ton estimation : <b[^>]*>(\d+)h(\d\d)</b>', html).groups() == hero
+    th = re.search(r'id="target-h"[^>]*value="(\d+)"', html).group(1)
+    tm = re.search(r'id="target-m"[^>]*value="(\d+)"', html).group(1)
+    assert (th, tm) == hero and len(tm) == 2
+    # the first table already runs on that estimate, stops included: start + number = arrival
+    # (the page's own recalculations send the same value, so nothing jumps once it loads)
+    plan = json.loads(html.split('id="plan-data">')[1].split("</script>")[0])
+    assert plan["plan_total_s"] == int(hero[0]) * 3600 + int(hero[1]) * 60
+    # every time on the page is rounded the way the script's fmtHM rounds (no 20h06 beside 20h07)
+    gpx = (ROOT / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
+    assert "(course.predicted_total_time_s + 30) // 60 * 60" in gpx and "rc.total_s + 30" in gpx
+
+
+def test_phone_anti_zoom_rule_spares_the_objective_inputs():
+    route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
+    assert "#simulator-root input:not(.pf-hero-in), #simulator-root select { font-size: 16px; }" in route
+
+
+@pytest.mark.asyncio
+async def test_missing_date_shows_the_pill_instead_of_date_and_start(as_user: AsyncClient):
+    rid = await _route(as_user, race_date="")
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    head = html.split('class="pf-plan-title"')[1].split('id="plan-more"')[0]
+    assert 'id="meta-when" class="pf-meta-when hidden"' in head
+    assert 'id="date-pill" class="pf-date-pill"' in head and "Ajoute la date et l'heure de départ" in head
+    assert 'id="wx-block" class="pt-4 border-t border-line hidden"' in html  # no date, no weather block
+
+
+@pytest.mark.asyncio
+async def test_menu_lists_share_print_reference_then_race_settings_and_gpx(as_user: AsyncClient):
     rid = await _route(as_user)
-    cps = [dict(c) for c in CPS]
-    cps[1]["kind"] = "base"
-    r = await as_user.post("/partials/simulator/passage-times", data={
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence",
+                                 "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
+    menu = html.split('id="plan-more"')[1].split("</details>")[0]
+    assert menu.count('class="pf-menu-sep"') == 1 and "<small" not in menu
+    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" in menu
+    assert "openRaceSheet()" in menu and "openTool('advanced')" in menu and 'type="file" name="gpx_file"' in menu
+
+
+def test_debrief_mode_rules():
+    from datetime import date
+
+    from app.routers.simulator import debrief_mode
+
+    today = date(2026, 10, 5)
+    assert debrief_mode("2026-10-17", False, today=today) is None  # before a dated race: nowhere
+    assert debrief_mode(None, False, today=today) == "menu"  # no date: in the menu
+    assert debrief_mode("2026-10-05", False, today=today) == "menu"  # race day: in the menu
+    assert debrief_mode("2026-10-04", False, today=today) == "primary"  # after: the main button
+    assert debrief_mode("2026-10-17", True, today=today) == "primary"  # a result is linked
+
+
+@pytest.mark.asyncio
+async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_session: AsyncSession):
+    from datetime import date
+
+    # a future dated race: no debrief anywhere
+    html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
+    assert "Débrief" not in _visible(html) and "débrief" not in _visible(html) and "data-primary-debrief" not in html
+    # no date, or race day: in the menu, after « Finisher de référence »; the main button stays « Envoyer à la montre »
+    for rd in ("", date.today().isoformat()):
+        html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
+        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence", "Débrief",
+                                     "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
+        assert html.count("data-primary-export") == 1 and 'id="rpanel-realise"' in html and "/result?" in html
+    # after race day: « Voir le débrief » is the main button, « Envoyer à la montre » heads the menu (the 4 formats stay)
+    html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date='2020-10-02')}")).text
+    assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
+    assert _surface(html).count("pf-btn-primary") == 1
+    assert 'id="heat-line"' not in html  # the forecast heat is for before the race
+    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable", "Finisher de référence",
+                                 "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
+    assert 'id="rtab-realise"' in html and "/result?" in html
+    for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
+        assert call in html, call
+    # a linked result counts as a run race, even with a date ahead
+    rid = await _route(as_user, race_date="2099-10-02")
+    route = (await db_session.execute(select(Route).where(Route.id == rid))).scalar_one()
+    route.result_json = {"total_actual_s": 5 * 3600, "actual": []}
+    await db_session.flush()
+    html = (await as_user.get(f"/simulator/routes/{rid}")).text
+    assert "data-primary-debrief" in html and _menu_items(html)[0] == "Envoyer à la montre"
+
+
+async def _rows(client: AsyncClient, rid: int, cps: list[dict]) -> str:
+    r = await client.post("/partials/simulator/passage-times", data={
         "checkpoints_json": json.dumps(cps), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0,
         "route_id": rid, "stop_minutes": 3,
     })
     assert r.status_code == 200, r.text
-    t = r.text
+    return r.text
+
+
+def _heads(t: str) -> list[str]:
+    return re.findall(r'(<div class="pf-prow-head".*?)</div>\s*<div data-detail', t, flags=re.S)
+
+
+@pytest.mark.asyncio
+async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
+    rid = await _route(as_user)
+    cps = [dict(c) for c in CPS]
+    cps[1]["kind"] = "base"
+    t = await _rows(as_user, rid, cps)
     assert "<table" not in t and 'role="list"' in t
     assert t.count("data-row ") == len(CPS) + 1  # one per point + the finish
-    # each row: a toggle and a detail block (hidden until opened), one per row
-    assert t.count('class="pf-prow-head"') == t.count("data-detail=") == len(CPS) + 1
-    assert t.count('class="pf-det hidden"') == len(CPS) + 1
-    # the detail: heart-rate ceiling, carbs, water, the point's chip and its actions
-    assert "FC max" in t and "glucides" in t and ">eau<" in t
-    assert 'data-poste="1"' in t and "Modifier le poste" in t and "Fixer l'heure" in t and "Supprimer" in t
-    # base vie badge, day separator, the three plans' finish for the selector
-    assert '<span class="pf-tag">Base vie</span>' in t and 'data-day="1"' in t
+    heads = _heads(t)
+    assert len(heads) == len(CPS) + 1 and t.count('class="pf-det hidden"') == len(CPS) + 1
+    for h in heads:
+        assert h.count("<svg") == 1  # the chevron only: no poste glyph, no bag, no weather icon
+        text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", h)).strip())
+        # the clock (plus the hidden Optimiste / Sécurité clocks the plan selector swaps in), the name, the km
+        assert re.fullmatch(r"(\d\d:\d\d ){1,3}\S.* km [\d,]+", text), text
+        assert "FC" not in text and "+" not in text and "°" not in text and " min" not in text and "Base vie" not in text
+    assert "pf-tag" not in t and "pf-kind" not in t and "pf-prow-col" not in t
+    # the day separator and the three plans' finish for « Plan affiché »
+    assert 'data-day="1"' in t
     pill = re.search(r'data-scn-pill hidden data-end-fast="([^"]+)" data-end-target="([^"]+)" data-end-safe="([^"]+)"', t)
     assert pill and all(pill.groups())
-    # one clock per plan in each row, CSS shows the one picked
     assert t.count("data-safe") >= len(CPS) + 1 and t.count("data-fast") >= len(CPS) + 1
+
+
+@pytest.mark.asyncio
+async def test_an_opened_row_has_the_leg_three_tiles_one_line_of_facts_and_two_actions(as_user: AsyncClient):
+    rid = await _route(as_user)
+    t = await _rows(as_user, rid, CPS)
+    det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
+    text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
+    assert re.search(r"\d+ ?(h\d\d|min) depuis Eau 1 · 4 km · \+[\d ]+ m −[\d ]+ m", text), text
+    assert ">FC max<" in det and ">glucides<" in det and ">eau<" in det and "conseillés" not in det
+    assert re.search(r"Ravito · assistance · arrêt 3 min · barrière 10:30 · marge [+−]\d+h\d\d", text), text
+    assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
+    assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »
+    actions = re.findall(r"<button[^>]*>([^<]+)</button>", det.split('class="pf-det-actions"')[1])
+    assert actions == ["Modifier ce point", "Voir sur la carte"]
+    assert "openSheet(1)" in det and "flyToCp(1)" in det
+    first = t.split('data-detail="0"')[1].split('data-row role="listitem"')[0]
+    assert "depuis le départ" in first and "Point d'eau" in unescape(first)
+    # gone from the row: the poste chip, the plans line, pinning and deleting (all in the point dialog)
+    for gone in ("data-poste", "Modifier le poste", "Fixer l'heure", "Changer l'heure", ">Supprimer<", "Plans</dt>", "<dl", "aucune"):
+        assert gone not in unescape(t), gone
+    # the finish row: the leg and the tiles, no actions
+    fin = t.split('data-detail="-1"')[1]
+    assert "depuis Village" in fin and "pf-det-actions" not in fin
+
+
+@pytest.mark.asyncio
+async def test_a_close_or_missed_cutoff_shows_on_the_closed_row(as_user: AsyncClient):
+    rid = await _route(as_user)
+    cps = [dict(c) for c in CPS]
+    t = await _rows(as_user, rid, cps)
+    plan = json.loads(t.split('id="plan-data">')[1].split("</script>")[0])
+    clk = next(p for p in plan["points"] if p["cp_index"] == 0)["clock_s"] // 60 * 60
+
+    def hhmm(s: int) -> str:
+        s %= 86400
+        return "%02d:%02d" % (s // 3600, s % 3600 // 60)
+
+    # 30 min ahead: amber, on the closed row (on the phone on its own line under the km: never cut by the ellipsis)
+    cps[0]["cutoff_clock"] = hhmm(clk + 30 * 60)
+    head = _heads(await _rows(as_user, rid, cps))[0]
+    assert f"barrière {hhmm(clk + 30 * 60)} · marge 30 min" in head and "text-warn" in head and "text-danger" not in head
+    assert re.search(r'class="pf-bar-m text-warn">barrière', head)  # no leading « · » before it
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    assert ".pf-bar-m { display: block;" in css and ".pf-prow.is-open :is(.pf-bar-m, .pf-bar-d) { display: none; }" in css
+    # missed by 15 min: red, and the clock too
+    cps[0]["cutoff_clock"] = hhmm(clk - 15 * 60)
+    head = _heads(await _rows(as_user, rid, cps))[0]
+    assert f"barrière {hhmm(clk - 15 * 60)} · marge −0h15" in head and 'data-cible-text class="text-danger"' in head
+    # two hours ahead: nothing on the closed row (it is in the opened one)
+    cps[0]["cutoff_clock"] = hhmm(clk + 2 * 3600)
+    t = await _rows(as_user, rid, cps)
+    assert "barrière" not in _heads(t)[0] and f"barrière {hhmm(clk + 2 * 3600)}" in t
+
+
+@pytest.mark.asyncio
+async def test_no_checkpoint_shows_the_empty_state(as_user: AsyncClient):
+    rid = await _route(as_user, cps=[])
+    t = await _rows(as_user, rid, [])
+    assert "data-empty-state" in t and "Ajoute tes ravitos pour avoir ton heure de passage à chacun." in t
+    assert "+ Ajouter un ravito" in t and "openAddSheet()" in t
+    assert "data-empty-state" not in await _rows(as_user, rid, CPS)
 
 
 # ── courses ─────────────────────────────────────────────────────────────────

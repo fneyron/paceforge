@@ -50,8 +50,8 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     t = r.text
     assert "Sécurité" in t  # one table: scenario columns live in the passage table
     assert "Sécurité" in t and "Optimiste" in t and "bascule" not in t  # scenario columns, no switch marker in the table
-    assert ">10:30</span>" in t  # cutoff shown read-only
-    assert 'data-kind="full"' in t and 'data-bag="1"' in t and "Drop bag" in t  # the poste chip carries kind, crew and drop bag
+    assert "barrière 10:30</span>" in t  # cutoff shown read-only, in the opened row
+    assert "<span>Ravito</span>" in t and "<span>assistance</span>" in t and "Drop bag ici" in t  # kind, crew and drop bag, in words
     # v4: day separator, no "+1j" suffix, no start row, switch row flagged, autonomy legs in the plan data
     assert 'data-day="1"' in t and "+1j" not in t and ">Départ<" not in t and "data-switch" not in t and '"autonomy"' in t
 
