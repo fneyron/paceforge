@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{% block title %}PaceForge{% endblock %}</title>
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#111827">
+    <meta name="theme-color" content="#ffffff">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
@@ -24,6 +24,8 @@
     <meta name="twitter:image" content="https://paceforge.fr/static/img/og-image.png">
     <meta name="description" content="{{ _meta_desc | trim }}">
     <link rel="stylesheet" href="/static/css/tailwind.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
+    <link rel="stylesheet" href="/static/css/theme.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
+    <link rel="stylesheet" href="/static/css/interface.css?v={{ request.app.state.build_id if request is defined and request else 0 }}">
     <script>
         // Apply dark mode before render to avoid flash
         try {
@@ -33,220 +35,46 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>htmx.config.allowScriptTags = true;</script>
     <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script><script defer src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-        [x-cloak] { display: none !important; }
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
-        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
-        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); } i[data-lucide] { display: inline-block; vertical-align: middle; }
-
-        /* Dark mode — Backgrounds */
-        .dark body { background-color: #111 !important; color: #e5e7eb; }
-        .dark .bg-white { background-color: #1a1a1a !important; }
-        .dark .bg-gray-50, .dark .bg-gray-50\/30, .dark .bg-gray-50\/50 { background-color: #222 !important; }
-        .dark .bg-gray-100 { background-color: #2a2a2a !important; }
-        .dark .bg-gray-200 { background-color: #374151 !important; }
-
-        /* Dark mode — Text */
-        .dark .text-gray-900:not(.bg-gray-900 *):not(button):not(a) { color: #f3f4f6 !important; }
-        .dark h1, .dark h2, .dark h3, .dark h4 { color: #f3f4f6 !important; }
-        .dark p:not([class*="text-green"]):not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-yellow"]):not([class*="text-white"]) { color: #d1d5db; }
-        .dark .text-gray-700 { color: #d1d5db !important; }
-        .dark .text-gray-600 { color: #9ca3af !important; }
-        .dark .text-gray-500 { color: #9ca3af !important; }
-        .dark .text-gray-400 { color: #6b7280 !important; }
-        .dark .text-gray-300 { color: #4b5563 !important; }
-        .dark label { color: #9ca3af !important; }
-
-        /* Dark mode — Borders */
-        .dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300 { border-color: #333 !important; }
-        .dark .border-r, .dark .border-b, .dark .border-t, .dark .border-l { border-color: #333 !important; }
-        .dark .divide-gray-200 > * + * { border-color: #333 !important; }
-
-        /* Dark mode — Cards & containers */
-        .dark .shadow-sm, .dark .shadow-md { box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
-        .dark .shadow-lg { box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important; }
-        .dark .rounded-2xl.border { border-color: #333 !important; }
-
-        /* Dark mode — Sidebar */
-        .dark aside { background-color: #161616 !important; }
-        .dark .bg-gray-900\/10 { background-color: rgba(255,255,255,0.08) !important; }
-
-        /* Dark mode — Forms */
-        .dark input, .dark select, .dark textarea { background-color: #1a1a1a !important; color: #e5e7eb !important; border-color: #444 !important; }
-        .dark input::placeholder, .dark textarea::placeholder { color: #555 !important; }
-        .dark .focus\:ring-gray-900:focus { --tw-ring-color: #666 !important; }
-
-        /* Dark mode — Buttons (keep dark buttons dark, they work in both modes) */
-        .dark .hover\:bg-gray-100:hover { background-color: #2a2a2a !important; }
-        .dark .hover\:bg-gray-50:hover { background-color: #252525 !important; }
-        .dark .border.border-gray-300 { border-color: #555 !important; }
-
-        /* Dark mode — Code blocks */
-        .dark code { background-color: #2a2a2a !important; border-color: #444 !important; color: #e5e7eb !important; }
-
-        /* Dark mode — Status colors */
-        .dark .bg-green-50 { background-color: #052e16 !important; }
-        .dark .text-green-700 { color: #4ade80 !important; }
-        .dark .border-green-200 { border-color: #166534 !important; }
-        .dark .bg-green-500 { background-color: #22c55e !important; }
-        .dark .bg-blue-50 { background-color: #172554 !important; }
-        .dark .text-blue-900 { color: #93c5fd !important; }
-        .dark .text-blue-700 { color: #60a5fa !important; }
-        .dark .text-blue-600 { color: #60a5fa !important; }
-        .dark .border-blue-200 { border-color: #1e40af !important; }
-        .dark .bg-red-50 { background-color: #450a0a !important; }
-        .dark .text-red-700, .dark .text-red-600 { color: #fca5a5 !important; }
-        .dark .border-red-200 { border-color: #991b1b !important; }
-        .dark .bg-yellow-50 { background-color: #422006 !important; }
-        .dark .text-yellow-900, .dark .text-yellow-700 { color: #fcd34d !important; }
-        .dark .border-yellow-200 { border-color: #92400e !important; }
-        .dark .bg-emerald-50 { background-color: #052e1b !important; }
-        .dark .text-emerald-700, .dark .text-emerald-600 { color: #6ee7b7 !important; }
-        .dark .border-emerald-200 { border-color: #065f46 !important; }
-        .dark .bg-amber-50 { background-color: #422006 !important; }
-        .dark .text-amber-700, .dark .text-amber-600 { color: #fcd34d !important; }
-        .dark .border-amber-200 { border-color: #92400e !important; }
-        .dark .bg-sky-50 { background-color: #082f49 !important; }
-        .dark .text-sky-700, .dark .text-sky-600 { color: #7dd3fc !important; }
-        .dark .border-sky-200 { border-color: #075985 !important; }
-        .dark .bg-red-50\/60, .dark .bg-red-50\/40, .dark .bg-red-50\/50 { background-color: #450a0a !important; }
-        .dark .bg-gray-50\/60, .dark .bg-gray-50\/70 { background-color: #222 !important; }
-
-        /* Dark mode — Mobile nav */
-        .dark nav.fixed { background-color: #1a1a1a !important; border-color: #333 !important; }
-        .dark .md\:hidden.fixed { background-color: #1a1a1a !important; border-color: #333 !important; }
-
-        /* Dark mode — Strava orange stays */
-        .dark .bg-strava { background-color: #FC4C02 !important; }
-
-        /* Dark mode — dark bands (bg-gray-900) keep their light-mode look: white buttons, light text */
-        .dark .bg-gray-900 .bg-white { background-color: #fff !important; }
-        .dark .bg-gray-900 .bg-white:hover { background-color: #f3f4f6 !important; }
-        .dark .bg-gray-900 .bg-white.text-gray-900 { color: #111827 !important; }
-        .dark .bg-gray-900 .text-gray-300 { color: #d1d5db !important; }
-        .dark .bg-gray-900 .text-gray-400 { color: #9ca3af !important; }
-        .dark .bg-green-50 .text-green-800, .dark .bg-green-50.text-green-800 { color: #86efac !important; }
-        .dark .bg-red-50 .text-red-800, .dark .bg-red-50.text-red-800 { color: #fca5a5 !important; }
-
-        /* Dark mode — Scrollbar */
-        .dark ::-webkit-scrollbar { background: #111; }
-        .dark ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-    </style>
-    <link rel="stylesheet" href="/static/css/interface.css?v=2">
     {% block head %}{% endblock %}
 </head>
-<body class="h-full bg-white text-gray-900 antialiased{% if user is defined and user %} pf-app{% endif %}">
+<body class="h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
     {% if user is defined and user %}
     <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
-    <div class="flex h-full">
-        <!-- Sidebar -->
-        <aside class="pf-sidebar hidden md:flex w-56 h-screen border-r bg-gray-50/30 flex-col shrink-0 sticky top-0">
-            <div class="pf-brand-block p-4 border-b">
-                <a href="/simulator" class="pf-brand flex items-center gap-2" aria-label="PaceForge — accueil">
-                    <img src="/static/img/logo.svg" alt="" width="32" height="32">
-                    <span class="text-xl font-bold tracking-tight">PaceForge</span>
-                </a>
-            </div>
-            <nav aria-label="Navigation principale" class="pf-navigation flex-1 p-2 space-y-1">
-                <p class="pf-nav-caption">Ton espace sportif</p>
-                <a href="/simulator" {% if request.url.path.startswith('/simulator') %}aria-current="page"{% endif %}
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path.startswith('/simulator') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <i data-lucide="route" class="h-4 w-4"></i>
-                    Courses
-                </a>
-                <a href="/activities" {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}aria-current="page"{% endif %}
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <i data-lucide="history" class="h-4 w-4"></i>
-                    Activités
-                </a>
-                <a href="/sante" {% if request.url.path.startswith('/sante') %}aria-current="page"{% endif %}
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path.startswith('/sante') %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <i data-lucide="heart-pulse" class="h-4 w-4"></i>
-                    Santé
-                </a>
-                <a href="/settings" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}
-                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          {% if request.url.path == '/settings' %}bg-gray-900/10 text-gray-900 font-medium{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-900{% endif %}">
-                    <i data-lucide="settings" class="h-4 w-4"></i>
-                    Réglages
-                </a>
+    <header class="pf-top">
+        <div class="pf-wrap pf-top-in">
+            <a href="/simulator" class="pf-logo" aria-label="PaceForge — mes courses">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
+            <nav aria-label="Navigation principale" class="pf-nav">
+                {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><span>Courses</span></a>
+                {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><span>Activités</span></a>
+                {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><span>Santé</span></a>
+                {% set _on = request.url.path == '/settings' %}<a href="/settings"{% if _on %} aria-current="page"{% endif %}><span>Réglages</span></a>
             </nav>
-            <div class="p-3 border-t space-y-2">
-                <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
-                    <i id="dark-icon-sun" data-lucide="sun" class="h-4 w-4 hidden"></i>
-                    <i id="dark-icon-moon" data-lucide="moon" class="h-4 w-4"></i>
-                    <span id="dark-label">Mode sombre</span>
+            <div class="pf-top-right">
+                <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="pf-ibtn">
+                    <svg id="dark-icon-moon" class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                    <svg id="dark-icon-sun" class="pf-ic hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
                 </button>
-                <div class="flex items-center gap-2">
-                    <a href="/settings" class="flex items-center gap-2 flex-1 min-w-0" aria-label="Mon profil">
-                        {% if user.profile_picture_url %}
-                        <img src="{{ user.profile_picture_url }}" alt="" class="w-8 h-8 rounded-full">
-                        {% else %}
-                        <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
-                            {{ (user.firstname or 'A')[0] | upper }}
-                        </div>
-                        {% endif %}
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-medium truncate">{{ user.firstname or '' }} {{ user.lastname or '' }}</p>
-                            <p class="text-[10px] text-gray-400">Connecté</p>
-                        </div>
-                    </a>
-                    <a href="/auth/logout" class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" title="Se déconnecter" aria-label="Se déconnecter">
-                        <i data-lucide="log-out" class="h-4 w-4"></i>
-                    </a>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Mobile header -->
-        <div class="pf-mobile-header md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b px-4 py-3 flex items-center justify-between">
-            <a href="/simulator" class="pf-brand text-lg font-bold tracking-tight"><img src="/static/img/logo.svg" alt="" width="28" height="28">PaceForge</a>
-            <div class="flex items-center gap-3">
-                <button type="button" data-theme-toggle aria-label="Activer le mode sombre" aria-pressed="false" onclick="toggleDarkMode()" class="pf-icon-button"><i data-lucide="sun-moon" class="h-5 w-5"></i></button>
-                {% if user.profile_picture_url %}
-                <img src="{{ user.profile_picture_url }}" alt="" class="w-7 h-7 rounded-full">
-                {% endif %}
-                <a href="/auth/logout" class="pf-icon-button text-gray-400 hover:text-gray-600" aria-label="Se déconnecter">
-                    <i data-lucide="log-out" class="h-5 w-5"></i>
+                <a href="/auth/logout" class="pf-ibtn pf-logout" title="Se déconnecter" aria-label="Se déconnecter">
+                    <svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                </a>
+                <a href="/settings" class="pf-avatar" aria-label="Mon profil">
+                    {% if user.profile_picture_url %}<img src="{{ user.profile_picture_url }}" alt="">{% else %}{{ (user.firstname or 'A')[0] | upper }}{% endif %}
                 </a>
             </div>
         </div>
+    </header>
 
-        <!-- Main content -->
-        <main id="main-content" tabindex="-1" class="pf-main flex-1 overflow-auto">
-            <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-8 mt-14 md:mt-0 pb-24 md:pb-8">
-                {% block content %}{% endblock %}
-            </div>
-        </main>
-    </div>
-
-    <!-- Mobile bottom nav -->
-    <nav aria-label="Navigation mobile" class="pf-mobile-nav md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 safe-area-bottom">
-        <div class="flex items-center justify-around h-14">
-            <a href="/simulator" {% if request.url.path.startswith('/simulator') %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/simulator') %}text-gray-900{% else %}text-gray-400{% endif %}">
-                <i data-lucide="route" class="h-5 w-5"></i>
-                <span class="text-[9px] font-medium">Courses</span>
-            </a>
-            <a href="/activities" {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}text-gray-900{% else %}text-gray-400{% endif %}">
-                <i data-lucide="history" class="h-5 w-5"></i>
-                <span class="text-[9px] font-medium">Activités</span>
-            </a>
-            <a href="/sante" {% if request.url.path.startswith('/sante') %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path.startswith('/sante') %}text-gray-900{% else %}text-gray-400{% endif %}">
-                <i data-lucide="heart-pulse" class="h-5 w-5"></i>
-                <span class="text-[9px] font-medium">Santé</span>
-            </a>
-            <a href="/settings" {% if request.url.path == '/settings' %}aria-current="page"{% endif %} class="flex flex-col items-center gap-0.5 px-2 py-1 {% if request.url.path == '/settings' %}text-gray-900{% else %}text-gray-400{% endif %}">
-                <i data-lucide="settings" class="h-5 w-5"></i>
-                <span class="text-[9px] font-medium">Réglages</span>
-            </a>
+    <main id="main-content" tabindex="-1" class="pf-main">
+        <div class="pf-wrap pf-page">
+            {% block content %}{% endblock %}
         </div>
+    </main>
+
+    <nav aria-label="Navigation mobile" class="pf-tabbar">
+        {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h12l-2 4 2 4H4"/></svg><span>Courses</span></a>
+        {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activités</span></a>
+        {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Santé</span></a>
+        {% set _on = request.url.path == '/settings' %}<a href="/settings"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>Réglages</span></a>
     </nav>
     {% else %}
     {% block content_public %}{% endblock %}
@@ -258,6 +86,7 @@
         const isDark = html.classList.toggle('dark');
         try { localStorage.setItem('darkMode', isDark); } catch (_) {}
         updateDarkModeUI(isDark);
+        document.dispatchEvent(new CustomEvent('pf:theme', { detail: { dark: isDark } }));
     }
     function updateDarkModeUI(isDark) {
         document.querySelectorAll('[data-theme-toggle]').forEach(function(button) {
@@ -266,12 +95,10 @@
         });
         const sun = document.getElementById('dark-icon-sun');
         const moon = document.getElementById('dark-icon-moon');
-        const label = document.getElementById('dark-label');
         if (sun && moon) {
             sun.classList.toggle('hidden', !isDark);
             moon.classList.toggle('hidden', isDark);
         }
-        if (label) label.textContent = isDark ? 'Mode clair' : 'Mode sombre';
     }
     document.addEventListener('DOMContentLoaded', function() {
         updateDarkModeUI(document.documentElement.classList.contains('dark'));
