@@ -59,16 +59,16 @@ async def test_sante_requires_login(client: AsyncClient):
 
 async def test_nav_item_and_activities_link(as_user: AsyncClient):
     page = (await as_user.get("/activities")).text
-    assert page.count('href="/sante"') >= 3  # sidebar, mobile nav, the line that replaced the card
-    assert "Santé" in page and "7 derniers jours comparés" not in page  # the card moved
+    assert page.count('href="/sante"') == 2  # top bar and tab bar only: Activités no longer talks about health
+    assert "7 derniers jours comparés" not in page and "récupération" not in page
     page = (await as_user.get("/sante")).text
     assert page.count('href="/sante" aria-current="page"') == 2
 
 
 async def test_not_connected(as_user: AsyncClient):
     page = (await as_user.get("/sante")).text
-    assert "Connecte ta montre COROS" in page and 'href="/coros/connect?region=monde"' in page
-    assert 'href="/coros/connect?region=europe"' in page and "Synchroniser maintenant" not in page
+    assert "Connecte ta montre COROS" in page and 'href="/settings#coros"' in page
+    assert "/coros/connect" not in page and "Synchroniser maintenant" not in page  # connecting happens in Réglages
 
 
 async def test_connected_without_data_yet(as_user: AsyncClient, db_session: AsyncSession, test_user: User):

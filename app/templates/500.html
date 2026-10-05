@@ -3,27 +3,20 @@
 {% block title %}Erreur — PaceForge{% endblock title %}
 
 {% block content %}
-<div class="min-h-[60vh] flex items-center justify-center">
-    <div class="text-center space-y-4">
-        <p class="text-6xl font-bold text-gray-200 tabular-nums">500</p>
-        <h1 class="text-lg font-semibold">Erreur interne</h1>
-        <p class="text-sm text-gray-500">Une erreur inattendue s'est produite.</p>
-        <a href="/simulator" class="inline-flex h-9 px-4 items-center rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
-            Retour au simulateur
-        </a>
-    </div>
+<div class="pf-errpage">
+    <p class="pf-big pf-errcode">500</p>
+    <h1 class="pf-h2 mt-2">Un souci de notre côté</h1>
+    <p class="pf-lead">Quelque chose a planté. Réessaie dans un instant : tes courses sont intactes.</p>
+    <a href="/simulator" class="pf-btn pf-btn-primary mt-6">Retour à mes courses</a>
 </div>
 {% endblock content %}
 
 {% block content_public %}
-<div class="min-h-screen flex items-center justify-center">
-    <div class="text-center space-y-4">
-        <p class="text-6xl font-bold text-gray-200 tabular-nums">500</p>
-        <h1 class="text-lg font-semibold">Erreur interne</h1>
-        <p class="text-sm text-gray-500">Une erreur inattendue s'est produite.</p>
-        <a href="/" class="inline-flex h-9 px-4 items-center rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
-            Retour à l'accueil
-        </a>
-    </div>
+{% include "partials/public_header.html" %}
+<div class="pf-errpage">
+    <p class="pf-big pf-errcode">500</p>
+    <h1 class="pf-h2 mt-2">Un souci de notre côté</h1>
+    <p class="pf-lead">Quelque chose a planté. Réessaie dans un instant.</p>
+    <a href="/" class="pf-btn pf-btn-primary mt-6">Retour à l'accueil</a>
 </div>
 {% endblock content_public %}

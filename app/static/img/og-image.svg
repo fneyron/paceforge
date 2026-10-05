@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
-  <rect width="1200" height="630" fill="#000000"/>
-  <!-- Logo (app/static/img/logo.svg) on a white disc -->
-  <circle cx="600" cy="236" r="66" fill="#ffffff"/>
-  <g transform="translate(540 176) scale(0.234375)">
-    <circle cx="256" cy="256" r="256" fill="#000000"/>
-    <path d="M300 80 L200 260 H260 L220 432 L360 240 H288 Z" fill="white" fill-rule="evenodd"/>
+  <rect width="1200" height="630" fill="#0B5F6E"/>
+  <path d="M0 520 L220 360 L340 450 L520 250 L700 430 L820 340 L1000 470 L1200 380 L1200 630 L0 630 Z" fill="#0A5664"/>
+  <g transform="translate(540 120) scale(0.234375)">
+    <rect width="512" height="512" rx="116" fill="#FFFFFF"/>
+    <path d="M84 372 L178 222 L238 300 L310 160 L428 372" fill="none" stroke="#0B5F6E" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="310" cy="160" r="34" fill="#BDE7EE"/>
+    <circle cx="310" cy="160" r="14" fill="#0B5F6E"/>
   </g>
-  <text x="600" y="392" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="56" font-weight="600" fill="#ffffff">PaceForge</text>
-  <text x="600" y="440" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="24" fill="#9ca3af">Tes temps de passage, calés sur de vraies courses</text>
+  <text x="600" y="330" text-anchor="middle" font-family="Sora, Figtree, Helvetica, Arial, sans-serif" font-size="60" font-weight="600" fill="#FFFFFF">PaceForge</text>
+  <text x="600" y="384" text-anchor="middle" font-family="Figtree, Helvetica, Arial, sans-serif" font-size="26" fill="#BDE7EE">Tes temps de passage, calés sur de vraies courses</text>
 </svg>

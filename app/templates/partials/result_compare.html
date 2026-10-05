@@ -120,7 +120,7 @@
                     <option value="{{ c.id }}"{% if preselect == c.id %} selected{% endif %}>{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
                     {% endfor %}
                 </select>
-                <button type="submit" class="h-9 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800">Comparer</button>
+                <button type="submit" class="h-9 px-4 rounded-lg bg-accent text-accent-ink text-sm font-medium hover:bg-accent-strong">Comparer</button>
             </form>
             <p class="text-[10px] text-gray-400">Les plus proches en distance. Sans splits détaillés → temps total seul. Ta course manque ? Re-synchronise Strava.</p>
             {% endif %}

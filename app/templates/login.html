@@ -8,269 +8,68 @@
 {% block title %}PaceForge · Temps de passage pour le trail et l'ultra{% endblock title %}
 
 {% block content_public %}
-<div class="min-h-screen bg-white overflow-x-hidden">
-    <!-- Hero -->
-    <div class="relative">
-        <div class="max-w-5xl mx-auto px-5 sm:px-6 pt-14 pb-12 sm:pt-24 sm:pb-16">
-            <div class="text-center max-w-2xl mx-auto">
-                <img src="/static/img/logo.svg" alt="PaceForge" class="w-16 h-16 mx-auto mb-6">
-                <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 leading-tight">
-                    Tes temps de passage,<br class="hidden sm:inline"> calés sur de vraies courses
-                </h1>
-                <p class="mt-5 text-base sm:text-lg text-gray-500 leading-relaxed">
-                    Importe le GPX de ta course. PaceForge répartit le temps selon la pente, le terrain, la nuit et la fatigue,
-                    avec un modèle tiré {% if has_dataset %}d'une base de <span class="text-gray-700 font-medium whitespace-nowrap">{{ ds.races }} courses</span> et <span class="text-gray-700 font-medium whitespace-nowrap">{{ ds.finisher_results }} finishers</span>{% else %}de vraies courses de trail{% endif %}.
-                    Puis il le met <span class="text-gray-700 font-medium">à ton niveau</span>, d'après tes propres courses Strava.
-                </p>
-                <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                    <a href="/auth/register"
-                       class="h-12 w-full sm:w-auto px-8 rounded-xl inline-flex items-center justify-center bg-gray-900 hover:bg-gray-800 text-white font-semibold text-sm transition-colors shadow-lg shadow-gray-900/20">
-                        Créer mon plan
-                    </a>
-                    <a href="/auth/login"
-                       class="h-12 w-full sm:w-auto px-8 rounded-xl inline-flex items-center justify-center border border-gray-300 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
-                        Se connecter
-                    </a>
+<div class="pf-landing overflow-x-hidden">
+    {% include "partials/public_header.html" %}
+    <main class="pf-wrap">
+        <section class="pf-lhero">
+            <div>
+                <p class="pf-eyebrow">Trail et ultra · calé sur tes courses</p>
+                <h1 class="pf-lh1">Tes temps de passage, calés sur <em>tes vraies courses.</em></h1>
+                <p class="pf-llead">Importe le GPX de ta course. PaceForge répartit ton temps selon la pente, le terrain, la nuit et la fatigue{% if has_dataset %}, avec un modèle tiré de <span class="whitespace-nowrap">{{ ds.races }} courses</span> et <span class="whitespace-nowrap">{{ ds.finisher_results }} finishers</span>{% endif %}, puis l'ajuste à ton niveau réel.</p>
+                <div class="pf-lctas">
+                    <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon plan
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+                    <a href="/methode" class="pf-btn pf-btn-secondary">Voir la méthode</a>
                 </div>
-                <p class="mt-4 text-xs text-gray-400">Sans Strava, tu as déjà une estimation de départ.</p>
-
+                <p class="pf-fine"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Gratuit · Sans Strava, tu as déjà une estimation de départ</p>
                 {% if error %}
-                <div class="mt-4 max-w-sm mx-auto rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                    La connexion a échoué. Réessaie.
-                </div>
+                <div class="pf-note !text-danger mt-4" role="alert">La connexion a échoué. Réessaie.</div>
                 {% endif %}
             </div>
-        </div>
-    </div>
+            {# what you get: the plan, in miniature #}
+            <div class="pf-panel pf-lpreview" aria-label="Exemple de plan">
+                <div class="flex items-end justify-between gap-3">
+                    <div><p class="pf-label">Exemple · 42 km · 2 400 m D+ · objectif</p><p class="pf-big pf-lpv-big">5h30</p></div>
+                    <span class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Réaliste</span>
+                </div>
+                <svg class="block w-full h-[80px] mt-3" viewBox="0 0 400 80" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="lpg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="pfp-g0"/><stop offset="1" class="pfp-g1"/></linearGradient></defs>
+                    <path d="M0 70 L30 62 L60 40 L85 22 L110 30 L140 52 L170 58 L200 44 L230 18 L255 10 L280 26 L310 48 L340 54 L370 66 L400 72 L400 80 L0 80 Z" fill="url(#lpg)"/>
+                    <path d="M0 70 L30 62 L60 40 L85 22 L110 30 L140 52 L170 58 L200 44 L230 18 L255 10 L280 26 L310 48 L340 54 L370 66 L400 72" class="pfp-line" vector-effect="non-scaling-stroke"/>
+                    <circle cx="85" cy="22" r="3.4" class="pfp-cp"/><circle cx="170" cy="58" r="4" class="pfp-base-cp"/><circle cx="255" cy="10" r="3.4" class="pfp-cp"/><circle cx="400" cy="72" r="3.6" class="pfp-fin"/>
+                </svg>
+                <div class="pf-lrows pf-list">
+                    <div><span>Ravito du col <span class="pf-label">km 12</span></span><b class="tabular-nums">07:48</b></div>
+                    <div><span>Refuge <span class="pf-tag">Base vie</span> <span class="pf-label">km 21</span></span><b class="tabular-nums">09:02</b></div>
+                    <div><span>Crête <span class="pf-label">km 27</span></span><b class="tabular-nums">10:22</b></div>
+                    <div><span>Arrivée <span class="pf-label">km 42</span></span><b class="tabular-nums text-accent">11:30</b></div>
+                </div>
+            </div>
+        </section>
 
-    {% if has_dataset %}
-    <!-- Chiffres -->
-    <div class="border-y border-gray-100">
-        <div class="max-w-5xl mx-auto px-5 sm:px-6 py-10 sm:py-12">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-6">La base de données</h2>
-            <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" data-stats>
-                <div class="rounded-2xl bg-gray-50 p-4 sm:p-5">
-                    <dt class="sr-only">Courses</dt>
-                    <dd class="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 tabular-nums whitespace-nowrap">{{ ds.races }}</dd>
-                    <dd class="mt-1 text-xs sm:text-sm text-gray-500">courses</dd>
-                </div>
-                <div class="rounded-2xl bg-gray-50 p-4 sm:p-5">
-                    <dt class="sr-only">Finishers</dt>
-                    <dd class="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 tabular-nums whitespace-nowrap">{{ ds.finisher_results }}</dd>
-                    <dd class="mt-1 text-xs sm:text-sm text-gray-500">finishers</dd>
-                </div>
-                {% if ds.checkpoint_passages %}
-                <div class="rounded-2xl bg-gray-50 p-4 sm:p-5">
-                    <dt class="sr-only">Temps de passage</dt>
-                    <dd class="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 tabular-nums whitespace-nowrap">{{ ds.checkpoint_passages }}</dd>
-                    <dd class="mt-1 text-xs sm:text-sm text-gray-500">temps de passage</dd>
-                </div>
-                {% endif %}
-                {% if has_validation %}
-                <div class="rounded-2xl bg-gray-50 p-4 sm:p-5">
-                    <dt class="sr-only">Écart moyen sur des courses jamais vues</dt>
-                    <dd class="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 tabular-nums whitespace-nowrap">{{ va.gap_after }}&nbsp;min</dd>
-                    <dd class="mt-1 text-xs sm:text-sm text-gray-500">d'écart moyen sur {{ va.held_out_races }} courses jamais vues</dd>
-                </div>
-                {% endif %}
+        {% if has_dataset %}
+        <section class="pf-lband" aria-label="La base de données">
+            <dl class="pf-lnums" data-stats>
+                <div><dt>courses analysées</dt><dd class="tabular-nums">{{ ds.races }}</dd></div>
+                <div><dt>finishers</dt><dd class="tabular-nums">{{ ds.finisher_results }}</dd></div>
+                {% if ds.checkpoint_passages %}<div><dt>temps de passage</dt><dd class="tabular-nums">{{ ds.checkpoint_passages }}</dd></div>{% endif %}
+                {% if has_validation %}<div><dt>d'écart moyen sur {{ va.held_out_races }} courses jamais vues</dt><dd class="tabular-nums">{{ va.gap_after }}&nbsp;min</dd></div>{% endif %}
             </dl>
-            <p class="mt-5 text-xs text-gray-400 leading-relaxed text-center max-w-2xl mx-auto">
-                Résultats publics UTMB Live et LiveTrail, sans aucun nom.{% if has_validation %} Écart mesuré aux points intermédiaires, une fois le temps final connu.{% endif %}{% if stats.updated %} Mis à jour le {{ stats.updated }}.{% endif %}
-                <a href="/methode" class="text-gray-600 underline underline-offset-2 hover:text-gray-900 whitespace-nowrap">Voir la méthode&nbsp;→</a>
-            </p>
-        </div>
-    </div>
-    {% endif %}
+            <p class="pf-lsrc">Résultats publics UTMB Live et LiveTrail, sans aucun nom.{% if has_validation %} Écart mesuré aux points intermédiaires, une fois le temps final connu.{% endif %}{% if stats.updated %} Mis à jour le {{ stats.updated }}.{% endif %} <a href="/methode">Voir la méthode</a></p>
+        </section>
+        {% endif %}
 
-    <!-- Exemple de plan -->
-    <div class="bg-gray-50 py-14 sm:py-16">
-        <div class="max-w-2xl mx-auto px-5 sm:px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-8">Ce que tu obtiens</h2>
-            <div class="rounded-2xl bg-white p-4 sm:p-5 shadow-md border border-gray-100">
-                <div class="flex items-start justify-between gap-3 mb-4">
-                    <div class="min-w-0">
-                        <p class="text-sm font-semibold text-gray-900">Plan de course · départ 06:00</p>
-                        <p class="text-[10px] text-gray-400">42 km · 2 400 m D+ · objectif 5h30</p>
-                    </div>
-                    <span class="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Exemple</span>
-                </div>
-                <div class="space-y-1.5 text-sm">
-                    <div class="flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg bg-green-50">
-                        <span class="font-semibold text-green-800 text-xs">Départ · km 0</span>
-                        <span class="tabular-nums font-semibold">06:00</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg">
-                        <span class="text-xs font-medium min-w-0">Ravito du col · km 12</span>
-                        <span class="tabular-nums text-gray-500 whitespace-nowrap">07:48 <span class="text-gray-300">(1h48)</span></span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg">
-                        <span class="text-xs font-medium min-w-0">Refuge · km 27</span>
-                        <span class="tabular-nums text-gray-500 whitespace-nowrap">10:22 <span class="text-gray-300">(4h22)</span></span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg bg-red-50">
-                        <span class="font-semibold text-red-800 text-xs">Arrivée · km 42</span>
-                        <span class="tabular-nums font-semibold whitespace-nowrap">11:30 <span class="text-red-400 font-normal">(5h30)</span></span>
-                    </div>
-                </div>
-                <div class="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                    <span>À l'arrivée :</span>
-                    <span><span class="text-blue-700 font-medium">Sécurité</span> <span class="tabular-nums">12:03</span></span>
-                    <span><span class="text-gray-900 font-medium">Cible</span> <span class="tabular-nums">11:30</span></span>
-                    <span><span class="text-emerald-700 font-medium">Optimiste</span> <span class="tabular-nums">11:14</span></span>
-                </div>
-                <p class="text-[10px] text-gray-400 mt-3 text-center">Export montre (GPX horodaté, TCX, CSV) · bande dossard imprimable</p>
-            </div>
-        </div>
-    </div>
+        <section class="pf-lsteps" aria-label="En 3 étapes">
+            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie Strava</h2><p>On lit tes courses pour connaître ton niveau sur l'effort long. La connexion passe par ta propre app Strava : on te guide pas à pas.</p></div>
+            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Importe le GPX</h2><p>Les points nommés deviennent tes postes. Ajoute eau, ravitos, bases vie, assistance et drop bags.</p></div>
+            <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Emporte ton plan</h2><p>Sur ta montre (GPX horodaté, TCX), en bande imprimée derrière le dossard, ou sur ton téléphone le jour J.</p></div>
+        </section>
 
-    <!-- En 3 étapes -->
-    <div class="py-14 sm:py-16">
-        <div class="max-w-3xl mx-auto px-5 sm:px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">En 3 étapes</h2>
-            <div class="space-y-8">
-                <div class="flex gap-4 sm:gap-5 items-start">
-                    <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">1</div>
-                    <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Crée ton compte et relie Strava</h3>
-                        <p class="text-sm text-gray-500 mt-0.5 leading-relaxed">On lit tes courses pour connaître ton niveau sur l'effort long. Marque tes compétitions «&nbsp;Course&nbsp;» dans Strava. La connexion passe par ta propre app Strava : on te guide pas à pas.</p>
-                    </div>
-                </div>
-                <div class="flex gap-4 sm:gap-5 items-start">
-                    <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">2</div>
-                    <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Importe le GPX de ta course</h3>
-                        <p class="text-sm text-gray-500 mt-0.5 leading-relaxed">Les points nommés du fichier deviennent tes points de passage. Ajoute eau, ravitos, bases vie, assistance et drop bags.</p>
-                    </div>
-                </div>
-                <div class="flex gap-4 sm:gap-5 items-start">
-                    <div class="w-8 h-8 rounded-full bg-gray-900 text-white text-sm font-bold flex items-center justify-center shrink-0">3</div>
-                    <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Règle, puis emporte ton plan</h3>
-                        <p class="text-sm text-gray-500 mt-0.5 leading-relaxed">Date, heure de départ, objectif : la météo arrive toute seule. Exporte sur ta montre ou imprime la bande à glisser derrière ton dossard.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Ce que tu as -->
-    <div class="bg-gray-50 py-14 sm:py-16">
-        <div class="max-w-5xl mx-auto px-5 sm:px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-10">Ce que tu as</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Ton temps, à ton niveau</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Ton temps estimé d'après tes courses. Glisse le curseur pour fixer ton objectif, le plan suit.</p>
-                </div>
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">L'heure à chaque point</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Heure de passage, temps du tronçon, D+/D−, allure. La météo à ton heure de passage, la nuit marquée, le changement de jour sur les ultras.</p>
-                </div>
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Trois plans</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Cible, Optimiste et Sécurité, et le point où basculer vers l'optimiste ou la sécurité.</p>
-                </div>
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Pilotage</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Plafonds cardio en montée, sur le plat et en descente, VAM visée, seuil de marche, passages raides signalés.</p>
-                </div>
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c-3 4-5.25 6.75-5.25 10.125a5.25 5.25 0 0010.5 0C17.25 9.75 15 7 12 3z"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Nutrition</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Glucides, eau, sel et caféine par heure, avec tes produits ou ceux du catalogue. Plan ravito par ravito, sac de départ et drop bags.</p>
-                </div>
-                <div class="rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-gray-100">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center mb-4">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659"/></svg>
-                    </div>
-                    <h3 class="font-semibold text-gray-900 mb-1.5">Montre et dossard</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">GPX horodaté pour COROS et Garmin, avec l'heure cible et la consigne dans le nom de chaque point. TCX, CSV. Une bande à glisser derrière le dossard.</p>
-                </div>
-            </div>
-
-            <h3 class="mt-12 mb-5 text-center text-sm font-semibold text-gray-900">Et aussi</h3>
-            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 max-w-4xl mx-auto text-sm">
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Points de passage.</b> Type de poste, temps d'arrêt réglable, assistance, drop bag. Les heures suivantes en tiennent compte.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Heures fixées par toi.</b> Tape l'heure où tu veux passer à un point, le reste du plan s'ajuste. Si c'est intenable, on te le dit.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Terrain.</b> Route, piste ou sentier, lu sur OpenStreetMap pour ton parcours.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Carte et profil.</b> Tracé coloré par la pente, relief 3D sur ordinateur.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Débrief.</b> Associe ton activité Strava : plan contre réel, tronçon par tronçon (temps, arrêts, FC, raison probable). Ta façon de finir sert au plan suivant.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Nouvelle trace.</b> Remplace le GPX : tes points, ton objectif et ta nutrition restent.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Synchro Strava.</b> Automatique, à chaque nouvelle activité.</p></li>
-                <li class="flex gap-3"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-gray-300 shrink-0"></span><p class="text-gray-500 leading-relaxed"><b class="font-semibold text-gray-900">Forme COROS, en option.</b> VFC, FC au repos, sommeil et VO2 max depuis ta montre, sur la page Activités.</p></li>
-            </ul>
-        </div>
-    </div>
-
-    <!-- La méthode -->
-    <div class="py-14 sm:py-16">
-        <div class="max-w-3xl mx-auto px-5 sm:px-6">
-            <div class="rounded-2xl border border-gray-200 p-6 sm:p-8">
-                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">D'où viennent tes heures de passage</h2>
-                <p class="mt-3 text-sm sm:text-base text-gray-500 leading-relaxed">
-                    La pente, la fatigue et la nuit sont réglées sur {% if ft.train_races and ft.train_finisher_results %}<span class="text-gray-900 font-medium tabular-nums">{{ ft.train_finisher_results }}</span> finishers de <span class="text-gray-900 font-medium tabular-nums">{{ ft.train_races }}</span> courses{% else %}de vrais temps de passage{% endif %}{% if has_validation %}, puis testées sur <span class="text-gray-900 font-medium tabular-nums">{{ va.held_out_races }}</span> autres courses, jamais vues pendant le réglage{% endif %}.
-                    La pente s'ajuste ensuite à tes sorties Strava, et ton niveau vient de tes courses.
-                </p>
-                <a href="/methode" class="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gray-900 dark:text-gray-100 hover:underline underline-offset-2">Comment PaceForge estime ton temps&nbsp;→</a>
-            </div>
-        </div>
-    </div>
-
-    <!-- FAQ -->
-    <div class="bg-gray-50 py-14 sm:py-16">
-        <div class="max-w-3xl mx-auto px-5 sm:px-6">
-            <h2 class="text-center text-sm font-semibold text-gray-400 uppercase tracking-wider mb-8">Questions</h2>
-            <div class="space-y-3">
-                <details class="group rounded-xl bg-white border border-gray-100 shadow-sm">
-                    <summary class="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-5 py-4 font-semibold text-gray-900">Il me faut Strava ?<span class="text-gray-400 group-open:rotate-45 transition-transform text-lg leading-none">+</span></summary>
-                    <p class="px-5 pb-4 text-sm text-gray-500 leading-relaxed">Pas pour commencer : sans activité, tu as une estimation générique. Pour un temps à ton niveau, oui. PaceForge lit tes courses Strava marquées «&nbsp;Course&nbsp;». La connexion passe par ta propre app Strava, créée en quelques minutes avec notre guide.</p>
-                </details>
-                <details class="group rounded-xl bg-white border border-gray-100 shadow-sm">
-                    <summary class="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-5 py-4 font-semibold text-gray-900">Et COROS ?<span class="text-gray-400 group-open:rotate-45 transition-transform text-lg leading-none">+</span></summary>
-                    <p class="px-5 pb-4 text-sm text-gray-500 leading-relaxed">C'est optionnel. Ta VFC, ta FC au repos, ton sommeil et ta VO2 max arrivent toutes les 6&nbsp;h pour suivre ta forme. Ça n'entre pas dans le calcul du plan.</p>
-                </details>
-                <details class="group rounded-xl bg-white border border-gray-100 shadow-sm">
-                    <summary class="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-5 py-4 font-semibold text-gray-900">Et mes données ?<span class="text-gray-400 group-open:rotate-45 transition-transform text-lg leading-none">+</span></summary>
-                    <p class="px-5 pb-4 text-sm text-gray-500 leading-relaxed">Elles servent seulement à ton plan, jamais revendues. Un seul cookie, celui de session, pas de pub. Tu supprimes ton compte et tout ce qu'il contient depuis Réglages.</p>
-                </details>
-                <details class="group rounded-xl bg-white border border-gray-100 shadow-sm">
-                    <summary class="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-5 py-4 font-semibold text-gray-900">C'est précis ?<span class="text-gray-400 group-open:rotate-45 transition-transform text-lg leading-none">+</span></summary>
-                    <p class="px-5 pb-4 text-sm text-gray-500 leading-relaxed">{% if has_validation %}Sur {{ va.held_out_races }} courses jamais vues, le plan tombe en moyenne à {{ va.gap_after }}&nbsp;min du réel aux points intermédiaires, une fois le temps final connu. {% endif %}Ton temps final, lui, dépend de tes courses : plus tu en as dans Strava, plus il est juste. <a href="/methode" class="text-gray-700 underline underline-offset-2 hover:text-gray-900">La méthode en détail</a>.</p>
-                </details>
-                <details class="group rounded-xl bg-white border border-gray-100 shadow-sm">
-                    <summary class="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-5 py-4 font-semibold text-gray-900">Pour quelles courses ?<span class="text-gray-400 group-open:rotate-45 transition-transform text-lg leading-none">+</span></summary>
-                    <p class="px-5 pb-4 text-sm text-gray-500 leading-relaxed">Trail et ultra.{% if ft.km_min and ft.km_max %} Le modèle est réglé sur des courses de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km. En dehors, ça marche, mais c'est moins testé.{% endif %}</p>
-                </details>
-            </div>
-        </div>
-    </div>
-
-    <!-- CTA -->
-    <div class="bg-gray-900 py-14 sm:py-16">
-        <div class="max-w-2xl mx-auto px-5 sm:px-6 text-center">
-            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-white">Arrive au départ avec un plan</h2>
-            <p class="mt-3 text-gray-400">Des heures de passage tirées de vraies courses, à ton niveau.</p>
-            <a href="/auth/register"
-               class="mt-6 h-12 px-8 rounded-xl inline-flex items-center justify-center bg-white hover:bg-gray-100 text-gray-900 font-semibold text-sm transition-colors">
-                Créer mon compte
-            </a>
-        </div>
-    </div>
-
+        <section class="pf-lmethod">
+            <h2 class="pf-h2">D'où viennent tes heures de passage</h2>
+            <p>La pente, la fatigue et la nuit sont réglées sur {% if ft.train_races and ft.train_finisher_results %}<span class="tabular-nums text-ink font-medium">{{ ft.train_finisher_results }}</span> finishers de <span class="tabular-nums text-ink font-medium">{{ ft.train_races }}</span> courses{% else %}de vrais temps de passage{% endif %}{% if has_validation %}, puis testées sur <span class="tabular-nums text-ink font-medium">{{ va.held_out_races }}</span> autres courses, jamais vues pendant le réglage{% endif %}. La pente s'ajuste ensuite à tes sorties Strava, et ton niveau vient de tes courses.{% if ft.km_min and ft.km_max %} Réglé sur des courses de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km.{% endif %}</p>
+            <a href="/methode" class="pf-link inline-block mt-3">Comment PaceForge estime ton temps →</a>
+        </section>
+    </main>
     {% include "partials/public_footer.html" %}
 </div>
 {% endblock content_public %}

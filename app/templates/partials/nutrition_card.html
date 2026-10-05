@@ -15,12 +15,12 @@
 
     {# ── 1. The objective, in words a first-timer understands ─────────────── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">1</span><h3 class="text-sm font-semibold tracking-tight">Combien manger</h3></div>
+        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">1</span><h3 class="text-sm font-semibold tracking-tight">Combien manger</h3></div>
         <p class="text-[13px] text-gray-600 mb-3">Sur une course longue, le corps a besoin de sucres toutes les heures. La question est simple : <b class="text-gray-900">combien de grammes de glucides par heure</b> ton estomac accepte.</p>
         <div class="grid grid-cols-3 gap-2 mb-3">
             {% for c, lbl, desc in [(60, 'Prudent', 'estomac fragile, peu entraîné à manger'), (75, 'Habitué', 'tu manges déjà en course sans souci'), (90, 'Entraîné', 'gros volume, estomac entraîné')] %}
             <button type="button" onclick="var f=this.form;f.querySelector('[name=carbs_g_per_h]').value={{ c }};f.requestSubmit()"
-                    class="rounded-lg border p-2.5 text-left {% if targets.carbs_g_per_h == c %}border-gray-900 bg-gray-900 text-white{% else %}border-gray-200 text-gray-700 hover:border-gray-400{% endif %}">
+                    class="rounded-lg border p-2.5 text-left {% if targets.carbs_g_per_h == c %}border-accent bg-accent text-accent-ink{% else %}border-gray-200 text-gray-700 hover:border-gray-400{% endif %}">
                 <span class="block text-lg font-bold tabular-nums leading-none">{{ c }} <span class="text-[10px] font-normal opacity-70">g/h</span></span>
                 <span class="block text-[11px] font-medium mt-1">{{ lbl }}</span>
                 <span class="block text-[10px] mt-0.5 leading-snug {% if targets.carbs_g_per_h == c %}text-gray-300{% else %}text-gray-400{% endif %}">{{ desc }}</span>
@@ -37,7 +37,7 @@
     {# ── 2. What you carry: tick, and each product gets its share in words ───── #}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-            <div class="flex items-baseline gap-2"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">2</span><h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3></div>
+            <div class="flex items-baseline gap-2"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">2</span><h3 class="text-sm font-semibold tracking-tight">Ce que tu prends</h3></div>
             {% if used %}<button type="submit" name="auto" value="1" class="text-[11px] text-gray-500 hover:text-gray-900 underline decoration-gray-300" title="Répartir la cible entre les produits cochés">répartir automatiquement pour {{ targets.carbs_g_per_h }} g/h</button>{% endif %}
         </div>
         <p class="text-[13px] text-gray-600 mb-3">Coche les produits que tu comptes vraiment emporter. Chacun reçoit sa part de la cible, tu ajustes la quantité par heure si tu veux.</p>
@@ -90,7 +90,7 @@
     {% if used and plan.schedule %}
     {% set hy = plan.hydration %}
     <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-gray-900 text-white text-[10px] font-bold inline-flex items-center justify-center">3</span><h3 class="text-sm font-semibold tracking-tight">Ton plan, ravito par ravito</h3></div>
+        <div class="flex items-baseline gap-2 mb-1"><span class="w-5 h-5 rounded-full bg-accent text-accent-ink text-[10px] font-bold inline-flex items-center justify-center">3</span><h3 class="text-sm font-semibold tracking-tight">Ton plan, ravito par ravito</h3></div>
         <p class="text-[13px] text-gray-600 mb-3">Entre deux points de passage, voilà ce que tu prends. Unités entières : ce que tu sors réellement de la poche.{% if n_aid %} L'eau se recharge aux {{ n_aid }} ravito{{ 's' if n_aid > 1 }}.{% else %} Type tes points de passage (eau / ravito) dans le plan pour placer les recharges d'eau.{% endif %}</p>
         <div class="hidden sm:block overflow-x-auto -mx-1">
             <table class="w-full text-sm">
@@ -134,13 +134,13 @@
     </div>
 
     {# ── 4. What goes in which bag ───────────────────────────────────────── #}
-    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div id="packing" data-packing class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm scroll-mt-24">
         <h3 class="text-sm font-semibold tracking-tight mb-1">À emporter</h3>
         {% if plan.packing and plan.packing|length > 1 %}
         <p class="text-[13px] text-gray-600 mb-3">Ce que tu mets dans ton sac au départ, et ce que tu laisses dans chaque drop bag.</p>
         <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {% for g in plan.packing %}
-            <div class="rounded-lg border {% if g.is_start %}border-gray-900{% else %}border-gray-200{% endif %} p-3">
+            <div class="rounded-lg border {% if g.is_start %}border-accent{% else %}border-gray-200{% endif %} p-3">
                 <p class="text-[12px] font-semibold text-gray-800">{% if g.is_start %}Sac au départ{% else %}Drop bag · {{ g.at }}{% endif %} <span class="text-gray-400 font-normal">→ {{ g.until }}</span></p>
                 <div class="mt-1.5 flex flex-wrap gap-1">
                     {% for u in g.units %}<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[12px] text-gray-700"><b>{{ u.units }}</b> {{ u.name }}</span>{% endfor %}
@@ -241,7 +241,7 @@
               class="mt-2 pt-2 border-t border-dashed border-gray-200 grid grid-cols-[minmax(0,1fr)_88px_28px] sm:grid-cols-[minmax(0,1fr)_88px_64px_64px_64px_64px_28px] gap-2 items-center">
             <input name="name" placeholder="Nouveau produit" aria-label="Nom du nouveau produit" class="h-8 px-2 rounded-lg border border-gray-200 text-sm min-w-0 w-full">
             <select name="kind" aria-label="Type" class="h-8 pl-1.5 pr-5 rounded-lg border border-gray-200 text-xs w-full"><option value="gel">Gel</option><option value="drink">Boisson</option><option value="bar">Barre</option><option value="solid">Solide</option><option value="salt">Sel</option></select>
-            <button type="submit" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg bg-gray-900 text-white text-lg leading-none" title="Ajouter">+</button>
+            <button type="submit" class="sm:order-last h-8 w-7 inline-flex items-center justify-center rounded-lg bg-accent text-accent-ink text-lg leading-none" title="Ajouter">+</button>
             {{ numfields(none) }}
         </form>
     </div>

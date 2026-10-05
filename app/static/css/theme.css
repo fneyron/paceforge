@@ -1,0 +1,104 @@
+/*
+ * PaceForge identity — the ONE place to change the brand.
+ *
+ * Colours are RGB channel triplets ("R G B") so Tailwind can add an alpha:
+ * tailwind.config.js maps e.g. `accent` to `rgb(var(--pf-accent) / <alpha-value>)`,
+ * which gives bg-accent, text-accent, bg-accent/10, ring-accent…
+ *
+ * To swap the palette: change the values below (light) and in the `.dark`
+ * block (dark mode is derived from the same names). Keep text colours at
+ * 4.5:1 on their background (AA).
+ *
+ * To swap the font: drop the woff2 files in app/static/fonts/, uncomment the
+ * @font-face block and put the family first in --pf-font-display / --pf-font-text.
+ */
+
+/* ── fonts (self-hosted, SIL OFL 1.1: app/static/fonts/licenses) ──────────
+ * Sora (Jonathan Barnbrook, Julián Moncada) for titles and numbers,
+ * Figtree (Erik Kennedy) for text. Variable weight, latin + latin-ext. */
+@font-face { font-family: "Sora"; src: url("/static/fonts/sora-latin-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Sora"; src: url("/static/fonts/sora-latin-ext-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Figtree"; src: url("/static/fonts/figtree-latin-wght-normal.woff2") format("woff2"); font-weight: 300 900; font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Figtree"; src: url("/static/fonts/figtree-latin-ext-wght-normal.woff2") format("woff2"); font-weight: 300 900; font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+:root {
+    /* brand: « Glacier » — petrol + ice, Sora + Figtree */
+    --pf-accent: 11 95 110;          /* #0B5F6E  petrol: buttons, active tab, profile line, links (white on it 7.3:1) */
+    --pf-accent-ink: 255 255 255;    /* text and icons ON the accent */
+    --pf-accent-soft: 230 242 244;   /* #E6F2F4  ice tint: tinted backgrounds, selected rings */
+    --pf-accent-strong: 8 71 84;     /* #084754  pressed / hover, small accent text */
+    --pf-mark-line: 189 231 238;     /* #BDE7EE  ice: the profile line of the logo */
+
+    --pf-font-display: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --pf-font-text: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    /* status */
+    --pf-ok: 46 125 50;              /* #0E7A46 */
+    --pf-ok-soft: 232 244 232;
+    --pf-warn: 163 90 0;             /* #A85307 */
+    --pf-warn-soft: 252 241 223;
+    --pf-danger: 191 42 34;          /* #C4281C */
+    --pf-danger-soft: 253 236 234;
+
+    /* neutrals: page, surfaces, ink. Tailwind's gray-* classes read this ramp. */
+    --pf-bg: 255 255 255;            /* page */
+    --pf-surface: 255 255 255;       /* cards, sheets, inputs */
+    --pf-soft: 242 246 247;          /* soft fills: segmented control, open row, secondary button */
+    --pf-line: 228 235 237;          /* hairlines */
+    --pf-ink: 11 26 31;              /* main text */
+    --pf-night: 234 242 244;         /* night band on the profile */
+
+    --pf-gray-50: 247 247 248;
+    --pf-gray-100: 241 241 243;
+    --pf-gray-200: 230 230 233;
+    --pf-gray-300: 205 205 211;
+    --pf-gray-400: 114 114 121;      /* smallest readable text: 4.7:1 on white */
+    --pf-gray-500: 99 99 106;
+    --pf-gray-600: 75 75 82;
+    --pf-gray-700: 58 58 64;
+    --pf-gray-800: 35 35 39;
+    --pf-gray-900: 11 26 31;
+    --pf-gray-950: 5 5 6;
+
+    color-scheme: light;
+}
+
+.dark {
+    --pf-accent: 92 195 209;
+    --pf-accent-ink: 4 22 26;
+    --pf-accent-soft: 13 44 50;
+    --pf-accent-strong: 132 214 224;
+    --pf-mark-line: 4 22 26;
+
+    --pf-ok: 98 204 145;
+    --pf-ok-soft: 18 46 31;
+    --pf-warn: 240 176 92;
+    --pf-warn-soft: 56 38 14;
+    --pf-danger: 248 128 116;
+    --pf-danger-soft: 60 22 20;
+
+    --pf-bg: 14 14 16;
+    --pf-surface: 24 24 27;
+    --pf-soft: 30 30 34;
+    --pf-line: 44 44 49;
+    --pf-ink: 244 244 246;
+    --pf-night: 32 32 38;
+
+    --pf-gray-50: 24 24 27;
+    --pf-gray-100: 32 32 36;
+    --pf-gray-200: 46 46 52;
+    --pf-gray-300: 70 70 78;
+    --pf-gray-400: 150 150 158;
+    --pf-gray-500: 166 166 173;
+    --pf-gray-600: 188 188 194;
+    --pf-gray-700: 210 210 215;
+    --pf-gray-800: 228 228 232;
+    --pf-gray-900: 244 244 246;
+    --pf-gray-950: 250 250 251;
+
+    color-scheme: dark;
+}
