@@ -36,15 +36,14 @@
 {% endmacro %}
 
 {% block content %}
+{% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
 <div class="pf-health">
     <div class="pf-head flex-col !items-start !gap-1">
         <h1 class="pf-h1">Santé</h1>
-        {% if coros.connected and not coros.needs_reauth %}{% include "partials/coros_status.html" %}{% endif %}
-        {% if garmin.connected and not garmin.needs_reauth %}{% include "partials/garmin_status.html" %}{% endif %}
+        {% if watches %}{% include "partials/sante_sync.html" %}{% endif %}
     </div>
 
     {# ── watch link ── #}
-    {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
     {% if not coros.connected and not garmin.connected %}
     <section class="pf-health-connect pf-panel space-y-3">
         <h2 class="pf-h2">Ta montre</h2>
@@ -66,7 +65,7 @@
     <section class="pf-note mt-4"><p>Impossible d'afficher tes données pour l'instant. Réessaie dans quelques minutes.</p></section>
     {% elif not page.has_data %}
     {% if watches %}
-    <section class="pf-note mt-4"><p>Pas encore de données de {{ watches|join(' ni de ') }}. Elles arrivent à la prochaine synchro : appuie sur « Synchroniser maintenant » ou reviens dans quelques minutes.</p></section>
+    <section class="pf-note mt-4"><p>Pas encore de données de {{ watches|join(' ni de ') }}. Elles arrivent dans quelques minutes.</p></section>
     {% endif %}
     {% else %}
     {% set ch = {} %}{% for it in page.trends.charts %}{% set _ = ch.update({it.key: it}) %}{% endfor %}

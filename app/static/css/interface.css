@@ -543,7 +543,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-loadchart { margin-top: 18px; }
 .pf-health-grid { display: grid; gap: 8px; }
 .pf-health-grid .pf-health-chart { margin-top: 36px; }
-.pf-coros-status { margin-top: 4px; }
+.pf-sante-sync { margin-top: 4px; }
 @media (min-width: 900px) {
     .pf-ring { width: 180px; height: 180px; }
     .pf-ring-v b { font-size: 56px; }

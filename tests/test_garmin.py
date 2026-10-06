@@ -524,7 +524,7 @@ async def test_login_errors_in_plain_french(test_user: User, login):
 
 async def test_routes_require_login(client: AsyncClient):
     for method, path in (("POST", "/garmin/connect"), ("GET", "/garmin/login"), ("POST", "/garmin/mfa"),
-                         ("POST", "/settings/garmin/sync"), ("POST", "/settings/garmin/disconnect")):
+                         ("POST", "/sante/sync"), ("POST", "/settings/garmin/disconnect")):
         r = await client.request(method, path)
         assert r.status_code == 307 and r.headers["location"] == "/", path
 
@@ -555,7 +555,7 @@ async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: Asyn
     r = await as_user.get("/garmin/login")
     assert r.status_code == 204 and r.headers["HX-Redirect"] == "/settings#garmin"
     page = (await as_user.get("/settings")).text
-    assert "Garmin connecté. Tes 60 derniers jours" in page and 'id="garmin-status"' in page
+    assert "Garmin connecté. Tes 60 derniers jours" in page and "Première synchro en cours" in page
     r = await as_user.get("/garmin/login")  # the ticket is gone once used
     assert "La connexion à Garmin a expiré. Recommence." in r.text
 
@@ -564,14 +564,16 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
                                                       test_user: User, fake):
     await _link(db_session, test_user)
     sante = (await as_user.get("/sante")).text
-    assert "Pas encore de données de Garmin" in sante and 'id="garmin-status"' in sante
-    assert "Connecter COROS" not in sante
+    assert "Pas encore de données de Garmin" in sante and "Connecter COROS" not in sante
+    # Santé: one button to sync, no link status (that's Réglages')
+    assert sante.count('hx-post="/sante/sync"') == 1 and "dernière synchro" not in sante.lower()
+    settings_page = (await as_user.get("/settings")).text
+    assert "Première synchro en cours" in settings_page and "Synchroniser maintenant" not in settings_page
 
-    r = await as_user.post("/settings/garmin/sync")
-    assert r.status_code == 200 and "Synchro terminée" in r.text and "HX-Refresh" not in r.headers
-    r = await as_user.post("/settings/garmin/sync", headers={"HX-Request": "true", "HX-Current-URL": "https://test/sante"})
-    assert r.headers.get("HX-Refresh") == "true"
+    r = await as_user.post("/sante/sync")
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
     assert "Récupération" in (await as_user.get("/sante")).text
+    assert "Dernière synchro" in (await as_user.get("/settings")).text
 
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/garmin/disconnect")
@@ -581,6 +583,20 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     assert n == n2 > 0  # imported data stays
     page = (await as_user.get("/settings")).text
     assert "Garmin déconnecté" in page and 'hx-post="/garmin/connect"' in page
+
+
+async def test_sante_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession,
+                                              test_user: User, fake):
+    conn = await _link(db_session, test_user)
+    fake.api_status = 503
+    r = await as_user.post("/sante/sync")
+    assert "HX-Refresh" not in r.headers and 'id="sante-sync"' in r.text
+    assert "Garmin : Garmin n&#39;a renvoyé aucune donnée lisible." in r.text
+    fake.api_status = None
+    conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
+    await db_session.flush()
+    r = await as_user.post("/sante/sync")
+    assert "Une synchro est déjà en cours" in r.text
 
 
 async def test_sante_offers_both_watches_when_none_is_linked(as_user: AsyncClient):
