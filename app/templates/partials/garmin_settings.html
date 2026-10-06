@@ -18,13 +18,13 @@
     {% endif %}
     {% if not garmin.connected %}
     <p class="text-sm text-gray-500">Ta récupération, ta charge d'entraînement, ta VFC, ton sommeil, ta VO2 max et tes séances arrivent automatiquement depuis Garmin Connect.</p>
-    {% set login = none %}{% set region = 'monde' %}{% set regions = {'monde': ('Monde', 'garmin.com'), 'chine': ('Chine', 'garmin.cn')} %}
+    {% set login = none %}
     {% include "partials/garmin_login.html" %}
     {% else %}
     {% if garmin.needs_reauth %}
     <div class="space-y-2.5">
         <p class="text-xs text-gray-600">{{ garmin.last_error or "La connexion à Garmin a expiré : reconnecte-toi." }} Les données déjà reçues restent.</p>
-        {% set login = none %}{% set region = 'monde' %}{% set regions = {'monde': ('Monde', 'garmin.com'), 'chine': ('Chine', 'garmin.cn')} %}
+        {% set login = none %}
         {% include "partials/garmin_login.html" %}
     </div>
     {% else %}
