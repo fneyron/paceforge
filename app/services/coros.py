@@ -15,7 +15,8 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
 - Sync → HRV, resting HR, sleep and VO2 max as HealthSample rows (source
   "COROS") through health.store_samples; the values COROS already gives per day
   (training load, recovery, daily heart rate, stress, steps, fitness
-  assessment, HRV normal range) straight to HealthMetric (health.store_daily).
+  assessment, HRV normal range, sleep score) straight to HealthMetric
+  (health.store_daily).
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand.
 
@@ -103,6 +104,10 @@ class ToolError(CorosError):
 
 class McpUnauthorized(CorosError):
     pass
+
+
+class McpUnavailable(CorosError):
+    """A 5xx: COROS is down or overloaded for that request."""
 
 
 # ── OAuth: discovery, client registration, PKCE ─────────────────────────────
@@ -442,7 +447,8 @@ class McpSession:
         if r.status_code == 401:
             raise McpUnauthorized("COROS a refusé le jeton.")
         if r.status_code >= 400:
-            raise CorosError(f"COROS ne répond pas pour l'instant (erreur {r.status_code}).")
+            error = McpUnavailable if r.status_code >= 500 else CorosError
+            raise error(f"COROS ne répond pas pour l'instant (erreur {r.status_code}).")
         sid = r.headers.get("mcp-session-id")
         if sid:
             self.session_id = sid
@@ -534,7 +540,8 @@ def _field_pct(block: str, label: str) -> float | None:
 
 def parse_sleep_overview(text: str) -> dict[date, dict]:
     """querySleepOverview, per wake-up day: main sleep window, asleep and period
-    minutes, awake time and the stage ratios (%)."""
+    minutes, awake time, the stage ratios (%) and the sleep score (0 or
+    « not available yet » when COROS hasn't scored the night)."""
     out = {}
     heads = list(re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$", text or "", re.M))
     for i, h in enumerate(heads):
@@ -559,6 +566,7 @@ def parse_sleep_overview(text: str) -> dict[date, dict]:
             "awake": _field_minutes(block, r"Awake Time"),
             "ratios": {"deep": _field_pct(block, "Deep Sleep Ratio"), "core": _field_pct(block, "Light Sleep Ratio"),
                        "rem": _field_pct(block, "REM Ratio"), "awake": _field_pct(block, "Awake Ratio")},
+            "score": None if "not available yet" in block else _field(block, "Sleep Score"),
         }
     return out
 
@@ -807,6 +815,9 @@ def build_daily(data: dict, today: date) -> list[Daily]:
         if _ok(v["lo"], 5, 300) and _ok(v["hi"], v["lo"], 300):
             base = v["base"] if _ok(v.get("base"), 5, 300) else round((v["lo"] + v["hi"]) / 2, 1)
             out.append(Daily("hrv_norm", d, base, {"lo": v["lo"], "hi": v["hi"]}))
+    for d, v in (data.get("overview") or {}).items():
+        if _ok(v.get("score"), 1, 100):  # 0: not scored (yet)
+            out.append(Daily("sleep_score", d, v["score"]))
     fit = dict(data.get("fitness") or {})
     if fit:
         if not _ok(fit.get("vo2max"), 10, 95):
@@ -857,7 +868,8 @@ def _ranges(lo: date, hi: date, size: int) -> list[tuple[date, date]]:
 
 class _Fetcher:
     """Tool calls with a small pause between them and a cap per sync. A tool
-    error only loses that piece: the rest of the sync goes on."""
+    error, a timeout or a 5xx only loses that piece: the rest of the sync goes
+    on (a rejected token still stops it)."""
 
     def __init__(self, mcp: McpSession):
         self.mcp, self.calls, self.failed = mcp, 0, 0
@@ -871,9 +883,9 @@ class _Fetcher:
         self.calls += 1
         try:
             return await self.mcp.call_tool(tool, args)
-        except ToolError as e:
+        except (ToolError, McpUnavailable, httpx.HTTPError) as e:
             self.failed += 1
-            logger.info("COROS %s %s failed: %s", tool, args, e)
+            logger.info("COROS %s %s failed: %r", tool, args, e)
             return None
 
     async def recent(self, tool: str, days: int, fallback: int = RECENT_DAYS) -> str | None:
@@ -901,7 +913,14 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     hi = today + timedelta(days=1)
     lo = hi - timedelta(days=days - 1)
     data: dict = {"hrv": {}, "hrv_range": {}, "rhr": {}, "overview": {}, "daily": {}, "vo2max": None}
-    # the daily values first: every athlete has them, night data is optional
+    # the nights first: last night is what the morning's decision reads
+    for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
+        text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
+        data["overview"].update(_parsed(parse_sleep_overview, text))
+    for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
+        text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
+        data["hrv"].update(_parsed(parse_hrv, text))
+        data["hrv_range"].update(_parsed(parse_hrv_range, text))
     data["load"] = _parsed(parse_training_load, await call.recent(
         "queryTrainingLoadAssessment", days, LOAD_FALLBACK_DAYS))
     data["recovery"] = _parsed(parse_recovery, await call("queryRecoveryStatus", {})) or None
@@ -912,13 +931,6 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
     data["vo2max"] = data["fitness"].get("vo2max")
     data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
-    for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
-        text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
-        data["hrv"].update(_parsed(parse_hrv, text))
-        data["hrv_range"].update(_parsed(parse_hrv_range, text))
-    for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
-        text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
-        data["overview"].update(_parsed(parse_sleep_overview, text))
     return data, call.calls, call.failed
 
 

@@ -72,6 +72,18 @@ SLEEP_OVERVIEW = """Sleep Overview
 ========================
 Note: each record below is dated by its wake-up day.
 
+2026-09-27
+Sleep Score: -1
+Daily Sleep: 1h 22min (incl. naps)
+Sleep metrics scope: daily
+Naps Total (asleep): 1h 22min
+Naps Period (incl. awake): 1h 29min
+Nap Window: 2026-09-27 01:23 - 2026-09-27 02:52
+
+2026-09-28
+Sleep Score: 0
+Sleep detail for this day is not available yet.
+
 2026-09-29
 Sleep Score: 89
 Daily Sleep: 8h 46min (incl. naps)
@@ -239,6 +251,7 @@ def test_parse_sleep_overview_and_daily_stages():
     assert n["start"] == datetime(2026, 9, 29, 23, 52) and n["end"] == datetime(2026, 9, 30, 9, 54)
     assert (n["asleep"], n["period"], n["awake"]) == (588, 602, 14)
     assert n["ratios"] == {"deep": 13, "core": 57, "rem": 28, "awake": 2}
+    assert (ov[D29]["score"], n["score"]) == (89, 91)  # nap-only (-1) and « not available yet » days: no night
     daily = coros.parse_daily_sleep(DAILY)
     assert daily[D30] == {"deep": 76, "core": 343, "rem": 169, "awake": 14}
     assert daily[D29] == {"deep": 60, "core": 341, "rem": 125, "awake": 14}
@@ -276,8 +289,11 @@ def test_build_daily_keeps_plausible_values_only():
     today = date(2026, 10, 5)
     data = {"load": coros.parse_training_load(LOAD), "recovery": coros.parse_recovery(RECOVERY),
             "hr_day": coros.parse_avg_hr(AVG_HR), "activity": coros.parse_daily_activity(DAILY_60),
-            "hrv_range": coros.parse_hrv_range(HRV), "fitness": coros.parse_fitness(FITNESS)}
+            "hrv_range": coros.parse_hrv_range(HRV), "fitness": coros.parse_fitness(FITNESS),
+            "overview": coros.parse_sleep_overview(SLEEP_OVERVIEW.replace("Sleep Score: 89", "Sleep Score: 0"))}
     rows = {(r.metric, r.day): r for r in coros.build_daily(data, today)}
+    assert rows[("sleep_score", D30)].value == 91 and rows[("sleep_score", D30)].details is None
+    assert ("sleep_score", D29) not in rows and ("sleep_score", D28) not in rows  # 0: not scored yet
     assert rows[("load", today)].value == 179
     assert rows[("load", today)].details == {"long": 109, "ratio": 1.64, "comment": "Excessive"}
     assert rows[("recovery", today)].value == 84 and rows[("recovery", today)].details["full_h"] == 45
@@ -291,7 +307,8 @@ def test_build_daily_keeps_plausible_values_only():
     assert all(len(r.metric) <= 12 for r in rows.values())  # HealthMetric.metric is String(12)
     odd = coros.build_daily({"recovery": {"pct": 840, "level": None, "full_h": None},
                              "hr_day": {today: {"avg": 999, "min": None, "max": None}},
-                             "fitness": {"threshold_s": 5, "pred": {"5k": 3}}}, today)
+                             "fitness": {"threshold_s": 5, "pred": {"5k": 3}},
+                             "overview": {D30: {"score": 0}, D29: {"score": 140}}}, today)
     assert odd == []
 
 
@@ -442,6 +459,8 @@ class FakeCoros:
         self.code_error: str | None = None
         self.refresh_error: str | None = None
         self.mcp_status: int | None = None
+        self.timeouts: set[str] = set()  # tools whose call times out
+        self.tool_status: dict[str, int] = {}  # tools answered with this HTTP status
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url).split("?")[0]
@@ -503,6 +522,10 @@ class FakeCoros:
         assert "text/event-stream" in request.headers["accept"]
         name, args = msg["params"]["name"], msg["params"]["arguments"]
         self.tool_calls.append((name, args))
+        if name in self.timeouts:
+            raise httpx.ReadTimeout("timed out", request=request)
+        if name in self.tool_status:
+            return httpx.Response(self.tool_status[name])
         limit = self.max_days.get(name)
         if limit and args.get("days", 0) > limit:
             return self._reply(msg["id"], {"content": [{"type": "text", "text": f"days must be <= {limit}"}],
@@ -696,7 +719,11 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     assert by["steps"].value == 1487 and by["steps"].details == {"kcal": 92, "exercise": 0}
     assert by["stress"].value == 13 and by["hrv_norm"].details == {"lo": 70, "hi": 84}
     assert by["fitness"].details["level"] == 97 and by["fitness"].details["pred"]["10k"] == 1954
+    assert by["sleep_score"].value == 91 and by["sleep_score"].details is None
     assert all(m.source == "COROS" for m in rows)
+    scores = (await db_session.execute(select(HealthMetric.date, HealthMetric.value).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "sleep_score"))).all()
+    assert dict(scores) == {today - timedelta(days=1): 89, today: 91}  # the 0 « not available yet » day: none
     hr = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "hr_day"))).scalars().all()
     assert {m.date: (m.value, m.details["max"]) for m in hr}[today - timedelta(days=1)] == (53, 98)
@@ -739,6 +766,27 @@ async def test_sync_failure_is_shown_in_plain_french(as_user: AsyncClient, db_se
     assert outcome["ok"] is False and conn.last_error == "COROS ne répond pas pour l'instant (erreur 503)."
     assert not conn.needs_reauth and conn.last_sync_at is None
     assert "Dernière synchro échouée" in (await as_user.get("/settings")).text
+
+
+async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: AsyncSession, test_user: User,
+                                                                 fake, no_commit):
+    fake.timeouts = {"queryTrainingLoadAssessment"}
+    fake.tool_status = {"queryAvgHeartRate": 502}
+    conn = await _link(db_session, test_user)
+    outcome = await coros.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}, {"days": 14}]
+    assert fake.tool_calls[-1][0] == "queryRestingHeartRate"  # the sync went on to the end
+    today = datetime.now(timezone.utc).date()
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    by = {(m.metric, m.date): m.value for m in rows}
+    assert by[("sleep", today)] == 588 and by[("sleep_score", today)] == 91 and by[("hrv", today)] == 83
+    assert not any(m in ("load", "hr_day") for m, _ in by)
+
+    # every call lost: the sync fails, as before
+    fake.timeouts = set(fake.texts)
+    outcome = await coros.run_sync(db_session, conn)
+    assert outcome == {"ok": False, "error": "COROS n'a renvoyé aucune donnée lisible."}
 
 
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):
