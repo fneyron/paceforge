@@ -123,7 +123,7 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
     # resting HR ~6 bpm over the usual two nights running: the illness rule comes before fatigue
-    assert "Reste tranquille aujourd&#39;hui" in r.text and "VFC · 7 j" in r.text and "FC au repos · 7 j" in r.text
+    assert "Reste tranquille aujourd&#39;hui" in r.text and "VFC <small>· 7 nuits" in r.text and "FC au repos <small>· 7 nuits" in r.text
     assert r.text.count('class="pf-sig"') == 2  # the 28-night pictures behind the two night signals
 
 

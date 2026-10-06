@@ -614,7 +614,7 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     r = await as_user.post("/sante/sync")
     assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
     sante = (await as_user.get("/sante")).text
-    assert "Charge · 7 j" in sante and "forte hausse" in sante and 'class="pf-nights"' in sante
+    assert "Charge <small>· 7 j (Garmin)" in sante and "forte hausse" in sante and 'class="pf-nights' in sante
     assert "Dernière synchro" in (await as_user.get("/settings")).text
 
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()

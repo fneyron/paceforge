@@ -2,41 +2,15 @@
 
 {% block title %}Santé — PaceForge{% endblock title %}
 
-{% macro signal_chart(s) %}{% set c = s.chart %}
-<figure class="pf-sig">
-    <div class="pf-sig-plot">
-        <svg viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="none" class="block w-full h-24 overflow-visible" aria-hidden="true">
-            <rect x="0" y="{{ c.band[0] }}" width="{{ c.w }}" height="{{ c.band[1] }}" class="pf-n-band"/>
-            {% for x, y in c.dots %}<path d="M{{ x }} {{ y }} l0 0" class="pf-sig-dot" vector-effect="non-scaling-stroke"/>{% endfor %}
-            <path d="{{ c.line }}" class="pf-sig-line" vector-effect="non-scaling-stroke"/>
-        </svg>
-        <span class="pf-sig-edge" style="top: {{ c.hi_pct }}%">{{ c.band_hi }}</span>
-        <span class="pf-sig-edge" style="top: {{ c.lo_pct }}%">{{ c.band_lo }}</span>
-    </div>
-    <figcaption class="pf-label">28 nuits depuis le {{ c.start }} · ligne : moyenne sur 7 nuits · bande : ta normale</figcaption>
-</figure>
-{% if s.resume %}<p class="pf-sig-resume">{{ s.resume }}</p>{% endif %}
-{% endmacro %}
-
 {% block content %}
 {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
 <div class="pf-health">
     <div class="pf-head flex-col !items-start !gap-1">
         <h1 class="pf-h1">Santé</h1>
+        {% if lines %}<p class="pf-sante-lines">{% for l in lines %}<span><b>{{ l.name }}</b> · {{ l.night }}</span>{% endfor %}</p>{% endif %}
         {% if watches %}{% include "partials/sante_sync.html" %}{% endif %}
     </div>
 
-    {# ── watch link ── #}
-    {% if not coros.connected and not garmin.connected %}
-    <section class="pf-health-connect pf-panel space-y-3">
-        <h2 class="pf-h2">Ta montre</h2>
-        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin : ta récupération, ta charge d'entraînement, ton sommeil et ta forme s'afficheront ici.</p>
-        <div class="flex flex-wrap gap-2">
-            <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
-            <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>
-        </div>
-    </section>
-    {% endif %}
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}
     <section class="pf-health-connect pf-panel space-y-3">
         <p class="text-[15px] text-gray-700">{{ link.last_error or "La connexion à " ~ name ~ " a expiré : reconnecte-toi." }} Les données déjà reçues restent.</p>
@@ -49,88 +23,82 @@
     {% elif not page.has_data %}
     {% if watches %}
     <section class="pf-note mt-4"><p>Pas encore de données de {{ watches|join(' ni de ') }}. Elles arrivent dans quelques minutes.</p></section>
+    {% else %}
+    <section class="pf-health-connect pf-panel space-y-3 mt-4">
+        <h2 class="pf-h2">Ta montre et tes séances</h2>
+        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ta récupération, tes semaines, ta prochaine course et tes progrès s'afficheront ici.</p>
+        <div class="flex flex-wrap gap-2">
+            <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
+            <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>
+        </div>
+    </section>
     {% endif %}
     {% else %}
-    {% set v = page.verdict %}{% set n = page.nights %}{% set fi = page.fitness %}
-    {# tone → class written out here: tailwind.css is prebuilt from the templates #}
-    {% set tones = {'ok': 'pf-tone-ok', 'easy': 'pf-tone-warn', 'rest': 'pf-tone-danger', 'unknown': 'pf-tone-muted'} %}
-    {% set words = {'ok': 'pf-word-ok', 'warn': 'pf-word-warn', 'danger': 'pf-word-danger', 'muted': 'pf-word-muted'} %}
-    <div class="pf-health-body">
+    {% set v = page.verdict %}{% set co = page.course %}
+    {% set vtone = {'ok': 'pf-word-ok', 'easy': 'pf-word-warn', 'rest': 'pf-word-danger', 'unknown': 'pf-word-muted'} %}
+    {% set tabs = [('aujourdhui', "Aujourd'hui", v.word, vtone[v.tone]), ('entrainement', 'Entraînement', None, ''),
+                   ('course', 'Course', co.sublabel if co else None, 'pf-word-accent'), ('tendances', 'Tendances', None, '')] %}
+    {% set active = vue if vue in ('entrainement', 'course', 'tendances') else 'aujourdhui' %}
+    <nav class="pf-stabs" role="tablist" aria-label="Santé">
+        {% for key, label, sub, cls in tabs %}
+        <a role="tab" id="tab-{{ key }}" href="#{{ key }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if key == active else 'false' }}" tabindex="{{ '0' if key == active else '-1' }}" class="pf-stab">{{ label }}{% if sub %}<small class="{{ cls }}">{{ sub }}</small>{% endif %}</a>
+        {% endfor %}
+    </nav>
 
-    {# ── today: one decision, the numbers behind it ── #}
-    <section class="pf-verdict {{ tones[v.tone] }}" aria-labelledby="h-today">
-        <h2 id="h-today" class="pf-health-verdict">{{ v.headline }}</h2>
-        {% if v.text %}<p class="pf-verdict-text">{{ v.text }}</p>{% endif %}
-        {% if page.signals %}
-        <div class="pf-signals">
-            {% for s in page.signals %}
-            {% set row %}<span class="pf-signal-label">{{ s.label }}</span><span class="pf-signal-value"><b class="tabular-nums">{{ s.value }}</b> <small>{{ s.ref }}</small></span><span class="pf-signal-word {{ words[s.tone] }}">{{ s.word }}</span>{% endset %}
-            {% if s.chart %}
-            <details class="pf-signal"{% if s.tone == 'danger' %} open{% endif %}>
-                <summary class="pf-signal-row">{{ row }}</summary>
-                {{ signal_chart(s) }}
-            </details>
-            {% else %}
-            <div class="pf-signal pf-signal-row">{{ row }}</div>
-            {% endif %}
-            {% endfor %}
-        </div>
-        {% endif %}
-        {% if v.note %}<p class="pf-verdict-note">{{ v.note }}</p>{% endif %}
+    <section id="aujourdhui" role="tabpanel" aria-labelledby="tab-aujourdhui" class="pf-tabpanel">
+        {% include "partials/sante_today.html" %}
     </section>
-
-    {# ── the last 14 nights ── #}
-    <section class="pf-nights-sec" aria-labelledby="h-nights">
-        <div class="pf-sechead"><h2 id="h-nights" class="pf-h2">Tes nuits</h2></div>
-        {% if n.takeaway %}<p class="pf-nights-take">{{ n.takeaway }}</p>{% endif %}
-        {% if n.coverage %}<p class="pf-nights-cover">{{ n.coverage }}</p>{% endif %}
-        {% if n.n7 >= 3 %}
-        <dl class="pf-kpis pf-kpis-2">
-            <div><dt class="pf-label">Sommeil · 7 nuits</dt><dd class="tabular-nums">{{ n.avg7_txt }}<small>/nuit</small></dd><dd class="pf-kpi-sub">besoin {{ n.need_h }} h · {{ n.n7 }} nuit{{ 's' if n.n7 > 1 }} sur 7</dd></div>
-            <div><dt class="pf-label">Horaires · 14 nuits</dt>
-                {% if n.regularity %}<dd class="tabular-nums">± {{ n.regularity.sd }}<small>min</small></dd><dd class="pf-kpi-sub"><span class="{{ words[n.regularity.tone] }}">{{ n.regularity.word }}</span> · {{ n.regularity.range }}</dd>
-                {% else %}<dd>—</dd><dd class="pf-kpi-sub">il faut 5 nuits sur 14</dd>{% endif %}
-            </div>
-        </dl>
-        {% endif %}
-        {% if n.selective %}<p class="pf-nights-cover">Peu de nuits mesurées : si tu enlèves la montre les mauvaises nuits, ta moyenne paraît meilleure qu'en vrai.</p>{% endif %}
-        {% set st = n.strip %}
-        {% if st %}
-        <figure class="pf-nights" role="img" aria-label="{{ st.aria }}">
-            <div class="pf-n-labels" aria-hidden="true">{% for b in st.bars %}<span class="{{ 'pf-n-now' if loop.first }}{{ ' pf-n-dim' if b.missing }}">{{ b.label }}</span>{% endfor %}</div>
-            <svg class="pf-n-plot" width="100%" height="{{ st.height }}" aria-hidden="true">
-                {% if st.band %}<rect x="{{ st.band.x }}%" width="{{ st.band.w }}%" y="0" height="{{ st.height }}" class="pf-n-band"/>{% endif %}
-                {% for gx in st.grid %}<line x1="{{ gx }}%" x2="{{ gx }}%" y1="0" y2="{{ st.height }}" class="pf-n-grid"/>{% endfor %}
-                <line x1="0" x2="100%" y1="{{ st.half }}" y2="{{ st.half }}" class="pf-n-grid"/>
-                {% for b in st.bars %}
-                {% if b.missing %}<line x1="0" x2="100%" y1="{{ b.y + 10 }}" y2="{{ b.y + 10 }}" class="pf-n-miss"/>
-                {% else %}<rect x="{{ b.x }}%" width="{{ b.w }}%" y="{{ b.y + 4 }}" height="12" rx="3" class="pf-n-{{ b.tone }}"/>{% endif %}
-                <rect x="0" width="100%" y="{{ b.y }}" height="20" fill="transparent"><title>{{ b.title }}</title></rect>
-                {% endfor %}
-            </svg>
-            <div class="pf-n-durs" aria-hidden="true">{% for b in st.bars %}<span class="pf-n-t-{{ b.tone }}">{{ b.dur }}</span>{% endfor %}</div>
-            <div class="pf-n-axis" aria-hidden="true">{% for t in st.ticks %}<span class="pf-n-tick pf-n-{{ t.align }}{{ ' pf-n-edge' if t.edge }}" style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}</div>
-        </figure>
-        <ol class="sr-only">{% for b in st.bars %}<li>{{ b.sr }}</li>{% endfor %}</ol>
-        <p class="pf-n-legend"><span class="text-warn">orange : moins de 7 h</span> · <span class="text-danger">rouge : moins de 6 h</span> · pointillés : pas de montre{% if st.band %} · bande : {{ n.need_h }} h avant ton lever habituel{% endif %}</p>
-        {% endif %}
+    <section id="entrainement" role="tabpanel" aria-labelledby="tab-entrainement" class="pf-tabpanel">
+        <h2 class="pf-panel-h pf-tabbed pf-h1">Entraînement</h2>
+        {% include "partials/sante_week.html" %}
     </section>
-
-    {# ── fitness assessment ── #}
-    <section aria-labelledby="h-fitness" class="pf-health-fitness">
-        <div class="pf-sechead">
-            <h2 id="h-fitness" class="pf-h2">Niveau</h2>
-        </div>
-        {% if fi %}
-        <dl class="pf-kpis pf-kpis-2">
-            {% if fi.vo2max %}<div><dt class="pf-label">VO2 max</dt><dd class="tabular-nums">{{ fi.vo2max }}</dd></div>{% endif %}
-            {% if fi.threshold %}<div><dt class="pf-label">Allure seuil</dt><dd class="tabular-nums">{{ fi.threshold.replace(' /km', '') }}<small>/km</small></dd></div>{% endif %}
-        </dl>
-        {% else %}
-        <p class="text-[15px] text-gray-500">Ton niveau arrive quand ta montre a assez de courses avec cardio pour l'évaluer.</p>
-        {% endif %}
+    <section id="course" role="tabpanel" aria-labelledby="tab-course" class="pf-tabpanel">
+        <h2 class="pf-panel-h pf-tabbed pf-h1">Course</h2>
+        {% if co %}{% with course = co %}{% include "partials/sante_course.html" %}{% endwith %}{% endif %}
     </section>
-    </div>
+    <section id="tendances" role="tabpanel" aria-labelledby="tab-tendances" class="pf-tabpanel">
+        <h2 class="pf-panel-h pf-tabbed pf-h1">Tendances</h2>
+        {% if page.trends %}{% with trends = page.trends %}{% include "partials/sante_trends.html" %}{% endwith %}{% endif %}
+    </section>
+    <script>
+    (function () {
+        // real tabs once scripts run; without them the four panels simply stack
+        var root = document.querySelector(".pf-health"), tabs = Array.from(document.querySelectorAll(".pf-stab"));
+        root.classList.add("pf-js");
+        function show(key, focus) {
+            tabs.forEach(function (t) {
+                var on = t.getAttribute("aria-controls") === key;
+                t.setAttribute("aria-selected", on ? "true" : "false");
+                t.tabIndex = on ? 0 : -1;
+                document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+                if (on && focus) t.focus();
+            });
+            try {
+                var u = new URL(location.href);
+                if (key === "aujourdhui") u.searchParams.delete("vue"); else u.searchParams.set("vue", key);
+                u.hash = "";
+                history.replaceState(null, "", u);
+            } catch (e) {}
+        }
+        tabs.forEach(function (t, i) {
+            t.addEventListener("click", function (e) { e.preventDefault(); show(t.getAttribute("aria-controls")); window.scrollTo({ top: 0 }); });
+            t.addEventListener("keydown", function (e) {
+                var k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+                if (k) { e.preventDefault(); show(tabs[(i + k + tabs.length) % tabs.length].getAttribute("aria-controls"), true); }
+            });
+        });
+        // links inside the panels that move to another tab
+        document.querySelectorAll("[data-vue-link]").forEach(function (a) {
+            a.addEventListener("click", function (e) {
+                var m = /[?&]vue=([a-z]+)/.exec(a.getAttribute("href") || "");
+                if (!m) return;
+                e.preventDefault(); show(m[1]); window.scrollTo({ top: 0 });
+            });
+        });
+        var start = tabs.find(function (t) { return t.getAttribute("aria-selected") === "true"; });
+        show(start ? start.getAttribute("aria-controls") : "aujourdhui");
+    })();
+    </script>
     {% endif %}
 </div>
 {% endblock content %}

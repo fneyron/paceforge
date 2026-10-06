@@ -1,23 +1,20 @@
-"""The Santé page: one decision for today, the last 14 nights, fitness — from
-the daily values in HealthMetric (COROS, Garmin).
-
-Everything here reads; nothing calls the watches. The page answers « what do
-I do today, and is my sleep holding up? » with the fewest elements:
-- the decision: night signals (compute_form), training load and last night
-  reconciled into one action headline, backed by at most three numbers
-  (VFC, FC au repos, charge), each next to the athlete's own usual value;
-- the nights: 14 sleep windows (bedtime → wake) against a band of the sleep
-  needed before the usual wake time, with one takeaway sentence from the
-  sleep research (duration, debt, regularity, race week);
-- fitness: VO2max and threshold pace.
-The watch's own recovery score is not shown: its formula is undisclosed and
-it contradicted the page. Sleep stages are not shown either (wrist stages
-agree poorly with polysomnography). A night without the watch is never
-guessed: it is drawn as a gap and never counted in an average.
+"""The Santé page in four tabs, each answering one question:
+- Aujourd'hui « comment je m'entraîne aujourd'hui ? »: one decision read from
+  the nights (HRV and resting HR against the athlete's normal), the training
+  load, the legs and the heart rate at easy pace (sante_today), the rows it
+  rests on, the watch's own score as a second opinion, the check-in and the
+  last 14 nights;
+- Entraînement « comment se passent mes semaines ? » (sante_week);
+- Course « suis-je prêt pour la prochaine ? » (sante_course);
+- Tendances « est-ce que je progresse sur des mois ? » (sante_trends).
+The training side comes from the sessions alone (sante_training), so the page
+is useful to an athlete who never wears the watch at night. Everything here
+reads; nothing calls the watches. A night without the watch is never guessed:
+it is a gap, never counted in an average. Each number is printed once.
 """
 import statistics
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,8 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.models.route import Route
 from app.services.health import (
-    BASELINE_DAYS,
-    RECENT_DAYS,
     SHORT_SLEEP_MIN,
     _today,
     compute_form,
@@ -133,71 +128,249 @@ def _hm(minutes: float) -> str:
 
 # ── page ────────────────────────────────────────────────────────────────────
 
-async def health_page(db: AsyncSession, user_id: int, today: date | None = None) -> dict:
-    """Everything /sante draws. `has_data` is False when nothing ever arrived."""
+PAGE_METRICS = ("hrv", "rhr", "sleep", "load", "recovery", "stress", "hr_day", "steps", "body_battery", "vo2max",
+                "fitness", "sleep_score", "feel")
+HISTORY_DAYS = 400
+SIGNAL_DAYS = 28
+
+
+async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
+                      now: datetime | None = None, weight_kg: float | None = None) -> dict:
+    """Everything /sante draws, tab by tab. `has_data` is False when neither
+    a watch nor a session ever arrived."""
+    from app.services import sante_today as td
+    from app.services import sante_training as st
+    from app.services import sante_week as wk
+
+    now = now or datetime.now(timezone.utc)
     latest = (await db.execute(
         select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    today = today or _today(latest)
-    lo = today - timedelta(days=RECENT_DAYS + BASELINE_DAYS)
+    today = today or await athlete_today(db, user_id, now, latest)
     rows = (await db.execute(
-        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.source,
-               HealthMetric.details)
-        .where(HealthMetric.user_id == user_id, HealthMetric.date >= lo, HealthMetric.date <= today,
-               HealthMetric.metric.in_(("hrv", "rhr", "sleep", "load")))
-    )).all()
+        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.source, HealthMetric.details)
+        .where(HealthMetric.user_id == user_id, HealthMetric.date >= today - timedelta(days=HISTORY_DAYS),
+               HealthMetric.date <= today, HealthMetric.metric.in_(PAGE_METRICS)))).all()
     series: dict[str, dict[date, float]] = defaultdict(dict)
     details: dict[str, dict[date, dict]] = defaultdict(dict)
-    hrv_sources: dict[date, str | None] = {}
+    sources: dict[str, dict[date, str | None]] = defaultdict(dict)
     for metric, d, v, source, det in rows:
         series[metric][d] = v
         details[metric][d] = det or {}
-        if metric == "hrv":
-            hrv_sources[d] = source
+        sources[metric][d] = source
     if series.get("hrv"):
-        series["hrv"] = hrv_same_scale(series["hrv"], hrv_sources)
-    # the last night ever worn, however old (for « depuis le 27/08 »)
+        series["hrv"] = hrv_same_scale(series["hrv"], sources["hrv"])
     last_sleep = next((r for r in (await db.execute(
         select(HealthMetric.date, HealthMetric.value, HealthMetric.details).where(
             HealthMetric.user_id == user_id, HealthMetric.metric == "sleep")
         .order_by(HealthMetric.date.desc()).limit(60))).all() if _measured(r.value, r.details)), None)
-    # the fitness assessment is written once per sync: the last one, even if older
-    last_fit = (await db.execute(
-        select(HealthMetric.date, HealthMetric.details).where(
-            HealthMetric.user_id == user_id, HealthMetric.metric == "fitness")
-        .order_by(HealthMetric.date.desc()).limit(1))).first()
-    last_vo2 = (await db.execute(
-        select(HealthMetric.date, HealthMetric.value).where(
-            HealthMetric.user_id == user_id, HealthMetric.metric == "vo2max")
-        .order_by(HealthMetric.date.desc()).limit(1))).first()
-    race = await _next_race(db, user_id, today)
+
+    sessions = await st.load_sessions(db, user_id, today)
+    peak = st.hr_max(sessions, today)
+    rest = st.hr_rest(series.get("rhr", {}),
+                      {d: det["min"] for d, det in details.get("hr_day", {}).items() if det.get("min")}, today)
+    st.set_loads(sessions, rest, peak)
+    tr = st.form(sessions, today)
+    legs = st.legs(sessions, today)
+    runs = st.easy_runs(sessions, peak)
+    easy = st.easy_hr(runs, today)
+    if easy and easy["n"] < 2:
+        easy = None
+    next_race, last_race, past_races = await _races(db, user_id, today)
 
     form = compute_form({m: series.get(m, {}) for m in ("hrv", "rhr", "sleep")}, today)
-    load = _load(series, details, today)
-    nights = _nights(series.get("sleep", {}), details.get("sleep", {}), today, race, last_sleep)
+    nights = _nights(series.get("sleep", {}), details.get("sleep", {}), today,
+                     next_race if next_race and (date.fromisoformat(next_race.race_date) - today).days <= 7 else None,
+                     last_sleep, series.get("sleep_score", {}))
+    weeks = st.weeks(sessions, now)
+    watch_load = _load(series, details, today)
+    watch_src = next((sources["load"][d] for d in sorted(series.get("load", {}), reverse=True)), None)
+
+    # what the decision reads
+    nr = None
+    if next_race:
+        nr = {"days": (date.fromisoformat(next_race.race_date) - today).days, "name": next_race.name}
+    post = _post_race(last_race, sessions, today)
+    hard48 = _hard48(sessions, today)
+    jump = any((j := wk._jump(weeks, i)) and j >= wk.JUMP for i in (len(weeks) - 2, len(weeks) - 1))
+    feel = None
+    if today in series.get("feel", {}):
+        feel = {"value": series["feel"][today], "legs_heavy": bool(details["feel"][today].get("legs_heavy"))}
+    ctx = {"form": form, "tr": tr, "legs": legs, "easy": easy, "feel": feel, "next_race": nr, "post_race": post,
+           "today": today, "ill": _ill(form, series.get("rhr", {}), today), "hard48": hard48,
+           "short_night": nights.get("short_night"), "jump": jump, "watch_load": watch_load}
+    verdict = td.decide(ctx)
+
+    # the rows, from the same objects
+    signals = []
+    if tr:
+        signals.append(td.fatigue_row(tr))
+    elif watch_load and watch_load["ratio"] is not None:
+        signals.append(td.watch_load_row(watch_load, watch_src or "montre"))
+    if legs:
+        signals.append(td.legs_row(legs, today))
+    if easy:
+        signals.append(td.easy_hr_row(easy))
+    if form.get("hrv_z") is not None:
+        dip = (f"Basse après ta sortie {td.of_day(hard48.day, today)} : normal, ça revient en 24–48 h."
+               if hard48 and form["hrv_z"] < -0.5 else None)
+        lo, hi = form["hrv_band"]
+        signals.append(td.hrv_row(form, signal_chart(series.get("hrv", {}), today, (lo, hi), form["hrv_baseline"],
+                                                     min_span=0.3 * form["hrv_baseline"]), dip))
+    if form.get("rhr_baseline") is not None and form.get("rhr_7d") is not None:
+        base = form["rhr_baseline"]
+        signals.append(td.rhr_row(form, signal_chart(series.get("rhr", {}), today, (base - 3, base + 3), base,
+                                                     min_span=12)))
+    for r in (td.sleep_row(nights, series.get("sleep_score", {}), today), td.stress_row(series.get("stress", {}), today)):
+        if r:
+            signals.append(r)
+    rec_day = max((d for d in series.get("recovery", {}) if d >= today - timedelta(days=1)), default=None)
+    watch = td.watch_row({"value": series["recovery"][rec_day], **details["recovery"][rec_day]} if rec_day else None,
+                         sources["recovery"].get(rec_day) if rec_day else None,
+                         next((details["body_battery"][d].get("at_wake") or series["body_battery"][d]
+                               for d in (today,) if d in series.get("body_battery", {})), None))
+    if watch:
+        signals.append(watch)
+        verdict["second"] = td.disagreement(watch, verdict["tone"], legs["big"] if legs else None, today)
+    visible, more = td.order_rows(signals, verdict["drivers"])
+
+    nights_line = None
+    if nights["n14"] == 0 and latest is not None:
+        since = f" (dernière le {last_sleep.date.strftime('%d/%m')})" if last_sleep else ""
+        nights_line = (f"VFC, FC au repos, sommeil : 0 nuit mesurée sur les 7 dernières{since}. Porte ta montre "
+                       "3 nuits sur 7 pour les voir ici.")
+    elif nights["n7"] >= MIN_AVG_NIGHTS and (form.get("nights_base") or 0) < 14:
+        nights_line = (f"VFC et FC au repos : il faut 14 nuits sur 2 mois pour connaître ta normale "
+                       f"(tu en as {form.get('nights_base') or 0}).")
+
+    # training tab
+    first_monday = weeks[0]["monday"]
+    hrv_band = form.get("hrv_band")
+    race_days = [date.fromisoformat(r.race_date) for r in past_races]
+    weeks26 = st.weeks(sessions, now, 26)
+    resid = st.residuals(runs, today)
+    course = _course(next_race, last_race, sessions, tr, today, weight_kg,
+                     _usual(series.get("sleep", {}), details.get("sleep", {}), today))
+    training = {
+        "header": wk.header(weeks, sessions, tr, today, (course or {}).get("taper_line")),
+        "bars": wk.bars(weeks, sessions, series.get("sleep", {}), series.get("hrv", {}), hrv_band)
+        if any(w["count"] for w in weeks) else None,
+        "fatigue": wk.fatigue_chart(tr, first_monday, today, race_days) if tr else None,
+        "fatigue_line": wk.fatigue_line(tr, today) if tr else None,
+        "insights": wk.insights(sessions, runs, resid, weeks26, series.get("sleep", {}), today),
+    }
     return {
-        "has_data": latest is not None,
+        "has_data": latest is not None or bool(sessions),
+        "has_watch_data": latest is not None,
         "today": today,
-        "verdict": _verdict(form, load, nights, series.get("rhr", {}), today),
-        "signals": _signals(form, load, series, today),
-        "nights": nights,
-        "fitness": _fitness(last_fit, last_vo2),
+        "verdict": verdict, "rows": visible, "more": more, "nights_line": nights_line, "feel": feel,
+        "nights": nights if nights["n14"] else None,
+        "night_state": _night_state(series, sources, today),
+        "training": training,
+        "course": course,
+        "trends": _trends(sessions, series, details, past_races, today, tr["series"] if tr else {}),
     }
 
 
-async def _next_race(db: AsyncSession, user_id: int, today: date):
-    """The next race in the coming 7 days (sports hidden right now left out)."""
+async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
+                        latest: date | None = None) -> date:
+    """The athlete's date: the server's clock moved by their UTC offset (from
+    their latest Strava session), else the watch's latest day (_today)."""
+    from app.services.sante_training import utc_offset
+
+    now = now or datetime.now(timezone.utc)
+    if latest is None:
+        latest = (await db.execute(
+            select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    offset = await utc_offset(db, user_id)
+    today = (now + timedelta(seconds=offset)).date() if offset is not None else _today(latest)
+    if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
+        today = latest
+    return today
+
+
+def _course(*args):
+    try:
+        from app.services.sante_course import course_tab
+    except ImportError:  # wired when the Course tab lands
+        return None
+    return course_tab(*args)
+
+
+def _trends(*args):
+    try:
+        from app.services.sante_trends import trends_tab
+    except ImportError:
+        return None
+    return trends_tab(*args)
+
+
+def _night_state(series, sources, today: date) -> dict[str, dict]:
+    """Per watch: last night received (with its length), not yet, or not worn
+    (daytime data for today already came but no night)."""
+    out = {}
+    for src in ("COROS", "Garmin"):
+        night = sources.get("sleep", {}).get(today) == src
+        if night and series["sleep"].get(today):
+            out[src] = {"state": "received", "txt": fmt_minutes(series["sleep"][today])}
+        elif any(sources.get(m, {}).get(today) == src for m in ("steps", "stress", "hr_day", "body_battery")):
+            out[src] = {"state": "none"}
+        else:
+            out[src] = {"state": "pending"}
+    return out
+
+
+async def _races(db: AsyncSession, user_id: int, today: date):
+    """(the next race, the last one run in the past 14 days, those of the past
+    12 months) — sports hidden right now left out."""
     from app.features import hidden_sports
 
-    q = select(Route).where(
-        Route.user_id == user_id, Route.race_date.is_not(None),
-        Route.race_date >= (today + timedelta(days=1)).isoformat(),
-        Route.race_date <= (today + timedelta(days=7)).isoformat())
+    q = select(Route).where(Route.user_id == user_id, Route.race_date.is_not(None),
+                            Route.race_date >= (today - timedelta(days=365)).isoformat())
     if hidden_sports():
         q = q.where(Route.sport_type.notin_(hidden_sports()))
-    return (await db.execute(q.order_by(Route.race_date).limit(1))).scalars().first()
+    routes = (await db.execute(q.order_by(Route.race_date))).scalars().all()
+    nxt = next((r for r in routes if r.race_date >= today.isoformat()), None)
+    past = [r for r in routes if r.race_date < today.isoformat()]
+    last = next((r for r in reversed(past) if r.race_date >= (today - timedelta(days=14)).isoformat()), None)
+    return nxt, last, past
+
+
+def _post_race(last_race, sessions, today: date) -> dict | None:
+    """The days after a race of 3 h or more (a Route raced, or a session marked
+    as a race), or after an exceptional outing (6 h and 1.5 × the longest of
+    the 60 days before): J+1..J+7, J+10 after 10 h."""
+    cands = []
+    if last_race:
+        res = last_race.result_json or {}
+        secs = res.get("total_actual_s") or last_race.target_time_s
+        if secs and secs >= 3 * 3600:
+            cands.append((date.fromisoformat(last_race.race_date), secs / 60, last_race.name))
+    for s in sessions:
+        if not 1 <= (today - s.day).days <= 10:
+            continue
+        before = max((x.minutes for x in sessions if s.day - timedelta(days=60) <= x.day < s.day), default=0)
+        if (s.workout_type == 1 and s.minutes >= 180) or (s.minutes >= 360 and s.minutes >= 1.5 * before):
+            from app.services.sante_today import of_day
+            cands.append((s.day, s.minutes, f"ta sortie {of_day(s.day, today)}"))
+    for day, minutes, name in sorted(cands, reverse=True):
+        days = (today - day).days
+        limit = 10 if minutes >= 600 else 7
+        if 1 <= days <= limit:
+            return {"day": day, "days": days, "minutes": minutes, "name": name, "limit": limit}
+    return None
+
+
+def _hard48(sessions, today: date):
+    """A long or hard session yesterday or the day before (its night HRV dip is expected)."""
+    loads = [s.load for s in sessions if s.day >= today - timedelta(days=90)]
+    med = statistics.median(loads) if loads else 0
+    cands = [s for s in sessions if 1 <= (today - s.day).days <= 2
+             and (s.minutes >= 180 or s.dplus >= 1000 or (med and s.load >= 2 * med))]
+    return max(cands, key=lambda s: s.load, default=None)
 
 
 def _load(series, details, today) -> dict | None:
+    """The watch's own load ratio (shown only without enough sessions)."""
     s = series.get("load", {})
     d = max(s, default=None)
     if d is None or (today - d).days > 7:
@@ -213,8 +386,6 @@ def _load(series, details, today) -> dict | None:
             "when": d.strftime("%d/%m")}
 
 
-# ── the decision ────────────────────────────────────────────────────────────
-
 def _ill(form: dict, rhr: dict[date, float], today: date) -> bool:
     """Resting HR well above the athlete's usual two measured nights running:
     often the start of an illness (strict '>', missing nights never count)."""
@@ -225,117 +396,7 @@ def _ill(form: dict, rhr: dict[date, float], today: date) -> bool:
     return all(rhr.get(d) is not None and rhr[d] > limit for d in (today, today - timedelta(days=1)))
 
 
-def _verdict(form: dict, load: dict | None, nights: dict, rhr: dict[date, float], today: date) -> dict:
-    """{tone: ok|easy|rest|unknown, headline, text, note}: one decision, first match wins."""
-    status, reasons = form["status"], form.get("reasons") or []
-    key = load["key"] if load else None
-    if _ill(form, rhr, today):
-        return {"tone": "rest", "headline": "Reste tranquille aujourd'hui",
-                "text": "Ta FC au repos est nettement au-dessus de ton habitude deux nuits de suite : c'est souvent "
-                        "un début de maladie (ou l'alcool, la chaleur, l'altitude). Repos ou footing très facile "
-                        "jusqu'à ce qu'elle redescende.", "note": None}
-    if status == "fatigue":
-        hrv_reason = any("VFC" in r for r in reasons)
-        text = ("Tu récupères moins bien que d'habitude : footing facile ou repos. Reprends l'intensité quand "
-                + ("ta VFC revient à son niveau habituel." if hrv_reason
-                   else "ta FC au repos redescend à son niveau habituel."))
-        if key in ("good", "keep", "taper"):
-            text += " Ta charge n'est pas en cause : pense sommeil, stress ou début de maladie."
-        return {"tone": "rest", "headline": "Pas d'intensité aujourd'hui", "text": text, "note": None}
-
-    short = nights.get("short_night")
-    triggers = [t for t, on in (("watch", status == "watch"), ("over", key == "over"), ("short", bool(short))) if on]
-    if triggers:
-        clauses = []
-        if status == "watch":
-            if reasons == ["nuits courtes"]:
-                clauses.append("Tes nuits sont plus courtes que d'habitude : n'enchaîne pas deux séances dures.")
-            else:
-                clauses.append("Un signal sort de ta normale : seul, ce n'est pas grave, mais n'enchaîne pas deux "
-                               "séances dures.")
-        if key == "over":
-            clauses.append("Ta VFC est haute en pleine charge : ça peut être de la surcharge, pas un feu vert."
-                           if status == "fresh" else
-                           "Tes 7 derniers jours pèsent bien plus que d'habitude : n'ajoute ni volume ni intensité.")
-        if short:
-            clauses.append(short)
-        headline = ("Séance dure le matin seulement" if triggers == ["short"]
-                    else "Séance prévue, sans en rajouter" if triggers == ["over"]
-                    else "Garde ta séance facile")
-        return {"tone": "easy", "headline": headline, "text": " ".join(clauses[:2]),
-                "note": _coverage(form, load) if status == "unknown" else None}
-    if status in ("ok", "fresh"):
-        text = ("Ta VFC est au-dessus de ta normale : tu récupères bien." if status == "fresh"
-                else "Ta VFC et ta FC au repos sont dans ta normale.")
-        if key == "taper":
-            text += " Charge en baisse : tu t'affûtes."
-        elif key == "low":
-            text += " Ta charge baisse nettement : ta forme de fond baissera si ça dure."
-        return {"tone": "ok", "headline": "Séance dure possible", "text": text, "note": None}
-    note = _coverage(form, load)
-    if key in ("good", "keep"):
-        return {"tone": "ok", "headline": "Entraînement prévu OK",
-                "text": "Ta charge monte à un bon rythme." if key == "good"
-                else "Ta charge reste proche de ton habitude.", "note": note}
-    if key == "taper":
-        return {"tone": "ok", "headline": "Semaine légère",
-                "text": "Tu en fais moins que d'habitude : tu récupères, idéal avant une course.", "note": note}
-    if key == "low":
-        return {"tone": "unknown", "headline": "Charge basse",
-                "text": "Tu en fais nettement moins que d'habitude : ta forme de fond baissera si ça dure.",
-                "note": note}
-    return {"tone": "unknown", "headline": "Pas encore d'avis", "text": None, "note": note}
-
-
-def _coverage(form: dict, load: dict | None) -> str:
-    """What the decision rests on while the nights can't say yet (asking for
-    the watch at night is left to « Tes nuits », said once)."""
-    have = form.get("nights_base") or 0
-    need = (f"il faut 14 nuits sur 2 mois pour connaître ta normale (tu en as {have})" if have < 14
-            else f"il faut 3 nuits mesurées sur les 7 dernières (tu en as {form.get('nights_recent') or 0})")
-    return f"Avis basé sur ta charge seulement : {need}." if load else _cap(need) + "."
-
-
-# ── the signals ─────────────────────────────────────────────────────────────
-
-HRV_BAND_SD = 0.5
-RHR_BAND_BPM = 3
-SIGNAL_DAYS = 28
-
-
-def _signals(form: dict, load: dict | None, series, today: date) -> list[dict]:
-    """Up to three rows: value over 7 days, the athlete's usual, a status word
-    (tone ok/warn/danger/muted). VFC and FC au repos open on a 28-day chart."""
-    out = []
-    if form.get("hrv_baseline") is not None and form.get("hrv_7d") is not None:
-        base, sd, v = form["hrv_baseline"], form["hrv_sd"], form["hrv_7d"]
-        z = (v - base) / sd if sd else 0
-        heavy = bool(load) and load["key"] == "over"
-        word, tone = (("basse", "danger") if z < -1 else ("un peu basse", "warn") if z < -0.5
-                      else (("haute en charge", "warn") if heavy else ("haute", "ok")) if z > 0.5
-                      else ("normale", "muted"))
-        band = (base - HRV_BAND_SD * sd, base + HRV_BAND_SD * sd)
-        out.append({"key": "hrv", "label": "VFC · 7 j", "value": f"{_num(v)} ms", "ref": f"d'habitude {_num(base)}",
-                    "word": word, "tone": tone,
-                    "chart": signal_chart(series.get("hrv", {}), today, band, base, min_span=0.3 * base),
-                    "resume": (f"Reprends l'intensité quand la ligne revient vers {_num(base)} ms, ta moyenne."
-                               if z < -0.5 else None)})
-    if form.get("rhr_baseline") is not None and form.get("rhr_7d") is not None:
-        base, v, delta = form["rhr_baseline"], form["rhr_7d"], form["rhr_delta_bpm"]
-        word, tone = (("haute", "danger") if delta >= 5 else ("un peu haute", "warn") if delta >= 3
-                      else ("normale", "muted"))
-        out.append({"key": "rhr", "label": "FC au repos · 7 j", "value": f"{_num(v)} bpm",
-                    "ref": f"d'habitude {_num(base)}", "word": word, "tone": tone,
-                    "chart": signal_chart(series.get("rhr", {}), today, (base - RHR_BAND_BPM, base + RHR_BAND_BPM),
-                                          base, min_span=12),
-                    "resume": (f"Reprends l'intensité quand la ligne revient vers {_num(base)} bpm, ta moyenne."
-                               if delta >= 3 else None)})
-    if load and load["ratio"] is not None:
-        out.append({"key": "load", "label": "Charge · 7 j", "value": _num(load["ratio"], 2),
-                    "ref": "× ton habitude" + (f" · au {load['when']}" if load["stale"] else ""),
-                    "word": load["word"], "tone": "danger" if load["key"] == "over" else "muted",
-                    "chart": None, "resume": None})
-    return out
+# ── the 28-night chart behind VFC and FC au repos ──────────────────────────
 
 
 SIG_W, SIG_H, SIG_PAD = 300, 96, 8
@@ -415,7 +476,8 @@ def _usual(sleep, det, today) -> dict | None:
     return None
 
 
-def _nights(sleep: dict[date, float], det: dict[date, dict], today: date, race, last_sleep) -> dict:
+def _nights(sleep: dict[date, float], det: dict[date, dict], today: date, race, last_sleep,
+            scores: dict[date, float] | None = None) -> dict:
     """The 14 nights (named by their wake-up day, last night first), the
     7-night average and debt, regularity, the takeaway sentence, the strip."""
     race_day = date.fromisoformat(race.race_date) if race else None
@@ -429,7 +491,8 @@ def _nights(sleep: dict[date, float], det: dict[date, dict], today: date, race, 
         win = _measured(v, det.get(d))
         rows.append({"day": d, "label": "cette nuit" if i == 0 else _dayname(d),
                      "value": v if win else None, "bed": win[0] if win else None, "wake": win[1] if win else None,
-                     "pending": i == 0 and not win})
+                     "pending": i == 0 and not win,
+                     "score": round((scores or {})[d]) if win and d in (scores or {}) else None})
     measured = [r for r in rows if r["value"] is not None]
     last7 = [r for r in rows[:7] if r["value"] is not None]
     n7, n14 = len(last7), len(measured)
@@ -498,23 +561,8 @@ def _takeaway(race, race_day, today, need, usual, bed_txt, avg7, avg14, debt, re
     """One sentence, first match wins (race week, < 6 h, < 7 h over 2 weeks,
     debt, irregular hours, all good). Only once 3 of the last 7 nights are
     measured, except in race week."""
-    if race_day:
-        days = (race_day - today).days
-        wake_clause = ""
-        if race.start_hour is not None:
-            start = race.start_hour * 60 + (race.start_minute or 0)
-            race_wake = (start - RACE_WAKE_BEFORE_START - 1080) % 1440
-            if usual and usual["wake"] - race_wake > EARLY_START_MIN:
-                gap = usual["wake"] - race_wake
-                shift = min(60, -(-gap // max(days, 1) // 5) * 5)
-                wake_clause = (f" Départ à {m_clock((start - 1080) % 1440)} : si tu te lèves 2 h avant, réveil vers "
-                               f"{m_clock(race_wake)}, {_hm(gap)} plus tôt que d'habitude. Avance ton coucher et ton "
-                               f"lever d'environ {shift} min par jour.")
-        if days == 1:
-            return (f"{race.name} demain : mal dormir la veille d'une course est courant et pèse peu après une bonne "
-                    "semaine. Au lit à ton heure." + wake_clause)
-        return (f"{race.name} dans {days} jours : vise 9 h par nuit d'ici là, {bed_txt}. C'est cette semaine de "
-                "sommeil qui compte, plus que la dernière nuit." + wake_clause)
+    if race_day:  # the race-week plan (wake shift, the last night) lives in Course
+        return f"Semaine de course : vise {need // 60} h par nuit" + (f", {bed_txt}." if usual else ".")
     if avg7 is None:
         return None
     if avg7 < SHORT_SLEEP_MIN:
@@ -559,7 +607,7 @@ def _strip(rows: list[dict], usual: dict | None, target_bed: float | None, need:
         if r["value"] is not None:
             tone = "ok" if r["value"] >= FLOOR_MIN else "short" if r["value"] >= SHORT_SLEEP_MIN else "vshort"
             bars.append({"y": i * STRIP_ROW, "x": x(r["bed"]), "w": max(round(x(r["wake"]) - x(r["bed"]), 2), 0.5),
-                         "tone": tone, "label": r["label"], "dur": fmt_minutes(r["value"]),
+                         "tone": tone, "label": r["label"], "dur": fmt_minutes(r["value"]), "score": r.get("score"),
                          "title": (f"{night} : coucher {m_clock(r['bed'])}, lever {m_clock(r['wake'])}, "
                                    f"{fmt_minutes(r['value'])} de sommeil"),
                          "sr": f"{r['label']} : {fmt_minutes(r['value'])}, de {m_clock(r['bed'])} à {m_clock(r['wake'])}"})
@@ -582,20 +630,6 @@ def _strip(rows: list[dict], usual: dict | None, target_bed: float | None, need:
     aria = (f"Tes 14 dernières nuits : {len(measured)} mesurée{s}"
             + (f", sommeil de {fmt_minutes(min(measured))} à {fmt_minutes(max(measured))}" if measured else ""))
     return {"bars": bars, "band": band, "ticks": sorted(ticks, key=lambda t: t["x"]),
+            "scored": any(r.get("score") for r in rows),
             "grid": [x(m) for m in hours], "height": len(rows) * STRIP_ROW, "half": 7 * STRIP_ROW,
             "aria": aria}
-
-
-# ── fitness ─────────────────────────────────────────────────────────────────
-
-def _fitness(last_fit, last_vo2) -> dict | None:
-    det = dict(last_fit.details or {}) if last_fit else {}
-    vo2 = det.get("vo2max")
-    if vo2 is None and last_vo2:
-        vo2 = last_vo2.value
-    if not det and vo2 is None:
-        return None
-    return {
-        "vo2max": f"{vo2:.0f}" if vo2 is not None else None,
-        "threshold": fmt_clock(det["threshold_s"], pace=True) if det.get("threshold_s") else None,
-    }

@@ -610,6 +610,11 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 
 /* ── Santé v2: tabs, signal rows, gauges, cards, charts ──────────────── */
 .pf-word-accent { color: rgb(var(--pf-accent-strong)); }
+.pf-nights-scored { grid-template-columns: 58px minmax(0, 1fr) 40px 24px; }
+.pf-n-scores { display: flex; flex-direction: column; }
+.pf-n-scores span { height: 20px; line-height: 20px; font-size: 12px; text-align: right; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
+.pf-nights-scored .pf-n-axis { grid-column: 2; }
+.pf-verdict-resume { font-size: 15px; font-weight: 600; color: rgb(var(--pf-ink)); margin-top: 8px; }
 .pf-sante-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 13px; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines b { font-weight: 600; color: rgb(var(--pf-gray-700)); }
 /* the tab strip: sticky under the top bar, scrolls inside itself on narrow phones */
@@ -693,6 +698,43 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-chg { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); margin-top: 6px; }
 @media (min-width: 640px) { .pf-cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1100px) { .pf-cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Entraînement: weekly bars and the fatigue chart share one x axis */
+.pf-wk-wrap { max-width: 720px; margin-top: 14px; }
+.pf-wk-bar { fill: rgb(var(--pf-gray-300)); }
+.pf-wk-jump { fill: rgb(var(--pf-warn) / .45); }
+.pf-wk-now { fill: transparent; stroke: rgb(var(--pf-accent)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.pf-wk-long { fill: rgb(var(--pf-ink) / .75); }
+.pf-wk-longjump { fill: rgb(var(--pf-warn)); }
+.pf-wk-med { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; stroke-dasharray: 4 3; }
+.pf-wk-axis { stroke: rgb(var(--pf-line)); stroke-width: 1; }
+.pf-wk-col:hover .pf-wk-bar:not(.pf-wk-now), .pf-wk-col:focus-visible .pf-wk-bar:not(.pf-wk-now) { fill: rgb(var(--pf-gray-400)); }
+.pf-fz { fill: transparent; }
+.pf-fz-z-warn { fill: rgb(var(--pf-warn-soft)); }
+.pf-fz-z-accent { fill: rgb(var(--pf-accent-soft)); }
+.pf-fz-z-ok { fill: rgb(var(--pf-ok-soft)); }
+.pf-fz-z-soft { fill: rgb(var(--pf-soft)); }
+.pf-fat-line { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pf-fat-race { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 2 2; }
+.pf-fat-now { stroke: rgb(var(--pf-bg)); stroke-width: 2; fill: rgb(var(--pf-ink)); }
+.pf-fat-now-warn { fill: rgb(var(--pf-warn)); }
+.pf-fat-now-ok { fill: rgb(var(--pf-ok)); }
+/* « chez toi » cards */
+.pf-ins-text { font-size: 15px !important; color: rgb(var(--pf-ink)) !important; margin-top: 0 !important; }
+.pf-ins-bars { display: grid; gap: 8px; margin-top: 12px; }
+.pf-ins-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; color: rgb(var(--pf-gray-600)); }
+.pf-ins-track { height: 10px; border-radius: 5px; background: rgb(var(--pf-soft)); overflow: hidden; }
+.pf-ins-fill { display: block; height: 100%; background: rgb(var(--pf-gray-300)); border-radius: 5px; }
+.pf-ins-hot { background: rgb(var(--pf-warn)); }
+.pf-ins-row b { color: rgb(var(--pf-ink)); font-weight: 600; }
+.pf-locked { display: grid; gap: 10px; font-size: 14px; color: rgb(var(--pf-gray-600)); }
+.pf-locked li { display: grid; gap: 4px; }
+.pf-lock-bar { display: block; height: 4px; border-radius: 2px; background: rgb(var(--pf-soft)); overflow: hidden; }
+.pf-lock-bar span { display: block; height: 100%; background: rgb(var(--pf-accent)); }
+/* Aujourd'hui on a wide screen: the decision and its rows left, the nights right */
+@media (min-width: 1024px) {
+    .pf-today { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: 56px; align-items: start; }
+    .pf-today-nights { margin-top: 12px; }
+}
 /* collapsed extras */
 .pf-more { margin-top: 10px; }
 .pf-more > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); min-height: 44px; display: flex; align-items: center; list-style: none; }

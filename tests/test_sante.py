@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.models.user import User
 from app.services.health import compute_form
-from app.services.sante import _nights, _strip, _verdict, clock_m, load_key, m_clock
+from app.services.sante import _nights, _strip, clock_m, load_key, m_clock
+from app.services.sante_today import decide, gauge, order_rows
+from app.services.sante_training import Session
 from tests import test_coros
 from tests.test_coros import _link
 
@@ -69,8 +71,9 @@ async def test_nav_item_and_activities_link(as_user: AsyncClient):
 
 async def test_not_connected(as_user: AsyncClient):
     page = (await as_user.get("/sante")).text
-    assert "Connecte ta montre COROS" in page and 'href="/settings#coros"' in page
+    assert "Connecter COROS" in page and 'href="/settings#coros"' in page
     assert "/coros/connect" not in page and "Synchroniser maintenant" not in page  # connecting happens in Réglages
+    assert 'role="tablist"' not in page
 
 
 async def test_connected_without_data_yet(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
@@ -81,28 +84,25 @@ async def test_connected_without_data_yet(as_user: AsyncClient, db_session: Asyn
 
 
 async def test_owner_like_sparse_data(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    """The owner's case: few nights long ago, but load every day."""
+    """The owner's case: few nights long ago, the watch's load every day, no Strava."""
     await _link(db_session, test_user)
     today = date.today()
     await _seed_owner(db_session, test_user, today)
     page = (await as_user.get("/sante")).text
     assert "Connecter COROS" not in page and "Synchroniser maintenant" in page
-    # one decision from the load alone, said as an action, with what it rests on
-    assert "Séance prévue, sans en rajouter" in page and "n&#39;ajoute ni volume ni intensité" in page
-    assert ("Avis basé sur ta charge seulement : il faut 14 nuits sur 2 mois pour connaître ta normale "
-            "(tu en as 3).") in page
-    assert "Charge · 7 j" in page and "1,36" in page and "forte hausse" in page
-    # gone: the watch's ring and advice, the period switch, the load chart, alarm words
-    for gone in (">84<", "Récupération complète", "Séance modérée possible", "?jours=", "Surcharge",
-                 "risque de blessure", "Court terme", "pf-health-chart"):
-        assert gone not in page, gone
-    # the nights section stays, says since when and asks for the watch at night once
+    # four tabs, the decision first, from the watch's load alone, said as an action
+    assert page.count('role="tab"') == 4 and 'aria-selected="true"' in page
+    assert "Séance prévue, sans en rajouter" in page and "Tes 7 derniers jours pèsent bien plus" in page
+    assert "Ce qui pèse aujourd'hui" in page and "×1,36" in page and "forte hausse" in page
+    # the watch's score is shown last, as a second opinion with what it rests on
+    assert "Récup COROS" in page and "calculée par COROS sur ta charge, sans ta nuit" in page
+    # the missing nights are said once, with since when
     since = (today - timedelta(days=40)).strftime("%d/%m")
-    assert "Tes nuits" in page and f"Aucune nuit avec ta montre depuis le {since} (9h00)." in page
-    assert page.count("Porte-la la nuit") + page.count("Porte ta montre la nuit") == 1
-    assert 'class="pf-nights"' not in page  # no empty strip
-    # fitness: VO2max and threshold pace only (no level index, no road predictions)
-    assert "3:20" in page and "1:10:54" not in page and "2:25:03" not in page and ">97<" not in page
+    assert page.count("Porte ta montre") == 1 and f"(dernière le {since})" in page
+    assert "pas de nuit mesurée (montre pas portée ?)" in page  # steps came today, no night
+    assert 'class="pf-nights' not in page  # no empty strip
+    for gone in ("risque de blessure", "Surcharge", "pf-word-danger\">forte hausse"):
+        assert gone not in page, gone
 
 
 async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
@@ -115,16 +115,17 @@ async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_us
             _add(db_session, test_user, "hrv", d, 80 + (k % 4) * 2)
             _add(db_session, test_user, "rhr", d, 42 + k % 2)
             _add(db_session, test_user, "sleep", d, 450 + k % 30, {"bedtime": "23:10", "wake": f"07:{k % 30:02d}"})
+            _add(db_session, test_user, "sleep_score", d, 70 + k % 10)
     await db_session.flush()
     page = (await as_user.get("/sante")).text
-    assert "VFC · 7 j" in page and "FC au repos · 7 j" in page and "d&#39;habitude" in page
-    assert 'class="pf-nights"' in page and page.count('class="pf-n-ok"') == 14
+    assert "VFC" in page and "FC au repos" in page and "ta normale" in page and "28 nuits" in page
+    assert 'class="pf-nights pf-nights-scored"' in page and page.count('class="pf-n-ok"') == 14
     assert "Sommeil · 7 nuits" in page and "Horaires · 14 nuits" in page and "besoin 8 h · 7 nuits sur 7" in page
-    assert "Porte ta montre" not in page and "Porte-la" not in page
-    assert "Avis basé sur ta charge" not in page
+    assert "cette nuit : reçue" in page
+    assert "Porte ta montre" not in page
 
 
-async def test_race_week_banks_sleep(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_race_week_points_to_course(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     from app.models.route import Route
 
     await _link(db_session, test_user)
@@ -135,10 +136,8 @@ async def test_race_week_banks_sleep(as_user: AsyncClient, db_session: AsyncSess
                          race_date=(today + timedelta(days=3)).isoformat(), start_hour=5, start_minute=0))
     await db_session.flush()
     page = (await as_user.get("/sante")).text
-    assert "Trail des Glaciers dans 3 jours : vise 9 h par nuit d&#39;ici là, au lit vers 21:15." in page
-    assert "Départ à 05:00 : si tu te lèves 2 h avant, réveil vers 03:00, 4h00 plus tôt que d&#39;habitude." in page
+    assert "Semaine de course : vise 9 h par nuit, au lit vers 21:15." in page
     assert "bande : 9 h avant ton lever habituel" in page and "besoin 9 h" in page
-    assert "réveil à 07:00" in page
 
 
 async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_session: AsyncSession,
@@ -152,60 +151,132 @@ async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_
     assert "Impossible d'afficher tes données" in page and "Connecter COROS" not in page
 
 
+async def test_the_check_in_is_stored_once_a_day_and_moves_the_decision(as_user: AsyncClient,
+                                                                        db_session: AsyncSession, test_user: User):
+    from sqlalchemy import select
+
+    await _link(db_session, test_user)
+    today = date.today()
+    await _seed_owner(db_session, test_user, today)
+    page = (await as_user.get("/sante")).text
+    assert "Ce matin, tu te sens ?" in page
+    r = await as_user.post("/sante/feel", data={"feel": "3"}, headers={"HX-Request": "true"})
+    assert r.headers.get("HX-Refresh") == "true"
+    r = await as_user.post("/sante/feel", data={"legs": "1"})
+    assert r.status_code == 303
+    rows = (await db_session.execute(select(HealthMetric).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "feel"))).scalars().all()
+    assert len(rows) == 1 and rows[0].value == 3 and rows[0].details == {"legs_heavy": True}
+    page = (await as_user.get("/sante")).text
+    assert "Ressenti du jour : fatigué, jambes lourdes · changer" in page
+    assert "Endurance facile aujourd&#39;hui" in page  # heavy legs: easy today
+
+
 # ── the decision ────────────────────────────────────────────────────────────
 
-def _form(status="unknown", reasons=(), **kw):
-    base = {"status": status, "reasons": list(reasons), "nights_base": 20, "nights_recent": 5,
-            "rhr_baseline": None, "rhr_sd": None}
-    return {**base, **kw}
-
-
-LOAD = {"good": {"key": "good"}, "over": {"key": "over"}, "keep": {"key": "keep"}, "taper": {"key": "taper"}}
 T = date(2026, 10, 6)
 
 
-def test_ill_needs_two_nights_strictly_above_the_limit():
-    form = _form("fatigue", ["FC au repos +5 bpm"], rhr_baseline=44.0, rhr_sd=1.5)
-    # 44 + max(2 × 1.5, 5) = 49: 49 and 48 are not above it (the rich-data edge case)
-    v = _verdict(form, None, {}, {T: 49, T - timedelta(days=1): 48}, T)
-    assert v["headline"] == "Pas d'intensité aujourd'hui"
-    v = _verdict(form, None, {}, {T: 50, T - timedelta(days=1): 49.5}, T)
-    assert v["headline"] == "Reste tranquille aujourd'hui" and "souvent" in v["text"]
-    v = _verdict(form, None, {}, {T: 53}, T)  # one night only: never ill
-    assert v["headline"] == "Pas d'intensité aujourd'hui"
+def _form(status="unknown", reasons=(), **kw):
+    base = {"status": status, "reasons": list(reasons), "nights_base": 20, "nights_recent": 5,
+            "rhr_baseline": 44.0, "rhr_sd": 1.5, "hrv_baseline": 80.0, "hrv_z": None, "rhr_delta_bpm": None}
+    return {**base, **kw}
 
 
-def test_fatigue_with_a_normal_load_says_the_load_is_not_the_cause():
-    v = _verdict(_form("fatigue", ["VFC nettement sous ta normale"]), LOAD["good"], {}, {}, T)
-    assert v["tone"] == "rest" and "ta VFC revient à son niveau habituel" in v["text"]
-    assert "Ta charge n'est pas en cause" in v["text"]
-    v = _verdict(_form("fatigue", ["FC au repos +6 bpm"]), LOAD["over"], {}, {}, T)
-    assert "ta FC au repos redescend" in v["text"] and "pas en cause" not in v["text"]
+def _ctx(**kw):
+    base = {"form": _form(), "tr": None, "legs": None, "easy": None, "feel": None, "next_race": None,
+            "post_race": None, "today": T, "ill": False, "hard48": None, "short_night": None, "jump": False,
+            "watch_load": None}
+    return {**base, **kw}
 
 
-def test_easy_headlines_by_trigger():
-    short = {"short_night": "Nuit courte : place ta séance de qualité ce matin plutôt que ce soir, ou passe-la en facile."}
-    assert _verdict(_form("ok"), None, short, {}, T)["headline"] == "Séance dure le matin seulement"
-    assert _verdict(_form("unknown"), LOAD["over"], {}, {}, T)["headline"] == "Séance prévue, sans en rajouter"
-    v = _verdict(_form("watch", ["VFC un peu sous ta normale"]), LOAD["over"], short, {}, T)
-    assert v["headline"] == "Garde ta séance facile" and v["text"].count(".") == 2  # two clauses at most
-    v = _verdict(_form("fresh"), LOAD["over"], {}, {}, T)
-    assert "haute en pleine charge" in v["text"]  # a high HRV in a heavy block is no green light
+TR = {"pct": 4, "key": "balanced", "word": "équilibré", "history": {}}
 
 
-def test_ok_and_unknown_with_load():
-    v = _verdict(_form("ok"), LOAD["taper"], {}, {}, T)
-    assert v["headline"] == "Séance dure possible" and "tu t'affûtes" in v["text"] and v["note"] is None
-    v = _verdict(_form("unknown", nights_base=3), LOAD["keep"], {}, {}, T)
-    assert v["headline"] == "Entraînement prévu OK" and "(tu en as 3)" in v["note"]
-    v = _verdict(_form("unknown", nights_base=0), None, {}, {}, T)
-    assert v["headline"] == "Pas encore d'avis" and v["note"].startswith("Il faut 14 nuits")
+def test_illness_first():
+    v = decide(_ctx(ill=True, form=_form("fatigue", hrv_z=-1.5, rhr_delta_bpm=6)))
+    assert v["tone"] == "rest" and v["headline"] == "Reste tranquille aujourd'hui" and v["word"] == "repos"
 
 
-def test_compute_form_gives_the_resting_hr_sd():
+def test_red_needs_hrv_down_and_resting_hr_up_together():
+    both = decide(_ctx(form=_form("fatigue", hrv_z=-0.8, rhr_delta_bpm=3.5), tr=TR))
+    assert both["tone"] == "rest" and both["headline"] == "Pas d'intensité aujourd'hui"
+    assert "sommeil, stress, virus" in both["text"] and both["drivers"] == ["hrv", "rhr"]
+    # one strong signal alone: an easy day, not a stop
+    alone = decide(_ctx(form=_form("fatigue", hrv_z=-1.4, rhr_delta_bpm=0.5), tr=TR))
+    assert alone["tone"] == "easy" and alone["headline"] == "Garde ta séance facile"
+    assert "ne suffit pas à tout arrêter" in alone["text"] and "Dis-moi comment tu te sens" in alone["text"]
+    # the dip after a long outing is expected: not flagged
+    long_ = Session(id=1, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=1800, km=30,
+                    speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
+    v = decide(_ctx(form=_form("fatigue", hrv_z=-1.4, rhr_delta_bpm=0.5), tr=TR, hard48=long_))
+    assert v["headline"] != "Garde ta séance facile"
+    # race week: a lower HRV alone is normal
+    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}))
+    assert v["headline"] == "Normal avant une course"
+
+
+def test_race_days_and_recovery():
+    v = decide(_ctx(next_race={"days": 2, "name": "Marathon"}))
+    assert v["headline"] == "Course après-demain : court et facile" and v["tone"] == "ok"
+    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "name": "Grand Trail", "limit": 10}
+    v = decide(_ctx(post_race=pr))
+    assert v["headline"] == "Récupération de course · J+3" and "Grand Trail (11h42)" in v["text"]
+    assert v["resume"] == "Pas d'intensité avant le 14/10."
+    v = decide(_ctx(post_race={**pr, "day": T - timedelta(days=6), "days": 6}))
+    assert v["headline"] == "Footing facile seulement" and v["tone"] == "easy"
+
+
+def test_legs_then_accumulated_then_jump():
+    big = Session(id=7, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=2100, km=30,
+                  speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
+    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big}))
+    assert v["headline"] == "Endurance facile aujourd'hui"
+    assert v["text"].startswith("Ta sortie d'hier (4h10, +2\u202f100 m)")
+    assert v["resume"] == "Séance dure possible à partir de demain."
+    hist = {T - timedelta(days=k): 35 for k in range(10)}
+    v = decide(_ctx(tr={**TR, "pct": 35, "key": "loaded", "history": hist}))
+    assert v["headline"] == "Semaine plus légère conseillée" and "10" in v["text"]
+    v = decide(_ctx(tr={**TR, "pct": 22, "key": "build"}, jump=True))
+    assert v["headline"] == "Séance prévue, sans en rajouter" and "risque" not in v["text"]
+
+
+def test_checkin_and_the_quiet_days():
+    v = decide(_ctx(tr=TR, feel={"value": 3, "legs_heavy": False}))
+    assert v["headline"] == "Garde ta séance facile" and "c'est toi qui sais" in v["text"]
+    v = decide(_ctx(tr=TR, form=_form("ok", hrv_z=0.1, rhr_delta_bpm=0.5)))
+    assert v["headline"] == "Séance dure possible" and v["word"] == "feu vert"
+    v = decide(_ctx(tr=TR, form=_form("unknown", nights_recent=0)))
+    assert v["headline"] == "Entraînement prévu OK" and v["note"].startswith("Sans nuit mesurée")
+    v = decide(_ctx())
+    assert v["headline"] == "Pas encore d'avis" and v["word"] == "?"
+    # « en forme » never lifts a stop
+    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.8, rhr_delta_bpm=3.5), feel={"value": 1, "legs_heavy": False}))
+    assert v["tone"] == "rest"
+
+
+def test_rows_order_and_the_watch_last():
+    rows = [{"key": "stress", "dev": 0.2}, {"key": "watch", "dev": 0}, {"key": "hrv", "dev": 3},
+            {"key": "fatigue", "dev": 0.1}, {"key": "sleep", "dev": 1}, {"key": "easy_hr", "dev": 0.9},
+            {"key": "legs", "dev": 0}]
+    visible, more = order_rows(rows, ["easy_hr"])
+    assert [r["key"] for r in visible] == ["easy_hr", "hrv", "sleep", "fatigue", "legs", "watch"]
+    assert [r["key"] for r in more] == ["stress"]
+
+
+def test_gauge_is_in_percent_and_clamped():
+    g = gauge(36, -40, 60, band=(-5, 10), edges=[(0, "ton fond")])
+    assert g["dot"] == 76.0 and g["band"] == {"l": 35.0, "w": 15.0} and g["edges"][0]["x"] == 40.0
+    assert gauge(90, -40, 60)["dot"] == 100.0
+
+
+def test_compute_form_reads_hrv_on_ln_and_gives_its_band():
+    hrv = {T - timedelta(days=k): 80 + (k % 4) * 2 for k in range(7, 60)} | {T - timedelta(days=k): 70 for k in range(4)}
+    f = compute_form({"hrv": hrv}, T)
+    lo, hi = f["hrv_band"]
+    assert lo < f["hrv_baseline"] < hi and f["hrv_z"] < -0.5 and f["status"] in ("watch", "fatigue")
     rhr = {T - timedelta(days=k): 44 + (k % 3) for k in range(7, 30)} | {T - timedelta(days=k): 45 for k in range(4)}
-    form = compute_form({"rhr": rhr}, T)
-    assert form["rhr_sd"] is not None and form["rhr_sd"] >= 1.5
+    assert compute_form({"rhr": rhr}, T)["rhr_sd"] >= 1.5
 
 
 # ── the nights ──────────────────────────────────────────────────────────────
