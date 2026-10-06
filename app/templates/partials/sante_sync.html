@@ -1,0 +1,14 @@
+{# Santé: the one place to sync on demand, for every linked watch (Réglages show each link's state) #}
+<div id="sante-sync" class="pf-sante-sync flex flex-col items-start gap-1">
+    <button type="button" hx-post="/sante/sync" hx-target="#sante-sync" hx-swap="outerHTML" hx-indicator="#sante-sync-spin"
+            class="text-[13px] font-semibold text-accent hover:underline inline-flex items-center gap-1.5 min-h-8">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Synchroniser maintenant
+        <span id="sante-sync-spin" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
+    </button>
+    {% if errors is defined %}
+    {% for name, error in errors %}<p class="text-[12px] text-warn">{{ name }} : {{ error }}</p>{% endfor %}
+    {% if busy and not errors %}<p class="text-[12px] text-gray-500">Une synchro est déjà en cours : réessaie dans une minute.</p>
+    {% elif not errors %}<p class="text-[12px] text-gray-500">Rien de nouveau.</p>{% endif %}
+    {% endif %}
+    <script>window.lucide && lucide.createIcons();</script>
+</div>

@@ -28,7 +28,8 @@
         {% include "partials/garmin_login.html" %}
     </div>
     {% else %}
-    {% include "partials/garmin_status.html" %}
+    <p class="pf-label"><span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if garmin.last_error else 'bg-ok' }} mr-1 align-middle"></span>{% if garmin.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ garmin.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
+    {% if garmin.last_error %}<p class="text-[12px] text-warn">Dernière synchro échouée : {{ garmin.last_error }}</p>{% endif %}
     {% endif %}
     <div class="flex flex-wrap items-center justify-between gap-2">
         <form method="post" action="/settings/garmin/disconnect"

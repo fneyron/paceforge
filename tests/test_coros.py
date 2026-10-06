@@ -753,7 +753,7 @@ async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_us
 
 async def test_routes_require_login(client: AsyncClient):
     for method, path in (("GET", "/coros/connect"), ("GET", "/coros/callback?code=x&state=y"),
-                         ("POST", "/settings/coros/sync"), ("POST", "/settings/coros/disconnect")):
+                         ("POST", "/sante/sync"), ("POST", "/settings/coros/disconnect")):
         r = await client.request(method, path)
         assert r.status_code == 307 and r.headers["location"] == "/", path
 
@@ -766,15 +766,13 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 
     await _link(db_session, test_user)
-    r = await as_user.post("/settings/coros/sync")
-    assert r.status_code == 200 and 'id="coros-status"' in r.text
-    assert "Synchro terminée" in r.text and "dernière synchro" in r.text and "HX-Refresh" not in r.headers
+    # syncing on demand is on Santé only; a finished sync reloads it to show the new values
+    sante = (await as_user.get("/sante")).text
+    assert sante.count("Synchroniser maintenant") == 1 and "dernière synchro" not in sante.lower()
+    r = await as_user.post("/sante/sync")
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
     settings_page = (await as_user.get("/settings")).text
     assert "Dernière synchro" in settings_page and "Synchroniser maintenant" not in settings_page
-    assert "Synchroniser maintenant" in (await as_user.get("/sante")).text
-    # from the Santé page, a finished sync reloads it to show the new values
-    r = await as_user.post("/settings/coros/sync", headers={"HX-Request": "true", "HX-Current-URL": "https://test/sante"})
-    assert r.headers.get("HX-Refresh") == "true"
 
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/coros/disconnect")

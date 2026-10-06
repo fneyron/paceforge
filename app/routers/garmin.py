@@ -1,12 +1,12 @@
-"""Garmin link from Réglages and Santé: login (email + password, then the MFA
-code when Garmin asks for one), manual sync, disconnect.
+"""Garmin link from Réglages: login (email + password, then the MFA code when
+Garmin asks for one), disconnect (syncing on demand is on the Santé page,
+app.routers.sante).
 
 The login runs in the background (app.services.garmin.start_login): the page
 polls its state with HTMX. The ticket rides in the (signed) session cookie;
 the password is never stored.
 """
 import logging
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -78,23 +78,6 @@ async def garmin_mfa(request: Request, code: str = Form(""), user: User = Depend
         return _login_partial(request, {"state": "error", "message": "La connexion à Garmin a expiré. Recommence."})
     return _login_partial(request, {"state": "running", "message": "Vérification du code…"})
 
-
-@router.post("/settings/garmin/sync", response_class=HTMLResponse)
-async def garmin_sync_now(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """« Synchroniser maintenant »: runs the sync here and shows how it went."""
-    conn = await garmin.connection_for(db, user.id)
-    outcome = await garmin.run_sync(db, conn) if conn else None
-    ctx = {"request": request, "garmin": await garmin.garmin_status(db, user.id),
-           "outcome": outcome or {"busy": True}}
-    response = templates.TemplateResponse(request, "partials/garmin_status.html", context=ctx)
-    # from the Santé page: reload it, so the new values show
-    if outcome and outcome.get("ok") and urlsplit(request.headers.get("HX-Current-URL", "")).path == "/sante":
-        response.headers["HX-Refresh"] = "true"
-    return response
 
 
 @router.post("/settings/garmin/disconnect")
