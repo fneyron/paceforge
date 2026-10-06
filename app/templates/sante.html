@@ -1,38 +1,21 @@
 {% extends "base.html" %}
-{% import "partials/_icons.html" as ic %}
 
 {% block title %}Santé — PaceForge{% endblock title %}
 
-{% macro chart_svg(it, cls) %}{% set g = it.chart %}
-<svg viewBox="0 0 {{ g.w }} {{ g.h }}" preserveAspectRatio="none" class="block w-full {{ cls }} overflow-visible" role="img" aria-label="{{ it.title }}, {{ days }} derniers jours">
-    {% for k in range(1, 4) %}<line x1="0" x2="{{ g.w }}" y1="{{ g.h * k / 4 }}" y2="{{ g.h * k / 4 }}" class="stroke-line" stroke-width="1" vector-effect="non-scaling-stroke"/>{% endfor %}
-    {% if g.band %}<rect x="0" y="{{ g.band[0] }}" width="{{ g.w }}" height="{{ g.band[1] }}" class="fill-ok-soft"/>{% endif %}
-    {% for x, y, w, h in g.bars %}<rect x="{{ x }}" y="{{ y }}" width="{{ w }}" height="{{ h }}" rx="0.6" class="{{ 'fill-ink' if loop.last else 'fill-gray-200' }}"/>{% endfor %}
-    {% for s in g.series %}
-    <g class="{{ 'text-ink' if loop.first else 'text-gray-400' }}">
-        <path d="{{ s.d }}" fill="none" stroke="currentColor" stroke-width="2" {% if not loop.first %}stroke-dasharray="4 4"{% endif %} stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-        {% for x, y in s.dots %}<path d="M{{ x }} {{ y }} l0 0" stroke="currentColor" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>{% endfor %}
-        {% if s.last %}<path d="M{{ s.last[0] }} {{ s.last[1] }} l0 0" stroke="currentColor" stroke-width="7" stroke-linecap="round" vector-effect="non-scaling-stroke"/>{% endif %}
-    </g>
-    {% endfor %}
-    {% for x, w, label in g.hits %}<rect x="{{ x }}" y="0" width="{{ w }}" height="{{ g.h }}" fill="transparent"><title>{{ label }}</title></rect>{% endfor %}
-</svg>
-{% endmacro %}
-
-{% macro chart_block(it, big=False) %}
-<article class="pf-health-chart min-w-0">
-    <div class="pf-sechead">
-        <h2 class="pf-h2">{{ it.title }}</h2>
-        <span class="pf-label tabular-nums">{{ it.value }}{% if it.when %} · {{ it.when }}{% endif %}</span>
+{% macro signal_chart(s) %}{% set c = s.chart %}
+<figure class="pf-sig">
+    <div class="pf-sig-plot">
+        <svg viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="none" class="block w-full h-24 overflow-visible" aria-hidden="true">
+            <rect x="0" y="{{ c.band[0] }}" width="{{ c.w }}" height="{{ c.band[1] }}" class="pf-n-band"/>
+            {% for x, y in c.dots %}<path d="M{{ x }} {{ y }} l0 0" class="pf-sig-dot" vector-effect="non-scaling-stroke"/>{% endfor %}
+            <path d="{{ c.line }}" class="pf-sig-line" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <span class="pf-sig-edge" style="top: {{ c.hi_pct }}%">{{ c.band_hi }}</span>
+        <span class="pf-sig-edge" style="top: {{ c.lo_pct }}%">{{ c.band_lo }}</span>
     </div>
-    {{ chart_svg(it, 'h-44 lg:h-60' if big else 'h-28') }}
-    {% if big %}<div class="flex justify-between text-[11px] text-gray-500 tabular-nums mt-2"><span>{{ page.trends.start }}</span><span>aujourd'hui</span></div>{% endif %}
-    {% if it.legend %}
-    <p class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-500 mt-2">
-        {% for label, tone in it.legend %}<span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 {{ 'border-ink' if tone == 'dark' else 'border-dashed border-gray-400' }}"></span>{{ label }}</span>{% endfor %}
-    </p>
-    {% endif %}
-</article>
+    <figcaption class="pf-label">28 nuits depuis le {{ c.start }} · ligne : moyenne sur 7 nuits · bande : ta normale</figcaption>
+</figure>
+{% if s.resume %}<p class="pf-sig-resume">{{ s.resume }}</p>{% endif %}
 {% endmacro %}
 
 {% block content %}
@@ -68,74 +51,70 @@
     <section class="pf-note mt-4"><p>Pas encore de données de {{ watches|join(' ni de ') }}. Elles arrivent dans quelques minutes.</p></section>
     {% endif %}
     {% else %}
-    {% set ch = {} %}{% for it in page.trends.charts %}{% set _ = ch.update({it.key: it}) %}{% endfor %}
-    {% set f = page.form %}{% set r = page.recovery %}{% set l = page.load %}{% set fi = page.fitness %}
+    {% set v = page.verdict %}{% set n = page.nights %}{% set fi = page.fitness %}
+    {# tone → class written out here: tailwind.css is prebuilt from the templates #}
+    {% set tones = {'ok': 'pf-tone-ok', 'easy': 'pf-tone-warn', 'rest': 'pf-tone-danger', 'unknown': 'pf-tone-muted'} %}
+    {% set words = {'ok': 'pf-word-ok', 'warn': 'pf-word-warn', 'danger': 'pf-word-danger', 'muted': 'pf-word-muted'} %}
+    <div class="pf-health-body">
 
-    {# ── the verdict in one sentence ── #}
-    <section class="pf-health-rec" aria-labelledby="h-today">
-            {% if r %}
-            {% set tone = 'ok' if r.pct >= 75 else ('warn' if r.pct >= 50 else 'danger') %}
-            {% set C = 364.4 %}
-            <div class="pf-ring" role="img" aria-label="Récupération {{ r.pct }} %">
-                <svg viewBox="0 0 132 132" width="100%" height="100%"><circle cx="66" cy="66" r="58" fill="none" class="stroke-gray-100" stroke-width="10"/>
-                <circle cx="66" cy="66" r="58" fill="none" class="{{ {'ok': 'stroke-ok', 'warn': 'stroke-warn', 'danger': 'stroke-danger'}[tone] }}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{{ '%.1f'|format(C * r.pct / 100) }} {{ C }}"/></svg>
-                <div class="pf-ring-v"><b class="tabular-nums">{{ r.pct }}</b><span>% récup.</span></div>
-            </div>
+    {# ── today: one decision, the numbers behind it ── #}
+    <section class="pf-verdict {{ tones[v.tone] }}" aria-labelledby="h-today">
+        <h2 id="h-today" class="pf-health-verdict">{{ v.headline }}</h2>
+        {% if v.text %}<p class="pf-verdict-text">{{ v.text }}</p>{% endif %}
+        {% if page.signals %}
+        <div class="pf-signals">
+            {% for s in page.signals %}
+            {% set row %}<span class="pf-signal-label">{{ s.label }}</span><span class="pf-signal-value"><b class="tabular-nums">{{ s.value }}</b> <small>{{ s.ref }}</small></span><span class="pf-signal-word {{ words[s.tone] }}">{{ s.word }}</span>{% endset %}
+            {% if s.chart %}
+            <details class="pf-signal"{% if s.tone == 'danger' %} open{% endif %}>
+                <summary class="pf-signal-row">{{ row }}</summary>
+                {{ signal_chart(s) }}
+            </details>
+            {% else %}
+            <div class="pf-signal pf-signal-row">{{ row }}</div>
             {% endif %}
-            <div class="min-w-0">
-                <h2 id="h-today" class="pf-health-verdict">{% if f.status != 'unknown' %}{{ f.label }}{% elif r %}{{ r.level or 'Récupération' }}{% else %}Aujourd'hui{% endif %}</h2>
-                <p class="text-[15px] text-gray-600 mt-1.5">
-                    {% if f.status == 'fatigue' %}Ton corps récupère moins bien que d'habitude ({{ f.reasons|join(', ') }}). Privilégie des séances faciles ou un jour de repos.
-                    {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
-                    {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale : tu récupères bien.
-                    {% elif f.status == 'ok' %}Tes indicateurs sont dans ta zone habituelle.
-                    {% else %}Pas encore assez de nuits pour juger ta forme : porte ta montre la nuit.
-                    {% endif %}
-                    {% if r and r.level and f.status != 'unknown' %} {{ r.level }}.{% endif %}
-                </p>
-                {% if r %}<p class="pf-label mt-2">{% if r.full_h is not none %}{% if r.full_h > 0 %}Récupération complète dans {{ '%.0f'|format(r.full_h) }} h{% else %}Tu es complètement récupéré{% endif %}{% endif %}{% if r.stale %} · {{ r.when }}{% endif %}</p>{% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if v.note %}<p class="pf-verdict-note">{{ v.note }}</p>{% endif %}
+    </section>
+
+    {# ── the last 14 nights ── #}
+    <section class="pf-nights-sec" aria-labelledby="h-nights">
+        <div class="pf-sechead"><h2 id="h-nights" class="pf-h2">Tes nuits</h2></div>
+        {% if n.takeaway %}<p class="pf-nights-take">{{ n.takeaway }}</p>{% endif %}
+        {% if n.coverage %}<p class="pf-nights-cover">{{ n.coverage }}</p>{% endif %}
+        {% if n.n7 >= 3 %}
+        <dl class="pf-kpis pf-kpis-2">
+            <div><dt class="pf-label">Sommeil · 7 nuits</dt><dd class="tabular-nums">{{ n.avg7_txt }}<small>/nuit</small></dd><dd class="pf-kpi-sub">besoin {{ n.need_h }} h · {{ n.n7 }} nuit{{ 's' if n.n7 > 1 }} sur 7</dd></div>
+            <div><dt class="pf-label">Horaires · 14 nuits</dt>
+                {% if n.regularity %}<dd class="tabular-nums">± {{ n.regularity.sd }}<small>min</small></dd><dd class="pf-kpi-sub"><span class="{{ words[n.regularity.tone] }}">{{ n.regularity.word }}</span> · {{ n.regularity.range }}</dd>
+                {% else %}<dd>—</dd><dd class="pf-kpi-sub">il faut 5 nuits sur 14</dd>{% endif %}
             </div>
-        </section>
-
-    {# ── training load ── #}
-    <section class="pf-health-load" aria-labelledby="h-load">
-        <div class="pf-sechead">
-            <h2 id="h-load" class="pf-h2">Charge d'entraînement</h2>
-            <nav aria-label="Période" class="pf-seg pf-seg-sm">
-                {% for n in periods %}<a href="/sante?jours={{ n }}" {% if days == n %}aria-current="true"{% endif %}>{{ n }} j</a>{% endfor %}
-            </nav>
-        </div>
-        {% if l %}
-        {% set pill = {'over': 'pf-pill-bad', 'good': 'pf-pill-ok', 'keep': 'pf-pill-soft', 'taper': 'pf-pill-accent', 'low': 'pf-pill-warn'}.get(l.key, 'pf-pill-soft') %}
-        <div class="pf-load-top">
-            <div><div class="pf-label">Ratio</div><b class="tabular-nums inline-flex items-center gap-2.5">{{ ('%.2f'|format(l.ratio)).replace('.', ',') if l.ratio is not none else '—' }} <span class="pf-pill {{ pill }}">{% if l.key == 'over' %}{{ ic.icon('alert', 'w-3.5 h-3.5', '2.2') }}{% endif %}{{ l.label }}</span></b></div>
-        </div>
-        {% if l.stale %}<p class="pf-label">{{ l.when }}</p>{% endif %}
+        </dl>
         {% endif %}
-        {% if ch.load %}
-        <div class="pf-loadchart">{{ chart_block(ch.load, big=True) }}</div>
-        {% endif %}
-        {% if l and l.meaning %}
-        <div class="pf-note mt-4">{% if l.key == 'over' %}<span class="text-danger mt-0.5">{{ ic.icon('alert', 'w-[18px] h-[18px]', '2.2') }}</span>{% endif %}<span>{{ l.meaning }}</span></div>
-        {% elif not l %}
-        <p class="text-[15px] text-gray-500">Pas de charge ces derniers jours : enregistre tes séances avec ta montre.</p>
+        {% if n.selective %}<p class="pf-nights-cover">Peu de nuits mesurées : si tu enlèves la montre les mauvaises nuits, ta moyenne paraît meilleure qu'en vrai.</p>{% endif %}
+        {% set st = n.strip %}
+        {% if st %}
+        <figure class="pf-nights" role="img" aria-label="{{ st.aria }}">
+            <div class="pf-n-labels" aria-hidden="true">{% for b in st.bars %}<span class="{{ 'pf-n-now' if loop.first }}{{ ' pf-n-dim' if b.missing }}">{{ b.label }}</span>{% endfor %}</div>
+            <svg class="pf-n-plot" width="100%" height="{{ st.height }}" aria-hidden="true">
+                {% if st.band %}<rect x="{{ st.band.x }}%" width="{{ st.band.w }}%" y="0" height="{{ st.height }}" class="pf-n-band"/>{% endif %}
+                {% for gx in st.grid %}<line x1="{{ gx }}%" x2="{{ gx }}%" y1="0" y2="{{ st.height }}" class="pf-n-grid"/>{% endfor %}
+                <line x1="0" x2="100%" y1="{{ st.half }}" y2="{{ st.half }}" class="pf-n-grid"/>
+                {% for b in st.bars %}
+                {% if b.missing %}<line x1="0" x2="100%" y1="{{ b.y + 10 }}" y2="{{ b.y + 10 }}" class="pf-n-miss"/>
+                {% else %}<rect x="{{ b.x }}%" width="{{ b.w }}%" y="{{ b.y + 4 }}" height="12" rx="3" class="pf-n-{{ b.tone }}"/>{% endif %}
+                <rect x="0" width="100%" y="{{ b.y }}" height="20" fill="transparent"><title>{{ b.title }}</title></rect>
+                {% endfor %}
+            </svg>
+            <div class="pf-n-durs" aria-hidden="true">{% for b in st.bars %}<span class="pf-n-t-{{ b.tone }}">{{ b.dur }}</span>{% endfor %}</div>
+            <div class="pf-n-axis" aria-hidden="true">{% for t in st.ticks %}<span class="pf-n-tick pf-n-{{ t.align }}{{ ' pf-n-edge' if t.edge }}" style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}</div>
+        </figure>
+        <ol class="sr-only">{% for b in st.bars %}<li>{{ b.sr }}</li>{% endfor %}</ol>
+        <p class="pf-n-legend"><span class="text-warn">orange : moins de 7 h</span> · <span class="text-danger">rouge : moins de 6 h</span> · pointillés : pas de montre{% if st.band %} · bande : {{ n.need_h }} h avant ton lever habituel{% endif %}</p>
         {% endif %}
     </section>
-
-    {# ── the other trends ── #}
-    {% set t = page.trends %}
-    <section aria-label="Tendances" class="pf-health-grid">
-        {% for it in t.charts if it.key != 'load' %}{{ chart_block(it) }}{% endfor %}
-    </section>
-    {# the verdict already asks for the watch at night: not said twice #}
-    {% set missing = t.missing | rejectattr('2') | list if f.status == 'unknown' else t.missing %}
-    {% if missing %}
-    <ul class="pf-health-missing pf-note flex-col !gap-1.5 mt-8">
-        {% for titles, hint, _night in missing %}
-        <li class="text-[14px] text-gray-600"><span class="font-medium text-ink">{{ titles }}</span> : {{ hint }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
 
     {# ── fitness assessment ── #}
     <section aria-labelledby="h-fitness" class="pf-health-fitness">
@@ -143,7 +122,7 @@
             <h2 id="h-fitness" class="pf-h2">Niveau</h2>
         </div>
         {% if fi %}
-        <dl class="pf-kpis">
+        <dl class="pf-kpis pf-kpis-2">
             {% if fi.vo2max %}<div><dt class="pf-label">VO2 max</dt><dd class="tabular-nums">{{ fi.vo2max }}</dd></div>{% endif %}
             {% if fi.threshold %}<div><dt class="pf-label">Allure seuil</dt><dd class="tabular-nums">{{ fi.threshold.replace(' /km', '') }}<small>/km</small></dd></div>{% endif %}
         </dl>
@@ -151,6 +130,7 @@
         <p class="text-[15px] text-gray-500">Ton niveau arrive quand ta montre a assez de courses avec cardio pour l'évaluer.</p>
         {% endif %}
     </section>
+    </div>
     {% endif %}
 </div>
 {% endblock content %}
