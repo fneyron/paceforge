@@ -6,7 +6,7 @@ from pydantic import BaseModel, computed_field
 
 class ActivitySummary(BaseModel):
     id: int
-    strava_activity_id: int
+    strava_activity_id: int | None = None
     sport_type: str
     name: str
     start_date: datetime

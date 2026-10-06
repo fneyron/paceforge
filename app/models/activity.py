@@ -17,8 +17,13 @@ class Activity(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strava_activity_id: Mapped[int] = mapped_column(
-        BigInteger, unique=True, index=True, nullable=False
+    # None for a session that only came from Garmin
+    strava_activity_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
+    )
+    # set when Garmin Connect also has (or alone has) this session
+    garmin_activity_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
@@ -76,4 +81,4 @@ class Activity(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Activity {self.id} strava={self.strava_activity_id} {self.sport_type}>"
+        return f"<Activity {self.id} strava={self.strava_activity_id} garmin={self.garmin_activity_id} {self.sport_type}>"
