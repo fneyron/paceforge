@@ -7,16 +7,10 @@
 <style>
 .maplibregl-popup-content { font-family: var(--pf-font-text); border-radius: 12px; padding: 12px; }
 .maplibregl-popup-content { font-size: 12px; line-height: 1.35; }
-/* phone: the map opens full screen (a pitched 3D map cannot live in a 200 px strip) */
-#map-wrap.map-full { position: fixed; inset: 0; z-index: 60; background: rgb(var(--pf-bg)); height: 100dvh; }
-#map-wrap.map-full #courseMap { height: 100%; }
-@media (pointer: coarse) { #simulator-root input, #simulator-root select { font-size: 16px; } }
-#map-wrap .map-close { display: none; }
-#map-wrap.map-full .map-close { display: inline-flex; }
-#map-wrap.map-full .map-expand { display: none; }
+/* phones: 16 px fields so iOS does not zoom; the objective's own inputs stay the size of the number (far above 16 px) */
+@media (pointer: coarse) { #simulator-root input:not(.pf-hero-in), #simulator-root select { font-size: 16px; } }
 .map-ctl { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); font: 600 12px/1 system-ui, sans-serif; color: #0B0B0C; padding: 0 9px; height: 29px; display: inline-flex; align-items: center; cursor: pointer; }
 .map-ctl[aria-pressed="true"] { background: rgb(var(--pf-accent)); color: rgb(var(--pf-accent-ink)); }
-.dark #map-wrap.map-full { background: rgb(var(--pf-bg)); }
 .cp-marker { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2.5px solid #0B0B0C; box-shadow: 0 1px 3px rgba(0,0,0,.35); cursor: pointer; font-size: 0; }
 .cp-marker.late { border-color: rgb(var(--pf-danger)); background: rgb(var(--pf-danger)); }
 .map-container { position: relative; z-index: 0; overflow: hidden; }
@@ -24,12 +18,6 @@
 .sim-num::-webkit-outer-spin-button, .sim-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sim-num { -moz-appearance: textfield; appearance: textfield; }
 summary::-webkit-details-marker { display: none; }
-/* Inline time fields: no picker icon, the value alone. */
-.time-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
-.time-inline { -webkit-appearance: none; appearance: none; }
-input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none; }
-/* Hero conditions: date / start / minutes take the width of their value, so the separators sit next to them. */
-.fit { field-sizing: content; }
 /* Objective: a 2 px track under the hero number, a 12 px black thumb. */
 #obj-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; margin: 0; outline: none; display: block; cursor: pointer; }
 #obj-slider::-webkit-slider-runnable-track { height: 2px; background: rgb(var(--pf-line)); border-radius: 1px; }
@@ -42,16 +30,18 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
 
 {% block content %}
 <div class="pf-route">
-    <a href="/simulator" class="pf-back" id="back-courses">
-        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
-        Mes courses
-    </a>
+    <div class="pf-col">
+        <a href="/simulator" class="pf-back" id="back-courses">
+            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+            Mes courses
+        </a>
+    </div>
 
-    <div id="rpanel-plan">
+    <div id="rpanel-plan" class="pf-col">
         {% include "partials/gpx_result.html" %}
     </div>
 
-    {# the tools of the « Outils » list open here, in place of the plan, with a way back #}
+    {# the tools (Préparer, the … menu, the débrief button) open here, in place of the plan, with a way back #}
     <div id="rpanel-tool" class="hidden">
         <button type="button" onclick="switchRouteTab('plan')" class="pf-back">
             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
@@ -59,17 +49,11 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
         </button>
         <h1 id="tool-title" class="pf-h1 mb-6" tabindex="-1"></h1>
 
-        <div id="rpanel-pacing" class="hidden">
-            <div id="pacing-wrap" hx-get="/partials/simulator/pacing/{{ saved_route_id }}?v=1" hx-trigger="intersect once" hx-swap="innerHTML">
-                <p class="text-sm text-gray-500">Consignes de pilotage…</p>
-            </div>
-        </div>
-
         <div id="rpanel-nutrition" class="hidden">
-            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=16" hx-trigger="intersect once" hx-swap="innerHTML">
+            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=18" hx-trigger="intersect once" hx-swap="innerHTML">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Plan nutritionnel…
+                    Ravitaillement…
                 </div>
             </div>
         </div>
@@ -87,10 +71,10 @@ input[type=date].time-inline::-webkit-calendar-picker-indicator { display: none;
 
 {% block scripts %}
 <script>
-var TOOL_TITLES = { pacing: 'Pilotage', nutrition: 'Nutrition', realise: 'Débrief', reference: 'Finisher de référence' };
+var TOOL_TITLES = { nutrition: 'Ravitaillement', realise: 'Débrief', reference: 'Finisher de référence' };
 var planScrollY = 0;
 function switchRouteTab(tab, anchor) {
-    var tools = ['pacing', 'nutrition', 'realise', 'reference'];
+    var tools = ['nutrition', 'realise', 'reference'];
     if (tab !== 'plan' && tools.indexOf(tab) < 0) tab = 'plan';
     if (tab !== 'plan' && !document.getElementById('rpanel-' + tab)) tab = 'plan';
     var plan = document.getElementById('rpanel-plan'), tool = document.getElementById('rpanel-tool'), back = document.getElementById('back-courses');
@@ -100,27 +84,39 @@ function switchRouteTab(tab, anchor) {
     tools.forEach(function (t) { var p = document.getElementById('rpanel-' + t); if (p) p.classList.toggle('hidden', t !== tab); });
     if (tab !== 'plan') {
         var n = document.getElementById('save-name'), bl = document.getElementById('tool-back-label'); if (n && bl) bl.textContent = n.value || 'Plan de course';
-        var tt = document.getElementById('tool-title'); tt.textContent = anchor === 'bags' ? 'Sacs et drop bags' : TOOL_TITLES[tab];
+        var tt = document.getElementById('tool-title'); tt.textContent = TOOL_TITLES[tab];
         window.scrollTo(0, 0); try { tt.focus({ preventScroll: true }); } catch (e) {}
         if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap [data-packing], #nutrition-wrap #packing'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
     } else {
         setTimeout(function () { window.scrollTo(0, planScrollY); if (window._sim && window._sim._redraw) window._sim._redraw(); }, 0);
+        // a change in Ravitaillement (stomach, products, quantities…): the rows' food, water and bags follow it
+        if (ravitoDirty && window._sim && window._sim.recalc) { ravitoDirty = false; window._sim.recalc(); }
     }
     // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
     var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    var urls = { pacing: ['/partials/simulator/pacing/{{ saved_route_id }}?v=1', '#pacing-wrap'], nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=16', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
+    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=18', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
     if (urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv) {
         window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
     }
-    try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + tab); } catch (e) {}
+    try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + (anchor === 'bags' ? 'bags' : tab)); } catch (e) {}
 }
-var tabLoadedAt = {};
+var tabLoadedAt = {}, ravitoDirty = false;
+document.body.addEventListener('htmx:afterRequest', function (ev) {
+    var d = ev.detail || {}, cfg = d.requestConfig || {}, path = (d.pathInfo && d.pathInfo.requestPath) || cfg.path || '';
+    if (d.successful && String(cfg.verb).toLowerCase() === 'post' && /\/partials\/simulator\/nutrition\//.test(path)) ravitoDirty = true;
+});
 document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    if (id === 'pacing-wrap') tabLoadedAt.pacing = pv; else if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
+    if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-document.addEventListener('DOMContentLoaded', function () { var h = (location.hash || '').slice(1); if (['pacing', 'nutrition', 'realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h); });
+// old links: #pacing (now in the passage rows) opens the plan; #nutrition, #ravito and #bags open Ravitaillement
+document.addEventListener('DOMContentLoaded', function () {
+    var h = (location.hash || '').slice(1);
+    if (h === 'pacing') switchRouteTab('plan');
+    else if (h === 'nutrition' || h === 'ravito' || h === 'bags') switchRouteTab('nutrition', h === 'bags' ? 'bags' : undefined);
+    else if (['realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h);
+});
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief.
 document.addEventListener('DOMContentLoaded', function () { switchRouteTab('realise'); });

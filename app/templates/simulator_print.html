@@ -103,20 +103,19 @@
     </div>
 
     {% if legs_rows %}
-    <!-- Pilotage: one instruction per leg between two points (what the watch shows) -->
+    <!-- Consignes: one instruction per leg, the passage row's words (the cardio ceiling is the watch's) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
         <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
-            <p class="text-[11px] font-bold uppercase tracking-wide">Pilotage</p>
-            <p class="text-[9px] text-gray-500">une consigne par tronçon · FC commande, VAM et allure = garde-fous</p>
+            <p class="text-[11px] font-bold uppercase tracking-wide">Consignes</p>
+            <p class="text-[9px] text-gray-500">une par tronçon · le cardio commande</p>
         </div>
         <table class="w-full text-[9.5px] tabular-nums">
             <tbody class="divide-y divide-gray-100">
                 {% for l in legs_rows %}{% set b = l.block %}
                 <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-warn-soft{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
                     <td class="py-0.5 pr-2 text-gray-600">→ <b class="text-gray-900">{{ l.to_names | join(', ') }}</b></td>
-                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif b.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ b.hr_cap }}{% endif %}{% endif %}</td>
-                    <td class="py-0.5 pr-2 whitespace-nowrap">{% if b %}{{ b.label }}{% if b.vam_m_per_h %} · {{ b.vam_m_per_h }} m/h{% elif b.pace_s_per_km %} · {{ (b.pace_s_per_km // 60)|int }}:{{ '%02d'|format((b.pace_s_per_km % 60)|int) }}/km{% endif %}{% endif %}</td>
-                    <td class="py-0.5 text-gray-600">{% if b %}{% if b.cls == 'stairs' %}marche, mains sur les cuisses{% elif b.cls == 'climb' %}marche > 8 %{% elif b.cls == 'descent' %}relâche, pas de freinage{% else %}régulier, manger, boire{% endif %}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} · <span class="text-red-700">escaliers km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</td>
+                    <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif l.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ l.hr_cap }}{% endif %}{% endif %}</td>
+                    <td class="py-0.5 text-gray-600">{% if l.effort %}{{ l.effort }}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} <span class="text-red-700">Raide km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %} : mains sur les cuisses.</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -130,7 +129,7 @@
         <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
             <p class="text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
             <p class="text-[10px] text-gray-500 tabular-nums">
-                {% for ln in nutrition_lines %}×{{ ln.total_units | int }} {{ ln.name }}{% if not loop.last %} · {% endif %}{% endfor %}
+                {% for ln in nutrition_lines %}{{ ln.label }}{% if not loop.last %} · {% endif %}{% endfor %}
             </p>
         </div>
         <table class="w-full text-[10px]">
@@ -138,13 +137,9 @@
                 {% for leg in nutrition_schedule %}
                 <tr>
                     <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
-                    <td class="py-1 px-1 text-right tabular-nums text-gray-500">{% set h = (leg.leg_time_s // 3600) | int %}{% set m = ((leg.leg_time_s % 3600) // 60) | int %}{% if h %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}min{% endif %}</td>
-                    <td class="py-1 pl-2 text-gray-700">
-                        {% set ns = namespace(any=false) %}
-                        {% for u in leg.units %}{% if u.units and not u.is_water %}{% if ns.any %} · {% endif %}{{ u.name }} <b>×{{ u.units }}</b>{% set ns.any = true %}{% endif %}{% endfor %}
-                        {% if not ns.any %}<span class="text-gray-300">—</span>{% endif %}
-                    </td>
-                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500">{{ leg.carbs_real_per_h }} g/h · {{ (leg.fluid_ml/1000)|round(1) }}L</td>
+                    <td class="py-1 px-1 text-right tabular-nums text-gray-500">{{ leg.leg_hm }}</td>
+                    <td class="py-1 pl-2 text-gray-700">{% if leg.labels %}{{ leg.labels | join(' · ') }}{% else %}<span class="text-gray-300">—</span>{% endif %}</td>
+                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{% if leg.water_ml >= 200 %}{{ ('%.1f'|format(leg.water_ml / 1000)).replace('.', ',') }} L d'eau{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

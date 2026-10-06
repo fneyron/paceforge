@@ -38,7 +38,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "Pilotage" in html and "exportPace(" in html
+    assert "Ravitaillement" in html and "Pilotage" not in html and "exportPace(" in html
     assert '"kind": "full"' in html and '"drop_bag": true' in html  # checkpoint metadata round-trips to the page
 
     course = _course()
@@ -50,8 +50,8 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     t = r.text
     assert "Sécurité" in t  # one table: scenario columns live in the passage table
     assert "Sécurité" in t and "Optimiste" in t and "bascule" not in t  # scenario columns, no switch marker in the table
-    assert ">10:30</span>" in t  # cutoff shown read-only
-    assert 'data-kind="full"' in t and 'data-bag="1"' in t and "Drop bag" in t  # the poste chip carries kind, crew and drop bag
+    assert "barrière 10:30</span>" in t  # cutoff shown read-only, in the opened row
+    assert "<span>Ravito</span>" in t and "<span>assistance</span>" in t and "Drop bag ici" in t  # kind, crew and drop bag, in words
     # v4: day separator, no "+1j" suffix, no start row, switch row flagged, autonomy legs in the plan data
     assert 'data-day="1"' in t and "+1j" not in t and ">Départ<" not in t and "data-switch" not in t and '"autonomy"' in t
 
@@ -73,7 +73,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_pacing_guide_and_params(as_user: AsyncClient):
+async def test_pacing_guide_and_params(as_user: AsyncClient, db_session: AsyncSession):
     route_id = await _create_route(as_user)
     r = await as_user.get(f"/partials/simulator/pacing/{route_id}")
     assert r.status_code == 200 and "Raide ≥" in r.text and "Escaliers" in r.text
@@ -84,31 +84,36 @@ async def test_pacing_guide_and_params(as_user: AsyncClient):
     assert r.status_code == 200 and re.search(r"sous 1[23]\d battements", r.text)  # the climb cap (140 at the start) comes down with the race
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=csv")
     assert r.status_code == 200 and "Village" in r.text
+    # Réglages du plan › « Plafond cardio en montée » alone: 204, the rest of params_json kept, flat / descent derive again
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/params", data={"hr_cap_climb": 150})
+    assert r.status_code == 204
+    from app.models.route import Route
+
+    route = await db_session.get(Route, route_id)
+    await db_session.refresh(route)
+    p = route.params_json
+    assert p["hr_cap_climb"] == 150 and p["walk_grade"] == 20 and p["scenario_fast_pct"] == 4 and p["switch_km"] == 10.0
+    assert "hr_cap_flat" not in p and "hr_release_descent" not in p
 
 
 @pytest.mark.asyncio
 async def test_nutrition_card_with_packing_and_caffeine(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
-    r = await as_user.post("/api/nutrition/products", data={"name": "Gel caf", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50})
-    assert r.status_code == 200
-    r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ce que tu prends" in r.text and "Coche les produits" in r.text
-    pid = r.text.split('name="use_')[1].split('"')[0]
-    # ticking a product with no quantity → it gets its share of the target (75 g/h / 25 g = 3/h)
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
-        "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000,
-        f"use_{pid}": 1, "caffeine_enabled": 1, "caffeine_from_h": 1, "caffeine_every_h": 2, "caffeine_dose_mg": 50, "caffeine_boost_dawn": 1,
-    })
+    # « + Marque » › « Un produit à toi »: added to the pantry and picked at once
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel caf", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50})
     assert r.status_code == 200, r.text
     t = r.text
-    assert f'name="qty_{pid}"' in t and 'value="3"' in t and "75 g/h" in t
-    assert "ravito par ravito" in t and "Sac au départ" in t and "Drop bag · Col" in t
-    assert "Caféine" in t and "aube" in t  # the caffeine card renders its doses
-    # a typed quantity is kept as is
+    assert 'aria-pressed="true" title="Gel caf"' in t
+    assert re.search(r"<b>1 Gel caf</b> à \d\d:\d\d", t)  # « Ta règle »: the caffeine clock line
+    assert "Sac au départ" in t and "Drop bag · Col" in t
+    # an older client posting the previous form (use_ / qty_) still works; a typed quantity is « à la main »
+    pid = int(re.search(r"/products/(\d+)/delete", t).group(1))
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
-        "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000, f"use_{pid}": 1, f"qty_{pid}": "2.5",
+        "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000,
+        "use_-1": 1, "qty_-1": "2.5", f"use_{pid}": 1, "caffeine_enabled": 1, "caffeine_from_h": 3, "caffeine_every_h": 2.5, "caffeine_dose_mg": 50,
     })
-    assert 'value="2.5"' in r.text
+    assert r.status_code == 200, r.text
+    assert "quantités à la main" in r.text and "<b>2,5</b>" in r.text and "à la main</span>" in r.text
 
 
 @pytest.mark.asyncio
@@ -218,7 +223,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     assert r.status_code == 200 and "barrière 12:00" not in r.text
     # nutrition, exports and print work on the bike plan too
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ce que tu prends" in r.text
+    assert r.status_code == 200 and "Ta règle pour toute la course" in r.text
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
     assert r.status_code == 200 and "<CoursePoint>" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}/print")
@@ -233,6 +238,8 @@ async def test_trail_export_carries_pacing_points_and_courses_page_has_no_triath
     assert gpx.text.count("<wpt") == 5  # DEP + 3 CPs + ARR
     assert "DEP 21:00 | PLAT" in gpx.text and "| ESCAL marche" in gpx.text and "LIBRE" not in gpx.text
     print_page = await as_user.get(f"/simulator/routes/{route_id}/print")
-    assert "Pilotage" in print_page.text and "mains sur les cuisses" in print_page.text
+    # « Consignes »: the rows' words, the cell's pace only (no second pace that disagrees with it)
+    assert "Consignes" in print_page.text and "Pilotage" not in print_page.text and "mains sur les cuisses" in print_page.text
+    assert "régulier, manger, boire" not in print_page.text and "garde-fous" not in print_page.text
     courses = await as_user.get("/simulator")
     assert courses.status_code == 200 and "tab-tri" not in courses.text and "mono-segment" not in courses.text

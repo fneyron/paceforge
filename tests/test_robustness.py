@@ -1,6 +1,7 @@
 """Real-data shapes that used to 500 or hang: odd race dates, string caps, race day without an objective,
 incomplete nutrition targets, catalogue on a course-less route, the privacy page."""
 import json
+import re
 
 import pytest
 from httpx import AsyncClient
@@ -70,8 +71,8 @@ async def test_nutrition_card_with_incomplete_saved_targets(as_user: AsyncClient
     route.nutrition_json = {"targets": {"carbs_g_per_h": 60}, "items": []}
     await db_session.flush()
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ce que tu prends" in r.text
-    assert 'name="fluid_ml_per_h" type="number" min="0" step="any"' in r.text  # the form must stay submittable
+    assert r.status_code == 200 and "Ta règle pour toute la course" in r.text
+    assert '"v":"fragile"}\' aria-pressed="true"' in r.text  # the old 60 g/h is the « Fragile » stomach
 
 
 @pytest.mark.asyncio
@@ -121,14 +122,17 @@ async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab
     assert r.status_code == 200 and "scenario_fast_pct" not in r.text
     r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
     assert r.status_code == 200 and "+12 % de temps" in r.text
-    # products: add, edit, delete from the race's nutrition tab
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": "", "volume_ml": ""})
-    assert r.status_code == 200 and "Gel maison" in r.text and 'id="pantry-box" class="rounded-xl border border-gray-200 bg-white shadow-sm" open' in r.text
-    pid = int(r.text.split("/products/")[1].split("\"")[0].split("/")[0])
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40"})
-    assert r.status_code == 200 and "Gel maison 40" in r.text
+    # products: add (picked at once), edit, delete (and unpicked) from the race's Ravitaillement view
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": ""})
+    assert r.status_code == 200
+    assert 'aria-pressed="true" title="Gel maison"' in r.text  # a pressed chip
+    assert '<b title="Gel maison">Gel maison</b>' in r.text  # Ajuster › Tes produits
+    pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40", "open": "adjust"})
+    assert r.status_code == 200 and "Gel maison 40" in r.text and 'id="rv-adjust" class="pf-rv-disc pf-rv-adjust" open' in r.text
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}/delete")
     assert r.status_code == 200 and "Gel maison" not in r.text
+    assert 'aria-pressed="false" title="Gel"' in r.text  # unpicked: the quick pick « Gel » is offered again
     r = await as_user.get("/nutrition", follow_redirects=False)
     assert r.status_code == 303
     r = await as_user.get("/simulator")
@@ -159,7 +163,7 @@ async def test_a_point_carries_its_own_stop_time(as_user: AsyncClient):
     r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(cps), "name": "Stops"})
     assert r.status_code == 200
     r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(cps), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
-    assert r.status_code == 200 and "+10'" in r.text
+    assert r.status_code == 200 and "arrêt 10 min" in r.text  # said in the point's opened row
     r = await as_user.get(f"/simulator/routes/{route_id}")
     assert r.status_code == 200 and '"stop_s": 600' in r.text  # persisted and handed back to the page
 

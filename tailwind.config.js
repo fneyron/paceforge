@@ -6,7 +6,8 @@ const grays = {};
 [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].forEach((k) => { grays[k] = v(`gray-${k}`); });
 
 module.exports = {
-  content: ["./app/templates/**/*.html"],
+  // the routers emit a few class strings too (small HTML responses)
+  content: ["./app/templates/**/*.html", "./app/routers/**/*.py"],
   darkMode: 'class',
   theme: {
     extend: {
