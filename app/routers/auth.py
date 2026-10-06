@@ -333,8 +333,10 @@ async def strava_callback(
         # keys just typed in the wizard: type them again there (and still come
         # back to Réglages after); stored keys refused: say so in Réglages,
         # which then offers the wizard; anything else: just try again
-        refused = getattr(exc, "status_code", None) in (400, 401)
-        if not typed and refused and user.has_own_strava_app:
+        # only a 401 says the keys are wrong (a 400 is the code: reused by a
+        # reload, or expired); never flag a link that is in place meanwhile
+        refused = getattr(exc, "status_code", None) == 401
+        if not typed and refused and user.has_own_strava_app and not user.strava_access_token:
             user.strava_credentials_valid = False
             await db.commit()
         back = None if typed else _back_to_settings(

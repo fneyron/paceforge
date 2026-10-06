@@ -216,16 +216,24 @@ async def test_a_pair_refreshed_by_another_worker_is_used_as_is(db_session: Asyn
     assert user.strava_access_token == "fresh" and post.await_count == 0  # no second refresh
 
 
-@pytest.mark.parametrize("status", [400, 401])
-async def test_a_refused_refresh_asks_to_reconnect(db_session: AsyncSession, test_user: User, status):
+async def test_refused_keys_and_a_revoked_access_are_told_apart(db_session: AsyncSession, test_user: User):
+    def refused(status):
+        resp = httpx.Response(status, json={"message": "Bad Request"},
+                              request=httpx.Request("POST", "https://www.strava.com/oauth/token"))
+        return patch("httpx.AsyncClient.post", AsyncMock(return_value=resp))
+
     test_user.strava_token_expires_at = 0
     await db_session.flush()
-    resp = httpx.Response(status, json={"message": "Bad Request"},
-                          request=httpx.Request("POST", "https://www.strava.com/oauth/token"))
-    with patch("httpx.AsyncClient.post", AsyncMock(return_value=resp)):
-        with pytest.raises(StravaTokenError):
-            await StravaService(db_session).refresh_token_if_needed(test_user)
-    assert test_user.strava_credentials_valid is False
+    with refused(401), pytest.raises(StravaTokenError):  # the app's keys: new ones needed
+        await StravaService(db_session).refresh_token_if_needed(test_user)
+    assert test_user.strava_credentials_valid is False and test_user.strava_refresh_token
+
+    test_user.strava_credentials_valid = True
+    await db_session.flush()
+    with refused(400), pytest.raises(StravaTokenError):  # PaceForge revoked on Strava: the link is gone
+        await StravaService(db_session).refresh_token_if_needed(test_user)
+    assert test_user.strava_credentials_valid is True and test_user.strava_refresh_token is None
+    assert test_user.initial_sync_done is False  # reconnecting fetches the gap
 
 
 async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: AsyncClient, db_session: AsyncSession,
@@ -251,7 +259,11 @@ async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: As
         assert (await c.get("/auth/strava?next=settings")).headers["location"] == "/setup?next=settings"
         user.strava_credentials_valid = True
         await db_session.flush()
-        # a Strava hiccup is not a refusal: the keys stay good
+        # a reused code (a reload of the callback) or a Strava hiccup is not a refusal
+        refuse.side_effect = StravaAPIError("Token exchange failed: 400", status_code=400)
+        await c.get("/auth/strava?next=settings")
+        await c.get("/auth/strava/callback?code=abc")
+        assert user.strava_credentials_valid is True
         refuse.side_effect = StravaAPIError("Token exchange failed: 503", status_code=503)
         await c.get("/auth/strava?next=settings")
         await c.get("/auth/strava/callback?code=abc")

@@ -79,8 +79,11 @@ class StravaService:
         # must be waited for and its pair used, not refreshed again (the
         # athlete's row is locked until that worker commits)
         await self.db.flush()
+        # FOR NO KEY UPDATE: serializes refreshers without blocking the
+        # athlete's other writes (rows pointing at users take KEY SHARE)
         await self.db.refresh(user, attribute_names=[
-            "strava_access_token", "strava_refresh_token", "strava_token_expires_at"], with_for_update=True)
+            "strava_access_token", "strava_refresh_token", "strava_token_expires_at"],
+            with_for_update={"key_share": True})
         if not user.strava_refresh_token or user.strava_token_expires_at is None:
             raise StravaTokenError()  # disconnected meanwhile
         if user.strava_token_expires_at > int(time.time()) + 300:
@@ -98,9 +101,10 @@ class StravaService:
                     "grant_type": "refresh_token",
                 },
             )
-            # 401: the app's keys are refused; 400: the athlete revoked the
-            # access on Strava. Either way only reconnecting helps, and the
-            # syncs stop asking until then (they skip invalid links).
+            # 401: the app's keys are refused (new keys needed, through the
+            # wizard); 400: the athlete revoked PaceForge on Strava (the keys
+            # are fine: the link is gone, one click reconnects it). Either way
+            # the syncs stop asking until then.
             if response.status_code in (400, 401):
                 # another worker may have refreshed first: Strava then refuses
                 # the refresh token we sent, but the stored pair is fine
@@ -111,7 +115,10 @@ class StravaService:
                 if user.strava_refresh_token != sent:
                     return user
                 logger.error("Strava refused the refresh for user %d (%s)", user.id, response.status_code)
-                user.strava_credentials_valid = False
+                if response.status_code == 401:
+                    user.strava_credentials_valid = False
+                else:
+                    _forget_link(user)
                 await self.db.flush()
                 raise StravaTokenError()
 
@@ -327,6 +334,16 @@ class StravaService:
             logger.exception("Failed to deauthorize Strava for user %d", user.id)
 
 
+def _forget_link(user: User) -> None:
+    """The tokens go (the athlete and the app keys stay, so reconnecting is
+    one click); reconnecting fetches what was recorded meanwhile."""
+    user.strava_access_token = None
+    user.strava_refresh_token = None
+    user.strava_token_expires_at = None
+    user.initial_sync_done = False
+    user.last_activity_poll_at = None
+
+
 def strava_status(user: User) -> dict:
     """The Strava link as Réglages show it, like coros_status / garmin_status.
     A link made without the athlete's own app keys (the old shared app) is
@@ -353,12 +370,6 @@ async def disconnect(db: AsyncSession, user: User) -> None:
     if user.has_own_strava_app and user.strava_webhook_subscription_id:
         if await strava.delete_webhook_subscription(user.strava_webhook_subscription_id):
             user.strava_webhook_subscription_id = None  # else kept, to retry on the next disconnect
-    user.strava_access_token = None
-    user.strava_refresh_token = None
-    user.strava_token_expires_at = None
-    # reconnecting fetches what was recorded meanwhile (the import skips
-    # what is already there), and Réglages say the first sync is running
-    user.initial_sync_done = False
-    user.last_activity_poll_at = None
+    _forget_link(user)  # the import skips what is already there
     await db.flush()
     logger.info("Strava disconnected for user %d", user.id)
