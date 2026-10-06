@@ -4,6 +4,7 @@ Syncing on demand lives here only (one button for every linked watch);
 Réglages manage the links (status, last sync, errors, disconnect).
 """
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -29,6 +30,7 @@ async def sante_page(
 ):
     status = await coros.coros_status(db, user.id)
     garmin_link = await garmin.garmin_status(db, user.id)
+    auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)))
     try:
         page = await health_page(db, user.id)
     except Exception:  # shown as an error, never as "connect your watch"
@@ -36,11 +38,53 @@ async def sante_page(
         page = None
     return templates.TemplateResponse(
         request, "sante.html",
-        context={"user": user, "coros": status, "garmin": garmin_link, "page": page},
+        context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync},
     )
 
 
 _WATCHES = (("COROS", coros), ("Garmin", garmin))
+STALE_AFTER = timedelta(hours=1)
+JUST_SYNCED = timedelta(minutes=3)
+
+
+def _fresh_at(link: dict, within: timedelta) -> bool:
+    at = link.get("last_sync_at")
+    if at is None:
+        return False
+    at = at.replace(tzinfo=timezone.utc) if at.tzinfo is None else at
+    return datetime.now(timezone.utc) - at < within
+
+
+def _sync_stale(user_id: int, links) -> bool:
+    """Opening Santé syncs, in the background, every watch not synced for an
+    hour (not one that failed last time: « Synchroniser maintenant » says why).
+    True when a sync is running, so the page waits for it."""
+    running = False
+    for service, link in links:
+        if not link.get("connected") or link.get("needs_reauth"):
+            continue
+        if link.get("syncing"):
+            running = True
+        elif not link.get("last_error") and not _fresh_at(link, STALE_AFTER):
+            running = service.schedule_sync(user_id) or running
+    return running
+
+
+@router.get("/sante/sync-status", response_class=HTMLResponse)
+async def sante_sync_status(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Polled while the opening sync runs: the page reloads once it brought
+    something, else the usual button comes back."""
+    links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
+    if any(link.get("syncing") for link in links):
+        return templates.TemplateResponse(request, "partials/sante_sync.html",
+                                          context={"request": request, "auto_sync": True})
+    if any(_fresh_at(link, JUST_SYNCED) for link in links if link.get("connected")):
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    return templates.TemplateResponse(request, "partials/sante_sync.html", context={"request": request})
 
 
 @router.post("/sante/sync", response_class=HTMLResponse)

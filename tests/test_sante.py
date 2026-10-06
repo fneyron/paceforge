@@ -293,3 +293,41 @@ def test_strip_geometry():
 def test_load_words_follow_the_watch_then_the_ratio():
     assert load_key("Excessive", 1.2) == "over" and load_key(None, 1.64) == "over"
     assert load_key(None, 1.2) == "good" and load_key("Detraining", None) == "low" and load_key(None, None) is None
+
+
+# ── opening Santé syncs a stale link ────────────────────────────────────────
+
+async def test_opening_sante_syncs_a_stale_link_and_reloads_once(as_user: AsyncClient, db_session: AsyncSession,
+                                                                 test_user: User, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user)
+    started = []
+    monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
+    # never synced: the page starts a sync and waits for it
+    page = (await as_user.get("/sante")).text
+    assert started == [test_user.id] and "Synchro en cours…" in page and 'hx-get="/sante/sync-status"' in page
+    # while it runs, the status keeps waiting; once done with something new, one reload
+    conn.sync_claimed_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    r = await as_user.get("/sante/sync-status")
+    assert "Synchro en cours…" in r.text and "HX-Refresh" not in r.headers
+    conn.sync_claimed_at = None
+    conn.last_sync_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    r = await as_user.get("/sante/sync-status")
+    assert r.headers.get("HX-Refresh") == "true"
+    # synced within the hour: no new sync, the usual button
+    started.clear()
+    page = (await as_user.get("/sante")).text
+    assert started == [] and "Synchroniser maintenant" in page
+    # stale but failed last time: no automatic retry (the button says why)
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=3)
+    conn.last_error = "COROS ne répond pas pour l'instant."
+    await db_session.flush()
+    page = (await as_user.get("/sante")).text
+    assert started == [] and "Synchroniser maintenant" in page
+    r = await as_user.get("/sante/sync-status")  # nothing running, nothing new: the button
+    assert "HX-Refresh" not in r.headers and "Synchroniser maintenant" in r.text

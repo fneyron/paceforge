@@ -149,9 +149,12 @@ class FakeGarmin:
                                              "timeHalfMarathon": 5520, "timeMarathon": 11800})
         if path == "/wellness-service/wellness/dailySleepData/runner%2042":
             d = date.fromisoformat(params["date"])
+            if d > t:  # a day that hasn't come yet: empty, as Garmin answers
+                return httpx.Response(200, json={"dailySleepDTO": {}})
             return httpx.Response(200, json=night(d) if (t - d).days % 10 != 9 else {"dailySleepDTO": {}})
         if path == "/usersummary-service/usersummary/daily/runner%2042":
-            return httpx.Response(200, json=summary(date.fromisoformat(params["calendarDate"])))
+            d = date.fromisoformat(params["calendarDate"])
+            return httpx.Response(200, json=summary(d) if d <= t else {})
         return httpx.Response(404, json={})
 
     def paths(self, prefix: str) -> list:
@@ -646,3 +649,14 @@ def test_migration_is_the_head_and_round_trips():
         insp = sa.inspect(c)
         assert "garmin_connections" not in insp.get_table_names()
         assert c.execute(sa.text("SELECT id FROM activities")).scalars().all() == [1]  # Garmin-only rows go
+
+
+async def test_the_nights_reach_the_athletes_today_ahead_of_utc(db_session: AsyncSession, test_user: User,
+                                                                fake, no_commit):
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    db_session.add(HealthMetric(user_id=test_user.id, date=fake.today, metric="steps", value=1,
+                                source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    days = [q["date"] for _, q in fake.paths("/wellness-service/wellness/dailySleepData/")]
+    assert days[0] == str(fake.today + timedelta(days=1)) and len(days) == 7

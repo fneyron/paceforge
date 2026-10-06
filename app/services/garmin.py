@@ -70,7 +70,7 @@ RECENT_DAYS = 7
 ACTIVITY_BACKFILL_DAYS = 180
 HRV_CHUNK_DAYS = 28  # hrv-service range: 28 days at most
 ACTIVITY_PAGE = 100
-SYNC_EVERY = timedelta(hours=6)
+SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 REFRESH_MARGIN = timedelta(minutes=15)  # DI access tokens last about a day
 CALL_DELAY_S = 0.3
@@ -832,7 +832,8 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
                   "load": None, "readiness": None, "predictions": {}, "activities": []}
     name = await _display_name(db, conn, call)
     # what changes every day first (today's readiness and load), then the history
-    data["readiness"] = parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today}"))
+    data["readiness"] = (parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today + timedelta(days=1)}"))
+                         or parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today}")))
     data["load"] = parse_training_status(await call(f"/metrics-service/metrics/trainingstatus/aggregated/{today}"))
     for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
         values, ranges = parse_hrv(await call(f"/hrv-service/hrv/daily/{a}/{b}"))
@@ -853,7 +854,9 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
     if name:
         q = quote(name, safe="")
         data["predictions"] = parse_predictions(await call(f"/metrics-service/metrics/racepredictions/latest/{q}"))
-        for i in range(days):
+        # Garmin dates days on the athlete's clock, which can be a day ahead of
+        # the server's (UTC): ask for that day too (a future day is just empty)
+        for i in range(-1, days - 1):  # same number of days, one later
             d = today - timedelta(days=i)
             night = parse_sleep(await call(f"/wellness-service/wellness/dailySleepData/{q}",
                                            {"date": d.isoformat(), "nonSleepBufferMinutes": 60}))
@@ -987,14 +990,16 @@ async def _sync_in_background(user_id: int) -> None:
             await run_sync(db, conn)
 
 
-def schedule_sync(user_id: int) -> None:
-    """Start a sync in this process without waiting for it (after connecting)."""
+def schedule_sync(user_id: int) -> bool:
+    """Start a sync in this process without waiting for it (after connecting,
+    on opening Santé). False when syncs are off here."""
     if not settings.GARMIN_SYNC:
-        return
+        return False
     try:
         _keep(asyncio.get_running_loop().create_task(_sync_in_background(user_id)))
     except RuntimeError:
-        return
+        return False
+    return True
 
 
 async def disconnect(db: AsyncSession, conn: GarminConnection) -> None:

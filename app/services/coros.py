@@ -67,7 +67,7 @@ BACKFILL_DAYS = 60
 RECENT_DAYS = 7
 HRV_CHUNK_DAYS = 7  # querySleepHrv: 7 days max per call
 SLEEP_CHUNK_DAYS = 31
-SYNC_EVERY = timedelta(hours=6)
+SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
@@ -895,7 +895,11 @@ def _parsed(parser, text):
 async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, int]:
     await mcp.initialize()
     call = _Fetcher(mcp)
-    lo = today - timedelta(days=days - 1)
+    # COROS dates nights in the athlete's time zone: ahead of the server's
+    # UTC day in Asia, this morning's night is « tomorrow » here. The window
+    # ends a day later (an empty future day costs nothing) and keeps its size.
+    hi = today + timedelta(days=1)
+    lo = hi - timedelta(days=days - 1)
     data: dict = {"hrv": {}, "hrv_range": {}, "rhr": {}, "overview": {}, "daily": {}, "vo2max": None}
     # the daily values first: every athlete has them, night data is optional
     data["load"] = _parsed(parse_training_load, await call.recent(
@@ -908,11 +912,11 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
     data["vo2max"] = data["fitness"].get("vo2max")
     data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
-    for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
+    for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
         data["hrv"].update(_parsed(parse_hrv, text))
         data["hrv_range"].update(_parsed(parse_hrv_range, text))
-    for a, b in _ranges(lo, today, SLEEP_CHUNK_DAYS):
+    for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
         data["overview"].update(_parsed(parse_sleep_overview, text))
     return data, call.calls, call.failed
@@ -1031,16 +1035,18 @@ async def _sync_in_background(user_id: int) -> None:
             await run_sync(db, conn)
 
 
-def schedule_sync(user_id: int) -> None:
-    """Start a sync in this process without waiting for it (after connecting)."""
+def schedule_sync(user_id: int) -> bool:
+    """Start a sync in this process without waiting for it (after connecting,
+    on opening Santé). False when syncs are off here."""
     if not settings.COROS_SYNC:
-        return
+        return False
     try:
         task = asyncio.get_running_loop().create_task(_sync_in_background(user_id))
     except RuntimeError:
-        return
+        return False
     _pending.add(task)
     task.add_done_callback(_done)
+    return True
 
 
 def _done(task: asyncio.Task) -> None:

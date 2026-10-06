@@ -845,3 +845,19 @@ async def test_sync_backfills_again_while_no_daily_value_arrived(db_session: Asy
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
     assert len([1 for n, _ in fake.tool_calls if n == "querySleepHrv"]) == 9  # the 60 days again
+
+
+async def test_the_window_reaches_the_athletes_today_ahead_of_utc(db_session: AsyncSession, test_user: User,
+                                                                   fake, no_commit):
+    """In Asia this morning's night is dated « tomorrow » for the server: it is
+    asked for too, and the window keeps its size."""
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    db_session.add(HealthMetric(user_id=test_user.id, date=date.today(), metric="load", value=1,
+                                source="COROS", n_samples=1))
+    await db_session.flush()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).strftime("%Y%m%d")
+    sleep = [a for n, a in fake.tool_calls if n == "querySleepOverview"]
+    assert sleep and sleep[0]["endDate"] == tomorrow
+    hrv = [a for n, a in fake.tool_calls if n == "querySleepHrv"]
+    assert len(hrv) == 1 and hrv[0]["endDate"] == tomorrow and hrv[0]["days"] == 7
