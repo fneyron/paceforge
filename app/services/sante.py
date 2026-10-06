@@ -1,7 +1,7 @@
 """The Santé page: today's recovery and training load, trends, fitness, the
-fitness verdict — from the daily values in HealthMetric (COROS).
+fitness verdict — from the daily values in HealthMetric (COROS, Garmin).
 
-Everything here reads; nothing calls COROS. Only what decides training or race
+Everything here reads; nothing calls the watches. Only what decides training or race
 readiness is drawn: load, recovery and the night signals (HRV, resting HR,
 sleep). Stress, steps and the daily heart rate are synced but not shown. An
 athlete who rarely wears the watch at night is told what the empty charts need.
@@ -169,7 +169,7 @@ def chart(lines: list[dict[date, float]], today: date, days: int, fmt=None,
 # ── page ────────────────────────────────────────────────────────────────────
 
 _NIGHT_HINT = "Porte ta montre la nuit pour avoir ta VFC, ta FC au repos et ton sommeil."
-_LOAD_HINT = "La charge arrive avec tes séances enregistrées sur ta montre COROS."
+_LOAD_HINT = "La charge arrive avec tes séances enregistrées sur ta montre."
 
 
 async def health_page(db: AsyncSession, user_id: int, days: int = 30) -> dict:

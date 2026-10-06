@@ -1,0 +1,38 @@
+{# Garmin login: email + password, then the code when Garmin asks for one. Polls while the login runs. #}
+{% set state = login.state if login else 'form' %}
+<div id="garmin-login" class="space-y-2.5"
+     {% if state == 'running' %}hx-get="/garmin/login" hx-trigger="load delay:2s" hx-swap="outerHTML"{% endif %}>
+    {% if login and login.message %}
+    <p class="text-[13px] {{ 'text-gray-600' if state == 'running' else 'text-danger' }}">{{ login.message }}</p>
+    {% endif %}
+    {% if state == 'running' %}
+    <p class="pf-label inline-flex items-center gap-2"><svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Connexion à Garmin… (jusqu'à une minute)</p>
+    {% elif state == 'mfa' %}
+    <form hx-post="/garmin/mfa" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2">
+        <label for="garmin-code" class="text-[13px] text-gray-600 block">Garmin t'a envoyé un code (email ou SMS) : saisis-le.</label>
+        <div class="flex gap-2">
+            <input type="text" id="garmin-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus
+                   class="pf-input placeholder:text-gray-400 tabular-nums w-36" placeholder="123456">
+            <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">Valider</button>
+        </div>
+    </form>
+    {% else %}
+    <form hx-post="/garmin/connect" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2.5">
+        <div class="grid sm:grid-cols-2 gap-2.5">
+            <input type="email" name="email" autocomplete="username" required placeholder="Email Garmin Connect"
+                   class="pf-input placeholder:text-gray-400">
+            <input type="password" name="password" autocomplete="current-password" required placeholder="Mot de passe Garmin"
+                   class="pf-input placeholder:text-gray-400">
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+            <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</button>
+            <label class="text-[13px] text-gray-500 inline-flex items-center gap-1.5">Serveur
+                <select name="region" class="pf-input !py-1 !w-auto text-[13px]">
+                    {% for key, (label, _domain) in regions.items() %}<option value="{{ key }}" {% if key == region %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <p class="text-[12px] text-gray-500">Ton mot de passe sert une seule fois à ouvrir l'accès : PaceForge ne le garde pas, seulement l'accès chiffré que Garmin renvoie.</p>
+    </form>
+    {% endif %}
+</div>

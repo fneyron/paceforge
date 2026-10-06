@@ -1,4 +1,4 @@
-"""Santé: recovery, training load, trends and fitness from the athlete's COROS watch."""
+"""Santé: recovery, training load, trends and fitness from the athlete's COROS or Garmin watch."""
 import logging
 
 from fastapi import APIRouter, Depends, Request
@@ -8,7 +8,7 @@ from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services import coros
+from app.services import coros, garmin
 from app.services.sante import PERIODS, health_page
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ async def sante_page(
 ):
     days = jours if jours in PERIODS else PERIODS[0]
     status = await coros.coros_status(db, user.id)
+    garmin_link = await garmin.garmin_status(db, user.id)
     try:
         page = await health_page(db, user.id, days)
     except Exception:  # shown as an error, never as "connect your watch"
@@ -33,5 +34,5 @@ async def sante_page(
         page = None
     return templates.TemplateResponse(
         request, "sante.html",
-        context={"user": user, "coros": status, "page": page, "days": days, "periods": PERIODS},
+        context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "days": days, "periods": PERIODS},
     )
