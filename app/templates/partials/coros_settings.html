@@ -16,9 +16,8 @@
     {% if coros_error is defined and coros_error %}
     <div class="pf-note !text-danger">{{ coros_error }}</div>
     {% endif %}
-    <p class="text-sm text-gray-500">Ta récupération, ta charge d'entraînement, ta VFC, ton sommeil, tes pas et ta VO2 max arrivent automatiquement depuis ta montre COROS.</p>
-
     {% if not coros.connected %}
+    <p class="text-sm text-gray-500">Ta récupération, ta charge d'entraînement, ta VFC, ton sommeil et ta VO2 max arrivent automatiquement depuis ta montre COROS.</p>
     {% include "partials/coros_connect.html" %}
     {% else %}
     {% if coros.needs_reauth %}
@@ -31,7 +30,6 @@
     {% if coros.last_error %}<p class="text-[12px] text-warn">Dernière synchro échouée : {{ coros.last_error }}</p>{% endif %}
     {% endif %}
     <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-[13px] text-gray-500">Synchro automatique toutes les 6 h, ou à la demande sur la page <a href="/sante" class="underline hover:text-gray-600">Santé</a>.</p>
         <form method="post" action="/settings/coros/disconnect"
               onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter COROS ? Les données déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
             <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>

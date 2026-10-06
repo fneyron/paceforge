@@ -25,15 +25,13 @@
         <h2 class="pf-h2">{{ it.title }}</h2>
         <span class="pf-label tabular-nums">{{ it.value }}{% if it.when %} · {{ it.when }}{% endif %}</span>
     </div>
-    {% if it.sub %}<p class="pf-label tabular-nums -mt-1 mb-3">{{ it.sub }}</p>{% endif %}
     {{ chart_svg(it, 'h-44 lg:h-60' if big else 'h-28') }}
-    <div class="flex justify-between text-[11px] text-gray-500 tabular-nums mt-2"><span>{{ page.trends.start }}</span><span>aujourd'hui</span></div>
+    {% if big %}<div class="flex justify-between text-[11px] text-gray-500 tabular-nums mt-2"><span>{{ page.trends.start }}</span><span>aujourd'hui</span></div>{% endif %}
     {% if it.legend %}
     <p class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-500 mt-2">
         {% for label, tone in it.legend %}<span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 {{ 'border-ink' if tone == 'dark' else 'border-dashed border-gray-400' }}"></span>{{ label }}</span>{% endfor %}
     </p>
     {% endif %}
-    {% if it.note %}<p class="text-[13px] text-gray-500 mt-2">{{ it.note }}</p>{% endif %}
 </article>
 {% endmacro %}
 
@@ -68,9 +66,8 @@
     {% set ch = {} %}{% for it in page.trends.charts %}{% set _ = ch.update({it.key: it}) %}{% endfor %}
     {% set f = page.form %}{% set r = page.recovery %}{% set l = page.load %}{% set fi = page.fitness %}
 
-    {# ── the verdict in one sentence, then the numbers ── #}
-    <div class="pf-health-top">
-        <section class="pf-health-rec" aria-labelledby="h-today">
+    {# ── the verdict in one sentence ── #}
+    <section class="pf-health-rec" aria-labelledby="h-today">
             {% if r %}
             {% set tone = 'ok' if r.pct >= 75 else ('warn' if r.pct >= 50 else 'danger') %}
             {% set C = 364.4 %}
@@ -87,27 +84,13 @@
                     {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
                     {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale : tu récupères bien.
                     {% elif f.status == 'ok' %}Tes indicateurs sont dans ta zone habituelle.
-                    {% else %}Pas encore assez de données pour juger ta forme : il faut au moins {{ f.need_recent }} nuits cette semaine et {{ f.need_base }} sur les 2 mois d'avant, tu en as {{ f.nights_recent }} et {{ f.nights_base }}. Porte ta montre la nuit.
+                    {% else %}Pas encore assez de nuits pour juger ta forme : porte ta montre la nuit.
                     {% endif %}
                     {% if r and r.level and f.status != 'unknown' %} {{ r.level }}.{% endif %}
                 </p>
                 {% if r %}<p class="pf-label mt-2">{% if r.full_h is not none %}{% if r.full_h > 0 %}Récupération complète dans {{ '%.0f'|format(r.full_h) }} h{% else %}Tu es complètement récupéré{% endif %}{% endif %}{% if r.stale %} · {{ r.when }}{% endif %}</p>{% endif %}
-                {% if f.status != 'unknown' %}
-                <p class="pf-label mt-1 tabular-nums">
-                    {% if f.hrv_7d is not none %}VFC {{ '%.0f'|format(f.hrv_7d) }} ms{% if f.hrv_delta_pct is not none %} ({{ '%+.0f'|format(f.hrv_delta_pct) }} %){% endif %}{% endif %}
-                    {% if f.rhr_7d is not none %} · FC au repos {{ '%.0f'|format(f.rhr_7d) }} bpm{% if f.rhr_delta_bpm is not none %} ({{ '%+.0f'|format(f.rhr_delta_bpm) }}){% endif %}{% endif %}
-                    {% if f.sleep_avg_min is not none %} · Sommeil {{ (f.sleep_avg_min // 60)|int }}h{{ '%02d'|format(f.sleep_avg_min % 60) }}{% endif %}
-                </p>
-                {% endif %}
             </div>
         </section>
-        <dl class="pf-kpis">
-            <div><dt class="pf-label">VO2max</dt><dd class="tabular-nums">{{ fi.vo2max if fi and fi.vo2max else '—' }}</dd><p class="pf-label">{% if fi %}COROS {{ fi.when }}{% else %}à venir{% endif %}</p></div>
-            <div><dt class="pf-label">FC repos</dt><dd class="tabular-nums">{% if ch.rhr %}{{ ch.rhr.value.replace(' bpm', '') }}<small>bpm</small>{% else %}—{% endif %}</dd><p class="pf-label">{{ ch.rhr.when if ch.rhr else 'la nuit' }}</p></div>
-            <div><dt class="pf-label">Sommeil</dt><dd class="tabular-nums">{{ ch.sleep.value if ch.sleep else '—' }}</dd><p class="pf-label">{{ ch.sleep.when if ch.sleep else 'la nuit' }}</p></div>
-            <div><dt class="pf-label">VFC</dt><dd class="tabular-nums">{% if ch.hrv %}{{ ch.hrv.value.replace(' ms', '') }}<small>ms</small>{% else %}—{% endif %}</dd><p class="pf-label">{{ ch.hrv.when if ch.hrv else 'la nuit' }}</p></div>
-        </dl>
-    </div>
 
     {# ── training load ── #}
     <section class="pf-health-load" aria-labelledby="h-load">
@@ -120,8 +103,6 @@
         {% if l %}
         {% set pill = {'over': 'pf-pill-bad', 'good': 'pf-pill-ok', 'keep': 'pf-pill-soft', 'taper': 'pf-pill-accent', 'low': 'pf-pill-warn'}.get(l.key, 'pf-pill-soft') %}
         <div class="pf-load-top">
-            <div><div class="pf-label">Court terme · 7 j</div><b class="tabular-nums">{{ l.short }}</b></div>
-            <div><div class="pf-label">Long terme · 6 sem.</div><b class="tabular-nums">{{ l.long if l.long is not none else '—' }}</b></div>
             <div><div class="pf-label">Ratio</div><b class="tabular-nums inline-flex items-center gap-2.5">{{ ('%.2f'|format(l.ratio)).replace('.', ',') if l.ratio is not none else '—' }} <span class="pf-pill {{ pill }}">{% if l.key == 'over' %}{{ ic.icon('alert', 'w-3.5 h-3.5', '2.2') }}{% endif %}{{ l.label }}</span></b></div>
         </div>
         {% if l.stale %}<p class="pf-label">{{ l.when }}</p>{% endif %}
@@ -130,7 +111,7 @@
         <div class="pf-loadchart">{{ chart_block(ch.load, big=True) }}</div>
         {% endif %}
         {% if l and l.meaning %}
-        <div class="pf-note mt-4">{% if l.key == 'over' %}<span class="text-danger mt-0.5">{{ ic.icon('alert', 'w-[18px] h-[18px]', '2.2') }}</span>{% endif %}<span><b class="text-ink">Ratio {{ ('%.2f'|format(l.ratio)).replace('.', ',') if l.ratio is not none else '—' }} · {{ l.label }}.</b> {{ l.meaning }} Court terme ≈ tes 7 derniers jours, long terme ≈ tes 6 dernières semaines ; de 0,8 à 1,5 c'est sain.</span></div>
+        <div class="pf-note mt-4">{% if l.key == 'over' %}<span class="text-danger mt-0.5">{{ ic.icon('alert', 'w-[18px] h-[18px]', '2.2') }}</span>{% endif %}<span>{{ l.meaning }}</span></div>
         {% elif not l %}
         <p class="text-[15px] text-gray-500">Pas de charge ces derniers jours : enregistre tes séances avec ta montre.</p>
         {% endif %}
@@ -141,9 +122,11 @@
     <section aria-label="Tendances" class="pf-health-grid">
         {% for it in t.charts if it.key != 'load' %}{{ chart_block(it) }}{% endfor %}
     </section>
-    {% if t.missing %}
+    {# the verdict already asks for the watch at night: not said twice #}
+    {% set missing = t.missing | rejectattr('2') | list if f.status == 'unknown' else t.missing %}
+    {% if missing %}
     <ul class="pf-health-missing pf-note flex-col !gap-1.5 mt-8">
-        {% for titles, hint in t.missing %}
+        {% for titles, hint, _night in missing %}
         <li class="text-[14px] text-gray-600"><span class="font-medium text-ink">{{ titles }}</span> : {{ hint }}</li>
         {% endfor %}
     </ul>
@@ -153,20 +136,12 @@
     <section aria-labelledby="h-fitness" class="pf-health-fitness">
         <div class="pf-sechead">
             <h2 id="h-fitness" class="pf-h2">Niveau</h2>
-            {% if fi %}<span class="pf-label">évaluation COROS {{ fi.when }}</span>{% endif %}
         </div>
         {% if fi %}
         <dl class="pf-kpis">
             {% if fi.vo2max %}<div><dt class="pf-label">VO2 max</dt><dd class="tabular-nums">{{ fi.vo2max }}</dd></div>{% endif %}
-            {% if fi.level %}<div><dt class="pf-label">Niveau de course</dt><dd class="tabular-nums">{{ fi.level }}</dd></div>{% endif %}
             {% if fi.threshold %}<div><dt class="pf-label">Allure seuil</dt><dd class="tabular-nums">{{ fi.threshold.replace(' /km', '') }}<small>/km</small></dd></div>{% endif %}
         </dl>
-        {% if fi.preds %}
-        <h3 class="pf-h3 mt-6 mb-1">Temps prédits</h3>
-        <dl class="pf-kpis pf-kpis-sm">
-            {% for label, time in fi.preds %}<div><dt class="pf-label">{{ label }}</dt><dd class="tabular-nums">{{ time }}</dd></div>{% endfor %}
-        </dl>
-        {% endif %}
         {% else %}
         <p class="text-[15px] text-gray-500">Ton niveau arrive quand COROS a assez de courses avec cardio pour l'évaluer.</p>
         {% endif %}

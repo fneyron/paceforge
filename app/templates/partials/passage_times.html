@@ -23,6 +23,9 @@
 {% set legs = legs if legs is defined and legs else [] %}
 {% set kind_word = {'water': "Point d'eau", 'full': 'Ravito', 'base': 'Base vie'} %}
 {% set coords_on = has_coords if has_coords is defined else true %}
+{# the same stop at every point (« Même durée partout »): a setting, not a fact of each row #}
+{% set stop_set = (sections[:-1] | selectattr('end_checkpoint_index', 'ne', none) | map(attribute='stop_s', default=0) | select | unique | list) if sections else [] %}
+{% set stops_vary = stop_set | length > 1 %}
 {% if plan_data is defined %}<script type="application/json" id="plan-data">{{ plan_data | safe }}</script>{% endif %}
 {# the three plans' finish times: read by « Plan affiché » in the objective editor #}
 {% if sc %}<div data-scn-pill hidden data-end-fast="{{ fmt_time(sc.totals.fast_s) }}" data-end-target="{{ fmt_time(sc.totals.target_s) }}" data-end-safe="{{ fmt_time(sc.totals.safe_s) }}"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span>Cible</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></div>{% endif %}
@@ -79,15 +82,15 @@
             <svg class="pf-prow-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
-            <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} depuis {% if loop.first %}le départ{% else %}{{ s.start_name }}{% endif %} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
+            <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
             {# the leg that ends here: how to run it, what was eaten on it #}
             {% if lg and lg.effort %}<p class="pf-detnote">{{ gl.glyph('heart', 'w-4 h-4') }}<span>{{ lg.effort }}</span></p>{% endif %}
             {% if lg and lg.steep_text %}<p class="pf-detnote is-alert">{{ gl.glyph('alert', 'w-4 h-4') }}<span>{{ lg.steep_text }}</span></p>{% endif %}
             {% if lg and lg.units_text %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>{{ lg.units_text }}</span></p>{% endif %}
             {% set has_kind = k in kind_word %}
             {% set has_wx = wx_on and s.temperature_c is not none %}
-            {% if has_kind or s.crew or stop_min > 0 or s.cutoff_clock or has_wx %}
-            <p class="pf-factline">{% set sep = joiner(' · ') %}{% if has_kind %}{{ sep() }}<span>{{ kind_word[k] }}</span>{% endif %}{% if s.crew %}{{ sep() }}<span>assistance</span>{% endif %}{% if stop_min > 0 %}{{ sep() }}<span class="tabular-nums">arrêt {{ stop_min }} min</span>{% endif %}{% if s.cutoff_clock %}{{ sep() }}<span class="tabular-nums" data-cutoff>barrière {{ s.cutoff_clock }}</span>{% if cm is not none %} · <span data-margin class="tabular-nums {{ margin_cls(cm) }}">marge {{ margin_txt(cm) }}</span>{% endif %}{% endif %}{% if has_wx %}{{ sep() }}{{ meteo(s) }}{% endif %}</p>
+            {% if has_kind or s.crew or (stop_min > 0 and stops_vary) or s.cutoff_clock or has_wx %}
+            <p class="pf-factline">{% set sep = joiner(' · ') %}{% if has_kind %}{{ sep() }}<span>{{ kind_word[k] }}</span>{% endif %}{% if s.crew %}{{ sep() }}<span>assistance</span>{% endif %}{% if stop_min > 0 and stops_vary %}{{ sep() }}<span class="tabular-nums">arrêt {{ stop_min }} min</span>{% endif %}{% if s.cutoff_clock %}{{ sep() }}<span class="tabular-nums" data-cutoff>barrière {{ s.cutoff_clock }}</span>{% if cm is not none %} · <span data-margin class="tabular-nums {{ margin_cls(cm) }}">marge {{ margin_txt(cm) }}</span>{% endif %}{% endif %}{% if has_wx %}{{ sep() }}{{ meteo(s) }}{% endif %}</p>
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}

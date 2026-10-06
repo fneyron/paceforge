@@ -1,9 +1,10 @@
 """The Santé page: today's recovery and training load, trends, fitness, the
 fitness verdict — from the daily values in HealthMetric (COROS).
 
-Everything here reads; nothing calls COROS. Each block stands on its own: an
-athlete who rarely wears the watch at night still sees load, recovery, daily
-heart rate, stress and steps, and is told what the empty ones need.
+Everything here reads; nothing calls COROS. Only what decides training or race
+readiness is drawn: load, recovery and the night signals (HRV, resting HR,
+sleep). Stress, steps and the daily heart rate are synced but not shown. An
+athlete who rarely wears the watch at night is told what the empty charts need.
 """
 from collections import defaultdict
 from datetime import date, timedelta
@@ -14,8 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.services.health import (
     BASELINE_DAYS,
-    MIN_BASELINE_DAYS,
-    MIN_RECENT_DAYS,
     RECENT_DAYS,
     _today,
     compute_form,
@@ -170,7 +169,6 @@ def chart(lines: list[dict[date, float]], today: date, days: int, fmt=None,
 # ── page ────────────────────────────────────────────────────────────────────
 
 _NIGHT_HINT = "Porte ta montre la nuit pour avoir ta VFC, ta FC au repos et ton sommeil."
-_DAY_HINT = "Porte ta montre dans la journée pour avoir ton stress, ta FC et tes pas."
 _LOAD_HINT = "La charge arrive avec tes séances enregistrées sur ta montre COROS."
 
 
@@ -245,10 +243,7 @@ def _load(series, details, today) -> dict | None:
 
 
 def _form(series, today) -> dict:
-    form = compute_form({m: series.get(m, {}) for m in ("hrv", "rhr", "sleep")}, today)
-    form["need_recent"] = MIN_RECENT_DAYS
-    form["need_base"] = MIN_BASELINE_DAYS
-    return form
+    return compute_form({m: series.get(m, {}) for m in ("hrv", "rhr", "sleep")}, today)
 
 
 def _trends(series, details, today, days) -> dict:
@@ -257,31 +252,25 @@ def _trends(series, details, today, days) -> dict:
     def window(metric: str) -> dict[date, float]:
         return {d: v for d, v in series.get(metric, {}).items() if lo_day <= d <= today}
 
-    def avg(s: dict[date, float]) -> float | None:
-        return sum(s.values()) / len(s) if s else None
-
     items, missing = [], []
 
-    def add(key, title, hint, s, value, sub=None, note=None, legend=None, **kw):
+    def add(key, title, hint, s, value, legend=None, **kw):
         g = chart([s] if not isinstance(s, list) else s, today, days, **kw)
         if g is None:
             missing.append((title, hint))
             return
         last = max(s[0] if isinstance(s, list) else s, default=None)
-        items.append({"key": key, "title": title, "value": value, "sub": sub, "note": note,
-                      "legend": legend, "when": _day(last, today) if last else None, "chart": g})
+        items.append({"key": key, "title": title, "value": value, "legend": legend, "when": _day(last, today) if last else None, "chart": g})
 
     # training load: short vs long term
     short, long_ = window("load"), {d: details["load"][d].get("long") for d in window("load")}
     long_ = {d: v for d, v in long_.items() if v is not None}
     last = max(short, default=None)
     add("load", "Charge d'entraînement", _LOAD_HINT, [short, long_],
-        f"{short[last]:.0f} / " + (f"{long_[last]:.0f}" if last in long_ else "—") if last else "—",
-        sub="court terme / long terme", legend=[("Court terme", "dark"), ("Long terme", "light")])
+        f"{short[last]:.0f} / " + (f"{long_[last]:.0f}" if last in long_ else "—") if last else "—", legend=[("Court terme", "dark"), ("Long terme", "light")])
 
     rhr = window("rhr")
-    add("rhr", "FC au repos", _NIGHT_HINT, rhr, f"{rhr[max(rhr)]:.0f} bpm" if rhr else "—",
-        sub=f"moyenne {avg(rhr):.0f} bpm" if rhr else None, note="Plus bas = mieux récupéré.")
+    add("rhr", "FC au repos", _NIGHT_HINT, rhr, f"{rhr[max(rhr)]:.0f} bpm" if rhr else "—")
 
     hrv = window("hrv")
     norm_day = max(series.get("hrv_norm", {}), default=None)
@@ -290,39 +279,19 @@ def _trends(series, details, today, days) -> dict:
         nd = details["hrv_norm"][norm_day]
         if nd.get("lo") is not None and nd.get("hi") is not None:
             band = (nd["lo"], nd["hi"])
-    add("hrv", "VFC (variabilité cardiaque)", _NIGHT_HINT, hrv, f"{hrv[max(hrv)]:.0f} ms" if hrv else "—",
-        sub=f"zone normale {band[0]:.0f}–{band[1]:.0f} ms" if band else None,
-        note="Dans ta zone normale (bande verte) = bien récupéré ; en dessous = fatigue." if band else
-        "Plus haut que d'habitude = bien récupéré.", band=band)
+    add("hrv", "VFC (variabilité cardiaque)", _NIGHT_HINT, hrv, f"{hrv[max(hrv)]:.0f} ms" if hrv else "—", band=band)
 
     sleep = {d: v / 60 for d, v in window("sleep").items()}
     add("sleep", "Sommeil", _NIGHT_HINT, sleep, fmt_minutes(sleep[max(sleep)] * 60) if sleep else "—",
-        sub=f"moyenne {fmt_minutes(avg(sleep) * 60)} sur {len(sleep)} nuit{'s' if len(sleep) > 1 else ''}"
-        if sleep else None, bars=True, fmt=lambda v: fmt_minutes(v * 60))
-
-    stress = window("stress")
-    add("stress", "Stress", _DAY_HINT, stress, f"{stress[max(stress)]:.0f}" if stress else "—",
-        sub=f"moyenne {avg(stress):.0f}" if stress else None, note="De 0 à 100 : plus bas = plus calme.")
-
-    hr = window("hr_day")
-    hr_last = max(hr, default=None)
-    hr_det = details["hr_day"].get(hr_last, {}) if hr_last else {}
-    add("hr_day", "FC moyenne du jour", _DAY_HINT, hr, f"{hr[hr_last]:.0f} bpm" if hr else "—",
-        sub=f"min {hr_det['min']} · max {hr_det['max']}" if hr_det.get("min") and hr_det.get("max") else None)
-
-    steps = window("steps")
-    add("steps", "Pas", _DAY_HINT, steps, fmt_int(steps[max(steps)]) if steps else "—",
-        sub=f"moyenne {fmt_int(avg(steps))} par jour" if steps else None, bars=True, fmt=fmt_int)
+        bars=True, fmt=lambda v: fmt_minutes(v * 60))
 
     # one line per distinct advice, naming the charts it would fill
     hints: dict[str, list[str]] = {}
     for title, hint in missing:
         hints.setdefault(hint, []).append(title.split(" (")[0])
-    return {"charts": items, "missing": [(", ".join(t), h) for h, t in hints.items()],
+    # (titles, advice, is the night advice: the verdict may already say it)
+    return {"charts": items, "missing": [(", ".join(t), h, h == _NIGHT_HINT) for h, t in hints.items()],
             "start": lo_day.strftime("%d/%m")}
-
-
-_PRED_LABELS = (("5k", "5 km"), ("10k", "10 km"), ("half", "Semi"), ("marathon", "Marathon"))
 
 
 def _fitness(last_fit, last_vo2, today) -> dict | None:
@@ -333,12 +302,9 @@ def _fitness(last_fit, last_vo2, today) -> dict | None:
     if not det and vo2 is None:
         return None
     when = max([d for d in (last_fit.date if last_fit else None, last_vo2.date if last_vo2 else None) if d])
-    preds = det.get("pred") or {}
     return {
         "vo2max": f"{vo2:.0f}" if vo2 is not None else None,
-        "level": f"{det['level']:.0f}" if det.get("level") is not None else None,
         "threshold": fmt_clock(det["threshold_s"], pace=True) if det.get("threshold_s") else None,
-        "preds": [(label, fmt_clock(preds[k])) for k, label in _PRED_LABELS if preds.get(k)],
         "when": _day(when, today),
     }
 

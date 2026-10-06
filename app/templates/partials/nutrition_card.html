@@ -40,15 +40,12 @@
 {% else %}
 <div class="pf-rv-cols lg:grid lg:grid-cols-2 lg:gap-10 lg:items-start">
 <div class="pf-rv-col">
-    <p class="pf-label pf-rv-context">{{ context_line }}</p>
-
     {# ── 3.1 Ta règle ─────────────────────────────────────────────────── #}
     <section id="rv-rule" class="pf-panel pf-rv-rule" aria-labelledby="rv-rule-t">
         <h2 id="rv-rule-t" class="pf-rv-rule-title">Ta règle pour toute la course</h2>
         <ul class="pf-rv-rules">
             {% for r in rules %}<li><span class="pf-rv-ic">{{ rv_icon(r.icon) }}</span><span>{{ r.html | safe }}</span></li>{% endfor %}
         </ul>
-        <p class="pf-rv-tip">Commence dès la première demi-heure, sans attendre d'avoir faim.</p>
         {% for w in warnings %}<p class="pf-rv-warn is-{{ w.tone }}">{% if w.tone in ('warn', 'alert') %}{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}{% endif %}<span>{{ w.text }}</span></p>{% endfor %}
         {% if hand_set %}<p class="pf-rv-hand"><span class="pf-pill pf-pill-soft">réglé à la main</span><button type="button" class="pf-link pf-rv-hit" hx-post="{{ P }}/plan" hx-vals='{"op":"reset"}'>Revenir au calcul auto</button></p>{% endif %}
     </section>
@@ -62,7 +59,7 @@
             {% endfor %}
             {% if not level %}<button type="button" aria-pressed="true" tabindex="-1">Ton réglage<small>{{ custom_carbs }} g/h</small></button>{% endif %}
         </div>
-        <p class="pf-rv-help">{% if level == 'fragile' %}Estomac sensible ou première fois : on y va doucement.{% elif level == 'normal' %}Tu as déjà mangé en courant, sans souci.{% elif level == 'solide' %}Tu t'entraînes à manger beaucoup en courant.{% else %}Ta valeur à toi. Touche un niveau pour revenir au calcul auto.{% endif %}</p>
+        {% if not level %}<p class="pf-rv-help">Touche un niveau pour revenir au calcul auto.</p>{% endif %}
     </section>
 
     {# ── 3.3 Ce que tu emportes ───────────────────────────────────────── #}
@@ -93,7 +90,7 @@
 
     {# ── 3.7 Ajuster (last on the phone, under the choices on a desktop) ── #}
     <details id="rv-adjust" class="pf-rv-disc pf-rv-adjust"{% if open == 'adjust' %} open{% endif %}>
-        <summary><span><b>Ajuster</b><small>{{ summary }}</small></span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
+        <summary><span><b>Ajuster</b>{% if summary %}<small>{{ summary }}</small>{% endif %}</span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
         <div class="pf-rv-adj">
             <div>
                 <h3 id="rv-sweat-t">Tu transpires</h3>
@@ -115,7 +112,7 @@
                 <ul class="pf-rv-qtys">
                     {% for q in qty_rows %}
                     <li class="pf-rv-qty">
-                        <span class="pf-rv-qty-name"><b title="{{ q.label }}">{{ q.label }}</b>{% if q.caf %}<small>aux heures de caféine</small>{% else %}<small class="{{ 'is-hand' if q.manual else '' }}">{{ 'à la main' if q.manual else 'auto' }}</small>{% endif %}</span>
+                        <span class="pf-rv-qty-name"><b title="{{ q.label }}">{{ q.label }}</b>{% if q.caf %}<small>aux heures de caféine</small>{% elif q.manual %}<small class="is-hand">à la main</small>{% endif %}</span>
                         {% if not q.caf %}
                         <span class="pf-rv-stepper">
                             <button type="button" hx-post="{{ P }}/plan" hx-vals='{"op":"step","pid":"{{ q.id }}","step":"-0.5","open":"adjust"}' aria-label="Moins de {{ q.label }}">−</button>
@@ -159,17 +156,17 @@
 <div class="pf-rv-col">
     {# ── 3.4 Tes sacs ─────────────────────────────────────────────────── #}
     <section id="bags" data-packing class="scroll-mt-24" aria-labelledby="rv-bags-t">
-        <div class="pf-rv-head"><h2 id="rv-bags-t" class="pf-rv-h !mb-0">Tes sacs</h2>{% if spare_noun %}<small>{{ spare_noun }} de secours compté par sac</small>{% endif %}</div>
+        <div class="pf-rv-head"><h2 id="rv-bags-t" class="pf-rv-h !mb-0">Tes sacs</h2></div>
         {% if not is_bike %}
         {% if bag_chips %}
         <p class="pf-rv-sublabel">Drop bag à :</p>
         <div class="pf-rv-chips">
-            {% for c in bag_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
+            {% for c in bag_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span></button>{% endfor %}
         </div>
         {% if water_chips %}
         <p class="pf-rv-sublabel">Eau à :</p>
         <div class="pf-rv-chips">
-            {% for c in water_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'water')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span><span class="pf-chip-km">· km {{ c.kmr }}</span></button>{% endfor %}
+            {% for c in water_chips %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if c.on else 'false' }}" data-ci="{{ c.ci }}" data-km="{{ c.km }}" data-kind="{{ c.kind }}" title="{{ c.label }}" onclick="pfRvPoint(this, 'water')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">{{ c.name }}</span></button>{% endfor %}
         </div>
         {% endif %}
         {% elif no_points %}
@@ -180,7 +177,6 @@
             {% for c in cards %}
             <article class="pf-rv-bag{% if c.is_start %} is-start{% endif %}">
                 <h3 class="pf-rv-bag-title">{{ ic.icon('bag', 'w-[18px] h-[18px]') }}{{ c.title }}</h3>
-                <p class="pf-rv-bag-sub">{{ c.sub }}</p>
                 {% if c.chips %}<div class="pf-rv-units">{% for x in c.chips %}<span class="pf-rv-unit">{{ x }}</span>{% endfor %}</div>{% endif %}
                 {% if c.water %}<p class="pf-rv-water{% if c.water.alert %} is-alert{% endif %}">{{ rv_icon('drop', 'w-4 h-4 mt-0.5') }}<span>{{ c.water.text }}</span></p>{% endif %}
             </article>
@@ -200,7 +196,7 @@
 
     {# ── 3.6 Tronçon par tronçon ──────────────────────────────────────── #}
     <details id="rv-legs" class="pf-rv-disc">
-        <summary><span><b>Tronçon par tronçon</b><small>aussi dans chaque point du plan</small></span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
+        <summary><span><b>Tronçon par tronçon</b></span>{{ ic.icon('chev-r', 'pf-chev') }}</summary>
         <ol class="pf-rv-legs">
             {% for l in legs %}
             <li><div class="pf-rv-leg-top"><b>{{ l.clock }}</b><span class="pf-rv-leg-to">→ {{ l.to }}</span><span class="pf-rv-leg-t">{{ l.time }}</span></div>{% if l.text %}<p>{{ l.text }}</p>{% endif %}</li>

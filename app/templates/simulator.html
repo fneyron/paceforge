@@ -9,7 +9,7 @@
 {% set past = routes | selectattr('days_to', 'ne', none) | selectattr('days_to', 'lt', 0) | list %}
 {% set undated = routes | selectattr('days_to', 'none') | list %}
 {% set nxt = upcoming[0] if upcoming else none %}
-{% macro meta(r) %}{% if r.card.date %}{{ r.card.date }} · {% endif %}{{ ('%.0f'|format(r.total_distance_km)) }} km · {{ '{:,}'.format(r.total_elevation_gain|int).replace(',', ' ') }} m D+{% if r.sport_type == 'bike' %} · vélo{% endif %}{% endmacro %}
+{% macro meta(r) %}{% if r.card.date %}{{ r.card.date }}{% else %}{{ ('%.0f'|format(r.total_distance_km)) }} km{% endif %}{% if r.sport_type == 'bike' %} · vélo{% endif %}{% endmacro %}
 {% macro row_menu(r) %}
 <details class="relative pf-rowmenu">
     <summary class="pf-ibtn list-none cursor-pointer" aria-label="Actions pour {{ r.name }}" title="Renommer ou supprimer">{{ ic.icon('more') }}</summary>
@@ -33,7 +33,6 @@
                 {% else %}<span class="pf-item-sub block">sans objectif</span>{% endif %}
             {% else %}
                 {% if r.card.objective %}<b>{{ r.card.objective }}</b>{% else %}<span class="pf-link text-sm block">Fixer l'objectif</span>{% endif %}
-                {% if r.card.when %}<span class="pf-item-sub block">{{ r.card.when }}</span>{% endif %}
             {% endif %}
         </span>
         {{ ic.icon('chev-r', 'pf-chev') }}
@@ -51,7 +50,6 @@
     <form id="gpx-form" hx-post="/partials/simulator/gpx-upload" hx-target="#gpx-error" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-indicator="#gpx-loading" hx-sync="this:drop">
         <label for="gpx-file" class="pf-btn pf-btn-primary pf-btn-block pf-only-m cursor-pointer mb-2">{{ ic.icon('upload') }}Importer un GPX<span class="sr-only"> · nouvelle course</span></label>
         <input type="file" id="gpx-file" name="gpx_file" accept=".gpx" class="pf-file-input" required aria-label="Choisir un fichier GPX" aria-describedby="file-name" onchange="submitGpx(this)">
-        <p class="pf-label pf-drop-hint" id="drop-label">Glisse le GPX de ta course n'importe où sur la page : le plan de passage est prêt tout de suite, calé sur ton historique Strava.</p>
         {% if cycling_enabled() %}
         <div class="pf-sport-selector pf-seg pf-seg-sm mt-3" role="radiogroup" aria-label="Sport">
             <button type="button" id="sport-run" role="radio" aria-checked="true" aria-pressed="true" tabindex="0" onclick="setSport('run')">Course à pied</button>
@@ -72,16 +70,15 @@
     <div class="pf-courses-cols">
         <div>
             {% if nxt %}
-            <div class="pf-sechead"><h2 class="pf-h2">Prochaine course</h2></div>
-            <div class="relative" id="route-card-{{ nxt.id }}">
+            <h2 class="sr-only">Prochaine course</h2>
+            <div class="relative mt-6" id="route-card-{{ nxt.id }}">
             <a href="/simulator/routes/{{ nxt.id }}" class="pf-next" id="route-next-{{ nxt.id }}">
                 <span class="pf-pill pf-next-date tabular-nums">{% if nxt.card.date %}{{ nxt.card.date }}{% endif %}{% if nxt.card.when %} · {{ nxt.card.when }}{% endif %}</span>
                 <span class="sr-only" id="route-name-{{ nxt.id }}">{{ nxt.name }}</span>
                 <span class="pf-next-name">{{ nxt.name }}</span>
-                <span class="pf-next-meta tabular-nums">{{ ('%.1f'|format(nxt.total_distance_km)).replace('.', ',') }} km · {{ '{:,}'.format(nxt.total_elevation_gain|int).replace(',', ' ') }} m D+ · départ {{ nxt.card.start }}</span>
+                <span class="pf-next-meta tabular-nums">{{ ('%.1f'|format(nxt.total_distance_km)).replace('.', ',') }} km · {{ '{:,}'.format(nxt.total_elevation_gain|int).replace(',', ' ') }} m D+</span>
                 <span class="pf-next-big">
                     <span><span class="pf-label block">Objectif</span><span class="pf-big pf-next-v">{{ nxt.card.objective or '—' }}</span></span>
-                    {% if nxt.card.arrival %}<span><span class="pf-label block">Arrivée</span><span class="pf-mid pf-next-s">{{ nxt.card.arrival }}</span></span>{% endif %}
                 </span>
                 {% if not nxt.card.objective %}<span class="pf-link text-sm mt-2 block">Fixe ton objectif →</span>{% endif %}
                 {% if nxt.card.profile %}<svg class="pf-next-pf" viewBox="0 0 400 70" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="nxg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="pfp-g0"/><stop offset="1" class="pfp-g1"/></linearGradient></defs><path d="{{ nxt.card.profile.area }}" fill="url(#nxg)"/><path d="{{ nxt.card.profile.line }}" class="pfp-line" vector-effect="non-scaling-stroke"/></svg>{% endif %}
@@ -100,7 +97,7 @@
             <div class="pf-list">{% for r in undated %}{{ route_row(r) }}{% endfor %}</div>
             {% endif %}
             {% if past %}
-            <div class="pf-sechead"><h2 class="pf-h2">Terminées</h2><span class="pf-label">réel vs plan</span></div>
+            <div class="pf-sechead"><h2 class="pf-h2">Terminées</h2></div>
             <div class="pf-list">{% for r in past %}{{ route_row(r, done=True) }}{% endfor %}</div>
             {% endif %}
         </div>
@@ -114,10 +111,8 @@
 <script>
 {% if cycling_enabled() %}
 var SPORT_URL = { run: '/partials/simulator/gpx-upload', bike: '/partials/simulator/bike-gpx-upload' };
-var SPORT_LABEL = { run: 'Glisse le GPX de ta course n\'importe où sur la page : le plan de passage est prêt tout de suite, calé sur ton historique Strava.', bike: 'Glisse le GPX du parcours : puissance et heures de passage avec le relief et le vent.' };
 function setSport(s) {
     var f = document.getElementById('gpx-form'); f.setAttribute('hx-post', SPORT_URL[s]); if (window.htmx) htmx.process(f);
-    document.getElementById('drop-label').textContent = SPORT_LABEL[s];
     ['run', 'bike'].forEach(function (k) { var b = document.getElementById('sport-' + k), on = k === s; b.setAttribute('aria-checked', on ? 'true' : 'false'); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
     try { localStorage.setItem('pf.sport', s); } catch (e) {}
 }

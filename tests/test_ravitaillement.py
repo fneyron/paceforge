@@ -194,7 +194,7 @@ async def test_the_taps_write_a_v2_plan_and_change_rows_bags_and_shopping(as_use
     assert "quantités à la main" in r.text and 'id="rv-adjust" class="pf-rv-disc pf-rv-adjust" open' in r.text
     assert (await _nj(db_session, rid))["manual"] == {"-1": 3.0}
     r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "level", "v": "normal"})
-    assert "quantités auto" in r.text and (await _nj(db_session, rid))["manual"] == {}
+    assert "quantités à la main" not in r.text and (await _nj(db_session, rid))["manual"] == {}  # back to auto: « Ajuster » says nothing
     # sweat and water carried
     r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "sweat", "v": "beaucoup", "open": "adjust"})
     assert "beaucoup de transpiration" in r.text and "Bois 0,6 L" in r.text  # 500 × 1,25
@@ -308,7 +308,8 @@ def test_the_heart_rate_ceiling_is_per_leg_and_the_watch_shows_the_same():
 def test_effort_and_steep_lines():
     from app.services.pacing_guide import effort_sentence, steep_on_leg, steep_sentence
 
-    assert effort_sentence("flat", 129) == "<b>Cardio sous 129</b> · roulant : cours régulier."
+    assert effort_sentence("flat", 129) == "<b>Cardio sous 129</b>"  # running steady on the flat goes without saying
+    assert effort_sentence("flat", None) is None
     assert effort_sentence("descent", 111) == "<b>Cardio vers 111</b> · descente : relâché, sans freiner. Mange avant, en haut."
     assert effort_sentence("climb", 124, 18) == "<b>Cardio sous 124</b> · montée : marche dès que ça dépasse 18 %, cours le reste."
     assert effort_sentence("stairs", None) == "Très raide : marche, mains sur les cuisses."
@@ -366,7 +367,8 @@ async def test_water_auto_has_no_red_and_a_short_capacity_is_named(as_user: Asyn
     names = [s["end_name"] for s in ctx["sections"]]
     row = ctx["legs"][names.index(stretch.group(1))]
     assert row["water_alert"] and row["water_note"].startswith("Remplis tout ici") and stretch.group(2) in row["water_note"]
-    assert all(lg["effort"] for lg in ctx["legs"]) and all(lg["hr_cap"] is None or lg["hr_cap"] > 0 for lg in ctx["legs"])
+    # every leg says how to run it, except a flat one without a cardio ceiling (running steady goes without saying)
+    assert all(lg["effort"] or (lg["cls"] == "flat" and not lg["hr_cap"]) for lg in ctx["legs"]) and all(lg["hr_cap"] is None or lg["hr_cap"] > 0 for lg in ctx["legs"])
 
 
 # ── review fixes ────────────────────────────────────────────────────────────
@@ -579,9 +581,12 @@ async def test_back_from_ravitaillement_redoes_the_rows_and_the_bags_link_stays(
 
 
 @pytest.mark.asyncio
-async def test_print_band_leg_times_match_the_rows(as_user: AsyncClient):
+async def test_print_band_nutrition_says_what_to_take_not_the_leg_times(as_user: AsyncClient):
     rid = await _route(as_user, target_s=6 * 3600)
     t = (await as_user.get(f"/simulator/routes/{rid}/print")).text
     nut = t.split(">Nutrition<")[1]
-    times = re.findall(r'text-right tabular-nums text-gray-500">([^<]*)</td>', nut)
-    assert times and all(re.fullmatch(r"\d+h\d\d|\d+ min", x) for x in times), times
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", nut, flags=re.S)
+    assert cells and "gel" in nut
+    # the band's cells already carry the clocks: no leg-duration column, no shopping totals in the header
+    assert not any(re.fullmatch(r"\s*(\d+h\d\d|\d+ min)\s*", c) for c in cells), cells
+    assert "pastilles de sel ·" not in t.split(">Nutrition<")[0][-300:]

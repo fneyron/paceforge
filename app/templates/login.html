@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% set ds = stats.dataset if stats is defined and stats else {} %}
-{% set ft = stats.fit if stats is defined and stats else {} %}
 {% set va = stats.validation if stats is defined and stats else {} %}
 {% set has_dataset = stats is defined and stats and stats.has_dataset %}
 {% set has_validation = stats is defined and stats and stats.has_validation %}
@@ -13,9 +12,9 @@
     <main class="pf-wrap">
         <section class="pf-lhero">
             <div>
-                <p class="pf-eyebrow">Trail et ultra · calé sur tes courses</p>
+                <p class="pf-eyebrow">Trail et ultra</p>
                 <h1 class="pf-lh1">Tes temps de passage, calés sur <em>tes vraies courses.</em></h1>
-                <p class="pf-llead">Importe le GPX de ta course. PaceForge répartit ton temps selon la pente, le terrain, la nuit et la fatigue{% if has_dataset %}, avec un modèle tiré de <span class="whitespace-nowrap">{{ ds.races }} courses</span> et <span class="whitespace-nowrap">{{ ds.finisher_results }} finishers</span>{% endif %}, puis l'ajuste à ton niveau réel.</p>
+                <p class="pf-llead">Importe le GPX de ta course. PaceForge répartit ton temps selon la pente, le terrain, la nuit et la fatigue, puis l'ajuste à ton niveau réel.</p>
                 <div class="pf-lctas">
                     <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon plan
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
@@ -51,24 +50,18 @@
             <dl class="pf-lnums" data-stats>
                 <div><dt>courses analysées</dt><dd class="tabular-nums">{{ ds.races }}</dd></div>
                 <div><dt>finishers</dt><dd class="tabular-nums">{{ ds.finisher_results }}</dd></div>
-                {% if ds.checkpoint_passages %}<div><dt>temps de passage</dt><dd class="tabular-nums">{{ ds.checkpoint_passages }}</dd></div>{% endif %}
                 {% if has_validation %}<div><dt>d'écart moyen sur {{ va.held_out_races }} courses jamais vues</dt><dd class="tabular-nums">{{ va.gap_after }}&nbsp;min</dd></div>{% endif %}
             </dl>
-            <p class="pf-lsrc">Résultats publics UTMB Live et LiveTrail, sans aucun nom.{% if has_validation %} Écart mesuré aux points intermédiaires, une fois le temps final connu.{% endif %}{% if stats.updated %} Mis à jour le {{ stats.updated }}.{% endif %} <a href="/methode">Voir la méthode</a></p>
+            <p class="pf-lsrc">Résultats publics UTMB Live et LiveTrail, sans aucun nom.</p>
         </section>
         {% endif %}
 
         <section class="pf-lsteps" aria-label="En 3 étapes">
-            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie Strava</h2><p>On lit tes courses pour connaître ton niveau sur l'effort long. La connexion passe par ta propre app Strava : on te guide pas à pas.</p></div>
+            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie Strava</h2><p>On lit tes courses pour connaître ton niveau sur l'effort long.</p></div>
             <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Importe le GPX</h2><p>Les points nommés deviennent tes postes. Ajoute eau, ravitos, bases vie, assistance et drop bags.</p></div>
             <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Emporte ton plan</h2><p>Sur ta montre (GPX horodaté, TCX), en bande imprimée derrière le dossard, ou sur ton téléphone le jour J.</p></div>
         </section>
 
-        <section class="pf-lmethod">
-            <h2 class="pf-h2">D'où viennent tes heures de passage</h2>
-            <p>La pente, la fatigue et la nuit sont réglées sur {% if ft.train_races and ft.train_finisher_results %}<span class="tabular-nums text-ink font-medium">{{ ft.train_finisher_results }}</span> finishers de <span class="tabular-nums text-ink font-medium">{{ ft.train_races }}</span> courses{% else %}de vrais temps de passage{% endif %}{% if has_validation %}, puis testées sur <span class="tabular-nums text-ink font-medium">{{ va.held_out_races }}</span> autres courses, jamais vues pendant le réglage{% endif %}. La pente s'ajuste ensuite à tes sorties Strava, et ton niveau vient de tes courses.{% if ft.km_min and ft.km_max %} Réglé sur des courses de {{ ft.km_min }} à {{ ft.km_max }}&nbsp;km.{% endif %}</p>
-            <a href="/methode" class="pf-link inline-block mt-3">Comment PaceForge estime ton temps →</a>
-        </section>
     </main>
     {% include "partials/public_footer.html" %}
 </div>

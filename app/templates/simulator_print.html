@@ -37,15 +37,13 @@
 </head>
 <body class="bg-gray-100 text-ink">
 {% import "partials/_plan_glyphs.html" as gl %}
-{% macro fmt_clock(seconds) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if (seconds // 86400) | int > 0 %} <span class="font-normal text-[8px] text-gray-500">{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</span>{% endif %}{% endmacro %}
+{% macro fmt_clock(seconds, show_day=True) %}{% set rem = seconds % 86400 %}{{ '%02d:%02d'|format((rem // 3600) | int, ((rem % 3600) // 60) | int) }}{% if show_day and (seconds // 86400) | int > 0 %} <span class="font-normal text-[8px] text-gray-500">{{ day_labels[(seconds // 86400) | int] if day_labels and (seconds // 86400) | int < day_labels|length else '+' ~ ((seconds // 86400) | int) ~ 'j' }}</span>{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
 {% macro fmt_hm(seconds) %}{{ (seconds // 3600) | int }}h{{ '%02d'|format(((seconds % 3600) // 60) | int) }}{% endmacro %}
-{% macro fmt_pace(pace) %}{{ (pace // 60) | int }}:{{ '%02d'|format((pace % 60) | int) }}{% endmacro %}
 {% set kind_mark = {'water': '💧', 'full': '🍽', 'base': '🏠'} %}
 
 <div class="mx-auto p-4" style="max-width:19cm">
-    <div class="flex items-center justify-between gap-4 mb-3 no-print">
-        <p class="text-sm text-gray-500">Bande à taille de dossard — imprime, découpe le long du pointillé, glisse derrière ton dossard.</p>
+    <div class="flex items-center justify-end gap-4 mb-3 no-print">
         <button onclick="window.print()" class="h-9 px-4 rounded-lg bg-accent text-accent-ink text-sm font-medium hover:bg-accent-strong">Imprimer</button>
     </div>
 
@@ -54,9 +52,7 @@
         <div class="bib-head flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2 mb-2">
             <h1 class="text-base font-bold tracking-tight truncate">{{ route.name }}</h1>
             <div class="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 shrink-0">
-                <span>{{ course.total_distance_km }} km</span>
                 <span>D+ {{ "%.0f"|format(course.total_elevation_gain) }} m</span>
-                <span>Départ {{ '%02d:%02d'|format(start_hour, start_minute) }}</span>
                 {# pinned times: « Objectif » only when the plan finishes on the objective he chose #}
                 {% set obj_s = (sections[-1].objective_s if sections else none) if pinned else route.target_time_s %}
                 <span class="font-semibold text-gray-900">{% if obj_s and plan_total_s == obj_s %}Objectif {{ fmt_hm(obj_s) }}{% elif pinned and plan_total_s %}Plan {{ fmt_hm(plan_total_s) }}{% elif route.target_time_s %}Objectif {{ fmt_hm(route.target_time_s) }}{% else %}Estimé {{ predicted_total_formatted }}{% endif %}</span>
@@ -66,20 +62,19 @@
         <div class="cells">
             <div class="cell start">
                 <p class="n">Départ</p>
-                <p class="k">km 0</p>
                 <p class="t">{{ fmt_clock(start_offset_s) }}</p>
             </div>
+            {# the day once, on the first cell past midnight #}
+            {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
             {% for s in sections %}
             {% set use_adj = has_target and s.adjusted_clock_time_s is not none %}
             {% set clock_val = s.adjusted_clock_time_s if use_adj else s.clock_time_s %}
-            {% set sec_time = s.adjusted_time_s if (has_target and s.adjusted_time_s is not none) else s.predicted_time_s %}
-            {% set pace = (sec_time / s.distance_km) if s.distance_km and s.distance_km > 0 else 0 %}
             {% set is_finish = loop.last %}
+            {% set day = (clock_val // 86400) | int %}{% set new_day = day > ns.day %}{% set ns.day = day %}
             <div class="cell {% if is_finish %}finish{% elif s.kind in ('full', 'base') %}full{% endif %}">
-                <p class="n">{% if is_finish %}Arrivée{% else %}{{ loop.index }}· {{ s.end_name }}{% endif %}</p>
+                <p class="n">{% if is_finish %}Arrivée{% else %}{{ s.end_name }}{% endif %}</p>
                 <p class="k">km {{ s.end_km }}{% if s.kind and s.kind != 'none' %} {{ kind_mark.get(s.kind, '') }}{% endif %}{% if s.drop_bag %} 🎒{% endif %}{% if s.crew %} 👥{% endif %}</p>
-                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-accent{% endif %}">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span>{% endif %}{{ fmt_clock(clock_val) }}</p>
-                {% if pace %}<p class="p">{{ fmt_pace(pace) }}/km</p>{% endif %}
+                <p class="t">{% if s.pinned and not s.passed %}<span title="heure fixée par toi" class="inline-flex mr-0.5 {% if s.pin_clamped %}text-red-600{% else %}text-accent{% endif %}">{{ gl.glyph('pin', 'w-2.5 h-2.5') }}</span>{% endif %}{{ fmt_clock(clock_val, new_day) }}</p>
                 <p class="d"><span class="text-red-400">{% if s.elevation_gain > 0 %}+{{ s.elevation_gain|int }}{% endif %}</span> <span class="text-blue-400">{% if s.elevation_loss > 0 %}−{{ s.elevation_loss|int }}{% endif %}</span></p>
                 {% if s.cutoff_clock %}<p class="c">barrière {{ s.cutoff_clock }}{% if s.cutoff_margin_s is not none %} · marge <b{% if s.cutoff_margin_s < 0 %} class="text-red-700"{% endif %}>{{ fmt_margin(s.cutoff_margin_s) }}</b>{% endif %}</p>{% endif %}
             </div>
@@ -98,17 +93,14 @@
         {% endif %}
 
         <p class="text-[8px] text-gray-400 mt-1.5 text-center">
-            {% if has_target %}Heures de passage visées — plan à effort régulier.{% else %}Heures de passage estimées.{% endif %}{% if pinned %} <span class="inline-flex text-accent align-middle">{{ gl.glyph('pin', 'w-2 h-2') }}</span> = heure fixée par toi, le reste du plan s'ajuste autour.{% endif %}{% if n_aid %} Arrêts aux postes inclus ({% if stop_minutes %}{{ stop_minutes }} min chacun{% else %}eau 2′, ravito 5′, base vie 15′{% endif %}).{% endif %} 💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance. Généré par PaceForge.
+            {% if pinned %}<span class="inline-flex text-accent align-middle">{{ gl.glyph('pin', 'w-2 h-2') }}</span> = heure fixée par toi. {% endif %}💧 eau · 🍽 ravito complet · 🏠 base vie · 🎒 drop bag · 👥 assistance
         </p>
     </div>
 
     {% if legs_rows %}
     <!-- Consignes: one instruction per leg, the passage row's words (the cardio ceiling is the watch's) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
-        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
-            <p class="text-[11px] font-bold uppercase tracking-wide">Consignes</p>
-            <p class="text-[9px] text-gray-500">une par tronçon · le cardio commande</p>
-        </div>
+        <p class="border-b border-gray-200 pb-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wide">Consignes</p>
         <table class="w-full text-[9.5px] tabular-nums">
             <tbody class="divide-y divide-gray-100">
                 {% for l in legs_rows %}{% set b = l.block %}
@@ -123,21 +115,15 @@
     </div>
     {% endif %}
 
-    {% if nutrition_schedule and nutrition_lines %}
+    {% if nutrition_schedule %}
     <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
-        <div class="flex items-baseline justify-between gap-3 border-b border-gray-200 pb-1.5 mb-1.5">
-            <p class="text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
-            <p class="text-[10px] text-gray-500 tabular-nums">
-                {% for ln in nutrition_lines %}{{ ln.label }}{% if not loop.last %} · {% endif %}{% endfor %}
-            </p>
-        </div>
+        <p class="border-b border-gray-200 pb-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
         <table class="w-full text-[10px]">
             <tbody class="divide-y divide-gray-100">
                 {% for leg in nutrition_schedule %}
                 <tr>
                     <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
-                    <td class="py-1 px-1 text-right tabular-nums text-gray-500">{{ leg.leg_hm }}</td>
                     <td class="py-1 pl-2 text-gray-700">{% if leg.labels %}{{ leg.labels | join(' · ') }}{% else %}<span class="text-gray-300">—</span>{% endif %}</td>
                     <td class="py-1 pl-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{% if leg.water_ml >= 200 %}{{ ('%.1f'|format(leg.water_ml / 1000)).replace('.', ',') }} L d'eau{% endif %}</td>
                 </tr>

@@ -80,12 +80,11 @@ async def activities_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Training log: this week + load at the top, then activities grouped by week."""
+    """Training log: the 7 / 28-day volume at the top, then activities grouped by week."""
     sport = sport if sport in _FILTER_KEYS else None
     now = datetime.now(timezone.utc)
 
     weeks, has_more = await _week_groups(db, user.id, page, sport)
-    week = await _this_week_summary(db, user.id, now)
     training_load = await calculate_training_load(db, user.id, now)
 
     return templates.TemplateResponse(
@@ -97,9 +96,7 @@ async def activities_page(
             "page": page,
             "sport": sport,
             "filters": FILTERS,
-            "week": week,
             "training_load": training_load,
-            "last_sync": _humanize_since(user.last_activity_poll_at, now),
         },
     )
 
@@ -190,22 +187,6 @@ def _week_label(monday: datetime, this_monday: datetime) -> str:
     return f"{monday.day} {_MONTHS_FR[monday.month - 1]} – {sunday.day} {_MONTHS_FR[sunday.month - 1]}{year}"
 
 
-def _humanize_since(dt: datetime | None, now: datetime) -> str | None:
-    if not dt:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    minutes = int((now - dt).total_seconds() // 60)
-    if minutes < 1:
-        return "moins d'une minute"
-    if minutes < 60:
-        return f"{minutes} min"
-    hours = minutes // 60
-    if hours < 24:
-        return f"{hours} h"
-    return f"{hours // 24} j"
-
-
 def _activity_to_summary(activity: Activity, duplicate_ids: frozenset | set = frozenset()) -> ActivitySummary:
     return ActivitySummary(
         id=activity.id,
@@ -272,26 +253,6 @@ async def _week_groups(
     )
     has_more = ((await db.execute(older)).scalar() or 0) > 0
     return weeks, has_more
-
-
-async def _this_week_summary(db: AsyncSession, user_id: int, now: datetime) -> dict:
-    """This week's totals across all sports, duplicates and false starts excluded."""
-    monday = _monday(now)
-    result = await db.execute(
-        select(Activity)
-        .where(Activity.user_id == user_id, Activity.start_date >= monday)
-        .order_by(Activity.start_date.desc())
-    )
-    activities = result.scalars().all()
-    duplicate_ids = find_duplicate_ids(activities)
-    kept = [a for a in activities if a.id not in duplicate_ids and not is_false_start(a)]
-    seconds = sum(a.moving_time or 0 for a in kept)
-    return {
-        "km": sum((a.distance or 0) / 1000 for a in kept),
-        "dplus": sum(a.total_elevation_gain or 0 for a in kept),
-        "hours": seconds / 3600,
-        "count": len(kept),
-    }
 
 
 async def _sync_recent_activities(user: User, db: AsyncSession) -> None:

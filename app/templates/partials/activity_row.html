@@ -28,7 +28,7 @@
                   title="Enregistrement très court">faux départ</span>
             {% endif %}
         </span>
-        <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }} · {{ activity.start_date.strftime('%H:%M') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
+        <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
     </span>
     <span class="sm:hidden pf-item-end"><b>{{ activity.distance_km }}<small class="text-[13px] font-medium text-gray-500"> km</small></b></span>
     <span class="hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">

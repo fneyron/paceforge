@@ -1189,8 +1189,6 @@ def shopping_list(plan: dict, main_pid: int | None, products_by_id: dict) -> lis
         note = ""
         if t["spares"]:
             note = f"dont {t['spares']} de secours"
-        elif (p.get("caffeine_mg") or 0) > 0:
-            note = f"{int(round(t['n'] * float(p['caffeine_mg'])))} mg de caféine en tout"
         elif pid == -2:
             note = "1 dose = 1 flasque de 500 ml"
         out.append({"product_id": pid, "n": t["n"], "spares": t["spares"], "noun": noun, "label": f"{t['n']} {noun}", "note": note})

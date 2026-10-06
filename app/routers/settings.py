@@ -11,7 +11,6 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
-from app.services.activity_dedupe import sport_group
 from app.services.coros import coros_status
 
 logger = logging.getLogger(__name__)
@@ -20,27 +19,11 @@ templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["settings"])
 
-_FAMILY_ORDER = ["Course", "Trail", "Vélo", "Natation", "Autre"]
-
-
-def _family_label(sport_type: str | None) -> str:
-    if sport_type == "Swim":
-        return "Natation"
-    return {"run": "Course", "trail": "Trail", "bike": "Vélo"}.get(sport_group(sport_type), "Autre")
-
 
 async def _settings_context(request: Request, user: User, db: AsyncSession, **flags) -> dict:
     """Everything the settings page needs — shared by every handler that
-    re-renders it, so the Strava inventory never vanishes after a save."""
-    stats_q = await db.execute(
-        select(
-            func.count(Activity.id),
-            func.count(Activity.id).filter(Activity.splits_metric.is_not(None)),
-            func.min(Activity.start_date),
-            func.max(Activity.start_date),
-        ).where(Activity.user_id == user.id)
-    )
-    total, with_splits, first_date, last_date = stats_q.one()
+    re-renders it."""
+    total = (await db.execute(select(func.count(Activity.id)).where(Activity.user_id == user.id))).scalar() or 0
     ftp_est = None
     if cycling_enabled():  # the FTP field only shows with the bike planner
         from app.services.power_calculator import ftp_for_user
@@ -50,26 +33,9 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
         except Exception:
             logger.exception("FTP estimate failed on the settings page")
 
-    by_sport_q = await db.execute(
-        select(Activity.sport_type, func.count(Activity.id))
-        .where(Activity.user_id == user.id)
-        .group_by(Activity.sport_type)
-    )
-    families: dict[str, int] = {}
-    for sport_type, n in by_sport_q.all():
-        label = _family_label(sport_type)
-        families[label] = families.get(label, 0) + n
-
-    strava_stats = {
-        "total": total or 0,
-        "with_splits": with_splits or 0,
-        "first_date": first_date,
-        "last_date": last_date,
-        "families": [(f, families[f]) for f in _FAMILY_ORDER if families.get(f)],
-    }
     flags.setdefault("ftp_est", ftp_est)
     flags.setdefault("coros", await coros_status(db, user.id))
-    return {"request": request, "user": user, "strava_stats": strava_stats, **flags}
+    return {"request": request, "user": user, "activity_count": total, **flags}
 
 
 @router.get("/settings", response_class=HTMLResponse)
