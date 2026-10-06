@@ -1,14 +1,14 @@
-{# Activities grouped by week, each with its totals (duplicates excluded from totals). #}
+{# Activities grouped by week, each with its totals when it has more than one (duplicates excluded from totals). #}
 {% for wk in weeks %}
 <section id="week-{{ wk.key }}">
     <div class="pf-week-heading">
         <h2 class="pf-h3">{{ wk.label }}</h2>
-        <p class="pf-label tabular-nums">
-            {{ wk.count }} séance{{ 's' if wk.count != 1 else '' }}
-            · <b class="text-gray-700">{{ '%.0f'|format(wk.km) }} km</b>
+        {# one counted activity: its row already says it all #}
+        {% if wk.count > 1 %}<p class="pf-label tabular-nums">
+            <b class="text-gray-700">{{ '%.0f'|format(wk.km) }} km</b>
             {% if wk.dplus %}· +{{ wk.dplus|int }} m{% endif %}
             · {{ wk.hours_formatted }}
-        </p>
+        </p>{% endif %}
     </div>
     {% for activity in wk.activities %}
     {% include "partials/activity_row.html" %}

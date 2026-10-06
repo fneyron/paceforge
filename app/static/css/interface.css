@@ -153,18 +153,6 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .dark ::-webkit-scrollbar-thumb { background: rgb(var(--pf-gray-300)); border-radius: 4px; }
 
 /* ── activities ───────────────────────────────────────────────────────── */
-.pf-stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid rgb(var(--pf-line)); }
-.pf-stats-grid > div { padding: 18px 0; border-bottom: 1px solid rgb(var(--pf-line)); min-width: 0; }
-.pf-stats-grid > div:nth-child(odd) { padding-right: 16px; border-right: 1px solid rgb(var(--pf-line)); }
-.pf-stats-grid > div:nth-child(even) { padding-left: 16px; }
-.pf-stats-grid b { display: block; font-family: var(--pf-font-display); font-size: 34px; font-weight: 700; letter-spacing: -.045em; line-height: 1.1; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-stats-grid b small { font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-500)); letter-spacing: 0; margin-left: 3px; }
-@media (min-width: 900px) {
-    .pf-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .pf-stats-grid > div, .pf-stats-grid > div:nth-child(odd), .pf-stats-grid > div:nth-child(even) { padding: 18px 20px; border-right: 1px solid rgb(var(--pf-line)); }
-    .pf-stats-grid > div:first-child { padding-left: 0; }
-    .pf-stats-grid > div:last-child { border-right: 0; }
-}
 .pf-activity-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid rgb(var(--pf-line)); color: rgb(var(--pf-ink)); }
 .pf-activity-row:hover .pf-item-title { color: rgb(var(--pf-accent)); }
 .pf-sport-icon { width: 40px; height: 40px; border-radius: 12px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); display: flex; align-items: center; justify-content: center; flex: none; }
@@ -398,8 +386,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-chip-lg[aria-pressed="true"] .pf-chip-check { display: inline-block; }
 .pf-chip-lbl { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-chip-lbl-wide { max-width: 24ch; }
-.pf-chip-km { white-space: nowrap; font-size: 13px; color: rgb(var(--pf-gray-500)); font-weight: 500; }
-.pf-chip-lg[aria-pressed="true"] .pf-chip-km { color: rgb(var(--pf-accent)); }
 .pf-chip-dash { border-style: dashed; color: rgb(var(--pf-gray-600)); }
 .pf-rv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .pf-rv-more[open], .pf-rv-own[open] { flex-basis: 100%; }
@@ -412,14 +398,11 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-panel > .pf-rv-sublabel:first-child { margin-top: 0; }
 
 /* layout: one column on the phone (Ajuster last), two on a desktop */
-.pf-rv-context { margin: -14px 0 16px; }
 .pf-rv-col > * + * { margin-top: 32px; }
-.pf-rv-col > .pf-rv-context + * { margin-top: 0; }
 @media (max-width: 1023px) {
     .pf-rv-cols { display: flex; flex-direction: column; gap: 32px; }
     .pf-rv-col { display: contents; }
     .pf-rv-col > * + * { margin-top: 0; }
-    .pf-rv-context { margin-bottom: -16px; }
     .pf-rv-adjust { order: 10; margin-top: -33px; }  /* right under « Tronçon par tronçon »: one list, one rule between */
 }
 
@@ -431,7 +414,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-rules li > span:last-child { padding-top: 5px; min-width: 0; }
 .pf-rv-rules b { font-weight: 650; }
 .pf-rv-ic { flex: none; width: 32px; height: 32px; border-radius: 10px; background: rgb(var(--pf-surface)); color: rgb(var(--pf-accent)); display: inline-flex; align-items: center; justify-content: center; }
-.pf-rv-tip { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 14px; }
 .pf-rv-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4; margin-top: 10px; color: rgb(var(--pf-gray-600)); }
 .pf-rv-warn.is-warn { color: rgb(var(--pf-warn)); }
 .pf-rv-warn.is-alert { color: rgb(var(--pf-danger)); }
@@ -451,7 +433,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-bag.is-start { border-color: rgb(var(--pf-accent)); }
 .pf-rv-bag-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; color: rgb(var(--pf-ink)); }
 .pf-rv-bag-title svg { color: rgb(var(--pf-accent)); }
-.pf-rv-bag-sub { font-size: 13px; color: rgb(var(--pf-gray-500)); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .pf-rv-units { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .pf-rv-unit { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border-radius: 999px; background: rgb(var(--pf-soft)); font-size: 14px; font-weight: 600; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
 .pf-rv-water { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
@@ -517,8 +498,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-form .pf-btn { justify-self: start; }
 
 /* ── Mes courses ──────────────────────────────────────────────────────── */
-.pf-drop-hint { margin-top: 4px; }
-@media (max-width: 1023px) { .pf-drop-hint { display: none; } }
 .pf-route-row { display: flex; align-items: center; gap: 4px; }
 .pf-route-row .pf-item:hover .pf-item-title { color: rgb(var(--pf-accent)); }
 .pf-rowmenu .pf-menu { width: 180px; top: 42px; }
@@ -528,7 +507,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-next-meta { display: block; color: rgb(var(--pf-gray-600)); font-size: 14px; margin-top: 2px; }
 .pf-next-big { display: flex; gap: 28px; margin-top: 18px; align-items: flex-start; }
 .pf-next-v { display: block; font-size: 40px; }
-.pf-next-s { display: block; font-size: 24px; padding-top: 10px; }
 .pf-next-pf { display: block; width: 100%; height: 70px; margin-top: 12px; }
 .pf-drop-overlay { position: fixed; inset: 0; z-index: 90; background: rgb(var(--pf-accent) / .1); border: 3px dashed rgb(var(--pf-accent)); display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .pf-drop-overlay span { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; font-weight: 600; color: rgb(var(--pf-accent)); background: rgb(var(--pf-surface)); padding: 20px 28px; border-radius: 20px; }
@@ -558,18 +536,15 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-kpis > div:nth-child(even) { padding-left: 16px; }
 .pf-kpis dd { font-family: var(--pf-font-display); font-size: 34px; font-weight: 700; letter-spacing: -.045em; line-height: 1.1; margin-top: 2px; color: rgb(var(--pf-ink)); }
 .pf-kpis dd small { font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-500)); letter-spacing: 0; margin-left: 3px; }
-.pf-kpis-sm dd { font-size: 24px; }
 .pf-load-top { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-end; margin: 14px 0 4px; }
 .pf-load-top b { display: block; font-family: var(--pf-font-display); font-size: 28px; font-weight: 700; letter-spacing: -.04em; line-height: 1.15; color: rgb(var(--pf-ink)); }
 .pf-load-top b .pf-pill { font-family: var(--pf-font-text); letter-spacing: 0; }
 .pf-loadchart .pf-sechead { display: none; }
-.pf-loadchart .pf-health-chart > p:first-of-type { display: none; }
 .pf-loadchart { margin-top: 18px; }
 .pf-health-grid { display: grid; gap: 8px; }
 .pf-health-grid .pf-health-chart { margin-top: 36px; }
 .pf-coros-status { margin-top: 4px; }
 @media (min-width: 900px) {
-    .pf-health-top { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
     .pf-ring { width: 180px; height: 180px; }
     .pf-ring-v b { font-size: 56px; }
     .pf-health-verdict { font-size: 28px; }
@@ -615,8 +590,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-lstep-i { font-size: 14px; font-weight: 700; color: rgb(var(--pf-accent)); }
 .pf-lsteps h2 { margin: 6px 0; }
 .pf-lsteps p:not(.pf-lstep-i) { color: rgb(var(--pf-gray-600)); font-size: 15px; }
-.pf-lmethod { padding: 40px 0 48px; max-width: 46em; }
-.pf-lmethod p { color: rgb(var(--pf-gray-600)); font-size: 16px; line-height: 1.6; margin-top: 10px; }
 @media (min-width: 900px) {
     .pf-lhero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 72px; align-items: center; padding: 64px 0 96px; }
     .pf-lh1 { font-size: 68px; }

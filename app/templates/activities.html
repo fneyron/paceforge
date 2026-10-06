@@ -7,9 +7,8 @@
     <div class="pf-head">
         <div>
             <h1 class="pf-h1">Activités</h1>
-            <div id="sync-msg" role="status" aria-live="polite" class="pf-label mt-1">
-                {% if last_sync %}Synchro auto · dernière il y a {{ last_sync }}{% else %}Synchro auto toutes les 5 min + à chaque activité Strava{% endif %}
-            </div>
+            {% if training_load %}<p class="pf-label tabular-nums mt-1">7 j : {{ '%.0f'|format(training_load.volume_7d_km) }} km · 28 j : {{ '%.0f'|format(training_load.volume_28d_km) }} km</p>{% endif %}
+            <div id="sync-msg" role="status" aria-live="polite" class="pf-label"></div>
         </div>
         <button hx-post="/api/sync" hx-target="#sync-msg" hx-swap="innerHTML" hx-indicator="#sync-spinner" hx-disabled-elt="this"
                 class="pf-btn pf-btn-secondary pf-btn-sm shrink-0">
@@ -19,16 +18,7 @@
         </button>
     </div>
 
-    <div class="pf-sechead"><h2 class="pf-h2">Cette semaine</h2>{% if training_load %}<span class="pf-label tabular-nums">7 j : {{ '%.0f'|format(training_load.volume_7d_km) }} km · 28 j : {{ '%.0f'|format(training_load.volume_28d_km) }} km</span>{% endif %}</div>
-    <div class="pf-stats-grid">
-        <div><p class="pf-label">Distance</p><b>{{ '%.0f'|format(week.km) }}<small>km</small></b></div>
-        <div><p class="pf-label">Dénivelé positif</p><b>{{ week.dplus|int }}<small>m</small></b></div>
-        <div><p class="pf-label">Durée</p><b>{{ '%.1f'|format(week.hours) }}<small>h</small></b></div>
-        <div><p class="pf-label">Séance{{ 's' if week.count != 1 else '' }}</p><b>{{ week.count }}</b></div>
-    </div>
-
     <!-- Filters: four families, not thirteen sport codes -->
-    <div class="pf-sechead"><h2 class="pf-h2">Historique</h2></div>
     <nav aria-label="Filtrer les activités par sport" class="pf-filters pf-seg pf-seg-sm max-w-full overflow-x-auto">
         {% for key, label in filters %}
         <a href="/activities{% if key %}?sport={{ key }}{% endif %}"

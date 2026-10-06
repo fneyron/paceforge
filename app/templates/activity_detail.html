@@ -12,13 +12,8 @@
             </svg>
             Activités
         </a>
-        <div class="flex items-center gap-3">
-            <h1 class="text-lg font-semibold tracking-tight">{{ activity.name }}</h1>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
-                {{ activity.sport_type }}
-            </span>
-        </div>
-        <p class="text-sm text-gray-400 mt-0.5">{{ activity.start_date.strftime('%d/%m/%Y · %H:%M') }}</p>
+        <h1 class="text-lg font-semibold tracking-tight">{{ activity.name }}</h1>
+        <p class="text-sm text-gray-400 mt-0.5">{{ activity.start_date.strftime('%d/%m/%Y') }}</p>
     </div>
 
     <!-- Metrics Grid -->
@@ -178,7 +173,6 @@
         <button @click="open = !open" class="w-full flex items-center justify-between p-5">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">
                 {% if is_cycling %}Vitesse par segment{% else %}Splits par kilomètre{% endif %}
-                <span class="text-gray-300 normal-case">({{ activity.splits_metric|length }})</span>
             </h3>
             <svg class="w-4 h-4 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
         </button>

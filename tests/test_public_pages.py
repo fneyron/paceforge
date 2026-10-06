@@ -120,15 +120,14 @@ async def test_landing_numbers_come_from_the_json(client: AsyncClient, stats_fil
     for expected in (
         f"1{NNBSP}234",               # dataset.races
         f"98{NNBSP}765",              # dataset.finisher_results
-        f"2{NNBSP}345{NNBSP}678",     # dataset.checkpoint_passages
         "17,4&nbsp;min",              # validation.mean_abs_gap_min_after
         "sur 47 courses jamais vues",  # validation.held_out_races
-        f"15{NNBSP}432",              # fit.train_finisher_results
-        ">84<",                       # fit.train_races
-        "de 50 à 170&nbsp;km",        # fit.note
-        "7 mars 2026",                # updated
     ):
         assert expected in html, expected
+    # each number once: the passages count, the training base and the date live on /methode only
+    for gone in (f"2{NNBSP}345{NNBSP}678", f"15{NNBSP}432", ">84<", "de 50 à 170&nbsp;km", "7 mars 2026"):
+        assert gone not in html, gone
+    assert html.count(f"98{NNBSP}765") == 1 and html.count(f"1{NNBSP}234") == 1
     # fit.races / fit.finisher_results count the test races too: never shown as the training base
     assert f"23{NNBSP}456" not in html and ">131<" not in html
     # the real numbers are not hard-coded in the template
@@ -224,7 +223,8 @@ async def test_methode_with_the_refit_shape(client: AsyncClient, stats_file):
     assert "Version précédente de PaceForge 21,9&nbsp;min" in text
     assert "Modèle actuel 18,6&nbsp;min" in text
     assert "fait mieux sur 42 courses sur 47" in text
-    assert "réglée sur 71 courses UTMB Live de 40 à 180&nbsp;km" in text and f"12{NNBSP}464 finishers" in text
+    assert "réglée sur 71 courses UTMB Live qui ont une trace GPS" in text and f"12{NNBSP}464 finishers" in text
+    assert text.count("de 40 à 180&nbsp;km") == 1  # the km range once, in the limits
     assert "30,1&nbsp;min" in text and "9,9" not in text
 
     data = json.loads(json.dumps(REFIT_SHAPE))
@@ -237,10 +237,11 @@ async def test_methode_with_the_refit_shape(client: AsyncClient, stats_file):
 
 
 @pytest.mark.asyncio
-async def test_landing_teaser_shows_the_training_split(client: AsyncClient, stats_file):
+async def test_landing_has_no_training_split_teaser(client: AsyncClient, stats_file):
+    """The training split lives on /methode: the landing shows the band's numbers once."""
     stats_file(REFIT_SHAPE)
     text = re.sub(r"[ \t\r\n]+", " ", re.sub(r"<[^>]+>", " ", (await client.get("/")).text))
-    assert f"réglées sur 12{NNBSP}464 finishers de 71 courses, puis testées sur 47 autres courses" in text
+    assert f"12{NNBSP}464" not in text and "D'où viennent" not in text and "D&#39;où viennent" not in text
     assert f"21{NNBSP}400" not in text and "115 courses" not in text
 
 

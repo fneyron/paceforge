@@ -5,9 +5,8 @@
 {% block content %}
 {% set input_cls = "pf-input placeholder:text-gray-400" %}
 <div class="pf-settings max-w-3xl">
-    <div class="pf-head flex-col !items-start !gap-1">
+    <div class="pf-head">
         <h1 class="pf-h1">Réglages</h1>
-        <p class="pf-lead !mt-0">Ton profil, tes connexions Strava et COROS.</p>
     </div>
 
     {% if saved is defined and saved %}
@@ -30,7 +29,7 @@
             {% endif %}
             <div class="min-w-0 flex-1">
                 <p class="text-base font-semibold truncate">{{ user.firstname or '' }} {{ user.lastname or '' }}</p>
-                <p class="text-xs text-gray-400 truncate">Connecté via Strava{% if user.strava_athlete_id %} · athlète #{{ user.strava_athlete_id }}{% endif %}{% if user.email %} · {{ user.email }}{% endif %}</p>
+                {% if user.email %}<p class="text-xs text-gray-400 truncate">{{ user.email }}</p>{% endif %}
             </div>
             <a href="/auth/logout" class="pf-btn pf-btn-secondary pf-btn-sm shrink-0">
                 <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Se déconnecter
@@ -79,23 +78,12 @@
             {% endif %}
         </div>
 
-        {% if strava_stats and strava_stats.total %}
-        <p class="text-sm text-gray-700 tabular-nums">
-            <b>{{ strava_stats.total }}</b> activités synchronisées{% if strava_stats.first_date %} depuis {{ strava_stats.first_date.strftime('%m/%Y') }}{% endif %}{% if strava_stats.last_date %} · dernière le {{ strava_stats.last_date.strftime('%d/%m') }}{% endif %}
-            · <span title="Les splits détaillés alimentent la prédiction personnalisée">{{ strava_stats.with_splits }} avec splits</span>
-        </p>
-        <div class="flex flex-wrap gap-1.5">
-            {% for fam, n in strava_stats.families %}
-            <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600">{{ fam }} <b class="tabular-nums">{{ n }}</b></span>
-            {% endfor %}
-        </div>
-        {% else %}
+        {% if not activity_count %}
         <p class="text-sm text-gray-500">Aucune activité synchronisée pour l'instant.</p>
         {% endif %}
-        <p class="text-[11px] text-gray-400">Synchronisation automatique toutes les 5 min et à chaque nouvelle activité Strava. Bouton « Synchroniser » sur la page <a href="/activities" class="underline hover:text-gray-600">Activités</a>.</p>
 
         <details class="border-t border-line pt-3"{% if not (user.has_own_strava_app and user.strava_credentials_valid) %} open{% endif %}>
-            <summary class="cursor-pointer select-none text-sm font-medium text-gray-600 hover:text-ink">Identifiants de l'app Strava (Client ID / Secret)</summary>
+            <summary class="cursor-pointer select-none text-sm font-medium text-gray-600 hover:text-ink">Identifiants de l'app Strava</summary>
             <form method="post" action="/settings/strava-credentials" class="mt-3 space-y-3">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>

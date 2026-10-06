@@ -68,11 +68,11 @@ def _hm(s: int) -> str:
 
 
 def _route_card(rt: Route) -> dict:
-    """What « Mes courses » shows for a race: the date in words, the objective and the
-    arrival clock, the real time against the plan once run, and a mini profile."""
+    """What « Mes courses » shows for a race: the date in words, the objective, the real
+    time against the plan once run, and a mini profile."""
     from datetime import date as _date
 
-    out: dict = {"date": None, "when": None, "objective": None, "arrival": None, "real": None, "diff": None, "good": None, "profile": None}
+    out: dict = {"date": None, "when": None, "objective": None, "real": None, "diff": None, "good": None, "profile": None}
     d = None
     try:
         d = _date.fromisoformat(str(rt.race_date)[:10]) if rt.race_date else None
@@ -85,20 +85,8 @@ def _route_card(rt: Route) -> dict:
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
                        else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
-    sh = rt.start_hour if rt.start_hour is not None else 6
-    sm = rt.start_minute or 0
-    out["start"] = f"{sh:02d}:{sm:02d}"
     if rt.target_time_s:
         out["objective"] = _hm(rt.target_time_s)
-        fin = sh * 3600 + sm * 60 + rt.target_time_s
-        n = fin // 86400
-        clock = f"{(fin % 86400) // 3600:02d}:{(fin % 3600) // 60:02d}"
-        if d and n:
-            from datetime import timedelta as _td
-
-            out["arrival"] = f"{_DAYS_FR[(d + _td(days=n)).weekday()]} {clock}"
-        else:
-            out["arrival"] = (f"J+{n} " if n else "") + clock
     res = rt.result_json or {}
     if res.get("total_actual_s"):
         real = int(res["total_actual_s"])
@@ -367,7 +355,7 @@ async def _leg_details(
             bag, cp, note = bags.get(km), cps_by_km.get(km) or {}, notes.get(km)
             effort = effort_sentence(cls, hr, walk)
             units = leg_labels(leg, products)
-            # the row is the leg that ARRIVES here (its leg line already says from where);
+            # the row is the leg that ARRIVES here (from the row above);
             # the « ici » lines (water, bag) are about leaving
             out.append({
                 "hr_cap": hr, "terrain": (ins.get("block") or {}).get("label"), "cls": cls,
@@ -1506,7 +1494,7 @@ async def print_route_plan(
     db: AsyncSession = Depends(get_db),
 ):
     """Printable race plan (passage timeline + nutrition) for a saved route."""
-    from app.services.race_simulator import _elevation_at_km, build_scenarios, replan_from_passage
+    from app.services.race_simulator import build_scenarios, replan_from_passage
 
     result = await db.execute(
         select(Route).where(Route.id == route_id, Route.user_id == user.id)
@@ -1517,7 +1505,7 @@ async def print_route_plan(
 
     b = await _plan_bundle(route, db, user)
     course, sections, cps = b["course"], b["sections"], b["checkpoints"]
-    start_hour, start_minute, start_offset_s = b["start_hour"], b["start_minute"], b["start_offset_s"]
+    start_offset_s = b["start_offset_s"]
     aid_kms, stop_min = b["aid_kms"], b["stop_min"]
     live = route.live_json or {}
     live_applied = False
@@ -1533,7 +1521,6 @@ async def print_route_plan(
                 from app.services.checkpoints import annotate_cutoffs
 
                 sections = annotate_cutoffs(sections, cps, start_offset_s)
-    has_weather = any(s.get("temperature_c") is not None for s in sections)
     pp = route.params_json or {}
     scenarios = None if live_applied else build_scenarios(
         sections, start_offset_s, route.target_time_s,
@@ -1542,18 +1529,14 @@ async def print_route_plan(
     )
 
     # Race pack: the Ravitaillement plan on the same printout (the virtual
-    # default too): the same units as the card and the passage rows, and the
-    # shopping totals (spares included) as the pack list.
+    # default too): the same units as the card and the passage rows.
     nutrition_schedule: list = []
-    nutrition_lines: list = []
     duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
     if duration_s and sections:
         from app.services.nutrition import leg_labels
 
-        ninp, nplan, nshop = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, aid_kms, start_offset_s, duration_s)
-        # the leg time written as in the rows and Ravitaillement (rounded: « 1h15 », « 38 min »)
-        nutrition_schedule = [{**leg, "labels": leg_labels(leg, ninp["products_by_id"]), "leg_hm": _hm_s(leg["leg_time_s"])} for leg in nplan["schedule"]]
-        nutrition_lines = nshop
+        ninp, nplan, _nshop = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, aid_kms, start_offset_s, duration_s)
+        nutrition_schedule = [{**leg, "labels": leg_labels(leg, ninp["products_by_id"])} for leg in nplan["schedule"]]
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
     legs_guide = None
@@ -1591,22 +1574,9 @@ async def print_route_plan(
             "has_target": route.target_time_s is not None or live_applied or b["pinned"],
             "pinned": b["pinned"],
             "plan_total_s": b["plan_total_s"],
-            "has_weather": has_weather,
-            "start_hour": start_hour,
-            "start_minute": start_minute,
             "start_offset_s": start_offset_s,
-            "start_elevation": _elevation_at_km(course, 0.0),
-            "total_distance_km": course.total_distance_km,
-            "print_mode": True,
-            "stop_minutes": stop_min,
-            "n_aid": len(aid_kms),
             "nutrition_schedule": nutrition_schedule,
-            "nutrition_lines": nutrition_lines,
             "scenarios": scenarios,
-            "sport": b["sport"],
-            "guide": guide,
-            "legs_guide": legs_guide,
-            "walk_grade": walk_grade,
         },
     )
 
@@ -2005,19 +1975,11 @@ async def _nutrition_card_context(
                 else:
                     water = {"alert": False, "text": f"Eau : ce que tu portes suffit ({N.liters(carry)} L)"}
             elif need >= 1000:
-                water = {"alert": False, "text": f"Eau : prévois {N._fr(N.ceil_half_l(need))} L (le plus long sans eau : {ds['from']} → {ds['to']}, {_hm_s(ds['time_s'])})"
-                         + (" · le plus long de la course" if g.get("is_longest") else "")}
+                water = {"alert": False, "text": f"Eau : prévois {N._fr(N.ceil_half_l(need))} L"}
             else:
                 water = {"alert": False, "text": "Eau : 1 L suffit"}
-        cards.append({
-            "title": _bag_title(g, cps_by_km), "is_start": g.get("is_start"),
-            # clock to clock, stops included: the same durations as the rows and the header
-            "sub": f"km {round(float(g['km'] or 0))} → {round(float(g['until_km'] or 0))} · jusqu'à {_until(g['until'])} · "
-                   + _hm_s((g["end_clock_s"] - g["start_clock_s"]) if g.get("end_clock_s") is not None and g.get("start_clock_s") is not None else (g.get("time_s") or 0)),
-            "chips": g.get("labels") or [], "water": water,
-        })
-    main = N.main_product_id(plan)
-    spare_noun = N.rule_noun(products[main]) if main in products else None
+        cards.append({"title": _bag_title(g, cps_by_km), "is_start": g.get("is_start"),
+                      "chips": g.get("labels") or [], "water": water})
 
     # tronçon par tronçon: the same units as the passage rows, plus the water to drink
     legs = []
@@ -2054,10 +2016,11 @@ async def _nutrition_card_context(
     carry_opts = [("auto", "Auto", carry is None)] + [(str(c), f"{N.liters(c)} L", carry == c) for c in N.CARRY_CHOICES]
     if carry and carry not in N.CARRY_CHOICES:
         carry_opts.append((str(carry), f"{N.liters(carry)} L", True))
+    # « Ajuster » names only what he changed: the defaults go without saying
     summary = [
-        {"peu": "peu de transpiration", "normal": "transpiration normale", "beaucoup": "beaucoup de transpiration"}.get(sweat or "", "transpiration : ton réglage"),
-        "eau auto" if not carry else f"{N.liters(carry)} L portés",
-        "quantités à la main" if manual else "quantités auto",
+        {"peu": "peu de transpiration", "beaucoup": "beaucoup de transpiration"}.get(sweat or "", "" if sweat == "normal" else "transpiration : ton réglage"),
+        f"{N.liters(carry)} L portés" if carry else "",
+        "quantités à la main" if manual else "",
     ]
     def _num(x) -> str:
         """An input's value: 25 not 25.0."""
@@ -2085,7 +2048,6 @@ async def _nutrition_card_context(
     hours = duration_s / 3600.0
     return {
         **ctx,
-        "context_line": f"{_hm_s(duration_s)} de course · départ {b['start_hour']:02d}:{b['start_minute']:02d}" + (f" · {round(temp)} °C prévus" if temp is not None else ""),
         "rules": N.rule_lines(plan, picks, products, has_refills),
         "warnings": warnings,
         "hand_set": inp["hand_set"],
@@ -2095,7 +2057,7 @@ async def _nutrition_card_context(
         "source": inp["source"],
         "bag_chips": bag_chips, "water_chips": water_chips, "no_points": not any(s.get("end_checkpoint_index") is not None for s in sections),
         "is_bike": b.get("sport") == "bike",
-        "cards": cards, "spare_noun": spare_noun,
+        "cards": cards,
         "shop": shop, "caf_over": caf_over,
         "own_form": own_form,
         "copy_text": N.copy_text(route.name, shop, plan.get("bags") or [], titles),
@@ -2105,7 +2067,7 @@ async def _nutrition_card_context(
         "custom_sweat": ("fluid_ml_per_h" in custom or "sodium_mg_per_h" in custom),
         "carry_opts": carry_opts, "carry": carry,
         "qty_rows": qty_rows, "caf_line": caf_line,
-        "summary": " · ".join(summary), "my_products": my_products,
+        "summary": " · ".join(x for x in summary if x), "my_products": my_products,
         "open": open_ if open_ in ("adjust", "brands") else None,
         "hours": hours,
     }

@@ -87,20 +87,23 @@ async def test_owner_like_sparse_data(as_user: AsyncClient, db_session: AsyncSes
     assert "Connecter COROS" not in page and "Synchroniser maintenant" in page
     # today
     assert ">84<" in page and "Séance modérée possible" in page and "Récupération complète dans 45 h" in page
-    assert "Surcharge" in page and "risque de blessure" in page and ">150<" in page and ">110<" in page
-    # trends: the daily ones drawn, the night ones explained (none in 30 days)
-    for title in ("Charge d&#39;entraînement", "Stress", "FC moyenne du jour", "Pas"):
-        assert f'aria-label="{title}, 30 derniers jours"' in page, title
+    assert "Surcharge" in page and "risque de blessure" in page and "1,36" in page
+    # the ratio decides: no short / long numbers, no definitions
+    assert ">150<" not in page and ">110<" not in page and "c&#39;est sain" not in page
+    # trends: only what decides readiness (load + the night signals); stress, steps, daily HR are not drawn
+    assert 'aria-label="Charge d&#39;entraînement, 30 derniers jours"' in page
+    for title in ("Stress", "FC moyenne du jour", "Pas"):
+        assert f'aria-label="{title}, 30 derniers jours"' not in page, title
     assert 'aria-label="VFC (variabilité cardiaque), 30 derniers jours"' not in page
-    assert "FC au repos, VFC, Sommeil</span> : Porte ta montre la nuit" in page
-    # verdict: what it waits for
-    assert "Pas encore assez de données" in page and "tu en as 0 et 3" in page
-    # fitness
-    assert "3:20" in page and "1:10:54" in page and "2:25:03" in page and ">97<" in page
+    # verdict: what it waits for, said once (the empty night charts don't repeat it)
+    assert "Pas encore assez de nuits" in page and page.count("Porte ta montre la nuit") + page.count("porte ta montre la nuit") == 1
+    assert "pf-health-missing" not in page
+    # fitness: VO2max and threshold pace only (no COROS level index, no road predictions)
+    assert "3:20" in page and "1:10:54" not in page and "2:25:03" not in page and ">97<" not in page
     # 90 days: the old nights show, with HRV's normal range
     page = (await as_user.get("/sante?jours=90")).text
     assert 'aria-label="VFC (variabilité cardiaque), 90 derniers jours"' in page
-    assert "zone normale 70–84 ms" in page and '<a href="/sante?jours=90" aria-current="true"' in page
+    assert "fill-ok-soft" in page and '<a href="/sante?jours=90" aria-current="true"' in page  # the normal range is the band
 
 
 async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
@@ -117,7 +120,7 @@ async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_us
     page = (await as_user.get("/sante")).text
     assert "Forme normale" in page or "Bien récupéré" in page or "À surveiller" in page
     assert "pf-health-missing" not in page
-    assert page.count('class="pf-health-chart') == 7
+    assert page.count('class="pf-health-chart') == 4
 
 
 async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_session: AsyncSession,
