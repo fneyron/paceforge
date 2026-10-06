@@ -30,12 +30,14 @@ async def sante_page(
 ):
     status = await coros.coros_status(db, user.id)
     garmin_link = await garmin.garmin_status(db, user.id)
-    auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)))
     try:
         page = await health_page(db, user.id)
     except Exception:  # shown as an error, never as "connect your watch"
         logger.exception("Santé page failed for user %d", user.id)
         page = None
+    night_missing = bool(page and page["nights"]["rows"][0]["pending"])
+    auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)),
+                            STALE_NIGHT if night_missing else STALE_AFTER)
     return templates.TemplateResponse(
         request, "sante.html",
         context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync},
@@ -44,6 +46,7 @@ async def sante_page(
 
 _WATCHES = (("COROS", coros), ("Garmin", garmin))
 STALE_AFTER = timedelta(hours=1)
+STALE_NIGHT = timedelta(minutes=10)  # last night still missing: it may have just been uploaded
 JUST_SYNCED = timedelta(minutes=3)
 
 
@@ -55,17 +58,17 @@ def _fresh_at(link: dict, within: timedelta) -> bool:
     return datetime.now(timezone.utc) - at < within
 
 
-def _sync_stale(user_id: int, links) -> bool:
-    """Opening Santé syncs, in the background, every watch not synced for an
-    hour (not one that failed last time: « Synchroniser maintenant » says why).
-    True when a sync is running, so the page waits for it."""
+def _sync_stale(user_id: int, links, stale_after: timedelta) -> bool:
+    """Opening Santé syncs, in the background, every watch not synced within
+    `stale_after` (not one that failed last time: « Synchroniser maintenant »
+    says why). True when a sync is running, so the page waits for it."""
     running = False
     for service, link in links:
         if not link.get("connected") or link.get("needs_reauth"):
             continue
         if link.get("syncing"):
             running = True
-        elif not link.get("last_error") and not _fresh_at(link, STALE_AFTER):
+        elif not link.get("last_error") and not _fresh_at(link, stale_after):
             running = service.schedule_sync(user_id) or running
     return running
 

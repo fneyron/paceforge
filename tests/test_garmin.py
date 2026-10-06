@@ -27,6 +27,7 @@ from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
 from app.models.user import User
 from app.services import garmin
+from app.services.sante import health_page
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIG = ROOT / "alembic" / "versions" / "w7f8a9b0c1d2_add_garmin.py"
@@ -154,7 +155,10 @@ class FakeGarmin:
             return httpx.Response(200, json=night(d) if (t - d).days % 10 != 9 else {"dailySleepDTO": {}})
         if path == "/usersummary-service/usersummary/daily/runner%2042":
             d = date.fromisoformat(params["calendarDate"])
-            return httpx.Response(200, json=summary(d) if d <= t else {})
+            if d > t:  # a day that hasn't come yet: Garmin's dated skeleton, every value null
+                return httpx.Response(200, json={"calendarDate": str(d), "totalSteps": None,
+                                                 "averageStressLevel": None, "bodyBatteryHighestValue": None})
+            return httpx.Response(200, json=summary(d))
         return httpx.Response(404, json={})
 
     def paths(self, prefix: str) -> list:
@@ -660,3 +664,8 @@ async def test_the_nights_reach_the_athletes_today_ahead_of_utc(db_session: Asyn
     assert (await garmin.run_sync(db_session, conn))["ok"]
     days = [q["date"] for _, q in fake.paths("/wellness-service/wellness/dailySleepData/")]
     assert days[0] == str(fake.today + timedelta(days=1)) and len(days) == 7
+    # the empty day ahead doesn't move « today »: the fitness row and the page stay on the UTC day
+    fit = (await db_session.execute(select(HealthMetric.date).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "fitness"))).scalars().all()
+    assert fit == [fake.today]
+    assert (await health_page(db_session, test_user.id))["today"] == fake.today

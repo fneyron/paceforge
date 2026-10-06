@@ -16,7 +16,7 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   "COROS") through health.store_samples; the values COROS already gives per day
   (training load, recovery, daily heart rate, stress, steps, fitness
   assessment, HRV normal range) straight to HealthMetric (health.store_daily).
-  60 days the first time, then the last 7 days, at most every 6 hours (Celery
+  60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.

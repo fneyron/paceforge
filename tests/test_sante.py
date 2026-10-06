@@ -5,6 +5,7 @@ navigation; the decision ladder, the night rules and the strip."""
 from datetime import date, timedelta
 
 from httpx import AsyncClient
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
@@ -331,3 +332,35 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_once(as_user: AsyncC
     assert started == [] and "Synchroniser maintenant" in page
     r = await as_user.get("/sante/sync-status")  # nothing running, nothing new: the button
     assert "HX-Refresh" not in r.headers and "Synchroniser maintenant" in r.text
+
+
+async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_session: AsyncSession,
+                                                 test_user: User, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user)
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    started = []
+    monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
+    today = datetime.now(timezone.utc).date()
+    db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=1), metric="sleep", value=450,
+                                source="COROS", n_samples=1, details={"bedtime": "23:00", "wake": "07:00"}))
+    await db_session.flush()
+    # last night isn't there yet: synced 30 min ago is already too old
+    await as_user.get("/sante")
+    assert started == [test_user.id]
+    # it arrived: no new sync within the hour
+    started.clear()
+    db_session.add(HealthMetric(user_id=test_user.id, date=today, metric="sleep", value=440,
+                                source="COROS", n_samples=1, details={"bedtime": "23:10", "wake": "06:50"}))
+    await db_session.flush()
+    await as_user.get("/sante")
+    assert started == []
+    # missing again but synced 5 min ago: no retry yet
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await db_session.execute(delete(HealthMetric).where(HealthMetric.date == today))
+    await db_session.flush()
+    await as_user.get("/sante")
+    assert started == []

@@ -34,11 +34,11 @@ celery_app.conf.update(
         },
         "sync-coros": {
             "task": "paceforge.sync_coros",
-            "schedule": crontab(minute=17),  # hourly; each link is synced every 6 h
+            "schedule": crontab(minute=17),  # hourly; each link is synced every 2 h
         },
         "sync-garmin": {
             "task": "paceforge.sync_garmin",
-            "schedule": crontab(minute=47),  # hourly; each link is synced every 6 h
+            "schedule": crontab(minute=47),  # hourly; each link is synced every 2 h
         },
         # disabled: weekly-digest
     },

@@ -22,7 +22,7 @@ Garmin Connect the way its mobile app does, with no AI involved:
   to HealthMetric (health.store_daily). Sessions go to Activity (a session
   Strava already has only gets its Garmin id).
   60 days of health and 180 days of sessions the first time, then the last
-  7 days, at most every 6 hours (Celery beat, app.tasks.garmin_sync), right
+  7 days, at most every 2 hours (Celery beat, app.tasks.garmin_sync), right
   after connecting and on demand.
 
 Times are the athlete's local wall clock (naive), as Garmin's *Local fields are.
@@ -595,6 +595,12 @@ def parse_summary(data) -> dict | None:
     }
 
 
+def _filled(summary: dict) -> bool:
+    """A day the watch reported, not the dated skeleton Garmin answers for a
+    day with nothing uploaded yet."""
+    return any(_ok(summary.get(k), 1, 200_000) for k in ("steps", "stress", "bb_high", "bb_wake"))
+
+
 def parse_vo2max(data) -> dict[date, float]:
     """maxmet range: the running VO2 max of each day it was (re)estimated."""
     out = {}
@@ -926,8 +932,9 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     if call.calls and call.failed == call.calls:
         raise GarminError("Garmin n'a renvoyé aucune donnée lisible.")
 
-    # the athlete's today (a day ahead of the server's in Asia mornings)
-    latest = max([*data["nights"], *data["summaries"]], default=None)
+    # the athlete's today (a day ahead of the server's in Asia mornings); a day
+    # Garmin only answers with its dated empty summary doesn't count
+    latest = max([*data["nights"], *(d for d, v in data["summaries"].items() if _filled(v))], default=None)
     today = _today(latest)
     samples = build_samples(data, today)
     await _drop_stale_intervals(db, conn.user_id, data["nights"], samples, source=SOURCE)
