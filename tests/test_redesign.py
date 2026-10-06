@@ -321,7 +321,8 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     assert re.search(r"\d+ ?(h\d\d|min) depuis Eau 1 · 4 km · \+[\d ]+ m −[\d ]+ m", text), text
     # how to run the leg (cardio + terrain) and what was eaten on it, in sentences: no tiles
     assert "pf-tiles" not in t and re.search(r"(Cardio (sous|vers) \d+ · )?(Roulant|roulant|Montée|montée|Très raide|très raide|Descente|descente) :", text), text
-    assert "Depuis Eau 1 :" in text, text
+    # the leg line already says where it comes from: the food line does not repeat it
+    assert "À prendre en route :" in text and text.lower().count("depuis eau 1") == 1, text
     assert re.search(r"Ravito · assistance · arrêt 3 min · barrière 10:30 · marge [+−]\d+h\d\d", text), text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
     assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »

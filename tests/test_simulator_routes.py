@@ -238,6 +238,8 @@ async def test_trail_export_carries_pacing_points_and_courses_page_has_no_triath
     assert gpx.text.count("<wpt") == 5  # DEP + 3 CPs + ARR
     assert "DEP 21:00 | PLAT" in gpx.text and "| ESCAL marche" in gpx.text and "LIBRE" not in gpx.text
     print_page = await as_user.get(f"/simulator/routes/{route_id}/print")
-    assert "Pilotage" in print_page.text and "mains sur les cuisses" in print_page.text
+    # « Consignes »: the rows' words, the cell's pace only (no second pace that disagrees with it)
+    assert "Consignes" in print_page.text and "Pilotage" not in print_page.text and "mains sur les cuisses" in print_page.text
+    assert "régulier, manger, boire" not in print_page.text and "garde-fous" not in print_page.text
     courses = await as_user.get("/simulator")
     assert courses.status_code == 200 and "tab-tri" not in courses.text and "mono-segment" not in courses.text

@@ -194,7 +194,7 @@
                     <p>Par défaut 2 min aux points d'eau, 5 min aux ravitos, 15 min aux bases vie. Pour un point précis, ouvre-le dans la liste.</p>
                     <label class="mt-2 inline-flex flex-wrap items-center gap-1.5">Même durée partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="—" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="{{ num }}"> min <span class="text-gray-500">(vide = par défaut)</span></label>
                 </div>
-                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="pt-4 border-t border-line">
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" hx-on::validation:halted="this.reportValidity()" class="pt-4 border-t border-line">
                     <span class="{{ lbl }}">Plans de rechange</span>
                     <p>En plus de ta cible, un plan <b class="text-ink">Optimiste</b> (si tout va bien) et un plan <b class="text-ink">Sécurité</b> (si ça coince), à afficher en touchant ton objectif.</p>
                     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -203,7 +203,7 @@
                         <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-9 pl-2 pr-7 rounded-lg border border-gray-200 text-sm text-ink bg-surface max-w-[190px]"><option value="">automatique</option></select></label>
                     </div>
                 </form>
-                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/params" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" class="pt-4 border-t border-line">
+                <form hx-post="/api/simulator/routes/{{ saved_route_id }}/params" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" hx-on::validation:halted="this.reportValidity()" class="pt-4 border-t border-line">
                     <span class="{{ lbl }}">Plafond cardio en montée</span>
                     <p>{% if hr_cap_default %}Vide = 75 % de ta FC max ({{ max_hr }}, vue dans tes activités).{% else %}Pas de cardio dans tes activités : indique-le pour avoir un plafond par tronçon.{% endif %} Plat&nbsp;−4, descente&nbsp;−10, et il baisse avec la fatigue.</p>
                     <label class="mt-2 inline-flex items-center gap-1.5"><input name="hr_cap_climb" type="number" inputmode="numeric" min="80" max="220" value="{{ hr_cap_climb or '' }}" placeholder="{{ hr_cap_default or '—' }}" aria-label="Plafond cardio en montée, en bpm" class="{{ num }}"> bpm</label>
@@ -918,6 +918,8 @@ window._sim = {};
         if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
         if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
+        // a forecast not saved yet: its heat sets the rows' water and salt, as it will in Ravitaillement once saved
+        if (currentWeather && currentWeather.temperature_c != null && !(currentRouteId && hourlySaved)) b.append('weather_temp_c', currentWeather.temperature_c);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
         var out = document.getElementById('passage-times-result'), seq = ++recalcSeq;
@@ -1087,11 +1089,16 @@ window._sim = {};
         var rd = raceDate; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
-        var withWeather = !!currentWeather; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
+        var withWeather = !!currentWeather, wxAt = withWeather ? currentWeather.fetched_at : null; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); })
-            .then(function(d) { if (d.id) { currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++; } else { saveFailed(); } }).catch(function() { saveFailed(); });
+            .then(function(d) {
+                if (!d.id) { saveFailed(); return; }
+                currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
+                // a new forecast just saved while Ravitaillement is open: its water and salt follow the heat, like the rows
+                if (withWeather && wxAt !== savedWxAt) { savedWxAt = wxAt; var rp = document.getElementById('rpanel-nutrition'); if (rp && !rp.classList.contains('hidden')) refreshNutrition(); }
+            }).catch(function() { saveFailed(); });
     }
-    var saveRetried = false, hourlySaved = false;
+    var saveRetried = false, hourlySaved = false, savedWxAt = null;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
     function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=18', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
@@ -1339,7 +1346,7 @@ window._sim = {};
     // ── INIT ──
     window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; var el = document.getElementById('page-error'); if (el) { el.textContent = 'Erreur dans la page : ' + ev.message + ' (ligne ' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
-    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
+    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) { renderWeather(sw); savedWxAt = sw.fetched_at; } } catch(e) {}
     updateMeta();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     document.addEventListener('pointerdown', function (ev) {

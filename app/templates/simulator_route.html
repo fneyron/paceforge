@@ -89,6 +89,8 @@ function switchRouteTab(tab, anchor) {
         if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap [data-packing], #nutrition-wrap #packing'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
     } else {
         setTimeout(function () { window.scrollTo(0, planScrollY); if (window._sim && window._sim._redraw) window._sim._redraw(); }, 0);
+        // a change in Ravitaillement (stomach, products, quantities…): the rows' food, water and bags follow it
+        if (ravitoDirty && window._sim && window._sim.recalc) { ravitoDirty = false; window._sim.recalc(); }
     }
     // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
     var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
@@ -97,9 +99,13 @@ function switchRouteTab(tab, anchor) {
         window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
     }
-    try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + tab); } catch (e) {}
+    try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + (anchor === 'bags' ? 'bags' : tab)); } catch (e) {}
 }
-var tabLoadedAt = {};
+var tabLoadedAt = {}, ravitoDirty = false;
+document.body.addEventListener('htmx:afterRequest', function (ev) {
+    var d = ev.detail || {}, cfg = d.requestConfig || {}, path = (d.pathInfo && d.pathInfo.requestPath) || cfg.path || '';
+    if (d.successful && String(cfg.verb).toLowerCase() === 'post' && /\/partials\/simulator\/nutrition\//.test(path)) ravitoDirty = true;
+});
 document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
     if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;

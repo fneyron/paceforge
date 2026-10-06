@@ -134,8 +134,7 @@ async def test_a_race_without_a_plan_shows_a_complete_default_and_the_read_write
     r = await as_user.post("/partials/simulator/passage-times", data={
         "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": short, "stop_minutes": 3,
     })
-    # (« Sur ce tronçon » until the row template names the leg: « Depuis X : … »)
-    assert re.search(r"(Sur ce tronçon|Depuis [^:<]+) : \d+ gels?", r.text)
+    assert re.search(r"À prendre en route : \d+ gels?", r.text)
     # from 8 h, a caffeinated gel joins the default
     long_ = await _route(as_user, target_s=9 * 3600, name="Long")
     t = (await as_user.get(f"/partials/simulator/nutrition/{long_}")).text
@@ -524,7 +523,7 @@ async def test_an_own_product_without_a_name_keeps_the_form(as_user: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_the_row_names_the_leg_it_describes(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_the_food_line_does_not_repeat_the_leg_line(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     rid = await _route(as_user, target_s=6 * 3600)
     from app.routers.simulator import _passage_table_context
     from app.schemas.simulator import CourseProfile
@@ -533,5 +532,56 @@ async def test_the_row_names_the_leg_it_describes(as_user: AsyncClient, db_sessi
     ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), CPS, 6 * 3600, 1.0, 21, 0, None,
                                        route, 3, None, None, route_id=rid)
     texts = [lg["units_text"] for lg in ctx["legs"]]
-    assert texts[0].startswith("Depuis le départ : ") and texts[1].startswith("Depuis Eau 1 : ") and texts[2].startswith("Depuis Col : ")
+    # the leg line says « … depuis Eau 1 · 4 km … » right above: the food line just says what to take
+    assert all(x.startswith("À prendre en route : ") for x in texts if x) and texts[0]
     assert all(x.endswith(".") for x in texts if x)
+
+
+@pytest.mark.asyncio
+async def test_rows_use_the_forecast_the_page_has_not_saved_yet(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """The forecast arrives, the rows are redone at once, the save comes after: the rows'
+    water and salt already read that heat, as Ravitaillement will once it is saved."""
+    rid = await _route(as_user, target_s=6 * 3600)
+    from app.routers.simulator import _passage_table_context
+    from app.schemas.simulator import CourseProfile
+
+    route = await db_session.get(Route, rid)
+
+    async def legs(temp=None):
+        ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), CPS, 6 * 3600, 1.0, 21, 0, None,
+                                           route, 3, None, None, route_id=rid, mean_temp_c=temp)
+        return [(lg["units_text"], lg["fluid_ml"], lg["water_note"], lg["bag"]) for lg in ctx["legs"]]
+
+    cold, hot = await legs(), await legs(32.0)
+    assert cold != hot
+    route.weather_json = {"temperature_c": 32.0}
+    await db_session.flush()
+    assert await legs() == hot  # saved: the same rows without the override
+    # the recalculation endpoint takes it from the page
+    r = await as_user.post("/partials/simulator/passage-times", data={
+        "checkpoints_json": json.dumps(CPS), "target_time_s": 6 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid,
+        "stop_minutes": 3, "weather_temp_c": "32",
+    })
+    assert r.status_code == 200 and "À prendre en route" in r.text
+
+
+@pytest.mark.asyncio
+async def test_back_from_ravitaillement_redoes_the_rows_and_the_bags_link_stays(as_user: AsyncClient):
+    html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
+    script = html.split("function switchRouteTab")[1].split("</script>")[0]
+    # any successful POST to the nutrition card marks the rows stale; back to the plan redoes them once
+    assert "ravitoDirty = true" in script and "/partials\\/simulator\\/nutrition\\//" in script
+    plan_branch = script.split("} else {")[1].split("// a tool reloads")[0]
+    assert "ravitoDirty" in plan_branch and "recalc()" in plan_branch
+    assert "anchor === 'bags' ? 'bags' : tab" in script  # #bags is kept in the address
+    # an out-of-range number in Réglages du plan says why it is not saved
+    assert html.count('hx-on::validation:halted="this.reportValidity()"') == 2
+
+
+@pytest.mark.asyncio
+async def test_print_band_leg_times_match_the_rows(as_user: AsyncClient):
+    rid = await _route(as_user, target_s=6 * 3600)
+    t = (await as_user.get(f"/simulator/routes/{rid}/print")).text
+    nut = t.split(">Nutrition<")[1]
+    times = re.findall(r'text-right tabular-nums text-gray-500">([^<]*)</td>', nut)
+    assert times and all(re.fullmatch(r"\d+h\d\d|\d+ min", x) for x in times), times

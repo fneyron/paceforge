@@ -253,10 +253,11 @@ def _moving_s(sections: list[dict] | None) -> float | None:
 
 async def _nutrition_inputs(
     db: AsyncSession, user_id: int, route: Route | None, duration_s: float, weight_kg: float | None,
-    moving_s: float | None = None, start_offset_s: int | None = None,
+    moving_s: float | None = None, start_offset_s: int | None = None, mean_temp_c: float | None = None,
 ) -> dict:
     """ONE resolver for every surface (card, passage rows, print band): the
-    stored choices (or the virtual default) → compute_plan's arguments."""
+    stored choices (or the virtual default) → compute_plan's arguments.
+    ``mean_temp_c``: a forecast the page has but has not saved yet (else the saved one)."""
     from app.services.nutrition import read_state, resolve_inputs, with_generics
 
     pantry = await _pantry(db, user_id)
@@ -267,6 +268,8 @@ async def _nutrition_inputs(
     if not any(p in products for p in st["picks"]) and not (st.get("explicit") and not st["picks"]):
         default_from = await _default_source(db, user_id, route.id if route else None, products)
     mean_temp = (route.weather_json or {}).get("temperature_c") if route and route.weather_json else None
+    if mean_temp_c is not None:
+        mean_temp = mean_temp_c
     inp = resolve_inputs(nj, pantry, duration_s, mean_temp, weight_kg, default_from, moving_s=moving_s, start_offset_s=start_offset_s)
     inp["pantry"], inp["mean_temp"] = pantry, mean_temp
     inp["moving_s"], inp["start_offset_s"] = moving_s, start_offset_s
@@ -279,12 +282,12 @@ def _resupply_points(checkpoints: list[dict]) -> list[dict]:
 
 async def _nutrition_plan(
     db: AsyncSession, user_id: int, weight_kg: float | None, route: Route | None, sections: list[dict],
-    checkpoints: list[dict], aid_kms: set, start_offset_s: int, duration_s: float,
+    checkpoints: list[dict], aid_kms: set, start_offset_s: int, duration_s: float, mean_temp_c: float | None = None,
 ) -> tuple[dict, dict, list]:
     """(inputs, plan, shopping list): the same numbers everywhere."""
     from app.services.nutrition import compute_plan, main_product_id, shopping_list
 
-    inp = await _nutrition_inputs(db, user_id, route, duration_s, weight_kg, _moving_s(sections), start_offset_s)
+    inp = await _nutrition_inputs(db, user_id, route, duration_s, weight_kg, _moving_s(sections), start_offset_s, mean_temp_c)
     plan = compute_plan(
         duration_s, inp["targets"], inp["items"], inp["products_by_id"], sections,
         flask_capacity_ml=inp["flask_capacity_ml"], refill_kms=aid_kms, resupply_points=_resupply_points(checkpoints),
@@ -329,6 +332,7 @@ def _water_notes(plan: dict, carry_ml: int | None) -> dict:
 async def _leg_details(
     db: AsyncSession, user_id: int, route_obj: Route | None, guide: dict, sections: list[dict],
     checkpoints: list[dict], aid_kms: set, start_offset_s: int, duration_s: float | None = None,
+    mean_temp_c: float | None = None,
 ) -> list[dict]:
     """What a passage row says once opened, one entry per section (the leg that ENDS
     at that point): what to do on it (heart-rate ceiling of its terrain, computed at
@@ -348,7 +352,7 @@ async def _leg_details(
         if duration_s is None:
             last = sections[-1] if sections else {}
             duration_s = last.get("adjusted_cumulative_time_s") or last.get("cumulative_time_s") or 0
-        inp, plan, _shop = await _nutrition_plan(db, user_id, weight, route_obj, sections, checkpoints, aid_kms, start_offset_s, duration_s)
+        inp, plan, _shop = await _nutrition_plan(db, user_id, weight, route_obj, sections, checkpoints, aid_kms, start_offset_s, duration_s, mean_temp_c)
         products = inp["products_by_id"]
         bags = {round(float(g["km"]), 1): g for g in plan.get("bags") or [] if not g.get("is_start")}
         cps_by_km = {round(float(cp["distance_km"]), 1): cp for cp in checkpoints}
@@ -363,9 +367,8 @@ async def _leg_details(
             bag, cp, note = bags.get(km), cps_by_km.get(km) or {}, notes.get(km)
             effort = effort_sentence(cls, hr, walk)
             units = leg_labels(leg, products)
-            # the row is the leg that ARRIVES here: say where it comes from, the
-            # « ici » lines (water, bag) are about leaving
-            src = "le départ" if i == 0 else (leg.get("from_name") or "le point d'avant")
+            # the row is the leg that ARRIVES here (its leg line already says from where);
+            # the « ici » lines (water, bag) are about leaving
             out.append({
                 "hr_cap": hr, "terrain": (ins.get("block") or {}).get("label"), "cls": cls,
                 "effort": Markup(effort) if effort else None,
@@ -373,7 +376,7 @@ async def _leg_details(
                 "carbs_g": leg["carbs_real_g"], "carbs_planned": True,
                 "fluid_ml": leg["fluid_ml"], "water_ml": leg.get("water_ml", leg["fluid_ml"]),
                 "units": units,
-                "units_text": f"Depuis {src} : {', '.join(units)}." if units else None,
+                "units_text": f"À prendre en route : {', '.join(units)}." if units else None,
                 "water_note": note[0] if note else None, "water_alert": bool(note and note[1]),
                 "bag": ({"head": "Assistance ici" if cp.get("crew") and not cp.get("drop_bag") else "Drop bag ici",
                          "until": _until(bag.get("until")), "units": bag.get("labels") or [], "carbs_g": bag.get("carbs_g") or 0}
@@ -389,6 +392,7 @@ async def _passage_table_context(
     db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
     start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
     anchor_km: float | None, anchor_clock: str | None, profile=None, route_id: int | None = None,
+    mean_temp_c: float | None = None,
 ) -> dict:
     """Everything partials/passage_times.html needs: the (re)planned sections, scenarios, plan data.
     Used by the recalculation endpoint and by the page itself, so the first paint already has the table."""
@@ -476,7 +480,7 @@ async def _passage_table_context(
         walk_grade=rc["walk_grade"], plan_sections=sections,
     )
     plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
-    legs = await _leg_details(db, user_id, route_obj, guide, sections, checkpoints, aid_kms, start_offset_s, duration_s=plan_s)
+    legs = await _leg_details(db, user_id, route_obj, guide, sections, checkpoints, aid_kms, start_offset_s, duration_s=plan_s, mean_temp_c=mean_temp_c)
     return {
         "legs": legs,
         "plan_data": _script_json(plan_data),
@@ -511,6 +515,7 @@ async def passage_times(
     stop_minutes: int | None = Form(default=None),
     anchor_km: float | None = Form(default=None),
     anchor_clock: str | None = Form(default=None),
+    weather_temp_c: float | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -542,6 +547,8 @@ async def passage_times(
         ctx = await _passage_table_context(
             db, user.id, course, checkpoints, target_time_s, heat_factor, start_hour, start_minute, hourly_weather,
             route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id,
+            # the forecast the page just fetched, not saved yet: the rows' water and salt use it as the card will
+            mean_temp_c=weather_temp_c,
         )
         return templates.TemplateResponse(request, "partials/passage_times.html", context=ctx)
     except Exception:
@@ -1544,7 +1551,8 @@ async def print_route_plan(
         from app.services.nutrition import leg_labels
 
         ninp, nplan, nshop = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, aid_kms, start_offset_s, duration_s)
-        nutrition_schedule = [{**leg, "labels": leg_labels(leg, ninp["products_by_id"])} for leg in nplan["schedule"]]
+        # the leg time written as in the rows and Ravitaillement (rounded: « 1h15 », « 38 min »)
+        nutrition_schedule = [{**leg, "labels": leg_labels(leg, ninp["products_by_id"]), "leg_hm": _hm_s(leg["leg_time_s"])} for leg in nplan["schedule"]]
         nutrition_lines = nshop
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
@@ -1554,17 +1562,22 @@ async def print_route_plan(
 
         legs_guide = leg_instructions(guide, sections)
     total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
-    # consecutive legs with the same instruction print as one row (« → A, B, C »)
+    # « Consignes »: per leg, the passage row's own words (cardio ceiling + what to do);
+    # the pace is the cell's, so no second one here. Consecutive legs with the same
+    # instruction print as one row (« → A, B, C »).
+    from app.services.pacing_guide import effort_sentence
+
+    walk_grade = int(round(float(((guide or {}).get("caps") or {}).get("walk_grade") or 18)))
     legs_rows: list[dict] = []
     for lg in legs_guide or []:
         bl = lg.get("block") or {}
         # the leg's own ceiling (the one the row and the watch show): legs merge only when it is equal
-        key = (bl.get("cls"), lg.get("hr_cap"), bl.get("hr_free"), bl.get("label"), bl.get("vam_m_per_h"), bl.get("pace_s_per_km"), bool(lg.get("steep")))
+        key = (bl.get("cls"), lg.get("hr_cap"), bl.get("hr_free"), bool(lg.get("steep")))
         if legs_rows and legs_rows[-1]["key"] == key and not lg.get("steep"):
             legs_rows[-1]["to_names"].append(lg["to_name"])
         else:
-            legs_rows.append({"key": key, "to_names": [lg["to_name"]], "block": lg.get("block"), "steep": lg.get("steep"), "hr_cap": lg.get("hr_cap")})
-    walk_grade = int(round(float(((guide or {}).get("caps") or {}).get("walk_grade") or 18)))
+            legs_rows.append({"key": key, "to_names": [lg["to_name"]], "block": lg.get("block"), "steep": lg.get("steep"), "hr_cap": lg.get("hr_cap"),
+                              "effort": effort_sentence(bl.get("cls"), None, walk_grade) if bl else None})
     return templates.TemplateResponse(
         request,
         "simulator_print.html",
