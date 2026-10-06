@@ -39,13 +39,13 @@ def _complete(weeks: list[dict]) -> list[dict]:
 
 
 def _jump(weeks: list[dict], i: int) -> float | None:
-    """Week i's load against the mean of the 3 weeks before (None without
-    3 previous weeks with sessions)."""
+    """Week i's hours against the mean of the 3 weeks before (None without
+    3 previous weeks with sessions) — the hours the bars show."""
     prev = weeks[i - 3:i] if i >= 3 else []
     if len(prev) < 3 or not all(w["count"] for w in prev):
         return None
-    mean = statistics.fmean(w["load"] for w in prev)
-    return weeks[i]["load"] / mean if mean > 0 else None
+    mean = statistics.fmean(w["minutes"] for w in prev)
+    return weeks[i]["minutes"] / mean if mean > 0 else None
 
 
 def spike(sessions: list[Session], today: date, days: int = 10) -> tuple[Session, float] | None:
@@ -144,7 +144,7 @@ def bars(weeks: list[dict], sessions: list[Session], nights: dict[date, float], 
     has_hrv = any(c["hrv"] for c in cols)
     height = 184 + (18 if has_sleep else 0) + (18 if has_hrv else 0)
     return {"cols": cols, "w": 360, "h": height, "base": B_BOT, "bw": BAR_W,
-            "median": {"y": y(med), "label": f"méd. {_hours_label(med)}"} if med else None,
+            "median": {"y": y(med), "label": _hours_label(med)} if med else None,
             "has_sleep": has_sleep, "has_hrv": has_hrv, "sleep_y": 198, "hrv_y": 198 + (18 if has_sleep else 0),
             "any_jump": any(c["jump"] or c["long_jump"] for c in cols)}
 
@@ -232,10 +232,6 @@ def welch(a: list[float], b: list[float]) -> tuple[float, float]:
     return d, (d / se if se > 0 else 0.0)
 
 
-def _since(d: date) -> str:
-    return MONTHS[d.month - 1].rstrip(".")
-
-
 def insights(sessions: list[Session], runs: list[Session], resid: dict[int, float], weeks26: list[dict],
              nights: dict[date, float], today: date) -> dict:
     """{"cards": [...max 3], "locked": [...]}: pre-registered links only."""
@@ -249,21 +245,20 @@ def insights(sessions: list[Session], runs: list[Session], resid: dict[int, floa
     other = [resid[s.id] for s in rr if not any(0 < (s.day - d).days <= 3 for d in longs)]
     if len(after) >= MIN_BIN and len(other) >= MIN_BIN:
         d, t = welch(after, other)
-        first = min(longs)
         if abs(d) >= SWC_HR and abs(t) >= T_MIN:
             cards.append({"key": "h2", "score": abs(t),
-                          "text": (f"Les 3 jours après une sortie de plus de 3 h ({len(longs)} depuis {_since(first)}), "
+                          "text": (f"Les 3 jours après une sortie de plus de 3 h ({len(longs)} en 6 mois), "
                                    f"ta FC à allure facile est {signed(d)} bpm {'plus haute' if d > 0 else 'plus basse'} "
                                    "qu'à l'habitude." + (" Garde ces jours-là faciles." if d > 0 else "")),
-                          "bars": _pair(f"après une sortie longue ({len(after)})", d, f"les autres jours ({len(other)})",
-                                        0.0, "bpm"),
-                          "foot": f"chez toi, {_since(lo)} → {_since(today)} · lien observé, pas forcément cause"})
+                          "bars": _pair(f"dans les 3 jours après ({len(after)} sorties)", d,
+                                        f"les autres jours ({len(other)} sorties)", 0.0, "bpm"),
+                          "foot": "chez toi, 6 derniers mois · lien observé, pas forcément cause"})
         elif abs(d) < 1 and nulls < 1:
             nulls += 1
             cards.append({"key": "h2", "score": 0,
                           "text": (f"Après tes sorties de plus de 3 h, ta FC à allure facile ne monte pas les jours "
                                    f"suivants ({len(after)} contre {len(other)} sorties) : tu les absorbes bien."),
-                          "bars": None, "foot": f"chez toi, {_since(lo)} → {_since(today)}"})
+                          "bars": None, "foot": "chez toi, 6 derniers mois"})
     else:
         locked.append({"text": "Effet de tes sorties longues sur ta FC à allure facile",
                        "have": min(len(after), MIN_BIN), "need": MIN_BIN,

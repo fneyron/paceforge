@@ -17,7 +17,7 @@
         <div class="pf-rows">{% for r in page.rows %}{{ signal(r) }}{% endfor %}</div>
         {% if v.second %}<p class="pf-muted mt-3">{{ v.second }}</p>{% endif %}
         {% if page.more %}
-        <details class="pf-more"><summary>Autres signaux ({{ page.more|length }})</summary>
+        <details class="pf-fold"><summary>Autres signaux ({{ page.more|length }})</summary>
             <div class="pf-rows">{% for r in page.more %}{{ signal(r) }}{% endfor %}</div>
         </details>
         {% endif %}
@@ -30,7 +30,7 @@
     {% set f = page.feel %}
     {% set feel_words = {1: 'en forme', 2: 'normal', 3: 'fatigué'} %}
     <section class="pf-sblock pf-feel" aria-labelledby="h-feel">
-        {% if f %}<details class="pf-more"><summary id="h-feel">Ressenti du jour : {{ feel_words[f.value|int] }}{{ ', jambes lourdes' if f.legs_heavy }} · changer</summary>
+        {% if f %}<details class="pf-fold"><summary id="h-feel">Ressenti du jour : {{ feel_words[f.value|int] }}{{ ', jambes lourdes' if f.legs_heavy }} · changer</summary>
         {% else %}<h2 id="h-feel" class="pf-h2">Ce matin, tu te sens ?</h2>{% endif %}
         <form method="post" action="/sante/feel" hx-post="/sante/feel" hx-swap="none" class="pf-chips">
             {% for val, label in ((1, 'En forme'), (2, 'Normal'), (3, 'Fatigué')) %}

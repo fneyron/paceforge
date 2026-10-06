@@ -48,7 +48,7 @@ def test_hr_bounds():
 
 
 def test_fatigue_needs_six_weeks_then_reads_the_last_week_against_the_fond():
-    steady = [S(k, i=k) for k in range(1, 100)]
+    steady = [S(k, i=k) for k in range(1, 300)]
     st.set_loads(steady, 50, 185)
     f = st.form(steady, T)
     assert f is not None and -5 <= f["pct"] <= 10 and f["word"] == "équilibré"
@@ -57,7 +57,8 @@ def test_fatigue_needs_six_weeks_then_reads_the_last_week_against_the_fond():
     st.set_loads(heavy, 50, 185)
     f = st.form(heavy, T)
     assert f["pct"] > 30 and f["key"] == "loaded"
-    assert len(f["history"]) == 99 - 42 + 1 and f["history"][T] == f["pct"]  # from 6 weeks of history on
+    assert len(f["history"]) == 84 and f["history"][T] == f["pct"]
+    assert len(st.form(steady[:60], T)["history"]) == 60 - 42 + 1  # from 6 weeks of history on
 
 
 def test_weeks_match_activites():

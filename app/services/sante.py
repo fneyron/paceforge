@@ -621,7 +621,7 @@ def _strip(rows: list[dict], usual: dict | None, target_bed: float | None, need:
     edges = [target_bed, usual_wake] if band else []
     hours = range(-(-t0 // 120) * 120, t1 + 1, 120)  # even hours (18:00 is m = 0)
     ticks = [{"x": x(m), "label": f"{(m + 1080) // 60 % 24}h", "edge": False}
-             for m in hours if all(abs(m - e) > 45 for e in edges)]
+             for m in hours if all(abs(m - e) > 75 for e in edges)]
     ticks += [{"x": x(e), "label": m_clock(e), "edge": True} for e in edges]
     for t in ticks:
         t["align"] = "start" if t["x"] < 6 else "end" if t["x"] > 94 else "mid"

@@ -19,10 +19,9 @@
         </a>
         {% endfor %}
         <line x1="8" x2="352" y1="{{ b.base }}" y2="{{ b.base }}" class="pf-wk-axis"/>
-        {% if b.median %}<text x="352" y="{{ b.median.y - 4 }}" text-anchor="end">{{ b.median.label }}</text>{% endif %}
     </svg>
     </div>
-    <p class="pf-legend">barre : heures de la semaine · foncé : ta plus longue sortie{% if b.any_jump %} · <span class="text-warn">orange : +30 % d'un coup, ou sortie longue en saut</span>{% endif %} · pointillés : semaine en cours{% if b.has_sleep %} · ligne 1 : sommeil moyen{% endif %}{% if b.has_hrv %} · ▼ ● ▲ : VFC sous, dans, au-dessus de ta normale{% endif %} · touche une semaine pour son détail</p>
+    <p class="pf-legend">barre : heures de la semaine · foncé : ta plus longue sortie{% if b.median %} · tirets : ta semaine médiane ({{ b.median.label }}){% endif %}{% if b.any_jump %} · <span class="text-warn">orange : +30 % d'un coup, ou sortie longue en saut</span>{% endif %} · contour : semaine en cours{% if b.has_sleep %} · ligne 1 : sommeil moyen{% endif %}{% if b.has_hrv %} · ▼ ● ▲ : VFC sous, dans, au-dessus de ta normale{% endif %} · touche une semaine pour son détail</p>
     {% endif %}
 </section>
 
@@ -62,7 +61,7 @@
     <p class="pf-muted">Rien de net pour l'instant : je compare tes semaines entre elles dès qu'il y en a assez.</p>
     {% endif %}
     {% if ins.locked %}
-    <details class="pf-more"><summary>À débloquer ({{ ins.locked|length }})</summary>
+    <details class="pf-fold"><summary>À débloquer ({{ ins.locked|length }})</summary>
         <ul class="pf-locked">{% for l in ins.locked %}<li><span>{{ l.text }} : {{ l.have }}/{{ l.need }} {{ l.unit }}</span><span class="pf-lock-bar"><span style="width: {{ (l.have / l.need * 100)|round|int }}%"></span></span></li>{% endfor %}</ul>
     </details>
     {% endif %}

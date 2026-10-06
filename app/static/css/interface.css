@@ -709,6 +709,7 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-wk-axis { stroke: rgb(var(--pf-line)); stroke-width: 1; }
 .pf-wk-col:hover .pf-wk-bar:not(.pf-wk-now), .pf-wk-col:focus-visible .pf-wk-bar:not(.pf-wk-now) { fill: rgb(var(--pf-gray-400)); }
 .pf-fz { fill: transparent; }
+.pf-fat text { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 3px; stroke-linejoin: round; }
 .pf-fz-z-warn { fill: rgb(var(--pf-warn-soft)); }
 .pf-fz-z-accent { fill: rgb(var(--pf-accent-soft)); }
 .pf-fz-z-ok { fill: rgb(var(--pf-ok-soft)); }
@@ -736,11 +737,11 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
     .pf-today-nights { margin-top: 12px; }
 }
 /* collapsed extras */
-.pf-more { margin-top: 10px; }
-.pf-more > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); min-height: 44px; display: flex; align-items: center; list-style: none; }
-.pf-more > summary::-webkit-details-marker { display: none; }
-.pf-more > summary::after { content: " ›"; margin-left: 4px; color: rgb(var(--pf-gray-400)); }
-.pf-more[open] > summary::after { content: " ⌄"; }
+.pf-fold { margin-top: 10px; }
+.pf-fold > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); min-height: 44px; display: flex; align-items: center; list-style: none; }
+.pf-fold > summary::-webkit-details-marker { display: none; }
+.pf-fold > summary::after { content: " ›"; margin-left: 4px; color: rgb(var(--pf-gray-400)); }
+.pf-fold[open] > summary::after { content: " ⌄"; }
 
 /* ── Réglages ─────────────────────────────────────────────────────────── */
 .pf-section { border-top: 1px solid rgb(var(--pf-line)); padding: 28px 0; }

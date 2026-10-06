@@ -149,9 +149,7 @@ def hrv_row(f: dict, chart: dict | None, dip_note: str | None) -> dict:
     return {"key": "hrv", "label": "VFC", "window": "7 nuits", "value": f"{num(f['hrv_7d'])} ms",
             "ref": f"ta normale {num(lo)}–{num(hi)}", "word": word, "tone": tone,
             "gauge": gauge(f["hrv_7d"], lo - span, hi + span, band=(lo, hi), edges=[(lo, num(lo)), (hi, num(hi))]),
-            "dev": abs(z) * 2, "chart": chart, "sub": dip_note,
-            "resume": f"Reprends l'intensité quand la ligne revient vers {num(base)} ms." if z < -0.5 and not dip_note
-            else None}
+            "dev": abs(z) * 2, "chart": chart, "sub": dip_note}
 
 
 def rhr_row(f: dict, chart: dict | None) -> dict:
@@ -162,8 +160,7 @@ def rhr_row(f: dict, chart: dict | None) -> dict:
     return {"key": "rhr", "label": "FC au repos", "window": "7 nuits", "value": f"{num(v)} bpm",
             "ref": f"ta normale {num(lo)}–{num(hi)}", "word": word, "tone": tone,
             "gauge": gauge(v, lo - 6, hi + 6, band=(lo, hi), edges=[(lo, num(lo)), (hi, num(hi))]),
-            "dev": abs(delta) / 1.5, "chart": chart,
-            "resume": f"Reprends l'intensité quand la ligne revient vers {num(base)} bpm." if delta >= 3 else None}
+            "dev": abs(delta) / 1.5, "chart": chart}
 
 
 def sleep_row(nights: dict, scores: dict[date, float], today: date) -> dict | None:

@@ -42,11 +42,10 @@
     </div>
     <figcaption class="pf-label">28 nuits depuis le {{ c.start }} · ligne : moyenne sur 7 nuits · bande : ta normale</figcaption>
 </figure>
-{% if r.resume %}<p class="pf-sig-resume">{{ r.resume }}</p>{% endif %}
 {% endmacro %}
 
 {# a row, with its 28-night chart folded under it when it has one #}
 {% macro signal(r) %}
 {{ row(r) }}
-{% if r.chart %}<details class="pf-more pf-row-chart"{% if r.tone in ('warn', 'danger') %} open{% endif %}><summary>{{ r.label }} · 28 nuits</summary>{{ night_chart(r) }}</details>{% endif %}
+{% if r.chart %}<details class="pf-fold pf-row-chart"><summary>{{ r.label }} · 28 nuits</summary>{{ night_chart(r) }}</details>{% endif %}
 {% endmacro %}

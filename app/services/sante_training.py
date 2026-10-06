@@ -207,13 +207,16 @@ def form(sessions: list[Session], today: date) -> dict | None:
     series = fitness(daily, today)
     if not series or (today - min(series)).days < MIN_HISTORY_DAYS or len(sessions) < MIN_SESSIONS:
         return None
-    ctl, atl = series[today]
+    # before today's session, today is yesterday evening: a morning must not read as a rest day
+    ref = today if today in daily or today == min(series) else today - timedelta(days=1)
+    ctl, atl = series[ref]
     if ctl < MIN_CTL:
         return None
     pct = fatigue_pct(ctl, atl)
     start = max(min(series), today - timedelta(days=83))
     history = {d: fatigue_pct(*series[d]) for d in (start + timedelta(days=i) for i in range((today - start).days + 1))
                if (d - min(series)).days >= MIN_HISTORY_DAYS}
+    history[today] = pct
     key, word = fatigue_band(pct)
     return {"ctl": ctl, "atl": atl, "pct": pct, "key": key, "word": word, "history": history, "series": series}
 
