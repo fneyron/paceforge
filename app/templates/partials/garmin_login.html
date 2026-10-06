@@ -17,15 +17,21 @@
         </div>
     </form>
     {% else %}
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <a href="/garmin/authorize?region=monde" class="pf-btn pf-btn-primary pf-btn-sm">Se connecter sur Garmin</a>
+        <a href="/garmin/authorize?region=chine" class="text-[13px] text-gray-500 underline hover:text-gray-600">compte Garmin Chine</a>
+    </div>
+    <details class="text-[13px]" {% if login %}open{% endif %}>
+        <summary class="cursor-pointer select-none text-gray-500 hover:text-gray-700">Ça ne marche pas ? Connexion par mot de passe</summary>
     <form hx-post="/garmin/connect" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2.5">
-        <div class="grid sm:grid-cols-2 gap-2.5">
+        <div class="grid sm:grid-cols-2 gap-2.5 mt-2.5">
             <input type="email" name="email" autocomplete="username" required placeholder="Email Garmin Connect"
                    class="pf-input placeholder:text-gray-400">
             <input type="password" name="password" autocomplete="current-password" required placeholder="Mot de passe Garmin"
                    class="pf-input placeholder:text-gray-400">
         </div>
         <div class="flex flex-wrap items-center gap-3">
-            <button type="submit" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</button>
+            <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm">Connecter avec mon mot de passe</button>
             <label class="text-[13px] text-gray-500 inline-flex items-center gap-1.5">Serveur
                 <select name="region" class="pf-input !py-1 !w-auto text-[13px]">
                     {% for key, (label, _domain) in regions.items() %}<option value="{{ key }}" {% if key == region %}selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -34,5 +40,6 @@
         </div>
         <p class="text-[12px] text-gray-500">Ton mot de passe sert une seule fois à ouvrir l'accès : PaceForge ne le garde pas, seulement l'accès chiffré que Garmin renvoie.</p>
     </form>
+    </details>
     {% endif %}
 </div>
