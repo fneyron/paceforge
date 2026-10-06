@@ -250,8 +250,15 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     resid = st.residuals(runs, today)
     course = _course(next_race, last_race, sessions, tr, today, weight_kg,
                      _usual(series.get("sleep", {}), details.get("sleep", {}), today))
+    taper_line = None
+    if course and course.get("race"):
+        days = course["race"]["days"]
+        course["sublabel"] = "aujourd'hui" if days == 0 else f"J-{days}"  # short enough for the tab strip
+        if course["state"] in ("taper", "race_week"):
+            taper_line = (f"Tu es en affûtage pour {course['race']['name']} : tes cibles de la semaine sont dans "
+                          "Course.")
     training = {
-        "header": wk.header(weeks, sessions, tr, today, (course or {}).get("taper_line")),
+        "header": wk.header(weeks, sessions, tr, today, taper_line),
         "bars": wk.bars(weeks, sessions, series.get("sleep", {}), series.get("hrv", {}), hrv_band)
         if any(w["count"] for w in weeks) else None,
         "fatigue": wk.fatigue_chart(tr, first_monday, today, race_days) if tr else None,

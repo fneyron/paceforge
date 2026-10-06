@@ -742,6 +742,62 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-fold > summary::after { content: " ›"; margin-left: 4px; color: rgb(var(--pf-gray-400)); }
 .pf-fold[open] > summary::after { content: " ⌄"; }
 
+/* Course */
+/* Santé › Course: race header, phase timeline, taper chart, readiness, race week */
+.pf-race-head .pf-h2 { font-size: 22px; }
+.pf-race-date { font-size: 13px; color: rgb(var(--pf-gray-500)); margin-top: 2px; }
+.pf-race-count { font-family: var(--pf-font-display); font-size: 48px; font-weight: 700; letter-spacing: -.04em; line-height: 1; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; margin-top: 10px; }
+.pf-race-facts { font-size: 13px; color: rgb(var(--pf-gray-500)); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.pf-race-cta { margin-top: 14px; }
+.pf-race-p { margin-top: 8px; }
+.pf-race-p:not(.pf-small):not(.pf-lead):not(.pf-muted) { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-race-h3 { font-size: 15px; font-weight: 650; color: rgb(var(--pf-ink)); margin-top: 22px; }
+.pf-race-plan, .pf-race-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-race-plan li, .pf-race-list li { position: relative; padding-left: 16px; }
+.pf-race-plan li::before, .pf-race-list li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--pf-gray-400)); }
+.pf-race-list a { color: rgb(var(--pf-accent-strong)); font-weight: 600; }
+.pf-race-links { display: flex; flex-wrap: wrap; gap: 0 20px; margin-top: 6px; }
+.pf-race-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+/* phase timeline: HTML in % (Construction / Affûtage / race flag / Récup), today marked above */
+.pf-race-tl { position: relative; margin-top: 18px; padding-top: 16px; }
+.pf-race-tl-now { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; font-weight: 600; line-height: 14px; color: rgb(var(--pf-ink)); white-space: nowrap; }
+.pf-race-tl-track { position: relative; height: 28px; border-radius: 8px; overflow: hidden; background: rgb(var(--pf-soft)); }
+.pf-race-tl-seg { position: absolute; top: 0; bottom: 0; }
+.pf-race-tl-lbl { position: absolute; top: 0; padding-left: 6px; font-size: 11px; font-weight: 600; line-height: 28px; color: rgb(var(--pf-gray-700)); white-space: nowrap; }
+.pf-race-tl-seg + .pf-race-tl-seg { border-left: 1px solid rgb(var(--pf-bg)); }
+.pf-race-tl-build { background: rgb(var(--pf-accent-soft)); }
+.pf-race-tl-taper { background: rgb(var(--pf-ok-soft)); }
+.pf-race-tl-rec { background: rgb(var(--pf-soft)); }
+.pf-race-tl-flag { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: rgb(var(--pf-ink)); }
+.pf-race-tl-today { position: absolute; top: 14px; height: 32px; width: 2px; margin-left: -1px; background: rgb(var(--pf-ink)); }
+.pf-race-tl-dates { position: relative; height: 16px; margin-top: 4px; }
+.pf-race-tl-date { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; color: rgb(var(--pf-gray-500)); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pf-race-tl-date.pf-race-start { transform: none; }
+.pf-race-tl-date.pf-race-end { transform: translateX(-100%); }
+/* taper chart: fixed 360 × 170 viewBox (width 100 %, height auto), hatched targets */
+.pf-race-chart { margin-top: 12px; }
+.pf-race-chart text { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 3px; stroke-linejoin: round; }
+.pf-race-bar { fill: rgb(var(--pf-gray-300)); }
+.pf-race-chart a:hover .pf-race-bar { fill: rgb(var(--pf-gray-400)); }
+.pf-race-cur { fill: transparent; stroke: rgb(var(--pf-ink)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.pf-race-tgt { stroke: rgb(var(--pf-ok)); stroke-opacity: .6; stroke-width: 1; pointer-events: none; }
+.pf-race-hatch { stroke: rgb(var(--pf-ok)); stroke-opacity: .5; stroke-width: 2; }
+.pf-race-base { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 4 3; }
+.pf-race-axis { stroke: rgb(var(--pf-line)); stroke-width: 1; }
+.pf-chart .pf-race-ct-ok { fill: rgb(var(--pf-ok)); font-weight: 600; }
+/* readiness: the coaching repère as an outlined tick or band */
+.pf-race-ready .pf-g-band { background: rgb(var(--pf-ok-soft)); box-shadow: inset 0 0 0 2px rgb(var(--pf-ok)); min-width: 3px; }
+/* race-day freshness: only the hollow (projected) dot, the target band outlined */
+.pf-race-fresh { border-top: 1px solid rgb(var(--pf-line)); margin-top: 8px; }
+.pf-race-fresh .pf-row-value small { font-size: 15px; color: rgb(var(--pf-ink)); }
+.pf-race-fresh .pf-g-dot:not(.pf-g-hollow) { display: none; }
+.pf-race-fresh .pf-g-band { background: transparent; box-shadow: inset 0 0 0 2px rgb(var(--pf-ok)); border-radius: 4px; }
+/* race-week sleep: 7 evenings, bed and wake */
+.pf-race-sleep { margin-top: 10px; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.pf-race-sleep th, .pf-race-sleep td { padding: 6px 24px 6px 0; text-align: left; border-bottom: 1px solid rgb(var(--pf-line)); color: rgb(var(--pf-ink)); }
+.pf-race-sleep thead th { padding-top: 0; font-size: 12px; font-weight: 500; color: rgb(var(--pf-gray-500)); }
+.pf-race-sleep tbody th { font-weight: 600; }
+
 /* Tendances */
 /* Tendances: 12-month curves and slope charts. The SVGs keep a fixed viewBox (never stretched); their
    text is in viewBox units, sized so it renders at 11 px or more on a 358 px phone and in 2-column cards */

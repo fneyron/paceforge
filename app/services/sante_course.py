@@ -25,9 +25,33 @@ import math
 import statistics
 from datetime import date, datetime, time, timedelta, timezone
 
-from app.services.sante import EARLY_START_MIN, FALL_ASLEEP_MIN, RACE_NEED_MIN, RACE_WAKE_BEFORE_START, m_clock
-from app.services.sante_today import FATIGUE_ZONES, WEEKDAYS, WEEKDAYS_LONG, dplus_txt, gauge, hm, num, signed
-from app.services.sante_training import ATL_DAYS, BIKE, CTL_DAYS, FOOT, Session, fatigue_band, fatigue_pct, weeks
+from app.services.sante import (
+    EARLY_START_MIN,
+    FALL_ASLEEP_MIN,
+    RACE_NEED_MIN,
+    RACE_WAKE_BEFORE_START,
+    m_clock,
+)
+from app.services.sante_today import (
+    FATIGUE_ZONES,
+    WEEKDAYS,
+    WEEKDAYS_LONG,
+    dplus_txt,
+    gauge,
+    hm,
+    num,
+    signed,
+)
+from app.services.sante_training import (
+    ATL_DAYS,
+    BIKE,
+    CTL_DAYS,
+    FOOT,
+    Session,
+    fatigue_band,
+    fatigue_pct,
+    weeks,
+)
 
 MONTHS = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 TAPER_LONG, TAPER_SHORT = 14, 10
@@ -36,10 +60,12 @@ TARGETS = {2: (0.80, 0.90), 1: (0.60, 0.75), 0: (0.40, 0.50)}  # weeks before th
 CHART_DAYS = 35  # the taper chart opens at J-35
 WEEK_OPEN_DAYS, WEEK_FIRST_DAYS = 10, 7  # race week: open at J-10, above the taper at J-7
 TIMELINE_DAYS = 63  # the phase timeline spans at most 12 weeks (today − 14 d → race + 7 d)
+TL_PHONE_PX = 326  # the timeline's width on a 358 px phone: segment labels are fitted to it
 RECOVERY_DAYS, SHORT_RECOVERY_DAYS = 14, 7
 REST_DAYS = (0, 4)  # the projection trains 5 days a week: Monday and Friday off
 LONG_RUN_MIN, LONG_RUN_MAX = 150, 360
 GENERIC_WAKE = 13 * 60  # 07:00 in minutes after 18:00 (no measured nights)
+EARLIEST_BED = 2 * 60  # 20:00: earlier, sleep hardly comes (the last night is then a bit shorter)
 EVE = ("Mal dormir la veille d'une course est courant et pèse peu après une bonne semaine. "
        "Au lit à ton heure.")
 
@@ -107,8 +133,8 @@ def range_txt(lo: float, hi: float, sep: str = "–") -> str:
     return f"{a} h" if a == b else f"{a}{sep}{b} h"
 
 
-def _m(v: float) -> str:  # « 2 380 m »
-    return f"{int(round(v, -1)):,} m".replace(",", " ")
+def _m(v: float) -> str:  # « 2 380 m », spaced like dplus_txt
+    return dplus_txt(v)[1:]
 
 
 def _km(v: float) -> str:
@@ -202,9 +228,20 @@ def timeline(today: date, start: date, race_day: date) -> dict:
     ts = max(start, lo)
     segs = []
     if ts > lo:
-        segs.append({"cls": "build", "label": "Construction", "l": 0.0, "w": x(ts)})
-    segs.append({"cls": "taper", "label": "Affûtage", "l": x(ts), "w": round(x(race_day) - x(ts), 1)})
-    segs.append({"cls": "rec", "label": "Récup", "l": x(race_day), "w": round(100 - x(race_day), 1)})
+        segs.append({"cls": "build", "label": "Construction", "short": "Constr.", "l": 0.0, "w": x(ts)})
+    segs.append({"cls": "taper", "label": "Affûtage", "short": None, "l": x(ts), "w": round(x(race_day) - x(ts), 1)})
+    segs.append({"cls": "rec", "label": "Récup", "short": None, "l": x(race_day), "w": round(100 - x(race_day), 1)})
+    now = x(today)
+    for sg in segs:  # a label only where it fits, never under today's marker
+        sg["tx"] = sg["text"] = None
+        for text in filter(None, (sg["label"], sg["short"])):
+            need = (6.6 * len(text) + 12) / TL_PHONE_PX * 100
+            at = sg["l"]
+            if at - 1 <= now <= at + need:
+                at = now + 1
+            if at + need <= sg["l"] + sg["w"]:
+                sg["tx"], sg["text"] = round(at, 1), text
+                break
     dates = ([_edge(x(start), _dm(start))] if start > lo else []) + [_edge(x(race_day), _dm(race_day))]
     label = (f"Construction jusqu'au {_dm(start)}, affûtage jusqu'à la course le {_dm(race_day)}, puis 7 jours de "
              "récupération." if start > lo else f"Affûtage jusqu'à la course le {_dm(race_day)}, puis 7 jours de "
@@ -269,7 +306,7 @@ def taper_chart(wk: list[dict], race_day: date, tg: dict, base_h: float) -> dict
 
 
 def _taper_status(today: date, days: int, start: date, race_day: date, tg: dict, wk: list[dict] | None,
-                  exp_s: int | None) -> str | None:
+                  base_h: float | None, exp_s: int | None) -> str | None:
     """One sentence, first match wins (no number printed on the chart)."""
     if days <= 1:
         return None
@@ -279,7 +316,9 @@ def _taper_status(today: date, days: int, start: date, race_day: date, tg: dict,
     ultra = exp_s is not None and exp_s >= ULTRA_S
     if today >= start:
         t = tg.get(cur_k)
-        if not t or not wk:
+        if base_h is None or not wk:
+            return "Affûtage en cours : moins de volume, garde un peu d'intensité."
+        if not t:
             return "Ton affûtage commence : allège dès maintenant, garde un peu d'intensité."
         so_far, elapsed = wk[-1]["minutes"] / 60, today.weekday() + 1
         left = min(7 - elapsed, days - 1) if cur_k == 0 else 7 - elapsed
@@ -299,7 +338,8 @@ def _taper_status(today: date, days: int, start: date, race_day: date, tg: dict,
         s = (f"Encore {left_w} semaine{'s' if left_w > 1 else ''} de construction : c'est le moment de ta plus "
              "grosse sortie longue (pas plus de 10 % au-dessus de la précédente).")
         if ultra:
-            s += f" Pour un ultra, place-la au plus tard le {_ddmm(race_day - timedelta(days=21))} (3 semaines avant, repère)."
+            last = race_day - timedelta(days=21)
+            s += f" Pour un ultra, place-la au plus tard le {_ddmm(last)} (3 semaines avant, repère)."
         return s
     if ultra and today > race_day - timedelta(days=21):
         return (f"Ta dernière grosse sortie longue est derrière toi (3 semaines avant un ultra, repère) : semaine "
@@ -315,7 +355,8 @@ def _bullets(today: date, days: int, race_day: date, tg: dict, base_h: float | N
         return []
     race_monday = race_day - timedelta(days=race_day.weekday())
     cur_k = (race_monday - (today - timedelta(days=today.weekday()))).days // 7
-    easy = "deux footings avec 4 accélérations" if fam == "foot" else "deux séances courtes avec quelques accélérations"
+    easy = ("deux footings avec 4 accélérations" if fam == "foot"
+            else "deux séances courtes avec quelques accélérations")
 
     def amount(k: int) -> str:
         lo, hi = tg[k]
@@ -365,7 +406,8 @@ def readiness(route, sessions: list[Session], today: date, exp_s: int | None, in
     recent = [s for s in pool if today - timedelta(days=56) < s.day <= today]
     href = f"/simulator/routes/{route.id}"
     goal_link = None if route.target_time_s else {
-        "text": "Ajoute ton objectif de temps sur la page de la course pour comparer ta plus longue sortie", "href": href}
+        "text": "Ajoute ton objectif de temps sur la page de la course pour comparer ta plus longue sortie",
+        "href": href}
     if not recent:
         return {"rows": [], "empty": "Il me faut tes sorties des 8 dernières semaines (Strava) pour comparer ta "
                 "préparation à la course.", "advice": None, "goal_link": None}
@@ -422,26 +464,25 @@ def load_per_hour(sessions: list[Session], today: date) -> float | None:
     return None
 
 
-def project(ctl: float, atl: float, lph: float, today: date, race_day: date, base_h: float, tg: dict,
-            so_far_h: float = 0.0, which: str = "mid") -> int | None:
-    """Fatigue % on the race morning (CTL and ATL at the end of the eve) if
-    the athlete trains `base_h` a week until the taper, then the low / mid /
-    high target of each taper week, 5 days a week (the 5 days before the race
-    in race week) at `lph` load per hour. This week counts what is done."""
+def project(ctl: float, atl: float, lph: float, first: date, race_day: date, base_h: float, tg: dict,
+            done: dict[date, float] | None = None, which: str = "mid") -> int | None:
+    """Fatigue % on the race morning (CTL and ATL at the end of the eve),
+    starting from (ctl, atl) at the end of the day before `first`, if the
+    athlete trains `base_h` a week until the taper, then the low / mid / high
+    target of each taper week — 5 days a week (the 5 days before the race in
+    race week) at `lph` load per hour. `done` = {monday: hours already done}."""
+    done = done or {}
     race_monday = race_day - timedelta(days=race_day.weekday())
-    this_monday = today - timedelta(days=today.weekday())
     s0 = set(sorted(race_monday + timedelta(days=i) for i in range(race_day.weekday()))[-5:])
-    d = today + timedelta(days=1)
+    d = first
     while d < race_day:
         mon = d - timedelta(days=d.weekday())
         k = (race_monday - mon).days // 7
         t = tg.get(k)
         hours = base_h if not t else t[0] if which == "lo" else t[1] if which == "hi" else (t[0] + t[1]) / 2
         train = s0 if k == 0 else {mon + timedelta(days=i) for i in range(7) if i not in REST_DAYS}
-        per_day = hours / 5
-        if mon == this_monday:
-            left = [x for x in train if x > today]
-            per_day = min(per_day, max(0.0, hours - so_far_h) / len(left)) if left else 0.0
+        left = [x for x in train if x >= first]
+        per_day = min(hours / 5, max(0.0, hours - done.get(mon, 0.0)) / len(left)) if left else 0.0
         load = per_day * lph if d in train else 0.0
         ctl += (load - ctl) / CTL_DAYS
         atl += (load - atl) / ATL_DAYS
@@ -455,21 +496,26 @@ def freshness(tr: dict | None, sessions: list[Session], today: date, race_day: d
     if not tr or base_h is None or not 2 <= days <= CHART_DAYS:
         return None
     lph = load_per_hour(sessions, today)
-    ctl, atl = (tr.get("series") or {}).get(today) or (tr["ctl"], tr["atl"])
+    # nothing logged yet today: start from last evening and plan today too
+    trained = any(s.day == today for s in sessions)
+    first = today + timedelta(days=1) if trained else today
+    series = tr.get("series") or {}
+    ctl, atl = series.get(first - timedelta(days=1)) or (tr["ctl"], tr["atl"])
     if not lph or ctl <= 0:
         return None
-    pct = project(ctl, atl, lph, today, race_day, base_h, tg, so_far_h)
+    done = {today - timedelta(days=today.weekday()): so_far_h}
+    pct = project(ctl, atl, lph, first, race_day, base_h, tg, done)
     if pct is None:
         return None
     key, w = fatigue_band(pct)
     if key == "fresh":
         advice = "C'est la zone visée pour une course (repère)."
     elif pct < -25:
-        hi = project(ctl, atl, lph, today, race_day, base_h, tg, so_far_h, "hi")
+        hi = project(ctl, atl, lph, first, race_day, base_h, tg, done, "hi")
         advice = ("Très reposé : vise le haut de tes fourchettes d'affûtage." if hi is not None and hi >= -25
                   else "Très reposé : garde un peu de volume.")
     else:
-        lo = project(ctl, atl, lph, today, race_day, base_h, tg, so_far_h, "lo")
+        lo = project(ctl, atl, lph, first, race_day, base_h, tg, done, "lo")
         advice = ("Encore chargé le jour J : vise le bas de tes fourchettes d'affûtage." if lo is not None and lo < -5
                   else "Encore chargé le jour J : allège davantage.")
     return {"pct": pct, "key": key, "word": w, "value": f"{signed(pct)} %",
@@ -481,6 +527,11 @@ def freshness(tr: dict | None, sessions: list[Session], today: date, race_day: d
 
 def _down5(m: float) -> int:
     return int(m // 5 * 5)
+
+
+def _bed(wake: float, awake: float) -> int:
+    """In bed early enough for 9 h of sleep before `wake`, not before 20:00."""
+    return max(EARLIEST_BED, _down5(wake - RACE_NEED_MIN - awake - FALL_ASLEEP_MIN))
 
 
 def _up5(m: float) -> int:
@@ -505,20 +556,21 @@ def sleep_plan(route, race_day: date, today: date, usual: dict | None) -> dict |
     early = race_wake is not None and gap >= EARLY_START_MIN
     out = {"lead": None, "early": None, "rows": [], "eve": EVE, "note": None}
     if not usual:
-        out["lead"] = (f"Vise 9 h par nuit {since} : si tu te lèves à 7 h, au lit vers "
-                       f"{m_clock(_down5(GENERIC_WAKE - RACE_NEED_MIN - FALL_ASLEEP_MIN))}.")
+        out["lead"] = f"Vise 9 h par nuit {since} : si tu te lèves à 7 h, au lit vers {m_clock(_bed(GENERIC_WAKE, 0))}."
         if early:
             n_wake = min(7, days)
             shift = min(60, _up5(gap / n_wake))
             first = race_day - timedelta(days=math.ceil(gap / shift) - 1)
+            k = (first - today).days
+            when = ("demain" if k <= 1 else WEEKDAYS_LONG[first.weekday()] if k < 7
+                    else f"{WEEKDAYS_LONG[first.weekday()]} {_ddmm(first)}")
             out["early"] = (f"Le jour J, réveil {m_clock(race_wake)} : avance ton lever de {shift} min par jour "
-                            f"{'dès demain' if first <= today + timedelta(days=1) else 'dès ' + WEEKDAYS_LONG[first.weekday()]}.")
+                            f"dès {when}.")
         out["note"] = "Porte ta montre ces 7 nuits : je te dirai si tu as assez dormi."
         return out
     if not early:
-        bed = _down5(wake - RACE_NEED_MIN - awake - FALL_ASLEEP_MIN)
-        out["lead"] = (f"Vise 9 h par nuit {since} : au lit vers {m_clock(bed)}. C'est cette semaine de sommeil qui "
-                       "compte, plus que la dernière nuit.")
+        out["lead"] = (f"Vise 9 h par nuit {since} : au lit vers {m_clock(_bed(wake, awake))}. C'est cette "
+                       "semaine de sommeil qui compte, plus que la dernière nuit.")
         return out
     n_wake = min(7, days)
     shift = min(60, _up5(gap / n_wake))
@@ -528,9 +580,7 @@ def sleep_plan(route, race_day: date, today: date, usual: dict | None) -> dict |
     for i in range(1, n_wake + 1):
         evening = race_day - timedelta(days=n_wake - i + 1)
         w = race_wake if i == n_wake else max(race_wake, wake - shift * i)
-        out["rows"].append({"day": WEEKDAYS[evening.weekday()], "bed": m_clock(_down5(w - RACE_NEED_MIN - awake
-                                                                                       - FALL_ASLEEP_MIN)),
-                            "wake": m_clock(w)})
+        out["rows"].append({"day": WEEKDAYS[evening.weekday()], "bed": m_clock(_bed(w, awake)), "wake": m_clock(w)})
     return out
 
 
@@ -587,8 +637,9 @@ def recovery(route, today: date) -> dict | None:
         return None
     if long:
         free = rd + timedelta(days=(10 if dur is not None and dur >= VERY_LONG_S else 7) + 1)
-        text = (f"Pas d'intensité avant le {_ddmm(free)}. Ta VFC et ta FC au repos mettent 1 à 2 semaines à revenir : "
-                "une semaine « basse » est normale." if today < free else
+        # the day-to-day advice (and the date to resume) is Aujourd'hui's
+        text = ("Compare ton temps à ton plan dans le débrief, et regarde ta fatigue redescendre dans Entraînement."
+                if today < free else
                 "Tu peux reprendre l'intensité, progressivement : ta VFC et ta FC au repos mettent parfois 2 semaines "
                 "à revenir.")
     else:
@@ -627,9 +678,9 @@ def race_block(route, sessions: list[Session], tr: dict | None, today: date, wei
            else "course de 3 h et plus" if exp_s is not None and exp_s >= LONG_S
            else "course de moins de 3 h" if exp_s is not None else "durée inconnue")
     taper = {
-        "days": taper_days(exp_s) + (7 if exp_s is not None and exp_s >= VERY_LONG_S else 0), "open": days <= CHART_DAYS,
+        "days": (rd - start).days, "open": days <= CHART_DAYS,
         "why": why + (" (estimée sans objectif de temps)" if estimated else ""),
-        "status": _taper_status(today, days, start, rd, tg, wk, exp_s),
+        "status": _taper_status(today, days, start, rd, tg, wk, base_h, exp_s),
         "chart": chart, "bullets": _bullets(today, days, rd, tg, base_h, chart is None, fam),
         "base": hm(base_h * 60) if base_h is not None and chart is None else None,
     }
