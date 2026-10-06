@@ -146,9 +146,9 @@ async def manual_sync(
             "<script>setTimeout(function () { window.location.reload(); }, 700);</script>"
         )
     if not user.has_strava_linked:
-        msg = "Strava non connecté."
+        msg = "Strava non connecté : connecte-le dans les Réglages."
     elif not user.has_own_strava_app:
-        msg = "Configure ton app Strava dans les Réglages pour activer la sync."
+        msg = "Reconnecte Strava dans les Réglages pour activer la sync."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."
     return HTMLResponse(f"<span>{msg}</span>")

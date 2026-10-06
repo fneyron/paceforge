@@ -44,6 +44,7 @@ async def _run_poll() -> dict:
                 User.initial_sync_done.is_(True),
                 User.strava_credentials_valid.is_(True),
                 User.strava_client_id.isnot(None),
+                User.strava_refresh_token.isnot(None),  # disconnected links have none
             )
         )
         users = result.scalars().all()

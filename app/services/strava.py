@@ -70,8 +70,22 @@ class StravaService:
             return response.json()
 
     async def refresh_token_if_needed(self, user: User) -> User:
+        if not user.strava_refresh_token or user.strava_token_expires_at is None:
+            raise StravaTokenError()  # disconnected: nothing to refresh
         if user.strava_token_expires_at > int(time.time()) + 300:
             return user
+        # one refresh at a time per athlete: Strava rotates the refresh token,
+        # so a worker that refreshed first (its pair maybe not committed yet)
+        # must be waited for and its pair used, not refreshed again (the
+        # athlete's row is locked until that worker commits)
+        await self.db.flush()
+        await self.db.refresh(user, attribute_names=[
+            "strava_access_token", "strava_refresh_token", "strava_token_expires_at"], with_for_update=True)
+        if not user.strava_refresh_token or user.strava_token_expires_at is None:
+            raise StravaTokenError()  # disconnected meanwhile
+        if user.strava_token_expires_at > int(time.time()) + 300:
+            return user
+        sent = user.strava_refresh_token
 
         logger.info("Refreshing Strava token for user %d", user.id)
         async with httpx.AsyncClient(timeout=30) as client:
@@ -84,8 +98,19 @@ class StravaService:
                     "grant_type": "refresh_token",
                 },
             )
-            if response.status_code == 401:
-                logger.error("Strava credentials invalid for user %d", user.id)
+            # 401: the app's keys are refused; 400: the athlete revoked the
+            # access on Strava. Either way only reconnecting helps, and the
+            # syncs stop asking until then (they skip invalid links).
+            if response.status_code in (400, 401):
+                # another worker may have refreshed first: Strava then refuses
+                # the refresh token we sent, but the stored pair is fine
+                await self.db.refresh(user, attribute_names=[
+                    "strava_access_token", "strava_refresh_token", "strava_token_expires_at"])
+                if not user.strava_refresh_token:
+                    raise StravaTokenError()  # disconnected meanwhile: nothing to flag
+                if user.strava_refresh_token != sent:
+                    return user
+                logger.error("Strava refused the refresh for user %d (%s)", user.id, response.status_code)
                 user.strava_credentials_valid = False
                 await self.db.flush()
                 raise StravaTokenError()
@@ -95,6 +120,7 @@ class StravaService:
                 raise StravaTokenError()
 
             data = response.json()
+            user.strava_credentials_valid = True  # a refresh that works heals a stale flag
             user.strava_access_token = data["access_token"]
             user.strava_refresh_token = data["refresh_token"]
             user.strava_token_expires_at = data["expires_at"]
@@ -264,29 +290,75 @@ class StravaService:
             logger.exception("Failed to create webhook subscription for user %d", user.id)
             return None
 
-    async def delete_webhook_subscription(self, subscription_id: int) -> None:
-        """Delete a Strava webhook subscription."""
+    async def delete_webhook_subscription(self, subscription_id: int) -> bool:
+        """Delete a Strava webhook subscription. True when it is gone (deleted
+        now, or already unknown to Strava)."""
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                await client.delete(
+                response = await client.delete(
                     f"{STRAVA_API_URL}/push_subscriptions/{subscription_id}",
                     params={
                         "client_id": self.client_id,
                         "client_secret": self.client_secret,
                     },
                 )
-            logger.info("Webhook subscription %d deleted", subscription_id)
         except Exception:
             logger.exception("Failed to delete webhook subscription %d", subscription_id)
+            return False
+        if response.status_code in (200, 204, 404):
+            logger.info("Webhook subscription %d deleted", subscription_id)
+            return True
+        logger.warning("Webhook subscription %d not deleted: %s", subscription_id, response.status_code)
+        return False
 
     async def deauthorize(self, user: User) -> None:
         try:
             user = await self.refresh_token_if_needed(user)
             async with httpx.AsyncClient(timeout=30) as client:
-                await client.post(
+                response = await client.post(  # token in the body, never in a logged URL
                     f"{STRAVA_OAUTH_URL}/deauthorize",
-                    params={"access_token": user.strava_access_token},
+                    data={"access_token": user.strava_access_token},
                 )
-            logger.info("Deauthorized Strava for user %d", user.id)
+            if response.status_code == 200:
+                logger.info("Deauthorized Strava for user %d", user.id)
+            else:
+                logger.warning("Strava deauthorize answered %s for user %d", response.status_code, user.id)
         except Exception:
             logger.exception("Failed to deauthorize Strava for user %d", user.id)
+
+
+def strava_status(user: User) -> dict:
+    """The Strava link as Réglages show it, like coros_status / garmin_status.
+    A link made without the athlete's own app keys (the old shared app) is
+    never synced: it needs reconnecting through the setup wizard."""
+    from app.services.health import _ago
+
+    if not user.has_strava_linked:
+        # stored keys Strava refused: say so and offer the wizard
+        return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid}
+    return {
+        "connected": True,
+        "needs_reauth": not (user.strava_credentials_valid and user.has_own_strava_app),
+        "last_sync_at": user.last_activity_poll_at,
+        "last_sync_ago": _ago(user.last_activity_poll_at),
+    }
+
+
+async def disconnect(db: AsyncSession, user: User) -> None:
+    """Revoke PaceForge on Strava (best effort), stop the athlete's own app
+    pushing to us, and forget the tokens. Activities already received stay;
+    the athlete and their app keys are kept, so reconnecting is one click."""
+    strava = StravaService.for_user(db, user)
+    await strava.deauthorize(user)
+    if user.has_own_strava_app and user.strava_webhook_subscription_id:
+        if await strava.delete_webhook_subscription(user.strava_webhook_subscription_id):
+            user.strava_webhook_subscription_id = None  # else kept, to retry on the next disconnect
+    user.strava_access_token = None
+    user.strava_refresh_token = None
+    user.strava_token_expires_at = None
+    # reconnecting fetches what was recorded meanwhile (the import skips
+    # what is already there), and Réglages say the first sync is running
+    user.initial_sync_done = False
+    user.last_activity_poll_at = None
+    await db.flush()
+    logger.info("Strava disconnected for user %d", user.id)

@@ -236,9 +236,27 @@ async def reset_password(
 # Strava linking (no longer auth — just account linking)
 # ---------------------------------------------------------------------------
 
+def _remember_next(request: Request, next: str | None) -> None:
+    """A connect started from Réglages comes back there, whatever happens."""
+    if next == "settings":
+        request.session["strava_next"] = "/settings#strava"
+    else:
+        request.session.pop("strava_next", None)
+
+
+def _back_to_settings(request: Request, error: str) -> RedirectResponse | None:
+    url = request.session.pop("strava_next", None)
+    if not url:
+        return None
+    request.session["strava_error"] = error
+    return RedirectResponse(url=url, status_code=302)
+
+
 @router.get("/auth/strava")
-async def strava_link(request: Request, db: AsyncSession = Depends(get_db)):
-    """Redirect to Strava OAuth to link account. User must be logged in."""
+async def strava_link(request: Request, next: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Redirect to Strava OAuth to link account. User must be logged in.
+    Without the athlete's own Strava app keys yet, the setup wizard asks for
+    them first (that is the only place they are typed)."""
     user_id = request.session.get("user_id")
     if not user_id:
         return RedirectResponse(url="/auth/login", status_code=302)
@@ -252,12 +270,20 @@ async def strava_link(request: Request, db: AsyncSession = Depends(get_db)):
     pending_id = request.session.get("pending_client_id")
     pending_secret = request.session.get("pending_client_secret")
 
+    _remember_next(request, next)
+    if next == "settings":
+        # from Réglages the keys were not just typed: keys left in the session
+        # by an abandoned wizard must not win over the stored ones
+        request.session.pop("pending_client_id", None)
+        request.session.pop("pending_client_secret", None)
+        pending_id = pending_secret = None
+    setup = "/setup?next=settings" if next == "settings" else "/setup"
     if pending_id and pending_secret:
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
-    elif user.has_own_strava_app:
+    elif user.has_own_strava_app and user.strava_credentials_valid:
         strava = StravaService.for_user(db, user)
-    else:
-        return RedirectResponse(url="/setup", status_code=302)
+    else:  # no keys yet, or keys Strava refused: the wizard asks for them
+        return RedirectResponse(url=setup, status_code=302)
 
     return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
 
@@ -271,7 +297,11 @@ async def strava_callback(
 ):
     if error or not code:
         logger.error("Strava OAuth error: %s", error)
-        return RedirectResponse(url="/setup?error=auth_failed", status_code=302)
+        request.session.pop("pending_client_id", None)
+        request.session.pop("pending_client_secret", None)
+        back = _back_to_settings(request, "Connexion à Strava annulée." if error == "access_denied"
+                                 else "La connexion à Strava a échoué. Réessaie.")
+        return back or RedirectResponse(url="/setup?error=auth_failed", status_code=302)
 
     user_id = request.session.get("user_id")
     if not user_id:
@@ -296,11 +326,21 @@ async def strava_callback(
     # Exchange code for tokens
     try:
         token_data = await strava.exchange_token(code)
-    except Exception:
+    except Exception as exc:
         logger.exception("Strava token exchange failed")
-        request.session.pop("pending_client_id", None)
+        typed = request.session.pop("pending_client_id", None)
         request.session.pop("pending_client_secret", None)
-        return RedirectResponse(url="/setup?error=invalid_credentials", status_code=302)
+        # keys just typed in the wizard: type them again there (and still come
+        # back to Réglages after); stored keys refused: say so in Réglages,
+        # which then offers the wizard; anything else: just try again
+        refused = getattr(exc, "status_code", None) in (400, 401)
+        if not typed and refused and user.has_own_strava_app:
+            user.strava_credentials_valid = False
+            await db.commit()
+        back = None if typed else _back_to_settings(
+            request, "Strava refuse les clés de ton app : change-les." if refused
+            else "La connexion à Strava a échoué. Réessaie.")
+        return back or RedirectResponse(url="/setup?error=invalid_credentials", status_code=302)
 
     athlete = token_data.get("athlete", {})
     strava_athlete_id = athlete.get("id")
@@ -348,12 +388,17 @@ async def strava_callback(
     user.strava_access_token = token_data["access_token"]
     user.strava_refresh_token = token_data["refresh_token"]
     user.strava_token_expires_at = token_data["expires_at"]
+    user.strava_credentials_valid = True  # the keys just worked
     user.firstname = user.firstname or athlete.get("firstname")
     user.lastname = user.lastname or athlete.get("lastname")
     user.profile_picture_url = athlete.get("profile")
 
     # Persist Strava app credentials from setup wizard
     if pending_id and pending_secret:
+        if user.strava_webhook_subscription_id and user.has_own_strava_app and user.strava_client_id != pending_id:
+            # another app: its subscription goes (with its own keys), the new app gets one below
+            await StravaService.for_user(db, user).delete_webhook_subscription(user.strava_webhook_subscription_id)
+            user.strava_webhook_subscription_id = None
         user.strava_client_id = pending_id
         user.strava_client_secret_encrypted = encrypt_secret(pending_secret)
         user.strava_credentials_valid = True
@@ -381,7 +426,10 @@ async def strava_callback(
         logger.info("Triggered initial sync for user %d", user.id)
 
     await db.commit()
-    return RedirectResponse(url="/dashboard", status_code=302)
+    next_url = request.session.pop("strava_next", None)
+    if next_url:
+        request.session["strava_ok"] = "Strava connecté. Tes séances arrivent."
+    return RedirectResponse(url=next_url or "/dashboard", status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +437,9 @@ async def strava_callback(
 # ---------------------------------------------------------------------------
 
 @router.get("/setup", response_class=HTMLResponse)
-async def setup_page(request: Request, error: str | None = None):
+async def setup_page(request: Request, error: str | None = None, next: str | None = None):
+    if next is not None or error is None:  # a fresh visit; an error page keeps the way back
+        _remember_next(request, next)
     return templates.TemplateResponse(
         request, "setup.html",
         context={
