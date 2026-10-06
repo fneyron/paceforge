@@ -29,6 +29,7 @@ HealthMetric (store_daily, source "COROS" or "Garmin"), the extras in `details`:
 Older rows may come from the Apple Health import PaceForge had before.
 """
 import logging
+import math
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
@@ -350,7 +351,8 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
         7-day HRV mean below baseline mean − 1 SD; 7-day resting HR ≥ baseline + 5 bpm
     - mild signals: HRV below mean − ½ SD; resting HR ≥ baseline + 3 bpm;
         sleep below 6 h a night on average, or 45 min under its own baseline
-    - the HRV SD is floored at 5 % of the mean;
+    - HRV is read on ln(RMSSD), its SD floored at 0.05 (≈ 5 %); the band and
+      the means are given back in ms;
     - fatigue = one strong or two mild; watch = one mild; fresh = none and HRV
       above mean + ½ SD; ok = none. Unknown until HRV or resting HR has
       14 baseline days and 3 recent days.
@@ -366,7 +368,7 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
         return recent, base
 
     out: dict = {
-        "hrv_7d": None, "hrv_baseline": None, "hrv_sd": None, "hrv_delta_pct": None,
+        "hrv_7d": None, "hrv_baseline": None, "hrv_sd": None, "hrv_z": None, "hrv_band": None, "hrv_delta_pct": None,
         "rhr_7d": None, "rhr_baseline": None, "rhr_sd": None, "rhr_delta_bpm": None,
         "sleep_avg_min": None, "sleep_baseline_min": None, "sleep_delta_min": None,
     }
@@ -374,25 +376,29 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
     usable = False
     hrv_high = False
 
+    # HRV on ln(RMSSD): it is skewed, and its noise grows with its level (Plews 2013)
     recent, base = split("hrv")
+    recent, base = [math.log(v) for v in recent if v > 0], [math.log(v) for v in base if v > 0]
     if recent:
-        out["hrv_7d"] = round(statistics.fmean(recent), 1)
+        out["hrv_7d"] = round(math.exp(statistics.fmean(recent)), 1)
     if len(recent) >= MIN_RECENT_DAYS and len(base) >= MIN_BASELINE_DAYS:
         usable = True
         mean = statistics.fmean(base)
         # a very steady baseline must not turn a 2 % dip into a signal (day-to-day
         # overnight HRV normally varies 10–15 %)
-        sd = max(statistics.stdev(base), 0.05 * mean)
+        sd = max(statistics.stdev(base), 0.05)
         r = statistics.fmean(recent)
-        out.update(hrv_baseline=round(mean, 1), hrv_sd=round(sd, 1),
-                   hrv_delta_pct=round((r / mean - 1) * 100, 1))
-        if r < mean - sd:
+        z = (r - mean) / sd
+        out.update(hrv_baseline=round(math.exp(mean), 1), hrv_sd=round(sd, 3), hrv_z=round(z, 2),
+                   hrv_band=(round(math.exp(mean - 0.5 * sd), 1), round(math.exp(mean + 0.5 * sd), 1)),
+                   hrv_delta_pct=round((math.exp(r - mean) - 1) * 100, 1))
+        if z < -1:
             strong += 1
             reasons.append("VFC nettement sous ta normale")
-        elif r < mean - 0.5 * sd:
+        elif z < -0.5:
             mild += 1
             reasons.append("VFC un peu sous ta normale")
-        elif r > mean + 0.5 * sd:
+        elif z > 0.5:
             hrv_high = True
 
     recent, base = split("rhr")

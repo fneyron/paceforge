@@ -1,0 +1,29 @@
+{# Santé building blocks. Tone → class written out here: tailwind.css is prebuilt from the templates. #}
+{% set WORDS = {'ok': 'pf-word-ok', 'warn': 'pf-word-warn', 'danger': 'pf-word-danger', 'muted': 'pf-word-muted', 'accent': 'pf-word-accent'} %}
+
+{# a gauge: zones, the athlete's band, the value as a dot, band edges under the track — all in % (HTML, never a stretched SVG) #}
+{% macro gauge(g, tone='muted', hollow=None) %}
+<div class="pf-g" aria-hidden="true">
+    <div class="pf-g-track">
+        {% for z in g.zones %}<span class="pf-gz pf-{{ z.cls }}" style="left: {{ z.l }}%; width: {{ z.w }}%"></span>{% endfor %}
+        {% if g.band %}<span class="pf-g-band" style="left: {{ g.band.l }}%; width: {{ g.band.w }}%"></span>{% endif %}
+        {% if hollow is not none %}<span class="pf-g-dot pf-g-hollow" style="left: {{ hollow }}%"></span>{% endif %}
+        <span class="pf-g-dot pf-g-dot-{{ tone }}" style="left: {{ g.dot }}%"></span>
+    </div>
+    {% if g.edges %}<div class="pf-g-edges">{% for e in g.edges %}<span class="pf-g-edge pf-g-{{ e.align }}" style="left: {{ e.x }}%">{{ e.label }}</span>{% endfor %}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# one signal: label · window | value + reference | word, then its gauge #}
+{% macro row(r) %}
+<div class="pf-row{{ ' pf-row-driver' if r.driver }}{{ ' pf-row-watch' if r.key == 'watch' }}">
+    <div class="pf-row-head">
+        <span class="pf-row-label">{{ r.label }}{% if r.window %} <small>· {{ r.window }}</small>{% endif %}</span>
+        <span class="pf-row-word {{ WORDS[r.tone] }}">{{ r.word }}</span>
+        <span class="pf-row-value"><b class="tabular-nums">{{ r.value }}</b>{% if r.ref %} <small>{{ r.ref }}</small>{% endif %}</span>
+    </div>
+    {{ gauge(r.gauge, r.tone) }}
+    {% if r.sub %}<p class="pf-row-sub">{% if r.sub_href %}<a href="{{ r.sub_href }}">{{ r.sub }} →</a>{% else %}{{ r.sub }}{% endif %}</p>{% endif %}
+    {% if r.href %}<p class="pf-row-sub"><a href="{{ r.href }}" data-vue-link>{{ r.link }} →</a></p>{% endif %}
+</div>
+{% endmacro %}
