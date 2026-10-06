@@ -1,12 +1,18 @@
-"""Garmin link from Réglages and Santé: login (email + password, then the MFA
-code when Garmin asks for one), manual sync, disconnect.
+"""Garmin link from Réglages and Santé: login on Garmin's own page (first
+choice), or email + password then the MFA code (fallback), manual sync,
+disconnect.
 
-The login runs in the background (app.services.garmin.start_login): the page
+The page login: /garmin/authorize sends the athlete to Garmin with a state that
+rides in the session cookie and in the return URL; /garmin/callback checks it
+and exchanges the ticket. The password login runs in the background (app.services.garmin.start_login): the page
 polls its state with HTMX. The ticket rides in the (signed) session cookie;
 the password is never stored.
 """
 import logging
+import secrets
 from urllib.parse import urlsplit
+
+import httpx
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -24,6 +30,52 @@ router = APIRouter(tags=["garmin"])
 
 _SETTINGS = "/settings#garmin"
 _TICKET = "garmin_login"
+_SSO = "garmin_sso"
+
+
+def _back(request: Request, error: str | None = None, ok: str | None = None) -> RedirectResponse:
+    if error:
+        request.session["garmin_error"] = error
+    if ok:
+        request.session["garmin_ok"] = ok
+    return RedirectResponse(url=_SETTINGS, status_code=303)
+
+
+@router.get("/garmin/authorize")
+async def garmin_authorize(request: Request, region: str | None = None, user: User = Depends(get_current_user)):
+    """Send the athlete to Garmin's sign-in page; Garmin comes back to /garmin/callback."""
+    region = region if region in garmin.REGIONS else garmin.DEFAULT_REGION
+    state = secrets.token_urlsafe(24)
+    request.session[_SSO] = {"state": state, "region": region}
+    domain = garmin.region_domain(region)
+    return RedirectResponse(url=garmin.sso_url(domain, garmin.sso_service(state)), status_code=302)
+
+
+@router.get("/garmin/callback")
+async def garmin_callback(
+    request: Request,
+    state: str | None = None,
+    ticket: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    pending = request.session.pop(_SSO, None)
+    if not pending or not state or not secrets.compare_digest(str(state), str(pending.get("state"))):
+        return _back(request, error="La connexion à Garmin a expiré. Réessaie.")
+    if not ticket or not ticket.startswith("ST-"):
+        return _back(request, error="Garmin n'a pas renvoyé d'autorisation. Réessaie.")
+    domain = garmin.region_domain(pending.get("region"))
+    try:
+        tokens = await garmin.exchange_ticket(domain, ticket, garmin.sso_service(state))
+    except garmin.GarminError as e:
+        return _back(request, error=str(e))
+    except httpx.HTTPError:
+        logger.exception("Garmin ticket exchange failed for user %d", user.id)
+        return _back(request, error="Garmin ne répond pas pour l'instant. Réessaie dans quelques minutes.")
+    await garmin.save_connection(db, user.id, domain, tokens)
+    await db.commit()  # the background sync reads the link from its own session
+    garmin.schedule_sync(user.id)
+    return _back(request, ok="Garmin connecté. Tes 60 derniers jours et tes séances arrivent : compte quelques minutes.")
 
 
 def _login_partial(request: Request, state: dict | None, region: str | None = None) -> HTMLResponse:

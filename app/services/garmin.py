@@ -3,8 +3,12 @@ sessions it recorded.
 
 Garmin publishes no MCP server or public athlete API, so PaceForge reads
 Garmin Connect the way its mobile app does, with no AI involved:
-- Login: the athlete types their Garmin email and password once, in Réglages.
-  The python-garminconnect library (mobile SSO, then the "DI" OAuth exchange)
+- Login, first choice: Garmin's own sign-in page. PaceForge sends the athlete
+  to sso.garmin.com with its callback as the CAS "service"; Garmin handles the
+  password and the MFA code, then comes back with a service ticket, exchanged
+  for DI tokens (sso_url, exchange_ticket).
+- Login, fallback: the athlete types their Garmin email and password once, in
+  Réglages. The python-garminconnect library (mobile SSO, then the "DI" OAuth exchange)
   does it in a thread; the password only lives in that thread's memory and is
   never stored. When Garmin asks for a code (MFA) the login waits for it.
   A login runs in the web worker that started it, while the code may arrive on
@@ -33,7 +37,7 @@ import logging
 import secrets
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from sqlalchemy import func, or_, select, update
@@ -440,6 +444,61 @@ async def submit_code(ticket: str, user_id: int, code: str) -> bool:
     await store().push_code(ticket, code.strip())
     await _set(ticket, user_id, "running", "Vérification du code…")
     return True
+
+
+# ── login on Garmin's own page (CAS service ticket) ─────────────────────────
+
+# the mobile app's DI clients, newest first (as python-garminconnect tries them)
+DI_CLIENT_IDS = ("GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2", "GARMIN_CONNECT_MOBILE_ANDROID_DI_2024Q4",
+                 "GARMIN_CONNECT_MOBILE_ANDROID_DI", "GARMIN_CONNECT_MOBILE_IOS_DI")
+DI_GRANT_TYPE = "https://connectapi.garmin.com/di-oauth2-service/oauth/grant/service_ticket"
+SSO_CALLBACK_PATH = "/garmin/callback"
+
+
+def sso_service(state: str) -> str:
+    """Where Garmin sends the athlete back; the ticket exchange must name the
+    very same URL."""
+    return f"{settings.BASE_URL.rstrip('/')}{SSO_CALLBACK_PATH}?{urlencode({'state': state})}"
+
+
+def sso_url(domain: str, service: str) -> str:
+    """Garmin's sign-in page, as Garmin Connect's web site opens it."""
+    sso = f"https://sso.{domain}/sso"
+    return f"{sso}/signin?" + urlencode({
+        "service": service, "webhost": service, "source": service,
+        "redirectAfterAccountLoginUrl": service, "redirectAfterAccountCreationUrl": service,
+        "gauthHost": sso, "locale": "fr_FR", "id": "gauth-widget", "clientId": "GarminConnect",
+        "rememberMeShown": "true", "rememberMeChecked": "false", "createAccountShown": "true",
+        "openCreateAccount": "false", "displayNameShown": "false", "consumeServiceTicket": "false",
+        "initialFocus": "true", "embedWidget": "false", "generateExtraServiceTicket": "true",
+        "generateTwoExtraServiceTickets": "false", "generateNoServiceTicket": "false",
+    })
+
+
+async def exchange_ticket(domain: str, ticket: str, service: str) -> dict:
+    """The DI tokens for a service ticket, trying each mobile client. GarminError
+    when Garmin accepts none (the ticket may only be valid for its own sites)."""
+    last = None
+    async with http_client() as client:
+        for client_id in DI_CLIENT_IDS:
+            r = await client.post(
+                f"https://diauth.{domain}/di-oauth2-service/oauth/token",
+                headers={**_APP_HEADERS, "Accept": "application/json", "Cache-Control": "no-cache",
+                         "Authorization": "Basic " + base64.b64encode(f"{client_id}:".encode()).decode()},
+                data={"client_id": client_id, "service_ticket": ticket, "grant_type": DI_GRANT_TYPE,
+                      "service_url": service})
+            if r.status_code == 429:
+                raise GarminRateLimited("Garmin bloque les connexions pour l'instant. Réessaie dans une heure.")
+            try:
+                body = r.json()
+            except ValueError:
+                body = {}
+            if r.status_code == 200 and isinstance(body, dict) and body.get("access_token"):
+                return {"di_token": body["access_token"], "di_refresh_token": body.get("refresh_token"),
+                        "di_client_id": _jwt_claims(body["access_token"]).get("client_id") or client_id}
+            last = (r.status_code, body.get("error_description") if isinstance(body, dict) else None)
+    logger.warning("Garmin ticket exchange refused by every client: %s", last)
+    raise GarminError("Garmin n'a pas accepté la connexion depuis sa page : utilise la connexion par mot de passe.")
 
 
 # ── API client ──────────────────────────────────────────────────────────────
