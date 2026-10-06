@@ -1,7 +1,11 @@
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 
 from app.config import settings
+
+logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs can carry tokens
 
 celery_app = Celery(
     "paceforge",

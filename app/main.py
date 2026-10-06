@@ -15,6 +15,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO, query string included (Strava's
+# deauthorize and webhook calls carry a token or the app secret there)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

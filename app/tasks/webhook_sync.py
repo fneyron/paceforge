@@ -43,6 +43,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
                 User.strava_athlete_id == owner_id,
                 User.strava_credentials_valid.is_(True),
                 User.strava_client_id.isnot(None),
+                User.strava_refresh_token.isnot(None),  # disconnected links have none
             )
         )
         user = result.scalar_one_or_none()
