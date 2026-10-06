@@ -91,8 +91,6 @@ class FakeGarmin:
         self.calls: list[tuple[str, dict]] = []
         self.token_calls: list[dict] = []
         self.token_auth: list[str] = []
-        self.ticket_calls: list[dict] = []
-        self.ticket_clients = set(garmin.DI_CLIENT_IDS)
         self.api_status: int | None = None
         self.reject_tokens: set[str] = set()
         self.refresh_status = 200
@@ -105,13 +103,6 @@ class FakeGarmin:
         url = urlsplit(str(request.url))
         if url.netloc.startswith("diauth."):
             form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
-            if form.get("grant_type") == garmin.DI_GRANT_TYPE:
-                self.ticket_calls.append(form)
-                if form["service_ticket"] != "ST-good" or form["client_id"] not in self.ticket_clients:
-                    return httpx.Response(400, json={"error": "invalid_request",
-                                                     "error_description": "invalid service ticket provided"})
-                return httpx.Response(200, json={"access_token": jwt(form["client_id"], tag="sso"),
-                                                 "refresh_token": "rt-sso", "expires_in": 72000})
             self.token_calls.append(form)
             self.token_auth.append(request.headers.get("authorization", ""))
             if self.refresh_status != 200:
@@ -483,13 +474,13 @@ async def _until(ticket, user_id, state):
 
 
 async def test_login_stores_the_tokens_never_the_password(db_session: AsyncSession, test_user: User, login):
-    ticket = await garmin.start_login(test_user.id, " me@x.fr ", "s3cret", "chine")
+    ticket = await garmin.start_login(test_user.id, " me@x.fr ", "s3cret")
     await _settle()
     assert (await garmin.login_state(ticket, test_user.id))["state"] == "done"
     assert await garmin.login_state(ticket, test_user.id + 1) is None  # another athlete sees nothing
-    assert login["domain"] == "garmin.cn" and login["client"].seen == [("login", "me@x.fr", "s3cret", True)]
+    assert login["domain"] == "garmin.com" and login["client"].seen == [("login", "me@x.fr", "s3cret", True)]
     conn = await garmin.connection_for(db_session, test_user.id)
-    assert conn.domain == "garmin.cn" and decrypt_secret(conn.refresh_token_encrypted) == "rt-login"
+    assert conn.domain == "garmin.com" and decrypt_secret(conn.refresh_token_encrypted) == "rt-login"
     assert garmin._jwt_claims(decrypt_secret(conn.access_token_encrypted))["tag"] == "login"
     stored = json.dumps([str(getattr(conn, c.name)) for c in GarminConnection.__table__.columns])
     assert "s3cret" not in stored and "me@x.fr" not in stored
@@ -497,7 +488,7 @@ async def test_login_stores_the_tokens_never_the_password(db_session: AsyncSessi
 
 async def test_login_with_mfa_retries_a_wrong_code(db_session: AsyncSession, test_user: User, login):
     login["client"] = FakeLoginClient(mfa=True)
-    ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw", "monde")
+    ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw")
     await _until(ticket, test_user.id, "mfa")
     assert await garmin.submit_code(ticket, test_user.id, "000000")
     s = await _until(ticket, test_user.id, "mfa")
@@ -523,7 +514,7 @@ async def test_login_errors_in_plain_french(test_user: User, login):
                            (GarminConnectConnectionError("boom"),
                             "Garmin ne répond pas pour l'instant. Réessaie dans quelques minutes.")):
         login["client"] = FakeLoginClient(error=error)
-        ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw", None)
+        ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw")
         await _settle()
         assert await garmin.login_state(ticket, test_user.id) == {"user_id": test_user.id, "state": "error",
                                                                  "message": message}
@@ -533,7 +524,6 @@ async def test_login_errors_in_plain_french(test_user: User, login):
 
 async def test_routes_require_login(client: AsyncClient):
     for method, path in (("POST", "/garmin/connect"), ("GET", "/garmin/login"), ("POST", "/garmin/mfa"),
-                         ("GET", "/garmin/authorize"), ("GET", "/garmin/callback?state=a&ticket=ST-1"),
                          ("POST", "/settings/garmin/sync"), ("POST", "/settings/garmin/disconnect")):
         r = await client.request(method, path)
         assert r.status_code == 307 and r.headers["location"] == "/", path
@@ -542,12 +532,13 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: AsyncSession, test_user: User, login):
     page = (await as_user.get("/settings")).text
     assert 'id="garmin"' in page and 'hx-post="/garmin/connect"' in page and "PaceForge ne le garde pas" in page
+    assert "/garmin/authorize" not in page and 'name="region"' not in page  # one login, one server
 
     r = await as_user.post("/garmin/connect", data={"email": "", "password": ""})
     assert "Indique ton email et ton mot de passe Garmin." in r.text
 
     login["client"] = FakeLoginClient(mfa=True)
-    r = await as_user.post("/garmin/connect", data={"email": "me@x.fr", "password": "pw", "region": "monde"})
+    r = await as_user.post("/garmin/connect", data={"email": "me@x.fr", "password": "pw"})
     assert 'hx-get="/garmin/login"' in r.text and "Connexion à Garmin" in r.text
     for _ in range(200):
         r = await as_user.get("/garmin/login")
@@ -595,57 +586,6 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
 async def test_sante_offers_both_watches_when_none_is_linked(as_user: AsyncClient):
     page = (await as_user.get("/sante")).text
     assert 'href="/settings#coros"' in page and 'href="/settings#garmin"' in page
-
-
-# ── login on Garmin's page ──────────────────────────────────────────────────
-
-async def test_authorize_sends_the_athlete_to_garmin_with_a_state(as_user: AsyncClient):
-    page = (await as_user.get("/settings")).text
-    assert 'href="/garmin/authorize?region=monde"' in page and "Se connecter sur Garmin" in page
-    r = await as_user.get("/garmin/authorize?region=chine")
-    assert r.status_code == 302
-    url = urlsplit(r.headers["location"])
-    q = {k: v[0] for k, v in parse_qs(url.query).items()}
-    assert url.netloc == "sso.garmin.cn" and url.path == "/sso/signin"
-    service = urlsplit(q["service"])
-    assert service.path == "/garmin/callback" and q["redirectAfterAccountLoginUrl"] == q["service"]
-    assert parse_qs(service.query)["state"][0]
-
-
-async def _sso_round(c: AsyncClient, ticket: str = "ST-good") -> httpx.Response:
-    r = await c.get("/garmin/authorize")
-    service = parse_qs(urlsplit(r.headers["location"]).query)["service"][0]
-    state = parse_qs(urlsplit(service).query)["state"][0]
-    return await c.get(f"/garmin/callback?state={state}&ticket={ticket}"), service
-
-
-async def test_callback_exchanges_the_ticket_and_stores_the_link(as_user: AsyncClient, db_session: AsyncSession,
-                                                                 test_user: User, fake):
-    fake.ticket_clients = {"GARMIN_CONNECT_MOBILE_ANDROID_DI"}  # the third one Garmin accepts
-    r, service = await _sso_round(as_user)
-    assert r.status_code == 303 and r.headers["location"] == "/settings#garmin"
-    assert [c["client_id"] for c in fake.ticket_calls] == list(garmin.DI_CLIENT_IDS[:3])
-    assert all(c["service_url"] == service and c["service_ticket"] == "ST-good" for c in fake.ticket_calls)
-    conn = await garmin.connection_for(db_session, test_user.id)
-    assert conn.domain == "garmin.com" and conn.di_client_id == "GARMIN_CONNECT_MOBILE_ANDROID_DI"
-    assert decrypt_secret(conn.refresh_token_encrypted) == "rt-sso"
-    assert "Garmin connecté" in (await as_user.get("/settings")).text
-    # the state is used once
-    r = await as_user.get(f"/garmin/callback?{urlsplit(service).query}&ticket=ST-good")
-    assert "La connexion à Garmin a expiré. Réessaie." in (await as_user.get("/settings")).text
-
-
-async def test_callback_refusals_point_to_the_password_login(as_user: AsyncClient, db_session: AsyncSession,
-                                                             test_user: User, fake):
-    r = await as_user.get("/garmin/callback?state=forged&ticket=ST-good")
-    assert "La connexion à Garmin a expiré. Réessaie." in (await as_user.get("/settings")).text
-    r, _ = await _sso_round(as_user, ticket="")
-    assert "pas renvoyé d&#39;autorisation" in (await as_user.get("/settings")).text
-    r, _ = await _sso_round(as_user, ticket="ST-refused")
-    assert len(fake.ticket_calls) == len(garmin.DI_CLIENT_IDS)  # every client tried
-    page = (await as_user.get("/settings")).text
-    assert "utilise la connexion par mot de passe" in page and "Connexion par mot de passe" in page
-    assert await garmin.connection_for(db_session, test_user.id) is None
 
 
 # ── migration ───────────────────────────────────────────────────────────────
