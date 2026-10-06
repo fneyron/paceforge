@@ -18,9 +18,9 @@ Garmin Connect the way its mobile app does, with no AI involved:
   stages with their real times, overnight HRV), resting HR and VO2 max become
   HealthSample rows (source "Garmin") through health.store_samples; the values
   Garmin gives per day (training readiness as recovery, acute/chronic load,
-  stress, steps, body battery, HRV normal range, race predictions) go straight
-  to HealthMetric (health.store_daily). Sessions go to Activity (a session
-  Strava already has only gets its Garmin id).
+  stress, steps, body battery, HRV normal range, sleep score, race
+  predictions) go straight to HealthMetric (health.store_daily). Sessions go
+  to Activity (a session Strava already has only gets its Garmin id).
   60 days of health and 180 days of sessions the first time, then the last
   7 days, at most every 2 hours (Celery beat, app.tasks.garmin_sync), right
   after connecting and on demand.
@@ -470,7 +470,8 @@ class GarminApi:
 
 class _Fetcher:
     """Calls with a small pause between them and a cap per sync. A failed call
-    only loses that piece; a rate limit or a lost link stops the sync."""
+    (an error, a timeout, a 5xx) only loses that piece; a rate limit or a lost
+    link stops the sync."""
 
     def __init__(self, api: GarminApi):
         self.api, self.calls, self.failed = api, 0, 0
@@ -529,8 +530,9 @@ _LEVELS = {0: "deep", 1: "core", 2: "rem", 3: "awake"}
 
 def parse_sleep(data) -> dict | None:
     """dailySleepData of one night (named by its wake-up day): the main sleep
-    window, minutes per stage, the stage intervals when Garmin gives them, and
-    the overnight HRV and resting HR it carries."""
+    window, minutes per stage, the stage intervals when Garmin gives them, the
+    overnight HRV and resting HR it carries, and the sleep score with its
+    qualifier (GOOD, FAIR…)."""
     if not isinstance(data, dict):
         return None
     dto = data.get("dailySleepDTO") or {}
@@ -544,8 +546,11 @@ def parse_sleep(data) -> dict | None:
         v = _f(dto.get(key))
         if v is not None:
             stages[kind] = round(v / 60)
+    scores = dto.get("sleepScores") if isinstance(dto.get("sleepScores"), dict) else {}
+    overall = scores.get("overall") if isinstance(scores.get("overall"), dict) else {}
     out = {"day": day, "start": start, "end": end, "stages": stages, "intervals": [],
-           "hrv": _f(data.get("avgOvernightHrv")), "rhr": _f(data.get("restingHeartRate"))}
+           "hrv": _f(data.get("avgOvernightHrv")), "rhr": _f(data.get("restingHeartRate")),
+           "score": _f(overall.get("value")), "qualifier": overall.get("qualifierKey")}
     gmt_start = _f(dto.get("sleepStartTimestampGMT"))
     if gmt_start is not None:
         offset = timedelta(milliseconds=_f(dto.get("sleepStartTimestampLocal")) - gmt_start)
@@ -797,6 +802,10 @@ def build_daily(data: dict, today: date) -> list[Daily]:
         if _ok(v["lo"], 5, 300) and _ok(v["hi"], v["lo"], 300):
             base = v["base"] if _ok(v.get("base"), 5, 300) else round((v["lo"] + v["hi"]) / 2, 1)
             out.append(Daily("hrv_norm", d, base, {"lo": v["lo"], "hi": v["hi"]}))
+    for d, n in (data.get("nights") or {}).items():
+        if _ok(n.get("score"), 1, 100):
+            out.append(Daily("sleep_score", d, n["score"],
+                             {"qualifier": n["qualifier"]} if n.get("qualifier") else None))
     fit: dict = {}
     vo2 = data["vo2max"].get(max(data["vo2max"], default=None)) if data["vo2max"] else None
     if _ok(vo2, 10, 95):
@@ -837,29 +846,9 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
     data: dict = {"nights": {}, "summaries": {}, "hrv": {}, "hrv_range": {}, "vo2max": {},
                   "load": None, "readiness": None, "predictions": {}, "activities": []}
     name = await _display_name(db, conn, call)
-    # what changes every day first (today's readiness and load), then the history
-    data["readiness"] = (parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today + timedelta(days=1)}"))
-                         or parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today}")))
-    data["load"] = parse_training_status(await call(f"/metrics-service/metrics/trainingstatus/aggregated/{today}"))
-    for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
-        values, ranges = parse_hrv(await call(f"/hrv-service/hrv/daily/{a}/{b}"))
-        data["hrv"].update(values)
-        data["hrv_range"].update(ranges)
-    data["vo2max"] = parse_vo2max(await call(f"/metrics-service/metrics/maxmet/daily/{lo}/{today}"))
-    page = 0
-    since = today - timedelta(days=activity_days - 1)
-    while page < 10:
-        rows = await call("/activitylist-service/activities/search/activities",
-                          {"startDate": since.isoformat(), "start": page * ACTIVITY_PAGE, "limit": ACTIVITY_PAGE})
-        if not isinstance(rows, list) or not rows:
-            break
-        data["activities"] += rows
-        if len(rows) < ACTIVITY_PAGE:
-            break
-        page += 1
-    if name:
-        q = quote(name, safe="")
-        data["predictions"] = parse_predictions(await call(f"/metrics-service/metrics/racepredictions/latest/{q}"))
+    q = quote(name, safe="") if name else None
+    # the nights first (last night is what the morning's decision reads), the sessions last
+    if q:
         # Garmin dates days on the athlete's clock, which can be a day ahead of
         # the server's (UTC): ask for that day too (a future day is just empty)
         for i in range(-1, days - 1):  # same number of days, one later
@@ -872,6 +861,27 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
                                                {"calendarDate": d.isoformat()}))
             if summary:
                 data["summaries"][summary["day"]] = summary
+    for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
+        values, ranges = parse_hrv(await call(f"/hrv-service/hrv/daily/{a}/{b}"))
+        data["hrv"].update(values)
+        data["hrv_range"].update(ranges)
+    data["readiness"] = (parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today + timedelta(days=1)}"))
+                         or parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today}")))
+    data["load"] = parse_training_status(await call(f"/metrics-service/metrics/trainingstatus/aggregated/{today}"))
+    data["vo2max"] = parse_vo2max(await call(f"/metrics-service/metrics/maxmet/daily/{lo}/{today}"))
+    if q:
+        data["predictions"] = parse_predictions(await call(f"/metrics-service/metrics/racepredictions/latest/{q}"))
+    page = 0
+    since = today - timedelta(days=activity_days - 1)
+    while page < 10:
+        rows = await call("/activitylist-service/activities/search/activities",
+                          {"startDate": since.isoformat(), "start": page * ACTIVITY_PAGE, "limit": ACTIVITY_PAGE})
+        if not isinstance(rows, list) or not rows:
+            break
+        data["activities"] += rows
+        if len(rows) < ACTIVITY_PAGE:
+            break
+        page += 1
     return data
 
 

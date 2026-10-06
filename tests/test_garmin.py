@@ -44,7 +44,7 @@ def _ms(dt: datetime) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def night(day: date, levels: bool = True, hrv: float | None = 62.0) -> dict:
+def night(day: date, levels: bool = True, hrv: float | None = 62.0, score: int | None = 82) -> dict:
     """dailySleepData of the night ending on `day`: 23:00 → 06:30 local, the
     athlete 2 h ahead of GMT."""
     start, end = datetime.combine(day - timedelta(days=1), datetime.min.time()) + timedelta(hours=23), \
@@ -55,6 +55,9 @@ def night(day: date, levels: bool = True, hrv: float | None = 62.0) -> dict:
            "sleepStartTimestampGMT": _ms(start - gmt), "sleepEndTimestampGMT": _ms(end - gmt),
            "deepSleepSeconds": 5400, "lightSleepSeconds": 13800, "remSleepSeconds": 6000,
            "awakeSleepSeconds": 1800}
+    if score is not None:
+        dto["sleepScores"] = {"totalDuration": {"qualifierKey": "EXCELLENT"},
+                              "overall": {"value": score, "qualifierKey": "GOOD" if score else None}}
     out = {"dailySleepDTO": dto, "avgOvernightHrv": hrv, "restingHeartRate": 44}
     if levels:
         g = start - gmt
@@ -95,6 +98,8 @@ class FakeGarmin:
         self.api_status: int | None = None
         self.reject_tokens: set[str] = set()
         self.refresh_status = 200
+        self.timeouts: set[str] = set()  # path prefixes whose call times out
+        self.statuses: dict[str, int] = {}  # path prefix → HTTP status
         self.n = 0
         midnight = datetime.combine(today, datetime.min.time())
         self.activities = [activity(9001, midnight - timedelta(days=2) + timedelta(hours=6)),
@@ -121,6 +126,11 @@ class FakeGarmin:
             return httpx.Response(self.api_status, json={})
         assert request.headers["x-garmin-client-platform"] == "Android"
         path, t = url.path, self.today
+        if any(path.startswith(p) for p in self.timeouts):
+            raise httpx.ReadTimeout("timed out", request=request)
+        for prefix, status in self.statuses.items():
+            if path.startswith(prefix):
+                return httpx.Response(status, json={})
         if path == "/userprofile-service/socialProfile":
             return httpx.Response(200, json={"displayName": "runner 42", "fullName": "Test Runner"})
         if path == f"/metrics-service/metrics/trainingreadiness/{t}":
@@ -152,7 +162,9 @@ class FakeGarmin:
             d = date.fromisoformat(params["date"])
             if d > t:  # a day that hasn't come yet: empty, as Garmin answers
                 return httpx.Response(200, json={"dailySleepDTO": {}})
-            return httpx.Response(200, json=night(d) if (t - d).days % 10 != 9 else {"dailySleepDTO": {}})
+            if (t - d).days % 10 == 9:
+                return httpx.Response(200, json={"dailySleepDTO": {}})
+            return httpx.Response(200, json=night(d, score=0 if (t - d).days == 1 else 82))  # yesterday: not scored
         if path == "/usersummary-service/usersummary/daily/runner%2042":
             d = date.fromisoformat(params["calendarDate"])
             if d > t:  # a day that hasn't come yet: Garmin's dated skeleton, every value null
@@ -207,6 +219,8 @@ def test_parse_sleep_keeps_garmin_stage_times_on_the_local_clock():
     assert n["day"] == d and n["start"] == datetime(2026, 10, 4, 23, 0) and n["end"] == datetime(2026, 10, 5, 6, 30)
     assert n["stages"] == {"deep": 90, "core": 230, "rem": 100, "awake": 30}
     assert n["hrv"] == 62.0 and n["rhr"] == 44
+    assert (n["score"], n["qualifier"]) == (82, "GOOD")
+    assert garmin.parse_sleep(night(d, score=None))["score"] is None
     samples = garmin.night_samples(n)
     assert [(s.kind, s.start.strftime("%H:%M"), s.value) for s in samples] == [
         ("core", "23:00", 90), ("deep", "00:30", 90), ("core", "02:00", 120), ("awake", "04:00", 30),
@@ -269,7 +283,8 @@ def test_build_daily_keeps_plausible_values_only():
             "readiness": {"day": None, "pct": 140, "level": "Rest", "full_h": 3},
             "summaries": {t: {"stress": -2, "steps": 0, "kcal": 0, "bb_wake": None, "bb_high": 77, "bb_low": 5}},
             "hrv_range": {t: {"lo": 70, "hi": 60, "base": None}},
-            "vo2max": {t: 120}, "predictions": {"5k": 30, "10k": 2480}}
+            "vo2max": {t: 120}, "predictions": {"5k": 30, "10k": 2480},
+            "nights": {t: {"score": 0, "qualifier": None}, t - timedelta(days=1): {"score": 101, "qualifier": None}}}
     rows = {r.metric: r for r in garmin.build_daily(data, t)}
     assert set(rows) == {"load", "body_battery", "fitness"}
     assert rows["load"].details == {"long": 520, "ratio": None, "comment": "Excessive"}
@@ -351,6 +366,9 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     assert by["steps"][t].details == {"kcal": 2650.0, "exercise": 55}
     assert by["stress"][t].value == 28 and by["body_battery"][t].value == 80
     assert by["hrv_norm"][t].details == {"lo": 55, "hi": 70}
+    assert by["sleep_score"][t].value == 82 and by["sleep_score"][t].details == {"qualifier": "GOOD"}
+    assert by["sleep_score"][t].source == "Garmin"
+    assert t - timedelta(days=1) not in by["sleep_score"] and len(by["sleep_score"]) == 53  # a 0 score is no score
     assert by["fitness"][t].details == {"vo2max": 54.3, "pred": {"5k": 1190, "10k": 2480, "half": 5520,
                                                                  "marathon": 11800}}
 
@@ -385,6 +403,22 @@ async def test_rate_limit_and_failures_are_shown_in_plain_french(as_user: AsyncC
     outcome = await garmin.run_sync(db_session, conn)
     assert outcome == {"ok": False, "error": "Garmin n'a renvoyé aucune donnée lisible."}
     assert "Dernière synchro échouée" in (await as_user.get("/settings")).text
+
+
+async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: AsyncSession, test_user: User,
+                                                                 fake, no_commit):
+    t = fake.today
+    fake.timeouts = {"/metrics-service/metrics/trainingstatus/"}
+    fake.statuses = {"/metrics-service/metrics/maxmet/": 502}
+    conn = await _link(db_session, test_user)
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert fake.paths("/metrics-service/metrics/trainingstatus/") and fake.paths("/metrics-service/metrics/maxmet/")
+    assert outcome["result"]["activities"]["inserted"] == 2  # the sync went on to the end
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    by = {(m.metric, m.date): m.value for m in rows}
+    assert by[("sleep", t)] == 420 and by[("sleep_score", t)] == 82 and by[("recovery", t)] == 72
+    assert not any(m in ("load", "vo2max") for m, _ in by)
 
 
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):
