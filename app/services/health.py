@@ -367,7 +367,7 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
 
     out: dict = {
         "hrv_7d": None, "hrv_baseline": None, "hrv_sd": None, "hrv_delta_pct": None,
-        "rhr_7d": None, "rhr_baseline": None, "rhr_delta_bpm": None,
+        "rhr_7d": None, "rhr_baseline": None, "rhr_sd": None, "rhr_delta_bpm": None,
         "sleep_avg_min": None, "sleep_baseline_min": None, "sleep_delta_min": None,
     }
     strong, mild, reasons = 0, 0, []
@@ -402,7 +402,9 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
         usable = True
         mean = statistics.fmean(base)
         delta = statistics.fmean(recent) - mean
-        out.update(rhr_baseline=round(mean, 1), rhr_delta_bpm=round(delta, 1))
+        # SD floored at 1.5 bpm: a very steady baseline must not make 2 bpm "ill"
+        out.update(rhr_baseline=round(mean, 1), rhr_sd=round(max(statistics.stdev(base), 1.5), 1),
+                   rhr_delta_bpm=round(delta, 1))
         if delta >= 5:
             strong += 1
             reasons.append(f"FC au repos +{delta:.0f} bpm")
