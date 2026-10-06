@@ -83,8 +83,9 @@
         tabs.forEach(function (t, i) {
             t.addEventListener("click", function (e) { e.preventDefault(); show(t.getAttribute("aria-controls")); window.scrollTo({ top: 0 }); });
             t.addEventListener("keydown", function (e) {
-                var k = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-                if (k) { e.preventDefault(); show(tabs[(i + k + tabs.length) % tabs.length].getAttribute("aria-controls"), true); }
+                var n = tabs.length, to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i + n - 1) % n
+                    : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
+                if (to >= 0) { e.preventDefault(); show(tabs[to].getAttribute("aria-controls"), true); }
             });
         });
         // links inside the panels that move to another tab
@@ -95,7 +96,9 @@
                 e.preventDefault(); show(m[1]); window.scrollTo({ top: 0 });
             });
         });
-        var start = tabs.find(function (t) { return t.getAttribute("aria-selected") === "true"; });
+        // a link to a tab's anchor (#tendances) opens that tab
+        var start = tabs.find(function (t) { return "#" + t.getAttribute("aria-controls") === location.hash; })
+            || tabs.find(function (t) { return t.getAttribute("aria-selected") === "true"; });
         show(start ? start.getAttribute("aria-controls") : "aujourdhui");
     })();
     </script>

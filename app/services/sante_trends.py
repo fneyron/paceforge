@@ -94,15 +94,18 @@ def _in(values: dict[date, float], months, today: date, lo: float = -math.inf, h
 
 
 def monthly(values: dict[date, float], months: list[tuple[int, int]], agg=statistics.median,
-            min_n: int = MIN_PER_MONTH) -> list[float | None]:
+            min_n: int = MIN_PER_MONTH, today: date | None = None) -> list[float | None]:
     """One point per month of the axis: `agg` of the month's values, None
-    below `min_n` values."""
+    below `min_n` values — and the month in progress only from its 14th day
+    (a few nights would read as a month)."""
     idx = {m: i for i, m in enumerate(months)}
     groups: list[list[float]] = [[] for _ in months]
     for d, v in values.items():
         i = idx.get((d.year, d.month))
         if i is not None and v is not None:
             groups[i].append(v)
+    if today is not None and today.day < 14 and months and months[-1] == (today.year, today.month):
+        groups[-1] = []
     return [agg(g) if len(g) >= min_n else None for g in groups]
 
 
@@ -132,13 +135,17 @@ def change(points: list[float | None], thr: float, hold: int = 1, back=BACK, rat
     after = [d(points[i]) for i in range(ref + 1, last + 1) if points[i] is not None]
     real = (abs(delta) >= thr and len(after) >= hold
             and all(abs(x) >= thr and (x > 0) == (delta > 0) for x in after[-hold:]))
-    return {"delta": delta, "months": last - ref, "ref": ref, "last": last, "real": real}
+    # above the noise but not held yet: neither a change nor « stable »
+    return {"delta": delta, "months": last - ref, "ref": ref, "last": last, "real": real,
+            "pending": abs(delta) >= thr and not real}
 
 
 def chip(ch: dict | None, fmt, better_down: bool = False) -> dict | None:
     """« ↗ +6 % en 3 mois », « ↘ −4 bpm en 6 mois · en mieux » or « ≈ stable »."""
     if ch is None:
         return None
+    if ch.get("pending"):
+        return {"text": "à confirmer", "tone": "muted"}
     if not ch["real"]:
         return {"text": "≈ stable", "tone": "muted"}
     up = ch["delta"] > 0
@@ -151,8 +158,11 @@ def chip(ch: dict | None, fmt, better_down: bool = False) -> dict | None:
 def _line(ch: dict | None, months, up: str, down: str, stable: str, none: str | None = None) -> str | None:
     if ch is None:
         return none
+    m = MONTHS[months[ch["ref"]][1] - 1]
+    if ch.get("pending"):
+        return f"{'Plus haut' if ch['delta'] > 0 else 'Plus bas'} qu'en {m} : à confirmer le mois prochain."
     tpl = (up if ch["delta"] > 0 else down) if ch["real"] else stable
-    return tpl.format(m=MONTHS[months[ch["ref"]][1] - 1])
+    return tpl.format(m=m)
 
 
 # ── charts ──────────────────────────────────────────────────────────────────
@@ -284,7 +294,8 @@ def locked_line(label: str, n: int, one: str, many: str, ok_months: int) -> str:
     if n == 0:
         return f"{label} : aucune {one} en 12 mois"
     if ok_months == 0 or n < MIN_PER_MONTH * MIN_MONTHS:
-        return f"{label} : {n} {_plural(n, one, many)} en 12 mois — il en faut {MIN_PER_MONTH} par mois"
+        return (f"{label} : {n} {_plural(n, one, many)} en 12 mois — il en faut {MIN_PER_MONTH} par mois "
+                f"pendant {MIN_MONTHS} mois")
     return f"{label} : {ok_months} mois avec {MIN_PER_MONTH} {many} ou plus — il en faut {MIN_MONTHS}"
 
 
@@ -340,8 +351,11 @@ def _fond(series: dict, months, today: date, races) -> tuple[dict | None, str | 
         line = "Ton fond n'a jamais été aussi haut " + (f"depuis {since}." if since else "cette année.")
     else:
         head = f"Ton pic date {_de(peak_m)}" + (f" ({near})" if near else "")
-        tail = ("" if not ch or not ch["real"] else " ; tu remontes" if ch["delta"] > 0
-                else " ; tu t'entraînes moins ces derniers mois")
+        last_pts = [v for v in pct if v is not None]
+        rising = len(last_pts) >= 2 and last_pts[-1] > last_pts[-2]
+        tail = (" ; tu es juste sous ton pic" if peak_day > today - timedelta(days=45)
+                else " ; tu remontes" if ch and ch["real"] and ch["delta"] > 0 and rising
+                else " ; tu t'entraînes moins ces derniers mois" if ch and ch["real"] and ch["delta"] < 0 else "")
         line = head + tail + "."
     card = _card("fond", "Ton fond", "12 mois", f"{num(now)} %",
                  f"de ton meilleur niveau depuis {since}" if since else "de ton meilleur niveau de l'année",
@@ -398,7 +412,7 @@ def _vo2(metrics, details, months, today: date, races) -> tuple[dict | None, str
     sub = f"Allure seuil {pace_txt(max(seuil)[1])}" if seuil else None
     first = min(vals)
     span = (today.year - first.year) * 12 + today.month - first.month - (today.day < first.day)
-    points = monthly(win, months)
+    points = monthly(win, months, today=today)
     latest = vals[max(vals)]
     if span < VO2_HISTORY_MONTHS:
         return _card("vo2", label, None, num(latest), sub=sub, caption=caption,
@@ -423,7 +437,7 @@ def _vo2(metrics, details, months, today: date, races) -> tuple[dict | None, str
 def _night_card(key, label, values, months, today, races, *, unit, thr, lines, better_down=False, caption=None,
                 one="nuit", many="nuits"):
     """A heart-rate curve from one value a day (FC au repos, FC la plus basse de la journée)."""
-    points = monthly(values, months)
+    points = monthly(values, months, today=today)
     ok = _count(points)
     if ok < MIN_MONTHS:
         return None, locked_line(label, len(values), one, many, ok)
@@ -445,7 +459,7 @@ def _hrv(values, months, today, races):
     label = "VFC (nuit)"
     win = {d: v for d, v in values.items() if v > 0}
     ln = {d: math.log(v) for d, v in win.items()}
-    pl = monthly(ln, months)
+    pl = monthly(ln, months, today=today)
     ok = _count(pl)
     if ok < MIN_MONTHS:
         return None, locked_line("VFC", len(win), "nuit", "nuits", ok)
@@ -464,11 +478,11 @@ def _hrv(values, months, today, races):
 
 def _sleep(values, scores, months, today, races):
     label = "Sommeil"
-    points = monthly(values, months, agg=statistics.fmean)
+    points = monthly(values, months, agg=statistics.fmean, today=today)
     ok = _count(points)
     if ok < MIN_MONTHS:
         return None, locked_line(label, len(values), "nuit", "nuits", ok)
-    sc = monthly(scores, months, agg=statistics.fmean)
+    sc = monthly(scores, months, agg=statistics.fmean, today=today)
     li = max(i for i, v in enumerate(points) if v is not None)
     ch = change(points, SLEEP_THR, hold=2)
     line = _line(ch, months, "Tu dors plus qu'en {m}.", "Tu dors moins qu'en {m}.",
@@ -558,8 +572,8 @@ def _links(fond: dict | None, easy: dict | None, vo2: list | None, months, races
         elif rule == "heart":
             title = "Ton cœur ne suit pas"
             text = (f"Ton fond monte depuis {since} mais {what} " + ("aussi" if key == "hr" else "baisse")
-                    + f" ({d_txt}) : ton cœur ne suit pas — essaie une semaine plus légère et regarde si "
-                    + ("elle redescend." if key == "hr" else "il remonte."))
+                    + f" ({d_txt}) : ton cœur ne suit pas — essaie une semaine plus légère et regarde "
+                    + ("si elle redescend." if key == "hr" else "s'il remonte."))
         else:
             title = "Ton fond s'érode"
             text = (f"Ton fond baisse depuis {since} et {what} " + ("remonte" if key == "hr" else "aussi")

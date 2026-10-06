@@ -783,10 +783,12 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     assert by[("sleep", today)] == 588 and by[("sleep_score", today)] == 91 and by[("hrv", today)] == 83
     assert not any(m in ("load", "hr_day") for m, _ in by)
 
-    # every call lost: the sync fails, as before
+    # COROS down: the sync stops after 3 lost calls in a row, and says so
     fake.timeouts = set(fake.texts)
+    before = len(fake.tool_calls)
     outcome = await coros.run_sync(db_session, conn)
-    assert outcome == {"ok": False, "error": "COROS n'a renvoyé aucune donnée lisible."}
+    assert outcome == {"ok": False, "error": "COROS ne répond pas pour l'instant."}
+    assert len(fake.tool_calls) - before == 3  # not one 30 s timeout per tool
 
 
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):

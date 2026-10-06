@@ -101,6 +101,7 @@ def test_welch_and_the_long_outing_link():
             resid[r.id] = (4 if lag <= 3 else 0) + (0.5 if j % 2 else -0.5)
     out = wk.insights(ss + runs, runs, resid, [], {}, T)
     card = next(c for c in out["cards"] if c["key"] == "h2")
-    assert "ta FC à allure facile est +4 bpm plus haute" in card["text"] and "pas forcément cause" in card["foot"]
+    assert "ta FC à allure facile est plus haute" in card["text"] and "pas forcément cause" in card["foot"]
+    assert "bpm" not in card["text"]  # the numbers are on the bars only
     assert [x["value"] for x in card["bars"]] == ["+4 bpm", "0"] or card["bars"][0]["hot"]
     assert any(lk["text"].startswith("Effet de tes heures sur ton sommeil") for lk in out["locked"])

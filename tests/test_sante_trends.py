@@ -64,7 +64,7 @@ def test_change_chip_only_above_noise():
     c = tr.chip(tr.change(drop, tr.RHR_THR, hold=2), bpm, better_down=True)
     assert c == {"text": "↘ −3 bpm en 6 mois · en mieux", "tone": "ok"}
     blip = [None] * 5 + [50, 50, 50, 50, 50, 50, 46]  # one month only: not held
-    assert tr.chip(tr.change(blip, tr.RHR_THR, hold=2), bpm, better_down=True)["text"] == "≈ stable"
+    assert tr.chip(tr.change(blip, tr.RHR_THR, hold=2), bpm, better_down=True)["text"] == "à confirmer"
     rise = [None] * 5 + [50, 50, 50, 51, 53, 54, 54]
     assert tr.chip(tr.change(rise, tr.RHR_THR, hold=2), bpm, better_down=True) == {"text": "↗ +4 bpm en 6 mois",
                                                                                     "tone": "muted"}
@@ -141,8 +141,9 @@ def test_vo2_card_short_history_then_curve():
 def test_night_cards_hrv_on_ln_and_sleep_with_score():
     hrv = nightly(lambda k: 50 if k % 2 else 72)  # skewed: the ln median sits between
     sleep = nightly(lambda k: 425 + (k % 3 - 1) * 20)
+    # on the 20th the month in progress counts (before the 14th it waits)
     t = tr.trends_tab([], {"hrv": hrv, "sleep": sleep, "sleep_score": nightly(lambda k: 74), "rhr": nightly(
-        lambda k: 47 + k % 3)}, {}, [], T, {})
+        lambda k: 47 + k % 3)}, {}, [], date(2026, 10, 20), {})
     v = card(t, "hrv")
     assert v["value"] == tr.num(math.exp((math.log(50) + math.log(72)) / 2)) and v["unit"] == "ms"
     assert v["chip"]["text"] == "≈ stable" and v["window"] == "200 nuits"
@@ -164,13 +165,13 @@ def test_day_low_hr_stands_in_only_without_night_rhr():
 def test_locked_lines():
     few = {T - timedelta(days=k): 60.0 for k in (1, 40, 80)}
     t = tr.trends_tab([], {"hrv": few, "rhr": nightly(lambda k: 47.0)}, {}, [], T, {})
-    assert "VFC : 3 nuits en 12 mois — il en faut 4 par mois" in t["locked"]
+    assert "VFC : 3 nuits en 12 mois — il en faut 4 par mois pendant 3 mois" in t["locked"]
     assert "Sommeil : aucune nuit en 12 mois" in t["locked"]
     none = tr.trends_tab([], {}, {}, [], T, {})
     assert "VFC, FC au repos, sommeil : aucune nuit mesurée en 12 mois" in none["locked"]
     assert none["locked_n"] == 6 and len(none["locked"]) == 4  # fond, easy HR, VO2, the three nights
     assert tr.locked_line("FC au repos", 20, "nuit", "nuits", 2) == "FC au repos : 2 mois avec 4 nuits ou plus — il en faut 3"
-    assert tr.locked_line("VFC", 1, "nuit", "nuits", 0) == "VFC : 1 nuit en 12 mois — il en faut 4 par mois"
+    assert tr.locked_line("VFC", 1, "nuit", "nuits", 0) == "VFC : 1 nuit en 12 mois — il en faut 4 par mois pendant 3 mois"
 
 
 # ── « Ce qui va ensemble » ──────────────────────────────────────────────────
@@ -234,3 +235,17 @@ def test_partial_renders_with_nothing():
     assert "Tes courbes sur 12 mois" in html and "Pas encore de courbe (6)" in html and "<svg" not in html
     assert "Ce qui va ensemble" not in html
     assert render(None).strip() == ""
+
+
+def test_a_change_not_held_yet_is_neither_a_change_nor_stable():
+    ch = tr.change([None] * 5 + [50, 50, 50, 50, 50, 50, 46], tr.RHR_THR, hold=2)
+    assert ch["pending"] and not ch["real"]
+    line = tr._line(ch, tr.months_axis(T), up="monte", down="baisse", stable="Même niveau qu'en {m}.")
+    assert line == "Plus bas qu'en avril : à confirmer le mois prochain."
+
+
+def test_the_month_in_progress_waits_for_its_14th_day():
+    months = tr.months_axis(T)
+    vals = {T - timedelta(days=k): 50.0 for k in range(6)}
+    assert tr.monthly(vals, months, today=T)[-1] is None
+    assert tr.monthly(vals, months, today=date(2026, 10, 20))[-1] == 50.0

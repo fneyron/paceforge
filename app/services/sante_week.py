@@ -48,10 +48,13 @@ def _jump(weeks: list[dict], i: int) -> float | None:
     return weeks[i]["minutes"] / mean if mean > 0 else None
 
 
-def spike(sessions: list[Session], today: date, days: int = 10) -> tuple[Session, float] | None:
+def spike(sessions: list[Session], today: date, days: int = 10,
+          race_days: set[date] = frozenset()) -> tuple[Session, float] | None:
     """The longest outing of the last `days` days when it is > 10 % longer
-    than the longest of the 30 days before it (90 min at least)."""
-    recent = [s for s in sessions if s.day > today - timedelta(days=days) and s.minutes >= 90]
+    than the longest of the 30 days before it (90 min at least; a race is
+    not a training jump)."""
+    recent = [s for s in sessions if s.day > today - timedelta(days=days) and s.minutes >= 90
+              and s.day not in race_days]
     big = max(recent, key=lambda s: s.minutes, default=None)
     if not big:
         return None
@@ -61,15 +64,20 @@ def spike(sessions: list[Session], today: date, days: int = 10) -> tuple[Session
     return big, big.minutes / max(before)
 
 
-def header(weeks: list[dict], sessions: list[Session], tr: dict | None, today: date, taper: str | None) -> str:
+def header(weeks: list[dict], sessions: list[Session], tr: dict | None, today: date, taper: str | None,
+           quiet: bool = False, race_days: set[date] = frozenset()) -> str:
+    """`quiet`: tapering or just after a race — no jump, no detraining."""
     done = _complete(weeks)
     active = [w for w in done if w["count"]]
+    if not sessions:
+        return "Connecte Strava dans Réglages : tes semaines s'afficheront ici."
     if len(active) < 4:
-        return (f"Il faut 4 semaines d'activités pour lire tes semaines (tu en as {len(active)})." if active
-                else "Connecte Strava dans Réglages : tes semaines s'afficheront ici.")
+        return f"Il faut 4 semaines d'activités pour lire tes semaines (tu en as {len(active)})."
     if taper:
         return taper
-    sp = spike(sessions, today)
+    if quiet:
+        return "Tu récupères de ta course : des semaines plus légères sont normales."
+    sp = spike(sessions, today, race_days=race_days)
     if sp:
         s, r = sp
         return (f"Ta sortie {of_day(s.day, today)} ({hm(s.minutes)}) : {round((r - 1) * 100)} % plus longue que ta plus "
@@ -194,7 +202,7 @@ def fatigue_chart(tr: dict, first_monday: date, today: date, races: list[date]) 
             "races": [{"x": x(r)} for r in races if first_monday <= r <= today], "x0": X0, "x1": X1}
 
 
-def fatigue_line(tr: dict, today: date) -> str | None:
+def fatigue_line(tr: dict, today: date, quiet: bool = False) -> str | None:
     hist, series = tr["history"], tr["series"]
     last14 = [hist[d] for d in (today - timedelta(days=k) for k in range(14)) if d in hist]
     if len(last14) < 14:
@@ -207,6 +215,8 @@ def fatigue_line(tr: dict, today: date) -> str | None:
     if high >= 7:
         return f"{high} jours sur les 14 derniers au-dessus de +30 % : c'est long. Prévois 4 à 5 jours faciles."
     if low >= 10:
+        if quiet:  # tapering or recovering: being rested is the point
+            return None
         return f"Très reposé depuis {low} jours sur 14 : ton fond baisse" + (f" ({signed(change)} % en 12 semaines)."
                                                                           if change is not None else ".")
     if change is not None:
@@ -214,7 +224,7 @@ def fatigue_line(tr: dict, today: date) -> str | None:
             return "Charge stable : ton fond ne bouge plus. Pour progresser, ajoute environ 10 % ou une sortie longue."
         if change >= 5:
             return f"Bonne construction : ton fond a monté de {change} % en 12 semaines."
-        if change <= -5:
+        if change <= -5 and not quiet:
             return f"Ton fond a baissé de {abs(change)} % en 12 semaines."
     return None
 
@@ -247,9 +257,9 @@ def insights(sessions: list[Session], runs: list[Session], resid: dict[int, floa
         d, t = welch(after, other)
         if abs(d) >= SWC_HR and abs(t) >= T_MIN:
             cards.append({"key": "h2", "score": abs(t),
-                          "text": (f"Les 3 jours après une sortie de plus de 3 h ({len(longs)} en 6 mois), "
-                                   f"ta FC à allure facile est {signed(d)} bpm {'plus haute' if d > 0 else 'plus basse'} "
-                                   "qu'à l'habitude." + (" Garde ces jours-là faciles." if d > 0 else "")),
+                          "text": (f"Les 3 jours après une sortie de plus de 3 h ({len(longs)} en 6 mois), ta FC à "
+                                   f"allure facile est {'plus haute' if d > 0 else 'plus basse'} qu'à l'habitude."
+                                   + (" Garde ces jours-là faciles." if d > 0 else "")),
                           "bars": _pair(f"dans les 3 jours après ({len(after)} sorties)", d,
                                         f"les autres jours ({len(other)} sorties)", 0.0, "bpm"),
                           "foot": "chez toi, 6 derniers mois · lien observé, pas forcément cause"})
@@ -277,13 +287,12 @@ def insights(sessions: list[Session], runs: list[Session], resid: dict[int, floa
         d, t = welch(after_w, other_w)
         if abs(d) >= SWC_HR and abs(t) >= T_MIN:
             cards.append({"key": "h1", "score": abs(t),
-                          "text": (f"Après tes semaines à +30 % de charge ({len(after_w)}), ta FC à allure facile est "
-                                   f"{signed(d)} bpm la semaine suivante. Chez toi, la hausse se paie la semaine d'après."
-                                   if d > 0 else
-                                   f"Après tes semaines à +30 % ({len(after_w)}), ta FC à allure facile ne monte pas : "
-                                   "tu les absorbes."),
-                          "bars": _pair(f"après une semaine à +30 % ({len(after_w)})", d,
-                                        f"après les autres ({len(other_w)})", 0.0, "bpm"),
+                          "text": ("Après une semaine à +30 % d'heures, ta FC à allure facile monte la semaine "
+                                   "suivante : chez toi, la hausse se paie la semaine d'après." if d > 0 else
+                                   "Après une semaine à +30 % d'heures, ta FC à allure facile baisse la semaine "
+                                   "suivante : tu absorbes bien tes grosses semaines."),
+                          "bars": _pair(f"la semaine d'après ({len(after_w)} fois)", d,
+                                        f"après les autres ({len(other_w)} semaines)", 0.0, "bpm"),
                           "foot": "chez toi, 6 derniers mois · lien observé, pas forcément cause"})
         elif abs(d) < 1 and nulls < 1:
             nulls += 1
@@ -312,10 +321,9 @@ def insights(sessions: list[Session], runs: list[Session], resid: dict[int, floa
             if abs(d) >= SWC_SLEEP and abs(t) >= T_MIN:
                 cards.append({"key": "h3", "score": abs(t),
                               "text": (f"Tes semaines de plus de {_hours_label(med)} sont aussi tes semaines de nuits "
-                                       f"{'courtes' if d < 0 else 'longues'} : {hm(statistics.fmean(big))} contre "
-                                       f"{hm(statistics.fmean(small))} ({len(big)} contre {len(small)} semaines)."),
+                                       f"{'plus courtes' if d < 0 else 'plus longues'}."),
                               "bars": _pair(f"grosses semaines ({len(big)})", statistics.fmean(big),
-                                            f"les autres ({len(small)})", statistics.fmean(small), "min"),
+                                            f"les autres ({len(small)} semaines)", statistics.fmean(small), "min"),
                               "foot": "chez toi, 6 derniers mois · lien observé, pas forcément cause"})
     else:
         locked.append({"text": "Effet de tes heures sur ton sommeil", "have": len(rows), "need": MIN_WEEKS,

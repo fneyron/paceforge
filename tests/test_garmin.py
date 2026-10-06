@@ -702,4 +702,5 @@ async def test_the_nights_reach_the_athletes_today_ahead_of_utc(db_session: Asyn
     fit = (await db_session.execute(select(HealthMetric.date).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "fitness"))).scalars().all()
     assert fit == [fake.today]
-    assert (await health_page(db_session, test_user.id))["today"] == fake.today
+    noon = datetime(fake.today.year, fake.today.month, fake.today.day, 12, tzinfo=timezone.utc)
+    assert (await health_page(db_session, test_user.id, now=noon))["today"] == fake.today

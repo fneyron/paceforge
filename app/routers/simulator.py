@@ -1477,7 +1477,7 @@ async def save_tri_plan(
     except ValueError:
         p["carbs_g_per_h"] = None
     route.params_json = p
-    route.race_date = race_date.strip() or None
+    route.race_date = _iso_date(race_date)
     st = _clock_to_s(start_time)
     if st is not None:
         route.start_hour, route.start_minute = st // 3600, (st % 3600) // 60

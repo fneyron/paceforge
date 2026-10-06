@@ -275,7 +275,7 @@ def _render(course: dict) -> str:
                      "l'affûtage et la semaine de course.", 'href="/simulator"', "Ajouter une course"]),
     (lambda: tab(race(40)), ["Ultra des Cimes", "dans 6 sem.", "Plan de course →", "Prêt pour la distance ?",
                              "repère d'entraîneur, pas une règle", "Ton plan d'affûtage",
-                             "Semaine de course : sommeil et glucides (s'ouvre à J-10)", "Construction"]),
+                             "Semaine de course : sommeil et glucides (s'ouvre à J‑10)", "Construction"]),
     (lambda: tab(race(19, target=5 * 3600)), ['viewBox="0 0 360 170"', 'fill="url(#pf-race-hatch)"', "ta base 9 h",
                                               "Fraîcheur le jour J", "si tu suis l&#39;affûtage", "Affûtage"]),
     (lambda: tab(race(6), usual={"bed": 285, "wake": 810, "awake": 20}),

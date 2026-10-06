@@ -618,7 +618,7 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-sante-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 13px; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines b { font-weight: 600; color: rgb(var(--pf-gray-700)); }
 /* the tab strip: sticky under the top bar, scrolls inside itself on narrow phones */
-.pf-stabs { position: sticky; top: 60px; z-index: 20; display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; background: rgb(var(--pf-bg)); border-bottom: 1px solid rgb(var(--pf-line)); margin: 14px -16px 0; padding: 0 16px; }
+.pf-stabs { position: sticky; top: calc(60px + env(safe-area-inset-top, 0px)); z-index: 20; display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; background: rgb(var(--pf-bg)); border-bottom: 1px solid rgb(var(--pf-line)); margin: 14px -16px 0; padding: 0 16px; }
 .pf-stabs::-webkit-scrollbar { display: none; }
 .pf-stab { flex: 1 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 52px; padding: 6px 7px; border-bottom: 3px solid transparent; color: rgb(var(--pf-gray-500)); font-size: 14px; font-weight: 600; line-height: 1.15; white-space: nowrap; }
 .pf-stab small { font-size: 12px; font-weight: 500; margin-top: 2px; }
@@ -628,14 +628,16 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-js .pf-panel-h.pf-tabbed { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .pf-tabpanel { padding-top: 4px; }
 .pf-tabpanel[hidden] { display: none; }
-@media (min-width: 1024px) { .pf-stabs { top: 64px; margin: 18px 0 0; padding: 0; } .pf-stab { flex: 0 0 auto; padding: 6px 18px; } }
+@media (min-width: 900px) { .pf-stabs { top: calc(64px + env(safe-area-inset-top, 0px)); } }
+@media (min-width: 1024px) { .pf-stabs { margin: 18px 0 0; padding: 0; } .pf-stab { flex: 0 0 auto; padding: 6px 18px; } }
+@media (max-width: 374px) { .pf-stab { padding: 6px 4px; font-size: 13.5px; } }
 /* sections inside a tab: a heading that asks the question, hairlines between */
 .pf-sblock { margin-top: 32px; }
 .pf-sblock > h2 { margin-bottom: 6px; }
-.pf-lead { font-size: 16px; line-height: 1.45; color: rgb(var(--pf-ink)); }
-.pf-muted { font-size: 14px; color: rgb(var(--pf-gray-500)); }
+.pf-health .pf-lead { font-size: 16px; line-height: 1.45; color: rgb(var(--pf-ink)); margin-top: 0; }
+.pf-health .pf-muted { font-size: 14px; }
 .pf-small { font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-small a, .pf-muted a, .pf-row-sub a, .pf-lead a { color: rgb(var(--pf-accent-strong)); font-weight: 600; }
+.pf-small a, .pf-health .pf-muted a, .pf-row-sub a, .pf-health .pf-lead a { color: rgb(var(--pf-accent-strong)); font-weight: 600; }
 /* a signal row: label · window | word, then the value and its reference, then the gauge */
 .pf-rows { margin-top: 14px; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-row { padding: 12px 0 10px; border-bottom: 1px solid rgb(var(--pf-line)); }
@@ -698,7 +700,9 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 @media (min-width: 640px) { .pf-cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1100px) { .pf-cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* Entraînement: weekly bars and the fatigue chart share one x axis */
-.pf-wk-wrap { max-width: 720px; margin-top: 14px; }
+.pf-wk-wrap { max-width: 440px; margin-top: 14px; }
+.pf-wk text, .pf-fat text, .pf-race-chart text { font-size: 12.5px; }
+.pf-wk text { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 3px; stroke-linejoin: round; }
 .pf-wk-bar { fill: rgb(var(--pf-gray-300)); }
 .pf-wk-jump { fill: rgb(var(--pf-warn) / .45); }
 .pf-wk-now { fill: transparent; stroke: rgb(var(--pf-accent)); stroke-width: 1.5; stroke-dasharray: 3 2; }
@@ -775,7 +779,7 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-race-tl-date.pf-race-start { transform: none; }
 .pf-race-tl-date.pf-race-end { transform: translateX(-100%); }
 /* taper chart: fixed 360 × 170 viewBox (width 100 %, height auto), hatched targets */
-.pf-race-chart { margin-top: 12px; }
+.pf-race-chart { margin-top: 12px; max-width: 440px; }
 .pf-race-chart text { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 3px; stroke-linejoin: round; }
 .pf-race-bar { fill: rgb(var(--pf-gray-300)); }
 .pf-race-chart a:hover .pf-race-bar { fill: rgb(var(--pf-gray-400)); }

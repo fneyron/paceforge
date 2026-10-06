@@ -12,6 +12,7 @@ is useful to an athlete who never wears the watch at night. Everything here
 reads; nothing calls the watches. A night without the watch is never guessed:
 it is a gap, never counted in an average. Each number is printed once.
 """
+import logging
 import statistics
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -28,6 +29,8 @@ from app.services.health import (
     fmt_minutes,
     hrv_same_scale,
 )
+
+logger = logging.getLogger(__name__)
 
 # ── words ───────────────────────────────────────────────────────────────────
 
@@ -179,7 +182,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 
     form = compute_form({m: series.get(m, {}) for m in ("hrv", "rhr", "sleep")}, today)
     nights = _nights(series.get("sleep", {}), details.get("sleep", {}), today,
-                     next_race if next_race and (date.fromisoformat(next_race.race_date) - today).days <= 7 else None,
+                     next_race if next_race and (_race_day(next_race) - today).days <= 7 else None,
                      last_sleep, series.get("sleep_score", {}))
     weeks = st.weeks(sessions, now)
     watch_load = _load(series, details, today)
@@ -188,7 +191,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # what the decision reads
     nr = None
     if next_race:
-        nr = {"days": (date.fromisoformat(next_race.race_date) - today).days, "name": next_race.name}
+        nr = {"days": (_race_day(next_race) - today).days, "name": next_race.name}
     post = _post_race(last_race, sessions, today)
     hard48 = _hard48(sessions, today)
     jump = any((j := wk._jump(weeks, i)) and j >= wk.JUMP for i in (len(weeks) - 2, len(weeks) - 1))
@@ -211,11 +214,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     if easy:
         signals.append(td.easy_hr_row(easy))
     if form.get("hrv_z") is not None:
-        dip = (f"Basse après ta sortie {td.of_day(hard48.day, today)} : normal, ça revient en 24–48 h."
-               if hard48 and form["hrv_z"] < -0.5 else None)
         lo, hi = form["hrv_band"]
         signals.append(td.hrv_row(form, signal_chart(series.get("hrv", {}), today, (lo, hi), form["hrv_baseline"],
-                                                     min_span=0.3 * form["hrv_baseline"]), dip))
+                                                     min_span=0.3 * form["hrv_baseline"]), verdict["hrv_note"]))
     if form.get("rhr_baseline") is not None and form.get("rhr_7d") is not None:
         base = form["rhr_baseline"]
         signals.append(td.rhr_row(form, signal_chart(series.get("rhr", {}), today, (base - 3, base + 3), base,
@@ -230,7 +231,12 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
                                for d in (today,) if d in series.get("body_battery", {})), None))
     if watch:
         signals.append(watch)
-        verdict["second"] = td.disagreement(watch, verdict["tone"], legs["big"] if legs else None, today)
+        verdict["second"] = td.disagreement(watch, verdict, signals, sources["recovery"].get(rec_day))
+    for r in signals:
+        if r["key"] in verdict["drivers"] and verdict["rule"] in ("red", "ill"):
+            r["tone"] = "danger"  # red only where the decision is red
+        if r["key"] == "legs" and feel and feel["legs_heavy"] and r["word"] == "fraîches":
+            r["word"], r["tone"] = "lourdes (ressenti)", "warn"
     visible, more = td.order_rows(signals, verdict["drivers"])
 
     nights_line = None
@@ -245,24 +251,27 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # training tab
     first_monday = weeks[0]["monday"]
     hrv_band = form.get("hrv_band")
-    race_days = [date.fromisoformat(r.race_date) for r in past_races]
+    race_days = [_race_day(r) for r in past_races]
     weeks26 = st.weeks(sessions, now, 26)
     resid = st.residuals(runs, today)
     course = _course(next_race, last_race, sessions, tr, today, weight_kg,
-                     _usual(series.get("sleep", {}), details.get("sleep", {}), today))
+                     _usual(series.get("sleep", {}), details.get("sleep", {}), today), now)
     taper_line = None
-    if course and course.get("race"):
+    if course and course.get("race") and course["state"] != "recovery":
         days = course["race"]["days"]
-        course["sublabel"] = "aujourd'hui" if days == 0 else f"J-{days}"  # short enough for the tab strip
+        course["sublabel"] = "jour J" if days == 0 else f"J\u2011{days}"  # short (a non-breaking hyphen)
         if course["state"] in ("taper", "race_week"):
             taper_line = (f"Tu es en affûtage pour {course['race']['name']} : tes cibles de la semaine sont dans "
                           "Course.")
+    # a race and the days after it are not a jump nor a loss of fitness
+    quiet = taper_line is not None or post is not None or (course or {}).get("state") == "recovery"
+    race_session_days = set(race_days) | {s.day for s in sessions if s.workout_type == 1}
     training = {
-        "header": wk.header(weeks, sessions, tr, today, taper_line),
+        "header": wk.header(weeks, sessions, tr, today, taper_line, quiet=quiet, race_days=race_session_days),
         "bars": wk.bars(weeks, sessions, series.get("sleep", {}), series.get("hrv", {}), hrv_band)
         if any(w["count"] for w in weeks) else None,
         "fatigue": wk.fatigue_chart(tr, first_monday, today, race_days) if tr else None,
-        "fatigue_line": wk.fatigue_line(tr, today) if tr else None,
+        "fatigue_line": wk.fatigue_line(tr, today, quiet=quiet) if tr else None,
         "insights": wk.insights(sessions, runs, resid, weeks26, series.get("sleep", {}), today),
     }
     return {
@@ -296,19 +305,29 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
 
 
 def _course(*args):
+    """Course and Tendances fail alone: a bug there never blanks the decision."""
+    from app.services.sante_course import course_tab
     try:
-        from app.services.sante_course import course_tab
-    except ImportError:  # wired when the Course tab lands
+        return course_tab(*args)
+    except Exception:
+        logger.exception("Santé › Course failed")
         return None
-    return course_tab(*args)
 
 
 def _trends(*args):
+    from app.services.sante_trends import trends_tab
     try:
-        from app.services.sante_trends import trends_tab
-    except ImportError:
+        return trends_tab(*args)
+    except Exception:
+        logger.exception("Santé › Tendances failed")
         return None
-    return trends_tab(*args)
+
+
+def _race_day(route) -> date | None:
+    try:
+        return date.fromisoformat(str(route.race_date)[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 def _night_state(series, sources, today: date) -> dict[str, dict]:
@@ -335,23 +354,24 @@ async def _races(db: AsyncSession, user_id: int, today: date):
                             Route.race_date >= (today - timedelta(days=365)).isoformat())
     if hidden_sports():
         q = q.where(Route.sport_type.notin_(hidden_sports()))
-    routes = (await db.execute(q.order_by(Route.race_date))).scalars().all()
-    nxt = next((r for r in routes if r.race_date >= today.isoformat()), None)
-    past = [r for r in routes if r.race_date < today.isoformat()]
-    last = next((r for r in reversed(past) if r.race_date >= (today - timedelta(days=14)).isoformat()), None)
+    routes = [r for r in (await db.execute(q.order_by(Route.race_date))).scalars().all() if _race_day(r)]
+    nxt = next((r for r in routes if _race_day(r) >= today), None)
+    past = [r for r in routes if _race_day(r) < today]
+    last = next((r for r in reversed(past) if _race_day(r) >= today - timedelta(days=14)), None)
     return nxt, last, past
 
 
 def _post_race(last_race, sessions, today: date) -> dict | None:
     """The days after a race of 3 h or more (a Route raced, or a session marked
     as a race), or after an exceptional outing (6 h and 1.5 × the longest of
-    the 60 days before): J+1..J+7, J+10 after 10 h."""
+    the 60 days before): J+1..J+7, J+10 after 10 h; J+1..J+2 after a race under 3 h."""
+    from app.services.sante_course import expected_s
+
     cands = []
-    if last_race:
+    if last_race and _race_day(last_race):
         res = last_race.result_json or {}
-        secs = res.get("total_actual_s") or last_race.target_time_s
-        if secs and secs >= 3 * 3600:
-            cands.append((date.fromisoformat(last_race.race_date), secs / 60, last_race.name))
+        secs = res.get("total_actual_s") or expected_s(last_race)[0]
+        cands.append((_race_day(last_race), secs / 60 if secs else None, last_race.name))
     for s in sessions:
         if not 1 <= (today - s.day).days <= 10:
             continue
@@ -359,11 +379,12 @@ def _post_race(last_race, sessions, today: date) -> dict | None:
         if (s.workout_type == 1 and s.minutes >= 180) or (s.minutes >= 360 and s.minutes >= 1.5 * before):
             from app.services.sante_today import of_day
             cands.append((s.day, s.minutes, f"ta sortie {of_day(s.day, today)}"))
-    for day, minutes, name in sorted(cands, reverse=True):
+    for day, minutes, name in sorted(cands, key=lambda c: c[0], reverse=True):
         days = (today - day).days
-        limit = 10 if minutes >= 600 else 7
+        long = minutes is None or minutes >= 180
+        limit = (10 if minutes and minutes >= 600 else 7) if long else 2
         if 1 <= days <= limit:
-            return {"day": day, "days": days, "minutes": minutes, "name": name, "limit": limit}
+            return {"day": day, "days": days, "minutes": minutes or 0, "name": name, "limit": limit, "long": long}
     return None
 
 
@@ -487,7 +508,7 @@ def _nights(sleep: dict[date, float], det: dict[date, dict], today: date, race, 
             scores: dict[date, float] | None = None) -> dict:
     """The 14 nights (named by their wake-up day, last night first), the
     7-night average and debt, regularity, the takeaway sentence, the strip."""
-    race_day = date.fromisoformat(race.race_date) if race else None
+    race_day = _race_day(race) if race else None
     need = RACE_NEED_MIN if race_day else SLEEP_NEED_MIN
     usual = _usual(sleep, det, today)
 
@@ -569,7 +590,7 @@ def _takeaway(race, race_day, today, need, usual, bed_txt, avg7, avg14, debt, re
     debt, irregular hours, all good). Only once 3 of the last 7 nights are
     measured, except in race week."""
     if race_day:  # the race-week plan (wake shift, the last night) lives in Course
-        return f"Semaine de course : vise {need // 60} h par nuit" + (f", {bed_txt}." if usual else ".")
+        return "Semaine de course : ton plan de sommeil (heures, coucher, lever) est dans Course."
     if avg7 is None:
         return None
     if avg7 < SHORT_SLEEP_MIN:
@@ -628,7 +649,7 @@ def _strip(rows: list[dict], usual: dict | None, target_bed: float | None, need:
     edges = [target_bed, usual_wake] if band else []
     hours = range(-(-t0 // 120) * 120, t1 + 1, 120)  # even hours (18:00 is m = 0)
     ticks = [{"x": x(m), "label": f"{(m + 1080) // 60 % 24}h", "edge": False}
-             for m in hours if all(abs(m - e) > 75 for e in edges)]
+             for m in hours if all(abs(m - e) >= 120 for e in edges)]
     ticks += [{"x": x(e), "label": m_clock(e), "edge": True} for e in edges]
     for t in ticks:
         t["align"] = "start" if t["x"] < 6 else "end" if t["x"] > 94 else "mid"

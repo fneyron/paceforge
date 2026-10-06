@@ -155,3 +155,11 @@ def cycling_on(monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "CYCLING_ENABLED", True)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_sessions_cache():
+    """Santé keeps each athlete's sessions per worker: never across tests."""
+    from app.services import sante_training
+    sante_training._CACHE.clear()
+    yield

@@ -203,8 +203,10 @@ def base_hours(wk: list[dict], start: date) -> float | None:
     return statistics.fmean(w["minutes"] for w in four) / 60
 
 
-def _now(today: date) -> datetime:
-    return datetime.combine(today, time(12), tzinfo=timezone.utc)
+def _now(today: date, now: datetime | None = None) -> datetime:
+    """The server's now, for the weeks: Activités' UTC Mondays (noon of the
+    athlete's day when not given)."""
+    return now or datetime.combine(today, time(12), tzinfo=timezone.utc)
 
 
 # ── phase timeline (HTML, in %) ─────────────────────────────────────────────
@@ -399,7 +401,8 @@ ADVICE = {"long": "Allonge ta sortie longue, de 10 % au plus d'une fois sur l'au
           "count": "Place une sortie de 3 h ou plus par semaine d'ici l'affûtage."}
 
 
-def readiness(route, sessions: list[Session], today: date, exp_s: int | None, in_taper: bool) -> dict:
+def readiness(route, sessions: list[Session], today: date, exp_s: int | None, in_taper: bool,
+              now: datetime | None = None) -> dict:
     """Three coaching repères over 8 weeks, as rows for the shared row macro."""
     fam = sport(route)
     pool = _pool(sessions, fam)
@@ -428,19 +431,20 @@ def readiness(route, sessions: list[Session], today: date, exp_s: int | None, in
                      "sub": "Au-delà de 12 h : deux sorties longues sur deux jours plutôt qu'une plus longue."
                      if route.target_time_s >= 12 * 3600 else None})
     if trail:
-        wk = weeks(pool, _now(today), 9)[:-1]
+        wk = weeks(pool, _now(today, now), 9)[:-1]
         best = sorted((w["dplus"] for w in wk), reverse=True)[:4]
         v, ref = statistics.fmean(best), 0.7 * route.total_elevation_gain
         w = word(v, ref)
         rows.append({"key": "dplus", "label": "D+ par semaine", "window": "tes 4 meilleures sur 8", "value": _m(v),
                      "ref": "repère : 70 % du D+ de la course", "word": w, "tone": TONES[w],
-                     "gauge": gauge(v, 0, max(v, ref) * 1.25, band=(ref, ref), edges=[(ref, _m(ref))])})
+                     "gauge": gauge(v, 0, max(v, ref) * 1.25, band=(ref, max(v, ref) * 1.25),
+                                    edges=[(0, "0"), (ref, _m(ref))])})
     if exp_s is not None and exp_s >= ULTRA_S:
         n = sum(1 for s in recent if s.minutes >= 180)
         w = word(n, 3)
         rows.append({"key": "count", "label": "Sorties de 3 h et plus", "window": "8 sem.", "value": str(n),
                      "ref": "repère : 3 et plus pour un ultra", "word": w, "tone": TONES[w],
-                     "gauge": gauge(n, 0, max(6, n + 1), band=(3, 3))})
+                     "gauge": gauge(n, 0, max(6, n + 1), band=(3, max(6, n + 1)), edges=[(0, "0"), (3, "3")])})
     if in_taper:
         advice = "Trop tard pour construire : tu cours avec ce fond. Mise sur la fraîcheur."
     elif not rows:
@@ -545,7 +549,7 @@ def sleep_plan(route, race_day: date, today: date, usual: dict | None) -> dict |
     days = (race_day - today).days
     if days <= 0:
         return None
-    since = (f"à partir de {WEEKDAYS_LONG[(race_day - timedelta(days=7)).weekday()]} (J-7)" if days > 7
+    since = (f"à partir de {WEEKDAYS_LONG[(race_day - timedelta(days=7)).weekday()]} (J‑7)" if days > 7
              else "dès ce soir")
     start = route.start_hour * 60 + (route.start_minute or 0) if route.start_hour is not None else None
     race_wake = (start - RACE_WAKE_BEFORE_START - 1080) % 1440 if start is not None and 4 * 60 <= start < 12 * 60 \
@@ -651,7 +655,7 @@ def recovery(route, today: date) -> dict | None:
 # ── the tab ─────────────────────────────────────────────────────────────────
 
 def race_block(route, sessions: list[Session], tr: dict | None, today: date, weight_kg: float | None,
-               usual: dict | None) -> dict | None:
+               usual: dict | None, now: datetime | None = None) -> dict | None:
     rd = _day(route.race_date)
     if rd is None or rd < today:
         return None
@@ -659,7 +663,7 @@ def race_block(route, sessions: list[Session], tr: dict | None, today: date, wei
     exp_s, estimated = expected_s(route)
     fam = sport(route)
     start = taper_start(rd, exp_s)
-    wk = weeks(sessions, _now(today), 12) if sessions else None
+    wk = weeks(sessions, _now(today, now), 12) if sessions else None
     base_h = base_hours(wk, start) if wk else None
     tg = targets(base_h, exp_s)
     in_taper = today >= start
@@ -685,7 +689,7 @@ def race_block(route, sessions: list[Session], tr: dict | None, today: date, wei
         "base": hm(base_h * 60) if base_h is not None and chart is None else None,
     }
     so_far = wk[-1]["minutes"] / 60 if wk else 0.0
-    ready = readiness(route, sessions, today, exp_s, in_taper)
+    ready = readiness(route, sessions, today, exp_s, in_taper, now)
     ready["fresh"] = freshness(tr, sessions, today, rd, base_h, tg, so_far)
     week = {"open": days <= WEEK_OPEN_DAYS, "first": days <= WEEK_FIRST_DAYS,
             "sleep": sleep_plan(route, rd, today, usual), "food": food_plan(route, exp_s, weight_kg),
@@ -699,10 +703,10 @@ def race_block(route, sessions: list[Session], tr: dict | None, today: date, wei
 
 
 def course_tab(next_race, last_race, sessions: list[Session], tr: dict | None, today: date,
-               weight_kg: float | None, usual: dict | None) -> dict:
+               weight_kg: float | None, usual: dict | None, now: datetime | None = None) -> dict:
     """Everything the « Course » tab draws (partials/sante_course.html, as
     `course`), and the tab strip's sublabel."""
-    race = race_block(next_race, sessions, tr, today, weight_kg, usual) if next_race is not None else None
+    race = race_block(next_race, sessions, tr, today, weight_kg, usual, now) if next_race is not None else None
     rec = recovery(last_race, today)
     if race and (race["days"] <= 14 or not rec):
         state, sublabel = race["phase"], race["when"]

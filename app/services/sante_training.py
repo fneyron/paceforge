@@ -17,11 +17,12 @@ Everything is computed on the fly; nothing is written to Activity.
 """
 import math
 import statistics
+from bisect import bisect_left
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -64,49 +65,80 @@ def monday(dt: datetime) -> datetime:
     return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+_CACHE: dict[int, tuple[tuple, list[Session]]] = {}
+_CACHE_SIZE = 256
+
+
+def _offset(strava: float | None, local: str | None, gmt: str | None) -> float | None:
+    """A session's UTC offset (s): Strava's utc_offset, else Garmin's
+    startTimeLocal − startTimeGMT."""
+    if strava is not None and abs(strava) <= 14 * 3600:
+        return strava
+    try:
+        delta = (datetime.strptime(str(local)[:19], "%Y-%m-%d %H:%M:%S")
+                 - datetime.strptime(str(gmt)[:19], "%Y-%m-%d %H:%M:%S")).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return delta if abs(delta) <= 14 * 3600 else None
+
+
 async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS) -> list[Session]:
-    """The sessions of the last `days` days, duplicates and false starts left out."""
+    """The sessions of the last `days` days, duplicates and false starts left
+    out exactly as on Activités. Kept per worker until a session is added (the
+    JSON fields cost a read of every activity's raw_data)."""
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
+    where = (Activity.user_id == user_id, Activity.start_date >= since)
+    key = (today, days, *(await db.execute(
+        select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
+               func.max(Activity.start_date), func.sum(Activity.moving_time)).where(*where))).one())
+    hit = _CACHE.get(user_id)
+    if hit and hit[0] == key:
+        return [replace(s) for s in hit[1]]
     rows = (await db.execute(
         select(Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
                Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
                Activity.max_heartrate, Activity.suffer_score, Activity.name,
                Activity.raw_data["workout_type"].as_integer(), Activity.raw_data["average_temp"].as_float(),
-               Activity.raw_data["utc_offset"].as_float())
-        .where(Activity.user_id == user_id, Activity.start_date >= since)
-        .order_by(Activity.start_date))).all()
+               Activity.raw_data["utc_offset"].as_float(), Activity.raw_data["startTimeLocal"].as_string(),
+               Activity.raw_data["startTimeGMT"].as_string(), Activity.splits_metric.is_not(None))
+        .where(*where).order_by(Activity.start_date))).all()
 
     @dataclass
-    class _Row:  # what activity_dedupe reads
+    class _Row:  # what activity_dedupe reads (splits: the richer copy is kept, as on Activités)
         id: int
         start_date: datetime
         sport_type: str
         distance: float
         moving_time: int
+        splits_metric: bool
 
-    raw = [_Row(r[0], _utc(r[1]), r[2], r[4] or 0, r[3] or 0) for r in rows]
+    raw = [_Row(r[0], _utc(r[1]), r[2], r[4] or 0, r[3] or 0, bool(r[16])) for r in rows]
     skip = find_duplicate_ids(raw) | {a.id for a in raw if is_false_start(a)}
     out = []
     for r in rows:
         if r[0] in skip or not r[3]:
             continue
         start = _utc(r[1])
-        offset = r[13] if r[13] is not None and abs(r[13]) <= 14 * 3600 else 0
+        offset = _offset(r[13], r[14], r[15]) or 0
         speed = r[6] if r[6] else ((r[4] or 0) / r[3] if r[3] else None)
         out.append(Session(
             id=r[0], start=start, day=(start + timedelta(seconds=offset)).date(), sport=r[2],
             minutes=r[3] / 60, dplus=r[5] or 0, km=(r[4] or 0) / 1000, speed=speed or None,
             hr=r[7] or None, hr_peak=r[8] or None, suffer=r[9] or None, workout_type=r[11], temp=r[12],
             name=r[10] or ""))
-    return out
+    if len(_CACHE) >= _CACHE_SIZE:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[user_id] = (key, out)
+    return [replace(s) for s in out]
 
 
 async def utc_offset(db: AsyncSession, user_id: int) -> float | None:
-    """The athlete's UTC offset (s) from their latest Strava session, if any."""
+    """The athlete's UTC offset (s) from their latest sessions (Strava or Garmin), if any."""
     rows = (await db.execute(
-        select(Activity.raw_data["utc_offset"].as_float()).where(Activity.user_id == user_id)
-        .order_by(Activity.start_date.desc()).limit(10))).scalars().all()
-    return next((v for v in rows if v is not None and abs(v) <= 14 * 3600), None)
+        select(Activity.raw_data["utc_offset"].as_float(), Activity.raw_data["startTimeLocal"].as_string(),
+               Activity.raw_data["startTimeGMT"].as_string()).where(Activity.user_id == user_id)
+        .order_by(Activity.start_date.desc()).limit(10))).all()
+    return next((o for o in (_offset(*r) for r in rows) if o is not None), None)
 
 
 # ── heart-rate bounds and session load ──────────────────────────────────────
@@ -226,10 +258,13 @@ def form(sessions: list[Session], today: date) -> dict | None:
 def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
     """The last `n` weeks, oldest first, the current one last."""
     this_monday = monday(now)
+    by: dict[datetime, list[Session]] = defaultdict(list)
+    for s in sessions:
+        by[monday(s.start)].append(s)
     out = []
     for i in range(n - 1, -1, -1):
         m = this_monday - timedelta(weeks=i)
-        ss = [s for s in sessions if monday(s.start) == m]
+        ss = by.get(m, [])
         longest = max(ss, key=lambda s: s.minutes, default=None)
         out.append({"monday": m.date(), "key": m.strftime("%Y-%m-%d"), "weeks_ago": i, "current": i == 0,
                     "minutes": sum(s.minutes for s in ss), "dplus": sum(s.dplus for s in ss),
@@ -298,7 +333,12 @@ def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
 
 
 def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
-    """(a, b) of y = a + b·x: median of the pairwise slopes, median intercept."""
+    """(a, b) of y = a + b·x: median of the pairwise slopes, median intercept
+    (on 300 evenly spread points at most: the pairs grow as n²)."""
+    if len(xs) > 300:
+        step = len(xs) / 300
+        idx = [int(k * step) for k in range(300)]
+        xs, ys = [xs[k] for k in idx], [ys[k] for k in idx]
     slopes = [(ys[j] - ys[i]) / (xs[j] - xs[i]) for i in range(len(xs)) for j in range(i + 1, len(xs))
               if abs(xs[j] - xs[i]) > 1e-9]
     b = statistics.median(slopes) if slopes else 0.0
@@ -325,12 +365,14 @@ def residuals(runs: list[Session], today: date) -> dict[int, float]:
     if len(year) < MIN_FIT_RUNS:
         return {}
     a, b = theil_sen([s.speed for s in year], [s.hr for s in year])
-    raw = {s.id: s.hr - (a + b * s.speed) for s in year}
+    year.sort(key=lambda s: s.day)
+    days = [s.day for s in year]
+    raw = [s.hr - (a + b * s.speed) for s in year]
     out = {}
-    for s in year:
-        prior = [raw[p.id] for p in year if s.day - timedelta(days=60) <= p.day < s.day]
+    for k, s in enumerate(year):
+        prior = raw[bisect_left(days, s.day - timedelta(days=60)):bisect_left(days, s.day)]
         if len(prior) >= 5:
-            out[s.id] = raw[s.id] - statistics.median(prior)
+            out[s.id] = raw[k] - statistics.median(prior)
     return out
 
 

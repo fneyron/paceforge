@@ -136,7 +136,7 @@ async def test_race_week_points_to_course(as_user: AsyncClient, db_session: Asyn
                          race_date=(today + timedelta(days=3)).isoformat(), start_hour=5, start_minute=0))
     await db_session.flush()
     page = (await as_user.get("/sante")).text
-    assert "Semaine de course : vise 9 h par nuit, au lit vers 21:15." in page
+    assert "Semaine de course : ton plan de sommeil (heures, coucher, lever) est dans Course." in page
     assert "bande : 9 h avant ton lever habituel" in page and "besoin 9 h" in page
 
 
@@ -211,20 +211,29 @@ def test_red_needs_hrv_down_and_resting_hr_up_together():
                     speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
     v = decide(_ctx(form=_form("fatigue", hrv_z=-1.4, rhr_delta_bpm=0.5), tr=TR, hard48=long_))
     assert v["headline"] != "Garde ta séance facile"
-    # race week: a lower HRV alone is normal
-    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}))
-    assert v["headline"] == "Normal avant une course"
+    # race week: a lower HRV alone is normal, the rest of the ladder still applies
+    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}, tr=TR))
+    assert v["headline"] == "Entraînement prévu OK" and v["hrv_note"].startswith("Avant une course")
+    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}, tr=TR,
+                    feel={"value": 3, "legs_heavy": False}))
+    assert v["headline"] == "Garde ta séance facile"
+    # two mild signals: easy, never greener than one
+    v = decide(_ctx(form=_form("fatigue", ["FC au repos +4 bpm", "nuits courtes"], hrv_z=0.1, rhr_delta_bpm=3.5),
+                    tr=TR))
+    assert v["headline"] == "Garde ta séance facile" and v["drivers"] == ["rhr", "sleep"]
 
 
 def test_race_days_and_recovery():
     v = decide(_ctx(next_race={"days": 2, "name": "Marathon"}))
     assert v["headline"] == "Course après-demain : court et facile" and v["tone"] == "ok"
-    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "name": "Grand Trail", "limit": 10}
+    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "name": "Grand Trail", "limit": 10, "long": True}
     v = decide(_ctx(post_race=pr))
-    assert v["headline"] == "Récupération de course · J+3" and "Grand Trail (11h42)" in v["text"]
-    assert v["resume"] == "Pas d'intensité avant le 14/10."
+    assert v["headline"] == "Récupère" and "Grand Trail (11h42)" in v["text"] and v["tone"] == "easy"
+    assert v["resume"] == "Pas d'intensité avant le 14/10." and v["word"] == "récup"
     v = decide(_ctx(post_race={**pr, "day": T - timedelta(days=6), "days": 6}))
     assert v["headline"] == "Footing facile seulement" and v["tone"] == "easy"
+    v = decide(_ctx(post_race={**pr, "minutes": 50, "long": False, "limit": 2, "days": 1, "day": T - timedelta(days=1)}))
+    assert v["headline"] == "Footing facile seulement" and v["resume"] == "Reprends l'intensité le 08/10."
 
 
 def test_legs_then_accumulated_then_jump():
@@ -260,8 +269,8 @@ def test_rows_order_and_the_watch_last():
             {"key": "fatigue", "dev": 0.1}, {"key": "sleep", "dev": 1}, {"key": "easy_hr", "dev": 0.9},
             {"key": "legs", "dev": 0}]
     visible, more = order_rows(rows, ["easy_hr"])
-    assert [r["key"] for r in visible] == ["easy_hr", "hrv", "sleep", "fatigue", "legs", "watch"]
-    assert [r["key"] for r in more] == ["stress"]
+    assert [r["key"] for r in visible] == ["easy_hr", "hrv", "fatigue", "legs", "watch"]  # a driver takes a place
+    assert [r["key"] for r in more] == ["sleep", "stress"]
 
 
 def test_gauge_is_in_percent_and_clamped():

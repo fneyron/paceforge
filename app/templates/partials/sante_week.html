@@ -21,7 +21,7 @@
         <line x1="8" x2="352" y1="{{ b.base }}" y2="{{ b.base }}" class="pf-wk-axis"/>
     </svg>
     </div>
-    <p class="pf-legend">barre : heures de la semaine · foncé : ta plus longue sortie{% if b.median %} · tirets : ta semaine médiane ({{ b.median.label }}){% endif %}{% if b.any_jump %} · <span class="text-warn">orange : +30 % d'un coup, ou sortie longue en saut</span>{% endif %} · contour : semaine en cours{% if b.has_sleep %} · ligne 1 : sommeil moyen{% endif %}{% if b.has_hrv %} · ▼ ● ▲ : VFC sous, dans, au-dessus de ta normale{% endif %} · touche une semaine pour son détail</p>
+    <p class="pf-legend">barre : heures de la semaine · segment intérieur : ta plus longue sortie{% if b.median %} · tirets : ta semaine médiane ({{ b.median.label }}){% endif %}{% if b.any_jump %} · <span class="text-warn">orange : +30 % d'un coup, ou sortie longue en saut</span>{% endif %} · contour : semaine en cours{% if b.has_sleep %} · ligne 1 : sommeil moyen{% endif %}{% if b.has_hrv %} · ▼ ● ▲ : VFC sous, dans, au-dessus de ta normale{% endif %} · touche une semaine pour son détail</p>
     {% endif %}
 </section>
 
@@ -33,8 +33,8 @@
     <svg class="pf-chart pf-fat" viewBox="0 0 {{ fc.w }} {{ fc.h }}" role="img" aria-label="Fatigue des 7 derniers jours comparée à ton fond, sur 12 semaines">
         {% for bd in fc.bands %}<rect x="{{ fc.x0 }}" y="{{ bd.y }}" width="{{ fc.x1 - fc.x0 }}" height="{{ bd.h }}" class="pf-fz{{ ' pf-fz-' ~ bd.cls if bd.cls }}"/>{% endfor %}
         {% for r in fc.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="10" y2="130" class="pf-fat-race"/><text x="{{ r.x + 3 }}" y="20">course</text>{% endfor %}
-        {% for bd in fc.bands %}<text x="{{ fc.x0 + 4 }}" y="{{ bd.ly }}">{{ bd.label }}</text>{% endfor %}
         <path d="{{ fc.line }}" class="pf-fat-line"/>
+        {% for bd in fc.bands %}<text x="{{ fc.x0 + 4 }}" y="{{ bd.ly }}">{{ bd.label }}</text>{% endfor %}
         {% if fc.today %}<circle cx="{{ fc.today.x }}" cy="{{ fc.today.y }}" r="4.5" class="pf-fat-now pf-fat-now-{{ fc.today.tone }}"/>{% endif %}
         {% for m in fc.months %}<text x="{{ m.x }}" y="146">{{ m.label }}</text>{% endfor %}
     </svg>

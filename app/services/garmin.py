@@ -474,7 +474,7 @@ class _Fetcher:
     link stops the sync."""
 
     def __init__(self, api: GarminApi):
-        self.api, self.calls, self.failed = api, 0, 0
+        self.api, self.calls, self.failed, self.down = api, 0, 0, 0
 
     async def __call__(self, path: str, params: dict | None = None):
         if self.calls >= MAX_CALLS:
@@ -484,13 +484,23 @@ class _Fetcher:
             await asyncio.sleep(CALL_DELAY_S)
         self.calls += 1
         try:
-            return await self.api.get(path, params)
+            out = await self.api.get(path, params)
         except (GarminAuthError, GarminRateLimited):
             raise
+        except httpx.TransportError as e:
+            # one slow call is skipped; Garmin down (3 calls in a row) fails the sync fast
+            self.failed += 1
+            self.down += 1
+            logger.info("Garmin %s failed: %r", path, e)
+            if self.down >= 3:
+                raise GarminError("Garmin ne répond pas pour l'instant.") from e
+            return None
         except (GarminError, httpx.HTTPError) as e:
             self.failed += 1
             logger.info("Garmin %s failed: %r", path, e)
             return None
+        self.down = 0
+        return out
 
 
 # ── parsers (pure, on Garmin's JSON; unknown shapes give nothing) ───────────
