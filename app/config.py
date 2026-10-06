@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     SURFACE_FETCH: bool = True
     # COROS: whether syncs may run in the background (off in tests)
     COROS_SYNC: bool = True
+    # Garmin: the same for Garmin Connect
+    GARMIN_SYNC: bool = True
     # Bike and triathlon planning: hidden for now (code kept, routes and data untouched)
     CYCLING_ENABLED: bool = False
 

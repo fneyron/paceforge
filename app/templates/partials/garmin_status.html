@@ -1,0 +1,30 @@
+<div id="garmin-status" class="pf-coros-status">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p class="pf-label">
+            {% if garmin.last_sync_at %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if garmin.last_error else 'bg-ok' }} mr-1 align-middle"></span>Garmin · dernière synchro <b class="text-gray-700">{{ garmin.last_sync_ago }}</b>
+            {% elif garmin.last_error %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn mr-1 align-middle"></span>Garmin connecté · pas encore de synchro réussie
+            {% else %}
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn mr-1 align-middle"></span>Garmin connecté · première synchro en cours…
+            {% endif %}
+        </p>
+        <button type="button" hx-post="/settings/garmin/sync" hx-target="#garmin-status" hx-swap="outerHTML" hx-indicator="#garmin-sync-spin"
+                class="text-[13px] font-semibold text-accent hover:underline inline-flex items-center gap-1.5 min-h-8">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Synchroniser maintenant
+            <span id="garmin-sync-spin" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
+        </button>
+    </div>
+    {% if outcome is defined and outcome %}
+    {% if outcome.busy %}
+    <p class="text-[12px] text-gray-500">Une synchro est déjà en cours : réessaie dans une minute.</p>
+    {% elif outcome.ok %}
+    {% set n = outcome.result.inserted + outcome.result.updated %}
+    <p class="text-[12px] text-ok">Synchro terminée : {% if n %}{{ n }} mesure{{ 's' if n != 1 }} ou séance{{ 's' if n != 1 }} nouvelle{{ 's' if n != 1 }} ou mise{{ 's' if n != 1 }} à jour{% else %}rien de nouveau{% endif %}.</p>
+    {% endif %}
+    {% endif %}
+    {% if garmin.last_error %}
+    <p class="text-[12px] text-warn">Dernière synchro échouée : {{ garmin.last_error }}</p>
+    {% endif %}
+    <script>window.lucide && lucide.createIcons();</script>
+</div>

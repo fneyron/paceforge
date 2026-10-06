@@ -1,8 +1,9 @@
 """Health data: one value per day and metric, and the fitness ("forme") signal.
 
 Values arrive from the athlete's COROS watch (app.services.coros, source
-"COROS") as raw samples (HealthSample, local wall-clock times), aggregated to
-one value per day and metric (HealthMetric):
+"COROS") or Garmin watch (app.services.garmin, source "Garmin") as raw samples
+(HealthSample, local wall-clock times), aggregated to one value per day and
+metric (HealthMetric):
 - hrv    : mean of the readings taken between 22:00 the evening before and
            10:00 that morning; falls back to the whole calendar day when no
            overnight reading exists. A COROS night value (overnight RMSSD)
@@ -14,8 +15,8 @@ one value per day and metric (HealthMetric):
 - weight : last weigh-in of the day (kg).
 - vo2max : last estimate of the day.
 
-COROS also gives values that are already daily: they go straight to
-HealthMetric (store_daily, source "COROS"), the extras in `details`:
+The watches also give values that are already daily: they go straight to
+HealthMetric (store_daily, source "COROS" or "Garmin"), the extras in `details`:
 - load      : short-term training load; {long, ratio, comment}
 - recovery  : recovery % (today only); {level, full_h}
 - hr_day    : average heart rate of the day; {min, max}
@@ -23,6 +24,7 @@ HealthMetric (store_daily, source "COROS"), the extras in `details`:
 - steps     : steps of the day; {kcal, exercise (min)}
 - fitness   : running level; {vo2max, level, threshold_s, pred: {5k, 10k, half, marathon} (s)}
 - hrv_norm  : HRV baseline of the night (ms); {lo, hi} its normal range
+- body_battery : Garmin's body battery at wake-up (0–100); {high, low}
 
 Older rows may come from the Apple Health import PaceForge had before.
 """
@@ -47,10 +49,10 @@ METRIC_LABELS = {
     "weight": "Poids",
     "vo2max": "VO2 max",
 }
-# daily values COROS gives as such (store_daily), with what Réglages lists
-DAILY_METRICS = ("load", "recovery", "hr_day", "stress", "steps", "fitness", "hrv_norm")
+# daily values the watches give as such (store_daily), with what Réglages lists
+DAILY_METRICS = ("load", "recovery", "hr_day", "stress", "steps", "fitness", "hrv_norm", "body_battery")
 DAILY_LABELS = {"load": "Charge", "recovery": "Récupération", "hr_day": "FC du jour",
-                "stress": "Stress", "steps": "Pas", "fitness": "Niveau"}
+                "stress": "Stress", "steps": "Pas", "fitness": "Niveau", "body_battery": "Body Battery"}
 
 
 @dataclass
@@ -233,13 +235,13 @@ def _dedupe_by_minute(samples) -> list:
     return list(seen.values())
 
 
-# HRV is not one number across devices: Apple Health stores SDNN, COROS its
-# overnight RMSSD — for the same night, often twice as high. A day therefore
-# takes one source (COROS when it has a value, stored with source "COROS";
+# HRV is not one number across devices: Apple Health stores SDNN, COROS and
+# Garmin their overnight RMSSD — for the same night, often twice as high. A day
+# therefore takes one source (a watch when it has a value, stored with its name;
 # Apple days keep no source), and the fitness signal compares only days on the
 # scale of the latest one (hrv_same_scale): never a COROS week against an
 # Apple baseline.
-RMSSD_SOURCES = ("COROS",)
+RMSSD_SOURCES = ("COROS", "Garmin")
 
 
 def _hrv_day(samples, d: date) -> dict | None:
@@ -457,7 +459,7 @@ async def _daily_series(db: AsyncSession, user_id: int, lo: date, hi: date,
         series[metric][d] = v
         if metric == "hrv":
             hrv_sources[d] = source
-        sources.add("COROS" if source in RMSSD_SOURCES else "Apple Santé")
+        sources.add(source if source in RMSSD_SOURCES else "Apple Santé")
     if "hrv" in series:
         series["hrv"] = hrv_same_scale(series["hrv"], hrv_sources)
     return series, sources

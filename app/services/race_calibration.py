@@ -499,7 +499,8 @@ async def backfill_race_dplus(db: AsyncSession, user, strava, limit: int = 20) -
     # light query first (this runs at every poll): ids, tag and cache marker only
     wt = Activity.raw_data["workout_type"].as_integer()
     cached_v = Activity.raw_data[(DPLUS_CACHE_KEY, "v")].as_integer()
-    q = candidate_query(user.id).with_only_columns(Activity.id, Activity.distance, wt, cached_v)
+    q = (candidate_query(user.id).where(Activity.strava_activity_id.is_not(None))  # streams come from Strava
+         .with_only_columns(Activity.id, Activity.distance, wt, cached_v))
     rows = (await db.execute(q.order_by(Activity.start_date.desc()))).all()
     ids = [
         r[0] for r in rows

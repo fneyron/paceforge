@@ -12,6 +12,7 @@ from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.coros import coros_status
+from app.services.garmin import garmin_status
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -35,6 +36,7 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
 
     flags.setdefault("ftp_est", ftp_est)
     flags.setdefault("coros", await coros_status(db, user.id))
+    flags.setdefault("garmin", await garmin_status(db, user.id))
     return {"request": request, "user": user, "activity_count": total, **flags}
 
 
@@ -49,6 +51,8 @@ async def settings_page(
         request, user, db,
         coros_ok=request.session.pop("coros_ok", None),
         coros_error=request.session.pop("coros_error", None),
+        garmin_ok=request.session.pop("garmin_ok", None),
+        garmin_error=request.session.pop("garmin_error", None),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
@@ -153,6 +157,7 @@ async def delete_account(
     from app.models.analysis import Analysis
     from app.models.chat_message import ChatMessage
     from app.models.coros import CorosConnection
+    from app.models.garmin import GarminConnection
     from app.models.generated_plan import GeneratedPlan
     from app.models.health import HealthMetric, HealthSample
     from app.models.route import Route
@@ -172,6 +177,7 @@ async def delete_account(
     await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
     await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user_id))
     await db.execute(delete(CorosConnection).where(CorosConnection.user_id == user_id))
+    await db.execute(delete(GarminConnection).where(GarminConnection.user_id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

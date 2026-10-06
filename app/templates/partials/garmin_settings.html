@@ -1,0 +1,40 @@
+{# Garmin: one login; recovery, load, HRV, sleep, VO2 max and the sessions then arrive on their own #}
+<div id="garmin" class="pf-section space-y-4 scroll-mt-20">
+    <div class="flex items-center justify-between gap-3">
+        <h2 class="pf-h2">Garmin</h2>
+        {% if garmin.connected and garmin.needs_reauth %}
+        <span class="pf-pill pf-pill-bad"><span class="pf-dot"></span>À reconnecter</span>
+        {% elif garmin.connected %}
+        <span class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</span>
+        {% else %}
+        <span class="pf-pill pf-pill-soft"><span class="pf-dot"></span>Non connecté</span>
+        {% endif %}
+    </div>
+    {% if garmin_ok is defined and garmin_ok %}
+    <div class="pf-note !text-ok">{{ garmin_ok }}</div>
+    {% endif %}
+    {% if garmin_error is defined and garmin_error %}
+    <div class="pf-note !text-danger">{{ garmin_error }}</div>
+    {% endif %}
+    {% if not garmin.connected %}
+    <p class="text-sm text-gray-500">Ta récupération, ta charge d'entraînement, ta VFC, ton sommeil, ta VO2 max et tes séances arrivent automatiquement depuis Garmin Connect.</p>
+    {% set login = none %}{% set region = 'monde' %}{% set regions = {'monde': ('Monde', 'garmin.com'), 'chine': ('Chine', 'garmin.cn')} %}
+    {% include "partials/garmin_login.html" %}
+    {% else %}
+    {% if garmin.needs_reauth %}
+    <div class="space-y-2.5">
+        <p class="text-xs text-gray-600">{{ garmin.last_error or "La connexion à Garmin a expiré : reconnecte-toi." }} Les données déjà reçues restent.</p>
+        {% set login = none %}{% set region = 'monde' %}{% set regions = {'monde': ('Monde', 'garmin.com'), 'chine': ('Chine', 'garmin.cn')} %}
+        {% include "partials/garmin_login.html" %}
+    </div>
+    {% else %}
+    {% include "partials/garmin_status.html" %}
+    {% endif %}
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <form method="post" action="/settings/garmin/disconnect"
+              onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter Garmin ? Les données déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
+            <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>
+        </form>
+    </div>
+    {% endif %}
+</div>

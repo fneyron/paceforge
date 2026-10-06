@@ -749,7 +749,7 @@ def night_stages(overview: dict, daily: dict[str, int] | None) -> dict[str, int]
     return {"deep": deep, "core": asleep - deep - rem, "rem": rem, "awake": awake}
 
 
-def sleep_samples(overview: dict, stages: dict[str, int]) -> list[Sample]:
+def sleep_samples(overview: dict, stages: dict[str, int], source: str = SOURCE) -> list[Sample]:
     """Contiguous stage intervals from the start of the main sleep window. The
     awake minutes sit before the last REM block, so the night starts and ends
     asleep: bedtime and wake time come out as COROS's window."""
@@ -763,7 +763,7 @@ def sleep_samples(overview: dict, stages: dict[str, int]) -> list[Sample]:
         if minutes <= 0:
             continue
         t1 = t + timedelta(seconds=round(minutes * 60))
-        out.append(Sample("sleep", kind, t, t1, round((t1 - t).total_seconds() / 60, 2), SOURCE))
+        out.append(Sample("sleep", kind, t, t1, round((t1 - t).total_seconds() / 60, 2), source))
         t = t1
     return out
 
@@ -918,14 +918,15 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     return data, call.calls, call.failed
 
 
-async def _drop_stale_intervals(db: AsyncSession, user_id: int, nights, samples: list[Sample]) -> None:
-    """A night's stage boundaries move when COROS revises its minutes: the
+async def _drop_stale_intervals(db: AsyncSession, user_id: int, nights, samples: list[Sample],
+                                source: str = SOURCE) -> None:
+    """A night's stage boundaries move when the watch revises its minutes: the
     intervals of a rewritten night that are no longer produced go, or the old
     and new ones would add up."""
     keep = {(s.start, s.kind) for s in samples if s.metric == "sleep"}
     for d in nights:
         rows = await db.execute(select(HealthSample.id, HealthSample.start_at, HealthSample.kind).where(
-            HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == SOURCE,
+            HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == source,
             HealthSample.start_at >= datetime.combine(d - timedelta(days=1), time(18, 0)),
             HealthSample.start_at < datetime.combine(d, time(12, 0))))
         stale = [r.id for r in rows.all() if (r.start_at, r.kind) not in keep]
