@@ -6,7 +6,9 @@ The action stays the evidence's: the ladder (sante_today.decide) decides it
 and its tone; the score is placed INSIDE the band of that tone, so the number
 and the action can never disagree:
     ok → 70–100 « bon », easy → 40–69 « moyen », rest → 0–39 « bas »,
-    score = low + (high − low) × raw / 100, rounded half up.
+    score = low + (high − low) × raw / 100, rounded half up (on the exact
+    value: raw and the placed value are snapped to 1e-9 first, so a tie such
+    as 6,5 is never read as 6,4999…).
 raw (0–100) is the weighted mean of the components present, each scored 0–100
 only when its own data rule holds (every threshold is (H) unless cited):
 1. VFC · 7 nuits (≥ 3 usable nights in the last 7 and a band, full or
@@ -20,10 +22,12 @@ only when its own data rule holds (every threshold is (H) unless cited):
    ≥ 7 h → 100 (Johnston 2020), 6 h → 60 (Craven 2022: sleep loss is ≤ 6 h
    per 24 h), ≤ 4 h → 0, linear between; with a 7-day mean (≥ 3 usable days)
    and a usual (the 24-h band's median) it is at most 100 − 2/3 point per
-   minute of that mean under the usual (90 min under → 40).
+   minute of that mean under the usual (90 min under → 40). Not on race
+   morning: the race eve is never judged (Lastella 2014; evidence row 23).
 4. Charge (≥ 6 sessions in 42 days): 100; an outing on foot ≥ 3 h or
    ≥ 1 500 m D+ in the last 48 h (the ladder's legs rule) → 50; ≥ 6 h → 30.
-   After a race the cap does it, not this.
+   An outing on a race day is left out: after a race the cap does it, not
+   this (sante._decide_day's `load`).
 5. Ressenti (the check-in answered today): mieux 100 · comme d'habitude 85 ·
    moins bien 50; jambes, fatigue, stress −10 each; malade → 10; « alcool
    hier » −15 (Pietilä 2018); kept within 0–100.
@@ -35,12 +39,15 @@ outing J+1 → J+3 ≤ 40, then until intensity comes back (J+7, J+10 after
 ≥ 10 h; sante._post_race) ≤ 65; R7 (VFC under the band AND FC de nuit above
 it or « moins bien », never in race week) ≤ 60; a short night (24-h total
 < 6 h, R5) ≤ 65. « malade » or the illness alert set the tone to rest (R2).
-No score: tone unknown (« Pas encore d'avis »), or fewer than 2 signals (H):
-one signal alone — the Charge at its default, say — is not a form.
+No score: tone unknown (« Pas encore d'avis »; the spec's « connecte ta
+montre ou Strava » only for an athlete with neither), or no signal at all
+(a race in 0–2 days, say, with nothing measured: no number to place). One
+signal is a score « basé sur 1 signal sur 5 ».
 A difference of a few points means nothing: the method fold says so.
 History: the last 14 days are recomputed from what is stored (nights,
-check-ins, sessions, races; sante._decide_day), nothing is persisted — no new
-table, and a night synced late corrects its own day.
+check-ins, sessions, races; sante._history), each from the rows of its own
+day and before only, as the page computed it that day; nothing is persisted —
+no new table, and a night synced late corrects its own day.
 """
 import math
 import statistics
@@ -70,21 +77,27 @@ FEEL_BASE = {1: 100, 2: 85, 3: 50}  # (H) mieux · comme d'habitude · moins bie
 FEEL_WHY, FEEL_SICK, FEEL_ALCOHOL = 10, 10, 15  # (H) per reason off; « malade »; « alcool hier » off (Pietilä 2018)
 CAP_REPRISE, CAP_POST_EARLY, CAP_POST, CAP_LOW_HRV, CAP_SHORT = 60, 40, 65, 60, 65  # (H) caps on raw
 POST_EARLY_DAYS = 3  # (H) J+1 → J+3 after a race or an exceptional outing
-MIN_SIGNALS = 2  # (H) fewer: no score
 HISTORY_DAYS = 14  # the sparkline
-HISTORY_NIGHTS = 110  # days of nights a past day's decision reads (Reprise: 28 days, then its 60-day band)
+NO_WATCH, RACE_EVE = "pas de montre", "veille de course"
+NOT_COUNTED = ("normale en construction", "jours avec sieste", RACE_EVE)  # and « nuits … » (a tag, the race window)
+HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
 
 METHOD = [
-    "L'action vient d'abord, de règles tirées des études ; le score se place dans sa plage : 70–100 « bon » (séance "
-    "prévue), 40–69 « moyen » (facile), 0–39 « bas » (repos). Le chiffre et l'action ne peuvent pas se contredire.",
+    "L'action vient d'abord, de règles tirées des études et de choix de PaceForge (H) ; le score se place dans sa "
+    "plage : 70–100 « bon » (séance prévue), 40–69 « moyen » (facile), 0–39 « bas » (repos). Le chiffre et l'action "
+    "ne peuvent pas se contredire.",
     "Il fait la moyenne de 5 signaux au plus, notés de 0 à 100, chacun seulement quand ses données suffisent : VFC sur "
     "7 nuits (poids 30), FC de nuit sur 7 nuits (25), sommeil sur 24 h siestes comprises (20), charge des 48 dernières "
-    "heures (15), ton ressenti du matin (10). Les poids (H) se répartissent sur les signaux présents ; il en faut 2 "
-    "au moins (H).",
-    "VFC : pleine note dans ta normale ou au-dessus (au-dessus n'est jamais un bonus : Plews 2013), zéro à 2,5 "
-    "écarts-types en dessous (H). FC de nuit : pleine note jusqu'à +2 bpm sur ta médiane, zéro à +10 (H). Sommeil : "
-    "7 h = pleine note (Johnston 2020), 6 h = 60 (Craven 2022), 4 h = 0 (H). Charge : 50 après 3 h ou 1 500 m D+, 30 "
-    "après 6 h (H). Ressenti : ta propre note compte (Saw 2016) ; alcool hier −15 (Pietilä 2018 ; H).",
+    "heures (15), ton ressenti du matin (10). Les poids (H) se répartissent sur les signaux présents.",
+    "VFC (H) : pleine note dans ta normale ou au-dessus (au-dessus n'est jamais un bonus : Plews 2013), zéro à 2,5 "
+    "écarts-types en dessous. FC de nuit (H) : pleine note jusqu'à +2 bpm sur ta médiane, zéro à +10.",
+    "Sommeil (H) : pleine note dès 7 h (le seuil de Johnston 2020), 60 à 6 h (le seuil de Craven 2022), 0 à 4 h ; au "
+    "plus 40 quand ta moyenne sur 7 jours est 90 min sous ton habitude (2/3 de point en moins par minute). Le matin "
+    "de la course, la nuit de la veille ne compte pas : elle ne dit rien de ta course (Lastella 2014).",
+    "Charge (H) : 50 après 3 h ou 1 500 m D+ sur 48 h, 30 après 6 h. La course elle-même n'y entre pas : le plafond "
+    "d'après course s'en charge.",
+    "Ressenti (H) : ta propre note compte (Saw 2016) ; mieux 100, comme d'habitude 85, moins bien 50, −10 par raison "
+    "(jambes, fatigue, stress), malade 10 ; alcool hier −15 (Pietilä 2018).",
     "Plafonds (H), les règles de l'action : reprise, jours après une course, VFC basse avec FC haute ou « moins "
     "bien », nuit de moins de 6 h. Malade ou alerte FC de nuit : plage repos.",
     "Une différence de quelques points ne veut rien dire : d'une nuit à l'autre la VFC varie d'environ 12 % "
@@ -94,6 +107,7 @@ METHOD = [
 ]
 REFS = [
     ("Plews 2013", "10.1007/s40279-013-0071-8"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
+    ("Lastella 2014", "10.1080/17461391.2012.660505"),
     ("Craven 2022", "10.1007/s40279-022-01706-y"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
     ("Pietilä 2018", "10.2196/mental.9519"), ("Buchheit 2014", "10.3389/fphys.2014.00073"),
     ("Quer 2021", "10.1038/s41591-020-1123-x"), ("Doherty 2025", "10.1515/teb-2025-0001"),
@@ -153,7 +167,8 @@ def _why_night(nights, metric: str, d: date, stat: dict) -> str:
     """Why a nightly component is missing, in a few words."""
     if stat["value"] is not None:
         return "normale en construction"
-    week = [n for k, n in nights.items() if d - timedelta(days=6) <= k <= d and n.value(metric) is not None]
+    week = [n for n in (nights.get(d - timedelta(days=k)) for k in range(6, -1, -1))
+            if n and n.value(metric) is not None]
     if len(week) < nt.MIN_MEAN_NIGHTS:
         return "pas assez de nuits"
     if any("race" in n.tags for n in week):
@@ -166,17 +181,21 @@ def _why_night(nights, metric: str, d: date, stat: dict) -> str:
 
 def components(day: dict, nights) -> tuple[list[dict], list[tuple[str, str]]]:
     """([{key, sub, weight, prov}] present, [(key, why)] missing) for one day
-    (sante._decide_day): the nightly ones read what the tiles show."""
+    (sante._decide_day): the nightly ones read what the tiles show. Without
+    a watch the nightly ones are missing for that one reason."""
     d, ctx, stats = day["day"], day["ctx"], day["shown"]
     parts, absent = [], []
+    watch = ctx.get("has_watch", True)
     for key, fn in (("hrv", hrv_sub), ("hr", hr_sub)):
         s = stats[key]
         if s["value"] is not None and s["normal"]:
             parts.append({"key": key, "sub": fn(s["value"], s["normal"]), "prov": s["normal"]["provisional"]})
         else:
-            absent.append((key, _why_night(nights, key, d, s)))
+            absent.append((key, _why_night(nights, key, d, s) if watch else NO_WATCH))
     tst = day["tst24"]
-    if tst is not None:
+    if tst is not None and (ctx.get("next_race") or {}).get("days") == 0:
+        absent.append(("sleep", RACE_EVE))  # race morning: the race eve is never judged (Lastella 2014)
+    elif tst is not None:
         m7 = nt.mean7(nights, "tst24", d)
         src = nt.mean_source(nights, "tst24", d)
         b = nt.band(nights, "tst24", d - timedelta(days=6), source=src) if m7 and src else None
@@ -184,9 +203,10 @@ def components(day: dict, nights) -> tuple[list[dict], list[tuple[str, str]]]:
                       "prov": bool(b and b["provisional"])})
     else:
         n = nights.get(d)
-        absent.append(("sleep", "nuit incomplète ?" if n and n.nap_min else "pas de nuit ce matin"))
+        absent.append(("sleep", NO_WATCH if not watch else "nuit incomplète ?" if n and n.nap_min
+                       else "pas de nuit ce matin"))
     if ctx["sessions42"] >= MIN_LOAD_SESSIONS:
-        parts.append({"key": "load", "sub": load_sub(day["big"]), "prov": False})
+        parts.append({"key": "load", "sub": load_sub(day["load"]), "prov": False})
     else:
         absent.append(("load", "pas assez de séances"))
     f = ctx.get("feel")
@@ -220,9 +240,10 @@ def caps(day: dict) -> list[tuple[float, str]]:
 
 
 def place(tone: str, raw: float) -> int:
-    """The score inside the tone's band, rounded half up."""
+    """The score inside the tone's band, rounded half up on the exact value
+    (snapped to 1e-9: 39 × 16,67 % is 6,5 → 7, never 6,4999… → 6)."""
     lo, hi = BANDS[tone]
-    return int(math.floor(lo + (hi - lo) * raw / 100 + 0.5))
+    return int(math.floor(round(lo + (hi - lo) * raw / 100, 9) + 0.5))
 
 
 def score_of(day: dict, nights) -> dict:
@@ -232,9 +253,9 @@ def score_of(day: dict, nights) -> dict:
     if tone not in BANDS:
         return {"value": None, "why": "unknown", "tone": tone}
     parts, absent = components(day, nights)
-    if len(parts) < MIN_SIGNALS:
-        return {"value": None, "why": "few", "tone": tone, "parts": parts, "absent": absent}
-    raw0 = sum(p["sub"] * p["weight"] for p in parts)
+    if not parts:  # nothing measured (a race in 0–2 days with no data, say): no number to place
+        return {"value": None, "why": "none", "tone": tone, "parts": parts, "absent": absent}
+    raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9)  # 49,99999999999999 is 50
     held = caps(day)
     raw = min([raw0] + [c for c, _ in held])
     binding = [w for c, w in held if c < raw0]
@@ -253,27 +274,33 @@ def _shares(parts: list[dict]) -> list[int]:
     return out
 
 
+def _names(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} et {names[-1]}"
+
+
 def _absent_line(absent: list[tuple[str, str]]) -> str | None:
-    """« pas mesuré : VFC et FC de nuit (pas assez de nuits) · Ressenti (pas encore répondu) »."""
+    """One muted line: « pas mesuré : FC de nuit (pas assez de nuits) · Ressenti
+    (pas encore répondu) » for what has no value; « pas compté : VFC et FC de
+    nuit (normale en construction) » for what the tiles show but the score
+    does not read yet (or never: the race eve)."""
     if not absent:
         return None
-    groups: dict[str, list[str]] = {}
+    heads: dict[str, dict[str, list[str]]] = {"pas mesuré": {}, "pas compté": {}}
     for key, why in absent:
-        groups.setdefault(why, []).append(SHORT_NAMES[key])
-    return "pas mesuré : " + " · ".join(f"{' et '.join(names)} ({why})" for why, names in groups.items())
+        head = "pas compté" if why in NOT_COUNTED or why.startswith("nuits ") else "pas mesuré"
+        heads[head].setdefault(why, []).append(SHORT_NAMES[key])
+    return " · ".join(f"{head} : " + " · ".join(f"{_names(names)} ({why})" for why, names in groups.items())
+                      for head, groups in heads.items() if groups)
 
 
 def _none_line(s: dict, has_watch: bool, has_sessions: bool) -> str:
+    """The one line without a score. Tone unknown: the spec's « connecte ta
+    montre ou Strava » only for an athlete with neither; one with Strava or a
+    watch is told what is missing once, by the action's sentence."""
     if s["why"] == "unknown":
-        return ("Pas encore de score." if has_watch and has_sessions
+        return ("Pas encore de score." if has_watch or has_sessions
                 else "Pas encore de score : connecte ta montre ou Strava.")
-    parts = s.get("parts") or []
-    if not parts:
-        return "Pas de score aujourd'hui : rien de mesuré."
-    if parts[0]["key"] == "feel":
-        return "Pas encore de score : ton ressenti seul ne suffit pas."
-    return (f"Pas encore de score : un seul signal ({SHORT_NAMES[parts[0]['key']].lower()}). "
-            "Dis-moi comment tu te sens ce matin.")
+    return "Pas de score aujourd'hui : rien de mesuré."
 
 
 def spark(history: list[tuple[date, dict, dict]]) -> dict | None:

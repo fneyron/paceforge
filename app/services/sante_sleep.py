@@ -244,13 +244,16 @@ def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
 
     cache = {}
 
+    def cached(metric):  # each metric's rolling band once (setdefault would compute it again on every call)
+        if metric not in cache:
+            cache[metric] = band_of(metric)
+        return cache[metric]
+
     def bands(metric):
-        cache.setdefault(metric, band_of(metric))
-        return [(b["lo"], b["hi"]) if b else None for b in cache[metric]]
+        return [(b["lo"], b["hi"]) if b else None for b in cached(metric)]
 
     def prov(metric):  # a « provisoire » band (7 to 13 nights, H) says so in the readout
-        cache.setdefault(metric, band_of(metric))
-        return [bool(b and b["provisional"]) for b in cache[metric]]
+        return [bool(b and b["provisional"]) for b in cached(metric)]
 
     def means(metric):
         if weekly:

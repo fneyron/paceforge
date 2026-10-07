@@ -54,9 +54,12 @@ heuristic, never shown as a finding):
   « malade » after 14 days → « vois un médecin ». A run not measured yet keeps
   intensity off, never sends to a doctor.
 """
+import copy
 import math
 import statistics
 from collections import defaultdict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
@@ -70,6 +73,7 @@ BAND_DAYS = 60  # (H)
 MIN_BAND_NIGHTS = 14  # (H) a full normal
 MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
+WEEK_DAYS = 7
 HR_BAND_BPM = 3  # (H)
 HRV_BAND_SD = 0.5  # (H) the SWC convention of HRV-guided training
 HRV_SD_FLOOR = 0.05  # (H) ≈ 5 %: a very steady band must not make a 2 % dip a signal
@@ -109,6 +113,9 @@ TAG_WORDS = {"long": "après une longue séance", "late": "séance intense le so
              "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
 EXCLUDING = ("long", "late", "altitude", "tz", "alcohol", "race", "ill", "alert")
 EPISODE = ("ill", "alert")  # the nights of an illness episode
+_EXCLUDING = frozenset(EXCLUDING)
+_VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
+_SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}
 CONTEXT = ("long", "late", "altitude", "tz", "alcohol")  # never fire the alert
 
 
@@ -175,16 +182,18 @@ class Night:
         return bool(self.tags & set(EXCLUDING))
 
     def value(self, metric: str):
-        return {"hr": self.hr, "hrv": self.hrv, "tst24": self.tst24, "resp": self.resp}[metric]
+        """hr, hrv, tst24 or resp (read on every night of every band: no dict built per call)."""
+        return self.tst24 if metric == "tst24" else getattr(self, _VALUE[metric])
 
     def source_of(self, metric: str) -> str | None:
-        return {"hr": self.hr_source, "hrv": self.hrv_source, "tst24": self.source, "resp": self.resp_source}[metric]
+        return getattr(self, _SOURCE[metric])
 
     def usable(self, metric: str, ignore=()) -> bool:
         """Can enter the band and the 7-night means for `metric` (`ignore`: tags
         that do not exclude here, e.g. EPISODE for the tile that shows an
         illness episode while R2/R3 is the rung, never for what decides)."""
-        if self.value(metric) is None or (self.tags - set(ignore)) & set(EXCLUDING):
+        out = _EXCLUDING - set(ignore) if ignore else _EXCLUDING
+        if self.value(metric) is None or not self.tags.isdisjoint(out):
             return False
         if metric == "hr" and self.hr_nap_day and self.hr_method == "coros_sleep_summary":
             return COROS_SLEEP_HR_NAP_VERIFIED
@@ -267,7 +276,8 @@ def _local(s, t: datetime) -> datetime:
     return (t + timedelta(seconds=s.offset or 0)).replace(tzinfo=None)
 
 
-def _vigorous(s, rest: float, peak: float) -> bool:
+def vigorous(s, rest: float, peak: float) -> bool:
+    """A session whose average HR is ≥ 60 % of the heart-rate reserve (H): « late » reads it."""
     return bool(s.hr) and s.hr >= rest + VIGOROUS_HRR * (peak - rest)
 
 
@@ -284,15 +294,8 @@ def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date
         before = by_day.get(d - timedelta(days=1), [])
         if any(s.minutes >= LONG_SESSION_MIN for s in before):
             n.tags.add("long")
-        for s in before + by_day.get(d, []):
-            end = _local(s, s.start) + timedelta(minutes=s.elapsed or s.minutes)
-            start = _local(s, s.start)
-            if not _vigorous(s, rest, peak):
-                continue
-            if n.start and timedelta(0) <= n.start - end <= LATE_SESSION_GAP:
-                n.tags.add("late")  # ending ≤ 1 h before sleep onset (Stutz 2019)
-            elif s.day == d - timedelta(days=1) and start.time() >= EVENING and (not n.start or end <= n.start):
-                n.tags.add("late")  # a hard evening session (Myllymäki 2012; 17:00 is H)
+        if any(vigorous(s, rest, peak) for s in late_candidates(n, before + by_day.get(d, []))):
+            n.tags.add("late")
         if any((s.elev_high or 0) >= ALTITUDE_M for s in before + by_day.get(d, [])):
             n.tags.add("altitude")
         if (feel.get(d) or {}).get("alcohol"):
@@ -305,6 +308,20 @@ def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date
     for d in illness_days(feel):
         if d in nights:
             nights[d].tags.add("ill")
+
+
+def late_candidates(n: Night, sessions) -> list:
+    """The sessions (of the day before and of the day) that tag night `n`
+    « late » when they are vigorous: one ending ≤ 1 h before sleep onset
+    (Stutz 2019), or a hard evening session (Myllymäki 2012; 17:00 is H)."""
+    out = []
+    for s in sessions:
+        start = _local(s, s.start)
+        end = start + timedelta(minutes=s.elapsed or s.minutes)
+        if (n.start and timedelta(0) <= n.start - end <= LATE_SESSION_GAP) or (
+                s.day == n.day - timedelta(days=1) and start.time() >= EVENING and (not n.start or end <= n.start)):
+            out.append(s)
+    return out
 
 
 def _tag_timezones(nights: dict[date, Night], sessions) -> None:
@@ -363,22 +380,86 @@ def illness_days(feel: dict[date, dict]) -> set[date]:
 # ── the athlete's normal ────────────────────────────────────────────────────
 
 def _latest_source(nights: dict[date, Night], metric: str, until: date) -> str | None:
-    for d in sorted(nights, reverse=True):
-        if d <= until and nights[d].value(metric) is not None:
-            return nights[d].source_of(metric)
-    return None
+    kept = _kept(nights)
+    if kept is None:
+        return _latest_source_(nights, metric, until)
+    key = ("source", metric, until)
+    if key not in kept:
+        kept[key] = _latest_source_(nights, metric, until)
+    return kept[key]
+
+
+def _latest_source_(nights: dict[date, Night], metric: str, until: date) -> str | None:
+    for k in range(WEEK_DAYS):  # nearly always a night of the last days: no scan of the whole year
+        n = nights.get(until - timedelta(days=k))
+        if n is not None and n.value(metric) is not None:
+            return n.source_of(metric)
+    lo = until - timedelta(days=WEEK_DAYS)
+    last = max((d for d, n in nights.items() if d <= lo and n.value(metric) is not None), default=None)
+    return nights[last].source_of(metric) if last is not None else None
+
+
+# ── a memo for nights that no longer change (the score's 14-day history) ────
+
+_MEMO: ContextVar[dict | None] = ContextVar("nights_memo", default=None)
+
+
+@contextmanager
+def memo():
+    """A scope in which band(), mean7() and illness_alert() on the nights dicts passed
+    to freeze() are computed once per arguments (Santé reads the same bands and
+    alerts again for each day of the score's history)."""
+    token = _MEMO.set({})
+    try:
+        yield
+    finally:
+        _MEMO.reset(token)
+
+
+def freeze(nights: dict[date, Night]) -> dict[date, Night]:
+    """Inside memo(): `nights` (its nights and their tags) will not change any
+    more, so its bands and alerts can be kept. A no-op outside memo()."""
+    m = _MEMO.get()
+    if m is not None and id(nights) not in m:
+        m[id(nights)] = (nights, {})  # the dict is held: its id cannot be reused while the scope lives
+    return nights
+
+
+def _kept(nights) -> dict | None:
+    m = _MEMO.get()
+    hit = m.get(id(nights)) if m else None
+    return hit[1] if hit and hit[0] is nights else None
+
+
+def retagged(n: Night, tags=()) -> Night:
+    """A copy of a night with these tags (the others are not copied: a copy is never mutated but its tags)."""
+    out = copy.copy(n)
+    out.tags = set(tags)
+    return out
 
 
 def band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
          full: bool = False) -> dict | None:
+    kept = _kept(nights)
+    if kept is None:
+        return _band(nights, metric, until, source, full)
+    key = ("band", metric, until, source, full)
+    if key not in kept:
+        kept[key] = _band(nights, metric, until, source, full)
+    return kept[key]
+
+
+def _band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
+          full: bool = False) -> dict | None:
     """The athlete's normal for `metric` (hr, hrv, tst24, resp) from the usable
     nights of the 60 days before `until` (excluded), on one watch (the latest
     one's unless `source`): None under 7 nights (« ta normale se construit »),
     `provisional` from 7 to 13 nights (« provisoire », H); `full`: None under
     14 nights (the illness alert, its episodes, « Reprise »)."""
     source = source or _latest_source(nights, metric, until - timedelta(days=1))
+    lo = until - timedelta(days=BAND_DAYS)
     vals = [n.value(metric) for d, n in nights.items()
-            if until - timedelta(days=BAND_DAYS) <= d < until and n.usable(metric) and n.source_of(metric) == source]
+            if lo <= d < until and n.usable(metric) and n.source_of(metric) == source]
     out = {"metric": metric, "n": len(vals), "source": source, "until": until,
            "provisional": len(vals) < MIN_BAND_NIGHTS}
     if len(vals) < (MIN_BAND_NIGHTS if full else MIN_PROVISIONAL_NIGHTS):
@@ -415,13 +496,24 @@ def band_count(nights: dict[date, Night], metric: str, until: date) -> int:
 
 
 def mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True, ignore=()) -> dict | None:
+    kept = _kept(nights)
+    if kept is None:
+        return _mean7(nights, metric, today, untagged, ignore)
+    key = ("mean7", metric, today, untagged, tuple(ignore))
+    if key not in kept:
+        kept[key] = _mean7(nights, metric, today, untagged, ignore)
+    return kept[key]
+
+
+def _mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True, ignore=()) -> dict | None:
     """The mean of the last 7 days (HRV: exp of the mean ln), {value, n}; None
     under 3 nights. `untagged=False` keeps excluded nights in (the 24-h sleep
     tile shows its value in race week; it is just never judged); `ignore`:
     tags that do not exclude a night here (Night.usable)."""
     source = _latest_source(nights, metric, today)
+    lo = today - timedelta(days=6)
     vals = [n.value(metric) for d, n in nights.items()
-            if today - timedelta(days=6) <= d <= today and n.value(metric) is not None
+            if lo <= d <= today and n.value(metric) is not None
             and n.source_of(metric) == source and (n.usable(metric, ignore) if untagged else True)]
     if len(vals) < MIN_MEAN_NIGHTS:
         return None
@@ -496,6 +588,17 @@ def alert_night(nights: dict[date, Night], races, d: date) -> bool:
 
 
 def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:
+    kept = _kept(nights)
+    if kept is None:
+        return _illness_alert(nights, today, races)
+    # the races it reads: those of the 8 days up to today (« not after a race », alert_night)
+    key = ("alert", today, tuple(sorted(rd for rd, _ in races if 0 <= (today - rd).days <= RACE_WINDOW + 1)))
+    if key not in kept:
+        kept[key] = _illness_alert(nights, today, races)
+    return kept[key]
+
+
+def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:
     """The two nights in a row (yesterday's and today's) each ≥ the HR band's
     alert line, against the FULL band (14 nights, never a provisional one) of
     the 60 days before them on the watch that measured both (one band per
@@ -553,7 +656,8 @@ def reprise(nights: dict[date, Night], feel: dict[date, dict], today: date, race
     """The « Reprise » state (see the module docstring): {since, days, cause,
     gates: {no_sick, easy_hr, night_hr}, see_doctor}; None when no episode
     opened in the last 28 days or it has closed. `easy`: [(day, bpm against the
-    athlete's usual at that pace)] of the flat easy runs (sante_training).
+    athlete's usual at that pace)] of the flat easy runs (sante_training), or
+    a function returning them, called only once an episode opened.
     - easy_hr: the LATEST easy run since the episode is at most 3 bpm over the
       usual (a lower one never holds); no run yet keeps it shut (unmeasured);
     - night_hr: the last night back under the band's top (without a band: the
@@ -569,6 +673,8 @@ def reprise(nights: dict[date, Night], feel: dict[date, dict], today: date, race
     opens = sorted(sick | alerts)
     if not opens:
         return None
+    if callable(easy):  # read once an episode opened only (the score's past days fit their easy-pace model then)
+        easy = easy()
     start = opens[-1]
     for d in reversed(opens[:-1]):  # the episode's first day
         if (start - d).days <= ILL_MERGE:

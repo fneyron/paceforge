@@ -199,7 +199,8 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
 def hr_max(sessions: list[Session], today: date) -> float:
     """98th percentile of the sessions' peaks over 12 months (wrist spikes
     left out by the percentile), clamped to 150–215; 190 without enough."""
-    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and s.day >= today - timedelta(days=365))
+    lo = today - timedelta(days=365)
+    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and s.day >= lo)
     if len(peaks) < 10:
         return 190.0
     return min(215.0, max(150.0, peaks[min(len(peaks) - 1, math.ceil(0.98 * len(peaks)) - 1)]))

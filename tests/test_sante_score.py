@@ -153,7 +153,7 @@ def test_the_word_and_colour_follow_the_tone_and_unknown_has_no_score():
     assert (sc.WORDS, sc.TONE_CLS) == ({"ok": "bon", "easy": "moyen", "rest": "bas"},
                                        {"ok": "ok", "easy": "warn", "rest": "danger"})
     assert sc.score_of({"verdict": {"tone": "unknown"}}, {}) == {"value": None, "why": "unknown", "tone": "unknown"}
-    v = sc.view({"value": None, "why": "unknown"}, [], has_watch=False, has_sessions=True)
+    v = sc.view({"value": None, "why": "unknown"}, [], has_watch=False, has_sessions=False)
     assert v == {"value": None, "line": "Pas encore de score : connecte ta montre ou Strava."}
 
 
@@ -191,9 +191,13 @@ async def test_owner_7_october_exact_score(db_session: AsyncSession, test_user: 
     assert s["cap_line"] == "Plafonné : après la course."
     assert s["absent_line"] == "pas mesuré : VFC et FC de nuit (pas assez de nuits) · Ressenti (pas encore répondu)"
     assert s["aria"].startswith("Forme du jour 59 sur 100, moyen : basé sur 2 signaux sur 5 (sommeil, charge).")
-    # the 14-day line: the days with a score only (no night on race day or the 3 after: one signal, no score)
-    data = s["spark"]["data"]
-    assert "2026-10-02" not in data and "2026-10-04" not in data and '"2026-10-07"' in data
+    # the 14-day line: race day and the 3 after have no night, Charge alone (the race itself left out of it) is
+    # their score: 100 on race day, the cap after it (40 + 29 × 40 / 100 = 51,6 → 52)
+    data = json.loads(s["spark"]["data"])
+    points = dict(zip(data["d"], [(r[1], r[2]) for r in data["r"]], strict=True))
+    assert points["2026-10-02"] == ("100 · bon", "Jour de course")
+    assert points["2026-10-03"] == points["2026-10-05"] == ("52 · moyen", "Récupère")
+    assert points["2026-10-07"] == ("59 · moyen", "Footing facile seulement") and len(points) == 14
     assert s["spark"]["read"] == ["14 derniers jours", "touche un jour", ""]  # today's score is the gauge's
 
 
@@ -318,10 +322,17 @@ async def test_empty_user_has_no_score(as_user: AsyncClient, db_session: AsyncSe
     assert "pf-gauge" not in page and "Forme du jour" not in page
 
 
-def test_strava_only_one_signal_is_no_score_until_the_check_in():
+def test_strava_only_one_signal_is_a_score_based_on_one_signal():
+    """SCORE_SPEC §1: a known tone always has a score (the one no-score case is
+    the tone unknown); one signal is « basé sur 1 signal sur 5 »."""
     a = _view(_nights({}), {}, _runs(), has_watch=False)
-    assert a["verdict"]["tone"] == "ok" and a["score"]["value"] is None
-    assert a["score"]["line"] == "Pas encore de score : un seul signal (charge). Dis-moi comment tu te sens ce matin."
+    s = a["score"]
+    assert a["verdict"]["tone"] == "ok" and s["value"] == 100 and s["word"] == "bon"
+    assert s["base"] == "basé sur 1 signal sur 5" and s["chips"] == ["Charge"]
+    assert [(r["key"], r["share"]) for r in s["rows"]] == [("load", 100)]
+    assert s["absent_line"] == "pas mesuré : VFC, FC de nuit et Sommeil (pas de montre) · Ressenti (pas encore répondu)"
+    sick = _view(_nights({}), {D: _feel(3, ["sick"])}, [], has_watch=False)  # « malade » alone: R2, rest
+    assert sick["verdict"]["tone"] == "rest" and sick["score"]["value"] == sc.place("rest", 10) == 4
     b = _view(_nights({}), {D: _feel(2)}, _runs(), has_watch=False)
     assert b["score"]["value"] == sc.place("ok", 0.6 * 100 + 0.4 * 85) == 98  # 70 + 30 × 0,94
     none = _view(_nights({}), {}, [], has_watch=False)

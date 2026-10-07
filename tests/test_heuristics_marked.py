@@ -60,7 +60,6 @@ HEURISTICS = [
     ("app/services/sante_score.py", "CAP_LOW_HRV", 60),
     ("app/services/sante_score.py", "CAP_SHORT", 65),
     ("app/services/sante_score.py", "POST_EARLY_DAYS", 3),
-    ("app/services/sante_score.py", "MIN_SIGNALS", 2),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc}

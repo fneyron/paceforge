@@ -14,6 +14,7 @@ the watch is a gap, never a zero. Each number is printed once.
 """
 import logging
 import statistics
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
@@ -78,7 +79,15 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
     """The Aujourd'hui view: « Forme du jour », decision, tiles, the sparse
     line, the check-in. `routes`: the Routes raced in the past 12 months and
     the next one (the score's 14-day history reads each day's own race);
-    default: `last_race` and `next_race`."""
+    default: `last_race` and `next_race`. The nights are not changed: their
+    bands and alerts are computed once (nights.memo)."""
+    with nt.memo():
+        return _build_today(nt.freeze(nights), feel, sessions, peak, next_race, last_race, races, today, has_watch,
+                           routes)
+
+
+def _build_today(nights, feel, sessions, peak, next_race, last_race, races, today: date, has_watch: bool,
+                routes=None) -> dict:
     from app.services import sante_score as sc
     from app.services import sante_today as td
     from app.services import sante_training as st
@@ -97,14 +106,8 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
     tiles = td.make_tiles(stats, verdict["drivers"], ctx["reprise"] is not None)
 
     # « Forme du jour »: today's, and the last 14 days' recomputed from what is stored (nothing persisted)
-    recent = {d: n for d, n in nights.items() if d > today - timedelta(days=sc.HISTORY_NIGHTS)}
-    history = []
-    for k in range(sc.HISTORY_DAYS - 1, 0, -1):
-        d = today - timedelta(days=k)
-        past = _decide_day(recent, feel, sessions, model, deltas, routes, races, d, has_watch)
-        history.append((d, past["verdict"], sc.score_of(past, recent)))
     now = sc.score_of(day, nights)
-    history.append((today, verdict, now))
+    history = _history(nights, feel, sessions, routes, today, has_watch, model) + [(today, verdict, now)]
     score = sc.view(now, history, has_watch=has_watch, has_sessions=bool(sessions))
 
     # the nightly tiles that cannot show: one line, once
@@ -124,6 +127,85 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
             "feel": _feel_view(feel.get(today)), "score": score, "method": sc.METHOD, "refs": sc.REFS}
 
 
+def _history(nights, feel, sessions, routes, today: date, has_watch: bool, today_model=None) -> list:
+    """[(day, verdict, score)] of the 13 days before today, each as the page
+    computed it on that day: from the rows stored by then only, so a past
+    point never takes knowledge from a later day. A day's nights carry that
+    day's tags: an alert episode's first night is « FC de nuit haute » only
+    from the next morning, when the alert fires; a race known only once run
+    (Strava) tags its J-7 → J-1 from the day it was run (Routes are planned,
+    known ahead); « late » reads that day's HR bounds. A day reads its own
+    easy-pace model (the runs logged by then), fitted only when a rule reads it.
+
+    Cost: the nights are tagged once, as of today, without the alert; a day
+    whose own tagging gives the same tags on its nights (no race run since
+    that tags them, the same « late » nights) reads those, with that
+    day's alert episodes on top; the bands and alerts are then shared between
+    the days (nights.memo). Any other day is tagged anew. `today_model`:
+    today's easy-pace model, shared with the days that have the same runs."""
+    from app.services import sante_score as sc
+    from app.services import sante_training as st
+
+    recent = [(x, n) for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)]
+    races_now, peak_now = rp.all_races(routes, sessions), st.hr_max(sessions, today)
+    base = {x: nt.retagged(n) for x, n in recent}  # every tag as of today but « FC de nuit haute »
+    rest_now = nt.rest_hr(base, today)
+    nt.tag_nights(base, sessions, races_now, feel, rest_now, peak_now)
+    nt.freeze(base)
+    by_day = defaultdict(list)
+    for s in sessions:
+        by_day[s.day].append(s)
+    # the nights a session can tag « late » (if vigorous: that reads the day's HR bounds)
+    late = {x: c for x, n in base.items()
+            if (c := nt.late_candidates(n, by_day.get(x - timedelta(days=1), []) + by_day.get(x, [])))}
+    tagged = {frozenset(): base}  # a day's alert episode nights → base with those nights tagged « alert »
+    models = {}  # the easy runs' ids → their model: the days with the same runs share one Theil–Sen fit
+    if today_model:
+        models[frozenset(s.id for s in today_model["runs"])] = today_model
+
+    def fitter(ss, d, peak):
+        box = []
+
+        def fit():
+            if not box:
+                key = frozenset(s.id for s in st.easy_runs(ss, peak)
+                                if d - timedelta(days=st.EASY_FIT_DAYS) < s.day <= d)
+                if key not in models:
+                    models[key] = st.easy_model(ss, d, peak)
+                box.append(models[key])
+            return box[0]
+        return fit
+
+    out = []
+    for k in range(sc.HISTORY_DAYS - 1, 0, -1):
+        d = today - timedelta(days=k)
+        ss = [s for s in sessions if s.day <= d]
+        fd = {x: f for x, f in feel.items() if x <= d}
+        races = rp.all_races(routes, ss)  # a race marked on Strava counts from the day it was run
+        peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
+        # its nights tagged « race » today by a race run after it (Strava), and by none it knew of
+        later = {rd for rd, _ in races_now} - {rd for rd, _ in races}
+        moved = later and any(x <= d and any(abs((x - rd).days) <= nt.RACE_WINDOW for rd in later)
+                              and not any(abs((x - rd).days) <= nt.RACE_WINDOW for rd, _ in races) for x in base)
+        same = not moved and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)
+                                 for x, c in late.items() if x <= d)
+        if same:
+            alert = frozenset(x for x in nt.alert_episodes(base, d, races) if x in base)
+            if alert not in tagged:
+                tagged[alert] = nt.freeze({x: nt.retagged(n, n.tags | {"alert"}) if x in alert else n
+                                           for x, n in base.items()})
+            nd = tagged[alert]
+        else:
+            nd = {x: nt.retagged(n) for x, n in recent if x <= d}
+            nt.tag_nights(nd, ss, races, fd, rest, peak)
+            nt.tag_alerts(nd, d, races)
+            nt.freeze(nd)
+        fit = fitter(ss, d, peak)
+        past = _decide_day(nd, fd, ss, fit, lambda fit=fit: st.easy_deltas(fit()), routes, races, d, has_watch)
+        out.append((d, past["verdict"], sc.score_of(past, nd)))
+    return out
+
+
 def _races_on(routes, d: date):
     """(the next race on or after `d`, the last one run in the 14 days before `d`), as _races reads them."""
     nxt = next((r for r in routes if rp.race_day(r) >= d), None)
@@ -133,9 +215,12 @@ def _races_on(routes, d: date):
 
 def _decide_day(nights, feel, sessions, model, deltas, routes, races, d: date, has_watch: bool) -> dict:
     """What the ladder reads on day `d` — today, or a past day of the score's
-    history, recomputed from what is stored now — and its verdict: {day, ctx,
-    verdict, stats (the deciding 7-night HR and HRV), shown (what the tiles
-    show: the same, or an illness episode's nights), tst24, big}."""
+    history (_history: what was stored on that day) — and its verdict: {day,
+    ctx, verdict, stats (the deciding 7-night HR and HRV), shown (what the
+    tiles show: the same, or an illness episode's nights), tst24, big (R6's
+    outing), load (the score's Charge: the same, the race itself left out)}.
+    `model` and `deltas`: the easy-pace model and its deltas, or functions
+    returning them (read only when « Reprise » or R8 needs them)."""
     from app.services import sante_today as td
     from app.services import sante_training as st
 
@@ -150,33 +235,41 @@ def _decide_day(nights, feel, sessions, model, deltas, routes, races, d: date, h
         post["href"] = f"/simulator/routes/{post['route_id']}#prep"
     alert = nt.illness_alert(nights, d, races)
     reprise = nt.reprise(nights, feel, d, races, deltas)
-    easy = st.easy_watch(model, d)
+    f = feel.get(d)
+    worse = bool(f and f.get("answered", True) and f.get("value") == 3)
+    easy = st.easy_watch(model() if callable(model) else model, d) if worse else None  # R8 reads it with « moins bien »
 
-    # R5: a main episode and a 24-h total under 6 h, never in race week
+    # R5: a main episode and a 24-h total under 6 h, never in race week nor on race morning (J-7 → J0: the race
+    # eve is never flagged, Lastella 2014; Juliff 2015)
     short = None
     tst = nt.day_tst24(nights, d)
-    if tst is not None and tst < nt.SHORT_DAY_MIN and not race_week:
+    if tst is not None and tst < nt.SHORT_DAY_MIN and not (nr and 0 <= nr["days"] <= WEEK):
         usual = _usual(nights, d - timedelta(days=1))
         # a « rendormi » morning (a nap ≤ 3 h after the wake, H) is no early wake: its 24-h total says the short night
         early = nt.early_wake(nights[d], usual) and not nights[d].resettled
         short = {"tst24": tst, "early": early, "tip": nt.nap_tip_hour(usual)}
 
     # R6 (H): the biggest outing on foot of the last 48 h, when ≥ 3 h or ≥ 1 500 m D+
-    big = max((s for s in sessions if s.sport in st.FOOT and d - timedelta(days=1) <= s.day <= d
-               and (s.minutes >= td.LEGS_MIN or s.dplus >= td.LEGS_DPLUS)),
-              key=lambda s: (s.minutes, s.dplus), default=None)
+    yday, d42 = d - timedelta(days=1), d - timedelta(days=42)
+    outings = [s for s in sessions if yday <= s.day <= d and s.sport in st.FOOT
+               and (s.minutes >= td.LEGS_MIN or s.dplus >= td.LEGS_DPLUS)]
+    big = max(outings, key=lambda s: (s.minutes, s.dplus), default=None)
+    # the score's Charge leaves a race day's outing out: after a race the cap does it (SCORE_SPEC §2.4)
+    race_days = {rd for rd, _ in races}
+    load = max((s for s in outings if s.day not in race_days), key=lambda s: (s.minutes, s.dplus), default=None)
 
     # what decides: the 7-night means without an illness episode's nights (evidence: « Excluded nights »)
     stats = {k: _night_stats(nights, k, d, spark=False) for k in ("hr", "hrv")}
     ctx = {"today": d, "next_race": nr, "post": post, "feel": feel.get(d), "alert": alert, "reprise": reprise,
            "short": short, "legs": {"big": big}, "hr": stats["hr"]["status"], "hrv": stats["hrv"]["status"],
-           "easy": easy, "sessions42": sum(1 for s in sessions if d - timedelta(days=42) < s.day <= d),
+           "easy": easy, "sessions42": sum(1 for s in sessions if d42 < s.day <= d),
            "has_watch": has_watch, "has_sessions": bool(sessions), "race_week": race_week}
     verdict = td.decide(ctx)
     shown = stats
     if verdict["rule"] in ("ill", "reprise"):
         shown = {k: _night_stats(nights, k, d, episode=True, spark=False) for k in ("hr", "hrv")}
-    return {"day": d, "ctx": ctx, "verdict": verdict, "stats": stats, "shown": shown, "tst24": tst, "big": big}
+    return {"day": d, "ctx": ctx, "verdict": verdict, "stats": stats, "shown": shown, "tst24": tst, "big": big,
+            "load": load}
 
 
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median onset and wake are used (R5's early wake, the nap tip)
@@ -357,8 +450,9 @@ def _post_race(last_race, sessions, today: date) -> dict | None:
     for s in sessions:
         if not 1 <= (today - s.day).days <= FREE_VERY_LONG:
             continue
-        before = max((x.minutes for x in sessions if s.day - timedelta(days=60) <= x.day < s.day), default=0)
-        if (s.workout_type == 1 and s.minutes >= 180) or (s.minutes >= 360 and s.minutes >= 1.5 * before):
+        # the longest of the 60 days before is read for an outing of 6 h and more only
+        if (s.workout_type == 1 and s.minutes >= 180) or (s.minutes >= 360 and s.minutes >= 1.5 * max(
+                (x.minutes for x in sessions if s.day - timedelta(days=60) <= x.day < s.day), default=0)):
             cands.append((s.day, s.minutes, True, f"ta sortie {of_day(s.day, today)}", s.workout_type == 1, None, s))
     # the latest day first; on one day, the Route (named) before the session
     for day, minutes, known, name, race, route, session in sorted(

@@ -69,7 +69,7 @@
 <div id="sante-today-rest">
     {% if a.tiles %}<div class="pf-tiles">{% for t in a.tiles %}{{ tile(t) }}{% endfor %}</div>{% endif %}
     {% if a.line %}<p class="pf-sante-note">{{ a.line }}{% if a.line_link %} <a href="{{ a.line_link[0] }}">{{ a.line_link[1] }} ›</a>{% endif %}</p>
-    {% elif a.building %}<p class="pf-sante-note">Pas encore de statut : ta normale se construit sur 14 nuits. <a href="/sante?vue=sommeil#nuits">Sommeil ›</a></p>{% endif %}
+    {% elif a.building %}<p class="pf-sante-note">Pas encore de statut : ta normale se construit. <a href="/sante?vue=sommeil#nuits">Sommeil ›</a></p>{% endif %}{# the count once, on Sommeil #}
     {% set f = a.feel %}
     <section class="pf-feel3" aria-labelledby="h-feel">
         {% if f.answered %}

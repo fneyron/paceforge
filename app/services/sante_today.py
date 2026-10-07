@@ -19,9 +19,10 @@ R4  after a race (or an exceptional outing): « Récupère » J+1 → J+3, then
     J+3 after a race under 3 h (H).
 R5  short night: a main episode (any length) and a 24-h total < 6 h (Craven
     2022; a nap that ended in the 24 h before the main wake counts, H),
-    outside J-7 → J-1. Early wake (≥ 60 min before the median wake, H, or no
-    median) → « Séance dure ce matin, sinon facile » + the nap tip (Lastella
-    2021; Mesas 2023; Mograss 2022). Otherwise the ladder goes on and the
+    outside J-7 → J0 (the race eve is never flagged: Lastella 2014). Early
+    wake (≥ 60 min before the median wake, H, or no median) → « Séance dure
+    ce matin, sinon facile » + the nap tip (Lastella 2021; Mesas 2023;
+    Mograss 2022). Otherwise the ladder goes on and the
     sentence slot says « Nuit courte : place ta séance dure plutôt le matin. »
 R6  legs (H): an outing ≥ 3 h or ≥ 1 500 m D+ in the last 48 h, or the
     check-in « jambes ». A mover by the athlete's sign-off, never worded
@@ -104,7 +105,7 @@ def decide(c: dict) -> dict:
     next_race {days, name, href}; post (sante._post_race, with href); feel
     (feel_of of today, or None); alert (nights.illness_alert); reprise
     (nights.reprise); short {early, tip} when R5 applies (a main episode, a
-    24-h total < 6 h, not in race week); legs {big: the outing of the last
+    24-h total < 6 h, not in race week nor on race day); legs {big: the outing of the last
     48 h ≥ 3 h or ≥ 1 500 m D+, or None}; hrv / hr: the 7-night status
     (« above » / « below » / « in » / None); easy {flag}; sessions42;
     has_watch; has_sessions. `drivers` name the tiles behind the action (hr,

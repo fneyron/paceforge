@@ -738,7 +738,8 @@ async def test_a_race_marked_on_strava_only_is_a_race_for_the_nights(db_session:
     assert v["rule"] == "race" and v["headline"] == "Récupère"
     marks = {r["iso"]: r["marks"] for r in page["som"]["rows"]}
     assert all("autour de la course" in marks[(D - timedelta(days=k)).isoformat()] for k in range(3))
-    assert "malade" not in str(page) and "FC de nuit haute" not in str(page)
+    shown = str({**page, "auj": {k: x for k, x in page["auj"].items() if k != "method"}})  # the fold names « malade »
+    assert "malade" not in shown and "FC de nuit haute" not in shown
 
 
 async def test_the_old_course_link_keeps_the_recovery_first(as_user: AsyncClient, db_session: AsyncSession,

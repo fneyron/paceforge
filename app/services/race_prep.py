@@ -472,12 +472,14 @@ def recovery(nights: dict, rd: date, today: date) -> dict:
             fix[i] = ([viz.night_label(d), "—", f"{j_label((d - rd).days)} · pas de montre cette nuit"],
                       f"{d_long(d)}, {j_label((d - rd).days)} : pas de mesure")
     c = _patch(c, fix) if fix else c
-    c["banded"] = any(p["band"][0] for p in panels)
-    prov = any(p["band"][0] and p["prov"][0] for p in panels)
+    banded = [p for p in panels if p["band"][0]]
+    c["banded"] = bool(banded)
+    # « (provisoire) » for the bands that are (7 to 13 nights, H), named when the other one is full
+    prov = [p["name"] for p in banded if p["prov"][0]]
+    prov = "" if not prov else " (provisoire)" if len(prov) == len(banded) else f" ({prov[0]} provisoire)"
     # resting readout: the last night's VFC and FC are Santé › Sommeil's (printed once, there)
     return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit",
-                        ("bande : ta normale avant la course" + (" (provisoire)" if prov else "")) if c["banded"]
-                        else ""],
+                        ("bande : ta normale avant la course" + prov) if c["banded"] else ""],
                     "Cœur la nuit de J+1 à J+14, VFC en haut, FC en bas"
                     + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Touche une nuit pour ses "
                     "valeurs.", back=sel)

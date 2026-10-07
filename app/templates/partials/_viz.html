@@ -164,7 +164,7 @@
    on the axis: the score is printed by the readout, on a tap); readout = date · « 59 · moyen » · the action #}
 {% macro viz_score(c, title="Forme du jour sur 14 jours") %}
 {% call figure(c, title, "forme", None, "journée", "Jour précédent", "Jour suivant", cls="pf-viz-score") %}
-{% for y in c.cuts %}<line x1="0" x2="{{ c.X1 }}" y1="{{ y }}" y2="{{ y }}" class="pf-viz-grid"/>{% endfor %}
+{% for y in c.cuts %}<line x1="0" x2="{{ c.X1 }}" y1="{{ y }}" y2="{{ y }}" class="pf-viz-edge"/>{% endfor %}{# the 40 and 70 that bound « bas / moyen / bon »: marks, ≥ 3:1 #}
 {% for z in c.zones %}<text x="{{ c.W }}" y="{{ z.label_y }}" text-anchor="end">{{ z.label }}</text>{% endfor %}
 <path d="{{ c.line }}" class="pf-viz-line is-soft" pathLength="1"/>
 {% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot" data-i="{{ d.i }}"/>{% endfor %}
