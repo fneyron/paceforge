@@ -13,7 +13,7 @@
                             to the default; aria-valuetext = D.a[k]
      [data-live] .......... polite live region: speaks once after a pointer scrub or a step, only in the
                             figure being touched
-     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link}
+     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?}
    Figures of one data-viz-group follow each other by date (silently); a figure without that date shows « — ».
    Range toggles: [data-viz-ranges] [data-range] show the matching [data-range-panel] in the closest
    [data-viz-scope] and write ?r= (history.replaceState). Lazy panels (hx-get, hx-trigger="click once")
@@ -42,7 +42,11 @@
         slots = fig.querySelectorAll("[data-r]"), marks = svg.querySelectorAll("[data-i]"),
         steps = fig.querySelectorAll("[data-step]"), hrefEl = fig.querySelector("[data-r-href]"),
         group = fig.getAttribute("data-viz-group"), dflt = D.sel == null ? D.x.length - 1 : D.sel,
-        cur = -1, pending = null, liveT = null, drag = false;
+        cur = -1, pending = null, liveT = null, drag = false,
+        // D.rest: a resting readout (« semaine type : 7h40 ») shown until a touch; it sits one step
+        // after the last point (index D.x.length): › from the last point and Esc come back to it
+        rest = D.rest || null, END = D.x.length, top = END - 1 + (rest ? 1 : 0);
+    if (rest) dflt = END;
     var byI = {};
     for (var m = 0; m < marks.length; m++) {
       var k = marks[m].getAttribute("data-i");
@@ -72,15 +76,16 @@
     function stepState() {
       for (var s = 0; s < steps.length; s++) {
         var dir = +steps[s].getAttribute("data-step");
-        steps[s].disabled = cur < 0 ? false : (dir < 0 ? cur <= 0 : cur >= D.x.length - 1);
+        steps[s].disabled = cur < 0 ? false : (dir < 0 ? cur <= 0 : cur >= top);
       }
     }
 
     // opts.silent: following another figure of the group (no event, no speech)
     function select(i, opts) {
       opts = opts || {};
-      i = Math.max(0, Math.min(D.x.length - 1, i | 0));
+      i = Math.max(0, Math.min(top, i | 0));
       if (i === cur) return;
+      if (rest && i === END) { resting(); return; }
       mark(cur, false);
       cur = i; pending = null;
       mark(i, true);
@@ -108,6 +113,17 @@
       }
     }
 
+    function resting() {   // nothing selected: the server's resting readout
+      mark(cur, false);
+      cur = END; pending = null;
+      if (cross) cross.style.visibility = "hidden";
+      for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
+      if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
+      if (hrefEl) hrefEl.toggleAttribute("hidden", true);
+      nights(-1);
+      stepState();
+    }
+
     function blank(date) {   // this figure has no such day: « — », no mark, no crosshair
       mark(cur, false);
       cur = -1; pending = date;
@@ -121,7 +137,7 @@
     function announce() {
       if (!live || !D.a || cur < 0) return;
       clearTimeout(liveT);
-      liveT = setTimeout(function () { live.textContent = D.a[cur]; }, 350);
+      liveT = setTimeout(function () { live.textContent = cur === END ? (D.restA || "") : D.a[cur]; }, 350);
     }
 
     function indexAt(e) {
@@ -161,7 +177,7 @@
     }
 
     if (input) {
-      input.min = 0; input.max = D.x.length - 1; input.step = 1;
+      input.min = 0; input.max = top; input.step = 1;
       input.addEventListener("input", function () { select(+input.value); });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { e.preventDefault(); select(dflt); }

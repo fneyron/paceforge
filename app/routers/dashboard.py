@@ -17,6 +17,7 @@ from app.services.activity_sources import adopt_watch_twin
 from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
+from app.services.training_view import training_top
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -87,6 +88,8 @@ async def activities_page(
 
     weeks, has_more = await _week_groups(db, user.id, page, sport)
     training_load = await calculate_training_load(db, user.id, now)
+    # weeks, fond et fatigue, FC en footing: on the first page of the whole log only
+    training = await training_top(db, user.id, now) if page == 1 and sport is None else None
 
     return templates.TemplateResponse(
         request, "activities.html",
@@ -98,6 +101,7 @@ async def activities_page(
             "sport": sport,
             "filters": FILTERS,
             "training_load": training_load,
+            "training": training,
         },
     )
 

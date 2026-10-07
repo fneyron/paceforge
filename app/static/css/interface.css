@@ -167,6 +167,27 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-upload-zone label:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; }
 .pf-file-invalid { color: rgb(var(--pf-danger)) !important; }
 
+/* ── Activités, top: Semaines, Fond et fatigue, FC en footing (training_view.py, activity_training.html) ── */
+.pf-train { margin-top: 20px; }
+.pf-train > .pf-h2 { font-size: 20px; }
+.pf-train-line a { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-train-line a { color: rgb(var(--pf-accent)); }
+.pf-train-fold { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-train-fold + .pf-filters, .pf-train + .pf-filters { margin-top: 20px; }
+.pf-train-fold:has(+ .pf-filters) { border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-train-fold > summary { display: flex; align-items: center; gap: 6px; min-height: 52px; cursor: pointer; list-style: none; font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-train-fold > summary::-webkit-details-marker { display: none; }
+.pf-train-fold > summary::after { content: "›"; display: inline-block; margin-left: auto; font-size: 22px; line-height: 1; color: rgb(var(--pf-gray-400)); }
+.pf-train-fold[open] > summary::after { transform: rotate(90deg); }
+.pf-train-fold > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-train-fold[open] { padding-bottom: 14px; }
+.pf-train-warn { font-family: var(--pf-font-text); font-size: 15px; font-weight: 600; color: rgb(var(--pf-warn)); }
+.pf-train-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); padding-bottom: 6px; }
+.pf-viz-line.is-accent { stroke: rgb(var(--pf-accent)); stroke-width: 1.5; }
+.pf-viz-svg .pf-viz-halo { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 4px; stroke-linejoin: round; }
+.pf-viz-long.is-warn { fill: rgb(var(--pf-warn)); }
+@media (forced-colors: active) { .pf-viz-line.is-accent { stroke: CanvasText; } .pf-viz-long.is-warn { fill: CanvasText; } }
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
@@ -333,6 +354,17 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-prep .pf-h2 { font-size: 22px; margin-bottom: 4px; }
 .pf-prep .pf-tool { min-height: 56px; padding: 0; }
 .pf-prep .pf-tools > :last-child { border-bottom: 1px solid rgb(var(--pf-line)); }
+
+/* race page › Préparation (#prep): taper, nights J-14 → J-1, race week, recovery (race_prep.py, race_prep.html) */
+.pf-rp { margin-top: 40px; scroll-margin-top: 72px; }
+.pf-rp > .pf-h2 { font-size: 22px; }
+.pf-rp-h3 { margin-top: 30px; font-size: 16px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-rp-line { margin-top: 8px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-rp-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
+.pf-rp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-rp-list a, .pf-rp-link { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.pf-rp-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; text-align: left; }
+.dark :is(.pf-rp-list a, .pf-rp-link) { color: rgb(var(--pf-accent)); }
 
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }

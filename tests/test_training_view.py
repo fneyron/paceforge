@@ -1,0 +1,190 @@
+"""Activités, top of the page (v3, moved from Santé): A1 « Semaines », A2
+« Fond et fatigue », A3 « FC en footing » — pure functions on synthetic
+sessions, then the page itself."""
+import json
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
+
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.dependencies import get_current_user
+from app.models.activity import Activity
+from app.models.route import Route
+from app.models.user import User
+from app.services import sante_training as st
+from app.services import training_view as tv
+from app.services.sante_training import Session
+
+T = date(2026, 10, 7)  # a Wednesday
+NOW = datetime(2026, 10, 7, 12, tzinfo=timezone.utc)
+
+
+def S(days_ago: int, minutes: float = 60, km: float = 10, dplus: float = 50, hr: float | None = 140,
+      sport: str = "Run", i: int = 0, **kw) -> Session:
+    day = T - timedelta(days=days_ago)
+    start = datetime(day.year, day.month, day.day, 7, 0, tzinfo=timezone.utc) + timedelta(minutes=i)
+    return Session(id=kw.pop("id", days_ago * 100 + i), start=start, day=day, sport=sport, minutes=minutes,
+                   dplus=dplus, km=km, speed=km * 1000 / (minutes * 60) if km else None, hr=hr,
+                   hr_peak=kw.pop("hr_peak", 185), suffer=None, workout_type=kw.pop("workout_type", 0),
+                   temp=kw.pop("temp", None), name=kw.pop("name", "Footing"), **kw)
+
+
+def race(days: int, name: str = "Transjeju 100M", rid: int = 7, km: float = 160, hour: int = 21,
+         target: int | None = None, result=None):
+    return SimpleNamespace(id=rid, name=name, race_date=(T + timedelta(days=days)).isoformat(), start_hour=hour,
+                           start_minute=0, total_distance_km=km, total_elevation_gain=6000, target_time_s=target,
+                           sport_type="trail", result_json=result)
+
+
+def steady(days: int = 200) -> list[Session]:
+    """Four outings a week, 1h50 each (7h20 a week), 10 km."""
+    ss = [S(k, minutes=110, km=18, i=k) for k in range(1, days) if (T - timedelta(days=k)).weekday() in (1, 3, 5, 6)]
+    st.set_loads(ss, 50, 185)
+    return ss
+
+
+def data(c: dict) -> dict:
+    return json.loads(c["data"].replace("<\\/", "</"))
+
+
+# ── A1 Semaines ─────────────────────────────────────────────────────────────
+
+def test_a_run_more_than_10_percent_longer_than_the_months_longest_is_a_spike_races_never():
+    base = [S(k, km=18, minutes=100, i=k) for k in range(5, 35, 3)]
+    assert tv.spikes(base + [S(1, km=19.5, minutes=110)], set(), T - timedelta(days=9)) == []  # +8 %
+    sp = tv.spikes(base + [S(1, km=22, minutes=125, id=1)], set(), T - timedelta(days=9))
+    assert [s.id for s, _ in sp] == [1] and round((sp[0][1] - 1) * 100) == 22
+    assert tv.spikes(base + [S(1, km=40, minutes=300, workout_type=1)], set(), T - timedelta(days=9)) == []
+    assert tv.spikes(base + [S(1, km=40, minutes=300)], {T - timedelta(days=1)}, T - timedelta(days=9)) == []
+    assert tv.spikes(base + [S(1, km=40, sport="Ride", minutes=90)], set(), T - timedelta(days=9)) == []  # runs only
+    new = [S(k, km=5 + k % 3, minutes=40, i=k) for k in range(1, 20)]  # 3 weeks of history: nothing to compare with
+    assert tv.spikes(new, set(), T - timedelta(days=30)) == []
+
+
+def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
+    ss = steady()
+    c = tv.semaines(ss, [], T, NOW)
+    d = data(c)
+    assert c["n"] == 12 and len(d["x"]) == 12
+    # resting readout: the usual week (median of the active weeks), nothing selected
+    assert d["rest"] == ["12 semaines", "semaine type : 7h20", ""] and d["sel"] == 12 and c["rest"]
+    assert c["read"][1] == "semaine type : 7h20" and c["band"] is not None
+    # a week on a tap: its hours and D+, the sessions, the link to it in the list (page 1: in place)
+    last = d["r"][-2]
+    assert last[0] == "sem. du 28 sept." and last[1] == "7h20 · 200 m D+" and last[2] == "4 séances"
+    assert d["h"][-2] == {"href": "#week-2026-09-28", "label": "Voir la semaine ›"}
+    assert d["h"][0]["href"] == "/activities?page=2#week-2026-07-20"
+    assert d["r"][-1][0] == "sem. du 5 oct. · en cours" and c["cols"][-1]["cur"]
+    assert "%" not in json.dumps(d, ensure_ascii=False)  # no weekly % anywhere
+
+
+def test_weeks_mark_races_long_outings_and_the_spike():
+    ss = steady() + [S(16, minutes=200, km=18, dplus=1800, id=2, name="Grand tour")]  # long, not longer
+    ss += [S(2, minutes=150, km=26, id=3)]  # +44 % on the 30-day longest (18 km): a spike, and the line
+    st.set_loads(ss, 50, 185)
+    rc = race(-30, name="Trail des Crêtes", hour=6)
+    c = tv.semaines(ss, [rc], T, NOW)
+    d = data(c)
+    assert [r["name"] for r in c["races"]] == ["Trail des Crêtes"]
+    assert len(c["longs"]) == 1 and len(c["spikes"]) == 1
+    assert "◆ sortie 44 % plus longue" in d["r"][-1][2]
+    assert "◆ sortie de 3h20" in d["r"][-3][2] and "⚑ Trail des Crêtes" in " ".join(r[2] for r in d["r"])
+    assert c["line"] == {"text": "Sortie de lundi 44 % plus longue que ta plus longue du mois.",
+                         "href": "/activity/3"}
+
+
+def test_the_line_after_the_spike_is_the_taper_then_the_recovery():
+    ss = steady()
+    rc = race(5, rid=9)  # Monday 12 Oct: S-1 started Monday 5 Oct
+    assert tv.a1_line(ss, [rc], set(), T) == {"text": "Affûtage pour Transjeju 100M ›",
+                                              "href": "/simulator/routes/9#prep"}
+    assert tv.a1_line(ss, [race(13)], set(), T) is None  # taper not started
+    done = race(-5, rid=4, result={"total_actual_s": 60780})
+    assert tv.a1_line(ss, [done], set(), T) == {
+        "text": "Récupération après Transjeju 100M\u00a0: volume bas, c'est voulu.", "href": "/simulator/routes/4#prep"}
+    short = race(-9, rid=5, km=10, result={"total_actual_s": 2700})
+    assert tv.a1_line(ss, [short], set(), T) is None  # 7 days after a race under 3 h
+    assert tv.a1_line(ss, [race(-15, result={"total_actual_s": 60780})], set(), T) is None
+
+
+# ── A2 Fond et fatigue ──────────────────────────────────────────────────────
+
+def test_fond_and_fatigue_wait_six_weeks_then_print_the_date_only():
+    young = steady(30)
+    assert tv.fond_fatigue(young, [], T)["wait"].startswith("Il faut 6 semaines de séances : encore ")
+    c = tv.fond_fatigue(steady(), [race(-40, name="Trail des Crêtes")], T)
+    d = data(c)
+    assert [s["name"] for s in c["series"]] == ["fond", "fatigue"] and len(d["x"]) == 120
+    assert d["r"][-1] == ["", "mer. 7 oct.", ""] and d["a"][-1] == "mercredi 7 octobre"
+    text = json.dumps(d, ensure_ascii=False)
+    for word in ("%", "au-dessus", "proche", "sous ton", "ratio"):
+        assert word not in text
+    assert [r["name"] for r in c["races"]] == ["Trail des Crêtes"]
+    ends = [s["ly"] for s in c["series"]]
+    assert abs(ends[0] - ends[1]) >= 13  # the two names never overlap
+
+
+# ── A3 FC en footing ────────────────────────────────────────────────────────
+
+def easy(days_ago: int, hr: float, temp: float | None = None, i: int = 0) -> Session:
+    return S(days_ago, minutes=60, km=10, dplus=40, hr=hr, temp=temp, i=i, id=50_000 + days_ago * 10 + i)
+
+
+def test_easy_pace_hr_dots_hollow_hot_runs_and_a_band_from_the_28_days_before():
+    runs = [easy(k, 140 + (k % 3) - 1) for k in range(3, 200, 4)] + [easy(6, 150, temp=29, i=1)]
+    c = tv.footing(runs, T, 185)
+    d = data(c)
+    assert c["pace"] == "6:00/km" and not c["flagged"] and c["line"] is None
+    hot = [p for p in c["dots"] if p["hot"]]
+    assert len(hot) == 1
+    i = next(k for k, r in enumerate(d["r"]) if "journée chaude" in r[2])
+    assert d["r"][i][1] == "150 bpm" and "normale 137–143" in d["r"][i][2]
+    assert d["h"][i] == {"href": f"/activity/{50_000 + 6 * 10 + 1}", "label": "Ouvrir la sortie ›"}
+    assert c["band"]  # the rolling band is drawn
+
+
+def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
+    runs = [easy(k, 140) for k in range(10, 200, 3)]
+    assert not tv.footing(runs + [easy(2, 144)], T, 185)["flagged"]  # one run
+    c = tv.footing(runs + [easy(5, 144), easy(2, 146)], T, 185)
+    assert c["flagged"] and c["line"] == "+5 bpm sur tes 2 dernières sorties, à même allure."
+    assert not tv.footing(runs + [easy(5, 144), easy(2, 142)], T, 185)["flagged"]  # +2: within the band
+    assert not tv.footing(runs + [easy(5, 150, temp=30), easy(2, 150, temp=30)], T, 185)["flagged"]  # hot
+    assert tv.footing([easy(k, 140) for k in range(3, 20, 3)], T, 185) is None  # under 8 runs for the slope
+
+
+# ── the page ────────────────────────────────────────────────────────────────
+
+async def _add_runs(db: AsyncSession, user: User, today: date, n: int = 140):
+    for k in range(1, n):
+        d = today - timedelta(days=k)
+        if d.weekday() not in (1, 3, 5, 6):
+            continue
+        start = datetime(d.year, d.month, d.day, 6, 0, tzinfo=timezone.utc)
+        db.add(Activity(user_id=user.id, strava_activity_id=880_000 + k, sport_type="Run", name=f"Footing {k}",
+                        start_date=start, distance=10_000, moving_time=3600, elapsed_time=3700,
+                        total_elevation_gain=40, average_speed=10_000 / 3600, average_heartrate=140 + k % 3,
+                        max_heartrate=185, raw_data={"utc_offset": 7200}))
+    await db.flush()
+
+
+async def test_activities_page_has_the_three_blocks_on_page_one_only(client: AsyncClient, db_session: AsyncSession,
+                                                                     test_user: User):
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
+    today = datetime.now(timezone.utc).date()
+    await _add_runs(db_session, test_user, today)
+    db_session.add(Route(user_id=test_user.id, name="Trail des Crêtes", total_distance_km=42, total_elevation_gain=2000,
+                         race_date=(today + timedelta(days=3)).isoformat(), start_hour=7, sport_type="trail"))
+    await db_session.flush()
+    r = await client.get("/activities")
+    assert r.status_code == 200
+    html = r.text
+    assert 'id="semaines"' in html and "semaine type" in html and "pf-viz.js" in html
+    assert '<details id="fatigue" class="pf-train-fold">' in html  # folded
+    assert '<details id="fc-facile" class="pf-train-fold">' in html  # folded: not flagged
+    assert "Affûtage pour Trail des Crêtes ›" in html and "#prep" in html
+    assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
+    assert html.index('id="semaines"') < html.index('aria-label="Filtrer les activités par sport"')
+    for url in ("/activities?sport=run", "/activities?page=2"):
+        assert 'id="semaines"' not in (await client.get(url)).text

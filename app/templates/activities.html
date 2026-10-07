@@ -18,6 +18,8 @@
         </button>
     </div>
 
+    {% if training %}{% include "partials/activity_training.html" %}{% endif %}
+
     <!-- Filters: four families, not thirteen sport codes -->
     <nav aria-label="Filtrer les activités par sport" class="pf-filters pf-seg pf-seg-sm max-w-full overflow-x-auto">
         {% for key, label in filters %}

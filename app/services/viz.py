@@ -255,7 +255,7 @@ PANEL_H, PANEL_GAP, FLAG = 92, 18, 22
 
 
 def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), longs=(), tags=None, sel=None,
-               title: str = "") -> dict:
+               title: str = "", labels: bool = True) -> dict:
     """Stacked panels sharing one x axis, one scrub and one readout (« Cœur la
     nuit »: VFC above, FC de nuit below, respiration as a slim third panel).
     Each panel: {name, unit, unit_long, values: [per day], band: [(lo, hi) |
@@ -263,7 +263,8 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
     min_span, digits, up_is: "warn" | "muted" (what « au-dessus » means), h}.
     Readout: [date, « VFC 58 ms · FC 46 bpm », « normale 55–63 · ◇ alcool »];
     an out-of-band night is a hollow dot and the word « au-dessus » /
-    « en dessous », never colour alone."""
+    « en dessous », never colour alone. `labels=False` draws the band
+    without judging any night (the race window: no flag, evidence rows 24–25)."""
     n = len(days)
     xs = slot_x(n)
     out_panels, y_series = [], []
@@ -280,7 +281,7 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
             if v is None:
                 continue
             b = p["band"][i]
-            out = "up" if b and v > b[1] else "down" if b and v < b[0] else None
+            out = ("up" if b and v > b[1] else "down" if b and v < b[0] else None) if labels else None
             dots.append({"x": xs[i], "y": yv[i], "out": out, "i": i})
         out_panels.append({
             "name": p["name"], "top": top, "bottom": top + h,
@@ -301,9 +302,9 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
             if v is None:
                 continue
             word = ""
-            if b and v > b[1]:
+            if labels and b and v > b[1]:
                 word = " au-dessus"
-            elif b and v < b[0]:
+            elif labels and b and v < b[0]:
                 word = " en dessous"
             vals.append(f"{p['name']} {num(v, dg, p['unit'])}{word}")
             if b:
