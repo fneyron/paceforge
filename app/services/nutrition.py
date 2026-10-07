@@ -1,16 +1,18 @@
-"""Deterministic race-nutrition planning.
+"""Race nutrition: products, the athlete's choices for a race, caffeine.
 
-The athlete defines an intake *rate* per product (units per hour); this module
-turns that into totals, per-hour intake of carbs/fluid/sodium, a comparison
-against recommended targets, and a schedule mapped to the race checkpoints.
+« Tu prépares par tronçon, tu manges au bip » : the athlete packs one sachet
+per stretch between two food ravitos and eats on one watch beep. This module
+holds what the plan is built FROM (the catalogue, the quick picks, the stored
+choices of a race, the caffeine doses); app.services.nutrition_plan turns that
+into the stretch table, the bags and the shopping list.
 
-Nothing here calls an LLM — the numbers are reproducible and explainable.
+Nothing here calls an LLM: the numbers are reproducible and explainable.
 """
 
 import math
 
-# Recommended intake guidelines (endurance, trained gut). These are defaults the
-# athlete can override; they are not medical advice.
+# Recommended intake guidelines (endurance, trained gut), used by the triathlon
+# plan. The trail plan takes its carbs from the level the athlete has practised.
 _CARBS_SHORT = 60.0   # g/h, efforts < 3h
 _CARBS_MID = 75.0     # g/h, 3–6h
 _CARBS_LONG = 80.0    # g/h, > 6h
@@ -19,63 +21,24 @@ _SODIUM_BASE = 400.0  # mg/h at mild temperature
 
 
 def default_targets(duration_h: float, mean_temp_c: float | None) -> dict:
-    """Recommended hourly targets from race duration and mean temperature.
-
-    Fluid and sodium scale up with heat above ~15 °C (more sweat, more loss).
-    """
+    """Hourly targets from duration and temperature (triathlon plan)."""
     if duration_h < 3:
         carbs = _CARBS_SHORT
     elif duration_h < 6:
         carbs = _CARBS_MID
     else:
         carbs = _CARBS_LONG
-
     fluid = _FLUID_BASE
     sodium = _SODIUM_BASE
     if mean_temp_c is not None and mean_temp_c > 15:
         over = mean_temp_c - 15
-        fluid += min(400.0, over * 25.0)    # +25 ml/h per °C, capped +400
-        sodium += min(500.0, over * 35.0)   # +35 mg/h per °C, capped +500
-
+        fluid += min(400.0, over * 25.0)
+        sodium += min(500.0, over * 35.0)
     return {
         "carbs_g_per_h": round(carbs),
         "fluid_ml_per_h": int(round(fluid / 10.0) * 10),
         "sodium_mg_per_h": int(round(sodium / 10.0) * 10),
     }
-
-
-def suggest_rates(target_carbs_per_h: float, products: list[dict]) -> dict[int, float]:
-    """Suggest an intake rate (units/h) to roughly meet the carb target.
-
-    Strategy: lean on the highest-carb product as the main fuel and set its
-    rate so it alone covers the carb target. Simple and transparent; the
-    athlete fine-tunes from there (e.g. swapping some gels for drink/solids).
-    """
-    carb_products = [p for p in products if (p.get("carbs_g") or 0) > 0]
-    if not carb_products or target_carbs_per_h <= 0:
-        return {}
-    main = max(carb_products, key=lambda p: p.get("carbs_g") or 0)
-    rate = target_carbs_per_h / (main["carbs_g"])
-    return {main["id"]: round(rate * 2) / 2}  # nearest 0.5 unit/h
-
-
-def rate_for_target(target_carbs_per_h: float, carbs_per_unit: float) -> float:
-    """Units/h of one product needed to hit the carb target alone."""
-    if carbs_per_unit and carbs_per_unit > 0 and target_carbs_per_h > 0:
-        return round((target_carbs_per_h / carbs_per_unit) * 2) / 2
-    return 0.0
-
-
-def _status(provided: float, target: float) -> str:
-    """under / ok / over relative to a target (±15% band = ok)."""
-    if target <= 0:
-        return "ok"
-    ratio = provided / target
-    if ratio < 0.85:
-        return "under"
-    if ratio > 1.2:
-        return "over"
-    return "ok"
 
 
 def _clock_hour(clock_s: float) -> float:
@@ -84,16 +47,18 @@ def _clock_hour(clock_s: float) -> float:
 
 # One-click catalogue of common race products (per unit, label values; the
 # athlete can still edit them in « Tes produits »). Keys are stable slugs;
-# "short" is what a chip, a bag and the shopping list show.
+# "short" is what a chip, a bag and the shopping list show. ``servings`` = the
+# prises in one unit (PF 90: a resealable 90 g pouch taken in 3 goes of 30 g);
+# a salt tablet's ``volume_ml`` is the water it dissolves in.
 PRODUCT_CATALOG: list[dict] = [
     {"key": "maurten-gel-100", "name": "Maurten Gel 100", "short": "Maurten 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": None, "volume_ml": None},
     {"key": "maurten-gel-100-caf", "name": "Maurten Gel 100 CAF 100", "short": "Maurten 100 CAF", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": 100, "volume_ml": None},
     {"key": "maurten-gel-160", "name": "Maurten Gel 160", "short": "Maurten 160", "kind": "gel", "carbs_g": 40, "sodium_mg": 30, "kcal": 160, "caffeine_mg": None, "volume_ml": None},
     {"key": "pf-30-gel", "name": "Precision Fuel PF 30 Gel", "short": "PF 30", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
     {"key": "pf-30-caf", "name": "Precision Fuel PF 30 Caffeine Gel", "short": "PF 30 Caféine", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": 100, "volume_ml": None},
-    {"key": "pf-90-gel", "name": "Precision Fuel PF 90 Gel", "short": "PF 90", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None},
-    {"key": "ph-1500", "name": "Precision Hydration PH 1500 (pastille, 500 ml)", "short": "PH 1500", "kind": "salt", "carbs_g": 0, "sodium_mg": 750, "kcal": None, "caffeine_mg": None, "volume_ml": None},
-    {"key": "ph-1000", "name": "Precision Hydration PH 1000 (pastille, 500 ml)", "short": "PH 1000", "kind": "salt", "carbs_g": 0, "sodium_mg": 500, "kcal": None, "caffeine_mg": None, "volume_ml": None},
+    {"key": "pf-90-gel", "name": "Precision Fuel PF 90 Gel", "short": "PF 90", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None, "servings": 3},
+    {"key": "ph-1500", "name": "Precision Hydration PH 1500 (pastille, 500 ml)", "short": "PH 1500", "kind": "salt", "carbs_g": 0, "sodium_mg": 750, "kcal": None, "caffeine_mg": None, "volume_ml": 500},
+    {"key": "ph-1000", "name": "Precision Hydration PH 1000 (pastille, 500 ml)", "short": "PH 1000", "kind": "salt", "carbs_g": 0, "sodium_mg": 500, "kcal": None, "caffeine_mg": None, "volume_ml": 500},
     {"key": "baouw-gel", "name": "Baouw Gel", "short": "Baouw", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
     {"key": "gu-gel", "name": "GU Energy Gel", "short": "GU", "kind": "gel", "carbs_g": 22, "sodium_mg": 60, "kcal": 100, "caffeine_mg": None, "volume_ml": None},
     {"key": "neversecond-c30", "name": "Neversecond C30 Gel", "short": "Neversecond C30", "kind": "gel", "carbs_g": 30, "sodium_mg": 200, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
@@ -111,7 +76,7 @@ GENERIC_PRODUCTS: list[dict] = [
      "label": "Gel", "one": "gel", "many": "gels"},
     {"id": -2, "name": "Boisson glucidique", "kind": "drink", "carbs_g": 22, "sodium_mg": 300, "kcal": 90, "caffeine_mg": None, "volume_ml": 500,
      "label": "Boisson", "one": "dose de boisson", "many": "doses de boisson"},
-    {"id": -3, "name": "Pastille de sel", "kind": "salt", "carbs_g": 0, "sodium_mg": 300, "kcal": None, "caffeine_mg": None, "volume_ml": None,
+    {"id": -3, "name": "Pastille de sel", "kind": "salt", "carbs_g": 0, "sodium_mg": 300, "kcal": None, "caffeine_mg": None, "volume_ml": 500,
      "label": "Sel", "one": "pastille de sel", "many": "pastilles de sel"},
     {"id": -4, "name": "Gel caféiné", "kind": "gel", "carbs_g": 25, "sodium_mg": 0, "kcal": 100, "caffeine_mg": 50, "volume_ml": None,
      "label": "Gel caféiné", "one": "gel caféiné", "many": "gels caféinés"},
@@ -120,15 +85,29 @@ GENERIC_PRODUCTS: list[dict] = [
 ]
 GENERIC_BY_ID = {p["id"]: p for p in GENERIC_PRODUCTS}
 GENERIC_ORDER = [-1, -4, -2, -5, -3]  # how the unpicked quick picks line up
+
+# What a ravito offers, eaten there (never packed, never bought): ≈ values,
+# nothing assumed until the athlete taps one. Coca counts ≈ 10 mg of caffeine
+# per 100 ml.
+AID_FOODS: list[dict] = [
+    {"id": -10, "name": "Coca (25 cl)", "label": "Coca", "kind": "aid", "carbs_g": 26, "sodium_mg": 10, "caffeine_mg": 25, "volume_ml": None},
+    {"id": -11, "name": "Banane", "label": "Banane", "kind": "aid", "carbs_g": 25, "sodium_mg": 0, "caffeine_mg": None, "volume_ml": None},
+    {"id": -12, "name": "Soupe", "label": "Soupe", "kind": "aid", "carbs_g": 5, "sodium_mg": 700, "caffeine_mg": None, "volume_ml": None},
+    {"id": -13, "name": "Pâtes ou riz", "label": "Pâtes/riz", "kind": "aid", "carbs_g": 40, "sodium_mg": 300, "caffeine_mg": None, "volume_ml": None},
+    {"id": -14, "name": "Compote", "label": "Compote", "kind": "aid", "carbs_g": 20, "sodium_mg": 0, "caffeine_mg": None, "volume_ml": None},
+]
+AID_BY_ID = {p["id"]: p for p in AID_FOODS}
+
 LEVEL_CARBS = {"fragile": 60, "normal": 75, "solide": 90}
 CARBS_LEVEL = {v: k for k, v in LEVEL_CARBS.items()}
 SWEAT_FACTOR = {"peu": 0.8, "normal": 1.0, "beaucoup": 1.25}
 CARRY_CHOICES = [1000, 1500, 2000]
+RESERVE_CHOICES = [0, 30, 60]  # minutes of the bag's main product
 
 
 def with_generics(pantry_by_id: dict) -> dict:
-    """Generic quick picks + the pantry: the products a plan can point at."""
-    return {**{p["id"]: dict(p) for p in GENERIC_PRODUCTS}, **pantry_by_id}
+    """Quick picks + ravito food + the pantry: the products a plan can point at."""
+    return {**{p["id"]: dict(p) for p in GENERIC_PRODUCTS}, **{p["id"]: dict(p) for p in AID_FOODS}, **pantry_by_id}
 
 
 def short_label(p: dict) -> str:
@@ -141,7 +120,9 @@ def short_label(p: dict) -> str:
 
 
 def role(p: dict) -> str:
-    """What a product stands in for: caf, salt, drink, bar or gel."""
+    """What a product stands in for: aid, caf, salt, drink, bar or gel."""
+    if p.get("kind") == "aid":
+        return "aid"
     if (p.get("caffeine_mg") or 0) > 0:
         return "caf"
     if not (p.get("carbs_g") or 0) and (p.get("sodium_mg") or 0) > 0:
@@ -153,22 +134,35 @@ def role(p: dict) -> str:
     return "gel"
 
 
+def is_fuel(p: dict) -> bool:
+    """A product the stretches fill with (gels, drinks, bars)."""
+    return role(p) in ("gel", "drink", "bar")
+
+
+def servings_of(p: dict) -> int:
+    """Prises in one unit: the product's own value, else the catalogue's (a PF 90
+    the athlete typed himself), else 1."""
+    try:
+        own = int(p.get("servings") or 0)
+    except (TypeError, ValueError):
+        own = 0
+    if own > 1:
+        return min(own, 12)
+    c = CATALOG_BY_NAME.get((p.get("name") or "").strip().lower())
+    return int(c.get("servings") or 1) if c else 1
+
+
 def _fr(x: float) -> str:
     """12.5 → '12,5', 3.0 → '3'."""
     return (f"{x:.2f}".rstrip("0").rstrip(".") if not float(x).is_integer() else str(int(x))).replace(".", ",")
 
 
 def unit_label(n: float, p: dict) -> str:
-    """'1 gel', '3 gels', '2 pastilles de sel', '4 × PF 90'."""
+    """'1 gel', '3 gels', '2 pastilles de sel', '4 PF 90'."""
     n = int(round(n))
     if p.get("one"):
         return f"{n} {p['one'] if n == 1 else p['many']}"
-    return f"{n} × {short_label(p)}"
-
-
-def rule_noun(p: dict) -> str:
-    """The noun of a rule line: '1 gel', '1 PF 90'."""
-    return f"1 {p['one']}" if p.get("one") else f"1 {short_label(p)}"
+    return f"{n} {short_label(p)}"
 
 
 def _hm_words(minutes: float) -> str:
@@ -176,32 +170,6 @@ def _hm_words(minutes: float) -> str:
     if h and m:
         return f"{h}h{m:02d}"
     return f"{h} h" if h else f"{m} min"
-
-
-def interval_words(rate: float) -> str:
-    """Units per hour → words: 0.5 'toutes les 2 h', 1 'par heure', 3 'toutes les 20 min'.
-
-    A round interval (5 min, or 10 min above an hour) is used only when it is
-    within 5 % of the real one, and never when it would mean noticeably MORE
-    units than are packed: 3,5 an hour is « toutes les 17 min », not 15."""
-    rate = float(rate or 0)
-    if rate <= 0:
-        return ""
-    if rate > 4 + 1e-9:
-        return f"{_fr(rate)} par heure"
-    if abs(rate - 1) < 1e-9:
-        return "par heure"
-    m = 60.0 / rate
-    step = 5 if rate > 1 else 10
-    nice = step * math.floor(m / step + 0.5)
-    # a shorter interval means more units than packed: only a hair of it is fine
-    ok = nice > 0 and ((nice >= m and nice - m <= 0.05 * m) or (nice < m and m - nice <= 0.02 * m))
-    if not ok:
-        nice = 5 * math.floor(m / 5 + 0.5) if rate < 1 else int(math.floor(m + 0.5))
-        if rate < 1 and abs(nice - m) > 0.05 * m:
-            nice = int(math.floor(m + 0.5))
-    nice = int(nice)
-    return f"toutes les {nice} min" if rate > 1 else "toutes les " + _hm_words(nice)
 
 
 def liters(ml: float, step: int = 50) -> str:
@@ -214,25 +182,41 @@ def ceil_half_l(ml: float) -> float:
     return math.ceil(float(ml or 0) / 500 - 1e-9) * 0.5
 
 
-# Caffeine defaults (per dose, timing). Guidance for a night start: small doses
-# every 2–3 h once the night sets in, a full dose at dawn. Totals are capped
-# (≈ 6 mg/kg, never > 400 mg) — the athlete sees the total, not just the plan.
+def _clock(s: float) -> str:
+    s = int(s) % 86400
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}"
+
+
+# ── Caffeine ────────────────────────────────────────────────────────────────
+#
+# Small doses (1–3 mg/kg) from 3 h, spaced, a full dose at dawn. A HARD cap of
+# min(400 mg, 6 mg/kg) per rolling 24 h (EFSA; Guest 2021): a 27 h race keeps
+# a dose for its second night. None in the last 30 min. Cola at a ravito
+# counts (≈ 10 mg/100 ml).
+
 CAFFEINE_DEFAULTS = {"enabled": False, "from_h": 3.0, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True}
 CAFFEINE_MAX_MG = 400
 CAFFEINE_MAX_MG_PER_KG = 6.0
+CAFFEINE_WINDOW_S = 24 * 3600
+CAFFEINE_LAST_S = 30 * 60  # no dose in the last 30 min
 
 
-def alternation_groups(lines: list[dict], products_by_id: dict) -> list[list]:
-    """Gels and bars taken at the same hourly rate (two or more): one stream
-    taken in turns. The rule says it in one line, the legs hand them out in turn."""
-    groups: dict = {}
-    for ln in lines:
-        if ln.get("by_caffeine") or ln.get("is_water") or float(ln.get("per_hour") or 0) <= 0:
-            continue
-        if role(products_by_id.get(ln["product_id"]) or {"kind": ln.get("kind")}) not in ("gel", "bar"):
-            continue
-        groups.setdefault(round(float(ln["per_hour"]), 3), []).append(ln["product_id"])
-    return [pids for pids in groups.values() if len(pids) >= 2]
+def caffeine_cap_mg(weight_kg: float | None) -> int:
+    """The most caffeine in any 24 h: min(400 mg, 6 mg/kg)."""
+    return int(round(min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG))
+
+
+def rolling_max_mg(events: list[tuple[float, float]], window_s: float = CAFFEINE_WINDOW_S) -> int:
+    """The most caffeine taken inside any window (clock seconds, mg)."""
+    ev = sorted((float(t), float(mg)) for t, mg in events if mg)
+    best, lo, acc = 0.0, 0, 0.0
+    for t, mg in ev:
+        acc += mg
+        while ev[lo][0] <= t - window_s:
+            acc -= ev[lo][1]
+            lo += 1
+        best = max(best, acc)
+    return int(round(best))
 
 
 def caffeine_schedule(
@@ -243,9 +227,13 @@ def caffeine_schedule(
     weight_kg: float | None = None,
     product_name: str | None = None,
     unit_mg: float | None = None,
+    events: list[tuple[float, float]] | None = None,
 ) -> dict | None:
-    """Timed caffeine doses mapped onto the legs. Returns {doses, total_mg,
-    max_mg, over} or None when disabled."""
+    """Timed caffeine doses on MOVING time (the legs' cum_s), each with the clock
+    it falls on (stops included: ``clock_s``). A dose that would put any 24 h
+    above the cap is skipped, the next one is tried (``events`` = caffeine
+    already planned elsewhere, e.g. cola at a ravito: (clock_s, mg)).
+    Returns {doses, total_mg, max_mg, over} or None when disabled."""
     cfg = {**CAFFEINE_DEFAULTS, **(settings or {})}
     if not cfg.get("enabled") or duration_s <= 0:
         return None
@@ -258,7 +246,7 @@ def caffeine_schedule(
         dose = float(unit_mg) * units_per_dose
     if dose <= 0:
         return None
-    max_mg = min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG
+    max_mg = caffeine_cap_mg(weight_kg)
 
     def clock_at(elapsed: float) -> float:
         """Elapsed moving time → clock, walking the legs (stops shift the clock)."""
@@ -277,610 +265,63 @@ def caffeine_schedule(
                 return leg
         return legs[-1] if legs else None
 
+    taken = [(float(t), float(mg)) for t, mg in (events or []) if mg]
     doses, t, total = [], from_s, 0.0
     dawn_done = False
-    # t is MOVING time (the legs' cum_s); the duration may include the stops,
-    # so the last leg's moving total is the real end
     end_s = min(float(duration_s), float(legs[-1]["cum_s"])) if legs else float(duration_s)
-    while t < end_s - 20 * 60:  # no point dosing in the last 20 min
+    while t < end_s - CAFFEINE_LAST_S:
         clk = clock_at(t)
         mg = dose
         label = "petite dose"
-        if cfg.get("boost_dawn") and not dawn_done and 5.0 <= _clock_hour(clk) < 7.5:
+        dawn = cfg.get("boost_dawn") and not dawn_done and 5.0 <= _clock_hour(clk) < 7.5
+        if dawn:
             # dawn: a full dose — with 100 mg gels one gel already is one
-            mg, label, dawn_done = (dose if (unit_mg and unit_mg >= 100) else dose * 2), "dose pleine (aube)", True
-        if unit_mg and total + mg > max_mg + 1:
-            break  # never plan past the safe total with whole gels
-        leg = leg_at(t)
-        doses.append({
-            "elapsed_s": int(t), "clock_s": int(clk), "mg": int(round(mg)), "label": label,
-            "leg_to": leg["to_name"] if leg else "", "product": product_name,
-            "units": int(round(mg / unit_mg)) if unit_mg else None,
-        })
-        total += mg
-        t += every_s
-    return {"doses": doses, "total_mg": int(round(total)), "max_mg": int(round(max_mg)), "over": total > max_mg, "settings": cfg}
-
-
-def compute_plan(
-    duration_s: float,
-    targets: dict,
-    items: list[dict],
-    products_by_id: dict[int, dict],
-    sections: list[dict] | None = None,
-    flask_capacity_ml: float = 0,
-    refill_kms: set | None = None,
-    resupply_points: list[dict] | None = None,
-    caffeine: dict | None = None,
-    start_offset_s: int = 0,
-    weight_kg: float | None = None,
-) -> dict:
-    """Build the nutrition plan.
-
-    Args:
-        duration_s: race duration used for totals (target or predicted).
-        targets: {carbs_g_per_h, fluid_ml_per_h, sodium_mg_per_h}.
-        items: [{"product_id": int, "per_hour": float}].
-        products_by_id: {id: {name, kind, carbs_g, sodium_mg, volume_ml, ...}}.
-        sections: optional passage sections (with cumulative_time_s, end_name)
-            to build a checkpoint-mapped schedule. The PLAN times are used when
-            a target exists (adjusted_*), the prediction otherwise.
-        resupply_points: [{"km", "name"}] where a drop bag / crew lets you
-            restock → the pack list is split per carry segment.
-        caffeine: {enabled, from_h, every_h, dose_mg, boost_dawn}.
-    """
-    hours = max(duration_s / 3600.0, 0.0)
-    # Hydration is driven by the fluid target, not by a "water product": water
-    # is what you drink/refill (flasks + aid stations), not a fuel you dose.
-    fluid_per_h = float(targets.get("fluid_ml_per_h", 0) or 0)
-
-    per_h = {"carbs_g": 0.0, "fluid_ml": 0.0, "sodium_mg": 0.0, "caffeine_mg": 0.0, "kcal": 0.0}
-    caffeine_on = bool((caffeine or {}).get("enabled"))
-    def _p(it): return products_by_id.get(it.get("product_id")) or {}
-    has_plain_carb = any(float(it.get("per_hour") or 0) > 0 and (_p(it).get("carbs_g") or 0) > 0 and not (_p(it).get("caffeine_mg") or 0) for it in items)
-    # "by_unit" (the new plan): a caffeinated product is ONLY taken at the
-    # caffeine times, never per hour, even with no plain carb next to it.
-    caffeine_on = caffeine_on and (has_plain_carb or bool((caffeine or {}).get("by_unit")))
-    lines = []
-    for it in items:
-        pid = it.get("product_id")
-        rate = float(it.get("per_hour") or 0)
-        p = products_by_id.get(pid)
-        if not p or rate <= 0:
-            continue
-        # A caffeinated gel is not taken « n per hour »: it is the caffeine
-        # plan's dose. Its units come from the schedule below.
-        by_caffeine = caffeine_on and (p.get("caffeine_mg") or 0) > 0
-        if by_caffeine:
-            rate = 0.0
-        carbs = (p.get("carbs_g") or 0) * rate
-        sodium = (p.get("sodium_mg") or 0) * rate
-        fluid = (p.get("volume_ml") or 0) * rate
-        caff = (p.get("caffeine_mg") or 0) * rate
-        kcal = (p.get("kcal") or 0) * rate
-        per_h["carbs_g"] += carbs
-        per_h["sodium_mg"] += sodium
-        per_h["fluid_ml"] += fluid
-        per_h["caffeine_mg"] += caff
-        per_h["kcal"] += kcal
-        is_water = (
-            (p.get("carbs_g") or 0) == 0
-            and (p.get("sodium_mg") or 0) == 0
-            and p.get("kind") == "drink"
-        )
-        lines.append({
-            "product_id": pid,
-            "name": p.get("name", "?"),
-            "kind": p.get("kind", "gel"),
-            "per_hour": rate,
-            "total_units": rate * hours,
-            "carbs_g_per_h": round(carbs),
-            "fluid_ml_per_h": round(fluid),
-            "carbs_per_unit": float(p.get("carbs_g") or 0),
-            "sodium_per_unit": float(p.get("sodium_mg") or 0),
-            "caffeine_per_unit": float(p.get("caffeine_mg") or 0),
-            "volume_per_unit": float(p.get("volume_ml") or 0) if p.get("kind") == "drink" else 0.0,
-            "is_water": is_water,
-            "by_caffeine": by_caffeine,
-        })
-
-    totals = {
-        "carbs_g": round(per_h["carbs_g"] * hours),
-        "fluid_ml": round(fluid_per_h * hours),
-        "sodium_mg": round(per_h["sodium_mg"] * hours),
-        "caffeine_mg": round(per_h["caffeine_mg"] * hours),
-        "kcal": round(per_h["kcal"] * hours),
-    }
-
-    # Coverage is product-driven (what your gels/drinks/salt provide). Water is
-    # not here — it's the fluid target + the flask/refill model below.
-    coverage = {
-        "carbs": {
-            "provided_per_h": round(per_h["carbs_g"]),
-            "target_per_h": targets.get("carbs_g_per_h", 0),
-            "status": _status(per_h["carbs_g"], targets.get("carbs_g_per_h", 0)),
-        },
-        "sodium": {
-            "provided_per_h": round(per_h["sodium_mg"]),
-            "target_per_h": targets.get("sodium_mg_per_h", 0),
-            "status": _status(per_h["sodium_mg"], targets.get("sodium_mg_per_h", 0)),
-        },
-    }
-
-    # Per-leg schedule: WHOLE units to take between two checkpoints (you never
-    # take half a gel/sachet). The fraction left over on one leg carries to the
-    # next (cumulative rounding), so a 50-minute leg does not get a full hour's
-    # worth of every product and the race total stays within half a unit of
-    # rate × duration. Also flags legs where you'd run dry before the next
-    # refill (carried > capacity), and the REAL g/h and sodium/h the whole
-    # units give on that leg.
-    refills = {round(float(k), 1) for k in (refill_kms or set())}
-    cap = float(flask_capacity_ml or 0)
-    schedule = []
-    line_totals = [0] * len(lines)
-    line_due = [0.0] * len(lines)  # units owed so far = rate × elapsed hours
-    # gels / bars taken at the same rate are ONE stream, in turns (« 1 gel
-    # toutes les 40 min, en alternant… »): the k-th of n starts a k/n step later,
-    # so three gels at ½ an hour come every 40 min, not all three every 2 h
-    pos = {ln["product_id"]: i for i, ln in enumerate(lines)}
-    for grp in alternation_groups(lines, products_by_id):
-        for k, pid in enumerate(grp):
-            line_due[pos[pid]] = 0.5 - (k + 0.5) / len(grp)
-    prev_cum_s = 0.0
-    prev_clock_s = float(start_offset_s)
-    prev_name = "Départ"
-    carried = 0.0  # fluid consumed since the last refill
-    target_carbs = float(targets.get("carbs_g_per_h", 0) or 0)
-    target_sodium = float(targets.get("sodium_mg_per_h", 0) or 0)
-    if sections:
-        for s in sections:
-            cum_s = s.get("adjusted_cumulative_time_s")
-            if cum_s is None:
-                cum_s = s.get("cumulative_time_s") or 0
-            clock_s = s.get("adjusted_clock_time_s")
-            if clock_s is None:
-                clock_s = s.get("clock_time_s")
-            if clock_s is None:
-                clock_s = start_offset_s + cum_s
-            leg_h = max((cum_s - prev_cum_s) / 3600.0, 0.0)
-            leg_fluid = round(fluid_per_h * leg_h)
-            carried += leg_fluid
-            dry = bool(cap and carried > cap + 1)
-            leg_units = []
-            real_carbs = real_sodium = real_caff = 0.0
-            for li, ln in enumerate(lines):
-                if ln["per_hour"] > 0:
-                    line_due[li] += ln["per_hour"] * leg_h
-                    u = max(0, int(math.floor(line_due[li] + 0.5)) - line_totals[li])
-                else:
-                    u = 0
-                line_totals[li] += u
-                real_carbs += u * ln["carbs_per_unit"]
-                real_sodium += u * ln["sodium_per_unit"]
-                real_caff += u * ln["caffeine_per_unit"]
-                leg_units.append({"name": ln["name"], "kind": ln["kind"], "is_water": ln["is_water"], "units": u, "product_id": ln["product_id"]})
-            schedule.append({
-                "from_name": prev_name,
-                "to_name": s.get("end_name", ""),
-                "km": s.get("end_km"),
-                "leg_time_s": int(cum_s - prev_cum_s),
-                "cum_s": int(cum_s),
-                "clock_s": int(clock_s),
-                "start_clock_s": int(prev_clock_s),
-                "night": _clock_hour(prev_clock_s) >= 21 or _clock_hour(prev_clock_s) < 6,
-                "carbs_g": round(per_h["carbs_g"] * leg_h),
-                "carbs_real_g": round(real_carbs),
-                "carbs_real_per_h": round(real_carbs / leg_h) if leg_h > 0 else 0,
-                "carbs_status": _status(real_carbs / leg_h, target_carbs) if leg_h > 0 else "ok",
-                "sodium_real_per_h": round(real_sodium / leg_h) if leg_h > 0 else 0,
-                "sodium_status": _status(real_sodium / leg_h, target_sodium) if leg_h > 0 else "ok",
-                "caffeine_mg": round(real_caff),
-                "fluid_ml": leg_fluid,
-                "carry_ml": round(carried),  # fluid drunk since the last refill
-                "dry": dry,
-                "over_ml": max(0, round(carried - cap)) if dry else 0,
-                "units": leg_units,
+            mg, label = (dose if (unit_mg and unit_mg >= 100) else dose * 2), "dose pleine (aube)"
+        def fits(m: float) -> bool:  # every 24 h holding this dose stays under the cap
+            return rolling_max_mg(taken + [(clk, m)]) <= max_mg + 1
+        if dawn and mg > dose and not fits(mg) and fits(dose):
+            mg, label = dose, "petite dose"  # no room for the double: a single one
+        if fits(mg):
+            if dawn:
+                dawn_done = True
+            leg = leg_at(t)
+            doses.append({
+                "elapsed_s": int(t), "clock_s": int(clk), "mg": int(round(mg)), "label": label,
+                "leg_to": leg["to_name"] if leg else "", "product": product_name,
+                "units": int(round(mg / unit_mg)) if unit_mg else None,
             })
-            if round(float(s.get("end_km") or 0), 1) in refills:
-                carried = 0.0  # topped up at this aid station
-            prev_cum_s = cum_s
-            prev_clock_s = clock_s
-            prev_name = s.get("end_name", "")
-    # Caffeine: timed doses. With a caffeinated gel ticked, each dose IS one of
-    # those gels: it lands in the leg where the dose falls (carbs included).
-    caff_line = next((ln for ln in lines if ln.get("by_caffeine")), None) or next((ln for ln in lines if ln["caffeine_per_unit"] > 0), None)
-    caffeine_plan = caffeine_schedule(
-        duration_s, schedule, caffeine, start_offset_s, weight_kg,
-        caff_line["name"] if caff_line else None,
-        unit_mg=caff_line["caffeine_per_unit"] if caff_line and caff_line.get("by_caffeine") else None,
-    )
-    if caffeine_plan and caff_line and caff_line.get("by_caffeine") and schedule:
-        li = lines.index(caff_line)
-        for d in caffeine_plan["doses"]:
-            leg = next((lg for lg in schedule if d["elapsed_s"] <= lg["cum_s"]), schedule[-1])
-            n = d.get("units") or 1
-            leg["units"][li]["units"] += n
-            line_totals[li] += n
-            leg["carbs_real_g"] += round(caff_line["carbs_per_unit"] * n)
-            leg["caffeine_mg"] += round(caff_line["caffeine_per_unit"] * n)
-            lh = leg["leg_time_s"] / 3600.0
-            if lh > 0:
-                leg["carbs_real_per_h"] = round(leg["carbs_real_g"] / lh)
-                leg["sodium_real_per_h"] = round(leg["sodium_real_per_h"] + caff_line["sodium_per_unit"] * n / lh)
-                leg["carbs_status"] = _status(leg["carbs_real_g"] / lh, target_carbs)
-    # Pack list = sum of the whole per-leg units (consistent with the schedule).
-    for li, ln in enumerate(lines):
-        ln["total_units"] = line_totals[li]
-    # Water to drink on a leg = the fluid target minus what the drink doses
-    # already bring (a 500 ml flask of drink IS fluid).
-    for leg in schedule:
-        drink_ml = sum(u["units"] * lines[li]["volume_per_unit"] for li, u in enumerate(leg["units"]))
-        leg["water_ml"] = max(0, round(leg["fluid_ml"] - drink_ml))
-
-    # Where does each unit travel? From the start bag until the first drop bag /
-    # crew point, then from that bag until the next one. What you carry at
-    # once is the max over carry segments — that's the "sac" size.
-    packing = []
-    if schedule:
-        resupply = {round(float(r.get("km") or 0), 1): r.get("name", "") for r in (resupply_points or []) if r.get("km")}
-
-        def _group(at: str, km: float) -> dict:
-            return {"at": at, "km": km, "until": None, "until_km": None, "legs": 0, "fluid_ml": 0, "units": {}, "carbs_g": 0, "time_s": 0,
-                    "start_clock_s": None, "end_clock_s": None}
-        group = _group("Départ", 0.0)
-        for leg in schedule:
-            if group["start_clock_s"] is None:
-                group["start_clock_s"] = leg["start_clock_s"]
-            group["end_clock_s"] = leg["clock_s"]  # clocks include the stops, like the rows
-            group["legs"] += 1
-            group["fluid_ml"] += leg["fluid_ml"]
-            group["carbs_g"] += leg["carbs_real_g"]
-            group["time_s"] += leg["leg_time_s"]
-            for u in leg["units"]:
-                if u["units"] and not u["is_water"]:
-                    key = u.get("product_id", u["name"])
-                    ent = group["units"].setdefault(key, {"name": u["name"], "units": 0, "product_id": u.get("product_id")})
-                    ent["units"] += u["units"]
-            km = round(float(leg["km"] or 0), 1)
-            if km in resupply:
-                group["until"], group["until_km"] = resupply[km], km
-                packing.append(group)
-                group = _group(resupply[km], km)
-        group["until"] = "Arrivée"
-        group["until_km"] = schedule[-1]["km"]
-        if group["legs"]:
-            packing.append(group)
-        for g in packing:
-            g["units"] = list(g["units"].values())
-            g["is_start"] = g["at"] == "Départ"
-
-
-    # Hydration: between two refill points you carry what you drink. With a
-    # capacity (flasks) a stretch that needs more is flagged; without one
-    # (« auto ») the plan says how much to take from each refill point.
-    hydration = None
-    if fluid_per_h > 0 and schedule:
-        refills = {round(float(k), 1) for k in (refill_kms or set())}
-        cap = float(flask_capacity_ml) if flask_capacity_ml else None
-        segs = []
-        seg_from, seg_from_km = "Départ", 0.0
-        seg_time = 0.0
-        seg_fluid = 0.0
-        for i, leg in enumerate(schedule):
-            seg_time += leg["leg_time_s"]
-            seg_fluid += leg["fluid_ml"]
-            is_refill = round(float(leg["km"]), 1) in refills if leg["km"] is not None else False
-            is_last = i == len(schedule) - 1
-            if is_refill or is_last:
-                segs.append({
-                    "from_name": seg_from,
-                    "to_name": leg["to_name"],
-                    "from_km": seg_from_km,
-                    "to_km": float(leg["km"] or 0),
-                    "time_s": int(seg_time),
-                    "need_ml": round(seg_fluid),
-                    "capacity_ml": round(cap) if cap else None,
-                    "ok": (seg_fluid <= cap + 1) if cap else True,
-                    "shortfall_ml": max(0, round(seg_fluid - cap)) if cap else 0,
-                })
-                seg_from, seg_from_km = leg["to_name"], float(leg["km"] or 0)
-                seg_time = 0.0
-                seg_fluid = 0.0
-        not_ok = [s for s in segs if not s["ok"]]
-        worst = max(segs, key=lambda s: s["need_ml"], default=None)
-        # Suggested carry = cover the longest single inter-refill segment.
-        suggested = int(math.ceil((worst["need_ml"] if worst else (cap or 0)) / 100.0) * 100)
-        hydration = {
-            "capacity_ml": round(cap) if cap else None,
-            "segments": segs,
-            "feasible": all(s["ok"] for s in segs) if cap else None,
-            "max_shortfall_ml": max((s["shortfall_ml"] for s in segs), default=0),
-            "has_refills": bool(refills),
-            "dry_count": len(not_ok),
-            "segment_count": len(segs),
-            "worst_segment": {"from_name": worst["from_name"], "to_name": worst["to_name"],
-                              "need_ml": worst["need_ml"]} if worst else None,
-            "suggested_capacity_ml": suggested,
-        }
-        # each carry segment (bag): its longest stretch without water
-        for g in packing:
-            lo, hi = float(g["km"] or 0), float(g["until_km"] or 0)
-            inside = [s for s in segs if lo - 0.05 <= s["from_km"] < hi - 0.05]
-            top = max(inside, key=lambda s: s["need_ml"], default=None)
-            g["need_ml_max"] = top["need_ml"] if top else 0
-            g["dry_stretch"] = ({"from": top["from_name"], "to": top["to_name"], "time_s": top["time_s"], "need_ml": top["need_ml"]}
-                                if top else None)
-            g["is_longest"] = bool(top is not None and top is worst and len(segs) > 1)
-            g["short"] = bool(top is not None and not top["ok"])
-
-    return {
-        "duration_s": int(duration_s),
-        "hydration": hydration,
-        "hours": round(hours, 2),
-        "targets": targets,
-        "per_hour": {k: round(v) for k, v in per_h.items()},
-        "totals": totals,
-        "coverage": coverage,
-        "lines": lines,
-        "schedule": schedule,
-        "packing": packing,
-        "caffeine": caffeine_plan,
-    }
-
-
-def _round_half(x: float) -> float:
-    return round(x * 2) / 2
-
-
-def _legacy_auto_rates(target_carbs_per_h: float, target_sodium_per_h: float, products: list[dict]) -> dict[int, float]:
-    """Units/h per product so the SELECTED products meet the targets together.
-
-    Carb products share the carb target equally (each brings target/n g/h);
-    salt products cover whatever sodium the carb products leave uncovered.
-    Rates are in halves (2.5 gels/h), never below 0.5 for a carb product the
-    athlete chose to use — you don't pack a product to not take it.
-    """
-    caff = [p for p in products if (p.get("caffeine_mg") or 0) > 0]
-    if not any((p.get("carbs_g") or 0) > 0 for p in products if p not in caff):
-        caff = []  # only caffeinated products: they carry the carbs, per hour like any gel
-    carb = [p for p in products if (p.get("carbs_g") or 0) > 0 and p not in caff]
-    salt = [p for p in products if (p.get("carbs_g") or 0) <= 0 and (p.get("sodium_mg") or 0) > 0 and p not in caff]
-    rates: dict[int, float] = {p["id"]: 1.0 for p in caff}  # kept « used »; the caffeine plan sets the count
-    sodium_covered = 0.0
-    if carb and target_carbs_per_h > 0:
-        # every chosen product at least ½ per hour, then add halves where they
-        # bring the total closest to the target (small products fine-tune)
-        cr = {p["id"]: 0.5 for p in carb}
-        def total() -> float:
-            return sum(cr[p["id"]] * float(p["carbs_g"]) for p in carb)
-        for _ in range(60):
-            gap = target_carbs_per_h - total()
-            best = min(carb, key=lambda p: abs(gap - 0.5 * float(p["carbs_g"])))
-            if abs(gap - 0.5 * float(best["carbs_g"])) >= abs(gap):
-                break
-            cr[best["id"]] += 0.5
-        for p in carb:
-            rates[p["id"]] = cr[p["id"]]
-            sodium_covered += cr[p["id"]] * float(p.get("sodium_mg") or 0)
-    remaining = max(0.0, float(target_sodium_per_h or 0) - sodium_covered)
-    for p in salt:
-        if remaining <= 0:
-            rates[p["id"]] = 0.0
-            continue
-        exact = remaining / float(p["sodium_mg"]) / len(salt)
-        lo, hi = math.floor(exact * 2) / 2, math.ceil(exact * 2) / 2
-        # the half-step whose sodium is closest to the target in RATIO (under-dosing is not « closer » by default)
-        def miss(r: float) -> float:
-            got = sodium_covered + r * float(p["sodium_mg"]) * len(salt)
-            return abs(math.log(max(got, 1.0) / max(float(target_sodium_per_h), 1.0)))
-        rates[p["id"]] = min((c for c in (lo, hi) if c > 0), key=miss, default=hi)
-    return rates
-
-
-# ── The « Ravitaillement » plan: a few taps, the rest computed ──────────────
-#
-# The athlete picks products (chips), a stomach level and, rarely, a sweat
-# level / the water he carries / a quantity by hand. Everything else (rates,
-# caffeine times, bags, shopping list) is computed here, one way, for the
-# Ravitaillement card, the passage rows, the print band and the watch export.
-
-def _fill_carbs(target: float, prods: list[dict], band: tuple[float, float] | None = None) -> dict[int, float]:
-    """Every product at least ½ per hour, then halves where they bring the
-    total closest to the target (small products fine-tune).
-
-    ``band`` = (lo, hi) carbs these products may bring so the WHOLE plan stays
-    in the stomach's range (no « too much » / « not enough » on a plan we
-    computed). When the halves land outside it, the closest in-band mix is
-    taken instead, with quarter steps as a last resort for a big unit (PF 90
-    at Normal: 1 every 1h20 rather than 45 or 90 g)."""
-    cr = {p["id"]: 0.5 for p in prods}
-
-    def carbs(p: dict) -> float:
-        return float(p.get("carbs_g") or 0)
-
-    def total(rates: dict) -> float:
-        return sum(rates[p["id"]] * carbs(p) for p in prods)
-    for _ in range(60):
-        gap = target - total(cr)
-        best = min(prods, key=lambda p: abs(gap - 0.5 * carbs(p)))
-        if abs(gap - 0.5 * carbs(best)) >= abs(gap):
-            break
-        cr[best["id"]] += 0.5
-    if not band or not prods or len(prods) > 4:
-        return cr
-    lo, hi = band
-    if lo - 1e-6 <= total(cr) <= hi + 1e-6 or hi <= 0:
-        return cr
-    import itertools
-
-    want = max(target, 1.0)
-
-    def make_grids(step: float) -> list[list[float]]:
-        out = []
-        for p in prods:
-            top = min(8.0, max(0.5, math.ceil(hi / max(carbs(p), 1.0) / step) * step))
-            grid = [0.5 + k * step for k in range(int(round((top - 0.5) / step)) + 1)]
-            if step == 0.25:
-                grid.append(2 / 3)  # 1 every 1h30: a 90 g gel at 60 g/h
-            out.append(grid)
-        return out
-    grids = make_grids(0.25)
-    if math.prod(len(g) for g in grids) > 4000:  # keep the search small: halves only
-        grids = make_grids(0.5)
-        if math.prod(len(g) for g in grids) > 4000:
-            return cr
-    best_r, best_key = None, None
-    for combo in itertools.product(*grids):
-        rates = {p["id"]: r for p, r in zip(prods, combo, strict=True)}
-        got = total(rates)
-        if not (lo - 1e-6 <= got <= hi + 1e-6):
-            continue
-        # closest to the target; a quarter step (1 every 1h20, 50 min…) only
-        # when it is clearly closer than the halves; then nearest the halves' mix
-        quarters = sum(1 for r in combo if (r * 2) % 1)
-        key = (round(abs(math.log(max(got, 1.0) / want)) + 0.08 * quarters, 3),
-               sum(abs(r - cr[p["id"]]) for p, r in zip(prods, combo, strict=True)))
-        if best_key is None or key < best_key:
-            best_r, best_key = rates, key
-    return best_r or cr
-
-
-def _fill_salt(target_sodium: float, covered: float, salts: list[dict]) -> dict[int, float]:
-    """Salt covers whatever sodium the rest leaves: the half-step closest in RATIO."""
-    out: dict[int, float] = {}
-    target_sodium = float(target_sodium or 0)
-    remaining = max(0.0, target_sodium - covered)
-    for p in salts:
-        if remaining <= 0:
-            out[p["id"]] = 0.0
-            continue
-        exact = remaining / float(p["sodium_mg"]) / len(salts)
-        lo, hi = math.floor(exact * 2) / 2, math.ceil(exact * 2) / 2
-
-        def miss(r: float, p=p) -> float:
-            got = covered + r * float(p["sodium_mg"]) * len(salts)
-            return abs(math.log(max(got, 1.0) / max(target_sodium, 1.0)))
-        out[p["id"]] = min((c for c in (lo, hi) if c > 0), key=miss, default=hi)
-    return out
-
-
-PLAN_BAND = (0.88, 1.17)  # what auto aims for; the warnings fire outside 0.85–1.2
-
-
-def auto_rates(
-    target_carbs_per_h: float, target_sodium_per_h: float, products: list[dict],
-    fluid_ml_per_h: float | None = None, manual: dict | None = None,
-    caffeine_per_h: dict | None = None,
-) -> dict[int, float]:
-    """Units/h per product so the SELECTED products meet the targets together.
-
-    Called with the three historical arguments it keeps its old behaviour. With
-    a fluid target and/or a manual map (the Ravitaillement plan):
-      1. manual products keep their rate; their carbs and sodium come off the targets,
-         and so do the caffeinated units the caffeine plan will place
-         (``caffeine_per_h`` = {"carbs", "sodium"} they bring per hour);
-      2. caffeinated products get no hourly rate (the caffeine plan places them,
-         1.0 is only a "picked" marker that compute_plan zeroes);
-      3. drinks: as many doses as the fluid target allows, never above it;
-      4. bars: ½ per hour each next to a gel or a drink, else they fill like gels;
-      5. gels fill the remaining carbs (each at least ½ per hour), keeping the
-         whole plan inside the stomach's range when a mix allows it;
-      6. salt fills the remaining sodium.
-    """
-    if fluid_ml_per_h is None and manual is None:
-        return _legacy_auto_rates(target_carbs_per_h, target_sodium_per_h, products)
-    manual = {int(k): float(v) for k, v in (manual or {}).items()}
-    rates: dict[int, float] = {}
-    got_carbs = float((caffeine_per_h or {}).get("carbs") or 0)
-    got_sodium = float((caffeine_per_h or {}).get("sodium") or 0)
-    got_fluid = 0.0
-    auto = []
-    for p in products:
-        if p["id"] in manual:
-            r = max(0.0, manual[p["id"]])
-            rates[p["id"]] = r
-            if role(p) != "caf":
-                got_carbs += r * float(p.get("carbs_g") or 0)
-                got_sodium += r * float(p.get("sodium_mg") or 0)
-                if p.get("kind") == "drink":
-                    got_fluid += r * float(p.get("volume_ml") or 500)
-        else:
-            auto.append(p)
-
-    def of(r: str) -> list[dict]:
-        return [p for p in auto if role(p) == r]
-    for p in of("caf"):
-        rates[p["id"]] = 1.0
-    drinks = of("drink")
-    fluid_left = max(0.0, float(fluid_ml_per_h or 0) - got_fluid)
-    for p in drinks:
-        vol = float(p.get("volume_ml") or 500)
-        r = max(0.5, math.floor(fluid_left / vol / len(drinks) * 2 + 1e-9) / 2)
-        rates[p["id"]] = r
-        got_carbs += r * float(p.get("carbs_g") or 0)
-        got_sodium += r * float(p.get("sodium_mg") or 0)
-    bars, gels = of("bar"), of("gel")
-    if bars and any(role(p) in ("gel", "drink") for p in products):
-        for p in bars:
-            rates[p["id"]] = 0.5
-            got_carbs += 0.5 * float(p.get("carbs_g") or 0)
-            got_sodium += 0.5 * float(p.get("sodium_mg") or 0)
-        fill = gels
-    else:
-        fill = gels + bars
-    if fill:
-        tc = float(target_carbs_per_h or 0)
-        band = (PLAN_BAND[0] * tc - got_carbs, PLAN_BAND[1] * tc - got_carbs) if tc > 0 else None
-        for pid, r in _fill_carbs(tc - got_carbs, fill, band).items():
-            rates[pid] = r
-            got_sodium += r * float(next(p for p in fill if p["id"] == pid).get("sodium_mg") or 0)
-    rates.update(_fill_salt(target_sodium_per_h, got_sodium, of("salt")))
-    return rates
-
-
-def caffeine_cap_mg(weight_kg: float | None) -> int:
-    return int(round(min(CAFFEINE_MAX_MG, CAFFEINE_MAX_MG_PER_KG * weight_kg) if weight_kg else CAFFEINE_MAX_MG))
+            taken.append((clk, mg))
+            total += mg
+        t += every_s
+    return {"doses": doses, "total_mg": int(round(total)), "max_mg": int(round(max_mg)),
+            "over": rolling_max_mg(taken) > max_mg + 1, "settings": cfg}
 
 
 def auto_caffeine(duration_s: float, unit_mg: float | None, weight_kg: float | None = None) -> dict:
-    """One caffeinated unit per dose from 3 h, spaced so the doses the cap
-    allows cover the race (100 mg gels on 19 h: 3 h, 8 h, 13 h, 18 h), double
-    at dawn with small units. The spacing is floored to the half hour so the
-    last allowed dose still lands before the finish. ``duration_s`` is the
+    """One caffeinated unit per dose from 3 h. Up to a day long, the doses the
+    24 h cap allows are spread over the race (100 mg gels on 19 h: 3 h, 8 h,
+    13 h, 18 h; on 27 h: 3 h, 10h30, 18 h, 25h30, the second night). Longer,
+    they are spaced so no 24 h holds more than the cap. ``duration_s`` is the
     MOVING time: the doses are placed on it, the stops come on top."""
     unit = float(unit_mg or 0) or 50.0
-    n = int(caffeine_cap_mg(weight_kg) // unit)
+    n = max(1, int(caffeine_cap_mg(weight_kg) // unit))
     hours = max(0.0, float(duration_s or 0) / 3600.0)
-    every = max(2.5, math.floor((hours - 3.5) / max(1, n - 1) * 2) / 2)
+    if hours - 3.5 <= 24 or n <= 1:
+        every = max(2.5, math.floor((hours - 3.5) / max(1, n - 1) * 2) / 2)
+    else:
+        every = max(2.5, math.ceil(24.0 / n * 2) / 2)
     return {"enabled": True, "from_h": 3.0, "every_h": every, "dose_mg": unit, "boost_dawn": True, "by_unit": True}
 
 
-def caffeine_units_estimate(caffeine: dict | None, unit_mg: float | None, moving_s: float, weight_kg: float | None,
-                            start_offset_s: float | None = None) -> int:
-    """How many caffeinated units the caffeine plan will place over the race
-    (with the dawn extra when the start time is known, stops left aside):
-    their carbs count before the gels fill the rest."""
-    cfg = {**CAFFEINE_DEFAULTS, **(caffeine or {})}
-    unit = float(unit_mg or 0)
-    if not cfg.get("enabled") or unit <= 0 or moving_s <= 0:
-        return 0
-    from_s = max(0.0, float(cfg.get("from_h") or 0)) * 3600
-    every_s = max(0.5, float(cfg.get("every_h") or 2.5)) * 3600
-    per_dose = max(1, int(round(float(cfg.get("dose_mg") or unit) / unit)))
-    cap = caffeine_cap_mg(weight_kg)
-    n, total, t, dawn_done = 0, 0.0, from_s, False
-    while t < moving_s - 20 * 60:
-        k = per_dose
-        if (start_offset_s is not None and cfg.get("boost_dawn") and not dawn_done and unit < 100
-                and 5.0 <= _clock_hour(float(start_offset_s) + t) < 7.5):
-            k, dawn_done = per_dose * 2, True
-        if total + k * unit > cap + 1:
-            break
-        n += k
-        total += k * unit
-        t += every_s
-    return n
-
+# ── The athlete's choices for a race (Route.nutrition_json) ────────────────
+#
+# Stored shape v3 (written by state_json, the echo keys by with_echo):
+#   {"v": 3, "picks": [pid], "phases": [{"km", "mix": {pid: share}}],
+#    "rows": {"58.1": {pid: n}}, "aid": {"58.1": {aid_id: n}}, "have": {pid: n},
+#    "reserve_min": 0|30|60|null, "level", "sweat", "carry_ml", "custom", "undo"}
+# Keys are the stretch's start km rounded to 0.1 (checkpoints have no stable
+# id). Older shapes (v2, the legacy items) are read in memory, never rewritten
+# by a read.
 
 def _carry(v) -> int | None:
     try:
@@ -890,8 +331,22 @@ def _carry(v) -> int | None:
     return ml if ml > 0 else None
 
 
+def _km(v) -> float | None:
+    try:
+        return round(float(v), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int(v) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _legacy_targets_into(st: dict, nj: dict) -> None:
-    """Old typed targets → a stomach level (60/75/90) or « ton réglage »."""
+    """Old typed targets → a level (60/75/90) or « ton réglage »."""
     t = nj.get("targets") or {}
     c = t.get("carbs_g_per_h")
     try:
@@ -903,35 +358,34 @@ def _legacy_targets_into(st: dict, nj: dict) -> None:
             st["level"] = CARBS_LEVEL[c]
         else:
             st["custom"]["carbs_g_per_h"] = c
-    for k in ("fluid_ml_per_h", "sodium_mg_per_h"):
-        try:
-            if t.get(k) not in (None, ""):
-                st["custom"][k] = round(float(t[k]))
-        except (TypeError, ValueError):
-            pass
+    try:
+        if t.get("fluid_ml_per_h") not in (None, ""):
+            st["custom"]["fluid_ml_per_h"] = round(float(t["fluid_ml_per_h"]))
+    except (TypeError, ValueError):
+        pass
 
 
 def _empty_state(refills=None) -> dict:
-    return {"picks": [], "manual": {}, "level": None, "sweat": None, "carry_ml": None, "custom": {},
-            "refills": list(refills or []), "legacy": False, "explicit": False}
+    return {"picks": [], "shares": {}, "phases": [], "rows": {}, "aid": {}, "have": {}, "reserve_min": None,
+            "level": None, "sweat": None, "carry_ml": None, "custom": {}, "refills": list(refills or []),
+            "legacy": False, "explicit": False, "version": 0, "undo": None}
 
 
 def upgrade_legacy(nj: dict) -> dict:
-    """A plan saved before the Ravitaillement view (items with typed rates),
-    read in memory: every item stays as typed (all manual), its targets and
-    caffeine settings become « ton réglage ». compute_plan then receives the
-    same arguments as before, so the numbers do not move."""
+    """A plan saved before the Ravitaillement view (items with typed rates), read
+    in memory: its products are the list, their rates the shares of one phase,
+    its targets and caffeine settings « ton réglage »."""
     nj = nj or {}
     st = _empty_state(nj.get("refills"))
     st["legacy"] = True
+    st["version"] = 1
     for it in nj.get("items") or []:
-        try:
-            pid = int(it.get("product_id"))
-        except (TypeError, ValueError):
+        pid = _int(it.get("product_id"))
+        if pid is None:
             continue
         if pid not in st["picks"]:
             st["picks"].append(pid)
-            st["manual"][pid] = float(it.get("per_hour") or 0)
+            st["shares"][pid] = float(it.get("per_hour") or 0)
     _legacy_targets_into(st, nj)
     # the old form saved its caffeine block on every save, switched off by
     # default: only a caffeine plan the athlete turned on is « his setting »
@@ -941,29 +395,88 @@ def upgrade_legacy(nj: dict) -> dict:
     return st
 
 
+def _read_mix(mix) -> dict | None:
+    if mix is None:
+        return None
+    out: dict = {}
+    if isinstance(mix, list):
+        for x in mix:
+            pid = _int(x)
+            if pid is not None:
+                out[pid] = 1.0
+        return out
+    if isinstance(mix, dict):
+        for k, v in mix.items():
+            pid = _int(k)
+            try:
+                share = float(v)
+            except (TypeError, ValueError):
+                share = 1.0
+            if pid is not None and share > 0:
+                out[pid] = share
+        return out
+    return None
+
+
+def _read_counts(d) -> dict:
+    out: dict = {}
+    for k, v in (d or {}).items() if isinstance(d, dict) else []:
+        km = _km(k)
+        if km is None or not isinstance(v, dict):
+            continue
+        row = {}
+        for pk, n in v.items():
+            pid, n = _int(pk), _int(n)
+            if pid is not None and n is not None and n >= 0:
+                row[pid] = n
+        out[km] = row
+    return out
+
+
 def read_state(nj: dict | None) -> dict:
     """The athlete's choices stored on a route, whatever the shape it was saved in."""
     nj = nj or {}
-    if nj.get("v") == 2:
+    if nj.get("v") in (2, 3):
         st = _empty_state(nj.get("refills"))
+        st["version"] = int(nj["v"])
         for x in nj.get("picks") or []:
-            try:
-                pid = int(x)
-            except (TypeError, ValueError):
-                continue
-            if pid not in st["picks"]:
+            pid = _int(x)
+            if pid is not None and pid not in st["picks"]:
                 st["picks"].append(pid)
-        for k, v in (nj.get("manual") or {}).items():
-            try:
-                st["manual"][int(k)] = max(0.0, float(v))
-            except (TypeError, ValueError):
-                continue
-        st["custom"] = {k: v for k, v in (nj.get("custom") or {}).items() if v is not None}
+        st["custom"] = {k: v for k, v in (nj.get("custom") or {}).items() if v is not None and k != "sodium_mg_per_h"}
         st["level"] = nj.get("level") if nj.get("level") in LEVEL_CARBS else None
         st["sweat"] = nj.get("sweat") if nj.get("sweat") in SWEAT_FACTOR else None
         st["carry_ml"] = _carry(nj.get("carry_ml"))
         # the athlete unticked everything: an empty plan, not the default again
         st["explicit"] = isinstance(nj.get("picks"), list)
+        if nj["v"] == 2:
+            # per-hour rates by hand → the shares of one phase (no per-stretch meaning left)
+            for k, v in (nj.get("manual") or {}).items():
+                pid = _int(k)
+                try:
+                    if pid is not None and float(v) > 0:
+                        st["shares"][pid] = float(v)
+                except (TypeError, ValueError):
+                    continue
+            return st
+        for ph in nj.get("phases") or []:
+            if not isinstance(ph, dict):
+                continue
+            km = _km(ph.get("km"))
+            if km is None:
+                continue
+            st["phases"].append({"km": km, "mix": _read_mix(ph.get("mix"))})
+        st["phases"].sort(key=lambda p: p["km"])
+        st["rows"] = _read_counts(nj.get("rows"))
+        st["aid"] = {k: {a: n for a, n in v.items() if a in AID_BY_ID and n > 0} for k, v in _read_counts(nj.get("aid")).items()}
+        st["aid"] = {k: v for k, v in st["aid"].items() if v}
+        for k, v in (nj.get("have") or {}).items() if isinstance(nj.get("have"), dict) else []:
+            pid, n = _int(k), _int(v)
+            if pid is not None and n and n > 0:
+                st["have"][pid] = n
+        rm = _int(nj.get("reserve_min"))
+        st["reserve_min"] = rm if rm in RESERVE_CHOICES else None
+        st["undo"] = nj.get("undo") if isinstance(nj.get("undo"), dict) else None
         return st
     if nj.get("items"):
         return upgrade_legacy(nj)
@@ -973,36 +486,57 @@ def read_state(nj: dict | None) -> dict:
     return st
 
 
+def race_rate(level_or_custom: float, race_s: float) -> float:
+    """The practised level, capped by the duration ladder (Jeukendrup 2014):
+    under 1 h nothing, 1–2 h up to 30 g/h, 2–3 h up to 60."""
+    h = float(race_s or 0) / 3600.0
+    r = float(level_or_custom or 0)
+    if h < 1:
+        return 0.0
+    if h < 2:
+        return min(r, 30.0)
+    if h < 3:
+        return min(r, 60.0)
+    return r
+
+
 def resolve_inputs(
     nutrition_json: dict | None, pantry_by_id: dict, duration_s: float, mean_temp: float | None,
     weight_kg: float | None, default_from: dict | None = None, moving_s: float | None = None,
     start_offset_s: float | None = None,
 ) -> dict:
-    """Everything compute_plan needs, from what is stored on the route.
+    """Everything the stretch plan needs, from what is stored on the route.
 
-    No plan yet → a virtual default (never saved by a read): the products of
-    the athlete's newest other race that has some (``default_from`` =
-    {"name", "nutrition_json"}), else Gel + Sel (+ Gel caféiné from 8 h).
-    ``moving_s`` (the plan without its stops) places the caffeine doses; the
-    duration is used when it is not known.
+    No plan yet → a virtual default (never saved by a read): the list and the
+    first mix of the athlete's newest other race that has some
+    (``default_from`` = {"name", "nutrition_json"}), else Gel + Sel (+ Gel
+    caféiné from 8 h). ``moving_s`` (the plan without its stops) places the
+    caffeine doses; the duration is used when it is not known.
     """
     products = with_generics(pantry_by_id or {})
     st = read_state(nutrition_json)
-    picks = [p for p in st["picks"] if p in products]
+    picks = [p for p in st["picks"] if p in products and p not in AID_BY_ID]
     level, sweat, carry = st["level"], st["sweat"], st["carry_ml"]
     custom = dict(st["custom"])
+    shares = dict(st["shares"])
+    phases = [dict(p) for p in st["phases"]]
     is_virtual = not picks and not (st.get("explicit") and not st["picks"])
     legacy = st["legacy"] and not is_virtual
     source = None
     if is_virtual:
         src = read_state(default_from.get("nutrition_json")) if default_from else None
-        src_picks = [p for p in (src or {}).get("picks", []) if p in products]
+        src_picks = [p for p in (src or {}).get("picks", []) if p in products and p not in AID_BY_ID]
         if src_picks:
             picks, source = src_picks, default_from.get("name")
-            # the route's own settings (old typed targets) win over the copied ones
+            shares = dict(src["shares"])
+            # the first mix travels; the kms of another race do not
+            first = (src["phases"] or [{}])[0].get("mix") if src["phases"] else None
+            phases = [{"km": 0.0, "mix": dict(first)}] if first else []
             if level is None and "carbs_g_per_h" not in custom:
                 level = src["level"]
-            if sweat is None and "fluid_ml_per_h" not in custom and "sodium_mg_per_h" not in custom:
+                if level is None and src["custom"].get("carbs_g_per_h"):
+                    custom["carbs_g_per_h"] = src["custom"]["carbs_g_per_h"]
+            if sweat is None and "fluid_ml_per_h" not in custom:
                 sweat = src["sweat"]
             # an old plan's flask (1 L: the old form's default) is not a choice
             # to spread to a new race: only a carry picked in the new view is
@@ -1010,53 +544,50 @@ def resolve_inputs(
                 carry = src["carry_ml"]
         else:
             picks = [-1, -3] + ([-4] if (duration_s or 0) >= 8 * 3600 else [])
-    manual = {} if is_virtual else {pid: r for pid, r in st["manual"].items() if pid in picks}
-
-    base = default_targets((duration_s or 0) / 3600.0, mean_temp)
-    fac = SWEAT_FACTOR[sweat or "normal"]
-    carbs = custom.get("carbs_g_per_h") or (LEVEL_CARBS[level] if level else (base["carbs_g_per_h"] if legacy else LEVEL_CARBS["normal"]))
-    fluid = custom["fluid_ml_per_h"] if "fluid_ml_per_h" in custom else int(round(base["fluid_ml_per_h"] * fac / 10.0) * 10)
-    sodium = custom["sodium_mg_per_h"] if "sodium_mg_per_h" in custom else int(round(base["sodium_mg_per_h"] * fac / 10.0) * 10)
-    targets = {"carbs_g_per_h": carbs, "fluid_ml_per_h": fluid, "sodium_mg_per_h": sodium}
+    level_carbs = custom.get("carbs_g_per_h") or (LEVEL_CARBS[level] if level else LEVEL_CARBS["normal"])
     sel = [products[p] for p in picks]
     caf = [p for p in sel if role(p) == "caf"]
-    if legacy:  # exactly what the plan said before (see upgrade_legacy)
-        items = [{"product_id": pid, "per_hour": manual.get(pid, 0.0)} for pid in picks]
-        caffeine = {**CAFFEINE_DEFAULTS, **(custom.get("caffeine") or {})}
+    moving = float(moving_s or duration_s or 0)
+    if custom.get("caffeine"):
+        caffeine = {**CAFFEINE_DEFAULTS, **custom["caffeine"], "enabled": bool(caf), "by_unit": True}
+    elif caf:
+        caffeine = auto_caffeine(moving, caf[0].get("caffeine_mg"), weight_kg)
     else:
-        moving = float(moving_s or duration_s or 0)
-        if custom.get("caffeine"):
-            caffeine = {**CAFFEINE_DEFAULTS, **custom["caffeine"], "enabled": bool(caf), "by_unit": True}
-        elif caf:
-            caffeine = auto_caffeine(moving, caf[0].get("caffeine_mg"), weight_kg)
-        else:
-            caffeine = {**CAFFEINE_DEFAULTS, "enabled": False}
-        # the caffeinated gels are gels too: their carbs (and sodium) count
-        # before the plain products fill the rest
-        caf_h = None
-        if caf and caffeine.get("enabled") and moving > 0:
-            n = caffeine_units_estimate(caffeine, caf[0].get("caffeine_mg"), moving, weight_kg, start_offset_s)
-            caf_h = {"carbs": n * float(caf[0].get("carbs_g") or 0) / (moving / 3600.0),
-                     "sodium": n * float(caf[0].get("sodium_mg") or 0) / (moving / 3600.0)}
-        rates = auto_rates(carbs, sodium, sel, fluid_ml_per_h=fluid, manual=manual, caffeine_per_h=caf_h)
-        items = [{"product_id": pid, "per_hour": round(rates[pid], 2)} for pid in picks if rates.get(pid, 0) > 0]
-    sweat_eff = None if ("fluid_ml_per_h" in custom or "sodium_mg_per_h" in custom) else (sweat or "normal")
-    level_eff = None if "carbs_g_per_h" in custom else CARBS_LEVEL.get(carbs)
+        caffeine = {**CAFFEINE_DEFAULTS, "enabled": False}
+    fuel = [p["id"] for p in sel if is_fuel(p)]
+    if not phases:
+        phases = [{"km": 0.0, "mix": None}]
+    if phases[0]["km"] > 0:
+        phases.insert(0, {"km": 0.0, "mix": None})
+    for ph in phases:
+        if ph["mix"] is None:  # the default: every fuel product of the list (an old plan's rates as shares)
+            ph["mix"] = {pid: (shares.get(pid) or 1.0) for pid in fuel}
+        ph["mix"] = {pid: s for pid, s in ph["mix"].items() if pid in products and is_fuel(products[pid]) and pid in picks}
+    rows = {} if is_virtual else {k: {p: n for p, n in v.items() if p in products and p not in AID_BY_ID} for k, v in st["rows"].items()}
+    aid = {} if is_virtual else {k: dict(v) for k, v in st["aid"].items()}
+    have = {p: n for p, n in st["have"].items() if p in products}
+    reserve_set = st["reserve_min"]
+    sweat_eff = None if "fluid_ml_per_h" in custom else (sweat or "normal")
+    level_eff = None if "carbs_g_per_h" in custom else CARBS_LEVEL.get(level_carbs)
     return {
-        "targets": targets, "items": items, "products_by_id": products, "flask_capacity_ml": carry,
-        "caffeine": caffeine, "picks": picks, "manual": manual, "level": level_eff, "sweat": sweat_eff,
-        "carry_ml": carry, "custom": custom, "source": source, "is_virtual": is_virtual, "legacy": legacy,
-        "refills": st["refills"], "rates": {it["product_id"]: float(it["per_hour"]) for it in items},
-        "has_caf": bool(caf), "weight_kg": weight_kg, "cap_mg": caffeine_cap_mg(weight_kg),
-        "hand_set": bool(manual) or any(k in custom for k in ("carbs_g_per_h", "fluid_ml_per_h", "sodium_mg_per_h", "caffeine")),
+        "products_by_id": products, "picks": picks, "phases": phases, "rows": rows, "aid": aid, "have": have,
+        "reserve_set": reserve_set, "level": level_eff, "level_carbs": float(level_carbs), "sweat": sweat_eff,
+        "sweat_factor": SWEAT_FACTOR[sweat or "normal"], "carry_ml": carry, "flask_capacity_ml": carry,
+        "custom": custom, "caffeine": caffeine, "caf_pid": caf[0]["id"] if caf else None,
+        "source": source, "is_virtual": is_virtual, "legacy": legacy, "upgraded": (not is_virtual) and st["version"] < 3,
+        "refills": st["refills"], "has_caf": bool(caf), "weight_kg": weight_kg, "cap_mg": caffeine_cap_mg(weight_kg),
+        "hand_set": bool(rows) or any(k in custom for k in ("carbs_g_per_h", "fluid_ml_per_h", "caffeine")),
+        "undo": None if is_virtual else st["undo"],
         # what a write starts from (the resolved state, the copied default included)
-        "state": {"picks": list(picks), "manual": dict(manual), "level": level, "sweat": sweat, "carry_ml": carry,
-                  "custom": dict(custom), "refills": list(st["refills"])},
+        "state": {"picks": list(picks), "phases": [{"km": p["km"], "mix": dict(p["mix"])} for p in phases],
+                  "rows": {k: dict(v) for k, v in rows.items()}, "aid": {k: dict(v) for k, v in aid.items()},
+                  "have": dict(have), "reserve_min": reserve_set, "level": level, "sweat": sweat, "carry_ml": carry,
+                  "custom": dict(custom), "refills": list(st["refills"]), "undo": None},
     }
 
 
 def pick_into(picks: list[int], pid: int, products_by_id: dict) -> list[int]:
-    """Add a product to the picks; a real product takes the place of the picked
+    """Add a product to the list; a real product takes the place of the picked
     quick pick of the same role (PF 90 replaces « Gel »)."""
     if pid in picks or pid not in products_by_id:
         return list(picks)
@@ -1071,270 +602,260 @@ def pick_into(picks: list[int], pid: int, products_by_id: dict) -> list[int]:
     return out
 
 
-def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = None, rates: dict | None = None) -> dict:
-    """One tap → the next stored state (see the write rules of the plan)."""
-    st = {**state, "picks": list(state.get("picks") or []), "manual": dict(state.get("manual") or {}),
-          "custom": dict(state.get("custom") or {}), "refills": list(state.get("refills") or [])}
+def _replaced(before: list[int], after: list[int]) -> list[int]:
+    return [x for x in before if x not in after]
+
+
+def _phase_at(phases: list[dict], km: float) -> int | None:
+    for i, ph in enumerate(phases):
+        if abs(ph["km"] - km) < 0.05:
+            return i
+    return None
+
+
+def _mix_in_force(phases: list[dict], km: float) -> dict:
+    mix: dict = {}
+    for ph in phases:
+        if ph["km"] <= km + 1e-6:
+            mix = dict(ph["mix"])
+    return mix
+
+
+def _phase_end(phases: list[dict], km: float) -> float:
+    later = [p["km"] for p in phases if p["km"] > km + 0.05]
+    return min(later) if later else math.inf
+
+
+def _purge(st: dict, pid: int) -> None:
+    st["picks"] = [x for x in st["picks"] if x != pid]
+    for ph in st["phases"]:
+        ph["mix"].pop(pid, None)
+    for k in list(st["rows"]):
+        st["rows"][k].pop(pid, None)
+        if not any(st["rows"][k].values()):
+            st["rows"].pop(k)
+    st["have"].pop(pid, None)
+
+
+def _seed(plan: dict | None, key: float) -> dict:
+    """A row's current automatic counts (what a first tap freezes)."""
+    for s in (plan or {}).get("stretches") or []:
+        if abs(s["key"] - key) < 0.05:
+            return {it["pid"]: it["n"] for it in s["items"] if not it.get("at_aid")}
+    return {}
+
+
+def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = None, plan: dict | None = None) -> dict:
+    """One tap → the next stored state.
+
+    ``value`` per op: level/sweat → the key; carry/reserve → the number;
+    toggle/pick/unpick/have → pid (have: (pid, d)); n → (km, pid, d) one row,
+    frozen whole on its first tap; add → (km, pid) one more on that row only;
+    auto → km; aid → (km, aid_id, d); mix → (km, pid) « à partir d'ici »;
+    unswitch → km; pick with (pid, km) → into the phase at km.
+    """
     products_by_id = products_by_id or {}
+    st = {
+        **state,
+        "picks": list(state.get("picks") or []),
+        "phases": [{"km": p["km"], "mix": dict(p.get("mix") or {})} for p in state.get("phases") or []] or [{"km": 0.0, "mix": {}}],
+        "rows": {k: dict(v) for k, v in (state.get("rows") or {}).items()},
+        "aid": {k: dict(v) for k, v in (state.get("aid") or {}).items()},
+        "have": dict(state.get("have") or {}),
+        "custom": dict(state.get("custom") or {}),
+        "refills": list(state.get("refills") or []),
+    }
+    prev_undo = state.get("undo")
+    st["undo"] = None
+    stretch_keys = [s["key"] for s in (plan or {}).get("stretches") or []]
+
+    def snap(km) -> float | None:
+        km = _km(km)
+        if km is None:
+            return None
+        if not stretch_keys:
+            return km
+        best = min(stretch_keys, key=lambda k: abs(k - km))
+        return best if abs(best - km) <= 0.5 else None
+
+    def add_to_mix(mix: dict, pid: int, before: list[int]) -> None:
+        for x in _replaced(before, st["picks"]):
+            mix.pop(x, None)
+        mix.setdefault(pid, 1.0)
+
     if op == "level" and value in LEVEL_CARBS:
         st["level"] = value
         st["custom"].pop("carbs_g_per_h", None)
-        st["manual"] = {}
-    elif op == "toggle":
-        pid = int(value)
-        if pid in st["picks"]:
-            st["picks"] = [x for x in st["picks"] if x != pid]
-        else:
+    elif op in ("toggle", "pick", "unpick"):
+        pid, km = (value if isinstance(value, tuple) else (value, None))
+        pid = int(pid)
+        if op == "unpick" or (op == "toggle" and pid in st["picks"]):
+            _purge(st, pid)
+        elif pid in products_by_id and pid not in AID_BY_ID:
+            before = list(st["picks"])
             st["picks"] = pick_into(st["picks"], pid, products_by_id)
-        st["manual"] = {}
-    elif op == "pick":  # add, never remove (catalogue, « un produit à toi »)
-        pid = int(value)
-        if pid not in st["picks"]:
-            st["picks"] = pick_into(st["picks"], pid, products_by_id)
-            st["manual"] = {}
-    elif op == "unpick":
-        pid = int(value)
-        st["picks"] = [x for x in st["picks"] if x != pid]
-        st["manual"].pop(pid, None)
+            gone = _replaced(before, st["picks"])
+            for x in gone:  # the quick pick it replaces leaves every phase and row
+                for ph in st["phases"]:
+                    ph["mix"].pop(x, None)
+                for k in st["rows"]:
+                    st["rows"][k].pop(x, None)
+            if is_fuel(products_by_id[pid]):
+                k = snap(km) if km is not None else None
+                if k is None or k <= 0:
+                    targets = st["phases"] if km is None else [st["phases"][0]]
+                    for ph in targets:
+                        ph["mix"].setdefault(pid, 1.0)
+                else:
+                    i = _phase_at(st["phases"], k)
+                    if i is None:
+                        st["phases"].append({"km": k, "mix": _mix_in_force(st["phases"], k)})
+                        st["phases"].sort(key=lambda p: p["km"])
+                        i = _phase_at(st["phases"], k)
+                    add_to_mix(st["phases"][i]["mix"], pid, before)
     elif op == "sweat" and value in SWEAT_FACTOR:
         st["sweat"] = value
         st["custom"].pop("fluid_ml_per_h", None)
-        st["custom"].pop("sodium_mg_per_h", None)
     elif op == "carry":
         st["carry_ml"] = None if value in (None, "", "auto") else _carry(value)
-    elif op == "step":
-        pid, step = value
-        cur = st["manual"].get(pid, (rates or {}).get(pid, 0.5))
-        st["manual"][pid] = max(0.5, round((float(cur) + float(step)) * 2) / 2)
+    elif op == "reserve":
+        v = _int(value)
+        if v in RESERVE_CHOICES:
+            st["reserve_min"] = v
+    elif op in ("n", "add"):
+        km, pid, d = (value + (1,))[:3] if op == "add" else value
+        k, pid = snap(km), int(pid)
+        if k is not None and pid in products_by_id and pid not in AID_BY_ID:
+            row = st["rows"].get(k)
+            if row is None:
+                row = _seed(plan, k)
+            if op == "add":
+                row[pid] = max(0, row.get(pid, 0)) + 1
+            else:
+                row[pid] = max(0, row.get(pid, 0) + int(d))
+            st["rows"][k] = row
+            if pid not in st["picks"]:
+                st["picks"].append(pid)
+    elif op == "auto":
+        k = snap(value)
+        if k is not None:
+            st["rows"].pop(k, None)
+    elif op == "aid":
+        km, aid_id, d = value
+        k, aid_id = snap(km), int(aid_id)
+        if k is not None and aid_id in AID_BY_ID:
+            row = st["aid"].get(k, {})
+            n = max(0, row.get(aid_id, 0) + int(d))
+            if n:
+                row[aid_id] = n
+            else:
+                row.pop(aid_id, None)
+            if row:
+                st["aid"][k] = row
+            else:
+                st["aid"].pop(k, None)
+    elif op == "have":
+        pid, d = value
+        pid = int(pid)
+        n = max(0, st["have"].get(pid, 0) + int(d))
+        if n:
+            st["have"][pid] = n
+        else:
+            st["have"].pop(pid, None)
+    elif op == "mix":
+        km, pid = value
+        k, pid = snap(km), int(pid)
+        if k is not None and pid in products_by_id and is_fuel(products_by_id[pid]):
+            snapshot = {"phases": [{"km": p["km"], "mix": {str(x): s for x, s in p["mix"].items()}} for p in st["phases"]],
+                        "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()}}
+            before = list(st["picks"])
+            if pid not in st["picks"]:
+                st["picks"] = pick_into(st["picks"], pid, products_by_id)
+            i = _phase_at(st["phases"], k)
+            if i is None:
+                st["phases"].append({"km": k, "mix": _mix_in_force(st["phases"], k)})
+                st["phases"].sort(key=lambda p: p["km"])
+                i = _phase_at(st["phases"], k)
+            mix = st["phases"][i]["mix"]
+            cleared = 0
+            if pid in mix:
+                mix.pop(pid)
+                # « à partir d'ici » sans ce produit : the hand-set rows of this
+                # phase that hold it go back to auto (an « Annuler » undoes it)
+                end = _phase_end(st["phases"], k)
+                for r in [r for r in st["rows"] if k - 0.05 <= r < end - 0.05 and st["rows"][r].get(pid)]:
+                    st["rows"].pop(r)
+                    cleared += 1
+            else:
+                add_to_mix(mix, pid, before)
+            # a change back to what was already in force is no change
+            if i > 0 and set(st["phases"][i]["mix"]) == set(st["phases"][i - 1]["mix"]):
+                st["phases"].pop(i)
+            if cleared:
+                st["undo"] = {**snapshot, "cleared": cleared}
+    elif op == "unswitch":
+        k = snap(value)
+        i = _phase_at(st["phases"], k) if k is not None else None
+        if i:
+            st["undo"] = {"phases": [{"km": p["km"], "mix": {str(x): s for x, s in p["mix"].items()}} for p in st["phases"]],
+                          "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()}, "cleared": 0}
+            st["phases"].pop(i)
+    elif op == "undo" and prev_undo:
+        st["phases"] = [{"km": _km(p["km"]), "mix": _read_mix(p.get("mix")) or {}} for p in prev_undo.get("phases") or []] or st["phases"]
+        st["rows"] = _read_counts(prev_undo.get("rows"))
     elif op == "reset":
-        st["manual"] = {}
+        st["rows"], st["aid"] = {}, {}
+        st["phases"] = st["phases"][:1]
         st["custom"] = {}
+        st["reserve_min"] = None
     return st
 
 
 def state_json(st: dict) -> dict:
-    """The stored v2 shape (the echo keys are added by with_echo)."""
+    """The stored v3 shape (the echo keys are added by with_echo)."""
     custom = {k: v for k, v in (st.get("custom") or {}).items() if v is not None}
-    nj = {"v": 2, "picks": list(st.get("picks") or []), "manual": {str(k): v for k, v in (st.get("manual") or {}).items()},
-          "carry_ml": st.get("carry_ml"), "custom": custom, "refills": list(st.get("refills") or [])}
+    nj = {
+        "v": 3, "picks": list(st.get("picks") or []),
+        "phases": [{"km": p["km"], "mix": {str(k): v for k, v in (p.get("mix") or {}).items()}} for p in st.get("phases") or []],
+        "rows": {str(k): {str(p): int(n) for p, n in v.items()} for k, v in (st.get("rows") or {}).items()},
+        "aid": {str(k): {str(p): int(n) for p, n in v.items()} for k, v in (st.get("aid") or {}).items() if v},
+        "have": {str(k): int(v) for k, v in (st.get("have") or {}).items() if v},
+        "reserve_min": st.get("reserve_min"),
+        "carry_ml": st.get("carry_ml"), "custom": custom, "refills": list(st.get("refills") or []),
+    }
+    if st.get("undo"):
+        nj["undo"] = st["undo"]
     if st.get("level") in LEVEL_CARBS and "carbs_g_per_h" not in custom:
         nj["level"] = st["level"]
-    if st.get("sweat") in SWEAT_FACTOR and "fluid_ml_per_h" not in custom and "sodium_mg_per_h" not in custom:
+    if st.get("sweat") in SWEAT_FACTOR and "fluid_ml_per_h" not in custom:
         nj["sweat"] = st["sweat"]
     return nj
 
 
-def with_echo(nj: dict, resolved: dict) -> dict:
-    """Old readers (and a rollback) read targets / items / flask / caffeine: write them, never read them."""
-    return {**nj, "targets": resolved["targets"], "items": resolved["items"],
-            "flask_capacity_ml": resolved["carry_ml"] or 1000, "caffeine": resolved["caffeine"]}
-
-
-def main_product_id(plan: dict) -> int | None:
-    """The product a spare is packed of: the non-caffeinated, non-salt one
-    that brings the most carbs per hour (tie → the first picked)."""
-    best, best_v = None, 0.0
-    for ln in plan.get("lines") or []:
-        if ln["caffeine_per_unit"] > 0 or ln["carbs_per_unit"] <= 0 or ln["is_water"] or ln.get("by_caffeine"):
-            continue
-        v = ln["per_hour"] * ln["carbs_per_unit"]
-        if v > best_v + 1e-9:
-            best, best_v = ln["product_id"], v
-    return best
-
-
-def _product_of(pid, name: str, products_by_id: dict) -> dict:
-    return products_by_id.get(pid) or {"name": name}
-
-
-def leg_labels(leg: dict, products_by_id: dict) -> list[str]:
-    """'6 gels', '1 gel caféiné'… for one leg of the schedule (no spare)."""
-    return [unit_label(u["units"], _product_of(u.get("product_id"), u["name"], products_by_id))
-            for u in leg["units"] if u["units"] and not u["is_water"]]
-
-
-def shopping_list(plan: dict, main_pid: int | None, products_by_id: dict) -> list[dict]:
-    """What to buy = the sum of the bags, each bag holding one spare of the
-    main carb product. Sets plan["bags"] (the packing groups with their spare
-    and their labels); the per-leg schedule is left untouched."""
-    bags = []
-    lines_by_pid = {ln["product_id"]: ln for ln in plan.get("lines") or []}
-    order = {pid: i for i, pid in enumerate(lines_by_pid)}
-    for g in plan.get("packing") or []:
-        # in the order of the picks, whatever leg a product first shows up on
-        units = sorted((dict(u) for u in g["units"]), key=lambda u: order.get(u.get("product_id"), len(order)))
-        if main_pid is not None and main_pid in lines_by_pid:
-            ent = next((u for u in units if u.get("product_id") == main_pid), None)
-            if ent is None:
-                ent = {"name": lines_by_pid[main_pid]["name"], "units": 0, "product_id": main_pid}
-                units.append(ent)
-            ent["units"] += 1
-            ent["spare"] = 1
-        bags.append({**g, "units": units, "spare": 1 if main_pid is not None else 0,
-                     "labels": [unit_label(u["units"], _product_of(u.get("product_id"), u["name"], products_by_id)) for u in units if u["units"]]})
-    plan["bags"] = bags
+def with_echo(nj: dict, plan: dict | None, resolved: dict) -> dict:
+    """Old readers (and a rollback) read targets / items / flask / caffeine:
+    write them, never read them. ``items`` = each product's race average
+    (total units / hours)."""
+    hours = max(float((plan or {}).get("race_s") or 0) / 3600.0, 1e-9)
     totals: dict = {}
-    for g in bags:
-        for u in g["units"]:
-            t = totals.setdefault(u.get("product_id"), {"n": 0, "spares": 0, "name": u["name"]})
-            t["n"] += u["units"]
-            t["spares"] += u.get("spare", 0)
-    out = []
-    for pid in [ln["product_id"] for ln in plan.get("lines") or [] if ln["product_id"] in totals]:
-        t = totals[pid]
-        if t["n"] <= 0:
-            continue
-        p = _product_of(pid, t["name"], products_by_id)
-        noun = (p["one"] if t["n"] == 1 else p["many"]) if p.get("one") else f"× {short_label(p)}"
-        note = ""
-        if t["spares"]:
-            note = f"dont {t['spares']} de secours"
-        elif pid == -2:
-            note = "1 dose = 1 flasque de 500 ml"
-        out.append({"product_id": pid, "n": t["n"], "spares": t["spares"], "noun": noun, "label": f"{t['n']} {noun}", "note": note})
-    return out
+    for s in (plan or {}).get("stretches") or []:
+        for it in s["items"]:
+            if not it.get("at_aid"):
+                totals[it["pid"]] = totals.get(it["pid"], 0) + it["packed"]
+    items = [{"product_id": pid, "per_hour": round(n / hours, 2)} for pid, n in totals.items() if n > 0] if plan else []
+    rate = (plan or {}).get("rate_g_h") or resolved.get("level_carbs") or 75
+    return {**nj, "manual": {}, "targets": {"carbs_g_per_h": round(rate), "fluid_ml_per_h": round((plan or {}).get("fluid_ml_per_h") or 500)},
+            "items": items, "flask_capacity_ml": resolved.get("carry_ml") or 1000, "caffeine": resolved.get("caffeine")}
 
 
-def _join(parts: list[str]) -> str:
-    parts = [p for p in parts if p]
-    if not parts:
-        return ""
-    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " et " + parts[-1]
-
-
-def _clock(s: float) -> str:
-    s = int(s) % 86400
-    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}"
-
-
-def caffeine_words(cfp: dict | None, noun: str) -> str | None:
-    """'1 gel caféiné' + its clock times, in one rule line (HTML)."""
-    from markupsafe import escape
-
-    if not cfp or not cfp.get("doses"):
-        return None
-    doses = cfp["doses"]
-    if len(doses) <= 6:
-        parts = [_clock(d["clock_s"]) + (f" (×{d['units']})" if (d.get("units") or 1) > 1 else "") for d in doses]
-        return f"<b>{escape(noun)}</b> à {_join(parts)}"
-    # spaced on moving time: the clocks add the stops, hence « environ »
-    every = _hm_words(float((cfp.get("settings") or {}).get("every_h") or 2.5) * 60)
-    dawn2 = next((d for d in doses if (d.get("units") or 1) > 1), None)
-    return (f"<b>{escape(noun)}</b> environ toutes les {every}, de {_clock(doses[0]['clock_s'])} à {_clock(doses[-1]['clock_s'])}"
-            + (f" ({dawn2['units']} vers {_clock(dawn2['clock_s'])})" if dawn2 else ""))
-
-
-def rule_lines(plan: dict, picks: list[int], products_by_id: dict, has_refills: bool) -> list[dict]:
-    """« Ta règle pour toute la course »: one line per product in whole units
-    and plain intervals, then the water line. [{"icon", "html"}]."""
-    from markupsafe import escape
-
-    by_pid = {ln["product_id"]: ln for ln in plan.get("lines") or []}
-    entries = []
-    for pid in picks:
-        ln, p = by_pid.get(pid), products_by_id.get(pid)
-        if not ln or not p or ln["is_water"]:
-            continue
-        if ln.get("by_caffeine"):
-            entries.append(("caf", pid))
-        elif ln["per_hour"] > 0:
-            entries.append(("rate", pid))
-    # the same groups compute_plan hands out in turns
-    picked = set(picks)
-    merged = {}
-    for grp in alternation_groups(plan.get("lines") or [], products_by_id):
-        grp = [x for x in grp if x in picked]
-        if len(grp) >= 2:
-            merged[by_pid[grp[0]]["per_hour"]] = grp
-    out, done = [], set()
-    for kind, pid in entries:
-        if pid in done:
-            continue
-        p, ln = products_by_id[pid], by_pid[pid]
-        done.add(pid)
-        if kind == "caf":
-            html = caffeine_words(plan.get("caffeine"), rule_noun(p))
-            if html:
-                out.append({"icon": "bolt", "html": html})
-            continue
-        rate, r = ln["per_hour"], role(p)
-        if r in ("gel", "bar") and pid in merged.get(rate, []):
-            pids = merged[rate]
-            done.update(pids)
-            kinds = {role(products_by_id[x]) for x in pids}
-            noun = "1 gel ou 1 barre" if len(kinds) > 1 else ("1 barre" if kinds == {"bar"} else "1 gel")
-            names = _join([str(escape(short_label(products_by_id[x]))) for x in pids])
-            out.append({"icon": "gel", "html": f"<b>{noun}</b> {interval_words(rate * len(pids))}, en alternant {names}"})
-            continue
-        if rate > 4:
-            many = p.get("many") or f"× {short_label(p)}"
-            html = f"<b>{_fr(rate)} {escape(many)}</b> par heure"
-        else:
-            html = f"<b>{escape(rule_noun(p))}</b> {interval_words(rate)}"
-        if r == "drink":
-            html += f" (une flasque de {int(p.get('volume_ml') or 500)} ml)"
-        out.append({"icon": {"drink": "drink", "salt": "salt", "bar": "bar"}.get(r, "gel"), "html": html})
-    cfp = plan.get("caffeine")
-    if cfp and cfp.get("doses") and not any(ln.get("by_caffeine") for ln in plan.get("lines") or []):
-        html = caffeine_words(cfp, f"{cfp['doses'][0]['mg']} mg de caféine")  # an old plan: caffeine without a product
-        if html:
-            out.append({"icon": "bolt", "html": html})
-    fluid = float((plan.get("targets") or {}).get("fluid_ml_per_h") or 0)
-    if fluid > 0:
-        drink = any(role(products_by_id.get(ln["product_id"]) or {}) == "drink" and ln["per_hour"] > 0 for ln in plan.get("lines") or [])
-        out.append({"icon": "drop", "html": f"<b>Bois {liters(fluid)} L</b> par heure"
-                    + (", remplis à chaque point d'eau" if has_refills else "") + (" (ta boisson comprise)" if drink else "")})
-    return out
-
-
-def plan_real_rates(plan: dict) -> tuple[float, float]:
-    """Real carbs and sodium per hour over the race, from the whole units."""
-    legs = plan.get("schedule") or []
-    secs = sum(lg["leg_time_s"] for lg in legs)
-    if not secs:
-        ph = plan.get("per_hour") or {}
-        return float(ph.get("carbs_g") or 0), float(ph.get("sodium_mg") or 0)
-    carbs = sum(lg["carbs_real_g"] for lg in legs) / (secs / 3600.0)
-    sodium = sum(lg["sodium_real_per_h"] * lg["leg_time_s"] for lg in legs) / secs
-    return carbs, sodium
-
-
-def plan_caffeine_mg(plan: dict) -> int:
-    """All the caffeine the plan has you take: every caffeinated unit on the
-    legs (per hour or at the caffeine times), plus doses with no product."""
-    total = sum(float(lg.get("caffeine_mg") or 0) for lg in plan.get("schedule") or [])
-    cfp = plan.get("caffeine")
-    if cfp and cfp.get("doses") and not any(ln.get("by_caffeine") for ln in plan.get("lines") or []):
-        total += float(cfp.get("total_mg") or 0)
-    return int(round(total))
-
-
-def rule_warnings(plan: dict, picks: list[int], products_by_id: dict, has_refills: bool, water_hint: str | None = None) -> list[dict]:
-    """Only what the runner can act on, with the fix in the same line."""
-    t = plan.get("targets") or {}
-    carbs, sodium = plan_real_rates(plan)
-    tc, ts = float(t.get("carbs_g_per_h") or 0), float(t.get("sodium_mg_per_h") or 0)
-    sel = [products_by_id[p] for p in picks if p in products_by_id]
-    out = []
-    if tc > 0 and carbs < 0.85 * tc:
-        # a drink is capped by the water you drink: more of it cannot help
-        more = "un gel ou une barre" if any(role(p) == "drink" for p in sel) else "un gel ou une boisson"
-        out.append({"tone": "warn", "text": f"Pas assez de glucides avec ça : ajoute {more}."})
-    elif tc > 0 and carbs > 1.2 * tc:
-        out.append({"tone": "warn", "text": "Un peu trop pour ton estomac : retire un produit ou baisse une quantité."})
-    if ts > 0 and sodium < 0.5 * ts:
-        out.append({"tone": "muted", "text": "Pas de sel dans tes produits : ajoute « Sel »."})
-    if any(role(p) == "caf" for p in sel) and not any(role(p) in ("gel", "drink", "bar") and (p.get("carbs_g") or 0) > 0 for p in sel):
-        out.append({"tone": "warn", "text": "Ajoute un gel sans caféine : la caféine ne se prend pas toutes les heures."})
-    if not has_refills:
-        out.append({"tone": "muted", "text": water_hint or "Indique les points d'eau dans le plan (ouvre un point › Type de poste) pour savoir combien d'eau porter."})
-    return out
-
-
-def copy_text(course: str, shop: list[dict], bags: list[dict], bag_titles: list[str]) -> str:
-    """The shopping list as plain text, for « Copier la liste »."""
+def copy_text(course: str, shop: list[dict], bags: list[dict], stretches: list[dict]) -> str:
+    """The list, then each bag and its stretches, as plain text for « Copier »."""
     lines = [f"{course} : à acheter"]
-    lines += [it["label"] + (f" ({it['note']})" if it["note"] else "") for it in shop]
-    lines.append("")
-    lines += [f"{title} : " + (", ".join(g.get("labels") or []) or "rien") for g, title in zip(bags, bag_titles, strict=False)]
+    lines += [f"{it['to_buy']} {it['label']}" for it in shop if it["to_buy"] > 0] or ["rien, tu as tout"]
+    for g in bags:
+        lines.append("")
+        lines.append(f"{g['title']} : " + (", ".join(g.get("labels") or []) or "rien"))
+        for i in g["stretch_idx"]:
+            s = stretches[i]
+            lines.append(f"  {s['clock']} → {s['to_name']} : " + (", ".join(s.get("labels") or []) or "rien"))
     return "\n".join(lines)
