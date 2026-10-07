@@ -201,8 +201,16 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None) -> dict:
 
 
 def x_labels(days: list[date], xs: list[float]) -> list[dict]:
-    """Mondays as « lun. 5 » up to a month, the 1st of each month as « oct. » beyond."""
+    """Mondays as « lun. 5 » up to a month, the 1st of each month as « oct. » beyond; weekly slots:
+    the first week of every other month."""
     n = len(days)
+    if n > 1 and (days[1] - days[0]).days == 7:  # weekly slots: the first week of every other month
+        out, prev = [], None
+        for d, x in zip(days, xs):
+            if d.month != prev and d.month % 2 == 1:
+                out.append({"x": x, "label": MOIS[d.month - 1]})
+            prev = d.month
+        return out
     if n <= 31:
         return [{"x": x, "label": d_day(d)} for d, x in zip(days, xs) if d.weekday() == 0]
     return [{"x": x, "label": MOIS[d.month - 1]} for d, x in zip(days, xs) if d.day == 1 and (n <= 120 or
@@ -255,15 +263,19 @@ PANEL_H, PANEL_GAP, FLAG = 92, 18, 22
 
 
 def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), longs=(), tags=None, sel=None,
-               title: str = "") -> dict:
+               title: str = "", slot_labels: list[tuple[str, str]] | None = None, unit_word: str = "nuits") -> dict:
     """Stacked panels sharing one x axis, one scrub and one readout (« Cœur la
     nuit »: VFC above, FC de nuit below, respiration as a slim third panel).
     Each panel: {name, unit, unit_long, values: [per day], band: [(lo, hi) |
     None per day], mean: [7-night mean | None per day] (drawn, never printed),
-    min_span, digits, up_is: "warn" | "muted" (what « au-dessus » means), h}.
+    min_span, digits, up_is: "warn" | "muted" (what « au-dessus » means), h,
+    judge: [bool per day] (optional: a night drawn but never judged, e.g. in
+    J-7 → J+7 around a race, gets no out-of-band word nor hollow dot)}.
     Readout: [date, « VFC 58 ms · FC 46 bpm », « normale 55–63 · ◇ alcool »];
     an out-of-band night is a hollow dot and the word « au-dessus » /
-    « en dessous », never colour alone."""
+    « en dessous », never colour alone. A night with a context tag (`tags`)
+    is drawn as a small diamond (◇). `slot_labels`: [(readout, spoken)] per
+    slot when the slots are not nights (the weekly « 1 an » view)."""
     n = len(days)
     xs = slot_x(n)
     out_panels, y_series = [], []
@@ -276,12 +288,13 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
         y = scale(lo, hi, top, top + h)
         yv = [y(v) for v in p["values"]]
         dots = []
+        judge = p.get("judge") or [True] * n
         for i, v in enumerate(p["values"]):
             if v is None:
                 continue
-            b = p["band"][i]
+            b = p["band"][i] if judge[i] else None
             out = "up" if b and v > b[1] else "down" if b and v < b[0] else None
-            dots.append({"x": xs[i], "y": yv[i], "out": out, "i": i})
+            dots.append({"x": xs[i], "y": yv[i], "out": out, "i": i, "tag": bool((tags or {}).get(days[i]))})
         out_panels.append({
             "name": p["name"], "top": top, "bottom": top + h,
             "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b]),
@@ -296,14 +309,16 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
     r, a = [], []
     for i, d in enumerate(days):
         vals, normals, spoken = [], [], []
+        label, said = slot_labels[i] if slot_labels else (night_label(d), d_long(d))
         for p in panels:
             v, b, dg = p["values"][i], p["band"][i], p.get("digits", 0)
             if v is None:
                 continue
             word = ""
-            if b and v > b[1]:
+            judged = (p.get("judge") or [True] * n)[i]
+            if judged and b and v > b[1]:
                 word = " au-dessus"
-            elif b and v < b[0]:
+            elif judged and b and v < b[0]:
                 word = " en dessous"
             vals.append(f"{p['name']} {num(v, dg, p['unit'])}{word}")
             if b:
@@ -313,17 +328,19 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
                           + (f", ta normale {num(b[0], dg)} à {num(b[1], dg)}" if b else ""))
         ctx = _context(d, races, longs, tags)
         if not vals:
-            r.append([night_label(d), "—", " · ".join(["pas de montre cette nuit"] + ctx)])
-            a.append(". ".join([f"{d_long(d)} : pas de mesure"] + ctx))
+            r.append([label, "—", " · ".join(["pas de montre cette nuit" if not slot_labels else "pas assez de nuits"]
+                                             + ctx)])
+            a.append(". ".join([f"{said} : pas de mesure"] + ctx))
             continue
         normal = ("normale " + ", ".join(normals)) if len(panels) > 1 and normals else (normals[0] if normals else "")
-        r.append([night_label(d), " · ".join(vals), " · ".join(([normal] if normal else []) + ctx)])
-        a.append(f"{d_long(d)} : " + ", ".join(spoken) + "".join(f". {c}" for c in ctx))
+        r.append([label, " · ".join(vals), " · ".join(([normal] if normal else []) + ctx)])
+        a.append(f"{said} : " + ", ".join(spoken) + "".join(f". {c}" for c in ctx))
     ev = events(days, xs, races, longs)
     measured = sum(1 for i in range(n) if any(p["values"][i] is not None for p in panels))
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "panels": out_panels, "xt": x_labels(days, xs), **ev,
             "dot_r": 2.5 if n <= 31 else 1.6 if n <= 120 else 1.0, "flag_y": FLAG - 3,
-            "summary": f"{title}, {n} nuits : {measured} mesurée{'s' if measured > 1 else ''}",
+            "summary": f"{title}, {n} {unit_word} : {measured} mesuré{'e' if unit_word == 'nuits' else ''}"
+                       f"{'s' if measured > 1 else ''}",
             **_data(xs, y_series, days, r, a, sel=sel)}
 
 
@@ -340,15 +357,24 @@ def _axis_min(t: datetime, day: date) -> float:
     return (t - datetime.combine(day - timedelta(days=1), time(0))).total_seconds() / 60
 
 
+SHORT_MAIN_MIN = 180  # (H) a main episode shorter than this may be a night cut in two: « nuit incomplète ? »
+
+
 def nights_chart(days: list[date], nights: dict, *, usual: dict | None = None, races=(), longs=(),
-                 tags: dict | None = None, link: str | None = None, sel=None) -> dict:
+                 tags: dict | None = None, link: str | None = None, sel=None, mean: list | None = None,
+                 band: list | None = None, slot_labels: list[tuple[str, str]] | None = None,
+                 unit_word: str = "jours") -> dict:
     """One linked figure over the days: 24-h amounts (night solid, nap lighter
     and hatched, < 6 h drawn as an outlined bar, ≈ 7 h line, 7-night mean
     line) above the bed → wake windows (floating bars on a 20:00 → 12:00 axis
     fitted over the main windows AND the in-axis naps; a nap inside the axis
     is its own segment with a gap, outside it an edge mark; real wake gaps cut
-    out; faint median lines). `nights`: {day: nights.Night}. `usual`:
-    nights.timing() (bed, wake as minutes after 18:00)."""
+    out; faint median lines, and ±1 SD bands around them once the spread is
+    known). `nights`: {day: nights.Night}. `usual`: nights.timing() (bed,
+    wake, bed_sd, wake_sd as minutes after 18:00). `mean`: the 7-night mean
+    line per slot (default: a rolling mean of the shown totals); `band`: the
+    athlete's 24-h normal per slot ((lo, hi) | None); `slot_labels`:
+    [(readout, spoken)] per slot when the slots are weeks."""
     n = len(days)
     xs = slot_x(n)
     slot = X1 / max(n, 1)
@@ -371,12 +397,13 @@ def nights_chart(days: list[date], nights: dict, *, usual: dict | None = None, r
     yt = scale(t1, t0, TIMING[0], TIMING[1])  # earlier times at the top
 
     cols, r, a = [], [], []
-    mean = [rolling(tot, i) for i in range(n)]
+    mean = mean if mean is not None else [rolling(tot, i) for i in range(n)]
     for i, d in enumerate(days):
         nt = nights.get(d)
         cx = xs[i]
         col = {"i": i, "x": round(cx - bw / 2, 1), "w": bw, "cx": cx}
         ctx = _context(d, races, longs, tags)
+        label, said = slot_labels[i] if slot_labels else (night_label(d), night_label(d))
         main, nap = (nt.asleep, nt.nap_min) if nt else (None, None)
         if nt and nt.asleep is not None:
             y_night = ya(nt.asleep)
@@ -403,29 +430,46 @@ def nights_chart(days: list[date], nights: dict, *, usual: dict | None = None, r
         col.update(nap_segs=segs, nap_edges=edges)
         cols.append(col)
         times = f"{clock(nt.start)} → {clock(nt.end)}" if nt and nt.start else ""
-        r.append([night_label(d), sleep_readout(main, nap) if nt else "—",
-                  " · ".join(([times] if times else []) + ctx) or ("pas de montre cette nuit" if not nt else "")])
-        sentence = f"{night_label(d)} : {sleep_spoken(main, nap) if nt else 'pas de mesure'}"
+        naps = [f"sieste {clock(na)} → {clock(nb)}" for na, nb, _ in (nt.naps if nt else []) if na is not None]
+        partial = bool(nt and nt.asleep is not None and nt.asleep < SHORT_MAIN_MIN)
+        extra = ([times] if times else []) + naps + (["nuit incomplète ?"] if partial else []) + ctx
+        r.append([label, sleep_readout(main, nap) if nt else "—",
+                  " · ".join(extra) or ("pas de montre cette nuit" if not nt and not slot_labels else "")])
+        sentence = f"{said} : {sleep_spoken(main, nap) if nt else 'pas de mesure'}"
         if times:
             sentence += f", couché vers {clock(nt.start)}, levé vers {clock(nt.end)}"
+        for na, nb, _ in (nt.naps if nt else []):
+            if na is not None:
+                sentence += f", sieste de {clock(na)} à {clock(nb)}"
         if nt and nt.tst24 is not None and nt.tst24 < 6 * 60:
             sentence += ", moins de 6 heures sur 24 heures"
         a.append(sentence + "".join(f". {c}" for c in ctx))
     hours = [{"y": yt(m), "label": f"{(m // 60) % 24:02d}:00"} for m in range(int(t0 // 60 * 60) + 60, int(t1), 120)]
-    med = {}
+    med, med_bands = {}, []
     if usual and usual.get("bed") is not None:
         for k in ("bed", "wake"):
             if usual.get(k) is not None:
                 m = usual[k] + 18 * 60  # minutes after 18:00 → after midnight of the evening
                 if t0 <= m <= t1:
                     med[k] = yt(m)
+                    sd = usual.get(f"{k}_sd")
+                    if sd:
+                        a0, a1 = max(t0, m - sd), min(t1, m + sd)
+                        med_bands.append({"y": yt(a0), "h": round(yt(a1) - yt(a0), 1)})
+    band_poly, band_lo, band_hi = [], "", ""
+    if band and any(band):
+        lo = [ya(b[0]) if b else None for b in band]
+        hi = [ya(b[1]) if b else None for b in band]
+        band_poly, band_lo, band_hi = band_polys(xs, lo, hi), paths(xs, lo), paths(xs, hi)
     ev = events(days, xs, races, longs)
     measured = sum(1 for d in days if d in nights and nights[d].asleep is not None)
-    return {"n": n, "W": W, "H": 262, "X1": X1, "cols": cols, "hours": hours, "med": med,
+    what = "nuit" if unit_word == "jours" else "semaine"
+    return {"n": n, "W": W, "H": 262, "X1": X1, "cols": cols, "hours": hours, "med": med, "med_bands": med_bands,
             "ref": {"y": ya(REF_MIN), "label": "7" + NNBSP + "h"}, "mean": paths(xs, [ya(v) for v in mean]),
+            "band": band_poly, "band_lo": band_lo, "band_hi": band_hi,
             "amount": AMOUNT, "timing": TIMING, "xt": x_labels(days, xs), **ev,
-            "summary": f"Sommeil sur 24 h et horaires, {n} jours : {measured} nuit{'s' if measured > 1 else ''} mesurée"
-                       f"{'s' if measured > 1 else ''}",
+            "summary": f"Sommeil sur 24 h et horaires, {n} {unit_word} : {measured} {what}{'s' if measured > 1 else ''}"
+                       f" mesurée{'s' if measured > 1 else ''}",
             **_data(xs, [], days, r, a, sel=sel, link=link)}
 
 

@@ -4,7 +4,7 @@
 
 {% block content %}
 {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
-<div class="pf-health">
+<div class="pf-health pf-sante3">
     <div class="pf-head flex-col !items-start !gap-1">
         <h1 class="pf-h1">Santé</h1>
         {% if lines %}<p class="pf-sante-lines">{% for l in lines %}<span><b>{{ l.name }}</b> · {{ l.night }}</span>{% endfor %}</p>{% endif %}
@@ -26,7 +26,7 @@
     {% else %}
     <section class="pf-health-connect pf-panel space-y-3 mt-4">
         <h2 class="pf-h2">Ta montre et tes séances</h2>
-        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ta récupération, tes semaines, ta prochaine course et tes progrès s'afficheront ici.</p>
+        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ce que tu peux faire aujourd'hui et tes nuits s'afficheront ici.</p>
         <div class="flex flex-wrap gap-2">
             <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
             <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>
@@ -34,37 +34,21 @@
     </section>
     {% endif %}
     {% else %}
-    {% set v = page.verdict %}{% set co = page.course %}
-    {% set vtone = {'ok': 'pf-word-ok', 'easy': 'pf-word-warn', 'rest': 'pf-word-danger', 'unknown': 'pf-word-muted'} %}
-    {% set tabs = [('aujourdhui', "Aujourd'hui", v.word, vtone[v.tone]), ('entrainement', 'Entraînement', None, ''),
-                   ('course', 'Course', co.sublabel if co else None, 'pf-word-accent'), ('tendances', 'Tendances', None, '')] %}
-    {% set active = vue if vue in ('entrainement', 'course', 'tendances') else 'aujourdhui' %}
-    <nav class="pf-stabs" role="tablist" aria-label="Santé">
-        {% for key, label, sub, cls in tabs %}
-        <a role="tab" id="tab-{{ key }}" href="#{{ key }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if key == active else 'false' }}" tabindex="{{ '0' if key == active else '-1' }}" class="pf-stab">{{ label }}{% if sub %}<small class="{{ cls }}">{{ sub }}</small>{% endif %}</a>
+    {# two views, server-rendered: a plain link without scripts (?vue=sommeil), an instant switch with them #}
+    <nav class="pf-stabs pf-stabs-2" role="tablist" aria-label="Santé">
+        {% for key, label, href in (('aujourdhui', "Aujourd'hui", '/sante'), ('sommeil', 'Sommeil', '/sante?vue=sommeil')) %}
+        <a role="tab" id="tab-{{ key }}" href="{{ href }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if key == vue else 'false' }}" tabindex="{{ '0' if key == vue else '-1' }}" class="pf-stab">{{ label }}</a>
         {% endfor %}
     </nav>
-
-    <section id="aujourdhui" role="tabpanel" aria-labelledby="tab-aujourdhui" class="pf-tabpanel">
+    <section id="aujourdhui" role="tabpanel" aria-labelledby="tab-aujourdhui" class="pf-tabpanel"{% if vue != 'aujourdhui' %} hidden{% endif %}>
         {% include "partials/sante_today.html" %}
     </section>
-    <section id="entrainement" role="tabpanel" aria-labelledby="tab-entrainement" class="pf-tabpanel">
-        <h2 class="pf-panel-h pf-tabbed pf-h1">Entraînement</h2>
-        {% include "partials/sante_week.html" %}
-    </section>
-    <section id="course" role="tabpanel" aria-labelledby="tab-course" class="pf-tabpanel">
-        <h2 class="pf-panel-h pf-tabbed pf-h1">Course</h2>
-        {% if co %}{% with course = co %}{% include "partials/sante_course.html" %}{% endwith %}{% endif %}
-    </section>
-    <section id="tendances" role="tabpanel" aria-labelledby="tab-tendances" class="pf-tabpanel">
-        <h2 class="pf-panel-h pf-tabbed pf-h1">Tendances</h2>
-        {% if page.trends %}{% with trends = page.trends %}{% include "partials/sante_trends.html" %}{% endwith %}{% endif %}
+    <section id="sommeil" role="tabpanel" aria-labelledby="tab-sommeil" class="pf-tabpanel"{% if vue != 'sommeil' %} hidden{% endif %}>
+        {% include "partials/sante_sommeil.html" %}
     </section>
     <script>
     (function () {
-        // real tabs once scripts run; without them the four panels simply stack
-        var root = document.querySelector(".pf-health"), tabs = Array.from(document.querySelectorAll(".pf-stab"));
-        root.classList.add("pf-js");
+        var tabs = Array.from(document.querySelectorAll(".pf-stabs-2 .pf-stab"));
         function show(key, focus) {
             tabs.forEach(function (t) {
                 var on = t.getAttribute("aria-controls") === key;
@@ -83,25 +67,24 @@
         tabs.forEach(function (t, i) {
             t.addEventListener("click", function (e) { e.preventDefault(); show(t.getAttribute("aria-controls")); window.scrollTo({ top: 0 }); });
             t.addEventListener("keydown", function (e) {
-                var n = tabs.length, to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i + n - 1) % n
-                    : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
+                var to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length
+                    : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
                 if (to >= 0) { e.preventDefault(); show(tabs[to].getAttribute("aria-controls"), true); }
             });
         });
-        // links inside the panels that move to another tab
-        document.querySelectorAll("[data-vue-link]").forEach(function (a) {
-            a.addEventListener("click", function (e) {
-                var m = /[?&]vue=([a-z]+)/.exec(a.getAttribute("href") || "");
-                if (!m) return;
-                e.preventDefault(); show(m[1]); window.scrollTo({ top: 0 });
-            });
+        // a link from Aujourd'hui to Sommeil (a tile, a driver) opens it in place, at its figure
+        document.addEventListener("click", function (e) {
+            var a = e.target.closest && e.target.closest('a[href^="/sante?vue=sommeil"]');
+            if (!a || e.metaKey || e.ctrlKey || e.shiftKey || a.closest(".pf-stabs")) return;
+            e.preventDefault();
+            show("sommeil");
+            var id = a.getAttribute("href").split("#")[1] || "", el = id && document.getElementById(id);
+            if (el) el.scrollIntoView(); else window.scrollTo({ top: 0 });
         });
-        // a link to a tab's anchor (#tendances) opens that tab
-        var start = tabs.find(function (t) { return "#" + t.getAttribute("aria-controls") === location.hash; })
-            || tabs.find(function (t) { return t.getAttribute("aria-selected") === "true"; });
-        show(start ? start.getAttribute("aria-controls") : "aujourdhui");
     })();
     </script>
     {% endif %}
 </div>
 {% endblock content %}
+
+{% block scripts %}<script defer src="/static/js/pf-viz.js?v=1"></script>{% endblock scripts %}

@@ -167,8 +167,10 @@ def test_old_rows_are_still_read():
                                                                      datetime(2026, 10, 7, 9, 31))
     assert main_window(d, {"main_start": "2026-10-06T23:35", "main_end": "2026-10-07T05:38"})[1].hour == 5
     assert main_window(d, {"bedtime": "22:00", "wake": "06:00", "from_in_bed": True}) is None
-    assert feel_of(3, {"legs_heavy": True}) == {"value": 3, "why": ["legs"], "alcohol": False}
-    assert feel_of(3, {"why": ["sick", "nope"], "alcohol": True}) == {"value": 3, "why": ["sick"], "alcohol": True}
+    assert feel_of(3, {"legs_heavy": True}) == {"value": 3, "why": ["legs"], "alcohol": False, "answered": True}
+    assert feel_of(3, {"why": ["sick", "nope"], "alcohol": True}) == {"value": 3, "why": ["sick"], "alcohol": True,
+                                                                      "answered": True}
+    assert feel_of(2, {"alcohol": True, "answered": False})["answered"] is False  # only « alcool hier » was tapped
     assert feel_of(None, {}) is None
 
 

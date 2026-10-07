@@ -1,58 +1,70 @@
-"""The Santé page: one decision, the last 14 nights, fitness — owner-like
-sparse data, full data, not connected, connected without data, errors,
-navigation; the decision ladder, the night rules and the strip."""
+"""The Santé page (v3): « Aujourd'hui | Sommeil » — the routes (login, not
+connected, no data yet, errors, the old views redirected, the range swap, the
+check-in swap, the opening sync), the owner's own October as a fixture
+(Transjeju 100M started 02/10 21:00 in Korea, 16h53; the 7 Oct nap), and the
+decision ladder rung by rung, (H) rungs included, then the tiles."""
 
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from httpx import AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
+from app.models.route import Route
 from app.models.user import User
-from app.services.health import compute_form
-from app.services.sante import _nights, _strip, clock_m, load_key, m_clock
-from app.services.sante_today import decide, gauge, order_rows, rhr_row
+from app.services import nights as nt
+from app.services import sante, sante_today
+from app.services.sante_today import decide, make_tiles, sparse_line
 from app.services.sante_training import Session
 from tests import test_coros
 from tests.test_coros import _link
+from tests.test_nights import D, owner_rows
 
 # the COROS test fixtures (a linked athlete, commits turned into flushes)
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 
 PF_HRV = {"n": 30, "method": "ln_mean_main"}  # PaceForge's own nightly HRV
-FIT = {"vo2max": 61, "level": 97, "threshold_s": 200,
-       "pred": {"5k": 950, "10k": 1954, "half": 4254, "marathon": 8703}}
+BRAND = ("Récup COROS", "calculée par COROS", "Training Readiness", "Body Battery", "Score de sommeil", "×1,",
+         "forte hausse", "Récupération", "84 %",
+         "Charge <small>", "VO2", "Stress de jour", "fatigue %", "Fraîcheur")
 
 
-def _add(db: AsyncSession, user: User, metric: str, d: date, value: float, details=None):
-    db.add(HealthMetric(user_id=user.id, date=d, metric=metric, value=value, source="COROS",
-                        details=details, n_samples=1))
+def _add(db: AsyncSession, user: User, metric: str, d: date, value: float, details=None, source="COROS"):
+    db.add(HealthMetric(user_id=user.id, date=d, metric=metric, value=value, source=source, details=details,
+                        n_samples=1))
 
 
-async def _seed_owner(db: AsyncSession, user: User, today: date):
-    """What the owner's watch gives: every day load, heart rate, stress and
-    steps; recovery and fitness today; HRV, resting HR and sleep on 3 nights
-    in 60 days only — the last ones 40 days ago."""
-    for k in range(60):
-        d = today - timedelta(days=k)
-        if k % 9 == 4:
-            continue  # a day off the wrist
-        _add(db, user, "steps", d, 9000 + 300 * (k % 7), {"kcal": 500, "exercise": 40})
-        _add(db, user, "stress", d, 20 + k % 15)
-        _add(db, user, "hr_day", d, 60 + k % 10, {"min": 38, "max": 140})
-        _add(db, user, "load", d, 150 + k % 20, {"long": 110, "ratio": round((150 + k % 20) / 110, 2),
-                                                 "comment": "Excessive"})
-    _add(db, user, "recovery", today, 84, {"level": "Moderate training recommended", "full_h": 45})
-    _add(db, user, "fitness", today, 97, FIT)
-    _add(db, user, "vo2max", today, 61)
-    for k in (40, 41, 55):
-        d = today - timedelta(days=k)
-        _add(db, user, "hrv", d, 83 + k % 3, PF_HRV)
-        _add(db, user, "hrv_norm", d, 77, {"lo": 70, "hi": 84})
-        _add(db, user, "hr_night", d, 39 + k % 2)
-        _add(db, user, "sleep", d, 540, {"bedtime": "23:50", "wake": "09:00"})
+async def _seed_owner(db: AsyncSession, user: User) -> Route:
+    """The owner's October as the COROS sync writes it, the brand rows COROS
+    also had (never read), and the Transjeju 100M with its result (16h53)."""
+    for metric, per_day in owner_rows().items():
+        for d, (v, det, src) in per_day.items():
+            _add(db, user, metric, d, v, det, src)
+    for k in range(20):
+        d = D - timedelta(days=k)
+        _add(db, user, "steps", d, 9000, {"kcal": 500})
+        _add(db, user, "load", d, 160, {"long": 110, "ratio": 1.45, "comment": "Excessive"})
+        _add(db, user, "stress", d, 25)
+    _add(db, user, "recovery", D, 84, {"level": "Moderate training recommended", "full_h": 45})
+    _add(db, user, "sleep_score", D, 89)
+    _add(db, user, "vo2max", D, 61)
+    route = Route(user_id=user.id, name="Transjeju 100M", total_distance_km=162, total_elevation_gain=6100,
+                  race_date="2026-10-02", start_hour=21, start_minute=0, sport_type="trail",
+                  result_json={"total_actual_s": 16 * 3600 + 53 * 60, "actual": []})
+    db.add(route)
     await db.flush()
+    return route
+
+
+@pytest.fixture
+def on_owner_day(monkeypatch):
+    """The page's « today » is 7 Oct 2026 (the athlete's date in Korea)."""
+    async def today(*a, **k):
+        return D
+    monkeypatch.setattr(sante, "athlete_today", today)
 
 
 # ── routes ──────────────────────────────────────────────────────────────────
@@ -60,12 +72,13 @@ async def _seed_owner(db: AsyncSession, user: User, today: date):
 async def test_sante_requires_login(client: AsyncClient):
     r = await client.get("/sante")
     assert r.status_code == 307 and r.headers["location"] == "/"
+    r = await client.get("/sante/sommeil?r=90")
+    assert r.status_code == 307
 
 
 async def test_nav_item_and_activities_link(as_user: AsyncClient):
     page = (await as_user.get("/activities")).text
     assert page.count('href="/sante"') == 2  # top bar and tab bar only: Activités no longer talks about health
-    assert "7 derniers jours comparés" not in page and "récupération" not in page
     page = (await as_user.get("/sante")).text
     assert page.count('href="/sante" aria-current="page"') == 2
 
@@ -84,62 +97,6 @@ async def test_connected_without_data_yet(as_user: AsyncClient, db_session: Asyn
     assert "Connecter COROS" not in page
 
 
-async def test_owner_like_sparse_data(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    """The owner's case: few nights long ago, the watch's load every day, no Strava."""
-    await _link(db_session, test_user)
-    today = date.today()
-    await _seed_owner(db_session, test_user, today)
-    page = (await as_user.get("/sante")).text
-    assert "Connecter COROS" not in page and "Synchroniser maintenant" in page
-    # four tabs, the decision first; the watch's load, recovery and scores are never read any more
-    assert page.count('role="tab"') == 4 and 'aria-selected="true"' in page
-    assert "Pas encore d&#39;avis" in page
-    for brand in ("×1,36", "forte hausse", "Récup COROS", "calculée par COROS", "Charge <small>", "Body Battery",
-                  "score"):
-        assert brand not in page, brand
-    # the missing nights are said once, with since when
-    assert page.count("Porte ta montre") <= 1  # said once at most (this page is rebuilt in Santé v3)
-    assert "pas de nuit mesurée (montre pas portée ?)" in page  # steps came today, no night
-    assert 'class="pf-nights' not in page  # no empty strip
-    for gone in ("risque de blessure", "Surcharge", "pf-word-danger\">forte hausse"):
-        assert gone not in page, gone
-
-
-async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    await _link(db_session, test_user)
-    today = date.today()
-    await _seed_owner(db_session, test_user, today)
-    for k in range(67):
-        d = today - timedelta(days=k)
-        if k not in (40, 41, 55):
-            _add(db_session, test_user, "hrv", d, 80 + (k % 4) * 2, PF_HRV)
-            _add(db_session, test_user, "hr_night", d, 42 + k % 2)
-            _add(db_session, test_user, "sleep", d, 450 + k % 30, {"bedtime": "23:10", "wake": f"07:{k % 30:02d}"})
-            _add(db_session, test_user, "sleep_score", d, 70 + k % 10)
-    await db_session.flush()
-    page = (await as_user.get("/sante")).text
-    assert "VFC" in page and "FC au repos" in page and "ta normale" in page and "28 nuits" in page
-    assert 'class="pf-nights"' in page and page.count('class="pf-n-ok"') == 14  # no watch score column
-    assert "Sommeil · 7 nuits" in page and "Horaires · 14 nuits" in page and "besoin 8 h · 7 nuits sur 7" in page
-    assert "cette nuit : reçue" in page
-    assert "Porte ta montre" not in page
-
-
-async def test_race_week_points_to_course(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    from app.models.route import Route
-
-    await _link(db_session, test_user)
-    today = date.today()
-    for k in range(20):
-        _add(db_session, test_user, "sleep", today - timedelta(days=k), 450, {"bedtime": "23:00", "wake": "07:00"})
-    db_session.add(Route(user_id=test_user.id, name="Trail des Glaciers", total_distance_km=42,
-                         race_date=(today + timedelta(days=3)).isoformat(), start_hour=5, start_minute=0))
-    await db_session.flush()
-    page = (await as_user.get("/sante")).text
-    assert "Semaine de course : ton plan de sommeil (heures, coucher, lever) est dans Course." in page
-    assert "bande : 9 h avant ton lever habituel" in page and "besoin 9 h" in page
-
-
 async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_session: AsyncSession,
                                                        test_user: User, monkeypatch):
     await _link(db_session, test_user)
@@ -151,242 +108,179 @@ async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_
     assert "Impossible d'afficher tes données" in page and "Connecter COROS" not in page
 
 
-async def test_the_check_in_is_stored_once_a_day_and_moves_the_decision(as_user: AsyncClient,
-                                                                        db_session: AsyncSession, test_user: User):
-    from sqlalchemy import select
+async def test_the_old_views_moved(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    for vue in ("entrainement", "tendances"):
+        r = await as_user.get(f"/sante?vue={vue}")
+        assert r.status_code == 302 and r.headers["location"] == "/activities"
+    r = await as_user.get("/sante?vue=course")
+    assert r.status_code == 302 and r.headers["location"] == "/activities"  # no race: Activités
+    route = Route(user_id=test_user.id, name="Trail des Glaciers", total_distance_km=42,
+                  race_date=(date.today() + timedelta(days=20)).isoformat(), start_hour=5, start_minute=0)
+    db_session.add(route)
+    await db_session.flush()
+    r = await as_user.get("/sante?vue=course")
+    assert r.status_code == 302 and r.headers["location"] == f"/simulator/routes/{route.id}#prep"
 
-    await _link(db_session, test_user)
-    today = date.today()
-    await _seed_owner(db_session, test_user, today)
+
+# ── the owner's own October ─────────────────────────────────────────────────
+
+async def test_owner_october_aujourdhui(db_session: AsyncSession, test_user: User):
+    route = await _seed_owner(db_session, test_user)
+    page = await sante.health_page(db_session, test_user.id, today=D)
+    a = page["auj"]
+    v = a["verdict"]
+    # R4: the 100-mile race took ≥ 10 h, J+5: easy only, intensity from J+10 (12/10)
+    assert (v["rule"], v["tone"], v["headline"]) == ("race", "easy", "Footing facile seulement")
+    assert v["text"] == "Pas d'intensité avant le 12/10." and len(v["text"]) <= 90
+    assert v["chips"] == [{"glyph": "⚑", "word": "Transjeju 100M · J+5", "href": f"/simulator/routes/{route.id}#prep",
+                           "aria": "Transjeju 100M, 5 jours après"}]
+    # no short-night line on 7 Oct: 5h50 + nap 2h20 = 8h10 over 24 h
+    assert "Nuit courte" not in str(v) and nt.day_tst24((await nt.load_nights(db_session, test_user.id, D))[0], D) == 490
+    # the nightly tiles have no status: every night sits in J-7 → J+7; the sleep tile still shows its value
+    assert [t["key"] for t in a["tiles"]] == ["sleep"]
+    sleep = a["tiles"][0]
+    assert (sleep["label"], sleep["value"], sleep["word"]) == ("Sommeil · 7 jours", "7h35", None)
+    assert a["line"] == "2 nuits mesurées sur 7 : je juge sur tes séances et ton ressenti."
+    assert not a["building"]  # said once (the line already explains), the count lives in Sommeil
+
+
+async def test_owner_october_sommeil(db_session: AsyncSession, test_user: User):
+    await _seed_owner(db_session, test_user)
+    s = (await sante.health_page(db_session, test_user.id, today=D))["som"]
+    assert s["state"] == "ok" and s["r"] == "14" and [k for k, _ in s["ranges"]] == ["14", "90"]  # no « 1 an » yet
+    assert s["coverage"] == "5 nuits mesurées sur 14"  # 25/09 (a nap only) is never a night
+    assert s["building"] == "Ta normale se construit : 0 nuit sur 14 hors course."
+    c = s["nights"]
+    col = c["cols"][-1]  # 7 Oct: the stacked bar and the in-axis nap after its 64-min gap
+    assert col["night"] and col["nap"] and not col["short"] and len(col["nap_segs"]) == 1
+    assert c["read"][1].replace(" ", " ") == "Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h"
+    assert c["read"][2].startswith("23:35 → 05:40 · sieste 06:40 → 09:05")
+    assert s["hyps"] == []  # COROS: no stage timeline, no hypnogram
+    assert s["amount_line"] is None and s["timing_line"] is None  # race nights: no regularity comment
+    marks = {r["date"]: r["marks"] for r in s["rows"]}
+    assert "fuseau changé" not in marks["mer. 7 oct."] and "autour de la course" in marks["mer. 7 oct."]
+    assert [r["date"] for r in s["rows"]][:2] == ["mer. 7 oct.", "mar. 6 oct."]  # newest first
+    assert s["heart"]["read"][1].replace(" ", " ") == "VFC 95 ms · FC 37 bpm"  # per-night values, no judgement
+
+
+async def test_owner_october_korea_time_zone_tags(db_session: AsyncSession, test_user: User):
+    """A session in France before the trip, one in Korea (UTC+9) after: the first nights in Korea are « fuseau
+    changé » (the night it shows and the next 2, H), and say it in the nights' table."""
+    from app.models.activity import Activity
+
+    await _seed_owner(db_session, test_user)
+    for i, (day, off) in enumerate(((date(2026, 9, 26), 7200), (date(2026, 9, 28), 32400))):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=9100 + i, sport_type="Run", name=f"r{i}",
+                                start_date=datetime(day.year, day.month, day.day, 8, tzinfo=timezone.utc)
+                                - timedelta(seconds=off), distance=8000, moving_time=2700, elapsed_time=2800,
+                                raw_data={"utc_offset": off}))
+    await db_session.flush()
+    rows = {r["iso"]: r["marks"] for r in (await sante.health_page(db_session, test_user.id, today=D))["som"]["rows"]}
+    assert "◇ fuseau changé" in rows["2026-09-29"] and "◇ fuseau changé" in rows["2026-09-30"]
+    assert "fuseau" not in rows["2026-10-06"] and "fuseau" not in rows["2026-10-07"]
+
+
+async def test_a_short_night_turns_the_sleep_tile_to_24_hours(db_session: AsyncSession, test_user: User):
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(1, 20), asleep=450)
+    rows["sleep"].update(night_rows([0], asleep=290, start=(23, 50), end=(6, 40))["sleep"])  # 4h50, no nap
+    for metric, per_day in rows.items():
+        for d, (v, det, src) in per_day.items():
+            _add(db_session, test_user, metric, d, v, det, src)
+    await db_session.flush()
+    a = (await sante.health_page(db_session, test_user.id, today=D))["auj"]
+    # a usual wake-up (06:40): not an early wake, the ladder goes on (no sessions: no opinion), the slot says it
+    assert a["verdict"]["rule"] == "none" and a["verdict"]["text"] == sante_today.SHORT_LATE
+    assert "sleep" in a["verdict"]["drivers"]
+    tile = next(t for t in a["tiles"] if t["key"] == "sleep")
+    assert (tile["label"], tile["value"], tile["glyph"], tile["word"]) == ("Sommeil · 24 h", "4h50", "▼", "moins de 6 h")
+    assert a["tiles"][0]["key"] == "sleep"  # the driver first
+
+
+async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_owner_day):
+    await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(minutes=25))
+    await _seed_owner(db_session, test_user)
     page = (await as_user.get("/sante")).text
-    assert "Ce matin, tu te sens ?" in page
+    assert page.count('role="tab"') == 2 and "Aujourd&#39;hui" in page and ">Sommeil<" in page
+    for gone in ("Entraînement", "Tendances", ">Course<"):
+        assert gone not in page, gone
+    for brand in BRAND:
+        assert brand not in page, brand
+    assert "COROS</b> · synchro il y a 25 min" in page and "cette nuit : reçue" not in page
+    assert 'aria-live="polite" aria-labelledby="h-today"' in page and "Footing facile seulement" in page
+    assert 'class="pf-dchip" href="/simulator/routes/' in page
+    assert re.search(r'<section id="sommeil"[^>]*hidden', page)  # server-rendered, the other view hidden
+    assert 'src="/static/js/pf-viz.js?v=1"' in page
+    # Sommeil: the figures, then the two closed folds; numbers once (the 7-day mean is Aujourd'hui's)
+    som = (await as_user.get("/sante?vue=sommeil")).text
+    assert re.search(r'<section id="aujourdhui"[^>]*hidden', som) and 'id="nuits"' in som and 'id="coeur"' in som
+    assert "<summary>Les chiffres de chaque nuit</summary>" in som and "<summary>Comment je lis tes nuits</summary>" in som
+    assert "<details open" not in som
+    assert som.count("7h35") == 1  # the sleep tile's mean, printed once in the whole page
+    assert "Horaires détectés par la montre, approximatifs." in som
+    assert 'data-viz-group="sommeil"' in som and 'hx-get="/sante/sommeil?r=90"' in som
+
+
+async def test_the_range_swaps_in_place(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
+                                        on_owner_day):
+    await _link(db_session, test_user)
+    await _seed_owner(db_session, test_user)
+    r = await as_user.get("/sante/sommeil?r=90", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and r.text.lstrip().startswith("{#") is False
+    assert '<div id="sommeil-range" data-viz-scope>' in r.text and re.search(r'aria-pressed="true"[^>]*>3 mois', r.text)
+    assert "3 nuits mesurées" not in r.text and "5 nuits mesurées sur 3 mois" in r.text
+    r = await as_user.get("/sante/sommeil?r=90")  # without htmx: the full page for that range
+    assert r.status_code == 303 and r.headers["location"] == "/sante?vue=sommeil&r=90"
+    page = (await as_user.get("/sante?vue=sommeil&r=90")).text
+    assert re.search(r'aria-pressed="true"[^>]*>3 mois', page)
+
+
+async def test_the_check_in_swaps_the_view_and_moves_the_decision(as_user: AsyncClient, db_session: AsyncSession,
+                                                                  test_user: User, on_owner_day):
+    await _link(db_session, test_user)
+    for k in range(1, 8):  # a few nights, no race: the default rung
+        _add(db_session, test_user, "sleep", D - timedelta(days=k), 450, {"bedtime": "23:00", "wake": "07:00"})
+    await db_session.flush()
+    page = (await as_user.get("/sante")).text
+    assert "Ce matin ?" in page and 'id="why-legs"' not in page
+    # « moins bien »: the reasons appear, the decision is swapped into the live region
     r = await as_user.post("/sante/feel", data={"feel": "3"}, headers={"HX-Request": "true"})
-    assert r.headers.get("HX-Refresh") == "true"
-    r = await as_user.post("/sante/feel", data={"legs": "1"})
-    assert r.status_code == 303
+    assert r.status_code == 200 and r.text.lstrip().startswith('<div id="sante-today-rest">')
+    assert '<div id="sante-decision" hx-swap-oob="innerHTML">' in r.text and "Garde ta séance facile" in r.text
+    assert 'id="why-legs"' in r.text and "<details class=\"pf-feel-fold\" open>" in r.text
+    r = await as_user.post("/sante/feel", data={"toggle": "legs"}, headers={"HX-Request": "true"})
+    assert "Endurance facile aujourd&#39;hui" in r.text and 'id="why-legs" name="toggle" value="legs" class="pf-chip" ' \
+        'aria-pressed="true"' in r.text
     rows = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "feel"))).scalars().all()
     assert len(rows) == 1 and rows[0].value == 3
     assert rows[0].details == {"why": ["legs"], "alcohol": False, "legs_heavy": True}
-    page = (await as_user.get("/sante")).text
-    assert "Ressenti du jour : fatigué, jambes lourdes · changer" in page
-    assert "Endurance facile aujourd&#39;hui" in page  # heavy legs: easy today
-    # v3: « moins bien » with its reasons, and « alcool hier » apart
+    page = (await as_user.get("/sante")).text  # folded once answered
+    assert "Noté : moins bien · jambes" in page and "— modifier" in page and "Ce matin ?" not in page
+    # without scripts: a plain form, back to the page
+    r = await as_user.post("/sante/feel", data={"toggle": "legs"})
+    assert r.status_code == 303 and r.headers["location"] == "/sante"
     r = await as_user.post("/sante/feel", data={"feel": "3", "why": ["sick", "fatigue", "nope"], "alcohol": "1"})
-    assert r.status_code == 303
     await db_session.refresh(rows[0])
     assert rows[0].details == {"why": ["fatigue", "sick"], "alcohol": True, "legs_heavy": False}
-    await as_user.post("/sante/feel", data={"feel": "1"})  # « mieux »: no reason left, the chip stays
+    assert "Pas d&#39;intensité aujourd&#39;hui" in (await as_user.get("/sante")).text  # « malade »
+    await as_user.post("/sante/feel", data={"feel": "1"})  # « mieux »: no reason left, the alcohol chip stays
     await db_session.refresh(rows[0])
     assert rows[0].value == 1 and rows[0].details == {"why": [], "alcohol": True, "legs_heavy": False}
 
 
-# ── the decision ────────────────────────────────────────────────────────────
-
-T = date(2026, 10, 6)
-
-
-def _form(status="unknown", reasons=(), **kw):
-    base = {"status": status, "reasons": list(reasons), "nights_base": 20, "nights_recent": 5,
-            "rhr_baseline": 44.0, "rhr_sd": 1.5, "hrv_baseline": 80.0, "hrv_z": None, "rhr_delta_bpm": None}
-    out = {**base, **kw}
-    if out["rhr_delta_bpm"] is not None and "rhr_7d" not in kw:  # the 7 nights the delta was read on
-        out["rhr_7d"] = out["rhr_baseline"] + out["rhr_delta_bpm"]
-    return out
-
-
-def _ctx(**kw):
-    base = {"form": _form(), "tr": None, "legs": None, "easy": None, "feel": None, "next_race": None,
-            "post_race": None, "today": T, "ill": False, "hard48": None, "short_night": None, "jump": False,
-            "watch_load": None}
-    return {**base, **kw}
-
-
-TR = {"pct": 4, "key": "balanced", "word": "équilibré", "history": {}}
-
-
-def test_illness_first():
-    v = decide(_ctx(ill=True, form=_form("fatigue", hrv_z=-1.5, rhr_delta_bpm=6)))
-    assert v["tone"] == "rest" and v["headline"] == "Reste tranquille aujourd'hui" and v["word"] == "repos"
-
-
-def test_red_needs_hrv_down_and_resting_hr_up_together():
-    both = decide(_ctx(form=_form("fatigue", hrv_z=-0.8, rhr_delta_bpm=3.5), tr=TR))
-    assert both["tone"] == "rest" and both["headline"] == "Pas d'intensité aujourd'hui"
-    assert "sommeil, stress, virus" in both["text"] and both["drivers"] == ["hrv", "rhr"]
-    # one strong signal alone: an easy day, not a stop
-    alone = decide(_ctx(form=_form("fatigue", hrv_z=-1.4, rhr_delta_bpm=0.5), tr=TR))
-    assert alone["tone"] == "easy" and alone["headline"] == "Garde ta séance facile"
-    assert "ne suffit pas à tout arrêter" in alone["text"] and "Dis-moi comment tu te sens" in alone["text"]
-    # the dip after a long outing is expected: not flagged
-    long_ = Session(id=1, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=1800, km=30,
-                    speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
-    v = decide(_ctx(form=_form("fatigue", hrv_z=-1.4, rhr_delta_bpm=0.5), tr=TR, hard48=long_))
-    assert v["headline"] != "Garde ta séance facile"
-    # race week: a lower HRV alone is normal, the rest of the ladder still applies
-    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}, tr=TR))
-    assert v["headline"] == "Entraînement prévu OK" and v["hrv_note"].startswith("Avant une course")
-    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=1), next_race={"days": 5, "name": "UTMB"}, tr=TR,
-                    feel={"value": 3, "legs_heavy": False}))
-    assert v["headline"] == "Garde ta séance facile"
-    # two mild signals: easy, never greener than one
-    v = decide(_ctx(form=_form("fatigue", ["FC au repos +4 bpm", "nuits courtes"], hrv_z=0.1, rhr_delta_bpm=3.5),
-                    tr=TR))
-    assert v["headline"] == "Garde ta séance facile" and v["drivers"] == ["rhr", "sleep"]
-
-
-def test_race_days_and_recovery():
-    v = decide(_ctx(next_race={"days": 2, "name": "Marathon"}))
-    assert v["headline"] == "Course après-demain : court et facile" and v["tone"] == "ok"
-    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "known": True, "name": "Grand Trail", "limit": 10,
-          "long": True}
-    v = decide(_ctx(post_race=pr))
-    assert v["headline"] == "Récupère" and "Grand Trail (11h42)" in v["text"] and v["tone"] == "easy"
-    assert v["resume"] == "Pas d'intensité avant le 14/10." and v["word"] == "récup"
-    v = decide(_ctx(post_race={**pr, "day": T - timedelta(days=6), "days": 6}))
-    assert v["headline"] == "Footing facile seulement" and v["tone"] == "easy"
-    v = decide(_ctx(post_race={**pr, "minutes": 50, "long": False, "limit": 2, "days": 1, "day": T - timedelta(days=1)}))
-    assert v["headline"] == "Footing facile seulement" and v["resume"] == "Reprends l'intensité le 08/10."
-
-
-def test_legs_then_accumulated_then_jump():
-    big = Session(id=7, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=2100, km=30,
-                  speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
-    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 300, "dplus": 2200}))
-    assert v["headline"] == "Endurance facile aujourd'hui"
-    assert v["text"].startswith("Ta sortie d'hier (4h10, +2\u202f100 m)")
-    assert v["resume"] == "Séance dure possible à partir de demain."
-    hist = {T - timedelta(days=k): 35 for k in range(10)}
-    v = decide(_ctx(tr={**TR, "pct": 35, "key": "loaded", "history": hist}))
-    assert v["headline"] == "Semaine plus légère conseillée" and "10" in v["text"]
-    v = decide(_ctx(tr={**TR, "pct": 22, "key": "build"}, jump=True))
-    assert v["headline"] == "Séance prévue, sans en rajouter" and "risque" not in v["text"]
-
-
-def test_checkin_and_the_quiet_days():
-    v = decide(_ctx(tr=TR, feel={"value": 3, "legs_heavy": False}))
-    assert v["headline"] == "Garde ta séance facile" and "c'est toi qui sais" in v["text"]
-    v = decide(_ctx(tr=TR, form=_form("ok", hrv_z=0.1, rhr_delta_bpm=0.5)))
-    assert v["headline"] == "Séance dure possible" and v["word"] == "feu vert"
-    v = decide(_ctx(tr=TR, form=_form("unknown", nights_recent=0)))
-    assert v["headline"] == "Entraînement prévu OK" and v["note"].startswith("Sans nuit mesurée")
-    v = decide(_ctx())
-    assert v["headline"] == "Pas encore d'avis" and v["word"] == "?"
-    # « en forme » never lifts a stop
-    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.8, rhr_delta_bpm=3.5), feel={"value": 1, "legs_heavy": False}))
-    assert v["tone"] == "rest"
-
-
-def test_rows_order_and_the_watch_last():
-    rows = [{"key": "stress", "dev": 0.2}, {"key": "watch", "dev": 0}, {"key": "hrv", "dev": 3},
-            {"key": "fatigue", "dev": 0.1}, {"key": "sleep", "dev": 1}, {"key": "easy_hr", "dev": 0.9},
-            {"key": "legs", "dev": 0}]
-    visible, more = order_rows(rows, ["easy_hr"])
-    assert [r["key"] for r in visible] == ["easy_hr", "hrv", "fatigue", "legs", "watch"]  # a driver takes a place
-    assert [r["key"] for r in more] == ["sleep", "stress"]
-
-
-def test_gauge_is_in_percent_and_clamped():
-    g = gauge(36, -40, 60, band=(-5, 10), edges=[(0, "ton fond")])
-    assert g["dot"] == 76.0 and g["band"] == {"l": 35.0, "w": 15.0} and g["edges"][0]["x"] == 40.0
-    assert gauge(90, -40, 60)["dot"] == 100.0
-
-
-def test_compute_form_reads_hrv_on_ln_and_gives_its_band():
-    hrv = {T - timedelta(days=k): 80 + (k % 4) * 2 for k in range(7, 60)} | {T - timedelta(days=k): 70 for k in range(4)}
-    f = compute_form({"hrv": hrv}, T)
-    lo, hi = f["hrv_band"]
-    assert lo < f["hrv_baseline"] < hi and f["hrv_z"] < -0.5 and f["status"] in ("watch", "fatigue")
-    rhr = {T - timedelta(days=k): 44 + (k % 3) for k in range(7, 30)} | {T - timedelta(days=k): 45 for k in range(4)}
-    assert compute_form({"rhr": rhr}, T)["rhr_sd"] >= 1.5
-
-
-# ── the nights ──────────────────────────────────────────────────────────────
-
-def test_clock_wraps_midnight():
-    assert clock_m("22:00") == 240 and clock_m("23:34") == 334 and clock_m("05:31") == 691
-    assert clock_m("00:10") == 370 and clock_m("bad") is None
-    assert m_clock(334) == "23:34" and m_clock(691) == "05:31" and m_clock(1450) == "18:10"
-
-
-def _sleep(nights: dict[int, tuple[float, str, str]]):
-    """{days ago: (minutes asleep, bedtime, wake)} → series, details."""
-    series = {T - timedelta(days=k): v for k, (v, _, _) in nights.items()}
-    det = {T - timedelta(days=k): {"bedtime": b, "wake": w} for k, (_, b, w) in nights.items()}
-    return series, det
-
-
-def test_few_nights_ask_for_the_watch_once_and_hide_the_averages():
-    series, det = _sleep({1: (420, "23:00", "07:00"), 3: (400, "23:20", "06:50")})
-    n = _nights(series, det, T, None, None)
-    assert n["n7"] == 2 and n["avg7_txt"] is None and n["takeaway"] is None
-    assert n["coverage"] == ("2 nuits mesurées sur les 7 dernières : il en faut 3 pour ta moyenne. "
-                             "Porte ta montre la nuit.")
-    assert n["rows"][0]["pending"] and n["strip"]["bars"][0]["title"].endswith("pas encore reçue")
-    assert n["strip"]["bars"][2]["title"].endswith("pas de montre")
-
-
-def test_missing_nights_are_never_bars_or_zeros():
-    series, det = _sleep({k: (450, "23:00", "07:00") for k in (0, 2, 4)})
-    series[T - timedelta(days=1)] = 0  # a broken night with no window
-    n = _nights(series, det, T, None, None)
-    bars = n["strip"]["bars"]
-    assert [b.get("missing", False) for b in bars[:5]] == [False, True, False, True, False]
-    assert all("w" not in b for b in bars if b.get("missing"))
-    assert n["avg7_txt"] == "7h30"  # the missing night is not a 0
-
-
-def test_regularity_takes_the_worse_of_bed_and_wake_from_5_nights():
-    series, det = _sleep({k: (440, "23:00", w) for k, w in zip(range(4), ("05:30", "07:35", "06:00", "07:00"))})
-    assert _nights(series, det, T, None, None)["regularity"] is None  # 4 of 14
-    series, det = _sleep({k: (440, "23:00", w) for k, w in
-                          zip(range(5), ("05:30", "07:35", "06:00", "07:00", "05:40"))})
-    reg = _nights(series, det, T, None, None)["regularity"]
-    assert reg["range"] == "réveil entre 05:30 et 07:35" and reg["sd"] > 30
-
-
-def test_sleep_rules():
-    # < 6 h on average this week
-    series, det = _sleep({k: (340, "00:30", "06:30") for k in range(5)} |
-                         {k: (470, "23:00", "07:00") for k in range(7, 14)})
-    n = _nights(series, det, T, None, None)
-    assert n["takeaway"].startswith("Moins de 6 h par nuit cette semaine") and "rhume" in n["takeaway"]
-    assert n["short_night"].startswith("Nuit courte")
-    # debt ≥ 60 min with a known wake time: a bedtime target
-    series, det = _sleep({k: (400, "23:20", "06:30") for k in range(6)})  # 6 of 14: no 2-week rule yet
-    n = _nights(series, det, T, None, None)
-    assert n["takeaway"].startswith("Il te manque environ 1h20 par nuit sur tes 8 h")
-    assert "Au lit vers 21:45." in n["takeaway"]  # 06:30 − 8 h − 30 min awake in the window − 15 min
-    # over 2 weeks under 7 h: the injury rule comes first, with the debt
-    series, det = _sleep({k: (400, "23:20", "06:30") for k in range(10)})
-    assert _nights(series, det, T, None, None)["takeaway"] == (
-        "Moins de 7 h par nuit sur 2 semaines : chez les coureurs d'endurance, c'est lié à plus de blessures. "
-        "Il te manque environ 1h20 par nuit : au lit vers 21:45.")
-    # enough, regular
-    series, det = _sleep({k: (480, "23:00", "07:05") for k in range(10)})
-    assert _nights(series, det, T, None, None)["takeaway"] == "Assez de sommeil, horaires réguliers : rien à changer."
-    # a few measured nights: the averages may flatter
-    series, det = _sleep({k: (480, "23:00", "07:05") for k in range(4)})
-    assert _nights(series, det, T, None, None)["selective"] is True
-
-
-def test_strip_geometry():
-    series, det = _sleep({k: (450, "23:30", "07:00") for k in range(10)})
-    n = _nights(series, det, T, None, None)
-    st = n["strip"]
-    assert st["height"] == 280 and st["half"] == 140 and len(st["bars"]) == 14
-    edge = [t["label"] for t in st["ticks"] if t["edge"]]
-    assert edge == ["23:00", "07:00"]  # the band: 8 h of sleep (+ the usual 0 min awake) before 07:00, labelled
-    assert all(0 <= t["x"] <= 100 for t in st["ticks"])
-    bar = st["bars"][0]
-    assert 0 < bar["x"] < bar["x"] + bar["w"] <= 100 and bar["tone"] == "ok"
-    assert _strip([{"day": T, "label": "cette nuit", "value": None, "bed": None, "wake": None, "pending": True}],
-                  None, None, 480)["band"] is None
-
-
-def test_load_words_follow_the_watch_then_the_ratio():
-    assert load_key("Excessive", 1.2) == "over" and load_key(None, 1.64) == "over"
-    assert load_key(None, 1.2) == "good" and load_key("Detraining", None) == "low" and load_key(None, None) is None
+async def test_alcohol_alone_is_not_a_reply(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
+                                            on_owner_day):
+    await _link(db_session, test_user)
+    _add(db_session, test_user, "sleep", D - timedelta(days=1), 450, {"bedtime": "23:00", "wake": "07:00"})
+    await db_session.flush()
+    r = await as_user.post("/sante/feel", data={"alcohol": "1"}, headers={"HX-Request": "true"})
+    assert "Ce matin ?" in r.text and 'id="feel-alcohol" name="alcohol" value="0" class="pf-chip pf-chip-ctx" ' \
+        'aria-pressed="true"' in r.text
+    assert 'id="feel-2" name="feel" value="2" class="pf-chip" aria-pressed="false"' in r.text
+    row = (await db_session.execute(select(HealthMetric).where(HealthMetric.metric == "feel"))).scalar_one()
+    assert row.details["answered"] is False and row.details["alcohol"] is True
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────
@@ -394,9 +288,6 @@ def test_load_words_follow_the_watch_then_the_ratio():
 async def test_opening_sante_syncs_a_stale_link_and_reloads_only_with_news(as_user: AsyncClient,
                                                                           db_session: AsyncSession,
                                                                           test_user: User, monkeypatch):
-    import re
-    from datetime import datetime, timezone
-
     from app.services import coros as coros_service
 
     conn = await _link(db_session, test_user)
@@ -456,8 +347,6 @@ async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, te
 
 async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_session: AsyncSession,
                                                  test_user: User, monkeypatch):
-    from datetime import datetime, timezone
-
     from app.services import coros as coros_service
 
     conn = await _link(db_session, test_user)
@@ -468,9 +357,9 @@ async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_sessi
     db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=1), metric="sleep", value=450,
                                 source="COROS", n_samples=1, details={"bedtime": "23:00", "wake": "07:00"}))
     await db_session.flush()
-    # last night isn't there yet: synced 30 min ago is already too old
-    await as_user.get("/sante")
-    assert started == [test_user.id]
+    # last night isn't there yet: synced 30 min ago is already too old, and the header says it
+    page = (await as_user.get("/sante")).text
+    assert started == [test_user.id] and "cette nuit pas encore reçue" in page
     # it arrived: no new sync within the hour
     started.clear()
     db_session.add(HealthMetric(user_id=test_user.id, date=today, metric="sleep", value=440,
@@ -486,66 +375,222 @@ async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_sessi
     assert started == []
 
 
-def test_a_race_day_beats_recovery_and_estimates_are_never_printed():
-    pr = {"day": T - timedelta(days=1), "days": 1, "minutes": 2995, "known": False, "name": "Trail X", "limit": 10,
-          "long": True, "race": True}
-    v = decide(_ctx(post_race=pr))
-    assert v["text"].startswith("Après Trail X, cœur") and "(" not in v["text"].split(",")[0]
-    v = decide(_ctx(post_race={**pr, "long": False, "limit": 2}, next_race={"days": 0, "name": "Semi"}))
-    assert v["headline"] == "Jour de course"
-    # after a race the low HRV is expected: the row gets the note
-    v = decide(_ctx(post_race={**pr, "known": True, "minutes": 642},
-                    form=_form("watch", hrv_z=-0.8, rhr_delta_bpm=1)))
-    assert v["text"].startswith("Après Trail X (10h42)") and v["hrv_note"].startswith("Basse après ta course")
+# ── the decision ladder ─────────────────────────────────────────────────────
+
+T = date(2026, 10, 6)  # a Tuesday
 
 
-def test_after_a_race_or_on_its_eve_low_hrv_and_high_rhr_get_their_note():
-    pr = {"day": T - timedelta(days=1), "days": 1, "minutes": 300, "known": True, "name": "Trail X", "limit": 10,
-          "long": True, "race": True}
-    both = _form("fatigue", hrv_z=-1.2, rhr_delta_bpm=4)
-    v = decide(_ctx(post_race=pr, form=both))
-    assert v["rule"] == "race" and v["hrv_note"].startswith("Basse après ta course")
-    assert v["rhr_note"].startswith("Haute après ta course")
-    assert "Une VFC basse" not in v["text"]  # said once, on the row
-    row = rhr_row(both, None, note=v["rhr_note"])
-    assert row["tone"] == "muted" and row["sub"] == v["rhr_note"]
-    # a training outing is not called a race
-    outing = {**pr, "race": False, "name": "ta sortie de dimanche"}
-    v = decide(_ctx(post_race=outing, form=both))
-    assert v["hrv_note"] == "Basse après ta sortie de dimanche : normal, ça revient en quelques jours."
-    # on the eve of a race too
-    v = decide(_ctx(next_race={"days": 1, "name": "UTMB"}, form=both))
-    assert v["hrv_note"].startswith("Avant une course") and v["rhr_note"].startswith("Avant une course")
-    # its time is not printed twice when the Jambes row already shows it
-    legs = {"key": "loaded", "minutes": 300.2, "big": None}
-    v = decide(_ctx(post_race=pr, legs=legs))
-    assert v["text"].startswith("Après Trail X, cœur")
+def _ctx(**kw):
+    base = {"today": T, "next_race": None, "post": None, "feel": None, "alert": None, "reprise": None, "short": None,
+            "legs": {"big": None}, "hr": None, "hrv": None, "easy": None, "sessions42": 8, "has_watch": True,
+            "has_sessions": True}
+    return {**base, **kw}
 
 
-def test_resting_hr_counts_from_three_bpm_exactly():
-    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=2.4), tr=TR))
-    assert v["rule"] == "mild" and v["drivers"] == ["hrv"]  # 46 against 44 is not +3: no red
-    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.7, rhr_delta_bpm=3.0), tr=TR))
-    assert v["rule"] == "red"
-    # the numbers the athlete reads decide: 47,3 against 44,4 prints 47 and 44, +3
-    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.7, rhr_baseline=44.4, rhr_7d=47.3, rhr_delta_bpm=2.9), tr=TR))
-    assert v["rule"] == "red"
-    row = rhr_row(_form(rhr_baseline=44.4, rhr_7d=47.3, rhr_delta_bpm=2.9), None)
-    assert (row["value"], row["ref"], row["word"]) == ("47 bpm", "d'habitude 44", "un peu haute")
+def _feel(value=3, why=(), alcohol=False, answered=True):
+    return {"value": value, "why": list(why), "alcohol": alcohol, "answered": answered}
 
 
-def test_the_legs_numbers_are_printed_once():
-    big = Session(id=7, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=2100, km=30,
-                  speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
-    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 250, "dplus": 2100}))
-    assert v["text"].startswith("Ta sortie d'hier pèse encore")  # the Jambes row shows 4h10 · +2 100 m
-    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 310, "dplus": 2200}))
-    assert v["text"].startswith("Ta sortie d'hier (4h10")
+def _session(day, minutes, dplus=0, sid=7, sport="TrailRun", workout_type=0):
+    return Session(id=sid, start=datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc), day=day,
+                   sport=sport, minutes=minutes, dplus=dplus, km=minutes / 6, speed=2.5, hr=140, hr_peak=170,
+                   suffer=None, workout_type=workout_type, temp=None)
+
+
+ALERT = {"days": [T - timedelta(days=1), T], "values": [52, 53], "threshold": 50, "resp_up": None}
+
+
+def test_every_sentence_is_one_and_short():
+    """At most one sentence under the headline, ≤ 90 characters — except the
+    alert's, the brief's own wording (it replaces « tu es malade »)."""
+    cases = [_ctx(next_race={"days": d, "name": "Marathon", "href": "/r#prep"}) for d in (0, 1, 2, 5)]
+    cases += [_ctx(feel=_feel(why=["sick"])), _ctx(feel=_feel()), _ctx(feel=_feel(why=["legs"])),
+              _ctx(short={"early": True, "tip": "16:00"}), _ctx(sessions42=0, has_sessions=False, has_watch=False),
+              _ctx(reprise={"since": T, "days": 3, "cause": "malade", "see_doctor": False,
+                            "gates": {"no_sick": True, "easy_hr": False, "night_hr": True}})]
+    for c in cases:
+        v = decide(c)
+        assert v["text"] is None or (len(v["text"]) <= 90 and v["text"].count(". ") == 0), v["text"]
+        assert len(v["chips"]) <= 2
+
+
+def test_r1_race_in_0_to_2_days():
+    for days, head in ((0, "Jour de course"), (1, "Course demain : repos ou 20 min faciles"),
+                       (2, "Course après-demain : court et facile")):
+        v = decide(_ctx(next_race={"days": days, "name": "Marathon de Paris", "href": "/simulator/routes/3#prep"}))
+        assert (v["headline"], v["tone"], v["rule"]) == (head, "ok", "race")
+        assert v["chips"][0]["href"] == "/simulator/routes/3#prep" and v["chips"][0]["glyph"] == "⚑"
+    assert decide(_ctx(next_race={"days": 0, "name": "Semi"}))["chips"][0]["word"] == "Semi · jour J"
+
+
+def test_r2_illness_the_chip_or_the_alert_even_in_race_week():
+    v = decide(_ctx(feel=_feel(why=["sick", "fatigue"])))
+    assert (v["tone"], v["headline"], v["rule"]) == ("rest", "Pas d'intensité aujourd'hui", "ill")
+    assert v["text"] == "Repos tant que tu as de la fièvre ou des courbatures partout."
+    v = decide(_ctx(alert=ALERT, next_race={"days": 5, "name": "UTMB", "href": "/r#prep"}))
+    assert v["rule"] == "ill" and v["tone"] == "rest" and v["drivers"] == ["hr"]
+    # the brief's wording (Altini & Plews 2021; Quer 2021), never « tu es malade »
+    assert v["headline"] + " · " + v["text"] == (
+        "Pas d'intensité aujourd'hui · FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive "
+        "avant un rhume, après de l'alcool ou une grosse journée.")
+    assert v["chips"][0]["href"] == "/sante?vue=sommeil#coeur" and "malade" not in v["text"]
+
+
+def test_r3_reprise_and_the_doctor_after_2_weeks():
+    rp = {"since": T - timedelta(days=4), "days": 4, "cause": "malade", "see_doctor": False,
+          "gates": {"no_sick": True, "easy_hr": False, "night_hr": True}}
+    v = decide(_ctx(reprise=rp))
+    assert (v["headline"], v["tone"]) == ("Reprise en douceur", "easy")
+    assert v["text"] == "Footings faciles ; l'intensité quand ta FC en footing est revenue."
+    assert [c["word"] for c in v["chips"]] == ["FC en footing · 14 j"] and "easy" in v["drivers"]
+    v = decide(_ctx(reprise={**rp, "days": 15, "see_doctor": True}))
+    assert v["text"] == "Toujours pas reparti après 2 semaines : vois un médecin."
+
+
+def test_r4_after_the_race_intensity_from_j10_after_10_hours():
+    route = Route(id=11, name="Transjeju 100M", race_date="2026-10-02", result_json={"total_actual_s": 60780})
+    for today, head in ((date(2026, 10, 3), "Récupère"), (date(2026, 10, 5), "Récupère"),
+                        (D, "Footing facile seulement"), (date(2026, 10, 11), "Footing facile seulement")):
+        post = sante._post_race(route, [], today)
+        assert post["free"] == date(2026, 10, 12) and post["race_name"] == "Transjeju 100M"
+        v = decide(_ctx(today=today, post={**post, "href": "/simulator/routes/11#prep"}))
+        assert (v["headline"], v["text"]) == (head, "Pas d'intensité avant le 12/10.")
+    assert sante._post_race(route, [], date(2026, 10, 12)) is None  # J+10: intensity is back
+    short = Route(id=12, name="10 km", race_date="2026-10-04", result_json={"total_actual_s": 2700})
+    post = sante._post_race(short, [], T)
+    assert post["free"] == date(2026, 10, 7) and decide(_ctx(post=post))["headline"] == "Footing facile seulement"
+    # an exceptional outing (not a Route): its own chip, to the activity
+    big = _session(T - timedelta(days=2), 420, 3000, sid=99)
+    post = sante._post_race(None, [_session(T - timedelta(days=20), 150, sid=1), big], T)
+    v = decide(_ctx(post=post))
+    assert v["chips"][0] == {"glyph": "◆", "word": "sortie de dim.", "href": "/activity/99", "aria": "sortie de dim., 7h00"}
+
+
+def test_r5_short_night_early_wake_or_the_ladder_goes_on():
+    v = decide(_ctx(short={"early": True, "tip": "15:55"}))
+    assert (v["headline"], v["tone"], v["drivers"]) == ("Séance dure ce matin, sinon facile", "easy", ["sleep"])
+    assert v["text"] == "Une sieste de 20 à 90 min avant 15:55 aide ; laisse 30 min avant de courir."
+    assert v["chips"][0]["href"] == "/sante?vue=sommeil#nuits"
+    v = decide(_ctx(short={"early": False, "tip": "16:00"}))  # late bedtime or neither: softer, the plan stands
+    assert v["headline"] == "Séance prévue : rien ne s'y oppose"
+    assert v["text"] == "Nuit courte : place ta séance dure plutôt le matin." and v["drivers"] == ["sleep"]
+    v = decide(_ctx(short={"early": False, "tip": "16:00"}, feel=_feel()))  # a rung with its own sentence keeps it
+    assert v["rule"] == "feel" and [c["word"] for c in v["chips"]] == ["Sommeil · 24 h"]
+
+
+def test_r5_reads_the_24_hour_total_of_any_main_episode():
+    from tests.test_nights import night_rows
+
+    rows = night_rows([0], asleep=160, start=(23, 50), end=(2, 30))  # a 2h40 night (travel): the rule fires
+    nights = nt.build_nights(rows, D)
+    assert nt.day_tst24(nights, D) == 160 < nt.SHORT_DAY_MIN
+    usual = sante._usual(nights, D - timedelta(days=1))
+    assert usual["wake"] is None and nt.early_wake(nights[D], usual)  # no median: an early wake (H)
+    nap_only = nt.build_nights({"nap": {D: (82, {"windows": [["2026-10-07T01:23", "2026-10-07T02:52"]]}, "COROS")}},
+                               D)
+    assert nt.day_tst24(nap_only, D) is None  # no main episode: unknown, no rule
+
+
+def test_r6_legs_after_3_hours_or_1500_m_is_a_heuristic():
+    big = _session(T - timedelta(days=1), 250, 2100)
+    v = decide(_ctx(legs={"big": big}))
+    assert (v["headline"], v["rule"], v["tone"]) == ("Endurance facile aujourd'hui", "legs", "easy")
+    assert v["text"] == "Séance dure possible demain." and "fatigue" not in v["text"]
+    assert decide(_ctx(legs={"big": _session(T - timedelta(days=1), 320, 2600)}))["text"] == "Séance dure possible jeudi."
+    assert v["chips"][0] == {"glyph": "◆", "word": "sortie d'hier", "href": "/activity/7", "aria": "sortie d'hier, 4h10"}
+    v = decide(_ctx(feel=_feel(why=["legs"])))
+    assert v["rule"] == "legs" and v["text"] == "Jambes lourdes : c'est toi qui sais, on regarde demain."
+    assert sante_today.LEGS_MIN == 180 and sante_today.LEGS_DPLUS == 1500
+
+
+def test_r7_hrv_below_needs_nightly_hr_up_or_feeling_worse():
+    v = decide(_ctx(hrv="below", hr="above"))
+    assert (v["headline"], v["rule"], v["drivers"]) == ("Garde ta séance facile", "hrv", ["hrv", "hr"])
+    assert [c["word"] for c in v["chips"]] == ["VFC · 7 nuits", "FC de nuit · 7 nuits"]
+    assert decide(_ctx(hrv="below", feel=_feel(why=["stress"])))["rule"] == "hrv"
+    # a single signal is shown on its tile, never moves the action
+    assert decide(_ctx(hrv="below", hr="in"))["rule"] == "plan"
+    assert decide(_ctx(hr="above", hrv="in"))["rule"] == "plan"
+    # race week: never
+    v = decide(_ctx(hrv="below", hr="above", next_race={"days": 5, "name": "UTMB", "href": "/r#prep"}))
+    assert v["rule"] == "race_week" and v["headline"] == "Semaine de course : séance prévue, sans en rajouter"
+
+
+def test_r8_r9_feeling_worse_is_the_athletes_own_call():
+    v = decide(_ctx(feel=_feel(why=["fatigue"]), easy={"flag": True}))
+    assert (v["rule"], v["text"]) == ("easy_hr", "Cœur plus haut en footing et tu te sens moins bien.")
+    assert v["chips"][0]["href"] == "/activities#fc-facile"
+    assert decide(_ctx(easy={"flag": True}))["rule"] == "plan"  # the flag alone: shown, no move
+    v = decide(_ctx(feel=_feel()))
+    assert (v["rule"], v["text"]) == ("feel", "Tu te sens moins bien : c'est toi qui sais, on regarde demain.")
+    assert decide(_ctx(feel=_feel(value=1)))["rule"] == "plan"  # « mieux » never lifts anything either
+    assert decide(_ctx(feel=_feel(answered=False)))["rule"] == "plan"
+
+
+def test_r10_to_r12_race_week_default_nothing():
+    v = decide(_ctx(next_race={"days": 6, "name": "Marathon", "href": "/simulator/routes/4#prep"}))
+    assert v["rule"] == "race_week" and v["chips"][0]["word"] == "Marathon · J−6" and v["text"] is None
+    v = decide(_ctx())
+    assert (v["headline"], v["tone"], v["text"], v["glyph"]) == ("Séance prévue : rien ne s'y oppose", "ok", None, "●")
+    v = decide(_ctx(sessions42=2, hrv="in", hr="in"))  # nights in the normal are enough
+    assert v["rule"] == "plan"
+    v = decide(_ctx(sessions42=2))
+    assert (v["headline"], v["text"], v["glyph"]) == ("Pas encore d'avis", "Il me faut 6 séances sur 6 semaines.", "?")
+    v = decide(_ctx(sessions42=0, has_sessions=False, has_watch=False))
+    assert v["text"] == "Connecte Strava ou ta montre dans Réglages."
+
+
+# ── tiles ───────────────────────────────────────────────────────────────────
+
+def _stat(label, text, status=None, band=(40, 46)):
+    return {"label": label, "text": text, "unit": "bpm", "spoken": f"{text} battements par minute", "status": status,
+            "means": [None] * 10 + [44, 45, 46, 47 if text else None], "band": band, "href": "/sante?vue=sommeil#coeur"}
+
+
+def test_tiles_drivers_first_then_out_of_band_three_at_most():
+    stats = {"hr": _stat("FC de nuit · 7 nuits", "47", "above"), "hrv": _stat("VFC · 7 nuits", "60", "in"),
+             "sleep": _stat("Sommeil · 7 jours", "7h01", "below")}
+    tiles = make_tiles(stats, ["hrv"], False)
+    assert [t["key"] for t in tiles] == ["hrv", "hr", "sleep"] and tiles[0]["driver"]
+    assert (tiles[1]["glyph"], tiles[1]["word"], tiles[1]["tone"]) == ("▲", "au-dessus", "warn")
+    assert (tiles[2]["glyph"], tiles[2]["word"]) == ("▼", "plus court")
+    assert tiles[0]["word"] == "dans ta normale" and tiles[0]["aria"].endswith("Facteur de la décision")
+    # FC en footing, flagged, takes the last slot
+    stats["easy"] = {**_stat("FC en footing · 14 j", "+4"), "word": ("▲", "à surveiller", "warn"), "flag": True}
+    assert [t["key"] for t in make_tiles(stats, [], False)] == ["hr", "sleep", "easy"]
+    # without a band: no status word
+    stats = {"hr": _stat("FC de nuit · 7 nuits", "47", None, None), "hrv": _stat("VFC · 7 nuits", None, None, None)}
+    tiles = make_tiles(stats, [], False)
+    assert [t["key"] for t in tiles] == ["hr"] and tiles[0]["word"] is None and tiles[0]["band"] is None
+
+
+def test_the_missing_nightly_tiles_say_why_once():
+    assert sparse_line([], {"measured": 7}) is None
+    assert sparse_line(["hr", "hrv"], {"measured": 0}) == ("Pas de nuit mesurée ces 7 jours : je juge sur tes séances et "
+                                                           "ton ressenti.")
+    assert sparse_line(["hr", "hrv"], {"measured": 4, "race": 4}) == ("Nuits autour de ta course : FC et VFC de nuit "
+                                                                      "pas jugées.")
+    assert sparse_line(["hr"], {"measured": 5, "race": 0, "nap": 3}) == ("FC de nuit des jours avec sieste : pas "
+                                                                         "encore comptée (COROS).")
+    assert sparse_line(["hrv"], {"measured": 5, "race": 0, "tag": "fuseau changé"}) == ("Nuits ◇ fuseau changé : VFC "
+                                                                                        "pas jugée.")
+
+
+def test_easy_pace_flag_needs_two_runs_up_3_bpm_on_14_days():
+    def run(k, hr, sid):
+        d = D - timedelta(days=k)
+        return Session(id=sid, start=datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc), day=d, sport="Run",
+                       minutes=50, dplus=20, km=10, speed=3.3, hr=hr, hr_peak=180, suffer=None, workout_type=0,
+                       temp=15)
+    base = [run(k, 140, k) for k in range(15, 60, 3)]
+    e = sante_today.easy_pace(base + [run(2, 144, 100), run(5, 143.5, 101)], 190, D)
+    assert e["flag"] and round(e["value"]) == 4 and e["means"][-1] == e["value"]
+    e = sante_today.easy_pace(base + [run(2, 144, 100), run(5, 141, 101)], 190, D)
+    assert not e["flag"]
+    assert sante_today.easy_pace(base[:3], 190, D) is None  # fewer than 6 runs in 6 weeks
 
 
 async def test_dedupe_matches_activites_when_strava_writes_json_null(db_session: AsyncSession, test_user: User):
-    from datetime import datetime, timezone
-
     from app.models.activity import Activity
     from app.services import sante_training as st
 

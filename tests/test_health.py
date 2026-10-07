@@ -123,9 +123,10 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
-    # resting HR ~6 bpm over the usual two nights running: the illness rule comes before fatigue
-    assert "Reste tranquille aujourd&#39;hui" in r.text and "VFC <small>· 7 nuits" in r.text and "FC au repos <small>· 7 nuits" in r.text
-    assert r.text.count('class="pf-sig"') == 2  # the 28-night pictures behind the two night signals
+    # nightly HR ~6 bpm over the usual two nights running: the HR alert (Santé v3), the FC de nuit tile first
+    assert "Pas d&#39;intensité aujourd&#39;hui" in r.text
+    assert "FC de nuit nettement au-dessus de ta normale 2 nuits de suite" in r.text
+    assert r.text.index("FC de nuit · 7 nuits") < r.text.index("Ce matin ?")
 
 
 # ── migration ───────────────────────────────────────────────────────────────

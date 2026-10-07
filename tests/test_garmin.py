@@ -633,7 +633,7 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     r = await as_user.post("/sante/sync")
     assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
     sante = (await as_user.get("/sante")).text
-    assert 'class="pf-nights' in sante
+    assert 'id="nuits"' in sante and 'data-viz-key="nuits"' in sante  # Sommeil: the nights figure
     for brand in ("Charge <small>", "Training Readiness", "Body Battery", "forte hausse"):
         assert brand not in sante, brand
     assert "Dernière synchro" in (await as_user.get("/settings")).text

@@ -121,7 +121,7 @@ def test_nights_chart_on_the_owner():
     seg, win = col["nap_segs"][0], col["win"]
     assert seg["y"] > win["y"] + win["h"]  # after the wake, with its 64-min gap
     assert c["read"] == ["nuit du mar. 6 au mer. 7", f"Nuit 5h50 · sieste 2h20 · 8h10 sur 24{NN}h",
-                         "23:35 → 05:40 · ◇ autour de la course"]
+                         "23:35 → 05:40 · sieste 06:40 → 09:05 · ◇ autour de la course"]  # times to 5 min
     assert data["link"] == "#hyp"
     short = c["cols"][days.index(date(2026, 10, 6))]
     assert short["short"]  # 5h33 with no nap: under 6 h, drawn as an outlined bar

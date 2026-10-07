@@ -250,7 +250,7 @@ async def test_load_nights_reads_the_rows_and_the_check_ins(db_session, test_use
                                 details={"lo": 70, "hi": 84}, n_samples=1))  # a brand row: never read
     await db_session.flush()
     nights, feel = await nt.load_nights(db_session, test_user.id, D, races=[RACE])
-    assert feel[D] == {"value": 3, "why": ["legs"], "alcohol": True}
+    assert feel[D] == {"value": 3, "why": ["legs"], "alcohol": True, "answered": True}
     assert nights[D].tst24 == 490 and {"race", "alcohol"} <= nights[D].tags
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}

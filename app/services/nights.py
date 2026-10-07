@@ -166,9 +166,11 @@ class Night:
     def source_of(self, metric: str) -> str | None:
         return {"hr": self.hr_source, "hrv": self.hrv_source, "tst24": self.source, "resp": self.resp_source}[metric]
 
-    def usable(self, metric: str) -> bool:
-        """Can enter the band and the 7-night means for `metric`."""
-        if self.value(metric) is None or self.excluded:
+    def usable(self, metric: str, ignore=()) -> bool:
+        """Can enter the band and the 7-night means for `metric` (`ignore`: tags
+        that do not exclude here, e.g. « ill » for the tile shown during an
+        illness episode)."""
+        if self.value(metric) is None or (self.tags - set(ignore)) & set(EXCLUDING):
             return False
         if metric == "hr" and self.hr_nap_day and self.hr_method == "coros_sleep_summary":
             return COROS_SLEEP_HR_NAP_VERIFIED
@@ -387,14 +389,15 @@ def band_count(nights: dict[date, Night], metric: str, until: date) -> int:
                and n.usable(metric) and n.source_of(metric) == source)
 
 
-def mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True) -> dict | None:
+def mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True, ignore=()) -> dict | None:
     """The mean of the last 7 days (HRV: exp of the mean ln), {value, n}; None
     under 3 nights. `untagged=False` keeps excluded nights in (the 24-h sleep
-    tile shows its value in race week; it is just never judged)."""
+    tile shows its value in race week; it is just never judged); `ignore`:
+    tags that do not exclude a night here (Night.usable)."""
     source = _latest_source(nights, metric, today)
     vals = [n.value(metric) for d, n in nights.items()
             if today - timedelta(days=6) <= d <= today and n.value(metric) is not None
-            and n.source_of(metric) == source and (n.usable(metric) if untagged else True)]
+            and n.source_of(metric) == source and (n.usable(metric, ignore) if untagged else True)]
     if len(vals) < MIN_MEAN_NIGHTS:
         return None
     v = math.exp(statistics.fmean(math.log(x) for x in vals)) if metric == "hrv" else statistics.fmean(vals)
@@ -558,14 +561,25 @@ async def read_rows(db: AsyncSession, user_id: int, lo: date, hi: date) -> dict[
     return out
 
 
+def rest_hr(nights: dict[date, Night], today: date) -> float:
+    """The athlete's resting HR for the « vigorous » test: the median nightly
+    HR of the last 60 days (3 nights at least), else 50."""
+    vals = [n.hr for d, n in nights.items() if today - timedelta(days=BAND_DAYS) < d <= today and n.hr
+            and 25 <= n.hr <= 100]
+    return statistics.median(vals) if len(vals) >= 3 else 50.0
+
+
 async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 400, sessions=(),
-                      races=(), rest: float = 50.0, peak: float = 190.0) -> tuple[dict[date, Night], dict[date, dict]]:
+                      races=(), rest: float | None = None,
+                      peak: float = 190.0) -> tuple[dict[date, Night], dict[date, dict]]:
     """(nights, check-ins) of the last `days` days, tagged: context, race
     window, illness (« malade » chip, then the alert episodes found with the
-    band built without them)."""
+    band built without them). `rest` None: from the nights (rest_hr)."""
     rows = await read_rows(db, user_id, today - timedelta(days=days), today)
     feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = build_nights(rows, today)
+    if rest is None:
+        rest = rest_hr(nights, today)
     tag_nights(nights, sessions, races, feel, rest, peak)
     for d in alert_episodes(nights, today, races):
         if d in nights:

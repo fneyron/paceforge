@@ -62,7 +62,7 @@
     {% for poly in p.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
     <path d="{{ p.edge_lo }}" class="pf-viz-edge"/><path d="{{ p.edge_hi }}" class="pf-viz-edge"/>
     <path d="{{ p.mean }}" class="pf-viz-line" pathLength="1"/>
-    {% for d in p.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r + (1 if d.out else 0) }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+    {% for d in p.dots %}{% set r = c.dot_r + (1 if d.out else 0) %}{% if d.tag %}<path d="M{{ d.x }} {{ d.y - r - 1 }}l{{ r + 1 }} {{ r + 1 }}l-{{ r + 1 }} {{ r + 1 }}l-{{ r + 1 }} -{{ r + 1 }}z" class="pf-viz-dot is-tag{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% else %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ r }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% endif %}{% endfor %}
     <text x="0" y="{{ p.label_y }}" class="pf-viz-strong">{{ p.name }}</text>
 </g>
 {% endfor %}
@@ -76,6 +76,8 @@
 {% macro viz_nights(c, title, key="nuits", group=None) %}
 {% call figure(c, title, key, group, "nuit", cls="pf-viz-tall") %}
 <defs><pattern id="pf-hatch-{{ key }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+{% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}{% if c.band %}<path d="{{ c.band_lo }}" class="pf-viz-edge"/><path d="{{ c.band_hi }}" class="pf-viz-edge"/>{% endif %}
+{% for b in c.med_bands %}<rect x="0" y="{{ b.y }}" width="{{ c.X1 }}" height="{{ b.h }}" class="pf-viz-band"/>{% endfor %}
 <line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/><text x="{{ c.W }}" y="{{ c.ref.y + 4 }}" text-anchor="end" class="pf-viz-strong">{{ c.ref.label }}</text>
 <line x1="0" x2="{{ c.X1 }}" y1="{{ c.amount[1] }}" y2="{{ c.amount[1] }}" class="pf-viz-grid"/>
 {% for h in c.hours %}<line x1="0" x2="{{ c.X1 }}" y1="{{ h.y }}" y2="{{ h.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ h.y + 4 }}" text-anchor="end">{{ h.label }}</text>{% endfor %}
@@ -90,6 +92,7 @@
     {% for e in col.nap_edges %}<rect x="{{ col.x }}" y="{{ e.y }}" width="{{ col.w }}" height="3" class="pf-viz-nap-edge"/>{% endfor %}
 </g>
 {% endfor %}
+{% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
 {{ _events(c, 14, c.timing[1]) }}
 {{ _xlabels(c) }}
 <g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ c.amount[0] }}" y2="{{ c.timing[1] }}"/></g>

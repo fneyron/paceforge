@@ -1,0 +1,13 @@
+{#- Santé › Sommeil (page.som, from sante_sleep.sleep_view): the range-scoped figures (sante_sleep_range.html, swapped
+    in place by the range toggle), then the closed method fold. Never any night: the wear advice, one line. -#}
+{% set s = page.som %}
+{% if s.state == "never" %}
+<p class="pf-sante-empty">{{ s.wear }}{% if watches is defined and not watches %} <a href="/settings#coros">Connecter une montre ›</a>{% endif %}</p>
+{% else %}
+{% include "partials/sante_sleep_range.html" %}
+<details class="pf-fold pf-method">
+    <summary>Comment je lis tes nuits</summary>
+    <ul>{% for l in s.method %}<li>{{ l }}</li>{% endfor %}</ul>
+    <p class="pf-refs">{% for name, doi in s.refs %}<a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a>{{ " · " if not loop.last }}{% endfor %}</p>
+</details>
+{% endif %}

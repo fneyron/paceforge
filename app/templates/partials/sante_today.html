@@ -1,84 +1,60 @@
-{% from "partials/_sante.html" import signal, WORDS with context %}
-{% set v = page.verdict %}{% set n = page.nights %}
-{% set tones = {'ok': 'pf-tone-ok', 'easy': 'pf-tone-warn', 'rest': 'pf-tone-danger', 'unknown': 'pf-tone-muted'} %}
-<div class="pf-today">
-<div class="pf-today-main">
-    {# the decision is the heading: the action, then why, then when to resume #}
-    <section class="pf-verdict {{ tones[v.tone] }}" aria-labelledby="h-today">
-        <h2 id="h-today" class="pf-health-verdict">{{ v.headline }}</h2>
-        {% if v.text %}<p class="pf-verdict-text">{{ v.text }}</p>{% endif %}
-        {% if v.resume %}<p class="pf-verdict-resume">{{ v.resume }}</p>{% endif %}
-        {% if v.note %}<p class="pf-verdict-note">{{ v.note }}</p>{% endif %}
-    </section>
+{#- Santé › Aujourd'hui (page.auj, from sante._today_view): the action (glyph + words, never colour alone), ≤ 2 linked
+    drivers, ≤ 1 sentence; ≤ 3 tiles; one muted line when nightly tiles cannot show; the one-tap check-in.
+    The check-in posts with htmx and swaps #sante-today-rest; the decision is swapped out of band INTO the persistent
+    polite live region #sante-decision, so the new action is spoken. With `swap` (the POST's answer) only those two. -#}
+{% import "partials/_viz.html" as viz %}
+{% set a = page.auj %}
 
-    {% if page.rows %}
-    <section class="pf-sblock" aria-labelledby="h-rows">
-        <h2 id="h-rows" class="pf-h2">Ce qui pèse aujourd'hui</h2>
-        <div class="pf-rows">{% for r in page.rows %}{{ signal(r) }}{% endfor %}</div>
-        {% if v.second %}<p class="pf-muted mt-3">{{ v.second }}</p>{% endif %}
-        {% if page.more %}
-        <details class="pf-fold"><summary>Autres signaux ({{ page.more|length }})</summary>
-            <div class="pf-rows">{% for r in page.more %}{{ signal(r) }}{% endfor %}</div>
-        </details>
-        {% endif %}
-        {% if not watches %}<p class="pf-small mt-3"><a href="/settings#coros">Connecte ta montre COROS ou Garmin dans Réglages pour son avis et tes nuits →</a></p>
-        {% elif page.nights_line %}<p class="pf-small mt-3">{{ page.nights_line }}</p>{% endif %}
-    </section>
-    {% endif %}
-
-    {# the check-in: one tap, the decision takes it into account #}
-    {% set f = page.feel %}
-    {% set feel_words = {1: 'en forme', 2: 'normal', 3: 'fatigué'} %}
-    <section class="pf-sblock pf-feel" aria-labelledby="h-feel">
-        {% if f %}<details class="pf-fold"><summary id="h-feel">Ressenti du jour : {{ feel_words[f.value|int] }}{{ ', jambes lourdes' if f.legs_heavy }} · changer</summary>
-        {% else %}<h2 id="h-feel" class="pf-h2">Ce matin, tu te sens ?</h2>{% endif %}
-        <form method="post" action="/sante/feel" hx-post="/sante/feel" hx-swap="none" class="pf-chips">
-            {% for val, label in ((1, 'En forme'), (2, 'Normal'), (3, 'Fatigué')) %}
-            <button type="submit" name="feel" value="{{ val }}" class="pf-chip" aria-pressed="{{ 'true' if f and f.value|int == val else 'false' }}">{{ label }}</button>
-            {% endfor %}
-            <button type="submit" name="legs" value="{{ '0' if f and f.legs_heavy else '1' }}" class="pf-chip" aria-pressed="{{ 'true' if f and f.legs_heavy else 'false' }}">Jambes lourdes</button>
-        </form>
-        {% if f %}</details>{% endif %}
-    </section>
+{% macro decision(v) %}
+<div class="pf-dec pf-dec-{{ v.tone }}">
+    <h2 id="h-today" class="pf-dec-head"><svg class="pf-dec-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if v.tone == 'ok' %}<circle cx="8" cy="8" r="6"/>{% elif v.tone == 'easy' %}<circle cx="8" cy="8" r="5.25" class="pf-dec-ring"/><path d="M8 2.75a5.25 5.25 0 0 0 0 10.5z"/>{% elif v.tone == 'rest' %}<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/>{% else %}<text x="8" y="13" text-anchor="middle">?</text>{% endif %}</svg>{{ v.headline }}</h2>
+    {% if v.chips %}<ul class="pf-dchips" aria-label="Ce qui décide">{% for c in v.chips %}<li>{% if c.href %}<a class="pf-dchip" href="{{ c.href }}" aria-label="{{ c.aria }}"><span aria-hidden="true">{{ c.glyph }}</span> {{ c.word }}</a>{% else %}<span class="pf-dchip"><span aria-hidden="true">{{ c.glyph }}</span> {{ c.word }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+    {% if v.text %}<p class="pf-dec-text">{{ v.text }}</p>{% endif %}
 </div>
+{% endmacro %}
 
-{% if n %}
-{# the last 14 nights #}
-<section class="pf-sblock pf-today-nights" aria-labelledby="h-nights">
-    <h2 id="h-nights" class="pf-h2">Tes nuits</h2>
-    {% if n.takeaway %}<p class="pf-lead">{{ n.takeaway }}{% if n.race %} <a href="?vue=course" data-vue-link>Course →</a>{% endif %}</p>{% endif %}
-    {% if n.coverage %}<p class="pf-nights-cover">{{ n.coverage }}</p>{% endif %}
-    {% if n.n7 >= 3 %}
-    <dl class="pf-kpis pf-kpis-2">
-        <div><dt class="pf-label">Sommeil · 7 nuits</dt><dd class="tabular-nums">{{ n.avg7_txt }}<small>/nuit</small></dd><dd class="pf-kpi-sub">besoin {{ n.need_h }} h · {{ n.n7 }} nuit{{ 's' if n.n7 > 1 }} sur 7</dd></div>
-        <div><dt class="pf-label">Horaires · 14 nuits</dt>
-            {% if n.regularity %}<dd class="tabular-nums">± {{ n.regularity.sd }}<small>min</small></dd><dd class="pf-kpi-sub"><span class="{{ WORDS[n.regularity.tone] }}">{{ n.regularity.word }}</span> · {{ n.regularity.range }}</dd>
-            {% else %}<dd>—</dd><dd class="pf-kpi-sub">il faut 5 nuits sur 14</dd>{% endif %}
-        </div>
-    </dl>
-    {% endif %}
-    {% if n.selective %}<p class="pf-nights-cover">Peu de nuits mesurées : si tu enlèves la montre les mauvaises nuits, ta moyenne paraît meilleure qu'en vrai.</p>{% endif %}
-    {% set st = n.strip %}
-    {% if st %}
-    <figure class="pf-nights{{ ' pf-nights-scored' if st.scored }}" role="img" aria-label="{{ st.aria }}">
-        <div class="pf-n-labels" aria-hidden="true">{% for b in st.bars %}<span class="{{ 'pf-n-now' if loop.first }}{{ ' pf-n-dim' if b.missing }}">{{ b.label }}</span>{% endfor %}</div>
-        <svg class="pf-n-plot" width="100%" height="{{ st.height }}" aria-hidden="true">
-            {% if st.band %}<rect x="{{ st.band.x }}%" width="{{ st.band.w }}%" y="0" height="{{ st.height }}" class="pf-n-band"/>{% endif %}
-            {% for gx in st.grid %}<line x1="{{ gx }}%" x2="{{ gx }}%" y1="0" y2="{{ st.height }}" class="pf-n-grid"/>{% endfor %}
-            <line x1="0" x2="100%" y1="{{ st.half }}" y2="{{ st.half }}" class="pf-n-grid"/>
-            {% for b in st.bars %}
-            {% if b.missing %}<line x1="0" x2="100%" y1="{{ b.y + 10 }}" y2="{{ b.y + 10 }}" class="pf-n-miss"/>
-            {% else %}<rect x="{{ b.x }}%" width="{{ b.w }}%" y="{{ b.y + 4 }}" height="12" rx="3" class="pf-n-{{ b.tone }}"/>{% endif %}
-            <rect x="0" width="100%" y="{{ b.y }}" height="20" fill="transparent"><title>{{ b.title }}</title></rect>
-            {% endfor %}
-        </svg>
-        <div class="pf-n-durs" aria-hidden="true">{% for b in st.bars %}<span class="pf-n-t-{{ b.tone }}">{{ b.dur }}</span>{% endfor %}</div>
-        {% if st.scored %}<div class="pf-n-scores" aria-hidden="true">{% for b in st.bars %}<span>{{ b.score or '—' }}</span>{% endfor %}</div>{% endif %}
-        <div class="pf-n-axis" aria-hidden="true">{% for t in st.ticks %}<span class="pf-n-tick pf-n-{{ t.align }}{{ ' pf-n-edge' if t.edge }}" style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}</div>
-    </figure>
-    <ol class="sr-only">{% for b in st.bars %}<li>{{ b.sr }}</li>{% endfor %}</ol>
-    <p class="pf-n-legend"><span class="text-warn">orange : moins de 7 h</span> · <span class="text-danger">rouge : moins de 6 h</span> · pointillés : pas de montre{% if st.band %} · bande : {{ n.need_h }} h avant ton lever habituel{% endif %}{% if st.scored %} · 2e colonne : le score de ta montre{% endif %}</p>
-    {% endif %}
-</section>
+{% macro chips(f) %}
+<form method="post" action="/sante/feel" hx-post="/sante/feel" hx-target="#sante-today-rest" hx-swap="outerHTML" class="pf-chips">
+    {% for val, label in ((1, 'Mieux'), (2, "Comme d'hab."), (3, 'Moins bien')) %}
+    <button type="submit" id="feel-{{ val }}" name="feel" value="{{ val }}" class="pf-chip" aria-pressed="{{ 'true' if f.value == val else 'false' }}">{{ label }}</button>
+    {% endfor %}
+    <button type="submit" id="feel-alcohol" name="alcohol" value="{{ '0' if f.alcohol else '1' }}" class="pf-chip pf-chip-ctx" aria-pressed="{{ 'true' if f.alcohol else 'false' }}">Alcool hier</button>
+</form>
+{% if f.value == 3 %}
+<form method="post" action="/sante/feel" hx-post="/sante/feel" hx-target="#sante-today-rest" hx-swap="outerHTML" class="pf-chips pf-chips-why" aria-label="Moins bien : pourquoi ?">
+    {% for key, label in (('legs', 'Jambes'), ('fatigue', 'Fatigue'), ('sick', 'Malade'), ('stress', 'Stress')) %}
+    <button type="submit" id="why-{{ key }}" name="toggle" value="{{ key }}" class="pf-chip" aria-pressed="{{ 'true' if key in f.why else 'false' }}">{{ label }}</button>
+    {% endfor %}
+</form>
 {% endif %}
+{% endmacro %}
+
+{% macro rest(a, tile, open_feel) %}
+<div id="sante-today-rest">
+    {% if a.tiles %}<div class="pf-tiles">{% for t in a.tiles %}{{ tile(t) }}{% endfor %}</div>{% endif %}
+    {% if a.line %}<p class="pf-sante-note">{{ a.line }}{% if a.line_link %} <a href="{{ a.line_link[0] }}">{{ a.line_link[1] }} ›</a>{% endif %}</p>
+    {% elif a.building %}<p class="pf-sante-note">Pas encore de statut : ta normale se construit sur 14 nuits. <a href="/sante?vue=sommeil#nuits">Sommeil ›</a></p>{% endif %}
+    {% set f = a.feel %}
+    <section class="pf-feel3" aria-labelledby="h-feel">
+        {% if f.answered %}
+        <details class="pf-feel-fold"{% if open_feel %} open{% endif %}>
+            <summary><span id="h-feel">Noté : {{ f.noted }}</span> <span class="pf-feel-edit">— modifier</span></summary>
+            {{ chips(f) }}
+        </details>
+        {% else %}
+        <h2 id="h-feel" class="pf-feel-q">Ce matin ?</h2>
+        {{ chips(f) }}
+        {% endif %}
+    </section>
 </div>
+{% endmacro %}
+
+{% if swap is defined and swap %}
+{{ rest(a, viz.viz_tile, open_feel) }}
+<div id="sante-decision" hx-swap-oob="innerHTML">{{ decision(a.verdict) }}</div>
+{% else %}
+<div id="today" class="pf-today3">
+    <section id="sante-decision" class="pf-dec-live" aria-live="polite" aria-labelledby="h-today">{{ decision(a.verdict) }}</section>
+    {{ rest(a, viz.viz_tile, false) }}
+</div>
+{% endif %}

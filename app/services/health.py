@@ -206,15 +206,17 @@ FEEL_WHY = ("legs", "fatigue", "sick", "stress")
 
 
 def feel_of(value: float | None, details: dict | None) -> dict | None:
-    """{value: 1 mieux | 2 comme d'habitude | 3 moins bien, why: [...], alcohol}
-    from a `feel` row, older rows ({legs_heavy}) included."""
+    """{value: 1 mieux | 2 comme d'habitude | 3 moins bien, why: [...], alcohol,
+    answered} from a `feel` row, older rows ({legs_heavy}) included. `answered`
+    is False on a row only « alcool hier » wrote (its value is not a reply)."""
     if value is None:
         return None
     det = details or {}
     why = [w for w in det.get("why") or [] if w in FEEL_WHY]
     if det.get("legs_heavy") and "legs" not in why:
         why.append("legs")
-    return {"value": int(value), "why": why, "alcohol": bool(det.get("alcohol"))}
+    return {"value": int(value), "why": why, "alcohol": bool(det.get("alcohol")),
+            "answered": det.get("answered", True) is not False}
 
 
 # ── storage + daily aggregation ─────────────────────────────────────────────
