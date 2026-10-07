@@ -222,8 +222,10 @@ def build_plan(stretches: list[dict], inp: dict, *, sections: list[dict], start_
     sweat = inp.get("sweat_factor", 1.0)
     custom_fluid = (inp.get("custom") or {}).get("fluid_ml_per_h")
 
-    def fluid_fn(t):
-        return fluid_rate(t, sweat, custom_fluid)
+    mean_temp = inp.get("mean_temp")
+
+    def fluid_fn(t):  # a section without a forecast takes the race's
+        return fluid_rate(t if t is not None else mean_temp, sweat, custom_fluid)
 
     # colours: the fuel products of the list, in its order
     fuel_order = [p for p in picks if N.is_fuel(products[p])]
@@ -402,7 +404,8 @@ def build_plan(stretches: list[dict], inp: dict, *, sections: list[dict], start_
         main = max((it for it in items if it["role"] in ("gel", "drink", "bar")), key=lambda it: it["n"] * _serving_g(products[it["pid"]]), default=None)
         out.append({
             **{x: st[x] for x in ("i", "key", "from_name", "to_name", "from_km", "to_km", "start_clock_s", "end_clock_s", "d_s",
-                                   "moving_s", "temp_c", "max_elev", "night", "bag", "bag_kind", "aid_food", "is_block", "start_cp_index")},
+                                   "moving_s", "max_elev", "night", "bag", "bag_kind", "aid_food", "is_block", "start_cp_index")},
+            "temp_c": st.get("temp_c") if st.get("temp_c") is not None else mean_temp,
             "clock": N._clock(st["start_clock_s"]), "phase": pi, "phase_start": pi > 0 and abs(phases[pi]["km"] - key) < 0.05,
             "items": items, "labels": [it["label"] for it in items if it["n"] and not it["at_aid"]],
             "carbs_g": round(carbs), "need_g": round(need), "g_h": _round(carbs / d_h) if d_h > 0 else 0,

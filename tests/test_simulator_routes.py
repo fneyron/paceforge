@@ -99,21 +99,20 @@ async def test_pacing_guide_and_params(as_user: AsyncClient, db_session: AsyncSe
 @pytest.mark.asyncio
 async def test_nutrition_card_with_packing_and_caffeine(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
-    # « + Marque » › « Un produit à toi »: added to the pantry and picked at once
+    # « + Marque » › « Un produit à toi »: on the list at once; a caffeinated gel goes on the caffeine plan
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel caf", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50})
     assert r.status_code == 200, r.text
     t = r.text
-    assert 'aria-pressed="true" title="Gel caf"' in t
-    assert re.search(r"<b>1 Gel caf</b> à \d\d:\d\d", t)  # « Ta règle »: the caffeine clock line
+    assert '<b title="Gel caf">Gel caf</b>' in t and re.search(r"\d+ Gel caf<", t)
     assert "Sac au départ" in t and "Drop bag · Col" in t
-    # an older client posting the previous form (use_ / qty_) still works; a typed quantity is « à la main »
+    # an older client posting the previous form (use_ / qty_) still works: its products become the list
     pid = int(re.search(r"/products/(\d+)/delete", t).group(1))
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
         "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000,
         "use_-1": 1, "qty_-1": "2.5", f"use_{pid}": 1, "caffeine_enabled": 1, "caffeine_from_h": 3, "caffeine_every_h": 2.5, "caffeine_dose_mg": 50,
     })
     assert r.status_code == 200, r.text
-    assert "quantités à la main" in r.text and "<b>2,5</b>" in r.text and "à la main</span>" in r.text
+    assert "1 L portés" in r.text and '<b title="Gel">Gel</b>' in r.text
 
 
 @pytest.mark.asyncio
@@ -223,7 +222,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     assert r.status_code == 200 and "barrière 12:00" not in r.text
     # nutrition, exports and print work on the bike plan too
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ta règle pour toute la course" in r.text
+    assert r.status_code == 200 and "Bip toutes les" in r.text and "pf-rv-bagline" not in r.text and "Drop bag ici" not in r.text  # a bike: no bags
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
     assert r.status_code == 200 and "<CoursePoint>" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}/print")

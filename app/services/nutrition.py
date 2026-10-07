@@ -693,7 +693,10 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
             _purge(st, pid)
         elif pid in products_by_id and pid not in AID_BY_ID:
             before = list(st["picks"])
-            st["picks"] = pick_into(st["picks"], pid, products_by_id)
+            phase_only = km is not None and (snap(km) or 0) > 0
+            # on the whole race a real product takes the quick pick's place; from a
+            # ravito on it only joins (the earlier phases keep their « Gel »)
+            st["picks"] = (st["picks"] + ([pid] if pid not in st["picks"] else [])) if phase_only else pick_into(st["picks"], pid, products_by_id)
             gone = _replaced(before, st["picks"])
             for x in gone:  # the quick pick it replaces leaves every phase and row
                 for ph in st["phases"]:
@@ -770,7 +773,7 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
                         "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()}}
             before = list(st["picks"])
             if pid not in st["picks"]:
-                st["picks"] = pick_into(st["picks"], pid, products_by_id)
+                st["picks"].append(pid)  # joins the list; the other phases keep what they have
             i = _phase_at(st["phases"], k)
             if i is None:
                 st["phases"].append({"km": k, "mix": _mix_in_force(st["phases"], k)})

@@ -71,7 +71,7 @@
     <div data-day="{{ day }}" class="pf-day" role="presentation"><span data-day-label>jour {{ day + 1 }}</span></div>
     {% set ns.day = day %}
     {% endif %}
-    <div data-row role="listitem" data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-key="{{ key }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if lg %} data-carbs="{{ lg.carbs_g }}"{% endif %}{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
+    <div data-row role="listitem" data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-key="{{ key }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
          class="pf-prow{% if is_finish %} is-finish{% endif %}{% if s.passed and not s.is_anchor %} is-passed{% endif %}">
         <div class="pf-prow-head" role="button" tabindex="0" aria-expanded="false" aria-controls="cp-det-{{ key }}">
             <span class="pf-clk">{% if pin_on %}<span data-pin class="pf-pin {% if s.pin_clamped %}text-danger{% else %}text-accent{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="{% if late %}text-danger{% endif %}">{{ hhmm(clock_val) }}</span>{% if sc %}<span data-safe class="{% if row.safe_ok is defined and row.safe_ok == false %}text-danger{% endif %}">{{ hhmm(row.safe_s) }}</span><span data-fast>{{ hhmm(row.fast_s) }}</span>{% endif %}</span>
@@ -83,10 +83,9 @@
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
             <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
-            {# the leg that ends here: how to run it, what was eaten on it #}
+            {# the leg that ends here: how to run it #}
             {% if lg and lg.effort %}<p class="pf-detnote">{{ gl.glyph('heart', 'w-4 h-4') }}<span>{{ lg.effort }}</span></p>{% endif %}
             {% if lg and lg.steep_text %}<p class="pf-detnote is-alert">{{ gl.glyph('alert', 'w-4 h-4') }}<span>{{ lg.steep_text }}</span></p>{% endif %}
-            {% if lg and lg.units_text %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span>{{ lg.units_text }}</span></p>{% endif %}
             {% set has_kind = k in kind_word %}
             {% set has_wx = wx_on and s.temperature_c is not none %}
             {% if has_kind or s.crew or (stop_min > 0 and stops_vary) or s.cutoff_clock or has_wx %}
@@ -94,10 +93,11 @@
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {# what to do here for the next stretch: water, the drop bag #}
+            {# what to do here for the next stretch: the product change, a pointer to the sachet (its contents live in Ravitaillement only), water, the drop bag #}
+            {% if lg and lg.switch %}<p class="pf-detnote" data-switch><span class="pf-pill pf-pill-accent">{{ lg.switch }}</span></p>{% endif %}
+            {% if lg and lg.ravito %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span><button type="button" class="pf-link" onclick="window.switchRouteTab && window.switchRouteTab('nutrition', 's:{{ lg.ravito.key }}')">Ton sachet jusqu'à {{ lg.ravito.to }}</button></span></p>{% endif %}
             {% if lg and lg.water_note %}<p class="pf-detnote{% if lg.water_alert %} is-alert{% endif %}">{{ gl.glyph('water', 'w-4 h-4') }}<span>{{ lg.water_note }}</span></p>{% endif %}
-            {% if lg and lg.bag %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>{{ lg.bag.head }}</b> : {% if lg.bag.units %}reprends {{ lg.bag.units|join(', ') }}{% else %}rien de prévu en nutrition{% endif %} jusqu'à {{ lg.bag.until }}.</span></p>
-            {% elif s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
+            {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">
                 <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="window._sim && window._sim.openSheet({{ ci }})">Modifier ce point</button>

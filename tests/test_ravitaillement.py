@@ -1,6 +1,8 @@
-"""« Ravitaillement »: Nutrition + Sacs in one view, Pilotage folded into the
-passage rows. A complete plan with zero input, a few taps to make it yours,
-old plans unchanged, the same numbers on every surface."""
+"""« Ravitaillement » : tu prépares par tronçon, tu manges au bip. One row per
+stretch between food ravitos (a sachet of whole units), one watch beep, products
+by phase, the bags and the list as the sums of the rows; Pilotage folded into
+the passage rows. A complete plan with zero input, older plans read in memory,
+reading never writes, the same numbers on every surface."""
 
 import json
 import re
@@ -15,8 +17,11 @@ from app.models.nutrition import NutritionProduct
 from app.models.route import Route
 from app.models.user import User
 from app.services import nutrition as N
+from app.services import nutrition_plan as NP
 from app.services.pacing_guide import build_pacing_guide, leg_instructions, resolve_hr_caps
 from tests.test_race_plan_services import CPS, _course, _sections
+
+P = "/partials/simulator/nutrition"
 
 
 @pytest.fixture
@@ -41,11 +46,30 @@ async def _nj(db: AsyncSession, route_id: int):
     return route.nutrition_json
 
 
+def _text(html: str) -> str:
+    html = re.sub(r"<script.*?</script>", " ", html, flags=re.S)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).replace("&#39;", "'").replace("&amp;", "&")
+
+
 def _pressed(html: str, title: str) -> bool:
     return f'aria-pressed="true" title="{title}"' in html
 
 
-# ── the legacy plan (the seeded Transjeju shape) keeps its numbers ──────────
+def _phases(html: str) -> list[str]:
+    """The header's phase chips, as read."""
+    return [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m)).strip() for m in re.findall(r'class="pf-rv-phase"[^>]*>(.*?)</button>', html, flags=re.S)]
+
+
+def _rows(html: str) -> dict:
+    """{stretch key: the row's HTML}."""
+    out = {}
+    for m in re.finditer(r'<details class="pf-rv-row[^"]*" name="rv-s" id="s-([\d.]+)"', html):
+        end = html.find('<details class="pf-rv-row', m.end())
+        out[float(m.group(1))] = html[m.start(): end if end > 0 else len(html)]
+    return out
+
+
+# ── older plans: read per stretch, never rewritten by a read ───────────────
 
 LEGACY_PRODUCTS = {
     11: {"id": 11, "name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None},
@@ -63,58 +87,50 @@ LEGACY_PLAN = {
 }
 
 
-def _numbers(plan: dict) -> dict:
-    return {
-        "legs": [[(u["name"], u["units"]) for u in lg["units"]] + [lg["carbs_real_g"], lg["fluid_ml"], lg["dry"]] for lg in plan["schedule"]],
-        "caffeine": [(d["elapsed_s"], d["mg"], d.get("units")) for d in (plan["caffeine"] or {}).get("doses", [])],
-        "packing": [(g["at"], g["until"], sorted((u["name"], u["units"]) for u in g["units"])) for g in plan["packing"]],
-        "lines": [(ln["name"], ln["per_hour"], ln["total_units"]) for ln in plan["lines"]],
-        "targets": plan["targets"], "feasible": (plan["hydration"] or {}).get("feasible"),
-    }
-
-
-def test_legacy_plan_numbers_are_unchanged():
-    _, secs = _sections(target=10 * 3600, start_hour=21)
-    resupply = [{"km": 10.0, "name": "Col"}]
-    duration = 10 * 3600
-    # before: what the previous Nutrition view handed compute_plan
-    before = N.compute_plan(
-        duration, {**N.default_targets(duration / 3600, None), **LEGACY_PLAN["targets"]}, LEGACY_PLAN["items"], LEGACY_PRODUCTS, secs,
-        flask_capacity_ml=1000, refill_kms={6.0, 10.0, 20.0}, resupply_points=resupply,
-        caffeine={**N.CAFFEINE_DEFAULTS, **LEGACY_PLAN["caffeine"]}, start_offset_s=21 * 3600, weight_kg=68,
-    )
-    # after: through the one resolver
-    inp = N.resolve_inputs(LEGACY_PLAN, LEGACY_PRODUCTS, duration, None, 68)
-    assert inp["legacy"] and not inp["is_virtual"] and inp["level"] == "normal" and inp["sweat"] is None and inp["carry_ml"] == 1000
-    after = N.compute_plan(
-        duration, inp["targets"], inp["items"], inp["products_by_id"], secs, flask_capacity_ml=inp["flask_capacity_ml"],
-        refill_kms={6.0, 10.0, 20.0}, resupply_points=resupply, caffeine=inp["caffeine"], start_offset_s=21 * 3600, weight_kg=68,
-    )
-    assert _numbers(before) == _numbers(after)
-    assert before["caffeine"]["doses"]  # the caffeine plan is part of what is compared
-
-
-@pytest.mark.asyncio
-async def test_seeded_transjeju_plan_renders_as_set(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    rid = await _route(as_user, target_s=10 * 3600)
+async def _seed_legacy(db: AsyncSession, test_user: User, rid: int, plan: dict = LEGACY_PLAN) -> dict:
     ids = {}
     for p in LEGACY_PRODUCTS.values():
         prod = NutritionProduct(user_id=test_user.id, **{k: v for k, v in p.items() if k != "id"})
-        db_session.add(prod)
-        await db_session.flush()
+        db.add(prod)
+        await db.flush()
         ids[p["id"]] = prod.id
-    route = await db_session.get(Route, rid)
-    route.nutrition_json = {**LEGACY_PLAN, "items": [{"product_id": ids[it["product_id"]], "per_hour": it["per_hour"]} for it in LEGACY_PLAN["items"]]}
-    await db_session.flush()
-    t = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    for p in LEGACY_PRODUCTS.values():
-        assert _pressed(t, p["name"]), p["name"]
+    route = await db.get(Route, rid)
+    route.nutrition_json = {**plan, "items": [{"product_id": ids[it["product_id"]], "per_hour": it["per_hour"]} for it in plan["items"]]}
+    await db.flush()
+    return ids
+
+
+@pytest.mark.asyncio
+async def test_the_seeded_transjeju_plan_reads_per_stretch_and_the_read_writes_nothing(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    rid = await _route(as_user, target_s=10 * 3600)
+    ids = await _seed_legacy(db_session, test_user, rid)
+    before = await _nj(db_session, rid)
+    t = (await as_user.get(f"{P}/{rid}")).text
     assert '"v":"normal"}\' aria-pressed="true"' in t  # 75 g/h = Normal
-    assert "transpiration : ton réglage · 1 L portés · quantités à la main" in t
-    assert "Ton réglage : 100 mg toutes les 2h30 dès 3 h." in t
-    assert "en alternant PF 90, Baouw et Maurten 160" in t  # three gels at ½ an hour each = 1 every 40 min
-    assert "réglé à la main" in t
-    assert await _nj(db_session, rid) == route.nutrition_json  # reading never writes
+    assert _phases(t) == ["PF 90 · Baouw · Maurten 160"]  # one phase: his three gels, in his order
+    rows = _rows(t)
+    assert len(rows) == 3 and "Bip toutes les" in t  # Départ → Col → Village → Arrivée, one beep
+    assert "prises PF 90" in t and "Maurten 100 CAF" in t and "PH 1500" in t  # PF 90 in prises, the caffeinated gel at its times, salt per flask
+    assert "0,5 gel" not in t and not re.search(r"\d+,5 (gels?|Maurten|Baouw|PF)", t)
+    assert await _nj(db_session, rid) == before  # reading never writes (in-memory upgrade)
+    # the first tap stores v3, from what was shown
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "level", "v": "normal"})
+    nj = await _nj(db_session, rid)
+    assert nj["v"] == 3 and nj["picks"] == [ids[11], ids[12], ids[13], ids[14], ids[15]]
+    assert nj["phases"][0]["mix"] == {str(ids[11]): 0.5, str(ids[12]): 0.5, str(ids[13]): 0.5}
+    assert nj["items"] and nj["targets"]["carbs_g_per_h"] == 75  # the echo an older reader understands
+
+
+@pytest.mark.asyncio
+async def test_a_v2_plan_reads_per_stretch_without_a_write(as_user: AsyncClient, db_session: AsyncSession):
+    rid = await _route(as_user, target_s=8 * 3600)
+    route = await db_session.get(Route, rid)
+    route.nutrition_json = {"v": 2, "picks": [-1, -3], "manual": {"-1": 3.5}, "level": "solide", "carry_ml": 1500, "custom": {}, "refills": []}
+    await db_session.flush()
+    before = await _nj(db_session, rid)
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert '"v":"solide"}\' aria-pressed="true"' in t and _phases(t) == ["Gel"] and "1,5 L portés" in t
+    assert await _nj(db_session, rid) == before
 
 
 # ── zero input: a complete plan ─────────────────────────────────────────────
@@ -122,170 +138,447 @@ async def test_seeded_transjeju_plan_renders_as_set(as_user: AsyncClient, db_ses
 @pytest.mark.asyncio
 async def test_a_race_without_a_plan_shows_a_complete_default_and_the_read_writes_nothing(as_user: AsyncClient, db_session: AsyncSession):
     short = await _route(as_user, target_s=5 * 3600)
-    t = (await as_user.get(f"/partials/simulator/nutrition/{short}")).text
-    assert _pressed(t, "Gel") and _pressed(t, "Pastille de sel") and not _pressed(t, "Gel caféiné")
-    assert "<b>1 gel</b> toutes les 20 min" in t and "<b>1 pastille de sel</b> toutes les 40 min" in t
-    assert "Bois 0,5 L</b> par heure, remplis à chaque point d'eau" in t
-    assert "Sac au départ" in t and "Drop bag · Col" in t and "dont 2 de secours" in t
-    assert "pf-rv-warn is-warn" not in t  # nothing to fix
-    assert "<table" not in t and 'type="number"' not in t.split('id="rv-brands"')[0]  # taps, not typing
+    t = (await as_user.get(f"{P}/{short}")).text
+    text = _text(t)
+    assert _phases(t) == ["Gel"] and "Bip toutes les 20 min" in text  # 25 g gels at 75 g/h
+    assert "Le rythme que tu as tenu à l'entraînement." in text
+    assert "Alerte nutrition de ta montre, auto-pause coupée. Raté un bip ? Ne double pas, reprends au suivant." in text
+    assert "Tu prépares par tronçon, tu manges au bip ; pas de demi-gel, le reste passe au tronçon suivant." in text
+    assert "Sac au départ" in t and "Drop bag · Col" in t and "en réserve" in t  # two load points: the bags say what they hold
+    assert "pastilles de sel" in t and "caféiné" not in _text(t.split('id="rv-brands"')[0])  # under 8 h no caffeine
+    assert "Ce sont des produits génériques" in text
+    assert 'class="pf-rv-strip" aria-hidden="true"' in t
+    assert "pf-rv-warn is-warn" not in t and 'class="pf-rv-st"' not in t  # nothing out of band
     assert await _nj(db_session, short) is None
-    # the passage rows carry the same plan
+    # the passage rows point at the sachets, never list them again
     r = await as_user.post("/partials/simulator/passage-times", data={
         "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": short, "stop_minutes": 3,
     })
-    assert re.search(r"À prendre en route : \d+ gels?", r.text)
-    # from 8 h, a caffeinated gel joins the default
+    assert "Ton sachet jusqu'à Village" in r.text.replace("&#39;", "'") and "À prendre en route" not in r.text and "reprends" not in r.text
+    # from 8 h, a caffeinated gel joins the default, placed at its times
     long_ = await _route(as_user, target_s=9 * 3600, name="Long")
-    t = (await as_user.get(f"/partials/simulator/nutrition/{long_}")).text
-    assert _pressed(t, "Gel caféiné") and re.search(r"<b>1 gel caféiné</b> à \d\d:\d\d", t)
+    t = (await as_user.get(f"{P}/{long_}")).text
+    assert "gel caféiné" in _text(t.split('id="rv-brands"')[0])
 
 
 @pytest.mark.asyncio
 async def test_a_new_race_starts_from_the_newest_plan_of_another_race(as_user: AsyncClient, db_session: AsyncSession):
     first = await _route(as_user, name="CCC 2025")
-    r = await as_user.post(f"/partials/simulator/nutrition/{first}/catalog/pf-90-gel")
+    r = await as_user.post(f"{P}/{first}/catalog/pf-90-gel")
     assert r.status_code == 200
-    r = await as_user.post(f"/partials/simulator/nutrition/{first}/plan", data={"op": "level", "v": "solide"})
+    r = await as_user.post(f"{P}/{first}/plan", data={"op": "level", "v": "solide"})
     second = await _route(as_user, name="UTMB")
-    t = (await as_user.get(f"/partials/simulator/nutrition/{second}")).text
-    assert _pressed(t, "Precision Fuel PF 90 Gel") and "Repris de « CCC 2025 »" in t
+    t = (await as_user.get(f"{P}/{second}")).text
+    assert _phases(t) == ["PF 90"] and "Repris de « CCC 2025 »" in t
     assert '"v":"solide"}\' aria-pressed="true"' in t
     assert await _nj(db_session, second) is None
 
 
-def test_generic_products_survive_a_non_empty_pantry():
-    pantry = {7: {"id": 7, "name": "Mon gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "caffeine_mg": None, "volume_ml": None}}
-    inp = N.resolve_inputs({"targets": {"carbs_g_per_h": 75}, "items": [{"product_id": -1, "per_hour": 3}, {"product_id": -3, "per_hour": 1}]}, pantry, 5 * 3600, None, None)
-    assert inp["items"] == [{"product_id": -1, "per_hour": 3.0}, {"product_id": -3, "per_hour": 1.0}]
-    assert -1 in inp["products_by_id"] and 7 in inp["products_by_id"]
-
-
 # ── the taps ────────────────────────────────────────────────────────────────
 
-def test_level_tap_clears_manual_step_makes_it_manual_reset_clears_everything():
-    products = N.with_generics({})
-    st = {"picks": [-1, -3], "manual": {}, "level": None, "sweat": None, "carry_ml": None, "custom": {"carbs_g_per_h": 80, "fluid_ml_per_h": 700}, "refills": []}
-    st = N.apply_op(st, "step", (-1, 0.5), products, {-1: 3.0})
-    assert st["manual"] == {-1: 3.5}
-    st = N.apply_op(st, "step", (-3, -0.5), products, {-3: 0.5})
-    assert st["manual"][-3] == 0.5  # never below ½
-    lv = N.apply_op(st, "level", "fragile", products)
-    assert lv["manual"] == {} and lv["level"] == "fragile" and "carbs_g_per_h" not in lv["custom"] and lv["custom"]["fluid_ml_per_h"] == 700
-    rs = N.apply_op(st, "reset", None, products)
-    assert rs["manual"] == {} and rs["custom"] == {} and rs["picks"] == [-1, -3]
+@pytest.mark.asyncio
+async def test_the_taps_write_a_v3_plan_and_change_the_rows_the_bags_and_the_list(as_user: AsyncClient, db_session: AsyncSession):
+    rid = await _route(as_user, target_s=6 * 3600)
+    t0 = (await as_user.get(f"{P}/{rid}")).text
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "level", "v": "solide"})
+    nj = await _nj(db_session, rid)
+    assert nj["v"] == 3 and nj["level"] == "solide" and nj["picks"] == [-1, -3] and nj["items"] and nj["targets"]["carbs_g_per_h"] == 90
+    buy = lambda html, name: int(re.search(rf'<b title="[^"]*">{name}</b>.*?<span class="pf-rv-buy"><b>(\d+)</b>', html, flags=re.S).group(1))  # noqa: E731
+    assert buy(r.text, "Gel") > buy(t0, "Gel")
+    keys = list(_rows(r.text))
+    k = keys[1]
+    # a stepper freezes the whole row (« à la main »), the next rows catch up
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": str(k), "pid": "-1", "d": "-1", "open": f"s:{k}"})
+    nj = await _nj(db_session, rid)
+    assert str(k) in nj["rows"] and set(nj["rows"][str(k)]) >= {"-1", "-3"}
+    row = _rows(r.text)[k]
+    assert "à la main" in row and "Remettre en auto" in row and " open>" in row.split("<summary>")[0] + ">"
+    assert 'id="s-' + str(k) + '-m-1"' in row  # stable ids: the morph keeps the focused stepper
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "auto", "km": str(k)})
+    assert str(k) not in (await _nj(db_session, rid))["rows"] and "à la main" not in _rows(r.text)[k]
+    # « + Produit »: this row only
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "pick", "v": "-5"})
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "add", "km": str(k), "pid": "-2"})
+    nj = await _nj(db_session, rid)
+    assert nj["rows"][str(k)]["-2"] == 1 and all("-2" not in v for kk, v in nj["rows"].items() if kk != str(k))
+    # « J'en ai » lowers what to buy; reserve in minutes
+    gel_need = buy(r.text, "Gel")
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "have", "pid": "-1", "d": "3", "open": "list"})
+    assert buy(r.text, "Gel") == gel_need - 3 and (await _nj(db_session, rid))["have"] == {"-1": 3}
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "reserve", "v": "0", "open": "settings"})
+    assert "en réserve" not in r.text and (await _nj(db_session, rid))["reserve_min"] == 0 and "réserve aucune" in r.text
+    # sweat and flasks
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "sweat", "v": "beaucoup", "open": "settings"})
+    assert "beaucoup de transpiration" in r.text and 'id="rv-settings" class="pf-rv-disc" open' in r.text
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "1500"})
+    assert (await _nj(db_session, rid))["carry_ml"] == 1500 and "1,5 L portés" in r.text
+    # a stale card's per-hour stepper changes nothing
+    before = await _nj(db_session, rid)
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "step", "pid": "-1", "step": "0.5"})
+    assert r.status_code == 200 and await _nj(db_session, rid) == before
+    # a malformed tap is ignored
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": "x", "pid": "-1", "d": "1"})
+    assert r.status_code == 200 and await _nj(db_session, rid) == before
+    # « Revenir au calcul auto »
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "reset"})
+    assert (await _nj(db_session, rid))["rows"] == {}
 
 
 @pytest.mark.asyncio
-async def test_the_taps_write_a_v2_plan_and_change_rows_bags_and_shopping(as_user: AsyncClient, db_session: AsyncSession):
-    rid = await _route(as_user, target_s=6 * 3600)
-    t0 = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "level", "v": "solide"})
-    t1 = r.text
+async def test_a_product_switch_from_a_ravito_with_confirm_and_undo(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    rid = await _route(as_user, target_s=8 * 3600)
+    await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    keys = list(_rows((await as_user.get(f"{P}/{rid}")).text))
+    col, village = keys[1], keys[2]
+    # the row's action opens the « à partir d'ici » editor (a GET: nothing written)
+    before = await _nj(db_session, rid)
+    t = (await as_user.get(f"{P}/{rid}?open=ph:{col}")).text
+    assert "À partir de Col, jusqu'à l'arrivée" in _text(t) and await _nj(db_session, rid) == before
+    # PF 90 from Col on, from the editor's « + Marque »
+    r = await as_user.post(f"{P}/{rid}/catalog/pf-90-gel", data={"km": str(col)})
+    assert "À partir de Col" in _text(r.text)  # the editor stays open
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "mix", "km": str(col), "pid": str(_pid(r.text, "Maurten 160")), "open": f"ph:{col}"})
+    assert _phases(r.text) == ["Maurten 160", "PF 90 dès Col"]
+    rows = _rows(r.text)
+    assert "Maurten 160" in rows[keys[0]] and "PF 90" not in rows[keys[0]].split("<summary>")[1].split("</summary>")[0]
+    assert "prises PF 90" in rows[col] and "Maurten 160" not in rows[col].split("</summary>")[0]
+    # a hand-set row holding PF 90, then PF 90 leaves from Col: the chip asks first, an « Annuler » follows
+    pf = _pid(r.text, "PF 90")
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": str(village), "pid": str(pf), "d": "1"})
+    t = (await as_user.get(f"{P}/{rid}?open=ph:{col}")).text
+    chip = re.search(rf'id="ed-{col}-{pf}"[^>]*>', t).group(0)
+    assert "hx-confirm=" in chip and "réglé à la main repasse en auto" in chip
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "mix", "km": str(col), "pid": str(pf)})
     nj = await _nj(db_session, rid)
-    assert nj["v"] == 2 and nj["level"] == "solide" and nj["picks"] == [-1, -3] and nj["items"] and nj["targets"]["carbs_g_per_h"] == 90
-    # 75 g/h = 3 gels an hour; 90 g/h = 3,5 an hour: every 17 min, never « 15 » (= 4 an hour, more than packed)
-    assert "<b>1 gel</b> toutes les 20 min" in t0 and "<b>1 gel</b> toutes les 17 min" in t1
-    shop0 = re.search(r"<li><b>(\d+)</b><span>gels</span>", t0).group(1)
-    shop1 = re.search(r"<li><b>(\d+)</b><span>gels</span>", t1).group(1)
-    assert int(shop1) > int(shop0)
-    # a step makes it « à la main », a level tap brings it back to auto
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "step", "pid": "-1", "step": "-0.5", "open": "adjust"})
-    assert "quantités à la main" in r.text and 'id="rv-adjust" class="pf-rv-disc pf-rv-adjust" open' in r.text
-    assert (await _nj(db_session, rid))["manual"] == {"-1": 3.0}
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "level", "v": "normal"})
-    assert "quantités à la main" not in r.text and (await _nj(db_session, rid))["manual"] == {}  # back to auto: « Ajuster » says nothing
-    # sweat and water carried
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "sweat", "v": "beaucoup", "open": "adjust"})
-    assert "beaucoup de transpiration" in r.text and "Bois 0,6 L" in r.text  # 500 × 1,25
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "carry", "v": "1500"})
-    assert (await _nj(db_session, rid))["carry_ml"] == 1500 and "1,5 L portés" in r.text
-    # drop bags are checkpoint flags: the plan's autosave sends them, bags and rows follow
-    cps = [dict(c) for c in CPS]
-    cps[2]["drop_bag"] = True  # Village
-    r = await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": json.dumps(cps), "name": "Jeju test", "target_time_s": 6 * 3600, "start_hour": 21, "start_minute": 0})
-    t = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    assert "Drop bag · Col" in t and "Drop bag · Village" in t and 'aria-pressed="true" data-ci="2"' in t
-    r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(cps), "target_time_s": 6 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid})
-    assert r.text.count("Drop bag ici") == 2
+    assert str(village) not in nj["rows"] and nj["undo"]["cleared"] == 1 and "1 tronçon remis en auto." in _text(r.text) and "Annuler" in r.text
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "undo"})
+    nj = await _nj(db_session, rid)
+    assert str(village) in nj["rows"] and "undo" not in nj and _phases(r.text) == ["Maurten 160", "PF 90 dès Col"]
+    # « Supprimer ce changement »
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "unswitch", "km": str(col)})
+    assert len(_phases(r.text)) == 1
+    # the switch reaches the passage row and the watch
+    t = (await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 8 * 3600, "start_hour": 21,
+                                                                       "start_minute": 0, "route_id": rid, "stop_minutes": 3})).text
+    assert "Dès ici" not in t
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "undo"})
+    t = (await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 8 * 3600, "start_hour": 21,
+                                                                       "start_minute": 0, "route_id": rid, "stop_minutes": 3})).text
+    assert t.count("Dès ici : PF 90") == 1
+    tcx = (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=tcx")).text
+    gpx = (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=gpx")).text
+    assert re.search(r"<Notes>km 10\.0 · \d\d:\d\d · Col · Dès ici : PF 90", tcx) and "Dès ici : PF 90</desc>" in gpx
+
+
+def _pid(html: str, label: str) -> int:
+    m = re.search(rf'"pid":"(-?\d+)"[^>]*>(?:(?!</button>).)*?<span class="pf-chip-lbl">{re.escape(label)}</span>', html, flags=re.S)
+    return int(m.group(1))
+
+
+@pytest.mark.asyncio
+async def test_ravito_food_is_off_by_default_and_counts_where_eaten(as_user: AsyncClient, db_session: AsyncSession):
+    rid = await _route(as_user, target_s=8 * 3600)
+    t = (await as_user.get(f"{P}/{rid}")).text
+    rows = _rows(t)
+    keys = list(rows)
+    assert "Au ravito" not in rows[keys[0]] and "Au ravito de Col" in _text(rows[keys[1]]) and "≈ Coca" not in t
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "aid", "km": str(keys[1]), "aid": "-10", "d": "2"})
+    assert "≈ Coca 2" in r.text and (await _nj(db_session, rid))["aid"] == {str(keys[1]): {"-10": 2}}
+    assert "Coca" not in r.text.split('id="rv-shop"')[1].split('id="rv-brands"')[0]  # never on the list
 
 
 @pytest.mark.asyncio
 async def test_catalogue_pick_replaces_the_generic_of_the_same_role(as_user: AsyncClient, db_session: AsyncSession):
     rid = await _route(as_user)
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/catalog/pf-90-gel")
+    r = await as_user.post(f"{P}/{rid}/catalog/pf-90-gel")
     t = r.text
-    assert _pressed(t, "Precision Fuel PF 90 Gel") and 'title="Gel"' not in t  # « Gel » is replaced, not offered
-    assert "<b>1 PF 90</b>" in t and 'open' not in t.split('id="rv-brands"')[1][:40]  # the panel closes
+    assert _phases(t) == ["PF 90"] and 'open' not in t.split('id="rv-brands"')[1][:40]  # the panel closes
     nj = await _nj(db_session, rid)
     assert -1 not in nj["picks"] and -3 in nj["picks"]
-    # toggling it off brings the quick pick back
     pid = nj["picks"][0]
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "toggle", "v": str(pid)})
-    assert 'aria-pressed="false" title="Gel"' in r.text
+    # off the list: off every stretch; the quick pick « Gel » is offered again
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "toggle", "v": str(pid)})
+    assert pid not in (await _nj(db_session, rid))["picks"] and 'title="Gel" hx-post' in r.text
     assert (await as_user.post("/api/nutrition/products", data={"name": "x"})).status_code in (404, 405)
 
 
-# ── the engine rules ────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_products_carry_their_prises(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    rid = await _route(as_user, target_s=8 * 3600)
+    r = await as_user.post(f"{P}/{rid}/products", data={"name": "Gros gel", "kind": "gel", "carbs_g": "60", "sodium_mg": "0", "servings": "2"})
+    assert r.status_code == 200 and "prises Gros gel" in r.text and "60 g · 0 mg sodium · 2 prises" in r.text
+    prod = (await db_session.execute(select(NutritionProduct).where(NutritionProduct.user_id == test_user.id))).scalars().one()
+    assert prod.servings == 2
+    r = await as_user.post(f"{P}/{rid}/catalog/pf-90-gel")
+    pf = (await db_session.execute(select(NutritionProduct).where(NutritionProduct.name == "Precision Fuel PF 90 Gel"))).scalar_one()
+    assert pf.servings == 3
+    # a row with a pouch to open says what to pack and what stays in it
+    assert re.search(r"prises · prends \d+ poches?(, il en restera \d)?", _text(r.text)) or "finis la poche entamée" in r.text
 
-def test_a_drink_never_exceeds_the_fluid_target_and_water_excludes_it():
-    drink = N.GENERIC_BY_ID[-2]
-    for fluid in (500, 650, 900):
-        r = N.auto_rates(75, 400, [drink], fluid_ml_per_h=fluid, manual={})[-2]
-        assert r * 500 <= fluid and r >= 0.5
-    _, secs = _sections(target=5 * 3600, start_hour=21)
-    inp = N.resolve_inputs({"v": 2, "picks": [-2]}, {}, 5 * 3600, None, None)
-    assert inp["items"] == [{"product_id": -2, "per_hour": 1.0}]
-    plan = N.compute_plan(5 * 3600, inp["targets"], inp["items"], inp["products_by_id"], secs, refill_kms={6.0, 10.0, 20.0}, caffeine=inp["caffeine"])
-    for lg in plan["schedule"]:
-        assert lg["water_ml"] == max(0, lg["fluid_ml"] - lg["units"][0]["units"] * 500)
-    warn = N.rule_warnings(plan, inp["picks"], inp["products_by_id"], True)
-    assert any("Pas assez de glucides" in w["text"] for w in warn)
+
+# ── the engine rules, through the resolver ─────────────────────────────────
+
+def _plan_for(nj, pantry, target_h, weight=68, stop_min=0, cps=CPS):
+    _, secs = _sections(target=target_h * 3600, start_hour=21, stop_min=stop_min)
+    inp = N.resolve_inputs(nj, pantry, target_h * 3600, None, weight, moving_s=NP.moving_cum(secs[-1]), start_offset_s=21 * 3600)
+    inp["mean_temp"] = None
+    st = NP.food_stretches(secs, cps, 21 * 3600)
+    return inp, NP.build_plan(st, inp, sections=secs, start_offset_s=21 * 3600, refill_kms={6.0, 10.0, 20.0})
+
+
+def _catalog_pantry(key):
+    c = N.CATALOG_BY_KEY[key]
+    return {100: {"id": 100, **{k: c.get(k) for k in ("name", "kind", "carbs_g", "sodium_mg", "kcal", "caffeine_mg", "volume_ml", "servings")}}}
+
+
+def test_the_automatic_plan_is_never_out_of_band_nor_too_much_for_the_stomach():
+    keys = [None] + [c["key"] for c in N.PRODUCT_CATALOG if N.role(c) in ("gel", "drink")]
+    for target_h in (9, 19, 30):
+        for level in ("fragile", "normal", "solide"):
+            for key in keys:
+                pantry = _catalog_pantry(key) if key else {}
+                picks = N.pick_into([-1, -3, -4], 100, N.with_generics(pantry)) if key else [-1, -3, -4]
+                inp, plan = _plan_for({"v": 3, "picks": picks, "level": level}, pantry, target_h)
+                for r in plan["stretches"]:
+                    assert r["status"] == "ok" and not r["stomach"], (target_h, level, key, r["to_name"], r["balance_g"], r["carbs_g"], r["need_g"])
+                assert plan["beep"] and plan["beep"]["interval"] in NP.BEEPS
+
+
+def test_a_drink_never_exceeds_the_water_and_salt_follows_the_flasks_of_water():
+    inp, plan = _plan_for({"v": 3, "picks": [-2, -3]}, {}, 6)
+    for r in plan["stretches"]:
+        drink = sum(it["n"] for it in r["items"] if it["pid"] == -2)
+        assert drink * 500 <= r["fluid_ml"] + 500  # at most the water of the stretch (whole doses, carried over)
+    total_drink_ml = sum(it["n"] * 500 for r in plan["stretches"] for it in r["items"] if it["pid"] == -2)
+    total_water = sum(r["fluid_ml"] for r in plan["stretches"]) - total_drink_ml
+    salt = sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == -3)
+    assert abs(salt - total_water / 500) <= 0.5 + 1e-9  # one tablet per 500 ml flask of water, never the drink's
+
+
+def test_gels_of_one_phase_are_handed_out_in_turns():
+    inp, plan = _plan_for({"v": 3, "picks": [12, 13, -3]}, LEGACY_PRODUCTS, 19)
+    n12 = sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == 12)
+    n13 = sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == 13)
+    assert abs(n12 - n13) <= 1 and n12 > 3
+    for r in plan["stretches"]:
+        if r["d_s"] >= 2 * 3600:
+            assert {12, 13} <= {it["pid"] for it in r["items"]}, r["to_name"]
 
 
 def test_a_caffeinated_gel_is_only_taken_at_caffeine_times_and_covers_the_race():
-    _, secs = _sections(target=19 * 3600, start_hour=21)
-    caf = {"id": 9, "name": "Maurten Gel 100 CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None}
-    inp = N.resolve_inputs({"v": 2, "picks": [9]}, {9: caf}, 19 * 3600, None, 70)
-    plan = N.compute_plan(19 * 3600, inp["targets"], inp["items"], inp["products_by_id"], secs, caffeine=inp["caffeine"], start_offset_s=21 * 3600, weight_kg=70)
-    line = plan["lines"][0]
-    assert line["by_caffeine"] and line["per_hour"] == 0  # never « per hour »
+    caf = {9: {"id": 9, "name": "Maurten Gel 100 CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None}}
+    inp, plan = _plan_for({"v": 3, "picks": [-1, 9]}, caf, 19, weight=70)
     cf = plan["caffeine"]
     assert cf["total_mg"] <= cf["max_mg"] and len(cf["doses"]) == 4
     assert [round(d["elapsed_s"] / 3600) for d in cf["doses"]] == [3, 8, 13, 18]
-    assert any("sans caféine" in w["text"] for w in N.rule_warnings(plan, [9], inp["products_by_id"], True))
+    assert sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == 9) == 4
 
 
-def test_spares_live_in_bags_and_shopping_only():
-    _, secs = _sections(target=8 * 3600, start_hour=21)
-    inp = N.resolve_inputs(None, {}, 8 * 3600, None, None)
-    plan = N.compute_plan(8 * 3600, inp["targets"], inp["items"], inp["products_by_id"], secs, refill_kms={6.0, 10.0, 20.0},
-                          resupply_points=[{"km": 10.0, "name": "Col"}], caffeine=inp["caffeine"], start_offset_s=21 * 3600)
-    legs_gels = sum(u["units"] for lg in plan["schedule"] for u in lg["units"] if u["product_id"] == -1)
-    main = N.main_product_id(plan)
-    assert main == -1
-    shop = N.shopping_list(plan, main, inp["products_by_id"])
-    bags_gels = sum(u["units"] for g in plan["bags"] for u in g["units"] if u["product_id"] == -1)
-    assert bags_gels == legs_gels + len(plan["bags"]) == legs_gels + 2
-    assert sum(u["units"] for lg in plan["schedule"] for u in lg["units"] if u["product_id"] == -1) == legs_gels  # legs untouched
-    for it in shop:
-        assert it["n"] == sum(u["units"] for g in plan["bags"] for u in g["units"] if u["product_id"] == it["product_id"])
-    gel = next(it for it in shop if it["product_id"] == -1)
-    assert gel["spares"] == 2 and gel["note"] == "dont 2 de secours"
+def test_no_caffeine_dose_after_the_finish_even_with_long_stops():
+    caf = _catalog_pantry("maurten-gel-100-caf")
+    inp, plan = _plan_for({"v": 3, "picks": [-1, 100, -3]}, caf, 19, stop_min=60)
+    end = plan["stretches"][-1]["end_clock_s"]
+    assert plan["caffeine"]["doses"] and all(d["clock_s"] <= end - 30 * 60 for d in plan["caffeine"]["doses"])
+    assert sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == 100) == len(plan["caffeine"]["doses"])
 
 
-def test_unit_labels_and_intervals_in_words():
-    assert N.unit_label(1, N.GENERIC_BY_ID[-1]) == "1 gel"
-    assert N.unit_label(3, N.GENERIC_BY_ID[-1]) == "3 gels"
+def test_a_switched_off_legacy_caffeine_block_is_not_a_setting():
+    legacy = {"targets": {"carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400},
+              "items": [{"product_id": -1, "per_hour": 3}, {"product_id": -3, "per_hour": 1.5}], "flask_capacity_ml": 1000,
+              "caffeine": {"enabled": False, "from_h": 3.0, "every_h": 2.5, "dose_mg": 50, "boost_dawn": False}}
+    st = N.upgrade_legacy(legacy)
+    assert "caffeine" not in st["custom"]
+    pantry = _catalog_pantry("maurten-gel-100-caf")
+    st = {**st, "phases": []}
+    st = N.apply_op(st, "pick", 100, N.with_generics(pantry))
+    inp, plan = _plan_for(N.state_json(st), pantry, 19)
+    assert inp["caffeine"].get("by_unit") and inp["caffeine"]["every_h"] >= 4  # auto spacing: the doses cover the race
+    assert plan["caffeine"]["doses"][-1]["elapsed_s"] > 14 * 3600
+    on = {**legacy, "caffeine": {**legacy["caffeine"], "enabled": True}}
+    assert N.upgrade_legacy(on)["custom"]["caffeine"]["enabled"] is True
+
+
+def test_unit_and_pill_labels():
+    assert N.unit_label(1, N.GENERIC_BY_ID[-1]) == "1 gel" and N.unit_label(3, N.GENERIC_BY_ID[-1]) == "3 gels"
     assert N.unit_label(2, N.GENERIC_BY_ID[-3]) == "2 pastilles de sel"
-    assert N.unit_label(4, {"name": "Precision Fuel PF 90 Gel"}) == "4 × PF 90"
-    assert N.unit_label(1, N.GENERIC_BY_ID[-4]) == "1 gel caféiné" and N.unit_label(5, N.GENERIC_BY_ID[-4]) == "5 gels caféinés"
-    words = {0.5: "toutes les 2 h", 1: "par heure", 1.5: "toutes les 40 min", 2: "toutes les 30 min", 2.5: "toutes les 25 min",
-             3: "toutes les 20 min", 4: "toutes les 15 min", 0.4: "toutes les 2h30", 4.5: "4,5 par heure",
-             # never a rounder interval that means more units than packed (3,5 an hour is not « every 15 min »)
-             3.5: "toutes les 17 min", 0.75: "toutes les 1h20", 0.67: "toutes les 1h30", 0.8: "toutes les 1h15", 1.25: "toutes les 50 min"}
-    for rate, text in words.items():
-        assert N.interval_words(rate) == text, rate
+    assert N.unit_label(4, {"name": "Precision Fuel PF 90 Gel"}) == "4 PF 90"
+    assert NP.pill_label(10, {"name": "Precision Fuel PF 90 Gel"}) == "10 prises PF 90" and NP.pill_label(1, {"name": "Precision Fuel PF 90 Gel"}) == "1 prise PF 90"
+    assert NP.pill_label(5, {"name": "Maurten Gel 160"}) == "5 Maurten 160"
+
+
+def test_generic_products_survive_a_non_empty_pantry():
+    pantry = {7: {"id": 7, "name": "Mon gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "caffeine_mg": None, "volume_ml": None}}
+    inp = N.resolve_inputs({"targets": {"carbs_g_per_h": 75}, "items": [{"product_id": -1, "per_hour": 3}, {"product_id": -3, "per_hour": 1}]}, pantry, 5 * 3600, None, None)
+    assert inp["picks"] == [-1, -3] and inp["phases"][0]["mix"] == {-1: 3.0}
+    assert -1 in inp["products_by_id"] and 7 in inp["products_by_id"] and -10 in inp["products_by_id"]
+
+
+# ── water ───────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_water_is_what_to_carry_and_a_short_flask_is_named(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    from tests.nutri_course import LONG_CPS, long_course
+
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": long_course().model_dump_json(), "checkpoints_json": json.dumps(LONG_CPS), "name": "Long", "target_time_s": 27 * 3600,
+        "race_date": "2099-10-02", "start_hour": 21, "start_minute": 0, "sport_type": "trail"})
+    rid = r.json()["id"]
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert "pf-rv-water is-warn" not in t and re.search(r"[\d,]+ L</span>", t)  # auto: each row says what to leave with, no amber
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "1000"})
+    t = r.text
+    assert "pf-rv-water is-warn" in t and "Tes flasques font 1 L" in _text(t)
+    # a water-only point where a long dry stretch starts says it in its passage row (a ravito's water is in its row)
+    from app.routers.simulator import _passage_table_context
+
+    route = await db_session.get(Route, rid)
+    await db_session.refresh(route)
+    from app.schemas.simulator import CourseProfile
+
+    ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), LONG_CPS, 27 * 3600, 1.0, 21, 0, None,
+                                       route, None, None, None, route_id=rid)
+    names = [s["end_name"] for s in ctx["sections"]]
+    noted = [names[i] for i, lg in enumerate(ctx["legs"]) if lg["water_note"]]
+    kinds = {cp["name"]: cp["kind"] for cp in LONG_CPS}
+    assert noted and all(kinds[n] == "water" for n in noted)
+    assert all(ctx["legs"][names.index(n)]["water_alert"] for n in noted)
+
+
+@pytest.mark.asyncio
+async def test_rows_use_the_forecast_the_page_has_not_saved_yet(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """The forecast arrives, the rows are redone at once, the save comes after:
+    the plan already reads that heat, as Ravitaillement will once it is saved."""
+    rid = await _route(as_user, target_s=6 * 3600)
+    from app.routers.simulator import _nutrition_plan, _plan_bundle
+
+    route = await db_session.get(Route, rid)
+    b = await _plan_bundle(route, db_session, test_user)
+
+    async def water(temp=None):
+        _inp, plan = await _nutrition_plan(db_session, test_user.id, None, route, b["sections"], b["checkpoints"], b["aid_kms"], b["start_offset_s"], 6 * 3600, temp)
+        return [r["fluid_ml"] for r in plan["stretches"]]
+
+    cold, hot = await water(), await water(32.0)
+    assert sum(hot) > sum(cold)
+    route.weather_json = {"temperature_c": 32.0}
+    await db_session.flush()
+    assert await water() == hot  # saved: the same plan without the override
+    r = await as_user.post("/partials/simulator/passage-times", data={
+        "checkpoints_json": json.dumps(CPS), "target_time_s": 6 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid,
+        "stop_minutes": 3, "weather_temp_c": "32",
+    })
+    assert r.status_code == 200 and "Ton sachet jusqu" in r.text
+
+
+# ── review fixes ────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_too_much_caffeine_set_by_hand_is_said(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    test_user.weight_kg = 50
+    await db_session.flush()
+    rid = await _route(as_user, target_s=19 * 3600)
+    await as_user.post(f"{P}/{rid}/catalog/maurten-gel-100-caf")
+    k = list(_rows((await as_user.get(f"{P}/{rid}")).text))[0]
+    pid = (await _nj(db_session, rid))["picks"][-1]
+    for _ in range(3):
+        r = await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": str(k), "pid": str(pid), "d": "1"})
+    assert re.search(r"Trop de caféine : \d+ mg en 24 h, au-dessus des 300 mg conseillés pour toi\.", _text(r.text))
+
+
+@pytest.mark.asyncio
+async def test_a_drop_bag_tap_keeps_the_default_so_another_race_cannot_rewrite_it(as_user: AsyncClient, db_session: AsyncSession):
+    first = await _route(as_user, name="Transjeju", target_s=19 * 3600)
+    other = await _route(as_user, name="SaintéLyon", target_s=9 * 3600)
+    await as_user.post(f"{P}/{other}/plan", data={"op": "level", "v": "solide"})
+    t = (await as_user.get(f"{P}/{first}")).text
+    assert "Repris de « SaintéLyon »" in t and await _nj(db_session, first) is None
+    r = await as_user.post(f"{P}/{first}/plan", data={"op": "keep"})
+    nj = await _nj(db_session, first)
+    assert nj["v"] == 3 and nj["level"] == "solide" and nj["picks"] == [-1, -3, -4] and "Repris de" not in r.text
+    await as_user.post(f"{P}/{other}/plan", data={"op": "toggle", "v": "-4"})
+    assert (await _nj(db_session, first))["picks"] == [-1, -3, -4]
+    await as_user.post(f"{P}/{first}/plan", data={"op": "keep"})
+    assert await _nj(db_session, first) == nj
+
+
+@pytest.mark.asyncio
+async def test_bare_points_ask_where_to_eat_and_the_race_runs_in_blocks(as_user: AsyncClient):
+    bare = [{**cp, "kind": "none", "drop_bag": False, "crew": False} for cp in CPS]
+    rid = await _route(as_user, cps=bare, target_s=9 * 3600)
+    t = (await as_user.get(f"{P}/{rid}")).text
+    chips = t.split("Où peux-tu manger ?")[1].split('class="pf-rv-table"')[0]
+    for cp in CPS:
+        assert cp["name"] in chips
+    assert "pfRvPoint(this, 'food')" in chips and "Par tranche de 3 h" in t and len(_rows(t)) == 3
+    t = (await as_user.get(f"{P}/{await _route(as_user, name='Typed')}")).text
+    assert "Où peux-tu manger ?" not in t and "Entre les ravitos" in t
+
+
+@pytest.mark.asyncio
+async def test_no_predicted_time_says_how_to_get_one(as_user: AsyncClient, db_session: AsyncSession):
+    rid = await _route(as_user)
+    route = await db_session.get(Route, rid)
+    route.target_time_s = None
+    route.course_json = {**route.course_json, "segments": []}
+    await db_session.flush()
+    r = await as_user.get(f"{P}/{rid}")
+    assert r.status_code == 200 and "Indique un objectif de temps, ou garde l'estimation, pour calculer ton plan." in r.text.replace("&#39;", "'")
+    assert await _nj(db_session, rid) is None
+
+
+@pytest.mark.asyncio
+async def test_the_card_morphs_in_place_and_keeps_the_open_row(as_user: AsyncClient):
+    t = (await as_user.get(f"{P}/{await _route(as_user)}")).text
+    script = t.split("<script>")[1]
+    assert "Idiomorph.morph(t, html, { morphStyle: 'outerHTML' })" in script and "htmx:beforeSwap" in script
+    assert "htmx:configRequest" in script and "details.pf-rv-row[open]" in script
+    assert 'hx-target="this" hx-swap="outerHTML" hx-sync="this:queue all"' in t
+    page = (await as_user.get(f"/simulator/routes/{await _route(as_user, name='Page')}")).text
+    assert "idiomorph" in page and "?v=19" in page
+
+
+@pytest.mark.asyncio
+async def test_print_band_has_one_line_per_stretch_and_the_beep(as_user: AsyncClient):
+    rid = await _route(as_user, target_s=6 * 3600)
+    t = (await as_user.get(f"/simulator/routes/{rid}/print")).text
+    nut = t.split(">Nutrition")[1]
+    assert "bip toutes les 20 min" in nut
+    rows = re.findall(r"<tr>(.*?)</tr>", nut, flags=re.S)
+    assert len(rows) == 3 and "gels" in nut
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", nut, flags=re.S)
+    assert not any(re.fullmatch(r"\s*(\d+h\d\d|\d+ min)\s*", c) for c in cells), cells
+
+
+def test_an_old_plans_flask_is_not_spread_to_a_new_race():
+    src = {"name": "Transjeju", "nutrition_json": LEGACY_PLAN}
+    inp = N.resolve_inputs(None, LEGACY_PRODUCTS, 20 * 3600, None, 68, default_from=src)
+    assert inp["source"] == "Transjeju" and inp["picks"] == [11, 12, 13, 14, 15] and inp["carry_ml"] is None
+    v2 = {"name": "CCC", "nutrition_json": {"v": 2, "picks": [-1, -3], "carry_ml": 1500}}
+    assert N.resolve_inputs(None, {}, 20 * 3600, None, 68, default_from=v2)["carry_ml"] == 1500
+
+
+@pytest.mark.asyncio
+async def test_an_own_product_without_a_name_keeps_the_form(as_user: AsyncClient):
+    rid = await _route(as_user)
+    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/products", data={"name": "", "kind": "drink", "carbs_g": "40", "sodium_mg": "200"})
+    t = r.text
+    assert 'id="rv-brands" class="pf-rv-more" open' in t and 'class="pf-rv-own" open' in t
+    assert "Donne-lui un nom." in t and 'value="40"' in t and 'value="200"' in t and 'data-kind="drink" aria-pressed="true"' in t
+    assert 'name="name" type="text" maxlength="100" required' in t and "novalidate" not in t
+    assert "par flasque de 500 ml" in t
+
+
+@pytest.mark.asyncio
+async def test_back_from_ravitaillement_redoes_the_rows_and_the_bags_link_stays(as_user: AsyncClient):
+    html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
+    script = html.split("function switchRouteTab")[1].split("</script>")[0]
+    # any successful POST to the nutrition card marks the rows stale; back to the plan redoes them once
+    assert "ravitoDirty = true" in script and "/partials\\/simulator\\/nutrition\\//" in script
+    plan_branch = script.split("} else {")[1].split("// a tool reloads")[0]
+    assert "ravitoDirty" in plan_branch and "recalc()" in plan_branch
+    assert "anchor === 'bags' ? 'bags' : tab" in script  # #bags is kept in the address
+    # an out-of-range number in Réglages du plan says why it is not saved
+    assert html.count('hx-on::validation:halted="this.reportValidity()"') == 2
 
 
 # ── Pilotage in the passage rows ────────────────────────────────────────────
@@ -342,251 +635,3 @@ async def test_rows_and_watch_codes_carry_the_same_ceiling(as_user: AsyncClient)
     codes = [int(x) for x in re.findall(r"FC(\d+)", csv)]
     assert row_caps and row_caps == codes[:len(row_caps)]
     assert row_caps[0] <= 150 and len(set(row_caps)) > 1  # falls along the race, not one repeated number
-
-
-# ── water ───────────────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_water_auto_has_no_red_and_a_short_capacity_is_named(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    rid = await _route(as_user, target_s=10 * 3600)
-    t = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    assert "is-alert" not in t and "Eau : prévois" in t
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/plan", data={"op": "carry", "v": "1000"})
-    t = r.text
-    assert "pf-rv-water is-alert" in t and "Prends une flasque de plus, ou change « Eau que tu portes » dans Ajuster." in t
-    stretch = re.search(r"il te faudrait [\d,]+ L entre (\w[\w ]*?) et (\w[\w ]*?) \(", t)
-    assert stretch
-    # the row of the point where that stretch starts says it, in red
-    from app.routers.simulator import _passage_table_context
-    from app.schemas.simulator import CourseProfile
-
-    route = await db_session.get(Route, rid)
-    await db_session.refresh(route)
-    ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), CPS, 10 * 3600, 1.0, 21, 0, None,
-                                       route, 3, None, None, route_id=rid)
-    names = [s["end_name"] for s in ctx["sections"]]
-    row = ctx["legs"][names.index(stretch.group(1))]
-    assert row["water_alert"] and row["water_note"].startswith("Remplis tout ici") and stretch.group(2) in row["water_note"]
-    # every leg says how to run it, except a flat one without a cardio ceiling (running steady goes without saying)
-    assert all(lg["effort"] or (lg["cls"] == "flat" and not lg["hr_cap"]) for lg in ctx["legs"]) and all(lg["hr_cap"] is None or lg["hr_cap"] > 0 for lg in ctx["legs"])
-
-
-# ── review fixes ────────────────────────────────────────────────────────────
-
-def _plan_for(nj, pantry, target_h, weight=68, stop_min=0):
-    _, secs = _sections(target=target_h * 3600, start_hour=21, stop_min=stop_min)
-    moving = secs[-1].get("adjusted_cumulative_time_s") or secs[-1]["cumulative_time_s"]
-    inp = N.resolve_inputs(nj, pantry, target_h * 3600, None, weight, moving_s=moving, start_offset_s=21 * 3600)
-    plan = N.compute_plan(target_h * 3600, inp["targets"], inp["items"], inp["products_by_id"], secs, refill_kms={6.0, 10.0, 20.0},
-                          caffeine=inp["caffeine"], start_offset_s=21 * 3600, weight_kg=weight)
-    return inp, plan
-
-
-def _catalog_pantry(key):
-    c = N.CATALOG_BY_KEY[key]
-    return {100: {"id": 100, **{k: c[k] for k in ("name", "kind", "carbs_g", "sodium_mg", "kcal", "caffeine_mg", "volume_ml")}}}
-
-
-def test_the_automatic_plan_never_warns_about_its_own_carbs():
-    """The caffeinated gels are gels too: the plain products fill what they leave,
-    so a computed plan sits inside the stomach's range (Fragile included)."""
-    keys = [None] + [c["key"] for c in N.PRODUCT_CATALOG if N.role(c) in ("gel", "drink")]
-    for target_h in (9, 12, 19, 30):
-        for level in ("fragile", "normal", "solide"):
-            for key in keys:
-                pantry = _catalog_pantry(key) if key else {}
-                picks = N.pick_into([-1, -3, -4], 100, N.with_generics(pantry)) if key else [-1, -3, -4]
-                inp, plan = _plan_for({"v": 2, "picks": picks, "level": level}, pantry, target_h)
-                carb = [w["text"] for w in N.rule_warnings(plan, inp["picks"], inp["products_by_id"], True) if "glucides" in w["text"] or "estomac" in w["text"]]
-                assert not carb, (target_h, level, key, inp["rates"], carb)
-    # PF 90 at Normal: neither 45 nor 90 g an hour fits, 1 every 1h20 does
-    inp, plan = _plan_for({"v": 2, "picks": [100, -3, -4], "level": "normal"}, _catalog_pantry("pf-90-gel"), 19)
-    assert inp["rates"][100] == 0.75 and "<b>1 PF 90</b> toutes les 1h20" in " ".join(r["html"] for r in N.rule_lines(plan, inp["picks"], inp["products_by_id"], True))
-
-
-def test_gels_at_the_same_rate_are_taken_in_turns():
-    """« 1 gel toutes les 40 min, en alternant… » is what the legs hand out:
-    no leg longer than the interval goes without a gel, the total is the same stream."""
-    for nj in (LEGACY_PLAN, {"v": 2, "picks": [11, 12, 13, -3]}):
-        inp, plan = _plan_for(nj, LEGACY_PRODUCTS, 19)
-        rules = " ".join(r["html"] for r in N.rule_lines(plan, inp["picks"], inp["products_by_id"], True))
-        assert "toutes les 40 min, en alternant PF 90, Baouw et Maurten 160" in rules
-        gels = {11, 12, 13}
-        for lg in plan["schedule"]:
-            if lg["leg_time_s"] >= 40 * 60:
-                assert sum(u["units"] for u in lg["units"] if u["product_id"] in gels) >= 1, lg["to_name"]
-        moving_h = sum(lg["leg_time_s"] for lg in plan["schedule"]) / 3600
-        total = sum(ln["total_units"] for ln in plan["lines"] if ln["product_id"] in gels)
-        assert abs(total - 3 * 0.5 * moving_h) <= 0.5 + 1e-9  # one stream at 1,5 an hour
-    # a gel and a bar at the same rate: one neutral noun
-    inp, plan = _plan_for({"v": 2, "picks": [11, -5, -3], "level": "fragile"}, LEGACY_PRODUCTS, 19)
-    rules = " ".join(r["html"] for r in N.rule_lines(plan, inp["picks"], inp["products_by_id"], True))
-    if inp["rates"].get(11) == inp["rates"].get(-5):
-        assert "1 gel ou 1 barre</b>" in rules
-
-
-def test_no_caffeine_dose_after_the_finish_even_with_long_stops():
-    caf = _catalog_pantry("maurten-gel-100-caf")
-    inp, plan = _plan_for({"v": 2, "picks": [-1, 100, -3]}, caf, 19, stop_min=60)
-    last = plan["schedule"][-1]
-    assert plan["caffeine"]["doses"] and all(d["elapsed_s"] <= last["cum_s"] and d["clock_s"] <= last["clock_s"] for d in plan["caffeine"]["doses"])
-    assert sum(u["units"] for lg in plan["schedule"] for u in lg["units"] if u["product_id"] == 100) == len(plan["caffeine"]["doses"])
-
-
-def test_a_switched_off_legacy_caffeine_block_is_not_a_setting():
-    legacy = {"targets": {"carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400},
-              "items": [{"product_id": -1, "per_hour": 3}, {"product_id": -3, "per_hour": 1.5}], "flask_capacity_ml": 1000,
-              "caffeine": {"enabled": False, "from_h": 3.0, "every_h": 2.5, "dose_mg": 50, "boost_dawn": False}}
-    st = N.upgrade_legacy(legacy)
-    assert "caffeine" not in st["custom"]
-    st = N.apply_op(st, "pick", 100, N.with_generics(_catalog_pantry("maurten-gel-100-caf")))
-    inp, plan = _plan_for(N.state_json(st), _catalog_pantry("maurten-gel-100-caf"), 19)
-    assert inp["caffeine"].get("by_unit") and inp["caffeine"]["every_h"] >= 4  # auto spacing: the doses cover the race
-    assert plan["caffeine"]["doses"][-1]["elapsed_s"] > 14 * 3600
-    # switched on, it stays his
-    on = {**legacy, "caffeine": {**legacy["caffeine"], "enabled": True}}
-    assert N.upgrade_legacy(on)["custom"]["caffeine"]["enabled"] is True
-
-
-def test_an_old_plans_flask_is_not_spread_to_a_new_race():
-    src = {"name": "Transjeju", "nutrition_json": LEGACY_PLAN}
-    inp = N.resolve_inputs(None, LEGACY_PRODUCTS, 20 * 3600, None, 68, default_from=src)
-    assert inp["source"] == "Transjeju" and inp["picks"] == [11, 12, 13, 14, 15] and inp["carry_ml"] is None
-    v2 = {"name": "CCC", "nutrition_json": {"v": 2, "picks": [-1, -3], "carry_ml": 1500}}
-    assert N.resolve_inputs(None, {}, 20 * 3600, None, 68, default_from=v2)["carry_ml"] == 1500
-
-
-def test_the_low_carb_advice_fits_the_picks():
-    inp, plan = _plan_for({"v": 2, "picks": [-2]}, {}, 5)
-    w = " ".join(x["text"] for x in N.rule_warnings(plan, inp["picks"], inp["products_by_id"], True))
-    assert "ajoute un gel ou une barre" in w and "une boisson" not in w
-
-
-@pytest.mark.asyncio
-async def test_a_caffeinated_gel_per_hour_from_an_old_plan_shows_the_total_in_red(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    rid = await _route(as_user, target_s=19 * 3600)
-    prod = NutritionProduct(user_id=test_user.id, name="Maurten Gel 100 CAF 100", kind="gel", carbs_g=25, sodium_mg=20, caffeine_mg=100)
-    db_session.add(prod)
-    await db_session.flush()
-    route = await db_session.get(Route, rid)
-    route.nutrition_json = {"targets": {"carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400},
-                            "items": [{"product_id": -1, "per_hour": 2}, {"product_id": prod.id, "per_hour": 1}],
-                            "flask_capacity_ml": 1000, "caffeine": {"enabled": False}}
-    await db_session.flush()
-    t = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    assert "<b>1 Maurten 100 CAF</b> par heure" in t  # an old plan keeps its numbers…
-    assert re.search(r"Caféine : \d{4} mg, au-dessus des 400 mg conseillés pour toi\. Touche « Revenir au calcul auto »\.", t)  # …but says it
-    assert "Trop de caféine" in t.split('id="rv-stomach"')[0]
-
-
-@pytest.mark.asyncio
-async def test_a_drop_bag_tap_keeps_the_default_so_another_race_cannot_rewrite_it(as_user: AsyncClient, db_session: AsyncSession):
-    first = await _route(as_user, name="Transjeju", target_s=19 * 3600)
-    other = await _route(as_user, name="SaintéLyon", target_s=9 * 3600)
-    await as_user.post(f"/partials/simulator/nutrition/{other}/plan", data={"op": "level", "v": "solide"})
-    t = (await as_user.get(f"/partials/simulator/nutrition/{first}")).text
-    assert "Repris de « SaintéLyon »" in t and await _nj(db_session, first) is None
-    # the drop-bag chip saves the route, then sends « keep »
-    r = await as_user.post(f"/partials/simulator/nutrition/{first}/plan", data={"op": "keep"})
-    nj = await _nj(db_session, first)
-    assert nj["v"] == 2 and nj["level"] == "solide" and nj["picks"] == [-1, -3, -4] and "Repris de" not in r.text
-    # a change on the other race no longer reaches this one; « keep » on a race of its own changes nothing
-    await as_user.post(f"/partials/simulator/nutrition/{other}/plan", data={"op": "toggle", "v": "-4"})
-    assert (await _nj(db_session, first))["picks"] == [-1, -3, -4]
-    await as_user.post(f"/partials/simulator/nutrition/{first}/plan", data={"op": "keep"})
-    assert await _nj(db_session, first) == nj
-
-
-@pytest.mark.asyncio
-async def test_bare_points_can_take_a_bag_and_water_in_one_tap(as_user: AsyncClient):
-    bare = [{**cp, "kind": "none", "drop_bag": False, "crew": False} for cp in CPS]
-    rid = await _route(as_user, cps=bare, target_s=6 * 3600)
-    t = (await as_user.get(f"/partials/simulator/nutrition/{rid}")).text
-    bags = t.split("Drop bag à :")[1].split("Eau à :")[0]
-    water = t.split("Eau à :")[1].split('class="pf-rv-bags"')[0]
-    for cp in CPS:  # every point, not only typed ravitos
-        assert cp["name"] in bags and cp["name"] in water
-    assert "pfRvPoint(this, 'bag')" in bags and "pfRvPoint(this, 'water')" in water and 'data-kind="none"' in bags
-    assert "Touche les points d&#39;eau dans « Tes sacs »" in t
-    # a typed ravito: the bag row lists the ravitos, no water row
-    t = (await as_user.get(f"/partials/simulator/nutrition/{await _route(as_user, name='Typed')}")).text
-    assert "Eau à :" not in t and "Eau 1 · km" not in t.split("Drop bag à :")[1].split('class="pf-rv-bags"')[0]
-
-
-@pytest.mark.asyncio
-async def test_an_own_product_without_a_name_keeps_the_form(as_user: AsyncClient):
-    rid = await _route(as_user)
-    r = await as_user.post(f"/partials/simulator/nutrition/{rid}/products", data={"name": "", "kind": "drink", "carbs_g": "40", "sodium_mg": "200"})
-    t = r.text
-    assert 'id="rv-brands" class="pf-rv-more" open' in t and 'class="pf-rv-own" open' in t
-    assert "Donne-lui un nom." in t and 'value="40"' in t and 'value="200"' in t and 'data-kind="drink" aria-pressed="true"' in t
-    assert 'name="name" type="text" maxlength="100" required' in t and "novalidate" not in t
-    assert "par flasque de 500 ml" in t
-
-
-@pytest.mark.asyncio
-async def test_the_food_line_does_not_repeat_the_leg_line(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    rid = await _route(as_user, target_s=6 * 3600)
-    from app.routers.simulator import _passage_table_context
-    from app.schemas.simulator import CourseProfile
-
-    route = await db_session.get(Route, rid)
-    ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), CPS, 6 * 3600, 1.0, 21, 0, None,
-                                       route, 3, None, None, route_id=rid)
-    texts = [lg["units_text"] for lg in ctx["legs"]]
-    # the leg line says « … depuis Eau 1 · 4 km … » right above: the food line just says what to take
-    assert all(x.startswith("À prendre en route : ") for x in texts if x) and texts[0]
-    assert all(x.endswith(".") for x in texts if x)
-
-
-@pytest.mark.asyncio
-async def test_rows_use_the_forecast_the_page_has_not_saved_yet(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    """The forecast arrives, the rows are redone at once, the save comes after: the rows'
-    water and salt already read that heat, as Ravitaillement will once it is saved."""
-    rid = await _route(as_user, target_s=6 * 3600)
-    from app.routers.simulator import _passage_table_context
-    from app.schemas.simulator import CourseProfile
-
-    route = await db_session.get(Route, rid)
-
-    async def legs(temp=None):
-        ctx = await _passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), CPS, 6 * 3600, 1.0, 21, 0, None,
-                                           route, 3, None, None, route_id=rid, mean_temp_c=temp)
-        return [(lg["units_text"], lg["fluid_ml"], lg["water_note"], lg["bag"]) for lg in ctx["legs"]]
-
-    cold, hot = await legs(), await legs(32.0)
-    assert cold != hot
-    route.weather_json = {"temperature_c": 32.0}
-    await db_session.flush()
-    assert await legs() == hot  # saved: the same rows without the override
-    # the recalculation endpoint takes it from the page
-    r = await as_user.post("/partials/simulator/passage-times", data={
-        "checkpoints_json": json.dumps(CPS), "target_time_s": 6 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid,
-        "stop_minutes": 3, "weather_temp_c": "32",
-    })
-    assert r.status_code == 200 and "À prendre en route" in r.text
-
-
-@pytest.mark.asyncio
-async def test_back_from_ravitaillement_redoes_the_rows_and_the_bags_link_stays(as_user: AsyncClient):
-    html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
-    script = html.split("function switchRouteTab")[1].split("</script>")[0]
-    # any successful POST to the nutrition card marks the rows stale; back to the plan redoes them once
-    assert "ravitoDirty = true" in script and "/partials\\/simulator\\/nutrition\\//" in script
-    plan_branch = script.split("} else {")[1].split("// a tool reloads")[0]
-    assert "ravitoDirty" in plan_branch and "recalc()" in plan_branch
-    assert "anchor === 'bags' ? 'bags' : tab" in script  # #bags is kept in the address
-    # an out-of-range number in Réglages du plan says why it is not saved
-    assert html.count('hx-on::validation:halted="this.reportValidity()"') == 2
-
-
-@pytest.mark.asyncio
-async def test_print_band_nutrition_says_what_to_take_not_the_leg_times(as_user: AsyncClient):
-    rid = await _route(as_user, target_s=6 * 3600)
-    t = (await as_user.get(f"/simulator/routes/{rid}/print")).text
-    nut = t.split(">Nutrition<")[1]
-    cells = re.findall(r"<td[^>]*>(.*?)</td>", nut, flags=re.S)
-    assert cells and "gel" in nut
-    # the band's cells already carry the clocks: no leg-duration column, no shopping totals in the header
-    assert not any(re.fullmatch(r"\s*(\d+h\d\d|\d+ min)\s*", c) for c in cells), cells
-    assert "pastilles de sel ·" not in t.split(">Nutrition<")[0][-300:]

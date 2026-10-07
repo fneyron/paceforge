@@ -201,11 +201,6 @@ def _hm_s(seconds: float) -> str:
     return f"{h}h{m:02d}" if h else f"{m} min"
 
 
-def _l1(ml: float) -> str:
-    """Litres with one decimal, French: 1100 → '1,1'."""
-    return f"{float(ml or 0) / 1000:.1f}".replace(".", ",")
-
-
 async def _pantry(db: AsyncSession, user_id: int) -> dict:
     """The athlete's products, newest first: {id: product dict}."""
     res = await db.execute(
@@ -264,57 +259,25 @@ async def _nutrition_inputs(
     return inp
 
 
-def _resupply_points(checkpoints: list[dict]) -> list[dict]:
-    return [{"km": cp["distance_km"], "name": cp["name"]} for cp in checkpoints if cp.get("drop_bag") or cp.get("crew")]
+def _until(name: str | None) -> str:
+    """'Gasiri', 'l'arrivée'."""
+    return "l'arrivée" if (name or "") == "Arrivée" else (name or "")
 
 
 async def _nutrition_plan(
     db: AsyncSession, user_id: int, weight_kg: float | None, route: Route | None, sections: list[dict],
     checkpoints: list[dict], aid_kms: set, start_offset_s: int, duration_s: float, mean_temp_c: float | None = None,
-) -> tuple[dict, dict, list]:
-    """(inputs, plan, shopping list): the same numbers everywhere."""
-    from app.services.nutrition import compute_plan, main_product_id, shopping_list
+    sport: str | None = None,
+) -> tuple[dict, dict]:
+    """(inputs, stretch plan): the same numbers on every surface (card, passage
+    rows, print band, watch export). Reading never writes."""
+    from app.services.nutrition_plan import build_plan, food_stretches
 
+    sport = sport or ("bike" if route is not None and route.sport_type == "bike" else "trail")
     inp = await _nutrition_inputs(db, user_id, route, duration_s, weight_kg, _moving_s(sections), start_offset_s, mean_temp_c)
-    plan = compute_plan(
-        duration_s, inp["targets"], inp["items"], inp["products_by_id"], sections,
-        flask_capacity_ml=inp["flask_capacity_ml"], refill_kms=aid_kms, resupply_points=_resupply_points(checkpoints),
-        caffeine=inp["caffeine"], start_offset_s=start_offset_s, weight_kg=weight_kg,
-    )
-    shop = shopping_list(plan, main_product_id(plan), inp["products_by_id"])
-    return inp, plan, shop
-
-
-def _until(name: str | None) -> str:
-    """'jusqu'à Gasiri', 'jusqu'à l'arrivée'."""
-    return "l'arrivée" if (name or "") == "Arrivée" else (name or "")
-
-
-def _bag_title(g: dict, cps_by_km: dict, sep: str = " · ") -> str:
-    if g.get("is_start"):
-        return "Sac au départ"
-    cp = cps_by_km.get(round(float(g.get("km") or 0), 1)) or {}
-    return f"{'Assistance' if cp.get('crew') and not cp.get('drop_bag') else 'Drop bag'}{sep}{g['at']}"
-
-
-def _water_notes(plan: dict, carry_ml: int | None) -> dict:
-    """{km of a refill point: (sentence, alert)} where a long dry stretch starts."""
-    from app.services.nutrition import _fr, ceil_half_l, liters
-
-    hy = plan.get("hydration") or {}
-    out: dict = {}
-    if not hy.get("has_refills"):
-        return out
-    for s in hy.get("segments") or []:
-        if s["from_km"] <= 0:
-            continue  # from the start: the « Sac au départ » card says it
-        need, key = s["need_ml"], round(float(s["from_km"]), 1)
-        if carry_ml:
-            if need > carry_ml + 1:
-                out[key] = (f"Remplis tout ici : il faut {_fr(ceil_half_l(need))} L jusqu'à {s['to_name']} ({_hm_s(s['time_s'])}), tu portes {liters(carry_ml)} L.", True)
-        elif need >= 1000:
-            out[key] = (f"Remplis {_fr(ceil_half_l(need))} L ici : pas d'eau avant {s['to_name']} ({_hm_s(s['time_s'])}).", False)
-    return out
+    stretches = food_stretches(sections, checkpoints, start_offset_s, sport)
+    plan = build_plan(stretches, inp, sections=sections, start_offset_s=start_offset_s, refill_kms=aid_kms, sport=sport)
+    return inp, plan
 
 
 async def _leg_details(
@@ -323,15 +286,15 @@ async def _leg_details(
     mean_temp_c: float | None = None,
 ) -> list[dict]:
     """What a passage row says once opened, one entry per section (the leg that ENDS
-    at that point): what to do on it (heart-rate ceiling of its terrain, computed at
-    the leg's own midpoint), the steep bits, what to eat, and at that point the water
-    to take for the next dry stretch and what to pick up from a drop bag. Same numbers
-    as the Ravitaillement card. Never fails the table: on any error the rows open
-    without these lines."""
+    at that point): how to run it (heart-rate ceiling of its terrain, computed at
+    the leg's own midpoint), the steep bits; at a food ravito a pointer to its row
+    in Ravitaillement (never its contents: the table is the one place for them)
+    and « Dès ici : PF 90 » where the product changes; at a water point the water
+    to take for a long dry stretch. Never fails the table: on any error the rows
+    open without these lines."""
     try:
         from markupsafe import Markup
 
-        from app.services.nutrition import leg_labels
         from app.services.pacing_guide import effort_sentence, leg_instructions, steep_on_leg, steep_sentence
 
         li = leg_instructions(guide, sections)
@@ -340,35 +303,26 @@ async def _leg_details(
         if duration_s is None:
             last = sections[-1] if sections else {}
             duration_s = last.get("adjusted_cumulative_time_s") or last.get("cumulative_time_s") or 0
-        inp, plan, _shop = await _nutrition_plan(db, user_id, weight, route_obj, sections, checkpoints, aid_kms, start_offset_s, duration_s, mean_temp_c)
-        products = inp["products_by_id"]
-        bags = {round(float(g["km"]), 1): g for g in plan.get("bags") or [] if not g.get("is_start")}
-        cps_by_km = {round(float(cp["distance_km"]), 1): cp for cp in checkpoints}
-        notes = _water_notes(plan, inp["carry_ml"])
+        _inp, plan = await _nutrition_plan(db, user_id, weight, route_obj, sections, checkpoints, aid_kms, start_offset_s, duration_s, mean_temp_c)
+        starts = {r["from_km"]: r for r in plan["stretches"] if r["i"] > 0 and not r["is_block"]}
+        notes, switch = plan["water_notes"], plan["switch_notes"]
         out = []
-        for i, leg in enumerate(plan["schedule"]):
+        for i, sec in enumerate(sections):
             ins = li[i] if i < len(li) else {}
-            sec = sections[i] if i < len(sections) else {}
             cls, hr = ins.get("cls"), ins.get("hr_cap")
             steep = steep_on_leg(ins.get("steep"), float(sec.get("start_km") or 0), float(sec.get("end_km") or 0))
-            km = round(float(leg["km"] or 0), 1)
-            bag, cp, note = bags.get(km), cps_by_km.get(km) or {}, notes.get(km)
+            km = round(float(sec.get("end_km") or 0), 1)
+            last = i == len(sections) - 1
+            nxt = None if last else starts.get(km)
+            note = None if last else notes.get(km)
             effort = effort_sentence(cls, hr, walk)
-            units = leg_labels(leg, products)
-            # the row is the leg that ARRIVES here (from the row above);
-            # the « ici » lines (water, bag) are about leaving
             out.append({
                 "hr_cap": hr, "terrain": (ins.get("block") or {}).get("label"), "cls": cls,
                 "effort": Markup(effort) if effort else None,
                 "steep": steep, "steep_text": steep_sentence(steep) if steep and cls != "stairs" else None,
-                "carbs_g": leg["carbs_real_g"], "carbs_planned": True,
-                "fluid_ml": leg["fluid_ml"], "water_ml": leg.get("water_ml", leg["fluid_ml"]),
-                "units": units,
-                "units_text": f"À prendre en route : {', '.join(units)}." if units else None,
+                "ravito": {"key": nxt["key"], "to": _until(nxt["to_name"])} if nxt else None,
+                "switch": None if last else switch.get(km),
                 "water_note": note[0] if note else None, "water_alert": bool(note and note[1]),
-                "bag": ({"head": "Assistance ici" if cp.get("crew") and not cp.get("drop_bag") else "Drop bag ici",
-                         "until": _until(bag.get("until")), "units": bag.get("labels") or [], "carbs_g": bag.get("carbs_g") or 0}
-                        if bag else None),
             })
         return out
     except Exception:
@@ -1528,15 +1482,19 @@ async def print_route_plan(
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
     )
 
-    # Race pack: the Ravitaillement plan on the same printout (the virtual
-    # default too): the same units as the card and the passage rows.
+    # Race pack: the stretch table on the same printout (the virtual default
+    # too): the same sachets as the card, one line per stretch, and the beep.
     nutrition_schedule: list = []
+    nutrition_beep = None
     duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
     if duration_s and sections:
-        from app.services.nutrition import leg_labels
+        _ninp, nplan = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, aid_kms, start_offset_s, duration_s, sport=b["sport"])
+        from app.services.nutrition import ceil_half_l
 
-        ninp, nplan, _nshop = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, aid_kms, start_offset_s, duration_s)
-        nutrition_schedule = [{**leg, "labels": leg_labels(leg, ninp["products_by_id"])} for leg in nplan["schedule"]]
+        nutrition_schedule = [{"clock": r["clock"], "to_name": r["to_name"], "labels": r["labels"] + [f"≈ {it['name']}" for it in r["items"] if it["at_aid"]],
+                               "water_l": ceil_half_l(r["water_ml"]) if r["water_ml"] else None, "switch": nplan["switch_notes"].get(r["from_km"]) if r["phase_start"] else None}
+                              for r in nplan["stretches"]]
+        nutrition_beep = (nplan["beep"] or {}).get("interval")
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
     legs_guide = None
@@ -1576,6 +1534,7 @@ async def print_route_plan(
             "plan_total_s": b["plan_total_s"],
             "start_offset_s": start_offset_s,
             "nutrition_schedule": nutrition_schedule,
+            "nutrition_beep": nutrition_beep,
             "scenarios": scenarios,
         },
     )
@@ -1898,15 +1857,42 @@ def _product_dict(p: NutritionProduct) -> dict:
         "id": p.id, "name": p.name, "kind": p.kind,
         "carbs_g": p.carbs_g, "sodium_mg": p.sodium_mg,
         "kcal": p.kcal, "caffeine_mg": p.caffeine_mg, "volume_ml": p.volume_ml,
+        "servings": getattr(p, "servings", None) or 1,
     }
+
+
+def _parse_open(open_: str | None) -> tuple[str | None, float | None]:
+    """« s:58.1 » (a row), « ph:58.1 » (its « à partir d'ici » editor),
+    « add:58.1 » (« + Produit »), « list », « brands », « settings »."""
+    if not open_:
+        return None, None
+    kind, _, key = str(open_).partition(":")
+    kind = {"adjust": "settings"}.get(kind, kind)  # a card from before the stretch table
+    try:
+        return kind, round(float(key), 1) if key else None
+    except ValueError:
+        return kind, None
+
+
+def _pack_words(it: dict) -> str | None:
+    """A multi-serve product: the pouches to pack and what stays in the open one."""
+    if it["servings"] <= 1 or it["at_aid"]:
+        return None
+    n, packed, left, open_in = it["n"], it["packed"], it["open_out"], it["open_in"]
+    if not n:
+        return None
+    take = f"prends {packed} poche{'s' if packed > 1 else ''}" if packed else ""
+    if open_in:
+        take = f"{take} + la poche entamée" if take else "finis la poche entamée"
+    return take + (f", il en restera {left}" if left else "")
 
 
 async def _nutrition_card_context(
     request: Request, route: Route, db: AsyncSession, user: User, open_: str | None = None, bundle: dict | None = None,
     own_form: dict | None = None,
 ) -> dict:
-    """Everything the Ravitaillement card shows: the rule, the stomach, the
-    products, the bags, the shopping list, the legs, and the rare settings."""
+    """Everything the Ravitaillement card shows: the target, the beep, the
+    phases, the stretch table with its bags, the list and the rare settings."""
     from app.services import nutrition as N
 
     b = bundle or await _plan_bundle(route, db, user)
@@ -1915,162 +1901,201 @@ async def _nutrition_card_context(
     if not duration_s:
         return ctx
     cps, sections = b["checkpoints"], b["sections"]
-    inp, plan, shop = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, b["aid_kms"], b["start_offset_s"], duration_s)
+    is_bike = b.get("sport") == "bike"
+    inp, plan = await _nutrition_plan(db, user.id, user.weight_kg, route, sections, cps, b["aid_kms"], b["start_offset_s"], duration_s, sport=b["sport"])
     products, picks, pantry = inp["products_by_id"], inp["picks"], inp["pantry"]
-    has_refills = bool(b["aid_kms"])
-    temp = inp["mean_temp"]
+    rows, race_s = plan["stretches"], plan["race_s"] or 1
+    open_kind, open_key = _parse_open(open_)
+    beep = plan["beep"]
 
-    # chips in a FIXED order, each with its pressed state (a tapped chip stays
-    # under the finger): the quick picks (one hidden when a picked product
-    # already plays its role), then his own products, newest first
-    roles = {N.role(products[p]) for p in picks}
-    chips = [{"id": g, "label": N.GENERIC_BY_ID[g]["label"], "title": N.GENERIC_BY_ID[g]["name"], "on": g in picks}
-             for g in N.GENERIC_ORDER if g in picks or N.role(N.GENERIC_BY_ID[g]) not in roles]
-    # his products: the picked ones and the 4 newest others on the row, in the order
-    # he added them (a new one lands at the end, next to « + Marque »); the rest under « + Marque »
-    shown = set(picks) | set([pid for pid in pantry if pid not in picks][:4])
-    for pid in reversed(list(pantry)):
-        if pid in shown:
-            p = pantry[pid]
-            chips.append({"id": pid, "label": N.short_label(p), "title": p.get("name") or "", "on": pid in picks})
-    others = [{"id": pid, "label": N.short_label(p), "title": p.get("name") or "", "on": False} for pid, p in pantry.items() if pid not in shown]
-    have = {(p.get("name") or "").strip().lower() for p in pantry.values()}
-    catalog = [c for c in N.PRODUCT_CATALOG if c["name"].lower() not in have]
-    brand_groups = [(label, [c for c in catalog if N.role(c) == r]) for label, r in
+    # ── the rows, under their bag lines
+    by_start = {g["stretch_idx"][0]: g for g in plan["bags"]}
+    multi_bags = len(plan["bags"]) > 1
+    frozen_keys = {r["key"] for r in rows if r["frozen"]}
+    table = []
+    for r in rows:
+        if r["i"] in by_start and not is_bike:
+            g = by_start[r["i"]]
+            table.append({"bag": {**g, "show": multi_bags}})
+        pills, steppers = [], []
+        for it in r["items"]:
+            if it["n"] and not it["at_aid"]:
+                pills.append(it)
+            if not it["at_aid"]:
+                steppers.append({**it, "pack": _pack_words(it), "unit": "prises" if it["servings"] > 1 else ""})
+        in_row = {it["pid"] for it in r["items"]}
+        add = [{"pid": p, "name": N.short_label(products[p]), "title": products[p].get("name") or ""} for p in picks if p not in in_row]
+        aid_items = []
+        if r["aid_food"]:
+            got = {it["pid"]: it["n"] for it in r["items"] if it["at_aid"]}
+            aid_items = [{"pid": f["id"], "name": f["label"], "title": f["name"], "n": got.get(f["id"], 0), "carbs": f["carbs_g"]} for f in N.AID_FOODS]
+        aid_pills = [it for it in r["items"] if it["at_aid"] and it["n"]]
+        cues = []
+        if r["stomach"]:
+            cues.append({"icon": "stomach", "tone": "warn", "text": "Beaucoup pour ton ventre sur ce tronçon."})
+        cap = inp["carry_ml"]
+        if r["water_over"] and cap:
+            w = r["water_worst"]
+            if w is r["water_first"] or (r["water_first"] and w["from_km"] == r["water_first"]["from_km"]):
+                cues.append({"icon": "drop", "tone": "warn", "text": f"Tes flasques font {N.liters(cap)} L : prends-en une de plus ou repère un point d'eau."})
+            else:
+                cues.append({"icon": "drop", "tone": "warn", "text": f"{N._fr(N.ceil_half_l(w['need_ml']))} L de {w['from_name']} à {_until(w['to_name'])}, tes flasques font {N.liters(cap)} L : prends-en une de plus."})
+        if r["temp_c"] is not None and r["temp_c"] >= 25:
+            cues.append({"icon": "sun", "tone": "", "text": "Chaud : plus d'eau à porter, mêmes glucides."})
+            if race_s > 8 * 3600 and not any(N.role(products[p]) == "salt" for p in picks):
+                cues.append({"icon": "salt", "tone": "", "text": "Le sel ne protège pas des crampes. Prends-en si tu en as envie, surtout quand c'est long et chaud."})
+        if r["max_elev"] is not None and r["max_elev"] >= 2500:
+            cues.append({"icon": "mountain", "tone": "", "text": "En altitude tu as moins faim : garde ton rythme de prise."})
+        bal = r["balance_g"]
+        balance = None
+        if abs(bal) >= 5:
+            # out of band the closed row already prints « −45 g »: the sentence says what follows, not the number again
+            amount = "" if r["status"] != "ok" else f" de {abs(bal)} g"
+            if r["i"] < len(rows) - 1:
+                balance = f"En avance{amount} : le tronçon suivant en prend moins." if bal > 0 else f"En retard{amount} : le tronçon suivant en prend plus."
+            else:
+                balance = (f"En avance{amount} sur ta cible à l'arrivée." if bal > 0 else f"En retard{amount} sur ta cible à l'arrivée.")
+        facts = [f"{r['g_h']} g/h"]
+        if r["sodium_h"]:
+            facts.append(f"sel ≈ {r['sodium_h']} mg/h")
+        if r["caffeine_mg"]:
+            facts.append(f"caféine {r['caffeine_mg']} mg")
+        ph = plan["phases"][r["phase"]]
+        editor = None
+        if open_kind in ("ph", "phbrands", "go") and open_key is not None and abs(open_key - r["key"]) < 0.05:
+            mix = set(ph["pids"]) if ph["key"] <= r["key"] + 1e-6 else set()
+            starts_here = r["phase_start"]
+            end_key = next((p["key"] for p in plan["phases"] if p["key"] > r["key"] + 0.05), None)
+            end_row = next((x for x in rows if end_key is not None and abs(x["key"] - end_key) < 0.05), None)
+            fuel = [p for p in picks if N.is_fuel(products[p])]
+            fuel += [p for p in pantry if N.is_fuel(pantry[p]) and p not in fuel]
+            roles = {N.role(products[p]) for p in fuel}
+            fuel += [g for g in N.GENERIC_ORDER if N.is_fuel(N.GENERIC_BY_ID[g]) and g not in fuel and N.role(N.GENERIC_BY_ID[g]) not in roles]
+            chips = []
+            for p in fuel:
+                on = p in mix
+                lost = sum(1 for x in rows if x["frozen"] and x["key"] >= r["key"] - 0.05 and (end_key is None or x["key"] < end_key - 0.05)
+                           and any(it["pid"] == p and it["n"] for it in x["items"])) if on else 0
+                chips.append({"id": p, "label": N.short_label(products[p]), "title": products[p].get("name") or "", "on": on,
+                              "cat": next((it["cat"] for x in rows for it in x["items"] if it["pid"] == p), 0),
+                              "confirm": (f"{lost} tronçon{'s' if lost > 1 else ''} réglé{'s' if lost > 1 else ''} à la main {'repassent' if lost > 1 else 'repasse'} en auto. Continuer ?") if lost else None})
+            have_names = {(pp.get("name") or "").strip().lower() for pp in pantry.values()}
+            editor = {"scope": f"À partir de {'Départ' if r['i'] == 0 else r['from_name']}, jusqu'à {_until(end_row['from_name'] if end_row else 'Arrivée')}",
+                      "chips": chips, "removable": starts_here,
+                      "brands": [c for c in N.PRODUCT_CATALOG if N.is_fuel(c) and c["name"].lower() not in have_names],
+                      "brands_open": open_kind == "phbrands"}
+        table.append({"row": {
+            **r, "id": f"s-{r['key']}", "dur": _hm_s(r["d_s"]), "pills": pills, "aid_pills": aid_pills, "steppers": steppers,
+            "add": add, "aid_items": aid_items, "cues": cues, "balance": balance, "facts": " · ".join(facts),
+            "fill": min(100.0, round(r["carbs_g"] / max(r["need_g"], 1) / 1.5 * 100, 1)),
+            "water_l": N._fr(N.ceil_half_l(r["water_ml"])) if r["water_ml"] else None,
+            "open": open_key is not None and abs(open_key - r["key"]) < 0.05 and open_kind in ("s", "ph", "add", "phbrands", "go"),
+            "add_open": open_kind == "add" and open_key is not None and abs(open_key - r["key"]) < 0.05,
+            "editor": editor, "phase_names": ph["names"],
+            "drop_toggle": (not is_bike and r["i"] > 0 and not r["is_block"] and r["start_cp_index"] is not None),
+            "drop_on": r["bag_kind"] == "drop",
+            "cp_kind": (cps[r["start_cp_index"]].get("kind") or "none") if r["start_cp_index"] is not None and r["start_cp_index"] < len(cps) else "none",
+        }})
+
+    # ── header: the strip (decorative), one chip per phase
+    strip = [{"w": round(r["d_s"] / race_s * 100, 3), "cat": r["main_cat"]} for r in rows]
+    phases = [{"key": ph["key"], "names": ph["names"], "cat": ph["cat"], "from": ph["from_name"] if ph["i"] else None,
+               "start_key": rows[ph["start_idx"]]["key"] if ph["start_idx"] is not None else ph["key"]} for ph in plan["phases"]]
+
+    warnings = []
+    if plan["caffeine_over"]:
+        warnings.append({"tone": "alert", "text": f"Trop de caféine : {plan['caffeine_24h_mg']} mg en 24 h, au-dessus des {inp['cap_mg']} mg conseillés pour toi. Remets les tronçons à la main en auto."})
+    sel = [products[p] for p in picks]
+    if any(N.role(p) == "caf" for p in sel) and not any(N.is_fuel(p) for p in sel):
+        warnings.append({"tone": "warn", "text": "Ajoute un gel sans caféine : la caféine ne se prend pas toutes les heures."})
+    if plan["dropped_rows"]:
+        n = plan["dropped_rows"]
+        warnings.append({"tone": "muted", "text": f"{n} tronçon{'s' if n > 1 else ''} réglé{'s' if n > 1 else ''} à la main {'ont' if n > 1 else 'a'} bougé avec tes ravitos : recalculé{'s' if n > 1 else ''}."})
+    if (inp["custom"].get("fluid_ml_per_h") or 0) > 800 and (inp["mean_temp"] is None or inp["mean_temp"] < 20):
+        warnings.append({"tone": "muted", "text": "Boire plus que ta soif n'aide pas : c'est ça qui cause l'hyponatrémie."})
+
+    # ── the list
+    shop = []
+    for it in plan["shop"]:
+        p = products[it["pid"]]
+        shop.append({**it, "role": N.role(p), "cat": next((x["cat"] for r in rows for x in r["items"] if x["pid"] == it["pid"]), 0)})
+    generic_only = all(p < 0 for p in picks)
+    have_names = {(p.get("name") or "").strip().lower() for p in pantry.values()}
+    catalog = [c for c in N.PRODUCT_CATALOG if c["name"].lower() not in have_names]
+    brand_groups = [(label, [c for c in catalog if N.role(c) == r_]) for label, r_ in
                     (("Gels", "gel"), ("Caféinés", "caf"), ("Boissons", "drink"), ("Barres", "bar"), ("Sel", "salt"))]
+    roles = {N.role(products[p]) for p in picks}
+    quick = [{"id": g, "label": N.GENERIC_BY_ID[g]["label"], "title": N.GENERIC_BY_ID[g]["name"]}
+             for g in N.GENERIC_ORDER if g not in picks and N.role(N.GENERIC_BY_ID[g]) not in roles]
+    pantry_more = [{"id": pid, "label": N.short_label(p), "title": p.get("name") or ""} for pid, p in pantry.items() if pid not in picks]
 
-    # drop bags: one chip per full / base point (or one already flagged), the finish excluded.
-    # No ravito typed yet (points imported from a GPX are « passage »): every
-    # point can take a bag, and the water points are one tap away too.
-    bag_chips, water_chips = [], []
-    untyped = not any((cp.get("kind") or "none") == "full" for cp in cps)
-    if b.get("sport") != "bike":
+    # food ravitos not typed yet (a GPX import): « Où peux-tu manger ? »
+    food_chips = []
+    if not is_bike and not any(_is_food_point(cp) for cp in cps):
         for s in sections:
             ci = s.get("end_checkpoint_index")
             if ci is None or ci >= len(cps):
                 continue
             cp = cps[ci]
-            kind = cp.get("kind") or "none"
-            base = {"ci": ci, "km": s["end_km"], "name": cp["name"], "kmr": round(float(s["end_km"])), "kind": kind,
-                    "label": f"{cp['name']} · km {round(float(s['end_km']))}"}
-            if untyped or kind in ("full", "base") or cp.get("drop_bag"):
-                bag_chips.append({**base, "on": bool(cp.get("drop_bag"))})
-            if untyped and kind in ("none", "water"):
-                water_chips.append({**base, "on": kind == "water"})
+            food_chips.append({"ci": ci, "km": s["end_km"], "name": cp["name"], "kind": cp.get("kind") or "none",
+                               "label": f"{cp['name']} · km {round(float(s['end_km']))}"})
 
-    # one card per carry segment (bag), spare included
-    cps_by_km = {round(float(cp["distance_km"]), 1): cp for cp in cps}
-    carry = inp["carry_ml"]
-    cards, titles = [], []
-    for g in plan.get("bags") or []:
-        titles.append(_bag_title(g, cps_by_km, sep=" "))
-        water = None
-        ds = g.get("dry_stretch")
-        if has_refills and ds:
-            need = ds["need_ml"]
-            if carry:
-                if g.get("short"):
-                    water = {"alert": True, "text": f"Eau : il te faudrait {N._fr(N.ceil_half_l(need))} L entre {ds['from']} et {ds['to']} ({_hm_s(ds['time_s'])}), tu portes {N.liters(carry)} L. "
-                                                    "Prends une flasque de plus, ou change « Eau que tu portes » dans Ajuster."}
-                else:
-                    water = {"alert": False, "text": f"Eau : ce que tu portes suffit ({N.liters(carry)} L)"}
-            elif need >= 1000:
-                water = {"alert": False, "text": f"Eau : prévois {N._fr(N.ceil_half_l(need))} L"}
-            else:
-                water = {"alert": False, "text": "Eau : 1 L suffit"}
-        cards.append({"title": _bag_title(g, cps_by_km), "is_start": g.get("is_start"),
-                      "chips": g.get("labels") or [], "water": water})
-
-    # tronçon par tronçon: the same units as the passage rows, plus the water to drink
-    legs = []
-    for leg in plan.get("schedule") or []:
-        parts = N.leg_labels(leg, products)
-        if leg.get("water_ml", 0) >= 200:
-            parts.append(f"{_l1(leg['water_ml'])} L d'eau")
-        legs.append({"clock": f"{(leg['clock_s'] % 86400) // 3600:02d}:{(leg['clock_s'] % 3600) // 60:02d}",
-                     "to": leg["to_name"], "time": _hm_s(leg["leg_time_s"]), "text": " · ".join(parts)})
-
-    # Ajuster: sweat, water carried, quantities, caffeine, products
-    t = inp["targets"]
-    rates, manual, custom = inp["rates"], inp["manual"], inp["custom"]
-    qty_rows = []
-    for pid in picks:
-        p = products[pid]
-        if N.role(p) == "caf":
-            qty_rows.append({"id": pid, "label": N.short_label(p), "caf": True})
-        else:
-            r = rates.get(pid, 0.0)
-            qty_rows.append({"id": pid, "label": N.short_label(p), "caf": False, "rate": N._fr(r) if r else "0", "manual": pid in manual})
-    caf_line = None
-    if inp["has_caf"]:
-        cf = inp["caffeine"]
-        every = N._hm_words(float(cf.get("every_h") or 2.5) * 60)
-        if custom.get("caffeine"):
-            caf_line = f"Ton réglage : {int(round(float(cf.get('dose_mg') or 0)))} mg toutes les {every} dès {N._fr(float(cf.get('from_h') or 0))} h."
-        else:
-            cp_ = next(products[p] for p in picks if N.role(products[p]) == "caf")
-            d2 = next((d for d in (plan.get("caffeine") or {}).get("doses") or [] if (d.get("units") or 1) > 1), None)
-            dawn = f", {N.unit_label(d2['units'], cp_)} vers {N._clock(d2['clock_s'])} (l'aube)" if d2 else ""
-            caf_line = f"{N.rule_noun(cp_)} toutes les {every} de course dès 3 h{dawn}, {inp['cap_mg']} mg au plus pour toi."
-    sweat = inp["sweat"]
+    # « Eau et réglages »
+    sweat, carry = inp["sweat"], inp["carry_ml"]
     carry_opts = [("auto", "Auto", carry is None)] + [(str(c), f"{N.liters(c)} L", carry == c) for c in N.CARRY_CHOICES]
     if carry and carry not in N.CARRY_CHOICES:
         carry_opts.append((str(carry), f"{N.liters(carry)} L", True))
-    # « Ajuster » names only what he changed: the defaults go without saying
+    reserve_eff = inp["reserve_set"] if inp["reserve_set"] is not None else (60 if race_s >= 6 * 3600 else 30)
+    reserve_opts = [(m, {0: "Aucune", 30: "30 min", 60: "1 h"}[m], reserve_eff == m) for m in N.RESERVE_CHOICES]
     summary = [
         {"peu": "peu de transpiration", "beaucoup": "beaucoup de transpiration"}.get(sweat or "", "" if sweat == "normal" else "transpiration : ton réglage"),
         f"{N.liters(carry)} L portés" if carry else "",
-        "quantités à la main" if manual else "",
+        f"réserve {dict((m, l) for m, l, _ in reserve_opts)[reserve_eff].lower()}" if inp["reserve_set"] is not None else "",
     ]
+
     def _num(x) -> str:
-        """An input's value: 25 not 25.0."""
         return f"{float(x):g}" if x not in (None, "") else ""
     my_products = []
     for pid, p in pantry.items():
         bits = [f"{N._fr(float(p.get('carbs_g') or 0))} g", f"{N._fr(float(p.get('sodium_mg') or 0))} mg sodium"]
         if p.get("caffeine_mg"):
             bits.append(f"{N._fr(float(p['caffeine_mg']))} mg caféine")
+        if N.servings_of(p) > 1:
+            bits.append(f"{N.servings_of(p)} prises")
         my_products.append({**p, "label": N.short_label(p), "detail": " · ".join(bits), "role": N.role(p),
                             "carbs_in": _num(p.get("carbs_g")), "sodium_in": _num(p.get("sodium_mg")),
-                            "caffeine_in": _num(p.get("caffeine_mg")) if p.get("caffeine_mg") else ""})
-
-    # all the caffeine the plan has you take (an old plan may take a caffeinated gel per hour)
-    caf_total, cap = N.plan_caffeine_mg(plan), inp["cap_mg"]
-    caf_over = None
-    if caf_total > cap + 1:
-        caf_over = {"total_mg": caf_total, "max_mg": cap,
-                    "fix": "Touche « Revenir au calcul auto »." if inp["hand_set"] else "Retire une prise."}
-    warnings = N.rule_warnings(plan, picks, products, has_refills,
-                               water_hint="Touche les points d'eau dans « Tes sacs » pour savoir combien d'eau porter." if water_chips else None)
-    if caf_over:
-        warnings.insert(0, {"tone": "alert", "text": f"Trop de caféine : {caf_total} mg en tout, au-dessus des {cap} mg conseillés pour toi. {caf_over['fix']}"})
-
-    hours = duration_s / 3600.0
+                            "caffeine_in": _num(p.get("caffeine_mg")) if p.get("caffeine_mg") else "",
+                            "servings_in": str(N.servings_of(p))})
+    temp = inp["mean_temp"]
+    t_fluid = plan["fluid_ml_per_h"]
+    undo = inp.get("undo")
     return {
         **ctx,
-        "rules": N.rule_lines(plan, picks, products, has_refills),
-        "warnings": warnings,
-        "hand_set": inp["hand_set"],
-        "level": inp["level"], "custom_carbs": t["carbs_g_per_h"],
-        "chips": chips, "pantry_more": others,
-        "brand_groups": [(lbl, items) for lbl, items in brand_groups if items],
-        "source": inp["source"],
-        "bag_chips": bag_chips, "water_chips": water_chips, "no_points": not any(s.get("end_checkpoint_index") is not None for s in sections),
-        "is_bike": b.get("sport") == "bike",
-        "cards": cards,
-        "shop": shop, "caf_over": caf_over,
-        "own_form": own_form,
-        "copy_text": N.copy_text(route.name, shop, plan.get("bags") or [], titles),
-        "legs": legs,
-        "sweat": sweat, "sweat_info": f"{N.liters(t['fluid_ml_per_h'])} L d'eau et {t['sodium_mg_per_h']} mg de sodium par heure, "
-                                      + (f"d'après {round(temp)} °C prévus." if temp is not None else "pour une météo douce."),
-        "custom_sweat": ("fluid_ml_per_h" in custom or "sodium_mg_per_h" in custom),
-        "carry_opts": carry_opts, "carry": carry,
-        "qty_rows": qty_rows, "caf_line": caf_line,
+        "level": inp["level"], "custom_carbs": round(inp["level_carbs"]), "rate": round(plan["rate_g_h"]),
+        "high_custom": inp["level"] is None and inp["level_carbs"] > 90,
+        "beep": beep, "strip": strip, "phases": phases, "warnings": warnings,
+        "table": table, "multi_bags": multi_bags, "is_bike": is_bike, "has_frozen": bool(frozen_keys),
+        "is_blocks": bool(rows) and rows[0]["is_block"], "no_points": not any(s.get("end_checkpoint_index") is not None for s in sections),
+        "food_chips": food_chips,
+        "shop": shop, "copy_text": N.copy_text(route.name, plan["shop"], plan["bags"], rows),
+        "source": inp["source"], "is_virtual": inp["is_virtual"], "generic_only": generic_only,
+        "brand_groups": [(lbl, items) for lbl, items in brand_groups if items], "quick": quick, "pantry_more": pantry_more,
+        "own_form": own_form, "hand_set": inp["hand_set"],
+        "undo": {"cleared": int(undo.get("cleared") or 0)} if undo else None,
+        "sweat": sweat, "custom_sweat": "fluid_ml_per_h" in inp["custom"],
+        "sweat_info": f"Environ {N.liters(t_fluid)} L à porter par heure, " + (f"d'après {round(temp)} °C prévus." if temp is not None else "pour une météo douce."),
+        "carry_opts": carry_opts, "carry": carry, "reserve_opts": reserve_opts,
         "summary": " · ".join(x for x in summary if x), "my_products": my_products,
-        "open": open_ if open_ in ("adjust", "brands") else None,
-        "hours": hours,
+        "open": open_kind if open_kind in ("list", "brands", "settings") else None,
+        "phase_open": open_key if open_kind in ("ph", "phbrands", "go") else None,
+        "autoscroll": open_kind == "go",
     }
+
+
+def _is_food_point(cp: dict) -> bool:
+    from app.services.checkpoints import is_resupply
+
+    return is_resupply(cp)
 
 
 def _visible(route: Route | None) -> Route | None:
@@ -2335,6 +2360,16 @@ async def export_pace_strategy(
         from app.services.pacing_guide import leg_instructions
 
         leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user), b["sections"])]
+    # « Dès ici : PF 90 » on the ravito where the product changes, so the watch shows it
+    notes: dict = {}
+    duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
+    if duration_s and b["sections"]:
+        try:
+            _ninp, nplan = await _nutrition_plan(db, user.id, user.weight_kg, route, b["sections"], b["checkpoints"], b["aid_kms"],
+                                                 b["start_offset_s"], duration_s, sport=b["sport"])
+            notes = nplan["switch_notes"]
+        except Exception:
+            logger.exception("nutrition notes for the export failed")
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
@@ -2342,10 +2377,10 @@ async def export_pace_strategy(
         return Response(content=body, media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.csv"'})
     if fmt == "tcx":
-        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
+        body = build_pace_tcx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes, notes_by_km=notes)
         return Response(content=body, media_type="application/vnd.garmin.tcx+xml",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.tcx"'})
-    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes)
+    body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes, notes_by_km=notes)
     return Response(content=body, media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
 
@@ -2471,15 +2506,17 @@ async def clear_reference(
 async def nutrition_card(
     route_id: int,
     request: Request,
+    open: str | None = Query(None, max_length=40),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """The Ravitaillement view. Reading it never writes: a race without a plan
-    shows the virtual default, saved on the first change."""
+    shows the virtual default and an older plan its per-stretch reading, saved
+    on the first change. ``open`` opens a row or its « à partir d'ici » editor."""
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
-    ctx = await _nutrition_card_context(request, route, db, user)
+    ctx = await _nutrition_card_context(request, route, db, user, open_=open)
     # htmx GETs can be heuristically cached by the browser; force a fresh card.
     return templates.TemplateResponse(
         request, "partials/nutrition_card.html", context=ctx,
@@ -2519,6 +2556,8 @@ def _product_fields(form) -> dict | None:
         "name": name[:100], "kind": kind if kind in _PRODUCT_KINDS else "gel",
         "carbs_g": _f("carbs_g") or 0, "sodium_mg": _f("sodium_mg") or 0, "caffeine_mg": _f("caffeine_mg") or None,
     }
+    if "servings" in form:  # prises in one unit (a PF 90 pouch: 3)
+        out["servings"] = max(1, min(12, int(_f("servings") or 1)))
     for key in ("kcal", "volume_ml"):  # older clients may still send them
         if key in form:
             out[key] = _f(key)
@@ -2526,20 +2565,28 @@ def _product_fields(form) -> dict | None:
 
 
 async def _write_nutrition(route: Route, db: AsyncSession, user: User, op: str, value=None) -> dict:
-    """Apply one tap to the route's plan and store it (v2 shape + echo). The
-    first write from a virtual default or an old plan starts from what was shown."""
+    """Apply one tap to the route's plan and store it (v3 shape + echo). The
+    first write from a virtual default or an older plan starts from what was
+    shown, its stretch keys snapped on today's ravitos."""
     from app.services import nutrition as N
+    from app.services.nutrition_plan import build_plan, food_stretches
 
     b = await _plan_bundle(route, db, user)
     duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
-    moving_s = _moving_s(b["sections"])
-    inp = await _nutrition_inputs(db, user.id, route, duration_s, user.weight_kg, moving_s, b["start_offset_s"])
+    inp, plan = await _nutrition_plan(db, user.id, user.weight_kg, route, b["sections"], b["checkpoints"], b["aid_kms"],
+                                      b["start_offset_s"], duration_s, sport=b["sport"])
     if op == "keep" and not inp["is_virtual"]:
         return b  # « keep » only freezes a plan still taken from the default
-    st = N.apply_op(inp["state"], op, value, inp["products_by_id"], inp["rates"])
+    state = {**inp["state"], **plan["state_snapped"], "undo": inp.get("undo")}
+    st = N.apply_op(state, op, value, inp["products_by_id"], plan)
     nj = N.state_json(st)
-    route.nutrition_json = N.with_echo(nj, N.resolve_inputs(nj, inp["pantry"], duration_s, inp["mean_temp"], user.weight_kg,
-                                                          moving_s=moving_s, start_offset_s=b["start_offset_s"]))
+    # the echo carries the plan this state gives (race averages for an older reader)
+    inp2 = N.resolve_inputs(nj, inp["pantry"], duration_s, inp["mean_temp"], user.weight_kg,
+                            moving_s=_moving_s(b["sections"]), start_offset_s=b["start_offset_s"])
+    inp2["mean_temp"] = inp["mean_temp"]
+    plan2 = build_plan(food_stretches(b["sections"], b["checkpoints"], b["start_offset_s"], b["sport"]), inp2,
+                       sections=b["sections"], start_offset_s=b["start_offset_s"], refill_kms=b["aid_kms"], sport=b["sport"])
+    route.nutrition_json = N.with_echo(nj, plan2, inp2)
     await db.flush()
     return b
 
@@ -2557,11 +2604,19 @@ async def _add_from_catalog(key: str, db: AsyncSession, user: User) -> int | Non
             return p.id
     prod = NutritionProduct(
         user_id=user.id, name=c["name"], kind=c["kind"], carbs_g=c["carbs_g"], sodium_mg=c["sodium_mg"],
-        kcal=c.get("kcal"), caffeine_mg=c.get("caffeine_mg"), volume_ml=c.get("volume_ml"),
+        kcal=c.get("kcal"), caffeine_mg=c.get("caffeine_mg"), volume_ml=c.get("volume_ml"), servings=int(c.get("servings") or 1),
     )
     db.add(prod)
     await db.flush()
     return prod.id
+
+
+def _form_km(form) -> float | None:
+    try:
+        v = form.get("km")
+        return round(float(v), 1) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 @router.post("/partials/simulator/nutrition/{route_id}/products", response_class=HTMLResponse)
@@ -2574,14 +2629,16 @@ async def pantry_in_plan(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """« Un produit à toi » (added and picked, in place of the quick pick of its
-    role), edited or deleted (and unpicked) from the Ravitaillement view."""
+    """« Un produit à toi » (added to the list in place of the quick pick of its
+    role, on the whole race or, with ``km``, from that ravito on), edited
+    (prises included) or deleted (and taken off every stretch)."""
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     form = await request.form()
     b = None
     own_form = None
+    km = _form_km(form)
     if product_id is None:
         f = _product_fields(form)
         if f:
@@ -2590,18 +2647,20 @@ async def pantry_in_plan(
             prod = NutritionProduct(user_id=user.id, **f)
             db.add(prod)
             await db.flush()
-            b = await _write_nutrition(route, db, user, "pick", prod.id)
+            b = await _write_nutrition(route, db, user, "pick", (prod.id, km))
         else:  # no name: the form stays open with what was typed
             kind = (form.get("kind") or "gel").strip()
             own_form = {"error": "Donne-lui un nom.", "kind": kind if kind in _PRODUCT_KINDS else "gel",
-                        **{k: str(form.get(k) or "")[:12] for k in ("carbs_g", "sodium_mg", "caffeine_mg")}}
+                        **{k: str(form.get(k) or "")[:12] for k in ("carbs_g", "sodium_mg", "caffeine_mg", "servings")}}
     else:
         pr = await db.execute(select(NutritionProduct).where(NutritionProduct.id == product_id, NutritionProduct.user_id == user.id))
         product = pr.scalar_one_or_none()
         if product and request.url.path.endswith("/delete"):
             await db.delete(product)
             await db.flush()
-            if product_id in ((route.nutrition_json or {}).get("picks") or [p.get("product_id") for p in (route.nutrition_json or {}).get("items") or []]):
+            from app.services.nutrition import read_state
+
+            if product_id in read_state(route.nutrition_json)["picks"]:
                 b = await _write_nutrition(route, db, user, "unpick", product_id)
         elif product:
             f = _product_fields(form)
@@ -2611,7 +2670,7 @@ async def pantry_in_plan(
                 if product.kind == "drink" and not product.volume_ml:
                     product.volume_ml = 500
                 await db.flush()
-    open_ = form.get("open") or ("adjust" if product_id is not None else ("brands" if own_form else None))
+    open_ = form.get("open") or ("settings" if product_id is not None else ("brands" if own_form else None))
     ctx = await _nutrition_card_context(request, route, db, user, open_=open_, bundle=b, own_form=own_form)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
@@ -2624,14 +2683,17 @@ async def add_catalog_product_to_plan(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """« + Marque » › a brand chip: in the pantry once, picked, in place of the
-    quick pick of the same role; the panel closes."""
+    """« + Marque » › a brand chip: in the pantry once and on the list, in place
+    of the quick pick of the same role. From the list it fuels the whole race;
+    from an « à partir d'ici » editor (``km``) that phase only, which stays open."""
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
+    form = await request.form()
+    km = _form_km(form)
     pid = await _add_from_catalog(key, db, user)
-    b = await _write_nutrition(route, db, user, "pick", pid) if pid else None
-    ctx = await _nutrition_card_context(request, route, db, user, bundle=b)
+    b = await _write_nutrition(route, db, user, "pick", (pid, km)) if pid else None
+    ctx = await _nutrition_card_context(request, route, db, user, open_=f"ph:{km}" if km is not None else None, bundle=b)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
@@ -2642,6 +2704,34 @@ def _to_float(v, default=0.0):
         return default
 
 
+_PLAN_OPS = ("level", "toggle", "pick", "sweat", "carry", "reserve", "n", "add", "auto", "aid", "have", "mix", "unswitch",
+             "undo", "reset", "keep")
+
+
+def _plan_op_value(op: str, form):
+    """The value of one tap, from its form fields (ValueError when malformed)."""
+    v = form.get("v")
+    km = _form_km(form)
+    d = max(-50, min(50, int(form.get("d") or 0)))
+    if op in ("level", "sweat", "carry", "reserve"):
+        return v
+    if op in ("toggle", "pick", "unpick"):
+        return int(v)
+    if op == "n":
+        return (km, int(form.get("pid")), d)
+    if op == "add":
+        return (km, int(form.get("pid")))
+    if op in ("auto", "unswitch"):
+        return km
+    if op == "aid":
+        return (km, int(form.get("aid")), d)
+    if op == "have":
+        return (int(form.get("pid")), d)
+    if op == "mix":
+        return (km, int(form.get("pid")))
+    return None
+
+
 @router.post("/partials/simulator/nutrition/{route_id}/plan", response_class=HTMLResponse)
 async def save_nutrition_plan(
     route_id: int,
@@ -2649,32 +2739,35 @@ async def save_nutrition_plan(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """One tap of the Ravitaillement view (``op`` = level | toggle | sweat |
-    carry | step | reset | keep), or the old form (targets, use_* / qty_*,
-    caffeine_*, flask) from an older client, stored as a plan with every
-    quantity by hand. ``keep`` (sent after a drop-bag chip) stores the plan
-    still taken from another race as this race's own, so a later change
-    elsewhere never rewrites it."""
+    """One tap of the Ravitaillement view, one ``op`` per POST:
+
+    level | sweat | carry | reserve (v) · toggle | pick (v = pid) · n (km, pid,
+    d: one row, frozen whole on its first tap) · add (km, pid: this row only) ·
+    auto (km: back to auto) · aid (km, aid, d: ravito food) · have (pid, d) ·
+    mix (km, pid: « à partir d'ici ») · unswitch (km) · undo · reset · keep.
+    ``step`` (a stale card) is accepted and changes nothing. Without ``op``: the
+    old form of an older client. ``keep`` (sent after a drop-bag tap) stores
+    the plan still taken from another race as this race's own."""
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     form = await request.form()
     op = (form.get("op") or "").strip()
-    v = form.get("v")
     b = None
     if op:
-        value = v
         try:
-            if op == "toggle":
-                if str(v or "").startswith("cat:"):
-                    value, op = await _add_from_catalog(str(v)[4:], db, user), "pick"
-                else:
-                    value = int(v)
-            elif op == "step":
-                value = (int(form.get("pid")), max(-2.0, min(2.0, float(form.get("step") or 0))))
+            if op == "toggle" and str(form.get("v") or "").startswith("cat:"):
+                value, op = await _add_from_catalog(str(form.get("v"))[4:], db, user), "pick"
+            else:
+                value = _plan_op_value(op, form)
         except (TypeError, ValueError):
             op = ""
-        if op in ("level", "toggle", "pick", "sweat", "carry", "step", "reset", "keep") and (value is not None or op in ("reset", "keep")):
+            value = None
+        needs_km = op in ("n", "add", "auto", "aid", "mix", "unswitch")
+        ok = op in _PLAN_OPS and (value is not None or op in ("reset", "keep", "undo"))
+        if ok and needs_km and (value is None or (isinstance(value, tuple) and value[0] is None)):
+            ok = False
+        if ok:
             b = await _write_nutrition(route, db, user, op, value)
     else:
         await _legacy_nutrition_post(route, db, user, form)
@@ -2683,18 +2776,15 @@ async def save_nutrition_plan(
 
 
 async def _legacy_nutrition_post(route: Route, db: AsyncSession, user: User, form) -> None:
-    """The form of the previous Nutrition view: typed targets and per-product
-    quantities, kept working; stored as a v2 plan (every quantity by hand,
-    the targets and caffeine settings as « ton réglage »)."""
+    """The form of the previous Nutrition view (typed targets, use_* / qty_*,
+    caffeine_*, flask), kept working: the ticked products become the list and
+    their quantities the shares of one phase; the targets and caffeine
+    settings « ton réglage »."""
     from app.services import nutrition as N
+    from app.services.nutrition_plan import build_plan, food_stretches
 
-    targets = {
-        "carbs_g_per_h": round(_to_float(form.get("carbs_g_per_h"))),
-        "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h"))),
-        "sodium_mg_per_h": round(_to_float(form.get("sodium_mg_per_h"))),
-    }
-    prev = route.nutrition_json or {}
-    prev_rates = {it.get("product_id"): float(it.get("per_hour") or 0) for it in (prev.get("items") or [])}
+    targets = {"targets": {"carbs_g_per_h": round(_to_float(form.get("carbs_g_per_h"))),
+                           "fluid_ml_per_h": round(_to_float(form.get("fluid_ml_per_h")))}}
     used: list[int] = []
     qty: dict[int, float] = {}
     for key, val in form.multi_items() if hasattr(form, "multi_items") else form.items():
@@ -2707,26 +2797,13 @@ async def _legacy_nutrition_post(route: Route, db: AsyncSession, user: User, for
             continue
     pantry = await _pantry(db, user.id)
     by_id = N.with_generics(pantry)
-    selected = [by_id[i] for i in dict.fromkeys(used) if i in by_id]
-    suggested = N.auto_rates(targets["carbs_g_per_h"], targets["sodium_mg_per_h"], selected) if selected else {}
-    plain_carb = any((p.get("carbs_g") or 0) > 0 and not (p.get("caffeine_mg") or 0) for p in selected)
-    st = {"picks": [], "manual": {}, "level": None, "sweat": None, "custom": {}, "refills": list(prev.get("refills") or [])}
-    for p in selected:
-        pid = p["id"]
-        r = qty.get(pid, 0.0)
-        if form.get("auto") or (r <= 0 and prev_rates.get(pid, 0) <= 0):
-            r = suggested.get(pid, 0.0)
-        elif r <= 0:
-            r = prev_rates.get(pid, 0.0)
-        if r <= 0 and (p.get("caffeine_mg") or 0) > 0 and plain_carb:
-            r = 1.0
-        if r > 0:
-            st["picks"].append(pid)
-            st["manual"][pid] = round(r, 2)
-    N._legacy_targets_into(st, {"targets": targets})
+    picks = [i for i in dict.fromkeys(used) if i in by_id and i not in N.AID_BY_ID]
+    st = {"picks": picks, "phases": [{"km": 0.0, "mix": {p: (qty.get(p) or 1.0) for p in picks if N.is_fuel(by_id[p])}}],
+          "rows": {}, "aid": {}, "have": {}, "reserve_min": None, "level": None, "sweat": None, "custom": {},
+          "refills": list((route.nutrition_json or {}).get("refills") or [])}
+    N._legacy_targets_into(st, targets)
     st["carry_ml"] = N._carry(form.get("flask_capacity_ml")) or 1000
-    new_caf = plain_carb and any((p.get("caffeine_mg") or 0) > 0 and p["id"] not in prev_rates for p in selected)
-    if bool(form.get("caffeine_enabled")) or new_caf:  # switched off = no setting of his (auto when a caffeinated gel is picked)
+    if form.get("caffeine_enabled"):
         st["custom"]["caffeine"] = {
             "enabled": True,
             "from_h": max(0.0, _to_float(form.get("caffeine_from_h"), 3.0)),
@@ -2738,8 +2815,11 @@ async def _legacy_nutrition_post(route: Route, db: AsyncSession, user: User, for
     duration_s = b["plan_total_s"] or b["predicted_total_s"] or 0
     mean_temp = (route.weather_json or {}).get("temperature_c") if route.weather_json else None
     nj = N.state_json(st)
-    route.nutrition_json = N.with_echo(nj, N.resolve_inputs(nj, pantry, duration_s, mean_temp, user.weight_kg,
-                                                          moving_s=_moving_s(b["sections"]), start_offset_s=b["start_offset_s"]))
+    inp = N.resolve_inputs(nj, pantry, duration_s, mean_temp, user.weight_kg, moving_s=_moving_s(b["sections"]), start_offset_s=b["start_offset_s"])
+    inp["mean_temp"] = mean_temp
+    plan = build_plan(food_stretches(b["sections"], b["checkpoints"], b["start_offset_s"], b["sport"]), inp,
+                      sections=b["sections"], start_offset_s=b["start_offset_s"], refill_kms=b["aid_kms"], sport=b["sport"])
+    route.nutrition_json = N.with_echo(nj, plan, inp)
     await db.flush()
 
 

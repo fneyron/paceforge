@@ -192,7 +192,7 @@ def test_one_beep_fits_every_phase_or_the_switch_row_says_so():
     assert not b["common"] and b["interval"] == 40 and b["per_phase"] == {0: 40, 1: 30}
     switch = next(r for r in plan["stretches"] if r["phase_start"])
     assert switch["beep_note"] == 30 and not any(r["beep_note"] for r in plan["stretches"] if r is not switch)
-    for ph, iv in b["per_phase"].items():
+    for iv in b["per_phase"].values():
         assert iv in NP.BEEPS
 
 
