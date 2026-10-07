@@ -263,7 +263,8 @@ PANEL_H, PANEL_GAP, FLAG = 92, 18, 22
 
 
 def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), longs=(), tags=None, sel=None,
-               title: str = "", slot_labels: list[tuple[str, str]] | None = None, unit_word: str = "nuits") -> dict:
+               title: str = "", slot_labels: list[tuple[str, str]] | None = None, unit_word: str = "nuits",
+               labels: bool = True) -> dict:
     """Stacked panels sharing one x axis, one scrub and one readout (« Cœur la
     nuit »: VFC above, FC de nuit below, respiration as a slim third panel).
     Each panel: {name, unit, unit_long, values: [per day], band: [(lo, hi) |
@@ -275,7 +276,9 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
     an out-of-band night is a hollow dot and the word « au-dessus » /
     « en dessous », never colour alone. A night with a context tag (`tags`)
     is drawn as a small diamond (◇). `slot_labels`: [(readout, spoken)] per
-    slot when the slots are not nights (the weekly « 1 an » view)."""
+    slot when the slots are not nights (the weekly « 1 an » view).
+    `labels=False` draws the band without judging any night, as if every
+    panel's `judge` were False (the race window: no flag, evidence rows 24–25)."""
     n = len(days)
     xs = slot_x(n)
     out_panels, y_series = [], []
@@ -288,7 +291,7 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
         y = scale(lo, hi, top, top + h)
         yv = [y(v) for v in p["values"]]
         dots = []
-        judge = p.get("judge") or [True] * n
+        judge = [False] * n if not labels else (p.get("judge") or [True] * n)
         for i, v in enumerate(p["values"]):
             if v is None:
                 continue
@@ -315,7 +318,7 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
             if v is None:
                 continue
             word = ""
-            judged = (p.get("judge") or [True] * n)[i]
+            judged = labels and (p.get("judge") or [True] * n)[i]
             if judged and b and v > b[1]:
                 word = " au-dessus"
             elif judged and b and v < b[0]:
