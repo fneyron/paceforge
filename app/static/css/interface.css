@@ -895,3 +895,118 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .dark .pf-seg > [aria-pressed="true"], .dark .pf-seg > [aria-current] { background: rgb(var(--pf-gray-200)); }
 .pf-nights-sec, .pf-health-fitness { margin-top: 44px; }
 .pf-courses-cols > div > .pf-sechead:first-child { margin-top: 28px; }
+
+/* ── viz: the chart kit (app/services/viz.py, partials/_viz.html, js/pf-viz.js) ─────────────────────
+   --pf-* tokens only. Marks are --pf-viz-mark: ≥ 3:1 on the page AND ≥ 3:1 against the selected ink,
+   in both themes (light 4.8:1 / 3.7:1, dark 4.5:1 / 3.9:1: tests/test_viz.py checks them). Status is
+   never colour alone (glyph + word + position). Motion: ≤ 300 ms, only under no-preference. */
+:root { --pf-viz-mark: var(--pf-gray-400); }
+.dark { --pf-viz-mark: 122 122 130; }
+.pf-tiles { margin-top: 14px; border-top: 1px solid rgb(var(--pf-line)); }
+.pf-tile { display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; column-gap: 12px; min-height: 72px; padding: 10px 0; border-bottom: 1px solid rgb(var(--pf-line)); color: inherit; text-decoration: none; }
+.pf-tile.is-driver { box-shadow: inset 2px 0 0 rgb(var(--pf-ink)); padding-left: 10px; }
+.pf-tile.is-driver .pf-tile-label { font-weight: 700; color: rgb(var(--pf-ink)); }
+a.pf-tile:active { background: rgb(var(--pf-soft)); }
+a.pf-tile:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-tile-label { display: block; font-size: 13px; line-height: 1.3; color: rgb(var(--pf-gray-500)); }
+.pf-tile-main { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px; margin-top: 2px; }
+.pf-tile-value { font-family: var(--pf-font-display); font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; color: rgb(var(--pf-ink)); }
+.pf-tile-value small { font-size: 14px; font-weight: 600; letter-spacing: 0; color: rgb(var(--pf-gray-500)); }
+.pf-tile-none { color: rgb(var(--pf-gray-500)); }
+.pf-tile-word { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.pf-tile-gap { font-size: 12px; color: rgb(var(--pf-gray-500)); text-align: right; }
+.pf-spark { display: block; width: 112px; height: 40px; overflow: visible; }
+
+.pf-viz { margin: 12px 0 0; }
+.pf-viz-read { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; column-gap: 4px; min-height: 64px; }
+.pf-viz-read-txt { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.pf-viz-read-txt [data-r]:first-child { flex-basis: 100%; font-size: 13px; color: rgb(var(--pf-gray-500)); }
+.pf-viz-tall .pf-viz-read { min-height: 100px; }   /* the nights' readout: 3 lines at 358 px, reserved */
+.pf-viz-read-txt b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-viz-read-txt [data-r]:nth-child(3) { font-size: 13px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-step { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; font-size: 22px; line-height: 1; color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
+.pf-viz-step:disabled { color: rgb(var(--pf-gray-400)); background: transparent; }
+.pf-viz-step:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-viz-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-viz-link { color: rgb(var(--pf-accent)); }
+.pf-viz-plot { position: relative; max-width: 560px; border-radius: 8px; }
+.pf-viz-plot:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 4px; }
+.pf-viz-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.pf-viz-on .pf-viz-svg { cursor: crosshair; }
+.pf-viz-svg text, .pf-spark text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
+.pf-viz-svg .pf-viz-strong { fill: rgb(var(--pf-ink)); font-weight: 600; }
+.pf-viz-band { fill: rgb(var(--pf-accent-soft)); }
+.pf-viz-edge { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; shape-rendering: crispEdges; fill: none; }
+.pf-viz-grid { stroke: rgb(var(--pf-line)); stroke-width: 1; shape-rendering: crispEdges; }
+.pf-viz-ref { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 4 3; shape-rendering: crispEdges; }
+.pf-viz-med { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; stroke-dasharray: 1 3; }
+.pf-viz-dot { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-dot.is-out, .pf-viz-dot.is-hot { fill: rgb(var(--pf-bg)); stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+.pf-viz-dot.is-sel { fill: rgb(var(--pf-ink)); }
+.pf-viz-line { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pf-viz-line.is-soft { stroke: rgb(var(--pf-viz-mark)); }
+.pf-viz-now { fill: rgb(var(--pf-ink)); stroke: rgb(var(--pf-bg)); stroke-width: 2; }
+.pf-viz-now.is-warn { fill: rgb(var(--pf-warn)); }
+.pf-viz-now.is-danger { fill: rgb(var(--pf-danger)); }
+.pf-viz-now.is-ok { fill: rgb(var(--pf-ok)); }
+.pf-viz-now.is-out { fill: rgb(var(--pf-bg)); stroke: currentColor; stroke-width: 2; }
+.pf-viz-now.is-out.is-warn { stroke: rgb(var(--pf-warn)); }
+.pf-viz-now.is-out.is-danger { stroke: rgb(var(--pf-danger)); }
+.pf-viz-ev { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 2 3; }
+.pf-viz-flag { fill: rgb(var(--pf-ink)); }
+.pf-viz-long { fill: rgb(var(--pf-gray-600)); }
+.pf-viz-cross { pointer-events: none; }
+.pf-viz-cross line { stroke: rgb(var(--pf-ink)); stroke-width: 1; }
+.pf-viz-cross circle { fill: rgb(var(--pf-ink)); stroke: rgb(var(--pf-bg)); stroke-width: 2; }
+.pf-viz-cross circle.pf-viz-ring { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+/* nights: 24-h bars (night solid, nap lighter and hatched, < 6 h outlined) and bed → wake windows */
+.pf-viz-night, .pf-viz-win, .pf-viz-bar { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-night.is-short { fill: rgb(var(--pf-bg)); stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+.pf-viz-nap { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1; }
+.pf-viz-nap-bg { fill: rgb(var(--pf-bg)); }
+.pf-viz-hatch { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; }
+.pf-viz-nap-edge { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-plan { fill: none; stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.pf-viz-sec { fill: rgb(var(--pf-gray-500)); }
+.pf-viz-miss { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 0 4; }
+.pf-viz-col.is-sel .pf-viz-night:not(.is-short), .pf-viz-col.is-sel .pf-viz-win, .pf-viz-col.is-sel .pf-viz-bar { fill: rgb(var(--pf-ink)); }
+.pf-viz-col.is-sel .pf-viz-nap, .pf-viz-col.is-sel .pf-viz-night.is-short, .pf-viz-col.is-sel .pf-viz-plan { stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+/* hypnogram: lane position carries the stage, one neutral hue, no minutes, no score */
+.pf-hyp[hidden], .pf-viz [hidden] { display: none; }
+.pf-hyp:not([hidden]) { display: block; width: 100%; max-width: 560px; height: auto; margin-top: 14px; }
+.pf-hyp text { font-size: 11px; fill: rgb(var(--pf-gray-500)); }
+.pf-hyp-seg { fill: rgb(var(--pf-accent)); }
+.pf-hyp-step { stroke: rgb(var(--pf-accent)); stroke-width: 1; opacity: .5; }
+.pf-hyp-lane { stroke: rgb(var(--pf-line)); stroke-width: 1; shape-rendering: crispEdges; }
+.pf-viz-cap { font-size: 12px; color: rgb(var(--pf-gray-500)); margin-top: 6px; }
+/* range toggle: 44 px on touch; the pressed one carries a 2 px ink ring (≥ 3:1 in both themes) */
+.pf-viz-ranges { margin-top: 14px; }
+.pf-viz-ranges > button { min-height: 40px; }
+.pf-viz-ranges > [aria-pressed="true"] { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
+.pf-viz-ranges > button:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+@media (pointer: coarse) { .pf-viz-ranges > button { min-height: 44px; } }
+/* motion: only when the reader allows it, ≤ 300 ms, never looping */
+@media (prefers-reduced-motion: no-preference) {
+    .pf-viz-cross { transition: transform .14s ease-out; }
+    .pf-viz-on:not(.pf-viz-in) .pf-viz-line[pathLength] { stroke-dasharray: 1; stroke-dashoffset: 1; }
+    .pf-viz-in .pf-viz-line[pathLength] { stroke-dasharray: 1; animation: pf-viz-draw .3s ease-out both; }
+    .pf-viz-in :is(.pf-viz-night, .pf-viz-bar) { animation: pf-viz-rise .3s ease-out both; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pf-viz-in :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { animation: pf-viz-fade .3s ease-out both; }
+}
+@keyframes pf-viz-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes pf-viz-rise { from { transform: scaleY(.3); opacity: .3; } to { transform: none; opacity: 1; } }
+@keyframes pf-viz-fade { from { opacity: 0; } to { opacity: 1; } }
+/* forced colours (Windows high contrast): marks in CanvasText, the selection in Highlight */
+@media (forced-colors: active) {
+    .pf-viz-line, .pf-viz-edge, .pf-viz-cross line, .pf-viz-ref, .pf-viz-ev, .pf-viz-nap, .pf-viz-hatch, .pf-viz-plan,
+    .pf-viz-miss, .pf-viz-night.is-short { stroke: CanvasText; }
+    .pf-viz-dot, .pf-viz-night, .pf-viz-win, .pf-viz-bar, .pf-viz-nap-edge, .pf-viz-flag, .pf-viz-long, .pf-hyp-seg,
+    .pf-viz-cross circle, .pf-viz-now { fill: CanvasText; }
+    .pf-viz-band { fill: Canvas; }
+    .pf-viz-dot.is-out, .pf-viz-dot.is-hot, .pf-viz-night.is-short, .pf-viz-nap-bg { fill: Canvas; }
+    .pf-viz-dot.is-sel, .pf-viz-col.is-sel .pf-viz-night, .pf-viz-col.is-sel .pf-viz-win, .pf-viz-col.is-sel .pf-viz-bar { fill: Highlight; }
+    .pf-viz-col.is-sel .pf-viz-nap { stroke: Highlight; }
+    .pf-viz-svg text { fill: CanvasText; }
+    .pf-viz-ranges > [aria-pressed="true"] { outline: 2px solid Highlight; box-shadow: none; }
+    .pf-viz-step { border: 1px solid ButtonText; }
+}

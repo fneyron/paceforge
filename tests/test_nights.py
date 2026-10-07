@@ -4,7 +4,8 @@ synthetic nights: the 24-h total, « rendormi », context tags and excluded
 nights, one band per watch, 7-night means, the illness alert, « Reprise »."""
 from datetime import date, datetime, timedelta, timezone
 
-from app.services import coros, nights as nt
+from app.services import coros
+from app.services import nights as nt
 from app.services.sante_training import Session
 from tests import owner_coros as oc
 

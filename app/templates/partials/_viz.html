@@ -1,0 +1,154 @@
+{#- PaceForge chart kit: Jinja macros drawing what app/services/viz.py computed.
+    Every scrubbable figure has: the readout pinned above the plot (printed by the server, so the
+    chart is complete without JS), 44×44 ‹ › step buttons, the SVG (aria-hidden, full-height hit
+    area), a visually hidden native range input (keyboard, VoiceOver/TalkBack), a polite live region
+    and the JSON that app/static/js/pf-viz.js reads. No colour here: interface.css styles the classes
+    on --pf-* tokens. Glyphs: ⚑ race, ◆ long outing, ◇ tagged night. -#}
+
+{% macro figure(c, title, key, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante", cls="") %}
+<figure class="pf-viz {{ cls }}" data-viz data-viz-key="{{ key }}"{% if group %} data-viz-group="{{ group }}"{% endif %}>
+    <figcaption class="sr-only">{{ c.summary or title }}</figcaption>
+    <div class="pf-viz-read">
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="{{ prev }}"{% if not c.n or c.sel == 0 %} disabled{% endif %}><span aria-hidden="true">‹</span></button>
+        <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>{{ c.read[0] }}</span><b data-r>{{ c.read[1] }}</b><span data-r>{{ c.read[2] }}</span></div>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="{{ next }}"{% if not c.n or c.sel == c.n - 1 %} disabled{% endif %}><span aria-hidden="true">›</span></button>
+    </div>
+    <a class="pf-viz-link" data-r-href href="#" hidden></a>
+    <div class="pf-viz-plot">
+        <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
+        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ c.n - 1 }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
+    </div>
+    <p class="sr-only" aria-live="polite" data-live></p>
+    <script type="application/json" class="pf-viz-data">{{ c.data|safe }}</script>
+</figure>
+{% endmacro %}
+
+{% macro _events(c, top, bottom) %}
+{% for r in c.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="{{ top }}" y2="{{ bottom }}" class="pf-viz-ev"/><path d="M{{ r.x }} {{ top - 1 }}v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text x="{{ r.x + 10 }}" y="{{ top - 6 }}" class="pf-viz-strong">{{ r.name|truncate(18, True, '…') }}</text>{% endfor %}
+{% for l in c.longs %}<path d="M{{ l.x }} {{ bottom + 3 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
+{% endmacro %}
+
+{% macro _xlabels(c) %}{% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 3 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}{% endmacro %}
+
+{# K1 tile: label · window / one number + status (glyph + word) | 14-day sparkline with the band #}
+{% macro viz_tile(t) %}
+<a class="pf-tile{% if t.driver %} is-driver{% endif %}" href="{{ t.href }}"{% if t.aria %} aria-label="{{ t.aria }}"{% endif %}>
+    <span>
+        <span class="pf-tile-label">{{ t.label }}</span>
+        <span class="pf-tile-main">
+            {% if t.value %}<span class="pf-tile-value">{{ t.value }}{% if t.unit %}<small>&#8239;{{ t.unit }}</small>{% endif %}</span>
+            {% if t.word %}<span class="pf-tile-word pf-word-{{ t.tone }}">{% if t.glyph %}{{ t.glyph }} {% endif %}{{ t.word }}</span>{% endif %}
+            {% else %}<span class="pf-tile-value pf-tile-none">—</span>{% endif %}
+        </span>
+    </span>
+    {% if t.path %}
+    <svg class="pf-spark" viewBox="0 0 112 40" aria-hidden="true" focusable="false">
+        {% if t.band %}<rect x="0" y="{{ t.band.y }}" width="112" height="{{ t.band.h }}" class="pf-viz-band"/>
+        <line x1="0" x2="112" y1="{{ t.band.y }}" y2="{{ t.band.y }}" class="pf-viz-edge"/>
+        <line x1="0" x2="112" y1="{{ t.band.y + t.band.h }}" y2="{{ t.band.y + t.band.h }}" class="pf-viz-edge"/>{% endif %}
+        <path d="{{ t.path }}" class="pf-viz-line"/>
+        <circle cx="{{ t.end.x }}" cy="{{ t.end.y }}" r="4" class="pf-viz-now is-{{ t.tone }}{% if t.glyph in ('▲', '▼') %} is-out{% endif %}"/>
+    </svg>
+    {% elif t.gap %}<span class="pf-tile-gap">{{ t.gap }}</span>{% endif %}
+</a>
+{% endmacro %}
+
+{# K2 band chart: stacked panels (VFC above, FC below, respiration while the alert is on) #}
+{% macro viz_band(c, title, group=None) %}
+{% call figure(c, title, c.key, group) %}
+{% for p in c.panels %}
+<g class="pf-viz-panel">
+    {% for t in p.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+    {% for poly in p.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
+    <path d="{{ p.edge_lo }}" class="pf-viz-edge"/><path d="{{ p.edge_hi }}" class="pf-viz-edge"/>
+    <path d="{{ p.mean }}" class="pf-viz-line" pathLength="1"/>
+    {% for d in p.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r + (1 if d.out else 0) }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+    <text x="0" y="{{ p.label_y }}" class="pf-viz-strong">{{ p.name }}</text>
+</g>
+{% endfor %}
+{{ _events(c, c.flag_y, c.panels[-1].bottom) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ c.flag_y }}" y2="{{ c.panels[-1].bottom }}"/>{% for p in c.panels %}<circle cx="0" cy="0" r="4"/>{% endfor %}</g>
+{% endcall %}
+{% endmacro %}
+
+{# K3 nights: 24-h bars (night solid, nap hatched, < 6 h outlined) above the bed → wake windows #}
+{% macro viz_nights(c, title, key="nuits", group=None) %}
+{% call figure(c, title, key, group, "nuit", cls="pf-viz-tall") %}
+<defs><pattern id="pf-hatch-{{ key }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/><text x="{{ c.W }}" y="{{ c.ref.y + 4 }}" text-anchor="end" class="pf-viz-strong">{{ c.ref.label }}</text>
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.amount[1] }}" y2="{{ c.amount[1] }}" class="pf-viz-grid"/>
+{% for h in c.hours %}<line x1="0" x2="{{ c.X1 }}" y1="{{ h.y }}" y2="{{ h.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ h.y + 4 }}" text-anchor="end">{{ h.label }}</text>{% endfor %}
+{% for k, y in c.med.items() %}<line x1="0" x2="{{ c.X1 }}" y1="{{ y }}" y2="{{ y }}" class="pf-viz-med"/>{% endfor %}
+{% for col in c.cols %}
+<g class="pf-viz-col" data-i="{{ col.i }}">
+    {% if col.miss %}<line x1="{{ col.cx }}" x2="{{ col.cx }}" y1="{{ c.amount[1] - 18 }}" y2="{{ c.amount[1] }}" class="pf-viz-miss"/>{% endif %}
+    {% if col.night %}<rect x="{{ col.x }}" y="{{ col.night.y }}" width="{{ col.w }}" height="{{ col.night.h }}" rx="3" class="pf-viz-night{% if col.short %} is-short{% endif %}"/>{% endif %}
+    {% if col.nap %}<rect x="{{ col.x }}" y="{{ col.nap.y }}" width="{{ col.w }}" height="{{ col.nap.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-{{ key }})"/>{% endif %}
+    {% if col.win %}<rect x="{{ col.x }}" y="{{ col.win.y }}" width="{{ col.w }}" height="{{ col.win.h }}" rx="3" class="pf-viz-win"/>{% endif %}
+    {% for s in col.nap_segs %}<rect x="{{ col.x }}" y="{{ s.y }}" width="{{ col.w }}" height="{{ s.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-{{ key }})"/>{% endfor %}
+    {% for e in col.nap_edges %}<rect x="{{ col.x }}" y="{{ e.y }}" width="{{ col.w }}" height="3" class="pf-viz-nap-edge"/>{% endfor %}
+</g>
+{% endfor %}
+{{ _events(c, 14, c.timing[1]) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ c.amount[0] }}" y2="{{ c.timing[1] }}"/></g>
+{% endcall %}
+{% endmacro %}
+
+{# K4 hypnogram of one night (real intervals only); shown by the nights figure's selection #}
+{% macro viz_hyp(h, i, show) %}
+<svg class="pf-hyp" viewBox="0 0 {{ h.W }} {{ h.H }}" data-night="{{ i }}" role="img" aria-label="{{ h.aria }}"{% if not show %} hidden{% endif %}>
+    {% for name, y in h.lanes %}<line x1="{{ h.X0 }}" x2="{{ h.X1 }}" y1="{{ y + h.LH / 2 }}" y2="{{ y + h.LH / 2 }}" class="pf-hyp-lane"/><text x="0" y="{{ y + 10 }}">{{ name }}</text>{% endfor %}
+    {% for s in h.steps %}<line x1="{{ s.x }}" x2="{{ s.x }}" y1="{{ s.y0 }}" y2="{{ s.y1 }}" class="pf-hyp-step"/>{% endfor %}
+    {% for s in h.segs %}<rect x="{{ s.x }}" y="{{ s.y }}" width="{{ s.w }}" height="{{ h.LH }}" rx="2" class="pf-hyp-seg"/>{% endfor %}
+</svg>
+{% endmacro %}
+
+{# K7 bars: weeks (hours, D+ as a thin mark), taper (planned outlined vs done, target band) #}
+{% macro viz_bars(c, title, key, group=None, unit_word="semaine", prev="Semaine précédente", next="Semaine suivante") %}
+{% call figure(c, title, key, group, unit_word, prev, next) %}
+{% if c.target %}<rect x="0" y="{{ c.target.y }}" width="{{ c.X1 }}" height="{{ c.target.h }}" class="pf-viz-band"/>
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.target.y }}" y2="{{ c.target.y }}" class="pf-viz-edge"/><line x1="0" x2="{{ c.X1 }}" y1="{{ c.target.y + c.target.h }}" y2="{{ c.target.y + c.target.h }}" class="pf-viz-edge"/>{% endif %}
+{% if c.reference is not none %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.reference }}" y2="{{ c.reference }}" class="pf-viz-ref"/>{% endif %}
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+{% for b in c.bars %}
+<g class="pf-viz-col" data-i="{{ b.i }}">
+    {% if b.plan %}<rect x="{{ b.x }}" y="{{ b.plan.y }}" width="{{ b.w }}" height="{{ b.plan.h }}" rx="3" class="pf-viz-plan"/>{% endif %}
+    {% if b.h is defined %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}
+</g>
+{% endfor %}
+{% if c.secondary %}{% for s in c.secondary %}<rect x="{{ s.x }}" y="{{ c.base + 4 }}" width="{{ s.w }}" height="{{ s.h }}" class="pf-viz-sec"/>{% endfor %}{% endif %}
+{{ _events(c, 12, c.base) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ c.base }}"/></g>
+{% endcall %}
+{% endmacro %}
+
+{# two directly labelled lines (fond et fatigue): readout = the date only #}
+{% macro viz_lines(c, title, key, group=None) %}
+{% call figure(c, title, key, group, "journée", "Jour précédent", "Jour suivant") %}
+{% for s in c.series %}<path d="{{ s.path }}" class="pf-viz-line {{ s.cls }}" pathLength="1"/>{% if s.end %}<text x="{{ [s.end.x + 4, c.W - 40]|min }}" y="{{ s.end.y - 6 }}" class="pf-viz-strong">{{ s.name }}</text>{% endif %}{% endfor %}
+{{ _events(c, 12, 120) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/>{% for s in c.series %}<circle cx="0" cy="0" r="3.5"/>{% endfor %}</g>
+{% endcall %}
+{% endmacro %}
+
+{# K8 dots: one per run (hot runs hollow), the rolling band #}
+{% macro viz_dots(c, title, key, group=None) %}
+{% call figure(c, title, key, group, "sortie", "Sortie précédente", "Sortie suivante") %}
+{% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+{% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot{% if d.hot %} is-hot{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/><circle cx="0" cy="0" r="5" class="pf-viz-ring"/></g>
+{% endcall %}
+{% endmacro %}
+
+{# K6 range toggle: one per view, above everything it scopes; ?r= keeps the choice #}
+{% macro viz_ranges(options, current, label="Période") %}
+<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" aria-label="{{ label }}">
+    {% for value, text in options %}<button type="button" data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
+</div>
+{% endmacro %}

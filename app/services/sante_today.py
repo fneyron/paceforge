@@ -20,6 +20,7 @@ import statistics
 from datetime import date, timedelta
 
 from app.services.health import fmt_minutes
+from app.services.viz import hm  # the house duration format (older modules import it from here)
 
 WEEKDAYS_LONG = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 WEEKDAYS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
@@ -32,12 +33,6 @@ def num(v: float, digits: int = 0) -> str:
 
 def signed(v: float, digits: int = 0) -> str:
     return ("+" if v > 0 else "") + num(v, digits) if round(v, digits) != 0 else "0"
-
-
-def hm(minutes: float) -> str:
-    """250 → '4h10', 45 → '45 min'."""
-    m = int(round(minutes))
-    return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
 
 
 def dplus_txt(m: float) -> str:
