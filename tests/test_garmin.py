@@ -421,6 +421,27 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     assert not any(m in ("load", "vo2max") for m, _ in by)
 
 
+async def test_a_first_sync_cut_short_is_redone_in_full(db_session: AsyncSession, test_user: User,
+                                                         fake, no_commit):
+    """Garmin stops answering (3 timeouts in a row) halfway through the history: what came is
+    kept, the athlete is told, and the next sync asks for the whole history again."""
+    t = fake.today
+    fake.timeouts = {"/hrv-service/"}
+    conn = await _link(db_session, test_user)
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert len(fake.paths("/hrv-service/")) == 3 and not fake.paths("/activitylist-service/")
+    assert conn.last_sync_at and conn.last_error == garmin.PARTIAL
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    assert {(m.metric, m.date): m.value for m in rows}[("sleep", t)] == 420  # the nights stay
+
+    fake.timeouts, fake.calls = set(), []
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"] and len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60
+    assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(t - timedelta(days=179))
+    assert conn.last_error is None and outcome["result"]["activities"]["inserted"] == 2
+
+
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):
     conn = await _link(db_session, test_user, sync_claimed_at=datetime.now(timezone.utc))
     assert await garmin.run_sync(db_session, conn) is None and not fake.calls

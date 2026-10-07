@@ -54,6 +54,7 @@ class Session:
     temp: float | None
     name: str = ""
     load: float = 0.0
+    elapsed: float = 0.0  # minutes, stops included (a race's real time)
 
 
 def _utc(dt: datetime) -> datetime:
@@ -67,6 +68,7 @@ def monday(dt: datetime) -> datetime:
 
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
+_CACHE_SIZE = 256
 RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT")
 
 
@@ -80,7 +82,6 @@ def _float(v) -> float | None:
 def _int(v) -> int | None:
     f = _float(v)
     return int(f) if f is not None else None
-_CACHE_SIZE = 256
 
 
 def _offset(strava: float | None, local: str | None, gmt: str | None) -> float | None:
@@ -102,11 +103,17 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     JSON fields cost a read of every activity's raw_data)."""
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
+    # the sport's family weighs differently, so a re-import from one family to another is seen
+    family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
+                  (Activity.sport_type.in_(BIKE), 1_000_000), else_=1_000_000_000)
     key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
-               func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.distance),
-               func.sum(Activity.total_elevation_gain), func.sum(func.coalesce(Activity.average_heartrate, 0)),
-               func.count(Activity.suffer_score), func.sum(func.length(Activity.sport_type))).where(*where))).one())
+               func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
+               func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
+               func.sum(func.coalesce(Activity.average_heartrate, 0)),
+               func.sum(func.coalesce(Activity.max_heartrate, 0)), func.count(Activity.suffer_score),
+               func.sum(family), func.sum(func.length(Activity.sport_type)),
+               func.sum(func.length(func.coalesce(Activity.name, "")))).where(*where))).one())
     hit = _CACHE.get(user_id)
     if hit and hit[0] == key:
         return [replace(s) for s in hit[1]]
@@ -114,7 +121,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     has_splits = and_(Activity.splits_metric.is_not(None), cast(Activity.splits_metric, String).not_in(("null", "[]")))
     cols = (Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
             Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
-            Activity.max_heartrate, Activity.suffer_score, Activity.name)
+            Activity.max_heartrate, Activity.suffer_score, Activity.name, Activity.elapsed_time)
     if db.get_bind().dialect.name == "postgresql":
         # one read of each raw_data (every ->> would detoast it again)
         obj = case((func.jsonb_typeof(Activity.raw_data) == "object", Activity.raw_data),
@@ -124,7 +131,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         q = select(*cols, *(x.c[k] for k in RAW_KEYS), has_splits).select_from(Activity).join(x, true())
     else:
         q = select(*cols, *(Activity.raw_data[k].as_string() for k in RAW_KEYS), has_splits)
-    rows = [(*r[:11], _int(r[11]), _float(r[12]), _float(r[13]), r[14], r[15], r[16])
+    rows = [(*r[:11], _int(r[12]), _float(r[13]), _float(r[14]), r[15], r[16], r[17], r[11])
             for r in (await db.execute(q.where(*where).order_by(Activity.start_date))).all()]
 
     @dataclass
@@ -149,7 +156,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             id=r[0], start=start, day=(start + timedelta(seconds=offset)).date(), sport=r[2],
             minutes=r[3] / 60, dplus=r[5] or 0, km=(r[4] or 0) / 1000, speed=speed or None,
             hr=r[7] or None, hr_peak=r[8] or None, suffer=r[9] or None, workout_type=r[11], temp=r[12],
-            name=r[10] or ""))
+            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)

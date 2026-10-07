@@ -173,7 +173,6 @@ def expected_s(route) -> tuple[int | None, bool]:
     return int(round(hours * 3600)), True
 
 
-
 def race_duration(route, sessions=()) -> tuple[int | None, bool]:
     """(seconds, known) of a race already run: its result, else its session
     (that day, marked as a race or half the distance at least), else its
@@ -183,13 +182,18 @@ def race_duration(route, sessions=()) -> tuple[int | None, bool]:
         return int(res["total_actual_s"]), True
     rd = _day(getattr(route, "race_date", None))
     km = getattr(route, "total_distance_km", None) or 0
-    # the race's own session: that day, covering most of the distance (not a warm-up)
-    same = [x.minutes for x in sessions if rd and x.day == rd and (x.workout_type == 1 or x.km >= 0.5 * km)]
+    # the race's own session: that day, its sport, covering most of the distance (not a warm-up);
+    # timed stops included, as a race is
+    family = {"foot": FOOT, "bike": BIKE}.get(sport(route))
+    same = [max(x.elapsed, x.minutes) for x in sessions
+            if rd and x.day == rd and (family is None or x.sport in family)
+            and (x.workout_type == 1 or x.km >= 0.5 * km)]
     if same:
         return int(max(same) * 60), True
     if getattr(route, "target_time_s", None):
         return int(route.target_time_s), True
     return expected_s(route)[0], False
+
 
 def taper_days(exp_s: int | None) -> int:
     return TAPER_SHORT if exp_s is not None and exp_s < LONG_S else TAPER_LONG

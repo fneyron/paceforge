@@ -12,7 +12,7 @@ from app.models.health import HealthMetric
 from app.models.user import User
 from app.services.health import compute_form
 from app.services.sante import _nights, _strip, clock_m, load_key, m_clock
-from app.services.sante_today import decide, gauge, order_rows
+from app.services.sante_today import decide, gauge, order_rows, rhr_row
 from app.services.sante_training import Session
 from tests import test_coros
 from tests.test_coros import _link
@@ -180,7 +180,10 @@ T = date(2026, 10, 6)
 def _form(status="unknown", reasons=(), **kw):
     base = {"status": status, "reasons": list(reasons), "nights_base": 20, "nights_recent": 5,
             "rhr_baseline": 44.0, "rhr_sd": 1.5, "hrv_baseline": 80.0, "hrv_z": None, "rhr_delta_bpm": None}
-    return {**base, **kw}
+    out = {**base, **kw}
+    if out["rhr_delta_bpm"] is not None and "rhr_7d" not in kw:  # the 7 nights the delta was read on
+        out["rhr_7d"] = out["rhr_baseline"] + out["rhr_delta_bpm"]
+    return out
 
 
 def _ctx(**kw):
@@ -487,11 +490,39 @@ def test_a_race_day_beats_recovery_and_estimates_are_never_printed():
     assert v["text"].startswith("Après Trail X (10h42)") and v["hrv_note"].startswith("Basse après ta course")
 
 
+def test_after_a_race_or_on_its_eve_low_hrv_and_high_rhr_get_their_note():
+    pr = {"day": T - timedelta(days=1), "days": 1, "minutes": 300, "known": True, "name": "Trail X", "limit": 10,
+          "long": True, "race": True}
+    both = _form("fatigue", hrv_z=-1.2, rhr_delta_bpm=4)
+    v = decide(_ctx(post_race=pr, form=both))
+    assert v["rule"] == "race" and v["hrv_note"].startswith("Basse après ta course")
+    assert v["rhr_note"].startswith("Haute après ta course")
+    assert "Une VFC basse" not in v["text"]  # said once, on the row
+    row = rhr_row(both, None, note=v["rhr_note"])
+    assert row["tone"] == "muted" and row["sub"] == v["rhr_note"]
+    # a training outing is not called a race
+    outing = {**pr, "race": False, "name": "ta sortie de dimanche"}
+    v = decide(_ctx(post_race=outing, form=both))
+    assert v["hrv_note"] == "Basse après ta sortie de dimanche : normal, ça revient en quelques jours."
+    # on the eve of a race too
+    v = decide(_ctx(next_race={"days": 1, "name": "UTMB"}, form=both))
+    assert v["hrv_note"].startswith("Avant une course") and v["rhr_note"].startswith("Avant une course")
+    # its time is not printed twice when the Jambes row already shows it
+    legs = {"key": "loaded", "minutes": 300.2, "big": None}
+    v = decide(_ctx(post_race=pr, legs=legs))
+    assert v["text"].startswith("Après Trail X, cœur")
+
+
 def test_resting_hr_counts_from_three_bpm_exactly():
-    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=2.6), tr=TR))
-    assert v["rule"] == "mild" and v["drivers"] == ["hrv"]  # 2.6 is not +3: no red
+    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=2.4), tr=TR))
+    assert v["rule"] == "mild" and v["drivers"] == ["hrv"]  # 46 against 44 is not +3: no red
     v = decide(_ctx(form=_form("fatigue", hrv_z=-0.7, rhr_delta_bpm=3.0), tr=TR))
     assert v["rule"] == "red"
+    # the numbers the athlete reads decide: 47,3 against 44,4 prints 47 and 44, +3
+    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.7, rhr_baseline=44.4, rhr_7d=47.3, rhr_delta_bpm=2.9), tr=TR))
+    assert v["rule"] == "red"
+    row = rhr_row(_form(rhr_baseline=44.4, rhr_7d=47.3, rhr_delta_bpm=2.9), None)
+    assert (row["value"], row["ref"], row["word"]) == ("47 bpm", "d'habitude 44", "un peu haute")
 
 
 def test_the_legs_numbers_are_printed_once():

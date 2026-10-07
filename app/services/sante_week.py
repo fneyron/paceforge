@@ -48,6 +48,11 @@ def _jump(weeks: list[dict], i: int) -> float | None:
     return weeks[i]["minutes"] / mean if mean > 0 else None
 
 
+def _race_week(w: dict, race_days: set[date]) -> bool:
+    """A week with a race in it: its hours are no training jump."""
+    return any(w["monday"] + timedelta(days=k) in race_days for k in range(7))
+
+
 def spike(sessions: list[Session], today: date, days: int = 10,
           race_days: set[date] = frozenset()) -> tuple[Session, float] | None:
     """The longest outing of the last `days` days when it is > 10 % longer
@@ -83,7 +88,7 @@ def header(weeks: list[dict], sessions: list[Session], tr: dict | None, today: d
         return (f"Ta sortie {of_day(s.day, today)} ({hm(s.minutes)}) : {round((r - 1) * 100)} % plus longue que ta plus "
                 "longue du mois. C'est ce type de saut qui pèse, plus que le volume de la semaine.")
     last = len(weeks) - 2  # the last complete week
-    j = _jump(weeks, last)
+    j = None if _race_week(weeks[last], race_days) else _jump(weeks, last)
     if j and j >= JUMP:
         w = weeks[last]
         mean = statistics.fmean(x["minutes"] for x in weeks[last - 3:last])
@@ -91,7 +96,7 @@ def header(weeks: list[dict], sessions: list[Session], tr: dict | None, today: d
         aim = f"{lo} à {hi} h" if hi > lo else f"{lo} h"
         return (f"Semaine du {w['monday'].strftime('%d/%m')} : {signed(round((j - 1) * 100))} % d'un coup "
                 f"({hm(w['minutes'])} contre {hm(mean)} en moyenne). Vise {aim} cette semaine.")
-    rising = [_jump(weeks, i) for i in (last - 2, last - 1, last)]
+    rising = [None if _race_week(weeks[i], race_days) else _jump(weeks, i) for i in (last - 2, last - 1, last)]
     if all(r and r > 1.05 for r in rising) and tr and tr["pct"] > 10:
         return ("3e semaine de hausse : une semaine plus légère (−30 %) t'aidera à l'absorber. C'est un repère "
                 "d'entraîneur, pas une règle.")
@@ -120,7 +125,7 @@ def bars(weeks: list[dict], sessions: list[Session], nights: dict[date, float], 
     for i, w in enumerate(weeks):
         cx = X0 + step * (i + 0.5)
         j = _jump(weeks, i)
-        jump = bool(j and j >= JUMP and not w["current"])
+        jump = bool(j and j >= JUMP and not w["current"] and not _race_week(w, race_days))
         long_jump = False
         if w["longest"] and w["longest_day"] and w["longest_day"] not in race_days:  # a race is no training jump
             before = [s.minutes for s in sessions

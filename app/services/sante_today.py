@@ -152,11 +152,22 @@ def hrv_row(f: dict, chart: dict | None, dip_note: str | None) -> dict:
             "dev": abs(z) * 2, "chart": chart, "sub": dip_note}
 
 
-def rhr_row(f: dict, chart: dict | None, sub: str | None = None) -> dict:
-    """The word from the same delta as the decision (+3 / +5 bpm over the 7 nights)."""
-    base, v, delta = f["rhr_baseline"], f["rhr_7d"], f["rhr_delta_bpm"]
+def rhr_up_by(f: dict) -> int | None:
+    """The 7 nights' resting HR over the usual, in whole bpm: the two printed numbers' difference,
+    so the word and the decision read what the athlete reads."""
+    if f.get("rhr_7d") is None or f.get("rhr_baseline") is None:
+        return None
+    return round(f["rhr_7d"]) - round(f["rhr_baseline"])
+
+
+def rhr_row(f: dict, chart: dict | None, sub: str | None = None, note: str | None = None) -> dict:
+    """The word from the same delta as the decision (+3 / +5 bpm over the 7 nights); `note`
+    explains a high one that does not count (after a race, just before one)."""
+    base, v, delta = f["rhr_baseline"], f["rhr_7d"], rhr_up_by(f)
     word, tone = (("haute", "warn") if delta >= 5 else ("un peu haute", "warn") if delta >= 3
                   else ("normale", "muted"))
+    if note and delta >= 3:
+        tone, sub = "muted", sub or note
     lo, hi = base - 3, base + 3
     return {"key": "rhr", "label": "FC au repos", "window": "7 nuits", "value": f"{num(v)} bpm",
             "ref": f"d'habitude {num(base)}", "word": word, "tone": tone,
@@ -250,26 +261,34 @@ def decide(c: dict) -> dict:
     def out(tone, headline, text=None, resume=None, drivers=(), note=None, rule=None, word=None):
         word = word or {"ok": "feu vert", "easy": "facile", "rest": "repos", "unknown": "?"}[tone]
         return {"tone": tone, "word": word, "headline": headline, "text": text, "resume": resume,
-                "drivers": list(drivers), "note": note, "rule": rule, "hrv_note": None}
+                "drivers": list(drivers), "note": note, "rule": rule, "hrv_note": None, "rhr_note": None}
 
-    hz, rd = f.get("hrv_z"), f.get("rhr_delta_bpm")
+    hz, rd = f.get("hrv_z"), rhr_up_by(f)
     hrv_low, hrv_vlow = hz is not None and hz < -0.5, hz is not None and hz < -1
     rhr_up, rhr_vup = rd is not None and rd >= 3, rd is not None and rd >= 5
     race_week = bool(nr and nr["days"] <= 7)
     after_long = c["hard48"]
-    # a low HRV alone is expected after a race or a long session, and before a race: it does not count
-    hrv_note = None
-    if hrv_low and not rhr_up:
+    # a low HRV is expected after a race or a long session, and before a race: it does not count
+    # (after a race or on its eve, a high resting HR neither: those rungs decide on their own)
+    race_soon = bool(nr and nr["days"] <= 2)
+    after = "ta course" if pr and pr.get("race") else pr["name"] if pr else None
+    hrv_note = rhr_note = None
+    if hrv_low:
         if pr:
-            hrv_note = "Basse après ta course : normal, ça revient en quelques jours."
-        elif after_long:
-            hrv_note = f"Basse après ta sortie {of_day(after_long.day, today)} : normal, ça revient en 24–48 h."
-        elif race_week:
+            hrv_note = f"Basse après {after} : normal, ça revient en quelques jours."
+        elif race_soon or (race_week and not rhr_up):
             hrv_note = "Avant une course, nerfs et affûtage font souvent baisser la VFC : rien à changer."
+        elif after_long and not rhr_up:
+            hrv_note = f"Basse après ta sortie {of_day(after_long.day, today)} : normal, ça revient en 24–48 h."
+    if rhr_up:
+        if pr:
+            rhr_note = f"Haute après {after} : normal, elle redescend en quelques jours."
+        elif race_soon:
+            rhr_note = "Avant une course, le stress fait souvent monter la FC au repos : rien à changer."
     hrv_flag = hrv_low and hrv_note is None
 
     def done(v):
-        v["hrv_note"] = hrv_note
+        v["hrv_note"], v["rhr_note"] = hrv_note, rhr_note
         return v
 
     if c["ill"]:
@@ -287,14 +306,16 @@ def decide(c: dict) -> dict:
                         "peut se perdre.", rule="race"))
     if pr:  # recovering is not a warning: orange, never red
         free = (pr["day"] + timedelta(days=pr["limit"] + 1)).strftime("%d/%m")
-        what = f"{pr['name']} ({hm(pr['minutes'])})" if pr.get("known") else pr["name"]
+        # its time, when known and not already the Jambes row's number
+        timed = pr.get("known") and not (legs and round(legs["minutes"]) == round(pr["minutes"]))
+        what = f"{pr['name']} ({hm(pr['minutes'])})" if timed else pr["name"]
         if not pr["long"]:
             return done(out("easy", "Footing facile seulement", f"Après {what}, 2 à 3 jours faciles suffisent.",
                             f"Reprends l'intensité le {free}.", rule="race", word="récup"))
         if pr["days"] <= 3:
             return done(out("easy", "Récupère",
                             f"Après {what}, cœur et muscles mettent 1 à 2 semaines à revenir. Marche, vélo tranquille "
-                            "ou footing très court. Une VFC basse ces jours-ci est normale.",
+                            "ou footing très court." + ("" if hrv_note else " Une VFC basse ces jours-ci est normale."),
                             f"Pas d'intensité avant le {free}.", rule="race", word="récup"))
         return done(out("easy", "Footing facile seulement",
                         f"Après {what}, ton corps récupère encore, même si tu te sens bien.",

@@ -295,3 +295,12 @@ def test_partial_renders_each_state(make, expect):
     assert "blessure" not in html and "None" not in html
     assert 'preserveAspectRatio="none"' not in html
     assert "<section" not in html.split("<section", 1)[0]  # no wrapper: blocks only
+
+
+def test_a_race_lasts_its_elapsed_time_on_its_own_sport():
+    """Aid-station stops count (elapsed time, not moving time); a ride that day is not the trail."""
+    r = race(-2, km=30, dplus=1500, target=11700)
+    ride = S(2, minutes=200, sport="Ride", km=90)
+    run = S(2, minutes=175, km=30, i=1, elapsed=194)
+    assert sc.race_duration(r, [ride, run]) == (194 * 60, True)
+    assert sc.race_duration(r, [ride]) == (11700, True)  # no foot session: the objective

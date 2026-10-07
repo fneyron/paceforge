@@ -223,7 +223,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         two = [rhr.get(d) for d in (today - timedelta(days=1), today)]
         sub = (f"{_num(two[0])} et {_num(two[1])} bpm ces deux dernières nuits" if verdict["rule"] == "ill"
                and None not in two else None)  # what the illness rule read
-        signals.append(td.rhr_row(form, signal_chart(rhr, today, (base - 3, base + 3), base, min_span=12), sub))
+        # the band on whole bpm, as the row prints them and its word reads them
+        signals.append(td.rhr_row(form, signal_chart(rhr, today, (round(base) - 3, round(base) + 3), base,
+                                                     min_span=12), sub, verdict["rhr_note"]))
     for r in (td.sleep_row(nights, series.get("sleep_score", {}), today), td.stress_row(series.get("stress", {}), today)):
         if r:
             signals.append(r)

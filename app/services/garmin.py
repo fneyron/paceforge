@@ -72,6 +72,8 @@ HRV_CHUNK_DAYS = 28  # hrv-service range: 28 days at most
 ACTIVITY_PAGE = 100
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
+# read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
+PARTIAL = "Garmin a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 REFRESH_MARGIN = timedelta(minutes=15)  # DI access tokens last about a day
 CALL_DELAY_S = 0.3
 MAX_CALLS = 160  # a 60-day backfill takes ~135
@@ -948,7 +950,7 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("steps", "stress", "load")))
     )).scalar()
-    first = conn.last_sync_at is None
+    first = conn.last_sync_at is None or conn.last_error == PARTIAL
     days = BACKFILL_DAYS if first or not have else RECENT_DAYS
     activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
@@ -972,8 +974,11 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     result["updated"] += daily["updated"] + acts["updated"] + acts["linked"]
     result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
     result["activities"] = acts
-    logger.info("Garmin sync user %d (%d days, %d calls, %d failed): %s, sessions %s",
-                conn.user_id, days, call.calls, call.failed, result["by_metric"], acts)
+    # Garmin stopped answering halfway through the history: keep it, but ask for it all again next time
+    result["backfill_partial"] = call.stopped and (days == BACKFILL_DAYS or activity_days == ACTIVITY_BACKFILL_DAYS)
+    logger.info("Garmin sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
+                conn.user_id, days, call.calls, call.failed, ", stopped" if call.stopped else "",
+                result["by_metric"], acts)
     return result
 
 
@@ -1001,7 +1006,8 @@ async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
     try:
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
-        conn.last_error = None
+        # a history cut short is not done: said so, and the next sync asks for all of it again
+        conn.last_error = PARTIAL if result.get("backfill_partial") else None
         outcome = {"ok": True, "result": result}
     except GarminAuthError as e:
         outcome = {"ok": False, "error": str(e)}

@@ -70,6 +70,8 @@ HRV_CHUNK_DAYS = 7  # querySleepHrv: 7 days max per call
 SLEEP_CHUNK_DAYS = 31
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
+# read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
+PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
 MAX_CALLS = 30  # a 60-day backfill takes 21 at most
@@ -885,9 +887,9 @@ class _Fetcher:
         self.calls += 1
         try:
             out = await self.mcp.call_tool(tool, args)
-        except httpx.TransportError as e:
-            # one slow call is skipped; after 3 timeouts in a row COROS is down: fail at once when
-            # nothing came back, else stop calling and keep what arrived
+        except (McpUnavailable, httpx.TransportError) as e:
+            # one slow call is skipped; after 3 failures in a row COROS is down: fail at once when
+            # nothing came back, else stop calling and keep what arrived (a backfill is then redone)
             self.failed += 1
             self.down += 1
             logger.info("COROS %s %s failed: %r", tool, args, e)
@@ -896,10 +898,9 @@ class _Fetcher:
                     raise CorosError("COROS ne répond pas pour l'instant.") from e
                 self.stopped = True
             return None
-        except (ToolError, McpUnavailable, httpx.HTTPError) as e:
+        except (ToolError, httpx.HTTPError) as e:
             self.failed += 1
-            if not isinstance(e, McpUnavailable):  # a 5xx on one tool says nothing either way
-                self.down = 0  # an answer, not an outage
+            self.down = 0  # an answer, not an outage
             logger.info("COROS %s %s failed: %r", tool, args, e)
             return None
         self.down = 0
@@ -921,7 +922,7 @@ def _parsed(parser, text):
         return {}
 
 
-async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, int]:
+async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, int, bool]:
     await mcp.initialize()
     call = _Fetcher(mcp)
     # COROS dates nights in the athlete's time zone: ahead of the server's
@@ -948,7 +949,7 @@ async def _fetch(mcp: McpSession, days: int, today: date) -> tuple[dict, int, in
     data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
     data["vo2max"] = data["fitness"].get("vo2max")
     data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
-    return data, call.calls, call.failed
+    return data, call.calls, call.failed, call.stopped
 
 
 async def _drop_stale_intervals(db: AsyncSession, user_id: int, nights, samples: list[Sample],
@@ -979,14 +980,15 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("load", "hr_day", "steps")))
     )).scalar()
-    days = BACKFILL_DAYS if conn.last_sync_at is None or not have else RECENT_DAYS
+    owed = conn.last_sync_at is None or not have or conn.last_error == PARTIAL
+    days = BACKFILL_DAYS if owed else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
     async with http_client() as client:
         token = await access_token(db, conn, client)
         for attempt in range(2):
             mcp = McpSession(client, conn.resource_url, token)
             try:
-                data, calls, failed = await _fetch(mcp, days, today)
+                data, calls, failed, stopped = await _fetch(mcp, days, today)
                 break
             except McpUnauthorized:
                 if attempt:
@@ -1010,8 +1012,10 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["inserted"] += daily["inserted"]
     result["updated"] += daily["updated"]
     result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
-    logger.info("COROS sync user %d (%d days, %d calls, %d failed): %s",
-                conn.user_id, days, calls, failed, result["by_metric"])
+    # COROS stopped answering halfway through the history: keep it, but ask for it all again next time
+    result["backfill_partial"] = stopped and days == BACKFILL_DAYS
+    logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s",
+                conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"])
     return result
 
 
@@ -1039,7 +1043,8 @@ async def run_sync(db: AsyncSession, conn: CorosConnection) -> dict | None:
     try:
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
-        conn.last_error = None
+        # a history cut short is not done: said so, and the next sync asks for all of it again
+        conn.last_error = PARTIAL if result.get("backfill_partial") else None
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
         outcome = {"ok": False, "error": str(e)}
