@@ -114,8 +114,9 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert "Connecter COROS" in r.text  # empty state
     today = date.today()
     for metric, series in _series(today, 60, 45, 50, 56).items():
-        for d, v in series.items():
-            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=v, n_samples=1))
+        for d, v in series.items():  # PaceForge's nightly HR is what the fitness signal reads as « rhr »
+            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="hr_night" if metric == "rhr" else metric,
+                                        value=v, n_samples=1))
     await db_session.flush()
     form = await current_form(db_session, test_user.id, today)
     assert form["status"] == "fatigue" and form["hrv_delta_pct"] < 0 and form["rhr_delta_bpm"] > 0

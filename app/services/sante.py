@@ -23,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.models.route import Route
 from app.services.health import (
+    HRV_METHOD,
     SHORT_SLEEP_MIN,
+    WATCH_SOURCES,
     _today,
     compute_form,
     fmt_minutes,
@@ -131,8 +133,9 @@ def _hm(minutes: float) -> str:
 
 # ── page ────────────────────────────────────────────────────────────────────
 
-PAGE_METRICS = ("hrv", "rhr", "sleep", "load", "recovery", "stress", "hr_day", "steps", "body_battery", "vo2max",
-                "fitness", "sleep_score", "feel")
+# no brand value (recovery, load, stress, body battery, sleep score, fitness, VO2 max, the daytime resting
+# HR): only PaceForge's own nightly values and the « watch worn » markers
+PAGE_METRICS = ("hrv", "hr_night", "sleep", "hr_day", "steps", "feel")
 HISTORY_DAYS = 400
 SIGNAL_DAYS = 28
 
@@ -157,6 +160,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     details: dict[str, dict[date, dict]] = defaultdict(dict)
     sources: dict[str, dict[date, str | None]] = defaultdict(dict)
     for metric, d, v, source, det in rows:
+        if metric == "hrv" and source in WATCH_SOURCES and (det or {}).get("method") != HRV_METHOD:
+            continue  # the watch's own HRV average (rows written before 2026-10)
+        metric = "rhr" if metric == "hr_night" else metric  # nightly HR, where this page reads « FC au repos »
         series[metric][d] = v
         details[metric][d] = det or {}
         sources[metric][d] = source
@@ -346,7 +352,7 @@ def _night_state(series, sources, today: date) -> dict[str, dict]:
         night = sources.get("sleep", {}).get(today) == src
         if night and series["sleep"].get(today):
             out[src] = {"state": "received", "txt": fmt_minutes(series["sleep"][today])}
-        elif any(sources.get(m, {}).get(today) == src for m in ("steps", "stress", "hr_day", "body_battery")):
+        elif any(sources.get(m, {}).get(today) == src for m in ("steps", "hr_day")):
             out[src] = {"state": "none"}
         else:
             out[src] = {"state": "pending"}

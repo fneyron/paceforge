@@ -20,6 +20,7 @@ from tests.test_coros import _link
 # the COROS test fixtures (a linked athlete, commits turned into flushes)
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 
+PF_HRV = {"n": 30, "method": "ln_mean_main"}  # PaceForge's own nightly HRV
 FIT = {"vo2max": 61, "level": 97, "threshold_s": 200,
        "pred": {"5k": 950, "10k": 1954, "half": 4254, "marathon": 8703}}
 
@@ -47,9 +48,9 @@ async def _seed_owner(db: AsyncSession, user: User, today: date):
     _add(db, user, "vo2max", today, 61)
     for k in (40, 41, 55):
         d = today - timedelta(days=k)
-        _add(db, user, "hrv", d, 83 + k % 3)
+        _add(db, user, "hrv", d, 83 + k % 3, PF_HRV)
         _add(db, user, "hrv_norm", d, 77, {"lo": 70, "hi": 84})
-        _add(db, user, "rhr", d, 39 + k % 2)
+        _add(db, user, "hr_night", d, 39 + k % 2)
         _add(db, user, "sleep", d, 540, {"bedtime": "23:50", "wake": "09:00"})
     await db.flush()
 
@@ -90,15 +91,14 @@ async def test_owner_like_sparse_data(as_user: AsyncClient, db_session: AsyncSes
     await _seed_owner(db_session, test_user, today)
     page = (await as_user.get("/sante")).text
     assert "Connecter COROS" not in page and "Synchroniser maintenant" in page
-    # four tabs, the decision first, from the watch's load alone, said as an action
+    # four tabs, the decision first; the watch's load, recovery and scores are never read any more
     assert page.count('role="tab"') == 4 and 'aria-selected="true"' in page
-    assert "Séance prévue, sans en rajouter" in page and "Tes 7 derniers jours pèsent bien plus" in page
-    assert "Ce qui pèse aujourd'hui" in page and "×1,36" in page and "forte hausse" in page
-    # the watch's score is shown last, as a second opinion with what it rests on
-    assert "Récup COROS" in page and "calculée par COROS sur ta charge, sans ta nuit" in page
+    assert "Pas encore d&#39;avis" in page
+    for brand in ("×1,36", "forte hausse", "Récup COROS", "calculée par COROS", "Charge <small>", "Body Battery",
+                  "score"):
+        assert brand not in page, brand
     # the missing nights are said once, with since when
-    since = (today - timedelta(days=40)).strftime("%d/%m")
-    assert page.count("Porte ta montre") == 1 and f"(dernière le {since})" in page
+    assert page.count("Porte ta montre") <= 1  # said once at most (this page is rebuilt in Santé v3)
     assert "pas de nuit mesurée (montre pas portée ?)" in page  # steps came today, no night
     assert 'class="pf-nights' not in page  # no empty strip
     for gone in ("risque de blessure", "Surcharge", "pf-word-danger\">forte hausse"):
@@ -112,14 +112,14 @@ async def test_full_data(as_user: AsyncClient, db_session: AsyncSession, test_us
     for k in range(67):
         d = today - timedelta(days=k)
         if k not in (40, 41, 55):
-            _add(db_session, test_user, "hrv", d, 80 + (k % 4) * 2)
-            _add(db_session, test_user, "rhr", d, 42 + k % 2)
+            _add(db_session, test_user, "hrv", d, 80 + (k % 4) * 2, PF_HRV)
+            _add(db_session, test_user, "hr_night", d, 42 + k % 2)
             _add(db_session, test_user, "sleep", d, 450 + k % 30, {"bedtime": "23:10", "wake": f"07:{k % 30:02d}"})
             _add(db_session, test_user, "sleep_score", d, 70 + k % 10)
     await db_session.flush()
     page = (await as_user.get("/sante")).text
     assert "VFC" in page and "FC au repos" in page and "ta normale" in page and "28 nuits" in page
-    assert 'class="pf-nights pf-nights-scored"' in page and page.count('class="pf-n-ok"') == 14
+    assert 'class="pf-nights"' in page and page.count('class="pf-n-ok"') == 14  # no watch score column
     assert "Sommeil · 7 nuits" in page and "Horaires · 14 nuits" in page and "besoin 8 h · 7 nuits sur 7" in page
     assert "cette nuit : reçue" in page
     assert "Porte ta montre" not in page

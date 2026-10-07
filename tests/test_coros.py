@@ -26,7 +26,7 @@ from app.models.coros import CorosConnection, OAuthClient
 from app.models.health import HealthMetric, HealthSample
 from app.models.user import User
 from app.services import coros
-from app.services.health import aggregate_days, current_form, hrv_same_scale
+from app.services.health import current_form, hrv_same_scale
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIG = ROOT / "alembic" / "versions" / "t4c5d6e7f8a9_add_coros.py"
@@ -41,32 +41,36 @@ RHR = """Resting Heart Rate — Last 3 days
 2026-09-28: No data
 """
 
-HRV = """Sleep HRV — 2026-09-28 to 2026-09-30
-========================
-Note: dates are wake-up days (each value comes from the night that ended that morning).
 
-HRV Assessment — Last 3 days
-========================
+def hrv_text(nights: dict, tz: int = 8, every_min: int = 10, value=lambda i: 70 + 3 * (i % 7)) -> str:
+    """querySleepHrv's text for nights {wake day: (start, end)} (local): the
+    assessment COROS prints (never read) and one reading every `every_min`
+    minutes inside each window plus two daytime readings, grouped by local
+    day as COROS groups them, `tz` in quarter hours."""
+    by_day: dict = {}
+    i = 0
+    for start, end in nights.values():
+        t = start + timedelta(minutes=4)
+        pts = []
+        while t < end:
+            pts.append(t)
+            t += timedelta(minutes=every_min)
+        pts += [end + timedelta(hours=5), end + timedelta(hours=6)]  # the afternoon: never the night's
+        for p in pts:
+            ts = int((p - timedelta(minutes=15 * tz)).replace(tzinfo=timezone.utc).timestamp())
+            by_day.setdefault(p.date(), []).append(f"  timestamp={ts}, timezone={tz}, hrv={value(i)} ms, status=4, "
+                                                   "confidence=100000")
+            i += 1
+    days = sorted(by_day)
+    head = [f"Sleep HRV — {days[0]} to {days[-1]}", "========================", "",
+            "HRV Assessment — Last days", "========================", ""]
+    for d in sorted(nights, reverse=True):
+        head += [f"{d}:", "  HRV Avg: 83 ms — Normal", "  Normal Range: 70 - 84 ms", "  Baseline: 77 ms"]
+    body = ["", "Sleep HRV Time Series — Last days", "========================", ""]
+    for d in days:
+        body += [f"{d}:"] + by_day[d]
+    return "\n".join(head + body) + "\n"
 
-2026-09-30:
-  HRV Avg: 83 ms — Normal
-  Normal Range: 70 - 84 ms
-  Baseline: 77 ms
-2026-09-29:
-  HRV Avg: 90 ms — Above normal
-  Normal Range: 70 - 84 ms
-  Baseline: 77 ms
-2026-09-28:
-  No data
-
-Sleep HRV Time Series — Last 3 days
-========================
-
-2026-09-28: no official sleep HRV value for this day; raw HRV points omitted.
-2026-09-29:
-  timestamp=1790610290, timezone=36, hrv=77 ms, status=4, confidence=100000
-  timestamp=1790610590, timezone=36, hrv=81 ms, status=4, confidence=100000
-"""
 
 SLEEP_OVERVIEW = """Sleep Overview
 ========================
@@ -133,61 +137,6 @@ Sleep Summary:
   Sleep HR: Avg 35 bpm | Min 30 bpm | Max 52 bpm
 """
 
-FITNESS = """Fitness Assessment Overview
-========================
-
-VO2max: 61
-Running Level: 97
-Threshold Pace: 3:20 /km
-5 km Prediction: 15:50
-10 km Prediction: 32:34
-Half Marathon Prediction: 1:10:54
-Marathon Prediction: 2:25:03
-"""
-
-# captured 2026-10-05
-RECOVERY = """Recovery Status
-========================
-
-Recovery: 84%
-Level: Moderate training recommended
-Estimated Full Recovery: 45h
-"""
-
-LOAD = """Training Load Assessment
-========================
-
-2026-10-05
-Comment: Excessive
-Short-Term Load: 179
-Long-Term Load: 109
-Load Ratio: 1.64
-
-2026-10-04
-Comment: Excessive
-Short-Term Load: 208
-Long-Term Load: 112
-Load Ratio: 1.85
-
-2026-10-02
-Comment: Maintaining
-Short-Term Load: 105
-Long-Term Load: 114
-Load Ratio: 0.92
-
-2026-10-01
-Comment: Performance
-Short-Term Load: 69
-Long-Term Load: 109
-Load Ratio: 0.63
-
-2026-09-23
-Comment: Optimized
-Short-Term Load: 128
-Long-Term Load: 123
-Load Ratio: 1.04
-"""
-
 AVG_HR = """Average Heart Rate — Last 10 days
 ========================
 
@@ -252,91 +201,47 @@ def _rows(samples):
 
 # ── parsers ─────────────────────────────────────────────────────────────────
 
-def test_parse_resting_hr_skips_no_data():
-    assert coros.parse_rhr(RHR) == {D30: 39.0, D29: 40.0}
-
-
-def test_parse_hrv_uses_the_assessment_only():
-    assert coros.parse_hrv(HRV) == {D30: 83.0, D29: 90.0}  # 09-28 "No data", time series ignored
-
-
-def test_parse_sleep_overview_and_daily_stages():
+def test_parse_sleep_overview_and_daily_summary():
     ov = coros.parse_sleep_overview(SLEEP_OVERVIEW)
-    assert set(ov) == {D29, D30}
+    assert set(ov) == {D29, D30}  # the nap-only day and the « not available yet » day: no night
     n = ov[D30]
     assert n["start"] == datetime(2026, 9, 29, 23, 52) and n["end"] == datetime(2026, 9, 30, 9, 54)
-    assert (n["asleep"], n["period"], n["awake"]) == (588, 602, 14)
-    assert n["ratios"] == {"deep": 13, "core": 57, "rem": 28, "awake": 2}
-    assert (ov[D29]["score"], n["score"]) == (89, 91)  # nap-only (-1) and « not available yet » days: no night
+    assert (n["asleep"], n["period"], n["awake"], n["daily"]) == (588, 602, 14, 588)
+    assert "score" not in n and "ratios" not in n  # brand score and daily-scope ratios are not read
     daily = coros.parse_daily_sleep(DAILY)
-    assert daily[D30] == {"deep": 76, "core": 343, "rem": 169, "awake": 14}
-    assert daily[D29] == {"deep": 60, "core": 341, "rem": 125, "awake": 14}
-    assert coros.parse_vo2max(FITNESS) == 61
+    assert daily[D30] == {"total": 602, "deep": 76, "core": 343, "rem": 169, "awake": 14,
+                          "hr": {"avg": 35, "min": 30, "max": 52}}
+    assert coros.parse_daily_sleep(DAILY_60)[date(2026, 9, 25)]["total"] == 89  # the lone nap's summary
 
 
-def test_parse_training_load():
-    load = coros.parse_training_load(LOAD)
-    assert sorted(load) == [date(2026, 9, 23), date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 4),
-                            date(2026, 10, 5)]  # days without a value are simply absent
-    assert load[date(2026, 10, 5)] == {"short": 179, "long": 109, "ratio": 1.64, "comment": "Excessive"}
-    assert load[date(2026, 10, 1)]["comment"] == "Performance"
-    no_ratio = LOAD.replace("Load Ratio: 1.64\n", "")
-    assert coros.parse_training_load(no_ratio)[date(2026, 10, 5)]["ratio"] == 1.64  # computed
-
-
-def test_parse_recovery_avg_hr_daily_activity_fitness():
-    assert coros.parse_recovery(RECOVERY) == {"pct": 84, "level": "Moderate training recommended", "full_h": 45}
-    assert coros.parse_recovery("Recovery: 100%\nLevel: Full\nEstimated Full Recovery: 0h")["full_h"] == 0
+def test_parse_avg_hr_and_daily_activity():
     hr = coros.parse_avg_hr(AVG_HR)
     assert hr[date(2026, 10, 4)] == {"avg": 53, "min": 36, "max": 98} and len(hr) == 3
     assert coros.parse_avg_hr("2026-10-04: 53 bpm") == {date(2026, 10, 4): {"avg": 53, "min": None, "max": None}}
     act = coros.parse_daily_activity(DAILY_60)
-    assert act[date(2026, 8, 2)] == {"steps": 19835, "kcal": 1474, "exercise": 106, "stress": 59}
-    assert act[date(2026, 8, 10)] == {"steps": 0, "kcal": 0, "exercise": 0}  # no stress line
-    assert coros.parse_daily_activity(DAILY)[D29] == {"steps": 18055, "kcal": 786, "exercise": 39, "stress": 23}
-    assert coros.parse_fitness(FITNESS) == {"vo2max": 61, "level": 97, "threshold_s": 200, "pred": {
-        "5k": 950, "10k": 1954, "half": 4254, "marathon": 8703}}
-    one_line = "VO2max: 61 / Running Level: 97 / Half Marathon Prediction: 1:10:54 / Marathon Prediction: 2:25:03"
-    assert coros.parse_fitness(one_line)["pred"] == {"half": 4254, "marathon": 8703}
-    assert coros.parse_hrv_range(HRV) == {D30: {"lo": 70, "hi": 84, "base": 77}, D29: {"lo": 70, "hi": 84, "base": 77}}
+    assert act[date(2026, 8, 2)] == {"steps": 19835, "kcal": 1474, "exercise": 106}  # no stress score
+    assert act[date(2026, 8, 10)] == {"steps": 0, "kcal": 0, "exercise": 0}
 
 
 def test_build_daily_keeps_plausible_values_only():
     today = date(2026, 10, 5)
-    data = {"load": coros.parse_training_load(LOAD), "recovery": coros.parse_recovery(RECOVERY),
-            "hr_day": coros.parse_avg_hr(AVG_HR), "activity": coros.parse_daily_activity(DAILY_60),
-            "hrv_range": coros.parse_hrv_range(HRV), "fitness": coros.parse_fitness(FITNESS),
-            "overview": coros.parse_sleep_overview(SLEEP_OVERVIEW.replace("Sleep Score: 89", "Sleep Score: 0"))}
+    data = {"hr_day": coros.parse_avg_hr(AVG_HR), "activity": coros.parse_daily_activity(DAILY_60)}
     rows = {(r.metric, r.day): r for r in coros.build_daily(data, today)}
-    assert rows[("sleep_score", D30)].value == 91 and rows[("sleep_score", D30)].details is None
-    assert ("sleep_score", D29) not in rows and ("sleep_score", D28) not in rows  # 0: not scored yet
-    assert rows[("load", today)].value == 179
-    assert rows[("load", today)].details == {"long": 109, "ratio": 1.64, "comment": "Excessive"}
-    assert rows[("recovery", today)].value == 84 and rows[("recovery", today)].details["full_h"] == 45
     assert rows[("hr_day", date(2026, 10, 3))].details == {"min": 54, "max": 142}
     assert rows[("steps", date(2026, 8, 2))].details == {"kcal": 1474, "exercise": 106}
-    assert ("steps", date(2026, 8, 10)) not in rows and ("stress", date(2026, 8, 10)) not in rows  # not worn
-    assert rows[("stress", date(2026, 9, 25))].value == 28
-    assert rows[("hrv_norm", D30)].value == 77 and rows[("hrv_norm", D30)].details == {"lo": 70, "hi": 84}
-    fit = rows[("fitness", today)]
-    assert fit.value == 97 and fit.details["threshold_s"] == 200 and fit.details["pred"]["marathon"] == 8703
+    assert ("steps", date(2026, 8, 10)) not in rows  # not worn
     assert all(len(r.metric) <= 12 for r in rows.values())  # HealthMetric.metric is String(12)
-    odd = coros.build_daily({"recovery": {"pct": 840, "level": None, "full_h": None},
-                             "hr_day": {today: {"avg": 999, "min": None, "max": None}},
-                             "fitness": {"threshold_s": 5, "pred": {"5k": 3}},
-                             "overview": {D30: {"score": 0}, D29: {"score": 140}}}, today)
-    assert odd == []
+    assert not {m for m, _ in rows} & {"load", "recovery", "stress", "fitness", "hrv_norm", "sleep_score",
+                                        "vo2max", "rhr"}
+    assert coros.build_daily({"hr_day": {today: {"avg": 999, "min": None, "max": None}}}, today) == []
 
 
 def test_parsers_survive_garbled_text():
     junk = "Erreur interne\n2026-13-45: 39 bpm\n2026-09-30:\n  HRV Avg: n/a\n--- 2026 ---\nVO2max: —"
-    assert coros.parse_rhr(junk) == {} and coros.parse_hrv(junk) == {}
+    assert coros.parse_hrv_points(junk) == [] and coros.parse_hrv_points("") == []
     assert coros.parse_sleep_overview(junk) == {} and coros.parse_daily_sleep(junk) == {}
-    assert coros.parse_vo2max(junk) is None and coros.parse_rhr("") == {}
-    assert coros.parse_training_load(junk) == {} and coros.parse_recovery(junk) is None
     assert coros.parse_avg_hr(junk) == {} and coros.parse_daily_activity(junk) == {}
-    assert coros.parse_fitness(junk) == {} and coros.parse_hrv_range(junk) == {}
-    assert coros.parse_training_load("2026-10-05\nComment: Excessive\nShort-Term Load: n/a") == {}
+    assert coros.parse_naps(junk) == {}
     bad_window = SLEEP_OVERVIEW.replace("2026-09-30 09:54", "2026-09-29 09:54")  # ends before it starts
     assert set(coros.parse_sleep_overview(bad_window)) == {D29}
     assert coros.parse_duration("9h 48min") == 588 and coros.parse_duration("14 min") == 14
@@ -347,7 +252,6 @@ def test_tool_text_decodes_the_json_quoted_text_coros_sends():
     # what COROS really sends: the text is itself a JSON string literal
     quoted = {"content": [{"type": "text", "text": json.dumps(RHR, ensure_ascii=True)}]}
     assert coros.tool_text(quoted) == RHR
-    assert coros.parse_rhr(coros.tool_text(quoted))
     assert coros.tool_text({"content": [{"type": "text", "text": '"broken'}]}) == '"broken'
 
 
@@ -366,48 +270,6 @@ def test_rpc_response_json_and_sse():
         coros.parse_rpc_response("application/json", "<html>", 3)
 
 
-# ── samples ─────────────────────────────────────────────────────────────────
-
-def test_sleep_stages_rebuild_the_night():
-    samples = coros.build_samples({}, {}, coros.parse_sleep_overview(SLEEP_OVERVIEW),
-                                  coros.parse_daily_sleep(DAILY), None, D30)
-    assert all(s.source == "COROS" and s.metric == "sleep" for s in samples)
-    night = aggregate_days("sleep", _rows(samples), [D30, D29])
-    n = night[D30]
-    assert n["value"] == 588 and n["source"] == "COROS"
-    assert n["details"]["bedtime"] == "23:52" and n["details"]["wake"] == "09:54"
-    assert (n["details"]["deep"], n["details"]["core"], n["details"]["rem"], n["details"]["awake"]) == (76, 343, 169, 14)
-    assert night[D29]["value"] == 526 and night[D29]["details"]["bedtime"] == "00:31"
-    assert night[D29]["details"]["wake"] == "09:31"
-
-
-def test_sleep_stages_from_ratios_without_daily_data():
-    ov = coros.parse_sleep_overview(SLEEP_OVERVIEW)[D30]
-    stages = coros.night_stages(ov, None)
-    assert stages == {"deep": 78, "core": 342, "rem": 168, "awake": 14}
-    n = aggregate_days("sleep", _rows(coros.sleep_samples(ov, stages)), [D30])[D30]
-    assert n["value"] == 588 and n["details"]["wake"] == "09:54"
-    # daily minutes that don't add up to the main sleep (a nap counted in) → ratios
-    assert coros.night_stages(ov, {"deep": 90, "core": 400, "rem": 200, "awake": 14})["deep"] == 78
-
-
-def test_hrv_rhr_vo2_points_and_aggregation():
-    samples = coros.build_samples(coros.parse_hrv(HRV), coros.parse_rhr(RHR), {}, {}, 61, D30)
-    by = {(s.metric, s.start.date()): s for s in samples}
-    assert by[("hrv", D30)].start == datetime(2026, 9, 30, 5, 0) and by[("hrv", D30)].value == 83
-    assert by[("rhr", D30)].start == datetime(2026, 9, 30, 23, 59)
-    assert by[("vo2max", D30)].start == datetime(2026, 9, 30, 12, 0) and by[("vo2max", D30)].value == 61
-    apple = [SimpleNamespace(start_at=datetime(2026, 9, 30, 3, 10), end_at=datetime(2026, 9, 30, 3, 10),
-                             value=45.0, source="Apple Watch", kind=""),
-             SimpleNamespace(start_at=datetime(2026, 9, 30, 9, 0), end_at=datetime(2026, 9, 30, 9, 0),
-                             value=52.0, source="Apple Watch", kind="")]
-    hrv = aggregate_days("hrv", _rows([by[("hrv", D30)]]) + apple[:1], [D30])[D30]
-    assert hrv["value"] == 83 and hrv["source"] == "COROS"  # never averaged with Apple's SDNN
-    rhr = aggregate_days("rhr", _rows([by[("rhr", D30)]]) + apple[1:], [D30])[D30]
-    assert rhr["value"] == 39  # 23:59: the last of the day
-    assert aggregate_days("hrv", apple[:1], [D30])[D30].get("source") is None  # Apple days unchanged
-
-
 # ── HRV scale in the fitness signal ─────────────────────────────────────────
 
 def test_hrv_same_scale_follows_the_latest_day():
@@ -419,13 +281,15 @@ def test_hrv_same_scale_follows_the_latest_day():
 
 async def test_form_never_compares_coros_to_an_apple_baseline(db_session: AsyncSession, test_user: User):
     today = date.today()
+    pf = {"method": "ln_mean_main"}
     for k in range(67):
         d = today - timedelta(days=k)
         coros_day = k < 5
         db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="hrv", n_samples=1,
                                     value=80.0 + (k % 3) if coros_day else 40.0 + (k % 3),
-                                    source="COROS" if coros_day else None))
-        db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="rhr", value=50 + (k % 2), n_samples=1))
+                                    source="COROS" if coros_day else None, details=pf if coros_day else None))
+        db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="hr_night", value=50 + (k % 2),
+                                    n_samples=1))
     await db_session.flush()
     form = await current_form(db_session, test_user.id, today)
     # 5 COROS days: too few for a COROS baseline, and the Apple days are left out
@@ -436,10 +300,16 @@ async def test_form_never_compares_coros_to_an_apple_baseline(db_session: AsyncS
     rows = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "hrv"))).scalars().all()
     for m in rows:
-        m.source, m.value = "COROS", 80.0 + (today - m.date).days % 3
+        m.source, m.value, m.details = "COROS", 80.0 + (today - m.date).days % 3, pf
     await db_session.flush()
     form = await current_form(db_session, test_user.id, today)
     assert 80 <= form["hrv_baseline"] <= 82 and abs(form["hrv_delta_pct"]) < 3
+
+    # the watch's own average (rows written before 2026-10) is never read as PaceForge's
+    for m in rows:
+        m.details = None
+    await db_session.flush()
+    assert (await current_form(db_session, test_user.id, today))["hrv_7d"] is None
 
 
 # ── a fake COROS (discovery, OAuth, MCP) ────────────────────────────────────
@@ -456,13 +326,12 @@ class FakeCoros:
 
     def __init__(self, shift_days: int = 0):
         self.texts = {name: _shift(t, shift_days) for name, t in (
-            ("queryRestingHeartRate", RHR), ("querySleepHrv", HRV), ("querySleepOverview", SLEEP_OVERVIEW),
-            ("queryDailyHealthData", DAILY), ("queryFitnessAssessmentOverview", FITNESS),
-            ("queryRecoveryStatus", RECOVERY), ("queryTrainingLoadAssessment", LOAD),
-            ("queryAvgHeartRate", AVG_HR))}
-        # the load and heart-rate texts were captured on 10-05, the others on 09-30
-        for name in ("queryTrainingLoadAssessment", "queryAvgHeartRate"):
-            self.texts[name] = _shift(self.texts[name], -5)
+            ("querySleepOverview", SLEEP_OVERVIEW), ("queryDailyHealthData", DAILY), ("queryAvgHeartRate", AVG_HR))}
+        # the heart-rate text was captured on 10-05, the others on 09-30
+        self.texts["queryAvgHeartRate"] = _shift(self.texts["queryAvgHeartRate"], -5)
+        # the raw HRV readings of the two nights, on the shifted dates (UTC+9, as captured in Korea)
+        ov = coros.parse_sleep_overview(self.texts["querySleepOverview"])
+        self.texts["querySleepHrv"] = hrv_text({d: (n["start"], n["end"]) for d, n in ov.items()}, tz=36)
         self.n = 1
         self.access, self.refresh = "at-1", "rt-1"
         self.registrations = 0
@@ -725,18 +594,19 @@ async def test_invalid_grant_asks_to_reconnect(as_user: AsyncClient, db_session:
 # ── sync ────────────────────────────────────────────────────────────────────
 
 async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, test_user: User, fake, no_commit):
-    fake.max_days = {"queryRestingHeartRate": 7, "queryDailyHealthData": 7,  # refuse 60: fall back to 7
-                     "queryTrainingLoadAssessment": 14}
+    fake.max_days = {"queryDailyHealthData": 7}  # refuse 60: fall back to 7
     conn = await _link(db_session, test_user)
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
     hrv_calls = [a for n, a in fake.tool_calls if n == "querySleepHrv"]
     assert len(hrv_calls) == 9 and all(a["days"] <= 7 for a in hrv_calls)  # 60 days, 7 per call
-    assert [a for n, a in fake.tool_calls if n == "queryRestingHeartRate"] == [{"days": 60}, {"days": 7}]
+    assert [a for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [{"days": 60}, {"days": 7}]
     assert len([1 for n, _ in fake.tool_calls if n == "querySleepOverview"]) == 2
-    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}, {"days": 14}]
     assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 60}]
-    assert [a for n, a in fake.tool_calls if n == "queryRecoveryStatus"] == [{}]
+    # no brand value is asked for
+    assert not {n for n, _ in fake.tool_calls} & {"queryRestingHeartRate", "queryTrainingLoadAssessment",
+                                                 "queryRecoveryStatus", "queryFitnessAssessmentOverview",
+                                                 "queryStressTimeSeries"}
     assert len(fake.tool_calls) <= coros.MAX_CALLS
     assert conn.last_sync_at is not None and conn.last_error is None and conn.sync_claimed_at is None
 
@@ -744,48 +614,43 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     rows = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.date == today))).scalars().all()
     by = {m.metric: m for m in rows}
-    assert by["hrv"].value == 83 and by["hrv"].source == "COROS"
-    assert by["rhr"].value == 39 and by["vo2max"].value == 61
-    assert by["sleep"].value == 588 and by["sleep"].details["bedtime"] == "23:52"
-    assert by["sleep"].details["wake"] == "09:54" and by["sleep"].source == "COROS"
-    # the daily values, straight from COROS
-    assert by["load"].value == 179 and by["load"].details == {"long": 109, "ratio": 1.64, "comment": "Excessive"}
-    assert by["recovery"].value == 84 and by["recovery"].details == {
-        "level": "Moderate training recommended", "full_h": 45}
+    assert set(by) == {"sleep", "hrv", "hr_night", "steps"} and all(m.source == "COROS" for m in rows)
+    y = (today - timedelta(days=1)).isoformat()
+    assert by["sleep"].value == 588 and by["sleep"].details == {
+        "main_start": f"{y}T23:52", "main_end": f"{today}T09:54", "period": 602, "bedtime": "23:52",
+        "wake": "09:54", "timeline": False, "tz": 540, "daily": 588}
+    hrv = by["hrv"]  # PaceForge's: the readings inside the window, the afternoon ones out
+    assert 70 <= hrv.value <= 88 and hrv.details == {"n": 60, "tz": 540, "method": "ln_mean_main"}
+    assert by["hr_night"].value == 35 and by["hr_night"].details == {
+        "min": 30, "max": 52, "method": "coros_sleep_summary", "nap_day": False}
     assert by["steps"].value == 1487 and by["steps"].details == {"kcal": 92, "exercise": 0}
-    assert by["stress"].value == 13 and by["hrv_norm"].details == {"lo": 70, "hi": 84}
-    assert by["fitness"].details["level"] == 97 and by["fitness"].details["pred"]["10k"] == 1954
-    assert by["sleep_score"].value == 91 and by["sleep_score"].details is None
-    assert all(m.source == "COROS" for m in rows)
-    scores = (await db_session.execute(select(HealthMetric.date, HealthMetric.value).where(
-        HealthMetric.user_id == test_user.id, HealthMetric.metric == "sleep_score"))).all()
-    assert dict(scores) == {today - timedelta(days=1): 89, today: 91}  # the 0 « not available yet » day: none
+    nap = (await db_session.execute(select(HealthMetric).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "nap"))).scalar_one()
+    d27 = today - timedelta(days=3)  # the nap-only day stays a nap, never a night
+    assert nap.date == d27 and nap.value == 82 and nap.details == {
+        "period": 89, "windows": [[f"{d27}T01:23", f"{d27}T02:52"]]}
+    assert (await db_session.execute(select(func.count(HealthMetric.id)).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "sleep", HealthMetric.date == d27))).scalar() == 0
     hr = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "hr_day"))).scalars().all()
     assert {m.date: (m.value, m.details["max"]) for m in hr}[today - timedelta(days=1)] == (53, 98)
-    loads = (await db_session.execute(select(func.count(HealthMetric.id)).where(
-        HealthMetric.user_id == test_user.id, HealthMetric.metric == "load"))).scalar()
-    assert loads == 5
-    n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
+    # no stage interval is written (COROS has no timeline)
+    assert (await db_session.execute(select(func.count(HealthSample.id)).where(
+        HealthSample.user_id == test_user.id))).scalar() == 0
 
     fake.tool_calls.clear()
     fake.sse = True  # same answers as server-sent events
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"] and outcome["result"]["inserted"] == 0 and outcome["result"]["updated"] == 0
-    assert [a for nm, a in fake.tool_calls if nm == "queryRestingHeartRate"] == [{"days": 7}]
-    assert [a for nm, a in fake.tool_calls if nm == "queryTrainingLoadAssessment"] == [{"days": 7}]
+    assert [a for nm, a in fake.tool_calls if nm == "queryAvgHeartRate"] == [{"days": 7}]
     assert len([1 for nm, _ in fake.tool_calls if nm == "querySleepHrv"]) == 1
-    n2 = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
-    assert n == n2
 
-    # COROS revises a night: the old intervals are replaced, not added up
-    daily = fake.texts["queryDailyHealthData"]
-    fake.texts["queryDailyHealthData"] = daily.replace("Deep: 1h 16min", "Deep: 1h 20min").replace(
-        "Light: 5h 43min", "Light: 5h 39min")
+    # COROS revises a night: the row is rewritten, not doubled
+    fake.texts["querySleepOverview"] = fake.texts["querySleepOverview"].replace(" 09:54", " 09:40")
     await coros.run_sync(db_session, conn)
     sleep = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.date == today, HealthMetric.metric == "sleep"))).scalar_one()
-    assert sleep.value == 588 and sleep.details["deep"] == 80 and sleep.details["core"] == 339
+    assert sleep.details["main_end"] == f"{today}T09:40" and sleep.details["wake"] == "09:40"
 
 
 async def test_expired_mcp_token_is_refreshed_once(db_session: AsyncSession, test_user: User, fake, no_commit):
@@ -809,15 +674,15 @@ async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSessi
     """The nights come first; when COROS then stops answering (3 timeouts or 5xx in a row), the
     sync stops calling and keeps what arrived instead of throwing it all away. The history it
     cut short is owed: said so, and asked for in full on the next sync."""
-    fake.tool_status = {"queryRecoveryStatus": 503}  # a 5xx counts toward the outage like a timeout
-    fake.timeouts = set(fake.texts) - {"querySleepOverview", "querySleepHrv", "queryRecoveryStatus"}
+    fake.tool_status = {"queryDailyHealthData": 503}  # a 5xx counts toward the outage like a timeout
+    fake.timeouts = set(fake.texts) - {"querySleepOverview", "querySleepHrv", "queryDailyHealthData"}
     conn = await _link(db_session, test_user)
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
     today = datetime.now(timezone.utc).date()
     rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
     by = {(m.metric, m.date): m.value for m in rows}
-    assert by[("sleep", today)] == 588 and by[("hrv", today)] == 83
+    assert by[("sleep", today)] == 588 and ("hrv", today) in by
     lost = [n for n, _ in fake.tool_calls if n in fake.timeouts or n in fake.tool_status]
     assert len(lost) == 3  # then it stopped calling
     assert conn.last_sync_at is not None and conn.last_error == coros.PARTIAL
@@ -826,27 +691,26 @@ async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSessi
     before = len(fake.tool_calls)
     assert (await coros.run_sync(db_session, conn))["ok"]
     again = fake.tool_calls[before:]
-    assert {"days": 60} in [a for n, a in again if n == "queryTrainingLoadAssessment"]  # the whole history
+    assert {"days": 60} in [a for n, a in again if n == "queryAvgHeartRate"]  # the whole history
     assert conn.last_error is None
     assert (await coros.run_sync(db_session, conn))["ok"]
-    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"][-1] == {"days": 7}  # then a week
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"][-1] == {"days": 7}  # then a week
 
 
 async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: AsyncSession, test_user: User,
                                                                  fake, no_commit):
-    fake.timeouts = {"queryTrainingLoadAssessment"}
     fake.tool_status = {"queryAvgHeartRate": 502}
     conn = await _link(db_session, test_user)
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
-    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}, {"days": 14}]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 60}, {"days": 7}]
     names = [n for n, _ in fake.tool_calls]
-    assert "queryRestingHeartRate" in names and names[-1] == "querySportRecords"  # the sync went on to the end
+    assert "queryDailyHealthData" in names and names[-1] == "querySportRecords"  # the sync went on to the end
     today = datetime.now(timezone.utc).date()
     rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
     by = {(m.metric, m.date): m.value for m in rows}
-    assert by[("sleep", today)] == 588 and by[("sleep_score", today)] == 91 and by[("hrv", today)] == 83
-    assert not any(m in ("load", "hr_day") for m, _ in by)
+    assert by[("sleep", today)] == 588 and by[("hr_night", today)] == 35 and ("hrv", today) in by
+    assert not any(m == "hr_day" for m, _ in by)
 
     # COROS down: the sync stops after 3 lost calls in a row, and says so
     fake.timeouts = set(fake.texts)
@@ -876,7 +740,7 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
                                                          test_user: User, fake):
     page = (await as_user.get("/settings")).text
-    assert "ta VFC, ton sommeil, ta VO2 max et tes séances arrivent automatiquement depuis ta montre COROS." in page
+    assert "Tes nuits et tes séances arrivent automatiquement depuis ta montre COROS." in page
     assert 'href="/sante"' in page
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 
@@ -889,12 +753,12 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
     settings_page = (await as_user.get("/settings")).text
     assert "Dernière synchro" in settings_page and "Synchroniser maintenant" not in settings_page
 
-    n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
+    n = (await db_session.execute(select(func.count(HealthMetric.id)).where(HealthMetric.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/coros/disconnect")
     assert r.status_code == 303 and r.headers["location"] == "/settings#coros"
     assert (await db_session.execute(select(CorosConnection))).scalar_one_or_none() is None
     assert fake.revoked and fake.revoked[0]["token_type_hint"] == "refresh_token"  # tried, even if refused
-    n2 = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
+    n2 = (await db_session.execute(select(func.count(HealthMetric.id)).where(HealthMetric.user_id == test_user.id))).scalar()
     assert n == n2 > 0  # imported data stays
     page = (await as_user.get("/settings")).text
     assert "COROS déconnecté" in page and "Connecter COROS" in page
@@ -909,11 +773,11 @@ async def test_link_made_before_the_daily_values_backfills_them(db_session: Asyn
                                 start_at=datetime.now() - timedelta(days=3), end_at=datetime.now() - timedelta(days=3)))
     await db_session.flush()
     assert (await coros.run_sync(db_session, conn))["ok"]
-    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 60}]
     fake.tool_calls.clear()
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)
     assert (await coros.run_sync(db_session, conn))["ok"]
-    assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 7}]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 7}]
 
 
 # ── migration ───────────────────────────────────────────────────────────────
@@ -967,7 +831,7 @@ async def test_the_window_reaches_the_athletes_today_ahead_of_utc(db_session: As
     """In Asia this morning's night is dated « tomorrow » for the server: it is
     asked for too, and the window keeps its size."""
     conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
-    db_session.add(HealthMetric(user_id=test_user.id, date=date.today(), metric="load", value=1,
+    db_session.add(HealthMetric(user_id=test_user.id, date=date.today(), metric="steps", value=1,
                                 source="COROS", n_samples=1))
     await db_session.flush()
     assert (await coros.run_sync(db_session, conn))["ok"]
@@ -1001,9 +865,10 @@ Nap Window: 2026-10-07 06:42 - 2026-10-07 09:07
 """
     naps = coros.parse_naps(text)
     assert list(naps) == [date(2026, 10, 7)]
-    assert naps[date(2026, 10, 7)] == {"asleep": 140, "period": 145,
+    assert naps[date(2026, 10, 7)] == {"asleep": 140, "period": 145, "legacy": False,
                                        "windows": [(datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7))]}
-    assert coros.parse_sleep_overview(text)[date(2026, 10, 7)]["asleep"] == 350  # the night alone
-    [d] = coros.nap_dailies(naps)
-    assert (d.metric, d.day, d.value, d.details) == ("nap", date(2026, 10, 7), 140,
-                                                      {"period": 145, "windows": [["06:42", "09:07"]]})
+    ov = coros.parse_sleep_overview(text)
+    assert ov[date(2026, 10, 7)]["asleep"] == 350  # the night alone
+    [d] = coros.nap_dailies(naps, ov)
+    assert (d.metric, d.day, d.value, d.details) == ("nap", date(2026, 10, 7), 140, {
+        "period": 145, "windows": [["2026-10-07T06:42", "2026-10-07T09:07"]]})

@@ -1,37 +1,44 @@
-"""Health data: one value per day and metric, and the fitness ("forme") signal.
+"""Health data: one value per day and metric, PaceForge's own nightly values.
 
-Values arrive from the athlete's COROS watch (app.services.coros, source
-"COROS") or Garmin watch (app.services.garmin, source "Garmin") as raw samples
-(HealthSample, local wall-clock times), aggregated to one value per day and
-metric (HealthMetric):
-- hrv    : mean of the readings taken between 22:00 the evening before and
-           10:00 that morning; falls back to the whole calendar day when no
-           overnight reading exists. A COROS night value (overnight RMSSD)
-           replaces readings on another scale that day.
-- rhr    : the last resting heart rate written that day.
-- sleep  : minutes asleep during the night ending that morning (samples starting
-           between 18:00 the day before and 12:00; afternoon naps are left out),
-           plus the core/deep/REM/awake/in-bed split, one source per night.
-- weight : last weigh-in of the day (kg).
-- vo2max : last estimate of the day.
+The athlete's COROS watch (app.services.coros, source "COROS") and Garmin watch
+(app.services.garmin, source "Garmin") give, per night (named by its wake-up
+day), values PaceForge computes from their raw data and writes once per day
+(store_daily → HealthMetric):
+- sleep      : minutes asleep in the MAIN sleep episode (naps never count in it);
+               {main_start, main_end: local ISO "YYYY-MM-DDTHH:MM", period (min,
+               awake included), tz (min east of UTC, when known), timeline (True
+               when real stage intervals were stored: Garmin sleepLevels),
+               bedtime, wake ("HH:MM", what older readers use), daily (COROS's
+               own « Daily Sleep (incl. naps) », a cross-check only)}
+- nap        : minutes asleep in the day's naps (a nap belongs to the day it
+               ends); {period, windows: [["2026-10-07T06:42", "2026-10-07T09:07"]],
+               legacy (COROS « includes legacy reported durations »)}. Rows
+               written before 2026-10 keep « HH:MM » windows: read them with
+               nap_windows().
+- hrv        : PaceForge's nightly HRV, exp(mean ln RMSSD) of the raw readings
+               inside the main window; {n, tz, method: "ln_mean_main"}. Rows
+               without that method are the watch's own average (written before
+               2026-10): never read as PaceForge's.
+- hr_night   : nightly heart rate; {min, max, method, nap_day}. Garmin: mean of
+               the sleepHeartRate readings inside the main window ("points");
+               COROS: its « Sleep HR » line, which sits in the summary of the
+               main sleep ("coros_sleep_summary", see docs/sante-v3-data-notes.md).
+- resp_night : overnight respiration (Garmin only); {method}.
+- hr_day     : average heart rate of the day; {min, max} (a « watch worn » marker)
+- steps      : steps of the day; {kcal, exercise (min)} (same)
+- feel       : the morning check-in (source "PaceForge"): 1 mieux, 2 comme
+               d'habitude, 3 moins bien; {why: [legs, fatigue, sick, stress],
+               alcohol: bool} (older rows: {legs_heavy}; read them with feel_of()).
 
-The watches also give values that are already daily: they go straight to
-HealthMetric (store_daily, source "COROS" or "Garmin"), the extras in `details`:
-- load      : short-term training load; {long, ratio, comment}
-- recovery  : recovery % (today only); {level, full_h}
-- hr_day    : average heart rate of the day; {min, max}
-- stress    : average stress of the day (0–100)
-- steps     : steps of the day; {kcal, exercise (min)}
-- fitness   : running level; {vo2max, level, threshold_s, pred: {5k, 10k, half, marathon} (s)}
-- hrv_norm  : HRV baseline of the night (ms); {lo, hi} its normal range
-- body_battery : Garmin's body battery at wake-up (0–100); {high, low}
-- sleep_score : the watch's score of the night ending that morning (1–100);
-                {qualifier} (Garmin's word for it)
-- nap       : minutes asleep in the day's naps, apart from the night (the
-               night's `sleep` never counts them); {period (min, awake included),
-               windows: [["06:42", "09:07"], …] local clock}
-- feel      : how the athlete says they feel that morning (source "PaceForge"):
-              1 en forme, 2 normal, 3 fatigué; {legs_heavy}
+Brand values (load, recovery, stress, fitness, hrv_norm, body_battery,
+sleep_score, vo2max, the watch's daytime resting HR "rhr") are no longer read
+nor written; rows already stored stay (Réglages still counts them).
+
+Raw samples (HealthSample, local wall-clock times, kept 400 days) remain for
+sources that send only samples: aggregate_days() turns them into daily values.
+The watches' own sleep samples are Garmin's real stage intervals, kept as the
+hypnogram's timeline only: they are never aggregated (the watch's main window
+is the night).
 
 Older rows may come from the Apple Health import PaceForge had before.
 """
@@ -57,12 +64,20 @@ METRIC_LABELS = {
     "weight": "Poids",
     "vo2max": "VO2 max",
 }
-# daily values the watches give as such (store_daily), with what Réglages lists
-DAILY_METRICS = ("load", "recovery", "hr_day", "stress", "steps", "fitness", "hrv_norm", "body_battery",
-                 "sleep_score", "feel", "nap")
-DAILY_LABELS = {"load": "Charge", "recovery": "Récupération", "hr_day": "FC du jour",
-                "stress": "Stress", "steps": "Pas", "fitness": "Niveau", "body_battery": "Body Battery",
-                "sleep_score": "Score de sommeil", "feel": "Ressenti", "nap": "Siestes"}
+# what a watch writes per day now (store_daily)
+NIGHT_METRICS = ("sleep", "nap", "hrv", "hr_night", "resp_night")
+# brand values: no longer read nor written; stored rows stay until a later purge
+BRAND_METRICS = ("load", "recovery", "stress", "fitness", "hrv_norm", "body_battery", "sleep_score", "vo2max",
+                 "rhr")
+DAILY_METRICS = NIGHT_METRICS + ("hr_day", "steps", "feel") + BRAND_METRICS
+# what Réglages lists, in this order (brand rows already stored included: « what is synced »)
+DAILY_LABELS = {"sleep": "Sommeil", "nap": "Siestes", "hrv": "VFC", "hr_night": "FC de nuit",
+                "resp_night": "Respiration", "hr_day": "FC du jour", "steps": "Pas", "feel": "Ressenti",
+                "load": "Charge", "recovery": "Récupération", "stress": "Stress", "fitness": "Niveau",
+                "hrv_norm": "Normale VFC", "body_battery": "Body Battery", "sleep_score": "Score de sommeil",
+                "vo2max": "VO2 max", "rhr": "FC au repos"}
+WATCH_SOURCES = ("COROS", "Garmin")
+HRV_METHOD = "ln_mean_main"
 
 
 @dataclass
@@ -79,6 +94,129 @@ _RANGES = {"hrv": (5, 300), "rhr": (25, 140), "weight": (25, 300), "vo2max": (10
 ASLEEP_KINDS = ("asleep", "core", "deep", "rem")
 
 
+# ── local times as stored ───────────────────────────────────────────────────
+
+def iso_min(t: datetime) -> str:
+    """datetime(2026, 10, 7, 6, 42) → '2026-10-07T06:42' (local, naive)."""
+    return t.strftime("%Y-%m-%dT%H:%M")
+
+
+def parse_local(s) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(s)).replace(tzinfo=None, second=0, microsecond=0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _hhmm(s) -> time | None:
+    try:
+        h, m = (int(x) for x in str(s).split(":")[:2])
+        return time(h, m)
+    except (TypeError, ValueError):
+        return None
+
+
+def nap_windows(day: date, details: dict | None) -> list[tuple[datetime, datetime]]:
+    """The local (start, end) of a `nap` row's windows. New rows hold ISO
+    datetimes; older ones « HH:MM » pairs, read as ending on `day` and starting
+    the day before when the start is later than the end."""
+    out = []
+    for w in (details or {}).get("windows") or []:
+        if not isinstance(w, (list, tuple)) or len(w) != 2:
+            continue
+        a, b = parse_local(w[0]), parse_local(w[1])
+        if a is None or b is None:
+            ta, tb = _hhmm(w[0]), _hhmm(w[1])
+            if ta is None or tb is None:
+                continue
+            b = datetime.combine(day, tb)
+            a = datetime.combine(day - timedelta(days=1) if ta > tb else day, ta)
+        if b > a:
+            out.append((a, b))
+    return out
+
+
+def main_window(day: date, details: dict | None) -> tuple[datetime, datetime] | None:
+    """The local (start, end) of a `sleep` row's main window: its ISO bounds,
+    else (older rows) « HH:MM » bedtime and wake, the wake on `day`."""
+    det = details or {}
+    a, b = parse_local(det.get("main_start")), parse_local(det.get("main_end"))
+    if a and b and b > a:
+        return a, b
+    ta, tb = _hhmm(det.get("bedtime")), _hhmm(det.get("wake"))
+    if ta is None or tb is None or det.get("from_in_bed"):
+        return None
+    b = datetime.combine(day, tb)
+    a = datetime.combine(day - timedelta(days=1) if ta > tb else day, ta)
+    return (a, b) if b > a else None
+
+
+# ── naps: what counts as one (H) ────────────────────────────────────────────
+
+NAP_MAX = timedelta(hours=6)
+
+
+def nap_guard(day: date, windows, main: tuple[datetime, datetime] | None = None) -> list[tuple[datetime, datetime]]:
+    """The windows that can be a nap of `day` (H, PaceForge's own guards):
+    - it lasts more than 0 and at most 6 h;
+    - it ends between 12:00 the day before and 23:59 that day (COROS keeps
+      legacy naps dated 1982);
+    - it does not overlap the main window (the night is never counted twice)."""
+    lo, hi = datetime.combine(day - timedelta(days=1), time(12, 0)), datetime.combine(day, time(23, 59, 59))
+    out = []
+    for a, b in windows or []:
+        if not (timedelta(0) < b - a <= NAP_MAX and lo <= b <= hi):
+            continue
+        if main and a < main[1] and b > main[0]:
+            continue
+        out.append((a, b))
+    return sorted(out)
+
+
+def nap_daily(day: date, asleep: float | None, period: float | None, windows,
+              main: tuple[datetime, datetime] | None = None, legacy: bool = False) -> "Daily | None":
+    """One `nap` value for `day` from what a watch says (minutes asleep, period,
+    windows), the guards applied. When some windows go, the minutes asleep
+    shrink in proportion; when they all go, so does the nap (its minutes can't
+    be trusted). Without any window (Garmin's napTimeSeconds alone) the minutes
+    are kept as they are."""
+    if not isinstance(asleep, (int, float)) or not 1 <= asleep <= 600:
+        return None
+    windows = list(windows or [])
+    kept = nap_guard(day, windows, main)
+    if windows and not kept:
+        return None
+    span = lambda ws: sum((b - a).total_seconds() for a, b in ws) / 60  # noqa: E731
+    if windows and len(kept) < len(windows):
+        asleep = round(asleep * span(kept) / span(windows))
+        period = round(span(kept))
+        if asleep < 1:
+            return None
+    period = period if isinstance(period, (int, float)) and asleep <= period <= 720 else (
+        round(span(kept)) if kept else None)
+    details = {"period": period, "windows": [[iso_min(a), iso_min(b)] for a, b in kept]}
+    if legacy:
+        details["legacy"] = True
+    return Daily("nap", day, round(asleep), details)
+
+
+# ── the check-in ────────────────────────────────────────────────────────────
+
+FEEL_WHY = ("legs", "fatigue", "sick", "stress")
+
+
+def feel_of(value: float | None, details: dict | None) -> dict | None:
+    """{value: 1 mieux | 2 comme d'habitude | 3 moins bien, why: [...], alcohol}
+    from a `feel` row, older rows ({legs_heavy}) included."""
+    if value is None:
+        return None
+    det = details or {}
+    why = [w for w in det.get("why") or [] if w in FEEL_WHY]
+    if det.get("legs_heavy") and "legs" not in why:
+        why.append("legs")
+    return {"value": int(value), "why": why, "alcohol": bool(det.get("alcohol"))}
+
+
 # ── storage + daily aggregation ─────────────────────────────────────────────
 
 RAW_RETENTION_DAYS = 400
@@ -87,21 +225,14 @@ _INSERT_CHUNK = 2000
 
 def _affected_dates(s: Sample) -> list[date]:
     d = s.start.date()
+    if s.source in WATCH_SOURCES and s.metric in ("sleep", "hrv"):
+        return []  # a watch's night comes whole (store_daily); its intervals are a timeline only
     if s.metric == "hrv":
         return [d, d + timedelta(days=1)] if s.start.hour >= 22 else [d]
     if s.metric == "sleep":
-        night = sleep_night_of(s.start)
-        return [night] if night else []
+        e = s.end.date()
+        return [e, e + timedelta(days=1)]  # the episode it starts may end the next day
     return [d]
-
-
-def sleep_night_of(t: datetime) -> date | None:
-    """Night a sleep sample belongs to, named by its wake-up day. None = afternoon nap."""
-    if t.hour < 12:
-        return t.date()
-    if t.hour >= 18:
-        return t.date() + timedelta(days=1)
-    return None
 
 
 async def store_samples(db: AsyncSession, user_id: int, samples: list[Sample]) -> dict:
@@ -192,6 +323,19 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
     return {"inserted": inserted, "updated": updated, "by_metric": dict(by_metric)}
 
 
+async def nights_upgraded(db: AsyncSession, user_id: int, source: str) -> bool:
+    """False while a watch's nights exist only in the format written before
+    2026-10 (no main window, the watch's HRV average, no nightly HR): its sync
+    then reads the history again once, so the band starts from PaceForge's own
+    values."""
+    base = (HealthMetric.user_id == user_id, HealthMetric.source == source, HealthMetric.metric == "sleep")
+    if not (await db.execute(select(func.count(HealthMetric.id)).where(*base))).scalar():
+        return True
+    new = (await db.execute(select(func.count(HealthMetric.id)).where(
+        *base, HealthMetric.details["main_start"].as_string().is_not(None)))).scalar()
+    return bool(new)
+
+
 async def reaggregate(db: AsyncSession, user_id: int, affected: dict[str, set[date]]) -> dict[str, int]:
     """Recompute the daily value of every (metric, day) touched. Returns days written per metric."""
     written: dict[str, int] = {}
@@ -222,7 +366,10 @@ async def reaggregate(db: AsyncSession, user_id: int, affected: dict[str, set[da
 
 def aggregate_days(metric: str, samples, dates) -> dict[date, dict]:
     """{day: {value, n, source?, details?}} for each requested day that has data.
-    `samples` carry .start_at/.end_at/.value/.source/.kind (rows or look-alikes)."""
+    `samples` carry .start_at/.end_at/.value/.source/.kind (rows or look-alikes).
+    A watch's sleep and HRV samples are left out: its nights come whole."""
+    if metric in ("sleep", "hrv"):
+        samples = [s for s in samples if s.source not in WATCH_SOURCES]
     out: dict[date, dict] = {}
     for d in dates:
         if metric == "hrv":
@@ -301,15 +448,41 @@ def _union_minutes(intervals: list[tuple[datetime, datetime]]) -> float:
     return total / 60
 
 
+EPISODE_GAP = timedelta(minutes=60)  # (H) a wake of an hour or more ends a sleep episode
+MAIN_ENDS_BY = time(14, 0)  # (H) the main episode of day D ends before 14:00 that day
+
+
+def sleep_episodes(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    """Intervals merged into episodes: a gap of 60 min or more starts a new one (H)."""
+    out: list[list[datetime]] = []
+    for a, b in sorted(intervals):
+        if out and a - out[-1][1] < EPISODE_GAP:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
+
+
+def main_episode(intervals, d: date) -> tuple[datetime, datetime] | None:
+    """The night of day D for a source that sends only samples: the longest
+    episode ending on D before 14:00 (H). The others are naps, never merged
+    into the night (an hour rule would merge a morning nap into it)."""
+    cands = [(a, b) for a, b in sleep_episodes(intervals)
+             if b.date() == d and b.time() <= MAIN_ENDS_BY]
+    return max(cands, key=lambda ab: ab[1] - ab[0], default=None)
+
+
 def _sleep_night(samples, d: date) -> dict | None:
-    lo = datetime.combine(d - timedelta(days=1), time(18, 0))
-    hi = datetime.combine(d, time(12, 0))
-    night = [s for s in samples if lo <= s.start_at < hi]
-    if not night:
-        return None
     by_source: dict[str, list] = defaultdict(list)
-    for s in night:
+    for s in samples:
         by_source[s.source].append(s)
+    nights: dict[str, list] = {}
+    for source, items in by_source.items():
+        main = main_episode([(s.start_at, s.end_at) for s in items], d)
+        if main:
+            nights[source] = [s for s in items if s.start_at < main[1] and s.end_at > main[0]]
+    if not nights:
+        return None
 
     def score(items):
         staged = any(s.kind in ("core", "deep", "rem") for s in items)
@@ -317,15 +490,16 @@ def _sleep_night(samples, d: date) -> dict | None:
         in_bed = _union_minutes([(s.start_at, s.end_at) for s in items if s.kind == "in_bed"])
         return (staged, asleep, in_bed)
 
-    source, items = max(by_source.items(), key=lambda kv: score(kv[1]))
+    source, items = max(nights.items(), key=lambda kv: score(kv[1]))
     per_kind = {k: round(_union_minutes([(s.start_at, s.end_at) for s in items if s.kind == k]))
                 for k in ("core", "deep", "rem", "awake", "in_bed")}
     asleep_ivs = [(s.start_at, s.end_at) for s in items if s.kind in ASLEEP_KINDS]
     asleep = _union_minutes(asleep_ivs)
     details = {k: v for k, v in per_kind.items() if v}
     if asleep > 0:
-        details["bedtime"] = min(a for a, _ in asleep_ivs).strftime("%H:%M")
-        details["wake"] = max(b for _, b in asleep_ivs).strftime("%H:%M")
+        a, b = min(a for a, _ in asleep_ivs), max(b for _, b in asleep_ivs)
+        details.update(bedtime=a.strftime("%H:%M"), wake=b.strftime("%H:%M"), main_start=iso_min(a),
+                       main_end=iso_min(b))
         value = asleep
     elif per_kind["in_bed"]:
         value = per_kind["in_bed"]  # phone only: time in bed is all there is
@@ -333,6 +507,24 @@ def _sleep_night(samples, d: date) -> dict | None:
     else:
         return None
     return {"value": round(value), "n": len(items), "source": source or None, "details": details}
+
+
+async def drop_stale_intervals(db: AsyncSession, user_id: int, source: str,
+                               nights: dict[date, tuple[datetime, datetime]], samples: list[Sample]) -> int:
+    """A night's stage intervals move when the watch revises it: the intervals
+    of a re-read night (around its main window) that are no longer produced go,
+    or old and new ones would add up. Returns how many went."""
+    keep = {(s.start, s.kind) for s in samples if s.metric == "sleep"}
+    n = 0
+    for _, (a, b) in nights.items():
+        rows = await db.execute(select(HealthSample.id, HealthSample.start_at, HealthSample.kind).where(
+            HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == source,
+            HealthSample.start_at >= a - timedelta(hours=6), HealthSample.start_at < b + timedelta(hours=2)))
+        stale = [r.id for r in rows.all() if (r.start_at, r.kind) not in keep]
+        if stale:
+            await db.execute(delete(HealthSample).where(HealthSample.id.in_(stale)))
+            n += len(stale)
+    return n
 
 
 # ── fitness signal ──────────────────────────────────────────────────────────
@@ -462,18 +654,23 @@ def compute_form(days: dict[str, dict[date, float]], today: date) -> dict:
 
 
 async def _daily_series(db: AsyncSession, user_id: int, lo: date, hi: date,
-                        metrics=("hrv", "rhr", "sleep")) -> tuple[dict[str, dict[date, float]], set[str]]:
-    """{metric: {day: value}} (HRV on one scale only) and the sources behind it."""
+                        metrics=("hrv", "hr_night", "sleep")) -> tuple[dict[str, dict[date, float]], set[str]]:
+    """{metric: {day: value}} (HRV on one scale only, PaceForge's own nightly
+    value for the watches; nightly HR under the key "rhr" the fitness signal
+    reads) and the sources behind it."""
     rows = await db.execute(
-        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.source)
+        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.source, HealthMetric.details)
         .where(HealthMetric.user_id == user_id, HealthMetric.metric.in_(metrics),
                HealthMetric.date >= lo, HealthMetric.date <= hi)
     )
     series: dict[str, dict[date, float]] = defaultdict(dict)
     hrv_sources: dict[date, str | None] = {}
     sources: set[str] = set()
-    for metric, d, v, source in rows.all():
-        series[metric][d] = v
+    for metric, d, v, source, det in rows.all():
+        if metric == "hrv" and source in WATCH_SOURCES and (det or {}).get("method") != HRV_METHOD:
+            continue  # the watch's own average (older rows): never read as PaceForge's
+        key = "rhr" if metric == "hr_night" else metric
+        series[key][d] = v
         if metric == "hrv":
             hrv_sources[d] = source
         sources.add(source if source in RMSSD_SOURCES else "Apple Santé")

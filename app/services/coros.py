@@ -1,4 +1,4 @@
-"""COROS: what the athlete's watch knows about recovery and fitness.
+"""COROS: the athlete's nights and sessions, from their watch.
 
 COROS publishes its data as an MCP server (https://mcp.coros.com/mcp) behind
 OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
@@ -12,11 +12,14 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
 - Tokens are Fernet-encrypted. The refresh token ROTATES on each use (the old
   one is then rejected), so the new pair is committed before anything else, and
   one refresh at a time per athlete (row lock + per-process lock).
-- Sync → HRV, resting HR, sleep and VO2 max as HealthSample rows (source
-  "COROS") through health.store_samples; the values COROS already gives per day
-  (training load, recovery, daily heart rate, stress, steps, fitness
-  assessment, HRV normal range, sleep score) straight to HealthMetric
-  (health.store_daily).
+- Sync → PaceForge's own nightly values, one row per night (HealthMetric via
+  health.store_daily, source "COROS"): the main sleep (window, minutes
+  asleep), the day's naps (local windows, guarded), nightly HRV computed from
+  the raw readings inside the main window, the « Sleep HR » line of the main
+  sleep's summary, plus the day's heart rate and steps as « watch worn »
+  markers. No brand value is read (recovery, load, stress, sleep score, HRV
+  range, fitness and VO2 max, the daytime resting HR), and no stage interval
+  is written (COROS has no stage timeline). Sessions go to Activity.
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand.
 
@@ -27,10 +30,12 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import re
 import secrets
+import statistics
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
@@ -42,21 +47,19 @@ from app.config import settings
 from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.coros import CorosConnection, OAuthClient
-from app.models.health import HealthMetric, HealthSample
+from app.models.health import HealthMetric
 from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
-    _RANGES,
     DAILY_LABELS,
     DAILY_METRICS,
-    METRIC_LABELS,
-    METRICS,
+    HRV_METHOD,
     Daily,
-    Sample,
     _ago,
     _today,
-    reaggregate,
+    iso_min,
+    nap_daily,
+    nights_upgraded,
     store_daily,
-    store_samples,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,12 +79,11 @@ CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
-MAX_CALLS = 45  # a 60-day backfill takes 21 at most, the sessions 3 + their details
+MAX_CALLS = 45  # a 60-day backfill takes 13 at most, the sessions 3 + their details
 ACTIVITY_BACKFILL_DAYS = 180  # the sessions' history, as Garmin's
 SESSION_CHUNK_DAYS = 60
 SESSION_LIMIT = 200  # records per querySportRecords call
 DETAILS_PER_SYNC = 10  # getActivityDetail (the D+) for sessions only COROS has, newest first
-LOAD_FALLBACK_DAYS = 14  # what queryTrainingLoadAssessment is known to take
 
 # tests swap in an httpx.MockTransport here
 _transport: httpx.AsyncBaseTransport | None = None
@@ -509,31 +511,49 @@ def parse_duration(text: str | None) -> int | None:
     return int(m.group(1) or 0) * 60 + int(m.group(2) or 0)
 
 
-def parse_rhr(text: str) -> dict[date, float]:
-    """queryRestingHeartRate: '2026-09-30: 39 bpm' lines ('No data' skipped)."""
+def parse_hrv_points(text: str) -> list[tuple[int, int, float]]:
+    """querySleepHrv's raw time series: one (UTC timestamp, timezone in quarter
+    hours, RMSSD ms) per reading, all days together (the series is grouped by
+    the athlete's local calendar day, not by night: a night spans two groups).
+    The official « HRV Avg », its normal range and verdict are not read."""
+    parts = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)
+    if len(parts) < 2:
+        return []
     out = {}
-    for m in re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2}):\s*" + _NUM + r"\s*bpm", text or "", re.M):
-        d = _date(*m.groups()[:3])
-        if d:
-            out[d] = _num(m.group(4))
-    return out
+    for m in re.finditer(r"timestamp=(\d+),\s*timezone=(-?\d+),\s*hrv=" + _NUM + r"\s*ms", parts[1]):
+        ts, tz, v = int(m.group(1)), int(m.group(2)), _num(m.group(3))
+        if abs(tz) <= 14 * 4 and 5 <= v <= 300:
+            out[ts] = (ts, tz, v)
+    return [out[k] for k in sorted(out)]
 
 
-def parse_hrv(text: str) -> dict[date, float]:
-    """querySleepHrv: the official 'HRV Avg' of each wake-up day, from the
-    assessment section only (the raw time series that follows is ignored)."""
-    head = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)[0]
-    out, day = {}, None
-    for line in head.splitlines():
-        m = re.match(r"^\s*(\d{4})-(\d{2})-(\d{2}):\s*$", line)
-        if m:
-            day = _date(*m.groups())
-            continue
-        m = re.search(r"HRV Avg:\s*" + _NUM + r"\s*ms", line)
-        if m and day:
-            out[day] = _num(m.group(1))
-            day = None
-    return out
+def hrv_days(text: str) -> set[date]:
+    """The local days querySleepHrv answered for (with or without readings)."""
+    parts = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)
+    if len(parts) < 2:
+        return set()
+    return {d for d in (_date(*m.groups()) for m in re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2}):", parts[1], re.M))
+            if d}
+
+
+def local_time(ts: int, tz: int) -> datetime:
+    """A reading's local wall clock: UTC + timezone × 15 min (checked on France,
+    UTC+3 and UTC+9 nights and across the 2025 autumn clock change)."""
+    return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None) + timedelta(minutes=15 * tz)
+
+
+HRV_MIN_POINTS = 12  # (H) readings inside the main window for a nightly value
+
+
+def night_hrv(points: list[tuple[int, int, float]], start: datetime, end: datetime) -> dict | None:
+    """PaceForge's nightly HRV: exp(mean ln RMSSD) of the readings inside the
+    main window [start, end] (naps and daytime readings out), with how many
+    readings and their timezone (quarter hours). None under 12 readings (H)."""
+    inside = [(tz, v) for ts, tz, v in points if start <= local_time(ts, tz) <= end]
+    if len(inside) < HRV_MIN_POINTS:
+        return None
+    value = math.exp(statistics.fmean(math.log(v) for _, v in inside))
+    return {"value": round(value, 1), "n": len(inside), "tz": inside[-1][0]}
 
 
 def _field_minutes(block: str, label: str) -> int | None:
@@ -541,15 +561,13 @@ def _field_minutes(block: str, label: str) -> int | None:
     return parse_duration(m.group(1)) if m else None
 
 
-def _field_pct(block: str, label: str) -> float | None:
-    m = re.search(label + r":\s*" + _NUM + r"\s*%", block)
-    return _num(m.group(1)) if m else None
-
-
 def parse_sleep_overview(text: str) -> dict[date, dict]:
-    """querySleepOverview, per wake-up day: main sleep window, asleep and period
-    minutes, awake time, the stage ratios (%) and the sleep score (0 or
-    « not available yet » when COROS hasn't scored the night)."""
+    """querySleepOverview, per wake-up day with a main sleep: its window, asleep
+    and period minutes, awake time, and COROS's « Daily Sleep (incl. naps) »
+    (a cross-check of PaceForge's own 24-h total). Older records have no
+    « (asleep) » or « Period » line: their « Main Sleep » is the window's
+    length. The sleep score and the stage ratios (daily scope: naps mixed in)
+    are not read."""
     out = {}
     heads = list(re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$", text or "", re.M))
     for i, h in enumerate(heads):
@@ -572,9 +590,7 @@ def parse_sleep_overview(text: str) -> dict[date, dict]:
             "asleep": _field_minutes(block, r"Main Sleep \(asleep\)"),
             "period": _field_minutes(block, r"Main Sleep Period \(incl\. awake\)"),
             "awake": _field_minutes(block, r"Awake Time"),
-            "ratios": {"deep": _field_pct(block, "Deep Sleep Ratio"), "core": _field_pct(block, "Light Sleep Ratio"),
-                       "rem": _field_pct(block, "REM Ratio"), "awake": _field_pct(block, "Awake Ratio")},
-            "score": None if "not available yet" in block else _field(block, "Sleep Score"),
+            "daily": _field_minutes(block, r"Daily Sleep"),
         }
     return out
 
@@ -584,7 +600,9 @@ _RANGE = r"(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*-\s*(\d{4})-(\d{2})-(\d
 
 def parse_naps(text: str) -> dict[date, dict]:
     """querySleepOverview: each wake-up day's naps {asleep, period (min),
-    windows [(start, end)] local}, the main night apart (days without a nap left out)."""
+    windows [(start, end)] local, legacy}, the main night apart (days without a
+    nap left out). « (includes legacy reported durations) » sets legacy; the
+    guards (health.nap_guard) come when the value is built."""
     out = {}
     heads = list(re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$", text or "", re.M))
     for i, h in enumerate(heads):
@@ -600,29 +618,34 @@ def parse_naps(text: str) -> dict[date, dict]:
                     a, b = datetime(*map(int, g.groups()[:5])), datetime(*map(int, g.groups()[5:]))
                 except ValueError:
                     continue
-                if timedelta(0) < b - a <= timedelta(hours=6):
-                    windows.append((a, b))
+                windows.append((a, b))
+        legacy = bool(re.search(r"Naps Total[^\n]*legacy", block, re.I))
         out[day] = {"asleep": asleep, "period": _field_minutes(block, r"Naps Period(?: \(incl\. awake\))?"),
-                    "windows": windows}
+                    "windows": windows, "legacy": legacy}
     return out
 
 
-def parse_daily_sleep(text: str) -> dict[date, dict[str, int]]:
-    """queryDailyHealthData: stage minutes of each wake-up day's sleep summary."""
+def parse_daily_sleep(text: str) -> dict[date, dict]:
+    """queryDailyHealthData: each wake-up day's « Sleep Summary » {total,
+    deep, core, rem, awake (min), hr: {avg, min, max} | None}. The block
+    describes the episode COROS selected: the main sleep when there is one (its
+    total is the main period, naps out), else the lone nap (2026-09-25)."""
     out = {}
-    heads = list(re.finditer(r"^\s*---\s*(\d{4})(\d{2})(\d{2})\s*---\s*$", text or "", re.M))
-    for i, h in enumerate(heads):
-        day = _date(*h.groups())
-        block = text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
-        stages = {}
-        for kind, label in (("deep", "Deep"), ("core", "Light"), ("rem", "REM"), ("awake", "Awake")):
+    for day, block in _day_blocks(text, r"^\s*---\s*(\d{4})(\d{2})(\d{2})\s*---\s*$"):
+        if "Sleep Summary" not in block:
+            continue
+        block = block[block.index("Sleep Summary"):]
+        row: dict = {}
+        for kind, label in (("total", "Total"), ("deep", "Deep"), ("core", "Light"), ("rem", "REM"),
+                            ("awake", "Awake")):
             m = re.search(r"\b" + label + r":\s*([^|\n]+)", block)
             v = parse_duration(m.group(1)) if m else None
             if v is not None:
-                stages[kind] = v
-        if day and all(k in stages for k in ("deep", "core", "rem")):
-            stages.setdefault("awake", 0)
-            out[day] = stages
+                row[kind] = v
+        m = re.search(r"Sleep HR:\s*Avg\s*(\d+)\s*bpm\s*\|\s*Min\s*(\d+)\s*bpm\s*\|\s*Max\s*(\d+)\s*bpm", block)
+        row["hr"] = {"avg": float(m.group(1)), "min": float(m.group(2)), "max": float(m.group(3))} if m else None
+        if row.get("total") is not None:
+            out[day] = row
     return out
 
 
@@ -764,23 +787,9 @@ def parse_tz_offset(text: str) -> float | None:
     return q * 900.0 if abs(q) <= 14 * 4 else None
 
 
-def parse_vo2max(text: str) -> float | None:
-    m = re.search(r"VO2\s*max:\s*" + _NUM, text or "", re.I)
-    return _num(m.group(1)) if m else None
-
-
 def _int(s: str) -> int:
     """'18,055' → 18055 (thousands separators: comma, space, narrow space)."""
     return int(re.sub(r"[,\s  ]", "", s))
-
-
-def _clock(s: str | None) -> int | None:
-    """'15:50' → 950 s, '1:10:54' → 4254 s."""
-    m = re.match(r"\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b", s or "")
-    if not m:
-        return None
-    a, b, c = int(m.group(1)), int(m.group(2)), m.group(3)
-    return a * 3600 + b * 60 + int(c) if c is not None else a * 60 + b
 
 
 def _day_blocks(text: str, head: str):
@@ -798,45 +807,6 @@ def _field(block: str, label: str) -> float | None:
     return _num(m.group(1)) if m else None
 
 
-def parse_hrv_range(text: str) -> dict[date, dict]:
-    """querySleepHrv: each wake-up day's normal range and baseline (ms)."""
-    head = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)[0]
-    out = {}
-    for day, block in _day_blocks(head, r"^\s*(\d{4})-(\d{2})-(\d{2}):\s*$"):
-        m = re.search(r"Normal Range:\s*" + _NUM + r"\s*-\s*" + _NUM, block)
-        if m:
-            out[day] = {"lo": _num(m.group(1)), "hi": _num(m.group(2)), "base": _field(block, "Baseline")}
-    return out
-
-
-def parse_training_load(text: str) -> dict[date, dict]:
-    """queryTrainingLoadAssessment, per day: short- and long-term load, their
-    ratio and COROS's one-word comment (Excessive, Optimized…)."""
-    out = {}
-    for day, block in _day_blocks(text, r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$"):
-        short, long_ = _field(block, "Short-Term Load"), _field(block, "Long-Term Load")
-        if short is None or long_ is None:
-            continue
-        ratio = _field(block, "Load Ratio")
-        if ratio is None and long_ > 0:
-            ratio = round(short / long_, 2)
-        m = re.search(r"^\s*Comment:\s*([A-Za-z][A-Za-z \-]*?)\s*$", block, re.M)
-        out[day] = {"short": short, "long": long_, "ratio": ratio, "comment": m.group(1) if m else None}
-    return out
-
-
-def parse_recovery(text: str) -> dict | None:
-    """queryRecoveryStatus (today only): {pct, level, full_h}."""
-    m = re.search(r"Recovery:\s*" + _NUM + r"\s*%", text or "")
-    if not m:
-        return None
-    level = re.search(r"^\s*Level:\s*(.+?)\s*$", text, re.M)
-    full = re.search(r"Full Recovery:\s*([^\n]+)", text)
-    full_min = parse_duration(full.group(1)) if full else None
-    return {"pct": _num(m.group(1)), "level": level.group(1) if level else None,
-            "full_h": round(full_min / 60, 1) if full_min is not None else None}
-
-
 def parse_avg_hr(text: str) -> dict[date, dict]:
     """queryAvgHeartRate: '2026-10-04: 53 bpm (Min: 36, Max: 98)' lines."""
     out = {}
@@ -851,8 +821,8 @@ def parse_avg_hr(text: str) -> dict[date, dict]:
 
 
 def parse_daily_activity(text: str) -> dict[date, dict]:
-    """queryDailyHealthData, per day: steps, calories (kcal), exercise minutes
-    and average stress (absent when the watch wasn't worn)."""
+    """queryDailyHealthData, per day: steps, calories (kcal) and exercise
+    minutes (the watch's stress score is not read)."""
     out = {}
     for day, block in _day_blocks(text, r"^\s*---\s*(\d{4})(\d{2})(\d{2})\s*---\s*$"):
         row: dict = {}
@@ -865,174 +835,114 @@ def parse_daily_activity(text: str) -> dict[date, dict]:
         m = re.search(r"Exercise:\s*([^|\n]+)", block)
         if m and parse_duration(m.group(1)) is not None:
             row["exercise"] = parse_duration(m.group(1))
-        m = re.search(r"Stress:\s*Avg\s*(\d+)", block)
-        if m:
-            row["stress"] = int(m.group(1))
         if row:
             out[day] = row
     return out
 
 
-_PREDICTIONS = (("5k", r"\b5\s*km"), ("10k", r"\b10\s*km"), ("half", r"\bHalf\s+Marathon"),
-                ("marathon", r"(?<!Half )\bMarathon"))
+# ── the nightly values ──────────────────────────────────────────────────────
 
-
-def parse_fitness(text: str) -> dict:
-    """queryFitnessAssessmentOverview: VO2max, running level, threshold pace
-    (s/km) and race predictions (s). Missing lines are left out."""
-    out: dict = {}
-    vo2 = parse_vo2max(text)
-    if vo2 is not None:
-        out["vo2max"] = vo2
-    level = _field(text or "", "Running Level")
-    if level is not None:
-        out["level"] = level
-    m = re.search(r"Threshold Pace:\s*(\d{1,2}:\d{2})\s*/\s*km", text or "")
-    if m:
-        out["threshold_s"] = _clock(m.group(1))
-    preds = {}
-    for key, label in _PREDICTIONS:
-        m = re.search(label + r"\s*Prediction:\s*([\d:]+)", text or "", re.I)
-        if m and _clock(m.group(1)):
-            preds[key] = _clock(m.group(1))
-    if preds:
-        out["pred"] = preds
-    return out
-
-
-# ── samples ─────────────────────────────────────────────────────────────────
-
-HRV_AT = time(5, 0)  # inside the 22:00 → 10:00 night window of health._hrv_day
-RHR_AT = time(23, 59)  # the last of the day: wins over an Apple value the same day
-VO2_AT = time(12, 0)
-STAGE_ORDER = ("deep", "core", "awake", "rem")
-STAGE_TOLERANCE_MIN = 15
-
-
-def night_stages(overview: dict, daily: dict[str, int] | None) -> dict[str, int] | None:
-    """Minutes per stage of one main sleep: the daily summary's exact minutes
-    when they add up to the main sleep, else the overview's ratios applied to it."""
-    asleep = overview.get("asleep")
-    if daily:
-        total = daily["deep"] + daily["core"] + daily["rem"]
-        if total > 0 and (asleep is None or abs(total - asleep) <= STAGE_TOLERANCE_MIN):
-            return dict(daily)
-    ratios = overview.get("ratios") or {}
-    period = overview.get("period") or round((overview["end"] - overview["start"]).total_seconds() / 60)
-    awake = overview.get("awake")
-    if awake is None:
-        awake = round(period * (ratios.get("awake") or 0) / 100)
-    asleep = asleep if asleep is not None else period - awake
-    parts = [ratios.get(k) or 0 for k in ("deep", "core", "rem")]
-    if asleep <= 0 or sum(parts) <= 0:
-        return None
-    deep = round(asleep * parts[0] / sum(parts))
-    rem = round(asleep * parts[2] / sum(parts))
-    return {"deep": deep, "core": asleep - deep - rem, "rem": rem, "awake": awake}
-
-
-def sleep_samples(overview: dict, stages: dict[str, int], source: str = SOURCE) -> list[Sample]:
-    """Contiguous stage intervals from the start of the main sleep window. The
-    awake minutes sit before the last REM block, so the night starts and ends
-    asleep: bedtime and wake time come out as COROS's window."""
-    start, end = overview["start"], overview["end"]
-    total = sum(max(stages.get(k, 0), 0) for k in STAGE_ORDER)
-    span = (end - start).total_seconds() / 60
-    scale = span / total if total > span else 1.0
-    out, t = [], start
-    for kind in STAGE_ORDER:
-        minutes = max(stages.get(kind, 0), 0) * scale
-        if minutes <= 0:
-            continue
-        t1 = t + timedelta(seconds=round(minutes * 60))
-        out.append(Sample("sleep", kind, t, t1, round((t1 - t).total_seconds() / 60, 2), source))
-        t = t1
-    return out
-
-
-def _point(metric: str, day: date, at: time, value: float) -> Sample | None:
-    lo, hi = _RANGES[metric]
-    if not lo <= value <= hi:
-        logger.info("COROS %s %s out of range (%s): skipped", metric, day, value)
-        return None
-    t = datetime.combine(day, at)
-    return Sample(metric, "", t, t, round(value, 3), SOURCE)
+HR_PERIOD_TOLERANCE = 15  # (H) min between the summary's total and the main period
 
 
 def _ok(value, lo: float, hi: float) -> bool:
     return isinstance(value, (int, float)) and lo <= value <= hi
 
 
+def _main_period(ov: dict) -> int:
+    """The main episode's minutes, awake included: the period line, else the window."""
+    return ov.get("period") or round((ov["end"] - ov["start"]).total_seconds() / 60)
+
+
+def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None) -> list[Daily]:
+    """One `sleep` value per main night: minutes asleep in the main episode,
+    its window (local ISO), period and timezone. COROS gives no stage
+    timeline, so no stage intervals are written (timeline False)."""
+    out = []
+    for d, ov in overview.items():
+        period = _main_period(ov)
+        asleep = ov.get("asleep")
+        if asleep is None:  # older records: « Main Sleep » is the window, awake inside it
+            asleep = period - (ov.get("awake") or 0)
+        if not _ok(asleep, 1, 16 * 60):
+            continue
+        det = {"main_start": iso_min(ov["start"]), "main_end": iso_min(ov["end"]), "period": period,
+               "bedtime": ov["start"].strftime("%H:%M"), "wake": ov["end"].strftime("%H:%M"), "timeline": False}
+        if (tz or {}).get(d) is not None:
+            det["tz"] = tz[d] * 15
+        if _ok(ov.get("daily"), 1, 24 * 60):
+            det["daily"] = ov["daily"]
+        out.append(Daily("sleep", d, asleep, det))
+    return out
+
+
+def hrv_dailies(points: list[tuple[int, int, float]], overview: dict[date, dict],
+                days: set[date] | None = None) -> list[Daily]:
+    """PaceForge's nightly HRV for each main night whose two local days (the
+    evening's and the morning's) were both read: a night computed from half its
+    readings would overwrite a whole one."""
+    out = []
+    for d, ov in overview.items():
+        if days is not None and not {d, d - timedelta(days=1)} <= days:
+            continue
+        v = night_hrv(points, ov["start"], ov["end"])
+        if v:
+            out.append(Daily("hrv", d, v["value"], {"n": v["n"], "tz": v["tz"] * 15, "method": HRV_METHOD}))
+    return out
+
+
+def hr_night_dailies(daily: dict[date, dict], overview: dict[date, dict], naps: dict[date, dict]) -> list[Daily]:
+    """COROS's nightly heart rate: the « Sleep HR » line of the sleep summary,
+    kept only when that summary is the main sleep's (a main window exists and
+    its total is the main period within 15 min (H): the nap-only day and the
+    malformed 2026-07-17 record go). A day with a nap is marked: whether COROS
+    leaves the nap out of that line could not be checked (no HR curve)."""
+    out = []
+    for d, row in daily.items():
+        hr, ov = row.get("hr"), overview.get(d)
+        if not hr or not ov or abs(row["total"] - _main_period(ov)) > HR_PERIOD_TOLERANCE:
+            continue
+        if not (_ok(hr["avg"], 25, 120) and hr["min"] <= hr["avg"] <= hr["max"]):
+            continue
+        out.append(Daily("hr_night", d, hr["avg"], {"min": hr["min"], "max": hr["max"],
+                                                     "method": "coros_sleep_summary", "nap_day": d in naps}))
+    return out
+
+
+def nap_dailies(naps: dict[date, dict], overview: dict[date, dict] | None = None) -> list[Daily]:
+    """One `nap` value per day with naps (Garmin's are built the same way), the
+    guards of health.nap_guard applied against that day's main window."""
+    out = []
+    for d, v in naps.items():
+        ov = (overview or {}).get(d)
+        row = nap_daily(d, v.get("asleep"), v.get("period"), v.get("windows"),
+                        (ov["start"], ov["end"]) if ov else None, legacy=bool(v.get("legacy")))
+        if row:
+            out.append(row)
+    return out
+
+
 def build_daily(data: dict, today: date) -> list[Daily]:
     """The per-day values, implausible ones left out (an odd wording must not
-    write a 0 % recovery or a 50 000 bpm day)."""
+    write a 50 000 bpm day). No brand value: recovery, load, stress, sleep score,
+    HRV range, fitness and the daytime resting HR are not read."""
     out: list[Daily] = []
-    for d, v in (data.get("load") or {}).items():
-        if _ok(v["short"], 0, 3000) and _ok(v["long"], 0, 3000):
-            ratio = v["ratio"] if _ok(v.get("ratio"), 0, 20) else None
-            out.append(Daily("load", d, v["short"], {"long": v["long"], "ratio": ratio, "comment": v["comment"]}))
-    rec = data.get("recovery")
-    if rec and _ok(rec["pct"], 0, 100):
-        full = rec["full_h"] if _ok(rec.get("full_h"), 0, 500) else None
-        out.append(Daily("recovery", today, rec["pct"], {"level": rec["level"], "full_h": full}))
+    overview = data.get("overview") or {}
     for d, v in (data.get("hr_day") or {}).items():
         if _ok(v["avg"], 25, 230):
             out.append(Daily("hr_day", d, v["avg"], {"min": v["min"], "max": v["max"]}))
     for d, v in (data.get("activity") or {}).items():
-        if _ok(v.get("stress"), 1, 100):
-            out.append(Daily("stress", d, v["stress"]))
         # 0 steps and 0 kcal: the watch wasn't worn that day
         if _ok(v.get("steps"), 1, 200_000) or _ok(v.get("kcal"), 1, 20_000):
             out.append(Daily("steps", d, v.get("steps") or 0,
                              {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
-    for d, v in (data.get("hrv_range") or {}).items():
-        if _ok(v["lo"], 5, 300) and _ok(v["hi"], v["lo"], 300):
-            base = v["base"] if _ok(v.get("base"), 5, 300) else round((v["lo"] + v["hi"]) / 2, 1)
-            out.append(Daily("hrv_norm", d, base, {"lo": v["lo"], "hi": v["hi"]}))
-    for d, v in (data.get("overview") or {}).items():
-        if _ok(v.get("score"), 1, 100):  # 0: not scored (yet)
-            out.append(Daily("sleep_score", d, v["score"]))
-    out += nap_dailies(data.get("naps") or {})
-    fit = dict(data.get("fitness") or {})
-    if fit:
-        if not _ok(fit.get("vo2max"), 10, 95):
-            fit.pop("vo2max", None)
-        if not _ok(fit.get("level"), 1, 200):
-            fit.pop("level", None)
-        if not _ok(fit.get("threshold_s"), 120, 900):
-            fit.pop("threshold_s", None)
-        preds = {k: s for k, s in (fit.get("pred") or {}).items() if _ok(s, 600, 12 * 3600)}
-        if preds:
-            fit["pred"] = preds
-        else:
-            fit.pop("pred", None)
-        if fit:
-            out.append(Daily("fitness", today, fit.get("level") or 0, fit))
-    return out
-
-
-def nap_dailies(naps: dict[date, dict]) -> list[Daily]:
-    """One `nap` value per day with naps (Garmin's are read the same way)."""
-    out = []
-    for d, v in naps.items():
-        if _ok(v.get("asleep"), 1, 600):
-            period = v["period"] if _ok(v.get("period"), v["asleep"], 720) else None
-            windows = [[a.strftime("%H:%M"), b.strftime("%H:%M")] for a, b in v.get("windows") or []]
-            out.append(Daily("nap", d, v["asleep"], {"period": period, "windows": windows}))
-    return out
-
-
-def build_samples(hrv: dict[date, float], rhr: dict[date, float], overview: dict[date, dict],
-                  daily: dict[date, dict[str, int]], vo2max: float | None, today: date) -> list[Sample]:
-    out: list[Sample] = []
-    out += [s for d, v in hrv.items() if (s := _point("hrv", d, HRV_AT, v))]
-    out += [s for d, v in rhr.items() if (s := _point("rhr", d, RHR_AT, v))]
-    for d, ov in overview.items():
-        stages = night_stages(ov, daily.get(d))
-        if stages:
-            out += sleep_samples(ov, stages)
-    if vo2max is not None and (s := _point("vo2max", today, VO2_AT, vo2max)):
-        out.append(s)
+    points = data.get("hrv_points") or []
+    hrv = hrv_dailies(points, overview, data.get("hrv_days"))
+    tz = {r.day: r.details["tz"] // 15 for r in hrv}
+    out += sleep_dailies(overview, tz)
+    out += hrv
+    out += hr_night_dailies(data.get("daily") or {}, overview, data.get("naps") or {})
+    out += nap_dailies(data.get("naps") or {}, overview)
     return out
 
 
@@ -1117,29 +1027,28 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # ends a day later (an empty future day costs nothing) and keeps its size.
     hi = today + timedelta(days=1)
     lo = hi - timedelta(days=days - 1)
-    data: dict = {"hrv": {}, "hrv_range": {}, "rhr": {}, "overview": {}, "daily": {}, "vo2max": None}
+    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {}}
     # the nights first: last night is what the morning's decision reads
     for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
         data["overview"].update(_parsed(parse_sleep_overview, text))
-        data.setdefault("naps", {}).update(_parsed(parse_naps, text))
+        data["naps"].update(_parsed(parse_naps, text))
+    points: dict[int, tuple] = {}
     for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
-        data["hrv"].update(_parsed(parse_hrv, text))
-        data["hrv_range"].update(_parsed(parse_hrv_range, text))
-        if data.get("utc_offset") is None and text:  # latest chunk first: the athlete's current offset
+        if text is None:
+            continue
+        points.update((p[0], p) for p in _parsed(parse_hrv_points, text) or [])
+        # every day of the answered range counts as read (COROS may leave an empty day out)
+        data["hrv_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
+        if data.get("utc_offset") is None:  # latest chunk first: the athlete's current offset
             tz = _parsed(parse_tz_offset, text)
             data["utc_offset"] = tz if isinstance(tz, float) else None
-    data["load"] = _parsed(parse_training_load, await call.recent(
-        "queryTrainingLoadAssessment", days, LOAD_FALLBACK_DAYS))
-    data["recovery"] = _parsed(parse_recovery, await call("queryRecoveryStatus", {})) or None
+    data["hrv_points"] = [points[k] for k in sorted(points)]
     data["hr_day"] = _parsed(parse_avg_hr, await call.recent("queryAvgHeartRate", days))
     text = await call.recent("queryDailyHealthData", days)
     data["daily"] = _parsed(parse_daily_sleep, text)
     data["activity"] = _parsed(parse_daily_activity, text)
-    data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
-    data["vo2max"] = data["fitness"].get("vo2max")
-    data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
     # the sessions last: the nights matter more on a morning when COROS is slow; their
     # failures never make the health history count as cut short
     data["health_stopped"] = call.stopped
@@ -1162,23 +1071,6 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
             if text is not None:  # a call lost to a timeout is asked again next time
                 data["details"][label] = _parsed(parse_activity_detail, text)
     return data, call.calls, call.failed, call.stopped
-
-
-async def _drop_stale_intervals(db: AsyncSession, user_id: int, nights, samples: list[Sample],
-                                source: str = SOURCE) -> None:
-    """A night's stage boundaries move when the watch revises its minutes: the
-    intervals of a rewritten night that are no longer produced go, or the old
-    and new ones would add up."""
-    keep = {(s.start, s.kind) for s in samples if s.metric == "sleep"}
-    for d in nights:
-        rows = await db.execute(select(HealthSample.id, HealthSample.start_at, HealthSample.kind).where(
-            HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == source,
-            HealthSample.start_at >= datetime.combine(d - timedelta(days=1), time(18, 0)),
-            HealthSample.start_at < datetime.combine(d, time(12, 0))))
-        stale = [r.id for r in rows.all() if (r.start_at, r.kind) not in keep]
-        if stale:
-            await db.execute(delete(HealthSample).where(HealthSample.id.in_(stale)))
-            await reaggregate(db, user_id, {"sleep": {d}})  # also when nothing replaces them
 
 
 async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
@@ -1298,17 +1190,19 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
 
 
 async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
-    """Fetch and store; returns store_samples' counts. Raises CorosAuthError
+    """Fetch and store; returns store_daily's counts. Raises CorosAuthError
     when the athlete must reconnect, CorosError when COROS can't be read."""
     # the history comes once: on the first sync, or while no daily value
     # arrived yet (a first sync that read nothing must not lose the 60 days;
-    # a link made before the daily values were read gets them too)
+    # a link made before the daily values were read gets them too), and once
+    # more when the nights are still in their pre-2026-10 format
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
-            HealthMetric.metric.in_(("load", "hr_day", "steps")))
+            HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
-    owed = conn.last_sync_at is None or not have or conn.last_error == PARTIAL
+    owed = (conn.last_sync_at is None or not have or conn.last_error == PARTIAL
+            or not await nights_upgraded(db, conn.user_id, SOURCE))
     days = BACKFILL_DAYS if owed else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read
     activity_days = ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None else RECENT_DAYS
@@ -1337,18 +1231,13 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
         raise CorosError("COROS n'a renvoyé aucune donnée lisible.")
 
     # the athlete's today (a day ahead of the server's in Asia mornings)
-    latest = max([*data["hrv"], *data["rhr"], *data["overview"], *data["activity"],
-                  *data["load"], *data["hr_day"]], default=None)
+    latest = max([*data["overview"], *data["activity"], *data["hr_day"], *data["naps"]], default=None)
     today = _today(latest)
-    samples = build_samples(data["hrv"], data["rhr"], data["overview"], data["daily"],
-                            data["vo2max"], today)
-    await _drop_stale_intervals(db, conn.user_id, data["overview"], samples)
-    result = await store_samples(db, conn.user_id, samples) if samples else {
-        "received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
+    result = {"received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
     daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE)
     result["inserted"] += daily["inserted"]
     result["updated"] += daily["updated"]
-    result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
+    result["by_metric"] = daily["by_metric"]
     if data.get("details"):
         sessions["detailed"] = await apply_details(db, conn.user_id, data["details"])
     result["activities"] = sessions
@@ -1478,25 +1367,25 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
-    rows = await db.execute(
-        select(HealthSample.metric, func.count(func.distinct(func.date(HealthSample.end_at))))
-        .where(HealthSample.user_id == user_id, HealthSample.source == SOURCE)
-        .group_by(HealthSample.metric))
-    days = dict(rows.all())
-    rows = await db.execute(
-        select(HealthMetric.metric, func.count(HealthMetric.id))
-        .where(HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
-               HealthMetric.metric.in_(DAILY_METRICS))
-        .group_by(HealthMetric.metric))
-    daily = dict(rows.all())
-    claimed = _as_utc(conn.sync_claimed_at)
     return {
         "connected": True,
         "needs_reauth": conn.needs_reauth,
         "last_sync_at": conn.last_sync_at,
         "last_sync_ago": _ago(conn.last_sync_at),
-        "syncing": bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
+        "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
+                        and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
-        "per_metric": [(METRIC_LABELS[m], days[m]) for m in METRICS if days.get(m)]
-                      + [(DAILY_LABELS[m], daily[m]) for m in DAILY_LABELS if daily.get(m)],
+        "per_metric": await synced_counts(db, user_id, SOURCE),
     }
+
+
+async def synced_counts(db: AsyncSession, user_id: int, source: str) -> list[tuple[str, int]]:
+    """What Réglages lists: days stored per value from this watch (brand rows
+    stored before 2026-10 included, as they are still there)."""
+    rows = await db.execute(
+        select(HealthMetric.metric, func.count(HealthMetric.id))
+        .where(HealthMetric.user_id == user_id, HealthMetric.source == source,
+               HealthMetric.metric.in_(DAILY_METRICS))
+        .group_by(HealthMetric.metric))
+    daily = dict(rows.all())
+    return [(label, daily[m]) for m, label in DAILY_LABELS.items() if daily.get(m)]
