@@ -28,6 +28,10 @@ After the race (J+1 → J+14, a display window, H):
   days before J-7 (the race window is out of it), dots only without it; no
   label, no flag, never « récupération incomplète » (Hynynen 2010: nightly HR
   at 130 % the first night; Paech 2021: back at day 7 after 100 miles).
+Each number is printed once across Santé, Activités and this page: the three
+figures open on a resting readout (viz.rest) — the window, the base and the
+target, the band — and a week's hours (Activités' week headings) or a night's
+values (Santé › Sommeil) show only on a tap.
 - After a race run through a night (in progress at 03:00, H): « Évite les
   longs trajets en voiture » on its finish day and the day after (Kishi 2024).
 « Prêt pour la distance ? » is gone: no evidence row backs it.
@@ -38,15 +42,13 @@ import statistics
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.health import HealthMetric
 from app.models.route import Route
 from app.services import nights as nt
 from app.services import sante_training as st
 from app.services import viz
-from app.services.health import _today as watch_today
 from app.services.health import feel_of
 from app.services.viz import MOIS, NNBSP, X1, d_long, hm, hm_long, num
 
@@ -67,20 +69,7 @@ LONG_OUTING_MIN, LONG_OUTING_DPLUS = 180, 1500  # ◆ a long outing (H)
 NBH = "‑"  # non-breaking hyphen: « J‑12 » never wraps
 
 
-# ── the athlete's day and races ─────────────────────────────────────────────
-
-async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None) -> date:
-    """The athlete's date: the server's clock moved by their UTC offset (latest
-    session), else the watch's latest day — as Santé reads it."""
-    now = now or datetime.now(timezone.utc)
-    latest = (await db.execute(
-        select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    offset = await st.utc_offset(db, user_id)
-    today = (now + timedelta(seconds=offset)).date() if offset is not None else watch_today(latest)
-    if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
-        today = latest
-    return today
-
+# ── races (Santé reads them too) ────────────────────────────────────────────
 
 def race_day(route) -> date | None:
     try:
@@ -284,7 +273,7 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
         if t:
             ctx.append(f"cible {range_hm(*t)}")
         elif m in base_weeks:
-            ctx.append(f"base : {hm(base)} en moyenne")
+            ctx.append("dans ta base")
         if big:
             ctx.append(f"{viz.GLYPH['long']} sortie de {hm(big.minutes)}")
         head = week_label(m) + (" · en cours" if m == this_monday else "")
@@ -305,6 +294,18 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
            "base_y": y(base) if base else None, **ev, "summary": summary,
            **viz._data(xs, [], mondays, r, a, h=h, sel=sel)}
     out["sentence"] = fr(taper_sentence(sessions, rd, today, now, target, taper_from))
+    # resting readout: this week's hours are Activités' (its week heading prints them)
+    t = target.get(mondays[-1])
+    back = sel  # this week (the latest one lived)
+    if base and t:
+        out = viz.rest(out, [f"S{NBH}6 → S0", f"base : {hm(round(base / 5) * 5)} par semaine", f"cible S{NBH}1 et S0 : {range_hm(*t)}"],
+                       f"Affûtage, 7 semaines jusqu'à la course : ta base {hm_long(round(base / 5) * 5)} par semaine, cible des 2 "
+                       f"dernières semaines {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)}. "
+                       "Touche une semaine pour ses heures.", back=back)
+    else:
+        out = viz.rest(out, [f"S{NBH}6 → S0", "heures par semaine", ""],
+                       "Affûtage, 7 semaines jusqu'à la course, heures par semaine. Touche une semaine pour ses heures.",
+                       back=back)
     return out
 
 
@@ -394,7 +395,14 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
                        + (f", cible {hm_long(round(goal[0] / 5) * 5)} à {hm_long(round(goal[1] / 5) * 5)} par jour"
                           if goal else "")),
            **viz._data(xs, [], days, r, a, sel=sel)}
-    return out
+    # resting readout: the last night's total is Santé › Sommeil's (printed once, there)
+    if goal:
+        return viz.rest(out, [f"J{NBH}14 → J{NBH}1", f"cible {range_hm(*goal)} par jour", ""],
+                        f"Sommeil sur 24 heures de J-14 à J-1 : cible {hm_long(round(goal[0] / 5) * 5)} à "
+                        f"{hm_long(round(goal[1] / 5) * 5)} par jour, siestes comprises. Touche une nuit pour la "
+                        "sienne.", back=sel)
+    return viz.rest(out, [f"J{NBH}14 → J{NBH}1", "sommeil sur 24 h", ""],
+                    "Sommeil sur 24 heures de J-14 à J-1, siestes comprises. Touche une nuit pour la sienne.", back=sel)
 
 
 # ── Récupération: Cœur la nuit, J+1 → J+14 ──────────────────────────────────
@@ -425,7 +433,11 @@ def recovery(nights: dict, rd: date, today: date) -> dict:
                       f"{d_long(d)}, {j_label((d - rd).days)} : pas de mesure")
     c = _patch(c, fix) if fix else c
     c["banded"] = any(p["band"][0] for p in panels)
-    return c
+    # resting readout: the last night's VFC and FC are Santé › Sommeil's (printed once, there)
+    return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit", "bande : ta normale avant la course" if c["banded"] else ""],
+                    "Cœur la nuit de J+1 à J+14, VFC en haut, FC en bas"
+                    + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Touche une nuit pour ses "
+                    "valeurs.", back=sel)
 
 
 # ── Semaine de course : manger ──────────────────────────────────────────────
@@ -499,7 +511,7 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
     if rd is None:
         return None
     now = now or datetime.now(timezone.utc)
-    today = await athlete_today(db, user.id, now)
+    today = await st.athlete_today(db, user.id, now)
     k = (today - rd).days
     if not -PREP_BEFORE <= k <= PREP_AFTER:
         return None

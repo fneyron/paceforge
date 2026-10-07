@@ -77,6 +77,10 @@ def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
     assert d["h"][0]["href"] == "/activities?page=2#week-2026-07-20"
     assert d["r"][-1][0] == "sem. du 5 oct. · en cours" and c["cols"][-1]["cur"]
     assert "%" not in json.dumps(d, ensure_ascii=False)  # no weekly % anywhere
+    # before 8 active weeks there is no usual week: the readout still rests, on words (no week printed twice)
+    young = tv.semaines([s for s in ss if s.day > T - timedelta(days=30)], [], T, NOW)
+    assert young["band"] is None and young["rest"] and young["read"] == ["12 semaines", "heures par semaine",
+                                                                         "dénivelé en dessous"]
 
 
 def test_weeks_mark_races_long_outings_and_the_spike():
@@ -148,7 +152,7 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
     runs = [easy(k, 140) for k in range(10, 200, 3)]
     assert not tv.footing(runs + [easy(2, 144)], T, 185)["flagged"]  # one run
     c = tv.footing(runs + [easy(5, 144), easy(2, 146)], T, 185)
-    assert c["flagged"] and c["line"] == "+5 bpm sur tes 2 dernières sorties, à même allure."
+    assert c["flagged"] and c["line"] == "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
     assert not tv.footing(runs + [easy(5, 144), easy(2, 142)], T, 185)["flagged"]  # +2: within the band
     assert not tv.footing(runs + [easy(5, 150, temp=30), easy(2, 150, temp=30)], T, 185)["flagged"]  # hot
     assert tv.footing([easy(k, 140) for k in range(3, 20, 3)], T, 185) is None  # under 8 runs for the slope

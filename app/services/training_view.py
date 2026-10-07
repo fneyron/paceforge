@@ -10,8 +10,9 @@ partials/activity_training.html draws it on page 1 without a sport filter.
   single-run spike in the warn tone: a run > 10 % longer, on distance, than
   the longest of the 30 days before it, races excluded (Frandsen 2025: 1.5–
   2.3× overuse injuries; no weekly % flag, evidence row 15). Resting readout
-  « semaine type : 7h40 » (the median of those weeks); a week's own values
-  only on tap. One line at most: the spike, else « Affûtage pour {course} › »
+  « semaine type : 7h40 » (the median of those weeks), « heures par semaine »
+  before 8 active weeks; a week's own values only on tap (the list's week
+  headings print them). One line at most: the spike, else « Affûtage pour {course} › »
   during the taper, else « Récupération après {course} : volume bas, c'est
   voulu. » after a race.
 - A2 « Fond et fatigue » (closed): fond (42-day EWMA) and fatigue (7-day) of
@@ -24,13 +25,13 @@ partials/activity_training.html draws it on page 1 without a sport filter.
   months), hot runs (≥ 25 °C, H) hollow and out of the normal; the normal is
   the median of the 28 days before ± 3 bpm (H; Nuuttila 2022's 3–4 bpm edge)
   with 3 runs at least (H). « à surveiller » when the 2 latest runs, both in
-  the last 14 days, are each ≥ 3 bpm above it (H; Nuuttila 2022). HR alone is
-  « not a clear marker of fatigue » (Buchheit 2014): never « fatigue ».
+  the last 14 days, are each ≥ 3 bpm above it (H; Nuuttila 2022). One model
+  (sante_training.easy_model / easy_watch), shared with Santé's « FC en
+  footing » tile, which prints the bpm: here the line says it in words. HR
+  alone is « not a clear marker of fatigue » (Buchheit 2014): never « fatigue ».
 """
-import json
 import logging
 import statistics
-from bisect import bisect_left
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -40,30 +41,19 @@ from app.models.health import HealthMetric
 from app.services import race_prep as rp
 from app.services import sante_training as st
 from app.services import viz
-from app.services.viz import JOURS_L, MOIS, NNBSP, X1, d_long, hm, hm_long, num, signed
+from app.services.viz import JOURS_L, MOIS, NNBSP, X1, d_long, hm, hm_long, num
 
 logger = logging.getLogger(__name__)
 
 WEEKS, USUAL_WEEKS, MIN_USUAL_WEEKS = 12, 26, 8  # (H)
 SPIKE, SPIKE_DAYS, SPIKE_RECENT = 1.10, 30, 10  # Frandsen 2025; the line names a spike of the last 10 days (H)
 FORM_DAYS = 120
-EASY_DAYS, EASY_FIT_DAYS = 182, 365
-EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H)
-HOT_C = 25  # (H)
+EASY_DAYS = 182  # the dots of 6 months
 
 
 def _dplus(v: float) -> str:
     """« 2 400 m D+ »."""
     return f"{int(round(v)):,}".replace(",", NNBSP) + f"{NNBSP}m D+"
-
-
-def _rest(c: dict, read: list[str], aria: str) -> dict:
-    """A resting readout shown until a touch (pf-viz.js D.rest): nothing selected."""
-    data = json.loads(c["data"].replace("<\\/", "</"))
-    data["rest"], data["restA"], data["sel"] = read, aria, len(data["x"])
-    c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True)
-    return c
 
 
 # ── A1 Semaines ─────────────────────────────────────────────────────────────
@@ -167,11 +157,15 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
          "xt": [{"x": xs[i], "label": f"{m.day} {MOIS[m.month - 1]}"} for i, m in enumerate(mondays)
                 if (n - 1 - i) % 3 == 0],
          "summary": "Heures par semaine sur 12 semaines, dénivelé en dessous" + (
-             f", ta semaine type autour de {hm_long(usual['mid'])}" if usual else ""),
+             f", ta semaine type autour de {hm_long(round(usual['mid'] / 5) * 5)}" if usual else ""),
          **viz._data(xs, [], mondays, r, a, h=h)}
+    # resting readout: a week's own hours only on tap (the list's week headings print them)
     if usual:
-        c = _rest(c, ["12 semaines", f"semaine type : {hm(usual['mid'])}", ""],
-                  f"12 semaines, ta semaine type : {hm_long(usual['mid'])}")
+        mid = round(usual["mid"] / 5) * 5  # a median: to 5 min
+        c = viz.rest(c, ["12 semaines", f"semaine type : {hm(mid)}", ""], f"12 semaines, ta semaine type : {hm_long(mid)}")
+    else:
+        c = viz.rest(c, ["12 semaines", "heures par semaine", "dénivelé en dessous"],
+                  "12 semaines : heures par semaine, dénivelé en dessous. Touche une semaine pour ses chiffres.")
     c["line"] = a1_line(sessions, routes, race_days, today)
     return c
 
@@ -237,57 +231,36 @@ def fond_fatigue(sessions: list[st.Session], routes: list, today: date) -> dict:
 
 # ── A3 FC en footing ────────────────────────────────────────────────────────
 
-def flat_easy(sessions: list[st.Session], peak: float) -> list[st.Session]:
-    """sante_training.easy_runs without its heat filter: hot runs are drawn
-    (hollow), only kept out of the normal."""
-    return [s for s in sessions
-            if s.sport in st.RUNS and s.hr and s.speed and s.km >= 5 and 25 <= s.minutes <= 150
-            and s.dplus <= 12 * s.km and s.hr <= 0.82 * peak and s.workout_type not in (1, 3)]
-
-
-def is_hot(s: st.Session) -> bool:
-    return s.temp is not None and s.temp >= HOT_C
-
-
 def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None:
-    runs = sorted((s for s in flat_easy(sessions, peak) if s.day > today - timedelta(days=EASY_FIT_DAYS)),
-                  key=lambda s: s.start)
-    cool = [s for s in runs if not is_hot(s)]
-    shown = [s for s in runs if s.day > today - timedelta(days=EASY_DAYS)]
-    if len(cool) < st.MIN_FIT_RUNS or not shown:
+    """The dots of 6 months against the rolling normal (sante_training.easy_model,
+    the model Santé's « FC en footing » tile reads too); « à surveiller »
+    is sante_training.easy_watch. Its number (the bpm over the normal) is
+    printed once, on Santé's tile: the line here says it in words."""
+    model = st.easy_model(sessions, today, peak)
+    if model is None:
         return None
-    _, b = st.theil_sen([s.speed for s in cool], [s.hr for s in cool])
-    pace = round(1000 / statistics.median(s.speed for s in cool) / 5) * 5  # s/km, to 5 s
-    ref = 1000 / pace
-    value = {s.id: s.hr - b * (s.speed - ref) for s in runs}
-    cdays = [s.day for s in cool]
-
-    def centre(d: date) -> float | None:
-        """The median of the cool runs of the 28 days before `d` (3 at least)."""
-        prior = [value[s.id] for s in cool[bisect_left(cdays, d - timedelta(days=EASY_WINDOW)):bisect_left(cdays, d)]]
-        return statistics.median(prior) if len(prior) >= EASY_MIN else None
-
+    shown = [s for s in model["runs"] if s.day > today - timedelta(days=EASY_DAYS)]
+    if not shown:
+        return None
+    value, centre = model["value"], model["centre"]
     lo = today - timedelta(days=EASY_DAYS - 1)
     days = [lo + timedelta(days=i) for i in range(EASY_DAYS)]
     band = []
     for d in days:
         m = centre(d)
-        band.append((m - EASY_BPM, m + EASY_BPM) if m is not None else None)
+        band.append((m - st.EASY_BPM, m + st.EASY_BPM) if m is not None else None)
     points = []
     for s in shown:
         m = centre(s.day)
-        points.append({"day": s.day, "value": value[s.id], "hot": is_hot(s),
-                       "label": f"normale {num(m - EASY_BPM)}–{num(m + EASY_BPM)}" if m is not None else "",
+        points.append({"day": s.day, "value": value[s.id], "hot": st.is_hot(s),
+                       "label": f"normale {num(m - st.EASY_BPM)}–{num(m + st.EASY_BPM)}" if m is not None else "",
                        "href": {"href": f"/activity/{s.id}", "label": "Ouvrir la sortie ›"}})
     c = viz.dots(days, points, band=band, min_span=10)
-    # two runs the same day: one slot, the later one stays selected by default
-    last2 = [s for s in cool if s.day > today - timedelta(days=FLAG_DAYS)][-2:]
-    deltas = [value[s.id] - centre(s.day) for s in last2 if centre(s.day) is not None]
-    flagged = len(deltas) == 2 and all(dl >= EASY_BPM for dl in deltas)
-    mins, secs = divmod(pace, 60)
+    watch = st.easy_watch(model, today)
+    flagged = bool(watch and watch["flag"])
+    mins, secs = divmod(model["pace"], 60)
     c.update(flagged=flagged, pace=f"{mins}:{secs:02d}/km",
-             line=(f"{signed(statistics.fmean(deltas), 0, 'bpm')} sur tes 2 dernières sorties, à même allure."
-                   if flagged else None),
+             line="Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure." if flagged else None,
              summary=(f"FC en footing sur 6 mois, ramenée à {mins}:{secs:02d} par kilomètre : {len(points)} sortie"
                       f"{'s' if len(points) > 1 else ''} facile{'s' if len(points) > 1 else ''}"))
     return c
@@ -309,7 +282,7 @@ async def training_top(db: AsyncSession, user_id: int, now: datetime | None = No
     failure: the list below never blanks for it)."""
     try:
         now = now or datetime.now(timezone.utc)
-        today = await rp.athlete_today(db, user_id, now)
+        today = await st.athlete_today(db, user_id, now)
         sessions = await st.load_sessions(db, user_id, today)
         if not sessions:
             return None

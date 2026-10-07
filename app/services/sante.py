@@ -20,9 +20,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
-from app.models.route import Route
 from app.services import nights as nt
-from app.services.health import WATCH_SOURCES, _today, fmt_minutes
+from app.services import race_prep as rp
+from app.services.health import WATCH_SOURCES, fmt_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
     next_race, last_race, past_races = await _races(db, user_id, today)
-    races = [(_race_day(x), x.name) for x in past_races + ([next_race] if next_race else [])]
+    races = [(rp.race_day(x), x.name) for x in past_races + ([next_race] if next_race else [])]
     nights, feel = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions, races=races,
                                         peak=peak)
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
@@ -77,17 +77,16 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
 
     nr = None
     if next_race:
-        nr = {"days": (_race_day(next_race) - today).days, "name": next_race.name,
+        nr = {"days": (rp.race_day(next_race) - today).days, "name": next_race.name,
               "href": f"/simulator/routes/{next_race.id}#prep"}
     race_week = bool(nr and 1 <= nr["days"] <= WEEK)
     post = _post_race(last_race, sessions, today)
     if post and post.get("route_id"):
         post["href"] = f"/simulator/routes/{post['route_id']}#prep"
     alert = nt.illness_alert(nights, today, races)
-    runs = st.easy_runs(sessions, peak)
-    resid = st.residuals(runs, today)
-    reprise = nt.reprise(nights, feel, today, races, [(s.day, resid[s.id]) for s in runs if s.id in resid])
-    easy = td.easy_pace(sessions, peak, today)
+    model = st.easy_model(sessions, today, peak)  # the easy-pace model Activités › FC en footing draws
+    reprise = nt.reprise(nights, feel, today, races, st.easy_deltas(model))
+    easy = st.easy_watch(model, today)
 
     # R5: a main episode and a 24-h total under 6 h, never in race week
     short = None
@@ -103,7 +102,7 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
 
     stats = {k: _night_stats(nights, k, today) for k in ("hr", "hrv")}
     stats["sleep"] = _sleep_stats(nights, today, short)
-    stats["easy"] = td.easy_stats(easy, reprise is not None)
+    stats["easy"] = td.easy_stats(model, today, reprise is not None)
     f_today = feel.get(today)
     ctx = {"today": today, "next_race": nr, "post": post, "feel": f_today, "alert": alert, "reprise": reprise,
            "short": short, "legs": {"big": big}, "hr": stats["hr"]["status"], "hrv": stats["hrv"]["status"],
@@ -237,26 +236,10 @@ async def _timelines(db: AsyncSession, user_id: int, nights) -> dict:
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
                         latest: date | None = None) -> date:
-    """The athlete's date: the server's clock moved by their UTC offset (from
-    their latest Strava session), else the watch's latest day (_today)."""
-    from app.services.sante_training import utc_offset
+    """sante_training.athlete_today (a seam the tests move to a fixed day)."""
+    from app.services.sante_training import athlete_today as today_of
 
-    now = now or datetime.now(timezone.utc)
-    if latest is None:
-        latest = (await db.execute(
-            select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    offset = await utc_offset(db, user_id)
-    today = (now + timedelta(seconds=offset)).date() if offset is not None else _today(latest)
-    if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
-        today = latest
-    return today
-
-
-def _race_day(route) -> date | None:
-    try:
-        return date.fromisoformat(str(route.race_date)[:10])
-    except (TypeError, ValueError):
-        return None
+    return await today_of(db, user_id, now, latest)
 
 
 async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[str]) -> dict[str, dict]:
@@ -282,55 +265,12 @@ async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[st
 
 async def _races(db: AsyncSession, user_id: int, today: date):
     """(the next race, the last one run in the past 14 days, those of the past
-    12 months) — sports hidden right now left out."""
-    from app.features import hidden_sports
-
-    q = select(Route).where(Route.user_id == user_id, Route.race_date.is_not(None),
-                            Route.race_date >= (today - timedelta(days=365)).isoformat())
-    if hidden_sports():
-        q = q.where(Route.sport_type.notin_(hidden_sports()))
-    routes = [r for r in (await db.execute(q.order_by(Route.race_date))).scalars().all() if _race_day(r)]
-    nxt = next((r for r in routes if _race_day(r) >= today), None)
-    past = [r for r in routes if _race_day(r) < today]
-    last = next((r for r in reversed(past) if _race_day(r) >= today - timedelta(days=14)), None)
+    12 months) — race_prep.load_races: sports hidden right now left out."""
+    routes = await rp.load_races(db, user_id, today)
+    nxt = next((r for r in routes if rp.race_day(r) >= today), None)
+    past = [r for r in routes if rp.race_day(r) < today]
+    last = next((r for r in reversed(past) if rp.race_day(r) >= today - timedelta(days=14)), None)
     return nxt, last, past
-
-
-def race_sport(route) -> str:
-    """foot | bike | tri | other (Route.sport_type, « trail » by default)."""
-    kind = (getattr(route, "sport_type", None) or "trail").lower()
-    if kind in ("tri", "triathlon"):
-        return "tri"
-    if kind in ("bike", "velo", "vélo", "cycling", "gravel"):
-        return "bike"
-    return "foot" if kind in ("trail", "run", "road", "route", "ultra", "marathon") else "other"
-
-
-def race_duration(route, sessions=()) -> tuple[int | None, bool]:
-    """(seconds, known) of a race already run: its result, else its session
-    (that day, its sport, covering most of the distance; stops included, as a
-    race is timed), else its objective; else a rough estimate (known=False:
-    never printed) — trail (km + D+/100) at 7 km-effort an hour, road 11 km/h."""
-    from app.services.sante_training import BIKE, FOOT
-
-    res = getattr(route, "result_json", None) or {}
-    if res.get("total_actual_s"):
-        return int(res["total_actual_s"]), True
-    rd = _race_day(route)
-    km = getattr(route, "total_distance_km", None) or 0
-    family = {"foot": FOOT, "bike": BIKE}.get(race_sport(route))
-    same = [max(x.elapsed, x.minutes) for x in sessions
-            if rd and x.day == rd and (family is None or x.sport in family)
-            and (x.workout_type == 1 or x.km >= 0.5 * km)]
-    if same:
-        return int(max(same) * 60), True
-    if getattr(route, "target_time_s", None):
-        return int(route.target_time_s), True
-    if race_sport(route) != "foot" or km <= 0:
-        return None, False
-    trail = (getattr(route, "total_elevation_gain", None) or 0) >= 10 * km
-    hours = (km + (route.total_elevation_gain or 0) / 100) / 7 if trail else km / 11
-    return int(round(hours * 3600)), False
 
 
 # intensity comes back at J+3 after a race under 3 h, J+7 after a long one, J+10 after 10 h (H)
@@ -341,13 +281,13 @@ def _post_race(last_race, sessions, today: date) -> dict | None:
     """The days after a race (a Route raced, or a session marked as a race),
     or after an exceptional outing (6 h and 1.5 × the longest of the 60 days
     before), until intensity comes back on `free` (see above; H). Its
-    duration is the real one when known (race_duration)."""
+    duration is the real one when known (race_prep.race_duration)."""
     from app.services.sante_today import of_day
 
     cands = []  # (day, minutes, known, name, race, route, session)
-    if last_race and _race_day(last_race):
-        secs, known = race_duration(last_race, sessions)
-        cands.append((_race_day(last_race), secs / 60 if secs else None, known and bool(secs), last_race.name, True,
+    if last_race and rp.race_day(last_race):
+        secs, known = rp.race_duration(last_race, sessions)
+        cands.append((rp.race_day(last_race), secs / 60 if secs else None, known and bool(secs), last_race.name, True,
                       last_race, None))
     for s in sessions:
         if not 1 <= (today - s.day).days <= FREE_VERY_LONG:

@@ -109,9 +109,9 @@ async def test_a_failure_is_not_shown_as_not_connected(as_user: AsyncClient, db_
 
 
 async def test_the_old_views_moved(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    for vue in ("entrainement", "tendances"):
+    for vue, where in (("entrainement", "/activities#semaines"), ("tendances", "/activities#fatigue")):
         r = await as_user.get(f"/sante?vue={vue}")
-        assert r.status_code == 302 and r.headers["location"] == "/activities"
+        assert r.status_code == 302 and r.headers["location"] == where  # the fold opens itself
     r = await as_user.get("/sante?vue=course")
     assert r.status_code == 302 and r.headers["location"] == "/activities"  # no race: Activités
     route = Route(user_id=test_user.id, name="Trail des Glaciers", total_distance_km=42,
@@ -576,18 +576,30 @@ def test_the_missing_nightly_tiles_say_why_once():
                                                                                         "pas jugée.")
 
 
-def test_easy_pace_flag_needs_two_runs_up_3_bpm_on_14_days():
+def test_easy_tile_reads_the_rule_activites_draws_and_prints_its_number_once():
+    """« FC en footing · 14 j » and Activités › FC en footing read one model
+    (sante_training.easy_watch): same « à surveiller », the bpm on the tile only."""
+    from app.services import sante_training as st
+    from app.services import training_view as tv
+
     def run(k, hr, sid):
         d = D - timedelta(days=k)
         return Session(id=sid, start=datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc), day=d, sport="Run",
                        minutes=50, dplus=20, km=10, speed=3.3, hr=hr, hr_peak=180, suffer=None, workout_type=0,
                        temp=15)
-    base = [run(k, 140, k) for k in range(15, 60, 3)]
-    e = sante_today.easy_pace(base + [run(2, 144, 100), run(5, 143.5, 101)], 190, D)
-    assert e["flag"] and round(e["value"]) == 4 and e["means"][-1] == e["value"]
-    e = sante_today.easy_pace(base + [run(2, 144, 100), run(5, 141, 101)], 190, D)
-    assert not e["flag"]
-    assert sante_today.easy_pace(base[:3], 190, D) is None  # fewer than 6 runs in 6 weeks
+    base = [run(k, 140, k) for k in range(8, 120, 3)]
+    up = base + [run(5, 144, 100), run(2, 143.5, 101)]
+    t = sante_today.easy_stats(st.easy_model(up, D, 190), D, reprise=False)
+    a3 = tv.footing(up, D, 190)
+    assert t["flag"] and a3["flagged"]  # the two pages agree
+    assert t["text"] == "+4" and t["word"][1] == "à surveiller" and t["means"][-1] == pytest.approx(3.75)
+    assert "+4" not in a3["line"] and "bpm" not in a3["line"]  # the number is the tile's
+    ok = base + [run(5, 144, 100), run(2, 141, 101)]
+    assert not sante_today.easy_stats(st.easy_model(ok, D, 190), D, reprise=False)["flag"]
+    assert not tv.footing(ok, D, 190)["flagged"]
+    assert sante_today.easy_stats(st.easy_model(base[:5], D, 190), D, reprise=False) is None  # under 8 runs
+    gap = sante_today.easy_stats(None, D, reprise=True)  # « Reprise » without a footing: the tile says so
+    assert gap["text"] is None and gap["gap"] == "pas de footing mesuré"
 
 
 async def test_dedupe_matches_activites_when_strava_writes_json_null(db_session: AsyncSession, test_user: User):

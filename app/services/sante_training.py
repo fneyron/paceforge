@@ -1,19 +1,17 @@
-"""The training side of Santé, from the sessions alone (Strava, Garmin): no
+"""The training model, from the sessions alone (Strava, Garmin): no
 night needed, so it works for an athlete who never wears the watch to bed.
 
 - session load: Strava's Relative Effort (zone time, good on intervals) put on
   the Banister TRIMP scale, else TRIMP from the average heart rate, else the
   duration at the athlete's own load per minute for that kind of sport;
 - fond (CTL, 42 days) and fatigue (ATL, 7 days) as exponential averages of the
-  daily load; « fatigue % » = ATL / CTL − 1, a picture of the last week against
-  the athlete's habit — never an injury risk (Impellizzeri 2020);
+  daily load (Activités › Fond et fatigue: two lines, never a ratio);
 - the weeks exactly as Activités counts them (UTC Monday, duplicates and false
   starts left out), so a bar's total is the week's total there;
-- the legs: hours and D+ on foot over 72 h (heart-rate scores miss the muscle
-  damage of long descents);
-- heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed): a
-  fatigue marker over 10 days and a fitness curve over months (Nuuttila 2022).
-Everything is computed on the fly; nothing is written to Activity.
+- heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), one
+  model for Activités › FC en footing and Santé's tile (Nuuttila 2022).
+Everything is computed on the fly; nothing is written to Activity. Activités
+(training_view), the race page (race_prep) and Santé read it.
 """
 import math
 import statistics
@@ -31,7 +29,7 @@ from app.services.activity_dedupe import find_duplicate_ids, is_false_start
 
 HISTORY_DAYS = 730
 CTL_DAYS, ATL_DAYS = 42, 7
-MIN_HISTORY_DAYS, MIN_SESSIONS, MIN_CTL = 42, 6, 20
+MIN_HISTORY_DAYS, MIN_SESSIONS = 42, 6
 FOOT = {"Run", "TrailRun", "VirtualRun", "Hike", "Walk", "BackcountrySki", "NordicSki", "Snowshoe"}
 RUNS = {"Run", "TrailRun"}
 BIKE = {"Ride", "VirtualRide", "EBikeRide", "GravelRide", "MountainBikeRide"}
@@ -177,6 +175,25 @@ async def utc_offset(db: AsyncSession, user_id: int) -> float | None:
     return next((o for o in (_offset(_float(a), b, c) for a, b, c in rows) if o is not None), None)
 
 
+async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
+                        latest: date | None = None) -> date:
+    """The athlete's date, the one Santé, Activités and the race page read: the
+    server's clock moved by their UTC offset (latest session), else the
+    watch's latest day; the watch's day when it is already on tomorrow."""
+    from app.models.health import HealthMetric
+    from app.services.health import _today as watch_today
+
+    now = now or datetime.now(timezone.utc)
+    if latest is None:
+        latest = (await db.execute(
+            select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    offset = await utc_offset(db, user_id)
+    today = (now + timedelta(seconds=offset)).date() if offset is not None else watch_today(latest)
+    if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
+        today = latest
+    return today
+
+
 # ── heart-rate bounds and session load ──────────────────────────────────────
 
 def hr_max(sessions: list[Session], today: date) -> float:
@@ -252,43 +269,6 @@ def fitness(daily: dict[date, float], today: date) -> dict[date, tuple[float, fl
     return out
 
 
-def fatigue_pct(ctl: float, atl: float) -> float | None:
-    return round((atl / ctl - 1) * 100) if ctl > 0 else None
-
-
-FATIGUE_BANDS = (  # (upper bound %, key, word)
-    (-25, "rested", "très reposé"), (-5, "fresh", "frais"), (10, "balanced", "équilibré"),
-    (30, "build", "en construction"), (math.inf, "loaded", "très chargé"))
-
-
-def fatigue_band(pct: float) -> tuple[str, str]:
-    for hi, key, word in FATIGUE_BANDS:
-        if pct < hi:
-            return key, word
-    return FATIGUE_BANDS[-1][1:]
-
-
-def form(sessions: list[Session], today: date) -> dict | None:
-    """Today's fond and fatigue, and the last 84 days of fatigue %; None
-    until 6 weeks of history with 6 sessions and a fond of 20 a day."""
-    daily = daily_loads(sessions)
-    series = fitness(daily, today)
-    if not series or (today - min(series)).days < MIN_HISTORY_DAYS or len(sessions) < MIN_SESSIONS:
-        return None
-    # before today's session, today is yesterday evening: a morning must not read as a rest day
-    ref = today if today in daily or today == min(series) else today - timedelta(days=1)
-    ctl, atl = series[ref]
-    if ctl < MIN_CTL:
-        return None
-    pct = fatigue_pct(ctl, atl)
-    start = max(min(series), today - timedelta(days=83))
-    history = {d: fatigue_pct(*series[d]) for d in (start + timedelta(days=i) for i in range((today - start).days + 1))
-               if (d - min(series)).days >= MIN_HISTORY_DAYS}
-    history[today] = pct
-    key, word = fatigue_band(pct)
-    return {"ctl": ctl, "atl": atl, "pct": pct, "key": key, "word": word, "history": history, "series": series}
-
-
 # ── weeks (as Activités counts them) ────────────────────────────────────────
 
 def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
@@ -311,61 +291,25 @@ def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
     return out
 
 
-def longest_before(sessions: list[Session], day: date, days: int = 30) -> float:
-    """The longest outing (minutes) of the `days` days before `day`."""
-    return max((s.minutes for s in sessions if day - timedelta(days=days) <= s.day < day), default=0.0)
+# ── heart rate at easy pace (Nuuttila 2022) ─────────────────────────────────
 
-
-# ── legs ────────────────────────────────────────────────────────────────────
-
-def _foot(s: Session) -> bool:
-    return s.sport in FOOT and s.minutes >= 30
-
-
-def legs(sessions: list[Session], today: date) -> dict | None:
-    """Hours and D+ on foot over 72 h (today and the two days before), the
-    biggest outing of the last 48 h, and the athlete's usual 72 h (P25–P75 over
-    90 days)."""
-    foot = [s for s in sessions if _foot(s)]
-    if not [s for s in foot if s.day >= today - timedelta(days=90)]:
-        return None
-    by_day: dict[date, list[Session]] = defaultdict(list)
-    for s in foot:
-        by_day[s.day].append(s)
-
-    def window(d: date) -> tuple[float, float]:
-        ss = [s for k in range(3) for s in by_day.get(d - timedelta(days=k), [])]
-        return sum(s.minutes for s in ss), sum(s.dplus for s in ss)
-
-    hist = sorted(window(today - timedelta(days=k))[0] for k in range(1, 91))
-    q = statistics.quantiles(hist, n=20) if len(hist) >= 20 else None  # 5 % steps
-    p25, p75, p90 = (q[4], q[14], q[17]) if q else (None, None, None)
-    minutes, dplus = window(today)
-    recent = [s for s in foot if s.day >= today - timedelta(days=1)]
-    big = max(recent, key=lambda s: (s.minutes, s.dplus), default=None)
-    if big and (big.minutes >= 300 or big.dplus >= 2500):
-        key, word = "heavy", "très chargées"
-    elif (big and (big.minutes >= 180 or big.dplus >= 1500)) or (p90 is not None and minutes > p90 and minutes >= 120):
-        key, word = "loaded", "chargées"
-    else:
-        key, word = "fresh", "fraîches"
-    return {"minutes": minutes, "dplus": dplus, "key": key, "word": word, "big": big,
-            "p25": p25, "p75": p75, "p95": q[18] if q else None}
-
-
-# ── heart rate at easy pace ─────────────────────────────────────────────────
-
-FIT_FROM, FIT_TO, RECENT_RUN_DAYS = 104, 15, 10
 MIN_FIT_RUNS = 8
+EASY_FIT_DAYS = 365  # one Theil–Sen slope over the cool runs of 12 months
+EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H)
+HOT_C = 25  # (H)
 
 
 def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
     """Flat easy runs: 5 km and more, 25–150 min, D+ ≤ 12 m/km, average HR ≤
-    82 % of HRmax, not a race nor a workout, not hot."""
+    82 % of HRmax, not a race nor a workout. Hot runs stay in (Activités
+    draws them hollow); they are kept out of the slope and the normal."""
     return [s for s in sessions
             if s.sport in RUNS and s.hr and s.speed and s.km >= 5 and 25 <= s.minutes <= 150
-            and s.dplus <= 12 * s.km and s.hr <= 0.82 * peak and s.workout_type not in (1, 3)
-            and (s.temp is None or s.temp <= 25)]
+            and s.dplus <= 12 * s.km and s.hr <= 0.82 * peak and s.workout_type not in (1, 3)]
+
+
+def is_hot(s: Session) -> bool:
+    return s.temp is not None and s.temp >= HOT_C
 
 
 def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
@@ -381,50 +325,58 @@ def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
     return statistics.median(y - b * x for x, y in zip(xs, ys)), b
 
 
-def easy_hr(runs: list[Session], today: date) -> dict | None:
-    """The mean residual (bpm) of the flat easy runs of the last 10 days
-    against the athlete's fit on days 15–104 before today."""
-    base = [s for s in runs if today - timedelta(days=FIT_FROM) <= s.day <= today - timedelta(days=FIT_TO)]
-    recent = [s for s in runs if s.day > today - timedelta(days=RECENT_RUN_DAYS)]
-    if len(base) < MIN_FIT_RUNS or not recent:
+def easy_model(sessions: list[Session], today: date, peak: float) -> dict | None:
+    """The one easy-pace model Activités (A3) and Santé (the « FC en footing »
+    tile, R8, Reprise) share: each flat easy run's HR moved to the athlete's
+    reference pace (one Theil–Sen slope over the cool runs of 12 months; the
+    pace is their median speed, to 5 s/km), and each day's normal, the median
+    of the cool runs of the 28 days before (3 at least, H). None under 8
+    cool runs. {runs, cool (by start), value: {id: bpm}, pace: s/km, centre:
+    day → bpm | None}."""
+    runs = sorted((s for s in easy_runs(sessions, peak) if today - timedelta(days=EASY_FIT_DAYS) < s.day <= today),
+                  key=lambda s: s.start)
+    cool = [s for s in runs if not is_hot(s)]
+    if len(cool) < MIN_FIT_RUNS:
         return None
-    a, b = theil_sen([s.speed for s in base], [s.hr for s in base])
-    res = [s.hr - (a + b * s.speed) for s in recent]
-    return {"delta": statistics.fmean(res), "n": len(res), "runs": recent,
-            "high": sum(1 for r in res if r >= 4)}
+    _, b = theil_sen([s.speed for s in cool], [s.hr for s in cool])
+    pace = round(1000 / statistics.median(s.speed for s in cool) / 5) * 5
+    ref = 1000 / pace
+    value = {s.id: s.hr - b * (s.speed - ref) for s in runs}
+    cdays = [s.day for s in cool]
+
+    def centre(d: date) -> float | None:
+        prior = [value[s.id] for s in cool[bisect_left(cdays, d - timedelta(days=EASY_WINDOW)):bisect_left(cdays, d)]]
+        return statistics.median(prior) if len(prior) >= EASY_MIN else None
+
+    return {"runs": runs, "cool": cool, "value": value, "pace": pace, "centre": centre}
 
 
-def residuals(runs: list[Session], today: date) -> dict[int, float]:
-    """{session id: residual against the 12-month fit, minus the median of the
-    residuals of the 60 days before} — detrended, for the « chez toi » links."""
-    year = [s for s in runs if s.day > today - timedelta(days=365)]
-    if len(year) < MIN_FIT_RUNS:
-        return {}
-    a, b = theil_sen([s.speed for s in year], [s.hr for s in year])
-    year.sort(key=lambda s: s.day)
-    days = [s.day for s in year]
-    raw = [s.hr - (a + b * s.speed) for s in year]
-    out = {}
-    for k, s in enumerate(year):
-        prior = raw[bisect_left(days, s.day - timedelta(days=60)):bisect_left(days, s.day)]
-        if len(prior) >= 5:
-            out[s.id] = raw[k] - statistics.median(prior)
+def easy_deltas(model: dict | None) -> list[tuple[date, float]]:
+    """[(day, bpm over that day's normal)] of the cool runs that have a normal."""
+    if not model:
+        return []
+    out = []
+    for s in model["cool"]:
+        c = model["centre"](s.day)
+        if c is not None:
+            out.append((s.day, model["value"][s.id] - c))
     return out
 
 
-def easy_hr_months(runs: list[Session], today: date) -> dict | None:
-    """Monthly HR at the athlete's reference pace (12 months, ≥ 4 runs a
-    month): one Theil–Sen slope for the year, each run's HR moved to the
-    reference speed, the monthly median."""
-    year = [s for s in runs if s.day > today - timedelta(days=365)]
-    if len(year) < MIN_FIT_RUNS:
+def easy_watch(model: dict | None, today: date) -> dict | None:
+    """« à surveiller » (H; Nuuttila 2022's 3–4 bpm): the 2 latest cool runs,
+    both in the last 14 days, each ≥ 3 bpm above its day's normal. {deltas:
+    [(day, bpm)] of those runs that have a normal (1 or 2), value: their mean,
+    flag}; None without such a run."""
+    if not model:
         return None
-    _, b = theil_sen([s.speed for s in year], [s.hr for s in year])
-    pace = round(1000 / statistics.median(s.speed for s in year) / 5) * 5  # s/km, rounded to 5 s
-    ref = 1000 / pace
-    by_month: dict[tuple[int, int], list[float]] = defaultdict(list)
-    for s in year:
-        if (s.day.year, s.day.month) == (today.year, today.month) and today.day < 14:
-            continue  # the month in progress counts from its 14th day
-        by_month[(s.day.year, s.day.month)].append(s.hr - b * (s.speed - ref))
-    return {"pace_s": pace, "months": {m: statistics.median(v) for m, v in by_month.items() if len(v) >= 4}}
+    last2 = [s for s in model["cool"] if today - timedelta(days=FLAG_DAYS) < s.day <= today][-2:]
+    deltas = []
+    for s in last2:
+        c = model["centre"](s.day)
+        if c is not None:
+            deltas.append((s.day, model["value"][s.id] - c))
+    if not deltas:
+        return None
+    return {"deltas": deltas, "value": statistics.fmean(v for _, v in deltas),
+            "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}

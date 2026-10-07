@@ -1,4 +1,4 @@
-"""Santé's training model: load, fond and fatigue, weeks, legs, easy-pace HR."""
+"""The training model (sante_training): load, fond and fatigue, weeks, easy-pace HR."""
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -47,20 +47,6 @@ def test_hr_bounds():
     assert st.hr_rest({}, {}, T) == 50
 
 
-def test_fatigue_needs_six_weeks_then_reads_the_last_week_against_the_fond():
-    steady = [S(k, i=k) for k in range(1, 300)]
-    st.set_loads(steady, 50, 185)
-    f = st.form(steady, T)
-    assert f is not None and -5 <= f["pct"] <= 10 and f["word"] == "équilibré"
-    assert st.form(steady[:30], T) is None  # 30 days only
-    heavy = steady + [S(k, minutes=120, i=500 + k) for k in range(0, 7)]
-    st.set_loads(heavy, 50, 185)
-    f = st.form(heavy, T)
-    assert f["pct"] > 30 and f["key"] == "loaded"
-    assert len(f["history"]) == 84 and f["history"][T] == f["pct"]
-    assert len(st.form(steady[:60], T)["history"]) == 60 - 42 + 1  # from 6 weeks of history on
-
-
 def test_weeks_match_activites():
     now = datetime(2026, 10, 7, 12, tzinfo=timezone.utc)  # Wednesday
     ss = [S(1, minutes=90, dplus=800), S(2, minutes=45), S(9, minutes=200, i=1), S(10, minutes=30)]
@@ -72,19 +58,6 @@ def test_weeks_match_activites():
     assert w[0]["href"] == "/activities?page=2#week-2026-07-20"
 
 
-def test_legs():
-    base = [S(k, minutes=60, dplus=100, i=k) for k in range(3, 95, 2)]
-    assert st.legs(base, T)["key"] == "fresh"
-    big = base + [S(1, minutes=250, dplus=2100, id=1)]
-    lg = st.legs(big, T)
-    assert lg["key"] == "loaded" and lg["word"] == "chargées" and lg["big"].id == 1
-    assert lg["minutes"] == 250 and lg["dplus"] == 2100
-    huge = base + [S(0, minutes=320, dplus=900, id=2)]
-    assert st.legs(huge, T)["key"] == "heavy"
-    assert st.legs(base + [S(2, minutes=320, id=3)], T)["key"] != "heavy"  # 48 h only
-    assert st.legs([S(0, sport="Ride", minutes=300)], T) is None
-
-
 def test_easy_runs_and_theil_sen():
     runs = [S(k, km=10, minutes=55, hr=140, i=k) for k in range(10)]
     hilly = S(1, km=10, minutes=60, dplus=400, id=1)
@@ -92,20 +65,30 @@ def test_easy_runs_and_theil_sen():
     hot = S(3, km=10, minutes=55, temp=30, id=3)
     hard = S(4, km=10, minutes=45, hr=170, id=4)
     ride = S(5, sport="Ride", km=40, minutes=90, id=5)
-    assert {s.id for s in st.easy_runs(runs + [hilly, race, hot, hard, ride], 185)} == {s.id for s in runs}
+    easy = st.easy_runs(runs + [hilly, race, hot, hard, ride], 185)
+    assert {s.id for s in easy} == {s.id for s in runs} | {3}  # a hot run stays (drawn hollow), flagged as hot
+    assert [s.id for s in easy if st.is_hot(s)] == [3]
     a, b = st.theil_sen([1, 2, 3, 4, 5], [11, 13, 15, 17, 99])  # one outlier: still 2x + 9
     assert b == pytest.approx(2) and a == pytest.approx(9)
 
 
-def test_easy_hr_flags_a_heart_running_high_at_the_same_pace():
-    def run(k, hr, minutes):
-        return S(k, km=10, minutes=minutes, hr=hr, i=k)
-    base = [run(k, 130 + (60 - m) * 0.8, m) for k, m in zip(range(15, 100, 4), [50, 52, 54, 56, 58, 60] * 4)]
-    ok = st.easy_hr(base + [run(3, 130 + (60 - 55) * 0.8, 55), run(6, 130 + (60 - 58) * 0.8, 58)], T)
-    assert ok["n"] == 2 and abs(ok["delta"]) < 0.5
-    high = st.easy_hr(base + [run(3, 130 + (60 - 55) * 0.8 + 5, 55), run(6, 130 + (60 - 58) * 0.8 + 4.5, 58)], T)
-    assert high["delta"] == pytest.approx(4.75, abs=0.3) and high["high"] == 2
-    assert st.easy_hr(base[:5], T) is None
+def test_easy_model_moves_hr_to_the_reference_pace_and_watches_the_2_latest_runs():
+    def run(k, hr, minutes=55, temp=None, i=0):
+        return S(k, km=10, minutes=minutes, hr=hr, temp=temp, i=i, id=7000 + k * 10 + i)
+    # 0.8 bpm per minute slower: the slope moves every run to the median pace
+    base = [run(k, 130 + (60 - m) * 0.8, m) for k, m in zip(range(15, 200, 4), [50, 52, 54, 56, 58, 60] * 8)]
+    m = st.easy_model(base, T, 185)
+    assert m["pace"] == 325  # 5:25/km: the median speed of the runs (54 min for 10 km), to 5 s
+    assert all(abs(m["value"][s.id] - m["value"][base[0].id]) < 0.5 for s in base)
+    assert st.easy_watch(m, T) is None  # no run in the last 14 days
+    high = base + [run(9, 130 + 4 * 0.8 + 4, 56), run(3, 130 + 4 * 0.8 + 5, 56)]
+    w = st.easy_watch(st.easy_model(high, T, 185), T)
+    assert w["flag"] and [d for d, _ in w["deltas"]] == [T - timedelta(days=9), T - timedelta(days=3)]
+    assert w["value"] == pytest.approx(4.5, abs=0.3)
+    hot = base + [run(9, 150, 56, temp=30), run(3, 150, 56, temp=30)]
+    assert st.easy_watch(st.easy_model(hot, T, 185), T) is None  # hot runs: out of the normal and the watch
+    assert len(st.easy_deltas(st.easy_model(high, T, 185))) >= len(base) - 3
+    assert st.easy_model(base[:7], T, 185) is None and st.easy_deltas(None) == [] and st.easy_watch(None, T) is None
 
 
 async def test_load_sessions_reads_strava_fields_and_drops_duplicates(db_session: AsyncSession, test_user: User):

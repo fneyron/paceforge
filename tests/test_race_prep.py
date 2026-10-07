@@ -16,6 +16,7 @@ from app.models.route import Route
 from app.models.user import User
 from app.services import nights as nt
 from app.services import race_prep as rp
+from app.services import sante_training as st
 from app.services.sante_training import Session
 from tests.test_nights import night_rows, owner_rows
 from tests.test_race_plan_services import _course
@@ -61,8 +62,11 @@ def test_owner_after_transjeju_heart_at_night_dots_only_never_judged():
     d = data(c)
     assert d["d"][0] == "2026-10-03" and d["d"][-1] == "2026-10-16" and c["n"] == 14
     assert not c["banded"] and all(not p["band"] for p in c["panels"])  # 0–1 night before J-7: dots only
-    assert d["r"][4] == ["nuit du mar. 6 au mer. 7", "VFC 95 ms · FC 37 bpm", ""]
-    assert c["sel"] == 4 and c["read"] == d["r"][4]
+    assert d["r"][4] == ["nuit du mar. 6 au mer. 7", "VFC 95 ms · FC 37 bpm", ""]  # on a tap
+    # resting readout: last night's values are Santé › Sommeil's, printed once there
+    assert c["rest"] and c["sel"] == d["sel"] == 14 and c["read"] == d["rest"] == ["J+1 → J+14", "VFC et FC de nuit", ""]
+    assert "95" not in " ".join(c["read"]) and "37" not in " ".join(c["read"])
+    assert d["back"] == 4  # ‹ from the rest: the latest measured night, not J+14 « à venir »
     assert d["r"][0][1] == "—" and "pas de montre cette nuit" in d["r"][0][2]  # 3 Oct: the race's own night
     assert d["r"][5] == ["nuit du mer. 7 au jeu. 8", "à venir", "J+6"]
     text = json.dumps(d, ensure_ascii=False)
@@ -101,10 +105,13 @@ def test_taper_bars_against_the_41_60_percent_band_of_the_base():
     d = data(c)
     assert [col["label"] for col in c["cols"]] == ["S‑6", "S‑5", "S‑4", "S‑3", "S‑2", "S‑1", "S0"]
     assert [bool(col.get("tgt")) for col in c["cols"]] == [False] * 5 + [True, True]
-    assert d["r"][5][0] == "sem. du 5 oct. · en cours" and c["cols"][5]["cur"] and d["sel"] == 5
+    assert d["r"][5][0] == "sem. du 5 oct. · en cours" and c["cols"][5]["cur"]
     assert d["r"][5][2] == "cible 2h55–4h20"  # base 7h20: −41 to −60 %
     assert d["r"][6][1] == "à venir" and d["r"][6][2] == "sans la course · cible 2h55–4h20"
-    assert d["r"][1][2] == "base : 7h20 en moyenne"
+    assert d["r"][1][2] == "dans ta base"
+    # resting readout: this week's hours are Activités' (its week heading), so the base and the target instead
+    assert c["rest"] and d["sel"] == 7 and c["read"] == ["S‑6 → S0", "base : 7h20 par semaine", "cible S‑1 et S0 : 2h55–4h20"]
+    assert d["back"] == 5  # ‹ from the rest: this week, not S0 « à venir »
     assert "extrapolation" in c["summary"]  # 160 km: beyond what was studied
     assert c["sentence"] == "Moins de volume, même intensité\u00a0: c'est elle qui entretient ta forme."
     heavy = ss + [S(D - timedelta(days=1), minutes=300, i=1)]  # 1h50 + 5 h this week: above 4h20
@@ -135,7 +142,10 @@ def test_nights_before_the_race_against_usual_plus_30_to_60_min_the_eve_never_fl
     assert d["r"][i][1] == "Nuit 7h20 · sieste 40 min · 8h00 sur 24 h" and c["cols"][i]["nap"]
     assert d["r"][i][2] == "J‑6 · cible 7h50–8h20"
     assert d["r"][-1] == ["nuit du sam. 10 au dim. 11", "à venir", "J‑1 · veille de course"]
-    assert c["cols"][-1]["future"] and d["sel"] == d["d"].index(D.isoformat())
+    assert c["cols"][-1]["future"]
+    # resting readout: the last night's total is Santé › Sommeil's, printed once there
+    assert c["rest"] and d["sel"] == 14 and c["read"] == ["J‑14 → J‑1", "cible 7h50–8h20 par jour", ""]
+    assert d["back"] == d["d"].index(D.isoformat())  # ‹ from the rest: last night, not J-1 « à venir »
     assert not any(col.get("short") for col in c["cols"])  # nothing outlined on this page
 
 
@@ -143,6 +153,7 @@ def test_nights_without_a_usual_have_no_band_and_without_a_watch_say_so():
     rd = D + timedelta(days=5)
     c = rp.night_bars(_pre_race_nights(rd, days=range(0, 8)), rd, D)
     assert c["goal"] is None and "cible" not in json.dumps(data(c), ensure_ascii=False)
+    assert c["read"] == ["J‑14 → J‑1", "sommeil sur 24 h", ""]
     assert rp.night_bars({}, rd, D) == {"empty": True}
 
 
@@ -191,7 +202,7 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
                                                         test_user: User, monkeypatch):
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
-    today = await rp.athlete_today(db_session, test_user.id)
+    today = await st.athlete_today(db_session, test_user.id)
     await _seed(db_session, test_user, today)
     test_user.weight_kg = 70
     soon = await _race(db_session, test_user, today + timedelta(days=5),

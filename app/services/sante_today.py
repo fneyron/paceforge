@@ -24,8 +24,9 @@ R6  legs (H): an outing ≥ 3 h or ≥ 1 500 m D+ in the last 48 h, or the
     « fatigue ».
 R7  7-night HRV under the band AND (7-night nightly HR above it OR « moins
     bien ») (H; Plews 2013, 2014; Düking 2021), never in J-7 → J-1.
-R8  easy-pace HR flag (+3 bpm on 2 runs in 14 days, Nuuttila 2022; H) AND
-    « moins bien ».
+R8  easy-pace HR « à surveiller » (the 2 latest easy runs, both in 14 days,
+    each ≥ 3 bpm over their normal: sante_training.easy_watch, the rule
+    Activités › FC en footing uses; Nuuttila 2022; H) AND « moins bien ».
 R9  « moins bien » alone (H): the athlete's own call (Saw 2016).
 R10 race week J-7 → J-3: « Semaine de course : séance prévue, sans en rajouter ».
 R11 « Séance prévue : rien ne s'y oppose » (nights in the normal, or ≥ 6
@@ -35,7 +36,6 @@ A single out-of-band signal shows on its tile and never moves the action (the
 R2 alert is the exception). Tagged nights and race week never trigger anything
 but the R2 alert.
 """
-import statistics
 from datetime import date, timedelta
 
 from app.services.viz import GLYPH, hm, signed
@@ -270,54 +270,27 @@ def sparse_line(missing: list[str], seen: dict) -> str | None:
     return f"{who} : pas assez de nuits ces 7 jours."
 
 
-# ── FC en footing: the 14-day flag (Nuuttila 2022; H) ───────────────────────
+# ── FC en footing (sante_training.easy_watch, shared with Activités › A3) ────
 
-EASY_WINDOW = 14  # days
-EASY_UP = 3  # bpm against the 14 days before (Nuuttila 2022: 3–4 bpm, H)
-EASY_FLAG_RUNS = 2  # (H)
-EASY_LINE_RUNS = 6  # in 42 days (H)
+EASY_DAYS = 14  # the sparkline
 
 
-def easy_pace(sessions, peak: float, today: date) -> dict | None:
-    """Heart rate at the athlete's reference pace on flat easy runs (one
-    Theil–Sen slope over 12 months moves each run to the median speed): the
-    runs of the last 14 days against the median of the 14 days before.
-    {value: mean bpm over that median, flag: ≥ 2 runs ≥ +3 bpm, means: the
-    running mean over the 14 days, n}; None under 6 runs in 42 days, or
-    without 2 runs before and 1 in the window."""
+def easy_stats(model: dict | None, today: date, reprise: bool) -> dict | None:
+    """The FC en footing tile (shown when « à surveiller », or during
+    « Reprise »): the mean bpm of the 2 latest easy runs over their normal —
+    the number Activités › FC en footing says in words, printed here only.
+    The sparkline is that value as it stood on each of the last 14 days."""
     from app.services import sante_training as st
 
-    runs = [s for s in st.easy_runs(sessions, peak) if today - timedelta(days=365) < s.day <= today]
-    if len(runs) < st.MIN_FIT_RUNS or sum(1 for s in runs if s.day > today - timedelta(days=42)) < EASY_LINE_RUNS:
-        return None
-    _, b = st.theil_sen([s.speed for s in runs], [s.hr for s in runs])
-    ref = statistics.median(s.speed for s in runs)
-    adj = {s.id: s.hr - b * (s.speed - ref) for s in runs}
-    lo = today - timedelta(days=EASY_WINDOW)
-    recent = [s for s in runs if s.day > lo]
-    prev = [s for s in runs if lo - timedelta(days=EASY_WINDOW) < s.day <= lo]
-    if len(prev) < 2 or not recent:
-        return None
-    base = statistics.median(adj[s.id] for s in prev)
-    deltas = sorted((s.day, adj[s.id] - base) for s in recent)
-    means = []
-    for k in range(EASY_WINDOW - 1, -1, -1):
-        d = today - timedelta(days=k)
-        upto = [v for day, v in deltas if day <= d]
-        means.append(statistics.fmean(upto) if upto else None)
-    return {"value": statistics.fmean(v for _, v in deltas), "n": len(deltas), "means": means,
-            "flag": sum(1 for _, v in deltas if v >= EASY_UP) >= EASY_FLAG_RUNS}
-
-
-def easy_stats(e: dict | None, reprise: bool) -> dict | None:
-    """The FC en footing tile's stats (shown when flagged, or during « Reprise »)."""
     base = {"label": "FC en footing · 14 j", "unit": "bpm", "href": "/activities#fc-facile"}
+    e = st.easy_watch(model, today)
     if not e:
-        return {**base, "text": None, "spoken": "pas de footing mesuré", "means": [None] * EASY_WINDOW, "band": None,
+        return {**base, "text": None, "spoken": "pas de footing mesuré", "means": [None] * EASY_DAYS, "band": None,
                 "gap": "pas de footing mesuré", "word": (None, None, "muted"), "flag": False} if reprise else None
+    means = [(st.easy_watch(model, today - timedelta(days=k)) or {}).get("value") for k in range(EASY_DAYS - 1, -1, -1)]
     v = round(e["value"])
-    word = (("▲", "à surveiller", "warn") if e["flag"] else ("▲", "au-dessus", "muted") if v >= EASY_UP
+    word = (("▲", "à surveiller", "warn") if e["flag"] else ("▲", "au-dessus", "muted") if v >= st.EASY_BPM
             else ("●", "comme d'habitude", "muted"))
     return {**base, "text": signed(v), "spoken": f"{signed(v)} battements par minute à la même allure",
-            "means": e["means"], "band": (-EASY_UP, EASY_UP), "word": word, "flag": e["flag"],
+            "means": means, "band": (-st.EASY_BPM, st.EASY_BPM), "word": word, "flag": e["flag"],
             "status": "above" if e["flag"] else None}

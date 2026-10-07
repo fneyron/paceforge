@@ -26,7 +26,7 @@ templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["sante"])
 
 
-MOVED = {"entrainement": "/activities", "tendances": "/activities"}
+MOVED = {"entrainement": "/activities#semaines", "tendances": "/activities#fatigue"}  # Tendances led with « Ton fond »
 
 
 async def _moved(db: AsyncSession, user: User, vue: str) -> str | None:

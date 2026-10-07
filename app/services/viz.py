@@ -200,6 +200,22 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None) -> dict:
             "n": len(xs)}
 
 
+def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
+    """Give a built figure a resting readout, shown until a touch (pf-viz.js
+    D.rest: one step after the last point; Esc and End come back to it), with
+    nothing selected. For a figure whose latest value another page or block
+    already prints (Activités' week headings, Santé › Sommeil's last night):
+    each number is printed once. `back`: where ‹ (or ←) from the rest lands
+    when the last slots are still to come (default: the last point)."""
+    data = json.loads(c["data"].replace("<\\/", "</"))
+    data["rest"], data["restA"], data["sel"] = read, aria, len(data["x"])
+    if back is not None:
+        data["back"] = back
+    c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True)
+    return c
+
+
 def x_labels(days: list[date], xs: list[float]) -> list[dict]:
     """Mondays as « lun. 5 » up to a month, the 1st of each month as « oct. » beyond; weekly slots:
     the first week of every other month."""
