@@ -227,7 +227,8 @@ def test_older_plans_read_in_memory_as_one_phase():
               "flask_capacity_ml": 1000, "caffeine": {"enabled": True, "from_h": 3.0, "every_h": 2.5, "dose_mg": 100, "boost_dawn": True}}
     inp = N.resolve_inputs(legacy, PANTRY, 27 * 3600, None, 68)
     assert inp["legacy"] and inp["upgraded"] and inp["level"] == "normal" and inp["carry_ml"] == 1000
-    assert inp["phases"] == [{"km": 0.0, "mix": {3: 0.5, 2: 0.5, 1: 0.5}}] and inp["caf_pid"] == 4
+    # the old rates count pouches, the shares count prises: PF 90 at 0,5 pouch an hour is 1,5 prises
+    assert inp["phases"] == [{"km": 0.0, "mix": {3: 1.5, 2: 0.5, 1: 0.5}}] and inp["caf_pid"] == 4
     v2 = {"v": 2, "picks": [1, 2, 4, 5], "manual": {"1": 1.0}, "level": "solide", "carry_ml": 1500}
     inp = N.resolve_inputs(v2, PANTRY, 27 * 3600, None, 68)
     assert inp["phases"][0]["mix"] == {1: 1.0, 2: 1.0} and inp["level"] == "solide" and inp["upgraded"]
@@ -260,7 +261,9 @@ def test_a_catalogue_product_replaces_the_quick_pick_of_its_role_everywhere():
     products = N.with_generics(PANTRY)
     st = {"picks": [-1, -3], "phases": [{"km": 0.0, "mix": {-1: 1.0}}, {"km": 20.0, "mix": {-1: 1.0}}], "rows": {33.0: {-1: 3}}, "aid": {}, "have": {}, "custom": {}}
     st = N.apply_op(st, "pick", 1, products)
-    assert st["picks"] == [1, -3] and all(p["mix"] == {1: 1.0} for p in st["phases"]) and st["rows"][33.0] == {}
+    # the hand-set sachet counted on « Gel »: it goes back to auto (with the new gel), never an empty « à la main »
+    assert st["picks"] == [1, -3] and all(p["mix"] == {1: 1.0} for p in st["phases"]) and 33.0 not in st["rows"]
+    assert st["undo"]["cleared"] == 1
     st = N.apply_op(st, "pick", (3, 20.0), products)  # « + Marque » in a phase: that phase only
     assert st["phases"][0]["mix"] == {1: 1.0} and st["phases"][1]["mix"] == {1: 1.0, 3: 1.0}
     st = N.apply_op(st, "toggle", 1, products)  # off the list: out of every phase and row
@@ -269,7 +272,11 @@ def test_a_catalogue_product_replaces_the_quick_pick_of_its_role_everywhere():
 
 def test_servings_fall_back_on_the_catalogue():
     assert N.servings_of({"name": "Precision Fuel PF 90 Gel"}) == 3
-    assert N.servings_of({"name": "Precision Fuel PF 90 Gel", "servings": 1}) == 3
+    # a pantry row's own value is trusted (he may take his PF 90 in 1 go); a PF 90 typed per prise is 1
+    assert N.servings_of({"name": "Precision Fuel PF 90 Gel", "servings": 1}) == 1
+    assert N.servings_of({"name": "Precision Fuel PF 90 Gel", "carbs_g": 30}) == 1
+    assert N.servings_of({"name": "Precision Fuel PF 90 Gel", "carbs_g": 90}) == 3
+    assert N.servings_of({"name": "Mon gel", "servings": "inf"}) == 1 and N.servings_of({"name": "Mon gel", "servings": 40}) == 12
     assert N.servings_of({"name": "Mon gel", "servings": 2}) == 2 and N.servings_of({"name": "Mon gel"}) == 1
     assert N.CATALOG_BY_KEY["pf-90-gel"]["servings"] == 3
 
@@ -300,3 +307,197 @@ def test_product_colours_keep_3_to_1_on_the_surfaces_in_light_and_dark():
         for surf in ("surface", "soft", "bg"):
             assert ratio(light_cat[f"cat-{i}"], light[surf]) >= 3, (i, surf)
             assert ratio(dark_cat[f"cat-{i}"], dark[surf]) >= 3, (i, surf)
+
+
+# ── review fixes ────────────────────────────────────────────────────────────
+
+def test_a_hand_set_row_never_hands_a_backlog_of_drink_or_salt_to_the_next_row():
+    """E1: a hand edit cannot put 7 salt tablets or 7 drink doses in the next sachet."""
+    inp, plan, _ = _plan()
+    st = N.apply_op(inp["state"], "n", (0.0, 5, -99), inp["products_by_id"], plan)  # no PH 1500 in the first sachet
+    _, p2, _ = _plan(N.state_json(st))
+    assert p2["stretches"][1]["labels"][-1] == "1 PH 1500"  # 715 ml to drink: one tablet, not 7
+    # three sachets tweaked, then PH 1500 joins the list: Gwanumsa → Seongpanak stays at one tablet a flask
+    nj = {"v": 3, "picks": [1, 2, 3, 4], "level": "normal", "phases": OWNER["phases"]}
+    inp, plan, _ = _plan(nj)
+    st = inp["state"]
+    for r in plan["stretches"][:3]:
+        st = N.apply_op(st, "n", (r["key"], 2, 1), inp["products_by_id"], plan)
+    st = N.apply_op(st, "pick", 5, inp["products_by_id"], plan)
+    _, p2, _ = _plan(N.state_json(st))
+    for r in p2["stretches"]:
+        salt = sum(it["n"] for it in r["items"] if it["pid"] == 5)
+        assert salt <= math.ceil(r["fluid_ml"] / 500) + 1, (r["to_name"], salt, r["fluid_ml"])
+    # quick picks, the drink set to 0 in the first sachet: the next one gets its own dose, no stomach flag
+    inp, plan, _ = _plan({"v": 3, "picks": [-1, -2, -3], "level": "normal"})
+    st = N.apply_op(inp["state"], "n", (0.0, -2, -99), inp["products_by_id"], plan)
+    _, p2, _ = _plan(N.state_json(st))
+    for r in p2["stretches"][1:]:
+        drink = sum(it["n"] for it in r["items"] if it["pid"] == -2)
+        assert drink * 500 <= r["fluid_ml"] + 500 and not r["stomach"], (r["to_name"], r["labels"])
+
+
+def test_a_bottle_and_bars_fill_the_target_with_the_bars():
+    """E2: a drink and a bar, no gel (the bike setup): the bars make up the rest, one beep."""
+    _, plan, _ = _plan({"v": 3, "picks": [-2, -5], "level": "normal"})
+    rows = plan["stretches"]
+    assert all(r["status"] == "ok" and not r["stomach"] for r in rows), [(r["to_name"], r["balance_g"]) for r in rows]
+    assert abs(sum(r["carbs_g"] for r in rows) - sum(r["need_g"] for r in rows)) <= 30
+    assert plan["beep"] and plan["beep"]["interval"] in NP.BEEPS
+
+
+def test_caffeine_in_hand_set_rows_counts_when_the_race_time_moves():
+    """E3: two rows frozen with their CAF gel (+1 Baouw), then the objective changes:
+    the schedule fits around them and never passes the cap."""
+    inp, plan, _ = _plan()
+    st = inp["state"]
+    for k in (45.0, 88.0):
+        st = N.apply_op(st, "n", (k, 2, 1), inp["products_by_id"], plan)
+    for hours in range(20, 37):
+        _, p, _ = _plan(N.state_json(st), target_s=hours * 3600)
+        assert not p["caffeine_over"] and p["caffeine_24h_mg"] <= 400, (hours, p["caffeine_24h_mg"])
+        # every CAF gel is a scheduled dose or one a hand-set row holds: no dose lands in a frozen row
+        caf_gels = sum(it["n"] for r in p["stretches"] for it in r["items"] if it["pid"] == 4)
+        in_frozen = sum(it["n"] for r in p["stretches"] if r["frozen"] for it in r["items"] if it["pid"] == 4)
+        assert caf_gels == sum(d["units"] for d in p["caffeine"]["doses"]) + in_frozen
+
+
+def test_freezing_a_row_for_another_product_never_moves_its_caffeine():
+    """E4: +1 Maurten 160 on two rows that hold a CAF gel: same gels, same 24 h total, no alert."""
+    inp, plan, _ = _plan(target_s=40 * 3600)
+    before = [sum(it["n"] for it in r["items"] if it["role"] == "caf") for r in plan["stretches"]]
+    st = inp["state"]
+    for k in (0.0, 45.0):
+        st = N.apply_op(st, "add", (k, 1), inp["products_by_id"], plan)
+    _, p, _ = _plan(N.state_json(st), target_s=40 * 3600)
+    assert [sum(it["n"] for it in r["items"] if it["role"] == "caf") for r in p["stretches"]] == before
+    assert p["caffeine_24h_mg"] == plan["caffeine_24h_mg"] == 400 and not p["caffeine_over"]
+
+
+def test_a_quick_pick_replaced_in_a_hand_set_row_sends_it_back_to_auto():
+    """E5: +1 Gel on Yeongsil → Eorimok, then Maurten 160 replaces « Gel »: the row
+    is not left frozen with salt only (0 g), it goes back to auto with Maurten."""
+    pantry = {1: PANTRY[1]}
+    nj = {"v": 3, "picks": [-1, -3], "level": "normal"}
+    _, secs = long_sections(27 * 3600)
+    inp = N.resolve_inputs(nj, pantry, 27 * 3600, None, 68, moving_s=NP.moving_cum(secs[-1]), start_offset_s=START)
+    plan = NP.build_plan(NP.food_stretches(secs, LONG_CPS, START), inp, sections=secs, start_offset_s=START, refill_kms=REFILLS)
+    st = N.apply_op(inp["state"], "add", (23.0, -1), inp["products_by_id"], plan)
+    st = N.apply_op(st, "pick", 1, inp["products_by_id"], plan)
+    assert 23.0 not in st["rows"] and st["undo"]["cleared"] == 1 and st["undo"]["picks"] == [-1, -3]
+    inp2 = N.resolve_inputs(N.state_json(st), pantry, 27 * 3600, None, 68, moving_s=NP.moving_cum(secs[-1]), start_offset_s=START)
+    p2 = NP.build_plan(NP.food_stretches(secs, LONG_CPS, START), inp2, sections=secs, start_offset_s=START, refill_kms=REFILLS)
+    row = p2["stretches"][1]
+    assert not row["frozen"] and row["status"] == "ok" and any(it["pid"] == 1 for it in row["items"])
+    # « Annuler » brings back « Gel » and the hand-set row
+    back = N.apply_op(st, "undo", None, inp2["products_by_id"], p2)
+    assert back["picks"] == [-1, -3] and back["rows"][23.0][-1] >= 1
+    # off the list: a hand-set row that counted on it for its carbs goes back to auto too; salt just leaves
+    st = N.apply_op(inp["state"], "add", (23.0, -1), inp["products_by_id"], plan)
+    gone = N.apply_op(st, "unpick", -3, inp["products_by_id"], plan)
+    assert gone["rows"][23.0].get(-3) is None and gone["rows"][23.0][-1] >= 1 and not gone["undo"]
+    gone = N.apply_op(st, "unpick", -1, inp["products_by_id"], plan)
+    assert 23.0 not in gone["rows"] and gone["undo"]["cleared"] == 1
+
+
+def test_two_points_at_the_same_km_make_one_stretch():
+    """E6: a crew point entered next to Yeongsil: one stretch from there, its key unique,
+    and a tap on it seeds from the real 1.5 h stretch."""
+    cps = sorted(LONG_CPS + [{**LONG_CPS[1], "name": "Yeongsil assistance", "kind": "none", "crew": True}], key=lambda c: c["distance_km"])
+    _, secs = long_sections(27 * 3600, cps=cps)
+    st = NP.food_stretches(secs, cps, START)
+    keys = [s["key"] for s in st]
+    assert len(keys) == len(set(keys)) and keys.count(23.0) == 1
+    assert sum(s["d_s"] for s in st) == 27 * 3600
+    y = next(s for s in st if s["key"] == 23.0)
+    assert y["to_name"] == "Eorimok" and y["bag"] and y["bag_kind"] == "crew" and y["aid_food"]
+    inp, plan, _ = _plan(cps=cps)
+    row = next(r for r in plan["stretches"] if r["key"] == 23.0)
+    st2 = N.apply_op(inp["state"], "n", (23.0, 2, 1), inp["products_by_id"], plan)
+    seeded = {it["pid"]: it["n"] for it in row["items"] if not it["at_aid"]}
+    assert st2["rows"][23.0] == {**seeded, 2: seeded.get(2, 0) + 1}
+    # a base vie listed « in » and « out » at the same km: one stretch, the drop bag kept
+    split = [c for c in LONG_CPS if c["name"] != "Gasiri"] + [{**LONG_CPS[7], "name": "Gasiri in", "drop_bag": False},
+                                                              {**LONG_CPS[7], "name": "Gasiri out"}]
+    split.sort(key=lambda c: c["distance_km"])
+    _, secs = long_sections(27 * 3600, cps=split)
+    st = NP.food_stretches(secs, split, START)
+    g = [s for s in st if s["key"] == 88.0]
+    assert len(g) == 1 and g[0]["bag_kind"] == "drop" and g[0]["to_name"] == "Meochewat"
+
+
+def test_a_caffeinated_product_in_prises_counts_the_caffeine_of_one_prise():
+    """E7: 100 mg in a pouch of 2 prises: each prise is 50 mg, in the schedule, the rows and the 24 h check."""
+    pan = dict(PANTRY)
+    pan[4] = {**pan[4], "name": "Mon gel caféiné double", "carbs_g": 50, "caffeine_mg": 100, "servings": 2}
+    _, secs = long_sections(27 * 3600)
+    inp = N.resolve_inputs(OWNER, pan, 27 * 3600, None, 68, moving_s=NP.moving_cum(secs[-1]), start_offset_s=START)
+    assert inp["caffeine"]["dose_mg"] == 50
+    plan = NP.build_plan(NP.food_stretches(secs, LONG_CPS, START), inp, sections=secs, start_offset_s=START, refill_kms=REFILLS)
+    doses = plan["caffeine"]["doses"]
+    assert all(d["mg"] == 50 * d["units"] for d in doses)
+    assert sum(r["caffeine_mg"] for r in plan["stretches"]) == sum(d["mg"] for d in doses)
+    assert plan["caffeine_24h_mg"] <= 400 and not plan["caffeine_over"]
+
+
+def test_a_phase_with_nothing_to_fill_with_has_no_beep_of_its_own():
+    """E8: PF 90 taken out from Seongpanak on: no bogus 20-min cue there, one beep for the race."""
+    inp, plan, _ = _plan()
+    st = N.apply_op(inp["state"], "mix", (64.0, 3), inp["products_by_id"], plan)
+    _, p, _ = _plan(N.state_json(st))
+    assert p["beep"]["common"] and set(p["beep"]["per_phase"]) == {0}
+    assert not any(r["beep_note"] for r in p["stretches"])
+    assert all(r["interval_min"] is None and r["own_interval"] is None for r in p["stretches"] if r["phase"] == 1)
+    # a bottle only from Seongpanak on: same, no beep claims that phase is fed
+    pan = {**PANTRY, 7: {"id": 7, "name": "Tailwind Endurance Fuel (1 dose)", "kind": "drink", "carbs_g": 25, "sodium_mg": 303,
+                         "caffeine_mg": None, "volume_ml": 500, "servings": 1}}
+    nj = {**OWNER, "picks": [1, 2, 4, 5, 7], "phases": [OWNER["phases"][0], {"km": 64.0, "mix": {"7": 1}}]}
+    _, secs = long_sections(27 * 3600)
+    inp = N.resolve_inputs(nj, pan, 27 * 3600, None, 68, moving_s=NP.moving_cum(secs[-1]), start_offset_s=START)
+    p = NP.build_plan(NP.food_stretches(secs, LONG_CPS, START), inp, sections=secs, start_offset_s=START, refill_kms=REFILLS)
+    assert set(p["beep"]["per_phase"]) == {0} and not any(r["beep_note"] for r in p["stretches"])
+
+
+def test_cola_left_at_a_point_that_is_no_longer_a_food_ravito_is_not_counted():
+    """E9: 4 Coca at Gasiri, then Gasiri becomes a water point with its drop bag: the
+    hidden cola no longer removes a caffeine dose."""
+    inp, plan, _ = _plan(weight=50)
+    st = N.apply_op(inp["state"], "aid", (88.0, -10, 4), inp["products_by_id"], plan)
+    water = [{**c, "kind": "water"} if c["name"] == "Gasiri" else c for c in LONG_CPS]
+    _, clean, _ = _plan({**OWNER, "aid": {}}, weight=50, cps=water)
+    _, stale, _ = _plan(N.state_json(st), weight=50, cps=water)
+    gas = next(r for r in stale["stretches"] if r["key"] == 88.0)
+    assert not gas["aid_food"] and not any(it["at_aid"] for it in gas["items"])
+    assert len(stale["caffeine"]["doses"]) == len(clean["caffeine"]["doses"]) == 3
+    assert stale["caffeine_24h_mg"] == clean["caffeine_24h_mg"]
+
+
+def test_a_hand_set_row_whose_stretch_changed_end_is_recalculated():
+    """A food ravito added inside a hand-set stretch: the counts are not applied to a
+    stretch of another length; the row is said « recalculé »."""
+    inp, plan, _ = _plan()
+    st = N.apply_op(inp["state"], "n", (0.0, 1, 4), inp["products_by_id"], plan)
+    nj = N.state_json(st)
+    assert nj["row_to"] == {"0.0": 23.0}
+    _, same, _ = _plan(nj)
+    assert same["stretches"][0]["frozen"] and same["dropped_rows"] == 0
+    full = [{**c, "kind": "full"} if c["name"] == "Healing Forest" else c for c in LONG_CPS]
+    _, p, _ = _plan(nj, cps=full)
+    assert p["stretches"][0]["to_name"] == "Healing Forest" and not p["stretches"][0]["frozen"] and p["dropped_rows"] == 1
+    assert 0.0 not in p["state_snapped"]["rows"] and not any(r["stomach"] for r in p["stretches"])
+    # a row stored before the end was kept is still applied (and gets its end on the next write)
+    old = {**nj, "row_to": {}}
+    _, p, _ = _plan(old)
+    assert p["stretches"][0]["frozen"] and p["state_snapped"]["row_to"] == {0.0: 23.0}
+
+
+def test_an_older_plans_rates_keep_their_split_in_prises():
+    """legacy-shares-in-prises: PF 90 at 0,5 pouch an hour (45 g/h) stays about 45 g/h."""
+    legacy = {"targets": {"carbs_g_per_h": 75},
+              "items": [{"product_id": 3, "per_hour": 0.5}, {"product_id": 2, "per_hour": 0.5}, {"product_id": 1, "per_hour": 0.5},
+                        {"product_id": 4, "per_hour": 1.0}, {"product_id": 5, "per_hour": 1.0}], "flask_capacity_ml": 1000}
+    _, plan, _ = _plan(legacy)
+    hours = plan["race_s"] / 3600
+    g = {pid: sum(it["n"] for r in plan["stretches"] for it in r["items"] if it["pid"] == pid) * NP._serving_g(PANTRY[pid]) / hours for pid in (1, 2, 3)}
+    assert g[3] > 35 and g[3] > g[1] + g[2] - 10, g  # PF 90 carries most of it, as typed
+    assert next(it for it in plan["shop"] if it["pid"] == 3)["need"] >= 13

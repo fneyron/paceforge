@@ -457,6 +457,9 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-row > summary { list-style: none; cursor: pointer; display: grid; gap: 7px; padding: 11px 0; }
 .pf-rv-row > summary::-webkit-details-marker { display: none; }
 .pf-rv-row[open] > summary .pf-chev { transform: rotate(90deg); }
+.pf-rv-row[open] > summary .pf-rv-r2 { display: none; }  /* open: the steppers carry the counts, printed once */
+/* a scrolled-to row or editor clears the sticky header (61 px) and the tab bar */
+.pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 72px; scroll-margin-bottom: 80px; }
 .pf-rv-r1 { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
 .pf-rv-clk { flex: none; width: 44px; font-family: var(--pf-font-display); font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; }
 .pf-rv-to { flex: 1 1 auto; min-width: 0; font-size: 16px; font-weight: 650; color: rgb(var(--pf-ink)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -467,6 +470,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-water { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 22px; font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pf-rv-water svg { color: rgb(var(--pf-accent)); }
 .pf-rv-water.is-warn, .pf-rv-water.is-warn svg { color: rgb(var(--pf-warn)); }
+.pf-rv-editor .pf-rv-undo { margin-top: 10px; }
 .pf-rv-r3 { display: flex; align-items: center; gap: 8px; min-height: 20px; }
 .pf-rv-bar { position: relative; flex: 1 1 auto; height: 6px; border-radius: 3px; background: rgb(var(--pf-line)); }
 .pf-rv-bar > i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--fill, 0%); border-radius: 3px; background: rgb(var(--pf-accent)); }
@@ -493,6 +497,8 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-rv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .pf-rv-editor { padding: 14px; border-radius: 18px; background: rgb(var(--pf-soft)); }
 .pf-rv-scope { font-size: 14px; color: rgb(var(--pf-ink)); margin-bottom: 10px; }
+.pf-rv-scope:focus { outline: none; }
+.pf-rv-scope:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
 .pf-rv-editor .pf-chip-lg { background: rgb(var(--pf-surface)); }
 .pf-rv-editor .pf-chip-lg[aria-pressed="true"] { background: rgb(var(--pf-accent-soft)); }
 .pf-rv-editor .pf-rv-panel { background: rgb(var(--pf-surface)); }

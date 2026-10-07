@@ -31,12 +31,15 @@ def test_servings_migration_is_the_head_and_round_trips():
     with eng.begin() as c:
         c.execute(sa.text("CREATE TABLE nutrition_products (id INTEGER PRIMARY KEY, user_id INTEGER, name VARCHAR(100), kind VARCHAR(20), "
                           "carbs_g FLOAT, sodium_mg FLOAT, kcal FLOAT, caffeine_mg FLOAT, volume_ml FLOAT, created_at TIMESTAMP)"))
-        for i, name in enumerate(("Precision Fuel PF 90 Gel", "precision fuel pf 90 gel (orange)", "Maurten Gel 160", "Baouw Gel"), start=1):
-            c.execute(sa.text("INSERT INTO nutrition_products (id, user_id, name, kind, carbs_g, sodium_mg) VALUES (:i, 1, :n, 'gel', 40, 0)"), {"i": i, "n": name})
+        for i, (name, g) in enumerate((("Precision Fuel PF 90 Gel", 90), ("precision fuel pf 90 gel (orange)", 90), ("Maurten Gel 160", 40),
+                                       ("Baouw Gel", 30), ("Precision Fuel PF 90", 30)), start=1):
+            c.execute(sa.text("INSERT INTO nutrition_products (id, user_id, name, kind, carbs_g, sodium_mg) VALUES (:i, 1, :n, 'gel', :g, 0)"), {"i": i, "n": name, "g": g})
         with Operations.context(MigrationContext.configure(c)):
             mig.upgrade()
         rows = dict(c.execute(sa.text("SELECT name, servings FROM nutrition_products")).all())
-        assert rows == {"Precision Fuel PF 90 Gel": 3, "precision fuel pf 90 gel (orange)": 3, "Maurten Gel 160": 1, "Baouw Gel": 1}
+        # a PF 90 typed per prise (30 g) is not cut in three: it stays at 1
+        assert rows == {"Precision Fuel PF 90 Gel": 3, "precision fuel pf 90 gel (orange)": 3, "Maurten Gel 160": 1, "Baouw Gel": 1,
+                        "Precision Fuel PF 90": 1}
         # a new row gets 1 without saying it; running the data step again changes nothing
         c.execute(sa.text("INSERT INTO nutrition_products (id, user_id, name, kind, carbs_g, sodium_mg) VALUES (9, 1, 'Mon gel', 'gel', 25, 0)"))
         assert c.execute(sa.text("SELECT servings FROM nutrition_products WHERE id = 9")).scalar() == 1
@@ -44,4 +47,4 @@ def test_servings_migration_is_the_head_and_round_trips():
         with Operations.context(MigrationContext.configure(c)):
             mig.downgrade()
         assert "servings" not in {col["name"] for col in sa.inspect(c).get_columns("nutrition_products")}
-        assert c.execute(sa.text("SELECT count(*) FROM nutrition_products")).scalar() == 5
+        assert c.execute(sa.text("SELECT count(*) FROM nutrition_products")).scalar() == 6

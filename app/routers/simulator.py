@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import logging
 
@@ -1863,7 +1864,8 @@ def _product_dict(p: NutritionProduct) -> dict:
 
 def _parse_open(open_: str | None) -> tuple[str | None, float | None]:
     """« s:58.1 » (a row), « ph:58.1 » (its « à partir d'ici » editor),
-    « add:58.1 » (« + Produit »), « list », « brands », « settings »."""
+    « add:58.1 » (« + Produit »), « list », « brands », « settings »,
+    « points » (« Où peux-tu manger ? » while he picks his ravitos)."""
     if not open_:
         return None, None
     kind, _, key = str(open_).partition(":")
@@ -1998,7 +2000,7 @@ async def _nutrition_card_context(
         }})
 
     # ── header: the strip (decorative), one chip per phase
-    strip = [{"w": round(r["d_s"] / race_s * 100, 3), "cat": r["main_cat"]} for r in rows]
+    strip = [{"w": round(r["d_s"] / race_s * 100, 3), "cat": plan["phases"][r["phase"]]["cat"]} for r in rows]
     phases = [{"key": ph["key"], "names": ph["names"], "cat": ph["cat"], "from": ph["from_name"] if ph["i"] else None,
                "start_key": rows[ph["start_idx"]]["key"] if ph["start_idx"] is not None else ph["key"]} for ph in plan["phases"]]
 
@@ -2030,15 +2032,17 @@ async def _nutrition_card_context(
     pantry_more = [{"id": pid, "label": N.short_label(p), "title": p.get("name") or ""} for pid, p in pantry.items() if pid not in picks]
     on_list = [{"id": p, "label": N.short_label(products[p]), "title": products[p].get("name") or ""} for p in picks]
 
-    # food ravitos not typed yet (a GPX import): « Où peux-tu manger ? »
+    # food ravitos not typed yet (a GPX import): « Où peux-tu manger ? ». The chips stay while
+    # he picks them (each tap reloads with open=points), pressed on the points that are food points
     food_chips = []
-    if not is_bike and not any(_is_food_point(cp) for cp in cps):
+    if not is_bike and (open_kind == "points" or not any(_is_food_point(cp) for cp in cps)):
         for s in sections:
             ci = s.get("end_checkpoint_index")
             if ci is None or ci >= len(cps):
                 continue
             cp = cps[ci]
             food_chips.append({"ci": ci, "km": s["end_km"], "name": cp["name"], "kind": cp.get("kind") or "none",
+                               "on": (cp.get("kind") or "none") in ("full", "base"),
                                "label": f"{cp['name']} · km {round(float(s['end_km']))}"})
 
     # « Eau et réglages »
@@ -2069,7 +2073,15 @@ async def _nutrition_card_context(
                             "servings_in": str(N.servings_of(p))})
     temp = inp["mean_temp"]
     t_fluid = plan["fluid_ml_per_h"]
-    undo = inp.get("undo")
+    undo = inp.get("undo") if (bundle and bundle.get("undo_fresh")) else None
+    if undo:
+        n = int(undo.get("cleared") or 0)
+        undo = {"text": "Changement supprimé." if undo.get("what") == "unswitch" or not n else
+                f"{n} tronçon{'s' if n > 1 else ''} remis en auto.",
+                # where he tapped: in the open row (its editor), else the list's panel, else the header
+                "at": next((r["key"] for r in rows if open_key is not None and abs(open_key - r["key"]) < 0.05
+                            and open_kind in ("s", "ph", "add", "phbrands", "go")), None)}
+        undo["where"] = "row" if undo["at"] is not None else ("brands" if open_kind == "brands" else "head")
     return {
         **ctx,
         "level": inp["level"], "custom_carbs": round(inp["level_carbs"]), "rate": round(plan["rate_g_h"]),
@@ -2083,7 +2095,7 @@ async def _nutrition_card_context(
         "upgraded": inp["upgraded"],  # an older plan read per stretch: said once, gone with the first tap (a v3 write)
         "brand_groups": [(lbl, items) for lbl, items in brand_groups if items], "quick": quick, "pantry_more": pantry_more, "on_list": on_list,
         "own_form": own_form, "hand_set": inp["hand_set"],
-        "undo": {"cleared": int(undo.get("cleared") or 0)} if undo else None,
+        "undo": undo,
         "sweat": sweat, "custom_sweat": "fluid_ml_per_h" in inp["custom"],
         "sweat_info": f"Environ {N.liters(t_fluid)} L à porter par heure, " + (f"d'après {round(temp)} °C prévus." if temp is not None else "pour une météo douce."),
         "carry_opts": carry_opts, "carry": carry, "reserve_opts": reserve_opts,
@@ -2549,9 +2561,10 @@ def _product_fields(form) -> dict | None:
         if raw in (None, ""):
             return None
         try:
-            return max(0.0, float(str(raw).replace(",", ".")))
+            x = float(str(raw).replace(",", "."))
         except (TypeError, ValueError):
             return None
+        return max(0.0, x) if math.isfinite(x) else None  # « inf », « 1e999 », « nan »: not a number for a label
 
     kind = (form.get("kind") or "gel").strip()
     out = {
@@ -2560,6 +2573,10 @@ def _product_fields(form) -> dict | None:
     }
     if "servings" in form:  # prises in one unit (a PF 90 pouch: 3)
         out["servings"] = max(1, min(12, int(_f("servings") or 1)))
+    else:  # an older client: the catalogue's prises for a product named like it (a PF 90 pouch)
+        from app.services.nutrition import servings_of
+
+        out["servings"] = servings_of({"name": out["name"], "carbs_g": out["carbs_g"]})
     for key in ("kcal", "volume_ml"):  # older clients may still send them
         if key in form:
             out[key] = _f(key)
@@ -2590,7 +2607,8 @@ async def _write_nutrition(route: Route, db: AsyncSession, user: User, op: str, 
                        sections=b["sections"], start_offset_s=b["start_offset_s"], refill_kms=b["aid_kms"], sport=b["sport"])
     route.nutrition_json = N.with_echo(nj, plan2, inp2)
     await db.flush()
-    return b
+    # « Annuler » is offered by the render of this write only (a reload or a later visit never shows an old one)
+    return {**b, "undo_fresh": bool(st.get("undo"))}
 
 
 async def _add_from_catalog(key: str, db: AsyncSession, user: User) -> int | None:
@@ -2672,7 +2690,7 @@ async def pantry_in_plan(
                 if product.kind == "drink" and not product.volume_ml:
                     product.volume_ml = 500
                 await db.flush()
-    open_ = form.get("open") or ("settings" if product_id is not None else ("brands" if own_form else None))
+    open_ = form.get("open") or ("settings" if product_id is not None else ("brands" if own_form or (b and b.get("undo_fresh")) else None))
     ctx = await _nutrition_card_context(request, route, db, user, open_=open_, bundle=b, own_form=own_form)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
@@ -2695,7 +2713,8 @@ async def add_catalog_product_to_plan(
     km = _form_km(form)
     pid = await _add_from_catalog(key, db, user)
     b = await _write_nutrition(route, db, user, "pick", (pid, km)) if pid else None
-    ctx = await _nutrition_card_context(request, route, db, user, open_=f"ph:{km}" if km is not None else None, bundle=b)
+    open_ = f"ph:{km}" if km is not None else ("brands" if b and b.get("undo_fresh") else None)
+    ctx = await _nutrition_card_context(request, route, db, user, open_=open_, bundle=b)
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx)
 
 
@@ -2706,7 +2725,7 @@ def _to_float(v, default=0.0):
         return default
 
 
-_PLAN_OPS = ("level", "toggle", "pick", "sweat", "carry", "reserve", "n", "add", "auto", "aid", "have", "mix", "unswitch",
+_PLAN_OPS = ("level", "toggle", "pick", "unpick", "sweat", "carry", "reserve", "n", "add", "auto", "aid", "have", "mix", "unswitch",
              "undo", "reset", "keep")
 
 
@@ -2729,8 +2748,9 @@ def _plan_op_value(op: str, form):
         return (km, int(form.get("aid")), d)
     if op == "have":
         return (int(form.get("pid")), d)
-    if op == "mix":
-        return (km, int(form.get("pid")))
+    if op == "mix":  # « on » = 1 / 0 sets the product in that phase (a stale card cannot flip it back)
+        on = form.get("on")
+        return (km, int(form.get("pid"))) + ((str(on) in ("1", "true"),) if on not in (None, "") else ())
     return None
 
 
@@ -2800,7 +2820,7 @@ async def _legacy_nutrition_post(route: Route, db: AsyncSession, user: User, for
     pantry = await _pantry(db, user.id)
     by_id = N.with_generics(pantry)
     picks = [i for i in dict.fromkeys(used) if i in by_id and i not in N.AID_BY_ID]
-    st = {"picks": picks, "phases": [{"km": 0.0, "mix": {p: (qty.get(p) or 1.0) for p in picks if N.is_fuel(by_id[p])}}],
+    st = {"picks": picks, "phases": [{"km": 0.0, "mix": {p: N.units_to_share(qty.get(p), by_id[p]) for p in picks if N.is_fuel(by_id[p])}}],
           "rows": {}, "aid": {}, "have": {}, "reserve_min": None, "level": None, "sweat": None, "custom": {},
           "refills": list((route.nutrition_json or {}).get("refills") or [])}
     N._legacy_targets_into(st, targets)

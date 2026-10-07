@@ -140,16 +140,26 @@ def is_fuel(p: dict) -> bool:
 
 
 def servings_of(p: dict) -> int:
-    """Prises in one unit: the product's own value, else the catalogue's (a PF 90
-    the athlete typed himself), else 1."""
-    try:
-        own = int(p.get("servings") or 0)
-    except (TypeError, ValueError):
-        own = 0
-    if own > 1:
-        return min(own, 12)
+    """Prises in one unit. A pantry row always carries its own value (the
+    athlete may set a PF 90 to 1 prise): it is trusted. Only a product without
+    one (a catalogue entry, an old dict) takes the catalogue's, and only when
+    its carbs are those of a whole pouch (a PF 90 typed per prise, 30 g, is 1)."""
+    raw = p.get("servings")
+    if raw not in (None, ""):
+        try:
+            return max(1, min(int(raw), 12))
+        except (TypeError, ValueError, OverflowError):
+            return 1
     c = CATALOG_BY_NAME.get((p.get("name") or "").strip().lower())
-    return int(c.get("servings") or 1) if c else 1
+    if not c or int(c.get("servings") or 1) <= 1:
+        return 1
+    try:
+        carbs = float(p["carbs_g"]) if p.get("carbs_g") not in (None, "") else None
+    except (TypeError, ValueError):
+        carbs = None
+    if carbs is not None and carbs < float(c["carbs_g"]) * 2 / 3:
+        return 1
+    return int(c["servings"])
 
 
 def _fr(x: float) -> str:
@@ -228,11 +238,14 @@ def caffeine_schedule(
     product_name: str | None = None,
     unit_mg: float | None = None,
     events: list[tuple[float, float]] | None = None,
+    blocked: list[tuple[float, float]] | None = None,
 ) -> dict | None:
     """Timed caffeine doses on MOVING time (the legs' cum_s), each with the clock
     it falls on (stops included: ``clock_s``). A dose that would put any 24 h
     above the cap is skipped, the next one is tried (``events`` = caffeine
-    already planned elsewhere, e.g. cola at a ravito: (clock_s, mg)).
+    already planned elsewhere, e.g. cola at a ravito or a stretch set by hand:
+    (clock_s, mg)). No dose is placed inside a ``blocked`` clock range [a, b)
+    (a stretch set by hand: what it holds is in ``events``).
     Returns {doses, total_mg, max_mg, over} or None when disabled."""
     cfg = {**CAFFEINE_DEFAULTS, **(settings or {})}
     if not cfg.get("enabled") or duration_s <= 0:
@@ -274,6 +287,10 @@ def caffeine_schedule(
         mg = dose
         label = "petite dose"
         dawn = cfg.get("boost_dawn") and not dawn_done and 5.0 <= _clock_hour(clk) < 7.5
+        if blocked and any(a <= clk < b for a, b in blocked):
+            dawn_done = dawn_done or bool(dawn)  # that stretch's own caffeine stands for this dose
+            t += every_s
+            continue
         if dawn:
             # dawn: a full dose — with 100 mg gels one gel already is one
             mg, label = (dose if (unit_mg and unit_mg >= 100) else dose * 2), "dose pleine (aube)"
@@ -317,7 +334,7 @@ def auto_caffeine(duration_s: float, unit_mg: float | None, weight_kg: float | N
 #
 # Stored shape v3 (written by state_json, the echo keys by with_echo):
 #   {"v": 3, "picks": [pid], "phases": [{"km", "mix": {pid: share}}],
-#    "rows": {"58.1": {pid: n}}, "aid": {"58.1": {aid_id: n}}, "have": {pid: n},
+#    "rows": {"58.1": {pid: n}}, "row_to": {"58.1": 64.0}, "aid": {"58.1": {aid_id: n}}, "have": {pid: n},
 #    "reserve_min": 0|30|60|null, "level", "sweat", "carry_ml", "custom", "undo"}
 # Keys are the stretch's start km rounded to 0.1 (checkpoints have no stable
 # id). Older shapes (v2, the legacy items) are read in memory, never rewritten
@@ -326,9 +343,9 @@ def auto_caffeine(duration_s: float, unit_mg: float | None, weight_kg: float | N
 def _carry(v) -> int | None:
     try:
         ml = int(round(float(v)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # « abc », « inf », « 1e999 »
         return None
-    return ml if ml > 0 else None
+    return ml if 0 < ml <= 10000 else None
 
 
 def _km(v) -> float | None:
@@ -366,7 +383,7 @@ def _legacy_targets_into(st: dict, nj: dict) -> None:
 
 
 def _empty_state(refills=None) -> dict:
-    return {"picks": [], "shares": {}, "phases": [], "rows": {}, "aid": {}, "have": {}, "reserve_min": None,
+    return {"picks": [], "shares": {}, "phases": [], "rows": {}, "row_to": {}, "aid": {}, "have": {}, "reserve_min": None,
             "level": None, "sweat": None, "carry_ml": None, "custom": {}, "refills": list(refills or []),
             "legacy": False, "explicit": False, "version": 0, "undo": None}
 
@@ -433,6 +450,16 @@ def _read_counts(d) -> dict:
     return out
 
 
+def _read_ends(d, rows: dict) -> dict:
+    """{row key: the km its stretch ended at when it was set by hand}."""
+    out: dict = {}
+    for k, v in (d or {}).items() if isinstance(d, dict) else []:
+        km, end = _km(k), _km(v)
+        if km is not None and end is not None and km in rows:
+            out[km] = end
+    return out
+
+
 def read_state(nj: dict | None) -> dict:
     """The athlete's choices stored on a route, whatever the shape it was saved in."""
     nj = nj or {}
@@ -468,6 +495,7 @@ def read_state(nj: dict | None) -> dict:
             st["phases"].append({"km": km, "mix": _read_mix(ph.get("mix"))})
         st["phases"].sort(key=lambda p: p["km"])
         st["rows"] = _read_counts(nj.get("rows"))
+        st["row_to"] = _read_ends(nj.get("row_to"), st["rows"])
         st["aid"] = {k: {a: n for a, n in v.items() if a in AID_BY_ID and n > 0} for k, v in _read_counts(nj.get("aid")).items()}
         st["aid"] = {k: v for k, v in st["aid"].items() if v}
         for k, v in (nj.get("have") or {}).items() if isinstance(nj.get("have"), dict) else []:
@@ -484,6 +512,16 @@ def read_state(nj: dict | None) -> dict:
     _legacy_targets_into(st, nj)
     st["carry_ml"] = _carry(nj.get("flask_capacity_ml"))
     return st
+
+
+def units_to_share(rate, product: dict) -> float:
+    """An older plan's per-hour rate counts whole units (pouches); a phase's
+    share counts PRISES: a PF 90 at 0,5 pouch an hour is 1,5 prises an hour."""
+    try:
+        r = float(rate or 0)
+    except (TypeError, ValueError):
+        r = 0.0
+    return r * servings_of(product) if r > 0 else 1.0
 
 
 def race_rate(level_or_custom: float, race_s: float) -> float:
@@ -550,8 +588,8 @@ def resolve_inputs(
     moving = float(moving_s or duration_s or 0)
     if custom.get("caffeine"):
         caffeine = {**CAFFEINE_DEFAULTS, **custom["caffeine"], "enabled": bool(caf), "by_unit": True}
-    elif caf:
-        caffeine = auto_caffeine(moving, caf[0].get("caffeine_mg"), weight_kg)
+    elif caf:  # the caffeine of one prise (a caffeinated product in 2 goes gives half its mg each)
+        caffeine = auto_caffeine(moving, float(caf[0].get("caffeine_mg") or 0) / servings_of(caf[0]), weight_kg)
     else:
         caffeine = {**CAFFEINE_DEFAULTS, "enabled": False}
     fuel = [p["id"] for p in sel if is_fuel(p)]
@@ -561,16 +599,17 @@ def resolve_inputs(
         phases.insert(0, {"km": 0.0, "mix": None})
     for ph in phases:
         if ph["mix"] is None:  # the default: every fuel product of the list (an old plan's rates as shares)
-            ph["mix"] = {pid: (shares.get(pid) or 1.0) for pid in fuel}
+            ph["mix"] = {pid: units_to_share(shares.get(pid), products[pid]) for pid in fuel}
         ph["mix"] = {pid: s for pid, s in ph["mix"].items() if pid in products and is_fuel(products[pid]) and pid in picks}
     rows = {} if is_virtual else {k: {p: n for p, n in v.items() if p in products and p not in AID_BY_ID} for k, v in st["rows"].items()}
+    row_to = {k: v for k, v in st["row_to"].items() if k in rows}
     aid = {} if is_virtual else {k: dict(v) for k, v in st["aid"].items()}
     have = {p: n for p, n in st["have"].items() if p in products}
     reserve_set = st["reserve_min"]
     sweat_eff = None if "fluid_ml_per_h" in custom else (sweat or "normal")
     level_eff = None if "carbs_g_per_h" in custom else CARBS_LEVEL.get(level_carbs)
     return {
-        "products_by_id": products, "picks": picks, "phases": phases, "rows": rows, "aid": aid, "have": have,
+        "products_by_id": products, "picks": picks, "phases": phases, "rows": rows, "row_to": row_to, "aid": aid, "have": have,
         "reserve_set": reserve_set, "level": level_eff, "level_carbs": float(level_carbs), "sweat": sweat_eff,
         "sweat_factor": SWEAT_FACTOR[sweat or "normal"], "carry_ml": carry, "flask_capacity_ml": carry,
         "custom": custom, "caffeine": caffeine, "caf_pid": caf[0]["id"] if caf else None,
@@ -580,7 +619,7 @@ def resolve_inputs(
         "undo": None if is_virtual else st["undo"],
         # what a write starts from (the resolved state, the copied default included)
         "state": {"picks": list(picks), "phases": [{"km": p["km"], "mix": dict(p["mix"])} for p in phases],
-                  "rows": {k: dict(v) for k, v in rows.items()}, "aid": {k: dict(v) for k, v in aid.items()},
+                  "rows": {k: dict(v) for k, v in rows.items()}, "row_to": dict(row_to), "aid": {k: dict(v) for k, v in aid.items()},
                   "have": dict(have), "reserve_min": reserve_set, "level": level, "sweat": sweat, "carry_ml": carry,
                   "custom": dict(custom), "refills": list(st["refills"]), "undo": None},
     }
@@ -626,15 +665,41 @@ def _phase_end(phases: list[dict], km: float) -> float:
     return min(later) if later else math.inf
 
 
-def _purge(st: dict, pid: int) -> None:
+def _gives_carbs(pid: int, products_by_id: dict) -> bool:
+    """A product a stretch counts on for its carbs (unknown, e.g. just deleted: yes)."""
+    p = products_by_id.get(pid)
+    return p is None or float(p.get("carbs_g") or 0) > 0
+
+
+def _purge(st: dict, pid: int, products_by_id: dict | None = None) -> int:
+    """Off the list, every phase and row. A hand-set row that counted on it for
+    its carbs goes back to auto (it would be left short, still « à la main »);
+    a salt tablet just leaves. Returns the rows sent back to auto."""
     st["picks"] = [x for x in st["picks"] if x != pid]
     for ph in st["phases"]:
         ph["mix"].pop(pid, None)
+    cleared, carbs = 0, _gives_carbs(pid, products_by_id or {})
     for k in list(st["rows"]):
-        st["rows"][k].pop(pid, None)
-        if not any(st["rows"][k].values()):
+        n = st["rows"][k].pop(pid, 0)
+        if n and carbs:
+            st["rows"].pop(k)
+            cleared += 1
+        elif not any(st["rows"][k].values()):
             st["rows"].pop(k)
     st["have"].pop(pid, None)
+    return cleared
+
+
+def _snapshot(st: dict, *, picks: bool = False) -> dict:
+    """What an « Annuler » puts back (phases and hand-set rows; the list too
+    when the tap changed it)."""
+    snap = {"phases": [{"km": p["km"], "mix": {str(x): s for x, s in p["mix"].items()}} for p in st["phases"]],
+            "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()},
+            "row_to": {str(r): e for r, e in st["row_to"].items() if r in st["rows"]}}
+    if picks:
+        snap["picks"] = list(st["picks"])
+        snap["have"] = {str(x): n for x, n in st["have"].items()}
+    return snap
 
 
 def _seed(plan: dict | None, key: float) -> dict:
@@ -645,14 +710,24 @@ def _seed(plan: dict | None, key: float) -> dict:
     return {}
 
 
+def _stretch_end(plan: dict | None, key: float) -> float | None:
+    for s in (plan or {}).get("stretches") or []:
+        if abs(s["key"] - key) < 0.05:
+            return s["to_km"]
+    return None
+
+
 def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = None, plan: dict | None = None) -> dict:
     """One tap → the next stored state.
 
     ``value`` per op: level/sweat → the key; carry/reserve → the number;
     toggle/pick/unpick/have → pid (have: (pid, d)); n → (km, pid, d) one row,
     frozen whole on its first tap; add → (km, pid) one more on that row only;
-    auto → km; aid → (km, aid_id, d); mix → (km, pid) « à partir d'ici »;
-    unswitch → km; pick with (pid, km) → into the phase at km.
+    auto → km; aid → (km, aid_id, d); mix → (km, pid[, on]) « à partir d'ici »
+    (on = True / False sets it, a stale card cannot flip it back; without it,
+    a toggle); unswitch → km; pick with (pid, km) → into the phase at km.
+    A tap that sends hand-set rows back to auto (or removes a switch) keeps an
+    « Annuler » for the next render.
     """
     products_by_id = products_by_id or {}
     st = {
@@ -660,6 +735,7 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
         "picks": list(state.get("picks") or []),
         "phases": [{"km": p["km"], "mix": dict(p.get("mix") or {})} for p in state.get("phases") or []] or [{"km": 0.0, "mix": {}}],
         "rows": {k: dict(v) for k, v in (state.get("rows") or {}).items()},
+        "row_to": dict(state.get("row_to") or {}),
         "aid": {k: dict(v) for k, v in (state.get("aid") or {}).items()},
         "have": dict(state.get("have") or {}),
         "custom": dict(state.get("custom") or {}),
@@ -689,20 +765,28 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
     elif op in ("toggle", "pick", "unpick"):
         pid, km = (value if isinstance(value, tuple) else (value, None))
         pid = int(pid)
+        snapshot = _snapshot(st, picks=True)
+        cleared = 0
         if op == "unpick" or (op == "toggle" and pid in st["picks"]):
-            _purge(st, pid)
+            cleared = _purge(st, pid, products_by_id)
         elif pid in products_by_id and pid not in AID_BY_ID:
             before = list(st["picks"])
             phase_only = km is not None and (snap(km) or 0) > 0
             # on the whole race a real product takes the quick pick's place; from a
             # ravito on it only joins (the earlier phases keep their « Gel »)
             st["picks"] = (st["picks"] + ([pid] if pid not in st["picks"] else [])) if phase_only else pick_into(st["picks"], pid, products_by_id)
-            gone = _replaced(before, st["picks"])
-            for x in gone:  # the quick pick it replaces leaves every phase and row
+            for x in _replaced(before, st["picks"]):  # the quick pick it replaces leaves every phase and row
                 for ph in st["phases"]:
                     ph["mix"].pop(x, None)
-                for k in st["rows"]:
-                    st["rows"][k].pop(x, None)
+                for k in list(st["rows"]):
+                    n = st["rows"][k].pop(x, 0)
+                    if not n:
+                        continue
+                    if _gives_carbs(x, products_by_id):
+                        st["rows"].pop(k)  # « Gel » set by hand: that sachet goes back to auto with the new gel
+                        cleared += 1
+                    else:  # a tablet is a tablet: the new salt takes its count
+                        st["rows"][k][pid] = st["rows"][k].get(pid, 0) + n
             if is_fuel(products_by_id[pid]):
                 k = snap(km) if km is not None else None
                 if k is None or k <= 0:
@@ -716,11 +800,14 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
                         st["phases"].sort(key=lambda p: p["km"])
                         i = _phase_at(st["phases"], k)
                     add_to_mix(st["phases"][i]["mix"], pid, before)
+        if cleared and pid in products_by_id:  # a deleted product cannot come back: no « Annuler »
+            st["undo"] = {**snapshot, "cleared": cleared}
     elif op == "sweat" and value in SWEAT_FACTOR:
         st["sweat"] = value
         st["custom"].pop("fluid_ml_per_h", None)
     elif op == "carry":
-        st["carry_ml"] = None if value in (None, "", "auto") else _carry(value)
+        # « auto » or empty: back to auto; a value that is not a volume changes nothing
+        st["carry_ml"] = None if value in (None, "", "auto") else (_carry(value) or st.get("carry_ml"))
     elif op == "reserve":
         v = _int(value)
         if v in RESERVE_CHOICES:
@@ -732,6 +819,9 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
             row = st["rows"].get(k)
             if row is None:
                 row = _seed(plan, k)
+            end = _stretch_end(plan, k)
+            if end is not None and k not in st["row_to"]:
+                st["row_to"][k] = end  # the stretch it is set on, start and end
             if op == "add":
                 row[pid] = max(0, row.get(pid, 0)) + 1
             else:
@@ -743,6 +833,7 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
         k = snap(value)
         if k is not None:
             st["rows"].pop(k, None)
+            st["row_to"].pop(k, None)
     elif op == "aid":
         km, aid_id, d = value
         k, aid_id = snap(km), int(aid_id)
@@ -766,22 +857,20 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
         else:
             st["have"].pop(pid, None)
     elif op == "mix":
-        km, pid = value
+        km, pid, on = (tuple(value) + (None,))[:3]
         k, pid = snap(km), int(pid)
         if k is not None and pid in products_by_id and is_fuel(products_by_id[pid]):
-            snapshot = {"phases": [{"km": p["km"], "mix": {str(x): s for x, s in p["mix"].items()}} for p in st["phases"]],
-                        "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()}}
+            snapshot = _snapshot(st)
             before = list(st["picks"])
-            if pid not in st["picks"]:
-                st["picks"].append(pid)  # joins the list; the other phases keep what they have
             i = _phase_at(st["phases"], k)
             if i is None:
                 st["phases"].append({"km": k, "mix": _mix_in_force(st["phases"], k)})
                 st["phases"].sort(key=lambda p: p["km"])
                 i = _phase_at(st["phases"], k)
             mix = st["phases"][i]["mix"]
+            want = (pid not in mix) if on is None else bool(on)
             cleared = 0
-            if pid in mix:
+            if pid in mix and not want:
                 mix.pop(pid)
                 # « à partir d'ici » sans ce produit : the hand-set rows of this
                 # phase that hold it go back to auto (an « Annuler » undoes it)
@@ -789,7 +878,9 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
                 for r in [r for r in st["rows"] if k - 0.05 <= r < end - 0.05 and st["rows"][r].get(pid)]:
                     st["rows"].pop(r)
                     cleared += 1
-            else:
+            elif want and pid not in mix:
+                if pid not in st["picks"]:
+                    st["picks"].append(pid)  # joins the list; the other phases keep what they have
                 add_to_mix(mix, pid, before)
             # a change back to what was already in force is no change
             if i > 0 and set(st["phases"][i]["mix"]) == set(st["phases"][i - 1]["mix"]):
@@ -800,14 +891,18 @@ def apply_op(state: dict, op: str, value=None, products_by_id: dict | None = Non
         k = snap(value)
         i = _phase_at(st["phases"], k) if k is not None else None
         if i:
-            st["undo"] = {"phases": [{"km": p["km"], "mix": {str(x): s for x, s in p["mix"].items()}} for p in st["phases"]],
-                          "rows": {str(r): {str(x): n for x, n in v.items()} for r, v in st["rows"].items()}, "cleared": 0}
+            st["undo"] = {**_snapshot(st), "cleared": 0, "what": "unswitch"}
             st["phases"].pop(i)
     elif op == "undo" and prev_undo:
         st["phases"] = [{"km": _km(p["km"]), "mix": _read_mix(p.get("mix")) or {}} for p in prev_undo.get("phases") or []] or st["phases"]
         st["rows"] = _read_counts(prev_undo.get("rows"))
+        st["row_to"] = _read_ends(prev_undo.get("row_to"), st["rows"])
+        if isinstance(prev_undo.get("picks"), list):
+            st["picks"] = [p for p in (_int(x) for x in prev_undo["picks"]) if p is not None]
+        if isinstance(prev_undo.get("have"), dict):
+            st["have"] = {p: n for p, n in ((_int(a), _int(b)) for a, b in prev_undo["have"].items()) if p is not None and n}
     elif op == "reset":
-        st["rows"], st["aid"] = {}, {}
+        st["rows"], st["aid"], st["row_to"] = {}, {}, {}
         st["phases"] = st["phases"][:1]
         st["custom"] = {}
         st["reserve_min"] = None
@@ -821,6 +916,7 @@ def state_json(st: dict) -> dict:
         "v": 3, "picks": list(st.get("picks") or []),
         "phases": [{"km": p["km"], "mix": {str(k): v for k, v in (p.get("mix") or {}).items()}} for p in st.get("phases") or []],
         "rows": {str(k): {str(p): int(n) for p, n in v.items()} for k, v in (st.get("rows") or {}).items()},
+        "row_to": {str(k): e for k, e in (st.get("row_to") or {}).items() if k in (st.get("rows") or {}) and e is not None},
         "aid": {str(k): {str(p): int(n) for p, n in v.items()} for k, v in (st.get("aid") or {}).items() if v},
         "have": {str(k): int(v) for k, v in (st.get("have") or {}).items() if v},
         "reserve_min": st.get("reserve_min"),

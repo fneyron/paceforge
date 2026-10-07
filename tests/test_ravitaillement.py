@@ -72,7 +72,8 @@ def _rows(html: str) -> dict:
 # ── older plans: read per stretch, never rewritten by a read ───────────────
 
 LEGACY_PRODUCTS = {
-    11: {"id": 11, "name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None},
+    # the servings migration set 3 on the PF 90 rows already in a pantry
+    11: {"id": 11, "name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None, "servings": 3},
     12: {"id": 12, "name": "Baouw Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None},
     13: {"id": 13, "name": "Maurten Gel 160", "kind": "gel", "carbs_g": 40, "sodium_mg": 30, "kcal": 160, "caffeine_mg": None, "volume_ml": None},
     14: {"id": 14, "name": "Maurten Gel 100 CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": 100, "volume_ml": None},
@@ -119,7 +120,8 @@ async def test_the_seeded_transjeju_plan_reads_per_stretch_and_the_read_writes_n
     assert "Ton plan est maintenant par tronçon" not in r.text
     nj = await _nj(db_session, rid)
     assert nj["v"] == 3 and nj["picks"] == [ids[11], ids[12], ids[13], ids[14], ids[15]]
-    assert nj["phases"][0]["mix"] == {str(ids[11]): 0.5, str(ids[12]): 0.5, str(ids[13]): 0.5}
+    # the old rates count pouches, the stored shares count prises: PF 90 keeps its 45 g/h (0,5 pouch = 1,5 prises an hour)
+    assert nj["phases"][0]["mix"] == {str(ids[11]): 1.5, str(ids[12]): 0.5, str(ids[13]): 0.5}
     assert nj["items"] and nj["targets"]["carbs_g_per_h"] == 75  # the echo an older reader understands
 
 
@@ -426,7 +428,7 @@ async def test_water_is_what_to_carry_and_a_short_flask_is_named(as_user: AsyncC
         "race_date": "2099-10-02", "start_hour": 21, "start_minute": 0, "sport_type": "trail"})
     rid = r.json()["id"]
     t = (await as_user.get(f"{P}/{rid}")).text
-    assert "pf-rv-water is-warn" not in t and re.search(r"[\d,]+ L</span>", t)  # auto: each row says what to leave with, no amber
+    assert "pf-rv-water is-warn" not in t and re.search(r"[\d,]+ L<span class=\"sr-only\"> d'eau</span></span>", t.replace("&#39;", "'"))  # auto: each row says what to leave with, no amber
     r = await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "1000"})
     t = r.text
     assert "pf-rv-water is-warn" in t and "Tes flasques font 1 L" in _text(t)
@@ -643,3 +645,214 @@ async def test_rows_and_watch_codes_carry_the_same_ceiling(as_user: AsyncClient)
 async def test_a_short_race_follows_the_duration_ladder(as_user: AsyncClient):
     t = (await as_user.get(f"{P}/{await _route(as_user, target_s=int(2.5 * 3600), name='Court')}")).text
     assert "Course courte : 60 g/h suffisent." in t and '"v":"normal"}\' aria-pressed="true"' in t
+
+
+# ── second review ───────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_undo_shows_where_the_tap_was_made_and_only_on_that_render(as_user: AsyncClient, db_session: AsyncSession):
+    """UX2 + UX3: « Annuler » in the editor he tapped in (not 1 170 px above), gone on
+    a reload; « Supprimer ce changement » says « Changement supprimé. », never « 0 tronçon »."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    keys = list(_rows((await as_user.get(f"{P}/{rid}")).text))
+    col, village = keys[1], keys[2]
+    r = await as_user.post(f"{P}/{rid}/catalog/pf-90-gel", data={"km": str(col)})
+    pf = _pid(r.text, "PF 90")
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": str(village), "pid": str(pf), "d": "1"})
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "mix", "km": str(col), "pid": str(pf), "on": "0", "open": f"ph:{col}"})
+    head = r.text.split('id="rv-table"')[0]
+    editor = r.text.split(f'id="ed-{col}"')[1].split('<details class="pf-rv-row')[0]
+    assert "pf-rv-undo" not in head and "1 tronçon remis en auto." in _text(editor) and '"op":"undo"' in editor
+    assert 'role="status"' in editor
+    t = (await as_user.get(f"{P}/{rid}")).text  # a reload or a later visit: no old « Annuler »
+    assert "pf-rv-undo" not in t and "remis en auto" not in _text(t)
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "undo"})
+    assert str(village) in (await _nj(db_session, rid))["rows"]
+    # « Supprimer ce changement » (row open, editor closed): the line is in that row and says what happened
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "unswitch", "km": str(col), "open": f"s:{col}"})
+    row = _rows(r.text)[col]
+    assert "Changement supprimé." in _text(row) and "0 tronçon" not in r.text and "pf-rv-undo" not in r.text.split('id="rv-table"')[0]
+
+
+@pytest.mark.asyncio
+async def test_a_catalogue_product_replacing_gel_in_a_hand_set_row_says_so_in_the_list(as_user: AsyncClient, db_session: AsyncSession):
+    """E5 through the page: the hand-set sachet goes back to auto with the new gel, an « Annuler » in the list."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    k = list(_rows((await as_user.get(f"{P}/{rid}")).text))[1]
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": str(k), "pid": "-1", "d": "1"})
+    r = await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    nj = await _nj(db_session, rid)
+    assert str(k) not in nj["rows"] and "à la main" not in _rows(r.text)[k] and "Maurten 160" in _rows(r.text)[k]
+    panel = r.text.split('id="rv-brands"')[1].split('id="rv-settings"')[0]
+    assert panel.startswith(' class="pf-rv-more" open') and "1 tronçon remis en auto." in _text(panel)
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "undo"})
+    nj = await _nj(db_session, rid)
+    assert nj["picks"][0] == -1 and nj["rows"][str(k)]["-1"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_removing_a_product_is_idempotent_and_phase_chips_say_on_or_off(as_user: AsyncClient, db_session: AsyncSession):
+    """stale-toggle-readds: a stale card (or a second device) cannot put back a product just removed."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    r = await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    pid = (await _nj(db_session, rid))["picks"][0]
+    chip = re.search(rf'hx-vals=\'\{{"op":"(\w+)","v":"{pid}","open":"brands"\}}\'', r.text)
+    assert chip and chip.group(1) == "unpick"
+    for _ in range(2):  # the same tap from two tabs
+        await as_user.post(f"{P}/{rid}/plan", data={"op": "unpick", "v": str(pid), "open": "brands"})
+    nj = await _nj(db_session, rid)
+    assert pid not in nj["picks"] and all(str(pid) not in p["mix"] for p in nj["phases"])
+    # « à partir d'ici » chips send what they want, twice is still on
+    await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    keys = list(_rows((await as_user.get(f"{P}/{rid}")).text))
+    t = (await as_user.get(f"{P}/{rid}?open=ph:{keys[1]}")).text
+    assert re.search(rf'"pid":"{pid}","on":"0"', t)  # on in this phase: the chip turns it off
+    for _ in range(2):
+        await as_user.post(f"{P}/{rid}/plan", data={"op": "mix", "km": str(keys[1]), "pid": "-5", "on": "1"})
+    nj = await _nj(db_session, rid)
+    assert [p["km"] for p in nj["phases"]] == [0.0, keys[1]] and "-5" in nj["phases"][1]["mix"]
+
+
+@pytest.mark.asyncio
+async def test_odd_numbers_never_give_a_500_and_never_reset_the_flask(as_user: AsyncClient, db_session: AsyncSession):
+    """servings-overflow-500: « inf » in a form or a tap keeps the page; « abc » keeps the flask."""
+    rid = await _route(as_user)
+    for v in ("inf", "1e999", "nan"):
+        r = await as_user.post(f"{P}/{rid}/products", data={"name": f"G {v}", "kind": "gel", "carbs_g": "30", "servings": v})
+        assert r.status_code == 200
+    prods = (await db_session.execute(select(NutritionProduct))).scalars().all()
+    assert {p.servings for p in prods} == {1}
+    r = await as_user.post(f"{P}/{rid}/products/{prods[0].id}", data={"name": "G", "carbs_g": "inf", "servings": "inf"})
+    assert r.status_code == 200
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "1500"})
+    for v in ("inf", "1e999", "abc", "-3"):
+        r = await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": v})
+        assert r.status_code == 200 and (await _nj(db_session, rid))["carry_ml"] == 1500
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "auto"})
+    assert (await _nj(db_session, rid))["carry_ml"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_pf90_set_to_one_prise_stays_at_one(as_user: AsyncClient, db_session: AsyncSession):
+    """servings-one-ignored: the pantry row's value is trusted, on the card and in the form."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    await as_user.post(f"{P}/{rid}/catalog/pf-90-gel")
+    pf = (await db_session.execute(select(NutritionProduct).where(NutritionProduct.name == "Precision Fuel PF 90 Gel"))).scalar_one()
+    r = await as_user.post(f"{P}/{rid}/products/{pf.id}", data={"name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": "90", "sodium_mg": "0", "servings": "1"})
+    await db_session.refresh(pf)
+    form = r.text.split(f'id="rv-edit-{pf.id}"')[1].split("</form>")[0]
+    assert pf.servings == 1 and "3 prises" not in r.text and "prises PF 90" not in r.text and 'name="servings" type="number"' in form
+    assert re.search(r'name="servings"[^>]*value="1"', form)
+
+
+@pytest.mark.asyncio
+async def test_the_old_form_quantities_are_pouches(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """legacy-shares-in-prises: an older client posting PF 90 at 0,5 an hour keeps 1,5 prises an hour."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    ids = await _seed_legacy(db_session, test_user, rid)
+    await as_user.post(f"{P}/{rid}/plan", data={"carbs_g_per_h": "75", f"use_{ids[11]}": "1", f"qty_{ids[11]}": "0.5",
+                                                   f"use_{ids[12]}": "1", f"qty_{ids[12]}": "0.5"})
+    nj = await _nj(db_session, rid)
+    assert nj["phases"][0]["mix"] == {str(ids[11]): 1.5, str(ids[12]): 0.5}
+
+
+@pytest.mark.asyncio
+async def test_a_second_point_at_the_same_km_makes_one_row(as_user: AsyncClient, db_session: AsyncSession):
+    """duplicate-stretch-keys: « Col » and « Col assistance » at km 10: one row id, one row frozen by a tap."""
+    cps = CPS[:2] + [{**CPS[1], "name": "Col assistance", "kind": "none", "crew": True, "drop_bag": False, "cutoff_clock": None}] + CPS[2:]
+    rid = await _route(as_user, cps=cps, target_s=8 * 3600)
+    t = (await as_user.get(f"{P}/{rid}")).text
+    ids = re.findall(r'<details class="pf-rv-row[^"]*" name="rv-s" id="(s-[\d.]+)"', t)
+    assert len(ids) == len(set(ids)) == 3 and "s-10.0" in ids
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "n", "km": "10.0", "pid": "-1", "d": "1"})
+    r = await as_user.get(f"{P}/{rid}")
+    assert sum("à la main" in v for v in _rows(r.text).values()) == 1
+
+
+@pytest.mark.asyncio
+async def test_food_point_chips_stay_while_he_picks_and_say_which_are_food(as_user: AsyncClient, db_session: AsyncSession):
+    """UX5: after the first ravito is marked, the chips are still there (pressed on it), and a second tap can unset it."""
+    from app.models.route import RouteCheckpoint
+
+    bare = [{**cp, "kind": "none", "drop_bag": False, "crew": False} for cp in CPS]
+    rid = await _route(as_user, cps=bare, target_s=9 * 3600)
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert t.count("pfRvPoint(this, 'food')") == 3 and 'aria-pressed="true" data-ci' not in t
+    cp = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == rid, RouteCheckpoint.name == "Col"))).scalar_one()
+    cp.kind = "full"
+    await db_session.flush()
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "keep", "open": "points"})  # what the chip's tap sends after the save
+    chips = r.text.split("Où peux-tu manger ?")[1].split('class="pf-rv-table"')[0]
+    assert chips.count("pfRvPoint(this, 'food')") == 3
+    assert re.search(r'id="pt-\d+" aria-pressed="true" data-ci="\d+" data-km="10.0"', chips) and chips.count('aria-pressed="true"') == 1
+    assert "Où peux-tu manger ?" not in (await as_user.get(f"{P}/{rid}")).text  # a later visit: the typed points speak
+
+
+@pytest.mark.asyncio
+async def test_the_card_says_scopes_counts_and_water_in_words(as_user: AsyncClient):
+    """UX6 scoped labels, UX8 counts once in an open row, UX11 water and counts for a screen
+    reader, UX13 the editor's own button closes it, UX9 stable ids, UX10 44 px targets."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    await as_user.post(f"{P}/{rid}/plan", data={"op": "carry", "v": "1000"})
+    keys = list(_rows((await as_user.get(f"{P}/{rid}")).text))
+    k = keys[1]
+    t = (await as_user.get(f"{P}/{rid}?open=s:{k}")).text
+    row = _rows(t)[k]
+    assert "Produit sur ce tronçon</summary>" in row and 'aria-label="Ajouter un produit' not in row
+    assert "Produit pour toute la course</summary>" in t
+    assert re.search(rf'class="pf-chip-lg" id="s-{k}-a-?\d+"', row)  # « + Produit » chips have ids the focus can follow
+    assert f'id="s-{k}-bag"' in row
+    assert re.search(r'<b aria-live="polite" aria-atomic="true">\d+</b>', row)
+    over = next(v for v in _rows(t).values() if "pf-rv-water is-warn" in v)
+    assert "d'eau, plus que tes flasques" in over and "pf-rv-water is-warn" in over and 'class="w-3.5 h-3.5' in over.split("pf-rv-water is-warn")[1][:900]
+    assert f'"open":"ph:{k}"' in row and "aria-controls" not in row.split("-ph")[1][:200]
+    t = (await as_user.get(f"{P}/{rid}?open=ph:{k}")).text
+    btn = re.search(rf'id="s-{k}-ph"[^>]*>', t).group(0)
+    assert f'"open":"s:{k}"' in btn and 'aria-expanded="true"' in btn and f'aria-controls="ed-{k}"' in btn
+    assert 'class="pf-rv-scope" tabindex="-1"' in t
+    # the open row's pills are hidden (the steppers carry the counts), and rows and editor clear the sticky bars
+    import pathlib
+
+    css = (pathlib.Path(__file__).resolve().parents[1] / "app" / "static" / "css" / "interface.css").read_text()
+    assert ".pf-rv-row[open] > summary .pf-rv-r2 { display: none; }" in css
+    assert ".pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 72px; scroll-margin-bottom: 80px; }" in css
+    script = t.split("<script>")[1]
+    assert "el.scrollIntoView({ block: 'nearest'" in script and "querySelector('.pf-rv-scope')" in script and "keepFocus(actId" in script
+    # 44 px: « Ton sachet jusqu'à » and « Ouvrir le plan »
+    pt = (await as_user.post("/partials/simulator/passage-times", data={
+        "checkpoints_json": json.dumps(CPS), "target_time_s": 8 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid, "stop_minutes": 3})).text
+    assert 'class="pf-link pf-rv-hit" onclick="window.switchRouteTab && window.switchRouteTab(\'nutrition\'' in pt
+    none = await _route(as_user, cps=[], name="Sans ravitos", target_s=9 * 3600)
+    assert 'class="pf-link pf-rv-hit" onclick="window.switchRouteTab && window.switchRouteTab(\'plan\')">Ouvrir le plan' in (await as_user.get(f"{P}/{none}")).text
+
+
+@pytest.mark.asyncio
+async def test_the_strip_is_coloured_by_phase(as_user: AsyncClient):
+    """UX7: one phase, one colour on the strip, whatever product leads a stretch."""
+    rid = await _route(as_user, target_s=8 * 3600)
+    await as_user.post(f"{P}/{rid}/catalog/maurten-gel-160")
+    await as_user.post(f"{P}/{rid}/catalog/baouw-gel")
+    t = (await as_user.get(f"{P}/{rid}")).text
+    strip = re.findall(r'<i data-cat="(\d)"', t.split('class="pf-rv-strip"')[1].split("</div>")[0])
+    chip = re.findall(r'class="pf-rv-phase".*?data-cat="(\d)"', t, flags=re.S)
+    assert len(chip) == 1 and strip and set(strip) == set(chip)
+
+
+@pytest.mark.asyncio
+async def test_the_sachet_link_opens_its_row_after_a_reload_and_the_bike_page_morphs(as_user: AsyncClient, cycling_on):
+    """UX1: the anchor rides the reload (open=s:…) and the row is opened once the new card is in.
+    UX14: the bike page loads idiomorph like the run page."""
+    page = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
+    script = page.split("function switchRouteTab")[1].split("</script>")[0]
+    assert "'&open=' + encodeURIComponent(anchor)" in script and "htmx:afterSettle" in script
+    assert script.index("var reload =") < script.index("if (rowAnchor)") or script.index("var reload =") < script.index("else if (rowAnchor)")
+    from tests.test_simulator_routes import _create_bike_route
+
+    bike = (await as_user.get(f"/simulator/routes/{await _create_bike_route(as_user)}")).text
+    assert "idiomorph@0.3.0/dist/idiomorph.min.js" in bike
+    # the card answers the open row the reload asks for
+    rid = await _route(as_user, target_s=8 * 3600, name="Ancre")
+    k = list(_rows((await as_user.get(f"{P}/{rid}")).text))[1]
+    t = (await as_user.get(f"{P}/{rid}?v=19&open=s:{k}")).text
+    assert " open>" in _rows(t)[k].split("<summary>")[0] + ">"
