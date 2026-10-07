@@ -61,7 +61,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         "night_state": await _night_state(db, user_id, today, watch_seen),
     }
     if "today" in parts:
-        out["auj"] = _today_view(nights, feel, sessions, peak, next_race, last_race, races, today, bool(sources))
+        out["auj"] = _today_view(nights, feel, sessions, peak, next_race, last_race, races, today, bool(sources),
+                                 routes=past_races + ([next_race] if next_race else []))
     if "sleep" in parts:
         race_days = {d for d, _ in races}  # a race has its own flag
         longs = sorted({s.day for s in sessions if (s.minutes >= 180 or s.dplus >= 1500) and s.day not in race_days})
@@ -72,51 +73,39 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     return out
 
 
-def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today: date, has_watch: bool) -> dict:
-    """The Aujourd'hui view: decision, tiles, the sparse line, the check-in."""
+def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today: date, has_watch: bool,
+                routes=None) -> dict:
+    """The Aujourd'hui view: « Forme du jour », decision, tiles, the sparse
+    line, the check-in. `routes`: the Routes raced in the past 12 months and
+    the next one (the score's 14-day history reads each day's own race);
+    default: `last_race` and `next_race`."""
+    from app.services import sante_score as sc
     from app.services import sante_today as td
     from app.services import sante_training as st
 
-    nr = None
-    if next_race:
-        nr = {"days": (rp.race_day(next_race) - today).days, "name": next_race.name,
-              "href": f"/simulator/routes/{next_race.id}#prep"}
-    race_week = bool(nr and 1 <= nr["days"] <= WEEK)
-    post = _post_race(last_race, sessions, today)
-    if post and post.get("route_id"):
-        post["href"] = f"/simulator/routes/{post['route_id']}#prep"
-    alert = nt.illness_alert(nights, today, races)
+    routes = sorted((r for r in (routes if routes is not None else (last_race, next_race)) if r and rp.race_day(r)),
+                    key=rp.race_day)
     model = st.easy_model(sessions, today, peak)  # the easy-pace model Activités › FC en footing draws
-    reprise = nt.reprise(nights, feel, today, races, st.easy_deltas(model))
-    easy = st.easy_watch(model, today)
+    deltas = st.easy_deltas(model)
+    day = _decide_day(nights, feel, sessions, model, deltas, routes, races, today, has_watch)
+    verdict, ctx = day["verdict"], day["ctx"]
+    # the tiles, with their 14-day sparklines; R2/R3: they show the episode's nights, never decided on
+    episode = verdict["rule"] in ("ill", "reprise")
+    stats = {k: _night_stats(nights, k, today, episode=episode) for k in ("hr", "hrv")}
+    stats["sleep"] = _sleep_stats(nights, today, ctx["short"])
+    stats["easy"] = td.easy_stats(model, today, ctx["reprise"] is not None)
+    tiles = td.make_tiles(stats, verdict["drivers"], ctx["reprise"] is not None)
 
-    # R5: a main episode and a 24-h total under 6 h, never in race week
-    short = None
-    tst = nt.day_tst24(nights, today)
-    if tst is not None and tst < nt.SHORT_DAY_MIN and not race_week:
-        usual = _usual(nights, today - timedelta(days=1))
-        # a « rendormi » morning (a nap ≤ 3 h after the wake, H) is no early wake: its 24-h total says the short night
-        early = nt.early_wake(nights[today], usual) and not nights[today].resettled
-        short = {"tst24": tst, "early": early, "tip": nt.nap_tip_hour(usual)}
-
-    # R6 (H): the biggest outing on foot of the last 48 h, when ≥ 3 h or ≥ 1 500 m D+
-    big = max((s for s in sessions if s.sport in st.FOOT and today - timedelta(days=1) <= s.day <= today
-               and (s.minutes >= td.LEGS_MIN or s.dplus >= td.LEGS_DPLUS)),
-              key=lambda s: (s.minutes, s.dplus), default=None)
-
-    # what decides: the 7-night means without an illness episode's nights (evidence: « Excluded nights »)
-    stats = {k: _night_stats(nights, k, today) for k in ("hr", "hrv")}
-    f_today = feel.get(today)
-    ctx = {"today": today, "next_race": nr, "post": post, "feel": f_today, "alert": alert, "reprise": reprise,
-           "short": short, "legs": {"big": big}, "hr": stats["hr"]["status"], "hrv": stats["hrv"]["status"],
-           "easy": easy, "sessions42": sum(1 for s in sessions if s.day > today - timedelta(days=42)),
-           "has_watch": has_watch, "has_sessions": bool(sessions)}
-    verdict = td.decide(ctx)
-    if verdict["rule"] in ("ill", "reprise"):  # R2/R3: the tiles show the episode's nights, never decided on
-        stats = {k: _night_stats(nights, k, today, episode=True) for k in ("hr", "hrv")}
-    stats["sleep"] = _sleep_stats(nights, today, short)
-    stats["easy"] = td.easy_stats(model, today, reprise is not None)
-    tiles = td.make_tiles(stats, verdict["drivers"], reprise is not None)
+    # « Forme du jour »: today's, and the last 14 days' recomputed from what is stored (nothing persisted)
+    recent = {d: n for d, n in nights.items() if d > today - timedelta(days=sc.HISTORY_NIGHTS)}
+    history = []
+    for k in range(sc.HISTORY_DAYS - 1, 0, -1):
+        d = today - timedelta(days=k)
+        past = _decide_day(recent, feel, sessions, model, deltas, routes, races, d, has_watch)
+        history.append((d, past["verdict"], sc.score_of(past, recent)))
+    now = sc.score_of(day, nights)
+    history.append((today, verdict, now))
+    score = sc.view(now, history, has_watch=has_watch, has_sessions=bool(sessions))
 
     # the nightly tiles that cannot show: one line, once
     any_night = any(n.asleep is not None or n.hr is not None or n.hrv is not None for n in nights.values())
@@ -132,7 +121,62 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
     # a tile without its status word: the normal is still being built (said once, on Sommeil with its count)
     building = line is None and any(t["key"] in ("hr", "hrv", "sleep") and t["value"] and not t["word"] for t in tiles)
     return {"verdict": verdict, "tiles": tiles, "line": line, "line_link": link, "building": building,
-            "feel": _feel_view(f_today)}
+            "feel": _feel_view(feel.get(today)), "score": score, "method": sc.METHOD, "refs": sc.REFS}
+
+
+def _races_on(routes, d: date):
+    """(the next race on or after `d`, the last one run in the 14 days before `d`), as _races reads them."""
+    nxt = next((r for r in routes if rp.race_day(r) >= d), None)
+    last = next((r for r in reversed(routes) if d - timedelta(days=14) <= rp.race_day(r) < d), None)
+    return nxt, last
+
+
+def _decide_day(nights, feel, sessions, model, deltas, routes, races, d: date, has_watch: bool) -> dict:
+    """What the ladder reads on day `d` — today, or a past day of the score's
+    history, recomputed from what is stored now — and its verdict: {day, ctx,
+    verdict, stats (the deciding 7-night HR and HRV), shown (what the tiles
+    show: the same, or an illness episode's nights), tst24, big}."""
+    from app.services import sante_today as td
+    from app.services import sante_training as st
+
+    next_race, last_race = _races_on(routes, d)
+    nr = None
+    if next_race:
+        nr = {"days": (rp.race_day(next_race) - d).days, "name": next_race.name,
+              "href": f"/simulator/routes/{next_race.id}#prep"}
+    race_week = bool(nr and 1 <= nr["days"] <= WEEK)
+    post = _post_race(last_race, sessions, d)
+    if post and post.get("route_id"):
+        post["href"] = f"/simulator/routes/{post['route_id']}#prep"
+    alert = nt.illness_alert(nights, d, races)
+    reprise = nt.reprise(nights, feel, d, races, deltas)
+    easy = st.easy_watch(model, d)
+
+    # R5: a main episode and a 24-h total under 6 h, never in race week
+    short = None
+    tst = nt.day_tst24(nights, d)
+    if tst is not None and tst < nt.SHORT_DAY_MIN and not race_week:
+        usual = _usual(nights, d - timedelta(days=1))
+        # a « rendormi » morning (a nap ≤ 3 h after the wake, H) is no early wake: its 24-h total says the short night
+        early = nt.early_wake(nights[d], usual) and not nights[d].resettled
+        short = {"tst24": tst, "early": early, "tip": nt.nap_tip_hour(usual)}
+
+    # R6 (H): the biggest outing on foot of the last 48 h, when ≥ 3 h or ≥ 1 500 m D+
+    big = max((s for s in sessions if s.sport in st.FOOT and d - timedelta(days=1) <= s.day <= d
+               and (s.minutes >= td.LEGS_MIN or s.dplus >= td.LEGS_DPLUS)),
+              key=lambda s: (s.minutes, s.dplus), default=None)
+
+    # what decides: the 7-night means without an illness episode's nights (evidence: « Excluded nights »)
+    stats = {k: _night_stats(nights, k, d, spark=False) for k in ("hr", "hrv")}
+    ctx = {"today": d, "next_race": nr, "post": post, "feel": feel.get(d), "alert": alert, "reprise": reprise,
+           "short": short, "legs": {"big": big}, "hr": stats["hr"]["status"], "hrv": stats["hrv"]["status"],
+           "easy": easy, "sessions42": sum(1 for s in sessions if d - timedelta(days=42) < s.day <= d),
+           "has_watch": has_watch, "has_sessions": bool(sessions), "race_week": race_week}
+    verdict = td.decide(ctx)
+    shown = stats
+    if verdict["rule"] in ("ill", "reprise"):
+        shown = {k: _night_stats(nights, k, d, episode=True, spark=False) for k in ("hr", "hrv")}
+    return {"day": d, "ctx": ctx, "verdict": verdict, "stats": stats, "shown": shown, "tst24": tst, "big": big}
 
 
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median onset and wake are used (R5's early wake, the nap tip)
@@ -144,27 +188,30 @@ def _usual(nights, until: date) -> dict:
     return t if t["n"] >= USUAL_NIGHTS else {"bed": None, "wake": None}
 
 
-def _night_stats(nights, metric: str, today: date, episode: bool = False) -> dict:
+def _night_stats(nights, metric: str, today: date, episode: bool = False, spark: bool = True) -> dict:
     """A nightly tile's numbers: the mean of the last 7 days' usable nights (3
     at least), its status against the band of the 60 days before the window,
     on the watch that mean reads (one band per watch, Dial 2025: a new watch
-    has no status for 14 nights), the 7-night means of the last 14 days for
-    the sparkline. The status is judged on the unrounded mean (median ± 3 bpm,
-    H). An illness episode's nights stay out (they never decide); `episode`
-    (R2/R3 only): they stay in, so the tile shows the episode."""
+    has no status for 7 nights, a « provisoire » one until 14, H), the
+    7-night means of the last 14 days for the sparkline (`spark`). The status
+    is judged on the unrounded mean (median ± 3 bpm, H). An illness episode's
+    nights stay out (they never decide); `episode` (R2/R3 only): they stay in,
+    so the tile shows the episode. `normal`: the band itself (the score reads
+    its centre and spread)."""
     ignore = nt.EPISODE if episode else ()
     m = nt.mean7(nights, metric, today, ignore=ignore)
     src = nt.mean_source(nights, metric, today)
     b = nt.band(nights, metric, today - timedelta(days=WEEK - 1), source=src) if src else None
     means = [(nt.mean7(nights, metric, today - timedelta(days=k), ignore=ignore) or {}).get("value")
-             for k in range(13, -1, -1)]
+             for k in range(13, -1, -1)] if spark else []
     label, unit, said = {"hr": ("FC de nuit · 7 nuits", "bpm", "battements par minute"),
                          "hrv": ("VFC · 7 nuits", "ms", "millisecondes")}[metric]
     st = nt.status(m["value"], b) if m and b else None
     text = f"{m['value']:.0f}" if m else None
     return {"label": label, "unit": unit, "text": text, "value": m["value"] if m else None, "status": st,
             "spoken": f"{text} {said}" if m else "", "means": means,
-            "band": (b["lo"], b["hi"]) if b and m else None, "href": "/sante?vue=sommeil#coeur"}
+            "band": (b["lo"], b["hi"]) if b and m else None, "href": "/sante?vue=sommeil#coeur",
+            "prov": bool(st and b["provisional"]), "normal": b if m else None}
 
 
 def _sleep_stats(nights, today: date, short: dict | None) -> dict:
@@ -194,7 +241,7 @@ def _sleep_stats(nights, today: date, short: dict | None) -> dict:
     v = shown["value"]
     return {**base, "label": "Sommeil · 7 jours", "text": hm(v), "value": v, "status": nt.status(v, b) if b else None,
             "spoken": f"{hm_long(v)} par jour en moyenne, siestes comprises", "means": means,
-            "band": (b["lo"], b["hi"]) if b else None}
+            "band": (b["lo"], b["hi"]) if b else None, "prov": bool(b and b["provisional"])}
 
 
 def _seen7(nights, today: date) -> dict:

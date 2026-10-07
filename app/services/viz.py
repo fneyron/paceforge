@@ -294,7 +294,9 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
     None per day], mean: [7-night mean | None per day] (drawn, never printed),
     min_span, digits, up_is: "warn" | "muted" (what « au-dessus » means), h,
     judge: [bool per day] (optional: a night drawn but never judged, e.g. in
-    J-7 → J+7 around a race, gets no out-of-band word nor hollow dot)}.
+    J-7 → J+7 around a race, gets no out-of-band word nor hollow dot), prov:
+    [bool per day] (optional: a « provisoire » band, 7 to 13 nights, H: its
+    normal and its words say « (provisoire) »)}.
     Readout: [date, « VFC 58 ms · FC 46 bpm », « normale 55–63 · ◇ alcool »];
     an out-of-band night is a hollow dot and the word « au-dessus » /
     « en dessous », never colour alone. A night with a context tag (`tags`)
@@ -342,23 +344,31 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
                 continue
             word = ""
             judged = labels and (p.get("judge") or [True] * n)[i]
+            prov = bool(b and (p.get("prov") or [False] * n)[i])
             if judged and b and v > b[1]:
-                word = " au-dessus"
+                word = " au-dessus" + (" (provisoire)" if prov else "")
             elif judged and b and v < b[0]:
-                word = " en dessous"
+                word = " en dessous" + (" (provisoire)" if prov else "")
             vals.append(f"{p['name']} {num(v, dg, p['unit'])}{word}")
             if b:
-                normals.append(f"{p['name']} {num(b[0], dg)}–{num(b[1], dg)}" if len(panels) > 1
-                               else f"normale {num(b[0], dg)}–{num(b[1], dg)}")
+                normals.append((f"{p['name']} {num(b[0], dg)}–{num(b[1], dg)}" if len(panels) > 1
+                                else f"{num(b[0], dg)}–{num(b[1], dg)}", prov))
             spoken.append(f"{p['name']} {num(v, dg)} {p['unit_long']}{word}"
-                          + (f", ta normale {num(b[0], dg)} à {num(b[1], dg)}" if b else ""))
+                          + (f", ta normale{' provisoire' if prov else ''} {num(b[0], dg)} à {num(b[1], dg)}"
+                             if b else ""))
         ctx = _context(d, races, longs, tags)
         if not vals:
             r.append([label, "—", " · ".join(["pas de montre cette nuit" if not slot_labels else "pas assez de nuits"]
                                              + ctx)])
             a.append(". ".join([f"{said} : pas de mesure"] + ctx))
             continue
-        normal = ("normale " + ", ".join(normals)) if len(panels) > 1 and normals else (normals[0] if normals else "")
+        # « normale 55–63 », « normale provisoire VFC 55–63, FC 44–50 » (7 to 13 nights, H), a mix said per panel
+        if not normals:
+            normal = ""
+        elif all(pv for _, pv in normals) or not any(pv for _, pv in normals):
+            normal = ("normale provisoire " if normals[0][1] else "normale ") + ", ".join(t for t, _ in normals)
+        else:
+            normal = "normale " + ", ".join(t + (" (provisoire)" if pv else "") for t, pv in normals)
         r.append([label, " · ".join(vals), " · ".join(([normal] if normal else []) + ctx)])
         a.append(f"{said} : " + ", ".join(spoken) + "".join(f". {c}" for c in ctx))
     ev = events(days, xs, races, longs)
@@ -625,3 +635,61 @@ def dots(days: list[date], points: list[dict], *, band: list | None = None, min_
             "band": band_polys(xs_all, [y(v) for v in lo_b], [y(v) for v in hi_b]),
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)],
             "xt": x_labels(days, xs_all), **_data(xs, [ys], ds, r, a, h=h, sel=sel)}
+
+
+# ── K9 score: the half-gauge 0–100 and the 14-day line (« Forme du jour ») ──
+
+GAUGE = {"W": 160, "H": 92, "cx": 80, "cy": 82, "r": 68}
+SCORE_ZONES = ((70, 100, "bon"), (40, 70, "moyen"), (0, 40, "bas"))
+
+
+def gauge(value: float) -> dict:
+    """A half ring, 0 on the left to 100 on the right: the track, the arc up to
+    `value` (the tone's colour is the CSS's; the word is printed beside it,
+    never colour alone) and two cuts at 40 and 70, the tone bands' edges."""
+    cx, cy, r = GAUGE["cx"], GAUGE["cy"], GAUGE["r"]
+
+    def pt(v, rr=r):
+        a = math.pi * (1 - max(0.0, min(100.0, v)) / 100)
+        return round(cx + rr * math.cos(a), 2), round(cy - rr * math.sin(a), 2)
+
+    (x0, y0), (x1, y1), (xv, yv) = pt(0), pt(100), pt(value)
+    cuts = []
+    for v in (40, 70):
+        (ax, ay), (bx, by) = pt(v, r - 9), pt(v, r + 9)
+        cuts.append({"x1": ax, "y1": ay, "x2": bx, "y2": by})
+    return {"W": GAUGE["W"], "H": GAUGE["H"], "track": f"M{x0} {y0} A{r} {r} 0 0 1 {x1} {y1}",
+            "arc": f"M{x0} {y0} A{r} {r} 0 0 1 {xv} {yv}" if value > 0 else "", "cuts": cuts}
+
+
+SCORE_PLOT = (8, 68)
+SCORE_X1 = 262  # the zone words (« moyen ») need more room than the y numbers of the other figures
+
+
+def score_days(days: list[date], points: list[dict]) -> dict:
+    """The score of each day that has one ({day, value, word, action}) on the
+    days' axis: dots, a line broken where a day has none, the three tone zones
+    named at the right edge (« bon », « moyen », « bas »: no number on the axis;
+    a fixed 0–100 scale, so a few points never look like a trend). Readout:
+    [date, « 59 · moyen », the action]; it steps from score to score."""
+    xs_all = [round(SCORE_X1 / max(len(days), 1) * (i + 0.5), 1) for i in range(len(days))]
+    idx = {d: i for i, d in enumerate(days)}
+    y = scale(0, 100, *SCORE_PLOT)
+    by_day = {p["day"]: p for p in points}
+    line = paths(xs_all, [y(by_day[d]["value"]) if d in by_day else None for d in days])
+    dots, xs, ys, ds, r, a = [], [], [], [], [], []
+    for p in sorted(points, key=lambda p: p["day"]):
+        x = xs_all[idx[p["day"]]]
+        dots.append({"i": len(xs), "x": x, "y": y(p["value"])})
+        xs.append(x)
+        ys.append(y(p["value"]))
+        ds.append(p["day"])
+        r.append([d_short(p["day"]), f"{p['value']} · {p['word']}", p["action"]])
+        a.append(f"{d_long(p['day'])} : forme du jour {p['value']} sur 100, {p['word']}. {p['action']}")
+    zones = [{"y": y(hi), "label_y": round((y(lo) + y(hi)) / 2 + 4, 1), "label": word,
+              "edge": lo > 0} for lo, hi, word in SCORE_ZONES]
+    H = SCORE_PLOT[1] + 20
+    return {"n": len(xs), "W": W, "H": H, "X1": SCORE_X1 + 6, "top": SCORE_PLOT[0], "bottom": SCORE_PLOT[1],
+            "cuts": [y(40), y(70)], "zones": zones, "line": line, "dots": dots, "xt": x_labels(days, xs_all),
+            "summary": f"Forme du jour sur {len(days)} jours : {len(xs)} jours avec un score",
+            **_data(xs, [ys], ds, r, a)}

@@ -102,3 +102,10 @@ Garmin:
 - A spring clock change.
 - Every (H) threshold is a choice.
 - The 400-day COROS history backfill is not built: the first sync still reads 60 days.
+
+## 7. « Forme du jour »: nothing stored
+
+- The score is never persisted: Aujourd'hui recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night, feel), the sessions and the Routes (`sante._decide_day`, then `sante_score.score_of`). No table, no migration, and a night synced late corrects its own day.
+- The 14-day line is « what is known now », not a log: a past day reads the nights tagged since (an alert episode that starts the next night, a Route added later).
+- Cost on the seeded Postgres (400 nights, 730 days of sessions): about 50–65 ms more on Aujourd'hui.
+- Normals are « provisoire » from 7 usable nights (`nights.band`), full from 14; the illness alert, its episodes and « Reprise » read a full band only (`full=True`).

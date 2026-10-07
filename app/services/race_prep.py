@@ -17,8 +17,8 @@ Before the race:
   before the race only.
 - Tes nuits, J-14 → J-1: 24-h sleep (main night solid, naps stacked and
   hatched), against your usual + 30 to 60 min (H, below the doses of Mah 2011
-  and Arnal 2016; Cunha 2023) drawn only when a usual exists (≥ 14 untagged
-  days in the 60 days before J-14, nights.band). « Vise 30 à 60 min de plus
+  and Arnal 2016; Cunha 2023) drawn only when a usual exists (≥ 7 untagged
+  days in the 60 days before J-14, nights.band; « provisoire » under 14, H). « Vise 30 à 60 min de plus
   par jour, siestes comprises. » The race eve is never flagged (Lastella
   2014; Juliff 2015): no target on it, no outline anywhere on this page.
 - Semaine de course (J-10 → J0): carbohydrate loading J-2 and J-1, 10–12
@@ -29,7 +29,8 @@ Before the race:
   sessions (Racinais 2015), most of it in the first week (Périard 2015).
 After the race (J+1 → J+14, a display window, H):
 - Cœur la nuit: nightly HRV above, HR below, against the band of the 60
-  days before J-7 (the race window is out of it), dots only without it; no
+  days before J-7 (the race window is out of it; « provisoire » from 7 to
+  13 nights, H), dots only without it; no
   label, no flag, never « récupération incomplète » (Hynynen 2010: nightly HR
   at 130 % the first night; Paech 2021: back at day 7 after 100 miles).
 Each number is printed once across Santé, Activités and this page: the three
@@ -376,6 +377,7 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
     b = nt.band(nights, "tst24", days[0])
     usual = b["center"] if b else None
     goal = (usual + EXTEND[0], usual + EXTEND[1]) if usual else None
+    prov = " (provisoire)" if b and b["provisional"] else ""  # a usual from 7 to 13 days (H)
     n = len(days)
     xs = viz.slot_x(n)
     slot = X1 / n
@@ -404,7 +406,7 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
         if k == -1:
             ctx.append("veille de course")
         elif goal:
-            ctx.append(f"cible {range_hm(*goal)}")
+            ctx.append(f"cible {range_hm(*goal)}{prov}")
         if night:
             ctx += [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(night.tags) if t not in ("race",)]
         if d > today:
@@ -433,7 +435,8 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
            **viz._data(xs, [], days, r, a, sel=sel)}
     # resting readout: the last night's total is Santé › Sommeil's (printed once, there)
     if goal:
-        return viz.rest(out, [f"J{NBH}14 → J{NBH}1", f"cible {range_hm(*goal)} par jour", ""],
+        return viz.rest(out, [f"J{NBH}14 → J{NBH}1", f"cible {range_hm(*goal)} par jour",
+                              "normale provisoire" if prov else ""],
                         f"Sommeil sur 24 heures de J-14 à J-1 : cible {hm_long(round(goal[0] / 5) * 5)} à "
                         f"{hm_long(round(goal[1] / 5) * 5)} par jour, siestes comprises. Touche une nuit pour la "
                         "sienne.", back=sel)
@@ -456,7 +459,8 @@ def recovery(nights: dict, rd: date, today: date) -> dict:
         b = nt.band(nights, metric, until)
         vals = [nights[d].value(metric) if d in nights and d <= today else None for d in days]
         panels.append({"name": name, "unit": unit, "unit_long": unit_long, "values": vals, "min_span": span,
-                       "band": [(b["lo"], b["hi"]) if b else None] * len(days), "digits": 0})
+                       "band": [(b["lo"], b["hi"]) if b else None] * len(days), "digits": 0,
+                       "prov": [bool(b and b["provisional"])] * len(days)})
     past = [i for i, d in enumerate(days) if d <= today]
     measured = [i for i in past if any(p["values"][i] is not None for p in panels)]
     sel = measured[-1] if measured else (past[-1] if past else 0)
@@ -469,8 +473,11 @@ def recovery(nights: dict, rd: date, today: date) -> dict:
                       f"{d_long(d)}, {j_label((d - rd).days)} : pas de mesure")
     c = _patch(c, fix) if fix else c
     c["banded"] = any(p["band"][0] for p in panels)
+    prov = any(p["band"][0] and p["prov"][0] for p in panels)
     # resting readout: the last night's VFC and FC are Santé › Sommeil's (printed once, there)
-    return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit", "bande : ta normale avant la course" if c["banded"] else ""],
+    return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit",
+                        ("bande : ta normale avant la course" + (" (provisoire)" if prov else "")) if c["banded"]
+                        else ""],
                     "Cœur la nuit de J+1 à J+14, VFC en haut, FC en bas"
                     + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Touche une nuit pour ses "
                     "valeurs.", back=sel)

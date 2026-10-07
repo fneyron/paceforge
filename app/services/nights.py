@@ -33,7 +33,11 @@ heuristic, never shown as a finding):
   mean and the illness alert until it is shown that COROS leaves the nap out
   of its « Sleep HR » line (docs/sante-v3-data-notes.md).
 - Bands (H): ≥ 14 untagged nights in the 60 days before, one band per watch
-  (Dial 2025: brands average over different windows). HR: median ± 3 bpm;
+  (Dial 2025: brands average over different windows); from 7 such nights a
+  « provisoire » band (owner decision 2026-10-07), labelled so wherever it is
+  read, until 14 — never for the illness alert, the alert episodes nor
+  « Reprise » (specific, not sensitive: Quer 2021; a provisional band would
+  make the alert fire on noise). HR: median ± 3 bpm;
   HRV: exp(mean ln ± 0.5 SD), SD floored at 0.05 (the SWC convention of
   HRV-guided training); 24-h sleep: median ± 30 min; respiration: median.
 - 7-night means need ≥ 3 nights in the last 7 (Plews 2014; Lau 2022).
@@ -63,7 +67,8 @@ from app.models.health import HealthMetric
 from app.services.health import HRV_METHOD, feel_of, main_window, nap_windows
 
 BAND_DAYS = 60  # (H)
-MIN_BAND_NIGHTS = 14  # (H)
+MIN_BAND_NIGHTS = 14  # (H) a full normal
+MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 HR_BAND_BPM = 3  # (H)
 HRV_BAND_SD = 0.5  # (H) the SWC convention of HRV-guided training
@@ -364,15 +369,19 @@ def _latest_source(nights: dict[date, Night], metric: str, until: date) -> str |
     return None
 
 
-def band(nights: dict[date, Night], metric: str, until: date, source: str | None = None) -> dict | None:
+def band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
+         full: bool = False) -> dict | None:
     """The athlete's normal for `metric` (hr, hrv, tst24, resp) from the usable
     nights of the 60 days before `until` (excluded), on one watch (the latest
-    one's unless `source`): None under 14 nights (« ta normale se construit »)."""
+    one's unless `source`): None under 7 nights (« ta normale se construit »),
+    `provisional` from 7 to 13 nights (« provisoire », H); `full`: None under
+    14 nights (the illness alert, its episodes, « Reprise »)."""
     source = source or _latest_source(nights, metric, until - timedelta(days=1))
     vals = [n.value(metric) for d, n in nights.items()
             if until - timedelta(days=BAND_DAYS) <= d < until and n.usable(metric) and n.source_of(metric) == source]
-    out = {"metric": metric, "n": len(vals), "source": source, "until": until}
-    if len(vals) < MIN_BAND_NIGHTS:
+    out = {"metric": metric, "n": len(vals), "source": source, "until": until,
+           "provisional": len(vals) < MIN_BAND_NIGHTS}
+    if len(vals) < (MIN_BAND_NIGHTS if full else MIN_PROVISIONAL_NIGHTS):
         return None
     if metric == "hrv":
         logs = [math.log(v) for v in vals if v > 0]
@@ -399,7 +408,7 @@ def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | No
 
 
 def band_count(nights: dict[date, Night], metric: str, until: date) -> int:
-    """How many usable nights the band would rest on (« ta normale se construit (n/14 nuits) »)."""
+    """How many usable nights the band would rest on (« ta normale se construit : n nuits sur 7 »)."""
     source = _latest_source(nights, metric, until - timedelta(days=1))
     return sum(1 for d, n in nights.items() if until - timedelta(days=BAND_DAYS) <= d < until
                and n.usable(metric) and n.source_of(metric) == source)
@@ -488,9 +497,9 @@ def alert_night(nights: dict[date, Night], races, d: date) -> bool:
 
 def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:
     """The two nights in a row (yesterday's and today's) each ≥ the HR band's
-    alert line, against the band of the 60 days before them on the watch that
-    measured both (one band per watch: a new watch has none for 14 nights, so
-    no alert): {days, values, threshold, resp_up, source}; None otherwise (no
+    alert line, against the FULL band (14 nights, never a provisional one) of
+    the 60 days before them on the watch that measured both (one band per
+    watch: a new watch has none for 14 nights, so no alert): {days, values, threshold, resp_up, source}; None otherwise (no
     band, a night missing or tagged, two watches)."""
     d2, d1 = today, today - timedelta(days=1)
     if not all(alert_night(nights, races, d) for d in (d1, d2)):
@@ -498,13 +507,13 @@ def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | No
     src = nights[d2].hr_source
     if nights[d1].hr_source != src:
         return None
-    b = band(nights, "hr", d1, source=src)
+    b = band(nights, "hr", d1, source=src, full=True)  # never a provisional band: specific, not sensitive (Quer 2021)
     if not b:
         return None
     vals = [nights[d1].hr, nights[d2].hr]
     if not all(v >= b["alert"] for v in vals):
         return None
-    rb = band(nights, "resp", d1)
+    rb = band(nights, "resp", d1, full=True)
     resp = [nights[d].resp for d in (d1, d2)]
     resp_up = (all(r is not None and r >= rb["up"] for r in resp)) if rb else None
     return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "resp_up": resp_up, "source": src}
@@ -519,7 +528,7 @@ def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int =
     while d <= today:
         a = illness_alert(nights, d, races)
         if a and a["days"][0] not in out:
-            b = band(nights, "hr", a["days"][0], source=a["source"])
+            b = band(nights, "hr", a["days"][0], source=a["source"], full=True)
             k = a["days"][0]
             while k <= min(today, a["days"][0] + timedelta(days=ILL_MAX)):
                 n = nights.get(k)
@@ -573,7 +582,7 @@ def reprise(nights: dict[date, Night], feel: dict[date, dict], today: date, race
     since = [(d, n.hr) for d, n in sorted(nights.items()) if start < d <= today and n.hr is not None]
     src = nights[since[-1][0]].hr_source if since else None
     since = [(d, v) for d, v in since if nights[d].hr_source == src]
-    b = band(nights, "hr", start, source=src) if src else None
+    b = band(nights, "hr", start, source=src, full=True) if src else None
     top = b["hi"] if b else _pre_top(nights, start, src) if src else None
     if not since or top is None:
         night_ok = True  # not measured, or nothing to compare with: never held for it

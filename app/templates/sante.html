@@ -85,12 +85,18 @@
         });
         // the check-in swaps its own block: when the answer folds it, the focus goes to « Noté : … — modifier »
         // (never lost to the page's top)
-        var feelFocus = false;
+        // the score (in #sante-decision, swapped out of band) keeps its breakdown open if it was, and its 14-day
+        // line gets its interaction (pf-viz scans the swapped target only)
+        var feelFocus = false, scoreOpen = false;
         document.addEventListener("htmx:beforeRequest", function (e) {
             var rest = document.getElementById("sante-today-rest");
             feelFocus = !!(rest && e.target && rest.contains(e.target) && rest.contains(document.activeElement));
+            scoreOpen = !!document.querySelector("#sante-decision details.pf-score[open]");
         });
         document.addEventListener("htmx:afterSettle", function () {
+            var dec = document.getElementById("sante-decision"), fold = dec && dec.querySelector("details.pf-score");
+            if (fold && scoreOpen) fold.open = true;
+            if (dec && window.PFViz) window.PFViz.scan(dec);
             if (!feelFocus) return;
             feelFocus = false;
             var active = document.activeElement;

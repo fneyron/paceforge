@@ -98,10 +98,18 @@ def test_bands_need_14_untagged_nights_on_one_watch():
     assert h["lo"] < h["center"] < h["hi"] and abs(h["center"] - 59) < 1.5
     s = nt.band(nights, "tst24", D)
     assert (s["center"], s["lo"], s["hi"]) == (440, 410, 470)
+    assert not b["provisional"] and nt.band(nights, "hr", D, full=True) == b
     nights[D - timedelta(days=1)].tags.add("alcohol")  # one tagged night: 14 left
-    assert nt.band(nights, "hr", D)["n"] == 14
+    assert nt.band(nights, "hr", D)["n"] == 14 and not nt.band(nights, "hr", D)["provisional"]
     nights[D - timedelta(days=3)].tags.add("long")
-    assert nt.band(nights, "hr", D) is None and nt.band_count(nights, "hr", D) == 13
+    # 13 nights: « provisoire » (owner decision: from 7, H), never a full band (the alert's)
+    assert nt.band(nights, "hr", D)["provisional"] and nt.band_count(nights, "hr", D) == 13
+    assert nt.band(nights, "hr", D, full=True) is None
+    for k in (5, 7, 9, 11, 13, 15):  # 7 nights left: still provisional; 6: none
+        nights[D - timedelta(days=k)].tags.add("alcohol")
+    assert nt.band(nights, "hr", D)["n"] == 7 and nt.band(nights, "hr", D)["provisional"]
+    nights[D - timedelta(days=17)].tags.add("alcohol")
+    assert nt.band(nights, "hr", D) is None and nt.band_count(nights, "hr", D) == 6
     # a new watch: its band starts again
     rows2 = night_rows(range(1, 30, 2))
     rows2["hr_night"][D] = (50.0, {"method": "coros_sleep_summary"}, "COROS")
@@ -246,7 +254,7 @@ def test_reprise_night_gate_without_a_band_reads_the_nights_before():
     nights = nt.build_nights(night_rows(range(0, 16), hr=45.0), D)  # 9 nights before the illness: no band
     start = D - timedelta(days=6)
     sick = {start: {"value": 3, "why": ["sick"]}}
-    assert nt.band(nights, "hr", start) is None
+    assert nt.band(nights, "hr", start, full=True) is None and nt.band(nights, "hr", start)["provisional"]
     nt.tag_nights(nights, (), [], sick)
     for today in (start + timedelta(days=2), start + timedelta(days=6)):
         assert nt.reprise(nights, sick, today) is None

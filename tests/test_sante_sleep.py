@@ -128,7 +128,7 @@ def test_the_nights_table_newest_first_dashes_for_missing():
     lone = next(r for r in rows if r["iso"] == "2026-09-25")
     assert (lone["tst"], lone["night"], lone["nap"], lone["times"]) == ("—", "—", "1h22", "—")
     assert s["coverage"] == "5 nuits mesurées sur 14"
-    assert s["building"] == "Ta normale se construit : 1 nuit sur 14."  # untagged here: no « hors course »
+    assert s["building"] == "Ta normale se construit : 1 nuit sur 7."  # untagged here: no « hors course »
 
 
 # ── review fixes (v3) ───────────────────────────────────────────────────────
@@ -171,4 +171,5 @@ def test_one_year_steps_by_week_and_says_so():
 
 def test_the_method_fold_marks_its_heuristics():
     """F11: the fold's numbers that no study gives are marked (H) where they are said."""
-    assert "au moins 14 nuits (H)" in sl.METHOD[1] and "J-7 → J+7 (H)" in sl.METHOD[1] and "60 jours (H)" in sl.METHOD[1]
+    assert "dès 7 nuits (H)" in sl.METHOD[1] and "jusqu'à 14 (H)" in sl.METHOD[1]
+    assert "J-7 → J+7 (H)" in sl.METHOD[1] and "60 jours (H)" in sl.METHOD[1] and "Quer 2021" in sl.METHOD[1]

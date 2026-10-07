@@ -150,7 +150,7 @@ async def test_owner_october_sommeil(db_session: AsyncSession, test_user: User):
     # every night within 14 days: « 3 mois » would draw them again (UX13), and no « 1 an » yet
     assert s["state"] == "ok" and s["r"] == "14" and [k for k, _ in s["ranges"]] == ["14"]
     assert s["coverage"] == "5 nuits mesurées sur 14"  # 25/09 (a nap only) is never a night
-    assert s["building"] == "Ta normale se construit : 0 nuit sur 14 hors course."
+    assert s["building"] == "Ta normale se construit : 0 nuit sur 7 hors course."  # provisional from 7 (H)
     c = s["nights"]
     col = c["cols"][-1]  # 7 Oct: the stacked bar and the in-axis nap after its 64-min gap
     assert col["night"] and col["nap"] and not col["short"] and len(col["nap_segs"]) == 1
@@ -191,9 +191,11 @@ async def test_a_short_night_turns_the_sleep_tile_to_24_hours(db_session: AsyncS
             _add(db_session, test_user, metric, d, v, det, src)
     await db_session.flush()
     a = (await sante.health_page(db_session, test_user.id, today=D))["auj"]
-    # a usual wake-up (06:40): not an early wake, the ladder goes on (no sessions: no opinion), the slot says it
-    assert a["verdict"]["rule"] == "none" and a["verdict"]["text"] == sante_today.SHORT_LATE
+    # a usual wake-up (06:40): not an early wake, the ladder goes on, the slot says it; 13 untagged nights make
+    # a « provisoire » normal (H), in which HR and HRV sit: « séance prévue »
+    assert a["verdict"]["rule"] == "plan" and a["verdict"]["text"] == sante_today.SHORT_LATE
     assert "sleep" in a["verdict"]["drivers"]
+    assert {t["key"]: t["word"] for t in a["tiles"]}.get("hr") == "dans ta normale (provisoire)"
     tile = next(t for t in a["tiles"] if t["key"] == "sleep")
     assert (tile["label"], tile["value"], tile["glyph"], tile["word"]) == ("Sommeil · 24 h", "4h50", "▼", "moins de 6 h")
     assert a["tiles"][0]["key"] == "sleep"  # the driver first

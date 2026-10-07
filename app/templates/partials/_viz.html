@@ -159,3 +159,16 @@
     {% for value, text in options %}<button type="button" data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
 </div>
 {% endmacro %}
+
+{# K9 « Forme du jour » over 14 days: one dot per day with a score, the tone zones named at the right edge (no number
+   on the axis: the score is printed by the readout, on a tap); readout = date · « 59 · moyen » · the action #}
+{% macro viz_score(c, title="Forme du jour sur 14 jours") %}
+{% call figure(c, title, "forme", None, "journée", "Jour précédent", "Jour suivant", cls="pf-viz-score") %}
+{% for y in c.cuts %}<line x1="0" x2="{{ c.X1 }}" y1="{{ y }}" y2="{{ y }}" class="pf-viz-grid"/>{% endfor %}
+{% for z in c.zones %}<text x="{{ c.W }}" y="{{ z.label_y }}" text-anchor="end">{{ z.label }}</text>{% endfor %}
+<path d="{{ c.line }}" class="pf-viz-line is-soft" pathLength="1"/>
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot" data-i="{{ d.i }}"/>{% endfor %}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}"/><circle cx="0" cy="0" r="4"/></g>
+{% endcall %}
+{% endmacro %}

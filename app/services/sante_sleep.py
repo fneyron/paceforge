@@ -42,8 +42,10 @@ WEAR = ("Porte ta montre au moins 3 nuits par semaine, des jours variés, et tou
 METHOD = [
     "Je calcule ta FC et ta VFC de nuit sur les mesures brutes de ta montre, pendant ta nuit principale "
     "seulement : jamais un score de marque.",
-    "Ta normale : au moins 14 nuits (H) sans contexte (course J-7 → J+7 (H), alcool, fuseau, altitude, longue "
-    "séance, maladie) sur 60 jours (H), une par montre. Les seuils marqués (H) sont des choix de PaceForge.",
+    "Ta normale : tes nuits sans contexte (course J-7 → J+7 (H), alcool, fuseau, altitude, longue séance, "
+    "maladie) sur 60 jours (H), une par montre ; « provisoire » dès 7 nuits (H), elle bouge encore jusqu'à 14 (H). "
+    "L'alerte FC de nuit attend 14 nuits : une normale provisoire la ferait sonner pour du bruit (Quer 2021). Les "
+    "seuils marqués (H) sont des choix de PaceForge.",
     "La montre surestime le sommeil, davantage les mauvaises nuits : lis le sens, pas la taille (Chinoy 2021 ; "
     "Schyvens 2025). Ses heures de coucher et de lever sont approximatives (de Zambotti 2024).",
     "Tes siestes comptent dans le total sur 24 h ; une sieste que la montre n'a pas vue n'est pas zéro (Sargent "
@@ -155,15 +157,20 @@ def _coverage(nights, days, chosen) -> str:
 
 
 def _building(nights, today: date) -> str | None:
-    """« Ta normale se construit : 3 nuits sur 14 hors course. » while neither HR nor HRV has a band."""
+    """« Ta normale se construit : 3 nuits sur 7 hors course. » while neither HR
+    nor HRV has a band; « Ta normale est provisoire : 9 nuits sur 14. » while
+    the best of them is provisional (7 to 13 nights, H); nothing once full."""
     until = today + timedelta(days=1)
     have = [n for d, n in nights.items() if today - timedelta(days=nt.BAND_DAYS) < d <= today
             and (n.hr is not None or n.hrv is not None)]
-    if not have or nt.band(nights, "hr", until) or nt.band(nights, "hrv", until):
+    bands = [nt.band(nights, m, until) for m in ("hr", "hrv")]
+    if not have or any(b and not b["provisional"] for b in bands):
         return None
     k = max(nt.band_count(nights, "hr", until), nt.band_count(nights, "hrv", until))
     race = " hors course" if any("race" in n.tags for n in have) else ""
-    return f"Ta normale se construit : {k} nuit{'s' if k > 1 else ''} sur 14{race}."
+    if any(bands):
+        return f"Ta normale est provisoire : {k} nuits sur {nt.MIN_BAND_NIGHTS}{race}."
+    return f"Ta normale se construit : {k} nuit{'s' if k > 1 else ''} sur {nt.MIN_PROVISIONAL_NIGHTS}{race}."
 
 
 def _band7(nights, metric: str, d: date) -> dict | None:
@@ -198,14 +205,15 @@ def _timing_line(usual: dict | None) -> str | None:
 def _heart_line(nights, today: date, alert: bool) -> str | None:
     if alert:
         return "FC de nuit nettement au-dessus de ta normale 2 nuits de suite."
-    k = 0
+    k, prov = 0, False
     while k < 60:
         d = today - timedelta(days=k)
         m, b = nt.mean7(nights, "hrv", d), _band7(nights, "hrv", d)
         if not (m and b and m["value"] < b["lo"]):
             break
+        prov = prov or (k == 0 and b["provisional"])
         k += 1
-    return f"VFC sous ta normale depuis {k} nuits." if k >= 3 else None
+    return f"VFC sous ta normale{' (provisoire)' if prov else ''} depuis {k} nuits." if k >= 3 else None
 
 
 def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
@@ -220,7 +228,7 @@ def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
             return [weekly[d].get(metric) for d in days]
         return [(nights[d].value(metric) if d in nights else None) for d in days]
 
-    def bands(metric):
+    def band_of(metric):
         out = []
         for d in days:
             if weekly:
@@ -231,8 +239,18 @@ def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
                             else None)
             if b and metric == "resp":
                 b = {**b, "lo": b["center"] - 1, "hi": b["center"] + 1}  # (H) median ± 1 breath/min
-            out.append((b["lo"], b["hi"]) if b and b.get("lo") is not None else None)
+            out.append(b if b and b.get("lo") is not None else None)
         return out
+
+    cache = {}
+
+    def bands(metric):
+        cache.setdefault(metric, band_of(metric))
+        return [(b["lo"], b["hi"]) if b else None for b in cache[metric]]
+
+    def prov(metric):  # a « provisoire » band (7 to 13 nights, H) says so in the readout
+        cache.setdefault(metric, band_of(metric))
+        return [bool(b and b["provisional"]) for b in cache[metric]]
 
     def means(metric):
         if weekly:
@@ -247,9 +265,9 @@ def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
 
     panels = [
         {"name": "VFC", "unit": "ms", "unit_long": "millisecondes", "values": vals("hrv"), "band": bands("hrv"),
-         "mean": means("hrv"), "judge": judge("hrv"), "min_span": 20},
+         "prov": prov("hrv"), "mean": means("hrv"), "judge": judge("hrv"), "min_span": 20},
         {"name": "FC", "unit": "bpm", "unit_long": "battements par minute", "values": vals("hr"), "band": bands("hr"),
-         "mean": means("hr"), "judge": judge("hr"), "min_span": 8},
+         "prov": prov("hr"), "mean": means("hr"), "judge": judge("hr"), "min_span": 8},
     ]
     if alert and not weekly and any(v is not None for v in vals("resp")):
         panels.append({"name": "Resp.", "unit": "/min", "unit_long": "respirations par minute", "values": vals("resp"),

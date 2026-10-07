@@ -1,6 +1,8 @@
 """Santé › Aujourd'hui: one action for today, at most 2 linked drivers, at most
-3 tiles, the one-tap check-in. No score, no paragraph: at most one sentence,
-for « quand reprendre » or the nap tip.
+3 tiles, the one-tap check-in. No paragraph: at most one sentence, for
+« quand reprendre » or the nap tip. The action decides; PaceForge's « Forme du
+jour » score (sante_score, owner decision 2026-10-07) is placed inside the
+band of its tone, never the other way round.
 
 The ladder (first match wins; evidence_final.md, SANTE_DECISIONS.md; (H) = a
 PaceForge heuristic, never shown as a finding):
@@ -239,6 +241,8 @@ def make_tiles(stats: dict, drivers: list[str], reprise: bool) -> list[dict]:
         else:
             st = s.get("status")
             glyph, word, tone = STATUS.get((k, st)) or (IN_BAND if st == "in" else (None, None, "muted"))
+            if word and st != "short" and s.get("prov"):  # a normal from 7 to 13 nights (H)
+                word += " (provisoire)"
         is_driver = k in drivers
         aria = (f"{s['label']} : {s['spoken']}" + (f", {word}" if word else "")
                 + (". Facteur de la décision" if is_driver else ""))

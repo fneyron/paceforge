@@ -440,3 +440,37 @@ def test_focus_follows_the_in_place_switches():
     sleep = (ROOT / "app/templates/partials/sante_sleep_range.html").read_text()
     assert '<h2 id="nuits" class="pf-sante-h" tabindex="-1">' in sleep and \
         '<h2 id="coeur" class="pf-sante-h" tabindex="-1">' in sleep
+
+
+def test_band_chart_says_a_provisional_normal():
+    """A band from 7 to 13 nights (H): « normale provisoire » once when every panel's is, else per panel; a judged
+    value's word gets « (provisoire) »; the spoken sentence says it."""
+    days = [D - timedelta(days=1), D]
+    panels = lambda prov_hrv, prov_hr: [  # noqa: E731
+        {"name": "VFC", "unit": "ms", "unit_long": "millisecondes", "values": [60, 50], "band": [(55, 65)] * 2,
+         "prov": [prov_hrv] * 2, "judge": [True, True], "min_span": 20},
+        {"name": "FC", "unit": "bpm", "unit_long": "battements par minute", "values": [45, 46], "band": [(43, 49)] * 2,
+         "prov": [prov_hr] * 2, "min_span": 8}]
+    c = viz.band_chart("coeur", days, panels(True, True), title="Cœur la nuit")
+    assert c["read"][1] == f"VFC 50{NN}ms en dessous (provisoire) · FC 46{NN}bpm"
+    assert c["read"][2] == "normale provisoire VFC 55–65, FC 43–49"
+    assert "ta normale provisoire 55 à 65" in json.loads(c["data"])["a"][-1]
+    mixed = viz.band_chart("coeur", days, panels(True, False), title="Cœur la nuit")
+    assert mixed["read"][2] == "normale VFC 55–65 (provisoire), FC 43–49"
+    full = viz.band_chart("coeur", days, panels(False, False), title="Cœur la nuit")
+    assert full["read"][2] == "normale VFC 55–65, FC 43–49" and "provisoire" not in full["read"][1]
+
+
+def test_score_gauge_and_line():
+    g = viz.gauge(59)
+    assert g["track"] == "M12.0 82.0 A68 68 0 0 1 148.0 82.0" and g["arc"].endswith("98.97 16.7")  # 59 % of the half turn
+    assert len(g["cuts"]) == 2 and viz.gauge(0)["arc"] == ""
+    days = [D - timedelta(days=13 - i) for i in range(14)]
+    c = viz.score_days(days, [{"day": days[2], "value": 100, "word": "bon", "action": "Séance prévue"},
+                              {"day": D, "value": 59, "word": "moyen", "action": "Footing facile seulement"}])
+    data = json.loads(c["data"])
+    assert c["n"] == 2 and data["d"] == [days[2].isoformat(), D.isoformat()]
+    assert data["r"][-1] == ["mer. 7 oct.", "59 · moyen", "Footing facile seulement"]
+    assert data["a"][-1] == "mercredi 7 octobre : forme du jour 59 sur 100, moyen. Footing facile seulement"
+    assert [z["label"] for z in c["zones"]] == ["bon", "moyen", "bas"] and c["line"].count("M") == 2  # a gap breaks it
+    assert max(data["x"]) < viz.SCORE_X1  # the zone words have the right edge to themselves
