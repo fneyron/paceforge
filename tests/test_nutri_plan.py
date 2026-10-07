@@ -202,6 +202,7 @@ def test_no_food_ravito_gives_blocks_and_no_checkpoint_at_all_still_works():
     rows = plan["stretches"]
     assert len(rows) == 9 and all(r["is_block"] for r in rows)  # 27 h in blocks of 3 h
     assert sum(r["d_s"] for r in rows) == 27 * 3600 and len(plan["bags"]) == 1
+    assert any(r["water_ml"] for r in rows)  # the water points still say what to carry
     _, plan, _ = _plan(cps=[])
     assert len(plan["stretches"]) == 9 and plan["stretches"][-1]["to_name"] == "Arrivée"
 
@@ -271,3 +272,31 @@ def test_servings_fall_back_on_the_catalogue():
     assert N.servings_of({"name": "Precision Fuel PF 90 Gel", "servings": 1}) == 3
     assert N.servings_of({"name": "Mon gel", "servings": 2}) == 2 and N.servings_of({"name": "Mon gel"}) == 1
     assert N.CATALOG_BY_KEY["pf-90-gel"]["servings"] == 3
+
+
+def test_product_colours_keep_3_to_1_on_the_surfaces_in_light_and_dark():
+    import pathlib
+    import re
+
+    css = (pathlib.Path(__file__).resolve().parents[1] / "app" / "static" / "css" / "interface.css").read_text()
+    theme = (pathlib.Path(__file__).resolve().parents[1] / "app" / "static" / "css" / "theme.css").read_text()
+
+    def tokens(block: str) -> dict:
+        return {k: tuple(int(x) for x in v.split()) for k, v in re.findall(r"--pf-([\w-]+):\s*(\d+ \d+ \d+)", block)}
+
+    def lum(rgb):
+        c = [v / 255 for v in rgb]
+        c = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    def ratio(a, b):
+        hi, lo = sorted((lum(a), lum(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+    light_cat = tokens(re.search(r":root \{ --pf-cat-0[^}]*\}", css).group(0))
+    dark_cat = tokens(re.search(r"\.dark \{ --pf-cat-0[^}]*\}", css).group(0))
+    light = tokens(re.search(r":root\s*\{[^}]*\}", theme).group(0))
+    dark = tokens(re.search(r"\n\.dark\s*\{[^}]*\}", theme).group(0))
+    for i in range(1, 6):
+        for surf in ("surface", "soft", "bg"):
+            assert ratio(light_cat[f"cat-{i}"], light[surf]) >= 3, (i, surf)
+            assert ratio(dark_cat[f"cat-{i}"], dark[surf]) >= 3, (i, surf)

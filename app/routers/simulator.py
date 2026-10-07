@@ -2028,6 +2028,7 @@ async def _nutrition_card_context(
     quick = [{"id": g, "label": N.GENERIC_BY_ID[g]["label"], "title": N.GENERIC_BY_ID[g]["name"]}
              for g in N.GENERIC_ORDER if g not in picks and N.role(N.GENERIC_BY_ID[g]) not in roles]
     pantry_more = [{"id": pid, "label": N.short_label(p), "title": p.get("name") or ""} for pid, p in pantry.items() if pid not in picks]
+    on_list = [{"id": p, "label": N.short_label(products[p]), "title": products[p].get("name") or ""} for p in picks]
 
     # food ravitos not typed yet (a GPX import): « Où peux-tu manger ? »
     food_chips = []
@@ -2079,7 +2080,8 @@ async def _nutrition_card_context(
         "food_chips": food_chips,
         "shop": shop, "copy_text": N.copy_text(route.name, plan["shop"], plan["bags"], rows),
         "source": inp["source"], "is_virtual": inp["is_virtual"], "generic_only": generic_only,
-        "brand_groups": [(lbl, items) for lbl, items in brand_groups if items], "quick": quick, "pantry_more": pantry_more,
+        "upgraded": inp["upgraded"],  # an older plan read per stretch: said once, gone with the first tap (a v3 write)
+        "brand_groups": [(lbl, items) for lbl, items in brand_groups if items], "quick": quick, "pantry_more": pantry_more, "on_list": on_list,
         "own_form": own_form, "hand_set": inp["hand_set"],
         "undo": {"cleared": int(undo.get("cleared") or 0)} if undo else None,
         "sweat": sweat, "custom_sweat": "fluid_ml_per_h" in inp["custom"],
@@ -2506,7 +2508,7 @@ async def clear_reference(
 async def nutrition_card(
     route_id: int,
     request: Request,
-    open: str | None = Query(None, max_length=40),
+    open_: str | None = Query(None, alias="open", max_length=40),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2516,7 +2518,7 @@ async def nutrition_card(
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
-    ctx = await _nutrition_card_context(request, route, db, user, open_=open)
+    ctx = await _nutrition_card_context(request, route, db, user, open_=open_)
     # htmx GETs can be heuristically cached by the browser; force a fresh card.
     return templates.TemplateResponse(
         request, "partials/nutrition_card.html", context=ctx,

@@ -63,7 +63,7 @@
         </div>
         <p class="pf-rv-help">Le rythme que tu as tenu à l'entraînement.</p>
         {% if high_custom %}<p class="pf-rv-help">100 g/h et plus : seulement si tu l'as déjà tenu en sortie longue.</p>{% endif %}
-        {% if rate < custom_carbs and (level is none or rate < 60) %}<p class="pf-rv-help">Course courte : {{ rate }} g/h suffisent.</p>{% endif %}
+        {% if rate < custom_carbs %}<p class="pf-rv-help">Course courte : {{ rate }} g/h suffisent.</p>{% endif %}
         {% if beep %}
         <div class="pf-rv-beep">
             <span class="pf-rv-ic">{{ rv_icon('watch') }}</span>
@@ -73,7 +73,7 @@
         <div class="pf-rv-strip" aria-hidden="true">{% for s in strip %}<i data-cat="{{ s.cat }}" style="flex-grow: {{ s.w }}"></i>{% endfor %}</div>
         <div class="pf-rv-phases">
             {% for ph in phases %}
-            <button type="button" class="pf-rv-phase" hx-get="{{ P }}?open=go:{{ ph.start_key }}" aria-label="{% if ph.from %}À partir de {{ ph.from }}{% else %}Au départ{% endif %} : {{ ph.names | join(', ') or 'rien' }}. Changer">{{ dot(ph.cat) }}<span>{{ ph.names | join(' · ') or 'Rien à manger' }}</span>{% if ph.from %}<small>dès {{ ph.from }}</small>{% endif %}</button>
+            <button type="button" class="pf-rv-phase" hx-get="{{ P }}" hx-vals='{"open":"go:{{ ph.start_key }}"}' aria-label="{% if ph.from %}À partir de {{ ph.from }}{% else %}Au départ{% endif %} : {{ ph.names | join(', ') or 'rien' }}. Changer">{{ dot(ph.cat) }}<span>{{ ph.names | join(' · ') or 'Rien à manger' }}</span>{% if ph.from %}<small>dès {{ ph.from }}</small>{% endif %}</button>
             {% endfor %}
         </div>
         {% for w in warnings %}<p class="pf-rv-warn is-{{ w.tone }}">{% if w.tone in ('warn', 'alert') %}{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}{% endif %}<span>{{ w.text }}</span></p>{% endfor %}
@@ -84,6 +84,7 @@
     <section id="rv-table" aria-labelledby="rv-table-t">
         <h2 id="rv-table-t" class="pf-rv-h">{% if is_blocks %}Par tranche de {{ '2' if is_bike else '3' }} h{% else %}Entre les ravitos{% endif %}</h2>
         <p class="pf-rv-lead">Tu prépares par tronçon, tu manges au bip ; pas de demi-gel, le reste passe au tronçon suivant.</p>
+        {% if upgraded %}<p class="pf-rv-help">Ton plan est maintenant par tronçon : vérifie tes sachets.</p>{% endif %}
         {% if source %}<p class="pf-rv-hand"><span class="pf-pill pf-pill-soft">Repris de « {{ source }} »</span><button type="button" class="pf-link pf-rv-hit" hx-post="{{ P }}/plan" hx-vals='{"op":"keep"}'>Garder</button></p>{% endif %}
         {% if food_chips %}
         <p class="pf-rv-sublabel">Où peux-tu manger ?</p>
@@ -112,16 +113,17 @@
                         {{ ic.icon('chev-r', 'pf-chev') }}
                     </span>
                     <span class="pf-rv-r2">
-                        {% for it in r.pills %}<span class="pf-rv-unit" title="{{ it.title }}">{{ mark(it) }}{{ it.label }}</span>{% endfor %}
+                        {# caffeine and salt as an icon and a count (their names are in the open row and the list) #}
+                        {% for it in r.pills %}{% if it.role in ('caf', 'salt') %}<span class="pf-rv-unit pf-rv-unit-ic" title="{{ it.label }}">{{ mark(it) }}{{ it.n }}<span class="sr-only"> {{ it.name }}</span></span>{% else %}<span class="pf-rv-unit" title="{{ it.title }}">{{ mark(it) }}{{ it.label }}</span>{% endif %}{% endfor %}
                         {% for it in r.aid_pills %}<span class="pf-rv-unit is-aid" title="{{ it.title }}, au ravito">{{ mark(it) }}{{ it.label }}</span>{% endfor %}
                         {% if not r.pills and not r.aid_pills %}<span class="pf-rv-none">rien à prendre</span>{% endif %}
-                        {% if r.water_l %}<span class="pf-rv-water{% if r.water_over %} is-warn{% endif %}" title="Eau à emporter{% if r.water_over %} : plus que tes flasques{% endif %}">{{ rv_icon('drop', 'w-4 h-4') }}{{ r.water_l }} L</span>{% endif %}
                     </span>
                     <span class="pf-rv-r3">
                         <span class="pf-rv-bar{% if r.status != 'ok' or r.stomach %} is-warn{% endif %}" style="--fill: {{ r.fill }}%"><i></i></span>
                         {% if r.status != 'ok' %}<span class="pf-rv-st">{{ ic.icon('alert', 'w-3.5 h-3.5') }}{{ '+' if r.balance_g > 0 else '−' }}{{ r.balance_g | abs }} g<span class="sr-only"> par rapport à ta cible</span></span>{% endif %}
                         {% if r.stomach %}<span class="pf-rv-st" title="Beaucoup pour ton ventre">{{ rv_icon('stomach', 'w-4 h-4') }}<span class="sr-only">beaucoup pour ton ventre</span></span>{% endif %}
                         {% if r.frozen %}<span class="pf-pill pf-pill-soft pf-rv-handpill">à la main</span>{% endif %}
+                        {% if r.water_l %}<span class="pf-rv-water{% if r.water_over %} is-warn{% endif %}" title="Eau à emporter{% if r.water_over %} : plus que tes flasques{% endif %}">{{ rv_icon('drop', 'w-4 h-4') }}{{ r.water_l }} L</span>{% endif %}
                     </span>
                 </summary>
                 <div class="pf-rv-open">
@@ -165,9 +167,9 @@
                     {% if r.beep_note %}<p class="pf-rv-cue">{{ rv_icon('watch', 'w-4 h-4') }}<span>Ici, passe ta montre à {{ r.beep_note }} min.</span></p>{% endif %}
                     {% for c in r.cues %}<p class="pf-rv-cue{% if c.tone %} is-{{ c.tone }}{% endif %}">{{ rv_icon(c.icon, 'w-4 h-4') }}<span>{{ c.text }}</span></p>{% endfor %}
                     <div class="pf-rv-acts">
-                        <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" id="{{ r.id }}-ph" hx-get="{{ P }}?open=ph:{{ r.key }}" aria-expanded="{{ 'true' if r.editor else 'false' }}">À partir d'ici : autre produit</button>
+                        <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" id="{{ r.id }}-ph" hx-get="{{ P }}" hx-vals='{"open":"ph:{{ r.key }}"}' aria-expanded="{{ 'true' if r.editor else 'false' }}">À partir d'ici : autre produit</button>
                         {% if r.frozen %}<button type="button" class="pf-btn pf-btn-ghost pf-btn-sm" id="{{ r.id }}-auto" hx-post="{{ P }}/plan" hx-vals='{"op":"auto","km":"{{ r.key }}","open":"s:{{ r.key }}"}'>Remettre en auto</button>{% endif %}
-                        {% if r.drop_toggle %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if r.drop_on else 'false' }}" data-ci="{{ r.start_cp_index }}" data-km="{{ r.from_km }}" data-kind="{{ r.cp_kind }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}{{ rv_icon('bag', 'w-4 h-4') }}Drop bag ici</button>{% endif %}
+                        {% if r.drop_toggle %}<button type="button" class="pf-chip-lg" aria-pressed="{{ 'true' if r.drop_on else 'false' }}" data-ci="{{ r.start_cp_index }}" data-km="{{ r.from_km }}" data-kind="{{ r.cp_kind }}" onclick="pfRvPoint(this, 'bag')">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}{{ rv_icon('bag', 'w-4 h-4') }}<span class="pf-chip-lbl pf-chip-lbl-wide">Drop bag à {{ r.from_name }}</span></button>{% endif %}
                     </div>
                     {% if r.editor %}{% set ed = r.editor %}
                     <div class="pf-rv-editor" id="ed-{{ r.key }}"{% if phase_open is not none and autoscroll %} data-autoscroll{% endif %}>
@@ -197,9 +199,9 @@
     {# ── the list: what the bags hold, less what he has ─────────────────── #}
     <section id="rv-shop" aria-labelledby="rv-shop-t">
         <div class="pf-rv-head"><h2 id="rv-shop-t" class="pf-rv-h !mb-0">Ta liste</h2><button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" onclick="pfRvCopy(this)">Copier</button></div>
-        {% if generic_only %}<p class="pf-rv-help">Ce sont des produits génériques : ajoute tes vrais produits avec « + Marque ».</p>{% endif %}
+        {% if generic_only %}<p class="pf-rv-help">Ce sont des produits génériques : ajoute les tiens dans « Produits ».</p>{% endif %}
         {% if shop %}
-        <div class="pf-rv-listhead" aria-hidden="true"><span></span><span>J'en ai</span><span>À acheter</span><span></span></div>
+        <div class="pf-rv-listhead" aria-hidden="true"><span></span><span>J'en ai</span><span>À acheter</span></div>
         <ul class="pf-rv-list">
             {% for it in shop %}
             <li>
@@ -209,16 +211,17 @@
                     <b>{{ it.have }}</b>
                     <button type="button" id="have-p{{ it.pid }}" hx-post="{{ P }}/plan" hx-vals='{"op":"have","pid":"{{ it.pid }}","d":"1","open":"list"}' aria-label="J'en ai un de plus : {{ it.name }}">+</button>
                 </span>
-                <span class="pf-rv-buy">{% if it.to_buy %}<b>{{ it.to_buy }}</b><span class="sr-only"> à acheter</span>{% else %}<span class="pf-rv-ok" title="Tu as tout">{{ ic.icon('check', 'w-5 h-5', '2.4') }}</span>{% if it.left %}<small>il t'en restera {{ it.left }}</small>{% endif %}{% endif %}</span>
-                <button type="button" class="pf-ibtn pf-rv-x" hx-post="{{ P }}/plan" hx-vals='{"op":"toggle","v":"{{ it.pid }}","open":"list"}' hx-confirm="Retirer {{ it.name }} de tous tes tronçons ?" aria-label="Retirer {{ it.name }} de ta liste et de tes tronçons">×</button>
+                <span class="pf-rv-buy">{% if it.to_buy %}<b>{{ it.to_buy }}</b><span class="sr-only"> à acheter</span>{% else %}<span class="pf-rv-ok" title="Tu as tout">{{ ic.icon('check', 'w-5 h-5', '2.4') }}<span class="sr-only">tu as tout</span></span>{% if it.left %}<small>il t'en restera {{ it.left }}</small>{% endif %}{% endif %}</span>
             </li>
             {% endfor %}
         </ul>
         {% else %}<p class="pf-rv-help">Rien à emporter pour l'instant.</p>{% endif %}
         <details id="rv-brands" class="pf-rv-more"{% if open == 'brands' %} open{% endif %}>
-            <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Marque</summary>
+            <summary class="pf-chip-lg pf-chip-dash">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Produits</summary>
             <div class="pf-rv-panel">
-                <p class="pf-rv-help !mt-0">Un produit ajouté ici sert sur toute la course.</p>
+                <p class="pf-rv-help !mt-0">Ici, un produit vaut pour toute la course : touche-le pour l'ajouter ou le retirer.</p>
+                {% if on_list %}<p class="pf-rv-sublabel">Sur ta liste</p>
+                <div class="pf-rv-chips">{% for c in on_list %}<button type="button" class="pf-chip-lg" aria-pressed="true" title="{{ c.title }}" hx-post="{{ P }}/plan" hx-vals='{"op":"toggle","v":"{{ c.id }}","open":"brands"}' hx-confirm="Retirer {{ c.label }} de tous tes tronçons ?">{{ ic.icon('check', 'pf-chip-check w-4 h-4', '2.4') }}<span class="pf-chip-lbl">{{ c.label }}</span></button>{% endfor %}</div>{% endif %}
                 {% if quick %}<p class="pf-rv-sublabel">Génériques</p>
                 <div class="pf-rv-chips">{% for c in quick %}<button type="button" class="pf-chip-lg" title="{{ c.title }}" hx-post="{{ P }}/plan" hx-vals='{"op":"pick","v":"{{ c.id }}"}'><span class="pf-chip-lbl">{{ c.label }}</span></button>{% endfor %}</div>{% endif %}
                 {% for label, items in brand_groups %}

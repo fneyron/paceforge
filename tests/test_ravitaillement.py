@@ -112,9 +112,11 @@ async def test_the_seeded_transjeju_plan_reads_per_stretch_and_the_read_writes_n
     assert len(rows) == 3 and "Bip toutes les" in t  # Départ → Col → Village → Arrivée, one beep
     assert "prises PF 90" in t and "Maurten 100 CAF" in t and "PH 1500" in t  # PF 90 in prises, the caffeinated gel at its times, salt per flask
     assert "0,5 gel" not in t and not re.search(r"\d+,5 (gels?|Maurten|Baouw|PF)", t)
+    assert "Ton plan est maintenant par tronçon" in t
     assert await _nj(db_session, rid) == before  # reading never writes (in-memory upgrade)
-    # the first tap stores v3, from what was shown
-    await as_user.post(f"{P}/{rid}/plan", data={"op": "level", "v": "normal"})
+    # the first tap stores v3, from what was shown; the note goes with it
+    r = await as_user.post(f"{P}/{rid}/plan", data={"op": "level", "v": "normal"})
+    assert "Ton plan est maintenant par tronçon" not in r.text
     nj = await _nj(db_session, rid)
     assert nj["v"] == 3 and nj["picks"] == [ids[11], ids[12], ids[13], ids[14], ids[15]]
     assert nj["phases"][0]["mix"] == {str(ids[11]): 0.5, str(ids[12]): 0.5, str(ids[13]): 0.5}
@@ -635,3 +637,9 @@ async def test_rows_and_watch_codes_carry_the_same_ceiling(as_user: AsyncClient)
     codes = [int(x) for x in re.findall(r"FC(\d+)", csv)]
     assert row_caps and row_caps == codes[:len(row_caps)]
     assert row_caps[0] <= 150 and len(set(row_caps)) > 1  # falls along the race, not one repeated number
+
+
+@pytest.mark.asyncio
+async def test_a_short_race_follows_the_duration_ladder(as_user: AsyncClient):
+    t = (await as_user.get(f"{P}/{await _route(as_user, target_s=int(2.5 * 3600), name='Court')}")).text
+    assert "Course courte : 60 g/h suffisent." in t and '"v":"normal"}\' aria-pressed="true"' in t

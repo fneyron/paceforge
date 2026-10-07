@@ -401,6 +401,8 @@ def build_plan(stretches: list[dict], inp: dict, *, sections: list[dict], start_
         worst = max(mine, key=lambda s_: s_["need_ml"], default=None)
         water_ml_out = int(N.ceil_half_l(first["need_ml"]) * 1000) if first else 0
         over = bool(cap and worst and worst["need_ml"] > cap + 1)
+        if st["is_block"] and not refill_kms:  # no water point known: no litres to promise
+            water_ml_out, over, first, worst = 0, False, None, None
         main = max((it for it in items if it["role"] in ("gel", "drink", "bar")), key=lambda it: it["n"] * _serving_g(products[it["pid"]]), default=None)
         out.append({
             **{x: st[x] for x in ("i", "key", "from_name", "to_name", "from_km", "to_km", "start_clock_s", "end_clock_s", "d_s",
