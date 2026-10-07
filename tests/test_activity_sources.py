@@ -212,7 +212,8 @@ def test_coros_sessions_migration_round_trips():
     spec.loader.exec_module(mig)
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    script = ScriptDirectory.from_config(cfg)  # in the chain (later migrations stack on it), one head overall
+    assert mig.revision in {s.revision for s in script.walk_revisions()} and len(script.get_heads()) == 1
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:
         c.execute(sa.text("CREATE TABLE activities (id INTEGER PRIMARY KEY, strava_activity_id BIGINT, "

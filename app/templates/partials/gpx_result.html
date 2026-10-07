@@ -1095,7 +1095,7 @@ window._sim = {};
     }
     var saveRetried = false, hourlySaved = false, savedWxAt = null;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=18', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
+    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=19', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }

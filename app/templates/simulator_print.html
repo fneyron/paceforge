@@ -116,16 +116,16 @@
     {% endif %}
 
     {% if nutrition_schedule %}
-    <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
+    <!-- Race pack: one line per stretch between food ravitos (the sachets), the beep -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
-        <p class="border-b border-gray-200 pb-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
+        <p class="border-b border-gray-200 pb-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wide">Nutrition{% if nutrition_beep %} <span class="normal-case font-normal text-gray-600">· bip toutes les {{ nutrition_beep }} min</span>{% endif %}</p>
         <table class="w-full text-[10px]">
             <tbody class="divide-y divide-gray-100">
                 {% for leg in nutrition_schedule %}
                 <tr>
-                    <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
-                    <td class="py-1 pl-2 text-gray-700">{% if leg.labels %}{{ leg.labels | join(' · ') }}{% else %}<span class="text-gray-300">—</span>{% endif %}</td>
-                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{% if leg.water_ml >= 200 %}{{ ('%.1f'|format(leg.water_ml / 1000)).replace('.', ',') }} L d'eau{% endif %}</td>
+                    <td class="py-1 pr-2 text-gray-600 whitespace-nowrap">{{ leg.clock }} → <b class="text-gray-900">{{ leg.to_name }}</b></td>
+                    <td class="py-1 pl-2 text-gray-700">{% if leg.switch %}<b>{{ leg.switch }}</b> · {% endif %}{% if leg.labels %}{{ leg.labels | join(' · ') }}{% else %}<span class="text-gray-300">—</span>{% endif %}</td>
+                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{% if leg.water_l %}{{ ('%g'|format(leg.water_l)).replace('.', ',') }} L d'eau{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

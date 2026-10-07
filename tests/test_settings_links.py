@@ -299,9 +299,9 @@ async def test_new_app_keys_from_settings_replace_the_old_app(client: AsyncClien
 # ── profile ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("weight, text", [
-    (None, "Sans poids, ta caféine en course est plafonnée à 400 mg : indique-le pour l'ajuster."),
-    (50.0, "Ta caféine en course est plafonnée à 300 mg."),
-    (80.0, "Ta caféine en course est plafonnée à 400 mg."),
+    (None, "Sans poids, ta caféine en course est plafonnée à 400 mg par 24 h : indique-le pour l'ajuster."),
+    (50.0, "Ta caféine en course est plafonnée à 300 mg par 24 h."),
+    (80.0, "Ta caféine en course est plafonnée à 400 mg par 24 h."),
 ])
 async def test_caffeine_cap_is_shown_with_its_value(as_user: AsyncClient, db_session: AsyncSession,
                                                     test_user: User, weight, text):

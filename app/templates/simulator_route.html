@@ -51,7 +51,7 @@ summary::-webkit-details-marker { display: none; }
         <h1 id="tool-title" class="pf-h1 mb-6" tabindex="-1"></h1>
 
         <div id="rpanel-nutrition" class="hidden">
-            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=18" hx-trigger="intersect once" hx-swap="innerHTML">
+            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=19" hx-trigger="intersect once" hx-swap="innerHTML">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     Ravitaillement…
@@ -83,21 +83,34 @@ function switchRouteTab(tab, anchor) {
     plan.classList.toggle('hidden', tab !== 'plan'); back.classList.toggle('hidden', tab !== 'plan');
     tool.classList.toggle('hidden', tab === 'plan');
     tools.forEach(function (t) { var p = document.getElementById('rpanel-' + t); if (p) p.classList.toggle('hidden', t !== tab); });
+    // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
+    var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
+    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=19', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
+    var reload = !!(urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv);
+    var rowAnchor = tab === 'nutrition' && anchor && String(anchor).indexOf('s:') === 0;
     if (tab !== 'plan') {
         var n = document.getElementById('save-name'), bl = document.getElementById('tool-back-label'); if (n && bl) bl.textContent = n.value || 'Plan de course';
         var tt = document.getElementById('tool-title'); tt.textContent = TOOL_TITLES[tab];
         window.scrollTo(0, 0); try { tt.focus({ preventScroll: true }); } catch (e) {}
-        if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap [data-packing], #nutrition-wrap #packing'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
+        if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap [data-packing], #nutrition-wrap #rv-table'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
+        // « Ton sachet jusqu'à X » in a passage row: that stretch's row, opened. When the card is
+        // about to reload (the plan changed), the row is opened once the new card is in, not before
+        else if (rowAnchor) {
+            var sid = 's-' + String(anchor).slice(2);
+            var tryRow = function (k) { var el = document.getElementById(sid); if (el) { el.open = true; el.scrollIntoView({ block: 'start' }); } else if (k > 0) setTimeout(function () { tryRow(k - 1); }, 250); };
+            if (reload) {
+                var wrap = document.getElementById('nutrition-wrap');
+                var once = function (ev) { if (ev.target !== wrap) return; wrap.removeEventListener('htmx:afterSettle', once); tryRow(4); };
+                if (wrap) wrap.addEventListener('htmx:afterSettle', once); else tryRow(16);
+            } else tryRow(16);
+        }
     } else {
         setTimeout(function () { window.scrollTo(0, planScrollY); if (window._sim && window._sim._redraw) window._sim._redraw(); }, 0);
         // a change in Ravitaillement (stomach, products, quantities…): the rows' food, water and bags follow it
         if (ravitoDirty && window._sim && window._sim.recalc) { ravitoDirty = false; window._sim.recalc(); }
     }
-    // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
-    var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=18', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
-    if (urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv) {
-        window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
+    if (reload) {
+        window.htmx.ajax('GET', urls[tab][0] + (rowAnchor ? '&open=' + encodeURIComponent(anchor) : ''), { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
     }
     try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + (anchor === 'bags' ? 'bags' : tab)); } catch (e) {}

@@ -6,7 +6,8 @@ import math
 from app.schemas.simulator import CourseProfile, CourseSegment
 from app.services import checkpoints as cpsvc
 from app.services.debrief import leg_debrief
-from app.services.nutrition import compute_plan
+from app.services import nutrition as N
+from app.services import nutrition_plan as NP
 from app.services.pace_export import (
     build_pace_csv,
     build_pace_gpx,
@@ -190,57 +191,34 @@ def test_scenarios_flag_cutoff_breach():
     assert any(r["name"] == "Village" for r in sc["cutoff_breach"])
 
 
-# ── 3. nutrition per leg ──
+# ── 3. nutrition per stretch ──
 
-PRODUCTS = {
-    1: {"id": 1, "name": "Gel", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 0, "volume_ml": None, "kcal": 100},
-    2: {"id": 2, "name": "Gel caféiné", "kind": "gel", "carbs_g": 25, "sodium_mg": 0, "caffeine_mg": 50, "volume_ml": None, "kcal": 100},
-    3: {"id": 3, "name": "Sel", "kind": "salt", "carbs_g": 0, "sodium_mg": 300, "caffeine_mg": 0, "volume_ml": None, "kcal": 0},
-}
+def _legs(secs):
+    return [{"cum_s": NP.moving_cum(s), "clock_s": NP.arrival_clock(s, 21 * 3600), "to_name": s["end_name"]} for s in secs]
 
 
-def test_nutrition_real_rates_packing_and_caffeine():
-    _, secs = _sections(target=5 * 3600, start_hour=21)  # night start → dawn falls inside a 5 h race? (21:00 + 5h = 02:00: no)
-    targets = {"carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    items = [{"product_id": 1, "per_hour": 3}, {"product_id": 3, "per_hour": 1}]
-    plan = compute_plan(
-        5 * 3600, targets, items, PRODUCTS, secs, flask_capacity_ml=1000, refill_kms={10.0, 20.0},
-        resupply_points=[{"km": 10.0, "name": "Col"}], caffeine={"enabled": True, "from_h": 1, "every_h": 2, "dose_mg": 50, "boost_dawn": True},
-        start_offset_s=21 * 3600, weight_kg=70,
-    )
-    legs = plan["schedule"]
-    assert len(legs) == 4  # Eau 1, Col, Village, Arrivée
-    # whole units per leg, the fraction carried to the next leg: the race total
-    # stays within half a unit of rate × duration for every product, and a short
-    # leg no longer gets a full hour's worth of everything
-    hours = sum(l["leg_time_s"] for l in legs) / 3600
-    for ln in plan["lines"]:
-        assert abs(ln["total_units"] - ln["per_hour"] * hours) <= 0.5 + 1e-9
-    assert all(u["units"] >= 0 for l in legs for u in l["units"])
-    race_real = sum(l["carbs_real_g"] for l in legs) / hours
-    assert 60 <= race_real <= 90  # 3 gels + 1 drink per hour ≈ 75 g/h over the race
-    assert legs[0]["night"] is True
-    # packing: start bag until the Col drop bag, then the drop bag until the finish
-    assert [p["at"] for p in plan["packing"]] == ["Départ", "Col"]
-    assert plan["packing"][0]["until"] == "Col" and plan["packing"][1]["until"] == "Arrivée"
-    total_units_packed = sum(u["units"] for p in plan["packing"] for u in p["units"] if u["name"] == "Gel")
-    assert total_units_packed == next(l["total_units"] for l in plan["lines"] if l["name"] == "Gel")
-    # caffeine: doses at 1h, 3h (5h is inside the last 20 min guard? 5h == duration → excluded)
-    cf = plan["caffeine"]
+def test_nutrition_stretches_follow_the_food_ravitos_and_the_clock():
+    _, secs = _sections(target=5 * 3600, start_hour=21, stop_min=3)
+    st = NP.food_stretches(secs, CPS, 21 * 3600)
+    # the water point at km 6 does not cut a stretch: Départ → Col → Village → Arrivée
+    assert [(s["from_name"], s["to_name"]) for s in st] == [("Départ", "Col"), ("Col", "Village"), ("Village", "Arrivée")]
+    # arrival to arrival on the clocks: the stops count, the stretches add up to the race time
+    assert sum(s["d_s"] for s in st) == 5 * 3600
+    assert st[0]["night"] is True and st[0]["bag"] and st[1]["bag_kind"] == "drop" and st[1]["aid_food"]
+
+
+def test_caffeine_doses_are_capped_per_rolling_day_and_never_in_the_last_half_hour():
+    _, secs = _sections(target=5 * 3600, start_hour=21)
+    cf = N.caffeine_schedule(NP.moving_cum(secs[-1]), _legs(secs), {"enabled": True, "from_h": 1, "every_h": 2, "dose_mg": 50, "boost_dawn": True},
+                             21 * 3600, 70)
     assert [d["elapsed_s"] for d in cf["doses"]] == [3600, 3 * 3600]
     assert cf["total_mg"] == 100 and cf["over"] is False and cf["max_mg"] == 400
-
-
-def test_caffeine_dawn_boost_and_cap():
+    # 60 kg → 360 mg in any 24 h: the dawn double still fits once, the rest is skipped, never planned past the cap
     _, secs = _sections(target=10 * 3600, start_hour=21)
-    targets = {"carbs_g_per_h": 60, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    plan = compute_plan(10 * 3600, targets, [{"product_id": 2, "per_hour": 2}], PRODUCTS, secs,
-                        caffeine={"enabled": True, "from_h": 3, "every_h": 2, "dose_mg": 100, "boost_dawn": True},
-                        start_offset_s=21 * 3600, weight_kg=60)
-    cf = plan["caffeine"]
-    dawn = [d for d in cf["doses"] if d["label"].startswith("dose pleine")]
-    assert len(dawn) == 1 and dawn[0]["mg"] == 200 and 5 <= (dawn[0]["clock_s"] % 86400) / 3600 < 7.5
-    assert cf["max_mg"] == 360 and cf["over"] is True
+    cf = N.caffeine_schedule(NP.moving_cum(secs[-1]), _legs(secs), {"enabled": True, "from_h": 3, "every_h": 2, "dose_mg": 100, "boost_dawn": True},
+                             21 * 3600, 60, "Gel caféiné", unit_mg=100)
+    assert cf["max_mg"] == 360 and cf["total_mg"] <= 360 and cf["over"] is False
+    assert all(d["elapsed_s"] < NP.moving_cum(secs[-1]) - 30 * 60 for d in cf["doses"])
     assert cf["doses"][0]["product"] == "Gel caféiné"
 
 
@@ -437,17 +415,18 @@ def test_best_efforts_ignore_hikes_and_slow_duplicates():
 
 def test_caffeinated_gel_follows_the_caffeine_plan():
     _, secs = _sections(target=18 * 3600, start_hour=21)
-    prods = {**PRODUCTS, 4: {"id": 4, "name": "CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None, "kcal": 100}}
-    targets = {"carbs_g_per_h": 60, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    plan = compute_plan(18 * 3600, targets, [{"product_id": 1, "per_hour": 2}, {"product_id": 4, "per_hour": 1}], prods, secs,
-                        caffeine={"enabled": True, "from_h": 3, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True},
-                        start_offset_s=21 * 3600, weight_kg=70)
+    caf = {"id": 4, "name": "CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None, "kcal": 100}
+    inp = N.resolve_inputs({"v": 3, "picks": [-1, 4]}, {4: caf}, 18 * 3600, None, 70, moving_s=NP.moving_cum(secs[-1]), start_offset_s=21 * 3600)
+    st = NP.food_stretches(secs, CPS, 21 * 3600)
+    plan = NP.build_plan(st, inp, sections=secs, start_offset_s=21 * 3600)
     cf = plan["caffeine"]
-    caf_line = next(l for l in plan["lines"] if l["name"] == "CAF 100")
-    assert caf_line["by_caffeine"] and caf_line["per_hour"] == 0
-    assert all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
-    assert caf_line["total_units"] == len(cf["doses"])  # one gel per dose, packed as such
-    assert sum(u["units"] for l in plan["schedule"] for u in l["units"] if u["name"] == "CAF 100") == len(cf["doses"])
+    assert cf["doses"] and all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
+    # one gel per dose, in the stretch whose clock holds it, never « per hour »
+    placed = [sum(it["n"] for it in r["items"] if it["pid"] == 4) for r in plan["stretches"]]
+    assert sum(placed) == len(cf["doses"])
+    for d in cf["doses"]:
+        r = next(r for r in plan["stretches"] if r["start_clock_s"] <= d["clock_s"] < r["end_clock_s"])
+        assert placed[r["i"]] >= 1
 
 
 def test_elevation_at_km_reads_the_full_resolution_trace():

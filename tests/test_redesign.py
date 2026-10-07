@@ -323,7 +323,8 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     # (flat legs: the ceiling only, running steady goes without saying)
     assert "pf-tiles" not in t and re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Très raide|très raide|Descente|descente) :", text), text
     assert "roulant" not in text.lower(), text
-    assert "À prendre en route :" in text and "depuis" not in text.lower(), text
+    # the food: a pointer to the stretch's sachet in Ravitaillement, never its contents again
+    assert "Ton sachet jusqu'à Village" in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated
     assert re.search(r"Ravito · assistance · barrière 10:30 · marge [+−]\d+h\d\d", text) and "arrêt" not in text, text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
