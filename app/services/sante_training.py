@@ -55,7 +55,7 @@ class Session:
     name: str = ""
     load: float = 0.0
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
-    offset: float = 0.0  # s east of UTC: the session's local clock (start + offset)
+    offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
     elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
 
 
@@ -154,13 +154,14 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         if r[0] in skip or not r[3]:
             continue
         start = _utc(r[1])
-        offset = _offset(r[13], r[14], r[15]) or 0
+        known = _offset(r[13], r[14], r[15])
+        offset = known or 0
         speed = r[6] if r[6] else ((r[4] or 0) / r[3] if r[3] else None)
         out.append(Session(
             id=r[0], start=start, day=(start + timedelta(seconds=offset)).date(), sport=r[2],
             minutes=r[3] / 60, dplus=r[5] or 0, km=(r[4] or 0) / 1000, speed=speed or None,
             hr=r[7] or None, hr_peak=r[8] or None, suffer=r[9] or None, workout_type=r[11], temp=r[12],
-            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60, offset=offset, elev_high=r[18]))
+            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60, offset=known, elev_high=r[18]))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)

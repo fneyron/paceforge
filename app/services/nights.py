@@ -296,7 +296,7 @@ def _tag_timezones(nights: dict[date, Night], sessions) -> None:
     else that of the sessions of the day before or that day) and the next 2."""
     offset = {}
     for s in sorted(sessions, key=lambda s: s.start):
-        if s.offset is not None:
+        if s.offset is not None:  # a session without a known offset says nothing about the time zone
             offset[s.day] = round(s.offset / 60)
     track = {}
     for d in sorted(set(nights) | set(offset)):

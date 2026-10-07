@@ -254,3 +254,13 @@ async def test_load_nights_reads_the_rows_and_the_check_ins(db_session, test_use
     assert nights[D].tst24 == 490 and {"race", "alcohol"} <= nights[D].tags
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}
+
+
+def test_a_session_without_a_known_offset_never_changes_the_time_zone():
+    nights = nt.build_nights(night_rows(range(0, 4)), D)
+    for n in nights.values():
+        n.tz = 120
+    blind = session(D - timedelta(days=1), 9, 40, offset=0)
+    blind.offset = None  # e.g. a manual entry: its local clock is unknown
+    nt.tag_nights(nights, [blind])
+    assert not any("tz" in n.tags for n in nights.values())
