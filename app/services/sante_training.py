@@ -28,8 +28,8 @@ from app.models.activity import Activity
 from app.services.activity_dedupe import find_duplicate_ids, is_false_start
 
 HISTORY_DAYS = 730
-CTL_DAYS, ATL_DAYS = 42, 7
-MIN_HISTORY_DAYS, MIN_SESSIONS = 42, 6
+CTL_DAYS, ATL_DAYS = 42, 7  # (H) a TrainingPeaks convention (evidence row 14)
+MIN_HISTORY_DAYS, MIN_SESSIONS = 42, 6  # (H) 6 weeks and 6 sessions before fond et fatigue
 FOOT = {"Run", "TrailRun", "VirtualRun", "Hike", "Walk", "BackcountrySki", "NordicSki", "Snowshoe"}
 RUNS = {"Run", "TrailRun"}
 BIKE = {"Ride", "VirtualRide", "EBikeRide", "GravelRide", "MountainBikeRide"}
@@ -293,19 +293,22 @@ def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
 
 # ── heart rate at easy pace (Nuuttila 2022) ─────────────────────────────────
 
-MIN_FIT_RUNS = 8
-EASY_FIT_DAYS = 365  # one Theil–Sen slope over the cool runs of 12 months
-EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H)
+MIN_FIT_RUNS = 6  # (H) cool runs for the Theil–Sen slope
+EASY_FIT_DAYS = 365  # (H) one Theil–Sen slope over the cool runs of 12 months
+EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H) the drawn band; Nuuttila 2022's 3–4 bpm edge
+FLAG_REF_DAYS, FLAG_REF_MIN = 14, 2  # (H) each run against the cool runs of the 14 days before it (Nuuttila 2022)
+LINE_DAYS, LINE_RUNS = 42, 6  # (H) the line needs ≥ 6 qualifying runs in 6 weeks (evidence row 16)
 HOT_C = 25  # (H)
+EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 150, 12, 0.82  # (H) a flat easy run
 
 
 def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
-    """Flat easy runs: 5 km and more, 25–150 min, D+ ≤ 12 m/km, average HR ≤
-    82 % of HRmax, not a race nor a workout. Hot runs stay in (Activités
+    """Flat easy runs (H): 5 km and more, 25–150 min, D+ ≤ 12 m/km, average
+    HR ≤ 82 % of HRmax, not a race nor a workout. Hot runs stay in (Activités
     draws them hollow); they are kept out of the slope and the normal."""
     return [s for s in sessions
-            if s.sport in RUNS and s.hr and s.speed and s.km >= 5 and 25 <= s.minutes <= 150
-            and s.dplus <= 12 * s.km and s.hr <= 0.82 * peak and s.workout_type not in (1, 3)]
+            if s.sport in RUNS and s.hr and s.speed and s.km >= EASY_KM and EASY_MIN_MIN <= s.minutes <= EASY_MAX_MIN
+            and s.dplus <= EASY_DPLUS_PER_KM * s.km and s.hr <= EASY_HR_SHARE * peak and s.workout_type not in (1, 3)]
 
 
 def is_hot(s: Session) -> bool:
@@ -330,9 +333,9 @@ def easy_model(sessions: list[Session], today: date, peak: float) -> dict | None
     tile, R8, Reprise) share: each flat easy run's HR moved to the athlete's
     reference pace (one Theil–Sen slope over the cool runs of 12 months; the
     pace is their median speed, to 5 s/km), and each day's normal, the median
-    of the cool runs of the 28 days before (3 at least, H). None under 8
-    cool runs. {runs, cool (by start), value: {id: bpm}, pace: s/km, centre:
-    day → bpm | None}."""
+    of the cool runs of the 28 days before (3 at least, H). None under 6
+    cool runs (H). {runs, cool (by start), value: {id: bpm}, pace: s/km,
+    centre: day → bpm | None}."""
     runs = sorted((s for s in easy_runs(sessions, peak) if today - timedelta(days=EASY_FIT_DAYS) < s.day <= today),
                   key=lambda s: s.start)
     cool = [s for s in runs if not is_hot(s)]
@@ -363,17 +366,32 @@ def easy_deltas(model: dict | None) -> list[tuple[date, float]]:
     return out
 
 
+def line_ok(model: dict | None, today: date) -> bool:
+    """Activités › FC en footing is drawn (and its flag read) only with ≥ 6
+    qualifying runs in the last 6 weeks (H, evidence row 16)."""
+    return bool(model) and sum(1 for s in model["cool"] if today - timedelta(days=LINE_DAYS) < s.day <= today) \
+        >= LINE_RUNS
+
+
+def prior(model: dict, s: Session) -> float | None:
+    """The normal a run is flagged against: the median of the cool runs of the
+    14 days before it, 2 at least (H; Nuuttila 2022: the previous 2 weeks)."""
+    vals = [model["value"][x.id] for x in model["cool"] if s.day - timedelta(days=FLAG_REF_DAYS) <= x.day < s.day]
+    return statistics.median(vals) if len(vals) >= FLAG_REF_MIN else None
+
+
 def easy_watch(model: dict | None, today: date) -> dict | None:
     """« à surveiller » (H; Nuuttila 2022's 3–4 bpm): the 2 latest cool runs,
-    both in the last 14 days, each ≥ 3 bpm above its day's normal. {deltas:
-    [(day, bpm)] of those runs that have a normal (1 or 2), value: their mean,
-    flag}; None without such a run."""
-    if not model:
+    both in the last 14 days, each ≥ 3 bpm above the median of the cool runs
+    of the 14 days before it (prior). {deltas: [(day, bpm)] of those runs that
+    have a normal (1 or 2), value: their mean, flag}; None without such a run,
+    or under 6 qualifying runs in 6 weeks (line_ok)."""
+    if not line_ok(model, today):
         return None
     last2 = [s for s in model["cool"] if today - timedelta(days=FLAG_DAYS) < s.day <= today][-2:]
     deltas = []
     for s in last2:
-        c = model["centre"](s.day)
+        c = prior(model, s)
         if c is not None:
             deltas.append((s.day, model["value"][s.id] - c))
     if not deltas:

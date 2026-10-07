@@ -30,16 +30,23 @@ MOVED = {"entrainement": "/activities#semaines", "tendances": "/activities#fatig
 
 
 async def _moved(db: AsyncSession, user: User, vue: str) -> str | None:
-    """Where an old Santé view lives now (Course: the next race's page, else
-    the one run in the last 14 days, else Activités)."""
+    """Where an old Santé view lives now. Course, as the old view chose: the
+    next race when it is 14 days away or less (or no race was run in the last
+    14 days), else the recovery of the one just run, else Activités; « #prep »
+    only when that page shows its preparation (J-42 → J+14)."""
     if vue in MOVED:
         return MOVED[vue]
     if vue == "course":
+        from app.services import race_prep as rp
         from app.services.sante import _races, athlete_today
 
-        nxt, last, _ = await _races(db, user.id, await athlete_today(db, user.id))
-        race = nxt or last
-        return f"/simulator/routes/{race.id}#prep" if race else "/activities"
+        today = await athlete_today(db, user.id)
+        nxt, last, _ = await _races(db, user.id, today)
+        race = nxt if nxt and (not last or (rp.race_day(nxt) - today).days <= 14) else (last or nxt)
+        if not race:
+            return "/activities"
+        k = (today - rp.race_day(race)).days
+        return f"/simulator/routes/{race.id}" + ("#prep" if -rp.PREP_BEFORE <= k <= rp.PREP_AFTER else "")
     return None
 
 
@@ -181,9 +188,15 @@ async def sante_feel(
     row.details = det
     await db.commit()
     if request.headers.get("HX-Request"):
-        page = await health_page(db, user.id, today=today, parts=("today",))
-        return templates.TemplateResponse(request, "partials/sante_today.html", context={
-            "page": page, "swap": True, "open_feel": row.value == 3 and (feel == 3 or toggle in FEEL_WHY)})
+        # the answer is saved: a failure to redraw reloads the page (never a 500 htmx would not swap, leaving the
+        # chip unpressed so that a second tap undoes the answer)
+        try:
+            page = await health_page(db, user.id, today=today, parts=("today",))
+            return templates.TemplateResponse(request, "partials/sante_today.html", context={
+                "page": page, "swap": True, "open_feel": row.value == 3 and (feel == 3 or toggle in FEEL_WHY)})
+        except Exception:
+            logger.exception("Santé › check-in redraw failed for user %d", user.id)
+            return HTMLResponse("", headers={"HX-Refresh": "true"})
     return RedirectResponse("/sante", status_code=303)
 
 

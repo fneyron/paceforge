@@ -23,9 +23,12 @@ heuristic, never shown as a finding):
   before sleep onset (Stutz 2019) or a hard evening session (Myllymäki 2012;
   the 17:00 start that defines « evening » is H), sleeping at altitude
   (Latshang 2013; inferred from the day's highest point ≥ 1 600 m, H), a time
-  zone change (Janse van Rensburg 2021; the night it shows and the next 2, H),
-  the « alcool hier » chip (Pietilä 2018), J-7 → J+7 around a race (H), and
-  the nights of an illness episode (H).
+  zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
+  change at home is none; the night it shows and the next 2, H), the « alcool
+  hier » chip (Pietilä 2018), J-7 → J+7 around a race (a Route or a session
+  marked as a race, H), and the nights of an illness episode (H): « malade »
+  only for the athlete's own chip, « FC de nuit haute » for an alert episode
+  (heart rate alone is never a diagnosis: evidence row 3).
 - COROS nightly HR on a day with a nap stays out of the HR band, the 7-night
   mean and the illness alert until it is shown that COROS leaves the nap out
   of its « Sleep HR » line (docs/sante-v3-data-notes.md).
@@ -34,15 +37,18 @@ heuristic, never shown as a finding):
   HRV: exp(mean ln ± 0.5 SD), SD floored at 0.05 (the SWC convention of
   HRV-guided training); 24-h sleep: median ± 30 min; respiration: median.
 - 7-night means need ≥ 3 nights in the last 7 (Plews 2014; Lau 2022).
-- Illness alert (H): the HR band, then 2 nights in a row each ≥ median +
-  max(2 robust SD, 5 bpm) (Altini & Plews 2021; Quer 2021: specific, not
-  sensitive). Context-tagged nights and the nights after a race never fire it;
-  race week does (J-7 → J-1). Respiration ≥ median + 2/min only backs it up.
+- Illness alert (H): the HR band of the watch that measured both nights, then
+  2 nights in a row each ≥ median + max(2 robust SD, 5 bpm) (Altini & Plews
+  2021; Quer 2021: specific, not sensitive). Context-tagged nights and the
+  nights after a race never fire it; race week does (J-7 → J-1). Respiration
+  ≥ median + 2/min only backs it up.
 - « Reprise » (H, after Schwellnus 2022; Snyders 2022; Radin 2021): opened by
   the « malade » chip or the alert, closed when there is no « malade » on the
-  last 2 days, the first easy run since is within 3 bpm of the athlete's usual
-  (when measurable) and nightly HR is back in the band or falling; still open
-  after 14 days → « vois un médecin ».
+  last 2 days, the latest easy run since is at most 3 bpm over the athlete's
+  usual (when measurable) and nightly HR is back in the band (else under the
+  median + 3 bpm of the 14 nights before, H) or falling; still high or still
+  « malade » after 14 days → « vois un médecin ». A run not measured yet keeps
+  intensity off, never sends to a doctor.
 """
 import math
 import statistics
@@ -76,7 +82,7 @@ LATE_SESSION_GAP = timedelta(hours=1)  # Stutz 2019
 EVENING = time(17, 0)  # (H) a hard session starting after 17:00 is an « evening » one
 VIGOROUS_HRR = 0.6  # (H) average HR ≥ 60 % of the heart-rate reserve
 ALTITUDE_M = 1600  # (H) Latshang 2013 studied 1 630–2 590 m
-TZ_CHANGE_MIN = 60  # (H)
+TZ_CHANGE_MIN = 60  # (H) a step of MORE than this: a 1-h clock change (DST) at home is no time zone change
 TZ_NIGHTS = 3  # the night the change shows and the next 2 (H)
 TZ_LOOKBACK = 10  # days (H)
 RACE_WINDOW = 7  # J-7 → J+7 (H)
@@ -86,15 +92,18 @@ ILL_MAX = 14  # days an alert episode can run (H)
 REPRISE_LOOKBACK = 28  # days (H)
 REPRISE_EASY_BPM = 3  # (H)
 REPRISE_DOCTOR = 14  # days (H)
+REPRISE_PRE_DAYS = 14  # (H) without a band, the nights before the episode are the reference
 AXIS = (time(20, 0), time(12, 0))  # the timing chart's local axis
 # whether COROS's « Sleep HR » line leaves a nap out: not shown (no HR curve), see the data notes
 COROS_SLEEP_HR_NAP_VERIFIED = False
 
 # context words, as the readouts print them (glyph ◇)
+# « ill » is the athlete's own « malade » chip; « alert » an alert episode, never worded as a diagnosis (row 3)
 TAG_WORDS = {"long": "après une longue séance", "late": "séance intense le soir", "altitude": "en altitude",
              "tz": "fuseau changé", "alcohol": "alcool", "race": "autour de la course", "ill": "malade",
-             "late_nap": "après sieste tardive"}
-EXCLUDING = ("long", "late", "altitude", "tz", "alcohol", "race", "ill")
+             "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
+EXCLUDING = ("long", "late", "altitude", "tz", "alcohol", "race", "ill", "alert")
+EPISODE = ("ill", "alert")  # the nights of an illness episode
 CONTEXT = ("long", "late", "altitude", "tz", "alcohol")  # never fire the alert
 
 
@@ -168,8 +177,8 @@ class Night:
 
     def usable(self, metric: str, ignore=()) -> bool:
         """Can enter the band and the 7-night means for `metric` (`ignore`: tags
-        that do not exclude here, e.g. « ill » for the tile shown during an
-        illness episode)."""
+        that do not exclude here, e.g. EPISODE for the tile that shows an
+        illness episode while R2/R3 is the rung, never for what decides)."""
         if self.value(metric) is None or (self.tags - set(ignore)) & set(EXCLUDING):
             return False
         if metric == "hr" and self.hr_nap_day and self.hr_method == "coros_sleep_summary":
@@ -309,7 +318,7 @@ def _tag_timezones(nights: dict[date, Night], sessions) -> None:
     days = sorted(track)
     for i, d in enumerate(days):
         prev = next((days[j] for j in range(i - 1, -1, -1) if (d - days[j]).days <= TZ_LOOKBACK), None)
-        if prev is not None and abs(track[d] - track[prev]) >= TZ_CHANGE_MIN:
+        if prev is not None and abs(track[d] - track[prev]) > TZ_CHANGE_MIN:
             for k in range(TZ_NIGHTS):
                 if d + timedelta(days=k) in nights:
                     nights[d + timedelta(days=k)].tags.add("tz")
@@ -326,12 +335,13 @@ def _tag_late_naps(nights: dict[date, Night]) -> None:
             n.tags.add("late_nap")
 
 
-def illness_days(feel: dict[date, dict], alert_days=()) -> set[date]:
-    """The days of an illness episode (H): « malade » days within 3 days of each
-    other make one episode, which runs 2 days after the last; plus the days an
-    alert episode ran (from alert_episodes)."""
+def illness_days(feel: dict[date, dict]) -> set[date]:
+    """The days of a « malade » episode (H): « malade » days within 3 days of
+    each other make one episode, which runs 2 days after the last. (The nights
+    of an alert episode are alert_episodes', tagged « alert »: heart rate alone
+    never says « malade ».)"""
     sick = sorted(d for d, f in (feel or {}).items() if f and "sick" in (f.get("why") or []))
-    out = set(alert_days)
+    out = set()
     i = 0
     while i < len(sick):
         j = i
@@ -380,6 +390,12 @@ def band(nights: dict[date, Night], metric: str, until: date, source: str | None
     else:  # resp: no band drawn, only « + 2/min » backs the alert
         out.update(lo=None, hi=None, up=med + RESP_UP)
     return out
+
+
+def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | None:
+    """The watch the 7-night mean of `today` reads (the latest one that measured
+    `metric`): its value is judged against that watch's band only (Dial 2025)."""
+    return _latest_source(nights, metric, today)
 
 
 def band_count(nights: dict[date, Night], metric: str, until: date) -> int:
@@ -460,7 +476,8 @@ def nap_tip_hour(usual: dict) -> str:
 # ── illness alert and « Reprise » ───────────────────────────────────────────
 
 def alert_night(nights: dict[date, Night], races, d: date) -> bool:
-    """A night that may fire the alert: measured HR, no context tag, not after a race."""
+    """A night that may fire the alert: measured HR, no context tag, not after a
+    race (`races`: [(day, name)], Routes and sessions marked as races)."""
     n = nights.get(d)
     if not n or n.hr is None or n.tags & set(CONTEXT):
         return False
@@ -471,11 +488,18 @@ def alert_night(nights: dict[date, Night], races, d: date) -> bool:
 
 def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:
     """The two nights in a row (yesterday's and today's) each ≥ the HR band's
-    alert line, against the band of the 60 days before them: {days, values,
-    threshold, resp_up}; None otherwise (no band, a night missing or tagged)."""
+    alert line, against the band of the 60 days before them on the watch that
+    measured both (one band per watch: a new watch has none for 14 nights, so
+    no alert): {days, values, threshold, resp_up, source}; None otherwise (no
+    band, a night missing or tagged, two watches)."""
     d2, d1 = today, today - timedelta(days=1)
-    b = band(nights, "hr", d1)
-    if not b or not all(alert_night(nights, races, d) for d in (d1, d2)):
+    if not all(alert_night(nights, races, d) for d in (d1, d2)):
+        return None
+    src = nights[d2].hr_source
+    if nights[d1].hr_source != src:
+        return None
+    b = band(nights, "hr", d1, source=src)
+    if not b:
         return None
     vals = [nights[d1].hr, nights[d2].hr]
     if not all(v >= b["alert"] for v in vals):
@@ -483,7 +507,7 @@ def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | No
     rb = band(nights, "resp", d1)
     resp = [nights[d].resp for d in (d1, d2)]
     resp_up = (all(r is not None and r >= rb["up"] for r in resp)) if rb else None
-    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "resp_up": resp_up}
+    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "resp_up": resp_up, "source": src}
 
 
 def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int = BAND_DAYS + 7) -> set[date]:
@@ -495,7 +519,7 @@ def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int =
     while d <= today:
         a = illness_alert(nights, d, races)
         if a and a["days"][0] not in out:
-            b = band(nights, "hr", a["days"][0])
+            b = band(nights, "hr", a["days"][0], source=a["source"])
             k = a["days"][0]
             while k <= min(today, a["days"][0] + timedelta(days=ILL_MAX)):
                 n = nights.get(k)
@@ -507,12 +531,28 @@ def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int =
     return out
 
 
+def _pre_top(nights: dict[date, Night], start: date, source: str | None) -> float | None:
+    """Without a band: the median nightly HR of the 14 nights before the episode
+    (same watch, none of an episode) + 3 bpm (H); None without such a night."""
+    pre = [n.hr for d, n in nights.items() if start - timedelta(days=REPRISE_PRE_DAYS) <= d < start
+           and n.hr is not None and n.hr_source == source and not n.tags & set(EPISODE)]
+    return statistics.median(pre) + HR_BAND_BPM if pre else None
+
+
 def reprise(nights: dict[date, Night], feel: dict[date, dict], today: date, races=(),
             easy: list[tuple[date, float]] = ()) -> dict | None:
     """The « Reprise » state (see the module docstring): {since, days, cause,
     gates: {no_sick, easy_hr, night_hr}, see_doctor}; None when no episode
     opened in the last 28 days or it has closed. `easy`: [(day, bpm against the
-    athlete's usual at that pace)] of the flat easy runs (sante_training)."""
+    athlete's usual at that pace)] of the flat easy runs (sante_training).
+    - easy_hr: the LATEST easy run since the episode is at most 3 bpm over the
+      usual (a lower one never holds); no run yet keeps it shut (unmeasured);
+    - night_hr: the last night back under the band's top (without a band: the
+      median + 3 bpm of the 14 nights before, H), or falling; nothing to
+      compare with, or no night since: open (never held for it);
+    - see_doctor (H): after 14 days, only while still « malade », nightly HR
+      still high or the latest easy run still high (Schwellnus 2022: « still
+      high or symptomatic »), never for a run not measured yet."""
     lo = today - timedelta(days=REPRISE_LOOKBACK)
     sick = {d for d, f in (feel or {}).items() if lo <= d <= today and f and "sick" in (f.get("why") or [])}
     alerts = {d for d in (today - timedelta(days=k) for k in range(REPRISE_LOOKBACK + 1))
@@ -527,20 +567,25 @@ def reprise(nights: dict[date, Night], feel: dict[date, dict], today: date, race
     cause = "malade" if start in sick else "alert"
     no_sick = not ({today, today - timedelta(days=1)} & sick) and today not in alerts
     before = [v for d, v in easy if start - timedelta(days=60) <= d < start]
-    after = sorted((d, v) for d, v in easy if d > start)
-    easy_ok = True if not before else bool(after) and abs(after[0][1]) <= REPRISE_EASY_BPM
-    b = band(nights, "hr", start)
-    since = [(d, n.hr) for d, n in sorted(nights.items()) if d > start and n.hr is not None]
-    if not since:
-        night_ok = True  # not measured: never held for not wearing the watch
+    after = sorted((d, v) for d, v in easy if start < d <= today)
+    easy_high = bool(before and after and after[-1][1] > REPRISE_EASY_BPM)
+    easy_ok = True if not before else bool(after) and not easy_high
+    since = [(d, n.hr) for d, n in sorted(nights.items()) if start < d <= today and n.hr is not None]
+    src = nights[since[-1][0]].hr_source if since else None
+    since = [(d, v) for d, v in since if nights[d].hr_source == src]
+    b = band(nights, "hr", start, source=src) if src else None
+    top = b["hi"] if b else _pre_top(nights, start, src) if src else None
+    if not since or top is None:
+        night_ok = True  # not measured, or nothing to compare with: never held for it
     else:
         last = since[-1][1]
-        night_ok = (b is not None and last <= b["hi"]) or (len(since) >= 2 and last < max(v for _, v in since))
+        night_ok = last <= top or (len(since) >= 2 and last < max(v for _, v in since))
     gates = {"no_sick": no_sick, "easy_hr": easy_ok, "night_hr": night_ok}
     if all(gates.values()):
         return None
     days = (today - start).days
-    return {"since": start, "days": days, "cause": cause, "gates": gates, "see_doctor": days >= REPRISE_DOCTOR}
+    doctor = days >= REPRISE_DOCTOR and (not no_sick or not night_ok or easy_high)
+    return {"since": start, "days": days, "cause": cause, "gates": gates, "see_doctor": doctor}
 
 
 # ── reading ─────────────────────────────────────────────────────────────────
@@ -569,19 +614,26 @@ def rest_hr(nights: dict[date, Night], today: date) -> float:
     return statistics.median(vals) if len(vals) >= 3 else 50.0
 
 
+def tag_alerts(nights: dict[date, Night], today: date, races=()) -> None:
+    """« FC de nuit haute » on the nights of the alert episodes (alert_episodes),
+    in place: out of the band and the means like « malade », never worded as it."""
+    for d in alert_episodes(nights, today, races):
+        if d in nights:
+            nights[d].tags.add("alert")
+
+
 async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 400, sessions=(),
                       races=(), rest: float | None = None,
                       peak: float = 190.0) -> tuple[dict[date, Night], dict[date, dict]]:
     """(nights, check-ins) of the last `days` days, tagged: context, race
-    window, illness (« malade » chip, then the alert episodes found with the
-    band built without them). `rest` None: from the nights (rest_hr)."""
+    window (`races`: Routes and sessions marked as races), « malade » (the
+    chip), then « FC de nuit haute » (the alert episodes). `rest` None: from
+    the nights (rest_hr)."""
     rows = await read_rows(db, user_id, today - timedelta(days=days), today)
     feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = build_nights(rows, today)
     if rest is None:
         rest = rest_hr(nights, today)
     tag_nights(nights, sessions, races, feel, rest, peak)
-    for d in alert_episodes(nights, today, races):
-        if d in nights:
-            nights[d].tags.add("ill")
+    tag_alerts(nights, today, races)
     return nights, feel

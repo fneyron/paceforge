@@ -84,11 +84,43 @@ def test_easy_model_moves_hr_to_the_reference_pace_and_watches_the_2_latest_runs
     high = base + [run(9, 130 + 4 * 0.8 + 4, 56), run(3, 130 + 4 * 0.8 + 5, 56)]
     w = st.easy_watch(st.easy_model(high, T, 185), T)
     assert w["flag"] and [d for d, _ in w["deltas"]] == [T - timedelta(days=9), T - timedelta(days=3)]
-    assert w["value"] == pytest.approx(4.5, abs=0.3)
+    # each run against the cool runs of the 14 days before it (H; Nuuttila 2022): the 2nd one's normal holds the 1st
+    assert [v for _, v in w["deltas"]] == [pytest.approx(4, abs=0.3), pytest.approx(3, abs=0.3)]
+    assert w["value"] == pytest.approx(3.5, abs=0.3)
     hot = base + [run(9, 150, 56, temp=30), run(3, 150, 56, temp=30)]
     assert st.easy_watch(st.easy_model(hot, T, 185), T) is None  # hot runs: out of the normal and the watch
     assert len(st.easy_deltas(st.easy_model(high, T, 185))) >= len(base) - 3
-    assert st.easy_model(base[:7], T, 185) is None and st.easy_deltas(None) == [] and st.easy_watch(None, T) is None
+    assert st.easy_model(base[:5], T, 185) is None and st.easy_deltas(None) == [] and st.easy_watch(None, T) is None
+    assert st.MIN_FIT_RUNS == 6 and (st.FLAG_REF_DAYS, st.FLAG_REF_MIN) == (14, 2) and (st.LINE_DAYS, st.LINE_RUNS) \
+        == (42, 6)  # (H)
+
+
+def test_easy_flag_reads_the_14_days_before_each_run_not_the_28():
+    """F10: 4 cool runs 28–15 days ago at 133 bpm, then 137 bpm from 14 days
+    ago on: against the 28-day median (133) both latest runs read +4; against
+    the 14 days before each (137) they read +0: no « à surveiller » (the
+    finding's scenario: 2 runs 14–3 days ago, then the 2 latest)."""
+    def run(k, hr, i=0):
+        return S(k, km=10, minutes=55, hr=hr, i=i, id=8000 + k * 10 + i)
+    older = [run(k, 133) for k in range(60, 110, 7)]  # enough for the slope (all at one pace)
+    ss = older + [run(k, 133) for k in (27, 23, 19, 16)] + [run(k, 137) for k in (13, 9, 2, 1)]
+    m = st.easy_model(ss, T, 185)
+    assert m["centre"](T - timedelta(days=1)) == 133  # the drawn band: the 28 days before
+    assert [round(v) for _, v in st.easy_deltas(m)[-2:]] == [4, 4]  # what the 28-day median would have flagged
+    w = st.easy_watch(m, T)
+    assert not w["flag"] and [round(v) for _, v in w["deltas"]] == [0, 0]
+
+
+def test_the_easy_pace_line_needs_6_runs_in_6_weeks():
+    """F10: 8 cool runs over a year, 1 in the last 6 weeks: no line, no flag;
+    6 within 6 weeks: the line (evidence row 16)."""
+    def run(k, hr=140, i=0):
+        return S(k, km=10, minutes=55, hr=hr, i=i, id=9000 + k * 10 + i)
+    spread = [run(k) for k in (5, 60, 100, 150, 200, 250, 300, 350)]
+    m = st.easy_model(spread, T, 185)
+    assert m is not None and not st.line_ok(m, T) and st.easy_watch(m, T) is None
+    recent = [run(k) for k in (2, 9, 16, 23, 30, 37)]
+    assert st.line_ok(st.easy_model(recent, T, 185), T)
 
 
 async def test_load_sessions_reads_strava_fields_and_drops_duplicates(db_session: AsyncSession, test_user: User):

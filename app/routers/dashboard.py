@@ -18,6 +18,8 @@ from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
 from app.services.training_view import training_top
+from app.services.viz import dplus as dplus_fmt
+from app.services.viz import hm
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -165,8 +167,8 @@ def _sport_filter(query, sport: str | None):
 
 
 def _fmt_hours(seconds: float) -> str:
-    h, m = divmod(int(seconds) // 60, 60)
-    return f"{h}h{m:02d}" if h else f"{m} min"
+    """The house duration (viz.hm, rounded to the minute): Activités › Semaines prints the same week alike."""
+    return hm(seconds / 60)
 
 
 def _week_label(monday: datetime, this_monday: datetime) -> str:
@@ -237,6 +239,7 @@ async def _week_groups(
     for key in sorted(groups, reverse=True):
         g = groups[key]
         g["hours_formatted"] = _fmt_hours(g["seconds"])
+        g["dplus_formatted"] = dplus_fmt(g["dplus"]) if round(g["dplus"]) >= 1 else None
         g["label"] = _week_label(g["monday"], this_monday)
         weeks.append(g)
 

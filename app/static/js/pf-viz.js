@@ -7,14 +7,18 @@
      svg.pf-viz-svg ....... fixed viewBox; optional g.pf-viz-cross (a line + one circle per y series, at x=0)
      [data-i="k"] ......... per-mark elements: the selected one gets .is-sel
      [data-r] ............. readout slots, filled in DOM order from D.r[k]
-     [data-step="±1"] ..... the 44×44 ‹ › buttons
-     [data-r-href] ........ a link following D.h[k] (hidden when null)
+     [data-step="±1"] ..... the 44×44 ‹ › buttons (aria-disabled at either end, never disabled: they keep focus)
+     [data-r-href] ........ a link following D.h[k]: its row is always there (visibility only, so the plot never
+                            moves under the finger); hidden, aria-hidden and out of the tab order when null
      input.pf-viz-range ... visually hidden native range: arrows ±1, PageUp/PageDown ±7, Home/End, Esc back
                             to the default; aria-valuetext = D.a[k]
      [data-live] .......... polite live region: speaks once after a pointer scrub or a step, only in the
                             figure being touched
      script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?, back?}
    Figures of one data-viz-group follow each other by date (silently); a figure without that date shows « — ».
+   The readout's height is reserved for its tallest line (measured once the figure is laid out, again when
+   its width changes), so selecting never moves the plot. A touch selects on a tap or a horizontal drag only:
+   a vertical swipe scrolls the page and leaves the selection as it was.
    Range toggles: [data-viz-ranges] [data-range] show the matching [data-range-panel] in the closest
    [data-viz-scope] and write ?r= (history.replaceState). Lazy panels (hx-get, hx-trigger="click once")
    are picked up on htmx:afterSettle. */
@@ -42,7 +46,8 @@
         slots = fig.querySelectorAll("[data-r]"), marks = svg.querySelectorAll("[data-i]"),
         steps = fig.querySelectorAll("[data-step]"), hrefEl = fig.querySelector("[data-r-href]"),
         group = fig.getAttribute("data-viz-group"), dflt = D.sel == null ? D.x.length - 1 : D.sel,
-        cur = -1, pending = null, liveT = null, drag = false,
+        cur = -1, pending = null, liveT = null, drag = false, touch = null,
+        readBox = fig.querySelector(".pf-viz-read"),
         // D.rest: a resting readout (« semaine type : 7h40 ») shown until a touch; it sits one step
         // after the last point (index D.x.length): › from the last point and Esc come back to it
         rest = D.rest || null, END = D.x.length, top = END - 1 + (rest ? 1 : 0),
@@ -75,11 +80,50 @@
       if (none) none.toggleAttribute("hidden", shown);
     }
 
-    function stepState() {
+    function stepState() {   // aria-disabled, never disabled: a focused button that disables itself drops focus
       for (var s = 0; s < steps.length; s++) {
         var dir = +steps[s].getAttribute("data-step");
-        steps[s].disabled = cur < 0 ? false : (dir < 0 ? cur <= 0 : cur >= top);
+        var off = cur < 0 ? false : (dir < 0 ? cur <= 0 : cur >= top);
+        steps[s].setAttribute("aria-disabled", off ? "true" : "false");
       }
+    }
+
+    function link(h) {   // the row stays; only its content shows or not
+      if (!hrefEl) return;
+      hrefEl.classList.toggle("is-off", !h);
+      if (h) {
+        hrefEl.href = h.href || h; hrefEl.textContent = h.label || "Voir ›";
+        hrefEl.removeAttribute("aria-hidden"); hrefEl.removeAttribute("tabindex");
+      } else {
+        hrefEl.setAttribute("aria-hidden", "true"); hrefEl.setAttribute("tabindex", "-1");
+      }
+    }
+
+    // the readout's tallest line, so that no selection moves the plot: the longest readouts are measured
+    // (a dozen at most), with the resting one and « — »; again when the figure's width changes
+    var lastW = -1;
+    function reserve() {
+      if (!readBox || !slots.length) return;
+      var w = readBox.clientWidth;
+      if (!w || w === lastW) return;
+      lastW = w;
+      var rows = (D.r || []).map(function (r, i) { return { r: r || [], i: i }; });
+      function len(r, k) { return ((r[k] || "") + "").length; }
+      var cand = rows.slice().sort(function (a, b) { return (len(b.r, 1) + len(b.r, 2)) - (len(a.r, 1) + len(a.r, 2)); })
+        .slice(0, 12).concat(rows.slice().sort(function (a, b) { return len(b.r, 0) - len(a.r, 0); }).slice(0, 4))
+        .map(function (o) { return o.r; });
+      if (rest) cand.push(rest);
+      cand.push(["", "—", ""]);
+      var keep = [], k;
+      for (k = 0; k < slots.length; k++) keep.push(slots[k].textContent);
+      readBox.style.minHeight = "";
+      var max = 0;
+      for (var c = 0; c < cand.length; c++) {
+        for (k = 0; k < slots.length; k++) slots[k].textContent = cand[c][k] || "";
+        max = Math.max(max, readBox.offsetHeight);
+      }
+      for (k = 0; k < slots.length; k++) slots[k].textContent = keep[k];
+      if (max) readBox.style.minHeight = max + "px";
     }
 
     // opts.silent: following another figure of the group (no event, no speech)
@@ -103,11 +147,7 @@
       var r = (D.r && D.r[i]) || [];
       for (var k = 0; k < slots.length; k++) slots[k].textContent = r[k] || "";
       if (input) { input.value = i; input.setAttribute("aria-valuetext", D.a ? D.a[i] : r.join(" ")); }
-      if (hrefEl) {
-        var h = D.h && D.h[i];
-        hrefEl.toggleAttribute("hidden", !h);
-        if (h) { hrefEl.href = h.href || h; hrefEl.textContent = h.label || "Voir ›"; }
-      }
+      link(D.h && D.h[i]);
       nights(i);
       stepState();
       if (!opts.silent && group && D.d) {
@@ -121,7 +161,7 @@
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
       if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
-      if (hrefEl) hrefEl.toggleAttribute("hidden", true);
+      link(null);
       nights(-1);
       stepState();
     }
@@ -131,7 +171,7 @@
       cur = -1; pending = date;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = k === 1 ? "—" : "";
-      if (hrefEl) hrefEl.toggleAttribute("hidden", true);
+      link(null);
       nights(-1);
       stepState();
     }
@@ -158,21 +198,45 @@
     }
 
     // a tap selects (the single-pointer alternative, WCAG 2.5.7); a horizontal drag scrubs;
-    // touch-action: pan-y leaves vertical page scroll to the browser (which then sends pointercancel)
+    // touch-action: pan-y leaves vertical page scroll to the browser (which then sends pointercancel).
+    // A touch selects nothing until it is a tap (lifted within 8 px) or a scrub (8 px sideways first):
+    // a swipe that scrolls the page never changes the selection. Mouse and pen select at once.
+    var SLOP = 8;
     svg.addEventListener("pointerdown", function (e) {
       if (e.button > 0) return;
+      if (e.pointerType === "touch") { touch = { x: e.clientX, y: e.clientY, scrub: false }; return; }
       drag = true;
       try { svg.setPointerCapture(e.pointerId); } catch (_) {}
       select(indexAt(e));
     });
     svg.addEventListener("pointermove", function (e) {
+      if (touch) {
+        if (!touch.scrub) {
+          var dx = Math.abs(e.clientX - touch.x), dy = Math.abs(e.clientY - touch.y);
+          if (dx <= SLOP || dx <= dy) return;
+          touch.scrub = true;
+          try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+        select(indexAt(e));
+        return;
+      }
       if (drag || e.pointerType === "mouse") select(indexAt(e));   // a mouse reads by hovering
     });
-    svg.addEventListener("pointerup", function () { if (drag) { drag = false; announce(); } });
-    svg.addEventListener("pointercancel", function () { drag = false; });
+    svg.addEventListener("pointerup", function (e) {
+      if (touch) {
+        var t = touch;
+        touch = null;
+        if (!t.scrub && Math.abs(e.clientX - t.x) <= SLOP && Math.abs(e.clientY - t.y) <= SLOP) select(indexAt(e));
+        announce();
+        return;
+      }
+      if (drag) { drag = false; announce(); }
+    });
+    svg.addEventListener("pointercancel", function () { touch = null; drag = false; });
 
     for (var s = 0; s < steps.length; s++) {
       steps[s].addEventListener("click", function () {
+        if (this.getAttribute("aria-disabled") === "true") return;
         var dir = +this.getAttribute("data-step");
         select(from(dir));
         announce();
@@ -203,13 +267,20 @@
     }
 
     select(dflt, { silent: true });
+    reserve();
+    if ("ResizeObserver" in window) {   // shown later, or a new width (next frame: never inside the observer's loop)
+      new ResizeObserver(function () { requestAnimationFrame(reserve); }).observe(fig);
+    } else window.addEventListener("resize", reserve);
+    // the marks draw once, when they scroll into view; a figure already on screen when this runs was painted
+    // whole before the script: it stays as it is (never collapsed and drawn again)
+    var r0 = fig.getBoundingClientRect(), seen = r0.height > 0 && r0.bottom > 0 && r0.top < window.innerHeight;
     fig.classList.add("pf-viz-on");
-    if (motion && "IntersectionObserver" in window) {   // the marks draw once, when they scroll into view
+    if (motion && !seen && "IntersectionObserver" in window) {
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (en) { if (en.isIntersecting) { fig.classList.add("pf-viz-in"); io.disconnect(); } });
-      }, { threshold: 0.3 });
+      }, { threshold: 0 });
       io.observe(fig);
-    } else fig.classList.add("pf-viz-in");
+    } else fig.classList.add("pf-viz-in", "pf-viz-still");
   }
 
   function ranges(box) {

@@ -4,13 +4,17 @@ moved from Santé › Course (v3). partials/race_prep.html draws it.
 Shown from J-42 to J+14 (H), on the race page only (simulator_route.html).
 Before the race:
 - Affûtage: Activités' weeks S-6 → S0 (UTC Mondays, duplicates out), hours
-  done as bars, the 2 taper weeks against the −41 to −60 % band of the base
-  (Bosquet 2007: about 2 weeks, volume −41–60 %, intensity and frequency
-  kept; Wang 2023: tapers of ≤ 21 days all worked, best at 8–14 days). No
-  event longer than 40 km was studied: for an ultra it is an extrapolation,
-  said in the figure's summary. Base = mean hours of the 4 complete weeks
-  before the taper (before this week while the taper is still ahead). S0
-  counts the days before the race only.
+  done as bars, the taper J-14 → J-1 against the −41 to −60 % band of the
+  base (Bosquet 2007: about 2 weeks, volume −41–60 %, intensity and frequency
+  kept; Wang 2023: tapers of ≤ 21 days all worked, best at 8–14 days). The
+  14 days fall on 2 or 3 calendar weeks: a week's target is the base at its
+  usual rate for its days before J-14, plus the band for its days inside
+  J-14 → J-1 (each day 1/7 of the week; the race day and after are not
+  counted), so a race on any weekday compares like with like. No event longer than 40 km was
+  studied: for an ultra it is an extrapolation, said in the figure's summary.
+  Base = mean hours of the 4 complete weeks before the taper's first week
+  (before this week while the taper is still ahead). S0 counts the days
+  before the race only.
 - Tes nuits, J-14 → J-1: 24-h sleep (main night solid, naps stacked and
   hatched), against your usual + 30 to 60 min (H, below the doses of Mah 2011
   and Arnal 2016; Cunha 2023) drawn only when a usual exists (≥ 14 untagged
@@ -44,6 +48,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.route import Route
 from app.services import nights as nt
@@ -58,7 +63,7 @@ PREP_BEFORE, PREP_AFTER = 42, 14  # the section shows J-42 → J+14 (H)
 NIGHT_DAYS = 14  # J-14 → J-1
 EXTEND = (30, 60)  # usual + 30–60 min a day of 24-h sleep (H)
 TAPER_SHARE = (0.40, 0.59)  # the taper weeks at 40–59 % of the base: volume −41 to −60 % (Bosquet 2007)
-TAPER_WEEKS = 2  # S-1 and S0: about 2 weeks (Bosquet 2007; Wang 2023)
+TAPER_DAYS = 14  # J-14 → J-1: about 2 weeks (Bosquet 2007; Wang 2023)
 CHART_WEEKS = 7  # S-6 → S0
 CARBS_DAYS = 10  # the race-week carbohydrates from J-10
 HOT_DAYS = 14  # the hot-race line J-14 → J-1
@@ -78,16 +83,36 @@ def race_day(route) -> date | None:
         return None
 
 
+# what the readers of load_races use: never the course, plan or weather JSON (≈ 1 MB per 100-mile course);
+# a page that needs those has its own route fully loaded (the identity map keeps it whole)
+RACE_COLUMNS = (Route.id, Route.user_id, Route.name, Route.race_date, Route.start_hour, Route.start_minute,
+                Route.sport_type, Route.total_distance_km, Route.total_elevation_gain, Route.target_time_s,
+                Route.result_json)
+
+
 async def load_races(db: AsyncSession, user_id: int, today: date) -> list[Route]:
     """The dated races of the last 12 months and to come, by date (sports
-    hidden right now left out)."""
+    hidden right now left out), their light columns only (RACE_COLUMNS)."""
     from app.features import hidden_sports
 
-    q = select(Route).where(Route.user_id == user_id, Route.race_date.is_not(None),
-                            Route.race_date >= (today - timedelta(days=365)).isoformat())
+    q = select(Route).options(load_only(*RACE_COLUMNS)).where(
+        Route.user_id == user_id, Route.race_date.is_not(None),
+        Route.race_date >= (today - timedelta(days=365)).isoformat())
     if hidden_sports():
         q = q.where(Route.sport_type.notin_(hidden_sports()))
     return [r for r in (await db.execute(q.order_by(Route.race_date))).scalars().all() if race_day(r)]
+
+
+def all_races(routes, sessions=()) -> list[tuple[date, str]]:
+    """[(day, name)] by day: the dated Routes, and the sessions marked as a race
+    (Strava workout_type 1, as Activités and Santé's « après la course » read
+    them) on a day no Route holds: one per day. What the J-7 → J+7 window and
+    the « not after a race » rule of the nights read."""
+    out = {race_day(r): r.name for r in routes if race_day(r)}
+    for s in sorted(sessions, key=lambda s: s.start):
+        if s.workout_type == 1 and s.day not in out:
+            out[s.day] = s.name or "course"
+    return sorted(out.items())
 
 
 def sport(route) -> str:
@@ -158,8 +183,14 @@ def drive_line(route, sessions, today: date) -> str | None:
 
 
 def taper_weeks(rd: date) -> tuple[date, date]:
-    """(the Monday of S-1, the race day): the taper Activités' A1 line names."""
-    return rd - timedelta(days=rd.weekday() + 7 * (TAPER_WEEKS - 1)), rd
+    """(J-14, the race day): the taper Activités' A1 line names."""
+    return rd - timedelta(days=TAPER_DAYS), rd
+
+
+def taper_days(m: date, rd: date) -> tuple[int, int]:
+    """(days before J-14, days in J-14 → J-1) of the week of Monday `m`, the race day and after left out."""
+    lo, nxt = rd - timedelta(days=TAPER_DAYS), m + timedelta(days=7)
+    return max(0, (min(nxt, lo) - m).days), max(0, (min(nxt, rd) - max(m, lo)).days)
 
 
 def recovery_days(route, sessions=()) -> int:
@@ -234,15 +265,18 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
     for s in sessions:
         if s.day < rd:  # S0 without the race (nor anything after it)
             by[st.monday(s.start).date()].append(s)
-    taper_from = mondays[-TAPER_WEEKS]
-    end = min(taper_from, this_monday)
+    taper_from = rd - timedelta(days=TAPER_DAYS)
+    share = {m: taper_days(m, rd) for m in mondays}  # (days before J-14, days in J-14 → J-1)
+    end = min(next(m for m in mondays if share[m][1]), this_monday)
     four = [sum(s.minutes for s in by.get(end - timedelta(weeks=k), [])
                 if s.workout_type != 1 and s.day not in race_days) for k in range(1, 5)]
     base = statistics.fmean(four) if any(four) else None
     done = [sum(s.minutes for s in by.get(m, [])) if m <= this_monday else None for m in mondays]
     if base is None and not any(done):
         return None
-    target = {m: (base * TAPER_SHARE[0], base * TAPER_SHARE[1]) for m in mondays[-TAPER_WEEKS:]} if base else {}
+    # a taper week's target: its days before J-14 at the base rate, its taper days in the band (1/7 a day)
+    target = {m: (base * (pre + TAPER_SHARE[0] * k) / 7, base * (pre + TAPER_SHARE[1] * k) / 7)
+              for m, (pre, k) in share.items() if k} if base else {}
 
     n = len(mondays)
     xs = viz.slot_x(n)
@@ -271,7 +305,7 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
         if k == 0:
             ctx.append("sans la course")
         if t:
-            ctx.append(f"cible {range_hm(*t)}")
+            ctx.append(f"cible {range_hm(*t)}" + (f" · {share[m][1]} jours d'affûtage" if share[m][1] < 7 else ""))
         elif m in base_weeks:
             ctx.append("dans ta base")
         if big:
@@ -283,6 +317,7 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
         spoken += "à venir" if v is None else hm_long(v) if v else "rien"
         if t:
             spoken += f", cible {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)}"
+            spoken += f", dont {share[m][1]} jours d'affûtage" if share[m][1] < 7 else ""
         a.append(spoken + ("" if not big else f", une sortie de {hm_long(big.minutes)}"))
         h.append({"href": activities_href(m, this_monday), "label": "Voir dans Activités ›"} if ss else None)
     sel = next((i for i, m in enumerate(mondays) if m == this_monday), n - 1 if this_monday > mondays[-1] else 0)
@@ -295,13 +330,14 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
            **viz._data(xs, [], mondays, r, a, h=h, sel=sel)}
     out["sentence"] = fr(taper_sentence(sessions, rd, today, now, target, taper_from))
     # resting readout: this week's hours are Activités' (its week heading prints them)
-    t = target.get(mondays[-1])
     back = sel  # this week (the latest one lived)
-    if base and t:
-        out = viz.rest(out, [f"S{NBH}6 → S0", f"base : {hm(round(base / 5) * 5)} par semaine", f"cible S{NBH}1 et S0 : {range_hm(*t)}"],
-                       f"Affûtage, 7 semaines jusqu'à la course : ta base {hm_long(round(base / 5) * 5)} par semaine, cible des 2 "
-                       f"dernières semaines {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)}. "
-                       "Touche une semaine pour ses heures.", back=back)
+    if base:
+        t = (base * TAPER_SHARE[0], base * TAPER_SHARE[1])  # a full week of the taper
+        out = viz.rest(out, [f"S{NBH}6 → S0", f"base : {hm(round(base / 5) * 5)} par semaine",
+                             f"cible J{NBH}14 → J{NBH}1 : {range_hm(*t)} par semaine"],
+                       f"Affûtage, 7 semaines jusqu'à la course : ta base {hm_long(round(base / 5) * 5)} par semaine, cible "
+                       f"de J-14 à J-1 {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)} par semaine, au "
+                       "prorata des jours d'une semaine entamée. Touche une semaine pour ses heures.", back=back)
     else:
         out = viz.rest(out, [f"S{NBH}6 → S0", "heures par semaine", ""],
                        "Affûtage, 7 semaines jusqu'à la course, heures par semaine. Touche une semaine pour ses heures.",
@@ -490,9 +526,7 @@ async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, session
     nights = nt.build_nights(rows, today)
     rest = st.hr_rest({d: n.hr for d, n in nights.items() if n.hr}, {}, today)
     nt.tag_nights(nights, sessions, races, feel, rest, st.hr_max(sessions, today))
-    for d in nt.alert_episodes(nights, today, races):
-        if d in nights:
-            nights[d].tags.add("ill")
+    nt.tag_alerts(nights, today, races)
     return nights
 
 
@@ -520,7 +554,7 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
            "heart": None, "drive": None}
     if k <= 0:
         out["title"] = "Jour J" if k == 0 else f"Affûtage · {j_label(k)}"
-        races = [(race_day(r), r.name) for r in await load_races(db, user.id, today)]
+        races = all_races(await load_races(db, user.id, today), sessions)
         out["taper"] = taper(sessions, route, rd, today, now, frozenset(d for d, _ in races))
         if -k <= NIGHT_DAYS or k == 0:
             nights = await _nights(db, user.id, today, rd - timedelta(days=NIGHT_DAYS + nt.BAND_DAYS + 1),
@@ -532,7 +566,7 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
             out["hot"] = fr("Course chaude : quelques séances à la chaleur sur 1 à 2 semaines t'y préparent.")
     else:
         out["title"] = f"Récupération · {j_label(k)}"
-        races = [(race_day(r), r.name) for r in await load_races(db, user.id, today)]
+        races = all_races(await load_races(db, user.id, today), sessions)
         nights = await _nights(db, user.id, today, rd - timedelta(days=nt.RACE_WINDOW + nt.BAND_DAYS + 1),
                                sessions, races)
         out["heart"] = recovery(nights, rd, today)

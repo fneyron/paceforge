@@ -6,7 +6,7 @@
         {# one counted activity: its row already says it all #}
         {% if wk.count > 1 %}<p class="pf-label tabular-nums">
             <b class="text-gray-700">{{ '%.0f'|format(wk.km) }} km</b>
-            {% if wk.dplus %}· +{{ wk.dplus|int }} m{% endif %}
+            {% if wk.dplus_formatted %}· {{ wk.dplus_formatted }}{% endif %}
             · {{ wk.hours_formatted }}
         </p>{% endif %}
     </div>

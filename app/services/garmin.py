@@ -896,8 +896,8 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
             HealthMetric.metric.in_(("steps", "sleep")))
     )).scalar()
     first = conn.last_sync_at is None or conn.last_error == PARTIAL
-    days = (BACKFILL_DAYS if first or not have or not await nights_upgraded(db, conn.user_id, SOURCE)
-            else RECENT_DAYS)
+    upgraded = await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+    days = BACKFILL_DAYS if first or not have or not upgraded else RECENT_DAYS
     activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
     async with http_client() as client:

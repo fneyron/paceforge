@@ -6,14 +6,17 @@
     on --pf-* tokens. Glyphs: ⚑ race, ◆ long outing, ◇ tagged night. -#}
 
 {% macro figure(c, title, key, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante", cls="") %}
+{#- a step at either end is aria-disabled, never disabled: it keeps its focus (a disabled button drops it to <body>);
+    the link row is reserved whenever a slot has a link (visibility, never display: the plot never moves) -#}
+{% set top = (c.n or 0) - 1 + (1 if c.rest else 0) %}{% set ln = c.link_now %}
 <figure class="pf-viz {{ cls }}" data-viz data-viz-key="{{ key }}"{% if group %} data-viz-group="{{ group }}"{% endif %}>
     <figcaption class="sr-only">{{ c.summary or title }}</figcaption>
     <div class="pf-viz-read">
-        <button type="button" class="pf-viz-step" data-step="-1" aria-label="{{ prev }}"{% if not c.n or c.sel == 0 %} disabled{% endif %}><span aria-hidden="true">‹</span></button>
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="{{ prev }}"{% if not c.n or c.sel == 0 %} aria-disabled="true"{% endif %}><span aria-hidden="true">‹</span></button>
         <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>{{ c.read[0] }}</span><b data-r>{{ c.read[1] }}</b><span data-r>{{ c.read[2] }}</span></div>
-        <button type="button" class="pf-viz-step" data-step="1" aria-label="{{ next }}"{% if not c.n or c.sel == c.n - 1 %} disabled{% endif %}><span aria-hidden="true">›</span></button>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="{{ next }}"{% if not c.n or c.sel >= top %} aria-disabled="true"{% endif %}><span aria-hidden="true">›</span></button>
     </div>
-    <a class="pf-viz-link" data-r-href href="#" hidden></a>
+    {% if c.links %}<a class="pf-viz-link{% if not ln %} is-off{% endif %}" data-r-href href="{{ ln.href if ln else '#' }}"{% if not ln %} aria-hidden="true" tabindex="-1"{% endif %}>{{ ln.label if ln else 'Voir ›' }}</a>{% endif %}
     <div class="pf-viz-plot">
         <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
         {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ c.n - 1 }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
@@ -23,8 +26,9 @@
 </figure>
 {% endmacro %}
 
+{#- a race in the right part of the plot: its name ends at the flag (it never runs past the screen edge) -#}
 {% macro _events(c, top, bottom) %}
-{% for r in c.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="{{ top }}" y2="{{ bottom }}" class="pf-viz-ev"/><path d="M{{ r.x }} {{ top - 1 }}v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text x="{{ r.x + 10 }}" y="{{ top - 6 }}" class="pf-viz-strong">{{ r.name|truncate(18, True, '…') }}</text>{% endfor %}
+{% for r in c.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="{{ top }}" y2="{{ bottom }}" class="pf-viz-ev"/><path d="M{{ r.x }} {{ top - 1 }}v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text {% if r.x > c.X1 * 0.6 %}x="{{ r.x - 4 }}" text-anchor="end"{% else %}x="{{ r.x + 10 }}"{% endif %} y="{{ top - 6 }}" class="pf-viz-strong">{{ r.name|truncate(18, True, '…') }}</text>{% endfor %}
 {% for l in c.longs %}<path d="M{{ l.x }} {{ bottom + 3 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
 {% endmacro %}
 
@@ -54,8 +58,8 @@
 {% endmacro %}
 
 {# K2 band chart: stacked panels (VFC above, FC below, respiration while the alert is on) #}
-{% macro viz_band(c, title, group=None) %}
-{% call figure(c, title, c.key, group) %}
+{% macro viz_band(c, title, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante") %}
+{% call figure(c, title, c.key, group, unit_word, prev, next) %}
 {% for p in c.panels %}
 <g class="pf-viz-panel">
     {% for t in p.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
@@ -73,8 +77,8 @@
 {% endmacro %}
 
 {# K3 nights: 24-h bars (night solid, nap hatched, < 6 h outlined) above the bed → wake windows #}
-{% macro viz_nights(c, title, key="nuits", group=None) %}
-{% call figure(c, title, key, group, "nuit", cls="pf-viz-tall") %}
+{% macro viz_nights(c, title, key="nuits", group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante") %}
+{% call figure(c, title, key, group, unit_word, prev, next, cls="pf-viz-tall") %}
 <defs><pattern id="pf-hatch-{{ key }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
 {% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}{% if c.band %}<path d="{{ c.band_lo }}" class="pf-viz-edge"/><path d="{{ c.band_hi }}" class="pf-viz-edge"/>{% endif %}
 {% for b in c.med_bands %}<rect x="0" y="{{ b.y }}" width="{{ c.X1 }}" height="{{ b.h }}" class="pf-viz-band"/>{% endfor %}

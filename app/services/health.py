@@ -325,13 +325,20 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
     return {"inserted": inserted, "updated": updated, "by_metric": dict(by_metric)}
 
 
-async def nights_upgraded(db: AsyncSession, user_id: int, source: str) -> bool:
-    """False while a watch's nights exist only in the format written before
-    2026-10 (no main window, the watch's HRV average, no nightly HR): its sync
-    then reads the history again once, so the band starts from PaceForge's own
-    values."""
+async def nights_upgraded(db: AsyncSession, user_id: int, source: str, today: date | None = None,
+                          days: int = 60) -> bool:
+    """False while a watch still has nights in the format written before
+    2026-10 (no main window, the watch's HRV average, no nightly HR) inside
+    the window a backfill rewrites (the last `days` days) and none in the new
+    one: its sync then reads those days again, once. Old nights beyond the
+    window, or none in it (a watch no longer worn at night), can never be
+    rewritten: they never ask again (else every sync would read 60 days)."""
+    today = today or _today(None)
     base = (HealthMetric.user_id == user_id, HealthMetric.source == source, HealthMetric.metric == "sleep")
-    if not (await db.execute(select(func.count(HealthMetric.id)).where(*base))).scalar():
+    old = (await db.execute(select(func.count(HealthMetric.id)).where(
+        *base, HealthMetric.date >= today - timedelta(days=days - 1),
+        HealthMetric.details["main_start"].as_string().is_(None)))).scalar()
+    if not old:
         return True
     new = (await db.execute(select(func.count(HealthMetric.id)).where(
         *base, HealthMetric.details["main_start"].as_string().is_not(None)))).scalar()

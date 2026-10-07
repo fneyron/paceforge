@@ -3,8 +3,11 @@
     group « sommeil » share the selected night; the hypnogram follows the Nuits figure. -#}
 {% import "partials/_viz.html" as viz %}
 {% set s = page.som %}
+{# « 1 an » steps by week: its buttons and range input say so #}
+{% set step = ("semaine", "Semaine précédente", "Semaine suivante") if s.weekly else ("nuit", "Nuit précédente", "Nuit suivante") %}
 <div id="sommeil-range" data-viz-scope>
-    {% macro range_button(value, text, pressed, cls="") %}<button type="submit" name="r" value="{{ value }}" data-range="{{ value }}"{% if pressed is not none %} aria-pressed="{{ 'true' if pressed else 'false' }}"{% endif %}{% if cls %} class="{{ cls }}"{% endif %} hx-get="/sante/sommeil?r={{ value }}" hx-target="#sommeil-range" hx-swap="outerHTML">{{ text }}</button>{% endmacro %}
+    {# a toggle button keeps one id per range: htmx gives the pressed one its focus back after the swap #}
+    {% macro range_button(value, text, pressed, cls="") %}<button type="submit" name="r" value="{{ value }}" data-range="{{ value }}"{% if pressed is not none %} id="range-{{ value }}" aria-pressed="{{ 'true' if pressed else 'false' }}"{% endif %}{% if cls %} class="{{ cls }}"{% endif %} hx-get="/sante/sommeil?r={{ value }}" hx-target="#sommeil-range" hx-swap="outerHTML">{{ text }}</button>{% endmacro %}
     {% if s.ranges|length > 1 %}
     <form method="get" action="/sante" class="pf-sleep-ranges">
         <input type="hidden" name="vue" value="sommeil">
@@ -22,23 +25,26 @@
     {% else %}
     <p class="pf-sante-note">{{ s.coverage }}{% if s.building %}<br>{{ s.building }}{% endif %}</p>
 
-    <h2 id="nuits" class="pf-sante-h">Tes nuits</h2>
+    <h2 id="nuits" class="pf-sante-h" tabindex="-1">Tes nuits</h2>
     {% if s.amount_line %}<p class="pf-sante-line">{{ s.amount_line }}</p>{% endif %}
-    {{ viz.viz_nights(s.nights, "Tes nuits", "nuits", "sommeil") }}
+    {{ viz.viz_nights(s.nights, "Tes nuits", "nuits", "sommeil", unit_word=step[0], prev=step[1], next=step[2]) }}
     <p class="pf-viz-cap">Horaires détectés par la montre, approximatifs.</p>
     {% if s.timing_line %}<p class="pf-sante-line">{{ s.timing_line }}</p>{% endif %}
     {% if s.hyps %}
     <div id="hyp" class="pf-hyps">
-        {% for i, h in s.hyps %}{{ viz.viz_hyp(h, i, i == s.hyp_sel) }}{% endfor %}
-        <p class="pf-viz-cap" data-night="none"{% if s.hyp_has_sel %} hidden{% endif %}>Pas de forme pour cette nuit-là.</p>
+        {# one box a hypnogram high: a night without one says so inside it, nothing below moves #}
+        <div class="pf-hyp-box">
+            {% for i, h in s.hyps %}{{ viz.viz_hyp(h, i, i == s.hyp_sel) }}{% endfor %}
+            <p class="pf-viz-cap" data-night="none"{% if s.hyp_has_sel %} hidden{% endif %}>Pas de forme pour cette nuit-là.</p>
+        </div>
         <p class="pf-viz-cap">Stades estimés par la montre : une allure, pas une mesure.</p>
     </div>
     {% endif %}
 
     {% if s.heart %}
-    <h2 id="coeur" class="pf-sante-h">Cœur la nuit</h2>
+    <h2 id="coeur" class="pf-sante-h" tabindex="-1">Cœur la nuit</h2>
     {% if s.heart_line %}<p class="pf-sante-line">{{ s.heart_line }}</p>{% endif %}
-    {{ viz.viz_band(s.heart, "Cœur la nuit", "sommeil") }}
+    {{ viz.viz_band(s.heart, "Cœur la nuit", "sommeil", unit_word=step[0], prev=step[1], next=step[2]) }}
     {% endif %}
 
     {% if s.rows %}

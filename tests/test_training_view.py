@@ -2,6 +2,7 @@
 « Fond et fatigue », A3 « FC en footing » — pure functions on synthetic
 sessions, then the page itself."""
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from app.dependencies import get_current_user
 from app.models.activity import Activity
 from app.models.route import Route
 from app.models.user import User
+from app.services import race_prep as rp
 from app.services import sante_training as st
 from app.services import training_view as tv
 from app.services.sante_training import Session
@@ -72,7 +74,7 @@ def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
     assert c["read"][1] == "semaine type : 7h20" and c["band"] is not None
     # a week on a tap: its hours and D+, the sessions, the link to it in the list (page 1: in place)
     last = d["r"][-2]
-    assert last[0] == "sem. du 28 sept." and last[1] == "7h20 · 200 m D+" and last[2] == "4 séances"
+    assert last[0] == "sem. du 28 sept." and last[1] == "7h20 · +200 m" and last[2] == "4 séances"
     assert d["h"][-2] == {"href": "#week-2026-09-28", "label": "Voir la semaine ›"}
     assert d["h"][0]["href"] == "/activities?page=2#week-2026-07-20"
     assert d["r"][-1][0] == "sem. du 5 oct. · en cours" and c["cols"][-1]["cur"]
@@ -100,10 +102,11 @@ def test_weeks_mark_races_long_outings_and_the_spike():
 
 def test_the_line_after_the_spike_is_the_taper_then_the_recovery():
     ss = steady()
-    rc = race(5, rid=9)  # Monday 12 Oct: S-1 started Monday 5 Oct
+    rc = race(5, rid=9)  # Monday 12 Oct: the taper started at J-14, 28 Sept
     assert tv.a1_line(ss, [rc], set(), T) == {"text": "Affûtage pour Transjeju 100M ›",
                                               "href": "/simulator/routes/9#prep"}
-    assert tv.a1_line(ss, [race(13)], set(), T) is None  # taper not started
+    assert tv.a1_line(ss, [race(14)], set(), T)  # J-14 is today
+    assert tv.a1_line(ss, [race(15)], set(), T) is None  # taper not started
     done = race(-5, rid=4, result={"total_actual_s": 60780})
     assert tv.a1_line(ss, [done], set(), T) == {
         "text": "Récupération après Transjeju 100M\u00a0: volume bas, c'est voulu.", "href": "/simulator/routes/4#prep"}
@@ -155,7 +158,10 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
     assert c["flagged"] and c["line"] == "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
     assert not tv.footing(runs + [easy(5, 144), easy(2, 142)], T, 185)["flagged"]  # +2: within the band
     assert not tv.footing(runs + [easy(5, 150, temp=30), easy(2, 150, temp=30)], T, 185)["flagged"]  # hot
-    assert tv.footing([easy(k, 140) for k in range(3, 20, 3)], T, 185) is None  # under 8 runs for the slope
+    assert tv.footing([easy(k, 140) for k in range(3, 17, 3)], T, 185) is None  # under 6 runs (H)
+    # 6 runs in 6 weeks draw the line; 8 spread over a year with 1 in the last 6 weeks do not (row 16)
+    assert tv.footing([easy(k, 140) for k in range(3, 20, 3)], T, 185) is not None
+    assert tv.footing([easy(k, 140) for k in (3, 60, 100, 150, 200, 250, 300, 350)], T, 185) is None
 
 
 # ── the page ────────────────────────────────────────────────────────────────
@@ -192,3 +198,44 @@ async def test_activities_page_has_the_three_blocks_on_page_one_only(client: Asy
     assert html.index('id="semaines"') < html.index('aria-label="Filtrer les activités par sport"')
     for url in ("/activities?sport=run", "/activities?page=2"):
         assert 'id="semaines"' not in (await client.get(url)).text
+
+
+async def test_a_week_reads_the_same_in_a1_and_in_its_list_heading(client: AsyncClient, db_session: AsyncSession,
+                                                                   test_user: User):
+    """L-F11 / UX9: 2 runs of 8 990 s (a 50 s remainder: 4h59m40s) and 2 400.6 m
+    D+: the list heading and A1's tap readout print « +2 401 m » and « 5h00 »."""
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
+    today = datetime.now(timezone.utc).date()
+    await _add_runs(db_session, test_user, today - timedelta(days=21), n=120)  # a usual week for A1
+    last_monday = today - timedelta(days=today.weekday() + 7)
+    for i, day in enumerate((last_monday, last_monday + timedelta(days=2))):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=990_000 + i, sport_type="TrailRun",
+                                name=f"Long {i}", start_date=datetime(day.year, day.month, day.day, 6,
+                                                                      tzinfo=timezone.utc),
+                                distance=30_000, moving_time=8990, elapsed_time=9000, total_elevation_gain=1200.3,
+                                average_speed=30_000 / 8990, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    html = (await client.get("/activities")).text
+    heading = re.search(r'<section id="week-' + last_monday.isoformat() + r'">.*?<p class="pf-label[^>]*>(.*?)</p>',
+                        html, re.S).group(1)
+    heading = re.sub(r"[ \n]+", " ", re.sub(r"<[^>]+>", "", heading)).strip()
+    assert heading == "60 km · +2 401 m · 5h00"
+    d = json.loads(re.search(r'data-viz-key="semaines".*?<script type="application/json" class="pf-viz-data">(.*?)'
+                             r'</script>', html, re.S).group(1))
+    week = d["r"][d["d"].index(last_monday.isoformat())]
+    assert week[1] == "5h00 · +2 401 m"
+
+
+async def test_the_races_are_read_without_their_course(db_session: AsyncSession, test_user: User):
+    """R1: Activités, Santé and the race page list the races without loading
+    the course, plan or weather JSON (≈ 1 MB a 100-mile course)."""
+    from sqlalchemy import inspect
+
+    db_session.add(Route(user_id=test_user.id, name="UTMB", total_distance_km=171, race_date="2026-08-28",
+                         course_json={"points": [[0, 0]] * 10}, sport_type="trail"))
+    await db_session.flush()
+    db_session.expunge_all()
+    [r] = await rp.load_races(db_session, test_user.id, date(2026, 10, 7))
+    unloaded = inspect(r).unloaded
+    assert {"course_json", "weather_json", "live_json"} <= unloaded
+    assert r.name == "UTMB" and rp.race_day(r) == date(2026, 8, 28) and "result_json" not in unloaded

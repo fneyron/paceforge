@@ -38,7 +38,7 @@
     <section class="pf-feel3" aria-labelledby="h-feel">
         {% if f.answered %}
         <details class="pf-feel-fold"{% if open_feel %} open{% endif %}>
-            <summary><span id="h-feel">Noté : {{ f.noted }}</span> <span class="pf-feel-edit">— modifier</span></summary>
+            <summary id="feel-summary"><span id="h-feel">Noté : {{ f.noted }}</span> <span class="pf-feel-edit">— modifier</span></summary>
             {{ chips(f) }}
         </details>
         {% else %}

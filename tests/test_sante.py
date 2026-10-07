@@ -147,7 +147,8 @@ async def test_owner_october_aujourdhui(db_session: AsyncSession, test_user: Use
 async def test_owner_october_sommeil(db_session: AsyncSession, test_user: User):
     await _seed_owner(db_session, test_user)
     s = (await sante.health_page(db_session, test_user.id, today=D))["som"]
-    assert s["state"] == "ok" and s["r"] == "14" and [k for k, _ in s["ranges"]] == ["14", "90"]  # no « 1 an » yet
+    # every night within 14 days: « 3 mois » would draw them again (UX13), and no « 1 an » yet
+    assert s["state"] == "ok" and s["r"] == "14" and [k for k, _ in s["ranges"]] == ["14"]
     assert s["coverage"] == "5 nuits mesurées sur 14"  # 25/09 (a nap only) is never a night
     assert s["building"] == "Ta normale se construit : 0 nuit sur 14 hors course."
     c = s["nights"]
@@ -211,7 +212,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'aria-live="polite" aria-labelledby="h-today"' in page and "Footing facile seulement" in page
     assert 'class="pf-dchip" href="/simulator/routes/' in page
     assert re.search(r'<section id="sommeil"[^>]*hidden', page)  # server-rendered, the other view hidden
-    assert 'src="/static/js/pf-viz.js?v=1"' in page
+    assert re.search(r'src="/static/js/pf-viz.js\?v=\w*"', page)
     # Sommeil: the figures, then the two closed folds; numbers once (the 7-day mean is Aujourd'hui's)
     som = (await as_user.get("/sante?vue=sommeil")).text
     assert re.search(r'<section id="aujourdhui"[^>]*hidden', som) and 'id="nuits"' in som and 'id="coeur"' in som
@@ -219,17 +220,26 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "<details open" not in som
     assert som.count("7h35") == 1  # the sleep tile's mean, printed once in the whole page
     assert "Horaires détectés par la montre, approximatifs." in som
-    assert 'data-viz-group="sommeil"' in som and 'hx-get="/sante/sommeil?r=90"' in som
+    assert 'data-viz-group="sommeil"' in som and 'hx-get="/sante/sommeil?r=90"' not in som  # one range: no toggle
 
 
 async def test_the_range_swaps_in_place(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                         on_owner_day):
+    from tests.test_nights import night_rows
+
     await _link(db_session, test_user)
     await _seed_owner(db_session, test_user)
+    alone = await as_user.get("/sante/sommeil?r=90", headers={"HX-Request": "true"})
+    assert "3 mois" not in alone.text and "5 nuits mesurées sur 14" in alone.text  # nothing older: 14 nuits only
+    for metric, per_day in night_rows(range(30, 33), source="COROS", hr_method="coros_sleep_summary").items():
+        for d, (v, det, src) in per_day.items():
+            _add(db_session, test_user, metric, d, v, det, src)
+    await db_session.flush()
     r = await as_user.get("/sante/sommeil?r=90", headers={"HX-Request": "true"})
     assert r.status_code == 200 and r.text.lstrip().startswith("{#") is False
     assert '<div id="sommeil-range" data-viz-scope>' in r.text and re.search(r'aria-pressed="true"[^>]*>3 mois', r.text)
-    assert "3 nuits mesurées" not in r.text and "5 nuits mesurées sur 3 mois" in r.text
+    assert "8 nuits mesurées sur 3 mois" in r.text
+    assert 'id="range-90"' in r.text and 'id="range-14"' in r.text  # htmx gives the pressed button its focus back
     r = await as_user.get("/sante/sommeil?r=90")  # without htmx: the full page for that range
     assert r.status_code == 303 and r.headers["location"] == "/sante?vue=sommeil&r=90"
     page = (await as_user.get("/sante?vue=sommeil&r=90")).text
@@ -614,3 +624,184 @@ async def test_dedupe_matches_activites_when_strava_writes_json_null(db_session:
     await db_session.flush()
     ss = await st.load_sessions(db_session, test_user.id, date(2026, 10, 6))
     assert [s.minutes for s in ss] == [50]  # the copy with splits, as Activités keeps it
+
+
+# ── review fixes (v3) ───────────────────────────────────────────────────────
+
+def test_r2_comes_before_r1_malade_or_the_alert_in_the_last_2_days_before_a_race():
+    """F5: « malade » at J-2, the alert at J-1: no accelerations, the race chip stays."""
+    race = {"days": 2, "name": "Marathon", "href": "/simulator/routes/3#prep"}
+    v = decide(_ctx(next_race=race, feel=_feel(why=["sick"])))
+    assert (v["rule"], v["tone"], v["headline"]) == ("ill", "rest", "Pas d'intensité aujourd'hui")
+    assert "accélérations" not in (v["text"] or "") and v["chips"][-1]["word"] == "Marathon · J−2"
+    v = decide(_ctx(next_race={**race, "days": 1}, alert=ALERT))
+    assert v["rule"] == "ill" and "accélérations" not in v["text"]
+    assert [c["word"] for c in v["chips"]] == ["FC de nuit · 2 nuits", "Marathon · J−1"]
+    assert decide(_ctx(next_race=race))["rule"] == "race"  # without them, R1 as before
+
+
+def _nights_of(rows):
+    from app.services import nights as nt_
+    return nt_.build_nights(rows, D)
+
+
+def test_illness_nights_never_drive_r7_once_reprise_closed():
+    """F7 / L-F6: « malade » D-6 and D-5, sick nights D-6 → D-2 (51 bpm, 44 ms),
+    back to 46 / 59 on D-1 and D: Reprise closed, the tiles' status (what
+    decides) leaves the episode out, so R7 does not fire."""
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(7, 61), hr=45.0, hrv=lambda k: 57 + k % 7)
+    sick_rows = night_rows(range(2, 7), hr=51.0, hrv=44.0)
+    back = night_rows([0, 1], hr=46.0, hrv=59.0)
+    nights = _nights_of({m: {**rows[m], **sick_rows[m], **back[m]} for m in rows})
+    feel = {D - timedelta(days=6): _feel(why=["sick"]), D - timedelta(days=5): _feel(why=["sick"])}
+    nt.tag_nights(nights, (), [], feel)
+    nt.tag_alerts(nights, D)
+    assert nt.reprise(nights, feel, D) is None
+    a = sante._today_view(nights, feel, [], 190, None, None, [], D, True)
+    assert a["verdict"]["rule"] != "hrv" and "Garde ta séance facile" not in a["verdict"]["headline"]
+    assert all(t["word"] not in ("au-dessus", "en dessous") for t in a["tiles"])
+    # during the episode (R3) the tiles still show its nights, never deciding on them
+    during = sante._today_view(nights, feel, [], 190, None, None, [], D - timedelta(days=2), True)
+    assert during["verdict"]["rule"] in ("reprise", "ill")
+    assert any(t["key"] == "hr" and t["value"] for t in during["tiles"])
+
+
+def test_the_hr_tile_is_judged_on_the_unrounded_mean():
+    """F8 / L-F4: band median 44.5 (top 47.5), 7-night mean 46.6: « dans ta
+    normale », never « au-dessus » by rounding; R7 does not fire on it."""
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(7, 61), hr=lambda k: 44.0 + k % 2)
+    last = night_rows(range(0, 7), hr=lambda k: 47.0 if k % 3 else 46.0)
+    nights = _nights_of({m: {**rows[m], **last[m]} for m in rows})
+    st = sante._night_stats(nights, "hr", D)
+    assert st["text"] == "47" and 46.5 < st["value"] < 47 and st["status"] == "in"
+    assert decide(_ctx(hrv="below", hr=st["status"]))["rule"] == "plan"
+
+
+def test_a_rendormi_morning_is_no_early_wake():
+    """F9: main sleep 23:30 → 04:30 (4h50), back asleep 05:30 → 06:20: R5 fires
+    on the 24-h total, never as an early wake (no « Séance dure ce matin », no nap tip)."""
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(1, 30), start=(23, 0), end=(7, 0), asleep=450)
+    rows["sleep"][D] = (290, {"main_start": "2026-10-06T23:30", "main_end": "2026-10-07T04:30"}, "Garmin")
+    rows["nap"][D] = (45, {"windows": [["2026-10-07T05:30", "2026-10-07T06:20"]]}, "Garmin")
+    nights = _nights_of(rows)
+    assert nights[D].resettled and nt.day_tst24(nights, D) == 335
+    a = sante._today_view(nights, {}, [], 190, None, None, [], D, True)
+    v = a["verdict"]
+    assert v["headline"] != "Séance dure ce matin, sinon facile" and "sieste" not in (v["text"] or "")
+    assert v["text"] == sante_today.SHORT_LATE and "sleep" in v["drivers"]
+
+
+def test_one_morning_has_one_24_hour_total():
+    """L-F8: yesterday's 15:00 nap counts for R5 (day_tst24) but the tile prints
+    the total Sommeil draws for that day (Night.tst24): one number, once."""
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(1, 20), asleep=450)
+    rows["sleep"][D] = (240, {"main_start": "2026-10-07T01:00", "main_end": "2026-10-07T05:30"}, "Garmin")
+    rows["nap"][D - timedelta(days=1)] = (30, {"windows": [["2026-10-06T15:00", "2026-10-06T15:30"]]}, "Garmin")
+    nights = _nights_of(rows)
+    assert nt.day_tst24(nights, D) == 270 and nights[D].tst24 == 240
+    a = sante._today_view(nights, {}, [], 190, None, None, [], D, True)
+    tile = next(t for t in a["tiles"] if t["key"] == "sleep")
+    assert (tile["label"], tile["value"]) == ("Sommeil · 24 h", "4h00")
+    from app.services import sante_sleep as sl
+    s = sl.sleep_view(nights, D, "14")
+    assert s["nights"]["read"][1] == "Nuit 4h00 sur 24 h"  # the same number on Sommeil
+
+
+async def test_a_race_marked_on_strava_only_is_a_race_for_the_nights(db_session: AsyncSession, test_user: User):
+    """F4: a marathon logged as a race on Strava (no Route) 3 days ago: its
+    recovery nights are « autour de la course », never the illness alert; R4."""
+    from app.models.activity import Activity
+    from tests.test_nights import night_rows
+
+    base = night_rows(range(4, 70), hr=lambda k: 47 + k % 3, hrv=82.0)
+    after = night_rows([0, 1, 2], hr=lambda k: {2: 60.0, 1: 56.0, 0: 55.0}[k], hrv=60.0)
+    for metric in base:
+        for d, (v, det, src) in {**base[metric], **after[metric]}.items():
+            _add(db_session, test_user, metric, d, v, det, src)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=4242, sport_type="Run", name="Marathon de Lyon",
+                            start_date=datetime(2026, 10, 4, 6, tzinfo=timezone.utc), distance=42195,
+                            moving_time=200 * 60, elapsed_time=200 * 60, average_heartrate=160,
+                            raw_data={"workout_type": 1, "utc_offset": 7200}))
+    await db_session.flush()
+    page = await sante.health_page(db_session, test_user.id, today=D)
+    v = page["auj"]["verdict"]
+    assert v["rule"] == "race" and v["headline"] == "Récupère"
+    marks = {r["iso"]: r["marks"] for r in page["som"]["rows"]}
+    assert all("autour de la course" in marks[(D - timedelta(days=k)).isoformat()] for k in range(3))
+    assert "malade" not in str(page) and "FC de nuit haute" not in str(page)
+
+
+async def test_the_old_course_link_keeps_the_recovery_first(as_user: AsyncClient, db_session: AsyncSession,
+                                                            test_user: User):
+    """R3: a race run 5 days ago and the next one 39 or 145 days out: the old
+    Course view led with the recovery; « #prep » only where the page shows it."""
+    today = date.today()
+
+    async def race(days, name):
+        r = Route(user_id=test_user.id, name=name, total_distance_km=42, start_hour=8, start_minute=0,
+                  race_date=(today + timedelta(days=days)).isoformat())
+        db_session.add(r)
+        await db_session.flush()
+        return r
+    last = await race(-5, "Marathon d'automne")
+    far = await race(145, "Ultra de printemps")
+    r = await as_user.get("/sante?vue=course")
+    assert r.headers["location"] == f"/simulator/routes/{last.id}#prep"
+    await db_session.delete(last)
+    await db_session.flush()
+    r = await as_user.get("/sante?vue=course")
+    assert r.headers["location"] == f"/simulator/routes/{far.id}"  # J-145: no preparation shown there yet
+    last = await race(-5, "Marathon d'automne")
+    near = await race(10, "Semi de novembre")
+    r = await as_user.get("/sante?vue=course")
+    assert r.headers["location"] == f"/simulator/routes/{near.id}#prep"  # 14 days or less: the next race first
+
+
+async def test_a_check_in_whose_redraw_fails_reloads_the_page(as_user: AsyncClient, db_session: AsyncSession,
+                                                              test_user: User, on_owner_day, monkeypatch):
+    """R5: the answer is saved; a failing redraw answers HX-Refresh (never a 500
+    htmx would not swap), so a second tap can never silently undo it."""
+    await _link(db_session, test_user)
+    _add(db_session, test_user, "sleep", D - timedelta(days=1), 450, {"bedtime": "23:00", "wake": "07:00"})
+    await db_session.flush()
+    real = sante.health_page
+
+    async def boom(db, user_id, *a, parts=("today", "sleep"), **k):
+        if parts == ("today",):
+            raise RuntimeError("redraw")
+        return await real(db, user_id, *a, parts=parts, **k)
+    monkeypatch.setattr("app.routers.sante.health_page", boom)
+    r = await as_user.post("/sante/feel", data={"feel": "3"}, headers={"HX-Request": "true"})
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+    r = await as_user.post("/sante/feel", data={"toggle": "legs"}, headers={"HX-Request": "true"})
+    assert r.headers.get("HX-Refresh") == "true"
+    row = (await db_session.execute(select(HealthMetric).where(HealthMetric.metric == "feel"))).scalar_one()
+    assert row.value == 3 and row.details["why"] == ["legs"]
+
+
+async def test_the_hypnograms_are_read_for_the_last_90_days_only(db_session: AsyncSession, test_user: User):
+    """R4: the stage intervals of older nights are never fetched, each interval
+    goes to its own night, and « 1 an » reads none."""
+    from app.models.health import HealthSample
+    from tests.test_nights import night_rows
+
+    rows = night_rows(range(0, 200))
+    nights = _nights_of(rows)
+    for k in (0, 1, 150):
+        n = nights[D - timedelta(days=k)]
+        for j, kind in enumerate(("core", "deep", "rem")):
+            a = n.start + timedelta(hours=j)
+            db_session.add(HealthSample(user_id=test_user.id, metric="sleep", source="Garmin", kind=kind, start_at=a,
+                                        end_at=a + timedelta(minutes=50), value=50))
+    await db_session.flush()
+    got = await sante._timelines(db_session, test_user.id, nights, D)
+    assert sorted(got) == [D - timedelta(days=1), D] and all(len(v) == 3 for v in got.values())
+    assert [k for k, _, _ in got[D]] == ["core", "deep", "rem"]

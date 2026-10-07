@@ -556,6 +556,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 
 /* ── Santé ────────────────────────────────────────────────────────────── */
 .pf-sante-sync { margin-top: 4px; }
+.pf-sante-sync > button { min-height: 44px; }   /* « Synchroniser maintenant »: a 44 px target */
 .pf-sante-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 13px; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines b { font-weight: 600; color: rgb(var(--pf-gray-700)); }
 /* status words (glyph + word, never colour alone) */
@@ -638,6 +639,8 @@ a.pf-dchip:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-off
 .pf-method ul { list-style: disc; padding-left: 18px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
 .pf-method li + li { margin-top: 6px; }
 .pf-refs { font-size: 12px; line-height: 1.8; color: rgb(var(--pf-gray-500)); margin-top: 10px; }
+/* each reference a 44 px target, never split across two lines */
+.pf-refs a { display: inline-block; min-height: 44px; padding: 12px 0; line-height: 20px; white-space: nowrap; }
 .pf-refs a { color: rgb(var(--pf-accent-strong)); }
 .dark .pf-refs a { color: rgb(var(--pf-accent)); }
 @media (min-width: 900px) { .pf-dec-head { font-size: 28px; } }
@@ -734,10 +737,11 @@ a.pf-tile:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-viz-read-txt b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
 .pf-viz-read-txt [data-r]:nth-child(3) { font-size: 13px; color: rgb(var(--pf-gray-600)); }
 .pf-viz-step { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; font-size: 22px; line-height: 1; color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
-.pf-viz-step:disabled { color: rgb(var(--pf-gray-400)); background: transparent; }
+.pf-viz-step:disabled, .pf-viz-step[aria-disabled="true"] { color: rgb(var(--pf-gray-400)); background: transparent; cursor: default; }
 .pf-viz-step:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
 .pf-viz-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
 .dark .pf-viz-link { color: rgb(var(--pf-accent)); }
+.pf-viz-link.is-off { visibility: hidden; }   /* the row stays: the plot never moves under the finger */
 .pf-viz-plot { position: relative; max-width: 560px; border-radius: 8px; }
 .pf-viz-plot:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 4px; }
 .pf-viz-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
@@ -780,9 +784,15 @@ a.pf-tile:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-viz-miss { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 0 4; }
 .pf-viz-col.is-sel .pf-viz-night:not(.is-short), .pf-viz-col.is-sel .pf-viz-win, .pf-viz-col.is-sel .pf-viz-bar { fill: rgb(var(--pf-ink)); }
 .pf-viz-col.is-sel .pf-viz-nap, .pf-viz-col.is-sel .pf-viz-night.is-short, .pf-viz-col.is-sel .pf-viz-plan { stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+/* a selected < 6 h night is filled too (its outline alone would look unselected); the readout says « moins de 6 h » */
+.pf-viz-col.is-sel .pf-viz-night.is-short { fill: rgb(var(--pf-ink)); }
 /* hypnogram: lane position carries the stage, one neutral hue, no minutes, no score */
 .pf-hyp[hidden], .pf-viz [hidden] { display: none; }
 .pf-hyp:not([hidden]) { display: block; width: 100%; max-width: 560px; height: auto; margin-top: 14px; }
+/* one box the height of a hypnogram (viewBox 320 × 72): « Pas de forme » sits inside it, nothing below moves */
+.pf-hyp-box { max-width: 560px; aspect-ratio: 320 / 72; margin-top: 14px; }
+.pf-hyp-box > .pf-hyp:not([hidden]) { margin-top: 0; }
+.pf-hyp-box > .pf-viz-cap { margin-top: 0; padding-top: 6px; }
 .pf-hyp text { font-size: 11px; fill: rgb(var(--pf-gray-500)); }
 .pf-hyp-seg { fill: rgb(var(--pf-accent)); }
 .pf-hyp-step { stroke: rgb(var(--pf-accent)); stroke-width: 1; opacity: .5; }
@@ -794,13 +804,16 @@ a.pf-tile:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-viz-ranges > [aria-pressed="true"] { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
 .pf-viz-ranges > button:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
 @media (pointer: coarse) { .pf-viz-ranges > button { min-height: 44px; } }
-/* motion: only when the reader allows it, ≤ 300 ms, never looping */
+/* motion: only when the reader allows it, ≤ 300 ms, never looping. A figure off screen when pf-viz.js sets it
+   up waits drawn small (never seen whole, then collapsed); one already on screen stays as painted (pf-viz-still) */
 @media (prefers-reduced-motion: no-preference) {
     .pf-viz-cross { transition: transform .14s ease-out; }
     .pf-viz-on:not(.pf-viz-in) .pf-viz-line[pathLength] { stroke-dasharray: 1; stroke-dashoffset: 1; }
-    .pf-viz-in .pf-viz-line[pathLength] { stroke-dasharray: 1; animation: pf-viz-draw .3s ease-out both; }
-    .pf-viz-in :is(.pf-viz-night, .pf-viz-bar) { animation: pf-viz-rise .3s ease-out both; transform-box: fill-box; transform-origin: 50% 100%; }
-    .pf-viz-in :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { animation: pf-viz-fade .3s ease-out both; }
+    .pf-viz-on:not(.pf-viz-in) :is(.pf-viz-night, .pf-viz-bar) { transform: scaleY(.3); opacity: .3; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pf-viz-on:not(.pf-viz-in) :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { opacity: 0; }
+    .pf-viz-in:not(.pf-viz-still) .pf-viz-line[pathLength] { stroke-dasharray: 1; animation: pf-viz-draw .3s ease-out both; }
+    .pf-viz-in:not(.pf-viz-still) :is(.pf-viz-night, .pf-viz-bar) { animation: pf-viz-rise .3s ease-out both; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pf-viz-in:not(.pf-viz-still) :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { animation: pf-viz-fade .3s ease-out both; }
 }
 @keyframes pf-viz-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes pf-viz-rise { from { transform: scaleY(.3); opacity: .3; } to { transform: none; opacity: 1; } }
@@ -813,9 +826,15 @@ a.pf-tile:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
     .pf-viz-cross circle, .pf-viz-now { fill: CanvasText; }
     .pf-viz-band { fill: Canvas; }
     .pf-viz-dot.is-out, .pf-viz-dot.is-hot, .pf-viz-night.is-short, .pf-viz-nap-bg { fill: Canvas; }
-    .pf-viz-dot.is-sel, .pf-viz-col.is-sel .pf-viz-night, .pf-viz-col.is-sel .pf-viz-win, .pf-viz-col.is-sel .pf-viz-bar { fill: Highlight; }
-    .pf-viz-col.is-sel .pf-viz-nap { stroke: Highlight; }
+    /* :is() takes its most specific argument: (0,4,0), as the normal-mode « .is-sel .pf-viz-night:not(.is-short) » */
+    .pf-viz-dot.is-sel, .pf-viz-col.is-sel :is(.pf-viz-night, .pf-viz-night:not(.is-short), .pf-viz-win, .pf-viz-bar) { fill: Highlight; }
+    .pf-viz-col.is-sel :is(.pf-viz-nap, .pf-viz-night.is-short, .pf-viz-plan) { stroke: Highlight; }
     .pf-viz-svg text { fill: CanvasText; }
     .pf-viz-ranges > [aria-pressed="true"] { outline: 2px solid Highlight; box-shadow: none; }
     .pf-viz-step { border: 1px solid ButtonText; }
+    .pf-viz-step[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
+    /* the selected Santé view and the pressed check-in answers: Highlight, the others plain */
+    .pf-stab { border-bottom-color: Canvas; }
+    .pf-stab[aria-selected="true"] { border-bottom-color: Highlight; }
+    .pf-chip[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
 }

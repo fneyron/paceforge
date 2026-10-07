@@ -1202,7 +1202,7 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
     owed = (conn.last_sync_at is None or not have or conn.last_error == PARTIAL
-            or not await nights_upgraded(db, conn.user_id, SOURCE))
+            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS))
     days = BACKFILL_DAYS if owed else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read
     activity_days = ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None else RECENT_DAYS

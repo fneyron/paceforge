@@ -27,7 +27,7 @@ def test_no_night_ever_is_one_line():
 
 def test_default_range_is_the_first_holding_data_and_an_empty_range_says_where_the_last_series_is():
     nights = _nights(night_rows(range(120, 160)))  # 40 nights, 4 to 5 months ago
-    assert sl.offered_ranges(nights, D) == ["14", "90", "365"]  # ≥ 30 nights older than 90 days
+    assert sl.offered_ranges(nights, D) == ["14", "365"]  # ≥ 30 nights older than 90 days, none 14–90 days old
     s = sl.sleep_view(nights, D, None)
     assert s["state"] == "ok" and s["r"] == "365" and s["weekly"]
     s = sl.sleep_view(nights, D, "14")
@@ -35,10 +35,18 @@ def test_default_range_is_the_first_holding_data_and_an_empty_range_says_where_t
     assert s["state"] == "empty" and s["go"] == ("365", "Voir 1 an")
     assert (first, last) == (date(2026, 5, 1), date(2026, 6, 9))
     assert s["empty"] == "Rien sur 14 jours · ta dernière série : 1 mai → 9 juin"
-    few = _nights(night_rows(range(100, 110)))  # too few old nights for « 1 an »
+    # UX12: too few old nights for « 1 an », none for « 3 mois »: nothing can open them, so never name them
+    few = _nights(night_rows(range(100, 110)))
     s = sl.sleep_view(few, D, None)
-    assert [k for k, _ in s["ranges"]] == ["14", "90"] and s["state"] == "empty" and s["go"] is None
-    assert sl.sleep_view(few, D, "365")["r"] == "14"  # a range not offered falls back
+    assert [k for k, _ in s["ranges"]] == ["14"] and s["state"] == "empty" and s["go"] is None
+    assert s["empty"] == "Rien sur 14 jours. " + sl.WEAR and "dernière série" not in s["empty"]
+    assert sl.sleep_view(few, D, "365")["r"] == "14" and sl.sleep_view(few, D, "90")["r"] == "14"  # not offered
+    # UX13: « 3 mois » only with a measured night 14 to 90 days old
+    assert sl.offered_ranges(_nights(night_rows(range(0, 14))), D) == ["14"]
+    assert sl.offered_ranges(_nights(night_rows(range(0, 15))), D) == ["14", "90"]
+    mid = _nights(night_rows(range(40, 50)))
+    s = sl.sleep_view(mid, D, None)
+    assert s["r"] == "90" and s["state"] == "ok"
 
 
 def test_one_year_is_one_mark_per_week():
@@ -121,3 +129,46 @@ def test_the_nights_table_newest_first_dashes_for_missing():
     assert (lone["tst"], lone["night"], lone["nap"], lone["times"]) == ("—", "—", "1h22", "—")
     assert s["coverage"] == "5 nuits mesurées sur 14"
     assert s["building"] == "Ta normale se construit : 1 nuit sur 14."  # untagged here: no « hors course »
+
+
+# ── review fixes (v3) ───────────────────────────────────────────────────────
+
+def test_one_year_never_judges_a_race_week_median():
+    """F6 / L-F9 / UX10: a year at 45 bpm and 60 ms, a race on Sunday 30 Aug, the
+    nights J+1 → J+5 at 55 bpm and 45 ms: their week is drawn from all its
+    nights, never judged (no word, no hollow dot), with its tag word; an
+    ordinary week is judged against the 60 days before its Monday."""
+    rd = date(2026, 8, 30)
+    rows = night_rows(range(0, 300), hr=lambda k: 45.0 if not 1 <= (D - timedelta(days=k) - rd).days <= 5 else 55.0,
+                      hrv=lambda k: 60.0 if not 1 <= (D - timedelta(days=k) - rd).days <= 5 else 45.0)
+    nights = nt.build_nights(rows, D)
+    nt.tag_nights(nights, (), [(rd, "Trail du Lac")], {})
+    s = sl.sleep_view(nights, D, "365", races=[(rd, "Trail du Lac")])
+    d = json.loads(s["heart"]["data"])
+    i = d["d"].index("2026-08-31")
+    assert "au-dessus" not in d["r"][i][1] and "en dessous" not in d["r"][i][1]
+    assert "FC 55" in d["r"][i][1] and "◇ autour de la course" in d["r"][i][2]
+    assert not any(dot["out"] for p in s["heart"]["panels"] for dot in p["dots"])
+    # an ordinary week out of its band is still judged
+    rows2 = night_rows(range(0, 300), hr=lambda k: 52.0 if k < 7 else 45.0)
+    s2 = sl.sleep_view(nt.build_nights(rows2, D), D, "365")
+    d2 = json.loads(s2["heart"]["data"])
+    assert "FC 52 bpm au-dessus" in d2["r"][-1][1].replace(" ", " ")
+
+
+def test_one_year_steps_by_week_and_says_so():
+    """UX11: in « 1 an » the step buttons and the range input name a week."""
+    from tests.test_viz import _env
+
+    nights = _nights(night_rows(range(0, 200)))
+    page = _env().get_template("partials/sante_sleep_range.html")
+    html = page.render(page={"som": sl.sleep_view(nights, D, "365")})
+    assert html.count('aria-label="Semaine précédente"') == 2 and html.count('aria-label="Semaine suivante"') == 2
+    assert "Nuit suivante" not in html and html.count("choisis une semaine") == 2 and "choisis une nuit" not in html
+    daily = page.render(page={"som": sl.sleep_view(nights, D, "14")})
+    assert daily.count('aria-label="Nuit précédente"') == 2 and "Semaine" not in daily
+
+
+def test_the_method_fold_marks_its_heuristics():
+    """F11: the fold's numbers that no study gives are marked (H) where they are said."""
+    assert "au moins 14 nuits (H)" in sl.METHOD[1] and "J-7 → J+7 (H)" in sl.METHOD[1] and "60 jours (H)" in sl.METHOD[1]

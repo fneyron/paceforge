@@ -24,8 +24,10 @@ partials/activity_training.html draws it on page 1 without a sport filter.
   its HR moved to the athlete's reference pace (one Theil–Sen slope over 12
   months), hot runs (≥ 25 °C, H) hollow and out of the normal; the normal is
   the median of the 28 days before ± 3 bpm (H; Nuuttila 2022's 3–4 bpm edge)
-  with 3 runs at least (H). « à surveiller » when the 2 latest runs, both in
-  the last 14 days, are each ≥ 3 bpm above it (H; Nuuttila 2022). One model
+  with 3 runs at least (H); drawn only with ≥ 6 qualifying runs in the last 6
+  weeks (H). « à surveiller » when the 2 latest runs, both in the last 14
+  days, are each ≥ 3 bpm above the median of the runs of the 14 days before
+  it (H; Nuuttila 2022: against the previous 2 weeks). One model
   (sante_training.easy_model / easy_watch), shared with Santé's « FC en
   footing » tile, which prints the bpm: here the line says it in words. HR
   alone is « not a clear marker of fatigue » (Buchheit 2014): never « fatigue ».
@@ -49,11 +51,6 @@ WEEKS, USUAL_WEEKS, MIN_USUAL_WEEKS = 12, 26, 8  # (H)
 SPIKE, SPIKE_DAYS, SPIKE_RECENT = 1.10, 30, 10  # Frandsen 2025; the line names a spike of the last 10 days (H)
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
-
-
-def _dplus(v: float) -> str:
-    """« 2 400 m D+ »."""
-    return f"{int(round(v)):,}".replace(",", NNBSP) + f"{NNBSP}m D+"
 
 
 # ── A1 Semaines ─────────────────────────────────────────────────────────────
@@ -139,12 +136,12 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
             said.append(f"une sortie longue de {hm_long(big.minutes)}")
         head = rp.week_label(m) + (" · en cours" if w["current"] else "")
         value = hm(w["minutes"]) if w["minutes"] else "aucune séance"
-        if w["dplus"] >= 1:
-            value += f" · {_dplus(w['dplus'])}"
+        if round(w["dplus"]) >= 1:
+            value += f" · {viz.dplus(w['dplus'])}"  # as the list's week heading prints it
         r.append([head, value, " · ".join(ctx)])
         spoken = f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + " : "
         spoken += (hm_long(w["minutes"]) if w["minutes"] else "aucune séance")
-        if w["dplus"] >= 1:
+        if round(w["dplus"]) >= 1:
             spoken += f", {int(round(w['dplus']))} mètres de dénivelé positif"
         a.append(spoken + "".join(f", {c}" for c in said))
         weeks_ago = (this_monday - m).days // 7
@@ -237,7 +234,7 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
     is sante_training.easy_watch. Its number (the bpm over the normal) is
     printed once, on Santé's tile: the line here says it in words."""
     model = st.easy_model(sessions, today, peak)
-    if model is None:
+    if not st.line_ok(model, today):  # ≥ 6 qualifying runs in 6 weeks (H, evidence row 16)
         return None
     shown = [s for s in model["runs"] if s.day > today - timedelta(days=EASY_DAYS)]
     if not shown:

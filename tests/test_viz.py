@@ -264,3 +264,179 @@ def test_js_moves_the_selection_only():
     for needed in ('"pfviz:sel"', "[data-step]", "[data-r-href]", "aria-valuetext", "PageUp", "Escape",
                    "toggleAttribute", "htmx:afterSettle", "replaceState", "prefers-reduced-motion"):
         assert needed in js, needed
+
+
+# ── review fixes (v3): nothing moves under the finger, focus never lost ─────
+
+def _bars_with_links(sel_link: bool):
+    days = [D - timedelta(days=7 * (3 - i)) for i in range(4)]
+    links = [{"href": f"#w{i}", "label": "Voir la semaine ›"} if i % 2 == 0 else None for i in range(4)]
+    return viz.bars(days, [60.0] * 4, readouts=[["a", "b", "c"]] * 4, arias=["a"] * 4, links=links,
+                    sel=2 if sel_link else 1)
+
+
+def test_the_link_row_is_reserved_never_inserted():
+    """UX1: a figure with links keeps the link row whatever is selected
+    (visibility, not display); the default slot's link is printed by the server."""
+    html = render("{{ v.viz_bars(c, 'Semaines', 'semaines') }}", c=_bars_with_links(False))
+    a = re.search(r"<a [^>]*data-r-href[^>]*>[^<]*</a>", html).group(0)
+    assert "is-off" in a and 'aria-hidden="true"' in a and 'tabindex="-1"' in a and " hidden" not in a
+    html = render("{{ v.viz_bars(c, 'Semaines', 'semaines') }}", c=_bars_with_links(True))
+    a = re.search(r"<a [^>]*data-r-href[^>]*>[^<]*</a>", html).group(0)
+    assert 'href="#w2"' in a and "Voir la semaine ›" in a and "is-off" not in a and "aria-hidden" not in a
+    days = [D]
+    plain = viz.bars(days, [1.0], readouts=[["a", "b", "c"]], arias=["a"])
+    assert "data-r-href" not in render("{{ v.viz_bars(c, 'x', 'x') }}", c=plain)  # no link anywhere: no row
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert ".pf-viz-link.is-off { visibility: hidden; }" in css
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    assert 'classList.toggle("is-off"' in js and 'hrefEl.toggleAttribute("hidden"' not in js
+
+
+def test_the_readout_and_the_hypnogram_reserve_their_height():
+    """UX2: pf-viz.js sets the readout's min-height to its tallest line; the
+    hypnogram sits in a box of its own height that also holds « Pas de forme »."""
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    assert "function reserve()" in js and "readBox.style.minHeight" in js and "ResizeObserver" in js
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert ".pf-hyp-box { max-width: 560px; aspect-ratio: 320 / 72;" in css
+    tpl = (ROOT / "app/templates/partials/sante_sleep_range.html").read_text()
+    box = tpl[tpl.index('<div class="pf-hyp-box">'):]
+    box = box[:box.index("</div>")]
+    assert "viz_hyp" in box and 'data-night="none"' in box
+    assert viz.hypnogram([("core", datetime(2026, 10, 7, 0), datetime(2026, 10, 7, 1))], datetime(2026, 10, 7),
+                         datetime(2026, 10, 7, 6))["H"] == 72 and viz.W == 320
+
+
+def test_a_touch_selects_on_a_tap_or_a_sideways_drag_only():
+    """UX3: a touch selects nothing on pointerdown; a vertical swipe (the
+    browser's pan-y, then pointercancel) leaves the selection alone."""
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    down = js[js.index('svg.addEventListener("pointerdown"'):js.index('svg.addEventListener("pointermove"')]
+    assert 'e.pointerType === "touch"' in down and "return;" in down.split('"touch"')[1].split("\n")[0]
+    move = js[js.index('svg.addEventListener("pointermove"'):js.index('svg.addEventListener("pointerup"')]
+    assert "dx <= SLOP || dx <= dy" in move and "var SLOP = 8" in js
+    cancel = js[js.index('svg.addEventListener("pointercancel"'):]
+    assert "select(" not in cancel.split("\n")[0]
+
+
+def test_steps_at_either_end_keep_their_focus():
+    """UX5: aria-disabled, never the native disabled that drops focus to <body>."""
+    days = [D - timedelta(days=13 - i) for i in range(14)]
+    html = render("{{ v.viz_bars(c, 'Semaines', 'semaines') }}", c=viz.bars(
+        days, [1.0] * 14, readouts=[["a", "b", "c"]] * 14, arias=["a"] * 14))
+    assert " disabled" not in html.replace('aria-disabled', '') and html.count('aria-disabled="true"') == 1
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    assert ".disabled =" not in js and 'setAttribute("aria-disabled"' in js
+    assert 'getAttribute("aria-disabled") === "true") return' in js
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert '.pf-viz-step[aria-disabled="true"]' in css
+
+
+def _split_top(text: str, sep: str = ",") -> list[str]:
+    """Split on `sep` outside parentheses."""
+    out, depth, cur = [], 0, ""
+    for ch in text:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == sep and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    return out + [cur.strip()]
+
+
+def _specificity(sel: str) -> tuple[int, int, int]:
+    """CSS specificity (ids, classes/attributes/pseudo-classes, types); :is()
+    and :not() count their most specific argument."""
+    total, i, base = [0, 0, 0], 0, ""
+    while i < len(sel):
+        m = re.match(r":(is|not)\(", sel[i:])
+        if m:
+            depth, j = 1, i + len(m.group(0))
+            while depth:
+                depth += sel[j] == "("
+                depth -= sel[j] == ")"
+                j += 1
+            best = max(_specificity(a) for a in _split_top(sel[i + len(m.group(0)):j - 1]))
+            total = [a + b for a, b in zip(total, best)]
+            i = j
+        else:
+            base += sel[i]
+            i += 1
+    total[0] += base.count("#")
+    total[1] += len(re.findall(r"\.[\w-]+|\[[^\]]+\]|:[\w-]+", base))
+    total[2] += len(re.findall(r"(?:^|[\s>+~])([a-z][\w-]*)", base))
+    return tuple(total)
+
+
+def test_the_selection_shows_in_forced_colours_and_on_a_short_night():
+    """UX6: the forced-colors selected rule is at least as specific as the
+    normal-mode one it must beat; a selected < 6 h night is filled."""
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    normal = ".pf-viz-col.is-sel .pf-viz-night:not(.is-short)"
+    fc = css[css.index("@media (forced-colors: active)"):]
+    rule = next(ln for ln in fc.splitlines() if "fill: Highlight" in ln and ".pf-viz-col.is-sel" in ln)
+    sel = next(s for s in _split_top(rule.split("{")[0]) if "pf-viz-col.is-sel" in s)
+    assert _specificity(sel) >= _specificity(normal) == (0, 4, 0), (sel, _specificity(sel))
+    assert ".pf-viz-col.is-sel .pf-viz-night.is-short { fill: rgb(var(--pf-ink)); }" in css
+
+
+def test_the_selected_tab_and_the_pressed_answers_show_in_forced_colours():
+    """UX7."""
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    fc = css[css.index("@media (forced-colors: active)"):]
+    assert '.pf-stab[aria-selected="true"] { border-bottom-color: Highlight; }' in fc
+    assert ".pf-stab { border-bottom-color: Canvas; }" in fc
+    assert '.pf-chip[aria-pressed="true"] { forced-color-adjust: none; background: Highlight;' in fc
+
+
+def test_a_race_name_never_runs_past_the_plot():
+    """UX8: a race in the right part of a chart has its name end at its flag;
+    every label's extent (≈ 6.2 px a character at 11 px) stays inside the viewBox."""
+    days = [D - timedelta(days=89 - i) for i in range(90)]
+    for k in (2, 5, 30, 80):
+        rd = D - timedelta(days=k)
+        c = viz.band_chart("coeur", days, [{"name": "FC", "unit": "bpm", "unit_long": "bpm", "values": [45.0] * 90,
+                                            "band": [None] * 90}], races=[(rd, "10 km de la Saint-Michel")])
+        html = render("{{ v.viz_band(c, 'Cœur la nuit') }}", c=c)
+        m = re.search(r'<text (x="([\d.]+)"(?: text-anchor="end")?|x="([\d.]+)") y="[\d.]+" class="pf-viz-strong">([^<]+)'
+                      r'</text>', html)
+        label = m.group(4)
+        x = float(re.search(r'x="([\d.]+)"', m.group(1)).group(1))
+        width = len(label) * 6.2
+        lo, hi = (x - width, x) if "text-anchor" in m.group(1) else (x, x + width)
+        assert lo >= 0 and hi <= viz.W, (k, lo, hi)
+
+
+def test_bars_never_collapse_after_being_seen_whole():
+    """UX14: under no-preference, bars wait drawn small while pf-viz.js has set
+    up their figure off screen; a figure already on screen stays as painted."""
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    motion = css[css.index("@media (prefers-reduced-motion: no-preference)"):]
+    assert ".pf-viz-on:not(.pf-viz-in) :is(.pf-viz-night, .pf-viz-bar) { transform: scaleY(.3); opacity: .3;" in motion
+    assert ".pf-viz-in:not(.pf-viz-still) :is(.pf-viz-night, .pf-viz-bar) { animation:" in motion
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    assert 'fig.classList.add("pf-viz-in", "pf-viz-still")' in js and "threshold: 0 }" in js
+
+
+def test_the_small_targets_reach_44_px():
+    """UX15: « Synchroniser maintenant » and the method fold's references."""
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert ".pf-sante-sync > button { min-height: 44px; }" in css
+    refs = re.search(r"\.pf-refs a \{ display: inline-block;[^}]*\}", css).group(0)
+    assert "min-height: 44px" in refs and "white-space: nowrap" in refs
+
+
+def test_focus_follows_the_in_place_switches():
+    """UX4 / UX16: the check-in fold's summary takes the focus after a swap that
+    folds it; a tile or driver opening Sommeil focuses the figure's heading."""
+    page = (ROOT / "app/templates/sante.html").read_text()
+    assert '(el || document.getElementById("tab-sommeil")).focus({ preventScroll: true })' in page
+    assert 'document.getElementById("feel-summary")' in page and "htmx:afterSettle" in page
+    today = (ROOT / "app/templates/partials/sante_today.html").read_text()
+    assert '<summary id="feel-summary">' in today
+    sleep = (ROOT / "app/templates/partials/sante_sleep_range.html").read_text()
+    assert '<h2 id="nuits" class="pf-sante-h" tabindex="-1">' in sleep and \
+        '<h2 id="coeur" class="pf-sante-h" tabindex="-1">' in sleep

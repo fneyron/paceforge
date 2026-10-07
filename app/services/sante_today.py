@@ -4,10 +4,12 @@ for « quand reprendre » or the nap tip.
 
 The ladder (first match wins; evidence_final.md, SANTE_DECISIONS.md; (H) = a
 PaceForge heuristic, never shown as a finding):
+R2  illness first: the « malade » chip today, or the nightly-HR alert (two
+    nights in a row, each ≥ normal + max(2 SD, 5 bpm) (H); Altini & Plews 2021,
+    Quer 2021: specific, not sensitive). It also fires in race week, J-2 and
+    J-1 included (« malade » or the alert → no intensity, evidence row 26: no
+    accelerations then); the race chip stays. → rest.
 R1  a race in 0–2 days.
-R2  illness: the « malade » chip today, or the nightly-HR alert (two nights in
-    a row, each ≥ normal + max(2 SD, 5 bpm) (H); Altini & Plews 2021, Quer
-    2021: specific, not sensitive). It also fires in race week. → rest.
 R3  « Reprise » (Schwellnus 2022; Snyders 2022; Radin 2021; gates (H)), the
     state R2 opens (nights.reprise); still open after 14 days → see a doctor.
 R4  after a race (or an exceptional outing): « Récupère » J+1 → J+3, then
@@ -117,21 +119,22 @@ def decide(c: dict) -> dict:
 
     alert_chip = chip("↑", "FC de nuit · 2 nuits", f"{SOMMEIL}#coeur",
                       "FC de nuit au-dessus de ta normale 2 nuits de suite")
+    soon = race_chip({**nr, "days": -nr["days"]}) if nr and nr["days"] <= 2 else None
+    # R2 illness: the chip, or the HR alert (race week included, J-2 → J0 too: no accelerations then)
+    if worse and "sick" in why:
+        return out("rest", "Pas d'intensité aujourd'hui", "Repos tant que tu as de la fièvre ou des courbatures partout.",
+                   [alert_chip if c.get("alert") else None, soon], "ill", ["hr"] if c.get("alert") else [])
+    if c.get("alert"):
+        return out("rest", "Pas d'intensité aujourd'hui",
+                   "FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant un rhume, après de "
+                   "l'alcool ou une grosse journée.", [alert_chip, soon], "ill", ["hr"])
     # R1 race in 0–2 days
     if nr and nr["days"] <= 2:
         head = ("Jour de course" if nr["days"] == 0 else "Course demain : repos ou 20 min faciles"
                 if nr["days"] == 1 else "Course après-demain : court et facile")
         text = ("Pars plus lentement que tu ne le voudrais." if nr["days"] == 0
                 else "20 à 30 min faciles avec 4 accélérations de 20 s, ou repos.")
-        return out("ok", head, text, [race_chip({**nr, "days": -nr["days"]}), alert_chip if c.get("alert") else None], "race")
-    # R2 illness: the chip, or the HR alert (race week included)
-    if worse and "sick" in why:
-        return out("rest", "Pas d'intensité aujourd'hui", "Repos tant que tu as de la fièvre ou des courbatures partout.",
-                   [alert_chip if c.get("alert") else None], "ill", ["hr"] if c.get("alert") else [])
-    if c.get("alert"):
-        return out("rest", "Pas d'intensité aujourd'hui",
-                   "FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant un rhume, après de "
-                   "l'alcool ou une grosse journée.", [alert_chip], "ill", ["hr"])
+        return out("ok", head, text, [soon], "race")
     # R3 « Reprise »
     rp = c.get("reprise")
     if rp:

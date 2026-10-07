@@ -741,3 +741,36 @@ def test_garmin_naps_on_the_local_clock():
     assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06", "napTimeSeconds": 1200}})[1][
         "asleep"] == 20
     assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06"}}) is None
+
+
+async def test_old_format_nights_beyond_the_backfill_never_ask_for_60_days_again(db_session: AsyncSession,
+                                                                                  test_user: User, fake, no_commit):
+    """R2: a night stored before 2026-10 (no main window) 100 days ago, and none
+    since (the watch no longer worn at night): the re-read cannot rewrite it,
+    so it never asks for the 60 days; one inside the window asks once."""
+    from app.services.health import nights_upgraded
+
+    t = fake.today
+    old = {"bedtime": "23:00", "wake": "07:00"}
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=100), metric="sleep", value=450,
+                                details=old, source="Garmin", n_samples=1))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=1), metric="steps", value=9000,
+                                details={}, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=2))
+    fake.statuses = {"/wellness-service/wellness/dailySleepData/": 204}
+    for _ in range(3):
+        fake.calls.clear()
+        assert (await garmin.run_sync(db_session, conn))["ok"]
+        assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
+    # an old-format night inside the window: read again (once it is rewritten, never again)
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=20), metric="sleep", value=450,
+                                details=old, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert not await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=2), metric="sleep", value=450,
+                                details={"main_start": f"{t - timedelta(days=3)}T23:00"}, source="Garmin",
+                                n_samples=1))
+    await db_session.flush()
+    assert await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)

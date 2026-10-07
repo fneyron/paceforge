@@ -72,7 +72,8 @@
                 if (to >= 0) { e.preventDefault(); show(tabs[to].getAttribute("aria-controls"), true); }
             });
         });
-        // a link from Aujourd'hui to Sommeil (a tile, a driver) opens it in place, at its figure
+        // a link from Aujourd'hui to Sommeil (a tile, a driver) opens it in place, at its figure, and takes the
+        // focus there (the link it came from is now hidden): the figure's heading, else the Sommeil tab
         document.addEventListener("click", function (e) {
             var a = e.target.closest && e.target.closest('a[href^="/sante?vue=sommeil"]');
             if (!a || e.metaKey || e.ctrlKey || e.shiftKey || a.closest(".pf-stabs")) return;
@@ -80,6 +81,22 @@
             show("sommeil");
             var id = a.getAttribute("href").split("#")[1] || "", el = id && document.getElementById(id);
             if (el) el.scrollIntoView(); else window.scrollTo({ top: 0 });
+            (el || document.getElementById("tab-sommeil")).focus({ preventScroll: true });
+        });
+        // the check-in swaps its own block: when the answer folds it, the focus goes to « Noté : … — modifier »
+        // (never lost to the page's top)
+        var feelFocus = false;
+        document.addEventListener("htmx:beforeRequest", function (e) {
+            var rest = document.getElementById("sante-today-rest");
+            feelFocus = !!(rest && e.target && rest.contains(e.target) && rest.contains(document.activeElement));
+        });
+        document.addEventListener("htmx:afterSettle", function () {
+            if (!feelFocus) return;
+            feelFocus = false;
+            var active = document.activeElement;
+            if (active && active !== document.body && document.body.contains(active) && active.offsetParent) return;
+            var to = document.getElementById("feel-summary") || document.querySelector("#sante-today-rest .pf-chip");
+            if (to) to.focus();
         });
     })();
     </script>
@@ -87,4 +104,4 @@
 </div>
 {% endblock content %}
 
-{% block scripts %}<script defer src="/static/js/pf-viz.js?v=1"></script>{% endblock scripts %}
+{% block scripts %}<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>{% endblock scripts %}

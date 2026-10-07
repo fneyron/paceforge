@@ -14,7 +14,8 @@ Each builder returns a plain dict with the geometry the macro needs and a
 one selects the same date in the others, silently.
 
 Formats (the house formats, one per kind, used everywhere):
-- durations: « 5h50 », « 2h20 », « 45 min » (hm); spoken « 5 heures 50 »;
+- durations: « 5h50 », « 2h20 », « 45 min » (hm, rounded to the minute); spoken « 5 heures 50 »;
+- climbs: « +2 401 m » (dplus);
 - clock times: « 23:35 », rounded to 5 min for sleep times (approximate);
 - numbers: decimal comma, true minus U+2212, narrow no-break space U+202F
   before units: « 58 ms », « −3 bpm »;
@@ -59,6 +60,11 @@ def hm(minutes: float) -> str:
     """The house duration: 350 → « 5h50 », 45 → « 45 min »."""
     m = int(round(minutes))
     return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
+
+
+def dplus(metres: float) -> str:
+    """A week's or a run's climb: « +2 401 m » (rounded; the list's week headings and A1 print it alike)."""
+    return "+" + f"{int(round(metres)):,}".replace(",", NNBSP) + f"{NNBSP}m"
 
 
 def hm_long(minutes: float) -> str:
@@ -191,13 +197,14 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None) -> dict:
     """{data: the JSON pf-viz.js reads, read: the default readout (printed by
     the server: the chart is complete without JS), sel, n}."""
     sel = (len(xs) - 1 if sel is None else sel) if xs else None
-    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "r": r, "a": a,
-           "h": h or [None] * len(xs), "sel": sel}
+    h = h or [None] * len(xs)
+    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "r": r, "a": a, "h": h, "sel": sel}
     if link:
         out["link"] = link
     data = json.dumps(out, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    # `links`: a slot has a link, so the figure reserves its row; `link_now`: the default slot's (printed by the server)
     return {"data": data, "read": r[sel] if xs else ["", "—", ""], "aria_now": a[sel] if xs else "", "sel": sel,
-            "n": len(xs)}
+            "n": len(xs), "links": any(h), "link_now": h[sel] if xs else None}
 
 
 def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
@@ -212,7 +219,7 @@ def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
     if back is not None:
         data["back"] = back
     c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True)
+    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True, link_now=None)
     return c
 
 

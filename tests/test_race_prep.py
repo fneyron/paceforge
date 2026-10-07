@@ -104,24 +104,50 @@ def test_taper_bars_against_the_41_60_percent_band_of_the_base():
     c = rp.taper(ss + [S(rd, minutes=900, km=160, workout_type=1)], route(rd), rd, D, NOW)
     d = data(c)
     assert [col["label"] for col in c["cols"]] == ["S‑6", "S‑5", "S‑4", "S‑3", "S‑2", "S‑1", "S0"]
-    assert [bool(col.get("tgt")) for col in c["cols"]] == [False] * 5 + [True, True]
+    # a Monday race: J-14 → J-1 is S-2 and S-1 whole; S0 holds no day before the race, so no target
+    assert [bool(col.get("tgt")) for col in c["cols"]] == [False] * 4 + [True, True, False]
     assert d["r"][5][0] == "sem. du 5 oct. · en cours" and c["cols"][5]["cur"]
-    assert d["r"][5][2] == "cible 2h55–4h20"  # base 7h20: −41 to −60 %
-    assert d["r"][6][1] == "à venir" and d["r"][6][2] == "sans la course · cible 2h55–4h20"
+    assert d["r"][5][2] == "cible 2h55–4h20" and d["r"][4][2] == "cible 2h55–4h20"  # base 7h20: −41 to −60 %
+    assert d["r"][6][1] == "à venir" and d["r"][6][2] == "sans la course"
     assert d["r"][1][2] == "dans ta base"
     # resting readout: this week's hours are Activités' (its week heading), so the base and the target instead
-    assert c["rest"] and d["sel"] == 7 and c["read"] == ["S‑6 → S0", "base : 7h20 par semaine", "cible S‑1 et S0 : 2h55–4h20"]
+    assert c["rest"] and d["sel"] == 7 and c["read"] == ["S‑6 → S0", "base : 7h20 par semaine",
+                                                        "cible J‑14 → J‑1 : 2h55–4h20 par semaine"]
     assert d["back"] == 5  # ‹ from the rest: this week, not S0 « à venir »
     assert "extrapolation" in c["summary"]  # 160 km: beyond what was studied
     assert c["sentence"] == "Moins de volume, même intensité\u00a0: c'est elle qui entretient ta forme."
     heavy = ss + [S(D - timedelta(days=1), minutes=300, i=1)]  # 1h50 + 5 h this week: above 4h20
     assert rp.taper(heavy, route(rd), rd, D, NOW)["sentence"].startswith("Déjà au-dessus de ta cible")
     early = rp.taper(ss, route(D + timedelta(days=20)), D + timedelta(days=20), D, NOW)
-    assert early["sentence"] == "Affûtage dès le lun. 19 oct.\u00a0: 41 à 60\u202f% de volume en moins, même intensité."
+    assert early["sentence"] == "Affûtage dès le mar. 13 oct.\u00a0: 41 à 60\u202f% de volume en moins, même intensité."
     assert rp.taper([], route(rd), rd, D, NOW) is None
     # a race inside the base weeks is no training volume: the base leaves it out
     raced = ss + [S(D - timedelta(days=17), minutes=900, km=100, workout_type=1, i=2)]
     assert data(rp.taper(raced, route(rd), rd, D, NOW))["r"][5][2] == "cible 2h55–4h20"
+
+
+def test_a_partial_taper_week_is_compared_with_its_own_days():
+    """L-F7: a Wednesday race. J-14 → J-1 holds 5 days of S-2, S-1 and 2 days of
+    S0: S0's target is 2/7 of the band, S-2's its 2 base days + 5/7 of the band;
+    a textbook 50 % taper sits inside every band, base volume never does."""
+    rd = date(2026, 10, 21)  # Wednesday
+    today, now = rd - timedelta(days=1), datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+    base = steady(rd - timedelta(days=14), days=60)  # 7h20 a week until J-14
+    per_day = 440 / 7 / 2  # half the base, every day of J-14 → J-1
+    taper_days = [S(rd - timedelta(days=k), minutes=per_day, i=5) for k in range(1, 15)]
+    c = rp.taper(base + taper_days, route(rd), rd, today, now)
+    d = data(c)
+    assert [col.get("tgt") is not None for col in c["cols"]] == [False] * 4 + [True] * 3
+    assert d["r"][6][2] == "sans la course · cible 50 min–1h15 · 2 jours d'affûtage"  # 2/7 × 2h55–4h20
+    assert d["r"][4][2].startswith("cible ") and d["r"][4][2].endswith(" · 5 jours d'affûtage")
+    for col in c["cols"][4:]:  # each bar inside its own band (y grows downwards)
+        assert col["tgt"]["y"] <= col["y"] <= col["tgt"]["y"] + col["tgt"]["h"], col
+    # base volume through the taper: above the band this week, and the sentence says so
+    full = base + [S(rd - timedelta(days=k), minutes=440 / 7, i=5) for k in range(1, 15)]
+    c = rp.taper(full, route(rd), rd, today, now)
+    assert c["cols"][6]["y"] < c["cols"][6]["tgt"]["y"]
+    assert c["sentence"].startswith("Déjà au-dessus de ta cible")
+    assert rp.taper_days(date(2026, 10, 5), rd) == (2, 5) and rp.taper_days(date(2026, 10, 19), rd) == (0, 2)
 
 
 def _pre_race_nights(rd: date, nap_day: date | None = None, days=range(0, 90)):

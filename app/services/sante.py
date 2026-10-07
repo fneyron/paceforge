@@ -47,7 +47,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
     next_race, last_race, past_races = await _races(db, user_id, today)
-    races = [(rp.race_day(x), x.name) for x in past_races + ([next_race] if next_race else [])]
+    # Routes and sessions marked as races (Strava), as Activités and « après la course » read them
+    races = rp.all_races(past_races + ([next_race] if next_race else []), sessions)
     nights, feel = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions, races=races,
                                         peak=peak)
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
@@ -64,7 +65,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     if "sleep" in parts:
         race_days = {d for d, _ in races}  # a race has its own flag
         longs = sorted({s.day for s in sessions if (s.minutes >= 180 or s.dplus >= 1500) and s.day not in race_days})
-        samples = await _timelines(db, user_id, nights)
+        # the hypnograms of the range shown only (none in « 1 an »)
+        samples = await _timelines(db, user_id, nights, today) if sl.choose(nights, today, r) in ("14", "90") else {}
         out["som"] = sl.sleep_view(nights, today, r, races=races, longs=longs, samples=samples,
                                    alert=nt.illness_alert(nights, today, races) is not None)
     return out
@@ -93,22 +95,27 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
     tst = nt.day_tst24(nights, today)
     if tst is not None and tst < nt.SHORT_DAY_MIN and not race_week:
         usual = _usual(nights, today - timedelta(days=1))
-        short = {"tst24": tst, "early": nt.early_wake(nights[today], usual), "tip": nt.nap_tip_hour(usual)}
+        # a « rendormi » morning (a nap ≤ 3 h after the wake, H) is no early wake: its 24-h total says the short night
+        early = nt.early_wake(nights[today], usual) and not nights[today].resettled
+        short = {"tst24": tst, "early": early, "tip": nt.nap_tip_hour(usual)}
 
     # R6 (H): the biggest outing on foot of the last 48 h, when ≥ 3 h or ≥ 1 500 m D+
     big = max((s for s in sessions if s.sport in st.FOOT and today - timedelta(days=1) <= s.day <= today
                and (s.minutes >= td.LEGS_MIN or s.dplus >= td.LEGS_DPLUS)),
               key=lambda s: (s.minutes, s.dplus), default=None)
 
+    # what decides: the 7-night means without an illness episode's nights (evidence: « Excluded nights »)
     stats = {k: _night_stats(nights, k, today) for k in ("hr", "hrv")}
-    stats["sleep"] = _sleep_stats(nights, today, short)
-    stats["easy"] = td.easy_stats(model, today, reprise is not None)
     f_today = feel.get(today)
     ctx = {"today": today, "next_race": nr, "post": post, "feel": f_today, "alert": alert, "reprise": reprise,
            "short": short, "legs": {"big": big}, "hr": stats["hr"]["status"], "hrv": stats["hrv"]["status"],
            "easy": easy, "sessions42": sum(1 for s in sessions if s.day > today - timedelta(days=42)),
            "has_watch": has_watch, "has_sessions": bool(sessions)}
     verdict = td.decide(ctx)
+    if verdict["rule"] in ("ill", "reprise"):  # R2/R3: the tiles show the episode's nights, never decided on
+        stats = {k: _night_stats(nights, k, today, episode=True) for k in ("hr", "hrv")}
+    stats["sleep"] = _sleep_stats(nights, today, short)
+    stats["easy"] = td.easy_stats(model, today, reprise is not None)
     tiles = td.make_tiles(stats, verdict["drivers"], reprise is not None)
 
     # the nightly tiles that cannot show: one line, once
@@ -128,30 +135,32 @@ def _today_view(nights, feel, sessions, peak, next_race, last_race, races, today
             "feel": _feel_view(f_today)}
 
 
+USUAL_NIGHTS = 5  # (H) nights of 28 days before a median onset and wake are used (R5's early wake, the nap tip)
+
+
 def _usual(nights, until: date) -> dict:
-    """The median onset and wake of the 28 days up to `until`, once 5 nights are there (else none)."""
+    """The median onset and wake of the 28 days up to `until`, once 5 nights are there (H; else none)."""
     t = nt.timing(nights, until)
-    return t if t["n"] >= 5 else {"bed": None, "wake": None}
+    return t if t["n"] >= USUAL_NIGHTS else {"bed": None, "wake": None}
 
 
-def _night_stats(nights, metric: str, today: date) -> dict:
+def _night_stats(nights, metric: str, today: date, episode: bool = False) -> dict:
     """A nightly tile's numbers: the mean of the last 7 days' usable nights (3
     at least), its status against the band of the 60 days before the window,
-    the 7-night means of the last 14 days for the sparkline."""
-    # the nights of an illness episode stay out of the band, not out of the tile that shows the episode
-    m = nt.mean7(nights, metric, today, ignore=("ill",))
-    b = nt.band(nights, metric, today - timedelta(days=WEEK - 1))
-    means = [(nt.mean7(nights, metric, today - timedelta(days=k), ignore=("ill",)) or {}).get("value")
+    on the watch that mean reads (one band per watch, Dial 2025: a new watch
+    has no status for 14 nights), the 7-night means of the last 14 days for
+    the sparkline. The status is judged on the unrounded mean (median ± 3 bpm,
+    H). An illness episode's nights stay out (they never decide); `episode`
+    (R2/R3 only): they stay in, so the tile shows the episode."""
+    ignore = nt.EPISODE if episode else ()
+    m = nt.mean7(nights, metric, today, ignore=ignore)
+    src = nt.mean_source(nights, metric, today)
+    b = nt.band(nights, metric, today - timedelta(days=WEEK - 1), source=src) if src else None
+    means = [(nt.mean7(nights, metric, today - timedelta(days=k), ignore=ignore) or {}).get("value")
              for k in range(13, -1, -1)]
     label, unit, said = {"hr": ("FC de nuit · 7 nuits", "bpm", "battements par minute"),
                          "hrv": ("VFC · 7 nuits", "ms", "millisecondes")}[metric]
-    st = None
-    if m and b:
-        if metric == "hr":  # on the whole bpm the tile prints: median + 3 is « au-dessus » (H)
-            v, c = round(m["value"]), round(b["center"])
-            st = "above" if v >= c + nt.HR_BAND_BPM else "below" if v <= c - nt.HR_BAND_BPM else "in"
-        else:
-            st = nt.status(m["value"], b)
+    st = nt.status(m["value"], b) if m and b else None
     text = f"{m['value']:.0f}" if m else None
     return {"label": label, "unit": unit, "text": text, "value": m["value"] if m else None, "status": st,
             "spoken": f"{text} {said}" if m else "", "means": means,
@@ -161,18 +170,22 @@ def _night_stats(nights, metric: str, today: date) -> dict:
 def _sleep_stats(nights, today: date, short: dict | None) -> dict:
     """« Sommeil · 7 jours »: the mean 24-h total (naps included) of the
     usable days, else of every measured day (the race window included: shown,
-    never judged); « Sommeil · 24 h » (the morning's total) when R5 fires."""
+    never judged); « Sommeil · 24 h » when R5 fires: this morning's total as
+    Sommeil draws it (Night.tst24: the same number on both views; R5 also
+    counts yesterday's late nap, day_tst24, without printing it)."""
     from app.services.viz import hm, hm_long
 
     base = {"unit": "", "href": "/sante?vue=sommeil#nuits"}
     if short:
         days = [today - timedelta(days=k) for k in range(13, -1, -1)]
-        means = [nt.day_tst24(nights, d) if d == today else (nights[d].tst24 if d in nights else None) for d in days]
-        return {**base, "label": "Sommeil · 24 h", "text": hm(short["tst24"]), "value": short["tst24"],
-                "status": "short", "spoken": f"{hm_long(short['tst24'])} sur 24 heures", "means": means, "band": None}
+        means = [nights[d].tst24 if d in nights else None for d in days]
+        v = nights[today].tst24
+        return {**base, "label": "Sommeil · 24 h", "text": hm(v), "value": v,
+                "status": "short", "spoken": f"{hm_long(v)} sur 24 heures", "means": means, "band": None}
     usable = nt.mean7(nights, "tst24", today)
     shown = usable or nt.mean7(nights, "tst24", today, untagged=False)
-    b = nt.band(nights, "tst24", today - timedelta(days=WEEK - 1)) if usable else None
+    src = nt.mean_source(nights, "tst24", today)
+    b = nt.band(nights, "tst24", today - timedelta(days=WEEK - 1), source=src) if usable and src else None
     means = [(nt.mean7(nights, "tst24", today - timedelta(days=k), untagged=bool(usable)) or {}).get("value")
              for k in range(13, -1, -1)]
     if not shown:
@@ -211,26 +224,31 @@ def _feel_view(f: dict | None) -> dict:
             "noted": " · ".join(words)}
 
 
-async def _timelines(db: AsyncSession, user_id: int, nights) -> dict:
+TIMELINE_DAYS = 90  # the hypnograms of the 14-night and 3-month ranges only
+
+
+async def _timelines(db: AsyncSession, user_id: int, nights, today: date) -> dict:
     """{day: [(stage, start, end)]}: the real stage intervals (Garmin
-    sleepLevels, stored as the hypnogram's timeline) of the nights that have
-    them, clipped to nothing else than their own main window."""
+    sleepLevels, stored as the hypnogram's timeline) of the nights of the last
+    90 days that have them, each matched to its own main window only."""
+    from bisect import bisect_right
+
     from app.models.health import HealthSample
 
-    days = [d for d, n in nights.items() if n.timeline and n.start]
+    days = sorted(d for d, n in nights.items() if n.timeline and n.start and d > today - timedelta(days=TIMELINE_DAYS))
     if not days:
         return {}
-    lo = nights[min(days)].start - timedelta(hours=1)
+    lo = nights[days[0]].start - timedelta(hours=1)
     rows = (await db.execute(select(HealthSample.kind, HealthSample.start_at, HealthSample.end_at).where(
         HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == "Garmin",
         HealthSample.start_at >= lo).order_by(HealthSample.start_at))).all()
     out: dict[date, list] = {}
-    wins = sorted((nights[d].start, nights[d].end, d) for d in days)
+    wins = sorted((nights[d].start, nights[d].end, d) for d in days)  # one night after the other: ends sorted too
+    ends = [e for _, e, _ in wins]
     for kind, a, b in rows:
-        for s, e, d in wins:
-            if a < e and b > s:
-                out.setdefault(d, []).append((kind, a, b))
-                break
+        j = bisect_right(ends, a)  # the first window ending after the interval starts
+        if j < len(wins) and wins[j][0] < b:
+            out.setdefault(wins[j][2], []).append((kind, a, b))
     return out
 
 
