@@ -46,8 +46,20 @@ async def sante_page(
     return templates.TemplateResponse(
         request, "sante.html",
         context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
+                 "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0,
                  "vue": vue, "lines": _lines(((("COROS", status), ("Garmin", garmin_link))), page)},
     )
+
+
+async def data_version(db: AsyncSession, user_id: int) -> str:
+    """What the page was drawn from: a new or rewritten day changes it."""
+    from sqlalchemy import func
+
+    from app.models.health import HealthMetric
+
+    n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
+        HealthMetric.user_id == user_id))).one()
+    return f"{n}-{last.timestamp() if last else 0:.0f}"
 
 
 def _lines(links, page) -> list[dict]:
@@ -97,7 +109,8 @@ async def sante_feel(
 
 _WATCHES = (("COROS", coros), ("Garmin", garmin))
 STALE_AFTER = timedelta(hours=1)
-STALE_NIGHT = timedelta(minutes=10)  # last night still missing: it may have just been uploaded
+STALE_NIGHT = timedelta(minutes=30)  # last night still missing: it may have been uploaded since
+MAX_POLLS = 40  # 3 s apart: the page stops waiting after 2 min
 JUST_SYNCED = timedelta(minutes=3)
 
 
@@ -127,17 +140,22 @@ def _sync_stale(user_id: int, links, stale_after: timedelta) -> bool:
 @router.get("/sante/sync-status", response_class=HTMLResponse)
 async def sante_sync_status(
     request: Request,
+    v: str = "",
+    n: int = 0,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Polled while the opening sync runs: the page reloads once it brought
-    something, else the usual button comes back."""
-    links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
-    if any(link.get("syncing") for link in links):
-        return templates.TemplateResponse(request, "partials/sante_sync.html",
-                                          context={"request": request, "auto_sync": True})
-    if any(_fresh_at(link, JUST_SYNCED) for link in links if link.get("connected")):
-        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    """Polled, quietly, while the opening sync runs: the page reloads only when
+    the sync brought something new; it stops waiting after 2 min."""
+    try:
+        links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
+        if any(link.get("syncing") for link in links) and n < MAX_POLLS:
+            return templates.TemplateResponse(request, "partials/sante_sync.html", context={
+                "request": request, "auto_sync": True, "sync_v": v, "sync_n": n + 1})
+        if v and await data_version(db, user.id) != v:
+            return HTMLResponse("", headers={"HX-Refresh": "true"})
+    except Exception:  # never leave the page waiting on an error
+        logger.exception("Santé sync status failed for user %d", user.id)
     return templates.TemplateResponse(request, "partials/sante_sync.html", context={"request": request})
 
 

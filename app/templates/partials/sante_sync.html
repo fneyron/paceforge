@@ -1,7 +1,8 @@
 {# Santé: the one place to sync on demand, for every linked watch (Réglages show each link's state) #}
 {% if auto_sync is defined and auto_sync %}
-<div id="sante-sync" class="pf-sante-sync flex flex-col items-start gap-1" hx-get="/sante/sync-status" hx-trigger="load delay:3s" hx-swap="outerHTML">
-    <p class="text-[13px] font-semibold text-accent inline-flex items-center gap-1.5 min-h-8"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Synchro en cours…</p>
+{# a sync runs in the background: the button stays, the page reloads only if something new arrives #}
+<div id="sante-sync" class="pf-sante-sync flex flex-col items-start gap-1" hx-get="/sante/sync-status?v={{ sync_v }}&n={{ sync_n }}" hx-trigger="load delay:3s" hx-swap="outerHTML">
+    <p class="text-[13px] text-gray-500 inline-flex items-center gap-1.5 min-h-8"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Mise à jour de tes données…</p>
 </div>
 {% else %}
 <div id="sante-sync" class="pf-sante-sync flex flex-col items-start gap-1">

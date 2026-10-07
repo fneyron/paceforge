@@ -337,7 +337,10 @@ def _night_state(series, sources, today: date) -> dict[str, dict]:
     """Per watch: last night received (with its length), not yet, or not worn
     (daytime data for today already came but no night)."""
     out = {}
+    seen = {src for per_day in sources.values() for src in per_day.values()}
     for src in ("COROS", "Garmin"):
+        if src not in seen:  # a link that never brought anything has no night to wait for
+            continue
         night = sources.get("sleep", {}).get(today) == src
         if night and series["sleep"].get(today):
             out[src] = {"state": "received", "txt": fmt_minutes(series["sleep"][today])}

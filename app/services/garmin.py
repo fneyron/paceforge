@@ -1009,9 +1009,27 @@ async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
         logger.warning("Garmin sync failed for user %d: %r", conn.user_id, e)
         conn.last_error = str(e) if isinstance(e, GarminError) else "Garmin ne répond pas pour l'instant."
         outcome = {"ok": False, "error": conn.last_error}
+    except asyncio.CancelledError:  # the worker stops (a deploy): never leave the link claimed
+        await _release(db, conn, conn.user_id)
+        raise
+    except Exception:  # a bug must not leave the link « en cours » for the claim's 15 min
+        logger.exception("Garmin sync crashed for user %d", conn.user_id)
+        await db.rollback()
+        conn.last_error = "La synchro a échoué : réessaie plus tard."
+        outcome = {"ok": False, "error": conn.last_error}
     conn.sync_claimed_at = None
     await db.commit()
     return outcome
+
+
+async def _release(db: AsyncSession, conn, user_id: int) -> None:
+    """Best effort, shielded from the cancellation that called it."""
+    try:
+        await db.rollback()
+        conn.sync_claimed_at = None
+        await asyncio.shield(db.commit())
+    except Exception:
+        logger.warning("Garmin: could not release the sync claim of user %d", user_id)
 
 
 async def _sync_in_background(user_id: int) -> None:

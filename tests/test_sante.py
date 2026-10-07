@@ -379,8 +379,10 @@ def test_load_words_follow_the_watch_then_the_ratio():
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────
 
-async def test_opening_sante_syncs_a_stale_link_and_reloads_once(as_user: AsyncClient, db_session: AsyncSession,
-                                                                 test_user: User, monkeypatch):
+async def test_opening_sante_syncs_a_stale_link_and_reloads_only_with_news(as_user: AsyncClient,
+                                                                          db_session: AsyncSession,
+                                                                          test_user: User, monkeypatch):
+    import re
     from datetime import datetime, timezone
 
     from app.services import coros as coros_service
@@ -388,18 +390,31 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_once(as_user: AsyncC
     conn = await _link(db_session, test_user)
     started = []
     monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
-    # never synced: the page starts a sync and waits for it
+    # never synced: the page starts a sync and waits for it, quietly
     page = (await as_user.get("/sante")).text
-    assert started == [test_user.id] and "Synchro en cours…" in page and 'hx-get="/sante/sync-status"' in page
-    # while it runs, the status keeps waiting; once done with something new, one reload
+    assert started == [test_user.id] and "Mise à jour de tes données…" in page and "Synchro en cours" not in page
+    url = re.search(r'hx-get="(/sante/sync-status\?v=[^"]+)"', page).group(1).replace("&amp;", "&")
+    # while it runs, the status keeps waiting
     conn.sync_claimed_at = datetime.now(timezone.utc)
     await db_session.flush()
-    r = await as_user.get("/sante/sync-status")
-    assert "Synchro en cours…" in r.text and "HX-Refresh" not in r.headers
+    r = await as_user.get(url)
+    assert "Mise à jour de tes données…" in r.text and "n=1" in r.text and "HX-Refresh" not in r.headers
+    # done but nothing new: no reload, the usual button
     conn.sync_claimed_at = None
     conn.last_sync_at = datetime.now(timezone.utc)
     await db_session.flush()
-    r = await as_user.get("/sante/sync-status")
+    r = await as_user.get(url)
+    assert "HX-Refresh" not in r.headers and "Synchroniser maintenant" in r.text
+    # a sync stuck « en cours » (a crashed worker): the page stops waiting after 2 min
+    conn.sync_claimed_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    r = await as_user.get(url.replace("n=0", "n=40"))
+    assert "Synchroniser maintenant" in r.text and "sync-status" not in r.text
+    conn.sync_claimed_at = None
+    # done with a new night: one reload
+    _add(db_session, test_user, "sleep", date.today(), 450, {"bedtime": "23:00", "wake": "07:00"})
+    await db_session.flush()
+    r = await as_user.get(url)
     assert r.headers.get("HX-Refresh") == "true"
     # synced within the hour: no new sync, the usual button
     started.clear()
@@ -411,8 +426,20 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_once(as_user: AsyncC
     await db_session.flush()
     page = (await as_user.get("/sante")).text
     assert started == [] and "Synchroniser maintenant" in page
-    r = await as_user.get("/sante/sync-status")  # nothing running, nothing new: the button
-    assert "HX-Refresh" not in r.headers and "Synchroniser maintenant" in r.text
+
+
+async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, test_user: User, monkeypatch):
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user)
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+
+    async def boom(*a, **k):
+        raise ValueError("an unexpected bug")
+    monkeypatch.setattr(coros_service, "sync_connection", boom)
+    out = await coros_service.run_sync(db_session, conn)
+    assert out == {"ok": False, "error": "La synchro a échoué : réessaie plus tard."}
+    assert conn.sync_claimed_at is None and conn.last_error
 
 
 async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_session: AsyncSession,
@@ -422,7 +449,7 @@ async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_sessi
     from app.services import coros as coros_service
 
     conn = await _link(db_session, test_user)
-    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=40)
     started = []
     monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
     today = datetime.now(timezone.utc).date()
