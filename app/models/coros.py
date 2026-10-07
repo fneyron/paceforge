@@ -60,6 +60,8 @@ class CorosConnection(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # when the sessions' history (180 days) was read in full; until then each sync asks for it
+    sessions_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # set by the worker that takes a sync, so parallel workers don't all run it
     sync_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)  # plain French, shown as is

@@ -125,20 +125,10 @@ async def manual_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a Strava activity sync."""
-    count_before_q = await db.execute(
-        select(func.count(Activity.id)).where(Activity.user_id == user.id)
-    )
-    count_before = count_before_q.scalar() or 0
-
+    new_count = 0  # sessions Strava brought, a watch's row taken over included
     if user.has_strava_linked and user.has_own_strava_app:
-        await _sync_recent_activities(user, db)
+        new_count = await _sync_recent_activities(user, db)
         request.session["last_strava_sync"] = datetime.now().timestamp()
-
-    count_after_q = await db.execute(
-        select(func.count(Activity.id)).where(Activity.user_id == user.id)
-    )
-    count_after = count_after_q.scalar() or 0
-    new_count = max(0, count_after - count_before)
 
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
@@ -256,8 +246,10 @@ async def _week_groups(
     return weeks, has_more
 
 
-async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
-    """Sync recent activities from Strava. Paginates until we find existing ones."""
+async def _sync_recent_activities(user: User, db: AsyncSession) -> int:
+    """Sync recent activities from Strava. Paginates until we find existing ones.
+    Returns how many Strava sessions were saved."""
+    total_synced = 0
     try:
         strava = StravaService.for_user(db, user)
         page = 1
@@ -326,3 +318,4 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
             )
     except Exception:
         logger.exception("Failed to sync activities from Strava")
+    return total_synced

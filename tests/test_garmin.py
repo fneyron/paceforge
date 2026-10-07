@@ -726,3 +726,16 @@ async def test_the_nights_reach_the_athletes_today_ahead_of_utc(db_session: Asyn
     assert fit == [fake.today]
     noon = datetime(fake.today.year, fake.today.month, fake.today.day, 12, tzinfo=timezone.utc)
     assert (await health_page(db_session, test_user.id, now=noon))["today"] == fake.today
+
+
+def test_garmin_naps_on_the_local_clock():
+    data = {"dailySleepDTO": {"calendarDate": "2026-10-06", "sleepStartTimestampGMT": 1791237600000,
+                              "sleepStartTimestampLocal": 1791237600000 + 2 * 3600_000},
+            "dailyNapDTOS": [{"napTimeSec": 1500, "napStartTimestampGMT": "2026-10-06T12:10:00.0",
+                              "napEndTimestampGMT": "2026-10-06T12:38:00.0", "calendarDate": "2026-10-06"}]}
+    day, nap = garmin.parse_naps(data)
+    assert day == date(2026, 10, 6) and nap["asleep"] == 25 and nap["period"] == 28
+    assert nap["windows"] == [(datetime(2026, 10, 6, 14, 10), datetime(2026, 10, 6, 14, 38))]  # 14:10 local
+    assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06", "napTimeSeconds": 1200}})[1][
+        "asleep"] == 20
+    assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06"}}) is None

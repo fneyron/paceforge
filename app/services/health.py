@@ -27,6 +27,9 @@ HealthMetric (store_daily, source "COROS" or "Garmin"), the extras in `details`:
 - body_battery : Garmin's body battery at wake-up (0–100); {high, low}
 - sleep_score : the watch's score of the night ending that morning (1–100);
                 {qualifier} (Garmin's word for it)
+- nap       : minutes asleep in the day's naps, apart from the night (the
+               night's `sleep` never counts them); {period (min, awake included),
+               windows: [["06:42", "09:07"], …] local clock}
 - feel      : how the athlete says they feel that morning (source "PaceForge"):
               1 en forme, 2 normal, 3 fatigué; {legs_heavy}
 
@@ -56,10 +59,10 @@ METRIC_LABELS = {
 }
 # daily values the watches give as such (store_daily), with what Réglages lists
 DAILY_METRICS = ("load", "recovery", "hr_day", "stress", "steps", "fitness", "hrv_norm", "body_battery",
-                 "sleep_score", "feel")
+                 "sleep_score", "feel", "nap")
 DAILY_LABELS = {"load": "Charge", "recovery": "Récupération", "hr_day": "FC du jour",
                 "stress": "Stress", "steps": "Pas", "fitness": "Niveau", "body_battery": "Body Battery",
-                "sleep_score": "Score de sommeil", "feel": "Ressenti"}
+                "sleep_score": "Score de sommeil", "feel": "Ressenti", "nap": "Siestes"}
 
 
 @dataclass

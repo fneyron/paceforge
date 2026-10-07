@@ -976,3 +976,34 @@ async def test_the_window_reaches_the_athletes_today_ahead_of_utc(db_session: As
     assert sleep and sleep[0]["endDate"] == tomorrow
     hrv = [a for n, a in fake.tool_calls if n == "querySleepHrv"]
     assert len(hrv) == 1 and hrv[0]["endDate"] == tomorrow and hrv[0]["days"] == 7
+
+
+def test_naps_are_read_apart_from_the_night():
+    """The owner's real 7 Oct: a 5h50 night, then a 2h20 nap from 06:42 to 09:07."""
+    text = """Sleep Overview
+========================
+
+2026-10-06
+Sleep Score: 66
+Main Sleep (asleep): 5h 33min
+Main Sleep Window: 2026-10-06 01:01 - 2026-10-06 06:45
+Naps Total: 0 min
+
+2026-10-07
+Sleep Score: 89
+Daily Sleep: 8h 10min (incl. naps)
+Main Sleep (asleep): 5h 50min
+Main Sleep Period (incl. awake): 6h 3min
+Main Sleep Window: 2026-10-06 23:35 - 2026-10-07 05:38
+Naps Total (asleep): 2h 20min
+Naps Period (incl. awake): 2h 25min
+Nap Window: 2026-10-07 06:42 - 2026-10-07 09:07
+"""
+    naps = coros.parse_naps(text)
+    assert list(naps) == [date(2026, 10, 7)]
+    assert naps[date(2026, 10, 7)] == {"asleep": 140, "period": 145,
+                                       "windows": [(datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7))]}
+    assert coros.parse_sleep_overview(text)[date(2026, 10, 7)]["asleep"] == 350  # the night alone
+    [d] = coros.nap_dailies(naps)
+    assert (d.metric, d.day, d.value, d.details) == ("nap", date(2026, 10, 7), 140,
+                                                      {"period": 145, "windows": [["06:42", "09:07"]]})

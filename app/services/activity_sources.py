@@ -62,6 +62,12 @@ async def adopt_watch_twin(db: AsyncSession, activity: Activity) -> Activity:
     if activity.start_date is not None:
         twin = await find_twin(db, activity.user_id, activity.sport_type, activity.start_date, activity.distance,
                                activity.moving_time, Activity.strava_activity_id.is_(None))
+    if twin is not None:
+        # claimed under a row lock, still without a Strava id: a parallel worker taking it over for
+        # the other recording of the outing (watch and phone) must not overwrite this one
+        twin = (await db.execute(select(Activity).where(
+            Activity.id == twin.id, Activity.strava_activity_id.is_(None))
+            .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if twin is None:
         db.add(activity)
         return activity
@@ -89,12 +95,14 @@ async def merge_twins(db: AsyncSession, user_id: int, since: datetime) -> int:
                             Activity.strava_activity_id.is_not(None), *free)
         if s is None:
             continue
+        # what the watch measured and Strava's row lacks (HR, power, calories…) stays
+        keep = {c: getattr(w, c) for c in Activity.__table__.columns.keys()
+                if c not in KEEP | {"strava_activity_id", "raw_data", "name", "sport_type", "start_date"}
+                and getattr(w, c) is not None and not getattr(s, c)}
         await db.delete(w)  # its ids are unique: free them first
         await db.flush()
-        for k, v in ids.items():
+        for k, v in {**keep, **ids}.items():
             setattr(s, k, v)
-        if not s.total_elevation_gain and w.total_elevation_gain:
-            s.total_elevation_gain = w.total_elevation_gain
         merged += 1
     if merged:
         await db.flush()

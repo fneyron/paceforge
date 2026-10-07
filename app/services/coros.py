@@ -579,6 +579,34 @@ def parse_sleep_overview(text: str) -> dict[date, dict]:
     return out
 
 
+_RANGE = r"(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*-\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})"
+
+
+def parse_naps(text: str) -> dict[date, dict]:
+    """querySleepOverview: each wake-up day's naps {asleep, period (min),
+    windows [(start, end)] local}, the main night apart (days without a nap left out)."""
+    out = {}
+    heads = list(re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$", text or "", re.M))
+    for i, h in enumerate(heads):
+        day = _date(*h.groups())
+        block = text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        asleep = _field_minutes(block, r"Naps Total(?: \(asleep\))?")
+        if not day or not asleep:
+            continue
+        windows = []
+        for line in re.findall(r"^\s*Nap Windows?:\s*(.+)$", block, re.M):
+            for g in re.finditer(_RANGE, line):
+                try:
+                    a, b = datetime(*map(int, g.groups()[:5])), datetime(*map(int, g.groups()[5:]))
+                except ValueError:
+                    continue
+                if timedelta(0) < b - a <= timedelta(hours=6):
+                    windows.append((a, b))
+        out[day] = {"asleep": asleep, "period": _field_minutes(block, r"Naps Period(?: \(incl\. awake\))?"),
+                    "windows": windows}
+    return out
+
+
 def parse_daily_sleep(text: str) -> dict[date, dict[str, int]]:
     """queryDailyHealthData: stage minutes of each wake-up day's sleep summary."""
     out = {}
@@ -608,6 +636,7 @@ SPORTS = {100: "Run", 101: "Run", 102: "TrailRun", 103: "Run", 104: "Hike", 105:
           904: "Yoga", 905: "Pilates", 1000: "Badminton", 1001: "TableTennis", 1003: "Soccer", 1004: "Pickleball",
           1005: "Tennis", 1006: "Padel"}
 INDOOR = {101, 201, 400, 701}
+MULTISPORT = {10000, 10001, 10002, 10003}  # one COROS record; Strava has one row per leg
 
 
 def _clock_s(text: str | None) -> int | None:
@@ -636,7 +665,7 @@ def parse_sport_records(text: str) -> list[dict]:
         end = re.search(r"endTimestamp=(\d+)", block)
         name = re.search(r"^\s*Location:\s*(.+?)\s*$", block, re.M)
         dur = re.search(r"Duration:\s*([\d:]+)", block)
-        km = re.search(r"Distance:\s*" + _NUM + r"\s*km", block)
+        dist = re.search(r"Distance:\s*" + _NUM + r"\s*(km|m)\b", block)  # under 1 km COROS writes metres
         hr = re.search(r"Avg HR:\s*" + _NUM + r"\s*bpm", block)
         kcal = re.search(r"Calories:\s*([\d,  ]+)\s*kcal", block)
         out.append({
@@ -644,7 +673,8 @@ def parse_sport_records(text: str) -> list[dict]:
             "name": name.group(1) if name else None, "day": "-".join(h.groups()[1:]),
             "start": int(start.group(1)), "end": int(end.group(1)) if end else None,
             "duration": _clock_s(dur.group(1)) if dur else None,
-            "km": _num(km.group(1)) if km else None, "hr": _num(hr.group(1)) if hr else None,
+            "km": (_num(dist.group(1)) / (1000 if dist.group(2) == "m" else 1)) if dist else None,
+            "hr": _num(hr.group(1)) if hr else None,
             "kcal": _int(kcal.group(1)) if kcal else None,
         })
     return out
@@ -660,12 +690,32 @@ def parse_activity_detail(text: str) -> dict:
         m = re.search(label + r":\s*([\d:]+)", text or "")
         if m and _clock_s(m.group(1)):
             out[key] = _clock_s(m.group(1))
+    m = re.search(r"^\s*Distance:\s*" + _NUM + r"\s*(km|m)\b", text or "", re.M)
+    if m:
+        out["km"] = _num(m.group(1)) / (1000 if m.group(2) == "m" else 1)
+    m = re.search(r"Moving Average Pace:\s*(\d+):(\d{2})\s*/km", text or "")
+    if m and out.get("km"):  # stops left out, as Strava's and Garmin's moving time
+        out["moving_pace"] = int(m.group(1)) * 60 + int(m.group(2))
     for key, label in (("hr_max", "Max(?:imum)? Heart Rate"), ("cadence", "Average Cadence"),
                        ("watts", "Average Power")):
         v = _field(text or "", label)
         if v is not None:
             out[key] = v
     return out
+
+
+def session_offset(start_ts: int, day: str | None, hint: float | None) -> float | None:
+    """A session's UTC offset (s): the quarter hour nearest the athlete's
+    current offset (else UTC) that puts its start on COROS's own local date —
+    right for a session recorded in another time zone; the hint without that date."""
+    try:
+        d = date.fromisoformat(str(day))
+        start = datetime.fromtimestamp(int(start_ts), tz=timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return hint
+    base = hint if hint is not None else 0.0
+    fits = [q * 900 for q in range(-48, 57) if (start + timedelta(seconds=q * 900)).date() == d]
+    return float(min(fits, key=lambda off: abs(off - base))) if fits else hint
 
 
 def session_fields(rec: dict, utc_offset: float | None) -> dict | None:
@@ -681,10 +731,13 @@ def session_fields(rec: dict, utc_offset: float | None) -> dict | None:
         return None
     meters = (rec.get("km") or 0) * 1000
     raw = {**rec, "source": "coros"}
-    if utc_offset is not None:
-        raw["utc_offset"] = utc_offset  # the key Strava uses: the session's local day
+    offset = session_offset(rec["start"], rec.get("day"), utc_offset)
+    if offset is not None:
+        raw["utc_offset"] = offset  # the key Strava uses: the session's local day
     if rec.get("code") in INDOOR:
         raw["trainer"] = True
+    if rec.get("code") in MULTISPORT:
+        raw["multisport"] = True
     return {
         "coros_activity_id": label,
         "sport_type": SPORTS.get(rec.get("code"), "Workout"),
@@ -939,6 +992,7 @@ def build_daily(data: dict, today: date) -> list[Daily]:
     for d, v in (data.get("overview") or {}).items():
         if _ok(v.get("score"), 1, 100):  # 0: not scored (yet)
             out.append(Daily("sleep_score", d, v["score"]))
+    out += nap_dailies(data.get("naps") or {})
     fit = dict(data.get("fitness") or {})
     if fit:
         if not _ok(fit.get("vo2max"), 10, 95):
@@ -954,6 +1008,17 @@ def build_daily(data: dict, today: date) -> list[Daily]:
             fit.pop("pred", None)
         if fit:
             out.append(Daily("fitness", today, fit.get("level") or 0, fit))
+    return out
+
+
+def nap_dailies(naps: dict[date, dict]) -> list[Daily]:
+    """One `nap` value per day with naps (Garmin's are read the same way)."""
+    out = []
+    for d, v in naps.items():
+        if _ok(v.get("asleep"), 1, 600):
+            period = v["period"] if _ok(v.get("period"), v["asleep"], 720) else None
+            windows = [[a.strftime("%H:%M"), b.strftime("%H:%M")] for a, b in v.get("windows") or []]
+            out.append(Daily("nap", d, v["asleep"], {"period": period, "windows": windows}))
     return out
 
 
@@ -1057,6 +1122,7 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
         data["overview"].update(_parsed(parse_sleep_overview, text))
+        data.setdefault("naps", {}).update(_parsed(parse_naps, text))
     for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
         data["hrv"].update(_parsed(parse_hrv, text))
@@ -1074,14 +1140,19 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     data["fitness"] = _parsed(parse_fitness, await call("queryFitnessAssessmentOverview", {}))
     data["vo2max"] = data["fitness"].get("vo2max")
     data["rhr"] = _parsed(parse_rhr, await call.recent("queryRestingHeartRate", days))
-    # the sessions last: the nights matter more on a morning when COROS is slow
-    data["sessions"], data["details"] = [], {}
-    if activity_days and on_sessions:
+    # the sessions last: the nights matter more on a morning when COROS is slow; their
+    # failures never make the health history count as cut short
+    data["health_stopped"] = call.stopped
+    data["sessions"], data["details"], data["sessions_complete"] = [], {}, False
+    if activity_days and on_sessions and not call.stopped:
+        data["sessions_complete"] = True
         for a, b in _ranges(hi - timedelta(days=activity_days - 1), hi, SESSION_CHUNK_DAYS):
             text = await call("querySportRecords", {
                 "startDate": _ymd(a), "endDate": _ymd(b), "sportTypeCodes": [65535], "minDistanceKm": 0,
                 "maxDistanceKm": 10000, "minDurationMinutes": 0, "maxDurationMinutes": 100000,
                 "maxAveragePace": "", "locationKeyword": "", "limit": SESSION_LIMIT})
+            if text is None:
+                data["sessions_complete"] = False  # that piece is asked again next time
             got = _parsed(parse_sport_records, text) or []
             if len(got) >= SESSION_LIMIT:
                 logger.warning("COROS: %d sessions between %s and %s, some may be missing", len(got), a, b)
@@ -1127,6 +1198,13 @@ async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
             Activity.coros_activity_id == f["coros_activity_id"]))).scalar_one_or_none()
         if act is not None and act.user_id != user_id:
             continue
+        if rec.get("code") in MULTISPORT:
+            n = await _multisport(db, user_id, f, act)
+            if n == "linked":
+                linked += 1
+                continue
+            if n == "kept":
+                continue
         if act is None:
             twin = await find_twin(db, user_id, f["sport_type"], f["start_date"], f["distance"], f["moving_time"],
                                    Activity.coros_activity_id.is_(None))
@@ -1161,6 +1239,30 @@ def _coros_only(act: Activity) -> bool:
     return act.strava_activity_id is None and act.garmin_activity_id is None
 
 
+async def _multisport(db: AsyncSession, user_id: int, f: dict, act: Activity | None) -> str | None:
+    """A triathlon is one COROS record but one row per leg elsewhere: when the
+    legs are there, the COROS id goes on the first and no row of its own is kept
+    (« linked » or « kept »); None: no leg yet, the record is saved as one session."""
+    start = f["start_date"]
+    end = start + timedelta(seconds=f["elapsed_time"])
+    legs = (await db.execute(select(Activity).where(
+        Activity.user_id == user_id, Activity.start_date >= start - timedelta(minutes=3),
+        Activity.start_date <= end, Activity.coros_activity_id.is_distinct_from(f["coros_activity_id"]))
+        .order_by(Activity.start_date))).scalars().all()
+    if not legs:
+        return None
+    if act is not None and not _coros_only(act):
+        return "kept"  # already on a leg
+    if act is not None:
+        await db.delete(act)  # saved before the legs arrived: they replace it
+        await db.flush()
+    first = next((x for x in legs if x.coros_activity_id is None), None)
+    if first is None:
+        return "kept"
+    first.coros_activity_id = f["coros_activity_id"]
+    return "linked"
+
+
 async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]) -> int:
     """The detail of sessions only COROS has: D+, total and moving time, cadence, power."""
     n = 0
@@ -1171,7 +1273,12 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
             continue
         if d.get("dplus") is not None:
             act.total_elevation_gain = d["dplus"]
-        if d.get("moving"):
+        if not act.distance and d.get("km"):
+            act.distance = d["km"] * 1000
+        moving = round(d["km"] * d["moving_pace"]) if d.get("moving_pace") and d.get("km") else None
+        if moving and moving <= (d.get("moving") or moving) * 1.02:
+            act.moving_time = moving
+        elif d.get("moving"):
             act.moving_time = d["moving"]
         if d.get("total"):
             act.elapsed_time = max(d["total"], act.moving_time or 0)
@@ -1203,10 +1310,8 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     )).scalar()
     owed = conn.last_sync_at is None or not have or conn.last_error == PARTIAL
     days = BACKFILL_DAYS if owed else RECENT_DAYS
-    # the sessions' history comes once too: until one of them is linked or stored
-    linked_any = (await db.execute(select(func.count(Activity.id)).where(
-        Activity.user_id == conn.user_id, Activity.coros_activity_id.is_not(None)))).scalar()
-    activity_days = ACTIVITY_BACKFILL_DAYS if owed or not linked_any else RECENT_DAYS
+    # the sessions' history comes once too: until every piece of it was read
+    activity_days = ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None else RECENT_DAYS
     sessions: dict = {}
 
     async def on_sessions(records, utc_offset):
@@ -1249,8 +1354,11 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["activities"] = sessions
     result["inserted"] += sessions.get("inserted", 0)
     result["updated"] += sessions.get("updated", 0) + sessions.get("linked", 0)
-    # COROS stopped answering halfway through the history: keep it, but ask for it all again next time
-    result["backfill_partial"] = stopped and (days == BACKFILL_DAYS or activity_days == ACTIVITY_BACKFILL_DAYS)
+    if activity_days == ACTIVITY_BACKFILL_DAYS and data.get("sessions_complete"):
+        conn.sessions_synced_at = datetime.now(timezone.utc)
+    # COROS stopped answering halfway through the health history: keep it, but ask for it all again next
+    # time (the sessions have their own flag above)
+    result["backfill_partial"] = bool(data.get("health_stopped")) and days == BACKFILL_DAYS
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result

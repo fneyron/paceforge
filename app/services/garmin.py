@@ -46,7 +46,7 @@ from app.models.activity import Activity
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
 from app.services.activity_sources import find_twin, merge_twins
-from app.services.coros import _drop_stale_intervals, sleep_samples
+from app.services.coros import _drop_stale_intervals, nap_dailies, sleep_samples
 from app.services.health import (
     _RANGES,
     DAILY_LABELS,
@@ -582,6 +582,37 @@ def parse_sleep(data) -> dict | None:
     return out
 
 
+def parse_naps(data) -> tuple[date, dict] | None:
+    """dailySleepData's naps (dailyNapDTOS, else the DTO's napTimeSeconds):
+    (day, {asleep, period (min), windows [(start, end)] local}), None without one."""
+    if not isinstance(data, dict):
+        return None
+    dto = data.get("dailySleepDTO") or {}
+    day = _d(dto.get("calendarDate"))
+    local, gmt = _f(dto.get("sleepStartTimestampLocal")), _f(dto.get("sleepStartTimestampGMT"))
+    offset = timedelta(milliseconds=local - gmt) if local is not None and gmt is not None else None
+    asleep, windows = 0.0, []
+    for n in data.get("dailyNapDTOS") or []:
+        if not isinstance(n, dict):
+            continue
+        day = day or _d(n.get("calendarDate"))
+        secs = _f(n.get("napTimeSec"))
+        a, b = _gmt(n.get("napStartTimestampGMT")), _gmt(n.get("napEndTimestampGMT"))
+        if secs is None and a and b:
+            secs = (b - a).total_seconds()
+        if not secs or secs <= 0:
+            continue
+        asleep += secs
+        if a and b and b > a and offset is not None:
+            windows.append((a + offset, b + offset))
+    if not asleep:
+        asleep = _f(dto.get("napTimeSeconds")) or 0
+    if not day or asleep < 60:
+        return None
+    period = sum((b - a).total_seconds() for a, b in windows) / 60 if windows else None
+    return day, {"asleep": round(asleep / 60), "period": round(period) if period else None, "windows": windows}
+
+
 def parse_hrv(data) -> tuple[dict[date, float], dict[date, dict]]:
     """hrv-service range: each night's average (ms) and its balanced range."""
     values, ranges = {}, {}
@@ -833,6 +864,7 @@ def build_daily(data: dict, today: date) -> list[Daily]:
         fit["pred"] = preds
     if fit:
         out.append(Daily("fitness", today, fit.get("vo2max") or 0, fit))
+    out += nap_dailies(data.get("naps") or {})
     return out
 
 
@@ -871,10 +903,14 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
         # the server's (UTC): ask for that day too (a future day is just empty)
         for i in range(-1, days - 1):  # same number of days, one later
             d = today - timedelta(days=i)
-            night = parse_sleep(await call(f"/wellness-service/wellness/dailySleepData/{q}",
-                                           {"date": d.isoformat(), "nonSleepBufferMinutes": 60}))
+            raw = await call(f"/wellness-service/wellness/dailySleepData/{q}",
+                             {"date": d.isoformat(), "nonSleepBufferMinutes": 60})
+            night = parse_sleep(raw)
             if night:
                 data["nights"][night["day"]] = night
+            nap = parse_naps(raw)
+            if nap:
+                data.setdefault("naps", {})[nap[0]] = nap[1]
             summary = parse_summary(await call(f"/usersummary-service/usersummary/daily/{q}",
                                                {"calendarDate": d.isoformat()}))
             if summary:
