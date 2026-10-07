@@ -3,6 +3,7 @@ import logging
 from app.celery_app import celery_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 from sqlalchemy import select, func
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
             splits_metric=data.get("splits_metric"),
             raw_data=data,
         )
-        db.add(activity)
+        activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
         await db.commit()
 
         logger.info(

@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.celery_app import celery_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ async def _run_poll() -> dict:
                         splits_metric=data.get("splits_metric"),
                         raw_data=data,
                     )
-                    db.add(activity)
+                    activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
                     logger.info(
                         "Poll saved new activity %d for user %d: %s",
                         strava_id, user.id, activity.name,

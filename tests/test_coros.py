@@ -216,6 +216,22 @@ Sleep Summary:
 
 D30, D29, D28 = date(2026, 9, 30), date(2026, 9, 29), date(2026, 9, 28)
 
+# the owner's real getActivityDetail answer (2026-09-30)
+DETAIL = """🏃 Outdoor Run Activity Details
+========================================
+
+Workout Time: 30:06
+Distance: 6.17 km
+Total Time: 30:12
+Average Pace: 4:53 /km
+Moving Average Pace: 4:46 /km
+Average Heart Rate: 132 bpm
+Average Cadence: 163 spm
+Average Power: 266 W
+Elevation Gain / Loss: 110 m / 121 m
+Calories: 436 kcal
+Training Load: 73"""
+
 
 def _shift(text: str, days: int) -> str:
     """The same text with every date moved by `days` (keeps DB tests on today's
@@ -461,6 +477,8 @@ class FakeCoros:
         self.mcp_status: int | None = None
         self.timeouts: set[str] = set()  # tools whose call times out
         self.tool_status: dict[str, int] = {}  # tools answered with this HTTP status
+        # sessions, as querySportRecords lists them: {label, code, type, name, start (UTC), seconds, km, hr}
+        self.sessions: list[dict] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url).split("?")[0]
@@ -530,7 +548,25 @@ class FakeCoros:
         if limit and args.get("days", 0) > limit:
             return self._reply(msg["id"], {"content": [{"type": "text", "text": f"days must be <= {limit}"}],
                                            "isError": True})
-        return self._reply(msg["id"], {"content": [{"type": "text", "text": self.texts[name]}], "isError": False})
+        text = (self.records(args) if name == "querySportRecords" else DETAIL if name == "getActivityDetail"
+                else self.texts[name])
+        return self._reply(msg["id"], {"content": [{"type": "text", "text": text}], "isError": False})
+
+    def records(self, args: dict) -> str:
+        """querySportRecords' text for the sessions inside [startDate, endDate] (the real format)."""
+        lo, hi = (datetime.strptime(args[k], "%Y%m%d").date() for k in ("startDate", "endDate"))
+        picked = [x for x in self.sessions if lo <= x["start"].date() <= hi]
+        out = [f"Sport Records — {lo} to {hi} ({len(picked)} records)", "========================", ""]
+        for i, x in enumerate(picked, 1):
+            t0 = int(x["start"].timestamp())
+            h, rem = divmod(x["seconds"], 3600)
+            out += [f"{i}. {x.get('type', 'Outdoor Run')} — {x['start'].date()}",
+                    f"   Location: {x.get('name', 'District de Namjeju Course')}",
+                    f"   Time Window: startTimestamp={t0} | endTimestamp={t0 + x['seconds'] + 30}",
+                    f"   Duration: {h}:{rem // 60:02d}:{rem % 60:02d} | Distance: {x['km']:.2f} km",
+                    f"   Average Pace: 5:00 /km | Avg HR: {x.get('hr', 130)} bpm | Calories: 1,225 kcal",
+                    f"   LabelId: {x['label']} | SportType: {x.get('code', 100)}", ""]
+        return "\n".join(out)
 
     def _reply(self, rid, result, headers=None) -> httpx.Response:
         body = {"jsonrpc": "2.0", "id": rid, "result": result}
@@ -804,7 +840,8 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
     assert [a for n, a in fake.tool_calls if n == "queryTrainingLoadAssessment"] == [{"days": 60}, {"days": 14}]
-    assert fake.tool_calls[-1][0] == "queryRestingHeartRate"  # the sync went on to the end
+    names = [n for n, _ in fake.tool_calls]
+    assert "queryRestingHeartRate" in names and names[-1] == "querySportRecords"  # the sync went on to the end
     today = datetime.now(timezone.utc).date()
     rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
     by = {(m.metric, m.date): m.value for m in rows}
@@ -839,7 +876,7 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
                                                          test_user: User, fake):
     page = (await as_user.get("/settings")).text
-    assert "ta VFC, ton sommeil et ta VO2 max arrivent automatiquement depuis ta montre COROS." in page
+    assert "ta VFC, ton sommeil, ta VO2 max et tes séances arrivent automatiquement depuis ta montre COROS." in page
     assert 'href="/sante"' in page
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 

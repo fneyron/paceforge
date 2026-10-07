@@ -67,10 +67,13 @@ def find_duplicate_ids(activities: Iterable) -> set[int]:
             if b.id in duplicates or not _same_family(a.sport_type, b.sport_type):
                 continue
             da, db_ = a.distance or 0, b.distance or 0
-            if max(da, db_) <= 0:
-                continue
-            if abs(da - db_) / max(da, db_) > _DUP_DISTANCE_TOL:
-                continue
+            if max(da, db_) > 0:
+                if abs(da - db_) / max(da, db_) > _DUP_DISTANCE_TOL:
+                    continue
+            else:  # no distance on either (strength, yoga…): the durations agree
+                ta, tb = a.moving_time or 0, b.moving_time or 0
+                if max(ta, tb) <= 0 or abs(ta - tb) / max(ta, tb) > _DUP_DISTANCE_TOL:
+                    continue
             loser = a if _richness(a) < _richness(b) else b
             duplicates.add(loser.id)
             if loser is a:

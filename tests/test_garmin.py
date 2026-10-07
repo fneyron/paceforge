@@ -377,7 +377,7 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     assert [(a.strava_activity_id, a.garmin_activity_id, a.sport_type) for a in acts] == [
         (555, 9002, "TrailRun"), (None, 9001, "Run")]
     assert acts[0].name == "Strava trail"  # Strava's row is left as it is
-    assert outcome["result"]["activities"] == {"inserted": 1, "linked": 1, "updated": 0}
+    assert outcome["result"]["activities"] == {"inserted": 1, "linked": 1, "updated": 0, "merged": 0}
 
     # then the last 7 days; the sessions already there are not duplicated
     fake.calls.clear()
@@ -386,7 +386,7 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     assert outcome["ok"] and len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
     assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(t - timedelta(days=6))
     assert not fake.paths("/userprofile-service/")  # the display name is kept
-    assert outcome["result"]["activities"] == {"inserted": 0, "linked": 0, "updated": 1}
+    assert outcome["result"]["activities"] == {"inserted": 0, "linked": 0, "updated": 1, "merged": 0}
     n = (await db_session.execute(select(func.count(Activity.id)).where(Activity.user_id == test_user.id))).scalar()
     assert n == 2
 
@@ -680,7 +680,8 @@ def test_migration_is_the_head_and_round_trips():
     spec.loader.exec_module(mig)
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    script = ScriptDirectory.from_config(cfg)
+    assert mig.revision in {r.revision for r in script.walk_revisions()}  # in the chain (COROS sessions came after)
 
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:

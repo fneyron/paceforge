@@ -13,6 +13,7 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
+from app.services.activity_sources import adopt_watch_twin
 from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
@@ -309,7 +310,7 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
                     average_watts=data.get("average_watts"),
                     raw_data=data,
                 )
-                db.add(activity)
+                activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
                 total_synced += 1
 
             # If all activities on this page were already known, stop paginating

@@ -45,7 +45,7 @@ from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
-from app.services.activity_dedupe import _DUP_DISTANCE_TOL, _DUP_WINDOW_S, _same_family
+from app.services.activity_sources import find_twin, merge_twins
 from app.services.coros import _drop_stale_intervals, sleep_samples
 from app.services.health import (
     _RANGES,
@@ -904,40 +904,36 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
 
 
 async def import_activities(db: AsyncSession, user_id: int, rows: list[dict]) -> dict:
-    """Garmin sessions into Activity: the one already imported is updated; a
-    session Strava already brought (same start within 3 min, same sport family,
-    close distance) only gets its Garmin id; else a new row."""
+    """Garmin sessions into Activity, one row per outing (activity_sources): the
+    one already imported is updated; a session another service already brought
+    only gets its Garmin id; else a new row. Rows Strava saved apart are merged."""
     inserted = linked = updated = 0
+    starts = []
     for raw in rows:
         f = activity_fields(raw) if isinstance(raw, dict) else None
         if not f:
             continue
+        starts.append(f["start_date"])
         act = (await db.execute(select(Activity).where(
             Activity.garmin_activity_id == f["garmin_activity_id"]))).scalar_one_or_none()
         if act is not None and act.user_id != user_id:
             continue
         if act is None:
-            window = timedelta(seconds=_DUP_WINDOW_S)
-            candidates = (await db.execute(select(Activity).where(
-                Activity.user_id == user_id, Activity.garmin_activity_id.is_(None),
-                Activity.start_date >= f["start_date"] - window,
-                Activity.start_date <= f["start_date"] + window))).scalars().all()
-            for c in candidates:
-                big = max(c.distance or 0, f["distance"])
-                if _same_family(c.sport_type, f["sport_type"]) and (
-                        big <= 0 or abs((c.distance or 0) - f["distance"]) / big <= _DUP_DISTANCE_TOL):
-                    c.garmin_activity_id = f["garmin_activity_id"]
-                    linked += 1
-                    break
+            twin = await find_twin(db, user_id, f["sport_type"], f["start_date"], f["distance"], f["moving_time"],
+                                   Activity.garmin_activity_id.is_(None))
+            if twin is not None:
+                twin.garmin_activity_id = f["garmin_activity_id"]
+                linked += 1
             else:
                 db.add(Activity(user_id=user_id, **f))
                 inserted += 1
-        elif act.strava_activity_id is None:  # Garmin's own row: keep it current
+        elif act.strava_activity_id is None and act.coros_activity_id is None:  # Garmin's own row: keep it current
             for k, v in f.items():
                 setattr(act, k, v)
             updated += 1
     await db.flush()
-    return {"inserted": inserted, "linked": linked, "updated": updated}
+    merged = await merge_twins(db, user_id, min(starts)) if starts else 0
+    return {"inserted": inserted, "linked": linked, "updated": updated, "merged": merged}
 
 
 async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:

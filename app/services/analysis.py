@@ -8,6 +8,7 @@ from app.exceptions import UserNotFoundError
 from app.models.activity import Activity
 from app.models.analysis import Analysis
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 from app.services.claude import ClaudeService
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
@@ -172,8 +173,7 @@ class AnalysisOrchestrator:
             for key, value in fields.items():
                 setattr(activity, key, value)
         else:
-            activity = Activity(**fields)
-            self.db.add(activity)
+            activity = await adopt_watch_twin(self.db, Activity(**fields))  # a watch may have brought it first
 
         await self.db.flush()
         await self.db.refresh(activity)
