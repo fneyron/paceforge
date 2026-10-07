@@ -55,6 +55,8 @@ class Session:
     name: str = ""
     load: float = 0.0
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
+    offset: float = 0.0  # s east of UTC: the session's local clock (start + offset)
+    elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
 
 
 def _utc(dt: datetime) -> datetime:
@@ -69,7 +71,8 @@ def monday(dt: datetime) -> datetime:
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
 _CACHE_SIZE = 256
-RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT")
+RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "elev_high",
+            "maxElevation")
 
 
 def _float(v) -> float | None:
@@ -131,7 +134,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         q = select(*cols, *(x.c[k] for k in RAW_KEYS), has_splits).select_from(Activity).join(x, true())
     else:
         q = select(*cols, *(Activity.raw_data[k].as_string() for k in RAW_KEYS), has_splits)
-    rows = [(*r[:11], _int(r[12]), _float(r[13]), _float(r[14]), r[15], r[16], r[17], r[11])
+    rows = [(*r[:11], _int(r[12]), _float(r[13]), _float(r[14]), r[15], r[16], r[19], r[11],
+             _float(r[17]) if _float(r[17]) is not None else _float(r[18]))
             for r in (await db.execute(q.where(*where).order_by(Activity.start_date))).all()]
 
     @dataclass
@@ -156,7 +160,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             id=r[0], start=start, day=(start + timedelta(seconds=offset)).date(), sport=r[2],
             minutes=r[3] / 60, dplus=r[5] or 0, km=(r[4] or 0) / 1000, speed=speed or None,
             hr=r[7] or None, hr_peak=r[8] or None, suffer=r[9] or None, workout_type=r[11], temp=r[12],
-            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60))
+            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60, offset=offset, elev_high=r[18]))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)

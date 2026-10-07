@@ -83,11 +83,17 @@ async def sante_feel(
     request: Request,
     feel: int | None = Form(default=None),
     legs: int | None = Form(default=None),
+    why: list[str] | None = Form(default=None),
+    alcohol: int | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The morning check-in: one row a day (how you feel, heavy legs)."""
+    """The morning check-in: one row a day. `feel` 1 mieux · 2 comme d'habitude
+    · 3 moins bien; with « moins bien », `why` (jambes, fatigue, malade, stress:
+    legs, fatigue, sick, stress); `alcohol` 1/0 tags last night (« alcool
+    hier »). `legs` 1/0 is the older « jambes lourdes » toggle (kept as why legs)."""
     from app.models.health import HealthMetric
+    from app.services.health import FEEL_WHY
     from app.services.sante import athlete_today
 
     today = await athlete_today(db, user.id)
@@ -95,12 +101,26 @@ async def sante_feel(
         HealthMetric.user_id == user.id, HealthMetric.metric == "feel", HealthMetric.date == today))).scalar_one_or_none()
     if row is None:
         row = HealthMetric(user_id=user.id, date=today, metric="feel", value=2, source="PaceForge", n_samples=1,
-                           details={"legs_heavy": False})
+                           details={"why": [], "alcohol": False, "legs_heavy": False})
         db.add(row)
+    det = dict(row.details or {})
+    reasons = [w for w in det.get("why") or [] if w in FEEL_WHY]
+    if det.get("legs_heavy") and "legs" not in reasons:
+        reasons.append("legs")
     if feel in (1, 2, 3):
         row.value = feel
+        if feel != 3:
+            reasons = []  # the reasons go with « moins bien »
+    if why is not None:
+        reasons = [w for w in FEEL_WHY if w in why]
     if legs in (0, 1):
-        row.details = {**(row.details or {}), "legs_heavy": bool(legs)}
+        reasons = [w for w in reasons if w != "legs"] + (["legs"] if legs else [])
+    if alcohol in (0, 1):
+        det["alcohol"] = bool(alcohol)
+    det["why"] = [w for w in FEEL_WHY if w in reasons]
+    det["legs_heavy"] = "legs" in reasons  # what the readers written before v3 look at
+    det.setdefault("alcohol", False)
+    row.details = det
     await db.commit()
     if request.headers.get("HX-Request"):
         return HTMLResponse("", headers={"HX-Refresh": "true"})

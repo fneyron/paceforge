@@ -166,10 +166,19 @@ async def test_the_check_in_is_stored_once_a_day_and_moves_the_decision(as_user:
     assert r.status_code == 303
     rows = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "feel"))).scalars().all()
-    assert len(rows) == 1 and rows[0].value == 3 and rows[0].details == {"legs_heavy": True}
+    assert len(rows) == 1 and rows[0].value == 3
+    assert rows[0].details == {"why": ["legs"], "alcohol": False, "legs_heavy": True}
     page = (await as_user.get("/sante")).text
     assert "Ressenti du jour : fatigué, jambes lourdes · changer" in page
     assert "Endurance facile aujourd&#39;hui" in page  # heavy legs: easy today
+    # v3: « moins bien » with its reasons, and « alcool hier » apart
+    r = await as_user.post("/sante/feel", data={"feel": "3", "why": ["sick", "fatigue", "nope"], "alcohol": "1"})
+    assert r.status_code == 303
+    await db_session.refresh(rows[0])
+    assert rows[0].details == {"why": ["fatigue", "sick"], "alcohol": True, "legs_heavy": False}
+    await as_user.post("/sante/feel", data={"feel": "1"})  # « mieux »: no reason left, the chip stays
+    await db_session.refresh(rows[0])
+    assert rows[0].value == 1 and rows[0].details == {"why": [], "alcohol": True, "legs_heavy": False}
 
 
 # ── the decision ────────────────────────────────────────────────────────────
