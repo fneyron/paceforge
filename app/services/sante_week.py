@@ -105,7 +105,7 @@ def header(weeks: list[dict], sessions: list[Session], tr: dict | None, today: d
 
 
 def bars(weeks: list[dict], sessions: list[Session], nights: dict[date, float], hrv: dict[date, float],
-         hrv_band: tuple[float, float] | None) -> dict:
+         hrv_band: tuple[float, float] | None, race_days: set[date] = frozenset()) -> dict:
     """The 12-week chart in a fixed 360-wide viewBox (scaled, never stretched)."""
     n = len(weeks)
     step = (X1 - X0) / n
@@ -122,7 +122,7 @@ def bars(weeks: list[dict], sessions: list[Session], nights: dict[date, float], 
         j = _jump(weeks, i)
         jump = bool(j and j >= JUMP and not w["current"])
         long_jump = False
-        if w["longest"] and w["longest_day"]:
+        if w["longest"] and w["longest_day"] and w["longest_day"] not in race_days:  # a race is no training jump
             before = [s.minutes for s in sessions
                       if w["longest_day"] - timedelta(days=30) <= s.day < w["longest_day"]]
             long_jump = bool(before) and w["longest"] > SPIKE * max(before) and w["longest"] >= 90
@@ -150,10 +150,11 @@ def bars(weeks: list[dict], sessions: list[Session], nights: dict[date, float], 
         })
     has_sleep = any(c["sleep"] for c in cols)
     has_hrv = any(c["hrv"] for c in cols)
-    height = 184 + (18 if has_sleep else 0) + (18 if has_hrv else 0)
+    # sleep labels alternate on two lines: twelve « 7h44 » don't fit side by side
+    height = 184 + (31 if has_sleep else 0) + (18 if has_hrv else 0)
     return {"cols": cols, "w": 360, "h": height, "base": B_BOT, "bw": BAR_W,
             "median": {"y": y(med), "label": _hours_label(med)} if med else None,
-            "has_sleep": has_sleep, "has_hrv": has_hrv, "sleep_y": 198, "hrv_y": 198 + (18 if has_sleep else 0),
+            "has_sleep": has_sleep, "has_hrv": has_hrv, "sleep_y": 198, "hrv_y": 198 + (31 if has_sleep else 0),
             "any_jump": any(c["jump"] or c["long_jump"] for c in cols)}
 
 

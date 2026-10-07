@@ -226,7 +226,8 @@ def test_red_needs_hrv_down_and_resting_hr_up_together():
 def test_race_days_and_recovery():
     v = decide(_ctx(next_race={"days": 2, "name": "Marathon"}))
     assert v["headline"] == "Course après-demain : court et facile" and v["tone"] == "ok"
-    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "name": "Grand Trail", "limit": 10, "long": True}
+    pr = {"day": T - timedelta(days=3), "days": 3, "minutes": 702, "known": True, "name": "Grand Trail", "limit": 10,
+          "long": True}
     v = decide(_ctx(post_race=pr))
     assert v["headline"] == "Récupère" and "Grand Trail (11h42)" in v["text"] and v["tone"] == "easy"
     assert v["resume"] == "Pas d'intensité avant le 14/10." and v["word"] == "récup"
@@ -239,7 +240,7 @@ def test_race_days_and_recovery():
 def test_legs_then_accumulated_then_jump():
     big = Session(id=7, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=2100, km=30,
                   speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
-    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big}))
+    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 300, "dplus": 2200}))
     assert v["headline"] == "Endurance facile aujourd'hui"
     assert v["text"].startswith("Ta sortie d'hier (4h10, +2\u202f100 m)")
     assert v["resume"] == "Séance dure possible à partir de demain."
@@ -444,3 +445,48 @@ async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_sessi
     await db_session.flush()
     await as_user.get("/sante")
     assert started == []
+
+
+def test_a_race_day_beats_recovery_and_estimates_are_never_printed():
+    pr = {"day": T - timedelta(days=1), "days": 1, "minutes": 2995, "known": False, "name": "Trail X", "limit": 10,
+          "long": True, "race": True}
+    v = decide(_ctx(post_race=pr))
+    assert v["text"].startswith("Après Trail X, cœur") and "(" not in v["text"].split(",")[0]
+    v = decide(_ctx(post_race={**pr, "long": False, "limit": 2}, next_race={"days": 0, "name": "Semi"}))
+    assert v["headline"] == "Jour de course"
+    # after a race the low HRV is expected: the row gets the note
+    v = decide(_ctx(post_race={**pr, "known": True, "minutes": 642},
+                    form=_form("watch", hrv_z=-0.8, rhr_delta_bpm=1)))
+    assert v["text"].startswith("Après Trail X (10h42)") and v["hrv_note"].startswith("Basse après ta course")
+
+
+def test_resting_hr_counts_from_three_bpm_exactly():
+    v = decide(_ctx(form=_form("watch", hrv_z=-0.7, rhr_delta_bpm=2.6), tr=TR))
+    assert v["rule"] == "mild" and v["drivers"] == ["hrv"]  # 2.6 is not +3: no red
+    v = decide(_ctx(form=_form("fatigue", hrv_z=-0.7, rhr_delta_bpm=3.0), tr=TR))
+    assert v["rule"] == "red"
+
+
+def test_the_legs_numbers_are_printed_once():
+    big = Session(id=7, start=None, day=T - timedelta(days=1), sport="TrailRun", minutes=250, dplus=2100, km=30,
+                  speed=2.0, hr=140, hr_peak=170, suffer=200, workout_type=0, temp=None)
+    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 250, "dplus": 2100}))
+    assert v["text"].startswith("Ta sortie d'hier pèse encore")  # the Jambes row shows 4h10 · +2 100 m
+    v = decide(_ctx(tr=TR, legs={"key": "loaded", "big": big, "minutes": 310, "dplus": 2200}))
+    assert v["text"].startswith("Ta sortie d'hier (4h10")
+
+
+async def test_dedupe_matches_activites_when_strava_writes_json_null(db_session: AsyncSession, test_user: User):
+    from datetime import datetime, timezone
+
+    from app.models.activity import Activity
+    from app.services import sante_training as st
+
+    t = datetime(2026, 10, 1, 7, tzinfo=timezone.utc)
+    for i, (dt, km, sec, splits) in enumerate([(0, 10.0, 3000, [{"split": 1}]), (60, 10.2, 3300, None)]):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=7000 + i, sport_type="Run", name=f"r{i}",
+                                start_date=t + timedelta(seconds=dt), distance=km * 1000, moving_time=sec,
+                                elapsed_time=sec, raw_data={}, splits_metric=splits))
+    await db_session.flush()
+    ss = await st.load_sessions(db_session, test_user.id, date(2026, 10, 6))
+    assert [s.minutes for s in ss] == [50]  # the copy with splits, as Activités keeps it

@@ -703,6 +703,7 @@ details[open] > summary.pf-signal-row .pf-signal-label::after { content: " ⌄";
 .pf-wk-wrap { max-width: 440px; margin-top: 14px; }
 .pf-wk text, .pf-fat text, .pf-race-chart text { font-size: 12.5px; }
 .pf-wk text { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 3px; stroke-linejoin: round; }
+.pf-wk .pf-wk-sleep { stroke: none; }
 .pf-wk-bar { fill: rgb(var(--pf-gray-300)); }
 .pf-wk-jump { fill: rgb(var(--pf-warn) / .45); }
 .pf-wk-now { fill: transparent; stroke: rgb(var(--pf-accent)); stroke-width: 1.5; stroke-dasharray: 3 2; }

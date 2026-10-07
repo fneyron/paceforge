@@ -173,6 +173,24 @@ def expected_s(route) -> tuple[int | None, bool]:
     return int(round(hours * 3600)), True
 
 
+
+def race_duration(route, sessions=()) -> tuple[int | None, bool]:
+    """(seconds, known) of a race already run: its result, else its session
+    (that day, marked as a race or half the distance at least), else its
+    objective; else the estimate (known=False: never printed as a time)."""
+    res = getattr(route, "result_json", None) or {}
+    if res.get("total_actual_s"):
+        return int(res["total_actual_s"]), True
+    rd = _day(getattr(route, "race_date", None))
+    km = getattr(route, "total_distance_km", None) or 0
+    # the race's own session: that day, covering most of the distance (not a warm-up)
+    same = [x.minutes for x in sessions if rd and x.day == rd and (x.workout_type == 1 or x.km >= 0.5 * km)]
+    if same:
+        return int(max(same) * 60), True
+    if getattr(route, "target_time_s", None):
+        return int(route.target_time_s), True
+    return expected_s(route)[0], False
+
 def taper_days(exp_s: int | None) -> int:
     return TAPER_SHORT if exp_s is not None and exp_s < LONG_S else TAPER_LONG
 
@@ -307,8 +325,16 @@ def taper_chart(wk: list[dict], race_day: date, tg: dict, base_h: float) -> dict
             "base_anchor": "end" if right else "start"}
 
 
+def local_week_h(sessions: list[Session], today: date, back: int = 0) -> float:
+    """Hours of the athlete's own week (local Monday to Sunday), `back` weeks
+    ago — this week so far for back=0. The chart's weeks are Activités' (UTC)."""
+    monday = today - timedelta(days=today.weekday() + 7 * back)
+    end = today if back == 0 else monday + timedelta(days=6)
+    return sum(s.minutes for s in sessions if monday <= s.day <= end) / 60
+
+
 def _taper_status(today: date, days: int, start: date, race_day: date, tg: dict, wk: list[dict] | None,
-                  base_h: float | None, exp_s: int | None) -> str | None:
+                  base_h: float | None, exp_s: int | None, sessions: list[Session] = ()) -> str | None:
     """One sentence, first match wins (no number printed on the chart)."""
     if days <= 1:
         return None
@@ -322,14 +348,14 @@ def _taper_status(today: date, days: int, start: date, race_day: date, tg: dict,
             return "Affûtage en cours : moins de volume, garde un peu d'intensité."
         if not t:
             return "Ton affûtage commence : allège dès maintenant, garde un peu d'intensité."
-        so_far, elapsed = wk[-1]["minutes"] / 60, today.weekday() + 1
+        so_far, elapsed = local_week_h(sessions, today), today.weekday() + 1
         left = min(7 - elapsed, days - 1) if cur_k == 0 else 7 - elapsed
         if so_far > t[1] or (elapsed >= 3 and so_far * 7 / elapsed > t[1] * 1.15):
             more = f", avec {left} jour{'s' if left > 1 else ''} à venir" if left > 0 else ""
             return f"Déjà au-dessus de ta cible cette semaine{more} : lève le pied."
         prev = tg.get(cur_k + 1)
-        if prev and len(wk) >= 2:
-            ph = wk[-2]["minutes"] / 60
+        if prev:
+            ph = local_week_h(sessions, today, 1)
             if ph > prev[1] * 1.05:
                 return "La semaine dernière a dépassé ta cible : allège davantage cette semaine."
             if ph < prev[0]:
@@ -625,7 +651,7 @@ def food_plan(route, exp_s: int | None, weight_kg: float | None) -> dict | None:
 
 # ── after the race ──────────────────────────────────────────────────────────
 
-def recovery(route, today: date) -> dict | None:
+def recovery(route, today: date, sessions=()) -> dict | None:
     """Up to J+14 after a race of 3 h or more (J+7 below): no intensity until
     J+8 (J+11 after 10 h), like Aujourd'hui."""
     if route is None:
@@ -634,8 +660,7 @@ def recovery(route, today: date) -> dict | None:
     if rd is None:
         return None
     k = (today - rd).days
-    res = getattr(route, "result_json", None) or {}
-    dur = res.get("total_actual_s") or expected_s(route)[0]
+    dur = race_duration(route, sessions)[0]
     long = dur is None or dur >= LONG_S
     if not 1 <= k <= (RECOVERY_DAYS if long else SHORT_RECOVERY_DAYS):
         return None
@@ -684,11 +709,11 @@ def race_block(route, sessions: list[Session], tr: dict | None, today: date, wei
     taper = {
         "days": (rd - start).days, "open": days <= CHART_DAYS,
         "why": why + (" (estimée sans objectif de temps)" if estimated else ""),
-        "status": _taper_status(today, days, start, rd, tg, wk, base_h, exp_s),
+        "status": _taper_status(today, days, start, rd, tg, wk, base_h, exp_s, sessions),
         "chart": chart, "bullets": _bullets(today, days, rd, tg, base_h, chart is None, fam),
         "base": hm(base_h * 60) if base_h is not None and chart is None else None,
     }
-    so_far = wk[-1]["minutes"] / 60 if wk else 0.0
+    so_far = local_week_h(sessions, today)
     ready = readiness(route, sessions, today, exp_s, in_taper, now)
     ready["fresh"] = freshness(tr, sessions, today, rd, base_h, tg, so_far)
     week = {"open": days <= WEEK_OPEN_DAYS, "first": days <= WEEK_FIRST_DAYS,
@@ -707,7 +732,7 @@ def course_tab(next_race, last_race, sessions: list[Session], tr: dict | None, t
     """Everything the « Course » tab draws (partials/sante_course.html, as
     `course`), and the tab strip's sublabel."""
     race = race_block(next_race, sessions, tr, today, weight_kg, usual, now) if next_race is not None else None
-    rec = recovery(last_race, today)
+    rec = recovery(last_race, today, sessions)
     if race and (race["days"] <= 14 or not rec):
         state, sublabel = race["phase"], race["when"]
     elif rec:

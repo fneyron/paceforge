@@ -768,6 +768,23 @@ async def test_sync_failure_is_shown_in_plain_french(as_user: AsyncClient, db_se
     assert "Dernière synchro échouée" in (await as_user.get("/settings")).text
 
 
+async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSession, test_user: User,
+                                                          fake, no_commit):
+    """The nights come first; when COROS then stops answering (3 timeouts in a row), the sync
+    stops calling and keeps what arrived instead of throwing it all away."""
+    fake.tool_status = {"queryAvgHeartRate": 502}  # one tool broken: an answer, not an outage
+    fake.timeouts = set(fake.texts) - {"querySleepOverview", "querySleepHrv", "queryAvgHeartRate"}
+    conn = await _link(db_session, test_user)
+    outcome = await coros.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    today = datetime.now(timezone.utc).date()
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    by = {(m.metric, m.date): m.value for m in rows}
+    assert by[("sleep", today)] == 588 and by[("hrv", today)] == 83
+    timed_out = [n for n, _ in fake.tool_calls if n in fake.timeouts]
+    assert len(timed_out) == 3  # then it stopped calling
+
+
 async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: AsyncSession, test_user: User,
                                                                  fake, no_commit):
     fake.timeouts = {"queryTrainingLoadAssessment"}

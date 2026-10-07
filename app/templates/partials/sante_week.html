@@ -14,7 +14,7 @@
             {% if c.lh > 0 %}<rect x="{{ c.cx - 4 }}" y="{{ c.ly }}" width="8" height="{{ c.lh }}" rx="2" class="pf-wk-long{{ ' pf-wk-longjump' if c.long_jump }}"/>{% endif %}
             {% if c.label %}<text x="{{ c.cx }}" y="{{ c.y - 5 }}" text-anchor="middle" class="{{ 'pf-ct-warn' if c.jump else 'pf-ct-ink' }}">{{ c.label }}</text>{% endif %}
             {% if c.show_date %}<text x="{{ c.cx }}" y="176" text-anchor="middle"{% if c.current %} class="pf-ct-accent"{% endif %}>{{ c.date }}</text>{% endif %}
-            {% if c.sleep %}<text x="{{ c.cx }}" y="{{ b.sleep_y }}" text-anchor="middle">{{ c.sleep }}</text>{% endif %}
+            {% if c.sleep %}<text x="{{ c.cx }}" y="{{ b.sleep_y + (13 if loop.index0 % 2 else 0) }}" text-anchor="middle" class="pf-wk-sleep">{{ c.sleep }}</text>{% endif %}
             {% if c.hrv %}<text x="{{ c.cx }}" y="{{ b.hrv_y }}" text-anchor="middle" class="{{ 'pf-ct-warn' if c.hrv == '▼' else '' }}">{{ c.hrv }}</text>{% endif %}
         </a>
         {% endfor %}

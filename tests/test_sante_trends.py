@@ -133,7 +133,7 @@ def test_vo2_card_short_history_then_curve():
     assert c["value"] == "61" and c["sub"] == "Allure seuil 3:20/km" and c["chart"] is None and c["chip"] is None
     assert c["note"] == "Historique depuis le 8 août : la tendance s'affiche à 4 mois."
     assert c["caption"] == "estimation de la montre, à ±10 près : regarde la direction"
-    year = nightly(lambda k: 55 + 3 * max(0, 150 - k) / 150, days=300)
+    year = nightly(lambda k: 55 + 4 * max(0, 150 - k) / 150, days=300)  # held two months above +2
     c = card(tr.trends_tab([], {"vo2max": year}, {"fitness": fit}, [], T, {}), "vo2")
     assert c["chart"] and c["chip"]["text"] == "↗ +3 en 6 mois" and "progresser" in c["line"]
 

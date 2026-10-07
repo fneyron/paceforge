@@ -22,7 +22,8 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import String, and_, case, cast, column, func, literal, select, true
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
@@ -66,6 +67,19 @@ def monday(dt: datetime) -> datetime:
 
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
+RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT")
+
+
+def _float(v) -> float | None:
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _int(v) -> int | None:
+    f = _float(v)
+    return int(f) if f is not None else None
 _CACHE_SIZE = 256
 
 
@@ -88,20 +102,30 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     JSON fields cost a read of every activity's raw_data)."""
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
-    key = (today, days, *(await db.execute(
+    key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
-               func.max(Activity.start_date), func.sum(Activity.moving_time)).where(*where))).one())
+               func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.distance),
+               func.sum(Activity.total_elevation_gain), func.sum(func.coalesce(Activity.average_heartrate, 0)),
+               func.count(Activity.suffer_score), func.sum(func.length(Activity.sport_type))).where(*where))).one())
     hit = _CACHE.get(user_id)
     if hit and hit[0] == key:
         return [replace(s) for s in hit[1]]
-    rows = (await db.execute(
-        select(Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
-               Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
-               Activity.max_heartrate, Activity.suffer_score, Activity.name,
-               Activity.raw_data["workout_type"].as_integer(), Activity.raw_data["average_temp"].as_float(),
-               Activity.raw_data["utc_offset"].as_float(), Activity.raw_data["startTimeLocal"].as_string(),
-               Activity.raw_data["startTimeGMT"].as_string(), Activity.splits_metric.is_not(None))
-        .where(*where).order_by(Activity.start_date))).all()
+    # splits that hold data (Strava writes JSON null when there are none): the richer copy, as on Activités
+    has_splits = and_(Activity.splits_metric.is_not(None), cast(Activity.splits_metric, String).not_in(("null", "[]")))
+    cols = (Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
+            Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
+            Activity.max_heartrate, Activity.suffer_score, Activity.name)
+    if db.get_bind().dialect.name == "postgresql":
+        # one read of each raw_data (every ->> would detoast it again)
+        obj = case((func.jsonb_typeof(Activity.raw_data) == "object", Activity.raw_data),
+                   else_=literal({}, JSONB))
+        x = func.jsonb_to_record(obj).table_valued(
+            *(column(k, String) for k in RAW_KEYS)).render_derived(name="raw", with_types=True)
+        q = select(*cols, *(x.c[k] for k in RAW_KEYS), has_splits).select_from(Activity).join(x, true())
+    else:
+        q = select(*cols, *(Activity.raw_data[k].as_string() for k in RAW_KEYS), has_splits)
+    rows = [(*r[:11], _int(r[11]), _float(r[12]), _float(r[13]), r[14], r[15], r[16])
+            for r in (await db.execute(q.where(*where).order_by(Activity.start_date))).all()]
 
     @dataclass
     class _Row:  # what activity_dedupe reads (splits: the richer copy is kept, as on Activités)
@@ -135,10 +159,10 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
 async def utc_offset(db: AsyncSession, user_id: int) -> float | None:
     """The athlete's UTC offset (s) from their latest sessions (Strava or Garmin), if any."""
     rows = (await db.execute(
-        select(Activity.raw_data["utc_offset"].as_float(), Activity.raw_data["startTimeLocal"].as_string(),
+        select(Activity.raw_data["utc_offset"].as_string(), Activity.raw_data["startTimeLocal"].as_string(),
                Activity.raw_data["startTimeGMT"].as_string()).where(Activity.user_id == user_id)
         .order_by(Activity.start_date.desc()).limit(10))).all()
-    return next((o for o in (_offset(*r) for r in rows) if o is not None), None)
+    return next((o for o in (_offset(_float(a), b, c) for a, b, c in rows) if o is not None), None)
 
 
 # ── heart-rate bounds and session load ──────────────────────────────────────
@@ -388,5 +412,7 @@ def easy_hr_months(runs: list[Session], today: date) -> dict | None:
     ref = 1000 / pace
     by_month: dict[tuple[int, int], list[float]] = defaultdict(list)
     for s in year:
+        if (s.day.year, s.day.month) == (today.year, today.month) and today.day < 14:
+            continue  # the month in progress counts from its 14th day
         by_month[(s.day.year, s.day.month)].append(s.hr - b * (s.speed - ref))
     return {"pace_s": pace, "months": {m: statistics.median(v) for m, v in by_month.items() if len(v) >= 4}}

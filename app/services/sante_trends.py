@@ -155,12 +155,16 @@ def chip(ch: dict | None, fmt, better_down: bool = False) -> dict | None:
     return {"text": text, "tone": "muted"}
 
 
-def _line(ch: dict | None, months, up: str, down: str, stable: str, none: str | None = None) -> str | None:
+FEM = ("Plus haute qu'en {m}", "Plus basse qu'en {m}")  # la FC, la VFC
+
+
+def _line(ch: dict | None, months, up: str, down: str, stable: str, none: str | None = None,
+          pending: tuple[str, str] = ("Plus haut qu'en {m}", "Plus bas qu'en {m}")) -> str | None:
     if ch is None:
         return none
     m = MONTHS[months[ch["ref"]][1] - 1]
     if ch.get("pending"):
-        return f"{'Plus haut' if ch['delta'] > 0 else 'Plus bas'} qu'en {m} : à confirmer le mois prochain."
+        return (pending[0] if ch["delta"] > 0 else pending[1]).format(m=m) + " : à confirmer le mois prochain."
     tpl = (up if ch["delta"] > 0 else down) if ch["real"] else stable
     return tpl.format(m=m)
 
@@ -353,7 +357,7 @@ def _fond(series: dict, months, today: date, races) -> tuple[dict | None, str | 
         head = f"Ton pic date {_de(peak_m)}" + (f" ({near})" if near else "")
         last_pts = [v for v in pct if v is not None]
         rising = len(last_pts) >= 2 and last_pts[-1] > last_pts[-2]
-        tail = (" ; tu es juste sous ton pic" if peak_day > today - timedelta(days=45)
+        tail = (" ; tu es juste sous ton pic" if peak_day > today - timedelta(days=45) and now >= 90
                 else " ; tu remontes" if ch and ch["real"] and ch["delta"] > 0 and rising
                 else " ; tu t'entraînes moins ces derniers mois" if ch and ch["real"] and ch["delta"] < 0 else "")
         line = head + tail + "."
@@ -385,7 +389,7 @@ def _easy(sessions, months, today: date, races) -> tuple[dict | None, str | None
     line = _line(ch, months,
                  up=f"Depuis {{m}}, ton cœur monte plus haut à {p} : fatigue, chaleur ou fond en baisse vont souvent avec.",
                  down=f"Depuis {{m}}, ton cœur travaille moins pour courir à {p} : signe de forme.",
-                 stable=f"Même effort cardiaque à {p} qu'en {{m}}.")
+                 stable=f"Même effort cardiaque à {p} qu'en {{m}}.", pending=FEM)
     last = [v for v in points if v is not None][-1]
     card = _card("easy_hr", label, f"{n} sorties", num(last), _unit(f"bpm à {p}", _stale(points, months)),
                  ch=chip(ch, lambda d: f"{signed(d)} bpm", better_down=True), line=line,
@@ -423,7 +427,7 @@ def _vo2(metrics, details, months, today: date, races) -> tuple[dict | None, str
             return _card("vo2", label, None, num(latest), sub=sub, caption=caption,
                          note=f"Trop peu de mesures par mois pour une courbe (il en faut {MIN_PER_MONTH})."), None, None
         return None, locked_line(label, len(win), "mesure", "mesures", _count(points)), None
-    ch = change(points, VO2_THR)
+    ch = change(points, VO2_THR, hold=2)  # held: two monthly points
     line = _line(ch, months, up="Ta montre te voit progresser depuis {m}.",
                  down="Ta montre te voit baisser depuis {m} ; chaleur, dénivelé et fatigue la font aussi baisser.",
                  stable="Ta montre ne voit pas de changement net depuis {m}.")
@@ -445,7 +449,7 @@ def _night_card(key, label, values, months, today, races, *, unit, thr, lines, b
     last = [v for v in points if v is not None][-1]
     card = _card(key, label, f"{len(values)} {many}", num(last), _unit(unit, _stale(points, months)),
                  ch=chip(ch, lambda d: f"{signed(d)} {unit}", better_down=better_down),
-                 line=_line(ch, months, *lines), caption=caption,
+                 line=_line(ch, months, *lines, pending=FEM), caption=caption,
                  chart=curve(points, sorted(values.items()), months, races, today, lambda v: num(v), label))
     return card, None
 
@@ -469,7 +473,7 @@ def _hrv(values, months, today, races):
     last = [v for v in points if v is not None][-1]
     line = _line(ch, months, "Plus haute qu'en {m} : va souvent avec une meilleure récupération.",
                  "Plus basse qu'en {m} : charge, nuits courtes ou stress la font souvent baisser.",
-                 "Même niveau qu'en {m} : rien à signaler.")
+                 "Même niveau qu'en {m} : rien à signaler.", pending=FEM)
     card = _card("hrv", label, f"{len(win)} nuits", num(last), _unit("ms", _stale(points, months)),
                  ch=chip(ch, lambda d: f"{signed((math.exp(d) - 1) * 100)} %"), line=line,
                  chart=curve(points, sorted(win.items()), months, races, today, lambda v: num(v), label, min_span=10))
@@ -486,7 +490,7 @@ def _sleep(values, scores, months, today, races):
     li = max(i for i, v in enumerate(points) if v is not None)
     ch = change(points, SLEEP_THR, hold=2)
     line = _line(ch, months, "Tu dors plus qu'en {m}.", "Tu dors moins qu'en {m}.",
-                 "Tes nuits durent autant qu'en {m}.")
+                 "Tes nuits durent autant qu'en {m}.", pending=("Tu dors plus qu'en {m}", "Tu dors moins qu'en {m}"))
     card = _card("sleep", label, f"{len(values)} nuits", hm(points[li]),
                  _unit(_stale(points, months), f"· score {num(sc[li])}" if sc[li] is not None else ""),
                  ch=chip(ch, lambda d: f"{signed(d)} min"), line=line,

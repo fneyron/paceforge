@@ -182,7 +182,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 
     form = compute_form({m: series.get(m, {}) for m in ("hrv", "rhr", "sleep")}, today)
     nights = _nights(series.get("sleep", {}), details.get("sleep", {}), today,
-                     next_race if next_race and (_race_day(next_race) - today).days <= 7 else None,
+                     next_race if next_race and 1 <= (_race_day(next_race) - today).days <= 7 else None,
                      last_sleep, series.get("sleep_score", {}))
     weeks = st.weeks(sessions, now)
     watch_load = _load(series, details, today)
@@ -219,8 +219,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
                                                      min_span=0.3 * form["hrv_baseline"]), verdict["hrv_note"]))
     if form.get("rhr_baseline") is not None and form.get("rhr_7d") is not None:
         base = form["rhr_baseline"]
-        signals.append(td.rhr_row(form, signal_chart(series.get("rhr", {}), today, (base - 3, base + 3), base,
-                                                     min_span=12)))
+        rhr = series.get("rhr", {})
+        two = [rhr.get(d) for d in (today - timedelta(days=1), today)]
+        sub = (f"{_num(two[0])} et {_num(two[1])} bpm ces deux dernières nuits" if verdict["rule"] == "ill"
+               and None not in two else None)  # what the illness rule read
+        signals.append(td.rhr_row(form, signal_chart(rhr, today, (base - 3, base + 3), base, min_span=12), sub))
     for r in (td.sleep_row(nights, series.get("sleep_score", {}), today), td.stress_row(series.get("stress", {}), today)):
         if r:
             signals.append(r)
@@ -233,8 +236,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         signals.append(watch)
         verdict["second"] = td.disagreement(watch, verdict, signals, sources["recovery"].get(rec_day))
     for r in signals:
-        if r["key"] in verdict["drivers"] and verdict["rule"] in ("red", "ill"):
-            r["tone"] = "danger"  # red only where the decision is red
+        if r["key"] in verdict["drivers"] and verdict["rule"] in ("red", "ill") and r["tone"] == "warn":
+            r["tone"] = "danger"  # red only where the decision is red, on a row out of its band
         if r["key"] == "legs" and feel and feel["legs_heavy"] and r["word"] == "fraîches":
             r["word"], r["tone"] = "lourdes (ressenti)", "warn"
     visible, more = td.order_rows(signals, verdict["drivers"])
@@ -264,11 +267,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
             taper_line = (f"Tu es en affûtage pour {course['race']['name']} : tes cibles de la semaine sont dans "
                           "Course.")
     # a race and the days after it are not a jump nor a loss of fitness
-    quiet = taper_line is not None or post is not None or (course or {}).get("state") == "recovery"
+    quiet = taper_line is not None or bool(post and post["race"]) or (course or {}).get("state") == "recovery"
     race_session_days = set(race_days) | {s.day for s in sessions if s.workout_type == 1}
     training = {
         "header": wk.header(weeks, sessions, tr, today, taper_line, quiet=quiet, race_days=race_session_days),
-        "bars": wk.bars(weeks, sessions, series.get("sleep", {}), series.get("hrv", {}), hrv_band)
+        "bars": wk.bars(weeks, sessions, series.get("sleep", {}), series.get("hrv", {}), hrv_band, race_session_days)
         if any(w["count"] for w in weeks) else None,
         "fatigue": wk.fatigue_chart(tr, first_monday, today, race_days) if tr else None,
         "fatigue_line": wk.fatigue_line(tr, today, quiet=quiet) if tr else None,
@@ -362,29 +365,31 @@ async def _races(db: AsyncSession, user_id: int, today: date):
 
 
 def _post_race(last_race, sessions, today: date) -> dict | None:
-    """The days after a race of 3 h or more (a Route raced, or a session marked
-    as a race), or after an exceptional outing (6 h and 1.5 × the longest of
-    the 60 days before): J+1..J+7, J+10 after 10 h; J+1..J+2 after a race under 3 h."""
-    from app.services.sante_course import expected_s
+    """The days after a race (a Route raced, or a session marked as a race),
+    or after an exceptional outing (6 h and 1.5 × the longest of the 60 days
+    before): J+1..J+7, J+10 after 10 h; J+1..J+2 after a race under 3 h. Its
+    duration is the real one when known (Course reads the same: race_duration)."""
+    from app.services.sante_course import race_duration
+    from app.services.sante_today import of_day
 
-    cands = []
+    cands = []  # (day, minutes, known, name, race)
     if last_race and _race_day(last_race):
-        res = last_race.result_json or {}
-        secs = res.get("total_actual_s") or expected_s(last_race)[0]
-        cands.append((_race_day(last_race), secs / 60 if secs else None, last_race.name))
+        secs, known = race_duration(last_race, sessions)
+        cands.append((_race_day(last_race), secs / 60 if secs else None, known and bool(secs), last_race.name, True))
     for s in sessions:
         if not 1 <= (today - s.day).days <= 10:
             continue
         before = max((x.minutes for x in sessions if s.day - timedelta(days=60) <= x.day < s.day), default=0)
         if (s.workout_type == 1 and s.minutes >= 180) or (s.minutes >= 360 and s.minutes >= 1.5 * before):
-            from app.services.sante_today import of_day
-            cands.append((s.day, s.minutes, f"ta sortie {of_day(s.day, today)}"))
-    for day, minutes, name in sorted(cands, key=lambda c: c[0], reverse=True):
+            cands.append((s.day, s.minutes, True, f"ta sortie {of_day(s.day, today)}", s.workout_type == 1))
+    # the latest day first; on one day, the Route (named) before the session
+    for day, minutes, known, name, race in sorted(cands, key=lambda c: (c[0], c[4], c[1] or 0), reverse=True):
         days = (today - day).days
         long = minutes is None or minutes >= 180
         limit = (10 if minutes and minutes >= 600 else 7) if long else 2
         if 1 <= days <= limit:
-            return {"day": day, "days": days, "minutes": minutes or 0, "name": name, "limit": limit, "long": long}
+            return {"day": day, "days": days, "minutes": minutes or 0, "known": known, "name": name,
+                    "limit": limit, "long": long, "race": race}
     return None
 
 

@@ -872,9 +872,11 @@ class _Fetcher:
     on (a rejected token still stops it)."""
 
     def __init__(self, mcp: McpSession):
-        self.mcp, self.calls, self.failed, self.down = mcp, 0, 0, 0
+        self.mcp, self.calls, self.failed, self.down, self.stopped = mcp, 0, 0, 0, False
 
     async def __call__(self, tool: str, args: dict) -> str | None:
+        if self.stopped:
+            return None
         if self.calls >= MAX_CALLS:
             logger.info("COROS call cap reached, %s skipped", tool)
             return None
@@ -883,16 +885,21 @@ class _Fetcher:
         self.calls += 1
         try:
             out = await self.mcp.call_tool(tool, args)
-        except (McpUnavailable, httpx.TransportError) as e:
-            # one slow call is skipped; COROS down (3 calls in a row) fails the sync fast
+        except httpx.TransportError as e:
+            # one slow call is skipped; after 3 timeouts in a row COROS is down: fail at once when
+            # nothing came back, else stop calling and keep what arrived
             self.failed += 1
             self.down += 1
             logger.info("COROS %s %s failed: %r", tool, args, e)
             if self.down >= 3:
-                raise CorosError("COROS ne répond pas pour l'instant.") from e
+                if self.failed == self.calls:
+                    raise CorosError("COROS ne répond pas pour l'instant.") from e
+                self.stopped = True
             return None
-        except (ToolError, httpx.HTTPError) as e:
+        except (ToolError, McpUnavailable, httpx.HTTPError) as e:
             self.failed += 1
+            if not isinstance(e, McpUnavailable):  # a 5xx on one tool says nothing either way
+                self.down = 0  # an answer, not an outage
             logger.info("COROS %s %s failed: %r", tool, args, e)
             return None
         self.down = 0
