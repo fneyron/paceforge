@@ -63,9 +63,9 @@
         <p class="pf-nu-lead">Ce que tu prends en repartant.</p>
         <ol class="pf-nu-rows">
             {% for r in rows %}
-            <li id="{{ r.id }}"><span class="pf-nu-clk">{{ r.clock }}</span><span class="pf-nu-at"><b title="{{ r.name }}">{{ r.name }}</b>{% if r.tag %}<small>{{ r.tag }}</small>{% endif %}</span><span class="pf-nu-take{% if r.none %} is-none{% endif %}">{{ r.take }}</span></li>
+            <li id="{{ r.id }}"><span class="pf-nu-clk">{{ r.clock }}</span> <span class="pf-nu-at"><b title="{{ r.name }}">{{ r.name }}</b>{% if r.tag %} <small>{{ r.tag }}</small>{% endif %}</span><span class="sr-only"> : </span> <span class="pf-nu-take{% if not r.parts %} is-none{% endif %}">{% for p in r.parts %}{{ p.words }}{% if p.note %}<span class="pf-nu-left{% if not r.fits %} is-wide{% endif %}"> {{ p.note }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% else %}rien à prendre{% endfor %}</span></li>
             {% endfor %}
-            <li class="is-end"><span class="pf-nu-clk">{{ finish }}</span><span class="pf-nu-at"><b>Arrivée</b></span></li>
+            <li class="is-end"><span class="pf-nu-clk">{{ finish }}</span> <span class="pf-nu-at"><b>Arrivée</b></span></li>
         </ol>
         <form method="post" action="{{ P }}/spare" hx-post="{{ P }}/spare"><input type="hidden" name="spare" value="{{ '0' if spare else '1' }}"><button type="submit" id="nu-spare" class="pf-nu-toggle" aria-pressed="{{ 'true' if spare else 'false' }}"><span class="pf-nu-switch" aria-hidden="true"></span>+1 de secours à chaque ravito</button></form>
         <p class="pf-nu-fine">Eau : bois à ta soif, remplis tes flasques à chaque ravito.</p>
@@ -78,7 +78,7 @@
             <details class="pf-nu-copy"><summary class="pf-btn pf-btn-secondary pf-btn-sm" data-nu-copy>Copier</summary><textarea id="nu-copytext" readonly rows="10" aria-label="Ta liste et tes ravitos, à copier">{{ copy_text }}</textarea></details>
             <span class="sr-only" role="status" data-nu-copied></span>
         </div>
-        {% if shop %}<ul class="pf-nu-list">{% for s in shop %}<li><b>{{ s.n }}</b><span>{{ s.name }}</span></li>{% endfor %}</ul>
+        {% if shop %}<ul class="pf-nu-list">{% for s in shop %}<li><b>{{ s.n }}</b> <span>{{ s.name }}</span></li>{% endfor %}</ul>
         {% else %}<p class="pf-nu-lead">Rien à emporter : aucune prise avant l'arrivée.</p>{% endif %}
     </section>
     {% endif %}
@@ -109,7 +109,7 @@
                 {% endfor %}
             </ul>
             {% else %}
-            <p class="pf-nu-lead">Ajoute ce que tu prends en course : une fois, pour toutes tes courses.</p>
+            <p class="pf-nu-lead">Ajoute ce que tu prends en course.</p>
             {% endif %}
             {% if catalog %}
             <form class="pf-nu-cat" method="post" action="{{ P }}/products" hx-post="{{ P }}/products">

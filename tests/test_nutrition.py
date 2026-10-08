@@ -228,8 +228,9 @@ def _text(html: str) -> str:
 
 
 def _rows(html: str) -> list[str]:
-    """« À chaque ravito », a row a string."""
+    """« À chaque ravito », a row a string, as a phone shows it (a note past one line is for wider screens)."""
     block = html.split('<ol class="pf-nu-rows">')[1].split("</ol>")[0]
+    block = re.sub(r'<span class="pf-nu-left is-wide">[^<]*</span>', "", block)
     return [_text(li) for li in re.findall(r"<li[^>]*>(.*?)</li>", block, flags=re.S)]
 
 
@@ -254,7 +255,7 @@ async def test_an_empty_plan_offers_plan_type_and_the_products_are_open(as_user:
     assert _selected(t, "nu-l0-p") == "-1" and _selected(t, "nu-l0-e") == "20" and _selected(t, "nu-l0-t") == ""
     assert "≈ 70 g de glucides par heure · dans la zone conseillée" in _text(t)  # 14 gels before the finish of a 5 h race
     assert 'id="nu-produits" class="pf-nu-fold">' in t and 'data-focus="nu-l0-p"' in t  # closed now the plan has a line
-    assert _rows(t) == ["21:00 Départ 6 gels", "23:05 Col assistance 4 gels", "00:25 Village 4 gels", "02:00 Arrivée"]
+    assert _rows(t) == ["21:00 Départ : 6 gels", "23:05 Col assistance : 4 gels", "00:25 Village : 4 gels", "02:00 Arrivée"]
     assert "Eau : bois à ta soif, remplis tes flasques à chaque ravito." in t
     # « Plan type » takes his first gel when he has one (a caffeinated gel is not « a gel »)
     rid2 = await _route(as_user, name="Deux")
@@ -285,7 +286,8 @@ async def test_lines_add_change_and_go_and_the_rows_follow(as_user: AsyncClient,
     assert "<option value=\"180\"" not in t.split('id="nu-l0-f"')[1].split("</select>")[0]
     # Départ → Col (23:05): Maurten at 0:20 … 2:00; PF 90 from 2:20: 4 prises to Village (2 pouches, 2 prises left),
     # 4 more to the finish (1 pouch with them); the opened pouch's prises only where the row has room
-    assert _rows(t) == ["21:00 Départ 6 Maurten 100", "23:05 Col assistance 2 PF 90", "00:25 Village 1 PF 90", "02:00 Arrivée"]
+    assert _rows(t) == ["21:00 Départ : 6 Maurten 100", "23:05 Col assistance : 2 PF 90", "00:25 Village : 1 PF 90", "02:00 Arrivée"]
+    assert '2 PF 90<span class="pf-nu-left is-wide"> (il t&#39;en reste 2 prises)</span>' in t  # past one line on a phone: wider screens
     assert "≈ 78 g de glucides par heure · dans la zone conseillée" in _text(t)  # (6 × 25 + 8 × 30) / 5 h
     assert [_text(li) for li in re.findall(r"<li><b>.*?</li>", t.split('class="pf-nu-list"')[1].split("</ul>")[0])] == [
         "6 Maurten Gel 100", "3 Precision Fuel PF 90 Gel"]
@@ -308,7 +310,7 @@ async def test_spare_and_copy(as_user: AsyncClient, db_session: AsyncSession):
     await as_user.post(f"{P}/{rid}/starter", headers=HX)
     r = await as_user.post(f"{P}/{rid}/spare", data={"spare": "1"}, headers=HX)
     assert (await _nj(db_session, rid))["spare"] is True and 'id="nu-spare" class="pf-nu-toggle" aria-pressed="true"' in r.text
-    assert _rows(r.text)[:3] == ["21:00 Départ 7 gels", "23:05 Col assistance 5 gels", "00:25 Village 5 gels"]
+    assert _rows(r.text)[:3] == ["21:00 Départ : 7 gels", "23:05 Col assistance : 5 gels", "00:25 Village : 5 gels"]
     r = await as_user.post(f"{P}/{rid}/spare", data={"spare": "1"}, headers=HX)  # a stale tap sets, never flips back
     assert (await _nj(db_session, rid))["spare"] is True
     copy = r.text.split('id="nu-copytext"')[1].split(">", 1)[1].split("</textarea>")[0]
@@ -355,7 +357,7 @@ async def test_no_simulation_keeps_the_plan_editable(as_user: AsyncClient, db_se
 async def test_a_race_without_aid_stations_takes_everything_at_the_start(as_user: AsyncClient):
     rid = await _route(as_user, cps=[])
     await as_user.post(f"{P}/{rid}/starter", headers=HX)
-    assert _rows((await as_user.get(f"{P}/{rid}")).text) == ["21:00 Départ 14 gels", "02:00 Arrivée"]
+    assert _rows((await as_user.get(f"{P}/{rid}")).text) == ["21:00 Départ : 14 gels", "02:00 Arrivée"]
 
 
 @pytest.mark.asyncio
@@ -411,7 +413,7 @@ async def test_products_are_his_for_every_race_and_a_used_one_asks_before_it_goe
     await as_user.post(f"{P}/{other}/starter", headers=HX)
     assert (await _nj(db_session, other))["rhythms"][0]["product_id"] == pid
     r = await as_user.post(f"{P}/{rid}/products/{pid}/delete", headers=HX)
-    assert "Il est dans ton plan et dans celui d'une autre course : il en sera retiré." in _text(r.text)
+    assert "Maurten Gel 100 est dans ton plan et dans celui d'une autre course : il en sera retiré." in _text(r.text)
     assert f'data-focus="nu-yes-{pid}"' in r.text and await db_session.get(NutritionProduct, pid) is not None
     page = (await as_user.get(f"/simulator/routes/{rid}?vue=nutrition&open=produits&confirm={pid}")).text  # the same question without JS
     assert "il en sera retiré" in page

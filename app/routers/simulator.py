@@ -1882,7 +1882,7 @@ async def _product_uses(db: AsyncSession, user: User, route: Route, pid: int, pl
     return {"here": here, "others": others}
 
 
-def _delete_question(uses: dict) -> str:
+def _delete_question(uses: dict, name: str) -> str:
     n = len(uses["others"])
     elsewhere = "d'une autre course" if n == 1 else f"de {n} autres courses"
     if uses["here"] and n:
@@ -1891,7 +1891,7 @@ def _delete_question(uses: dict) -> str:
         where = "dans ton plan"
     else:
         where = f"dans le plan {elsewhere}"
-    return f"Il est {where} : il en sera retiré."
+    return f"{name} est {where} : il en sera retiré."
 
 
 async def _nutrition_card_context(
@@ -1940,9 +1940,11 @@ async def _nutrition_card_context(
             caf = {"mg": mg, "cap": cap, "over": mg > cap, "no_weight": not user.weight_kg}
         for r in count["rows"]:
             tag = "base vie" if r["base"] else ("assistance" if r["crew"] else ("drop bag" if r["drop"] else None))
-            text = NP.take_text(r["items"], products, NP.ROW_CHARS - len(r["name"]) - (len(tag) + 1 if tag else 0))
+            text = NP.take_text(r["items"], products)
+            # the opened pouch's prises: on a phone only when the row stays one line, always on a wider screen
+            room = NP.ROW_CHARS - len(r["name"]) - (len(tag) + 1 if tag else 0)
             rows.append({"id": f"s-{r['key']}", "clock": NP.clock_hm(r["clock_s"]), "name": r["name"], "tag": tag,
-                         "take": text, "none": not any(it["units"] for it in r["items"])})
+                         "take": text, "parts": NP.take_parts(r["items"], products), "fits": len(text) <= room})
         finish = NP.clock_hm(count["finish_clock_s"])
         # a product of « Tes produits » by its full name (what to buy); a generic one in its own words (« 14 gels »)
         shop = [{"n": n, "name": (products[pid]["one"] if n == 1 else products[pid]["many"]) if products[pid].get("one")
@@ -1956,7 +1958,7 @@ async def _nutrition_card_context(
     question = None
     if confirm is not None and confirm in pantry:
         uses = await _product_uses(db, user, route, confirm, plan)
-        question = _delete_question(uses) if (uses["here"] or uses["others"]) else None
+        question = _delete_question(uses, pantry[confirm].get("name") or "") if (uses["here"] or uses["others"]) else None
     my_products = []
     for pid, p in pantry.items():
         bits = [f"{N._fr(float(p.get('carbs_g') or 0))} g de glucides"]

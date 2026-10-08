@@ -259,19 +259,23 @@ def line_words(r: dict, products: dict) -> str:
     return f"{N.short_label(p)} · {one} toutes les {r['every_min']} min{when}"
 
 
+def take_parts(items: list[dict], products: dict) -> list[dict]:
+    """A row's products to take: [{"words": "1 PF 90", "note": "(il t'en reste 1 prise)" | None}]."""
+    return [{"words": unit_words(it["units"], products[it["pid"]]),
+             "note": f"(il t'en reste {it['left']} prise{'s' if it['left'] > 1 else ''})" if it["left"] else None}
+            for it in items if it["units"] > 0]
+
+
 def take_text(items: list[dict], products: dict, room: int | None = None) -> str:
     """What a row says: « 2 Maurten 100 · 1 PF 90 », « rien à prendre » when
     there is nothing to take. The prises left in an opened pouch, « 1 PF 90
     (il t'en reste 1 prise) », only when that stays within ``room`` characters
     (one short line; None: always)."""
-    shown = [it for it in items if it["units"] > 0]
-    if not shown:
+    parts = take_parts(items, products)
+    if not parts:
         return "rien à prendre"
-    plain = [unit_words(it["units"], products[it["pid"]]) for it in shown]
-    noted = [w + (f" (il t'en reste {it['left']} prise{'s' if it['left'] > 1 else ''})" if it["left"] else "")
-             for w, it in zip(plain, shown, strict=True)]
-    text = " · ".join(noted)
-    return text if room is None or len(text) <= room else " · ".join(plain)
+    text = " · ".join(p["words"] + (f" {p['note']}" if p["note"] else "") for p in parts)
+    return text if room is None or len(text) <= room else " · ".join(p["words"] for p in parts)
 
 
 # ── the stored plan ─────────────────────────────────────────────────────────

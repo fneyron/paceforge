@@ -454,6 +454,9 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-nu-at small { flex: none; font-size: 12px; font-weight: 600; color: rgb(var(--pf-accent)); white-space: nowrap; }
 .pf-nu-take { flex: 0 1 auto; text-align: right; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
 .pf-nu-take.is-none { font-weight: 400; color: rgb(var(--pf-gray-500)); }
+.pf-nu-left { font-weight: 400; color: rgb(var(--pf-gray-600)); }
+.pf-nu-left.is-wide { display: none; }  /* « (il t'en reste 1 prise) »: past one line on a phone, shown from 560 px */
+@media (min-width: 560px) { .pf-nu-left.is-wide { display: inline; } }
 /* « +1 de secours à chaque ravito »: a switch (aria-pressed), its edge ≥ 3:1 in both themes */
 .pf-nu-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 10px; font-size: 15px; font-weight: 500; color: rgb(var(--pf-ink)); text-align: left; }
 .pf-nu-switch { flex: none; position: relative; width: 40px; height: 24px; border-radius: 999px; background: rgb(var(--pf-gray-200)); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-400)); }
