@@ -117,7 +117,7 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
                                                                 test_user: User, monkeypatch):
     await seed_owner_v4(db_session, test_user)
     main = _main(await _page(as_user, monkeypatch, D8))
-    hero = main.split('<section id="sommeil"')[1].split('data-viz-scope')[0]  # the Sommeil card's first part
+    hero = main.split('<section id="sommeil"')[1].split("</section>")[0]  # the Sommeil card under the dials
     bar = re.search(r'<div class="pf-phases-bar" aria-hidden="true">(.*?)</div>', hero).group(1)
     assert re.findall(r'class="pf-ph is-(\w+)" style="flex-grow: (\d+)"', bar) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
@@ -303,13 +303,14 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
 
 async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                                  monkeypatch):
-    """REG-3: « 14 nuits / 3 mois » is a GET form (?r=90, back to #sommeil): with scripts off or pf-viz.js not
-    loaded, it still switches; pf-viz.js switches in place."""
+    """REG-3: « 14 nuits / 3 mois » is a GET form (?r=90, back to the chart: #sommeil-detail): with scripts off or
+    pf-viz.js not loaded, it still switches; pf-viz.js switches in place."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, days=60))
     html = _main(await _page(as_user, monkeypatch, today))
     form = re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" '
-                     r'aria-label="Période" method="get" action="/sante#sommeil">(.*?)</form>', html, re.S).group(1)
+                     r'aria-label="Période" method="get" action="/sante#sommeil-detail">(.*?)</form>', html,
+                     re.S).group(1)
     assert 'type="submit" name="r" value="90" data-range="90" aria-pressed="false">3 mois' in form
     r = await as_user.get("/sante?r=90")
     assert '<div data-range-panel="90">' in r.text and '<div data-range-panel="14" hidden>' in r.text

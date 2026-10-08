@@ -605,6 +605,12 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
    Vitals — a dot and the name on the left, the value over its word on the right (never colour alone) */
 .pf-sum { padding-bottom: 4px; }
 .pf-sum-h { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; color: rgb(var(--pf-ink)); }
+/* the title a link to its details (« › » at the card's right edge, as in the mockup): the whole row, 44 px tall, in
+   the plain title's place */
+.pf-sum-go { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: -11px 0; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.pf-sum-chev { font-family: var(--pf-font-text); font-size: 20px; font-weight: 400; line-height: 1; color: rgb(var(--pf-gray-500)); }
+.pf-sum-go:active .pf-sum-chev { color: rgb(var(--pf-ink)); }
+.pf-sum-go:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
 .pf-rows { margin-top: 2px; }
 .pf-rows > li + li { border-top: 1px solid rgb(var(--pf-line)); }
 .pf-row { display: flex; align-items: center; column-gap: 10px; min-height: 48px; padding: 11px 0; }

@@ -399,14 +399,22 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
     main = _main(html)
-    # one page, the approved mockup's order (2026-10-08, « Fais comme WHOOP »): the dials, then their cards in the
-    # same order — Récupération (its rows, its 14 days, the VFC and FC de nuit charts), Sommeil, Entraînement —
-    # then the folds
-    order = ['class="pf-dials"', 'id="recuperation"', 'class="pf-rows"', "Récupération · 14 jours", 'id="vfc"',
-             'id="fc"', 'id="sommeil"', 'id="entrainement"', "Comment je calcule ta récupération",
+    # one page, the approved mockup's order (2026-10-08, « Fais comme WHOOP »; « Pourquoi je n'ai rien dans Sommeil
+    # et Entraînement ? »): the dials, then their three cards right under them in the same order — Récupération (its
+    # rows), Sommeil (last night), Entraînement (the 7 days) —, then the details — Récupération's 14 days and its
+    # VFC and FC de nuit charts, Sommeil's 24-h chart and habits —, then the folds
+    order = ['class="pf-dials"', 'id="recuperation"', 'class="pf-rows"', 'id="sommeil"', 'class="pf-row pf-night"',
+             'id="entrainement"', 'class="pf-row pf-week"', 'id="recuperation-detail"', "Récupération · 14 jours",
+             'id="vfc"',
+             'id="fc"', 'id="sommeil-detail"', "Sommeil sur 24 h", "pf-habits", "Comment je calcule ta récupération",
              "Comment je lis tes nuits", "Les chiffres de chaque nuit"]
     at = [main.index(k) for k in order]
     assert at == sorted(at)
+    # each card's title a link « › » to its details further down (Activités for Entraînement), like the mockup
+    titles = re.findall(r'<h2 id="h-(\w+)" class="pf-sum-h"><a class="pf-sum-go" href="([^"]+)">([^<]+)<span '
+                        r'class="pf-sum-chev" aria-hidden="true">›</span></a></h2>', main)
+    assert titles == [("recup", "#recuperation-detail", "Récupération"), ("sommeil", "#sommeil-detail", "Sommeil"),
+                      ("train", "/activities", "Entraînement")]
     # three dials, in WHOOP's order, each a link to its card (a full aria-label), the state said in words
     dials = re.findall(r'<a class="pf-ring pf-ring-(\w+) is-(\w+)" href="(#\w+)" aria-label="([^"]+)">(.*?)</a>',
                        main, re.S)
@@ -428,22 +436,24 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert rows == [("none", "VFC 7 nuits en construction prête dans 2 nuits"),
                     ("none", "FC de nuit 7 nuits en construction prête après ta prochaine nuit"),
                     ("warn", "Effort récent 8 jours avant d'être récupéré")]
-    assert '<h2 id="h-recup" class="pf-sum-h">Récupération</h2>' in recup
     assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
-    # the VFC and FC de nuit charts in words (the rows print the numbers)
-    assert recup.count('<p class="pf-card-status is-plain">En construction : chaque nuit où tu portes ta montre '
-                       "compte.</p>") == 2
-    # Sommeil: « Cette nuit », its times, its hours over the 8-h need; the stages; the 24-h chart; the habits
+    # the details: the VFC and FC de nuit charts in words (the rows print the numbers)
+    recup_detail = main.split('<section id="recuperation-detail"')[1].split("</section>")[0]
+    assert recup_detail.count('<p class="pf-card-status is-plain">En construction : chaque nuit où tu portes ta '
+                              "montre compte.</p>") == 2
+    # Sommeil: « Cette nuit », its times, its hours over the 8-h need; the stages; then, in the details, the 24-h
+    # chart and the habits
     sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
     night = re.search(r'<div class="pf-row pf-night">(.*?)</div>', sommeil, re.S).group(1)
     assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", night)).strip()) == (
         "Cette nuit 22:40 → 07:30 8h36 sur 8 h de besoin")
-    assert sommeil.index("pf-night") < sommeil.index("pf-phases") < sommeil.index("Sommeil sur 24 h") < sommeil.index(
-        "pf-habits")
+    assert sommeil.index("pf-night") < sommeil.index("pf-phases") and "Sommeil sur 24 h" not in sommeil
+    sleep_detail = main.split('<section id="sommeil-detail"')[1].split("</section>")[0]
+    assert sleep_detail.index("Sommeil sur 24 h") < sleep_detail.index("pf-habits")
     # Entraînement: the 7 days (the dial prints their time: no usual week yet), the link to Activités
     train = main.split('<section id="entrainement"')[1].split(">", 1)[1].split("</section>")[0]
     assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train)).strip()) == (
-        "Entraînement 7 derniers jours pas encore de semaine habituelle Voir tes semaines dans Activités ›")
+        "Entraînement › 7 derniers jours pas encore de semaine habituelle Voir tes semaines dans Activités ›")
     assert '<a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>' in train
     assert "Détail du score" not in main and "Contributeurs" not in main and "En bref" not in main
     # each number printed once before a tap (the closed folds are the accessible alternative): the dials' (the
@@ -461,11 +471,11 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4  # 4 charts, no 3 mois
     # a day or a night without a measure draws nothing and no legend names it (owner, 2026-10-08: « s'il n'y a pas
     # de mesure tu ne mets rien, pas de point »): no gap dot, no « pas de score » / « pas de mesure » swatch
-    for part in (recup, sommeil):
+    for part in (recup_detail, sleep_detail):
         assert "pf-viz-gap" not in part and "is-gap" not in part
         legends = "".join(re.findall(r'<p class="pf-viz-legend"[^>]*>(.*?)</p>', part, re.S))
         assert "pas de score" not in legends and "pas de mesure" not in legends
-    history = recup.split("Récupération · 14 jours")[1].split('id="vfc"')[0]
+    history = recup_detail.split("Récupération · 14 jours")[1].split('id="vfc"')[0]
     assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', history) == [
         ("is-est", "estimé, nuit non enregistrée")]  # the one swatch left: the days estimated without a night
     assert "is-out" not in main and "ne compte" not in main
@@ -679,8 +689,9 @@ def _sleep_only(rows: dict) -> dict:
 async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession, test_user: User):
     """A watch that sent one night (its sleep alone) but none this morning, no score: Sommeil links to its card,
     Récupération is a plain dial (no row, under 2 days for its 14 days: nothing to link to), Entraînement always
-    links to its card; no state: the line says why. With 2 past days scored, Récupération links to its 14 days
-    even without today's score; a night with its heart values gives the card its rows (VFC, FC de nuit)."""
+    links to its card; no state: the line says why. With 2 past days scored, Récupération links to its 14 days in
+    the details (no row: no card under the dials) even without today's score; a night with its heart values gives
+    the card its rows (VFC, FC de nuit), and the dial links to it."""
     today = date(2026, 10, 8)
     kw = {"today": today, "source": "COROS", "hr_method": "coros_sleep_summary"}
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([3], **kw)))
@@ -690,10 +701,11 @@ async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession
     assert page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([2], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation"
+    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation-detail"
     await _seed_rows(db_session, test_user, night_rows([5], **kw))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert [(r["key"], r["word"]) for r in page["rows"]] == [("vfc", "en construction"), ("fc", "en construction")]
+    assert page["dials"][1]["href"] == "#recuperation"
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

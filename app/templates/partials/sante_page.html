@@ -1,10 +1,11 @@
 {#- Santé, one page (app.services.sante.health_page), like WHOOP (2026-10-08, owner: « Fais comme WHOOP, ça doit rester
-    simple »), top to bottom: three equal dials in a row, Sommeil · Récupération · Entraînement (each a percentage over
-    its name and a plain word, a link to its card below), the illness alert's sentence under them only when it fires
-    (or the line that says why there is no score); then their cards in the same order: Récupération (its rows: VFC,
-    FC de nuit, Effort récent; the 14 days, the VFC and FC de nuit charts), Sommeil (last night: its times, its
-    hours over the 8-h need, its stages; the 24-h chart; the habits), Entraînement (the last 7 days and the usual
-    week, a link to Activités); then the closed folds (each ending on its « Sources » link). No sub-score anywhere.
+    simple »), top to bottom, as in the approved mockup: three equal dials in a row, Sommeil · Récupération ·
+    Entraînement (each a percentage over its name and a plain word, a link to its card), the illness alert's sentence
+    under them only when it fires (or the line that says why there is no score); then their three cards right under
+    them, in the same order: Récupération (its rows: VFC, FC de nuit, Effort récent), Sommeil (last night: its times,
+    its hours over the 8-h need, its stages), Entraînement (the last 7 days and the usual week, a link to Activités);
+    then the details: Récupération's 14 days and its VFC and FC de nuit charts, Sommeil's 24-h chart and the habits;
+    then the closed folds (each ending on its « Sources » link). No sub-score anywhere.
     Each number is printed once on the page: a dial's percentage on the dial, the hours and the values on the cards;
     the charts' readouts rest on something else until a tap (a mean, the latest night). The tone is in a word too,
     never colour alone; no mark without a label or a legend; nothing for a missing measure. -#}
@@ -28,17 +29,52 @@
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
 {% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
 
-{#- Récupération: its rows, then its 14 days, then the VFC and FC de nuit charts (each opening on its status line in
-    words: the rows print the percentages; the legend names every mark drawn: a measured night's dot, the 7-night
-    line when a segment of it is drawn, the usual values' band, dashed while provisional) -#}
-{% if p.rows or p.recup or p.vfc or p.fc %}
+{#- the three cards of the mockup, right under the dials and in their order (each dial links to its card): Récupération
+    (its rows: VFC, FC de nuit, Effort récent), Sommeil (last night: its times, the naps its 24 h counts, its hours
+    over the 8-h need, its stages), Entraînement (the last 7 days and the usual week); each title a link « › » to its
+    details further down (Activités for Entraînement) -#}
+{% macro card_title(id, text, href) %}<h2 id="{{ id }}" class="pf-sum-h"><a class="pf-sum-go" href="{{ href }}">{{ text }}<span class="pf-sum-chev" aria-hidden="true">›</span></a></h2>{% endmacro %}
+{% set has_recup_detail = p.recup or p.vfc or p.fc %}
+{% set has_sleep_detail = s and s.state not in ("never", "old") %}
+{% if p.rows %}
 <section id="recuperation" class="pf-sec" aria-labelledby="h-recup">
-    {% if p.rows %}
     <div class="pf-card pf-sum">
-        <h2 id="h-recup" class="pf-sum-h">Récupération</h2>
+        {% if has_recup_detail %}{{ card_title("h-recup", "Récupération", "#recuperation-detail") }}{% else %}<h2 id="h-recup" class="pf-sum-h">Récupération</h2>{% endif %}
         {{ rows(p.rows, "Récupération") }}
     </div>
-    {% else %}<h2 id="h-recup" class="pf-sec-h">Récupération</h2>{% endif %}
+</section>
+{% endif %}
+{% if s and s.state != "never" and (s.state == "old" or s.hero) %}
+<section id="sommeil" class="pf-sec" aria-labelledby="h-sommeil">
+    <div class="pf-card pf-sum">
+        {% if has_sleep_detail %}{{ card_title("h-sommeil", "Sommeil", "#sommeil-detail") }}{% else %}<h2 id="h-sommeil" class="pf-sum-h">Sommeil</h2>{% endif %}
+        {% if s.state == "old" %}
+        <p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
+        {% else %}{% set h = s.hero %}
+        <div class="pf-row pf-night"><span class="pf-row-name"><span>{{ h.label }} <small>{{ h.times }}</small>{% if h.nap %} <small>{{ h.nap }}</small>{% endif %}</span></span><span class="pf-row-val"><b>{{ h.total }}</b> <span>{{ h.need }}</span></span></div>
+        {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
+        {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
+        {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+{% set t = p.training %}
+<section id="entrainement" class="pf-sec" aria-labelledby="h-train">
+    <div class="pf-card pf-sum">
+        {{ card_title("h-train", "Entraînement", "/activities") }}
+        <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b> <span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
+        <a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>
+    </div>
+</section>
+
+{#- the details, after the three cards: Récupération's 14 days and its VFC and FC de nuit charts (each opening on its
+    status line in words: the rows print the percentages; the legend names every mark drawn: a measured night's
+    dot, the 7-night line when a segment of it is drawn, the usual values' band, dashed while provisional), then
+    Sommeil's 24-h chart (14 nuits / 3 mois) and the habits -#}
+{% if has_recup_detail %}
+<section id="recuperation-detail" class="pf-sec" aria-labelledby="h-recup-detail">
+    <h2 id="h-recup-detail" class="sr-only">Récupération en détail</h2>
     {% if p.recup %}
     <div class="pf-card">
         <h3 class="pf-card-h">Récupération · 14 jours</h3>
@@ -57,30 +93,13 @@
     {% endfor %}
 </section>
 {% endif %}
-
-{#- Sommeil: last night (its times, the naps its 24 h counts, its hours over the 8-h need, its stages: the bar and its
-    legend; with real intervals, the hypnogram above it, else nothing), then the 24-h chart (14 nuits / 3 mois) and
-    the habits -#}
-{% if s and s.state != "never" %}
-<section id="sommeil" class="pf-sec" aria-labelledby="h-sommeil">
-    {% if s.state == "old" or s.hero %}
-    <div class="pf-card pf-sum">
-        <h2 id="h-sommeil" class="pf-sum-h">Sommeil</h2>
-        {% if s.state == "old" %}
-        <p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
-        {% else %}{% set h = s.hero %}
-        <div class="pf-row pf-night"><span class="pf-row-name"><span>{{ h.label }} <small>{{ h.times }}</small>{% if h.nap %} <small>{{ h.nap }}</small>{% endif %}</span></span><span class="pf-row-val"><b>{{ h.total }}</b> <span>{{ h.need }}</span></span></div>
-        {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
-        {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
-        {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
-        {% endif %}
-    </div>
-    {% else %}<h2 id="h-sommeil" class="pf-sec-h">Sommeil</h2>{% endif %}
-    {% if s.state != "old" %}
+{% if has_sleep_detail %}
+<section id="sommeil-detail" class="pf-sec" aria-labelledby="h-sommeil-detail">
+    <h2 id="h-sommeil-detail" class="sr-only">Sommeil en détail</h2>
     <div class="pf-card" data-viz-scope>
         <div class="pf-card-top">
             <h3 class="pf-card-h">Sommeil sur 24 h</h3>
-            {% if s.ranges|length > 1 %}{{ viz.viz_ranges(s.ranges, s.r, action="/sante#sommeil") }}{% endif %}
+            {% if s.ranges|length > 1 %}{{ viz.viz_ranges(s.ranges, s.r, action="/sante#sommeil-detail") }}{% endif %}
         </div>
         {% for key, label in s.ranges %}{% set b = s.bars[key] %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
@@ -95,20 +114,8 @@
     <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
     {% if s.habits.regular %}<p class="pf-habits-reg">{{ s.habits.regular }}</p>{% endif %}
     {% endif %}
-    {% endif %}
 </section>
 {% endif %}
-
-{#- Entraînement: the last 7 days' time and the usual week's (each once: the dial prints the time itself when there
-    is no usual week yet), then Activités, where the weeks are (no chart here) -#}
-{% set t = p.training %}
-<section id="entrainement" class="pf-sec" aria-labelledby="h-train">
-    <div class="pf-card pf-sum">
-        <h2 id="h-train" class="pf-sum-h">Entraînement</h2>
-        <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b> <span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
-        <a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>
-    </div>
-</section>
 
 <div class="pf-folds">
     {#- the two method folds (v4.3: a few plain bullets, no citation), each ending on one small link to the sources

@@ -14,17 +14,18 @@ comme WHOOP, ça doit rester simple »). Top to bottom:
   H); the illness alert's one sentence under them (sante_today; v4.3, owner:
   « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
   activity named). No sub-score anywhere, no « Détail du score »;
-- the cards, in the dials' order: Récupération (rows: VFC and FC de nuit
-  over 7 nights — the 7-night mean as a signed percentage of the usual value
-  and its word, « comme d'habitude » at 0 %, « en construction » and when the
-  usual values will be ready — and « Effort récent », the days left in a
-  recovery window whenever one is open; then « Récupération · 14 jours »,
+- three cards right under the dials, in their order (the approved mockup):
+  Récupération (rows: VFC and FC de nuit over 7 nights — the 7-night mean as
+  a signed percentage of the usual value and its word, « comme d'habitude » at
+  0 %, « en construction » and when the usual values will be ready — and
+  « Effort récent », the days left in a recovery window whenever one is
+  open), Sommeil (sante_sleep: last night, its stages), Entraînement (the
+  last 7 days and the usual week, a link to Activités, where the weeks are);
+  each title a link to its details further down: « Récupération · 14 jours »,
   « VFC · 30 nuits » and « FC de nuit · 30 nuits », each night card opening
   on its status line in words, the last 7 nights against the usual values the
-  score reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »)), Sommeil
-  (sante_sleep: last night, its stages, the 24-h chart, the habits),
-  Entraînement (the last 7 days and the usual week, a link to Activités,
-  where the weeks are); every measured night counts, last night included
+  score reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »), then
+  the 24-h sleep chart and the habits; every measured night counts, last night included
   (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil
   pour la FC »), and a night or a day without a measure draws nothing (« s'il
   n'y a pas de mesure tu ne mets rien, pas de point »);
@@ -323,15 +324,17 @@ def effort_row(efforts, day: dict) -> dict | None:
 
 
 def _top(day: dict, efforts, sessions, has_watch: bool, page: dict) -> dict:
-    """The three dials, each a link to its card below (a plain dial when the page has none): Sommeil,
-    Récupération, Entraînement (WHOOP's order); the illness alert's sentence under them (sante_today), or the line
-    that says why there is no score; the Récupération card's rows (VFC, FC de nuit, Effort récent) and the
-    Entraînement card."""
+    """The three dials, each a link to its card right under the dials, else to its details further down (a plain
+    dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
+    sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
+    (VFC, FC de nuit, Effort récent) and the Entraînement card."""
     state, score = day["state"], day["score"]
-    sleep_href = "#sommeil" if (page.get("sleep") or {}).get("state", "never") != "never" else None
+    sleep = page.get("sleep") or {}
+    sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
+                  "#sommeil-detail" if sleep.get("state") == "ok" else None)
     rows = [r for r in (night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
                         effort_row(efforts, day)) if r]
-    recup_href = "#recuperation" if rows or page.get("recup") else None
+    recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
     train = training(sessions, day["day"])
     return {"dials": [sleep_dial(day["tst24"], sleep_href), sc.dial(score, state, recup_href), train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
