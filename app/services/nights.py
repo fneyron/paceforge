@@ -139,6 +139,11 @@ TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir
 EXCLUDING = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "ultra_tail", "alcohol", "race",
              "ill", "alert")
 EPISODE = ("ill", "alert")  # the nights of an illness episode
+
+
+def tag_words(tags, skip=("race",)) -> list[str]:
+    """A night's tags as the readouts print them, each word once (« ultra » and « ultra_tail » say the same)."""
+    return list(dict.fromkeys(TAG_WORDS[t] for t in sorted(tags) if t not in skip))
 _EXCLUDING = frozenset(EXCLUDING)
 _VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
 _SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}

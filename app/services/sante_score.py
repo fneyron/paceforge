@@ -137,7 +137,7 @@ METHOD = [
         "Des jours de 3 h enchaînés font une sortie ; à vélo ou en nageant, une classe de moins.",
         "Ta normale : 60 jours, une par montre, «\u00a0provisoire\u00a0» de 7 à 13 nuits, pleine à 14.",
         "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %) et devient la tienne au fil des nuits.",
-        "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm.",
+        "Alerte (dès 14 nuits) : 2 nuits à +5 bpm et 2 écarts-types au moins ; Alavi 2022 dit +4 bpm.",
         "L'anneau Charge fait le tour au double de ta semaine type, la médiane des 12 dernières.",
         "Le mot sous l'anneau dit «\u00a0comme d'habitude\u00a0» à 20 % près.",
     ]),

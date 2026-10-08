@@ -408,7 +408,7 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
         elif banked:
             ctx.append(f"cible {range_hm(*goal)}{prov}")
         if night:
-            ctx += [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(night.tags) if t not in ("race",)]
+            ctx += [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(night.tags)]
         if d > today:
             r.append([viz.night_label(d), "à venir", " · ".join(ctx)])
             a.append(f"{viz.night_label(d)}, {j_label(k)} : à venir")

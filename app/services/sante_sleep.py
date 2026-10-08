@@ -55,7 +55,7 @@ REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015
 METHOD = [
     ("Ce qui vient des textes officiels", [
         "Ton sommeil se compte sur 24 h, siestes comprises (Watson 2015b ; Hirshkowitz 2015).",
-        "Les 7 h recommandées parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a).",
+        "Les 7 h parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a ; Hirshkowitz 2015).",
         "Une longue nuit n'est jamais signalée : elle peut aider à récupérer (Watson 2015a).",
         "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A).",
         "Décalage : 1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021).",
@@ -68,7 +68,8 @@ METHOD = [
         "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021).",
         "Un jour sous 6 h est «\u00a0court\u00a0», score plafonné à 65 (6 h : Craven 2022 ; 65 : notre choix).",
         "Régularité : tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021).",
-        "Hors de ta normale : 1 nuit après 3 h, 3 après 6 h, 4 après 10 h ; l'altitude ; un fuseau.",
+        "Hors de ta normale : la nuit après 1h30 de sortie ou une sortie intense le soir ;",
+        "3 nuits après 6 h, 4 après 10 h ; en altitude ; après un changement de fuseau.",
         "Après un ultra, tes 4 nuits restent aussi hors de tes horaires habituels (Fachan 2026).",
         "Sieste «\u00a0tardive\u00a0» après 16 h ou à moins de 7 h de ton coucher (Mograss 2022 ; Walsh 2021).",
         "Coucher et lever arrondis à 5 min, phases à 10 min.",
@@ -268,7 +269,7 @@ def rows(nights: dict, today: date) -> list[dict]:
         n = nights.get(d)
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
-        marks = [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(n.tags) if t != "race"]
+        marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags)]
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
                     "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",

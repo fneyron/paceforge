@@ -569,3 +569,14 @@ def test_the_history_sees_a_chain_across_midnight_as_each_day_knew_it():
         assert (state or {}).get("key") == (then["state"] or {}).get("key"), d
     assert _then(rows, sessions, d1)["window"] is None
     assert _then(rows, sessions, d1 + timedelta(days=1))["window"]["effort"].ids == frozenset({11, 12})
+
+
+def test_a_night_says_each_word_once():
+    """Two overlapping ultras can leave a night both « ultra » and « ultra_tail »: « après ultra » once."""
+    from app.services import sante_sleep as sl
+
+    nights = nt.build_nights(night_rows(range(0, 3), today=D), D)
+    nights[D].tags |= {"ultra", "ultra_tail", "late_nap", "race"}
+    assert nt.tag_words(nights[D].tags) == ["après sieste tardive", "après ultra"]
+    assert {r["iso"]: r["marks"] for r in sl.rows(nights, D)}[D.isoformat()] == \
+        "◇ après sieste tardive · ◇ après ultra"

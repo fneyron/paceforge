@@ -527,7 +527,7 @@ def test_the_method_fold_marks_every_choice_h_and_cites_the_brief():
                    "10 h et plus : 40 trois jours, puis 65 jusqu'au 10e (13e après 24 h ou une nuit blanche)",
                    "« provisoire » de 7 à 13 nuits, pleine à 14",
                    "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %)",
-                   "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm",
+                   "Alerte (dès 14 nuits) : 2 nuits à +5 bpm et 2 écarts-types au moins ; Alavi 2022 dit +4 bpm",
                    "Comment tu te sens : rien ne le mesure ici, à ta demande",
                    "conseillent pourtant un questionnaire (Saw 2016 ; Schwellnus 2016)",
                    "Ta VFC est estimée par la montre (variabilité du pouls ; Sammito 2024 ; Quigley 2024)",

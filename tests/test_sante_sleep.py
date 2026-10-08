@@ -173,7 +173,7 @@ def test_the_method_fold_marks_its_heuristics_and_names_no_race():
                                          "Ce que la montre ne sait pas"]
     text = sc.flat(sl.METHOD)
     for phrase in ("Ton sommeil se compte sur 24 h, siestes comprises (Watson 2015b ; Hirshkowitz 2015)",
-                   "Les 7 h recommandées parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a)",
+                   "Les 7 h parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a ; Hirshkowitz 2015)",
                    "Une longue nuit n'est jamais signalée",
                    "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A)",
                    "1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021)",
@@ -184,7 +184,7 @@ def test_the_method_fold_marks_its_heuristics_and_names_no_race():
                    "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021)",
                    "(6 h : Craven 2022 ; 65 : notre choix)",
                    "tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021)",
-                   "4 après 10 h", "(Fachan 2026)", "(Mograss 2022 ; Walsh 2021)",
+                   "la nuit après 1h30 de sortie ou une sortie intense le soir", "4 après 10 h", "(Fachan 2026)", "(Mograss 2022 ; Walsh 2021)",
                    "Coucher et lever arrondis à 5 min, phases à 10 min",
                    "Ton sommeil est estimé par la montre, qui le surestime (Walsh 2021 ; de Zambotti 2024)",
                    "50 à 70 % des moments de la nuit bien classés (de Zambotti 2024)",
