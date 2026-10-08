@@ -483,7 +483,8 @@ RING_C = round(2 * math.pi * RING_R, 2)
 
 
 def ring(key: str, fill: float | None, value: str, label: str | None, sub: str | None = None, *,
-         tone: str = "accent", href: str | None = None, aria: str = "", note: str | None = None) -> dict:
+         tone: str = "accent", href: str | None = None, aria: str = "", note: str | None = None,
+         unit: str | None = None) -> dict:
     """One ring: the track, an arc up to `fill` (0–1, from the top, clockwise;
     None or 0: the track alone), the value in the middle (formatted by the
     caller, printed once), the label under it (None when a word next to the
@@ -491,11 +492,12 @@ def ring(key: str, fill: float | None, value: str, label: str | None, sub: str |
     word that says what the arc compares (« plus que d'habitude »): no mark
     without words. `tone` (ok, warn, danger, accent) is the CSS's colour; the
     value and the words say it too, never colour alone. `href`: what it sums
-    up (None: a plain ring, never a link to nothing)."""
+    up (None: a plain ring, never a link to nothing). `unit`: printed smaller
+    after the value, on its baseline (« 65 % »)."""
     f = 0.0 if fill is None else max(0.0, min(1.0, fill))
     dash = round(f * RING_C, 2)
     return {"key": key, "value": value, "label": label, "sub": sub, "tone": tone, "href": href, "aria": aria,
-            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "note": note}
+            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "note": note, "unit": unit}
 
 
 # ── V2 card bars: one bar per day (Récupération, Sommeil, Charge) ───────────

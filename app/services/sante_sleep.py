@@ -3,9 +3,9 @@
 - Last night (the hero): bed → wake (the watch's detection, approximate,
   rounded to 5 min, H: de Zambotti 2024) and the naps its 24 h counts
   (« + sieste 2h20 », nights.day_naps: yesterday afternoon's too; sleep is
-  counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015). Its 24-h total
-  is the Sommeil ring's, printed once there; the hero prints it only for a
-  night that is not this morning's (the ring is then empty).
+  counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and its 24-h
+  total (v4.4: the Sommeil row at the top says it as a percentage of 8 h, so
+  its hours are printed here, once).
 - Its stages, like WHOOP and Oura (the owner's request, a deliberate
   departure from research_sleep.md §b: shown for COROS and Garmin, no
   collapse, no setting), never judged: one bar of the four phases (Éveil ·
@@ -202,8 +202,8 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
     """Last night (the latest main night of the last 90 days): its times, the
     naps its 24 h counts (nights.day_naps), its stages (the stages bar and
     legend; with real Garmin intervals, the hypnogram above it), else its plain
-    bar on a clock axis; the 24-h total only when it is not this morning's
-    (the ring prints this morning's)."""
+    bar on a clock axis; its 24-h total, this morning's too (v4.4: the Sommeil
+    row says it as a percentage of 8 h, its hours are printed here, once)."""
     last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
                default=None)
     if last is None:
@@ -224,7 +224,7 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
             + (f", sieste de {viz.hm_long(nap_min)}" if nap_min else ""))
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
             "times": times, "nap": nap, "night": f"nuit {viz.hm(n.asleep)}" if nap_min else None,
-            "total": None if last == today else f"{viz.hm(n.asleep + nap_min)} sur 24{viz.NNBSP}h",
+            "total": f"{viz.hm(n.asleep + nap_min)} sur 24{viz.NNBSP}h",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 

@@ -164,7 +164,7 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
         assert name not in main, name
     folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', main, flags=re.S)
     calc = re.findall(r"<li>(.*?)</li>", folds[0])
-    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[3]]
+    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[4]]
     rest = H.unescape(main.replace(folds[0], ""))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
@@ -241,10 +241,11 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
-    assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "dans tes valeurs habituelles"
-    assert [(f["key"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("sommeil", "suffisant", "ok"), ("vfc", "dans tes valeurs habituelles", "ok"),
-        ("fc", "dans tes valeurs habituelles", "ok")]
+    # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
+    assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
+    assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
+        ("sommeil", "92\u00a0%", "suffisant", "ok"), ("vfc", None, "comme d'habitude", "ok"),
+        ("fc", None, "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
     assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-fact is-ok"' in main
     act = _coherent((await as_user.get("/activities")).text)

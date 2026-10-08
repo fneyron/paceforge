@@ -414,12 +414,12 @@ def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
         hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
-    assert c["read"] == ["100", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13
-    assert d["r"][-1] == ["100", "● Bonne récupération", "jeu. 8 oct."] and d["t"][-1] == "ok"
-    assert d["a"][-1] == "jeudi 8 octobre : 100 sur 100, bonne récupération."
+    assert c["read"] == ["100\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13  # v4.4: in percent
+    assert d["r"][-1] == ["100\u00a0%", "● Bonne récupération", "jeu. 8 oct."] and d["t"][-1] == "ok"
+    assert d["a"][-1] == "jeudi 8 octobre : 100\u00a0%, bonne récupération."
     assert all(b["cls"] == "ok" and not b["est"] for b in c["bars"]) and c["bars"][-1]["today"]
     assert c["hatched"] == []  # every day measured: no hatched bar, no legend for it
-    assert [ln["label"] for ln in c["lines"]] == ["70", "40"] and c["lines"][0]["y"] < c["lines"][1]["y"]
+    assert [ln["label"] for ln in c["lines"]] == ["70\u00a0%", "40\u00a0%"] and c["lines"][0]["y"] < c["lines"][1]["y"]
     assert c["xt"][-1]["today"] and c["tone_now"] == ""
 
 
@@ -516,8 +516,10 @@ def test_the_day_after_an_alert_stops_firing_the_episode_is_still_read():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hr", D, day)
-    assert card["status"] == {"key": "above", "text": "plus haute que d'habitude", "tone": "warn",
+    assert card["status"] == {"key": "above", "value": "+8\u00a0%", "word": "plus haute que d'habitude",
+                              "text": "+8\u00a0% plus haute que d'habitude", "tone": "warn",
                               "meaning": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
+    assert 100 * (day["stats"]["hr"]["value"] - 45) / 45 == pytest.approx(7.94, abs=0.01)  # 48,57 against 45
     assert day["score"]["value"] == sc.rounded((25 * 100 + 25 * hr["sub"] + 30 * 100) / 80) == 90
 
 
@@ -535,11 +537,14 @@ def test_the_illness_alert_makes_the_nightly_hr_row_red():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hr", D, day)
-    assert card["status"] == {"key": "above", "text": "plus haute que d'habitude", "tone": "danger",
+    # its 2 nights (53 bpm) against the usual value (45): + 18 %, the same on the card and on its facts row
+    assert day["stats"]["hr"]["normal"]["center"] == 45 and day["alert"]["values"] == [53.0, 53.0]
+    assert card["status"] == {"key": "above", "value": "+18\u00a0%", "word": "nettement plus haute depuis 2 nuits",
+                              "text": "+18\u00a0% nettement plus haute depuis 2 nuits", "tone": "danger",
                               "meaning": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
     row = sante.night_fact(card, "hr", day)
-    assert (row["name"], row["qual"], row["word"], row["tone"], row["href"]) == (
-        "FC de nuit", "7 nuits", "nettement plus haute depuis 2 nuits", "danger", "#fc")
+    assert (row["name"], row["qual"], row["value"], row["word"], row["tone"], row["href"]) == (
+        "FC de nuit", "7 nuits", "+18\u00a0%", "nettement plus haute depuis 2 nuits", "danger", "#fc")
 
 
 def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
@@ -555,7 +560,7 @@ def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
     assert (day["state"]["key"], day["score"]["value"]) == ("ok", 95)  # (25·100 + 25·100 + 30·86,7) / 80 = 95
     assert round(next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]) == 87
     row = sante.sleep_fact(day["tst24"], "#sommeil")
-    assert (row["value"], row["word"], row["tone"]) == ("6h40", "un peu court", "accent")  # 6 to 7 h: neutral
+    assert (row["value"], row["word"], row["tone"]) == ("83\u00a0%", "un peu court", "accent")  # 6h40 of 8 h: neutral
     nights = nt.build_nights(rows, D)
     assert nights[D].tst24 == 300 and nights[y].tst24 == 540  # each day's bar keeps its own nap
     # a « rendormi » nap of the day before (06:42, its wake 06:40): never counted again
@@ -662,7 +667,8 @@ def test_provisional_bands_say_so_on_the_cards():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hrv", D, day)
-    assert card["read"][2].endswith(" (provisoire)") and card["status"]["text"] == "dans tes valeurs habituelles"
+    assert card["read"][2].endswith(" (provisoire)")
+    assert (card["status"]["value"], card["status"]["word"]) == (None, "comme d'habitude")  # every night the same
 
 
 def test_the_method_fold_is_six_plain_bullets():
@@ -672,15 +678,15 @@ def test_the_method_fold_is_six_plain_bullets():
     (owner: « les explications en français ne sont pas claires »): sentences of 15 words at most, VFC and FC de
     nuit each said once in one plain sentence, « tes valeurs habituelles », never « ta normale »."""
     assert sc.METHOD == [
-        "Ton score est une note sur 100. Elle combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts "
-        "récents.",
+        "Ton score est un pourcentage. Il combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
         "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
         "pouls moyen pendant ton sommeil.",
         "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
+        "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles.",
         "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après "
         "un ultra.",
         "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
-        "70 et plus : bonne récupération ; 40 à 69 : en cours ; moins de 40 : faible.",
+        "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
         "C'est une estimation : quelques points d'écart ne veulent rien dire."]
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
         assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence

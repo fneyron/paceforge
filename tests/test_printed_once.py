@@ -47,7 +47,7 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     # no VFC in the seed: no card; no Charge card (v4.1: the activities are Activités')
     assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc"}
     # the ring prints today's score, the Sommeil row last night's total: their cards rest on their means…
-    assert sante["recuperation"][1:] == ("en moyenne", "") and sante["recuperation"][0].isdigit()
+    assert sante["recuperation"][1:] == ("en moyenne", "") and re.fullmatch(r"\d+\u00a0%", sante["recuperation"][0])
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
     assert sante["fc"][0] == "45\u00a0bpm" and " · d'habitude " in sante["fc"][2]

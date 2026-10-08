@@ -128,7 +128,8 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert "Récupération faible" in r.text and "À ménager" not in r.text
     assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
     assert r.text.index('class="pf-card pf-facts"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
-    assert re.search(r'<a class="pf-fact is-danger" href="#fc">.*?nettement plus haute depuis 2 nuits</span></a>', r.text)
+    assert re.search(r'<a class="pf-fact is-danger" href="#fc">.*?<b>\+\d+\u00a0%</b> <span class="pf-fact-word">'
+                     r'nettement plus haute depuis 2 nuits</span>', r.text)  # its 2 nights in percent (v4.4)
 
 
 # ── migration ───────────────────────────────────────────────────────────────

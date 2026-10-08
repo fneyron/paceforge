@@ -49,26 +49,74 @@ def test_two_windows_the_row_lasts_until_the_last_one_ends():
     assert (f["word"], f["tone"]) == ("encore 9 jours", "danger")
 
 
-def test_a_night_row_repeats_its_cards_word_never_its_explanation():
-    """VFC (7 nuits) / FC de nuit (7 nuits): the card's word in its colour; grey without a comparison (« pas
-    encore de normale », « trop peu de nuits »); no row without a card; the FC de nuit row under the alert."""
-    def card(key, text, tone):
-        return {"status": {"key": key, "text": text, "tone": tone, "meaning": "x"}}
+def test_a_night_row_repeats_its_cards_status_never_its_explanation():
+    """VFC (7 nuits) / FC de nuit (7 nuits): its card's percentage and word (one source of truth: card_status) in
+    its colour; « comme d'habitude » at 0 %; grey and no percentage without a comparison (« en construction »,
+    « trop peu de nuits pour comparer »); no row without a card."""
+    def card(key, value, word, tone):
+        return {"status": {"key": key, "value": value, "word": word, "text": "x", "tone": tone, "meaning": "x"}}
     plain = {"day": D, "window": None, "alert": None}
-    rows = [sante.night_fact(card("in", sante.STATUS["in"], "ok"), "hrv", plain),
-            sante.night_fact(card("below", sante.STATUS["below"], "danger"), "hrv", plain),
-            sante.night_fact(card("above", sante.STATUS["above"], "accent"), "hrv", plain),
-            sante.night_fact(card("none", "Tes valeurs habituelles seront prêtes dans 3 nuits …", None), "hr", plain),
-            sante.night_fact(card("few", sante.NO_MEAN, None), "hr", plain)]
-    assert [(r["name"], r["qual"], r["word"], r["tone"], r["href"]) for r in rows] == [
-        ("VFC", "7 nuits", "dans tes valeurs habituelles", "ok", "#vfc"),
-        ("VFC", "7 nuits", "plus basse que d'habitude", "danger", "#vfc"),
-        ("VFC", "7 nuits", "plus haute que d'habitude", "accent", "#vfc"),
-        ("FC de nuit", "7 nuits", "pas encore de valeurs habituelles", "none", "#fc"),
-        ("FC de nuit", "7 nuits", "trop peu de nuits pour comparer", "none", "#fc")]
-    assert all(r["value"] is None for r in rows)  # a word, no number: the card prints last night's value
+    rows = [sante.night_fact(card("in", "+2\u00a0%", sante.STATUS["in"], "ok"), "hrv", plain),
+            sante.night_fact(card("in", None, sante.SAME, "ok"), "hrv", plain),
+            sante.night_fact(card("below", "\u221212\u00a0%", sante.STATUS["below"], "danger"), "hrv", plain),
+            sante.night_fact(card("above", "+9\u00a0%", sante.STATUS["above"], "accent"), "hrv", plain),
+            sante.night_fact(card("none", None, sante.BUILDING, None), "hr", plain),
+            sante.night_fact(card("few", None, sante.FEW, None), "hr", plain)]
+    assert [(r["name"], r["qual"], r["value"], r["word"], r["tone"], r["href"]) for r in rows] == [
+        ("VFC", "7 nuits", "+2\u00a0%", "dans tes valeurs habituelles", "ok", "#vfc"),
+        ("VFC", "7 nuits", None, "comme d'habitude", "ok", "#vfc"),
+        ("VFC", "7 nuits", "\u221212\u00a0%", "plus basse que d'habitude", "danger", "#vfc"),
+        ("VFC", "7 nuits", "+9\u00a0%", "plus haute que d'habitude", "accent", "#vfc"),
+        ("FC de nuit", "7 nuits", None, "en construction", "none", "#fc"),
+        ("FC de nuit", "7 nuits", None, "trop peu de nuits pour comparer", "none", "#fc")]
     assert sante.night_fact(None, "hrv", plain) is None
-    ill = {**plain, "alert": {"values": [53.0, 53.0]}}
-    assert sante.night_fact(card("above", sante.STATUS["above"], "danger"), "hr", ill)["word"] == (
-        "nettement plus haute depuis 2 nuits")
-    assert sante.night_fact(card("in", sante.STATUS["in"], "ok"), "hrv", ill)["word"] == "dans tes valeurs habituelles"
+
+
+# ── v4.4 (owner: « Mets des pourcentages plutôt que des valeurs (comme WHOOP / Oura) ») ──────────────────────────
+
+def test_the_night_rows_in_percent_from_real_nights():
+    """Once the usual values exist, the 7-night mean against the usual value (the band's centre) in whole
+    percent, half up, signed: VFC above them is « plus haute que d'habitude », neutral (never praised); « 0 % »
+    reads « comme d'habitude »; a week with fewer than 3 nights that count: no percentage; the card's status line
+    and the row are one (card_status)."""
+    from app.services import nights as nt
+    from tests.test_sante_score import _day, _nights, _rich, _runs
+
+    def card(rows, metric="hrv"):
+        day = _day(rows, _runs())
+        nights = _nights(rows, _runs())
+        with nt.memo():
+            nt.freeze(nights)
+            return sante._night_card(nights, metric, D, day), day
+    up, day = card(_rich(hrv_last=85.0))
+    centre = day["stats"]["hrv"]["normal"]["center"]
+    p = sante.signed_pct(85.0, centre)
+    assert p > 0 and up["status"] == {"key": "above", "value": f"+{p} %", "word": "plus haute que d'habitude",
+                                      "text": f"+{p} % plus haute que d'habitude", "tone": "accent",
+                                      "meaning": None}
+    row = sante.night_fact(up, "hrv", day)
+    assert (row["value"], row["word"], row["tone"]) == (up["status"]["value"], up["status"]["word"], "accent")
+    rows = _rich()
+    for metric in rows:  # only 2 nights in the last 7 (5 and 6 days ago)
+        for k in range(5):
+            rows[metric].pop(D - timedelta(days=k), None)
+    few, _ = card(rows)
+    assert few["status"] == {"key": "few", "value": None, "word": "trop peu de nuits pour comparer",
+                             "text": sante.NO_MEAN, "tone": None, "meaning": None}
+    assert [sante.signed_pct(v, 45.0) for v in (45.0, 45.2, 44.775, 44.7, 45.23, 48.6)] == [0, 0, 0, -1, 1, 8]
+
+
+def test_the_ring_prints_the_score_as_a_percentage():
+    """« 65 % »: the same number, the « % » smaller on its baseline; spoken « Récupération 65 % »; the 14-day card
+    and the fold say percentages too (the score is one quantity)."""
+    from app.services import sante_score as sc
+    from app.services import sante_today as td
+    from tests.test_viz import render
+
+    score = {"value": 65, "tone": "warn", "estimated": False}
+    r = sc.ring(score, td.state({**score, "reason": "effort"}), "#recuperation")
+    assert (r["value"], r["unit"], r["aria"]) == ("65", "%", "Récupération 65 %. Récupération en cours.")
+    html = render("{{ v.viz_ring(r) }}", r=r)
+    assert '<span class="pf-ring-value" aria-hidden="true"><span>65<span class="pf-ring-unit">%</span></span></span>' in html
+    assert sc.pct(100) == "100 %" and "70 % et plus" in sc.flat(sc.typo(sc.METHOD)).replace(" ", " ")
+    assert "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles." in sc.METHOD

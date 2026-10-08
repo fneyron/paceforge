@@ -127,7 +127,7 @@
 <{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
     <span class="pf-ring-dial">
         <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-track"/>{% if r.dash %}<circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-arc" stroke-dasharray="{{ r.dash }} {{ r.c }}" transform="rotate(-90 50 50)" style="--pf-dash: {{ r.dash }}"/>{% endif %}</svg>
-        <span class="pf-ring-value{% if r.value|length > 4 %} is-long{% endif %}" aria-hidden="true">{{ r.value }}</span>
+        <span class="pf-ring-value{% if r.value|length > 4 %} is-long{% endif %}" aria-hidden="true">{% if r.unit %}<span>{{ r.value }}<span class="pf-ring-unit">{{ r.unit }}</span></span>{% else %}{{ r.value }}{% endif %}</span>
     </span>
     {% if r.label %}<span class="pf-ring-label" aria-hidden="true">{{ r.label }}</span>{% endif %}
     {% if r.sub %}<span class="pf-ring-sub" aria-hidden="true">{{ r.sub }}</span>{% endif %}

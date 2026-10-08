@@ -108,16 +108,18 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 
 # code and the tests); one plain bullet on the cap after a big effort, the only effort Santé names (« Ne mentionne
 # pas les sorties dans la partie Santé »). v4.4 (owner: « les explications en français ne sont pas claires »):
 # sentences of 15 words at most, VFC and FC de nuit each said in one plain sentence, « tes valeurs habituelles »
-# instead of « ta normale ». The references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
+# instead of « ta normale »; the score and the facts' percentages (owner: « Mets des pourcentages plutôt que des
+# valeurs ») said in one sentence each. The references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Ton score est une note sur 100. Elle combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
+    "Ton score est un pourcentage. Il combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
     "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
     "pouls moyen pendant ton sommeil.",
     "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
+    "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles.",
     "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après un "
     "ultra.",
     "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
-    "70 et plus : bonne récupération ; 40 à 69 : en cours ; moins de 40 : faible.",
+    "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
     "C'est une estimation : quelques points d'écart ne veulent rien dire.",
 ]
 # the references both folds rest on, listed on /sante/sources (label, DOI or URL): « Recommandations officielles »
@@ -339,20 +341,27 @@ EST_READ = "estimé, nuit non enregistrée"  # its readout in the 14-day card (v
 EST_SAID = "estimé car ta montre n'a pas enregistré la nuit"  # spoken
 
 
+def pct(v: int) -> str:
+    """The score as the page prints it (v4.4, owner: « Mets des pourcentages plutôt que des valeurs (comme WHOOP /
+    Oura) »): « 65 % », the same number, a no-break space (the display font has no narrow one)."""
+    return f"{v}{viz.NBSP}%"
+
+
 def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
-    """The Récupération ring, the only one (v4.4): the score, the arc in the
-    state's colour; no label under it (the state's word next to it names it:
-    « Récupération en cours »), only « estimé » when no night was measured
-    (the window's cap alone, v4.3). `href`: the section it sums up, None when
-    the page has none (a plain ring)."""
+    """The Récupération ring, the only one (v4.4): the score as a percentage
+    (« 65 % », the « % » smaller), the arc in the state's colour; no label
+    under it (the state's word next to it names it: « Récupération en
+    cours »), only « estimé » when no night was measured (the window's cap
+    alone, v4.3). `href`: the section it sums up, None when the page has none
+    (a plain ring)."""
     v = score.get("value")
     if v is None:
         return viz.ring("recup", None, "—", None, tone="none", href=href,
                         aria="Récupération : pas de score ce matin")
     est = bool(score.get("estimated"))
-    return viz.ring("recup", v / 100, str(v), None, ESTIMATED if est else None, tone=state["tone"],
-                    href=href, aria=f"Récupération {v} sur 100" + (", estimée : ta montre n'a pas enregistré ta "
-                                                                    "nuit" if est else "")
+    return viz.ring("recup", v / 100, str(v), None, ESTIMATED if est else None, tone=state["tone"], unit="%",
+                    href=href, aria=f"Récupération {pct(v)}" + (", estimée : ta montre n'a pas enregistré ta "
+                                                                 "nuit" if est else "")
                     + f". {state['aria']}")
 
 
@@ -385,7 +394,7 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     """« Récupération · 14 jours »: one bar per day with a score, in its
     state's colour, hatched when it was estimated without a night measured
     (v4.3), with faint 40 and 70 lines labelled on the right (the bands:
-    never colour alone), today's day on a disc; tap a bar → « 64 »
+    never colour alone), today's day on a disc; tap a bar → « 64 % »
     « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, nuit non
     enregistrée »): the date, the score and the state only (v4.3, owner: « mets
     juste les scores »). It rests on the mean of the days with a score
@@ -407,13 +416,13 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
             r.append(["—", "", f"{viz.d_short(d)} · pas de score"])
             a.append(f"{viz.d_long(d)} : pas de score")
             continue
-        r.append([str(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {EST_READ}" if e else "")])
-        a.append(f"{viz.d_long(d)} : {v} sur 100, {st['word'].lower()}" + (f", {EST_SAID}" if e else "") + ".")
+        r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {EST_READ}" if e else "")])
+        a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}" + (f", {EST_SAID}" if e else "") + ".")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
-                     lines=((70, "70"), (40, "40")), today=len(days) - 1 if days and days[-1] == today else None,
+                     lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
                      hatched=est,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
     mean = rounded(sum(with_score) / len(with_score))
-    return viz.rest(c, [str(mean), "en moyenne", ""],
-                    f"Récupération des {len(days)} derniers jours : {mean} en moyenne. Choisis un jour pour voir son "
-                    "score et son état.", back=len(days) - 1)
+    return viz.rest(c, [pct(mean), "en moyenne", ""],
+                    f"Récupération des {len(days)} derniers jours : {pct(mean)} en moyenne. Choisis un jour pour voir "
+                    "son score et son état.", back=len(days) - 1)

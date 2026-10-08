@@ -6,12 +6,14 @@ many nights until they come; a provisional band (7 to 13 nights, H) dashed and l
 legend names only what is drawn."""
 import re
 from datetime import timedelta
+from pathlib import Path
 
 from app.services import nights as nt
 from app.services import sante, viz
 from tests.test_sante_score import D, _day, _nights, _runs, _session, night_rows
 from tests.test_viz import render
 
+ROOT = Path(__file__).resolve().parent.parent
 
 def _card(rows, sessions=(), metric="hrv"):
     sessions = list(sessions)
@@ -27,13 +29,14 @@ def test_without_usual_values_the_card_says_when_they_come():
     values exist (nights_to_normal, every coming night counted) and which nights do not count; no band drawn, no
     band in the legend."""
     c = _card(night_rows(range(0, 13)))  # tomorrow's band reads 7 nights (offsets 6 → 12)
-    assert c["status"] == {"key": "none", "tone": None, "meaning": sante.COUNTS,
-                           "text": "Tes valeurs habituelles seront prêtes après ta prochaine nuit, si tu portes ta "
-                                   "montre."}
+    assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None,
+                           "meaning": sante.COUNTS, "text": "En construction : tes valeurs habituelles seront prêtes "
+                                                            "après ta prochaine nuit, si tu portes ta montre."}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert c["status"]["text"] == "Tes valeurs habituelles seront prêtes dans 9 nuits, si tu portes ta montre."
+    assert c["status"]["text"] == ("En construction : tes valeurs habituelles seront prêtes dans 9 nuits, si tu "
+                                   "portes ta montre.")
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
 
@@ -53,7 +56,7 @@ def test_a_provisional_band_is_dashed_and_a_full_one_solid():
     assert sante.LEGEND_BAND in full["legend"] and sante.LEGEND_PROV not in full["legend"]
     html = render("{{ v.viz_night_card(c, 'VFC · 30 nuits') }}", c=full)
     assert "is-prov" not in html and html.count('class="pf-viz-edge"') == 2
-    css = open("app/static/css/interface.css", encoding="utf-8").read()
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
     assert ".pf-viz-edge.is-prov { stroke-dasharray: 3 3; }" in css
     assert ".pf-card .pf-viz-band.is-prov { fill: rgb(var(--pf-accent) / .08); }" in css  # lighter than .16
 
@@ -86,6 +89,6 @@ def test_a_night_that_does_not_count_is_a_hollow_dot():
     html = render("{{ v.viz_night_card(c, 'VFC · 30 nuits') }}", c=c)
     assert len(re.findall(r'<circle [^>]*r="3.2" class="pf-viz-dot is-out"', html)) == 1
     assert len(re.findall(r'class="pf-viz-dot(?: is-sel)?" data-i', html)) == len(c["dots"]) - 1
-    css = open("app/static/css/interface.css", encoding="utf-8").read()
+    css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
     assert ".pf-viz-card .pf-viz-dot.is-out { fill: rgb(var(--pf-soft)); stroke: rgb(var(--pf-viz-mark));" in css
     assert ".pf-lg.is-out {" in css and ".pf-lg.is-band-prov {" in css

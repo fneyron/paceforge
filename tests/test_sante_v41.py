@@ -13,6 +13,7 @@ and the reviewers see them.
 - The review's findings at page level: OWN-1 (a window without a night),
   DAWN-FINISH, REG-3 (the toggle without JS), REG-4 (the race page tags as
   Santé), the a11y fixes (UX2, UX5–UX11)."""
+import html as H
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -191,17 +192,19 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     top = main.split('<div class="pf-sante-top')[1].split("</h2>")[0]
     assert "pf-ring-tick" not in main and "<line" not in top
     facts = main.split('<section class="pf-card pf-facts"')[1].split("</section>")[0]
-    rows = re.findall(r'<(?:a|div) class="pf-fact is-(\w+)"[^>]*><span class="pf-fact-name"><i class="pf-dot" '
-                      r'aria-hidden="true"></i><span>([^<]+)(?:<small>[^<]+</small>)?</span></span>'
-                      r'<span class="pf-fact-val">(.*?)</span>', facts)
-    assert [(n.strip(), re.sub(r"<[^>]+>", "", v)) for _, n, v in rows] == [
-        ("Sommeil", "7h20 suffisant"), ("VFC", "plus basse que d&#39;habitude"),
-        ("FC de nuit", "dans tes valeurs habituelles")]
+    rows = [H.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip().replace("\u00a0", " "))
+            for body in re.findall(r'<(?:a|div) class="pf-fact is-\w+"[^>]*>(.*?)</(?:a|div)>', facts)]
+    assert rows[0] == "Sommeil sur 8 h 92 % suffisant" and len(rows) == 3  # each dot with its name and its words
+    assert re.fullmatch(r"VFC 7 nuits \u2212\d+ % plus basse que d'habitude", rows[1]), rows[1]
+    assert re.fullmatch(r"FC de nuit 7 nuits (comme d'habitude|[+\u2212]\d+ % dans tes valeurs habituelles)",
+                        rows[2]), rows[2]
+    assert facts.count('<i class="pf-dot" aria-hidden="true"></i>') == 3
     for key in ("vfc", "fc"):
         card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
         # its status line: a dot and its words (the 2 missing nights leave the VFC week a little under its normal)
         assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i>'
-                         r'(dans tes valeurs habituelles|plus basse que d&#39;habitude)</p>', card), key
+                         r'(<b>[+\u2212]\d+\u00a0%</b> )?(dans tes valeurs habituelles|plus basse que d&#39;habitude|'
+                         r'comme d&#39;habitude)</p>', card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
                 and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
@@ -225,12 +228,11 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
     assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
     assert (page["ring"]["value"], page["ring"]["sub"]) == ("35", "estimé") and "rings" not in page
-    assert page["ring"]["aria"] == ("Récupération 35 sur 100, estimée : ta montre n'a pas enregistré ta nuit. "
+    assert page["ring"]["aria"] == ("Récupération 35\u00a0%, estimée : ta montre n'a pas enregistré ta nuit. "
                                     "Récupération faible.")
     assert [(f["name"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
         ("Sommeil", None, "pas enregistré", "none"), ("Effort récent", None, "encore 11 jours", "danger"),
-        ("VFC", None, "pas encore de valeurs habituelles", "none"),
-        ("FC de nuit", None, "pas encore de valeurs habituelles", "none")]
+        ("VFC", None, "en construction", "none"), ("FC de nuit", None, "en construction", "none")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">estimé</span>' in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html

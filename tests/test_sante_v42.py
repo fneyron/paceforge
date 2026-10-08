@@ -363,14 +363,15 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
 # ── §C: sleep (research_sleep.md §a–§b; the owner's requests win) ───────────
 
 async def test_the_sommeil_row_marks_a_short_day_only(db_session, test_user):
-    """v4.4: the Sommeil row prints the last 24 h with a word: under 6 h « court » (warm: Craven 2022), 6 to 7 h
-    « un peu court » (neutral), 7 h and more « suffisant » (green; Watson 2015a); a long night is never flagged,
-    no ceiling (Watson 2015a: > 9 h « may be appropriate »); the score's note follows its own scale."""
+    """v4.4: the Sommeil row prints the last 24 h as a percentage of an 8-h need, at most 100 % (owner: « Mets des
+    pourcentages plutôt que des valeurs »), with a word from the hours: under 6 h « court » (warm: Craven 2022),
+    6 to 7 h « un peu court » (neutral), 7 h and more « suffisant » (green; Watson 2015a); a long night is never
+    flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »); the score's note follows its own scale."""
     from app.services import sante
     from tests.test_sante import _seed_rows
 
-    for asleep, value, word, tone in ((330, "5h30", "court", "warn"), (390, "6h30", "un peu court", "accent"),
-                                      (600, "10h00", "suffisant", "ok")):
+    for asleep, value, word, tone in ((330, "69\u00a0%", "court", "warn"), (390, "81\u00a0%", "un peu court", "accent"),
+                                      (600, "100\u00a0%", "suffisant", "ok")):
         rows = night_rows(range(0, 20), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
         await _seed_rows(db_session, test_user, rows)
         page = await sante.health_page(db_session, test_user.id, today=D)
@@ -557,7 +558,7 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     recup, nuits = folds
     assert "<summary>Comment je calcule ta récupération</summary>" in recup
     assert "<summary>Comment je lis tes nuits</summary>" in nuits
-    assert len(re.findall(r"<li>", recup)) == 7 and len(re.findall(r"<li>", nuits)) == 5
+    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 5
     for fold, anchor in ((recup, "recuperation"), (nuits, "sommeil")):
         assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
         assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »

@@ -91,6 +91,8 @@ HEURISTICS = [
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
+    # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil row's 100 % (Sargent 2021: 8,3 h)
+    ("app/services/sante.py", "SLEEP_NEED", 480),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
@@ -106,10 +108,11 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
 
 
 def test_the_folds_print_no_h_and_no_citation():
-    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 7 at most since v4.4
-    explains VFC and FC de nuit, « Comment je lis tes nuits » 5 at most) with no « (H) » and no citation (their
+    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 8 at most since v4.4
+    explains VFC, FC de nuit and the percentages, « Comment je lis tes nuits » 5 at most) with no « (H) » and no
+    citation (their
     sources are on /sante/sources); the (H) marks stay on the constants' lines (above) and in these tests."""
-    assert len(sc.METHOD) <= 7 and len(sl.METHOD) <= 5
+    assert len(sc.METHOD) <= 8 and len(sl.METHOD) <= 5
     for text in (sc.flat(sc.METHOD), sc.flat(sl.METHOD)):
         assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
     assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)

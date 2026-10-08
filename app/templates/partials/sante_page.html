@@ -5,9 +5,10 @@
     « Récupération · 14 jours », the Sommeil section (last night, its stages, the 14 nuits / 3 mois bars and their
     legend, the habits), « VFC · 30 nuits », « FC de nuit · 30 nuits » (each opening on its status line), then the
     closed folds (each ending on its « Sources » link). No sub-score anywhere. Each number is printed once on the
-    page: the ring prints today's score, the Sommeil row this morning's 24 h; the cards' readouts rest on something
-    else until a tap (a mean, the latest night of a card no row prints). The tone is in a glyph and a word too,
-    never colour alone; no mark without a label or a legend. -#}
+    page: the ring prints today's score (as a percentage), the Sommeil row this morning's 24 h as a percentage of
+    8 h and the Sommeil section its hours; the cards' readouts rest on something else until a tap (a mean, the
+    latest night of a card no row prints). The tone is in a glyph and a word too, never colour alone; no mark
+    without a label or a legend. -#}
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 
@@ -24,13 +25,14 @@
     {% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
 </div>
 
-{#- the facts, like Apple's Vitals: a coloured dot and the name on the left, the value and its word on the right (the
-    colour is never alone), each row a link to its section below when there is one -#}
+{#- the facts, like Apple's Vitals: a coloured dot and the name on the left (what the percentage is of, under it),
+    the percentage and its word on the right, one above the other (the colour is never alone), each row a link to its
+    section below when there is one -#}
 {% if p.facts %}
 <section class="pf-card pf-facts" aria-label="En bref">
     <ul>
         {% for f in p.facts %}{% set tag = "a" if f.href else "div" %}
-        <li><{{ tag }} class="pf-fact is-{{ f.tone }}"{% if f.href %} href="{{ f.href }}"{% endif %}><span class="pf-fact-name"><i class="pf-dot" aria-hidden="true"></i><span>{{ f.name }}{% if f.qual %} <small>{{ f.qual }}</small>{% endif %}</span></span><span class="pf-fact-val">{% if f.value %}<b>{{ f.value }}</b> {% endif %}{{ f.word }}</span></{{ tag }}></li>
+        <li><{{ tag }} class="pf-fact is-{{ f.tone }}"{% if f.href %} href="{{ f.href }}"{% endif %}><span class="pf-fact-name"><i class="pf-dot" aria-hidden="true"></i><span>{{ f.name }}{% if f.qual %} <small>{{ f.qual }}</small>{% endif %}</span></span><span class="pf-fact-val">{% if f.value %}<b>{{ f.value }}</b> {% endif %}<span class="pf-fact-word">{{ f.word }}</span></span></{{ tag }}></li>
         {% endfor %}
     </ul>
 </section>
@@ -89,14 +91,15 @@
 {% endif %}
 
 {#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »), opening on its
-    status line (the last 7 nights against the usual values: a word and a dot in its facts row's colour, what it
-    often means when it is out of them on the side that matters; or how many nights until they exist); the legend
+    status line (the last 7 nights against the usual values: the percentage and the word of its facts row, a dot in
+    its colour, what it often means when it is out of them on the side that matters; or how many nights until
+    they exist); the legend
     names every mark drawn (sante._night_card): a night's dot, filled when it counts, hollow when it does not, the
     7-night line (when a segment of it is drawn), the usual values' band, dashed while provisional -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
-    {% if c.status %}<p class="pf-card-status {{ "is-" ~ c.status.tone if c.status.tone else "is-plain" }}">{% if c.status.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status.text }}</p>
+    {% if c.status %}{% set cs = c.status %}<p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{% if cs.value %}<b>{{ cs.value }}</b> {{ cs.word }}{% else %}{{ cs.text }}{% endif %}</p>
     {% if c.status.meaning %}<p class="pf-card-meaning">{{ c.status.meaning }}</p>{% endif %}{% endif %}
     {{ viz.viz_night_card(c, c.title) }}
     {{ viz.viz_legend(c.legend) }}
