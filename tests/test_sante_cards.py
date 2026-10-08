@@ -33,7 +33,7 @@ def test_without_usual_values_the_card_says_when_they_come():
     c = _card(night_rows(range(0, 6)))  # 6 nights: the 7th makes the band
     assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None, "meaning": None,
                            "detail": "prête après ta prochaine nuit",
-                           "text": "En construction : chaque nuit où tu portes ta montre compte."}
+                           "text": "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))

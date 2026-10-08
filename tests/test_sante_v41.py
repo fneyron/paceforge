@@ -233,34 +233,34 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 
 async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                                    test_user: User, monkeypatch):
-    """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): the state
-    comes from the activity, its window's cap alone: 35 (v4.3), « Récupération faible », « estimée » under the
-    dial; the page names no activity (v4.3, owner: « mets juste les scores »). The Sommeil dial: no night this
-    morning; the Récupération card's rows: no usual values yet for VFC nor FC de nuit (when they will be ready),
-    the effort's window open to 16/10 at 35 (red)."""
+    """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): no score,
+    an empty dial (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui ») and the line that says why; the
+    page names no activity (v4.3, owner: « mets juste les scores »). The Sommeil dial: no night this morning; the
+    Récupération card's rows: no usual values yet for VFC nor FC de nuit (when they will be ready), the effort's
+    window open to 16/10 at 35 (red): the fatigue is still said, on its row."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
     st_, score = page["state"], page["score"]
-    assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
-    assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
+    assert st_ is None and (score["value"], score["measured"]) == (None, False) and page["line"] == td.NO_NIGHT
     sleep, recup = page["dials"][:2]
     assert (sleep["value"], sleep["sub"]) == ("—", "pas enregistré") and "ring" not in page
-    assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("35", "%", "estimée", "danger")
-    assert recup["aria"] == "Récupération 35\u00a0%, faible, estimée : ta montre n'a pas enregistré ta nuit."
+    assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
+    assert recup["aria"] == "Récupération : pas de score ce matin."
     assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [
         ("VFC", None, "en construction", "prête dans 4\u00a0nuits", "none"),
         ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none"),
         ("Effort récent", "11\u00a0jours", "avant d'être récupéré", None, "danger")]
     html = await _page(as_user, monkeypatch, D5)
-    assert '<span class="pf-ring-sub" aria-hidden="true">estimée</span>' in html
+    assert '<span class="pf-ring-sub" aria-hidden="true">pas de score</span>' in html and ">estimée<" not in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
 
 
 async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncClient, db_session: AsyncSession,
                                                                  test_user: User, monkeypatch):
-    """OWN-A: no watch, an ultra 2 days ago: « Récupération faible » (its 35, estimé) from the activity alone, the
-    connect links still there (how to add the nights)."""
+    """OWN-A: no watch, an ultra 2 days ago: no score from the activity alone any more (owner, 2026-10-09, like
+    WHOOP: « Mets un cadran vide, oui »), the line says why and the connect links show how to add the nights; the
+    « Effort récent » row still says the fatigue."""
     today = date(2026, 10, 8)
     await _runs(db_session, test_user, today, n=8)
     d = today - timedelta(days=2)
@@ -270,10 +270,10 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
                             raw_data={"utc_offset": 7200}))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["key"] == "effort" and page["score"]["value"] == 35 and page["connect"]
-    assert page["state"]["text"] is None and page["score"]["estimated"]
+    assert page["state"] is None and page["score"]["value"] is None and page["connect"]
+    assert page["line"] == td.NO_WATCH and "effort" in {r["key"] for r in page["rows"]}
     html = await _page(as_user, monkeypatch, today)
-    assert "Récupération faible" in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
+    assert "Effort récent" in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
     assert "Connecte ta montre pour ta récupération." not in html
 
 
@@ -347,11 +347,11 @@ async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, 
 
 
 def test_the_readouts_fit_one_line_at_358_px():
-    """UX2: a past day's readout in compact words (v4.3: the date, the score, the state; « estimé, nuit non
-    enregistrée » the longest); a provisional normal says « (provisoire) » after its numbers."""
+    """UX2: a past day's readout in compact words (v4.3: the date, the score, the state; « pas de mesure ce
+    jour-là » the longest); a provisional normal says « (provisoire) » after its numbers."""
     from app.services import sante_score as sc
 
-    assert len("mer. 30 sept. · " + sc.EST_READ) <= 44  # ≈ 290 px at 13 px
+    assert len("mer. 30 sept. · " + sc.NO_MEASURE) <= 44  # ≈ 290 px at 13 px
     assert max(len(f"{td.GLYPHS[t]} {w}") for t, w in td.WORDS.items()) <= 24  # the word line, 15 px
 
 

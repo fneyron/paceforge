@@ -258,21 +258,17 @@ def test_rung_4_a_short_24_hour_total():
 def test_rung_5_well_recovered_needs_a_nightly_signal():
     day = _day(_rich(), _runs())
     assert (day["state"]["key"], day["state"]["word"], day["state"]["text"]) == ("ok", "Bonne récupération", None)
-    assert day["score"]["value"] == 100 and not day["score"]["estimated"]
+    assert day["score"]["value"] == 100 and day["score"]["measured"]
     strava = _day({}, _runs())  # activities only: nothing measured
     assert strava["state"] is None and strava["score"]["value"] is None
     assert td.no_state_line(False) == "Connecte ta montre pour voir ta récupération."
-    # without a nightly signal, a recovery window still makes the state, from the activities alone (OWN-1): the
-    # score is the window's cap (nothing measured says otherwise), « estimé » (v4.3): an ultra's 35 the first 3 days
+    # without a nightly signal no score, a recovery window or not (owner, 2026-10-09, like WHOOP: « Mets un
+    # cadran vide, oui »): the window is still there (the « Effort récent » row says it), never a score from it
     ultra = _day({}, _runs() + [_session(D - timedelta(days=3), 700, sid=9, name="Ultra des Crêtes")])
-    w, s, st_ = ultra["window"], ultra["score"], ultra["state"]
-    assert (w["days"], w["cap"]) == (3, 35) and (s["value"], s["tone"], s["measured"]) == (35, "danger", False)
-    assert s["estimated"] and st_["estimated"] and s["caps"] == ["effort", "no_heart"]
+    w, s = ultra["window"], ultra["score"]
+    assert (w["days"], w["cap"]) == (3, 35) and (s["value"], s["measured"], ultra["state"]) == (None, False, None)
     assert s["absent"] == ["hrv", "hr", "sleep"] and s["building"] == []  # nothing ever measured: not « built »
-    assert (st_["key"], st_["word"], st_["text"]) == ("effort", "Récupération faible", None)
-    later = _day({}, _runs() + [_session(D - timedelta(days=6), 700, sid=9)])  # D+6: its 65 cap
-    assert (later["score"]["value"], later["state"]["key"], later["score"]["estimated"]) == (65, "effort", True)
-    assert _day({}, _runs() + [_session(D - timedelta(days=11), 700, sid=9)])["state"] is None  # window over
+    assert "estimated" not in s and not hasattr(sc, "ESTIMATED") and not hasattr(sc, "EST_READ")
 
 
 # ── the score ───────────────────────────────────────────────────────────────
@@ -330,7 +326,7 @@ def test_the_effort_caps_bind_and_the_ultra_window_ends_after_10_days():
     assert early["window"]["cap"] == 35 and early["score"]["caps"] == ["effort"]
     assert early["score"]["value"] == 35  # raw 100 (no Charge in the mean, 2026-10-08) → capped at 35 (v4.3, H)
     assert early["state"]["tone"] == "danger" and early["state"]["key"] == "effort"
-    assert early["state"]["word"] == "Récupération faible" and not early["score"]["estimated"]  # nights measured
+    assert early["state"]["word"] == "Récupération faible" and early["score"]["measured"]  # nights measured
     nine, ten = timedelta(days=9), timedelta(days=10)
     later = _day(_rich(), _runs() + [replace(big, start=big.start - nine, day=big.day - nine)])
     assert later["window"]["days"] == 10 and later["window"]["cap"] == 65
@@ -653,9 +649,10 @@ def test_the_parts_and_what_is_missing():
     no_hrv.pop("hrv")
     nothing = _day(no_hrv, _runs())
     assert nothing["score"]["absent"] == ["hrv", "hr"] and nothing["score"]["building"] == ["hr"]
-    # no night this morning: Sommeil is missing too
+    # no night this morning: Sommeil is missing too, and no score even in a window (like WHOOP)
     gone = _day(night_rows(range(1, 6)), [_session(D - timedelta(days=1), 200, sid=9)])  # in a window
-    assert gone["score"]["absent"] == ["hrv", "hr", "sleep"] and gone["score"]["estimated"]
+    assert gone["score"]["absent"] == ["hrv", "hr", "sleep"] and gone["score"]["value"] is None
+    assert gone["window"] and gone["state"] is None
 
 
 def test_a_row_wears_the_colour_its_card_wears():
@@ -734,8 +731,9 @@ def test_a_heart_signal_wears_its_place_against_the_normal():
 
 def test_a_past_day_says_its_date_its_score_and_its_state_only():
     """OWN-3, v4.3 (owner: « Ne mentionne pas les sorties dans la partie Santé »): in the 14-day card a day says its
-    date, its score and its state, never an activity, never « il y a »; a day estimated without a night measured
-    says so (« estimé, nuit non enregistrée »), its bar hatched."""
+    date, its score and its state, never an activity, never « il y a »; a day without a night measured has no
+    score, its recovery window or not (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui »): no bar, a tap
+    says « pas de mesure ce jour-là »."""
     big = _session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=44, name="Transjeju 100M")
     rows, sessions = night_rows([0, 1, 2, 9, 10, 11, 12, 13]), _runs() + [big]  # no night D-8 → D-3, no band
     nights = _nights(rows, sessions)
@@ -748,7 +746,8 @@ def test_a_past_day_says_its_date_its_score_and_its_state_only():
     d = json.loads(c["data"])
     for word in ("Transjeju", "sortie", "il y a"):
         assert word not in c["data"], word
-    est = [i for i, b in enumerate(c["bars"]) if b["est"]]
-    assert est == [8, 9, 10] and all(d["r"][i][2].endswith(" · estimé, nuit non enregistrée") for i in est)
-    assert all(d["a"][i].endswith(", estimé car ta montre n'a pas enregistré la nuit.") for i in est)
-    assert all(b["cls"] == "danger" for b in (c["bars"][i] for i in est)) and c["hatched"] == ["danger"]
+    assert not any(b["est"] for b in c["bars"]) and c["hatched"] == []
+    gaps = [i for i, b in enumerate(c["bars"]) if b.get("miss")]
+    assert {8, 9, 10} <= set(gaps)  # D-5 → D-3: no night, its window open, no score
+    assert all(d["r"][i][2].endswith(" · pas de mesure ce jour-là") for i in (8, 9, 10))
+    assert all(d["a"][i].endswith(" : pas de mesure ce jour-là.") for i in (8, 9, 10))

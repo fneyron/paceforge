@@ -17,11 +17,9 @@ context tag, each ≥ median + max(2 robust SD, 5 bpm), on a full 14-night band:
 nights.illness_alert; Altini & Plews 2021, Quer 2021: specific, not
 sensitive; score ≤ 39, H), whose one sentence says what it can mean. The
 reason (sante_score.reason: the alert, the cap that binds, the joint VFC/FC
-pattern, the lowest component) stays as data (`key`), never printed. A score
-from a recovery window alone (no nightly signal measured, sante_score: its
-cap) is « estimé ».
-No score (no nightly signal measured, no recovery window) → no state: one
-line, « Connecte ta montre pour voir ta récupération. » (a watch already
+pattern, the lowest component) stays as data (`key`), never printed.
+No score (no nightly signal measured, like WHOOP: owner, 2026-10-09) → no
+state: one line, « Connecte ta montre pour voir ta récupération. » (a watch already
 sending: « Pas de score ce matin : ta montre n'a pas enregistré ta nuit. »).
 A quiet chart is not a clean bill of health (Quer 2021).
 """
@@ -37,7 +35,7 @@ NO_NIGHT = "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
 
 
 def state(score: dict, day: dict | None = None) -> dict | None:
-    """{key, tone, word, glyph, text, estimated, aria} from the day's score
+    """{key, tone, word, glyph, text, aria} from the day's score
     (sante_score.score_of), or None without a score. `key`: the reason (ill,
     effort, short, joint, hrv, hr, sleep) or « ok », data only; `text`: the
     illness alert's sentence, else None (the page prints the word and the
@@ -48,7 +46,7 @@ def state(score: dict, day: dict | None = None) -> dict | None:
     text = ILL if key == "ill" else None
     word = WORDS[tone]
     return {"key": key, "tone": tone, "word": word, "glyph": GLYPHS[tone], "text": text,
-            "estimated": bool(score.get("estimated")), "aria": f"{word}." + (f" {text}" if text else "")}
+            "aria": f"{word}." + (f" {text}" if text else "")}
 
 
 def no_state_line(has_watch: bool) -> str:

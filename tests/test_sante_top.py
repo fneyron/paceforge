@@ -55,19 +55,16 @@ def test_the_sommeil_dial():
 
 def test_the_recuperation_dial():
     """The score as a percentage, its arc in its state's colour, the state's word under « Récupération »
-    (« bonne », « en cours », « faible »), « estimée » instead when no night was measured; « — » and « pas de
-    score » without one."""
-    def dial(value, estimated=False):
-        score = {"value": value, "tone": sc.tone_of(value), "estimated": estimated, "reason": "effort"}
+    (« bonne », « en cours », « faible »); « — » and « pas de score » without one (no night measured: an empty
+    dial, like WHOOP, owner 2026-10-09)."""
+    def dial(value):
+        score = {"value": value, "tone": sc.tone_of(value), "reason": "effort"}
         return sc.dial(score, td.state(score), "#recuperation")
     dials = (dial(85), dial(65), dial(35))
     assert [(d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for d in dials] == [
         ("85", "%", "Récupération", "bonne", "ok", 0.85), ("65", "%", "Récupération", "en cours", "warn", 0.65),
         ("35", "%", "Récupération", "faible", "danger", 0.35)]
     assert dial(65)["aria"] == "Récupération 65 %, en cours."
-    est = dial(35, estimated=True)
-    assert (est["sub"], est["tone"]) == ("estimée", "danger")
-    assert est["aria"] == "Récupération 35 %, faible, estimée : ta montre n'a pas enregistré ta nuit."
     none = sc.dial({"value": None}, None, None)
     assert (none["value"], none["sub"], none["tone"], none["href"], none["dash"]) == ("—", "pas de score", "none",
                                                                                       None, 0)

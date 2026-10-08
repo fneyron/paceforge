@@ -79,7 +79,6 @@
     <div class="pf-card">
         <h3 class="pf-card-h">Récupération · 14 jours</h3>
         {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
-        {% if p.recup.hatched %}{{ viz.viz_legend([("is-est", "estimé, nuit non enregistrée")]) }}{% endif %}
     </div>
     {% endif %}
     {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}

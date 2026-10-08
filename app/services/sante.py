@@ -8,8 +8,8 @@ comme WHOOP, ça doit rester simple »). Top to bottom:
   habitual amount read on one day, H), « un peu court » from 6 h (H),
   « court » under 6 h (Craven 2022), its arc then in the warning colour),
   Récupération (the 0–100 score as a percentage in its state's colour,
-  « bonne », « en cours », « faible », « estimée » when no night was
-  measured: sante_score.dial), Entraînement (the last 7 days' activity time
+  « bonne », « en cours », « faible »; empty, « pas de score », when no night
+  was measured, like WHOOP: sante_score.dial), Entraînement (the last 7 days' activity time
   against the usual week, as a percentage; « comme d'habitude » within ± 20 %,
   H); the illness alert's one sentence under them (sante_today; v4.3, owner:
   « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
@@ -409,8 +409,9 @@ MEANING = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début 
 NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
 FEW = "trop peu de nuits pour comparer"  # its row's word
 BUILDING = "en construction"  # a signal without usual values yet: its row's word, its card's first words
-# while they build, the chart card says it in words (the row prints when they will be ready: printed once)
-BUILDS = "En construction : chaque nuit où tu portes ta montre compte."
+# while they build, the chart card says it in words (the row prints when they will be ready: printed once; owner,
+# 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
+BUILDS = "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional

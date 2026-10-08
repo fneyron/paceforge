@@ -133,8 +133,8 @@ def _coherent(html: str) -> str:
 async def test_owner_les_houches_two_efforts_from_his_activities(db_session: AsyncSession, test_user: User):
     """His real 18/09 (9h04 stops included, +3 511 m) and 19/09 (7h04, +2 847 m) at Les Houches: two Très
     longues, each its own window (45 to D+2, 65 to D+5): the last 65 day is 24/09, 25/09 is free. On 24/09 no
-    night was measured: the score is the window's cap alone, « estimée » under the dial, and « Effort récent » says
-    it is the window's last day; on 25/09 there is no score and no Effort récent."""
+    night was measured: no score (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui »), and « Effort
+    récent » says it is the window's last day; on 25/09 there is no score and no Effort récent."""
     await seed_owner_v4(db_session, test_user)
     sessions = await st.load_sessions(db_session, test_user.id, D8)
     houches = [e for e in st.efforts(sessions) if e.start_day in (date(2026, 9, 18), date(2026, 9, 19))]
@@ -144,9 +144,8 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
     caps = {k: (st.effort_window(houches, date(2026, 9, k)) or {}).get("cap") for k in range(18, 26)}
     assert caps == {18: 45, 19: 45, 20: 45, 21: 45, 22: 65, 23: 65, 24: 65, 25: None}
     page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 24))
-    assert (page["score"]["value"], page["score"]["estimated"], page["state"]["word"]) == (
-        65, True, "Récupération en cours")
-    assert page["dials"][1]["sub"] == "estimée" and page["state"]["text"] is None
+    assert (page["score"]["value"], page["state"], page["line"]) == (None, None, td.NO_NIGHT)
+    assert (page["dials"][1]["value"], page["dials"][1]["sub"]) == ("—", "pas de score")
     effort = {r["key"]: r for r in page["rows"]}["effort"]
     assert (effort["value"], effort["word"], effort["tone"]) == ("dernier jour", "avant d'être récupéré", "warn")
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))

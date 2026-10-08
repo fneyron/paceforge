@@ -236,7 +236,7 @@ async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_us
     page = await sante.health_page(db_session, test_user.id, today=D8)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["word"], st["text"]) == ("effort", "warn", "Récupération en cours", None)
-    assert "href" not in st and not st["estimated"] and st["aria"] == "Récupération en cours."
+    assert "href" not in st and "estimated" not in st and st["aria"] == "Récupération en cours."
     assert s["raw0"] == 100 and s["value"] == 65 and s["tone"] == "warn" and s["reason"] == "effort"
     assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100}
     assert s["absent"] == ["hrv", "hr"] and s["caps"] == ["effort", "no_heart"]  # the window's 65 binds
@@ -350,7 +350,7 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     for key, c in (("vfc", vfc), ("fc", fc)):
         assert c["status"] == {"key": "none", "value": None, "word": "en construction", "detail": f"prête {when[key]}",
                                "tone": None, "meaning": None,
-                               "text": "En construction : chaque nuit où tu portes ta montre compte."}
+                               "text": "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."}
         assert not c["band"] and not c["band_prov"] and all(set(d) == {"i", "x", "y"} for d in c["dots"])  # filled
     # the 7-night line where 3 nights of the last 7 hold: FC de nuit from 06/10 (01/10 alone draws no segment)
     assert vfc["legend"] == [sante.LEGEND_DOT] and fc["legend"] == [sante.LEGEND_DOT, sante.LEGEND_MEAN]
@@ -365,20 +365,18 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # a day without a score draws nothing (owner, 2026-10-08: « pas de point »): a tap says it plainly
     assert d["r"][0] == ["—", "", "ven. 25 sept. · pas de mesure ce jour-là"]
     assert d["a"][0] == "vendredi 25 septembre : pas de mesure ce jour-là."
-    assert [b["i"] for b in rec["bars"] if b.get("miss")] == [0, 1, 2, 3, 7]
+    assert [b["i"] for b in rec["bars"] if b.get("miss")] == [0, 1, 2, 3, 7, 8, 9, 10]
     # before the race: Sommeil alone (no band): 100, capped at 80 without VFC nor FC
     assert points["2026-09-29"] == points["2026-10-01"] == ["80\u00a0%", "● Bonne récupération"]
     # 02/10: the Transjeju still running at midnight (uploaded on 03/10), no night: no score; 03/10 (the day it
-    # ended) → 05/10: no night, its window alone: the Ultra's 35 (v4.3, H), « estimé, nuit non enregistrée »
-    assert points["2026-10-02"] == ["—", ""]
-    assert points["2026-10-03"] == points["2026-10-04"] == points["2026-10-05"] == ["35\u00a0%",
-                                                                                   "■ Récupération faible"]
-    assert [d["r"][k][2] for k in (8, 9, 10)] == [f"{x} · estimé, nuit non enregistrée" for x in (
+    # ended) → 05/10: no night, no score either, its window or not (owner, 2026-10-09, like WHOOP: « Mets un
+    # cadran vide, oui »): nothing drawn, a tap says it plainly
+    assert points["2026-10-02"] == points["2026-10-03"] == points["2026-10-04"] == points["2026-10-05"] == ["—", ""]
+    assert [d["r"][k][2] for k in (8, 9, 10)] == [f"{x} · pas de mesure ce jour-là" for x in (
         "sam. 3 oct.", "dim. 4 oct.", "lun. 5 oct.")]
-    assert d["a"][8] == ("samedi 3 octobre : 35\u00a0%, récupération faible, estimé car ta montre n'a pas "
-                         "enregistré la nuit.")
-    # 06/10: D+3, 5h33 → 46,5, Charge 20: raw (30 × 46,5 + 20 × 20) / 50 = 35,9, the window's 35 binds: the same
-    # 35 as the days without a night (v4.2: 36 « À ménager » under the 40 of the days before, « pourquoi le 6 ? »)
+    assert d["a"][8] == "samedi 3 octobre : pas de mesure ce jour-là."
+    # 06/10: D+3, 5h33 → 46,5, Charge 20: raw (30 × 46,5 + 20 × 20) / 50 = 35,9, the window's 35 binds
+    # (v4.2: 36 « À ménager » under the 40 of the days before, « pourquoi le 6 ? »)
     assert points["2026-10-06"] == ["35\u00a0%", "■ Récupération faible"] and d["r"][11][2] == "mar. 6 oct."
     assert d["a"][11] == "mardi 6 octobre : 35\u00a0%, récupération faible."
     # 07/10 and 08/10: Sommeil 100, Charge 20: raw 68, the window's 65 binds
@@ -387,10 +385,10 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # the date, the score and the state only: no activity named in the card (v4.3, owner: « mets juste les scores »)
     for word in ("Transjeju", "Morning", "sortie", "il y a"):
         assert word not in rec["data"], word
-    assert rec["read"] == ["57\u00a0%", "en moyenne", ""]  # (80 × 3 + 35 × 4 + 65 × 2) / 9 = 56,7
+    assert rec["read"] == ["68\u00a0%", "en moyenne", ""]  # (80 × 3 + 35 + 65 × 2) / 6 = 67,5
     classes, est = [b["cls"] for b in rec["bars"]], [b["est"] for b in rec["bars"]]
-    assert classes[4] == "ok" and classes[8:12] == ["danger"] * 4 and classes[12] == "warn" and rec["bars"][-1]["today"]
-    assert est == [False] * 8 + [True] * 3 + [False] * 3 and rec["hatched"] == ["danger"]  # 03 → 05/10 hatched
+    assert classes[4] == "ok" and classes[8:11] == [""] * 3 and classes[11] == "danger" and classes[12] == "warn"
+    assert rec["bars"][-1]["today"] and not any(est) and rec["hatched"] == []  # no score estimated any more
     assert d["t"][11] == "danger" and [ln["label"] for ln in rec["lines"]] == ["70\u00a0%", "40\u00a0%"]
 
 
@@ -439,8 +437,10 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
     # the details: the VFC and FC de nuit charts in words (the rows print the numbers)
     recup_detail = main.split('<section id="recuperation-detail"')[1].split("</section>")[0]
-    assert recup_detail.count('<p class="pf-card-status is-plain">En construction : chaque nuit où tu portes ta '
-                              "montre compte.</p>") == 2
+    # the usual values to come, said where they will be drawn (owner, 2026-10-09: « Tu ne mets pas les fourchettes
+    # pour VFC et FC repos dans les graphiques ? »)
+    assert recup_detail.count('<p class="pf-card-status is-plain">Tes valeurs habituelles s&#39;afficheront ici dès 7 '
+                              "nuits mesurées.</p>") == 2
     # Sommeil: « Cette nuit », its times, its hours over the 8-h need; the stages; then, in the details, the 24-h
     # chart and the habits
     sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
@@ -460,7 +460,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # score, this morning's sleep as a percentage, the week's time), the effort's days, last night's hours, the VFC
     # and FC of last night, the means, the stages; no sub-score (no « 20 »)
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("65 %", "100 %", "15h35", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "57 %", "1h10", "5h30",
+    for number in ("65 %", "100 %", "15h35", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "68 %", "1h10", "5h30",
                    "2h00"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
     assert not re.search(r"(?<![\d,h:])20(?![\d,h:A-Za-z])", seen)
@@ -476,8 +476,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
         legends = "".join(re.findall(r'<p class="pf-viz-legend"[^>]*>(.*?)</p>', part, re.S))
         assert "pas de score" not in legends and "pas de mesure" not in legends
     history = recup_detail.split("Récupération · 14 jours")[1].split('id="vfc"')[0]
-    assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', history) == [
-        ("is-est", "estimé, nuit non enregistrée")]  # the one swatch left: the days estimated without a night
+    # no legend at all: a day without a night has no score and draws nothing (owner, 2026-10-09, like WHOOP)
+    assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', history) == [] and "estimé" not in history
     assert "is-out" not in main and "ne compte" not in main
     # the stages: one bar, its legend names each phase with its minutes (never colour alone); « Comment je lis tes
     # nuits » says they are the watch's estimate

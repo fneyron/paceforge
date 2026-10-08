@@ -37,13 +37,11 @@ recovery behaviour every consensus text names). The recent efforts are no
 component of the mean (2026-10-08, owner: « Fais comme WHOOP »: its recovery
 is body signals and sleep, the strain kept out; « Charge récente » is gone):
 their recovery windows cap the score (below), the owner's « Un effort récent,
-il faut le prendre en compte et afficher la fatigue quand même ». Without a
-nightly component (VFC, FC de nuit or Sommeil) no score, but during a
-recovery window: the activities then say the athlete is recovering, so the
-score is the window's cap (nothing measured says otherwise: raw is taken as
-100 and the caps bind), « estimée » (v4.3: its bar hatched in the 14-day
-card, the word under the dial), the activities being all it knows (owner:
-« tu te bases que sur les activités passées pour juger de la récupération »).
+il faut le prendre en compte et afficher la fatigue quand même »; the
+« Effort récent » row says it on every day of a window). Without a nightly
+component (VFC, FC de nuit or Sommeil) no score at all, like WHOOP (owner,
+2026-10-09: « Mets un cadran vide, oui »): the dial is empty, the 14-day card
+draws nothing that day, never a score estimated from the activities alone.
 Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
 nights.illness_alert) → 39; a recovery window (sante_training.EFFORT_RULES:
 35, 45 or 65 by class and day); a 24-h total under 6 h → 65 (6 h: Craven
@@ -89,7 +87,7 @@ from app.services.nights import SHORT_DAY_MIN
 BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}  # (H) the state is the band of the score
 WEIGHTS = {"hrv": 25, "hr": 25, "sleep": 30}  # (H) research_recovery.md §3.2; no Charge (WHOOP: strain kept out)
 ORDER = ("hrv", "hr", "sleep")
-NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (but in a recovery window)
+NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (like WHOOP: no night, no score)
 HRV_FULL_Z, HRV_ZERO_Z = -0.5, -2.5  # z of ln RMSSD: 100 from the band's floor (the trials' ± 0.5 SD), 0 at −2.5 (H)
 HR_FULL_BPM, HR_MID_BPM, HR_ZERO_BPM = 2, 5, 8  # (H) over the band's median: 100, 40, 0 (Alavi 2022; Bosquet 2008)
 HR_MID_SUB = 40  # (H) the FC de nuit sub-score at + 5 bpm
@@ -307,17 +305,15 @@ def building(day: dict, absent: list[str]) -> list[str]:
 
 def score_of(day: dict) -> dict:
     """{value, tone, raw, raw0, parts, absent, building, caps (binding keys,
-    the lowest first), reason, measured, estimated} for one day, or {value:
-    None, …} without a nightly component outside a recovery window (then no
-    state either). In a window without a nightly component, raw is 100
-    (nothing measured says otherwise) and the caps bind: the score is the
-    window's cap, « estimé » (v4.3)."""
+    the lowest first), reason, measured} for one day, or {value: None, …}
+    without a nightly component (then no state either), recovery window or
+    not (owner, 2026-10-09: « Mets un cadran vide, oui », like WHOOP)."""
     parts, absent = components(day)
     measured = any(p["key"] in NIGHTLY for p in parts)
-    if not measured and not day["window"]:
+    if not measured:
         return {"value": None, "tone": None, "parts": parts, "absent": absent, "building": building(day, absent),
-                "caps": [], "reason": None, "measured": False, "estimated": False}
-    raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9) if measured else 100.0  # 49,99999999999999 is 50
+                "caps": [], "reason": None, "measured": False}
+    raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9)  # 49,99999999999999 is 50
     held = caps(day, parts)
     raw = min([raw0] + [c for c, _ in held])
     value = rounded(raw)
@@ -325,14 +321,11 @@ def score_of(day: dict) -> dict:
     binding = [k for _, _, k in sorted((c, CAPS.index(k), k) for c, k in held if c < raw0)]
     return {"value": value, "tone": tone, "raw": raw, "raw0": raw0, "parts": parts, "absent": absent,
             "building": building(day, absent), "caps": binding, "reason": reason(tone, binding, parts, day),
-            "measured": measured, "estimated": not measured}
+            "measured": True}
 
 
 # ── what the page draws ─────────────────────────────────────────────────────
 
-ESTIMATED = "estimée"  # the dial's word for a score from a recovery window alone, no night measured (v4.3)
-EST_READ = "estimé, nuit non enregistrée"  # its readout in the 14-day card (v4.4: what happened, in plain words)
-EST_SAID = "estimé car ta montre n'a pas enregistré la nuit"  # spoken
 DIAL_WORDS = {"ok": "bonne", "warn": "en cours", "danger": "faible"}  # the state's word under « Récupération »
 NO_SCORE = "pas de score"  # the dial's word without a score (the line under the dials says why)
 NO_MEASURE = "pas de mesure ce jour-là"  # a day without a score: no bar, no dot, its readout says it (2026-10-08)
@@ -348,17 +341,15 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
     """The Récupération dial, the middle one of three (2026-10-08, owner: « Fais comme WHOOP, ça doit rester
     simple »): the score as a percentage (« 65 % », the « % » smaller), its arc in its state's colour, its name
     under it and the state's word (« bonne », « en cours », « faible »: the name and the word say the state,
-    never colour alone); « estimée » instead when no night was measured (the window's cap alone, v4.3); « — » and
-    « pas de score » without a score. `href`: its card below, None when the page has none (a plain dial)."""
+    never colour alone); « — » and « pas de score » without a score (no night measured: an empty dial, like
+    WHOOP). `href`: its card below, None when the page has none (a plain dial)."""
     v = score.get("value")
     if v is None:
         return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
                         aria="Récupération : pas de score ce matin.")
-    est = bool(score.get("estimated"))
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Récupération", ESTIMATED if est else word, tone=state["tone"],
-                    unit="%", href=href, aria=f"Récupération {pct(v)}, {word}"
-                    + (", estimée : ta montre n'a pas enregistré ta nuit." if est else "."))
+    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="%", href=href,
+                    aria=f"Récupération {pct(v)}, {word}.")
 
 
 def heart_tone(key: str, status: str | None, sub: float, red: bool = True, joint: bool = False,
@@ -388,13 +379,12 @@ def row_tone(p: dict) -> str:
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
     """« Récupération · 14 jours »: one bar per day with a score, in its
-    state's colour, hatched when it was estimated without a night measured
-    (v4.3), with faint 40 and 70 lines labelled on the right (the bands:
+    state's colour, with faint 40 and 70 lines labelled on the right (the bands:
     never colour alone), today's day on a disc; nothing on a day without a
     score (owner, 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas
-    de point »), whose readout says « pas de mesure ce jour-là »; tap a bar →
-    « 64 % » « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, nuit
-    non enregistrée »): the date, the score and the state only (v4.3, owner:
+    de point »; a night not recorded has no score), whose readout says « pas de
+    mesure ce jour-là »; tap a bar → « 64 % » « ◐ Récupération en cours » /
+    « mer. 7 oct. »: the date, the score and the state only (v4.3, owner:
     « mets juste les scores »). It rests on the mean of the days with a score
     (nothing selected: today's score is the dial's). None under 2 days with a
     score."""
@@ -402,23 +392,20 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     with_score = [s["value"] for _, _, s in history if s.get("value") is not None]
     if len(with_score) < 2:
         return None
-    values, classes, tones, est, r, a = [], [], [], [], [], []
+    values, classes, tones, r, a = [], [], [], [], []
     for d, st, s in history:
         v = s.get("value")
         values.append(v)
         classes.append(s["tone"] if v is not None else "")
         tones.append(s["tone"] if v is not None else "")
-        e = v is not None and bool(s.get("estimated"))
-        est.append(e)
         if v is None:
             r.append(["—", "", f"{viz.d_short(d)} · {NO_MEASURE}"])
             a.append(f"{viz.d_long(d)} : {NO_MEASURE}.")
             continue
-        r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {EST_READ}" if e else "")])
-        a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}" + (f", {EST_SAID}" if e else "") + ".")
+        r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d)])
+        a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
-                     hatched=est,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
     mean = rounded(sum(with_score) / len(with_score))
     return viz.rest(c, [pct(mean), "en moyenne", ""],
