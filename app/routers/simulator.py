@@ -1901,8 +1901,9 @@ async def _nutrition_card_context(
     confirm: int | None = None, own_form: dict | None = None, focus: str | None = None,
 ) -> dict:
     """Everything the Nutrition card shows: « Ton plan » (one line per rhythm and
-    the totals against the evidence), « À chaque ravito » (what to take when
-    leaving each refill point), « Ta liste », « Tes produits »."""
+    the totals against the evidence, the sodium too when the race is hot),
+    « À chaque ravito » (what to take when leaving each refill point and the
+    water to carry to the next one), « Ta liste », « Tes produits »."""
     from app.services import nutrition as N
     from app.services import nutrition_plan as NP
 
@@ -1930,32 +1931,45 @@ async def _nutrition_card_context(
             "whole": len(lines) == 1 and not r["from_min"] and r["to_min"] is None,
         })
 
-    carbs = caf = None
+    carbs = caf = sodium = water_note = None
     rows: list[dict] = []
     shop: list[dict] = []
     finish = None
     copy_text = ""
     if count and lines:
+        # a hot race (H: 25 °C or more on average over its predicted hours, the temperatures the simulator read in
+        # its saved forecast; none saved: not hot): its water at the top of ISSN 2019's range, and its sodium
+        hot = NP.is_hot(sections, start)
         g = NP._round(NP.carbs_per_hour(count["intakes"], products, end))
         note, tone = NP.carbs_note(g, end / 3600)
         carbs = {"g": g, "note": note, "tone": tone}
+        if hot:  # the sodium per hour only when it is hot (ISSN 2019: 300 to 600 mg/h in the heat)
+            na = NP._round(NP.sodium_per_hour(count["intakes"], products, end))
+            na_note, na_tone = NP.sodium_note(na)
+            sodium = {"mg": na, "note": na_note, "tone": na_tone}
+        water_note = NP.water_note(hot)
         if NP.holds_caffeine(lines, products):
             mg, cap = NP.caffeine_24h(count["intakes"], products), N.caffeine_cap_mg(user.weight_kg)
             caf = {"mg": mg, "cap": cap, "over": mg > cap, "no_weight": not user.weight_kg}
         for r in count["rows"]:
             tag = "base vie" if r["base"] else ("assistance" if r["crew"] else ("drop bag" if r["drop"] else None))
             text = NP.take_text(r["items"], products)
-            # the opened pouch's prises: on a phone only when the row stays one line, always on a wider screen
+            # after what to take, the water to carry to the next refill point: « 1 Maurten 100 · 1 L »
+            water = NP.litres(NP.water_ml(r["t_s"], r["end_s"], hot))
+            # the opened pouch's prises: on a phone only when the row (its water too) stays one line, always on a
+            # wider screen
             room = NP.ROW_CHARS - len(r["name"]) - (len(tag) + 1 if tag else 0)
             rows.append({"id": f"s-{r['key']}", "clock": NP.clock_hm(r["clock_s"]), "name": r["name"], "tag": tag,
-                         "take": text, "parts": NP.take_parts(r["items"], products), "fits": len(text) <= room})
+                         "take": text, "water": water, "parts": NP.take_parts(r["items"], products),
+                         "fits": len(f"{text} · {water}") <= room})
         finish = NP.clock_hm(count["finish_clock_s"])
         # a product of « Tes produits » by its full name (what to buy); a generic one in its own words (« 14 gels »)
         shop = [{"n": n, "name": (products[pid]["one"] if n == 1 else products[pid]["many"]) if products[pid].get("one")
                  else (products[pid].get("name") or N.short_label(products[pid]))} for pid, n in count["shop"].items()]
         copy_text = "\n".join(
             [f"{route.name} : nutrition", "", "Ta liste"] + [f"{s['n']} {s['name']}" for s in shop]
-            + ["", "À chaque ravito"] + [f"{r['clock']} {r['name']} : {r['take']}" for r in rows] + [f"{finish} Arrivée"])
+            + ["", "À chaque ravito"] + [f"{r['clock']} {r['name']} : {r['take']} · {r['water']}" for r in rows]
+            + [f"{finish} Arrivée"])
 
     # « Tes produits »: the same for every race
     used = {r["product_id"] for r in lines}
@@ -1982,7 +1996,8 @@ async def _nutrition_card_context(
     return {
         "request": request, "route_id": route.id, "page_url": f"/simulator/routes/{route.id}?vue=nutrition",
         "has_times": count is not None, "old_notice": plan["old"], "lines": view_lines, "can_add": len(lines) < NP.MAX_LINES,
-        "carbs": carbs, "caf": caf, "rows": rows, "finish": finish, "spare": plan["spare"], "shop": shop, "copy_text": copy_text,
+        "carbs": carbs, "caf": caf, "sodium": sodium, "water_note": water_note,
+        "rows": rows, "finish": finish, "spare": plan["spare"], "shop": shop, "copy_text": copy_text,
         "products": my_products, "catalog": [(label, cs) for label, cs in catalog if cs], "own_form": own_form,
         "open_products": open_ == "produits" or not lines or question is not None or own_form is not None,
         "focus": focus,

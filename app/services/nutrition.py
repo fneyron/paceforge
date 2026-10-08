@@ -3,8 +3,8 @@
 The athlete fills « Tes produits » once (NutritionProduct, the same for every
 race) and says, per race, when he eats each one; app.services.nutrition_plan
 counts the rest. This module holds what that plan is built FROM and checked
-AGAINST: the carbohydrate guidelines, the catalogue of common products, the
-caffeine cap.
+AGAINST: the carbohydrate guidelines, the water and sodium ones, the catalogue
+of common products, the caffeine cap.
 
 Nothing here calls an LLM: the numbers are reproducible and explainable.
 """
@@ -43,6 +43,19 @@ def starter_carbs(duration_h: float) -> int:
     if duration_h > ULTRA_H:
         return ULTRA_STARTER_G_H
     return round(_CARBS_SHORT if duration_h < 3 else _CARBS_MID)
+
+
+# Water and sodium on a race (2026-10-09; owner, on the mockup: « Oui vas-y »). ISSN 2019 (Tiller et al., JISSN
+# 16:50): « Fluid volumes of 450–750 mL·h−1 … are recommended during racing », drinking to thirst « the most
+# appropriate method »; in hot and/or humid conditions « ~300–600 mg·h−1 of sodium ». Nothing to fill in: the card
+# counts the water to carry from each refill point to the next on the race's predicted times, and says the sodium
+# only when the race is hot (its temperatures from its saved forecast: nutrition_plan.is_hot).
+WATER_ML_H = 500  # (H) ml per hour of a stretch: inside ISSN 2019's 450–750 ml/h, near its low end (drink to thirst)
+WATER_HOT_ML_H = 750  # (H) ml per hour when the race is hot: the top of that range
+WATER_STEP_ML = 500  # (H) the water to carry, rounded up to half a litre
+WATER_MIN_ML = 500  # (H) never less than half a litre to the next refill point
+HOT_RACE_C = 25  # (H) a hot race: 25 °C or more, its mean temperature over its predicted hours
+SODIUM_HOT_MG_H = (300, 600)  # a hot race's sodium per hour, mg (ISSN 2019)
 
 # The carbs per hour of the level picker of older plans (fragile / normal /
 # solide), kept to read those plans.

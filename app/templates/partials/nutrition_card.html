@@ -1,9 +1,10 @@
 {% import "partials/_icons.html" as ic %}
 {# « Nutrition » : tu dis quand tu prends chaque produit, l'app compte le reste. Three blocks and a fold, nothing
-   else: « Ton plan » (one line per rhythm, one line of totals against the evidence), « À chaque ravito » (what to
-   take when leaving each refill point, whole units), « Ta liste » (the race's totals, « Copier »), « Tes produits »
-   (the pantry, the same for every race). Every form posts on its own without JS (then 303 back to the race page,
-   the card open); htmx swaps the card in place. Every number is printed once. #}
+   else: « Ton plan » (one line per rhythm, the totals against the evidence: the carbs per hour, the sodium per hour
+   when the race is hot), « À chaque ravito » (what to take when leaving each refill point, whole units, then the
+   water to carry to the next one), « Ta liste » (the race's totals, « Copier »), « Tes produits » (the pantry, the
+   same for every race). Every form posts on its own without JS (then 303 back to the race page, the card open);
+   htmx swaps the card in place. Every number is printed once. #}
 {% set P = '/partials/simulator/nutrition/' ~ route_id %}
 {% macro chev() -%}<svg class="pf-nu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>{%- endmacro %}
 {# p = a product to edit; v = what was typed (« Un produit à toi » sent without a name) #}
@@ -47,6 +48,7 @@
         {% if can_add %}<form method="post" action="{{ P }}/rhythms" hx-post="{{ P }}/rhythms"><button type="submit" id="nu-add" class="pf-nu-add">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Ajouter un produit au plan</button></form>{% endif %}
         {% if carbs %}
         <p class="pf-nu-sum"><span>≈ {{ carbs.g }} g de glucides par heure</span><span class="pf-nu-zone is-{{ carbs.tone }}">{{ carbs.note }}</span>
+            {%- if sodium %}<span class="pf-nu-na">≈ {{ sodium.mg }} mg de sodium par heure</span><span class="pf-nu-zone is-{{ sodium.tone }}">{{ sodium.note }}</span>{% endif %}
             {%- if caf %}<span class="pf-nu-caf{% if caf.over %} is-warn{% endif %}">{% if caf.over %}{{ ic.icon('alert', 'w-4 h-4') }}{% endif %}<span>caféine : {{ caf.mg }} mg, {% if caf.over %}au-dessus de la limite de {{ caf.cap }} mg sur 24 h{% else %}limite {{ caf.cap }} mg sur 24 h{% endif %}{% if caf.no_weight %} · <a class="pf-link" href="/settings#weight_kg">indique ton poids dans Réglages</a> pour l'ajuster{% endif %}</span></span>{% endif %}</p>
         {% endif %}
         {% else %}
@@ -56,19 +58,20 @@
         {% if not has_times %}<p class="pf-nu-note">Lance une simulation pour avoir tes heures de passage.</p>{% endif %}
     </section>
 
-    {# ── À chaque ravito: what to take when leaving each refill point ─────── #}
+    {# ── À chaque ravito: what to take when leaving each refill point, the water to the next one ──
+       (the litres come from the predicted times: a row without them would keep today's water line) #}
     {% if rows %}
     <section id="nu-ravitos" class="pf-nu-sec" aria-labelledby="nu-rav-t">
         <h2 id="nu-rav-t" class="pf-nu-h">À chaque ravito</h2>
-        <p class="pf-nu-lead">Ce que tu prends en repartant.</p>
+        <p class="pf-nu-lead">Ce que tu prends en repartant{% if water_note %}, et l'eau pour aller au ravito suivant{% endif %}.</p>
         <ol class="pf-nu-rows">
             {% for r in rows %}
-            <li id="{{ r.id }}"><span class="pf-nu-clk">{{ r.clock }}</span> <span class="pf-nu-at"><b title="{{ r.name }}">{{ r.name }}</b>{% if r.tag %} <small>{{ r.tag }}</small>{% endif %}</span><span class="sr-only"> : </span> <span class="pf-nu-take{% if not r.parts %} is-none{% endif %}">{% for p in r.parts %}{{ p.words }}{% if p.note %}<span class="pf-nu-left{% if not r.fits %} is-wide{% endif %}"> {{ p.note }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% else %}rien à prendre{% endfor %}</span></li>
+            <li id="{{ r.id }}"><span class="pf-nu-clk">{{ r.clock }}</span> <span class="pf-nu-at"><b title="{{ r.name }}">{{ r.name }}</b>{% if r.tag %} <small>{{ r.tag }}</small>{% endif %}</span><span class="sr-only"> : </span> <span class="pf-nu-take{% if not r.parts %} is-none{% endif %}">{% for p in r.parts %}{{ p.words }}{% if p.note %}<span class="pf-nu-left{% if not r.fits %} is-wide{% endif %}"> {{ p.note }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% else %}rien à prendre{% endfor %}{% if r.water %} <span class="pf-nu-water">· {{ r.water }}</span>{% endif %}</span></li>
             {% endfor %}
             <li class="is-end"><span class="pf-nu-clk">{{ finish }}</span> <span class="pf-nu-at"><b>Arrivée</b></span></li>
         </ol>
         <form method="post" action="{{ P }}/spare" hx-post="{{ P }}/spare"><input type="hidden" name="spare" value="{{ '0' if spare else '1' }}"><button type="submit" id="nu-spare" class="pf-nu-toggle" aria-pressed="{{ 'true' if spare else 'false' }}"><span class="pf-nu-switch" aria-hidden="true"></span>+1 de secours à chaque ravito</button></form>
-        <p class="pf-nu-fine">Eau : bois à ta soif, remplis tes flasques à chaque ravito.</p>
+        <p class="pf-nu-fine">{{ water_note or "Eau : bois à ta soif, remplis tes flasques à chaque ravito." }}</p>
     </section>
 
     {# ── Ta liste: the race's totals ──────────────────────────────────────── #}

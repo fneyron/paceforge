@@ -9,6 +9,11 @@ simply gets what the next stretch needs (0 or 1 gel), never half a gel. A
 product taken in prises (a PF 90 pouch, 3 × 30 g) is taken in whole pouches,
 and the prises left in an opened pouch count toward the next stretch.
 
+Each refill point also gets the water to carry to the next one, from the
+stretch's predicted time (water_ml); a hot race (is_hot, from the temperatures
+the simulator read in the race's saved forecast) is counted at a higher rate
+and has its sodium per hour said against the hot-weather range.
+
 Times are seconds after the start, on the plan's arrival clocks (stops
 included). Pure functions: no database, no request.
 
@@ -173,12 +178,21 @@ def shopping(rows: list[dict]) -> dict[int, int]:
     return out
 
 
-def carbs_per_hour(intake_list: list[tuple[int, int, int]], products: dict, end_s: int) -> float:
-    """Σ carbs eaten / race hours."""
+def label_per_hour(intake_list: list[tuple[int, int, int]], products: dict, end_s: int, key: str) -> float:
+    """Σ of a label value (carbs_g, sodium_mg) taken, per prise, / race hours."""
     if not end_s or end_s <= 0:
         return 0.0
-    g = sum(n * N.per_prise(products[pid], "carbs_g") for _t, pid, n in intake_list)
-    return g / (end_s / 3600.0)
+    return sum(n * N.per_prise(products[pid], key) for _t, pid, n in intake_list) / (end_s / 3600.0)
+
+
+def carbs_per_hour(intake_list: list[tuple[int, int, int]], products: dict, end_s: int) -> float:
+    """Σ carbs eaten / race hours."""
+    return label_per_hour(intake_list, products, end_s, "carbs_g")
+
+
+def sodium_per_hour(intake_list: list[tuple[int, int, int]], products: dict, end_s: int) -> float:
+    """Σ sodium taken / race hours (mg/h), counted like the carbs: the plan's products' label values, per prise."""
+    return label_per_hour(intake_list, products, end_s, "sodium_mg")
 
 
 def caffeine_24h(intake_list: list[tuple[int, int, int]], products: dict) -> int:
@@ -234,6 +248,69 @@ def starter_interval(product: dict, target_g_h: float) -> int:
     if g <= 0 or target_g_h <= 0:
         return 60
     return min(INTERVALS, key=lambda i: (abs(g * 60.0 / i - target_g_h), -i))
+
+
+# ── water and sodium (ISSN 2019; nutrition.WATER_*, SODIUM_HOT_MG_H) ──────────
+
+def mean_temp_c(sections: list[dict], start_offset_s: int) -> float | None:
+    """The race's mean temperature over its predicted hours (°C): each section's
+    temperature (the one the simulator read in the race's saved forecast for
+    its arrival point and hour, as the passage table shows it) weighted by the
+    section's time on the plan's clocks. None when a section has none (no
+    forecast saved): no guess."""
+    prev = float(start_offset_s)
+    acc = span = 0.0
+    for s in sections:
+        t = s.get("temperature_c")
+        if t is None:
+            return None
+        clock = max(prev, arrival_clock(s, start_offset_s))
+        acc += float(t) * (clock - prev)
+        span += clock - prev
+        prev = clock
+    return acc / span if span > 0 else None
+
+
+def is_hot(sections: list[dict], start_offset_s: int) -> bool:
+    """A hot race (H): its mean temperature over its predicted hours is 25 °C or
+    more. Without temperatures the race is not hot."""
+    t = mean_temp_c(sections, start_offset_s)
+    return t is not None and t >= N.HOT_RACE_C
+
+
+def water_ml(t_s: int, end_s: int, hot: bool = False) -> int:
+    """The water to carry from a refill point to the next one (ml), over the
+    stretch its row's food is for (its arrival to the next one's): the
+    stretch's time × 0,5 L/h, 0,75 L/h when the race is hot, rounded up to half
+    a litre, at least half a litre (H)."""
+    rate = N.WATER_HOT_ML_H if hot else N.WATER_ML_H
+    steps = -(-max(0, int(end_s) - int(t_s)) * rate // (3600 * N.WATER_STEP_ML))  # rounded up, in whole numbers
+    return max(N.WATER_MIN_ML, steps * N.WATER_STEP_ML)
+
+
+def litres(ml: float) -> str:
+    """500 → '0,5 L', 1000 → '1 L', 1500 → '1,5 L', 750 → '0,75 L'."""
+    return f"{N._fr(ml / 1000)} L"
+
+
+def water_note(hot: bool) -> str:
+    """The card's water line: drink to thirst (ISSN 2019), then the rate its rows are counted at."""
+    if hot:
+        return f"Eau : bois à ta soif. Il fera chaud : je compte {litres(N.WATER_HOT_ML_H)} par heure jusqu'au ravito suivant."
+    return f"Eau : bois à ta soif. Je compte {litres(N.WATER_ML_H)} par heure jusqu'au ravito suivant."
+
+
+def sodium_note(mg_h: int) -> tuple[str, str]:
+    """(the sentence, its tone: ok, warn, plain) for a hot race's sodium per
+    hour, against ISSN 2019's 300 to 600 mg/h in the heat: under it, the warning
+    colour and what to add; in it, ok; over it, plain."""
+    lo, hi = N.SODIUM_HOT_MG_H
+    if mg_h < lo:
+        return (f"Il fera chaud : vise {lo} à {hi} mg de sodium par heure. "
+                "Ajoute du sel à ton plan (pastilles ou boisson salée).", "warn")
+    if mg_h > hi:
+        return f"Plus que le repère par temps chaud ({lo} à {hi} mg par heure).", "plain"
+    return f"Dans le repère par temps chaud : {lo} à {hi} mg de sodium par heure.", "ok"
 
 
 # ── words ───────────────────────────────────────────────────────────────────

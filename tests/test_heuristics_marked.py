@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.services import nights as nt
+from app.services import nutrition as nu
 from app.services import race_prep as rp
 from app.services import sante
 from app.services import sante_score as sc
@@ -99,10 +100,17 @@ HEURISTICS = [
     ("app/services/sante.py", "USUAL_WEEKS", 11),
     ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),
     ("app/services/sante.py", "USUAL_SPREAD", 0.2),
+    # 2026-10-09 (owner, on the mockup: « Oui vas-y »): the water to carry to the next ravito, inside ISSN 2019's
+    # 450–750 ml/h, rounded up to half a litre, and the hot race that raises it and says its sodium
+    ("app/services/nutrition.py", "WATER_ML_H", 500),
+    ("app/services/nutrition.py", "WATER_HOT_ML_H", 750),
+    ("app/services/nutrition.py", "WATER_STEP_ML", 500),
+    ("app/services/nutrition.py", "WATER_MIN_ML", 500),
+    ("app/services/nutrition.py", "HOT_RACE_C", 25),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
-           "app/services/sante_today.py": td}
+           "app/services/sante_today.py": td, "app/services/nutrition.py": nu}
 
 
 @pytest.mark.parametrize("path,name,value", HEURISTICS)
