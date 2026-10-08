@@ -173,8 +173,10 @@ def _history(nights, sessions, efforts, today: date) -> list:
         midnight = datetime.combine(d + timedelta(days=1), time(0))
         ss = [s for s in sessions if ends[s.id] <= midnight]  # finished by the end of `d`
         known = {s.id for s in ss}
-        efs = nt.anchor_efforts(base, st.efforts(ss))  # as that day saw them
-        same = efs == [e for e in efforts if e.session_id in known and e.end <= midnight]
+        # the efforts as that day saw them: today's that it knew whole; computed anew when one was only partly
+        # known (back-to-back days, M3, or a chain across midnight: that day saw a smaller effort)
+        same = not any(e.ids & known and not e.ids <= known for e in efforts)
+        efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss))
         running = any(s.day <= d and s.id not in known for s in sessions)
         peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
         if not running and same and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)

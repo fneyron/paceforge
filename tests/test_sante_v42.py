@@ -549,3 +549,23 @@ async def test_the_method_folds_on_the_page(as_user, db_session, test_user, monk
     assert 'href="https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"' in nuits
     assert '<ul class="pf-refs" aria-label="Textes officiels">' in recup and '<ul class="pf-refs" aria-label="Études">' \
         in nuits
+
+
+def test_the_history_sees_a_chain_across_midnight_as_each_day_knew_it():
+    """A 2-h run 21:00 → 23:00, then another from 23:20 to 01:00: one 4-h Longue (a chain), uploaded after
+    midnight. The 14-day card's day before saw only the first run (no effort: no window, no Charge), the day
+    after the whole Longue; today's efforts are reused on the other days (no recomputation, no leak)."""
+    d1 = D - timedelta(days=4)
+    a = _session(d1, 120, sid=11, hour=21, name="Sortie du soir")
+    b = _session(d1, 100, sid=12, hour=23, name="Suite")
+    b = replace(b, start=b.start + timedelta(minutes=20))
+    [e] = st.efforts([a, b])
+    assert (e.kind, e.ids, e.day) == ("long", frozenset({11, 12}), d1)  # ended 01:00: D is the day before
+    rows, sessions = _rich(), _runs(start=5) + [a, b]
+    hist = {d: (state, score) for d, state, score in _history(rows, sessions)}
+    for d, (state, score) in hist.items():
+        then = _then(rows, sessions, d)
+        assert score["value"] == then["score"]["value"], d
+        assert (state or {}).get("key") == (then["state"] or {}).get("key"), d
+    assert _then(rows, sessions, d1)["window"] is None
+    assert _then(rows, sessions, d1 + timedelta(days=1))["window"]["effort"].ids == frozenset({11, 12})

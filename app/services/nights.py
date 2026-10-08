@@ -75,6 +75,7 @@ heuristic, never shown as a finding):
 import copy
 import math
 import statistics
+from bisect import bisect_left
 from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -445,17 +446,25 @@ def _tag_timezones(nights: dict[date, Night], sessions) -> None:
                     nights[d + timedelta(days=k)].tags.add(tag)
 
 
-def nap_cutoff(nights: dict[date, Night], d: date) -> datetime | None:
+def _onsets(nights: dict[date, Night]) -> tuple[list[date], list[int]]:
+    """The main nights' days and onsets (minutes after 18:00), by day, time-zone nights left out."""
+    pairs = sorted((x, clock_min(m.start)) for x, m in nights.items()
+                   if m.start and m.tags.isdisjoint(("tz", "jetlag")))
+    return [x for x, _ in pairs], [v for _, v in pairs]
+
+
+def nap_cutoff(nights: dict[date, Night], d: date, onsets=None) -> datetime | None:
     """When a nap becomes « tardive » for the night that wakes on `d`: on the
     evening before, min(the usual bedtime − 7 h, 16:00) (H; Mograss 2022 for
     the 7 h, Walsh 2021's 13:00–16:00 window); the usual bedtime is the median
     onset of the 28 days before (5 nights at least, time-zone nights left
-    out), else this night's own onset. None without an onset."""
+    out), else this night's own onset. None without an onset. `onsets`:
+    _onsets(nights), when read for many nights."""
     n = nights.get(d)
     if n is None or n.start is None:
         return None
-    beds = [clock_min(m.start) for x, m in nights.items() if d - timedelta(days=USUAL_BED_DAYS) <= x < d
-            and m.start and m.tags.isdisjoint(("tz", "jetlag"))]
+    days, mins = onsets or _onsets(nights)
+    beds = mins[bisect_left(days, d - timedelta(days=USUAL_BED_DAYS)):bisect_left(days, d)]
     bed = statistics.median(beds) if len(beds) >= USUAL_BED_NIGHTS else clock_min(n.start)
     evening = datetime.combine(d - timedelta(days=1), time(0))
     # clock_min counts from 18:00 of the evening before: 18 h after its midnight
@@ -468,10 +477,14 @@ def _tag_late_naps(nights: dict[date, Night]) -> None:
     cut-off (nap_cutoff) and before its onset: an annotation, never judged
     (Ohayon 2017: no consensus on naps as a mark of good sleep), never out of
     the normal."""
+    onsets = None
     for d, n in nights.items():
         ends = [b for m in (nights.get(d - timedelta(days=1)), n) if m for _, b, _ in m.naps
                 if b and n.start and b <= n.start]
-        if ends and (cut := nap_cutoff(nights, d)) is not None and any(cut <= b for b in ends):
+        if not ends:
+            continue
+        onsets = onsets or _onsets(nights)
+        if (cut := nap_cutoff(nights, d, onsets)) is not None and any(cut <= b for b in ends):
             n.tags.add("late_nap")
 
 

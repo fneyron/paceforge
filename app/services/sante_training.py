@@ -464,6 +464,7 @@ class Effort:
     caps: tuple = ()  # ((last day from D+1, cap), …) of its window, the modifiers applied (H)
     load: int | None = None  # its Charge récente sub-score (H)
     tail: bool = False  # ≥ 20 h: nights D+5 → D+7 out of the band too (H)
+    ids: frozenset = frozenset()  # the activities it is made of (a past day knew it whole, or saw a smaller one)
 
     @property
     def big(self) -> bool:
@@ -486,6 +487,11 @@ def local_start(s: Session) -> datetime:
 def local_end(s: Session) -> datetime:
     """The session's end on its own local clock (naive), stops included (effort_minutes)."""
     return local_start(s) + timedelta(minutes=effort_minutes(s))
+
+
+def _span(s: Session) -> tuple[datetime, datetime]:
+    start = local_start(s)
+    return start, start + timedelta(minutes=effort_minutes(s))
 
 
 def effort_day(end: datetime) -> date:
@@ -546,6 +552,8 @@ class _Unit:
 def _climbs(units: list[_Unit], sessions: list[Session]) -> None:
     """M1 on each unit, in place: its D+ on foot ≥ 1.5 × the largest single-activity D+ on foot of the 8 weeks
     before it, when that largest is ≥ 200 m (H). Only the units that can be a Longue or a Très longue are read."""
+    if not any(u.dplus for u in units):
+        return
     foot = sorted((local_start(s), s.dplus) for s in sessions if s.sport in FOOT and s.dplus)
     starts = [t for t, _ in foot]
     for u in units:
@@ -593,7 +601,8 @@ def _effort(units: list[_Unit]) -> Effort | None:
     caps, load = _rules(kind, minutes, any(u.race for u in units), foot and any(u.climb for u in units),
                         any(through_night(u.start, u.end) for u in units))
     return Effort(named.first.id, kind, minutes, end, effort_day(end), named.first.name, named.first.day, nights,
-                  caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN)
+                  caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN,
+                  frozenset(s.id for u in units for s in u.sessions))
 
 
 def effort_of(s: Session, sessions=()) -> Effort | None:
@@ -607,15 +616,19 @@ def chains(sessions: list[Session]) -> list[list[Session]]:
     """The sessions in runs that are one effort: each starts at most 30 min (H)
     after the previous one ended (a watch restarted at an aid station, a
     battery swapped: one ultra saved as two activities), by start."""
-    out: list[list[Session]] = []
-    end = None
-    for s in sorted(sessions, key=local_start):
-        if out and local_start(s) - end <= CHAIN_GAP:
-            out[-1].append(s)
-            end = max(end, local_end(s))
+    return [run for run, _, _ in _chains(sessions)]
+
+
+def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, datetime]]:
+    """chains, each with its first start and last end (local), every span computed once."""
+    out: list[tuple[list[Session], datetime, datetime]] = []
+    for start, end, s in sorted(((*_span(s), s) for s in sessions), key=lambda t: t[0]):
+        if out and start - out[-1][2] <= CHAIN_GAP:
+            run, first, last = out[-1]
+            run.append(s)
+            out[-1] = (run, first, max(last, end))
         else:
-            out.append([s])
-            end = local_end(s)
+            out.append(([s], start, end))
     return out
 
 
@@ -646,7 +659,10 @@ def efforts(sessions: list[Session]) -> list[Effort]:
     more are one effort (M3); an unusual climb (M1), a race flag and a night
     run through set the window (_rules); a low-impact effort is one class
     lower (M4) but its nights follow its time."""
-    units = [_Unit(run, local_start(run[0]), max(local_end(s) for s in run)) for run in chains(sessions)]
+    # only the units that can be an effort: 3 h and more, or the legs rule (a shorter one never is, M3 included)
+    units = [_Unit(run, start, end) for run, start, end in _chains(sessions)
+             if end - start >= timedelta(minutes=EFFORT_LONG)
+             or sum(s.dplus for s in run if s.sport in FOOT) >= EFFORT_DPLUS]
     _climbs(units, sessions)
     out = [e for g in back_to_back(units) if (e := _effort(g))]
     return sorted(out, key=lambda e: e.end)
