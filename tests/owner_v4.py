@@ -2,10 +2,12 @@
 08/10 as the COROS sync writes them (the 07 → 08 night read from COROS that
 morning: 22:42 → 07:30, 8h36, no nap; PaceForge's own VFC from the raw series,
 100 ms; « Sleep HR » 35 bpm; the three nights before the Transjeju with their
-own raw HRV series and « Sleep HR », read the same morning) and the Transjeju
-100M as a plain activity (02/10 21:00 in Korea, 16h53 stops included, marked
-as a race on Strava: just an activity for Santé). His real log has no activity
-after it. No Route is read by Santé."""
+own raw HRV series and « Sleep HR », read the same morning; each main night's
+stage minutes from its « Sleep Summary », e.g. 07/10: Profond 49 min · Léger
+3h25 · Paradoxal 1h36 · Éveil 13 min) and the Transjeju 100M as a plain
+activity (02/10 21:00 in Korea, 16h53 stops included, marked as a race on
+Strava: just an activity for Santé). His real log has no activity after it. No
+Route is read by Santé."""
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,11 @@ def owner_rows_v4() -> dict:
     VFC and FC de nuit of 29/09 → 01/10, and the 08/10 night."""
     rows = owner_rows()
     old = coros.parse_sleep_overview(oc.OVERVIEW_2026)
+    # every « Sleep Summary » read that morning (queryDailyHealthData): the nights' stage minutes
+    daily = {**coros.parse_daily_sleep(oc.DAILY), **coros.parse_daily_sleep(oc.DAILY_2026_10_01),
+             **coros.parse_daily_sleep(oc.DAILY_2026_10_08)}
+    for r in coros.sleep_dailies(old, {d: 36 for d in old}, daily):
+        rows["sleep"][r.day] = (r.value, r.details, "COROS")
     early = coros.parse_hrv_points(oc.HRV_2026_10_01)
     read = coros.hrv_days(oc.HRV_2026_09_28) | coros.hrv_days(oc.HRV_2026_10_01)
     for r in coros.hrv_dailies(early, old, read):
@@ -35,7 +42,7 @@ def owner_rows_v4() -> dict:
         rows["hr_night"][r.day] = (r.value, r.details, "COROS")
     ov = coros.parse_sleep_overview(oc.OVERVIEW_2026_10_08)
     naps = coros.parse_naps(oc.OVERVIEW_2026_10_08)
-    for r in coros.sleep_dailies(ov, {d: 36 for d in ov}):
+    for r in coros.sleep_dailies(ov, {d: 36 for d in ov}, daily):
         rows["sleep"][r.day] = (r.value, r.details, "COROS")
     points = coros.parse_hrv_points(oc.HRV_2026_10_08)
     for r in coros.hrv_dailies(points, ov, {D8, D8 - timedelta(days=1)}):

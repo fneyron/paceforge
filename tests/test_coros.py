@@ -535,8 +535,8 @@ async def test_callback_stores_encrypted_tokens_and_starts_the_sync(as_user: Asy
     assert conn.resource_url == "https://mcpus.coros.com/mcp" and conn.token_endpoint.endswith("/oauth2/token")
     assert conn.expires_at is not None and not conn.needs_reauth
     page = (await as_user.get("/settings")).text
-    # Réglages manage the link only; syncing on demand lives on the Santé page
-    assert "Connecté" in page and "Première synchro en cours" in page and "Synchroniser maintenant" not in page
+    # Réglages manage the link and sync on demand (Santé shows no sync status: owner, 2026-10-08)
+    assert "Connecté" in page and "Première synchro en cours" in page and "Synchroniser maintenant" in page
     # the state is single use
     r = await as_user.get(f"/coros/callback?code=the-code&state={state}")
     assert "expiré" in (await as_user.get("/settings")).text
@@ -616,9 +616,12 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     by = {m.metric: m for m in rows}
     assert set(by) == {"sleep", "hrv", "hr_night", "steps"} and all(m.source == "COROS" for m in rows)
     y = (today - timedelta(days=1)).isoformat()
+    # its stage minutes from the « Sleep Summary » of the main sleep (total 10h02 = the main period), never the
+    # « daily » ratios; marked read (the 60 days are read again once for nights written before)
     assert by["sleep"].value == 588 and by["sleep"].details == {
         "main_start": f"{y}T23:52", "main_end": f"{today}T09:54", "period": 602, "bedtime": "23:52",
-        "wake": "09:54", "timeline": False, "tz": 540, "daily": 588}
+        "wake": "09:54", "timeline": False, "tz": 540, "daily": 588,
+        "stages": {"deep": 76, "light": 343, "rem": 169, "awake": 14}, "stages_read": True}
     hrv = by["hrv"]  # PaceForge's: the readings inside the window, the afternoon ones out
     assert 70 <= hrv.value <= 88 and hrv.details == {"n": 60, "tz": 540, "method": "ln_mean_main"}
     assert by["hr_night"].value == 35 and by["hr_night"].details == {
@@ -745,13 +748,29 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 
     await _link(db_session, test_user)
-    # syncing on demand is on Santé only; a finished sync reloads it to show the new values
+    # Santé: no sync status, no button (owner, 2026-10-08: « c'est affiché déjà dans Réglages »)
     sante = (await as_user.get("/sante")).text
-    assert sante.count("Synchroniser maintenant") == 1 and "dernière synchro" not in sante.lower()
+    assert "Synchroniser maintenant" not in sante and "synchro" not in sante.lower()
+    # Réglages: the button next to « Dernière synchro … »; its answer replaces the content of a persistent live
+    # region (said to a screen reader), the button never swapped (its focus kept), its spinner on itself (UX4)
+    settings_page = (await as_user.get("/settings")).text
+    block = settings_page.split('id="coros"')[1].split('id="garmin"')[0]
+    assert '<div id="coros-sync-state" class="pf-watch-state" role="status" aria-live="polite">' in block
+    assert ('<button id="coros-sync-btn" type="button" hx-post="/settings/coros/sync" hx-target="#coros-sync-state" '
+            'hx-swap="innerHTML"') in block and "hx-indicator" not in block and "hx-disabled-elt" not in block
+    assert block.index("coros-sync-state") < block.index("coros-sync-btn") and "Synchroniser maintenant" in block
+    r = await as_user.post("/settings/coros/sync")
+    assert r.status_code == 200 and "HX-Refresh" not in r.headers
+    assert "Dernière synchro <b class=\"text-gray-700\">à l&#39;instant</b>" in r.text
+    assert "Synchro faite : tes nouvelles données sont dans Santé." in r.text and "<button" not in r.text
+    r = await as_user.post("/settings/coros/sync")
+    assert "Synchro faite : rien de nouveau." in r.text
+    settings_page = (await as_user.get("/settings")).text
+    assert "Dernière synchro" in settings_page and settings_page.count("Synchroniser maintenant") == 1
+    # a Santé page left open since v4 still posts /sante/sync: harmless, it reloads (without the button)
     r = await as_user.post("/sante/sync")
     assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
-    settings_page = (await as_user.get("/settings")).text
-    assert "Dernière synchro" in settings_page and "Synchroniser maintenant" not in settings_page
+    assert (await as_user.post("/settings/strava/sync")).status_code == 404
 
     n = (await db_session.execute(select(func.count(HealthMetric.id)).where(HealthMetric.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/coros/disconnect")
@@ -872,3 +891,74 @@ Nap Window: 2026-10-07 06:42 - 2026-10-07 09:07
     [d] = coros.nap_dailies(naps, ov)
     assert (d.metric, d.day, d.value, d.details) == ("nap", date(2026, 10, 7), 140, {
         "period": 145, "windows": [["2026-10-07T06:42", "2026-10-07T09:07"]]})
+
+
+# ── v4.1: the sleep stages, the re-read, Réglages' sync ─────────────────────
+
+def test_the_stages_come_from_the_main_nights_sleep_summary_only():
+    """The owner's real answers: each main night's stage minutes from its « Sleep Summary » when that summary is the
+    main sleep's (its total is the main period within 15 min, H, the hr_night guard) and its parts add up to it;
+    never the nap-only day's summary, never the « Sleep metrics scope: daily » ratios."""
+    from tests import owner_coros as oc
+
+    ov = coros.parse_sleep_overview(oc.OVERVIEW_2026)
+    daily = coros.parse_daily_sleep(oc.DAILY)
+    rows = {r.day: r.details for r in coros.sleep_dailies(ov, {}, daily, (date(2026, 9, 20), date(2026, 10, 8)))}
+    assert rows[date(2026, 10, 7)]["stages"] == {"deep": 49, "light": 205, "rem": 96, "awake": 13}  # 6h03 = 6h03
+    assert rows[date(2026, 10, 6)]["stages"] == {"deep": 39, "light": 218, "rem": 76, "awake": 11}
+    assert "stages" not in rows[date(2026, 9, 29)] and rows[date(2026, 9, 29)]["stages_read"]  # no summary that day
+    assert date(2026, 9, 25) not in rows  # the nap-only day: no main night, its summary never a night's stages
+    # a summary that is not the main sleep's (its total 20 min off the main period), or whose parts don't add up
+    o7 = ov[date(2026, 10, 7)]
+    assert coros.night_stages({**daily[date(2026, 10, 7)], "total": 383}, o7) is None
+    assert coros.night_stages({**daily[date(2026, 10, 7)], "deep": 80}, o7) is None
+    assert coros.night_stages({"total": 363, "deep": 49, "rem": 96}, o7) is None  # no light sleep: not a summary
+    # a day the daily answer did not cover: its night is not marked read (it is asked again)
+    rows = {r.day: r.details for r in coros.sleep_dailies(ov, {}, daily, (date(2026, 10, 7), date(2026, 10, 8)))}
+    assert "stages_read" not in rows[date(2026, 10, 6)] and rows[date(2026, 10, 7)]["stages_read"]
+
+
+async def test_nights_written_before_the_stages_are_read_again_once(db_session: AsyncSession, test_user: User,
+                                                                     fake, no_commit):
+    """A link whose nights were written before the stages were stored (no « stages_read ») reads its 60 days once
+    more, then a week again: the owner's nights get their stages."""
+    from app.services.health import STAGES_READ, nights_upgraded
+
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    today = datetime.now(timezone.utc).date()
+    for k in (1, 2):
+        d = today - timedelta(days=k)
+        db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="sleep", value=450, source="COROS", n_samples=1,
+                                    details={"main_start": f"{d - timedelta(days=1)}T23:00", "main_end": f"{d}T07:00"}))
+    db_session.add(HealthMetric(user_id=test_user.id, date=today - timedelta(days=1), metric="steps", value=9000,
+                                source="COROS", n_samples=1, details={}))
+    await db_session.flush()
+    assert await nights_upgraded(db_session, test_user.id, "COROS")  # the main window is there…
+    assert not await nights_upgraded(db_session, test_user.id, "COROS", key=STAGES_READ)  # …not the stages
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 60}]
+    assert await nights_upgraded(db_session, test_user.id, "COROS", key=STAGES_READ)
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert [a for n, a in fake.tool_calls if n == "queryAvgHeartRate"] == [{"days": 7}]  # once only
+
+
+async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
+                                                  fake):
+    conn = await _link(db_session, test_user)
+    fake.mcp_status = 503
+    r = await as_user.post("/settings/coros/sync")
+    assert "HX-Refresh" not in r.headers
+    assert "Dernière synchro échouée : COROS ne répond pas pour l&#39;instant (erreur 503)." in r.text
+    fake.mcp_status = None
+    conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
+    await db_session.flush()
+    r = await as_user.post("/settings/coros/sync")
+    assert "Une synchro est déjà en cours : réessaie dans une minute." in r.text
+    conn.sync_claimed_at = None
+    conn.needs_reauth = True  # to reconnect: the whole block changes (its reconnect button), the page reloads
+    await db_session.flush()
+    r = await as_user.post("/settings/coros/sync")
+    assert r.headers.get("HX-Refresh") == "true"
+    page = (await as_user.get("/settings")).text
+    assert "À reconnecter" in page and "coros-sync-btn" not in page

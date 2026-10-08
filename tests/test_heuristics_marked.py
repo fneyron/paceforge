@@ -82,7 +82,7 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
 def test_the_score_method_marks_its_heuristics():
     """The fold says the weights, thresholds, caps, the effort classes and the provisional normal are (H)."""
     text = " ".join(sc.METHOD)
-    assert text.count("(H)") >= 6 and "Les poids (H)" in text and "Plafonds (H)" in text and "14 nuits (H)" in text
+    assert text.count("(H)") >= 6 and "Les poids (H)" in text and "Plafonds (H)" in text and "13 nuits (H)" in text
     assert "Grosses sorties (H)" in text and "Une différence de quelques points ne veut rien dire" in text
 
 

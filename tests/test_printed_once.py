@@ -44,14 +44,13 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     before = readouts((await client.get(f"/simulator/routes/{soon}")).text)
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
-    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "charge"}  # no VFC in the seed: no card
+    # no VFC in the seed: no card; no Charge card (v4.1: the activities are Activités')
+    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc"}
     # the rings print today's score and last night's total: their cards rest on their means, one line each…
     assert sante["recuperation"][1:] == ("en moyenne", "") and sante["recuperation"][0].isdigit()
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (no ring, no other block does)…
-    assert sante["fc"][0] == "45\u202fbpm" and " · normale " in sante["fc"][2]
-    # …and Charge the number of its activities (the ring prints the last 7 days' hours; nothing selected)
-    assert sante["charge"][1] == "activités" and sante["charge"][0].isdigit()
+    assert sante["fc"][0] == "45\u00a0bpm" and " · normale " in sante["fc"][2]
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race…
     assert after["recup"][:2] == ("J+1 → J+14", "VFC et FC de nuit")  # …nor last night's VFC and FC
     # this week's hours: Activités' week heading prints them; neither A1 nor the taper does by default

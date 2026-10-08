@@ -4,6 +4,7 @@ night cards and timeline), the Jinja macros' accessible structure, and the
 CSS/JS rules (contrast of marks and selected states in both themes, motion
 ≤ 300 ms under no-preference only, forced colours, no colour or number
 formatting in JS)."""
+import html as html_mod
 import json
 import math
 import pathlib
@@ -98,18 +99,16 @@ def test_band_chart_prints_per_night_values_and_normal_only():
 
 
 def test_ring_arc_is_the_fill_and_the_value_is_printed_by_the_caller():
-    """V1: an arc from the top, clockwise, up to the fill (capped at one turn); none at 0 or without a value; a
-    tick across the track at a share of the turn (the Charge ring's usual week, 1× on a ring that runs to 2×)."""
+    """V1: an arc from the top, clockwise, up to the fill (capped at one turn); none at 0 or without a value; no
+    mark without words: no tick (« c'est quoi la barre ? »), a note says what the arc compares."""
     r = viz.ring("recup", 0.59, "59", "Récupération", tone="warn", href="#recuperation",
                  aria="Récupération : 59 sur 100, récupération en cours")
-    assert r["c"] == round(2 * math.pi * 42, 2) and r["dash"] == round(0.59 * r["c"], 2) and r["tick"] is None
+    assert r["c"] == round(2 * math.pi * 42, 2) and r["dash"] == round(0.59 * r["c"], 2) and r["note"] is None
+    assert "tick" not in r
     assert viz.ring("sommeil", 1.4, "8h36", "Sommeil")["dash"] == r["c"]  # more than the full mark: one turn
     assert viz.ring("charge", None, "—", "Charge")["dash"] == 0 and viz.ring("x", -1, "0", "x")["dash"] == 0
     assert viz.ring("charge", .5, "16h53", "Charge")["href"] is None  # no section to sum up: a plain ring
-    t = viz.ring("charge", .7, "9h40", "Charge", tick=.5)["tick"]
-    assert t["x1"] == t["x2"] == 50 and t["y1"] < t["y2"] and t["y1"] > 50 + 42 - 11  # across the track, at 6 o'clock
-    q = viz.ring("charge", .7, "9h40", "Charge", tick=.25)["tick"]
-    assert q["y1"] == q["y2"] == 50 and q["x1"] > 50  # a quarter turn: at 3 o'clock
+    assert viz.ring("charge", .7, "9h40", "Charge", note="plus que d'habitude")["note"] == "plus que d'habitude"
 
 
 def test_day_bars_stack_the_naps_mark_today_and_leave_a_gap():
@@ -147,10 +146,13 @@ def test_night_card_prints_the_night_and_its_normal_never_a_verdict():
                        name="VFC", min_span=20)
     d = json.loads(c["data"])
     # two compact rows: the value (no word: a night is never judged alone), the night and its normal
-    assert d["sel"] == 29 and c["read"] == [f"64{NN}ms", "", f"{viz.night_label(D)} · normale 55–66"]
+    # the value: a no-break space (the display font has no narrow one: « 64ms » glued, UX11)
+    assert d["sel"] == 29 and c["read"] == ["64\u00a0ms", "", f"{viz.night_label(D)} · normale 55–66"]
     assert d["r"][10] == ["—", "", f"{viz.night_label(days[10])} · pas de mesure"]
     assert d["a"][10] == f"{viz.night_label(days[10])} : pas de mesure"  # spoken as it reads
-    assert d["r"][8][2].endswith(" · normale provisoire 55–66") and d["r"][2][2] == viz.night_label(days[2])
+    # « (provisoire) » after the numbers: at 358 px the ellipsis only ever cuts it, never the band (UX2)
+    assert d["r"][8][2].endswith(" · normale 55–66 (provisoire)") and d["r"][2][2] == viz.night_label(days[2])
+    assert "ta normale provisoire de 55 à 66" in d["a"][8]
     assert c["title"] == "VFC · 30 nuits" and [t["label"] for t in c["xt"]][0].startswith("lun.")
     short = viz.night_card("vfc", days[-14:], vals[-14:], band=band[-14:], prov=prov[-14:], mean=mean[-14:],
                            unit="ms", unit_long="millisecondes", name="VFC")
@@ -267,10 +269,20 @@ def test_ring_and_ranges_macros():
     empty = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", 0, "0 h", "Charge", "7 jours"))
     assert "pf-ring-arc" not in empty and "pf-ring-track" in empty  # the track alone
     assert "<a " not in empty and '<div class="pf-ring pf-ring-charge is-accent" role="img" aria-label=' in empty
-    tick = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", .4, "16h53", "Charge", href="#charge", tick=.5))
-    assert 'class="pf-ring-tick"' in tick and "is-long" not in tick  # one value size for the row
+    note = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", .4, "16h53", "Charge", "7 jours", href="/activities",
+                                                    note="plus que d'habitude"))
+    assert "pf-ring-tick" not in note and "<line" not in note  # no unlabelled mark
+    assert html_mod.unescape(re.sub(r"<[^>]+>", " ", note)).split() == ["16h53", "Charge", "7", "jours", "plus", "que",
+                                                                         "d'habitude"]
     html = render("{{ v.viz_ranges([('14', '14 nuits'), ('90', '3 mois')], '14') }}")
     assert 'data-viz-ranges role="group"' in html and html.count('aria-pressed="true"') == 1
+    # with an action, a GET form: the toggle works without JS too (REG-3); pf-viz.js switches in place
+    form = render("{{ v.viz_ranges([('14', '14 nuits'), ('90', '3 mois')], '14', action='/sante#sommeil') }}")
+    assert '<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group"' in form
+    assert 'method="get" action="/sante#sommeil"' in form and form.count('type="submit" name="r"') == 2
+    assert 'value="90" data-range="90" aria-pressed="false"' in form
+    js = (ROOT / "app/static/js/pf-viz.js").read_text()
+    assert "e.preventDefault();   // a GET form's submit" in js
 
 
 def test_the_timeline_is_one_image_with_hours_only():
@@ -285,7 +297,8 @@ def test_the_timeline_is_one_image_with_hours_only():
         ("core", datetime(2026, 10, 6, 23, 0), datetime(2026, 10, 7, 1, 0)),
         ("deep", datetime(2026, 10, 7, 1, 0), datetime(2026, 10, 7, 6, 30))])
     html = render("{{ v.viz_timeline(t, 'x') }}", t=stages)
-    assert html.count('class="pf-tl-seg"') == 2 and html.count('class="pf-tl-step"') == 1 and "pf-tl-night" not in html
+    assert html.count('class="pf-tl-seg ') == 2 and html.count('class="pf-tl-step"') == 1 and "pf-tl-night" not in html
+    assert 'class="pf-tl-seg is-light"' in html and 'class="pf-tl-seg is-deep"' in html  # each stage its colour
 
 
 # ── CSS and JS rules ────────────────────────────────────────────────────────
@@ -504,9 +517,18 @@ def test_the_rings_bars_and_cards_show_in_forced_colours():
 def test_every_ring_and_card_anchor_lands_under_the_top_bar():
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-sante4 [id] { scroll-margin-top: 80px; }" in css
+    # on the phone the page keeps the focus clear of the top bar and the tab bar (UX8): the anchors still land at
+    # 80 px (72 + 8), the race page's and Ravitaillement's where they were
+    phone = css[css.index("@media (max-width: 899px) {\n    html { scroll-padding-top: 72px;"):]
+    phone = phone[:phone.index("\n}")]
+    for rule in ("html { scroll-padding-top: 72px; scroll-padding-bottom: 84px; }",
+                 ".pf-sante4 [id] { scroll-margin-top: 8px; }", ".pf-rp { scroll-margin-top: 0; }",
+                 ".pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }"):
+        assert rule in phone, rule
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    for anchor in ("contributeurs", "recuperation", "sommeil", "charge"):
+    for anchor in ("contributeurs", "recuperation", "sommeil"):
         assert f'id="{anchor}"' in page, anchor
+    assert 'id="charge"' not in page  # no Charge card: the ring links to Activités
     assert '(("vfc", p.vfc), ("fc", p.fc))' in page and "{{ c.title }}" in page
     assert 'id="{{ key }}"' in page
 
@@ -541,9 +563,15 @@ def test_bars_never_collapse_after_being_seen_whole():
 
 
 def test_the_small_targets_reach_44_px():
-    """UX15: « Synchroniser maintenant » (an icon now, 44 × 44) and the method fold's references."""
+    """UX15: « Synchroniser maintenant » (Réglages, 44 px), the method fold's references; UX9: the empty states'
+    links and buttons (a 22-px line with 11 px above and under it: exactly 44)."""
     css = (ROOT / "app/static/css/interface.css").read_text()
-    assert re.search(r"\.pf-sync-btn \{[^}]*width: 44px; height: 44px;", css)
+    assert ".pf-sync-now { min-height: 44px; }" in css
+    link = re.search(r"\.pf-state-line a \{[^}]*\}", css).group(0)
+    assert "padding: 11px 0; line-height: 22px;" in link
+    assert ".pf-health-connect .pf-btn { min-height: 44px; }" in css
+    assert (".pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px "
+            "rgb(var(--pf-gray-400)); }") in css
     refs = re.search(r"\.pf-refs a \{ display: inline-block;[^}]*\}", css).group(0)
     assert "min-height: 44px" in refs and "white-space: nowrap" in refs
 

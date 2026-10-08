@@ -20,7 +20,7 @@ def owner_rows():
     naps = coros.parse_naps(oc.OVERVIEW_2026)
     daily = coros.parse_daily_sleep(oc.DAILY)
     out = {"sleep": {}, "nap": {}, "hrv": {}, "hr_night": {}}
-    for r in coros.sleep_dailies(ov, {d: 36 for d in ov}):
+    for r in coros.sleep_dailies(ov, {d: 36 for d in ov}, daily):
         out["sleep"][r.day] = (r.value, r.details, "COROS")
     for r in coros.nap_dailies(naps, ov):
         out["nap"][r.day] = (r.value, r.details, "COROS")

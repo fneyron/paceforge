@@ -245,9 +245,11 @@ def test_nightly_values_come_from_the_readings_inside_the_main_window():
     d = date(2026, 10, 5)
     rows = {r.metric: r for r in garmin.night_dailies(garmin.parse_sleep(night(d)), True)}
     assert set(rows) == {"sleep", "hrv", "hr_night", "resp_night"}
+    # the stage minutes of the main night (the DTO's seconds): shown on Santé, never judged
     assert rows["sleep"].value == 420 and rows["sleep"].details == {
         "main_start": "2026-10-04T23:00", "main_end": "2026-10-05T06:30", "period": 450, "bedtime": "23:00",
-        "wake": "06:30", "timeline": True, "tz": 120}
+        "wake": "06:30", "timeline": True, "tz": 120, "stages": {"deep": 90, "light": 230, "rem": 100, "awake": 30},
+        "stages_read": True}
     # 91 readings from 23:00 to 06:30, 46 at 48 bpm / 60 ms and 45 at 50 bpm / 64 ms
     assert rows["hr_night"].value == 49.0 and rows["hr_night"].details == {
         "min": 48.0, "max": 50.0, "n": 91, "method": "points", "nap_day": False}
@@ -625,13 +627,15 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     await _link(db_session, test_user)
     sante = (await as_user.get("/sante")).text
     assert "Pas encore de données de Garmin" in sante and "Connecter COROS" not in sante
-    # Santé: one button to sync, no link status (that's Réglages')
-    assert sante.count('hx-post="/sante/sync"') == 1 and "dernière synchro" not in sante.lower()
+    # Santé: no sync button, no link status (Réglages': owner, 2026-10-08)
+    assert "/sante/sync\"" not in sante and "synchro" not in sante.lower()
     settings_page = (await as_user.get("/settings")).text
-    assert "Première synchro en cours" in settings_page and "Synchroniser maintenant" not in settings_page
+    block = settings_page.split('id="garmin"')[1]
+    assert "Première synchro en cours" in block and "Synchroniser maintenant" in block
+    assert 'hx-post="/settings/garmin/sync" hx-target="#garmin-sync-state"' in block
 
-    r = await as_user.post("/sante/sync")
-    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+    r = await as_user.post("/settings/garmin/sync")
+    assert r.status_code == 200 and "Synchro faite : tes nouvelles données sont dans Santé." in r.text
     sante = (await as_user.get("/sante")).text
     assert 'id="sommeil"' in sante and 'data-viz-key="sommeil-14"' in sante  # Sommeil: the nights' bars
     for brand in ("Charge <small>", "Training Readiness", "Body Battery", "forte hausse"):
@@ -648,18 +652,21 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     assert "Garmin déconnecté" in page and 'hx-post="/garmin/connect"' in page
 
 
-async def test_sante_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession,
-                                              test_user: User, fake):
+async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession,
+                                                  test_user: User, fake):
     conn = await _link(db_session, test_user)
     fake.api_status = 503
-    r = await as_user.post("/sante/sync")
-    assert "HX-Refresh" not in r.headers and 'id="sante-sync"' in r.text
-    assert "Garmin : Garmin n&#39;a renvoyé aucune donnée lisible." in r.text
+    r = await as_user.post("/settings/garmin/sync")
+    assert "HX-Refresh" not in r.headers
+    assert "Dernière synchro échouée : Garmin n&#39;a renvoyé aucune donnée lisible." in r.text
     fake.api_status = None
     conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
     await db_session.flush()
-    r = await as_user.post("/sante/sync")
+    r = await as_user.post("/settings/garmin/sync")
     assert "Une synchro est déjà en cours" in r.text
+    # a Santé page left open since v4: its old button reloads it, harmlessly
+    r = await as_user.post("/sante/sync")
+    assert r.headers.get("HX-Refresh") == "true"
 
 
 async def test_sante_offers_both_watches_when_none_is_linked(as_user: AsyncClient):
@@ -774,3 +781,38 @@ async def test_old_format_nights_beyond_the_backfill_never_ask_for_60_days_again
                                 n_samples=1))
     await db_session.flush()
     assert await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+
+
+def test_stage_minutes_from_the_levels_when_the_dto_has_none():
+    """A DTO without its stage seconds: the minutes summed from the real sleepLevels inside the main window; neither:
+    no stages (a watch that does not track them), still marked read."""
+    d = date(2026, 10, 5)
+    raw = night(d)
+    for k in ("deepSleepSeconds", "lightSleepSeconds", "remSleepSeconds", "awakeSleepSeconds"):
+        raw["dailySleepDTO"].pop(k)
+    n = garmin.parse_sleep(raw)
+    assert garmin.night_stages(n) == {"deep": 90, "light": 210, "rem": 120, "awake": 30}
+    bare = garmin.parse_sleep({**raw, "sleepLevels": []})
+    [sleep] = [r for r in garmin.night_dailies(bare, False) if r.metric == "sleep"]
+    assert "stages" not in sleep.details and sleep.details["stages_read"]
+
+
+async def test_garmin_nights_written_before_the_stages_are_read_again_once(db_session: AsyncSession,
+                                                                           test_user: User, fake, no_commit):
+    from app.services.health import STAGES_READ, nights_upgraded
+
+    t = fake.today
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=2))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=2), metric="sleep", value=450,
+                                details={"main_start": f"{t - timedelta(days=3)}T23:00"}, source="Garmin",
+                                n_samples=1))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=1), metric="steps", value=9000,
+                                details={}, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert not await nights_upgraded(db_session, test_user.id, "Garmin", today=t, key=STAGES_READ)
+    fake.calls.clear()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60  # the 60 days, once
+    fake.calls.clear()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7  # then a week

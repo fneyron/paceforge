@@ -1,6 +1,7 @@
-"""Activités, top of the page (v3, moved from Santé): A1 « Semaines », A2
-« Fond et fatigue », A3 « FC en footing » — pure functions on synthetic
-sessions, then the page itself."""
+"""Activités, top of the page (v3, moved from Santé): A1 « Semaines », A2 « FC
+en footing » — pure functions on synthetic sessions, then the page itself.
+Training only (v4.1): no recovery line, no taper line, no « Fond et fatigue »
+(recovery is Santé's: no redundancy), never a planned race."""
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -54,19 +55,24 @@ def data(c: dict) -> dict:
 
 def test_a_run_more_than_10_percent_longer_than_the_months_longest_is_a_spike_races_never():
     base = [S(k, km=18, minutes=100, i=k) for k in range(5, 35, 3)]
-    assert tv.spikes(base + [S(1, km=19.5, minutes=110)], set(), T - timedelta(days=9)) == []  # +8 %
-    sp = tv.spikes(base + [S(1, km=22, minutes=125, id=1)], set(), T - timedelta(days=9))
+    since = T - timedelta(days=9)
+    assert tv.spikes(base + [S(1, km=19.5, minutes=110)], since) == []  # +8 %
+    sp = tv.spikes(base + [S(1, km=22, minutes=125, id=1)], since)
     assert [s.id for s, _ in sp] == [1] and round((sp[0][1] - 1) * 100) == 22
-    assert tv.spikes(base + [S(1, km=40, minutes=300, workout_type=1)], set(), T - timedelta(days=9)) == []
-    assert tv.spikes(base + [S(1, km=40, minutes=300)], {T - timedelta(days=1)}, T - timedelta(days=9)) == []
-    assert tv.spikes(base + [S(1, km=40, sport="Ride", minutes=90)], set(), T - timedelta(days=9)) == []  # runs only
+    assert tv.spikes(base + [S(1, km=40, minutes=300, workout_type=1)], since) == []  # a race on Strava
+    # an ultra neither marked on Strava nor planned in the app (a COROS import: no workout_type) is a race too: an
+    # effort of 6 h or more is marked ◆, never flagged (OWN-2 / OWN-C: from the activity alone, no Route read)
+    ultra = S(5, km=150, minutes=935, elapsed=1013, workout_type=None, id=9, name="Ultra du Mont")
+    assert tv.spikes(base + [ultra], since) == [] and tv.is_race(ultra)
+    assert tv.spikes(base + [S(1, km=40, minutes=300)], since)  # 5 h, not a race: flagged, whatever the plan
+    assert tv.spikes(base + [S(1, km=40, sport="Ride", minutes=90)], since) == []  # runs only
     new = [S(k, km=5 + k % 3, minutes=40, i=k) for k in range(1, 20)]  # 3 weeks of history: nothing to compare with
-    assert tv.spikes(new, set(), T - timedelta(days=30)) == []
+    assert tv.spikes(new, T - timedelta(days=30)) == []
 
 
 def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
     ss = steady()
-    c = tv.semaines(ss, [], T, NOW)
+    c = tv.semaines(ss, T, NOW)
     d = data(c)
     assert c["n"] == 12 and len(d["x"]) == 12
     # resting readout: the usual week (median of the active weeks), nothing selected
@@ -80,7 +86,7 @@ def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
     assert d["r"][-1][0] == "sem. du 5 oct. · en cours" and c["cols"][-1]["cur"]
     assert "%" not in json.dumps(d, ensure_ascii=False)  # no weekly % anywhere
     # before 8 active weeks there is no usual week: the readout still rests, on words (no week printed twice)
-    young = tv.semaines([s for s in ss if s.day > T - timedelta(days=30)], [], T, NOW)
+    young = tv.semaines([s for s in ss if s.day > T - timedelta(days=30)], T, NOW)
     assert young["band"] is None and young["rest"] and young["read"] == ["12 semaines", "heures par semaine",
                                                                          "dénivelé en dessous"]
 
@@ -92,8 +98,7 @@ def test_weeks_mark_long_outings_and_the_spike_never_a_race_flag():
     ss += [S(2, minutes=150, km=26, id=3)]  # +44 % on the 30-day longest (18 km): a spike, and the line
     ss += [S(40, minutes=300, km=40, dplus=2400, id=4, workout_type=1, name="Trail des Crêtes")]  # a Strava race
     st.set_loads(ss, 50, 185)
-    rc = race(-40, name="Trail des Crêtes", hour=6)
-    c = tv.semaines(ss, [rc], T, NOW)
+    c = tv.semaines(ss, T, NOW)
     d = data(c)
     assert c["races"] == [] and len(c["longs"]) == 2 and len(c["spikes"]) == 1
     assert "▲ sortie 44\u202f% plus longue" in d["r"][-1][2]  # a spike by its shape too, never colour alone
@@ -103,43 +108,22 @@ def test_weeks_mark_long_outings_and_the_spike_never_a_race_flag():
                          "href": "/activity/3"}
 
 
-def test_the_line_after_the_spike_is_the_taper_then_the_recovery_from_the_activities():
+def test_the_line_is_the_spike_only_never_recovery_nor_taper():
+    """v4.1 (owner: « Concernant récupération, j'ai vu que c'est aussi dans Activités … ce ne doit pas être
+    redondant »): no « Récupération après ta sortie … » (Santé's), no « Affûtage pour … » (a planned race: the race
+    page's); the line is a spike of the last 10 days, or nothing. An unflagged ultra keeps its week's ◆."""
     ss = steady()
-    rc = race(5, rid=9)  # Monday 12 Oct: the taper started at J-14, 28 Sept
-    assert tv.a1_line(ss, [rc], set(), T) == {"text": "Affûtage pour Transjeju 100M ›",
-                                              "href": "/simulator/routes/9#prep"}
-    assert tv.a1_line(ss, [race(14)], set(), T)  # J-14 is today
-    assert tv.a1_line(ss, [race(15)], set(), T) is None  # taper not started
-    # after the race: from the activities alone, the Route is never read for it
-    done = race(-5, rid=4, result={"total_actual_s": 60780})
-    assert tv.a1_line(ss, [done], set(), T) is None
-    ultra = S(5, minutes=935, km=160, dplus=6000, id=77, workout_type=1, elapsed=1013, name="Transjeju 100M")
-    assert tv.a1_line(ss + [ultra], [done], set(), T) == {
-        "text": "Récupération après ta sortie de 16h53\u00a0: volume bas, c'est voulu.", "href": "/activity/77"}
-    long = S(1, minutes=200, km=18, dplus=900, id=78, elapsed=210)
-    assert tv.a1_line(ss + [long], [], set(), T) is None  # a 3-h outing: the line waits for 6 h and more
-    old = S(11, minutes=935, km=160, dplus=6000, id=79, elapsed=1013)
-    assert tv.a1_line(ss + [old], [], set(), T) is None  # the ultra's 10 days are over
+    assert tv.a1_line(ss, T) is None
+    ultra = S(5, minutes=935, km=160, dplus=6000, id=77, workout_type=None, elapsed=1013, name="Transjeju 100M")
+    assert tv.a1_line(ss + [ultra], T) is None  # neither a spike nor a recovery line
+    c = tv.semaines(ss + [ultra], T, NOW)
+    assert c["spikes"] == [] and len(c["longs"]) == 1 and c["line"] is None
+    assert "◆ sortie de 15h35" in data(c)["r"][-2][2]  # its week (28 sept.): the moving time, as the list
+    assert "Récupération" not in json.dumps(data(c), ensure_ascii=False)
+    assert not hasattr(tv, "fond_fatigue") and "routes" not in tv.semaines.__code__.co_varnames
 
 
-# ── A2 Fond et fatigue ──────────────────────────────────────────────────────
-
-def test_fond_and_fatigue_wait_six_weeks_then_print_the_date_only():
-    young = steady(30)
-    assert tv.fond_fatigue(young, T)["wait"].startswith("Il faut 6 semaines d'activités : encore ")
-    c = tv.fond_fatigue(steady(), T)
-    d = data(c)
-    assert [s["name"] for s in c["series"]] == ["fond", "fatigue"] and len(d["x"]) == 120
-    assert d["r"][-1] == ["", "mer. 7 oct.", ""] and d["a"][-1] == "mercredi 7 octobre"
-    text = json.dumps(d, ensure_ascii=False)
-    for word in ("%", "au-dessus", "proche", "sous ton", "ratio"):
-        assert word not in text
-    assert c["races"] == []  # no race flag
-    ends = [s["ly"] for s in c["series"]]
-    assert abs(ends[0] - ends[1]) >= 13  # the two names never overlap
-
-
-# ── A3 FC en footing ────────────────────────────────────────────────────────
+# ── A2 FC en footing ────────────────────────────────────────────────────────
 
 def easy(days_ago: int, hr: float, temp: float | None = None, i: int = 0) -> Session:
     return S(days_ago, minutes=60, km=10, dplus=40, hr=hr, temp=temp, i=i, id=50_000 + days_ago * 10 + i)
@@ -186,27 +170,39 @@ async def _add_runs(db: AsyncSession, user: User, today: date, n: int = 140):
     await db.flush()
 
 
-async def test_activities_page_has_the_three_blocks_on_page_one_only(client: AsyncClient, db_session: AsyncSession,
-                                                                     test_user: User):
+async def test_activities_page_has_the_two_blocks_on_page_one_only(client: AsyncClient, db_session: AsyncSession,
+                                                                   test_user: User):
+    """Semaines and FC en footing, training only: no recovery line, no taper line for a planned race, no « Fond et
+    fatigue » (v4.1: recovery lives on Santé; nothing twice, nothing complicated); every mark has a legend."""
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     today = datetime.now(timezone.utc).date()
     await _add_runs(db_session, test_user, today)
     db_session.add(Route(user_id=test_user.id, name="Trail des Crêtes", total_distance_km=42, total_elevation_gain=2000,
                          race_date=(today + timedelta(days=3)).isoformat(), start_hour=7, sport_type="trail"))
+    d = today - timedelta(days=4)
+    db_session.add(Activity(user_id=test_user.id, coros_activity_id=4242, sport_type="TrailRun", name="Ultra du Mont",
+                            start_date=datetime(d.year, d.month, d.day, 4, tzinfo=timezone.utc), distance=150_000,
+                            moving_time=56100, elapsed_time=60807, total_elevation_gain=6000,
+                            raw_data={"utc_offset": 7200, "source": "coros"}))
     await db_session.flush()
     r = await client.get("/activities")
     assert r.status_code == 200
     html = r.text
     assert 'id="semaines"' in html and "semaine type" in html and "pf-viz.js" in html
-    assert '<details id="fatigue" class="pf-train-fold">' in html  # folded
     assert '<details id="fc-facile" class="pf-train-fold">' in html  # folded: not flagged
-    assert "Affûtage pour Trail des Crêtes ›" in html and "#prep" in html
+    for gone in ('id="fatigue"', "Fond et fatigue", "Affûtage", "Trail des Crêtes", "#prep", "Récupération",
+                 "volume bas", "c'est voulu"):
+        assert gone not in html, gone
     assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
     assert html.index('id="semaines"') < html.index('aria-label="Filtrer les activités par sport"')
     semaines = html.split('id="semaines"')[1].split("</section>")[0]
-    if "pf-viz-long" in semaines:  # a marker under the bars: its legend, by shape (◆ long, ▲ spike), never colour alone
-        assert '<p class="pf-viz-legend" aria-hidden="true">' in semaines
-        assert ('<i class="pf-lg is-long"></i>sortie longue' in semaines) == ('class="pf-viz-long"' in semaines)
+    # every mark named, by shape too (never colour alone): the weeks, this one in progress, the usual band, D+, ◆
+    legend = semaines.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+    for item in ('<i class="pf-lg is-week"></i>heures', '<i class="pf-lg is-cur"></i>en cours',
+                 '<i class="pf-lg is-usual"></i>semaine type', '<i class="pf-lg is-dplus"></i>D+',
+                 '<i class="pf-lg is-long"></i>sortie longue'):
+        assert item in legend, item
+    assert "pf-viz-long is-warn" not in semaines  # the unflagged ultra: ◆, never ▲ (OWN-2)
     for url in ("/activities?sport=run", "/activities?page=2"):
         assert 'id="semaines"' not in (await client.get(url)).text
 

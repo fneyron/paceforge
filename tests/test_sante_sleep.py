@@ -76,7 +76,8 @@ def test_the_timeline_is_one_bar_or_the_hypnogram():
               ("rem", start + timedelta(hours=3), end), ("light", start, end)]  # an unknown stage is left out
     t = viz.timeline(start, end, stages=stages)
     assert t["main"] is None and len(t["segs"]) == 3 and len(t["steps"]) == 2 and t["stages"]
-    assert [nm for nm, _, _ in t["lanes"]] == ["Éveil", "REM", "Léger", "Profond"]
+    assert [nm for nm, _, _ in t["lanes"]] == ["Éveil", "Paradoxal", "Léger", "Profond"]  # named as the legend
+    assert [s["k"] for s in t["segs"]] == ["light", "deep", "rem"]  # each lane in its stage's colour
     # the axis never runs past 18:00 the evening before → 14:00
     t = viz.timeline(datetime(2026, 10, 7, 17, 30), datetime(2026, 10, 8, 13, 50))
     assert t["ticks"][0]["label"] == "18:00" and t["ticks"][-1]["label"] == "14:00"
