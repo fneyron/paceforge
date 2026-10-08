@@ -31,11 +31,11 @@
   rounded to 5 min, and once 8 nights are there (H; ANSI/CTA/NSF-2052.1-A's
   « 1 week or more ») « 9 nuits sur 11 à moins d'1 h de ton coucher
   habituel » (the RU-SATED window: Ravyts 2021), no colour, no score.
-  Time-zone nights and the 4 nights after an ultra stay out; a « rendormi »
-  wake leaves the wake median (H).
+  Every night counts (owner, 2026-10-08: none left out); a « rendormi » wake
+  leaves the wake median (H).
 - The closed « Les chiffres de chaque nuit » table (30 nights, their stage
   minutes too, to 10 min: the accessible alternative of the charts) and the
-  closed « Comment je lis tes nuits » fold (METHOD, 5 plain bullets; its
+  closed « Comment je lis tes nuits » fold (METHOD, 4 plain bullets; its
   sources on /sante/sources).
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
@@ -52,20 +52,19 @@ TABLE_DAYS = 30
 REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
 
 # « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
-# citations »): 5 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the code
-# and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »: « un gros effort »); v4.4
-# (owner: « les explications en français ne sont pas claires »): active sentences of 15 words at most, the words
-# of the cards (« ne comptent pas »); the references (REFS) are on /sante/sources
+# citations »): a few one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
+# code and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »); v4.4 (owner: « les
+# explications en français ne sont pas claires »): active sentences of 15 words at most; every night counts (owner,
+# 2026-10-08: no bullet about nights left out); the references (REFS) are on /sante/sources
 METHOD = [
     "Je compte ton sommeil sur 24 h, siestes comprises.",
     "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
     "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
-    "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas.",
     "Ta montre détecte tes heures de coucher et de lever.",
 ]
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
-WORDS = {**{t: "après un gros effort" for t in ("long", "big", "ultra", "ultra_tail")},
+WORDS = {**{t: "après un gros effort" for t in ("long", "big", "ultra")},
          "late": "effort intense le soir", "tz": "changement de fuseau", "late_nap": "après une sieste tardive"}
 # the sources « Comment je lis tes nuits » rests on (label, DOI or URL), listed on /sante/sources
 REFS = [

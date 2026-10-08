@@ -179,8 +179,9 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
 async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                              monkeypatch):
     """The ring: no tick, no line; the facts: each dot with its name and its word (v4.4); the VFC and FC cards: a
-    status line, a legend for the dot, the 7-night line and the normal; a day without data: named in its card's
-    legend."""
+    status line, a legend for the dot, the 7-night line and the normal; a day without data: no mark at all (owner,
+    2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de point »), so nothing in the legend, its readout
+    says it."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     for d in (today - timedelta(days=4), today - timedelta(days=9)):  # two nights missing
@@ -210,7 +211,12 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
                 and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
         assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
-    assert '<i class="pf-lg is-gap"></i>pas de mesure' in sleep  # 2 nights missing: a dot, named
+    legend = sleep.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+    svg = sleep.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
+    assert "pas de mesure" not in legend and "is-gap" not in sleep and "pf-viz-gap" not in svg  # 2 nights missing
+    data = json.loads(re.search(r'class="pf-viz-data">(.*?)</script>', sleep, re.S).group(1))
+    gone = [r for r in data["r"] if r[2].endswith(" · pas de mesure")]
+    assert len(gone) == 2 and all(r[:2] == ["—", ""] for r in gone)  # a tap on one still says it
 
 
 # ── B: the review's findings at page level ──────────────────────────────────
@@ -297,7 +303,7 @@ async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_sessio
 
 async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, test_user: User):
     """REG-4: « sortie intense le soir » from the laps too (load_segments), and the 3 nights after an effort of 6 h
-    or more, on the race page as on Santé: the same nights out of the normal."""
+    or more, on the race page as on Santé: the same nights never fire the alert."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, night_rows(range(0, 30), today=today))
     d = today - timedelta(days=6)  # an interval session ending 21:00 local, 2 h before sleep (23:00)
@@ -320,7 +326,9 @@ async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, 
     assert "late" in race_nights[late].tags and "late" in sante_nights[late].tags
     after = [big + timedelta(days=k) for k in (1, 2, 3)]
     assert all("big" in race_nights[x].tags and "big" in sante_nights[x].tags for x in after)
-    assert {x for x, n in race_nights.items() if n.excluded} == {x for x, n in sante_nights.items() if n.excluded}
+    # the same nights never fire the alert there (their only effect: every measured night counts, 2026-10-08)
+    assert ({x for x, n in race_nights.items() if not n.tags.isdisjoint(nt.CONTEXT)}
+            == {x for x, n in sante_nights.items() if not n.tags.isdisjoint(nt.CONTEXT)} != set())
 
 
 def test_the_readouts_fit_one_line_at_358_px():
@@ -353,7 +361,7 @@ def test_the_a11y_fixes_in_css_and_js():
     fc = fc[fc.index("@media (forced-colors: active)"):]
     for rule in (".pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }",
                  ".pf-tl-step { stroke: CanvasText; opacity: 1; }", ".pf-viz-hair { stroke: CanvasText; }",
-                 ".pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot, .is-gap) { background: CanvasText; "
+                 ".pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot) { background: CanvasText; "
                  "box-shadow: none; }",
                  ".pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }",
                  ".pf-ph.is-deep { background: CanvasText; }"):
@@ -411,7 +419,8 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
         assert "<rect" not in svg, key  # no grey column behind the selected night
         assert 'class="pf-viz-ring"/>' in svg and 'class="pf-viz-at"/>' in svg, key
         assert f'class="pf-viz-dot is-sel" data-i="{days.index(D8)}"' in svg, key  # the latest night, in ink
-    # on 08/10 no 7-day window holds 3 usable nights next to another such night (02/10 → 05/10 have none, 06/10 is
-    # set aside after the ultra): no segment, so no « moyenne sur 7 nuits » in either legend; it used to run flat
-    # from 01/10 to 05/10, the window still finding 29/09 → 01/10
-    assert drawn == {"vfc": [], "fc": []}, drawn
+    # every measured night counts (owner, 2026-10-08): FC de nuit's 7-night windows of 06/10 → 08/10 hold 3 nights
+    # each (01/10 or 30/09 with 06/10, 07/10, 08/10): one segment over their 3 dots; VFC has no 06/10, so no window
+    # holds 3 nights next to another such night (01/10 alone: no segment, no legend item). It used to run flat from
+    # 01/10 to 05/10, the window still finding 29/09 → 01/10
+    assert drawn == {"vfc": [], "fc": [[date(2026, 10, 6), date(2026, 10, 7), D8]]}, drawn

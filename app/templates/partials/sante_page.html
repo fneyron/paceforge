@@ -42,8 +42,7 @@
 <section id="recuperation" class="pf-card" aria-labelledby="h-recup">
     <h2 id="h-recup" class="pf-card-h">Récupération · 14 jours</h2>
     {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
-    {% set marks = ([("is-est", "estimé, nuit non enregistrée")] if p.recup.hatched else []) + ([("is-gap", "pas de score")] if p.recup.bars|selectattr("miss")|list else []) %}
-    {% if marks %}{{ viz.viz_legend(marks) }}{% endif %}
+    {% if p.recup.hatched %}{{ viz.viz_legend([("is-est", "estimé, nuit non enregistrée")]) }}{% endif %}
 </section>
 {% endif %}
 
@@ -75,10 +74,9 @@
         {% for key, label in s.ranges %}{% set b = s.bars[key] %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
             {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
-            {% set gap = [("is-gap", "pas de mesure")] if b.bars|selectattr("miss")|list else [] %}
-            {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")] + gap) }}
-            {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "7 h")] + gap) }}
-            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")] + gap) }}{% endif %}
+            {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")]) }}
+            {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "7 h")]) }}
+            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")]) }}{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -93,9 +91,9 @@
 {#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »), opening on its
     status line (the last 7 nights against the usual values: the percentage and the word of its facts row, a dot in
     its colour, what it often means when it is out of them on the side that matters; or how many nights until
-    they exist); the legend
-    names every mark drawn (sante._night_card): a night's dot, filled when it counts, hollow when it does not, the
-    7-night line (when a segment of it is drawn), the usual values' band, dashed while provisional -#}
+    they exist); the legend names every mark drawn (sante._night_card): a measured night's dot (every one counts,
+    nothing for a night without a measure), the 7-night line (when a segment of it is drawn), the usual values'
+    band, dashed while provisional -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>

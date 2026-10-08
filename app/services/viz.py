@@ -509,7 +509,9 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
              today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0,
              hatched: list | None = None) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
-    slot, a faint dot on the base line), an optional lighter part on top
+    slot, `miss`, where nothing is drawn — no mark for a missing measure,
+    owner 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de
+    point »; its readout says so), an optional lighter part on top
     (`stack`: the naps over the night), a class per bar (`classes`: the
     state's tone), a fixed top (`y_max`: 100 for a score) or the data's, a
     `reference` line (value, label: « 7 h », Johnston 2020), faint `lines`
@@ -576,8 +578,6 @@ def day_ticks(days: list[date], xs: list[float]) -> list[dict]:
 
 # ── V3 night card: one nightly signal, a dot per night, the 7-night line, the normal ──
 
-NOT_COUNTED = "ne compte pas"  # a hollow night's word in its readout: out of the usual values (v4.4)
-
 def _band_runs(band: list, prov: list) -> tuple[list, list]:
     """The band split into its full and its provisional days ([(lo, hi) | None] each), every run of one kind
     carried one day into the next run of the other kind, so the two drawings meet with no gap."""
@@ -592,29 +592,25 @@ def _band_runs(band: list, prov: list) -> tuple[list, list]:
 
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
-               unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
-               counts: list | None = None) -> dict:
+               unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
-    dot per measured night, never judged one by one (Buchheit 2014: ≈ 12 %
-    night to night) — filled when the night counts toward the athlete's usual
-    values, hollow when it does not (`counts`: False for a night out of the
-    band, after a big effort, in another time zone, at altitude…: v4.4, owner:
-    « comment matérialiser que c'est en cours de construction ? ») — the
-    7-night mean as a line (drawn, never printed) over the measured nights
-    only, broken on any night without one (never a line with no dot under it;
-    "" when no segment is left: no legend item), the athlete's usual values
-    as a band (the 60 days before each night, on that night's watch): solid
-    edges from 14 nights, dashed edges and a lighter fill while provisional
-    (7 to 13 nights, H; `band_prov`, `edge_prov_lo/hi`). Readout, two compact
-    lines: [« 100 ms », the word « ne compte pas » for a hollow night, « nuit
-    du mer. 7 au jeu. 8 · d'habitude 85–110 »] (« … (provisoire) » from 7 to
-    13 nights); the latest measured night is selected: its value is the card's.
-    `min_span`: the y axis never narrower (noise must not look like a cliff).
-    « (provisoire) » comes after the band's numbers: at 358 px the ellipsis
-    only ever cuts it."""
+    filled dot per measured night — every one counts toward the athlete's
+    usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
+    en fait »), a night without a measure draws nothing — never judged one by
+    one (Buchheit 2014: ≈ 12 % night to night), the 7-night mean as a line
+    (drawn, never printed) over the measured nights only, broken on any night
+    without one (never a line with no dot under it; "" when no segment is
+    left: no legend item), the athlete's usual values as a band (each night's:
+    the 60 days up to and including it, on that night's watch): solid edges
+    from 14 nights, dashed edges and a lighter fill while provisional (7 to
+    13 nights, H; `band_prov`, `edge_prov_lo/hi`). Readout, two compact
+    lines: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · d'habitude 85–110 »]
+    (« … (provisoire) » from 7 to 13 nights); the latest measured night is
+    selected: its value is the card's. `min_span`: the y axis never narrower
+    (noise must not look like a cliff). « (provisoire) » comes after the
+    band's numbers: at 358 px the ellipsis only ever cuts it."""
     n = len(days)
     xs = slot_x(n)
-    counts = counts or [True] * n
     lo_b = [b[0] if b else None for b in band]
     hi_b = [b[1] if b else None for b in band]
     mean = [m if v is not None else None for v, m in zip(values, mean, strict=True)]
@@ -630,14 +626,12 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             a.append(f"{night_label(d)} : pas de mesure")  # the readout's night, as for a measured one
             continue
         line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
-        if not counts[i]:
-            spoken += ", cette nuit ne compte pas"
         if b:
             pv = bool(prov[i])
             line += f" · d'habitude {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
             spoken += (f", d'habitude entre {num(b[0], digits)} et {num(b[1], digits)}"
                        + (", valeurs provisoires" if pv else ""))
-        r.append([f"{num(v, digits)}{NBSP}{unit}", "" if counts[i] else NOT_COUNTED, line])
+        r.append([f"{num(v, digits)}{NBSP}{unit}", "", line])
         a.append(spoken)
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
@@ -650,8 +644,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "edge_lo": paths(xs, ys["full"][0]), "edge_hi": paths(xs, ys["full"][1]),
             "edge_prov_lo": paths(xs, ys["prov"][0]), "edge_prov_hi": paths(xs, ys["prov"][1]),
             "mean": paths(xs, [y(v) for v in mean], lone=False),
-            "dots": [{"i": i, "x": xs[i], "y": yv[i], "out": not counts[i]} for i, v in enumerate(values)
-                     if v is not None],
+            "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
             # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,

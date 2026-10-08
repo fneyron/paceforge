@@ -57,8 +57,6 @@ HEURISTICS = [
     ("app/services/sante_training.py", "LOWER", {"ultra": "very_long", "very_long": "long", "long": None}),
     ("app/services/sante_training.py", "NIGHT_TAGS", {"long": ("long", 1), "very_long": ("big", 3),
                                                      "ultra": ("ultra", 4)}),
-    ("app/services/sante_training.py", "ULTRA_TAIL_MIN", 1200),
-    ("app/services/sante_training.py", "ULTRA_TAIL", (5, 7)),
     ("app/services/sante_training.py", "AFTER_ULTRA_DAYS", 21),
     # v4.2 sleep (research_sleep.md): the stages to 10 min, the late-nap cut-off (Mograss 2022; Walsh 2021)
     ("app/services/sante_sleep.py", "STAGE_STEP", 10),
@@ -120,6 +118,8 @@ def test_the_folds_print_no_h_and_no_citation():
         assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
     assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)
     assert not hasattr(st, "CLIMB_RATIO") and not hasattr(st, "back_to_back") and not hasattr(td, "HR_UP_BPM")
+    # every measured night counts (owner, 2026-10-08): no ≥ 20-h tail out of the band any more
+    assert not hasattr(st, "ULTRA_TAIL") and not hasattr(st, "ULTRA_TAIL_MIN")
 
 
 def test_the_late_session_gap_is_marked_h():

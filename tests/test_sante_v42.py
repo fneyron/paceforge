@@ -200,22 +200,22 @@ def test_the_band_sd_is_shrunk_towards_a_prior():
 
 def _caps(s):
     e = st.effort_of(s)
-    return (e.kind, e.nights, e.caps, e.load, e.tail) if e else None
+    return (e.kind, e.nights, e.caps, e.load) if e else None
 
 
 def test_the_classes_and_their_windows():
     """Longue (≥ 3 h, or ≥ 1 500 m D+ on foot) 65 until D+3 (was D+2), D+5 when Strava marks it a race; Très
     longue 45 to D+2, 65 to D+5; Ultra 35 to D+3 (v4.3, was 40), 65 to D+10, D+13 when ≥ 24 h or run through a
     night (01:00 → 05:00 local); Charge 50 / 30 / 20."""
-    assert _caps(_session(D, 200)) == ("long", "long", ((3, 65),), 50, False)
-    assert _caps(_session(D, 200, workout_type=1)) == ("long", "long", ((5, 65),), 50, False)  # a race (Strava)
-    assert _caps(_session(D, 170, dplus=1600)) == ("long", "long", ((3, 65),), 50, False)  # the legs rule
-    assert _caps(_session(D, 420)) == ("very_long", "very_long", ((2, 45), (5, 65)), 30, False)
-    assert _caps(_session(D, 420, workout_type=1)) == ("very_long", "very_long", ((2, 45), (5, 65)), 30, False)
-    assert _caps(_session(D, 660, hour=5)) == ("ultra", "ultra", ((3, 35), (10, 65)), 20, False)  # 05:00 → 16:00
-    assert _caps(_session(D, 1500, hour=5)) == ("ultra", "ultra", ((3, 35), (13, 65)), 20, True)  # ≥ 24 h, ≥ 20 h
+    assert _caps(_session(D, 200)) == ("long", "long", ((3, 65),), 50)
+    assert _caps(_session(D, 200, workout_type=1)) == ("long", "long", ((5, 65),), 50)  # a race (Strava)
+    assert _caps(_session(D, 170, dplus=1600)) == ("long", "long", ((3, 65),), 50)  # the legs rule
+    assert _caps(_session(D, 420)) == ("very_long", "very_long", ((2, 45), (5, 65)), 30)
+    assert _caps(_session(D, 420, workout_type=1)) == ("very_long", "very_long", ((2, 45), (5, 65)), 30)
+    assert _caps(_session(D, 660, hour=5)) == ("ultra", "ultra", ((3, 35), (10, 65)), 20)  # 05:00 → 16:00
+    assert _caps(_session(D, 1500, hour=5)) == ("ultra", "ultra", ((3, 35), (13, 65)), 20)  # ≥ 24 h
     night = _session(D, 660, hour=20)  # 20:00 → 07:00: ran from 01:00 to 05:00
-    assert _caps(night) == ("ultra", "ultra", ((3, 35), (13, 65)), 20, False) and st.through_night(
+    assert _caps(night) == ("ultra", "ultra", ((3, 35), (13, 65)), 20) and st.through_night(
         st.local_start(night), st.local_end(night))
     assert not st.through_night(datetime(2026, 10, 8, 2), datetime(2026, 10, 8, 12))  # started after 01:00
     assert not st.through_night(datetime(2026, 10, 7, 22), datetime(2026, 10, 8, 4, 59))  # ended before 05:00
@@ -226,11 +226,10 @@ def test_the_classes_and_their_windows():
 def test_the_owner_transjeju_window_and_nights():
     """The owner (brief §E): the Transjeju started 02/10 21:00, 16h53, ending 03/10 13:53 local → D+0 = 03/10, an
     Ultra: cap 35 to D+3 (06/10; v4.3, was 40); it ran through the night, so 65 to D+13 (16/10); nights D+1 → D+4
-    (04 → 07/10) out of the band and the alert; 16h53 is under 20 h, so no D+5 → D+7."""
+    (04 → 07/10) never fire the alert, and count in the band like any night (2026-10-08)."""
     s = _session(date(2026, 10, 2), 935, elapsed=1013, hour=21, offset=32400, workout_type=1, name="Transjeju 100M")
     [e] = st.efforts([s])
-    assert (e.kind, e.nights, e.day, e.end, e.tail) == ("ultra", "ultra", date(2026, 10, 3),
-                                                       datetime(2026, 10, 3, 13, 53), False)
+    assert (e.kind, e.nights, e.day, e.end) == ("ultra", "ultra", date(2026, 10, 3), datetime(2026, 10, 3, 13, 53))
     assert e.caps == ((3, 35), (13, 65)) and e.load == 20
     caps = {k: (st.effort_window([e], date(2026, 10, k)) or {}).get("cap") for k in (3, 6, 7, 16, 17)}
     assert caps == {3: 35, 6: 35, 7: 65, 16: 65, 17: None}
@@ -239,14 +238,15 @@ def test_the_owner_transjeju_window_and_nights():
     nights = nt.build_nights(rows, D)
     nt.tag_efforts(nights, [e])
     assert sorted(d for d, n in nights.items() if "ultra" in n.tags) == [date(2026, 10, k) for k in (4, 5, 6, 7)]
-    assert not any("ultra_tail" in n.tags for n in nights.values())
-    assert all(not n.usable("hr") and not nt.alert_night(nights, (), d) for d, n in nights.items() if "ultra" in n.tags)
+    assert all(not nt.alert_night(nights, (), d) for d, n in nights.items() if "ultra" in n.tags)
+    assert nt.mean7(nights, "hr", date(2026, 10, 7))["n"] == 7  # 04 → 07/10 among them
 
 
 def test_the_nights_after_an_effort_by_its_class():
     """Longue: night D+1 « après une sortie longue » (every Longue, the D+ rule included: an 85-min climb the
-    90-min rule misses); Très longue: D+1 → D+3 « après grosse sortie »; Ultra: D+1 → D+4 « après ultra »; after
-    ≥ 20 h also D+5 → D+7, out of the band only. All counted in the 24-h totals."""
+    90-min rule misses); Très longue: D+1 → D+3 « après grosse sortie »; Ultra: D+1 → D+4 « après ultra », after
+    ≥ 20 h too (no tail out of the band any more: every measured night counts, 2026-10-08). All counted in the
+    24-h totals."""
     def tagged(s):
         nights = nt.build_nights(night_rows(range(0, 20), today=D), D)
         nt.tag_efforts(nights, st.efforts([s]))
@@ -256,29 +256,29 @@ def test_the_nights_after_an_effort_by_its_class():
     assert tagged(_session(D - timedelta(days=12), 420, hour=6)) == {1: ["big"], 2: ["big"], 3: ["big"]}
     assert tagged(_session(D - timedelta(days=12), 660, hour=5)) == {k: ["ultra"] for k in (1, 2, 3, 4)}
     tail = tagged(_session(D - timedelta(days=12), 1260, hour=0))  # 21 h, 00:00 → 21:00
-    assert tail == {**{k: ["ultra"] for k in (1, 2, 3, 4)}, **{k: ["ultra_tail"] for k in (5, 6, 7)}}
-    assert nt.TAG_WORDS["ultra"] == nt.TAG_WORDS["ultra_tail"] == "après ultra"
-    assert "ultra_tail" in nt.EXCLUDING and "ultra_tail" not in nt.CONTEXT and "ultra" in nt.CONTEXT
-    # a night out of the band keeps its sleep in the 24-h totals
+    assert tail == {k: ["ultra"] for k in (1, 2, 3, 4)}
+    assert "ultra_tail" not in nt.TAG_WORDS and "tail" not in st.Effort.__dataclass_fields__ and "ultra" in nt.CONTEXT
+    # a night after an effort keeps its sleep in the 24-h totals
     nights = nt.build_nights(night_rows(range(0, 20), today=D), D)
     nt.tag_efforts(nights, st.efforts([_session(D - timedelta(days=12), 660, hour=5)]))
     assert nights[D - timedelta(days=11)].tst24 == 440 and nt.day_tst24(nights, D - timedelta(days=11)) == 440
 
 
 def test_the_illness_alert_is_muted_then_rearms_against_the_band_before():
-    """The alert is muted on the nights out of the alert (Longue D+1, Très longue D+1 → D+3, Ultra D+1 → D+4)
-    and re-arms by itself after them, against the band before the effort (Schwellnus 2016: symptoms more frequent
-    in the 1–2 weeks after a race); after ≥ 20 h the nights D+5 → D+7 can fire it (out of the band only)."""
+    """The alert is muted on the nights after an effort (Longue D+1, Très longue D+1 → D+3, Ultra D+1 → D+4)
+    and re-arms by itself after them (Schwellnus 2016: symptoms more frequent in the 1–2 weeks after a race); those
+    nights count in its band like any night (2026-10-08), their 52 bpm leaving its median at 45; after ≥ 20 h too,
+    the nights D+5 → D+7 can fire it."""
     def rows(high):  # 60 nights at 44–46 bpm; `high`: days ago at 58 bpm; 52 bpm on the nights D+1 → D+4
         return night_rows(range(0, 60), today=D, hr=lambda k: 58.0 if k in high else 52.0 if 2 <= k <= 5 and
                           not high & {2, 3} else 44.0 + k % 3)
     ultra = _session(D - timedelta(days=6), 660, hour=5, sid=9)  # D+0 = D-6: nights D-5 → D-2 muted
     on = _day(rows({0, 1}), _runs() + [ultra])  # D+5 and D+6 at 58: it fires, against the band before
     assert on["alert"] and on["alert"]["days"] == [D - timedelta(days=1), D]
-    assert on["alert"]["threshold"] == 50 and on["state"]["key"] == "ill"  # 52 bpm on D+1 → D+4: out of the band
+    assert on["alert"]["threshold"] == 50 and on["state"]["key"] == "ill"  # 52 bpm on D+1 → D+4: in the band
     muted = _day(rows({2, 3}), _runs() + [ultra], today=D - timedelta(days=2))  # D+3 and D+4 at 58: muted
     assert muted["alert"] is None and muted["state"]["key"] == "effort"
-    long_ = _session(D - timedelta(days=6), 1260, hour=0, sid=9)  # 21 h: D+5 → D+7 are out of the band only
+    long_ = _session(D - timedelta(days=6), 1260, hour=0, sid=9)  # 21 h: D+5 → D+7 fire it like any night
     tail = _day(rows({0, 1}), _runs() + [long_])
     assert tail["alert"] and tail["state"]["key"] == "ill"
     hr = next(p for p in tail["score"]["parts"] if p["key"] == "hr")  # the episode's nights are read
@@ -288,15 +288,15 @@ def test_the_illness_alert_is_muted_then_rearms_against_the_band_before():
 def test_m4_cycling_is_one_class_lower_its_nights_follow_its_time():
     """M4: not on foot (ride, swim…) one class lower — ≥ 10 h Très longue, 6–10 h Longue, 3–6 h none — while its
     nights follow its time (Koller 1998; Shave 2007). A chain with a run in it is on foot (a triathlon)."""
-    assert _caps(_session(D, 720, sport="Ride")) == ("very_long", "ultra", ((2, 45), (5, 65)), 30, False)
-    assert _caps(_session(D, 420, sport="Ride")) == ("long", "very_long", ((3, 65),), 50, False)
-    assert _caps(_session(D, 420, sport="Ride", workout_type=11)) == ("long", "very_long", ((5, 65),), 50, False)
-    assert _caps(_session(D, 240, sport="Ride")) == (None, "long", (), None, False)
+    assert _caps(_session(D, 720, sport="Ride")) == ("very_long", "ultra", ((2, 45), (5, 65)), 30)
+    assert _caps(_session(D, 420, sport="Ride")) == ("long", "very_long", ((3, 65),), 50)
+    assert _caps(_session(D, 420, sport="Ride", workout_type=11)) == ("long", "very_long", ((5, 65),), 50)
+    assert _caps(_session(D, 240, sport="Ride")) == (None, "long", (), None)
     four = st.effort_of(_session(D - timedelta(days=1), 240, sport="Ride"))
     assert st.effort_window([four], D) is None  # no window, no Charge
     nights = nt.build_nights(night_rows(range(0, 5), today=D), D)
     nt.tag_efforts(nights, [four])
-    assert nights[D].tags == {"long"}  # its night after: out of the band and the alert
+    assert nights[D].tags == {"long"}  # its night after: never fires the alert
     bike = _session(D - timedelta(days=2), 300, sport="Ride", sid=1, hour=6)  # 06:00 → 11:00
     run = _session(D - timedelta(days=2), 100, sid=2, hour=11)  # 11:00 → 12:40, no stop: one effort on foot
     assert [(x.kind, x.nights) for x in st.efforts([bike, run])] == [("very_long", "very_long")]
@@ -327,9 +327,8 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
 
 async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user):
     """A Garmin athlete every night, a 3h30 marathon marked as a race on Strava 4 days ago: a Longue, 65 until D+5
-    (v4.2; an unmarked one ends at D+3); its night D+1 out of the normal. Raw ≈ (25·100 + 25·100 + 30·100 +
-    20·50) / 100 = 90 (the VFC just under 100 without that night), capped at 65: « Récupération en cours », the
-    word only (v4.3: no activity named)."""
+    (v4.2; an unmarked one ends at D+3); its night D+1 never fires the alert. Raw ≈ (25·100 + 25·100 + 30·100 +
+    20·50) / 100 = 90, capped at 65: « Récupération en cours », the word only (v4.3: no activity named)."""
     from app.models.activity import Activity
     from app.services import sante
     from tests.test_sante import _garmin_rows, _seed_rows
@@ -394,7 +393,7 @@ async def test_the_sommeil_row_marks_a_short_day_only(db_session, test_user):
 
 def test_a_late_nap_is_after_the_usual_bedtime_minus_7_h_or_16_00():
     """« après sieste tardive »: a nap ending after min(the usual bedtime − 7 h, 16:00) on the evening before
-    (H; Mograss 2022 for the 7 h, Walsh 2021's 13:00–16:00 window); annotated, never out of the normal."""
+    (H; Mograss 2022 for the 7 h, Walsh 2021's 13:00–16:00 window); a word in the nights' table, nothing else."""
     def tagged(start, nap_end, days=range(0, 10)):
         rows = night_rows(days, today=D, start=start, end=(7, 0))
         y = D - timedelta(days=1)
@@ -424,7 +423,7 @@ def test_a_late_nap_is_after_the_usual_bedtime_minus_7_h_or_16_00():
     rows["nap"][y] = (50, {"windows": [[f"{y}T16:30", f"{y}T17:20"]]}, "Garmin")
     nights = nt.build_nights(rows, D)
     nt.tag_nights(nights)
-    assert "late_nap" in nights[D].tags and not nights[D].excluded and nights[D].usable("hr")
+    assert "late_nap" in nights[D].tags and nt.alert_night(nights, (), D) and nt.mean7(nights, "hr", D)["n"] == 7
 
 
 def test_stages_rounded_to_10_min_the_bar_keeps_its_shape():
@@ -497,15 +496,15 @@ def test_the_history_sees_a_chain_across_midnight_as_each_day_knew_it():
 
 
 def test_a_night_says_each_word_once():
-    """Two overlapping ultras can leave a night both « ultra » and « ultra_tail »: « après ultra » once (the race
-    page's words); Santé's table says « récupération » once (v4.3: Santé names no outing)."""
+    """Two overlapping efforts can leave a night both « ultra » and « big »: Santé's table says « après un gros
+    effort » once (v4.3: Santé names no outing); the race page's words name each."""
     from app.services import sante_sleep as sl
 
     nights = nt.build_nights(night_rows(range(0, 3), today=D), D)
-    nights[D].tags |= {"ultra", "ultra_tail", "late_nap", "race"}
-    assert nt.tag_words(nights[D].tags) == ["après sieste tardive", "après ultra"]
+    nights[D].tags |= {"ultra", "big", "late_nap"}
+    assert nt.tag_words(nights[D].tags) == ["après grosse sortie", "après sieste tardive", "après ultra"]
     assert {r["iso"]: r["marks"] for r in sl.rows(nights, D)}[D.isoformat()] == \
-        "◇ après une sieste tardive · ◇ après un gros effort"
+        "◇ après un gros effort · ◇ après une sieste tardive"
 
 
 def test_a_big_climb_is_no_modifier_any_more():
@@ -563,7 +562,7 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     recup, nuits = folds
     assert "<summary>Comment je calcule ta récupération</summary>" in recup
     assert "<summary>Comment je lis tes nuits</summary>" in nuits
-    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 5
+    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 4  # 2026-10-08: 4
     for fold, anchor in ((recup, "recuperation"), (nuits, "sommeil")):
         assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
         assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »

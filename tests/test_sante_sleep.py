@@ -138,28 +138,27 @@ def test_habits_medians_to_5_min_and_regularity_from_8_nights():
     assert sl.habits(five, D)["regular"] is None  # under 8 nights (H)
 
 
-def test_habits_leave_out_time_zone_nights_and_the_nights_after_an_ultra():
-    """Out of the medians and the regularity (v4.2): the time-zone nights and the 4 nights after an ultra
-    (Fachan 2026; Kishi 2024); the nights after a 6–10 h effort count (only their HR and HRV stay out)."""
+def test_habits_count_every_night():
+    """Every night counts in the medians and the regularity (owner, 2026-10-08: no night left out, « pour la même
+    raison »): a time-zone night, the nights after an ultra or a 6–10 h effort too."""
     rows = night_rows(range(0, 8), start=(23, 0), end=(7, 0))
     rows["sleep"].update(night_rows([0, 1, 2], start=(3, 0), end=(10, 0))["sleep"])  # 3 nights at odd times
     nights = _nights(rows)
-    assert sl.habits(nights, D)["stats"][0] == ("Coucher", "23:00")  # the median holds
-    for k in (0, 1, 2):
-        nights[D - timedelta(days=k)].tags.add("big")
-    assert sl.habits(nights, D)["n"] == 8  # après grosse sortie: still in
+    before = sl.habits(nights, D)
+    assert before["stats"] == [("Coucher", "23:00"), ("Lever", "07:00")] and before["n"] == 8  # the median holds
     for k in (0, 1):
         nights[D - timedelta(days=k)].tags = {"ultra"}
-    nights[D - timedelta(days=2)].tags = {"tz"}
-    h = sl.habits(nights, D)
-    assert h["n"] == 5 and h["stats"][:2] == [("Coucher", "23:00"), ("Lever", "07:00")]
+    nights[D - timedelta(days=2)].tags = {"tz", "big"}
+    assert sl.habits(nights, D) == before  # tagged nights: still in
+    assert before["regular"] == "5 nuits sur 8 à moins d'1\u00a0h de ton coucher habituel"
 
 
 def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
     """v4.3 (owner: « Ne mentionne pas les sorties dans la partie Santé »): a night after an effort says
     « récupération », as the cards do (« hors voyage, altitude et récupération »), never the outing."""
     nights = _nights(night_rows(range(0, 40)))
-    nights[D - timedelta(days=2)].tags |= {"big", "race"}
+    nights[D - timedelta(days=2)].tags |= {"big", "ultra"}
+    assert "race" not in nt.TAG_WORDS  # no race window tag any more (2026-10-08)
     nights[D - timedelta(days=3)].tags |= {"late", "jetlag"}
     out = sl.rows(nights, D)
     assert len(out) == 30 and out[0]["iso"] == D.isoformat()
@@ -170,10 +169,11 @@ def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
     assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
 
-def test_the_method_fold_is_five_plain_bullets_and_names_no_race():
+def test_the_method_fold_is_four_plain_bullets_and_names_no_race():
     """« Comment je lis tes nuits » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets pas les
-    citations »): 5 one-line bullets in plain words, no citation, no « (H) »; its references stay in the code
-    (REFS), listed on /sante/sources. v4.4: active sentences of 15 words at most, the cards' words."""
+    citations »): one-line bullets in plain words, no citation, no « (H) »; its references stay in the code
+    (REFS), listed on /sante/sources. v4.4: active sentences of 15 words at most. 2026-10-08: every night counts,
+    so no bullet about nights that do not."""
     import re
 
     from app.services import sante_score as sc
@@ -181,9 +181,9 @@ def test_the_method_fold_is_five_plain_bullets_and_names_no_race():
     assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
                          "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
                          "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
-                         "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas.",
                          "Ta montre détecte tes heures de coucher et de lever."]
     text = sc.flat(sl.METHOD)
+    assert "ne compte" not in text
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text
     assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text)
     assert [g for g, _ in sl.REFS] == ["Recommandations officielles", "Études scientifiques"]

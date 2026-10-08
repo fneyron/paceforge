@@ -52,7 +52,8 @@ async def test_a_coros_only_athlete_gets_a_real_max_hr_and_the_evening_tag(db_se
                                                                          test_user: User, fake, no_commit):
     """COROS's detail has no max HR, so a COROS-only athlete ran on the 190 default (« sortie intense le soir »
     skewed). The laps are read with the detail, for the same sessions, under the call cap: hr_max() gets real
-    peaks, and a hard evening session (150 bpm, ≥ 80 % of a 45–171 reserve) drops the night after it."""
+    peaks, and a hard evening session (150 bpm, ≥ 80 % of a 45–171 reserve) tags the night after it (it never fires
+    the alert)."""
     now = datetime.now(timezone.utc).replace(hour=3, minute=0, second=0, microsecond=0)
     fake.sessions = [{"label": 500 + i, "code": 100, "start": now - timedelta(days=2 + 3 * i), "seconds": 3000,
                       "km": 10} for i in range(coros.DETAILS_PER_SYNC)]
@@ -69,10 +70,10 @@ async def test_a_coros_only_athlete_gets_a_real_max_hr_and_the_evening_tag(db_se
 
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)  # asleep at 23:00
     evening = run(today - timedelta(days=1), minutes=40, hr=150, hour=21, sid=99)  # ends 21:40
-    nt.tag_nights(nights, [evening], [], {}, rest=45, peak=st.hr_max(sessions, today))
+    nt.tag_nights(nights, [evening], {}, rest=45, peak=st.hr_max(sessions, today))
     assert "late" in nights[today].tags
     nights = nt.build_nights(night_rows(range(0, 20), today=today, hr=45.0), today)
-    nt.tag_nights(nights, [evening], [], {}, rest=45, peak=190)  # the old default: 150 < 161
+    nt.tag_nights(nights, [evening], {}, rest=45, peak=190)  # the old default: 150 < 161
     assert "late" not in nights[today].tags
 
     # read once: the next sync asks neither again

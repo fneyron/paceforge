@@ -12,8 +12,8 @@ not good French).
 v4.3 (owner, 2026-10-08 evening: « Ne mentionne pas les sorties dans la
 partie Santé, ça complexifie : mets juste les scores »): the page says the
 state's word and its glyph, nothing else — no activity named, no reason
-sentence — but for the nightly-HR illness alert (2 untagged nights in a
-row, each ≥ median + max(2 robust SD, 5 bpm), on a full 14-night band:
+sentence — but for the nightly-HR illness alert (2 nights in a row with no
+context tag, each ≥ median + max(2 robust SD, 5 bpm), on a full 14-night band:
 nights.illness_alert; Altini & Plews 2021, Quer 2021: specific, not
 sensitive; score ≤ 39, H), whose one sentence says what it can mean. The
 reason (sante_score.reason: the alert, the cap that binds, the joint VFC/FC

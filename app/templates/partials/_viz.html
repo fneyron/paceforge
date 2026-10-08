@@ -135,8 +135,9 @@
 </{{ tag }}>
 {% endmacro %}
 
-{# V2 card bars: one bar per day (a lighter part on top: the naps), a faint dot for a day without data, today's day
-   on a disc, the reference line (« 7 h »), faint labelled lines (the score's 40 and 70), a bar past the axis broken,
+{# V2 card bars: one bar per day (a lighter part on top: the naps), nothing for a day without data (no mark for a
+   missing measure: its readout says so), today's day on a disc, the reference line (« 7 h »), faint labelled lines
+   (the score's 40 and 70), a bar past the axis broken,
    a line over faint bars (a long range's mean), a bar hatched and outlined in its colour (a score estimated without a
    night measured: its card's legend names it); the selection is a soft column behind its bar #}
 {% macro viz_day_bars(c, title, unit_word="journée", prev="Jour précédent", next="Jour suivant") %}
@@ -147,7 +148,7 @@
 <line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
 {% for b in c.bars %}
 <g class="pf-viz-col{% if b.today %} is-today{% endif %}" data-i="{{ b.i }}">
-    {% if b.miss %}<circle cx="{{ b.cx }}" cy="{{ c.base - 3 }}" r="1.6" class="pf-viz-gap"/>{% else %}
+    {% if not b.miss %}
     {% if b.top %}<rect x="{{ b.x }}" y="{{ b.top.y }}" width="{{ b.w }}" height="{{ b.top.h + b.h }}" rx="{{ c.rx }}" class="pf-bar-top"/>{% endif %}
     {% if b.h and b.est %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar-est is-{{ b.cls }}" fill="url(#pf-est-{{ c.key }}-{{ b.cls }})"/>
     {% elif b.h %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar{% if b.cls %} is-{{ b.cls }}{% endif %}"/>{% endif %}
@@ -161,12 +162,12 @@
 {% endcall %}
 {% endmacro %}
 
-{# V3 night card: a dot per night (filled when it counts toward the usual values, hollow when it does not), the 7-night
-   line over the measured nights only (broken on a night without one), the usual values as a band, its edges dashed
-   and its fill lighter while provisional (no out-of-band word on one night). The selection is a ring around its dot
-   (the dot in ink), no column that would read as a bar; a selected night without a measure (‹ › or the keyboard)
-   shows a thin dashed hairline at its place instead (pf-viz.js sets .is-none on the group when the day has no
-   value) #}
+{# V3 night card: a filled dot per measured night (every one counts toward the usual values; nothing for a night
+   without a measure), the 7-night line over the measured nights only (broken on a night without one), the usual values
+   as a band, its edges dashed and its fill lighter while provisional (no out-of-band word on one night). The selection
+   is a ring around its dot (the dot in ink), no column that would read as a bar; a selected night without a measure
+   (‹ › or the keyboard) shows a thin dashed hairline at its place instead (pf-viz.js sets .is-none on the group when
+   the day has no value) #}
 {% macro viz_night_card(c, title) %}
 {% call figure(c, title, c.key, None, "nuit", "Nuit précédente", "Nuit suivante", cls="pf-viz-card", card=True) %}
 <g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
@@ -176,7 +177,7 @@
 {% if c.edge_prov_lo %}<path d="{{ c.edge_prov_lo }}" class="pf-viz-edge is-prov"/><path d="{{ c.edge_prov_hi }}" class="pf-viz-edge is-prov"/>{% endif %}
 {% if c.edge_lo %}<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>{% endif %}
 {% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
-{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ (c.dot_r + 0.6)|round(1) if d.out else c.dot_r }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r }}" class="pf-viz-dot{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
 {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
 {% endcall %}
 {% endmacro %}

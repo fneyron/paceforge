@@ -409,23 +409,22 @@ RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): par
 # activity, or chain of activities less than 30 min apart, is its own effort; overlapping windows already extend
 # the recovery (effort_window keeps the lowest cap of the windows open)
 LOWER = {"ultra": "very_long", "very_long": "long", "long": None}  # M4: a low-impact sport one class lower (H)
-# the nights after an effort, by its duration whatever the sport (M4): D+1 → D+n out of the bands and of the
-# illness alert (H): a Longue night D+1 (« après une sortie longue »), a Très longue D+1 → D+3 (« après grosse
-# sortie »: Hynynen 2010, nightly HR at 130 % after a marathon), an Ultra D+1 → D+4 (« après ultra »: sleep
-# fragmented through night 4, Fachan 2026; normal wakefulness after 2.3 days, Kishi 2024)
+# the nights after an effort, by its duration whatever the sport (M4): D+1 → D+n never fire the illness alert
+# (they count in the bands like any night, owner 2026-10-08) (H): a Longue night D+1 (« après une sortie
+# longue »), a Très longue D+1 → D+3 (« après grosse sortie »: Hynynen 2010, nightly HR at 130 % after a
+# marathon), an Ultra D+1 → D+4 (« après ultra »: sleep fragmented through night 4, Fachan 2026; normal
+# wakefulness after 2.3 days, Kishi 2024)
 NIGHT_TAGS = {"long": ("long", 1), "very_long": ("big", 3), "ultra": ("ultra", 4)}  # (H)
-ULTRA_TAIL_MIN, ULTRA_TAIL = 20 * 60, (5, 7)  # (H) ≥ 20 h: D+5 → D+7 out of the band too, never of the alert
-# (after 100 miles SDNN still −7 % at D+7: Paech 2021)
 AFTER_ULTRA_DAYS = 21  # (H) Activités: a raised easy-pace HR is « après ultra » (Chambers 1998, n = 8: to day 25)
 
 
 @dataclass(frozen=True)
 class Effort:
     """An activity (or activities chained without a real stop) big enough to open a recovery window or to keep
-    its nights out of the normal. D is `day`: the day before the first morning after it — the local day it
-    ended, or the day before when it ended in the night (before 06:00, H; nights.anchor_efforts moves D there
-    too when the athlete slept after it and woke the same day). Its window is D+0 (once uploaded) → its last
-    cap's day (`caps`, the modifiers applied); its nights by `nights` (NIGHT_TAGS, and D+5 → D+7 when `tail`)."""
+    its nights from firing the illness alert. D is `day`: the day before the first morning after it — the local
+    day it ended, or the day before when it ended in the night (before 06:00, H; nights.anchor_efforts moves D
+    there too when the athlete slept after it and woke the same day). Its window is D+0 (once uploaded) → its
+    last cap's day (`caps`, the modifiers applied); its nights by `nights` (NIGHT_TAGS)."""
     session_id: int
     kind: str | None  # the class: ultra | very_long | long; None (M4: a low-impact 3–6 h) opens no window
     minutes: float  # its own time, stops included (first start → last end when chained)
@@ -436,12 +435,12 @@ class Effort:
     nights: str | None = None  # the class its nights follow: by its duration whatever the sport (M4)
     caps: tuple = ()  # ((last day from D+1, cap), …) of its window, the modifiers applied (H)
     load: int | None = None  # its Charge récente sub-score (H)
-    tail: bool = False  # ≥ 20 h: nights D+5 → D+7 out of the band too (H)
     ids: frozenset = frozenset()  # the activities it is made of (a past day knew the chain whole, or a part of it)
 
     @property
     def big(self) -> bool:
-        """6 h or more by its duration: never a « spike » on Activités, nights D+1 → D+3 at least out of the normal."""
+        """6 h or more by its duration: never a « spike » on Activités, nights D+1 → D+3 at least never fire the
+        illness alert."""
         return self.nights in ("ultra", "very_long")
 
 
@@ -576,7 +575,7 @@ def _effort(u: _Unit, bounds=None) -> Effort | None:
     kind = nights if u.foot else LOWER[nights]
     caps, load = _rules(kind, minutes, kind == "long" and u.raced(bounds), through_night(u.start, u.end))
     return Effort(u.first.id, kind, minutes, u.end, effort_day(u.end), u.first.name, u.first.day, nights,
-                  caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN, frozenset(s.id for s in u.sessions))
+                  caps, load, frozenset(s.id for s in u.sessions))
 
 
 def effort_of(s: Session) -> Effort | None:

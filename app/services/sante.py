@@ -24,9 +24,13 @@ de graphiques »). Top to bottom:
   Activités'), no « Détail du score »;
 - the cards « Récupération · 14 jours », the Sommeil section (sante_sleep),
   « VFC · 30 nuits », « FC de nuit · 30 nuits », each night card opening on
-  one status line, the last 7 nights against the normal the score reads
-  (v4.3, owner: « est-ce que c'est bien ou pas bien ? »): the activities
-  themselves are Activités' (v4.1: no « Charge · 14 jours » card);
+  one status line, the last 7 nights against the usual values the score
+  reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »): every
+  measured night counts, last night included (owner, 2026-10-08: « Tous les
+  relevés VFC doivent compter en fait, pareil pour la FC »), and a night or a
+  day without a measure draws nothing (« s'il n'y a pas de mesure tu ne mets
+  rien, pas de point »); the activities themselves are Activités' (v4.1: no
+  « Charge · 14 jours » card);
 - the closed folds (how the recovery is computed, how the nights are read,
   each ending on a link to /sante/sources; the nights' table).
 From past activities and the nights only: no planned race, no check-in, no
@@ -112,21 +116,19 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 
 # ── one day: its state and its score ────────────────────────────────────────
 
-def _night_stat(nights, metric: str, d: date, ignore=()) -> dict:
-    """The 7-night mean of the usable nights (3 at least, Plews 2014; Lau 2022)
-    and the band it is read against: the 60 days before its window, on the
-    watch that mean reads (one band per watch, Dial 2025; « provisoire » from 7
-    to 13 nights, H); the band even without a mean (« ta normale se
-    construit » is said only when there is none). The status is judged on the
-    unrounded mean. `seen`: the metric measured in the band's 60 days or the
-    week after them. `ignore`: tags kept in the mean (an alert episode's own
-    nights, when the alert is the state: the score then reads them, never the
-    band)."""
-    m = nt.mean7(nights, metric, d, ignore=ignore)
+def _night_stat(nights, metric: str, d: date) -> dict:
+    """The 7-night mean of every measured night (3 at least, Plews 2014; Lau
+    2022) and the usual values it is read against (nights.normal: every
+    measured night of the 60 days up to and including last night, on the
+    watch that mean reads: one band per watch, Dial 2025; « provisoire » from
+    7 to 13 nights, H); the band even without a mean (« en construction » is
+    said only when there is none). The status is judged on the unrounded
+    mean. `seen`: the metric measured in those 60 days."""
+    m = nt.mean7(nights, metric, d)
     src = nt.mean_source(nights, metric, d)
-    b = nt.band(nights, metric, d - timedelta(days=6), source=src)
+    b = nt.normal(nights, metric, d)
     v = m["value"] if m else None
-    lo = d - timedelta(days=nt.BAND_DAYS + 6)
+    lo = d - timedelta(days=nt.BAND_DAYS - 1)
     seen = src is not None and any(lo <= x <= d and n.value(metric) is not None for x, n in nights.items())
     return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen}
 
@@ -134,16 +136,11 @@ def _night_stat(nights, metric: str, d: date, ignore=()) -> dict:
 def _assess(nights, sessions, efforts, d: date) -> dict:
     """What day `d` reads — today, or a past day of the 14-day card (_history:
     the rows and activities known that day) — and its score and state (the
-    band of the score). While an alert episode is open (a night of it in the
-    7-night window, the alert firing or not) the nightly components read the
-    episode's own nights (the band stays the normal before it): the score
-    shows the episode, never « dans ta normale » the morning the alert stops."""
+    band of the score). Every measured night counts in the 7-night means (an
+    alert episode's own nights too: the score shows the episode, never « dans
+    tes valeurs habituelles » the morning the alert stops)."""
     alert = nt.illness_alert(nights, d)
-    episode = alert or any("alert" in n.tags for x in range(nt.WEEK_DAYS)
-                           if (n := nights.get(d - timedelta(days=x))) is not None)
-    # an episode's nights are read even 5 to 7 nights after a ≥ 20-h ultra (out of the band only: the alert fires)
-    ignore = (*nt.EPISODE, "ultra_tail") if episode else ()
-    stats = {k: _night_stat(nights, k, d, ignore=ignore) for k in ("hr", "hrv")}
+    stats = {k: _night_stat(nights, k, d) for k in ("hr", "hrv")}
     tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
     m7 = nt.mean7(nights, "tst24", d)
     usual = nt.band(nights, "tst24", d - timedelta(days=6), source=nt.mean_source(nights, "tst24", d)) if m7 else None
@@ -158,23 +155,24 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
 
 def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
-    computed it on that day: from the nights and the activities known then
-    only — an activity is known once it ended (it is uploaded then), so one
-    still running at midnight belongs to the next day — and the efforts as
-    that day saw them (st.efforts on those activities: a chain across
-    midnight joins a later day, so a past day may have seen a smaller effort). A night's
-    tags as of that day are today's (an effort tags the nights after it, a
+    computed it on that day: from the nights up to that day (the bands, the
+    means, the alert and the 24 h read nothing dated after it) and the
+    activities known then only — an activity is known once it ended (it is
+    uploaded then), so one still running at midnight belongs to the next day
+    — and the efforts as that day saw them (st.efforts on those activities: a
+    chain across midnight joins a later day, so a past day may have seen a
+    smaller effort). The nights' tags only keep a night from firing the
+    illness alert (every measured night counts in the bands and the means):
+    as of that day they are today's (an effort tags the nights after it, a
     session the night after it: both known by then) but for « sortie intense
-    le soir » (it reads that day's HR bounds) and « FC de nuit haute » (an
-    alert episode's first night is tagged only from the next morning). The
-    nights are tagged once, as of today, without the alert episodes; a day
-    whose « late » tags and efforts are the same, with no activity still
-    running at its midnight, reads them, with that day's own alert episodes on
-    top, and shares their bands (nights.memo); any other day is tagged anew
-    from what it knew. `rest_of`: what the efforts were computed with
-    (st.efforts): a Longue's heart-rate test reads the bounds as of its own
-    day, the same whichever later day reads it; `day_alt`: Garmin's day
-    altitudes the nights were tagged with (a night reads the day before)."""
+    le soir » (it reads that day's HR bounds). The nights are tagged once, as
+    of today; a day whose « late » tags and efforts are the same, with no
+    activity still running at its midnight, reads them and shares their bands
+    (nights.memo); any other day is tagged anew from what it knew. `rest_of`:
+    what the efforts were computed with (st.efforts): a Longue's heart-rate
+    test reads the bounds as of its own day, the same whichever later day
+    reads it; `day_alt`: Garmin's day altitudes the nights were tagged with (a
+    night reads the day before)."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
     nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today), day_alt)
@@ -185,7 +183,6 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     ends = {s.id: st.local_end(s) for s in sessions}
     late = {x: c for x, n in base.items()
             if (c := nt.late_candidates(n, by_day.get(x - timedelta(days=1), []) + by_day.get(x, [])))}
-    tagged = {frozenset(): base}
     out = []
     for k in range(sc.HISTORY_DAYS - 1, 0, -1):
         d = today - timedelta(days=k)
@@ -200,15 +197,10 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
         peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
         if not running and same and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)
                                          for x, c in late.items() if x <= d):
-            alert = frozenset(x for x in nt.alert_episodes(base, d) if x in base)
-            if alert not in tagged:
-                tagged[alert] = nt.freeze({x: nt.retagged(n, n.tags | {"alert"}) if x in alert else n
-                                           for x, n in base.items()})
-            nd = tagged[alert]
+            nd = base
         else:
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
             nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
-            nt.tag_alerts(nd, d)
             nt.freeze(nd)
         past = _assess(nd, ss, efs, d)
         out.append((d, past["state"], past["score"]))
@@ -321,29 +313,28 @@ STATUS = {"in": "dans tes valeurs habituelles", "below": "plus basse que d'habit
 BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over it: the side that matters
 MEANING = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie.",
            "hr": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
-NO_MEAN = "Trop peu de nuits qui comptent ces 7 derniers jours pour comparer."
+NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
 FEW = "trop peu de nuits pour comparer"  # its row's word
 BUILDING = "en construction"  # a signal without usual values yet: its row's word, its card's first words
-COUNTS = "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas."  # while the band builds
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
-# a filled dot counts toward the usual values, a hollow one does not; the band solid, or dashed while provisional
-LEGEND_DOTS = {"both": [("is-dot", "compte"), ("is-out", "ne compte pas (voyage, gros effort, altitude)")],
-               "in": [("is-dot", "nuit")], "out": [("is-out", "ne compte pas (voyage, gros effort, altitude)")]}
+# every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
+# provisional
+LEGEND_DOT = ("is-dot", "nuit")
 LEGEND_MEAN = ("is-mean", "moyenne sur 7 nuits")
 LEGEND_BAND = ("is-band", "tes valeurs habituelles")
 LEGEND_PROV = ("is-band-prov", "valeurs habituelles (provisoires)")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
-    """How many nights until the normal the score reads on `metric` exists, every coming night being an
-    ordinary one: the first j ≥ 1 for which the band day d + j reads (the 60 days before its 7-night window, on
-    the latest watch: 7 usable nights at least, H) holds 7 nights — those already slept and the coming ones."""
+    """How many nights until the usual values the score reads on `metric` exist, every coming night being
+    measured: the first j ≥ 1 for which the band of day d + j (nights.normal: every measured night of the 60 days
+    up to and including d + j, on the latest watch: 7 at least, H) holds 7 nights — those already slept and the
+    j coming ones."""
     src = nt.mean_source(nights, metric, d)
-    known = [x for x, n in nights.items() if x <= d and n.usable(metric) and n.source_of(metric) == src]
-    for j in range(1, nt.BAND_DAYS + 8):
-        until = d + timedelta(days=j - 6)  # the band of day d + j: the nights before d + j − 6
-        lo = until - timedelta(days=nt.BAND_DAYS)
-        if sum(1 for x in known if lo <= x < until) + max(0, (until - d).days - 1) >= nt.MIN_PROVISIONAL_NIGHTS:
+    known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
+    for j in range(1, nt.MIN_PROVISIONAL_NIGHTS):
+        lo = d + timedelta(days=j - nt.BAND_DAYS + 1)  # the first day of the band of day d + j
+        if sum(1 for x in known if x >= lo) + j >= nt.MIN_PROVISIONAL_NIGHTS:
             return j
     return nt.MIN_PROVISIONAL_NIGHTS
 
@@ -363,13 +354,13 @@ def card_status(nights, metric: str, day: dict) -> dict:
     red out of them on the side that matters, neutral on the other side, never praised), and « Ça arrive avec … »
     only out of them on the side that matters. Under the illness alert the FC de nuit reads the alert's 2 nights,
     as the score does: their percentage, « nettement plus haute depuis 2 nuits ». Without a band (none): « en
-    construction », how many nights until there is one (nights_to_normal) and which nights do not count; a plain
-    line when the week holds under 3 usable nights (few). `text`: the line in words."""
+    construction » and how many nights until there is one (nights_to_normal); a plain line when the week holds
+    under 3 measured nights (few). `text`: the line in words."""
     s = day["stats"][metric]
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
         when = f"dans {n} nuits" if n > 1 else "après ta prochaine nuit"
-        return {"key": "none", "value": None, "word": BUILDING, "tone": None, "meaning": COUNTS,
+        return {"key": "none", "value": None, "word": BUILDING, "tone": None, "meaning": None,
                 "text": f"En construction : tes valeurs habituelles seront prêtes {when}, si tu portes ta montre."}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None or part is None:
@@ -392,12 +383,13 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     without a night measured in the 30 days. With fewer than 10 measured
     nights the axis spans them (from the first, 14 days at least), not 30
     nights with a few dots against the right edge. Each day's band is the
-    normal its 7-night mean is read against (the 60 days before that week, on
-    the watch the mean reads: v4.3, one normal for the card, its status line
-    and the score), its status line opens the card (card_status). v4.4: a
-    night that does not count toward the usual values (Night.usable: time
-    zone, after a big effort, altitude, an alert episode…) is a hollow dot,
-    the provisional band is dashed; the legend names only what is drawn."""
+    usual values its 7-night mean is read against (nights.normal: every
+    measured night of the 60 days up to and including that night, on the
+    watch the mean reads: v4.3, one normal for the card, its status line and
+    the score), its status line opens the card (card_status). Every measured
+    night is a filled dot (each one counts: owner, 2026-10-08), a night
+    without a measure draws nothing; the provisional band is dashed; the
+    legend names only what is drawn."""
     days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
     values = [nights[d].value(metric) if d in nights else None for d in days]
     seen = [i for i, v in enumerate(values) if v is not None]
@@ -408,18 +400,15 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
         days, values = days[-keep:], values[-keep:]
     bands, prov = [], []
     for d in days:
-        b = nt.band(nights, metric, d - timedelta(days=6), source=nt.mean_source(nights, metric, d))
+        b = nt.normal(nights, metric, d)
         bands.append((b["lo"], b["hi"]) if b else None)
         prov.append(bool(b and b["provisional"]))
     means = [(nt.mean7(nights, metric, d) or {}).get("value") for d in days]
-    counts = [v is None or nights[d].usable(metric) for d, v in zip(days, values, strict=True)]
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
-                       name=name, min_span=_span(metric, values, bands), counts=counts)
+                       name=name, min_span=_span(metric, values, bands))
     c["status"] = card_status(nights, metric, day)
-    out = {d["out"] for d in c["dots"]}
-    c["legend"] = (LEGEND_DOTS["both" if len(out) > 1 else "out" if out == {True} else "in"]
-                   + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
+    c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
                    + ([LEGEND_PROV] if c["band_prov"] else []))
     return c
 

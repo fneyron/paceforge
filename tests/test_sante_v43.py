@@ -176,13 +176,15 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
 def test_coros_the_night_offset_comes_from_its_hrv_series():
     """COROS: a night's UTC offset is its HRV series' timezone (quarter hours): 20 nights at UTC+2 (8), then
     UTC+9 (36) from 5 nights ago: 7 zones east, « décalage horaire » on the first 7 of them (⌈1 × 7⌉, Janse van
-    Rensburg 2021), out of the normal; no activity needed."""
+    Rensburg 2021): they never fire the alert, and count in the normal like any night (2026-10-08); no activity
+    needed."""
     rows = coros_rows(D, range(0, 25), tz_q=lambda k: 36 if k <= 4 else 8)
     nights = nt.build_nights(rows, D)
     assert {nights[D].tz, nights[D - timedelta(days=10)].tz} == {540, 120}
     nt.tag_activities(nights)
     assert _tags(nights) == {D - timedelta(days=k): ["jetlag"] for k in range(0, 5)}
-    assert not any(nights[D - timedelta(days=k)].usable("hrv") for k in range(0, 5))
+    assert not any(nt.alert_night(nights, (), D - timedelta(days=k)) for k in range(0, 5))
+    assert nt.mean7(nights, "hrv", D)["n"] == 7
 
 
 def test_garmin_the_night_offset_comes_from_its_local_and_gmt_times():
@@ -253,10 +255,10 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
 
 
 async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
-    """Garmin nights through its own parser (12 nights: a « provisoire » normal from 7 before the week, H), no
-    activity: VFC and FC de nuit in the score, the cards' readouts say « (provisoire) »."""
+    """Garmin nights through its own parser (12 nights, last night included: a « provisoire » normal from 7, H),
+    no activity: VFC and FC de nuit in the score, the cards' readouts say « (provisoire) »."""
     await test_garmin._link(db_session, test_user)
-    await _seed(db_session, test_user, garmin_rows(D, range(0, 15)))
+    await _seed(db_session, test_user, garmin_rows(D, range(0, 12)))
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert {p["key"] for p in page["score"]["parts"]} == {"hrv", "hr", "sleep"}
     assert all(p["prov"] for p in page["score"]["parts"] if p["key"] in ("hrv", "hr"))

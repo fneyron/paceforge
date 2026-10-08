@@ -10,8 +10,9 @@ every number below is (H) unless cited.
 
 raw (0–100) is the weighted mean of the components present, each scored 0–100
 only when its own data rule holds:
-1. VFC · 7 nuits (≥ 3 usable nights in the last 7 and a band, full or
-   « provisoire »): z = (ln of the 7-night mean − ln of the band's centre) /
+1. VFC · 7 nuits (≥ 3 measured nights in the last 7 and a band, full or
+   « provisoire »: every measured night counts in both, last night included,
+   nights.normal): z = (ln of the 7-night mean − ln of the band's centre) /
    the band's SD of ln RMSSD; 100 from z ≥ −0.5 (the trials' convention:
    mean ± 0.5 SD), linear to 0 at z = −2.5 (H). Above the band = 100: never
    above, never praised (Plews 2013; Bellenger 2016).
@@ -25,9 +26,10 @@ only when its own data rule holds:
    its wake count, nights.day_tst24): ≥ 7 h → 100 (AASM/SRS: Watson 2015a;
    NSF: Hirshkowitz 2015), 6 h → 60 (Craven 2022: sleep loss is ≤ 6 h per
    24 h), ≤ 4 h → 0, linear between (H); never less for a long night (no
-   ceiling: Watson 2015a); with a 7-day mean (≥ 3 usable days) and a usual
-   (the 24-h band's median) at most 100 − 2/3 point per minute of that mean
-   under the usual (90 min under → 40, H).
+   ceiling: Watson 2015a); with a 7-day mean (≥ 3 measured days) and a usual
+   (the median of the 24-h band of the 60 days before that week) at most
+   100 − 2/3 point per minute of that mean under the usual (90 min under →
+   40, H).
 4. Charge récente, only while a recovery window is open (sante_training's
    effort windows): 50 after a Longue, 30 after a Très longue, 20 after an
    Ultra (the lowest of the windows open). Outside a window it is no
@@ -101,7 +103,7 @@ CAP_NO_HEART = 80  # (H) neither VFC nor FC de nuit in the score: sleep and Char
 CAPS = ("ill", "effort", "short", "joint", "red", "no_heart")  # equal caps: the first names the reason
 HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
-HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
+HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and its alert's (the 60 before), with room
 
 # « Comment je calcule ta récupération » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets
 # pas les citations »): a few bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
@@ -306,8 +308,8 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
 
 
 def building(day: dict, absent: list[str]) -> list[str]:
-    """The heart signals missing from the score because their normal is still being built: measured lately (in
-    the 60 days of a band and the week after them) but no band yet (fewer than 7 usable nights, H)."""
+    """The heart signals missing from the score because their normal is still being built: measured in the 60 days
+    of a band but no band yet (fewer than 7 measured nights, H)."""
     return [k for k in HEART if k in absent and day["stats"][k].get("seen") and not day["stats"][k]["normal"]]
 
 
@@ -339,6 +341,7 @@ def score_of(day: dict) -> dict:
 ESTIMATED = "estimé"  # a score from a recovery window alone, no night measured (v4.3)
 EST_READ = "estimé, nuit non enregistrée"  # its readout in the 14-day card (v4.4: what happened, in plain words)
 EST_SAID = "estimé car ta montre n'a pas enregistré la nuit"  # spoken
+NO_MEASURE = "pas de mesure ce jour-là"  # a day without a score: no bar, no dot, its readout says it (2026-10-08)
 
 
 def pct(v: int) -> str:
@@ -394,10 +397,12 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     """« Récupération · 14 jours »: one bar per day with a score, in its
     state's colour, hatched when it was estimated without a night measured
     (v4.3), with faint 40 and 70 lines labelled on the right (the bands:
-    never colour alone), today's day on a disc; tap a bar → « 64 % »
-    « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, nuit non
-    enregistrée »): the date, the score and the state only (v4.3, owner: « mets
-    juste les scores »). It rests on the mean of the days with a score
+    never colour alone), today's day on a disc; nothing on a day without a
+    score (owner, 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas
+    de point »), whose readout says « pas de mesure ce jour-là »; tap a bar →
+    « 64 % » « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, nuit
+    non enregistrée »): the date, the score and the state only (v4.3, owner:
+    « mets juste les scores »). It rests on the mean of the days with a score
     (nothing selected: today's score is the ring's). None under 2 days with a
     score."""
     days = [d for d, _, _ in history]
@@ -413,8 +418,8 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
         e = v is not None and bool(s.get("estimated"))
         est.append(e)
         if v is None:
-            r.append(["—", "", f"{viz.d_short(d)} · pas de score"])
-            a.append(f"{viz.d_long(d)} : pas de score")
+            r.append(["—", "", f"{viz.d_short(d)} · {NO_MEASURE}"])
+            a.append(f"{viz.d_long(d)} : {NO_MEASURE}.")
             continue
         r.append([pct(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {EST_READ}" if e else "")])
         a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}" + (f", {EST_SAID}" if e else "") + ".")

@@ -112,8 +112,9 @@ def test_ring_arc_is_the_fill_and_the_value_is_printed_by_the_caller():
 
 
 def test_day_bars_stack_the_naps_mark_today_and_leave_a_gap():
-    """V2: one bar per day; a lighter part on top (the naps); a day without data is a dot, never a zero;
-    the reference line; the day of the month under 16 slots or fewer, the months beyond."""
+    """V2: one bar per day; a lighter part on top (the naps); a day without data draws nothing, never a zero nor
+    a dot (owner, 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de point »); the reference line; the
+    day of the month under 16 slots or fewer, the months beyond."""
     days = [D - timedelta(days=13 - i) for i in range(14)]
     vals = [440.0] * 14
     vals[3] = None
@@ -234,7 +235,10 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
         assert "<a " not in html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0], name  # links via the readout
     html = render(figs["day_bars"][0], c=sleep)
     assert 'class="pf-viz pf-viz-card"' in html and "choisis une nuit" in html
-    assert html.count('class="pf-bar-top"') == 1 and html.count('class="pf-viz-gap"') == 1
+    assert html.count('class="pf-bar-top"') == 1 and "pf-viz-gap" not in html  # the day without data: nothing
+    col = html.split('<g class="pf-viz-col" data-i="0">')[1].split("</g>")[0]
+    assert "<circle" not in col and "<rect" not in col and "<path" not in col
+    assert html.count('<rect x=') == 1 + 13 + 1  # the selection's column, the 13 bars, the one nap on top
     assert 'class="pf-viz-col is-today"' in html and ">7 h</text>" in html
     assert 'class="pf-viz-todisc"' in html and 'class="pf-viz-today">' in html  # today's day on a disc
     # the selection: a soft column behind the bars (first in the SVG), never a full-height rule

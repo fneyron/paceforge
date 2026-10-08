@@ -67,7 +67,7 @@ Why I trust this reading:
 What the code does:
 - It keeps `hr_night` only when a main window exists and the summary's Total equals the main period within 15 min (H). This drops 2026-09-25 and the malformed 2026-07-17 record.
 - It marks `nap_day` on days with a nap.
-- While `nights.COROS_SLEEP_HR_NAP_VERIFIED` is False, those nights stay out of the HR band, the 7-night mean and the illness alert.
+- While `nights.COROS_SLEEP_HR_NAP_VERIFIED` is False, those nights never fire the illness alert. Since 2026-10-08 they count in the HR band and the 7-night mean like every measured night (owner: « Tous les relevés VFC doivent compter en fait, pareil pour la FC »).
 
 Garmin:
 - Nightly HR is the mean of the `sleepHeartRate` readings inside the main window, so naps are left out by construction.
@@ -108,6 +108,6 @@ Garmin:
 - The score is never persisted: /sante recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night) and the activities only (`sante._assess`, then `sante_score.score_of`): no Route, no check-in. No table, no migration, and a night synced late corrects its own day.
 - Each past day is computed with what that day knew (`sante._history`): its own normals, alert episodes and effort windows, from the nights and activities up to that day, nothing dated after it.
 - The check-in rows (`feel`) are still accepted by `POST /sante/feel` and kept; Santé no longer reads them.
-- Efforts come from the activities' own time, stops included (`sante_training.effort_of`, H): ≥ 10 h ultra, 6–10 h very long, ≥ 3 h (or ≥ 1 500 m D+ on foot) long. The three nights after a ≥ 6 h effort (and a sleep started after it ended, the same day) are tagged `big` and left out of the normals and of the illness alert.
-- Normals are « provisoire » from 7 usable nights (`nights.band`), full from 14; the illness alert and its episodes read a full band only (`full=True`).
+- Efforts come from the activities' own time, stops included (`sante_training.effort_of`, H): ≥ 10 h ultra, 6–10 h very long, ≥ 3 h (or ≥ 1 500 m D+ on foot) long. The three nights after a ≥ 6 h effort (and a sleep started after it ended, the same day) are tagged `big`: they never fire the illness alert, and count in the normals like every measured night (2026-10-08).
+- Normals are every measured night of 60 days on one watch, whatever its tags (`nights.band`; Santé reads the 60 days up to and including last night, `nights.normal`): « provisoire » from 7 nights, full from 14; the illness alert and its episodes read a full band only (`full=True`), of the 60 days before their 2 nights.
 - Cost on the seeded Postgres (400 nights, 730 days of activities): the whole one-page /sante, rings to folds, 82–90 ms median, against 87–117 ms for main's Aujourd'hui alone.

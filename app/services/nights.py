@@ -3,7 +3,7 @@
 One `Night` per wake-up day, from the rows the watches' syncs write
 (health.py docstring): the main window and minutes asleep, the day's naps, the
 24-h total (main night + naps), nightly HR, HRV and respiration, and the
-context that keeps a night out of the athlete's normal. Pure functions on
+context that keeps a night from firing the illness alert. Pure functions on
 those rows; `load_nights` reads them.
 
 Rules, with where they come from (evidence_final.md; (H) = a PaceForge
@@ -28,50 +28,58 @@ heuristic, never shown as a finding):
   16:00) on the evening before a night annotates it (H; Mograss 2022 for the
   7 h; Walsh 2021's 13:00–16:00 window); it does not exclude it and never
   judges the nap (Ohayon 2017).
-- Excluded nights (H), out of the band and of the 7-night means: a session
-  ≥ 90 min the day before (Myllymäki 2012), a vigorous session ending ≤ 2 h
-  before sleep onset (« sortie intense le soir »: average HR ≥ 80 % of the
+- Every measured night counts (owner, 2026-10-08: « Tous les relevés VFC
+  doivent compter en fait, pareil pour la FC », like WHOOP's and Oura's
+  rolling baselines): in the bands, the 7-night means and the timing. The
+  context tags only keep a night from firing the illness alert (a rise is
+  expected there), and the nights' table names them (H): a session ≥ 90 min
+  the day before (Myllymäki 2012), a vigorous session ending ≤ 2 h before
+  sleep onset (« sortie intense le soir »: average HR ≥ 80 % of the
   heart-rate reserve, or ≥ 20 min above it in its laps or km splits; Stutz
   2019's ≤ 1 h and Myllymäki 2012's vigorous evening session, the 2 h and
-  the 80 % are H: an easy evening run never drops a night), sleeping at altitude
-  (Latshang 2013: ≥ 1 600 m where the athlete slept, H: night_altitude, for
-  every user; carried to the next nights without any activity, 3 at most,
-  H; a summit day from a valley is no night at altitude), a time
-  zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
-  change at home is none; from the night it shows, ⌈1 night per zone⌉
-  eastwards, ⌈0.5⌉ westwards, « décalage horaire » from 3 zones, H), the nights
-  after an effort by its duration (H, sante_training.NIGHT_TAGS: night D+1
-  after a Longue; D+1 → D+3 after a Très longue, « après grosse sortie »:
-  Hynynen 2010, nightly HR at 130 % after a marathon; D+1 → D+4 after an
-  Ultra, « après ultra »: Fachan 2026, Kishi 2024; D is the day before the
-  first morning after it, H: anchor_efforts; after ≥ 20 h D+5 → D+7 too, out
-  of the band only: Paech 2021), and
-  the nights of an alert episode (« FC de nuit haute », H; heart rate alone is
-  never a diagnosis: evidence row 3). Santé (v4) reads nothing else: no planned
-  race, no check-in (owner, 2026-10-08). The race page keeps its own: J-7 →
-  J+7 around its race (H), and the « alcool hier » and « malade » chips
-  (Pietilä 2018) a check-in stored before v4 holds.
-- COROS nightly HR on a day with a nap stays out of the HR band, the 7-night
-  mean and the illness alert until it is shown that COROS leaves the nap out
-  of its « Sleep HR » line (docs/sante-v3-data-notes.md).
-- Bands (H): ≥ 14 untagged nights in the 60 days before, one band per watch
-  (Dial 2025: brands average over different windows); from 7 such nights a
-  « provisoire » band (owner decision 2026-10-07), labelled so wherever it is
-  read, until 14 — never for the illness alert nor its episodes (specific,
-  not sensitive: Quer 2021; a provisional band would make the alert fire on
-  noise). HR: median ± 3 bpm; HRV: exp(mean ln ± 0.5 SD) (the SWC convention
-  of HRV-guided training); both SDs shrunk towards a prior (H, Kellmann
-  2018's Bayesian individualisation): σ0 = 0.10 ln units for HRV, 4 % of the
-  median for the robust HR SD behind the alert line (Mishica 2022), as if
-  7 nights had it; 24-h sleep: median ± 30 min; respiration: median.
-- 7-night means need ≥ 3 nights in the last 7 (Plews 2014; Lau 2022).
-- Illness alert (H): the HR band of the watch that measured both nights, then
-  2 nights in a row each ≥ median + max(2 robust SD, 5 bpm) (Alavi 2022:
-  2 nights at + 4 bpm over the median; ours stricter, specific, not
-  sensitive: Quer 2021). Context-tagged nights (the nights after an effort
-  included) never fire it; it re-arms by itself after them, against the band
-  before the effort (Schwellnus 2016: symptoms more frequent in the 1–2 weeks
-  after a race); on the race page, the nights after its race never fire it.
+  the 80 % are H: an easy evening run never mutes the alert), sleeping at
+  altitude (Latshang 2013: ≥ 1 600 m where the athlete slept, H:
+  night_altitude, for every user; carried to the next nights without any
+  activity, 3 at most, H; a summit day from a valley is no night at
+  altitude), a time zone change (Janse van Rensburg 2021; a step of more
+  than 1 h, so a clock change at home is none; from the night it shows,
+  ⌈1 night per zone⌉ eastwards, ⌈0.5⌉ westwards, « décalage horaire » from
+  3 zones, H), the nights after an effort by its duration (H,
+  sante_training.NIGHT_TAGS: night D+1 after a Longue; D+1 → D+3 after a
+  Très longue, « après grosse sortie »: Hynynen 2010, nightly HR at 130 %
+  after a marathon; D+1 → D+4 after an Ultra, « après ultra »: Fachan 2026,
+  Kishi 2024; D is the day before the first morning after it, H:
+  anchor_efforts), and the race page's « alcool hier » (Pietilä 2018). The
+  nights of an alert episode are « FC de nuit haute » in the table (H; heart
+  rate alone is never a diagnosis: evidence row 3). Santé (v4) reads nothing
+  else: no planned race, no check-in (owner, 2026-10-08). The race page keeps
+  the « alcool hier » and « malade » chips a check-in stored before v4 holds,
+  and the nights after its race never fire the alert.
+- COROS nightly HR on a day with a nap counts like any night, but never fires
+  the illness alert until it is shown that COROS leaves the nap out of its
+  « Sleep HR » line (docs/sante-v3-data-notes.md: consistent with the main
+  sleep only).
+- Bands (H): every measured night of 60 days on one watch (Dial 2025: brands
+  average over different windows) — Santé's usual values (`normal`) the 60
+  days up to and including last night, the illness alert the 60 days before
+  its 2 nights; full from 14 nights, « provisoire » from 7 (owner decision
+  2026-10-07), labelled so wherever it is read, until 14 — never for the
+  illness alert nor its episodes (specific, not sensitive: Quer 2021; a
+  provisional band would make the alert fire on noise). HR: median ± 3 bpm;
+  HRV: exp(mean ln ± 0.5 SD) (the SWC convention of HRV-guided training);
+  both SDs shrunk towards a prior (H, Kellmann 2018's Bayesian
+  individualisation): σ0 = 0.10 ln units for HRV, 4 % of the median for the
+  robust HR SD behind the alert line (Mishica 2022), as if 7 nights had it;
+  24-h sleep: median ± 30 min; respiration: median.
+- 7-night means: every measured night of the last 7, 3 at least (Plews 2014;
+  Lau 2022).
+- Illness alert (H): the full HR band of the watch that measured both nights
+  (the 60 days before them), then 2 nights in a row each ≥ median + max(2
+  robust SD, 5 bpm) (Alavi 2022: 2 nights at + 4 bpm over the median; ours
+  stricter, specific, not sensitive: Quer 2021). Context-tagged nights (the
+  nights after an effort included) never fire it; it re-arms by itself after
+  them (Schwellnus 2016: symptoms more frequent in the 1–2 weeks after a
+  race); on the race page, the nights after its race never fire it.
   Respiration ≥ median + 2/min only backs it up.
 """
 import copy
@@ -124,7 +132,7 @@ TZ_CHANGE_MIN = 60  # (H) a step of MORE than this: a 1-h clock change (DST) at 
 TZ_EAST, TZ_WEST = 1.0, 0.5
 JETLAG_ZONES = 3  # « décalage horaire » from 3 zones (Janse van Rensburg 2021), « fuseau changé » under
 TZ_LOOKBACK = 10  # days (H)
-RACE_WINDOW = 7  # J-7 → J+7 (H)
+RACE_WINDOW = 7  # (H) the race page: the nights up to J+7 never fire the alert
 ILL_TAIL = 2  # days after the last « malade » (H)
 ILL_MERGE = 3  # « malade » days this close make one episode (H)
 ILL_MAX = 14  # days an alert episode can run (H)
@@ -136,27 +144,19 @@ COROS_SLEEP_HR_NAP_VERIFIED = False
 # « ill » is the athlete's own « malade » chip; « alert » an alert episode, never worded as a diagnosis (row 3)
 TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir", "altitude": "en altitude",
              "tz": "fuseau changé", "jetlag": "décalage horaire", "big": "après grosse sortie",
-             "ultra": "après ultra", "ultra_tail": "après ultra", "alcohol": "alcool", "race": "autour de la course",
-             "ill": "malade", "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
-# Santé names no outing (v4.3, owner: « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »): the
-# nights after an effort say « récupération » there, as its cards do (« hors voyage, altitude et récupération »)
-RECOVERY_WORDS = {t: "récupération" for t in ("long", "late", "big", "ultra", "ultra_tail")}
-# « ultra_tail » (D+5 → D+7 after ≥ 20 h) is out of the band and the 7-night means, never out of the alert
-EXCLUDING = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "ultra_tail", "alcohol", "race",
-             "ill", "alert")
-EPISODE = ("ill", "alert")  # the nights of an illness episode
+             "ultra": "après ultra", "alcohol": "alcool", "ill": "malade", "alert": "FC de nuit haute",
+             "late_nap": "après sieste tardive"}
+# the context nights: they count like any night (in the bands, the means, the timing), but never fire the alert
+CONTEXT = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "alcohol")
 
 
-def tag_words(tags, skip=("race",), words=None) -> list[str]:
-    """A night's tags as the readouts print them, each word once (« ultra » and « ultra_tail » say the same);
-    `words` replaces some of TAG_WORDS (Santé: RECOVERY_WORDS)."""
+def tag_words(tags, words=None) -> list[str]:
+    """A night's tags as the readouts print them, each word once (`words`, which replaces some of TAG_WORDS, may
+    say several tags alike: Santé's table, sante_sleep.WORDS)."""
     w = {**TAG_WORDS, **(words or {})}
-    return list(dict.fromkeys(w[t] for t in sorted(tags) if t not in skip))
-_EXCLUDING = frozenset(EXCLUDING)
+    return list(dict.fromkeys(w[t] for t in sorted(tags)))
 _VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
 _SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}
-CONTEXT = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "alcohol")  # never fire the alert
-OFF_TIMING = frozenset(("tz", "jetlag", "ultra", "race"))  # out of the bedtime and wake medians and the regularity
 
 
 def round5(t: datetime) -> datetime:
@@ -217,28 +217,13 @@ class Night:
     def wake5(self) -> datetime | None:
         return round5(self.end) if self.end else None
 
-    @property
-    def excluded(self) -> bool:
-        """Out of the band and of the 7-night means."""
-        return bool(self.tags & set(EXCLUDING))
-
     def value(self, metric: str):
-        """hr, hrv, tst24 or resp (read on every night of every band: no dict built per call)."""
+        """hr, hrv, tst24 or resp (read on every night of every band: no dict built per call). A measured value
+        counts in the bands and the 7-night means, whatever the night's tags (owner, 2026-10-08)."""
         return self.tst24 if metric == "tst24" else getattr(self, _VALUE[metric])
 
     def source_of(self, metric: str) -> str | None:
         return getattr(self, _SOURCE[metric])
-
-    def usable(self, metric: str, ignore=()) -> bool:
-        """Can enter the band and the 7-night means for `metric` (`ignore`: tags
-        that do not exclude here, e.g. EPISODE for the tile that shows an
-        illness episode while R2/R3 is the rung, never for what decides)."""
-        out = _EXCLUDING - set(ignore) if ignore else _EXCLUDING
-        if self.value(metric) is None or not self.tags.isdisjoint(out):
-            return False
-        if metric == "hr" and self.hr_nap_day and self.hr_method == "coros_sleep_summary":
-            return COROS_SLEEP_HR_NAP_VERIFIED
-        return True
 
     def in_axis(self, a: datetime, b: datetime) -> bool:
         """A segment that fits the timing chart's 20:00 → 12:00 axis of this night."""
@@ -334,11 +319,11 @@ def vigorous(s, rest: float, peak: float) -> bool:
     return s.hr >= hard or sum(m for m, hr in (getattr(s, "segs", None) or ()) if hr >= hard) >= VIGOROUS_MIN
 
 
-def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date, dict] | None = None,
+def tag_nights(nights: dict[date, Night], sessions=(), feel: dict[date, dict] | None = None,
                rest: float = 50.0, peak: float = 190.0, day_alt: dict[date, float] | None = None) -> None:
     """Context tags on each night (see the module docstring), in place.
-    `sessions`: sante_training.Session; `races`: [(race day, name)];
-    `feel`: {day: feel_of(...)}; `rest`/`peak`: the athlete's HR bounds;
+    `sessions`: sante_training.Session; `feel`: {day: feel_of(...)} (the race
+    page's stored check-ins); `rest`/`peak`: the athlete's HR bounds;
     `day_alt`: {day: Garmin's average altitude that day} (day_altitudes)."""
     feel = feel or {}
     by_day = defaultdict(list)
@@ -352,9 +337,6 @@ def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date
             n.tags.add("late")
         if (feel.get(d) or {}).get("alcohol"):
             n.tags.add("alcohol")
-        for rd, _ in races:
-            if abs((d - rd).days) <= RACE_WINDOW:
-                n.tags.add("race")
     _tag_altitude(nights, sessions, day_alt or {})
     _tag_timezones(nights, sessions)
     _tag_late_naps(nights)
@@ -511,9 +493,8 @@ def _tag_timezones(nights: dict[date, Night], sessions) -> None:
 
 
 def _onsets(nights: dict[date, Night]) -> tuple[list[date], list[int]]:
-    """The main nights' days and onsets (minutes after 18:00), by day, time-zone nights left out."""
-    pairs = sorted((x, clock_min(m.start)) for x, m in nights.items()
-                   if m.start and m.tags.isdisjoint(("tz", "jetlag")))
+    """The main nights' days and onsets (minutes after 18:00), by day: every night counts (as in timing)."""
+    pairs = sorted((x, clock_min(m.start)) for x, m in nights.items() if m.start)
     return [x for x, _ in pairs], [v for _, v in pairs]
 
 
@@ -521,9 +502,9 @@ def nap_cutoff(nights: dict[date, Night], d: date, onsets=None) -> datetime | No
     """When a nap becomes « tardive » for the night that wakes on `d`: on the
     evening before, min(the usual bedtime − 7 h, 16:00) (H; Mograss 2022 for
     the 7 h, Walsh 2021's 13:00–16:00 window); the usual bedtime is the median
-    onset of the 28 days before (5 nights at least, time-zone nights left
-    out), else this night's own onset. None without an onset. `onsets`:
-    _onsets(nights), when read for many nights."""
+    onset of the 28 days before (5 nights at least, every night counted), else
+    this night's own onset. None without an onset. `onsets`: _onsets(nights),
+    when read for many nights."""
     n = nights.get(d)
     if n is None or n.start is None:
         return None
@@ -539,8 +520,8 @@ def nap_cutoff(nights: dict[date, Night], d: date, onsets=None) -> datetime | No
 def _tag_late_naps(nights: dict[date, Night]) -> None:
     """« après sieste tardive » on a night after a nap that ended past its
     cut-off (nap_cutoff) and before its onset: an annotation, never judged
-    (Ohayon 2017: no consensus on naps as a mark of good sleep), never out of
-    the normal."""
+    (Ohayon 2017: no consensus on naps as a mark of good sleep), a word in the
+    nights' table."""
     onsets = None
     for d, n in nights.items():
         ends = [b for m in (nights.get(d - timedelta(days=1)), n) if m for _, b, _ in m.naps
@@ -576,12 +557,11 @@ def tag_efforts(nights: dict[date, Night], efforts=()) -> None:
     sport, sante_training.NIGHT_TAGS), in place: a Longue « après une sortie
     longue » on D+1 (every Longue, the D+ rule included, whatever the 90-min
     rule saw), a Très longue « après grosse sortie » D+1 → D+3, an Ultra
-    « après ultra » D+1 → D+4 — out of the bands and of the illness alert —
-    and after ≥ 20 h also D+5 → D+7 out of the band only (« ultra_tail »: the
-    alert re-arms, against the band before the effort). D+1 only when that
-    sleep started after the effort ended (the sleep before a night start is
-    not after it). Drawn like any night; counted in the 24-h totals (H)."""
-    from app.services.sante_training import NIGHT_TAGS, ULTRA_TAIL
+    « après ultra » D+1 → D+4: they never fire the illness alert, and count
+    in the bands and the means like any night. D+1 only when that sleep
+    started after the effort ended (the sleep before a night start is not
+    after it). Drawn like any night; counted in the 24-h totals (H)."""
+    from app.services.sante_training import NIGHT_TAGS
 
     for e in efforts:
         if e.nights is None:
@@ -591,10 +571,6 @@ def tag_efforts(nights: dict[date, Night], efforts=()) -> None:
             n = nights.get(e.day + timedelta(days=k))
             if n is not None and (k > 1 or n.start is None or n.start >= e.end):
                 n.tags.add(tag)
-        if e.tail:
-            for k in range(ULTRA_TAIL[0], ULTRA_TAIL[1] + 1):
-                if (n := nights.get(e.day + timedelta(days=k))) is not None:
-                    n.tags.add("ultra_tail")
 
 
 def illness_days(feel: dict[date, dict]) -> set[date]:
@@ -696,15 +672,15 @@ def band(nights: dict[date, Night], metric: str, until: date, source: str | None
 
 def _band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
           full: bool = False) -> dict | None:
-    """The athlete's normal for `metric` (hr, hrv, tst24, resp) from the usable
-    nights of the 60 days before `until` (excluded), on one watch (the latest
-    one's unless `source`): None under 7 nights, `provisional` from 7 to 13
-    nights (« provisoire », H); `full`: None under 14 nights (the illness
-    alert and its episodes)."""
+    """The athlete's normal for `metric` (hr, hrv, tst24, resp) from every
+    measured night of the 60 days before `until` (excluded), whatever its tags
+    (owner, 2026-10-08), on one watch (the latest one's unless `source`): None
+    under 7 nights, `provisional` from 7 to 13 nights (« provisoire », H);
+    `full`: None under 14 nights (the illness alert and its episodes)."""
     source = source or _latest_source(nights, metric, until - timedelta(days=1))
     lo = until - timedelta(days=BAND_DAYS)
-    vals = [n.value(metric) for d, n in nights.items()
-            if lo <= d < until and n.usable(metric) and n.source_of(metric) == source]
+    vals = [v for d, n in nights.items()
+            if lo <= d < until and (v := n.value(metric)) is not None and n.source_of(metric) == source]
     out = {"metric": metric, "n": len(vals), "source": source, "until": until,
            "provisional": len(vals) < MIN_BAND_NIGHTS}
     if len(vals) < (MIN_BAND_NIGHTS if full else MIN_PROVISIONAL_NIGHTS):
@@ -729,32 +705,37 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
     return out
 
 
+def normal(nights: dict[date, Night], metric: str, d: date) -> dict | None:
+    """The usual values day `d` reads (Santé's cards, their status lines and the score): the band of every
+    measured night of the 60 days up to and including `d` — last night included (owner, 2026-10-08: « Tous les
+    relevés VFC doivent compter en fait, pareil pour la FC », like WHOOP's and Oura's rolling baselines) — on the
+    watch its 7-night mean reads (mean_source)."""
+    return band(nights, metric, d + timedelta(days=1), source=mean_source(nights, metric, d))
+
+
 def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | None:
     """The watch the 7-night mean of `today` reads (the latest one that measured
     `metric`): its value is judged against that watch's band only (Dial 2025)."""
     return _latest_source(nights, metric, today)
 
 
-def mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True, ignore=()) -> dict | None:
+def mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
     kept = _kept(nights)
     if kept is None:
-        return _mean7(nights, metric, today, untagged, ignore)
-    key = ("mean7", metric, today, untagged, tuple(ignore))
+        return _mean7(nights, metric, today)
+    key = ("mean7", metric, today)
     if key not in kept:
-        kept[key] = _mean7(nights, metric, today, untagged, ignore)
+        kept[key] = _mean7(nights, metric, today)
     return kept[key]
 
 
-def _mean7(nights: dict[date, Night], metric: str, today: date, untagged: bool = True, ignore=()) -> dict | None:
-    """The mean of the last 7 days (HRV: exp of the mean ln), {value, n}; None
-    under 3 nights. `untagged=False` keeps excluded nights in (the 24-h sleep
-    tile shows its value in race week; it is just never judged); `ignore`:
-    tags that do not exclude a night here (Night.usable)."""
+def _mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
+    """The mean of every measured night of the last 7 days on the latest watch (HRV: exp of the mean ln), {value,
+    n}; None under 3 nights."""
     source = _latest_source(nights, metric, today)
     lo = today - timedelta(days=6)
-    vals = [n.value(metric) for d, n in nights.items()
-            if lo <= d <= today and n.value(metric) is not None
-            and n.source_of(metric) == source and (n.usable(metric, ignore) if untagged else True)]
+    vals = [v for d, n in nights.items()
+            if lo <= d <= today and (v := n.value(metric)) is not None and n.source_of(metric) == source]
     if len(vals) < MIN_MEAN_NIGHTS:
         return None
     v = math.exp(statistics.fmean(math.log(x) for x in vals)) if metric == "hrv" else statistics.fmean(vals)
@@ -812,12 +793,10 @@ def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
     nights of the last `days` days, and once 8 nights are there (H) their
     spread (SD of the onset, the regularity measure of ANSI/CTA/NSF-2052.1-A)
     and `bed_near`, the nights whose onset is within 1 h of the median (the
-    RU-SATED window: Ravyts 2021), what the page shows. Time-zone nights, the
-    4 nights after an ultra (Fachan 2026; Kishi 2024) and those around a race
-    (the race page) are left out; a « rendormi » wake counts in neither the
-    wake median nor its spread (H)."""
-    ns = [n for d, n in nights.items() if today - timedelta(days=days - 1) <= d <= today and n.start
-          and n.tags.isdisjoint(OFF_TIMING)]
+    RU-SATED window: Ravyts 2021), what the page shows. Every night counts,
+    whatever its tags (owner, 2026-10-08); a « rendormi » wake counts in
+    neither the wake median nor its spread (H)."""
+    ns = [n for d, n in nights.items() if today - timedelta(days=days - 1) <= d <= today and n.start]
     beds = [clock_min(n.start) for n in ns]
     wakes = [clock_min(n.end) for n in ns if not n.resettled]
     out = {"n": len(ns), "bed": statistics.median(beds) if beds else None,
@@ -833,10 +812,12 @@ def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
 # ── illness alert ───────────────────────────────────────────────────────────
 
 def alert_night(nights: dict[date, Night], races, d: date) -> bool:
-    """A night that may fire the alert: measured HR, no context tag, not after a
-    race (`races`: [(day, name)], Routes and sessions marked as races)."""
+    """A night that may fire the alert: measured HR, no context tag (a rise is
+    expected after an ultra or a long-haul flight), not a COROS nap day (its
+    « Sleep HR » unverified), not after a race (`races`: [(day, name)], the
+    race page's Routes and sessions marked as races)."""
     n = nights.get(d)
-    if not n or n.hr is None or n.tags & set(CONTEXT):
+    if not n or n.hr is None or not n.tags.isdisjoint(CONTEXT):
         return False
     if n.hr_nap_day and n.hr_method == "coros_sleep_summary" and not COROS_SLEEP_HR_NAP_VERIFIED:
         return False
@@ -929,7 +910,7 @@ def rest_hr(nights: dict[date, Night], today: date) -> float:
 
 def tag_alerts(nights: dict[date, Night], today: date, races=()) -> None:
     """« FC de nuit haute » on the nights of the alert episodes (alert_episodes),
-    in place: out of the band and the means like « malade », never worded as it."""
+    in place: a word in the nights' table, never worded as « malade »."""
     for d in alert_episodes(nights, today, races):
         if d in nights:
             nights[d].tags.add("alert")
@@ -946,7 +927,7 @@ def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: flo
     sortie » (`efforts`: sante_training.efforts, anchored on these nights).
     No planned race, no check-in; « FC de nuit haute » comes after
     (tag_alerts)."""
-    tag_nights(nights, sessions, (), {}, rest, peak, day_alt)
+    tag_nights(nights, sessions, {}, rest, peak, day_alt)
     tag_efforts(nights, anchor_efforts(nights, efforts))
 
 

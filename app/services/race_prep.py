@@ -19,7 +19,7 @@ after the race day — recovery is Santé's.
 - Tes nuits, J-14 → J-1: 24-h sleep (main night solid, naps stacked and
   hatched), against your usual + 30 to 60 min (H, below the doses of Mah 2011
   and Arnal 2016; Cunha 2023) on J-7 → J-2 only (the banking week: Walsh
-  2021, « even just 1 week »), drawn only when a usual exists (≥ 7 untagged
+  2021, « even just 1 week »), drawn only when a usual exists (≥ 7 measured
   days in the 60 days before J-14, nights.band; « provisoire » under 14, H).
   « Vise 30 à 60 min de plus par jour, siestes comprises. » from J-7 to J-1,
   and once, from J-7 to J0, Walsh 2021's race-eve reassurance (EVE_LINE). The
@@ -428,14 +428,14 @@ def hot(route) -> bool:
 
 async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, sessions, races) -> dict:
     """The nights from `lo` to today, tagged as Santé tags them (nights.load_nights: « sortie intense le soir »
-    from the laps or splits too, the 3 nights after an effort of 6 h or more), plus the race window and the
-    check-in's « alcool » and « malade » this page keeps."""
+    from the laps or splits too, the 3 nights after an effort of 6 h or more), plus the check-in's « alcool » and
+    « malade » this page keeps; the alert never fires on the nights after a race (`races`)."""
     rows = await nt.read_rows(db, user_id, lo, today)
     feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = nt.build_nights(rows, today)
     rest = st.hr_rest({d: n.hr for d, n in nights.items() if n.hr}, {}, today)
     await nt.load_segments(db, nights, sessions)
-    nt.tag_nights(nights, sessions, races, feel, rest, st.hr_max(sessions, today),
+    nt.tag_nights(nights, sessions, feel, rest, st.hr_max(sessions, today),
                   await nt.day_altitudes(db, user_id, lo, today))
     nt.tag_efforts(nights, nt.anchor_efforts(nights, st.efforts(sessions)))
     nt.tag_alerts(nights, today, races)
