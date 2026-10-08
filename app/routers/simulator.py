@@ -236,7 +236,8 @@ async def _nutrition_plan(db: AsyncSession, user_id: int, route: Route | None, s
 
 def _nutrition_count(plan: dict, products: dict, sections: list[dict], checkpoints: list[dict], start_offset_s: int) -> dict | None:
     """The plan counted on this race's clocks: the intakes, one row per refill
-    point, the list. None without a simulation (no clocks to count on)."""
+    point, the list, the « Eau » points' times (where the flasks are filled
+    again between two of them). None without a simulation (no clocks to count on)."""
     from app.services import nutrition_plan as NP
 
     end = NP.race_end_s(sections, start_offset_s)
@@ -249,6 +250,7 @@ def _nutrition_count(plan: dict, products: dict, sections: list[dict], checkpoin
     rows = NP.ravito_rows(NP.refill_points(sections, checkpoints, start_offset_s), end, il, products, order, spare)
     shop = NP.shopping(rows)
     return {"end_s": end, "intakes": il, "rows": rows, "order": order, "spare_pid": spare,
+            "water_s": NP.water_times(sections, checkpoints, start_offset_s),
             "finish_clock_s": NP.arrival_clock(sections[-1], start_offset_s),
             "shop": {p: shop[p] for p in sorted(shop, key=lambda p: order.index(p) if p in order else len(order))}}
 
@@ -1903,7 +1905,7 @@ async def _nutrition_card_context(
     """Everything the Nutrition card shows: « Ton plan » (one line per rhythm and
     the totals against the evidence, the sodium too when the race is hot),
     « À chaque ravito » (what to take when leaving each refill point and the
-    water to carry to the next one), « Ta liste », « Tes produits »."""
+    water to carry, to the next place to drink), « Ta liste », « Tes produits »."""
     from app.services import nutrition as N
     from app.services import nutrition_plan as NP
 
@@ -1954,8 +1956,9 @@ async def _nutrition_card_context(
         for r in count["rows"]:
             tag = "base vie" if r["base"] else ("assistance" if r["crew"] else ("drop bag" if r["drop"] else None))
             text = NP.take_text(r["items"], products)
-            # after what to take, the water to carry to the next refill point: « 1 Maurten 100 · 1 L »
-            water = NP.litres(NP.water_ml(r["t_s"], r["end_s"], hot))
+            # after what to take, the water to carry: the longest stretch without water before the next refill
+            # point, an « Eau » point on the way cutting it (H): « 1 Maurten 100 · 1 L »
+            water = NP.litres(NP.water_ml(r["t_s"], r["end_s"], hot, count["water_s"]))
             # the opened pouch's prises: on a phone only when the row (its water too) stays one line, always on a
             # wider screen
             room = NP.ROW_CHARS - len(r["name"]) - (len(tag) + 1 if tag else 0)
@@ -1970,6 +1973,8 @@ async def _nutrition_card_context(
             [f"{route.name} : nutrition", "", "Ta liste"] + [f"{s['n']} {s['name']}" for s in shop]
             + ["", "À chaque ravito"] + [f"{r['clock']} {r['name']} : {r['take']} · {r['water']}" for r in rows]
             + [f"{finish} Arrivée"])
+    elif lines:  # no predicted times yet: no rows, no litres, only « Eau : bois à ta soif. » under the plan
+        water_note = NP.water_note(timed=False)
 
     # « Tes produits »: the same for every race
     used = {r["product_id"] for r in lines}

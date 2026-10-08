@@ -14,32 +14,36 @@ Nothing here calls an LLM: the numbers are reproducible and explainable.
 _CARBS_SHORT = 60.0   # g/h, efforts < 3h
 _CARBS_MID = 75.0     # g/h, 3–6h
 _CARBS_LONG = 80.0    # g/h, > 6h
-_FLUID_BASE = 500.0   # ml/h at mild temperature
-_SODIUM_BASE = 400.0  # mg/h at mild temperature
 
 # The range a race plan is read against, from the race's duration (2026-10-09; owner, on the mockup: « la
 # maquette est parfaite »): under 1 h eating is not needed (Jeukendrup 2014); up to 2 h 30, 30 to 60 g/h (ACSM
-# 2016, Thomas); from 2 h 30 to 6 h, 60 to 90 g/h (Jeukendrup 2014; ACSM 2016: up to 90 g/h past 2.5–3 h); past
-# 6 h, an ultra, 30 to 50 g/h (ISSN 2019, Tiller: 90 g/h « may be unrealistic for longer ultra-marathon races
-# (> 6 h) »), more only with a gut trained for it (ISSN 2019: progressive gut training).
-ULTRA_H = 6.0  # an ultra: past 6 h (ISSN 2019)
-ULTRA_STARTER_G_H = 50  # « Plan type » on an ultra: the top of its range (ISSN 2019), never 80 any more
+# 2016, Thomas); from 2 h 30 to 6 h, 60 to 90 g/h (Jeukendrup 2014; ACSM 2016: up to 90 g/h past 2.5–3 h).
+# Past 6 h, an ultra (2026-10-09, owner: « fait la combinaison nutrition »; nutri_study.md C1-a): 30 to 90 g/h,
+# read in two halves split at 60. ISSN 2019's own 30 to 50 g/h (Tiller) is graded category C, and its field data put
+# the 161-km finishers above it (≈ 66 g/h; non-finishers ≈ 42) and the elites too (≈ 71 g/h): read against it,
+# the typical finisher would be « Plus que le repère ». So: its floor, 30; the ceiling of ACSM 2016 and Costa
+# 2019, 90, reachable with a gut trained for it; and in between, about what one sugar transporter absorbs, 60
+# (Jeukendrup 2014): past it, train the gut (Costa 2017; Martinez 2023: two weeks of practice help).
+ULTRA_H = 6.0  # an ultra: past 6 h (ISSN 2019; Morton 2026)
+ULTRA_GUT_G_H = 60  # (H) an ultra's band split here: past it, « habitue ton ventre » (one transporter, Jeukendrup 2014)
+ULTRA_STARTER_G_H = 50  # « Plan type » on an ultra: ISSN 2019's 50, under the split, no gut training asked; never 80
 
 
 def carbs_zone(duration_h: float) -> tuple[int, int] | None:
-    """The carbs per hour a race of `duration_h` hours is read against, (lo, hi) g/h; None under 1 h."""
+    """The carbs per hour a race of `duration_h` hours is read against, (lo, hi) g/h; None under 1 h. An
+    ultra's 30 to 90 is read in two halves, split at ULTRA_GUT_G_H (nutrition_plan.carbs_note)."""
     if duration_h < 1:
         return None
     if duration_h < 2.5:
         return 30, 60
     if duration_h <= ULTRA_H:
         return 60, 90
-    return 30, 50
+    return 30, 90
 
 
 def starter_carbs(duration_h: float) -> int:
-    """The carbs per hour « Plan type » aims at: 60 g/h under 3 h, 75 g/h to 6 h, the top of the ultra range
-    past 6 h (50 g/h). The triathlon plan keeps default_targets."""
+    """The carbs per hour « Plan type » aims at: 60 g/h under 3 h, 75 g/h to 6 h, 50 g/h past 6 h (ISSN 2019's
+    top, under an ultra's split at 60). The triathlon plan keeps default_targets."""
     if duration_h > ULTRA_H:
         return ULTRA_STARTER_G_H
     return round(_CARBS_SHORT if duration_h < 3 else _CARBS_MID)
@@ -62,25 +66,16 @@ SODIUM_HOT_MG_H = (300, 600)  # a hot race's sodium per hour, mg (ISSN 2019)
 LEVEL_CARBS = {"fragile": 60, "normal": 75, "solide": 90}
 
 
-def default_targets(duration_h: float, mean_temp_c: float | None) -> dict:
-    """Hourly targets from duration and temperature (triathlon plan)."""
+def default_targets(duration_h: float) -> dict:
+    """The hourly carbs from the duration (the triathlon plan, its only reader). The water and the sodium are
+    the race card's, from WATER_* and SODIUM_HOT_MG_H: no formula of their own here any more."""
     if duration_h < 3:
         carbs = _CARBS_SHORT
     elif duration_h < 6:
         carbs = _CARBS_MID
     else:
         carbs = _CARBS_LONG
-    fluid = _FLUID_BASE
-    sodium = _SODIUM_BASE
-    if mean_temp_c is not None and mean_temp_c > 15:
-        over = mean_temp_c - 15
-        fluid += min(400.0, over * 25.0)
-        sodium += min(500.0, over * 35.0)
-    return {
-        "carbs_g_per_h": round(carbs),
-        "fluid_ml_per_h": int(round(fluid / 10.0) * 10),
-        "sodium_mg_per_h": int(round(sodium / 10.0) * 10),
-    }
+    return {"carbs_g_per_h": round(carbs)}
 
 
 # One-click catalogue of common race products (per unit, label values; the
