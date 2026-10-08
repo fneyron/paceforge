@@ -99,7 +99,7 @@
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
-    {% if c.status %}{% set cs = c.status %}<p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{% if cs.value %}<b>{{ cs.value }}</b> {{ cs.word }}{% else %}{{ cs.text }}{% endif %}</p>
+    {% if c.status %}{% set cs = c.status %}<p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{% if cs.value %}{{ cs.word }}{% else %}{{ cs.text }}{% endif %}</p>
     {% if c.status.meaning %}<p class="pf-card-meaning">{{ c.status.meaning }}</p>{% endif %}{% endif %}
     {{ viz.viz_night_card(c, c.title) }}
     {{ viz.viz_legend(c.legend) }}
