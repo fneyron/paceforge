@@ -61,7 +61,7 @@
         {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
         {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
-        {% if h.phases or h.stages %}<p class="pf-viz-cap">Phases estimées par la montre.</p>{% endif %}
+        {% if h.phases or h.stages %}<p class="pf-viz-cap">Estimées par la montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa qualité.</p>{% endif %}
     </div>
     {% endif %}
     <div class="pf-card" data-viz-scope>
@@ -81,6 +81,7 @@
     </div>
     {% if s.habits %}
     <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
+    {% if s.habits.regular %}<p class="pf-habits-reg">{{ s.habits.regular }}</p>{% endif %}
     {% endif %}
     {% endif %}
 </section>

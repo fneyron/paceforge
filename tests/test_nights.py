@@ -60,8 +60,10 @@ def test_owner_october():
     owned = [d for d, n in nights.items() if n.asleep]
     assert owned == [date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 6), D]
     assert all("race" in nights[d].tags and nights[d].excluded for d in owned)
-    assert "tz" in nights[date(2026, 9, 29)].tags and "tz" in nights[date(2026, 9, 30)].tags
-    assert "tz" not in nights[date(2026, 10, 6)].tags
+    # France (UTC+2) → Korea (UTC+9), 7 zones east: « décalage horaire » for 7 nights from 28/09 (v4.2: ⌈1 × 7⌉;
+    # Janse van Rensburg 2021); 06/10 is past them
+    assert all("jetlag" in nights[date(2026, 9, d)].tags for d in (29, 30)) and "jetlag" in nights[date(2026, 10, 1)].tags
+    assert not nights[date(2026, 10, 6)].tags & {"tz", "jetlag"}
     for metric in ("hr", "hrv", "tst24"):
         assert nt.mean7(nights, metric, D) is None and nt.band(nights, metric, D) is None
     sleep7 = nt.mean7(nights, "tst24", D, untagged=False)  # the sleep tile still shows its value
@@ -371,7 +373,8 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
 
 def test_a_clock_change_at_home_is_no_time_zone_change():
     """L-F10: France, nights at UTC+2 until Sun 25 Oct 2026 then UTC+1: no
-    « fuseau changé »; a real trip (UTC+2 → UTC+9) still is."""
+    « fuseau changé »; a real trip (UTC+2 → UTC+9) still is: 7 zones east, « décalage horaire » for ⌈1 × 7⌉ nights
+    from the first night it shows (v4.2; Janse van Rensburg 2021), back west ⌈0.5 × 7⌉ = 4."""
     day = date(2026, 10, 30)
     nights = nt.build_nights(night_rows(range(0, 12), today=day), day)
     for d, n in nights.items():
@@ -387,8 +390,27 @@ def test_a_clock_change_at_home_is_no_time_zone_change():
     for d, n in trip.items():
         n.tz = 120 if d <= date(2026, 10, 25) else 540
     nt.tag_nights(trip)
-    assert sorted(d for d, n in trip.items() if "tz" in n.tags) == [date(2026, 10, 26), date(2026, 10, 27),
-                                                                   date(2026, 10, 28)]
+    assert sorted(d for d, n in trip.items() if "jetlag" in n.tags) == [date(2026, 10, k) for k in range(26, 31)]
+    assert not any("tz" in n.tags for n in trip.values())
+    home = nt.build_nights(night_rows(range(0, 12), today=day), day)
+    for d, n in home.items():
+        n.tz = 540 if d <= date(2026, 10, 22) else 120  # back west on the 23rd
+    nt.tag_nights(home)
+    assert sorted(d for d, n in home.items() if "jetlag" in n.tags) == [date(2026, 10, k) for k in range(23, 27)]
+
+
+def test_time_zone_nights_by_zones_and_direction():
+    """⌈1 night per zone⌉ eastwards, ⌈0.5⌉ westwards, 1 at least; « décalage horaire » from 3 zones, « fuseau
+    changé » under (the same rate, H); the shorter way round the date line. A 1-h step is no change (DST)."""
+    assert nt.tz_nights(7 * 60) == ("jetlag", 7) and nt.tz_nights(-7 * 60) == ("jetlag", 4)
+    assert nt.tz_nights(3 * 60) == ("jetlag", 3) and nt.tz_nights(-3 * 60) == ("jetlag", 2)
+    assert nt.tz_nights(2 * 60) == ("tz", 2) and nt.tz_nights(-2 * 60) == ("tz", 1)
+    assert nt.tz_nights(90) == ("tz", 2) and nt.tz_nights(-90) == ("tz", 1)
+    assert nt.tz_nights(330) == ("jetlag", 6)  # India, +5h30
+    assert nt.tz_nights(22 * 60) == ("tz", 1)  # UTC−10 → UTC+12: 2 zones west, the shorter way
+    assert nt.TAG_WORDS["jetlag"] == "décalage horaire" and nt.TAG_WORDS["tz"] == "fuseau changé"
+    for tag in ("tz", "jetlag"):
+        assert tag in nt.EXCLUDING and tag in nt.CONTEXT and tag in nt.OFF_TIMING
 
 
 def test_a_race_marked_on_strava_only_keeps_its_nights_out_and_never_fires_the_alert():

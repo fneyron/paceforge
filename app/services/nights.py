@@ -23,8 +23,10 @@ heuristic, never shown as a finding):
   (de Zambotti 2024).
 - « Rendormi » (H): a nap starting ≤ 3 h after the main wake leaves that wake
   out of the wake median and spread, with no wake-shift word.
-- « Après sieste tardive »: a nap ending < 7 h before the next main onset
-  annotates that night (Mograss 2022); it does not exclude it.
+- « Après sieste tardive »: a nap ending after min(the usual bedtime − 7 h,
+  16:00) on the evening before a night annotates it (H; Mograss 2022 for the
+  7 h; Walsh 2021's 13:00–16:00 window); it does not exclude it and never
+  judges the nap (Ohayon 2017).
 - Excluded nights (H), out of the band and of the 7-night means: a session
   ≥ 90 min the day before (Myllymäki 2012), a vigorous session ending ≤ 2 h
   before sleep onset (« sortie intense le soir »: average HR ≥ 80 % of the
@@ -33,7 +35,8 @@ heuristic, never shown as a finding):
   the 80 % are H: an easy evening run never drops a night), sleeping at altitude
   (Latshang 2013; inferred from the day's highest point ≥ 1 600 m, H), a time
   zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
-  change at home is none; the night it shows and the next 2, H), the nights
+  change at home is none; from the night it shows, ⌈1 night per zone⌉
+  eastwards, ⌈0.5⌉ westwards, « décalage horaire » from 3 zones, H), the nights
   after an effort by its duration (H, sante_training.NIGHT_TAGS: night D+1
   after a Longue; D+1 → D+3 after a Très longue, « après grosse sortie »:
   Hynynen 2010, nightly HR at 130 % after a marathon; D+1 → D+4 after an
@@ -99,16 +102,22 @@ SLEEP_BAND_MIN = 30  # (H)
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
 RESP_UP = 2  # breaths/min (H)
 SHORT_DAY_MIN = 6 * 60  # ≤ 6 h per 24 h (Craven 2022)
-REGULARITY_NIGHTS = 8  # of 28 days, any order (H; Fischer 2021)
+REGULARITY_NIGHTS = 8  # of 28 days, any order (H; « 1 week or more » of the main sleep: ANSI/CTA/NSF-2052.1-A)
+REGULAR_WINDOW = 60  # minutes: a bedtime « à moins d'1 h » of the usual one (the RU-SATED item: Ravyts 2021)
 RESETTLE_H = 3  # (H) a nap starting this soon after the wake: « rendormi »
-LATE_NAP_H = 7  # nap ending < 7 h before onset (Mograss 2022)
+LATE_NAP_H = 7  # (H) a nap ending < 7 h before the usual bedtime (Mograss 2022, observational)
+NAP_LATEST = time(16)  # (H) and never later than 16:00: the end of Walsh 2021's 13:00–16:00 nap window
+USUAL_BED_NIGHTS, USUAL_BED_DAYS = 5, 28  # (H) the usual bedtime: the median of 28 days, 5 nights at least
 LONG_SESSION_MIN = 90  # Myllymäki 2012
 LATE_SESSION_GAP = timedelta(hours=2)  # (H) a vigorous session ending this soon before sleep onset (Stutz 2019: ≤ 1 h)
 VIGOROUS_HRR = 0.8  # (H) average HR ≥ 80 % of the heart-rate reserve: vigorous (Myllymäki 2012); easy is ≈ 60–70 %
 VIGOROUS_MIN = 20  # (H) or this many minutes above it in its laps, else its km splits (an interval session)
 ALTITUDE_M = 1600  # (H) Latshang 2013 studied 1 630–2 590 m
 TZ_CHANGE_MIN = 60  # (H) a step of MORE than this: a 1-h clock change (DST) at home is no time zone change
-TZ_NIGHTS = 3  # the night the change shows and the next 2 (H)
+# nights per zone crossed, from the night the change shows: 1 eastwards, 0.5 westwards, rounded up, 1 at least
+# (Janse van Rensburg 2021: natural alignment ≈ 1 day per zone east, 0.5 west; the same rate under 3 zones, H)
+TZ_EAST, TZ_WEST = 1.0, 0.5
+JETLAG_ZONES = 3  # « décalage horaire » from 3 zones (Janse van Rensburg 2021), « fuseau changé » under
 TZ_LOOKBACK = 10  # days (H)
 RACE_WINDOW = 7  # J-7 → J+7 (H)
 ILL_TAIL = 2  # days after the last « malade » (H)
@@ -121,17 +130,18 @@ COROS_SLEEP_HR_NAP_VERIFIED = False
 # context words, as the readouts print them (glyph ◇)
 # « ill » is the athlete's own « malade » chip; « alert » an alert episode, never worded as a diagnosis (row 3)
 TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir", "altitude": "en altitude",
-             "tz": "fuseau changé", "big": "après grosse sortie", "ultra": "après ultra", "ultra_tail": "après ultra",
-             "alcohol": "alcool", "race": "autour de la course", "ill": "malade", "alert": "FC de nuit haute",
-             "late_nap": "après sieste tardive"}
+             "tz": "fuseau changé", "jetlag": "décalage horaire", "big": "après grosse sortie",
+             "ultra": "après ultra", "ultra_tail": "après ultra", "alcohol": "alcool", "race": "autour de la course",
+             "ill": "malade", "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
 # « ultra_tail » (D+5 → D+7 after ≥ 20 h) is out of the band and the 7-night means, never out of the alert
-EXCLUDING = ("long", "late", "altitude", "tz", "big", "ultra", "ultra_tail", "alcohol", "race", "ill", "alert")
+EXCLUDING = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "ultra_tail", "alcohol", "race",
+             "ill", "alert")
 EPISODE = ("ill", "alert")  # the nights of an illness episode
 _EXCLUDING = frozenset(EXCLUDING)
 _VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
 _SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}
-CONTEXT = ("long", "late", "altitude", "tz", "big", "ultra", "alcohol")  # never fire the alert
-OFF_TIMING = frozenset(("tz", "ultra", "race"))  # out of the bedtime and wake medians and of the regularity
+CONTEXT = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "alcohol")  # never fire the alert
+OFF_TIMING = frozenset(("tz", "jetlag", "ultra", "race"))  # out of the bedtime and wake medians and the regularity
 
 
 def round5(t: datetime) -> datetime:
@@ -398,9 +408,22 @@ async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -
             s.segs = found.get(i, ())
 
 
+def tz_nights(step: float) -> tuple[str, int]:
+    """(tag, nights) of a UTC-offset step of `step` minutes (east > 0), the
+    shorter way round: « décalage horaire » from 3 zones, else « fuseau
+    changé », for ⌈1 × zones⌉ nights eastwards, ⌈0.5 × zones⌉ westwards, 1 at
+    least (Janse van Rensburg 2021; the same rate under 3 zones, H)."""
+    step = (step + 720) % 1440 - 720  # −12 h → +12 h
+    zones = abs(step) / 60
+    rate = TZ_EAST if step > 0 else TZ_WEST
+    return ("jetlag" if zones >= JETLAG_ZONES else "tz"), max(1, math.ceil(rate * zones - 1e-9))
+
+
 def _tag_timezones(nights: dict[date, Night], sessions) -> None:
-    """« fuseau changé » on the night a new UTC offset shows (the night's own,
-    else that of the sessions of the day before or that day) and the next 2."""
+    """« fuseau changé » / « décalage horaire » (tz_nights) on the night a new
+    UTC offset shows (the night's own, else that of the sessions of the day
+    before or that day) and the nights after it, by the zones crossed and the
+    direction (Janse van Rensburg 2021)."""
     offset = {}
     for s in sorted(sessions, key=lambda s: s.start):
         if s.offset is not None:  # a session without a known offset says nothing about the time zone
@@ -414,20 +437,40 @@ def _tag_timezones(nights: dict[date, Night], sessions) -> None:
     days = sorted(track)
     for i, d in enumerate(days):
         prev = next((days[j] for j in range(i - 1, -1, -1) if (d - days[j]).days <= TZ_LOOKBACK), None)
-        if prev is not None and abs(track[d] - track[prev]) > TZ_CHANGE_MIN:
-            for k in range(TZ_NIGHTS):
+        if prev is not None and abs((track[d] - track[prev] + 720) % 1440 - 720) > TZ_CHANGE_MIN:
+            tag, count = tz_nights(track[d] - track[prev])
+            for k in range(count):
                 if d + timedelta(days=k) in nights:
-                    nights[d + timedelta(days=k)].tags.add("tz")
+                    nights[d + timedelta(days=k)].tags.add(tag)
+
+
+def nap_cutoff(nights: dict[date, Night], d: date) -> datetime | None:
+    """When a nap becomes « tardive » for the night that wakes on `d`: on the
+    evening before, min(the usual bedtime − 7 h, 16:00) (H; Mograss 2022 for
+    the 7 h, Walsh 2021's 13:00–16:00 window); the usual bedtime is the median
+    onset of the 28 days before (5 nights at least, time-zone nights left
+    out), else this night's own onset. None without an onset."""
+    n = nights.get(d)
+    if n is None or n.start is None:
+        return None
+    beds = [clock_min(m.start) for x, m in nights.items() if d - timedelta(days=USUAL_BED_DAYS) <= x < d
+            and m.start and m.tags.isdisjoint(("tz", "jetlag"))]
+    bed = statistics.median(beds) if len(beds) >= USUAL_BED_NIGHTS else clock_min(n.start)
+    evening = datetime.combine(d - timedelta(days=1), time(0))
+    # clock_min counts from 18:00 of the evening before: 18 h after its midnight
+    at = min(bed + 18 * 60 - LATE_NAP_H * 60, NAP_LATEST.hour * 60 + NAP_LATEST.minute)
+    return evening + timedelta(minutes=at)
 
 
 def _tag_late_naps(nights: dict[date, Night]) -> None:
-    """« après sieste tardive » on the night after a nap that ended < 7 h before its onset."""
+    """« après sieste tardive » on a night after a nap that ended past its
+    cut-off (nap_cutoff) and before its onset: an annotation, never judged
+    (Ohayon 2017: no consensus on naps as a mark of good sleep), never out of
+    the normal."""
     for d, n in nights.items():
-        if not n.start:
-            continue
-        cands = [nights.get(d - timedelta(days=1)), n]
-        if any(b and b <= n.start and n.start - b < timedelta(hours=LATE_NAP_H)
-               for m in cands if m for _, b, _ in m.naps):
+        ends = [b for m in (nights.get(d - timedelta(days=1)), n) if m for _, b, _ in m.naps
+                if b and n.start and b <= n.start]
+        if ends and (cut := nap_cutoff(nights, d)) is not None and any(cut <= b for b in ends):
             n.tags.add("late_nap")
 
 
@@ -687,21 +730,25 @@ def day_tst24(nights: dict[date, Night], d: date) -> int | None:
 # ── timing ──────────────────────────────────────────────────────────────────
 
 def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
-    """Median onset and wake (minutes after 18:00) over the main nights of the
-    last `days` days, and their spread (SD) once 8 nights are there (H). Time
-    zone nights, the 4 nights after an ultra (Fachan 2026; Kishi 2024) and
-    those around a race (the race page) are left out; a « rendormi » wake
-    counts in neither the wake median nor its spread (H)."""
+    """Median onset and wake (minutes after 18:00, local clock) over the main
+    nights of the last `days` days, and once 8 nights are there (H) their
+    spread (SD of the onset, the regularity measure of ANSI/CTA/NSF-2052.1-A)
+    and `bed_near`, the nights whose onset is within 1 h of the median (the
+    RU-SATED window: Ravyts 2021), what the page shows. Time-zone nights, the
+    4 nights after an ultra (Fachan 2026; Kishi 2024) and those around a race
+    (the race page) are left out; a « rendormi » wake counts in neither the
+    wake median nor its spread (H)."""
     ns = [n for d, n in nights.items() if today - timedelta(days=days - 1) <= d <= today and n.start
           and n.tags.isdisjoint(OFF_TIMING)]
     beds = [clock_min(n.start) for n in ns]
     wakes = [clock_min(n.end) for n in ns if not n.resettled]
     out = {"n": len(ns), "bed": statistics.median(beds) if beds else None,
            "wake": statistics.median(wakes) if wakes else None, "bed_sd": None, "wake_sd": None,
-           "regular_ok": len(ns) >= REGULARITY_NIGHTS}
+           "regular_ok": len(ns) >= REGULARITY_NIGHTS, "bed_near": None}
     if out["regular_ok"]:
-        out["bed_sd"] = statistics.stdev(beds)
+        out["bed_sd"] = statistics.stdev(beds)  # the standard's measure (ANSI/CTA/NSF-2052.1-A)
         out["wake_sd"] = statistics.stdev(wakes) if len(wakes) >= REGULARITY_NIGHTS else None
+        out["bed_near"] = sum(1 for b in beds if abs(b - out["bed"]) <= REGULAR_WINDOW)  # what the page shows
     return out
 
 

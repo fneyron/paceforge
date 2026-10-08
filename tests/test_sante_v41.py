@@ -89,14 +89,15 @@ async def test_owner_7_october_stages_from_the_daily_summary(db_session: AsyncSe
     h = page["sleep"]["hero"]
     assert (h["label"], h["times"], h["night"], h["nap"]) == ("Cette nuit", "23:35 → 05:40", "nuit 5h50",
                                                               "+ sieste 2h20")
+    # printed to 10 min (H, v4.2): 13, 205, 49 and 96 min
     assert [(p["name"], p["hm"]) for p in h["phases"]["parts"]] == [
-        ("Éveil", "13 min"), ("Léger", "3h25"), ("Profond", "49 min"), ("Paradoxal", "1h36")]
+        ("Éveil", "10 min"), ("Léger", "3h30"), ("Profond", "50 min"), ("Paradoxal", "1h40")]
     # no timeline drawn (no intervals): the nap's times are said in words
     assert h["timeline"] is None and h["out_naps"] == ["sieste 06:40 → 09:05"]
     nights = await nt.load_nights(db_session, test_user.id, D8)
     assert nights[date(2026, 10, 7)].stages == {"awake": 13, "light": 205, "deep": 49, "rem": 96}
     table = {r["iso"]: r["phases"] for r in sl.rows(nights, D8)}
-    assert table["2026-10-07"] == ["13 min", "3h25", "49 min", "1h36"]
+    assert table["2026-10-07"] == ["10 min", "3h30", "50 min", "1h40"]
 
 
 async def test_a_night_without_stages_keeps_its_plain_bar_and_no_legend(as_user: AsyncClient,
@@ -109,7 +110,7 @@ async def test_a_night_without_stages_keeps_its_plain_bar_and_no_legend(as_user:
     h = (await sante.health_page(db_session, test_user.id, today=D8))["sleep"]["hero"]
     assert h["phases"] is None and h["timeline"]["main"] and not h["stages"]
     main = _main(await _page(as_user, monkeypatch, D8))
-    assert 'class="pf-tl-night"' in main and "pf-phases" not in main and "Phases estimées" not in main
+    assert 'class="pf-tl-night"' in main and "pf-phases" not in main and "Estimées par la montre" not in main
 
 
 async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncClient, db_session: AsyncSession,
@@ -122,8 +123,8 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
     legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
     assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
-        "Éveil 12 min", "Léger 5h26", "Profond 1h11", "Paradoxal 1h59"]
-    assert "Phases estimées par la montre." in hero
+        "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
+    assert "Estimées par la montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa qualité." in hero
     for word in ("bon", "mauvais", "objectif", "insuffisant", "%"):  # shown, never judged
         assert word not in re.sub(r"<[^>]+>", " ", hero), word
     css = (ROOT / "app/static/css/interface.css").read_text()
@@ -319,9 +320,9 @@ def test_the_readouts_fit_one_line_at_358_px():
 
 def test_the_large_readouts_keep_their_unit_apart():
     """UX11: a plain no-break space between a large value and its unit (the display font has no narrow one)."""
-    nights = nt.build_nights(night_rows(range(0, 28), today=D8), D8)  # every night at 23:00: ± 5 min at least
+    nights = nt.build_nights(night_rows(range(0, 28), today=D8), D8)  # every night at 23:00
     h = sl.habits(nights, D8)
-    assert ("Régularité", "± 5 min") in h["stats"]
+    assert h["regular"] == "28 nuits sur 28 à moins d'1\u00a0h de ton coucher habituel"
 
 
 def test_the_a11y_fixes_in_css_and_js():

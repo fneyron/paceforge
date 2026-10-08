@@ -779,6 +779,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-habits dt { font-size: 12px; color: rgb(var(--pf-gray-500)); }
 .pf-habits dd { font-family: var(--pf-font-display); font-size: 18px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
 @media (max-width: 374px) { .pf-habits dd { font-size: 16px; } }
+.pf-habits-reg { margin-top: 8px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-600)); }   /* the regularity: words, no colour, no score */
 /* the closed folds at the end */
 .pf-folds { margin-top: 24px; }
 .pf-fold { margin-top: 4px; }

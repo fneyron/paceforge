@@ -380,7 +380,8 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     marathon named."""
     from app.models.activity import Activity
     from app.services import sante
-    from tests.test_sante import _garmin_rows, _runs as _db_runs, _seed_rows
+    from tests.test_sante import _garmin_rows, _seed_rows
+    from tests.test_sante import _runs as _db_runs
 
     await _seed_rows(db_session, test_user, _garmin_rows(D))
     await _db_runs(db_session, test_user, D)
@@ -405,3 +406,112 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["key"] == "ok" and page["score"]["value"] == 100
+
+
+# ── §C: sleep (research_sleep.md §a–§b; the owner's requests win) ───────────
+
+async def test_the_sommeil_ring_marks_one_day_only_under_6_hours(db_session, test_user):
+    """The ring's value is the last 24 h, full at 8 h (a scale, not a goal, H); one day is marked only under 6 h
+    (warm, the word « court »: Craven 2022), else the neutral sleep hue (the 7 h is habitual sleep: Watson 2015a);
+    a long night is never flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »)."""
+    from app.services import sante
+    from tests.test_sante import _seed_rows
+
+    for asleep, tone, note in ((330, "warn", "court"), (390, "accent", None), (600, "accent", None)):
+        rows = night_rows(range(0, 20), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
+        await _seed_rows(db_session, test_user, rows)
+        page = await sante.health_page(db_session, test_user.id, today=D)
+        ring = page["rings"][1]
+        assert (ring["tone"], ring["note"]) == (tone, note), asleep
+        assert ring["aria"].endswith(("court." if note else "siestes comprises.") + " Ouvre la section Sommeil.")
+        row = next(r for r in page["contrib"]["rows"] if r["key"] == "sleep")
+        assert row["tone"] == tone and (row["word"] == "suffisant") is (asleep >= 420), asleep
+        if asleep == 600:
+            assert row["sub"] == 100 and ring["dash"] == ring["c"]  # 10 h: full, never « too long »
+        from sqlalchemy import delete
+
+        from app.models.health import HealthMetric
+        await db_session.execute(delete(HealthMetric).where(HealthMetric.user_id == test_user.id))
+        await db_session.flush()
+
+
+def test_a_late_nap_is_after_the_usual_bedtime_minus_7_h_or_16_00():
+    """« après sieste tardive »: a nap ending after min(the usual bedtime − 7 h, 16:00) on the evening before
+    (H; Mograss 2022 for the 7 h, Walsh 2021's 13:00–16:00 window); annotated, never out of the normal."""
+    def tagged(start, nap_end, days=range(0, 10)):
+        rows = night_rows(days, today=D, start=start, end=(7, 0))
+        y = D - timedelta(days=1)
+        rows["nap"][y] = (50, {"windows": [[f"{y}T{nap_end[0] - 1:02d}:{nap_end[1]:02d}",
+                                            f"{y}T{nap_end[0]:02d}:{nap_end[1]:02d}"]]}, "Garmin")
+        nights = nt.build_nights(rows, D)
+        nt.tag_nights(nights)
+        return "late_nap" in nights[D].tags, nt.nap_cutoff(nights, D)
+    assert tagged((23, 0), (15, 50)) == (False, datetime(2026, 10, 7, 16, 0))  # 23:00 − 7 h = 16:00
+    assert tagged((23, 0), (16, 10))[0]
+    assert tagged((21, 30), (15, 0)) == (True, datetime(2026, 10, 7, 14, 30))  # 21:30 − 7 h = 14:30
+    assert tagged((21, 30), (14, 20))[0] is False
+    # a bedtime after midnight (00:30): 00:30 − 7 h = 17:30, so 16:00 comes first
+    rows = night_rows(range(0, 10), today=D, end=(8, 0))
+    for d in list(rows["sleep"]):
+        v, det, src = rows["sleep"][d]
+        rows["sleep"][d] = (v, {**det, "main_start": f"{d}T00:30"}, src)
+    y = D - timedelta(days=1)
+    rows["nap"][y] = (50, {"windows": [[f"{y}T15:15", f"{y}T16:05"]]}, "Garmin")
+    nights = nt.build_nights(rows, D)
+    nt.tag_nights(nights)
+    assert "late_nap" in nights[D].tags and nt.nap_cutoff(nights, D) == datetime(2026, 10, 7, 16, 0)
+    # under 5 nights in 28 days: the night's own onset
+    assert tagged((21, 30), (15, 0), days=range(0, 3)) == (True, datetime(2026, 10, 7, 14, 30))
+    rows = night_rows(range(0, 10), today=D)
+    y = D - timedelta(days=1)
+    rows["nap"][y] = (50, {"windows": [[f"{y}T16:30", f"{y}T17:20"]]}, "Garmin")
+    nights = nt.build_nights(rows, D)
+    nt.tag_nights(nights)
+    assert "late_nap" in nights[D].tags and not nights[D].excluded and nights[D].usable("hr")
+
+
+def test_stages_rounded_to_10_min_the_bar_keeps_its_shape():
+    """Each phase rounded to 10 min (H) in the legend and the table (« 1h10 », « 10 min »); the bar keeps the raw
+    minutes; no %, no target, no norm; « < 10 min » for a sliver, never « 0 min »."""
+    from app.services import sante_sleep as sl
+
+    assert [sl.stage_hm(m) for m in (49, 205, 96, 13, 15, 4, 125)] == [
+        "50 min", "3h30", "1h40", "10 min", "20 min", "< 10 min", "2h10"]
+    ph = sl.phases({"awake": 4, "light": 205, "deep": 49, "rem": 0})
+    assert [(p["key"], p["min"], p["hm"]) for p in ph["parts"]] == [("awake", 4, "< 10 min"),
+                                                                    ("light", 205, "3h30"), ("deep", 49, "50 min")]
+    assert ph["aria"] == ("Phases estimées par la montre : éveil moins de 10 minutes, léger 3 heures 30, profond "
+                          "50 minutes.")
+    for word in ("%", "objectif", "idéal", "norme"):
+        assert word not in str(ph)
+
+
+def test_the_race_page_banks_sleep_the_last_week_and_reassures_on_the_eve():
+    """The sleep-banking target and line only J-7 → J-1 (Walsh 2021: « even just 1 week »), + 30–60 min kept
+    (H); never on the race eve; Walsh's race-eve reassurance once, J-7 → J0."""
+    import json as _json
+
+    from app.services import race_prep as rp
+
+    nights = nt.build_nights(night_rows(range(0, 90), today=D, asleep=440), D)
+    for rd in (D + timedelta(days=10), D + timedelta(days=3)):  # D is J-10, then J-3
+        c = rp.night_bars(nights, rd, D)
+        d = _json.loads(c["data"].replace("<\\/", "</"))
+        assert [d["r"][i][2].split(" · ")[0] for i in range(14) if "cible" in d["r"][i][2]] == [
+            "J‑7", "J‑6", "J‑5", "J‑4", "J‑3", "J‑2"], rd  # J-14 → J-8 and the race eve: none
+        slot = rp.X1 / 14
+        assert c["goal"]["x"] == round(slot * 7, 1) and c["goal"]["w"] == round(slot * 6, 1)  # J-7 → J-2
+        assert "par jour de J-7 à J-2" in c["summary"] and "par jour de J-7 à J-2" in c["aria_now"]
+    assert rp.EVE_LINE == ("Une nuit agitée avant une course est courante : si tu as bien dormi la semaine "
+                           "d'avant, elle ne devrait pas peser sur ta course.")
+    html = (ROOT / "app/templates/partials/race_prep.html").read_text()
+    assert "{% if p.bank %}" in html and "{% if p.eve %}<p class=\"pf-rp-line\">{{ p.eve }}</p>{% endif %}" in html
+
+
+def test_no_8_to_10_hour_norm_anywhere():
+    """The IOC 2026 dropped the « 9–10 h » of 2019 (Reardon 2026): never an 8–10 h norm for athletes, never a
+    sleep drop worded as overreaching (Walsh 2021)."""
+    for path in list((ROOT / "app/services").glob("*.py")) + list((ROOT / "app/templates").rglob("*.html")):
+        text = path.read_text(encoding="utf-8")
+        for norm in ("8 à 10", "9 à 10", "8–10 h", "8-10 h", "9–10 h", "surentraînement", "surmenage"):
+            assert norm not in text, (path.name, norm)

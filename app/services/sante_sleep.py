@@ -31,6 +31,7 @@
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
+import math
 from datetime import date, timedelta
 
 from app.services import nights as nt
@@ -137,6 +138,7 @@ def bars(nights: dict, today: date, key: str) -> dict:
 
 
 PHASES = (("awake", "Éveil"), ("light", "Léger"), ("deep", "Profond"), ("rem", "Paradoxal"))  # WHOOP's order
+STAGE_STEP = 10  # (H) the stages' minutes are printed to 10 min: the watch's estimate has no finer precision
 LEVEL = {"core": "light", "deep": "deep", "rem": "rem", "awake": "awake"}  # Garmin's sleepLevels kinds
 
 
@@ -152,16 +154,30 @@ def summed(intervals, start, end) -> dict | None:
     return out if out["light"] + out["deep"] + out["rem"] else None
 
 
+def stage_hm(minutes: float) -> str:
+    """A stage's minutes as printed, rounded to 10 min (H): « 1h10 », « 50 min », « < 10 min »."""
+    m = int(math.floor(minutes / STAGE_STEP + 0.5)) * STAGE_STEP
+    return viz.hm(m) if m else f"<{viz.NBSP}{STAGE_STEP}{viz.NBSP}min"
+
+
+def stage_spoken(minutes: float) -> str:
+    m = int(math.floor(minutes / STAGE_STEP + 0.5)) * STAGE_STEP
+    return viz.hm_long(m) if m else f"moins de {STAGE_STEP} minutes"
+
+
 def phases(stages: dict | None) -> dict | None:
-    """The stages bar and its legend: [{key, name, min, hm}] in WHOOP's order
-    (Éveil · Léger · Profond · Paradoxal; a phase of 0 min left out), and the
-    spoken list; None without stage minutes."""
+    """The stages bar (the raw minutes: its shape) and its legend, each phase
+    rounded to 10 min (H): [{key, name, min, hm}] in WHOOP's order (Éveil ·
+    Léger · Profond · Paradoxal; a phase of 0 min left out), and the spoken
+    list; None without stage minutes. No %, no target, no norm, no
+    comparison: the watch's estimate, the shape of the night, not its
+    quality."""
     if not stages:
         return None
-    parts = [{"key": k, "name": nm, "min": stages[k], "hm": viz.hm(stages[k])} for k, nm in PHASES if stages.get(k)]
+    parts = [{"key": k, "name": nm, "min": stages[k], "hm": stage_hm(stages[k])} for k, nm in PHASES if stages.get(k)]
     if not parts:
         return None
-    said = ", ".join(f"{p['name'].lower()} {viz.hm_long(p['min'])}" for p in parts)
+    said = ", ".join(f"{p['name'].lower()} {stage_spoken(p['min'])}" for p in parts)
     return {"parts": parts, "aria": f"Phases estimées par la montre : {said}."}
 
 
@@ -196,18 +212,20 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
 
 
 def habits(nights: dict, today: date) -> dict | None:
-    """« Coucher 23:10 · Lever 07:20 » (medians of 28 days, 5 nights at least
-    (H)) and « Régularité ± 35 min » (the SD of bedtime, 8 nights in 28 at
-    least (H); Fischer 2021)."""
+    """« Coucher 23:10 · Lever 07:20 » (medians of 28 days on the local clock,
+    5 nights at least (H), rounded to 5 min: detected by the watch, de
+    Zambotti 2024) and, once 8 nights are there (H; ANSI/CTA/NSF-2052.1-A's
+    « 1 week or more »), « 9 nuits sur 11 à moins d'1 h de ton coucher
+    habituel » (the RU-SATED window: Ravyts 2021): no colour, no score."""
     t = nt.timing(nights, today)
     if t["n"] < USUAL_NIGHTS or t["bed"] is None:
         return None
     items = [("Coucher", nt.clock5(t["bed"]))]
     if t["wake"] is not None:
         items.append(("Lever", nt.clock5(t["wake"])))
-    if t["regular_ok"] and t["bed_sd"] is not None:
-        items.append(("Régularité", f"±{viz.NBSP}{max(5, int(round(t['bed_sd'] / 5)) * 5)}{viz.NBSP}min"))
-    return {"stats": items, "n": t["n"]}
+    regular = (f"{t['bed_near']} nuit{'s' if t['bed_near'] > 1 else ''} sur {t['n']} à moins d'1{viz.NBSP}h de ton "
+               "coucher habituel" if t["regular_ok"] else None)
+    return {"stats": items, "n": t["n"], "regular": regular}
 
 
 def rows(nights: dict, today: date) -> list[dict]:
@@ -228,7 +246,7 @@ def rows(nights: dict, today: date) -> list[dict]:
                     "times": f"{viz.clock(n.start)} → {viz.clock(n.end)}" if n.start else "—",
                     "hr": viz.num(n.hr) if n.hr is not None else "—",
                     "hrv": viz.num(n.hrv) if n.hrv is not None else "—",
-                    "phases": [viz.hm(n.stages[k]) if n.stages else "—" for k, _ in PHASES],
+                    "phases": [stage_hm(n.stages[k]) if n.stages else "—" for k, _ in PHASES],
                     "marks": " · ".join(marks) or "—"})
     return out
 

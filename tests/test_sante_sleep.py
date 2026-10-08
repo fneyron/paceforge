@@ -130,7 +130,9 @@ def test_habits_medians_to_5_min_and_regularity_from_8_nights():
     nine = night_rows(range(0, 9), start=(23, 0), end=(7, 0))
     nine["sleep"].update(night_rows([0], start=(0, 10), end=(7, 0))["sleep"])
     h = sl.habits(_nights(nine), D)
-    assert h["stats"][2][0] == "Régularité" and h["stats"][2][1].startswith("±")
+    # v4.2: no « ± 35 min », the nights within 1 h of the usual bedtime (RU-SATED: Ravyts 2021), no colour
+    assert len(h["stats"]) == 2 and h["regular"] == "8 nuits sur 9 à moins d'1\u00a0h de ton coucher habituel"
+    assert sl.habits(five, D)["regular"] is None  # under 8 nights (H)
 
 
 def test_habits_leave_out_time_zone_nights_and_the_nights_after_an_ultra():

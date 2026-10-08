@@ -290,10 +290,11 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]
-    assert [(p["name"], p["hm"]) for p in h["phases"]["parts"]] == [
-        ("Éveil", "12 min"), ("Léger", "5h26"), ("Profond", "1h11"), ("Paradoxal", "1h59")]
-    assert h["phases"]["aria"] == ("Phases estimées par la montre : éveil 12 minutes, léger 5 heures 26, profond "
-                                   "1 heure 11, paradoxal 1 heure 59.")
+    # each phase rounded to 10 min (H, v4.2): 12, 326, 71 and 119 min; the bar keeps the raw shape
+    assert [(p["name"], p["min"], p["hm"]) for p in h["phases"]["parts"]] == [
+        ("Éveil", 12, "10 min"), ("Léger", 326, "5h30"), ("Profond", 71, "1h10"), ("Paradoxal", 119, "2h00")]
+    assert h["phases"]["aria"] == ("Phases estimées par la montre : éveil 10 minutes, léger 5 heures 30, profond "
+                                   "1 heure 10, paradoxal 2 heures 00.")
     assert [k for k, _ in s["ranges"]] == ["14"] and s["r"] == "14"  # nothing 14 to 90 days old: no « 3 mois »
     bars = s["bars"]["14"]
     d = json.loads(bars["data"])
@@ -368,7 +369,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # each number printed once before a tap (the closed folds are the accessible alternative): the score, the
     # night, the week's hours, the VFC and FC of last night, the means; the state word once (the title)
     seen = _visible(html)
-    for number in ("65", "8h36", "16h53", "100", "35", "8h20", "58", "1h11", "5h26", "1h59", "12"):
+    for number in ("65", "8h36", "16h53", "100", "35", "8h20", "58", "1h10", "5h30", "2h00"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
     assert seen.count("Récupération en cours") == 1 and "en cours" not in seen.replace("Récupération en cours", "")
     assert "pf-viz-flag" not in main and "pf-viz-ev" not in main
@@ -376,8 +377,9 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4  # 4 cards, no 3 mois
     # the stages: one bar, its legend names each phase with its minutes (never colour alone), the caption
     assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
-    assert '<li><i class="pf-ph is-deep" aria-hidden="true"></i>Profond <b>1h11</b></li>' in main
-    assert "Phases estimées par la montre." in main and "pf-tl-night" not in main
+    assert '<li><i class="pf-ph is-deep" aria-hidden="true"></i>Profond <b>1h10</b></li>' in main
+    assert ("Estimées par la montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa qualité."
+            in main and "pf-tl-night" not in main)
     # the Sommeil hero is not the race page's grid (UX3)
     assert 'class="pf-card pf-nhero"' in main and "pf-hero\"" not in main
     # a five-character ring value is set smaller on a wide screen, so it stays inside the ring

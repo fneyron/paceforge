@@ -248,3 +248,22 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
 
     far = await _race(db_session, test_user, today + timedelta(days=60), name="Plus tard")
     assert 'id="prep"' not in (await client.get(f"/simulator/routes/{far}")).text
+
+
+async def test_race_page_sleep_banking_the_last_week_and_the_eve_reassurance(client: AsyncClient,
+                                                                            db_session: AsyncSession,
+                                                                            test_user: User, monkeypatch,
+                                                                            same_today):
+    """v4.2 (Walsh 2021): « Vise 30 à 60 min de plus » only J-7 → J-1 (« even just 1 week »); the race-eve
+    reassurance once on the nights block, J-7 → J0; neither at J-10."""
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
+    today = await st.athlete_today(db_session, test_user.id)
+    await _seed(db_session, test_user, today)
+    bank, eve = "Vise 30 à 60 min de plus par jour, siestes comprises.", rp.EVE_LINE.replace("'", "&#39;")
+    for k, lines in ((10, (False, False)), (5, (True, True)), (0, (False, True))):
+        rid = await _race(db_session, test_user, today + timedelta(days=k), name=f"Course J-{k}")
+        html = (await client.get(f"/simulator/routes/{rid}")).text
+        assert 'data-viz-key="nuits-course"' in html, k
+        assert (bank in html, eve in html) == lines, k
+        assert html.count(eve) <= 1

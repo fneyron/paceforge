@@ -17,10 +17,13 @@ Before the race:
   before the race only.
 - Tes nuits, J-14 → J-1: 24-h sleep (main night solid, naps stacked and
   hatched), against your usual + 30 to 60 min (H, below the doses of Mah 2011
-  and Arnal 2016; Cunha 2023) drawn only when a usual exists (≥ 7 untagged
-  days in the 60 days before J-14, nights.band; « provisoire » under 14, H). « Vise 30 à 60 min de plus
-  par jour, siestes comprises. » The race eve is never flagged (Lastella
-  2014; Juliff 2015): no target on it, no outline anywhere on this page.
+  and Arnal 2016; Cunha 2023) on J-7 → J-2 only (the banking week: Walsh
+  2021, « even just 1 week »), drawn only when a usual exists (≥ 7 untagged
+  days in the 60 days before J-14, nights.band; « provisoire » under 14, H).
+  « Vise 30 à 60 min de plus par jour, siestes comprises. » from J-7 to J-1,
+  and once, from J-7 to J0, Walsh 2021's race-eve reassurance (EVE_LINE). The
+  race eve is never flagged (Lastella 2014; Juliff 2015): no target on it, no
+  outline anywhere on this page.
 - Semaine de course (J-10 → J0): carbohydrate loading J-2 and J-1, 10–12
   g/kg/day for races over 90 min (Burke 2011; ACSM/AND/DC 2016), breakfast
   1–2 g/kg 3 h before, 5–7 ml/kg of fluid at least 4 h before (ACSM).
@@ -63,6 +66,9 @@ logger = logging.getLogger(__name__)
 PREP_BEFORE, PREP_AFTER = 42, 14  # the section shows J-42 → J+14 (H)
 NIGHT_DAYS = 14  # J-14 → J-1
 EXTEND = (30, 60)  # usual + 30–60 min a day of 24-h sleep (H)
+BANK_DAYS = 7  # the sleep-banking line and target from J-7 (Walsh 2021: « even just 1 week » improves performance)
+EVE_LINE = ("Une nuit agitée avant une course est courante : si tu as bien dormi la semaine d'avant, elle ne devrait "
+            "pas peser sur ta course.")  # Walsh 2021, Box 2
 TAPER_SHARE = (0.40, 0.59)  # the taper weeks at 40–59 % of the base: volume −41 to −60 % (Bosquet 2007)
 TAPER_DAYS = 14  # J-14 → J-1: about 2 weeks (Bosquet 2007; Wang 2023)
 CHART_WEEKS = 7  # S-6 → S0
@@ -362,8 +368,8 @@ AMOUNT = (16, 120)
 
 def night_bars(nights: dict, rd: date, today: date) -> dict:
     """24-h sleep J-14 → J-1 (night solid, naps stacked and hatched), the usual
-    + 30–60 min band from J-14 to J-2 when a usual exists. {"empty": True}
-    when the watch never measured a night."""
+    + 30–60 min band from J-7 to J-2 (the banking week) when a usual exists.
+    {"empty": True} when the watch never measured a night."""
     if not any(n.asleep is not None or n.nap_min for n in nights.values()):
         return {"empty": True}
     days = [rd - timedelta(days=NIGHT_DAYS - i) for i in range(NIGHT_DAYS)]
@@ -396,9 +402,10 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
             col["miss"] = True
         cols.append(col)
         ctx = [j_label(k)]
+        banked = goal and -BANK_DAYS <= k < -1  # the target: J-7 → J-2, never the race eve
         if k == -1:
             ctx.append("veille de course")
-        elif goal:
+        elif banked:
             ctx.append(f"cible {range_hm(*goal)}{prov}")
         if night:
             ctx += [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(night.tags) if t not in ("race",)]
@@ -410,7 +417,7 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
             ctx.append("pas de montre cette nuit")
         r.append([viz.night_label(d), viz.sleep_readout(main, nap) if night else "—", " · ".join(ctx)])
         spoken = f"{viz.night_label(d)}, {j_label(k)} : " + (viz.sleep_spoken(main, nap) if night else "pas de mesure")
-        if goal and k != -1:
+        if banked:
             spoken += f", cible {hm_long(round(goal[0] / 5) * 5)} à {hm_long(round(goal[1] / 5) * 5)}"
         a.append(spoken)
     past = [i for i, d in enumerate(days) if d <= today]
@@ -418,21 +425,21 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
     measured = sum(1 for d in days if d in nights and d <= today and nights[d].asleep is not None)
     out = {"n": n, "W": viz.W, "H": 142, "X1": X1, "cols": cols, "amount": AMOUNT,
            "ticks": [{"y": y(m), "label": f"{m // 60}{NNBSP}h"} for m in range(240, int(max(vals) * 1.05) + 1, 120)],
-           "goal": ({"x": 0, "w": round(slot * (n - 1), 1), "y": y(goal[1]), "h": round(y(goal[0]) - y(goal[1]), 1)}
-                    if goal else None),
+           "goal": ({"x": round(slot * (n - BANK_DAYS), 1), "w": round(slot * (BANK_DAYS - 1), 1), "y": y(goal[1]),
+                     "h": round(y(goal[0]) - y(goal[1]), 1)} if goal else None),
            "xt": [{"x": xs[i], "label": j_label((d - rd).days)} for i, d in enumerate(days) if (n - 1 - i) % 3 == 0],
            "summary": (f"Sommeil sur 24 heures de J-14 à J-1 : {measured} nuit{'s' if measured > 1 else ''} mesurée"
                        f"{'s' if measured > 1 else ''} sur {len(past)}"
                        + (f", cible {hm_long(round(goal[0] / 5) * 5)} à {hm_long(round(goal[1] / 5) * 5)} par jour"
-                          if goal else "")),
+                          " de J-7 à J-2" if goal else "")),
            **viz._data(xs, [], days, r, a, sel=sel)}
     # resting readout: the last night's total is Santé › Sommeil's (printed once, there)
     if goal:
         return viz.rest(out, [f"J{NBH}14 → J{NBH}1", f"cible {range_hm(*goal)} par jour",
                               "normale provisoire" if prov else ""],
                         f"Sommeil sur 24 heures de J-14 à J-1 : cible {hm_long(round(goal[0] / 5) * 5)} à "
-                        f"{hm_long(round(goal[1] / 5) * 5)} par jour, siestes comprises. Choisis une nuit pour la "
-                        "sienne.", back=sel)
+                        f"{hm_long(round(goal[1] / 5) * 5)} par jour de J-7 à J-2, siestes comprises. Choisis une "
+                        "nuit pour la sienne.", back=sel)
     return viz.rest(out, [f"J{NBH}14 → J{NBH}1", "sommeil sur 24 h", ""],
                     "Sommeil sur 24 heures de J-14 à J-1, siestes comprises. Choisis une nuit pour la sienne.", back=sel)
 
@@ -557,7 +564,7 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
         return None
     sessions = await st.load_sessions(db, user.id, today)
     out = {"route_id": route.id, "k": k, "taper": None, "nights": None, "food": None, "hot": None,
-           "heart": None, "drive": None}
+           "heart": None, "drive": None, "bank": -BANK_DAYS <= k < 0, "eve": EVE_LINE if -BANK_DAYS <= k <= 0 else None}
     if k <= 0:
         out["title"] = "Jour J" if k == 0 else f"Affûtage · {j_label(k)}"
         races = all_races(await load_races(db, user.id, today), sessions)
