@@ -16,7 +16,6 @@ from app.models.activity import Activity
 from app.models.route import Route
 from app.models.user import User
 from app.services import race_prep as rp
-from app.services import sante_training as st
 from app.services import training_view as tv
 from app.services.sante_training import Session
 
@@ -32,7 +31,7 @@ def S(days_ago: int, minutes: float = 60, km: float = 10, dplus: float = 50, hr:
     start = datetime(day.year, day.month, day.day, 7, 0, tzinfo=timezone.utc) + timedelta(minutes=i)
     return Session(id=kw.pop("id", days_ago * 100 + i), start=start, day=day, sport=sport, minutes=minutes,
                    dplus=dplus, km=km, speed=km * 1000 / (minutes * 60) if km else None, hr=hr,
-                   hr_peak=kw.pop("hr_peak", 185), suffer=None, workout_type=kw.pop("workout_type", 0),
+                   hr_peak=kw.pop("hr_peak", 185), workout_type=kw.pop("workout_type", 0),
                    temp=kw.pop("temp", None), name=kw.pop("name", "Footing"), **kw)
 
 
@@ -45,9 +44,7 @@ def race(days: int, name: str = "Transjeju 100M", rid: int = 7, km: float = 160,
 
 def steady(days: int = 200) -> list[Session]:
     """Four outings a week, 1h50 each (7h20 a week), 10 km."""
-    ss = [S(k, minutes=110, km=18, i=k) for k in range(1, days) if (T - timedelta(days=k)).weekday() in (1, 3, 5, 6)]
-    st.set_loads(ss, 50, 185)
-    return ss
+    return [S(k, minutes=110, km=18, i=k) for k in range(1, days) if (T - timedelta(days=k)).weekday() in (1, 3, 5, 6)]
 
 
 def data(c: dict) -> dict:
@@ -220,7 +217,6 @@ def test_the_spike_is_a_tag_on_its_row_never_a_mark_on_the_chart():
     longue que d'habitude »."""
     ss = steady() + [S(2, minutes=150, km=26, id=3)]  # +44 % on the 30-day longest (18 km)
     ss += [S(40, minutes=300, km=40, dplus=2400, id=4, workout_type=1, name="Trail des Crêtes")]  # a Strava race
-    st.set_loads(ss, 50, 185)
     assert [s.id for s, _ in tv.spikes(ss, T - timedelta(days=60))] == [3]
     assert tv.SPIKE_TAG == "plus longue que d'habitude"
     assert not hasattr(tv, "a1_line")

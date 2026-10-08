@@ -1,12 +1,8 @@
-"""The training model, from the sessions alone (Strava, Garmin): no
+"""The training model, from the sessions alone (Strava, Garmin, COROS): no
 night needed, so it works for an athlete who never wears the watch to bed.
+No brand value is read (v4.4: Strava's Relative Effort and the load model
+built on it are gone; nothing drew it since Santé v4.1).
 
-- session load: Strava's Relative Effort (zone time, good on intervals) put on
-  the Banister TRIMP scale, else TRIMP from the average heart rate, else the
-  duration at the athlete's own load per minute for that kind of sport;
-- fond (CTL, 42 days) and fatigue (ATL, 7 days) as exponential averages of the
-  daily load (the model only: no page draws it since Santé v4.1, the owner
-  wanting recovery on Santé alone, never a fatigue model on Activités);
 - the weeks exactly as Activités counts them (UTC Monday, duplicates and false
   starts left out), so a bar's total is the week's total there;
 - heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), the
@@ -15,7 +11,9 @@ night needed, so it works for an athlete who never wears the watch to bed.
   activités passées pour juger de la récupération »): each activity sized by
   its own time, stops included, whatever it was (a race marked on Strava is
   just an activity; activities chained without a real stop are one effort),
-  and the recovery window it opens (`efforts`, `effort_window`).
+  and the recovery window it opens (`efforts`, `effort_window`); a Longue run
+  like a race keeps it longer, for every user (v4.4, R3: marked so on
+  Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve).
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it.
 """
@@ -31,11 +29,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.services import activity_env as env
 from app.services.activity_dedupe import find_duplicate_ids, is_false_start
 
 HISTORY_DAYS = 730
-CTL_DAYS, ATL_DAYS = 42, 7  # (H) a TrainingPeaks convention (evidence row 14)
-MIN_HISTORY_DAYS, MIN_SESSIONS = 42, 6  # (H) 6 weeks and 6 sessions before fond et fatigue
 FOOT = {"Run", "TrailRun", "VirtualRun", "Hike", "Walk", "BackcountrySki", "NordicSki", "Snowshoe"}
 RUNS = {"Run", "TrailRun"}
 BIKE = {"Ride", "VirtualRide", "EBikeRide", "GravelRide", "MountainBikeRide"}
@@ -53,14 +50,17 @@ class Session:
     speed: float | None  # m/s
     hr: float | None
     hr_peak: float | None
-    suffer: float | None
     workout_type: int | None
     temp: float | None
     name: str = ""
-    load: float = 0.0
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
     offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
-    elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
+    rpe: float | None = None  # Strava's perceived exertion (1–10), when the athlete rated it (its detail only)
+    indoor: bool = False  # a treadmill, a home trainer, a virtual ride (activity_env.is_indoor)
+    located: bool = False  # it carries a GPS position, start or end (Strava, Garmin, COROS)
+    alt: float | None = None  # m, the ground altitude where it ended (Open-Meteo, looked up in the sync)
+    elev_low: float | None = None  # m, its lowest point (Strava elev_low)
+    feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.load_segments)
 
 
@@ -76,8 +76,8 @@ def monday(dt: datetime) -> datetime:
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
 _CACHE_SIZE = 256
-RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "elev_high",
-            "maxElevation")
+RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "perceived_exertion",
+            "elev_low", "trainer", *env.POSITION_KEYS, env.ENV_KEY)
 
 
 def _float(v) -> float | None:
@@ -90,6 +90,12 @@ def _float(v) -> float | None:
 def _int(v) -> int | None:
     f = _float(v)
     return int(f) if f is not None else None
+
+
+def _rpe(v) -> float | None:
+    """Strava's perceived exertion, 1–10; None when unrated or odd."""
+    f = _float(v)
+    return f if f is not None and 1 <= f <= 10 else None
 
 
 def _offset(strava: float | None, local: str | None, gmt: str | None) -> float | None:
@@ -114,12 +120,15 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
                   (Activity.sport_type.in_(BIKE), 1_000_000), else_=1_000_000_000)
+    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too
+    pg = db.get_bind().dialect.name == "postgresql"
     key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
+               func.sum(env.raw_size(db)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
                func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
                func.sum(func.coalesce(Activity.average_heartrate, 0)),
-               func.sum(func.coalesce(Activity.max_heartrate, 0)), func.count(Activity.suffer_score),
+               func.sum(func.coalesce(Activity.max_heartrate, 0)),
                func.sum(family), func.sum(func.length(Activity.sport_type)),
                func.sum(func.length(func.coalesce(Activity.name, "")))).where(*where))).one())
     hit = _CACHE.get(user_id)
@@ -129,8 +138,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     has_splits = and_(Activity.splits_metric.is_not(None), cast(Activity.splits_metric, String).not_in(("null", "[]")))
     cols = (Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
             Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
-            Activity.max_heartrate, Activity.suffer_score, Activity.name, Activity.elapsed_time)
-    if db.get_bind().dialect.name == "postgresql":
+            Activity.max_heartrate, Activity.name, Activity.elapsed_time)
+    if pg:
         # one read of each raw_data (every ->> would detoast it again)
         obj = case((func.jsonb_typeof(Activity.raw_data) == "object", Activity.raw_data),
                    else_=literal({}, JSONB))
@@ -139,8 +148,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         q = select(*cols, *(x.c[k] for k in RAW_KEYS), has_splits).select_from(Activity).join(x, true())
     else:
         q = select(*cols, *(Activity.raw_data[k].as_string() for k in RAW_KEYS), has_splits)
-    rows = [(*r[:11], _int(r[12]), _float(r[13]), _float(r[14]), r[15], r[16], r[19], r[11],
-             _float(r[17]) if _float(r[17]) is not None else _float(r[18]))
+    n = len(cols)
+    rows = [(r, dict(zip(RAW_KEYS, r[n:n + len(RAW_KEYS)])), bool(r[-1]))
             for r in (await db.execute(q.where(*where).order_by(Activity.start_date))).all()]
 
     @dataclass
@@ -152,21 +161,26 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         moving_time: int
         splits_metric: bool
 
-    raw = [_Row(r[0], _utc(r[1]), r[2], r[4] or 0, r[3] or 0, bool(r[16])) for r in rows]
+    raw = [_Row(r.id, _utc(r.start_date), r.sport_type, r.distance or 0, r.moving_time or 0, split)
+           for r, _, split in rows]
     skip = find_duplicate_ids(raw) | {a.id for a in raw if is_false_start(a)}
     out = []
-    for r in rows:
-        if r[0] in skip or not r[3]:
+    for r, x, _ in rows:
+        if r.id in skip or not r.moving_time:
             continue
-        start = _utc(r[1])
-        known = _offset(r[13], r[14], r[15])
+        start = _utc(r.start_date)
+        known = _offset(_float(x["utc_offset"]), x["startTimeLocal"], x["startTimeGMT"])
         offset = known or 0
-        speed = r[6] if r[6] else ((r[4] or 0) / r[3] if r[3] else None)
+        speed = r.average_speed if r.average_speed else ((r.distance or 0) / r.moving_time)
+        looked = env.env_of(x)
         out.append(Session(
-            id=r[0], start=start, day=(start + timedelta(seconds=offset)).date(), sport=r[2],
-            minutes=r[3] / 60, dplus=r[5] or 0, km=(r[4] or 0) / 1000, speed=speed or None,
-            hr=r[7] or None, hr_peak=r[8] or None, suffer=r[9] or None, workout_type=r[11], temp=r[12],
-            name=r[10] or "", elapsed=max(r[17] or 0, r[3]) / 60, offset=known, elev_high=r[18]))
+            id=r.id, start=start, day=(start + timedelta(seconds=offset)).date(), sport=r.sport_type,
+            minutes=r.moving_time / 60, dplus=r.total_elevation_gain or 0, km=(r.distance or 0) / 1000,
+            speed=speed or None, hr=r.average_heartrate or None, hr_peak=r.max_heartrate or None,
+            workout_type=_int(x["workout_type"]), temp=_float(x["average_temp"]), name=r.name or "",
+            elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known, rpe=_rpe(x["perceived_exertion"]),
+            indoor=env.is_indoor(r.sport_type, x), located=env.located(x), alt=_float(looked.get("alt")),
+            elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels"))))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)
@@ -201,13 +215,14 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
     return today
 
 
-# ── heart-rate bounds and session load ──────────────────────────────────────
+# ── heart-rate bounds ───────────────────────────────────────────────────────
 
 def hr_max(sessions: list[Session], today: date) -> float:
-    """98th percentile of the sessions' peaks over 12 months (wrist spikes
-    left out by the percentile), clamped to 150–215; 190 without enough."""
+    """98th percentile of the sessions' peaks over the 12 months up to `today`
+    (wrist spikes left out by the percentile), clamped to 150–215; 190
+    without enough (COROS's own sessions have theirs from their laps, v4.4)."""
     lo = today - timedelta(days=365)
-    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and s.day >= lo)
+    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and lo <= s.day <= today)
     if len(peaks) < 10:
         return 190.0
     return min(215.0, max(150.0, peaks[min(len(peaks) - 1, math.ceil(0.98 * len(peaks)) - 1)]))
@@ -221,60 +236,6 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
         if len(vals) >= 3:
             return statistics.median(vals)
     return 50.0
-
-
-def trimp(minutes: float, hr: float, rest: float, peak: float) -> float:
-    """Banister TRIMP from the average heart rate (male constants for all: only
-    ratios are shown, so the constant barely matters)."""
-    x = min(1.0, max(0.0, (hr - rest) / max(peak - rest, 1)))
-    return minutes * x * 0.64 * math.exp(1.92 * x)
-
-
-def _family(sport: str) -> str:
-    return "foot" if sport in FOOT else "bike" if sport in BIKE else "other"
-
-
-def set_loads(sessions: list[Session], rest: float, peak: float) -> None:
-    """Each session's load on the TRIMP scale (see the module docstring)."""
-    pairs = [trimp(s.minutes, s.hr, rest, peak) / s.suffer for s in sessions if s.hr and s.suffer]
-    k = statistics.median(pairs) if len(pairs) >= 10 else 1.0
-    per_min: dict[str, list[float]] = defaultdict(list)
-    for s in sessions:
-        if s.suffer:
-            s.load = s.suffer * k
-        elif s.hr:
-            s.load = trimp(s.minutes, s.hr, rest, peak)
-        else:
-            continue
-        per_min[_family(s.sport)].append(s.load / s.minutes)
-    rate = {f: statistics.median(v) for f, v in per_min.items() if len(v) >= 5}
-    for s in sessions:
-        if not (s.suffer or s.hr):
-            fam = _family(s.sport)
-            s.load = s.minutes * rate.get(fam, 1.2 if fam == "foot" else 0.9)
-
-
-# ── fond and fatigue ────────────────────────────────────────────────────────
-
-def daily_loads(sessions: list[Session]) -> dict[date, float]:
-    out: dict[date, float] = defaultdict(float)
-    for s in sessions:
-        out[s.day] += s.load
-    return dict(out)
-
-
-def fitness(daily: dict[date, float], today: date) -> dict[date, tuple[float, float]]:
-    """{day: (CTL, ATL)} from the first session day to today."""
-    if not daily:
-        return {}
-    d, ctl, atl, out = min(daily), 0.0, 0.0, {}
-    while d <= today:
-        load = daily.get(d, 0.0)
-        ctl += (load - ctl) / CTL_DAYS
-        atl += (load - atl) / ATL_DAYS
-        out[d] = (ctl, atl)
-        d += timedelta(days=1)
-    return out
 
 
 # ── weeks (as Activités counts them) ────────────────────────────────────────
@@ -292,7 +253,7 @@ def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
         longest = max(ss, key=lambda s: s.minutes, default=None)
         out.append({"monday": m.date(), "key": m.strftime("%Y-%m-%d"), "weeks_ago": i, "current": i == 0,
                     "minutes": sum(s.minutes for s in ss), "dplus": sum(s.dplus for s in ss),
-                    "load": sum(s.load for s in ss), "count": len(ss),
+                    "count": len(ss),
                     "longest": longest.minutes if longest else 0.0, "longest_id": longest.id if longest else None,
                     "longest_day": longest.day if longest else None,
                     "href": f"/activities?page={i // 6 + 1}#week-{m.strftime('%Y-%m-%d')}"})
@@ -306,7 +267,7 @@ EASY_FIT_DAYS = 365  # (H) one Theil–Sen slope over the cool runs of 12 months
 EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H) the drawn band; Nuuttila 2022's 3–4 bpm edge
 FLAG_REF_DAYS, FLAG_REF_MIN = 14, 2  # (H) each run against the cool runs of the 14 days before it (Nuuttila 2022)
 LINE_DAYS, LINE_RUNS = 42, 6  # (H) the line needs ≥ 6 qualifying runs in 6 weeks (evidence row 16)
-HOT_C = 25  # (H)
+HOT_C = 25  # (H) °C felt at the start (Open-Meteo's apparent temperature), else the device's (R4)
 EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 150, 12, 0.82  # (H) a flat easy run
 
 
@@ -320,7 +281,15 @@ def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
 
 
 def is_hot(s: Session) -> bool:
-    return s.temp is not None and s.temp >= HOT_C
+    """A hot run (H, v4.4 R4): 25 °C or more felt at its start place and hour (Open-Meteo's apparent
+    temperature, looked up in the sync: every user with a GPS run), else its device's temperature as before
+    (Strava average_temp: the wrist reads body heat too); never indoors (a treadmill, a home trainer). Heat
+    raises HR at a given pace (Racinais 2015): a hot run is drawn hollow, out of the slope and the normal;
+    never a score nor a recovery modifier."""
+    if s.indoor:
+        return False
+    t = s.feels if s.feels is not None else s.temp
+    return t is not None and t >= HOT_C
 
 
 def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
@@ -428,7 +397,11 @@ DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that mor
 EFFORT_RULES = {"ultra": (((3, 35), (10, 65)), 20),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
                 "very_long": (((2, 45), (5, 65)), 30),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
                 "long": (((3, 65),), 50)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
-LONG_RACE_LAST = 5  # (H) a Longue marked as a race on Strava: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+LONG_RACE_LAST = 5  # (H) a Longue run like a race: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+# v4.4 (R3): run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
+# Foster 2001; Haddad 2017), or its average HR ≥ 80 % of the heart-rate reserve as of its day (nights.VIGOROUS_HRR,
+# the « vigorous » test: harder efforts bring more damage, Martínez-Navarro 2021b; Bernat-Adell 2021)
+INTENSE_RPE = 8  # (H)
 ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) an ultra ≥ 24 h, or run through a night: 65 until D+13
 NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
 RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
@@ -547,9 +520,36 @@ class _Unit:
     def race(self) -> bool:
         return any(s.workout_type in RACE_TYPES for s in self.sessions)
 
+    def raced(self, bounds) -> bool:
+        """Run like a race (H, R3): marked so on Strava, rated ≥ 8/10 there, or its average HR (by time, over
+        its parts with one) ≥ rest + 80 % of (peak − rest), the athlete's bounds as of the day it started
+        (`bounds(day)` → (rest, peak); None: no heart-rate test)."""
+        if self.race or any((s.rpe or 0) >= INTENSE_RPE for s in self.sessions):
+            return True
+        timed = [(s.minutes, s.hr) for s in self.sessions if s.hr and s.minutes]
+        if bounds is None or not timed:
+            return False
+        from app.services.nights import VIGOROUS_HRR
+
+        rest, peak = bounds(self.first.day)
+        return sum(m * hr for m, hr in timed) / sum(m for m, _ in timed) >= rest + VIGOROUS_HRR * (peak - rest)
+
+
+def hr_bounds(sessions: list[Session], rest_of):
+    """`bounds(day)` → (rest, peak) as of that day: `rest_of(day)` (nights.rest_hr on the nights: the median
+    nightly HR of the 60 days up to it, else 50) and hr_max of the sessions up to it; each day computed once.
+    The same whichever later day reads it: a past day of the score's history sees what today sees."""
+    memo: dict[date, tuple[float, float]] = {}
+
+    def bounds(d: date) -> tuple[float, float]:
+        if d not in memo:
+            memo[d] = (rest_of(d), hr_max(sessions, d))
+        return memo[d]
+    return bounds
+
 
 def _rules(kind: str | None, minutes: float, race: bool, night: bool) -> tuple[tuple, int | None]:
-    """The class's window with its modifiers (H): a Longue marked as a race → 65 until D+5; an Ultra ≥ 24 h or
+    """The class's window with its modifiers (H): a Longue run like a race → 65 until D+5; an Ultra ≥ 24 h or
     run through a night → 65 until D+13 (function back only at D+16 after 37 h: Millet 2011; jump height down to
     day 18 after 90 km: Chambers 1998). No D+ scaling (CK does not follow the descent: Lecina 2024; duration, not
     elevation, shapes fatigue: Giandolini 2016b)."""
@@ -564,17 +564,17 @@ def _rules(kind: str | None, minutes: float, race: bool, night: bool) -> tuple[t
     return (*head, (last, cap)), load
 
 
-def _effort(u: _Unit) -> Effort | None:
+def _effort(u: _Unit, bounds=None) -> Effort | None:
     """One effort from one unit (an activity, or a chain), or None. Its class by its time (and the legs rule on
     foot), one lower when no part is on foot (M4: cycling 230 km gave « only modest » damage, Koller 1998;
     troponin about half as often after cycling, Shave 2007); its nights by its time whatever the sport. A chain
-    is named and linked after its first activity."""
+    is named and linked after its first activity. `bounds`: hr_bounds, for a Longue's heart-rate test (R3)."""
     minutes = u.minutes
     nights = _kind(minutes, u.dplus if u.foot else 0)
     if nights is None:
         return None
     kind = nights if u.foot else LOWER[nights]
-    caps, load = _rules(kind, minutes, u.race, through_night(u.start, u.end))
+    caps, load = _rules(kind, minutes, kind == "long" and u.raced(bounds), through_night(u.start, u.end))
     return Effort(u.first.id, kind, minutes, u.end, effort_day(u.end), u.first.name, u.first.day, nights,
                   caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN, frozenset(s.id for s in u.sessions))
 
@@ -604,19 +604,23 @@ def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, date
     return out
 
 
-def efforts(sessions: list[Session]) -> list[Effort]:
+def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
     """The big efforts among the sessions, by end: each activity, or chain of
     activities without a real stop (< 30 min apart, H), is its own effort,
     sized from its first start to its last end (stops included), named and
-    linked after its first activity; a race flag and a night run through set
-    its window (_rules); a low-impact effort is one class lower (M4) but its
-    nights follow its time. Two efforts close together keep their own windows:
-    the lowest cap of those open holds each day (effort_window)."""
+    linked after its first activity; a Longue run like a race (_Unit.raced)
+    and a night run through set its window (_rules); a low-impact effort is one
+    class lower (M4) but its nights follow its time. Two efforts close
+    together keep their own windows: the lowest cap of those open holds each
+    day (effort_window). `rest_of(day)`: the athlete's resting HR as of a day
+    (nights.rest_hr on the nights) for a Longue's heart-rate test; None: no
+    such test (the night tags and Activités read only the classes)."""
     # only the units that can be an effort: 3 h and more, or the legs rule
     units = [_Unit(run, start, end) for run, start, end in _chains(sessions)
              if end - start >= timedelta(minutes=EFFORT_LONG)
              or sum(s.dplus for s in run if s.sport in FOOT) >= EFFORT_DPLUS]
-    return sorted((e for u in units if (e := _effort(u))), key=lambda e: e.end)
+    bounds = hr_bounds(sessions, rest_of) if rest_of is not None else None
+    return sorted((e for u in units if (e := _effort(u, bounds))), key=lambda e: e.end)
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:

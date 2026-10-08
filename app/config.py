@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     COROS_SYNC: bool = True
     # Garmin: the same for Garmin Connect
     GARMIN_SYNC: bool = True
+    # Each outdoor activity's ground altitude and its start's weather from Open-Meteo, in the syncs (off in tests)
+    ACTIVITY_ENV_FETCH: bool = True
     # Bike and triathlon planning: hidden for now (code kept, routes and data untouched)
     CYCLING_ENABLED: bool = False
 

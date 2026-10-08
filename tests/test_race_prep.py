@@ -41,7 +41,7 @@ def S(day: date, minutes: float = 110, km: float = 18, i: int = 0, **kw) -> Sess
     start = datetime(day.year, day.month, day.day, 7, 0, tzinfo=timezone.utc) + timedelta(minutes=i)
     return Session(id=kw.pop("id", day.toordinal() * 10 + i), start=start, day=day, sport="Run", minutes=minutes,
                    dplus=kw.pop("dplus", 200), km=km, speed=km * 1000 / (minutes * 60), hr=140, hr_peak=180,
-                   suffer=None, workout_type=kw.pop("workout_type", 0), temp=None, **kw)
+                   workout_type=kw.pop("workout_type", 0), temp=None, **kw)
 
 
 def steady(until: date, days: int = 120) -> list[Session]:

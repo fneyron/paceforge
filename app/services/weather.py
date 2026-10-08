@@ -1,7 +1,7 @@
 import logging
 import math
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 CLIMATE_URL = "https://climate-api.open-meteo.com/v1/climate"
+ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 
 async def get_weather_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
@@ -386,3 +388,82 @@ def compute_heat_factor(temp_c: float, humidity_pct: float) -> float:
         factor += (humidity_pct - 65) * 0.001
 
     return min(factor, 1.5)
+
+
+# ── an activity's ground altitude and its start's weather (Santé v4.4) ─────
+# Read in the syncs only (activity_env), never while a page renders: a short
+# timeout, and any failure is the caller's to skip.
+
+LOOKUP_TIMEOUT = 10  # s
+ELEVATION_POINTS = 100  # the Elevation API's limit per call
+PAST_DAYS = 92  # the forecast API's past_days limit: older hours come from the ERA5 archive
+
+# tests swap in an httpx.MockTransport here
+_transport: httpx.AsyncBaseTransport | None = None
+
+
+class LookupUnavailable(Exception):
+    """Open-Meteo did not answer (a timeout, a 5xx, a 429): ask again at a later sync."""
+
+
+async def _get(url: str, params: dict) -> dict | list | None:
+    """The JSON answer; None for an answer that will not change (a 4xx, unreadable).
+    LookupUnavailable when Open-Meteo is down, slow or rate-limiting."""
+    try:
+        async with httpx.AsyncClient(transport=_transport, timeout=LOOKUP_TIMEOUT) as client:
+            response = await client.get(url, params=params)
+    except httpx.HTTPError as e:
+        raise LookupUnavailable(repr(e)) from e
+    if response.status_code == 429 or response.status_code >= 500:
+        raise LookupUnavailable(f"HTTP {response.status_code}")
+    if response.status_code != 200:
+        logger.info("Open-Meteo %s answered %s", url, response.status_code)
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
+def _value(v) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+async def elevations(points: list[tuple[float, float]]) -> list[float | None]:
+    """The ground altitude (m, Copernicus GLO-90) of each point, one call for up
+    to 100 points; None for a point without a value (or an answer it cannot
+    read). Raises LookupUnavailable."""
+    points = points[:ELEVATION_POINTS]
+    if not points:
+        return []
+    data = await _get(ELEVATION_URL, {"latitude": ",".join(f"{lat:.4f}" for lat, _ in points),
+                                      "longitude": ",".join(f"{lon:.4f}" for _, lon in points)})
+    values = data.get("elevation") if isinstance(data, dict) else None
+    if not isinstance(values, list) or len(values) != len(points):
+        return [None] * len(points)
+    return [_value(v) for v in values]
+
+
+async def feels_like(lat: float, lon: float, first: date, last: date, today: date) -> dict[str, float]:
+    """Open-Meteo's hourly apparent temperature (°C) at a point from `first` to
+    `last` (GMT days), keyed by GMT hour (« 2026-10-01T06:00 »): the forecast
+    API with past_days while `first` is within its last 92 days, else the ERA5
+    archive. {} for an answer without values. Raises LookupUnavailable."""
+    point = {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}", "hourly": "apparent_temperature",
+             "timezone": "GMT"}
+    if (today - first).days < PAST_DAYS:
+        # tomorrow too: the hour nearest a start at 23:40 GMT is tomorrow's midnight
+        data = await _get(FORECAST_URL, {**point, "past_days": max(1, (today - first).days + 1), "forecast_days": 2})
+    else:
+        data = await _get(ARCHIVE_URL, {**point, "start_date": first.isoformat(), "end_date": last.isoformat()})
+    hourly = data.get("hourly") if isinstance(data, dict) else None
+    if not isinstance(hourly, dict):
+        return {}
+    times, temps = hourly.get("time"), hourly.get("apparent_temperature")
+    if not isinstance(times, list) or not isinstance(temps, list):
+        return {}
+    return {str(t): v for t, raw in zip(times, temps, strict=False) if (v := _value(raw)) is not None}

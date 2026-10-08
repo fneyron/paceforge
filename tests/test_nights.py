@@ -32,11 +32,12 @@ def owner_rows():
     return out
 
 
-def session(day, hour, minutes, hr=None, offset=7200, elev=None, sid=1):
+def session(day, hour, minutes, hr=None, offset=7200, alt=None, sid=1):
+    """`alt`: the ground altitude where it ended (looked up in the sync): a session with one is placed."""
     start = datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc) - timedelta(seconds=offset)
     return Session(id=sid, start=start, day=day, sport="Run", minutes=minutes, dplus=0, km=10, speed=3.0, hr=hr,
-                   hr_peak=None, suffer=None, workout_type=None, temp=None, elapsed=minutes, offset=offset,
-                   elev_high=elev)
+                   hr_peak=None, workout_type=None, temp=None, elapsed=minutes, offset=offset,
+                   alt=alt, located=alt is not None)
 
 
 # ── the owner ───────────────────────────────────────────────────────────────
@@ -147,13 +148,14 @@ def test_context_tags_exclude_nights():
         session(d(3), 21, 60, hr=170, sid=2),  # vigorous, ends 22:00 local, sleep at 23:00: ≤ 2 h (H; Stutz 2019)
         session(d(4), 18, 45, hr=168, sid=3),  # vigorous but ending 18:45, 4 h before sleep: nothing (§8)
         session(d(5), 18, 45, hr=110, sid=4),  # easy evening run: nothing
-        session(d(2), 9, 60, elev=2100, sid=5),  # at 2 100 m that day: the night after is at altitude
+        session(d(2), 9, 60, alt=2100, sid=5),  # ended at 2 100 m that day: the night after is at altitude
     ]
     feel = {d(1): {"value": 2, "why": [], "alcohol": True}}
     nt.tag_nights(nights, sessions, [], feel, rest=45, peak=190)
     assert nights[D].tags == {"long"}
-    # the night after the high session, and the one before it (a morning run up there: slept there, H)
-    assert nights[d(1)].tags == {"alcohol", "altitude"} and nights[d(2)].tags == {"late", "altitude"}
+    # the night after the high session only (v4.4, R2: a run after a night says nothing of that night); not
+    # carried to D: the 95-min run of the day before, without a position, says nothing of where D was slept
+    assert nights[d(1)].tags == {"alcohol", "altitude"} and nights[d(2)].tags == {"late"}
     assert nights[d(3)].tags == set() and nights[d(4)].tags == set()
     assert all(nights[d(k)].excluded for k in range(0, 3)) and not nights[d(3)].excluded
 
@@ -419,7 +421,7 @@ def test_a_race_marked_on_strava_only_keeps_its_nights_out_and_never_fires_the_a
     from app.services import race_prep as rp
 
     race = Session(id=5, start=datetime(2026, 10, 4, 7, tzinfo=timezone.utc), day=date(2026, 10, 4), sport="Run",
-                   minutes=200, dplus=200, km=42.2, speed=3.5, hr=160, hr_peak=180, suffer=None, workout_type=1,
+                   minutes=200, dplus=200, km=42.2, speed=3.5, hr=160, hr_peak=180, workout_type=1,
                    temp=None, name="Marathon de Lyon")
     races = rp.all_races([], [race, session(D - timedelta(days=9), 8, 60, sid=9)])
     assert races == [(date(2026, 10, 4), "Marathon de Lyon")]

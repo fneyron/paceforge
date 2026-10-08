@@ -30,7 +30,7 @@ right under « Semaines », filtering the chart and the list alike.
 - A2 « FC en footing » (opens itself when flagged; under « Tout », « Course »
   and « Trail »: its runs are runs): one dot per flat easy run,
   its HR moved to the athlete's reference pace (one Theil–Sen slope over 12
-  months), hot runs (≥ 25 °C, H) hollow and out of the normal; the normal is
+  months), hot runs (≥ 25 °C felt, H: sante_training.is_hot) hollow and out of the normal; the normal is
   the median of the 28 days before ± 3 bpm (H; Nuuttila 2022's 3–4 bpm edge)
   with 3 runs at least (H); drawn only with ≥ 6 qualifying runs in the last 6
   weeks (H). « à surveiller » when the 2 latest runs, both in the last 14

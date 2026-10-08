@@ -130,6 +130,13 @@ async def _run_poll() -> dict:
                 except Exception:
                     logger.warning("Race D+ backfill failed for user %d", user.id, exc_info=True)
 
+                # each new outdoor activity's altitude and weather (Open-Meteo), the backlog a few at a
+                # time; never fails the poll
+                from app.services.activity_env import enrich
+
+                await db.flush()
+                await enrich(db, user.id)
+
                 # Update poll timestamp
                 user.last_activity_poll_at = datetime.now(timezone.utc)
                 users_checked += 1

@@ -35,7 +35,7 @@ def _session(day, minutes, dplus=0, sid=7, sport="Run", hr=125, elapsed=None, ho
     start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=hour) \
         - timedelta(seconds=offset)
     return Session(id=sid, start=start, day=day, sport=sport, minutes=minutes, dplus=dplus, km=minutes / 6,
-                   speed=2.8, hr=hr, hr_peak=160, suffer=None, workout_type=workout_type, temp=None,
+                   speed=2.8, hr=hr, hr_peak=160, workout_type=workout_type, temp=None,
                    elapsed=elapsed if elapsed is not None else minutes, offset=offset, name=name)
 
 
@@ -578,7 +578,7 @@ def test_history_reads_only_the_activities_finished_that_day():
     05/10 bar is the page of 05/10 (the hike unknown: no « en altitude » on that night, no 6th activity)."""
     rows = _rich(hrv_last=58.0)
     hike = replace(_session(D - timedelta(days=3), 540, hour=21, sid=60, sport="Hike", name="Rando de nuit"),
-                   elev_high=2500.0)
+                   alt=2500.0, located=True)  # ended at 2 500 m (v4.4: the night after it is « en altitude »)
     sessions = _runs(n=5) + [hike]
     hist = {d: (state, score) for d, state, score in _history(rows, sessions)}
     for d, (state, score) in hist.items():
@@ -683,8 +683,8 @@ def test_the_method_fold_is_six_plain_bullets():
         "pouls moyen pendant ton sommeil.",
         "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
         "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles.",
-        "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après "
-        "un ultra.",
+        "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
+        "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",  # v4.4 (R3): no number
         "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
         "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
         "C'est une estimation : quelques points d'écart ne veulent rien dire."]

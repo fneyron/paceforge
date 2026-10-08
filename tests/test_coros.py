@@ -27,6 +27,7 @@ from app.models.health import HealthMetric, HealthSample
 from app.models.user import User
 from app.services import coros
 from app.services.health import current_form, hrv_same_scale
+from tests import owner_coros as oc
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIG = ROOT / "alembic" / "versions" / "t4c5d6e7f8a9_add_coros.py"
@@ -180,6 +181,10 @@ Average Power: 266 W
 Elevation Gain / Loss: 110 m / 121 m
 Calories: 436 kcal
 Training Load: 73"""
+
+
+# the owner's real queryActivityLapData answer for that run (2026-10-08, laps trimmed): its whole-activity row
+LAPS = oc.LAPS_2026_09_30
 
 
 def _shift(text: str, days: int) -> str:
@@ -348,6 +353,7 @@ class FakeCoros:
         self.tool_status: dict[str, int] = {}  # tools answered with this HTTP status
         # sessions, as querySportRecords lists them: {label, code, type, name, start (UTC), seconds, km, hr}
         self.sessions: list[dict] = []
+        self.laps = LAPS  # queryActivityLapData's answer (the owner's real JSON, its max HR 171)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url).split("?")[0]
@@ -418,7 +424,7 @@ class FakeCoros:
             return self._reply(msg["id"], {"content": [{"type": "text", "text": f"days must be <= {limit}"}],
                                            "isError": True})
         text = (self.records(args) if name == "querySportRecords" else DETAIL if name == "getActivityDetail"
-                else self.texts[name])
+                else self.laps if name == "queryActivityLapData" else self.texts[name])
         return self._reply(msg["id"], {"content": [{"type": "text", "text": text}], "isError": False})
 
     def records(self, args: dict) -> str:

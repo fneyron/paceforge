@@ -116,8 +116,8 @@ METHOD = [
     "pouls moyen pendant ton sommeil.",
     "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
     "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles.",
-    "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après un "
-    "ultra.",
+    "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
+    "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",
     "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
     "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
     "C'est une estimation : quelques points d'écart ne veulent rien dire.",

@@ -23,8 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 HEURISTICS = [
     ("app/services/sante_training.py", "MIN_FIT_RUNS", 6),
     ("app/services/sante_training.py", "EASY_FIT_DAYS", 365),
-    ("app/services/sante_training.py", "MIN_HISTORY_DAYS", 42),
-    ("app/services/sante_training.py", "CTL_DAYS", 42),
     ("app/services/sante_training.py", "FLAG_REF_DAYS", 14),
     ("app/services/sante_training.py", "LINE_RUNS", 6),
     ("app/services/sante_training.py", "EASY_KM", 5),
@@ -35,6 +33,9 @@ HEURISTICS = [
     ("app/services/nights.py", "MIN_BAND_NIGHTS", 14),
     ("app/services/nights.py", "RACE_WINDOW", 7),
     ("app/services/nights.py", "TZ_CHANGE_MIN", 60),
+    # v4.4 (research_data.md R2): where the athlete sleeps (Latshang 2013), carried over rest days up there
+    ("app/services/nights.py", "ALTITUDE_M", 1600),
+    ("app/services/nights.py", "ALTITUDE_CARRY", 3),
     ("app/services/race_prep.py", "HOT_FACTOR", 1.06),
     ("app/services/nights.py", "MIN_PROVISIONAL_NIGHTS", 7),
     # Santé v4 (SANTE_V4_SPEC.md): the effort classes, their windows and Charge, the score, the habits
@@ -48,6 +49,8 @@ HEURISTICS = [
                                                        "long": (((3, 65),), 50)}),
     # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018)
     ("app/services/sante_training.py", "LONG_RACE_LAST", 5),
+    # v4.4 (research_data.md R3): a Longue run like a race, whoever measured it (session RPE: Foster 2001)
+    ("app/services/sante_training.py", "INTENSE_RPE", 8),
     ("app/services/sante_training.py", "ULTRA_LONG_MIN", 1440),
     ("app/services/sante_training.py", "ULTRA_LONG_LAST", 13),
     ("app/services/sante_training.py", "NIGHT_SPAN", (time(1), time(5))),
