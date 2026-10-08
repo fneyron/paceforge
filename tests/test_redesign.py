@@ -119,11 +119,11 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
                  "Pilotage", "Nutrition et sacs"):
         assert gone not in text, gone
     # the hooks the tools and scripts rely on are all still there
-    for hook in ('id="rtab-nutrition"', 'id="rtab-reference"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
+    for hook in ('id="rtab-nutrition"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
                  'id="race-sheet"', 'id="save-name"', 'id="race-date"', 'id="start-time"', 'name="scenario_fast_pct"', "/reimport",
-                 'id="rpanel-nutrition"', 'id="rpanel-reference"', 'class="pf-carte"', 'id="wx-block"'):
+                 'id="rpanel-nutrition"', 'class="pf-carte"', 'id="wx-block"'):
         assert hook in html, hook
-    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"'):
+    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"', 'id="rtab-reference"', 'id="rpanel-reference"'):
         assert gone not in html, gone
     # the map is an overlay, closed on load, never restored from a remembered state
     assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
@@ -219,14 +219,17 @@ async def test_missing_date_shows_the_pill_instead_of_date_and_start(as_user: As
 
 
 @pytest.mark.asyncio
-async def test_menu_lists_share_print_reference_then_race_settings_and_gpx(as_user: AsyncClient):
+async def test_menu_lists_share_print_then_race_settings_and_gpx(as_user: AsyncClient):
+    """No « Finisher de référence » any more (owner, 2026-10-09: « je ne pense pas qu'on l'ait pour toutes les
+    courses »)."""
     rid = await _route(as_user)
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence",
+    assert _menu_items(html) == ["Partager le plan", "Bande imprimable",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
+    assert "Finisher de référence" not in html and "/reference" not in html
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
     assert menu.count('class="pf-menu-sep"') == 1 and "<small" not in menu
-    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" in menu
+    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" not in menu
     assert "openRaceSheet()" in menu and "openTool('advanced')" in menu and 'type="file" name="gpx_file"' in menu
 
 
@@ -250,10 +253,10 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     # a future dated race: no debrief anywhere
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
     assert "Débrief" not in _visible(html) and "débrief" not in _visible(html) and "data-primary-debrief" not in html
-    # no date, or race day: in the menu, after « Finisher de référence »; the main button stays « Envoyer à la montre »
+    # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Envoyer à la montre »
     for rd in ("", date.today().isoformat()):
         html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
-        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence", "Débrief",
+        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Débrief",
                                      "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
         assert html.count("data-primary-export") == 1 and 'id="rpanel-realise"' in html and "/result?" in html
     # after race day: « Voir le débrief » is the main button, « Envoyer à la montre » heads the menu (the 4 formats stay)
@@ -261,7 +264,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
     assert _surface(html).count("pf-btn-primary") == 1
     assert 'id="heat-line"' not in html  # the forecast heat is for before the race
-    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable", "Finisher de référence",
+    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):

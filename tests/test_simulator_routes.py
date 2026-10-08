@@ -1,6 +1,6 @@
 """End-to-end through the HTTP layer: save a route with typed checkpoints, then
 render every plan surface (passage times + scenarios, pacing guide, nutrition,
-exports, reference finisher, debrief)."""
+exports, debrief)."""
 
 import json
 import re
@@ -126,16 +126,12 @@ async def test_pace_exports(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_no_reference_finisher_and_the_debrief(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
-    r = await as_user.get(f"/api/simulator/routes/{route_id}/reference")
-    assert r.status_code == 200 and "Finisher de référence" in r.text
-    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={
-        "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00\nArrivée km 30 4:10:00", "total_time": "4:10:00",
-    })
-    assert r.status_code == 200, r.text
-    assert "Mamba" in r.text and "Où il gagne du temps" in r.text or "Où ton plan est plus rapide" in r.text
-    assert "4h10" in r.text
+    # the « Finisher de référence » tool is gone (owner, 2026-10-09: « je ne pense pas qu'on l'ait pour toutes les
+    # courses »): its routes no longer exist
+    assert (await as_user.get(f"/api/simulator/routes/{route_id}/reference")).status_code == 404
+    assert (await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={"source": "x"})).status_code in (404, 405)
 
     # debrief: a matched activity with per-km splits (moving + elapsed + HR)
     splits = [{"distance": 1000, "moving_time": 600, "elapsed_time": 600 + (900 if k == 9 else 0), "average_heartrate": 150 if k < 8 else 130} for k in range(30)]

@@ -44,6 +44,8 @@ class Route(Base):
     result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Reference finisher aligned on this route: {"label", "source", "total_s",
     # "points": [{"km", "time_s"}]} — their passage time next to yours at each CP.
+    # unused since 2026-10-09: the « Finisher de référence » tool was removed (owner: « je ne pense pas qu'on l'ait
+    # pour toutes les courses »); the column stays so that no stored data is dropped
     reference_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
