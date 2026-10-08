@@ -59,6 +59,12 @@ HEURISTICS = [
     ("app/services/sante_training.py", "ULTRA_TAIL_MIN", 1200),
     ("app/services/sante_training.py", "ULTRA_TAIL", (5, 7)),
     ("app/services/sante_training.py", "AFTER_ULTRA_DAYS", 21),
+    # v4.2 sleep (research_sleep.md): the stages to 10 min, the late-nap cut-off (Mograss 2022; Walsh 2021)
+    ("app/services/sante_sleep.py", "STAGE_STEP", 10),
+    ("app/services/nights.py", "LATE_NAP_H", 7),
+    ("app/services/nights.py", "NAP_LATEST", time(16)),
+    ("app/services/nights.py", "USUAL_BED_NIGHTS", 5),
+    ("app/services/nights.py", "USUAL_BED_DAYS", 28),
     ("app/services/sante_today.py", "HR_UP_BPM", 3),
     # v4.2 (research_recovery.md §3.2): the weights, Charge only in a window, the FC de nuit anchors (Alavi 2022;
     # Bosquet 2008), the joint VFC/FC cap (Buchheit 2014, Table 2)
