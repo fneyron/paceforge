@@ -107,7 +107,8 @@ def test_a_product_switch_at_8_h_on_a_16_h_race_with_ten_ravitos():
     assert g == NP._round((8 * 25 + 25 * 30) / 16.5) == 58 and NP.carbs_word(g)[0] == "un peu bas"
     # each row is one short line on a phone: the pouches, the opened pouch's prises only when there is room
     for r in rows:
-        assert len(NP.take_text(r["items"], PRODUCTS, 36 - len(r["name"]))) <= max(36 - len(r["name"]), 23), r["name"]
+        room = NP.ROW_CHARS - len(r["name"])
+        assert len(NP.take_text(r["items"], PRODUCTS, room)) <= max(room, 23), r["name"]
 
 
 def test_a_pf90_in_3_prises_takes_whole_pouches_and_the_opened_one_carries_on():
