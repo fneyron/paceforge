@@ -45,9 +45,11 @@ def is_false_start(activity) -> bool:
 
 
 def _richness(activity) -> tuple:
-    """Which of two duplicates to keep: the one with splits, then the longer one."""
+    """Which of two duplicates to keep: the one with a heart rate (Santé's Entraînement dial weighs it; owner,
+    2026-10-09: his run of 02/09 kept its copy without one), then the one with splits, then the longer one."""
+    has_hr = 1 if getattr(activity, "average_heartrate", None) else 0
     has_splits = 1 if getattr(activity, "splits_metric", None) else 0
-    return (has_splits, activity.moving_time or 0, -activity.id)
+    return (has_hr, has_splits, activity.moving_time or 0, -activity.id)
 
 
 def find_duplicate_ids(activities: Iterable) -> set[int]:

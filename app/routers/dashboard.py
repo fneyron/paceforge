@@ -184,7 +184,8 @@ async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
     today = await st.athlete_today(db, user_id)
     if not today - timedelta(days=RECENT_MAX_DAYS) <= since <= today:
         return None
-    sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.day >= since),
+    # every session that ended in those days, as Santé counts them (Session.end_day: an overnight race too)
+    sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.end_day >= since),
                       key=lambda s: s.start, reverse=True)
     ids = [s.id for s in sessions]
     rows = {a.id: a for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars()} if ids else {}

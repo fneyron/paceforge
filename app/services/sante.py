@@ -257,8 +257,9 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
 # (Watson 2015a) and 7/8 of the need (H: an 8-h need gives the 7 h), « court » under 6 h (Craven 2022)
 SUFFICIENT_SHARE = 7 / 8  # (H)
 NO_NIGHT_WORD = "pas enregistré"
-USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the last 11 complete weeks (Activités'
-# « par semaine en moyenne », the same weeks and the same moving time), 4 weeks with an activity at least
+USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the 11 weeks just before the 7 days (77
+# days, never the 7 days themselves: a period is not compared to a mean that holds it, the « uncoupled » ratio:
+# Lolli 2019; Windt & Gabbett 2019; owner, 2026-10-09: his Transjeju counted in both), 4 with an activity at least
 TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
 USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
@@ -298,33 +299,33 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
                     aria=f"Sommeil {sc.pct(p)} de ton besoin de {viz.hm_long(need)}, {word}.")
 
 
-def usual_week(sessions, today: date, value=None) -> float | None:
-    """The usual week (H), the figure Activités › « Semaines » prints as « par semaine en moyenne »: the mean of
-    the activities' moving minutes over the last 11 complete weeks (Monday → Sunday, local days) since the first
-    activity's week; None with fewer than 4 of those weeks holding an activity. `value(s)`: what a session counts
-    over those same weeks instead of its minutes (its heart-rate load: the Entraînement dial)."""
+def usual_week(sessions, since: date, value=None) -> float | None:
+    """The usual week (H): the mean of the activities' moving minutes over the 11 weeks just before the 7 days
+    (the 77 days before `since`, their first day; each activity on the day it ended: Session.end_day), the weeks
+    since the first activity only; None with fewer than 4 of those weeks holding an activity. Never the 7 days
+    themselves (USUAL_WEEKS). `value(s)`: what a session counts over those same weeks instead of its minutes (its
+    heart-rate load: the Entraînement dial)."""
     if not sessions:
         return None
     value = value or (lambda s: s.minutes)
-    monday = today - timedelta(days=today.weekday())
-    first = min(s.day for s in sessions)
+    first = min(s.end_day for s in sessions)
     held, per = defaultdict(float), defaultdict(float)
     for s in sessions:
-        m = s.day - timedelta(days=s.day.weekday())
-        held[m] += s.minutes
-        per[m] += value(s)
-    weeks = [m for m in (monday - timedelta(days=7 * k) for k in range(1, USUAL_WEEKS + 1))
-             if m + timedelta(days=6) >= first]
-    if sum(1 for m in weeks if held.get(m, 0.0) > 0) < USUAL_MIN_WEEKS:
+        k = (since - s.end_day).days - 1  # 0: the day before the 7 days
+        if 0 <= k < 7 * USUAL_WEEKS:
+            held[k // 7] += s.minutes
+            per[k // 7] += value(s)
+    weeks = [k for k in range(USUAL_WEEKS) if since - timedelta(days=7 * k + 1) >= first]
+    if sum(1 for k in weeks if held.get(k, 0.0) > 0) < USUAL_MIN_WEEKS:
         return None
-    return statistics.fmean(per.get(m, 0.0) for m in weeks) or None
+    return statistics.fmean(per.get(k, 0.0) for k in weeks) or None
 
 
 def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0) -> dict:
     """« Entraînement », the third dial and its card (owner, 2026-10-09: « Oui vas-y », research_ind_train.md): the
     heart-rate load of the last 7 days (sante_training.loads: each minute weighted by its share of the heart-rate
     reserve, Banister 1991; a minute without a readable HR, or of strength, at the athlete's usual minute) against
-    the usual week's (the same 11 complete weeks as usual_week), as a percentage, 100 % as usual, the arc full at
+    the usual week's (the 11 weeks before the 7 days: usual_week), as a percentage, 100 % as usual, the arc full at
     twice it, in the accent colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que
     d'habitude » or « moins que d'habitude »; without a usual week, the 7 days' time itself and « pas encore
     d'habitude ». The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
@@ -334,13 +335,13 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     left out when under half of the minutes, of the 7 days or of the usual weeks, were read from their HR (H): the
     dial is then nearly the hours' ratio. Without a usual week the dial prints the time, the card only its words.
     `rest`, `peak`: today's heart-rate bounds, for every week compared (H). `until`: the calendar day when the page
-    still reads yesterday's cycle (cycle_day): the activities since midnight count in it. `since`: the 7 days' first
-    day, the card's link to them in Activités (owner, 2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial,
-    week, usual, word, intensity, since}."""
+    still reads yesterday's cycle (cycle_day): the activities since midnight count in it. Each activity counts on
+    the day it ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (owner,
+    2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word, intensity, since}."""
     until, since = until or today, today - timedelta(days=6)
-    days7 = [s for s in sessions if since <= s.day <= until]
+    days7 = [s for s in sessions if since <= s.end_day <= until]
     week = sum(s.minutes for s in days7)  # moving time, as Activités
-    usual = usual_week(sessions, today)
+    usual = usual_week(sessions, since)
     href = "#entrainement"
     if usual is None:
         return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", NO_HABIT, tone="accent",
@@ -348,7 +349,7 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
                                                  f"jours, {NO_HABIT}."),
                 "week": None, "usual": None, "word": NO_USUAL, "intensity": None, "since": since}
     load = st.loads(sessions, until, rest, peak)
-    usual_load = usual_week(sessions, today, lambda s: load[s.id][0])
+    usual_load = usual_week(sessions, since, lambda s: load[s.id][0])
     # snapped to 1e-9 (as sante_score.rounded): minutes that all weigh the same (no HR at all) give exactly the
     # hours' ratio
     intensity = (round(sum(load[s.id][0] for s in days7) / week / (usual_load / usual), 9)
@@ -358,7 +359,7 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
             "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
     p = sc.rounded(100 * ratio)
     read7 = sum(s.minutes for s in days7 if load[s.id][1])
-    read_usual = usual_week(sessions, today, lambda s: s.minutes if load[s.id][1] else 0.0) or 0.0
+    read_usual = usual_week(sessions, since, lambda s: s.minutes if load[s.id][1] else 0.0) or 0.0
     pace = None
     if week and read7 >= INTENSITY_READ * week and read_usual >= INTENSITY_READ * usual:
         pace = (INTENSITY_WORDS[0] if intensity > 1 + INTENSITY_SPREAD else

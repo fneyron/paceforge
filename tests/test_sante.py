@@ -414,7 +414,7 @@ async def test_the_entrainement_link_lists_the_7_days_it_counts(as_user: AsyncCl
     monkeypatch.setattr(st_, "athlete_today", today)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     since = page["training"]["since"]
-    sessions = [s for s in await st_.load_sessions(db_session, test_user.id, D8) if s.day >= since]
+    sessions = [s for s in await st_.load_sessions(db_session, test_user.id, D8) if s.end_day >= since]
     html = (await as_user.get(f"/activities?depuis={since.isoformat()}")).text
     recent = html.split('<section id="recent"')[1].split("</section>")[0]
     assert '<h2 id="recent-h" class="pf-h3">7 derniers jours</h2>' in recent and "15h35" in recent  # the dial's
@@ -424,6 +424,9 @@ async def test_the_entrainement_link_lists_the_7_days_it_counts(as_user: AsyncCl
     assert "7 j :" not in html  # their kilometres printed once, in their own line
     for bad in ("abc", "2026-07-01", "2026-12-01"):
         assert 'id="recent"' not in (await as_user.get(f"/activities?depuis={bad}")).text, bad
+    # the Transjeju started on 02/10 at 21:00 and ended on 03/10: the 7 days from 03/10 still list it, as they count it
+    html = (await as_user.get("/activities?depuis=2026-10-03")).text
+    assert html.split('<section id="recent"')[1].split("</section>")[0].count('class="pf-activity-row') == 1
 
 
 async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_owner_day):

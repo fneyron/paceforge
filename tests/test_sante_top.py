@@ -100,15 +100,18 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
     return out
 
 
+SINCE = D - timedelta(days=6)  # the 7 days' first day: the usual week is the 11 weeks before it
+
+
 def test_the_entrainement_dial_against_the_usual_week():
-    """The last 7 days' heart-rate load against the usual week's, the mean of the same last 11 complete weeks (H;
-    the weeks Activités prints « par semaine en moyenne » over), as a percentage (100 % as usual), the arc full at
+    """The last 7 days' heart-rate load against the usual week's, the mean of the 11 weeks just before them (H;
+    never the 7 days themselves: owner, 2026-10-09), as a percentage (100 % as usual), the arc full at
     twice it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que
     d'habitude »; the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each
     once. Every session here runs at the same HR: every minute weighs the same, the dial is the hours' ratio (the
     weighting itself: test_sante_train_hr)."""
     usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350)
-    assert sante.usual_week(_weeks(usual), D) == 350
+    assert sante.usual_week(_weeks(usual), SINCE) == 350
     cases = {350: ("100", "comme d'habitude", 0.5), 420: ("120", "comme d'habitude", 0.6),
              421: ("120", "plus que d'habitude", 0.601), 280: ("80", "comme d'habitude", 0.4),
              279: ("80", "moins que d'habitude", 0.399), 700: ("200", "plus que d'habitude", 1.0),
@@ -129,6 +132,33 @@ def test_the_entrainement_dial_against_the_usual_week():
     assert sante.training(_weeks([47, 48, 52, 53], 50), D)["usual"] == "ta semaine habituelle : 50 min"
 
 
+def test_the_7_days_never_count_in_the_usual_week():
+    """Owner, 2026-10-09: his 148-km race counted in the 7 days AND in the usual week (its calendar week was one of
+    the 11, so his race week read « comme d'habitude »). The usual week is the 11 weeks before the 7 days: a big
+    Friday in them leaves it untouched (an « uncoupled » ratio)."""
+    friday = D - timedelta(days=6)  # 02/10: the 7 days' first day, in the calendar week 28/09 → 04/10
+    sessions = _weeks([300] * 11) + [_session(friday, 960, sid=50)]
+    assert sante.usual_week(sessions, SINCE) == 300
+    t = sante.training(sessions, D)
+    assert (t["dial"]["value"], t["dial"]["sub"], t["usual"]) == ("320", "plus que d'habitude",
+                                                                 "ta semaine habituelle\u00a0: 5h00")
+
+
+def test_an_overnight_race_counts_on_the_day_it_ended():
+    """The Transjeju started on 02/10 at 21:00 and ended on 03/10 (16h53, stops in): it counts in the 7 days until
+    09/10 (03/10 → 09/10), as Récupération dates it, and then joins the usual weeks (owner, 2026-10-09: « demain le
+    cadran tombe à 0 % »)."""
+    race = _session(date(2026, 10, 2), 964, sid=60, hour=21, elapsed=1013)
+    assert (race.day, race.end_day) == (date(2026, 10, 2), date(2026, 10, 3))
+    assert _session(D, 50, hour=7).end_day == D  # a morning run: its own day
+    sessions = _weeks([300] * 11) + [race]
+    t9 = sante.training(sessions, date(2026, 10, 9))
+    assert (t9["since"], t9["week"], t9["usual"]) == (date(2026, 10, 3), "16h04", "ta semaine habituelle\u00a0: 5h00")
+    t10 = sante.training(sessions, date(2026, 10, 10))
+    assert t10["week"] == "0 min" and t10["dial"]["sub"] == "moins que d'habitude"
+    assert sante.usual_week(sessions, date(2026, 10, 4)) == (11 * 300 + 964) / 11  # in the week just before
+
+
 def test_without_a_usual_week_the_dial_prints_the_time():
     """Fewer than 4 complete weeks holding an activity (H): no usual week, the dial prints the 7 days' time itself
     and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words, and no
@@ -140,9 +170,9 @@ def test_without_a_usual_week_the_dial_prints_the_time():
     assert (t["week"], t["usual"], t["word"], t["intensity"]) == (None, None, "pas encore de semaine habituelle",
                                                                   None)
     assert d["aria"] == "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."
-    assert sante.usual_week(_weeks([300, 300, 300, 300]), D) == 300  # 4 weeks: there is one
-    assert sante.usual_week([], D) is None and sante.training([], D)["dial"]["value"] == "0 min"
-    assert sante.usual_week(_weeks([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 30]), D) is None  # a usual week of nothing
+    assert sante.usual_week(_weeks([300, 300, 300, 300]), SINCE) == 300  # 4 weeks: there is one
+    assert sante.usual_week([], SINCE) is None and sante.training([], D)["dial"]["value"] == "0 min"
+    assert sante.usual_week(_weeks([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 30]), SINCE) is None  # a usual week of nothing
     html = render("{{ v.viz_ring(r) }}", r=d)
     assert '<span class="pf-ring-value is-long" aria-hidden="true">16h53</span>' in html
 

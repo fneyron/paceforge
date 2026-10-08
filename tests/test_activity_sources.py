@@ -187,6 +187,18 @@ def test_display_dedupe_pairs_sessions_without_distance():
     assert find_duplicate_ids([a, b, c]) == {1}  # 15 min of stretching is another outing
 
 
+def test_display_dedupe_keeps_the_copy_with_a_heart_rate():
+    """Owner, 2026-10-09: two copies of his run of 02/09, 12 s apart; the longer one had no heart rate and was kept,
+    so Santé's Entraînement weighed that hour at a rate. The copy with a heart rate wins, then splits, then length."""
+    t = datetime(2026, 9, 2, 17, 6, 15, tzinfo=timezone.utc)
+    plain = SimpleNamespace(id=1, start_date=t, sport_type="Run", distance=15802, moving_time=3731,
+                            splits_metric=[{"distance": 1000}], average_heartrate=None)
+    hr = SimpleNamespace(id=2, start_date=t + timedelta(seconds=12), sport_type="Run", distance=15449,
+                         moving_time=3690, splits_metric=[{"distance": 1000}], average_heartrate=138.6)
+    assert find_duplicate_ids([plain, hr]) == {1}
+    assert find_duplicate_ids([SimpleNamespace(**{**vars(plain), "average_heartrate": 130.0}), hr]) == {2}  # both
+
+
 async def test_garmin_merges_a_strava_row_saved_after_it(db_session: AsyncSession, test_user: User):
     start = datetime(2026, 10, 3, 6, 0, tzinfo=timezone.utc)
     raw = {"activityId": 9100, "startTimeGMT": "2026-10-03 06:00:00", "activityType": {"typeKey": "running"},

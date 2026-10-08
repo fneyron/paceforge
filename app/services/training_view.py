@@ -128,7 +128,8 @@ async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
     if (f := _sport_where(sport)) is not None:
         where.append(f)
     rows = (await db.execute(select(Activity.id, Activity.start_date, Activity.sport_type, Activity.distance,
-                                    Activity.moving_time, Activity.total_elevation_gain, has_splits)
+                                    Activity.moving_time, Activity.total_elevation_gain, has_splits,
+                                    Activity.average_heartrate)
                              .where(*where, Activity.start_date >= lo,
                                     Activity.start_date < this_monday + timedelta(weeks=1)))).all()
     first = (await db.execute(select(func.min(Activity.start_date)).where(*where))).scalar()
@@ -137,7 +138,7 @@ async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
         def __init__(self, r):
             self.id, self.start_date, self.sport_type, self.distance, self.moving_time = r[0], st._utc(r[1]), r[2], \
                 r[3] or 0, r[4] or 0
-            self.dplus, self.splits_metric = r[5] or 0, bool(r[6])
+            self.dplus, self.splits_metric, self.average_heartrate = r[5] or 0, bool(r[6]), r[7]
 
     acts = [_Row(r) for r in rows]
     skip = find_duplicate_ids(acts)

@@ -67,6 +67,13 @@ class Session:
     feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.read_segments)
 
+    @property
+    def end_day(self) -> date:
+        """The local day it ended, stops included: an overnight race is its finish's day, as its recovery window's
+        (Effort.day). Santé's 7 days and usual weeks count a session there (owner, 2026-10-09: the Transjeju, started
+        on 02/10 at 21:00, ran 14 of its 17 hours on 03/10)."""
+        return (local_start(self) + timedelta(minutes=self.elapsed)).date()
+
 
 def _utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
@@ -159,16 +166,17 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             for r in (await db.execute(q.where(*where).order_by(Activity.start_date))).all()]
 
     @dataclass
-    class _Row:  # what activity_dedupe reads (splits: the richer copy is kept, as on Activités)
+    class _Row:  # what activity_dedupe reads (a heart rate, splits: the richer copy is kept, as on Activités)
         id: int
         start_date: datetime
         sport_type: str
         distance: float
         moving_time: int
         splits_metric: bool
+        average_heartrate: float | None
 
-    raw = [_Row(r.id, _utc(r.start_date), r.sport_type, r.distance or 0, r.moving_time or 0, split)
-           for r, _, split in rows]
+    raw = [_Row(r.id, _utc(r.start_date), r.sport_type, r.distance or 0, r.moving_time or 0, split,
+                r.average_heartrate) for r, _, split in rows]
     skip = find_duplicate_ids(raw) | {a.id for a in raw if is_false_start(a)}
     out = []
     for r, x, _ in rows:
@@ -496,8 +504,8 @@ DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that mor
 # of its mean (2026-10-08, owner: « Fais comme WHOOP »; « Un effort récent, il faut le prendre en compte et afficher
 # la fatigue quand même »: the cap stays). The day it ends (D+0, once it is uploaded) already reads D+1's cap: a big
 # outing done today is never « pas de grosse sortie ». v4.3: the 3 days after an ultra are the efforts report's
-# « repos ou très facile » days, in the low band (35, H): « Récupération faible » whether a night was measured or
-# not (the owner: 03 → 06/10 all read alike)
+# « repos ou très facile » days, in the low band (35, H); a day without a night measured has no score at all (v4.4,
+# like WHOOP), and a short night can read under the cap
 EFFORT_RULES = {"ultra": ((3, 35), (10, 65)),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
                 "very_long": ((2, 45), (5, 65)),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
                 "long": ((3, 65),)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
