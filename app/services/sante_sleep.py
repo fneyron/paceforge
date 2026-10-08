@@ -59,7 +59,7 @@ METHOD = [
         "Une longue nuit n'est jamais signalée : elle peut aider à récupérer (Watson 2015a).",
         "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A).",
         "Décalage : 1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021).",
-        "Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM, stades du laboratoire (CTA/NSF 2052.3).",
+        "Au labo, Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM (CTA/NSF 2052.3).",
         "Le sommeil léger occupe normalement la plus grande partie de la nuit.",
         "Aucune instance ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017).",
     ]),
