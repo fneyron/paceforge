@@ -209,7 +209,8 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
 SLEEP_WORDS = ((sl.REF_MIN, "suffisant"), (nt.SHORT_DAY_MIN, "un peu court"), (0, "court"))
 SLEEP_NEED = sl.SLEEP_NEED
 NO_NIGHT_WORD = "pas enregistré"
-USUAL_WEEKS, USUAL_MIN_WEEKS = 12, 4  # (H) the usual week: the median of the last 12 complete weeks, 4 at least
+USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the last 11 complete weeks (Activités'
+# « par semaine en moyenne », the same weeks and the same moving time), 4 weeks with an activity at least
 TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
 USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
@@ -238,21 +239,21 @@ def sleep_dial(tst24: int | None, href: str | None) -> dict:
 
 
 def usual_week(sessions, today: date) -> float | None:
-    """The usual week (H): the median of the activities' minutes (stops included, st.effort_minutes) of the last
-    12 complete weeks (Monday → Sunday, local days) since the first activity's week; None under 4 such weeks, or
-    when that median is no time at all."""
+    """The usual week (H), the figure Activités › « Semaines » prints as « par semaine en moyenne »: the mean of
+    the activities' moving minutes over the last 11 complete weeks (Monday → Sunday, local days) since the first
+    activity's week; None with fewer than 4 of those weeks holding an activity."""
     if not sessions:
         return None
     monday = today - timedelta(days=today.weekday())
     first = min(s.day for s in sessions)
     per = defaultdict(float)
     for s in sessions:
-        per[s.day - timedelta(days=s.day.weekday())] += st.effort_minutes(s)
+        per[s.day - timedelta(days=s.day.weekday())] += s.minutes
     weeks = [m for m in (monday - timedelta(days=7 * k) for k in range(1, USUAL_WEEKS + 1))
              if m + timedelta(days=6) >= first]
-    if len(weeks) < USUAL_MIN_WEEKS:
+    if sum(1 for m in weeks if per.get(m, 0.0) > 0) < USUAL_MIN_WEEKS:
         return None
-    return statistics.median(per.get(m, 0.0) for m in weeks) or None
+    return statistics.fmean(per.get(m, 0.0) for m in weeks) or None
 
 
 def training(sessions, today: date) -> dict:
@@ -262,7 +263,7 @@ def training(sessions, today: date) -> dict:
     d'habitude »; without a usual week, the 7 days' time itself and « pas encore d'habitude ». The card prints the
     7 days' time and the usual week's (to 5 min: a typical value), each once: without a usual week the dial
     prints the time, the card only its words. {dial, week, usual, word}."""
-    week = sum(st.effort_minutes(s) for s in sessions if today - timedelta(days=6) <= s.day <= today)
+    week = sum(s.minutes for s in sessions if today - timedelta(days=6) <= s.day <= today)  # moving time, as Activités
     usual = usual_week(sessions, today)
     href = "#entrainement"
     if usual is None:

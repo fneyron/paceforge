@@ -274,7 +274,7 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
 async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user: User):
     """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
     dials — Sommeil 100 % « suffisant » (8h36 of an 8-h need, in the sleep hue), Récupération 65 % « en cours »,
-    Entraînement 16h53 « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
+    Entraînement 15h35 (moving time, as Activités) « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
     usual week, so the 7 days' time itself, no arc) — each a link to its card; the Récupération card's rows: VFC
     and FC de nuit « en construction », ready in 2 nights and after his next night (every measured night counts),
     « Effort récent » 8 days before he is recovered (the Transjeju's window to 16/10, at 65: orange)."""
@@ -283,10 +283,10 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
         ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
         ("recup", "65", "%", "Récupération", "en cours", "warn", "#recuperation"),
-        ("entrainement", "16h53", None, "Entraînement", "pas encore d'habitude", "accent", "#entrainement")]
+        ("entrainement", "15h35", None, "Entraînement", "pas encore d'habitude", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
         "Sommeil 100\u00a0% de tes 8 heures de besoin, suffisant.", "Récupération 65\u00a0%, en cours.",
-        "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."]
+        "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
         ("VFC", "7 nuits", None, "en construction", "prête dans 2\u00a0nuits", "none"),
@@ -414,9 +414,9 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
         ("sommeil", "sleep", "#sommeil", "Sommeil 100\u00a0% de tes 8 heures de besoin, suffisant."),
         ("recup", "warn", "#recuperation", "Récupération 65\u00a0%, en cours."),
         ("entrainement", "accent", "#entrainement",
-         "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude.")]
+         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude.")]
     assert [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()) for *_, body in dials] == [
-        "100 % Sommeil suffisant", "65 % Récupération en cours", "16h53 Entraînement pas encore d'habitude"]
+        "100 % Sommeil suffisant", "65 % Récupération en cours", "15h35 Entraînement pas encore d'habitude"]
     assert main.count('class="pf-ring ') == 3 and "pf-state-text" not in main  # no alert: no sentence
     for href in re.findall(r'href="#([\w-]+)"', main.split('<div class="pf-dials">')[1].split("</div>\n")[0]):
         assert f'id="{href}"' in main, href  # never a link to nothing
@@ -450,7 +450,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # score, this morning's sleep as a percentage, the week's time), the effort's days, last night's hours, the VFC
     # and FC of last night, the means, the stages; no sub-score (no « 20 »)
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("65 %", "100 %", "16h53", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "57 %", "1h10", "5h30",
+    for number in ("65 %", "100 %", "15h35", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "57 %", "1h10", "5h30",
                    "2h00"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
     assert not re.search(r"(?<![\d,h:])20(?![\d,h:A-Za-z])", seen)

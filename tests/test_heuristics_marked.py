@@ -96,7 +96,7 @@ HEURISTICS = [
     # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil dial's 100 % (Sargent 2021: 8,3 h)
     ("app/services/sante_sleep.py", "SLEEP_NEED", 480),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week and its « comme d'habitude »
-    ("app/services/sante.py", "USUAL_WEEKS", 12),
+    ("app/services/sante.py", "USUAL_WEEKS", 11),
     ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),
     ("app/services/sante.py", "USUAL_SPREAD", 0.2),
 ]

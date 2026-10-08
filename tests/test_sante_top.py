@@ -91,11 +91,11 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
 
 
 def test_the_entrainement_dial_against_the_usual_week():
-    """The last 7 days' activity time (stops included) against the usual week, the median of the last 12
-    complete weeks (H), as a percentage (100 % as usual), the arc full at twice it, in the accent colour; within
-    ± 20 % « comme d'habitude » (H), else « plus » or « moins que d'habitude »; the card prints the 7 days' time
-    and the usual week's (to 5 min), the dial the percentage: each once."""
-    usual = [300] * 6 + [400] * 6 + [900]  # a 13th week back: out of the 12
+    """The last 7 days' moving time against the usual week, the mean of the last 11 complete weeks (H; the
+    figure Activités prints « par semaine en moyenne »), as a percentage (100 % as usual), the arc full at twice
+    it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que d'habitude »;
+    the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each once."""
+    usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350)
     assert sante.usual_week(_weeks(usual), D) == 350
     cases = {350: ("100", "comme d'habitude", 0.5), 420: ("120", "comme d'habitude", 0.6),
              421: ("120", "plus que d'habitude", 0.601), 280: ("80", "comme d'habitude", 0.4),
@@ -116,7 +116,7 @@ def test_the_entrainement_dial_against_the_usual_week():
 
 
 def test_without_a_usual_week_the_dial_prints_the_time():
-    """Under 4 complete weeks since the first activity (H): no usual week, the dial prints the 7 days' time itself
+    """Fewer than 4 complete weeks holding an activity (H): no usual week, the dial prints the 7 days' time itself
     and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words."""
     t = sante.training(_weeks([300, 300, 300], 1013), D)
     d = t["dial"]

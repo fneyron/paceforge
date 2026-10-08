@@ -200,7 +200,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 
     dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
     assert dials[0] == "92 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
-    assert dials[2] == "100 % Entraînement comme d'habitude"  # a run every 3 days: the 7 days are its usual week
+    # a run every 3 days: 2 or 3 runs a week, the 7 days within 20 % of the weeks' mean (89 %)
+    assert dials[2] == "89 % Entraînement comme d'habitude"
     card = main.split('<section id="recuperation"')[1].split("</ul>")[0]
     rows = [words(body) for body in re.findall(r'<li class="pf-row is-\w+">(.*?)</li>', card)]
     assert len(rows) == 2  # each dot with its name and its words; no recovery window open: no Effort récent
