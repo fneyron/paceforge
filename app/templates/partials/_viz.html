@@ -106,12 +106,14 @@
 {% endcall %}
 {% endmacro %}
 
-{# K6 range toggle: one per view, above everything it scopes; ?r= keeps the choice. With `action` it is a GET form,
-   so it works without JS too (the page comes back with ?r=…); pf-viz.js switches the panels in place #}
-{% macro viz_ranges(options, current, label="Période", action=None) %}
+{# K6 range toggle: one per view, above everything it scopes; ?r= (or ?`param`=) keeps the choice. With `action` it
+   is a GET form, so it works without JS too (the page comes back with ?r=…, `hidden` fields kept: Activités' sport
+   filter); pf-viz.js switches the panels in place and carries the choice into the links marked data-viz-carry #}
+{% macro viz_ranges(options, current, label="Période", action=None, param="r", hidden=None) %}
 {% set tag = "form" if action else "div" %}
-<{{ tag }} class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" aria-label="{{ label }}"{% if action %} method="get" action="{{ action }}"{% endif %}>
-    {% for value, text in options %}<button type="{{ 'submit' if action else 'button' }}"{% if action %} name="r" value="{{ value }}"{% endif %} data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
+<{{ tag }} class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges{% if param != "r" %} data-viz-param="{{ param }}"{% endif %} role="group" aria-label="{{ label }}"{% if action %} method="get" action="{{ action }}"{% endif %}>
+    {% for k, v in (hidden or {}).items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for value, text in options %}<button type="{{ 'submit' if action else 'button' }}"{% if action %} name="{{ param }}" value="{{ value }}"{% endif %} data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
 </{{ tag }}>
 {% endmacro %}
 

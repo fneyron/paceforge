@@ -53,9 +53,10 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     assert sante["fc"][0] == "45\u00a0bpm" and " · normale " in sante["fc"][2]
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race…
     assert after["recup"][:2] == ("J+1 → J+14", "VFC et FC de nuit")  # …nor last night's VFC and FC
-    # this week's hours: Activités' week heading prints them; neither A1 nor the taper does by default
-    week = readouts(activites)["semaines"]
-    assert week[0] == "12 semaines" and "en cours" not in week[0]
+    # this week's hours: Activités' week heading prints them; neither A1 (it rests on the average of the complete
+    # weeks, v4.3) nor the taper does by default
+    week = readouts(activites)["semaines-duree"]
+    assert week[0].startswith("sur ") and week[2] == "par semaine en moyenne" and "en cours" not in " ".join(week)
     taper = before["affutage"]
     assert taper[0] == "S‑6 → S0" and taper[1].startswith("base : ") and "en cours" not in taper[0]
     shown = {v for r in (sante, readouts(activites)) for t in r.values() for v in t if re.search(r"\d", v)}

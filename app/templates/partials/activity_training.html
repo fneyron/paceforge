@@ -1,34 +1,36 @@
-{#- Activités, top (v3, moved from Santé): A1 « Semaines » open, A2 « FC en footing » folded unless flagged —
-    training only (v4.1: recovery is Santé's, no fond et fatigue model, no taper line). Expects `training` =
-    training_view.training_top(...). Every number of a week is in the list headings below, so A1 prints a week's own
-    values only in its readout, on a tap. A legend names every mark. No selection sync across A1–A2. -#}
+{#- Activités, top, page 1 (v4.3): « Semaines » — its measure toggle (Durée · Distance · D+, a GET form that keeps the
+    sport; pf-viz.js switches in place), the sport filter right under the title (filtering the chart and the list),
+    then ONE measure's 12 weekly bars and nothing else: the current week hatched (« en cours », said in the legend
+    and its readout), a dashed line at the average of the complete weeks labelled « moy. »; a week's own total only
+    on a tap (the list's week headings print it). Then « FC en footing », folded unless flagged — training only (v4.1:
+    recovery is Santé's, no fond et fatigue model, no taper line). Expects `training` = training_view.training_top(...),
+    `filters`, `sport`. -#}
 {% import "partials/_viz.html" as vz %}
 {% set w = training.weeks %}{% set e = training.easy %}
-<section id="semaines" class="pf-train" aria-labelledby="semaines-h">
-    <h2 id="semaines-h" class="pf-h2">Semaines</h2>
-    {% call vz.figure(w, "Heures par semaine", "semaines", None, "semaine", "Semaine précédente", "Semaine suivante") %}
-    <defs><pattern id="pf-hatch-sem" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
-    {% if w.band %}<rect x="0" y="{{ w.band.y }}" width="{{ w.X1 }}" height="{{ w.band.h }}" class="pf-viz-band"/>
-    <line x1="0" x2="{{ w.X1 }}" y1="{{ w.band.y }}" y2="{{ w.band.y }}" class="pf-viz-edge"/><line x1="0" x2="{{ w.X1 }}" y1="{{ w.band.y + w.band.h }}" y2="{{ w.band.y + w.band.h }}" class="pf-viz-edge"/>{% endif %}
-    <line x1="0" x2="{{ w.X1 }}" y1="{{ w.base }}" y2="{{ w.base }}" class="pf-viz-grid"/>
-    {% for b in w.cols %}
-    <g class="pf-viz-col" data-i="{{ b.i }}">
-        {% if b.h is defined %}{% if b.cur %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-sem)"/>{% else %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}{% endif %}
-        {% if b.dplus %}<rect x="{{ b.x }}" y="{{ w.base + 4 }}" width="{{ b.w }}" height="{{ b.dplus }}" class="pf-viz-sec"/>{% endif %}
-    </g>
+<section id="semaines" class="pf-train" aria-labelledby="semaines-h" data-viz-scope>
+    <div class="pf-train-top">
+        <h2 id="semaines-h" class="pf-h2">Semaines</h2>
+        {% if w and w.measures|length > 1 %}{{ vz.viz_ranges(w.measures, w.m, label="Mesure", action="/activities#semaines", param="m", hidden={"sport": sport} if sport else none) }}{% endif %}
+    </div>
+    {% set keep_m = w.m if w and w.m != "duree" else none %}{% set carry = w and w.measures|length > 1 %}
+    {% include "partials/activity_filters.html" %}
+    {% if w %}
+    {% for key, label in w.measures %}{% set c = w.charts[key] %}
+    <div data-range-panel="{{ key }}"{% if key != w.m %} hidden{% endif %}>
+        {% call vz.figure(c, c.title, c.key, None, "semaine", "Semaine précédente", "Semaine suivante") %}
+        <defs><pattern id="pf-hatch-{{ key }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+        <line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+        {% for b in c.cols %}
+        <g class="pf-viz-col" data-i="{{ b.i }}">{% if b.h is defined %}{% if b.cur %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-{{ key }})"/>{% else %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}{% endif %}</g>
+        {% endfor %}
+        {% if c.avg is not none %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.avg }}" y2="{{ c.avg }}" class="pf-viz-avg"/><text x="{{ c.W }}" y="{{ c.avg + 4 }}" text-anchor="end" class="pf-viz-strong">moy.</text>{% endif %}
+        {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 2 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ c.base }}"/></g>
+        {% endcall %}
+        {% if c.cur %}{{ vz.viz_legend([("is-cur", "semaine en cours")]) }}{% endif %}
+    </div>
     {% endfor %}
-    {% for l in w.longs %}<path d="M{{ l.x }} {{ w.base + 14 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
-    {% for l in w.spikes %}<path d="M{{ l.x }} {{ w.base + 14 }}l4.5 8h-9z" class="pf-viz-long is-warn"/>{% endfor %}
-    {% for t in w.xt %}<text x="{{ t.x }}" y="{{ w.H - 2 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
-    <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ w.base }}"/></g>
-    {% endcall %}
-    {#- every mark named: the weeks' hours, this week (hatched, in progress), the usual week's band, D+ under the bars,
-        and the markers by shape too (never colour alone): ◆ a long outing, ▲ a run over 10 % longer -#}
-    {% set marks = [("is-week", "heures")] + ([("is-cur", "en cours")] if w.cols and w.cols[-1].h is defined else [])
-        + ([("is-usual", "semaine type")] if w.band else []) + ([("is-dplus", "D+")] if w.cols|selectattr("dplus")|list else [])
-        + ([("is-long", "sortie longue")] if w.longs else []) + ([("is-spike", "10 % de plus que ta plus longue du mois")] if w.spikes else []) %}
-    {{ vz.viz_legend(marks) }}
-    {% if w.line %}<p class="pf-train-line"><a href="{{ w.line.href }}">{{ w.line.text }}</a></p>{% endif %}
+    {% endif %}
 </section>
 
 {% if e %}

@@ -25,8 +25,9 @@
    back to the resting readout. A mouse reads by hovering, like a tooltip: leaving the figure goes back to the
    default (the resting readout), so no hovered value stays printed twice.
    Range toggles: [data-viz-ranges] [data-range] show the matching [data-range-panel] in the closest
-   [data-viz-scope] and write ?r= (history.replaceState); a toggle that is a GET form works without JS too (its
-   submit is the fallback, prevented here). Lazy panels (hx-get, hx-trigger="click once") are picked up on
+   [data-viz-scope] and write ?r= (or the toggle's data-viz-param: history.replaceState), also into the links
+   marked data-viz-carry="<param>"; a toggle that is a GET form works without JS too (its submit is the
+   fallback, prevented here). Lazy panels (hx-get, hx-trigger="click once") are picked up on
    htmx:afterSettle. */
 (function () {
   "use strict";
@@ -309,13 +310,19 @@
   function ranges(box) {
     if (box.__pfviz) return;
     box.__pfviz = true;
-    var btns = box.querySelectorAll("[data-range]"), scope = box.closest("[data-viz-scope]") || document;
+    var btns = box.querySelectorAll("[data-range]"), scope = box.closest("[data-viz-scope]") || document,
+        param = box.getAttribute("data-viz-param") || "r";
     function show(r, save) {
       for (var b = 0; b < btns.length; b++) btns[b].setAttribute("aria-pressed", String(btns[b].getAttribute("data-range") === r));
       var panels = scope.querySelectorAll("[data-range-panel]");
       for (var p = 0; p < panels.length; p++) panels[p].toggleAttribute("hidden", panels[p].getAttribute("data-range-panel") !== r);
       if (save) {
-        try { var u = new URL(location.href); u.searchParams.set("r", r); history.replaceState(history.state, "", u); } catch (_) {}
+        try { var u = new URL(location.href); u.searchParams.set(param, r); history.replaceState(history.state, "", u); } catch (_) {}
+        // the links that carry the choice to the next page (Activités' sport filter keeps the measure)
+        var carry = document.querySelectorAll('a[data-viz-carry="' + param + '"]');
+        for (var c = 0; c < carry.length; c++) {
+          try { var v = new URL(carry[c].href, location.href); v.searchParams.set(param, r); carry[c].href = v.pathname + v.search + v.hash; } catch (_) {}
+        }
       }
       scan(scope);   // panels that were hidden get their interaction now
     }

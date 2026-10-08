@@ -343,8 +343,8 @@ def test_the_a11y_fixes_in_css_and_js():
     fc = fc[fc.index("@media (forced-colors: active)"):]
     for rule in (".pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }",
                  ".pf-tl-step { stroke: CanvasText; opacity: 1; }", ".pf-viz-hair { stroke: CanvasText; }",
-                 ".pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-long, .is-spike, .is-dot, .is-gap, .is-week) "
-                 "{ background: CanvasText; box-shadow: none; }",
+                 ".pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot, .is-gap) { background: CanvasText; "
+                 "box-shadow: none; }",
                  ".pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }",
                  ".pf-ph.is-deep { background: CanvasText; }"):
         assert rule in fc, rule

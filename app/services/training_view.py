@@ -3,24 +3,32 @@ Tendances): how the weeks go and heart rate at easy pace — training, never
 recovery (v4.1, owner 2026-10-08: recovery lives on Santé only, like WHOOP
 and Oura keep it on their home; « ce ne doit pas être redondant ni trop
 compliqué »: no recovery line, no taper line, no fond et fatigue model here).
-From the activities alone (sante_training), never a planned race, so it works
-without a watch at night and without a race in the app.
-partials/activity_training.html draws it on page 1 without a sport filter.
+From the activities alone, never a planned race, so it works without a watch
+at night and without a race in the app. partials/activity_training.html
+draws it on page 1, the sport filter (Tout · Course · Trail · Vélo · Autre)
+right under « Semaines », filtering the chart and the list alike.
 
-- A1 « Semaines » (open): 12 weeks of hours as Activités counts them (UTC
-  Mondays, duplicates and false starts out), D+ as a thin second mark, the
-  usual week as a band (P25–P75 of the active weeks of the last 26, H), ◆
-  weeks holding a long outing (≥ 3 h or ≥ 1 500 m D+, H; a race is an outing
-  like any other: no race flag, owner 2026-10-08), the single-run spike in the
-  warn tone: a run > 10 % longer, on distance, than the longest of the 30 days
-  before it, never a race (marked so on Strava) nor an effort of 6 h or more
-  (an ultra planned in the app or not: marked ◆, never flagged; Frandsen 2025:
-  1.5–2.3× overuse injuries; no weekly % flag, evidence row 15). Resting
-  readout « semaine type : 7h40 » (the median of those weeks), « heures par
-  semaine » before 8 active weeks; a week's own values only on tap (the list's
-  week headings print them). A legend names every mark. One line at most:
-  the spike of the last 10 days.
-- A2 « FC en footing » (opens itself when flagged): one dot per flat easy run,
+- A1 « Semaines » (v4.3, owner: « Base-toi sur l'état de l'art, là c'est
+  incompréhensible le schéma, il y a trop d'infos » — Strava's weekly
+  progress, Garmin Connect's weekly volume): ONE measure at a time, a
+  segmented control « Durée · Distance · D+ » (Distance only when some
+  activity has one, D+ only when the 12 weeks hold some: an activity
+  without D+ adds 0), « Durée » by default (every sport counts). 12 weekly
+  bars and nothing else: the current week lighter (hatched, « en cours » in
+  its readout and the legend), one dashed line at the average of the
+  complete weeks, labelled « moy. ». The weeks as the list's headings count
+  them (week_totals: UTC Mondays, the same sport filter, its duplicates and
+  false starts out, moving time): a week's own total only on a tap (its
+  heading prints it); the resting readout is the average, « 12h20 par
+  semaine en moyenne », « sur 11 semaines » (the complete weeks since the
+  first activity). No band, no ◆, no ▲, no D+ marks: the single-run spike
+  (a run > 10 % longer, on distance, than the longest of the 30 days before
+  it, never a race nor an effort of 6 h or more; Frandsen 2025: 1.5–2.3×
+  overuse injuries) is a worded tag on its row in the list, « plus longue
+  que d'habitude » (spike_ids). The toggle and the filter work without JS
+  (a GET form, links).
+- A2 « FC en footing » (opens itself when flagged; under « Tout », « Course »
+  and « Trail »: its runs are runs): one dot per flat easy run,
   its HR moved to the athlete's reference pace (one Theil–Sen slope over 12
   months), hot runs (≥ 25 °C, H) hollow and out of the normal; the normal is
   the median of the 28 days before ± 3 bpm (H; Nuuttila 2022's 3–4 bpm edge)
@@ -36,24 +44,32 @@ partials/activity_training.html draws it on page 1 without a sport filter.
   fatigue » (Buchheit 2014): never « fatigue ».
 """
 import logging
-import statistics
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.activity import Activity
 from app.services import race_prep as rp
 from app.services import sante_training as st
 from app.services import viz
-from app.services.viz import JOURS_L, MOIS, NNBSP, X1, d_long, hm, hm_long, num
+from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
+from app.services.viz import MOIS, NBSP, X1, d_long, hm, hm_long, num
 
 logger = logging.getLogger(__name__)
 
-WEEKS, USUAL_WEEKS, MIN_USUAL_WEEKS = 12, 26, 8  # (H)
-SPIKE, SPIKE_DAYS, SPIKE_RECENT = 1.10, 30, 10  # Frandsen 2025; the line names a spike of the last 10 days (H)
+WEEKS = 12
+SPIKE, SPIKE_DAYS = 1.10, 30  # Frandsen 2025
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
 FLAG_LINE = "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
 AFTER_ULTRA = "après ultra"  # the fold's note instead of « à surveiller », 21 days after an ultra (H)
+SPIKE_TAG = "plus longue que d'habitude"  # the list row's tag of a single-run spike (v4.3)
+# « Durée · Distance · D+ »: (key, the toggle's word, the figure's title, the spoken unit)
+MEASURES = (("duree", "Durée", "Durée par semaine"), ("distance", "Distance", "Distance par semaine"),
+            ("dplus", "D+", "Dénivelé positif par semaine"))
+FLOOR = {"duree": 60, "distance": 10, "dplus": 100}  # the axis never shorter: a light week is no tall bar
+FOOTING_SPORTS = (None, "run", "trail")  # « FC en footing » under these filters: its dots are runs
 
 
 # ── A1 Semaines ─────────────────────────────────────────────────────────────
@@ -79,97 +95,146 @@ def spikes(sessions: list[st.Session], since: date) -> list[tuple[st.Session, fl
     return out
 
 
-def semaines(sessions: list[st.Session], today: date, now: datetime) -> dict | None:
-    wk = st.weeks(sessions, now, WEEKS)
-    if not any(w["count"] for w in wk):
-        return None
-    hist = [w for w in st.weeks(sessions, now, USUAL_WEEKS + 1)[:-1] if w["count"]]
-    usual = None
-    if len(hist) >= MIN_USUAL_WEEKS:
-        q = statistics.quantiles([w["minutes"] for w in hist], n=4)
-        usual = {"lo": q[0], "hi": q[2], "mid": statistics.median(w["minutes"] for w in hist)}
-    mondays = [w["monday"] for w in wk]
-    this_monday = mondays[-1]
-    by_week: dict[date, list] = {}
-    for s in sessions:
-        by_week.setdefault(st.monday(s.start).date(), []).append(s)
-    spk = {st.monday(s.start).date(): (s, ratio) for s, ratio in spikes(sessions, mondays[0])}
-    longs = [m for m in mondays if m not in spk and any(
-        s.minutes >= rp.LONG_OUTING_MIN or s.dplus >= rp.LONG_OUTING_DPLUS for s in by_week.get(m, []))]
+async def spike_ids(db: AsyncSession, user_id: int, since: date, now: datetime | None = None) -> set[int]:
+    """The activities of the list (since `since`) that are a single-run spike (spikes): their rows say « plus
+    longue que d'habitude » (v4.3: no ▲ on the chart any more). Never fails the list."""
+    try:
+        today = await st.athlete_today(db, user_id, now)
+        return {s.id for s, _ in spikes(await st.load_sessions(db, user_id, today), since)}
+    except Exception:
+        logger.exception("Activités › spikes failed for user %d", user_id)
+        return set()
 
-    n = len(wk)
+
+def _sport_where(sport: str | None):
+    """The list's sport filter (dashboard._sport_filter), as a where clause."""
+    if sport in SPORT_GROUPS:
+        return Activity.sport_type.in_(SPORT_GROUPS[sport])
+    if sport == "other":
+        return Activity.sport_type.not_in([t for types in SPORT_GROUPS.values() for t in types])
+    return None
+
+
+async def week_totals(db: AsyncSession, user_id: int, sport: str | None,
+                      now: datetime) -> tuple[list[dict], date | None]:
+    """The last 12 weeks, oldest first, exactly as the list's week headings count them (dashboard._week_groups):
+    UTC Mondays, the same sport filter, the duplicates among those activities and the false starts left out, the
+    moving time; {monday, current, count, minutes, km, dplus}. And the Monday of the first activity of that
+    filter ever (the average reads the complete weeks since)."""
+    this_monday = st.monday(now)
+    lo = this_monday - timedelta(weeks=WEEKS - 1)
+    has_splits = and_(Activity.splits_metric.is_not(None), cast(Activity.splits_metric, String).not_in(("null", "[]")))
+    where = [Activity.user_id == user_id]
+    if (f := _sport_where(sport)) is not None:
+        where.append(f)
+    rows = (await db.execute(select(Activity.id, Activity.start_date, Activity.sport_type, Activity.distance,
+                                    Activity.moving_time, Activity.total_elevation_gain, has_splits)
+                             .where(*where, Activity.start_date >= lo,
+                                    Activity.start_date < this_monday + timedelta(weeks=1)))).all()
+    first = (await db.execute(select(func.min(Activity.start_date)).where(*where))).scalar()
+
+    class _Row:  # what activity_dedupe reads
+        def __init__(self, r):
+            self.id, self.start_date, self.sport_type, self.distance, self.moving_time = r[0], st._utc(r[1]), r[2], \
+                r[3] or 0, r[4] or 0
+            self.dplus, self.splits_metric = r[5] or 0, bool(r[6])
+
+    acts = [_Row(r) for r in rows]
+    skip = find_duplicate_ids(acts)
+    out = []
+    for i in range(WEEKS):
+        m = lo + timedelta(weeks=i)
+        week = [a for a in acts if a.id not in skip and not is_false_start(a) and st.monday(a.start_date) == m]
+        out.append({"monday": m.date(), "current": m == this_monday, "count": len(week),
+                    "minutes": sum(a.moving_time for a in week) / 60, "km": sum(a.distance for a in week) / 1000,
+                    "dplus": sum(a.dplus for a in week)})
+    return out, (st.monday(first).date() if first else None)
+
+
+def _big(v: float, key: str) -> str:
+    """A week's value as the readout prints it (a plain no-break space: the display font has no narrow one)."""
+    if key == "duree":
+        return hm(v)
+    if key == "distance":
+        return f"{num(v)}{NBSP}km"
+    return "+" + f"{int(round(v)):,}".replace(",", NBSP) + f"{NBSP}m"
+
+
+def _said(v: float, key: str) -> str:
+    if key == "duree":
+        return hm_long(v)
+    if key == "distance":
+        return f"{num(v)} kilomètre{'s' if round(v) > 1 else ''}"
+    return f"{int(round(v))} mètre{'s' if round(v) > 1 else ''} de dénivelé positif"
+
+
+def _avg_rounded(v: float, key: str) -> float:
+    """A mean: durations to 5 min, distances to 1 km, climbs to 10 m."""
+    return round(v / 5) * 5 if key == "duree" else round(v) if key == "distance" else round(v / 10) * 10
+
+
+def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | None, this_monday: date) -> dict:
+    """One measure's 12 bars (see the module docstring)."""
+    field = {"duree": "minutes", "distance": "km", "dplus": "dplus"}[key]
+    values = [w[field] for w in weeks]
+    done = [v for w, v in zip(weeks, values) if not w["current"]][-n_avg:] if n_avg else []
+    avg = sum(done) / len(done) if done else None
+    n = len(weeks)
     xs = viz.slot_x(n)
     bw = round(min(18, X1 / n * 0.62), 1)
-    vmax = max([w["minutes"] for w in wk] + ([usual["hi"]] if usual else []) + [60]) * 1.08
+    vmax = max(values + ([avg] if avg else []) + [FLOOR[key]]) * 1.08
     y = viz.scale(0, vmax, 14, 132)
-    smax = max([w["dplus"] for w in wk] + [1])
     cols, r, a, h = [], [], [], []
-    for i, w in enumerate(wk):
+    for i, (w, v) in enumerate(zip(weeks, values)):
         m = w["monday"]
         col = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cur": w["current"]}
-        if w["minutes"]:
-            col.update(y=y(w["minutes"]), h=round(132 - y(w["minutes"]), 1))
-        if w["dplus"]:
-            col["dplus"] = round(max(8 * w["dplus"] / smax, 1), 1)
+        if v > 0:
+            col.update(y=y(v), h=round(132 - y(v), 1))
         cols.append(col)
-        ss = by_week.get(m, [])
-        big = max(ss, key=lambda s: s.minutes, default=None)
-        ctx, said = [], []  # printed (glyph + word), spoken
-        if w["count"]:
-            ctx.append(f"{w['count']} activité{'s' if w['count'] > 1 else ''}")
-            said.append(ctx[-1])
-        if m in spk:
-            s, ratio = spk[m]
-            ctx.append(f"{viz.GLYPH['up']} sortie {round((ratio - 1) * 100)}{NNBSP}% plus longue")
-            said.append(f"une sortie {round((ratio - 1) * 100)} % plus longue que ta plus longue du mois")
-        elif m in longs and big:
-            ctx.append(f"{viz.GLYPH['long']} sortie de {hm(big.minutes)}")
-            said.append(f"une sortie longue de {hm_long(big.minutes)}")
-        head = rp.week_label(m) + (" · en cours" if w["current"] else "")
-        value = hm(w["minutes"]) if w["minutes"] else "aucune activité"
-        if round(w["dplus"]) >= 1:
-            value += f" · {viz.dplus(w['dplus'])}"  # as the list's week heading prints it
-        r.append([head, value, " · ".join(ctx)])
-        spoken = f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + " : "
-        spoken += (hm_long(w["minutes"]) if w["minutes"] else "aucune activité")
-        if round(w["dplus"]) >= 1:
-            spoken += f", {int(round(w['dplus']))} mètres de dénivelé positif"
-        a.append(spoken + "".join(f", {c}" for c in said))
+        head = rp.week_label(m)
+        if not w["count"]:
+            r.append([head, "—", "aucune activité"])
+            a.append(f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + " : aucune activité")
+        else:
+            r.append([head, _big(v, key), "en cours" if w["current"] else ""])
+            a.append(f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + f" : {_said(v, key)}")
+        # the week in the list below (page 1 holds the last 6 weeks), the filter kept
         weeks_ago = (this_monday - m).days // 7
-        href = f"#week-{w['key']}" if weeks_ago < 6 else rp.activities_href(m, this_monday)
-        h.append({"href": href, "label": "Voir la semaine ›"} if ss else None)
-    ev = viz.events(mondays, xs, longs=longs)
-    c = {"n": n, "W": viz.W, "H": 168, "X1": X1, "cols": cols, "base": 132,
-         "band": {"y": y(usual["hi"]), "h": round(y(usual["lo"]) - y(usual["hi"]), 1)} if usual else None,
-         "spikes": [{"x": xs[mondays.index(m)]} for m in spk if m in mondays], **ev,
-         "xt": [{"x": xs[i], "label": f"{m.day} {MOIS[m.month - 1]}"} for i, m in enumerate(mondays)
-                if (n - 1 - i) % 3 == 0],
-         "summary": "Heures par semaine sur 12 semaines, dénivelé en dessous" + (
-             f", ta semaine type autour de {hm_long(round(usual['mid'] / 5) * 5)}" if usual else ""),
-         **viz._data(xs, [], mondays, r, a, h=h)}
-    # resting readout: a week's own hours only on tap (the list's week headings print them)
-    if usual:
-        mid = round(usual["mid"] / 5) * 5  # a median: to 5 min
-        c = viz.rest(c, ["12 semaines", f"semaine type : {hm(mid)}", ""], f"12 semaines, ta semaine type : {hm_long(mid)}")
-    else:
-        c = viz.rest(c, ["12 semaines", "heures par semaine", "dénivelé en dessous"],
-                  "12 semaines : heures par semaine, dénivelé en dessous. Choisis une semaine pour ses chiffres.")
-    c["line"] = a1_line(sessions, today)
-    return c
+        href = f"#week-{m.isoformat()}" if weeks_ago < 6 else (
+            f"/activities?page={weeks_ago // 6 + 1}" + (f"&sport={sport}" if sport else "") + f"#week-{m.isoformat()}")
+        h.append({"href": href, "label": "Voir la semaine ›"} if w["count"] else None)
+    c = {"key": f"semaines-{key}", "n": n, "W": viz.W, "H": 156, "X1": X1, "cols": cols, "base": 132,
+         "avg": y(avg) if avg else None, "cur": bool(cols[-1].get("h")),
+         "xt": [{"x": xs[i], "label": f"{w['monday'].day} {MOIS[w['monday'].month - 1]}"}
+                for i, w in enumerate(weeks) if (n - 1 - i) % 3 == 0],
+         "summary": f"{title} sur 12 semaines, la semaine en cours plus claire"
+                    + (", une ligne à la moyenne des semaines complètes" if avg else ""),
+         "title": title, **viz._data(xs, [], [w["monday"] for w in weeks], r, a, h=h)}
+    # resting readout: the average (each week's own total is its list heading's: printed there, on a tap here)
+    if avg is not None:
+        mean = _avg_rounded(avg, key)
+        over = f"sur {n_avg} semaine{'s' if n_avg > 1 else ''}"
+        return viz.rest(c, [over, _big(mean, key), "par semaine en moyenne"],
+                        f"{_said(mean, key)} par semaine en moyenne, {over} complète{'s' if n_avg > 1 else ''}. "
+                        "Choisis une semaine pour son total.", back=n - 1)
+    return viz.rest(c, ["12 semaines", title, ""], f"{title} sur 12 semaines. Choisis une semaine pour son total.",
+                    back=n - 1)
 
 
-def a1_line(sessions, today: date) -> dict | None:
-    """{text, href}: a spike of the last 10 days, else nothing (the recovery
-    after a big outing is Santé's, a race's taper the race page's)."""
-    recent = spikes(sessions, today - timedelta(days=SPIKE_RECENT - 1))
-    if not recent:
+def semaines(weeks: list[dict], first: date | None, measure: str | None, sport: str | None = None) -> dict | None:
+    """« Semaines »: the measures offered, the one shown (`measure` when offered, else « Durée ») and one chart
+    per measure offered (the toggle switches them in place, ?m= without JS); None without any activity in the
+    12 weeks (for this filter). The average reads the complete weeks since the first activity's (H)."""
+    if not any(w["count"] for w in weeks):
         return None
-    s, ratio = recent[-1]
-    k = (today - s.day).days
-    when = ("d'aujourd'hui" if k == 0 else "d'hier" if k == 1 else f"de {JOURS_L[s.day.weekday()]}" if k < 7
-            else f"du {s.day.day} {MOIS[s.day.month - 1]}")
-    return {"text": f"Sortie {when} {round((ratio - 1) * 100)}{NNBSP}% plus longue que ta plus longue du mois.",
-            "href": f"/activity/{s.id}"}
+    offered = [k for k, _, _ in MEASURES if k == "duree" or (k == "distance" and any(w["km"] > 0 for w in weeks))
+               or (k == "dplus" and any(round(w["dplus"]) >= 1 for w in weeks))]
+    this_monday = weeks[-1]["monday"]
+    since = max(weeks[0]["monday"], first) if first else weeks[0]["monday"]
+    n_avg = sum(1 for w in weeks if not w["current"] and w["monday"] >= since)
+    charts = {k: _chart(weeks, k, title, n_avg, sport, this_monday) for k, _, title in MEASURES if k in offered}
+    return {"measures": [(k, label) for k, label, _ in MEASURES if k in offered],
+            "m": measure if measure in offered else "duree", "charts": charts}
 
 
 # ── A2 FC en footing ────────────────────────────────────────────────────────
@@ -214,19 +279,20 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
 
 # ── the block ───────────────────────────────────────────────────────────────
 
-async def training_top(db: AsyncSession, user_id: int, now: datetime | None = None) -> dict | None:
-    """What partials/activity_training.html draws, or None (no session, or a
-    failure: the list below never blanks for it). No planned race is read."""
+async def training_top(db: AsyncSession, user_id: int, now: datetime | None = None, sport: str | None = None,
+                       measure: str | None = None) -> dict | None:
+    """What partials/activity_training.html draws for the sport filter `sport` (None: every sport), or None on a
+    failure (the list below never blanks for it): « Semaines » (None without an activity in its 12 weeks) and
+    « FC en footing » (under « Tout », « Course » and « Trail »). No planned race is read."""
     try:
         now = now or datetime.now(timezone.utc)
-        today = await st.athlete_today(db, user_id, now)
-        sessions = await st.load_sessions(db, user_id, today)
-        if not sessions:
-            return None
-        weeks = semaines(sessions, today, now)
-        if weeks is None:
-            return None
-        return {"weeks": weeks, "easy": footing(sessions, today, st.hr_max(sessions, today))}
+        weeks, first = await week_totals(db, user_id, sport, now)
+        easy = None
+        if sport in FOOTING_SPORTS:
+            today = await st.athlete_today(db, user_id, now)
+            sessions = await st.load_sessions(db, user_id, today)
+            easy = footing(sessions, today, st.hr_max(sessions, today)) if sessions else None
+        return {"weeks": semaines(weeks, first, measure, sport), "easy": easy}
     except Exception:
         logger.exception("Activités › training block failed for user %d", user_id)
         return None

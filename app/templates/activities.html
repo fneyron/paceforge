@@ -18,21 +18,22 @@
         </button>
     </div>
 
-    {% if training %}{% include "partials/activity_training.html" %}{% endif %}
-
-    <!-- Filters: four families, not thirteen sport codes -->
-    <nav aria-label="Filtrer les activités par sport" class="pf-filters pf-seg pf-seg-sm max-w-full overflow-x-auto">
-        {% for key, label in filters %}
-        <a href="/activities{% if key %}?sport={{ key }}{% endif %}"
-           {% if sport == key %}aria-current="true"{% endif %}
-           >{{ label }}</a>
-        {% endfor %}
-    </nav>
+    {#- page 1: « Semaines » with the sport filter right under its title (it filters the chart and the list); the
+        other pages, or no activity in 12 weeks and no filter chosen: the filter alone -#}
+    {% if training and (training.weeks or sport) %}{% include "partials/activity_training.html" %}
+    {% else %}{% set keep_m, carry = none, false %}{% include "partials/activity_filters.html" %}{% endif %}
 
     {% if weeks %}
     <div id="activity-list">
         {% include "partials/activity_weeks.html" %}
     </div>
+    <div id="load-more">
+        {% include "partials/load_more.html" %}
+    </div>
+    {% elif has_more %}
+    {#- nothing in these 6 weeks, older activities there: the way to them -#}
+    <p class="pf-sante-note">Aucune activité{% if sport %} dans cette catégorie{% endif %} ces 6 dernières semaines.</p>
+    <div id="activity-list"></div>
     <div id="load-more">
         {% include "partials/load_more.html" %}
     </div>

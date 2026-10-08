@@ -157,6 +157,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-activity-row:hover .pf-item-title { color: rgb(var(--pf-accent)); }
 .pf-sport-icon { width: 40px; height: 40px; border-radius: 12px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); display: flex; align-items: center; justify-content: center; flex: none; }
 .pf-week-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 28px 0 8px; flex-wrap: wrap; }
+.pf-item-flag { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3; color: rgb(var(--pf-warn)); }   /* a run over 10 % longer than the month's longest: in words */
 .pf-empty-state { padding: 44px 0; text-align: center; }
 .pf-empty-icon { display: block; width: 32px; height: 32px; color: rgb(var(--pf-accent)); margin: 0 auto 16px; }
 .pf-secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 999px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); font-size: 14px; font-weight: 600; border: 0; margin-top: 16px; }
@@ -167,14 +168,17 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-upload-zone label:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; }
 .pf-file-invalid { color: rgb(var(--pf-danger)) !important; }
 
-/* ── Activités, top: Semaines, Fond et fatigue, FC en footing (training_view.py, activity_training.html) ── */
+/* ── Activités, top: Semaines (its measure toggle, the sport filter under its title, one measure's 12 bars) and
+   FC en footing (training_view.py, activity_training.html) ── */
 .pf-train { margin-top: 20px; }
-.pf-train > .pf-h2 { font-size: 20px; }
-.pf-train-line a { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
-.dark .pf-train-line a { color: rgb(var(--pf-accent)); }
+.pf-train-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.pf-train-top .pf-h2 { font-size: 20px; }
+.pf-train-top .pf-viz-ranges > button { min-height: 44px; }   /* « Durée · Distance · D+ »: 44 px targets */
+.pf-train .pf-filters { margin-top: 10px; }
+.pf-filters > a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.pf-train + .pf-filters, .pf-train + .pf-train-fold { margin-top: 8px; }
 .pf-train-fold { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-train-fold + .pf-filters, .pf-train + .pf-filters { margin-top: 20px; }
-.pf-train-fold:has(+ .pf-filters) { border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-viz-avg { stroke: rgb(var(--pf-ink)); stroke-width: 1.25; stroke-dasharray: 5 4; shape-rendering: crispEdges; }   /* the average of the complete weeks, labelled « moy. » */
 .pf-train-fold > summary { display: flex; align-items: center; gap: 6px; min-height: 52px; cursor: pointer; list-style: none; font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
 .pf-train-fold > summary::-webkit-details-marker { display: none; }
 .pf-train-fold > summary::after { content: "›"; content: "›" / ""; display: inline-block; margin-left: auto; font-size: 22px; line-height: 1; color: rgb(var(--pf-gray-400)); }
@@ -187,7 +191,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-viz-line.is-accent { stroke: rgb(var(--pf-accent)); stroke-width: 1.5; }
 .pf-viz-svg .pf-viz-halo { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 4px; stroke-linejoin: round; }
 .pf-viz-long.is-warn { fill: rgb(var(--pf-warn)); }
-@media (forced-colors: active) { .pf-viz-line.is-accent { stroke: CanvasText; } .pf-viz-long.is-warn { fill: CanvasText; } }
+@media (forced-colors: active) { .pf-viz-line.is-accent { stroke: CanvasText; } .pf-viz-long.is-warn { fill: CanvasText; }
+    .pf-viz-avg { stroke: CanvasText; } .pf-item-flag { color: CanvasText; } }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
@@ -754,14 +759,10 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-lg.is-day { background: rgb(var(--pf-accent) / .4); }
 .pf-lg.is-ref { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed rgb(var(--pf-gray-500)); }
 .pf-lg.is-mean { width: 14px; height: 0; border-radius: 0; border-top: 2px solid rgb(var(--pf-ink)); }
-.pf-lg.is-long { width: 8px; height: 8px; margin: 0 1px; border-radius: 1px; background: rgb(var(--pf-gray-600)); transform: rotate(45deg); }   /* Activités' ◆ */
-.pf-lg.is-spike { width: 10px; height: 9px; border-radius: 0; background: rgb(var(--pf-warn)); clip-path: polygon(50% 0, 100% 100%, 0 100%); }   /* Activités' ▲ */
 .pf-lg.is-dot { width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a night's dot */
 .pf-lg.is-gap { width: 4px; height: 4px; margin: 0 3px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a day without data */
 .pf-lg.is-band { width: 14px; height: 8px; background: rgb(var(--pf-accent) / .16); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the normal */
-.pf-lg.is-week { background: rgb(var(--pf-viz-mark)); }   /* Activités: a week's hours */
 .pf-lg.is-cur { background: repeating-linear-gradient(45deg, rgb(var(--pf-viz-mark)) 0 1.5px, rgb(var(--pf-bg)) 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-viz-mark)); }   /* the week in progress, hatched */
-.pf-lg.is-dplus { width: 10px; height: 4px; border-radius: 0; background: rgb(var(--pf-gray-500)); }   /* D+ under the bars */
 .pf-lg.is-usual { width: 14px; height: 8px; background: rgb(var(--pf-accent-soft)); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the usual week (page background) */
 .pf-lg.is-hot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-bg)); box-shadow: inset 0 0 0 1.5px rgb(var(--pf-ink)); }   /* a hot run, hollow */
 .pf-lg.is-est { background: repeating-linear-gradient(45deg, rgb(var(--pf-gray-600)) 0 1.5px, transparent 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-600)); }   /* a score without a night measured, hatched */
@@ -846,7 +847,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-contrib-bar > i, .pf-contrib-bar.is-ok > i, .pf-contrib-bar.is-warn > i, .pf-contrib-bar.is-danger > i, .pf-contrib-bar.is-accent > i { background: CanvasText; forced-color-adjust: none; }
     .pf-lg { forced-color-adjust: none; background: CanvasText; }
     /* (0,3,0): over the tones' (0,2,0) swatches, so the legend matches the forced bars */
-    .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-long, .is-spike, .is-dot, .is-gap, .is-week) { background: CanvasText; box-shadow: none; }
+    .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot, .is-gap) { background: CanvasText; box-shadow: none; }
     .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur, .is-est) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
     .pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }
     .pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }
