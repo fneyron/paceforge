@@ -1,8 +1,9 @@
 """Race page › « Préparation » (#prep): what the evidence backs around one race,
 moved from Santé › Course (v3). partials/race_prep.html draws it.
 
-Shown from J-42 to J+14 (H), on the race page only (simulator_route.html).
-Before the race:
+Shown from J-42 to J0 (H), on the race page only (simulator_route.html): v4.3
+(owner: « Enlève la partie récupération sous le plan d'une course »), nothing
+after the race day — recovery is Santé's.
 - Affûtage: Activités' weeks S-6 → S0 (UTC Mondays, duplicates out), hours
   done as bars, the taper J-14 → J-1 against the −41 to −60 % band of the
   base (Bosquet 2007: about 2 weeks, volume −41–60 %, intensity and frequency
@@ -30,25 +31,18 @@ Before the race:
 - Course chaude (J-14 → J-1): one line when the saved forecast is hot (heat
   factor ≥ 1.06 ≈ 25 °C, H): acclimatise over 1–2 weeks of repeated heat
   sessions (Racinais 2015), most of it in the first week (Périard 2015).
-After the race (J+1 → J+14, a display window, H):
-- Cœur la nuit: nightly HRV above, HR below, against the band of the 60
-  days before J-7 (the race window is out of it; « provisoire » from 7 to
-  13 nights, H), dots only without it; no
-  label, no flag, never « récupération incomplète » (Hynynen 2010: nightly HR
-  at 130 % the first night; Paech 2021: back at day 7 after 100 miles).
-Each number is printed once across Santé, Activités and this page: the three
+Each number is printed once across Santé, Activités and this page: the two
 figures open on a resting readout (viz.rest) — the window, the base and the
-target, the band — and a week's hours (Activités' week headings) or a night's
-values (Santé › Sommeil) show only on a tap.
-- After a race run through a night (in progress at 03:00, H): « Évite les
-  longs trajets en voiture » on its finish day and the day after (Kishi 2024).
-« Prêt pour la distance ? » is gone: no evidence row backs it.
+target — and a week's hours (Activités' week headings) or a night's values
+(Santé › Sommeil) show only on a tap.
+« Prêt pour la distance ? » is gone: no evidence row backs it; the post-race
+« Cœur la nuit » J+1 → J+14 and the driving line after a night race went with
+the recovery part (v4.3).
 """
-import json
 import logging
 import statistics
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +57,7 @@ from app.services.viz import MOIS, NNBSP, X1, d_long, hm, hm_long, num
 
 logger = logging.getLogger(__name__)
 
-PREP_BEFORE, PREP_AFTER = 42, 14  # the section shows J-42 → J+14 (H)
+PREP_BEFORE = 42  # the section shows J-42 → J0 (H)
 NIGHT_DAYS = 14  # J-14 → J-1
 EXTEND = (30, 60)  # usual + 30–60 min a day of 24-h sleep (H)
 BANK_DAYS = 7  # the sleep-banking line and target from J-7 (Walsh 2021: « even just 1 week » improves performance)
@@ -75,7 +69,6 @@ CHART_WEEKS = 7  # S-6 → S0
 CARBS_DAYS = 10  # the race-week carbohydrates from J-10
 HOT_DAYS = 14  # the hot-race line J-14 → J-1
 HOT_FACTOR = 1.06  # (H) weather.compute_heat_factor at ≈ 25 °C
-NIGHT_OUT_AT = time(3, 0)  # (H) a race still running at 03:00 kept the athlete up
 LONG_S, CARBS_S = 3 * 3600, 90 * 60
 LONG_OUTING_MIN, LONG_OUTING_DPLUS = 180, 1500  # ◆ a long outing (H)
 NBH = "‑"  # non-breaking hyphen: « J‑12 » never wraps
@@ -146,49 +139,6 @@ def expected_s(route) -> int | None:
     return int(round(hours * 3600))
 
 
-def race_duration(route, sessions=()) -> tuple[int | None, bool]:
-    """(seconds, known) of a race already run: its result, else its session
-    (that day, its sport, a race or half the distance at least, stops
-    included), else its objective; else the estimate (known=False)."""
-    res = getattr(route, "result_json", None) or {}
-    if res.get("total_actual_s"):
-        return int(res["total_actual_s"]), True
-    rd, km = race_day(route), getattr(route, "total_distance_km", None) or 0
-    family = {"foot": st.FOOT, "bike": st.BIKE}.get(sport(route))
-    same = [max(s.elapsed, s.minutes) for s in sessions
-            if rd and s.day == rd and (family is None or s.sport in family)
-            and (s.workout_type == 1 or s.km >= 0.5 * km)]
-    if same:
-        return int(max(same) * 60), True
-    if getattr(route, "target_time_s", None):
-        return int(route.target_time_s), True
-    return expected_s(route), False
-
-
-def night_out(route, sessions=()) -> date | None:
-    """The finish day of a race still running at 03:00 (H), else None."""
-    rd = race_day(route)
-    secs = race_duration(route, sessions)[0]
-    if rd is None or route.start_hour is None or not secs:
-        return None
-    start = datetime.combine(rd, time(route.start_hour, route.start_minute or 0))
-    end = start + timedelta(seconds=secs)
-    d = rd
-    while d <= end.date():
-        if start < datetime.combine(d, NIGHT_OUT_AT) < end:
-            return end.date()
-        d += timedelta(days=1)
-    return None
-
-
-def drive_line(route, sessions, today: date) -> str | None:
-    """On the finish day of a race run through a night and the day after (H, Kishi 2024)."""
-    finish = night_out(route, sessions)
-    if finish and finish <= today <= finish + timedelta(days=1) and today > race_day(route):
-        return fr("Évite les longs trajets en voiture aujourd'hui : ta nuit de course pèse encore.")
-    return None
-
-
 def taper_weeks(rd: date) -> tuple[date, date]:
     """(J-14, the race day): the taper Activités' A1 line names."""
     return rd - timedelta(days=TAPER_DAYS), rd
@@ -238,17 +188,6 @@ def activities_href(m: date, this_monday: date) -> str:
     """The week on Activités (6 weeks a page, newest first)."""
     page = (this_monday - m).days // 7 // 6 + 1
     return f"/activities?page={page}#week-{m.isoformat()}"
-
-
-def _patch(c: dict, fix: dict[int, tuple[list, str]]) -> dict:
-    """Replace some readouts (and their aria sentences) in a built figure."""
-    data = json.loads(c["data"].replace("<\\/", "</"))
-    for i, (r, a) in fix.items():
-        data["r"][i], data["a"][i] = r, a
-    c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    if c.get("sel") in fix:
-        c["read"], c["aria_now"] = fix[c["sel"]]
-    return c
 
 
 # ── Affûtage ────────────────────────────────────────────────────────────────
@@ -444,47 +383,6 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
                     "Sommeil sur 24 heures de J-14 à J-1, siestes comprises. Choisis une nuit pour la sienne.", back=sel)
 
 
-# ── Récupération: Cœur la nuit, J+1 → J+14 ──────────────────────────────────
-
-def recovery(nights: dict, rd: date, today: date) -> dict:
-    """Nightly HRV and HR after the race against the pre-race band (dots only
-    without it), never judged. {"empty": True} when the watch never measured a night."""
-    if not any(n.hr is not None or n.hrv is not None for n in nights.values()):
-        return {"empty": True}
-    days = [rd + timedelta(days=i) for i in range(1, PREP_AFTER + 1)]
-    until = rd - timedelta(days=nt.RACE_WINDOW)
-    panels = []
-    for metric, name, unit, unit_long, span in (("hrv", "VFC", "ms", "millisecondes", 20),
-                                                ("hr", "FC", "bpm", "battements par minute", 8)):
-        b = nt.band(nights, metric, until)
-        vals = [nights[d].value(metric) if d in nights and d <= today else None for d in days]
-        panels.append({"name": name, "unit": unit, "unit_long": unit_long, "values": vals, "min_span": span,
-                       "band": [(b["lo"], b["hi"]) if b else None] * len(days), "digits": 0,
-                       "prov": [bool(b and b["provisional"])] * len(days)})
-    past = [i for i, d in enumerate(days) if d <= today]
-    measured = [i for i in past if any(p["values"][i] is not None for p in panels)]
-    sel = measured[-1] if measured else (past[-1] if past else 0)
-    c = viz.band_chart("recup", days, panels, sel=sel, title="Cœur la nuit après la course", labels=False)
-    fix = {i: ([viz.night_label(d), "à venir", j_label((d - rd).days)], f"{d_long(d)} : à venir")
-           for i, d in enumerate(days) if d > today}
-    for i, d in enumerate(days):
-        if d <= today and i not in measured:
-            fix[i] = ([viz.night_label(d), "—", f"{j_label((d - rd).days)} · pas de montre cette nuit"],
-                      f"{d_long(d)}, {j_label((d - rd).days)} : pas de mesure")
-    c = _patch(c, fix) if fix else c
-    banded = [p for p in panels if p["band"][0]]
-    c["banded"] = bool(banded)
-    # « (provisoire) » for the bands that are (7 to 13 nights, H), named when the other one is full
-    prov = [p["name"] for p in banded if p["prov"][0]]
-    prov = "" if not prov else " (provisoire)" if len(prov) == len(banded) else f" ({prov[0]} provisoire)"
-    # resting readout: the last night's VFC and FC are Santé › Sommeil's (printed once, there)
-    return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit",
-                        ("bande : ta normale avant la course" + prov) if c["banded"] else ""],
-                    "Cœur la nuit de J+1 à J+14, VFC en haut, FC en bas"
-                    + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Choisis une nuit pour ses "
-                    "valeurs.", back=sel)
-
-
 # ── Semaine de course : manger ──────────────────────────────────────────────
 
 def food_plan(route, exp_s: int | None, weight_kg: float | None) -> dict | None:
@@ -545,7 +443,7 @@ async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, session
 
 async def prep_context(db: AsyncSession, user, route, now: datetime | None = None) -> dict | None:
     """What partials/race_prep.html draws for this race, or None (no date,
-    outside J-42 → J+14, or any failure: the race page never blanks for it)."""
+    outside J-42 → J0, or any failure: the race page never blanks for it)."""
     try:
         return await _prep(db, user, route, now)
     except Exception:
@@ -560,28 +458,20 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
     now = now or datetime.now(timezone.utc)
     today = await st.athlete_today(db, user.id, now)
     k = (today - rd).days
-    if not -PREP_BEFORE <= k <= PREP_AFTER:
+    if not -PREP_BEFORE <= k <= 0:  # nothing after the race day: recovery is Santé's (v4.3)
         return None
     sessions = await st.load_sessions(db, user.id, today)
     out = {"route_id": route.id, "k": k, "taper": None, "nights": None, "food": None, "hot": None,
-           "heart": None, "drive": None, "bank": -BANK_DAYS <= k < 0, "eve": EVE_LINE if -BANK_DAYS <= k <= 0 else None}
-    if k <= 0:
-        out["title"] = "Jour J" if k == 0 else f"Affûtage · {j_label(k)}"
-        races = all_races(await load_races(db, user.id, today), sessions)
-        out["taper"] = taper(sessions, route, rd, today, now, frozenset(d for d, _ in races))
-        if -k <= NIGHT_DAYS or k == 0:
-            nights = await _nights(db, user.id, today, rd - timedelta(days=NIGHT_DAYS + nt.BAND_DAYS + 1),
-                                   sessions, races)
-            out["nights"] = night_bars(nights, rd, today)
-        if -k <= CARBS_DAYS:
-            out["food"] = food_plan(route, expected_s(route), getattr(user, "weight_kg", None))
-        if 1 <= -k <= HOT_DAYS and hot(route):
-            out["hot"] = fr("Course chaude : quelques sorties à la chaleur sur 1 à 2 semaines t'y préparent.")
-    else:
-        out["title"] = f"Récupération · {j_label(k)}"
-        races = all_races(await load_races(db, user.id, today), sessions)
-        nights = await _nights(db, user.id, today, rd - timedelta(days=nt.RACE_WINDOW + nt.BAND_DAYS + 1),
+           "bank": -BANK_DAYS <= k < 0, "eve": EVE_LINE if -BANK_DAYS <= k <= 0 else None,
+           "title": "Jour J" if k == 0 else f"Affûtage · {j_label(k)}"}
+    races = all_races(await load_races(db, user.id, today), sessions)
+    out["taper"] = taper(sessions, route, rd, today, now, frozenset(d for d, _ in races))
+    if -k <= NIGHT_DAYS:
+        nights = await _nights(db, user.id, today, rd - timedelta(days=NIGHT_DAYS + nt.BAND_DAYS + 1),
                                sessions, races)
-        out["heart"] = recovery(nights, rd, today)
-        out["drive"] = drive_line(route, sessions, today)
+        out["nights"] = night_bars(nights, rd, today)
+    if -k <= CARBS_DAYS:
+        out["food"] = food_plan(route, expected_s(route), getattr(user, "weight_kg", None))
+    if 1 <= -k <= HOT_DAYS and hot(route):
+        out["hot"] = fr("Course chaude : quelques sorties à la chaleur sur 1 à 2 semaines t'y préparent.")
     return out

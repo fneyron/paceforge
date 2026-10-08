@@ -1,7 +1,7 @@
 {#- Race page › Préparation (#prep), v3 (moved from Santé › Course). Expects `prep` = race_prep.prep_context(...):
-    None outside J-42 → J+14 (nothing drawn). Before the race: taper, nights J-14 → J-1 (the banking line from J-7,
-    Walsh 2021's race-eve reassurance once from J-7 to J0), race-week carbs, the hot-race line; after it: « Cœur la
-    nuit » J+1 → J+14 and the driving line. The race eve is never flagged. -#}
+    None outside J-42 → J0 (nothing drawn; v4.3: no recovery part after the race, Santé's). Taper, nights J-14 → J-1
+    (the banking line from J-7, Walsh 2021's race-eve reassurance once from J-7 to J0), race-week carbs, the hot-race
+    line. The race eve is never flagged. -#}
 {% if prep %}{% import "partials/_viz.html" as vz %}{% set p = prep %}
 <section id="prep" class="pf-rp" aria-labelledby="prep-h">
     <h2 id="prep-h" class="pf-h2">{{ p.title }}</h2>
@@ -31,7 +31,7 @@
     <h3 class="pf-rp-h3">Tes nuits</h3>
     {% if p.bank %}<p class="pf-rp-line">Vise 30 à 60 min de plus par jour, siestes comprises.</p>{% endif %}
     {% if p.eve %}<p class="pf-rp-line">{{ p.eve }}</p>{% endif %}
-    {% if n.empty %}<p class="pf-rp-note">Porte ta montre toutes les nuits de J‑14 à J+14 autour de la course.</p>
+    {% if n.empty %}<p class="pf-rp-note">Porte ta montre toutes les nuits de J‑14 à la course.</p>
     {% else %}
     {% call vz.figure(n, "Sommeil sur 24 h avant la course", "nuits-course", None, "nuit", cls="pf-viz-tall") %}
     <defs><pattern id="pf-hatch-rn" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
@@ -67,15 +67,6 @@
     {% endif %}
     <button type="button" class="pf-rp-link" onclick="window.switchRouteTab && window.switchRouteTab('nutrition')">Pendant la course&#160;: Ravitaillement ›</button>
     {% endif %}
-
-    {% set h = p.heart %}
-    {% if h and h.empty %}<p class="pf-rp-note">Porte ta montre la nuit jusqu'à J+14&#160;: tu verras ton cœur revenir à ta normale.</p>
-    {% elif h %}
-    <h3 class="pf-rp-h3">Cœur la nuit</h3>
-    {{ vz.viz_band(h, "Cœur la nuit après la course") }}
-    {% endif %}
-
-    {% if p.drive %}<p class="pf-rp-line">{{ p.drive }}</p>{% endif %}
 </section>
 <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
 <script>

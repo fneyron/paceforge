@@ -1,10 +1,12 @@
 """Race page › Préparation (#prep, v3, moved from Santé › Course): the taper
 against the −41–60 % band, nights J-14 → J-1 against usual + 30–60 min, the
-race week, the hot-race line; after the race « Cœur la nuit » J+1 → J+14 and
-the driving line. The owner's Transjeju 100M (02/10 21:00, 16h53) as a fixture."""
+race week, the hot-race line; nothing after the race (v4.3: the recovery part,
+« Cœur la nuit » J+1 → J+14 and the driving line, is gone: recovery is
+Santé's)."""
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,12 +22,12 @@ from app.services import nights as nt
 from app.services import race_prep as rp
 from app.services import sante_training as st
 from app.services.sante_training import Session
-from tests.test_nights import night_rows, owner_rows
+from tests.test_nights import night_rows
 from tests.test_race_plan_services import _course
 
+ROOT = Path(__file__).resolve().parent.parent
 D = date(2026, 10, 7)  # Wednesday
 NOW = datetime(2026, 10, 7, 12, tzinfo=timezone.utc)
-TRANSJEJU = date(2026, 10, 2)
 
 
 def route(rd: date, km: float = 160, hour: int | None = 21, target: int | None = None, result=None, weather=None,
@@ -33,9 +35,6 @@ def route(rd: date, km: float = 160, hour: int | None = 21, target: int | None =
     return SimpleNamespace(id=rid, name=name, race_date=rd.isoformat(), start_hour=hour, start_minute=0,
                            total_distance_km=km, total_elevation_gain=6000, target_time_s=target,
                            sport_type="trail", result_json=result, weather_json=weather)
-
-
-OWNER_RACE = route(TRANSJEJU, result={"total_actual_s": 16 * 3600 + 53 * 60})
 
 
 def S(day: date, minutes: float = 110, km: float = 18, i: int = 0, **kw) -> Session:
@@ -53,49 +52,6 @@ def steady(until: date, days: int = 120) -> list[Session]:
 
 def data(c: dict) -> dict:
     return json.loads(c["data"].replace("<\\/", "</"))
-
-
-# ── after the race: the owner ───────────────────────────────────────────────
-
-def test_owner_after_transjeju_heart_at_night_dots_only_never_judged():
-    nights = nt.build_nights(owner_rows(), D)
-    nt.tag_nights(nights, [], [(TRANSJEJU, "Transjeju 100M")], {})
-    c = rp.recovery(nights, TRANSJEJU, D)
-    d = data(c)
-    assert d["d"][0] == "2026-10-03" and d["d"][-1] == "2026-10-16" and c["n"] == 14
-    assert not c["banded"] and all(not p["band"] for p in c["panels"])  # 0–1 night before J-7: dots only
-    assert d["r"][4] == ["nuit du mar. 6 au mer. 7", "VFC 95 ms · FC 37 bpm", ""]  # on a tap
-    # resting readout: last night's values are Santé › Sommeil's, printed once there
-    assert c["rest"] and c["sel"] == d["sel"] == 14 and c["read"] == d["rest"] == ["J+1 → J+14", "VFC et FC de nuit", ""]
-    assert "95" not in " ".join(c["read"]) and "37" not in " ".join(c["read"])
-    assert d["back"] == 4  # ‹ from the rest: the latest measured night, not J+14 « à venir »
-    assert d["r"][0][1] == "—" and "pas de montre cette nuit" in d["r"][0][2]  # 3 Oct: the race's own night
-    assert d["r"][5] == ["nuit du mer. 7 au jeu. 8", "à venir", "J+6"]
-    text = json.dumps(d, ensure_ascii=False)
-    assert "au-dessus" not in text and "en dessous" not in text and "incomplète" not in text
-    assert not any(dot["out"] for p in c["panels"] for dot in p["dots"])
-
-
-def test_recovery_against_the_pre_race_band_without_labels():
-    rd = D - timedelta(days=4)
-    rows = night_rows(range(4, 90), hr=45, hrv=60)  # every night, the race window included
-    rows["hr_night"][D] = (55, {"method": "points"}, "Garmin")  # well above: drawn, not judged
-    nights = nt.build_nights(rows, D)
-    nt.tag_nights(nights, [], [(rd, "Course")], {})
-    c = rp.recovery(nights, rd, D)
-    assert c["banded"] and c["panels"][1]["band"]
-    i = data(c)["d"].index(D.isoformat())
-    assert "FC 55 bpm" in data(c)["r"][i][1] and "au-dessus" not in data(c)["r"][i][1]
-    assert data(c)["r"][i][2] == "normale FC 42–48"  # no HRV that night: its normal is not printed
-
-
-def test_driving_line_after_a_race_run_through_a_night_only():
-    assert rp.night_out(OWNER_RACE) == date(2026, 10, 3)  # still running at 03:00 on 3 Oct, done at 13:53
-    assert rp.drive_line(OWNER_RACE, [], date(2026, 10, 3)) and rp.drive_line(OWNER_RACE, [], date(2026, 10, 4))
-    assert rp.drive_line(OWNER_RACE, [], D) is None  # J+5
-    assert rp.night_out(route(D, hour=6, result={"total_actual_s": 10 * 3600})) is None
-    assert rp.night_out(route(D, hour=21, result={"total_actual_s": 5 * 3600})) is None  # done at 02:00
-    assert rp.night_out(route(D, hour=None, result={"total_actual_s": 30 * 3600})) is None
 
 
 # ── before the race ─────────────────────────────────────────────────────────
@@ -242,12 +198,15 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
     assert "Semaine de course" in html and "700 à 840 g" in html and "Ravitaillement ›" in html
     assert "Course chaude" in html
     assert "Prêt pour la distance" not in html and "Cœur la nuit" not in html
-
+    day = await _race(db_session, test_user, today, name="Aujourd'hui")
+    assert "Jour J" in (await client.get(f"/simulator/routes/{day}")).text
+    # after the race: no section at all (v4.3: recovery is Santé's)
     done = await _race(db_session, test_user, today - timedelta(days=5), name="Trail passé")
     html = (await client.get(f"/simulator/routes/{done}")).text
-    assert "Récupération · J+5" in html and "Cœur la nuit" in html and 'data-viz-key="recup"' in html
-    assert "Tes nuits" not in html and "Semaine de course" not in html
-
+    assert 'id="prep"' not in html and "Récupération ·" not in html and "Cœur la nuit" not in html
+    assert 'data-viz-key="recup"' not in html and "Trail passé" in html
+    yday = await _race(db_session, test_user, today - timedelta(days=1), name="Hier")
+    assert 'id="prep"' not in (await client.get(f"/simulator/routes/{yday}")).text
     far = await _race(db_session, test_user, today + timedelta(days=60), name="Plus tard")
     assert 'id="prep"' not in (await client.get(f"/simulator/routes/{far}")).text
 
@@ -278,3 +237,13 @@ async def test_race_page_sleep_banking_the_last_week_and_the_eve_reassurance(cli
         if band:
             x, w, *edges = (float(v) for v in band.groups())
             assert x > 0 and edges == pytest.approx([x, x + w, x, x + w]), k
+
+
+def test_no_recovery_part_after_the_race():
+    """v4.3 (owner: « Enlève la partie récupération sous le plan d'une course »): the race page's section shows
+    J-42 → J0 only; « Cœur la nuit » J+1 → J+14 and the driving line went with the recovery part (Santé's)."""
+    for gone in ("recovery", "drive_line", "night_out", "race_duration", "PREP_AFTER", "NIGHT_OUT_AT", "_patch"):
+        assert not hasattr(rp, gone), gone
+    html = (ROOT / "app/templates/partials/race_prep.html").read_text()
+    for gone in ("p.heart", "p.drive", "Cœur la nuit", "J+14", "viz_band"):
+        assert gone not in html, gone

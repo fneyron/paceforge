@@ -40,7 +40,8 @@
                 <input type="number" id="weight_kg" name="weight_kg" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">kg</span>
             </div>
-            <p class="text-[11px] text-gray-400 mt-1">{% if caffeine_cap %}Ta caféine en course est plafonnée à {{ caffeine_cap }} mg par 24 h.{% else %}Sans poids, ta caféine en course est plafonnée à 400 mg par 24 h : indique-le pour l'ajuster.{% endif %}{% if cycling_enabled() %} Ton poids sert aussi à ta puissance à vélo.{% endif %}</p>
+            {#- one neutral helper (v4.3, owner: the caffeine cap « n'a rien à faire dans Réglages »: the race nutrition card says it, where caffeine is planned) -#}
+            <p class="text-[11px] text-gray-400 mt-1">Sert à ta nutrition de course.{% if cycling_enabled() %} Ton poids sert aussi à ta puissance à vélo.{% endif %}</p>
         </div>
         {% if cycling_enabled() %}
         <div class="max-w-xs">

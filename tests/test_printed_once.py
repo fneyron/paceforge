@@ -51,8 +51,8 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (no ring, no other block does)…
     assert sante["fc"][0] == "45\u00a0bpm" and " · normale " in sante["fc"][2]
-    assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race…
-    assert after["recup"][:2] == ("J+1 → J+14", "VFC et FC de nuit")  # …nor last night's VFC and FC
+    assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race
+    assert "recup" not in after  # v4.3: no recovery part on the race page after the race
     # this week's hours: Activités' week heading prints them; neither A1 (it rests on the average of the complete
     # weeks, v4.3) nor the taper does by default
     week = readouts(activites)["semaines-duree"]

@@ -298,14 +298,15 @@ async def test_new_app_keys_from_settings_replace_the_old_app(client: AsyncClien
 
 # ── profile ─────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("weight, text", [
-    (None, "Sans poids, ta caféine en course est plafonnée à 400 mg par 24 h : indique-le pour l'ajuster."),
-    (50.0, "Ta caféine en course est plafonnée à 300 mg par 24 h."),
-    (80.0, "Ta caféine en course est plafonnée à 400 mg par 24 h."),
-])
-async def test_caffeine_cap_is_shown_with_its_value(as_user: AsyncClient, db_session: AsyncSession,
-                                                    test_user: User, weight, text):
+@pytest.mark.parametrize("weight", [None, 50.0, 80.0])
+async def test_the_weight_has_one_neutral_helper_and_no_caffeine_line(as_user: AsyncClient, db_session: AsyncSession,
+                                                                      test_user: User, weight):
+    """v4.3 (owner: « Ta caféine en course est plafonnée à 400 mg par 24 h — ça n'a rien à faire dans Réglages,
+    non ? »): the cap belongs where caffeine is planned (the race nutrition card); under the weight one neutral
+    helper, whatever the weight."""
     test_user.weight_kg = weight
     await db_session.flush()
     page = (await as_user.get("/settings")).text
-    assert text in page and "Plafond de caféine (nutrition)" not in page
+    profile = page.split('<h2 class="pf-h2">Profil</h2>')[1].split("</form>")[0]
+    assert "Sert à ta nutrition de course." in profile
+    assert "caféine" not in page and "400 mg" not in page and "Plafond de caféine" not in page

@@ -14,7 +14,6 @@ from app.services import coros as coros_service
 from app.services import garmin as garmin_service
 from app.services.coros import coros_status
 from app.services.garmin import garmin_status
-from app.services.nutrition import caffeine_cap_mg
 from app.services.strava import disconnect as strava_disconnect_link
 from app.services.strava import strava_status
 
@@ -42,7 +41,6 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("coros", await coros_status(db, user.id))
     flags.setdefault("garmin", await garmin_status(db, user.id))
     flags.setdefault("strava", strava_status(user))
-    flags.setdefault("caffeine_cap", caffeine_cap_mg(user.weight_kg) if user.weight_kg else None)
     return {"request": request, "user": user, "activity_count": total, **flags}
 
 

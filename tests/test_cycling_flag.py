@@ -109,7 +109,7 @@ async def test_settings_have_no_ftp_and_keep_the_saved_one(as_user: AsyncClient,
     page = await as_user.get("/settings")
     assert page.status_code == 200
     assert "FTP" not in page.text and "ftp_watts" not in page.text and "(vélo)" not in page.text
-    assert "Sans poids, ta caféine en course est plafonnée à 400 mg" in page.text and 'name="weight_kg"' in page.text
+    assert "Sert à ta nutrition de course." in page.text and "caféine" not in page.text and 'name="weight_kg"' in page.text
 
     r = await as_user.post("/settings", data={"weight_kg": "68"})
     assert r.status_code == 200

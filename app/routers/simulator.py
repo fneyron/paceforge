@@ -894,7 +894,7 @@ async def route_detail_page(
     ctx["compare_activity_id"] = compare
     from app.services.race_prep import prep_context
 
-    ctx["prep"] = await prep_context(db, user, route)  # « Préparation » (#prep): taper, nights, recovery
+    ctx["prep"] = await prep_context(db, user, route)  # « Préparation » (#prep): taper, nights, race week
     if compare:  # arrived from an activity: the debrief is the main action
         ctx["debrief_mode"] = "primary"
         ctx["show_debrief"] = True
