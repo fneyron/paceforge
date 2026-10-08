@@ -295,8 +295,9 @@ async def test_load_nights_reads_the_nights_never_the_check_ins_nor_a_race(db_se
     race = session(date(2026, 10, 2), 21, 935, offset=32400, sid=8)
     race.elapsed, race.workout_type = 1013, 1
     nights = await nt.load_nights(db_session, test_user.id, D, sessions=[race], efforts=st.efforts([race]))
-    assert nights[D].tst24 == 490 and nights[D].tags == set()  # no « alcool », no « malade », no race window
-    assert nights[date(2026, 10, 6)].tags == {"big"}  # D+3 after the 16h53 effort (it ended on 03/10)
+    # no « alcool », no « malade », no race window; 07/10 is D+4 after the 16h53 ultra (it ended on 03/10)
+    assert nights[D].tst24 == 490 and nights[D].tags == {"ultra"}
+    assert nights[date(2026, 10, 6)].tags == {"ultra"}  # D+3: « après ultra », D+1 → D+4 (v4.2)
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}
 

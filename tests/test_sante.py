@@ -234,19 +234,22 @@ async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_us
     assert s["raw0"] == raw == 68 and s["value"] == 65 and s["tone"] == "warn" and s["reason"] == "effort"
     assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100, "load": 20}
     assert s["absent"] == ["hrv", "hr"] and s["caps"] == ["effort"]  # the window's 65 binds
+    load = next(p for p in s["parts"] if p["key"] == "load")
+    assert load["window"]["until"] == date(2026, 10, 16)  # D+13: it ran through the night (01:00 → 05:00, H)
 
 
 async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_user: User):
-    """06/10 is D+3 after the effort: « après grosse sortie », out of the bands and of the illness alert; the
-    others are usable. A band needs 7 nights: none yet, and no sentence says so on the page."""
+    """06/10 and 07/10 are D+3 and D+4 after the ultra: « après ultra » (D+1 → D+4, v4.2), out of the bands, of the
+    illness alert and of the bedtime medians; the others are usable. A band needs 7 nights: none yet, and no
+    sentence says so on the page. 16h53 is under 20 h: nothing more after D+4."""
     await seed_owner_v4(db_session, test_user)
     from app.services import sante_training as st
 
     sessions = await st.load_sessions(db_session, test_user.id, D8)
     nights = await nt.load_nights(db_session, test_user.id, D8, sessions=sessions, efforts=st.efforts(sessions))
     owned = {d: sorted(n.tags) for d, n in nights.items() if n.asleep is not None}
-    assert owned == {date(2026, 9, 29): [], date(2026, 9, 30): [], date(2026, 10, 1): [], date(2026, 10, 6): ["big"],
-                     date(2026, 10, 7): [], D8: []}
+    assert owned == {date(2026, 9, 29): [], date(2026, 9, 30): [], date(2026, 10, 1): [],
+                     date(2026, 10, 6): ["ultra"], date(2026, 10, 7): ["ultra"], D8: []}
     assert (nights[D8].asleep, nights[D8].tst24, nights[D8].hrv, nights[D8].hr) == (516, 516, 99.7, 35.0)
     # his real nights before the race: PaceForge's own VFC from COROS's raw series (COROS says 90, 83, 80)
     assert [(nights[date(2026, 9, d)].hrv, nights[date(2026, 9, d)].hr) for d in (29, 30)] == [(86.8, 35.0),
@@ -300,9 +303,10 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
     assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40"]
     assert d["r"][0] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · pas de nuit mesurée"]  # no « ? »
     assert "?" not in json.dumps(d["r"], ensure_ascii=False)
-    assert s["habits"]["stats"] == [("Coucher", "23:50"), ("Lever", "09:25")]  # 5 nights: no regularity yet
+    # 4 nights left for the medians in 28 days (06/10 and 07/10 are D+3 and D+4 after the ultra): none yet (5, H)
+    assert s["habits"] is None
     marks = {r["iso"]: r["marks"] for r in s["rows"]}
-    assert marks["2026-10-06"] == "◇ après grosse sortie" and marks["2026-10-08"] == "—"
+    assert marks["2026-10-06"] == marks["2026-10-07"] == "◇ après ultra" and marks["2026-10-08"] == "—"
 
 
 async def test_owner_cards(db_session: AsyncSession, test_user: User):

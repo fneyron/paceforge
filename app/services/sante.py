@@ -122,7 +122,9 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     alert = nt.illness_alert(nights, d)
     episode = alert or any("alert" in n.tags for x in range(nt.WEEK_DAYS)
                            if (n := nights.get(d - timedelta(days=x))) is not None)
-    stats = {k: _night_stat(nights, k, d, ignore=nt.EPISODE if episode else ()) for k in ("hr", "hrv")}
+    # an episode's nights are read even 5 to 7 nights after a ≥ 20-h ultra (out of the band only: the alert fires)
+    ignore = (*nt.EPISODE, "ultra_tail") if episode else ()
+    stats = {k: _night_stat(nights, k, d, ignore=ignore) for k in ("hr", "hrv")}
     tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the ring's number and the score's
     m7 = nt.mean7(nights, "tst24", d)
     usual = nt.band(nights, "tst24", d - timedelta(days=6), source=nt.mean_source(nights, "tst24", d)) if m7 else None
@@ -142,15 +144,18 @@ def _history(nights, sessions, efforts, today: date) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights and the activities known then
     only — an activity is known once it ended (it is uploaded then), so one
-    still running at midnight belongs to the next day. A night's tags as of
-    that day are today's (an effort tags the nights after it, a session the
-    night after it: both known by then) but for « sortie intense le soir » (it
-    reads that day's HR bounds) and « FC de nuit haute » (an alert episode's
-    first night is tagged only from the next morning). The nights are tagged
-    once, as of today, without the alert episodes; a day whose « late » tags
-    are the same, with no activity still running at its midnight, reads them,
-    with that day's own alert episodes on top, and shares their bands
-    (nights.memo); any other day is tagged anew from what it knew."""
+    still running at midnight belongs to the next day — and the efforts as
+    that day saw them (st.efforts on those activities: back-to-back days, M3,
+    join a later day, so a past day may have seen a smaller effort). A night's
+    tags as of that day are today's (an effort tags the nights after it, a
+    session the night after it: both known by then) but for « sortie intense
+    le soir » (it reads that day's HR bounds) and « FC de nuit haute » (an
+    alert episode's first night is tagged only from the next morning). The
+    nights are tagged once, as of today, without the alert episodes; a day
+    whose « late » tags and efforts are the same, with no activity still
+    running at its midnight, reads them, with that day's own alert episodes on
+    top, and shares their bands (nights.memo); any other day is tagged anew
+    from what it knew."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
     nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today))
@@ -168,11 +173,12 @@ def _history(nights, sessions, efforts, today: date) -> list:
         midnight = datetime.combine(d + timedelta(days=1), time(0))
         ss = [s for s in sessions if ends[s.id] <= midnight]  # finished by the end of `d`
         known = {s.id for s in ss}
-        efs = [e for e in efforts if e.session_id in known and e.end <= midnight]
+        efs = nt.anchor_efforts(base, st.efforts(ss))  # as that day saw them
+        same = efs == [e for e in efforts if e.session_id in known and e.end <= midnight]
         running = any(s.day <= d and s.id not in known for s in sessions)
         peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
-        if not running and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)
-                               for x, c in late.items() if x <= d):
+        if not running and same and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)
+                                         for x, c in late.items() if x <= d):
             alert = frozenset(x for x in nt.alert_episodes(base, d) if x in base)
             if alert not in tagged:
                 tagged[alert] = nt.freeze({x: nt.retagged(n, n.tags | {"alert"}) if x in alert else n

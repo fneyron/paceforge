@@ -33,7 +33,7 @@
 
 {% if e %}
 <details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
-    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% endif %}</summary>
+    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% endif %}</summary>
     <span id="forme"></span>
     {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
     {{ vz.viz_dots(e, "FC en footing", "footing") }}

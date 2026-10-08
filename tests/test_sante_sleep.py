@@ -133,13 +133,19 @@ def test_habits_medians_to_5_min_and_regularity_from_8_nights():
     assert h["stats"][2][0] == "Régularité" and h["stats"][2][1].startswith("±")
 
 
-def test_habits_leave_out_time_zone_nights_and_the_nights_after_a_big_effort():
+def test_habits_leave_out_time_zone_nights_and_the_nights_after_an_ultra():
+    """Out of the medians and the regularity (v4.2): the time-zone nights and the 4 nights after an ultra
+    (Fachan 2026; Kishi 2024); the nights after a 6–10 h effort count (only their HR and HRV stay out)."""
     rows = night_rows(range(0, 8), start=(23, 0), end=(7, 0))
     rows["sleep"].update(night_rows([0, 1, 2], start=(3, 0), end=(10, 0))["sleep"])  # 3 nights at odd times
     nights = _nights(rows)
     assert sl.habits(nights, D)["stats"][0] == ("Coucher", "23:00")  # the median holds
     for k in (0, 1, 2):
         nights[D - timedelta(days=k)].tags.add("big")
+    assert sl.habits(nights, D)["n"] == 8  # après grosse sortie: still in
+    for k in (0, 1):
+        nights[D - timedelta(days=k)].tags = {"ultra"}
+    nights[D - timedelta(days=2)].tags = {"tz"}
     h = sl.habits(nights, D)
     assert h["n"] == 5 and h["stats"][:2] == [("Coucher", "23:00"), ("Lever", "07:00")]
 

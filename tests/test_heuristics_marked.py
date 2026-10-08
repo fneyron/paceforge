@@ -2,6 +2,7 @@
 comments and tests ». Each heuristic constant below is (H) on the line that
 sets it, and its value is pinned here (H) so a change is a decision."""
 import re
+from datetime import time
 from pathlib import Path
 
 import pytest
@@ -42,8 +43,22 @@ HEURISTICS = [
     ("app/services/sante_training.py", "STOPPED_WATCH", 2),
     ("app/services/sante_training.py", "EFFORT_RULES", {"ultra": (((3, 40), (10, 65)), 20),
                                                        "very_long": (((2, 45), (5, 65)), 30),
-                                                       "long": (((2, 65),), 50)}),
-    ("app/services/sante_training.py", "BIG_NIGHTS", 3),
+                                                       "long": (((3, 65),), 50)}),
+    # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018)
+    ("app/services/sante_training.py", "LONG_RACE_LAST", 5),
+    ("app/services/sante_training.py", "ULTRA_LONG_MIN", 1440),
+    ("app/services/sante_training.py", "ULTRA_LONG_LAST", 13),
+    ("app/services/sante_training.py", "NIGHT_SPAN", (time(1), time(5))),
+    ("app/services/sante_training.py", "CLIMB_RATIO", 1.5),
+    ("app/services/sante_training.py", "CLIMB_MIN_M", 200),
+    ("app/services/sante_training.py", "CLIMB_DAYS", 56),
+    ("app/services/sante_training.py", "CLIMB_EXTRA", 2),
+    ("app/services/sante_training.py", "LOWER", {"ultra": "very_long", "very_long": "long", "long": None}),
+    ("app/services/sante_training.py", "NIGHT_TAGS", {"long": ("long", 1), "very_long": ("big", 3),
+                                                     "ultra": ("ultra", 4)}),
+    ("app/services/sante_training.py", "ULTRA_TAIL_MIN", 1200),
+    ("app/services/sante_training.py", "ULTRA_TAIL", (5, 7)),
+    ("app/services/sante_training.py", "AFTER_ULTRA_DAYS", 21),
     ("app/services/sante_today.py", "HR_UP_BPM", 3),
     # v4.2 (research_recovery.md §3.2): the weights, Charge only in a window, the FC de nuit anchors (Alavi 2022;
     # Bosquet 2008), the joint VFC/FC cap (Buchheit 2014, Table 2)

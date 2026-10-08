@@ -83,7 +83,9 @@ def test_effort_classes_by_their_own_time_stops_included():
     assert st.effort_of(_session(D, 170, dplus=1500, sport="Ride")) is None  # D+ on a bike is no legs rule
     assert st.effort_of(_session(D, 150, elapsed=185)).kind == "long"  # 3 h stops included
     assert st.effort_of(_session(D, 300, elapsed=365)).kind == "very_long"
-    assert st.effort_of(_session(D, 340, elapsed=360, sport="Ride")).kind == "very_long"  # any activity
+    # any activity, but a low-impact one is one class lower (M4, v4.2): its nights still follow its time
+    ride = st.effort_of(_session(D, 340, elapsed=360, sport="Ride"))
+    assert (ride.kind, ride.nights) == ("long", "very_long")
     assert st.effort_of(_session(D, 560, elapsed=600)).kind == "ultra"
     # a race is just an activity: the same classes by its own size
     assert st.effort_of(_session(D, 170, workout_type=1)) is None
@@ -104,7 +106,7 @@ def test_an_effort_ends_on_its_own_local_day():
 @pytest.mark.parametrize("kind,elapsed,windows", [
     ("ultra", 600, {1: 40, 3: 40, 4: 65, 10: 65, 11: None}),
     ("very_long", 360, {1: 45, 2: 45, 3: 65, 5: 65, 6: None}),
-    ("long", 180, {1: 65, 2: 65, 3: None}),
+    ("long", 180, {1: 65, 2: 65, 3: 65, 4: None}),  # v4.2: 65 until D+3 (was D+2)
 ])
 def test_each_class_opens_its_window(kind, elapsed, windows):
     """D+0, the day it ends (once it is uploaded), already reads D+1's cap: a big outing done today is never
@@ -147,8 +149,8 @@ def test_the_three_nights_after_six_hours_are_tagged_and_left_out():
 
 def test_a_sleep_right_after_an_ultra_finished_at_dawn_is_tagged():
     """An ultra ending at 05:00: the sleep that started after it, waking that same day, is the first night after
-    (D+1: D is the day before), and exactly 3 nights are tagged (DAWN-FINISH); one ending at 06:00, after that
-    morning's 05:00 sleep began, keeps D on its own day."""
+    (D+1: D is the day before), and exactly 4 nights are tagged (DAWN-FINISH; v4.2: D+1 → D+4); one ending at
+    06:00, after that morning's 05:00 sleep began, keeps D on its own day."""
     rows = {"sleep": {}}
     for k in range(20):
         d = D - timedelta(days=k)
@@ -156,12 +158,14 @@ def test_a_sleep_right_after_an_ultra_finished_at_dawn_is_tagged():
     s = _session(D - timedelta(days=4), 1080, hour=12)  # D-4 12:00 + 18 h → D-3 06:00
     nights = _nights(rows, [s])
     assert st.effort_of(s).day == D - timedelta(days=3)
-    # D-3's sleep started at 05:00, before the finish at 06:00: not after it; D-2 → D are D+1 → D+3
-    assert sorted(d for d, n in nights.items() if "big" in n.tags) == [D - timedelta(days=k) for k in (2, 1, 0)]
+    # D-3's sleep started at 05:00, before the finish at 06:00: not after it; D-2 → D are D+1 → D+3 (D+4 is
+    # tomorrow): « après ultra » (an ultra: D+1 → D+4, v4.2)
+    assert sorted(d for d, n in nights.items() if "ultra" in n.tags) == [D - timedelta(days=k) for k in (2, 1, 0)]
     s = _session(D - timedelta(days=4), 1020, hour=12)  # 17 h → D-3 05:00: the 05:00 sleep is after it
     nights = _nights(rows, [s])
     assert st.effort_of(s).day == D - timedelta(days=4)  # ended before 06:00: D is the day before (H)
-    assert sorted(d for d, n in nights.items() if "big" in n.tags) == [D - timedelta(days=k) for k in (3, 2, 1)]
+    assert sorted(d for d, n in nights.items() if "ultra" in n.tags) == [D - timedelta(days=k)
+                                                                         for k in (3, 2, 1, 0)]
 
 
 def test_tagged_nights_never_fire_the_illness_alert():
@@ -176,9 +180,9 @@ def test_tagged_nights_never_fire_the_illness_alert():
 
 def test_rung_1_the_alert_comes_first_even_in_a_window():
     rows = night_rows(range(0, 40), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)
-    ultra = _session(D - timedelta(days=5), 610, sid=9)  # D+5 of an ultra: its 3 nights after are not the last 2
+    ultra = _session(D - timedelta(days=7), 610, sid=9)  # D+7 of an ultra: its 4 nights after are not the last 2
     day = _day(rows, _runs() + [ultra])
-    assert day["window"]["days"] == 5
+    assert day["window"]["days"] == 7
     assert (day["state"]["key"], day["state"]["word"]) == ("ill", "À ménager")
     assert day["state"]["text"] == ("FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant "
                                     "un rhume, après de l'alcool ou une grosse journée.")
@@ -380,10 +384,10 @@ def test_contributors_print_no_number_and_say_what_is_missing():
     assert {r["key"]: r["word"] for r in c["rows"]}["hrv"] == "basse" and c["absent"] is None
     # in an alert, the window is not the state: the Contributeurs say when
     rows = night_rows(range(0, 40), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)
-    ill = _day(rows, _runs(start=3) + [_session(D - timedelta(days=5), 610, sid=9)])
+    ill = _day(rows, _runs(start=3) + [_session(D - timedelta(days=7), 610, sid=9)])
     assert ill["state"]["key"] == "ill"
     assert {r["key"]: r["word"] for r in sc.contributors(ill["score"], ill["state"])["rows"]}["load"] == \
-        "grosse sortie il y a 5 j"
+        "grosse sortie il y a 7 j"
     for r in sc.contributors(day["score"], day["state"])["rows"]:
         assert not any(ch.isdigit() for ch in r["word"])
 
@@ -541,7 +545,7 @@ def test_dawn_finish_the_first_morning_after_is_in_its_window():
     assert (day["window"]["days"], day["window"]["cap"], day["score"]["value"]) == (1, 40, 40)
     assert day["state"]["text"] == "Grosse sortie hier : 100 miles des Crêtes."
     nights = _nights(rows, _runs() + [race])
-    assert "big" in nights[D].tags and "big" not in nights[D - timedelta(days=1)].tags
+    assert "ultra" in nights[D].tags and "ultra" not in nights[D - timedelta(days=1)].tags  # 22 h: an ultra
     words = {r["key"]: r["word"] for r in sc.contributors(day["score"], day["state"])["rows"]}
     assert words["load"] == "grosse sortie"
     for start in (datetime(2026, 10, 7, 4, 59), datetime(2026, 10, 7, 5, 1)):  # 19 h: 23:59 or 00:01
@@ -561,7 +565,7 @@ def test_a_dawn_finish_then_a_daytime_sleep_is_anchored_on_the_nights():
     assert st.effort_of(race).day == D  # 06:30: the proxy alone keeps it on D
     nights = _nights(rows, _runs() + [race])
     [e] = nt.anchor_efforts(nights, [st.effort_of(race)])
-    assert e.day == D - timedelta(days=1) and "big" in nights[D].tags
+    assert e.day == D - timedelta(days=1) and "ultra" in nights[D].tags
     assert _day(rows, _runs() + [race])["window"]["days"] == 1
 
 
@@ -577,17 +581,20 @@ def test_two_windows_open_the_charge_is_the_lowest():
 
 def test_an_ultra_saved_as_two_activities_is_one_effort():
     """SPLIT-ULTRA: the Transjeju saved as 9h00 (21:00 → 06:00) then, 6 min later, 7h47 (→ 13:53): one ultra of
-    16h53 (first start to last end, the stop included), named and linked after the first; its 10-day window
-    (40 to D+3, 65 to D+10) as if it were one activity. Apart by more than 30 min (H): two efforts."""
+    16h53 (first start to last end, the stop included), named and linked after the first; its window (40 to D+3,
+    65 to D+13: it ran through the night, v4.2) as if it were one activity. Apart by more than 30 min (H): two
+    activities, but on consecutive days of 3 h and more: one effort again (M3), their times summed (16h47)."""
     a = _session(date(2026, 10, 2), 540, hour=21, offset=32400, sid=81, name="Transjeju 100M")
     b = _session(date(2026, 10, 3), 467, hour=6, offset=32400, sid=82, name="Transjeju 100M (2)")
     b = replace(b, start=b.start + timedelta(minutes=6))
     [e] = st.efforts([a, b])
     assert (e.kind, e.session_id, e.name, e.minutes) == ("ultra", 81, "Transjeju 100M", 1013)
     assert (e.end, e.day, e.start_day) == (datetime(2026, 10, 3, 13, 53), date(2026, 10, 3), date(2026, 10, 2))
-    assert [st.effort_window([e], date(2026, 10, k))["cap"] for k in (6, 9, 13)] == [40, 65, 65]
+    assert [st.effort_window([e], date(2026, 10, k))["cap"] for k in (6, 9, 13, 16)] == [40, 65, 65, 65]
+    assert st.effort_window([e], date(2026, 10, 17)) is None
     far = replace(b, start=b.start + timedelta(minutes=40))
-    assert [x.kind for x in st.efforts([a, far])] == ["very_long", "very_long"]
+    [m3] = st.efforts([a, far])
+    assert (m3.kind, m3.minutes, m3.session_id, m3.name) == ("ultra", 540 + 467, 81, "Transjeju 100M")
 
 
 def test_the_day_after_an_alert_stops_firing_the_episode_is_still_read():

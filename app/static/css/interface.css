@@ -182,6 +182,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-train-fold > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
 .pf-train-fold[open] { padding-bottom: 14px; }
 .pf-train-warn { font-family: var(--pf-font-text); font-size: 15px; font-weight: 600; color: rgb(var(--pf-warn)); }
+.pf-train-soft { font-family: var(--pf-font-text); font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-600)); }   /* « après ultra »: a note, not a flag */
 .pf-train-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); padding-bottom: 6px; }
 .pf-viz-line.is-accent { stroke: rgb(var(--pf-accent)); stroke-width: 1.5; }
 .pf-viz-svg .pf-viz-halo { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 4px; stroke-linejoin: round; }

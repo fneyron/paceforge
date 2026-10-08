@@ -34,9 +34,12 @@ heuristic, never shown as a finding):
   (Latshang 2013; inferred from the day's highest point ≥ 1 600 m, H), a time
   zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
   change at home is none; the night it shows and the next 2, H), the nights
-  D+1 → D+3 after an effort of 6 h or more (« après grosse sortie »: Hynynen
-  2010, nightly HR at 130 % after a marathon; D is the day before the first
-  morning after it, H: anchor_efforts), and
+  after an effort by its duration (H, sante_training.NIGHT_TAGS: night D+1
+  after a Longue; D+1 → D+3 after a Très longue, « après grosse sortie »:
+  Hynynen 2010, nightly HR at 130 % after a marathon; D+1 → D+4 after an
+  Ultra, « après ultra »: Fachan 2026, Kishi 2024; D is the day before the
+  first morning after it, H: anchor_efforts; after ≥ 20 h D+5 → D+7 too, out
+  of the band only: Paech 2021), and
   the nights of an alert episode (« FC de nuit haute », H; heart rate alone is
   never a diagnosis: evidence row 3). Santé (v4) reads nothing else: no planned
   race, no check-in (owner, 2026-10-08). The race page keeps its own: J-7 →
@@ -59,9 +62,11 @@ heuristic, never shown as a finding):
 - Illness alert (H): the HR band of the watch that measured both nights, then
   2 nights in a row each ≥ median + max(2 robust SD, 5 bpm) (Alavi 2022:
   2 nights at + 4 bpm over the median; ours stricter, specific, not
-  sensitive: Quer 2021). Context-tagged nights (« après
-  grosse sortie » included) never fire it; on the race page, neither do the
-  nights after its race. Respiration ≥ median + 2/min only backs it up.
+  sensitive: Quer 2021). Context-tagged nights (the nights after an effort
+  included) never fire it; it re-arms by itself after them, against the band
+  before the effort (Schwellnus 2016: symptoms more frequent in the 1–2 weeks
+  after a race); on the race page, the nights after its race never fire it.
+  Respiration ≥ median + 2/min only backs it up.
 """
 import copy
 import math
@@ -116,14 +121,17 @@ COROS_SLEEP_HR_NAP_VERIFIED = False
 # context words, as the readouts print them (glyph ◇)
 # « ill » is the athlete's own « malade » chip; « alert » an alert episode, never worded as a diagnosis (row 3)
 TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir", "altitude": "en altitude",
-             "tz": "fuseau changé", "big": "après grosse sortie", "alcohol": "alcool", "race": "autour de la course",
-             "ill": "malade", "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
-EXCLUDING = ("long", "late", "altitude", "tz", "big", "alcohol", "race", "ill", "alert")
+             "tz": "fuseau changé", "big": "après grosse sortie", "ultra": "après ultra", "ultra_tail": "après ultra",
+             "alcohol": "alcool", "race": "autour de la course", "ill": "malade", "alert": "FC de nuit haute",
+             "late_nap": "après sieste tardive"}
+# « ultra_tail » (D+5 → D+7 after ≥ 20 h) is out of the band and the 7-night means, never out of the alert
+EXCLUDING = ("long", "late", "altitude", "tz", "big", "ultra", "ultra_tail", "alcohol", "race", "ill", "alert")
 EPISODE = ("ill", "alert")  # the nights of an illness episode
 _EXCLUDING = frozenset(EXCLUDING)
 _VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
 _SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}
-CONTEXT = ("long", "late", "altitude", "tz", "big", "alcohol")  # never fire the alert
+CONTEXT = ("long", "late", "altitude", "tz", "big", "ultra", "alcohol")  # never fire the alert
+OFF_TIMING = frozenset(("tz", "ultra", "race"))  # out of the bedtime and wake medians and of the regularity
 
 
 def round5(t: datetime) -> datetime:
@@ -442,20 +450,30 @@ def anchor_efforts(nights: dict[date, Night], efforts=()) -> list:
 
 
 def tag_efforts(nights: dict[date, Night], efforts=()) -> None:
-    """« après grosse sortie » on the 3 nights after an effort of 6 h or more
-    (sante_training.Effort with `big`, anchored: anchor_efforts), in place:
-    D+1 → D+3, D+1 only when that sleep started after the effort ended (the
-    sleep before a night start is not after it). Out of the bands and the
-    illness alert (H; Hynynen 2010); drawn like any night."""
-    from app.services.sante_training import BIG_NIGHTS
+    """The nights after an effort (sante_training.Effort, anchored:
+    anchor_efforts), by the class of its nights (its duration whatever the
+    sport, sante_training.NIGHT_TAGS), in place: a Longue « après une sortie
+    longue » on D+1 (every Longue, the D+ rule included, whatever the 90-min
+    rule saw), a Très longue « après grosse sortie » D+1 → D+3, an Ultra
+    « après ultra » D+1 → D+4 — out of the bands and of the illness alert —
+    and after ≥ 20 h also D+5 → D+7 out of the band only (« ultra_tail »: the
+    alert re-arms, against the band before the effort). D+1 only when that
+    sleep started after the effort ended (the sleep before a night start is
+    not after it). Drawn like any night; counted in the 24-h totals (H)."""
+    from app.services.sante_training import NIGHT_TAGS, ULTRA_TAIL
 
     for e in efforts:
-        if not e.big:
+        if e.nights is None:
             continue
-        for k in range(1, BIG_NIGHTS + 1):
+        tag, last = NIGHT_TAGS[e.nights]
+        for k in range(1, last + 1):
             n = nights.get(e.day + timedelta(days=k))
             if n is not None and (k > 1 or n.start is None or n.start >= e.end):
-                n.tags.add("big")
+                n.tags.add(tag)
+        if e.tail:
+            for k in range(ULTRA_TAIL[0], ULTRA_TAIL[1] + 1):
+                if (n := nights.get(e.day + timedelta(days=k))) is not None:
+                    n.tags.add("ultra_tail")
 
 
 def illness_days(feel: dict[date, dict]) -> set[date]:
@@ -671,11 +689,11 @@ def day_tst24(nights: dict[date, Night], d: date) -> int | None:
 def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
     """Median onset and wake (minutes after 18:00) over the main nights of the
     last `days` days, and their spread (SD) once 8 nights are there (H). Time
-    zone nights, the nights after a big effort and those around a race (the
-    race page) are left out; a « rendormi » wake counts in neither the wake
-    median nor its spread (H)."""
+    zone nights, the 4 nights after an ultra (Fachan 2026; Kishi 2024) and
+    those around a race (the race page) are left out; a « rendormi » wake
+    counts in neither the wake median nor its spread (H)."""
     ns = [n for d, n in nights.items() if today - timedelta(days=days - 1) <= d <= today and n.start
-          and not n.tags & {"tz", "big", "race"}]
+          and n.tags.isdisjoint(OFF_TIMING)]
     beds = [clock_min(n.start) for n in ns]
     wakes = [clock_min(n.end) for n in ns if not n.resettled]
     out = {"n": len(ns), "bed": statistics.median(beds) if beds else None,

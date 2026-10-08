@@ -243,7 +243,7 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
 
 async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSession, test_user: User):
     """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (« hier »,
-    capped at 40), Contributeurs never « pas de grosse sortie »; that sleep is « après grosse sortie »."""
+    capped at 40), Contributeurs never « pas de grosse sortie »; that sleep is « après ultra »."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     rows["sleep"][today] = (400, {"main_start": f"{today}T04:00", "main_end": f"{today}T11:00", "timeline": True},
@@ -260,7 +260,7 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
     assert page["state"]["text"] == "Grosse sortie hier : 100 miles." and page["score"]["value"] == 40
     assert {r["key"]: r["word"] for r in page["contrib"]["rows"]}["load"] == "grosse sortie"
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
-    assert "◇ après grosse sortie" in marks[today.isoformat()]
+    assert "◇ après ultra" in marks[today.isoformat()]  # 22 h: an ultra (v4.2)
 
 
 async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_session: AsyncSession, test_user: User,

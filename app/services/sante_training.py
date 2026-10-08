@@ -408,43 +408,67 @@ def easy_watch(model: dict | None, today: date) -> dict | None:
             "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}
 
 
-# ── big efforts: the recovery windows Santé reads (v4) ──────────────────────
+# ── big efforts: the recovery windows Santé reads (v4.2) ────────────────────
 # Santé judges recovery from past activities only (owner, 2026-10-08): a planned race is never read. Each
-# activity is sized by its own time, stops included (elapsed), whatever it was: a race marked on Strava is
-# just an activity. The classes keep the old post-race and legs rules (H), now for any activity:
+# activity is sized by its own time, stops included (elapsed), whatever it was. No official body gives a number of
+# days (Kellmann 2018: « a clear categorization based on specific time frames cannot be provided »; Schwellnus 2016;
+# Meeusen 2013): every class, window and modifier below is (H), « fenêtres indicatives » anchored on
+# research_efforts.md §b. The night data never shorten a window (autonomic recovery comes before muscle recovery:
+# HRV back at D+2, soreness to D+5, Fazackerley 2019; 400 m still 12 % slower at D+5, Hoffman 2017a); no age or sex
+# adjustment (evidence too thin: Easthope 2010; Besson 2021).
 EFFORT_ULTRA, EFFORT_VERY_LONG, EFFORT_LONG = 600, 360, 180  # (H) minutes, stops included: ≥ 10 h, 6–10 h, ≥ 3 h
-EFFORT_DPLUS = 1500  # (H) m: an outing on foot this steep is « long » whatever its time (the legs rule)
+EFFORT_DPLUS = 1500  # (H) m on foot: « long » whatever its time (1 264 m of descent: 2-day deficits, Giandolini 2016a)
 STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
 CHAIN_GAP = timedelta(minutes=30)  # (H) an activity starting this soon after the last one ended: the same effort
 DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that morning is the first one after it
 # class → ((last day from D+1, cap on the score's raw value), …), the Charge récente sub-score (H). The day it
 # ends (D+0, once it is uploaded) already reads D+1's cap: a big outing done today is never « pas de grosse sortie »
-EFFORT_RULES = {"ultra": (((3, 40), (10, 65)), 20),  # (H)
-                "very_long": (((2, 45), (5, 65)), 30),
-                "long": (((2, 65),), 50)}
-BIG_NIGHTS = 3  # (H) nights D+1 → D+3 after an effort ≥ 6 h stay out of the normal (Hynynen 2010: nightly HR at 130 %)
+EFFORT_RULES = {"ultra": (((3, 40), (10, 65)), 20),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
+                "very_long": (((2, 45), (5, 65)), 30),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
+                "long": (((3, 65),), 50)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
+LONG_RACE_LAST = 5  # (H) a Longue marked as a race on Strava: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) an ultra ≥ 24 h, or run through a night: 65 until D+13
+NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
+RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
+# M1, an unusual climb (H): D+ ≥ 1.5 × the largest single-activity D+ on foot of the 8 weeks before (that largest
+# ≥ 200 m) → the 65 window 2 days longer; the repeated-bout protection fades by ≈ 9 weeks (Bontemps 2020); D+ stands
+# for D− (loops), the descent being the damaging part (Koller 1998)
+CLIMB_RATIO, CLIMB_MIN_M, CLIMB_DAYS, CLIMB_EXTRA = 1.5, 200, 56, 2  # (H)
+LOWER = {"ultra": "very_long", "very_long": "long", "long": None}  # M4: a low-impact sport one class lower (H)
+# the nights after an effort, by its duration whatever the sport (M4): D+1 → D+n out of the bands and of the
+# illness alert (H): a Longue night D+1 (« après une sortie longue »), a Très longue D+1 → D+3 (« après grosse
+# sortie »: Hynynen 2010, nightly HR at 130 % after a marathon), an Ultra D+1 → D+4 (« après ultra »: sleep
+# fragmented through night 4, Fachan 2026; normal wakefulness after 2.3 days, Kishi 2024)
+NIGHT_TAGS = {"long": ("long", 1), "very_long": ("big", 3), "ultra": ("ultra", 4)}  # (H)
+ULTRA_TAIL_MIN, ULTRA_TAIL = 20 * 60, (5, 7)  # (H) ≥ 20 h: D+5 → D+7 out of the band too, never of the alert
+# (after 100 miles SDNN still −7 % at D+7: Paech 2021)
+AFTER_ULTRA_DAYS = 21  # (H) Activités: a raised easy-pace HR is « après ultra » (Chambers 1998, n = 8: to day 25)
 
 
 @dataclass(frozen=True)
 class Effort:
-    """An activity (or activities chained without a real stop) big enough to
-    open a recovery window. D is `day`: the day before the first morning after
-    it — the local day it ended, or the day before when it ended in the night
-    (before 06:00, H; nights.anchor_efforts moves D there too when the athlete
-    slept after it and woke the same day). Its window is D+0 (once uploaded)
-    → the class's last day; its nights « après grosse sortie » are D+1 → D+3."""
+    """An activity (or activities chained without a real stop, or back-to-back days of 3 h and more: M3) big
+    enough to open a recovery window or to keep its nights out of the normal. D is `day`: the day before the
+    first morning after it — the local day it ended, or the day before when it ended in the night (before 06:00,
+    H; nights.anchor_efforts moves D there too when the athlete slept after it and woke the same day). Its window
+    is D+0 (once uploaded) → its last cap's day (`caps`, the modifiers applied); its nights by `nights`
+    (NIGHT_TAGS, and D+5 → D+7 when `tail`)."""
     session_id: int
-    kind: str  # ultra | very_long | long
-    minutes: float  # its own time, stops included (effort_minutes; first start → last end when chained)
+    kind: str | None  # the class: ultra | very_long | long; None (M4: a low-impact 3–6 h) opens no window
+    minutes: float  # its own time, stops included (first start → last end when chained; M3: its days' sum)
     end: datetime  # local, naive
     day: date
     name: str = ""
     start_day: date | None = None  # the local day it started (its day on Activités)
+    nights: str | None = None  # the class its nights follow: by its duration whatever the sport (M4)
+    caps: tuple = ()  # ((last day from D+1, cap), …) of its window, the modifiers applied (H)
+    load: int | None = None  # its Charge récente sub-score (H)
+    tail: bool = False  # ≥ 20 h: nights D+5 → D+7 out of the band too (H)
 
     @property
     def big(self) -> bool:
-        """≥ 6 h: its nights D+1 → D+3 are « après grosse sortie » (out of the bands and the illness alert)."""
-        return self.kind in ("ultra", "very_long")
+        """6 h or more by its duration: never a « spike » on Activités, nights D+1 → D+3 at least out of the normal."""
+        return self.nights in ("ultra", "very_long")
 
 
 def effort_minutes(s: Session) -> float:
@@ -477,14 +501,106 @@ def _kind(minutes: float, dplus_on_foot: float) -> str | None:
             else "long" if minutes >= EFFORT_LONG or dplus_on_foot >= EFFORT_DPLUS else None)
 
 
-def effort_of(s: Session) -> Effort | None:
-    """One activity alone as an effort (see _kind), or None (H)."""
-    m = effort_minutes(s)
-    kind = _kind(m, s.dplus if s.sport in FOOT else 0)
+def through_night(start: datetime, end: datetime) -> bool:
+    """The effort ran from 01:00 to 05:00 local on one night (H): a night without a main sleep."""
+    d = start.date()
+    while d <= end.date():
+        if start <= datetime.combine(d, NIGHT_SPAN[0]) and end >= datetime.combine(d, NIGHT_SPAN[1]):
+            return True
+        d += timedelta(days=1)
+    return False
+
+
+@dataclass
+class _Unit:
+    """Activities that are one effort (chains): their first start → last end, local."""
+    sessions: list
+    start: datetime
+    end: datetime
+    climb: bool = False  # M1
+
+    @property
+    def first(self) -> Session:
+        return self.sessions[0]
+
+    @property
+    def minutes(self) -> float:
+        if len(self.sessions) == 1:
+            return effort_minutes(self.first)
+        return (self.end - self.start).total_seconds() / 60
+
+    @property
+    def foot(self) -> bool:
+        """On foot when any part is (a triathlon chain runs): M4 lowers only low-impact efforts."""
+        return any(s.sport in FOOT for s in self.sessions)
+
+    @property
+    def dplus(self) -> float:
+        return sum(s.dplus for s in self.sessions if s.sport in FOOT)
+
+    @property
+    def race(self) -> bool:
+        return any(s.workout_type in RACE_TYPES for s in self.sessions)
+
+
+def _climbs(units: list[_Unit], sessions: list[Session]) -> None:
+    """M1 on each unit, in place: its D+ on foot ≥ 1.5 × the largest single-activity D+ on foot of the 8 weeks
+    before it, when that largest is ≥ 200 m (H). Only the units that can be a Longue or a Très longue are read."""
+    foot = sorted((local_start(s), s.dplus) for s in sessions if s.sport in FOOT and s.dplus)
+    starts = [t for t, _ in foot]
+    for u in units:
+        m, dplus = u.minutes, u.dplus
+        if not dplus or m >= EFFORT_ULTRA or (m < EFFORT_LONG and dplus < EFFORT_DPLUS):
+            continue
+        lo, hi = bisect_left(starts, u.start - timedelta(days=CLIMB_DAYS)), bisect_left(starts, u.start)
+        top = max((d for _, d in foot[lo:hi]), default=0.0)
+        u.climb = top >= CLIMB_MIN_M and dplus >= CLIMB_RATIO * top
+
+
+def _rules(kind: str | None, minutes: float, race: bool, climb: bool, night: bool) -> tuple[tuple, int | None]:
+    """The class's window with the modifiers (H): a Longue marked as a race → 65 until D+5; an Ultra ≥ 24 h or
+    run through a night → 65 until D+13 (function back only at D+16 after 37 h: Millet 2011; jump height down to
+    day 18 after 90 km: Chambers 1998); an unusual climb (M1) on a Longue or a Très longue → its 65 window 2 days
+    longer. No D+ scaling of an Ultra (CK does not follow the descent: Lecina 2024; duration, not elevation,
+    shapes fatigue: Giandolini 2016b)."""
     if kind is None:
+        return (), None
+    caps, load = EFFORT_RULES[kind]
+    *head, (last, cap) = caps
+    if kind == "long" and race:
+        last = LONG_RACE_LAST
+    if kind == "ultra" and (minutes >= ULTRA_LONG_MIN or night):
+        last = ULTRA_LONG_LAST
+    if climb and kind in ("long", "very_long"):
+        last += CLIMB_EXTRA
+    return (*head, (last, cap)), load
+
+
+def _effort(units: list[_Unit]) -> Effort | None:
+    """One effort from its units (one chain, or back-to-back days: M3), or None. Its class by its time (and the
+    legs rule on foot), one lower when no part is on foot (M4: cycling 230 km gave « only modest » damage, Koller
+    1998; troponin about half as often after cycling, Shave 2007); its nights by its time whatever the sport. A
+    chain is named and linked after its first activity, back-to-back days after their longest one."""
+    one = len(units) == 1
+    minutes = units[0].minutes if one else sum(u.minutes for u in units)
+    foot = any(u.foot for u in units)
+    nights = _kind(minutes, sum(u.dplus for u in units) if foot else 0)
+    if nights is None:
         return None
-    end = local_start(s) + timedelta(minutes=m)
-    return Effort(s.id, kind, m, end, effort_day(end), s.name, s.day)
+    kind = nights if foot else LOWER[nights]
+    named = units[0] if one else max(units, key=lambda u: u.minutes)
+    end = max(u.end for u in units)
+    caps, load = _rules(kind, minutes, any(u.race for u in units), foot and any(u.climb for u in units),
+                        any(through_night(u.start, u.end) for u in units))
+    return Effort(named.first.id, kind, minutes, end, effort_day(end), named.first.name, named.first.day, nights,
+                  caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN)
+
+
+def effort_of(s: Session, sessions=()) -> Effort | None:
+    """One activity alone as an effort (see _effort), or None (H); `sessions`: its history, for M1."""
+    u = _Unit([s], local_start(s), local_end(s))
+    _climbs([u], list(sessions))
+    return _effort([u])
 
 
 def chains(sessions: list[Session]) -> list[list[Session]]:
@@ -503,46 +619,68 @@ def chains(sessions: list[Session]) -> list[list[Session]]:
     return out
 
 
-def efforts(sessions: list[Session]) -> list[Effort]:
-    """The big efforts among the sessions, by end. Activities chained without a
-    real stop (chains) are one effort, sized from the first start to the last
-    end (stops included), named and linked after the first one."""
-    out = []
-    for run in chains(sessions):
-        if len(run) == 1:
-            e = effort_of(run[0])
+def back_to_back(units: list[_Unit]) -> list[list[_Unit]]:
+    """M3 (H; peripheral fatigue recovers more slowly after 4 × 40 km than after the same course in one go:
+    Besson 2020): the units of 3 h and more on consecutive days — each starting at the latest the day after the
+    previous one's D — are one effort when they span 2 days at least (a shorter activity between them changes
+    nothing); every other unit stays alone."""
+    groups: list[list[_Unit]] = []
+    for u in sorted((u for u in units if u.minutes >= EFFORT_LONG), key=lambda u: u.start):
+        if groups and u.start.date() <= effort_day(groups[-1][-1].end) + timedelta(days=1):
+            groups[-1].append(u)
         else:
-            first, end = run[0], max(local_end(s) for s in run)
-            m = (end - local_start(first)).total_seconds() / 60
-            kind = _kind(m, sum(s.dplus for s in run if s.sport in FOOT))
-            e = Effort(first.id, kind, m, end, effort_day(end), first.name, first.day) if kind else None
-        if e:
-            out.append(e)
+            groups.append([u])
+    out = [[u] for u in units if u.minutes < EFFORT_LONG]
+    for g in groups:
+        if len(g) > 1 and len({u.start.date() for u in g}) == 1:  # one day only: not « consecutive days »
+            out.extend([u] for u in g)
+        else:
+            out.append(g)
+    return out
+
+
+def efforts(sessions: list[Session]) -> list[Effort]:
+    """The big efforts among the sessions, by end: chains (activities without a
+    real stop) are one unit, sized from the first start to the last end (stops
+    included), named and linked after the first; back-to-back days of 3 h and
+    more are one effort (M3); an unusual climb (M1), a race flag and a night
+    run through set the window (_rules); a low-impact effort is one class
+    lower (M4) but its nights follow its time."""
+    units = [_Unit(run, local_start(run[0]), max(local_end(s) for s in run)) for run in chains(sessions)]
+    _climbs(units, sessions)
+    out = [e for g in back_to_back(units) if (e := _effort(g))]
     return sorted(out, key=lambda e: e.end)
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:
-    """The recovery window that holds day `d` (D+0 → the class's last day (H);
+    """The recovery window that holds day `d` (D+0 → its last cap's day (H);
     D+0 reads D+1's cap), the one with the lowest cap on that day, then the
     lowest Charge, then the latest: {effort, days (d − D), ago (d − the day it
     started: what the page says, as Activités dates it), cap, load (the lowest
     Charge of every window open on `d`: a second effort never raises it),
-    until}; None outside any."""
+    until}; None outside any. An effort without a class (M4, 3–6 h) opens
+    none."""
     best, lowest = None, None
     for e in efs:
         k = (d - e.day).days
-        if k < 0:
+        if k < 0 or e.kind is None:
             continue
-        caps, load = EFFORT_RULES[e.kind]
-        cap = next((c for last, c in caps if max(k, 1) <= last), None)
+        cap = next((c for last, c in e.caps if max(k, 1) <= last), None)
         if cap is None:
             continue
-        lowest = load if lowest is None else min(lowest, load)
-        key = (cap, load, k)
+        lowest = e.load if lowest is None else min(lowest, e.load)
+        key = (cap, e.load, k)
         if best is None or key < best[0]:
             best = (key, {"effort": e, "days": k, "ago": (d - (e.start_day or e.day)).days, "cap": cap,
-                          "load": load, "until": e.day + timedelta(days=caps[-1][0])})
+                          "load": e.load, "until": e.day + timedelta(days=e.caps[-1][0])})
     if best is None:
         return None
     best[1]["load"] = lowest
     return best[1]
+
+
+def after_ultra(efs: list[Effort], d: date) -> Effort | None:
+    """The Ultra (by its class) whose D+1 → D+21 (H) holds day `d`, if any: Activités annotates a raised
+    easy-pace HR « après ultra » instead of flagging it (Chambers 1998, n = 8: HR at fixed speeds higher to
+    day 25)."""
+    return next((e for e in reversed(efs) if e.kind == "ultra" and 1 <= (d - e.day).days <= AFTER_ULTRA_DAYS), None)

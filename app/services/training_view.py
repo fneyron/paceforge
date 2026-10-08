@@ -27,10 +27,13 @@ partials/activity_training.html draws it on page 1 without a sport filter.
   with 3 runs at least (H); drawn only with ≥ 6 qualifying runs in the last 6
   weeks (H). « à surveiller » when the 2 latest runs, both in the last 14
   days, are each ≥ 3 bpm above the median of the runs of the 14 days before
-  it (H; Nuuttila 2022: against the previous 2 weeks). One model
-  (sante_training.easy_model / easy_watch), shared with Santé's « FC en
-  footing » tile, which prints the bpm: here the line says it in words. HR
-  alone is « not a clear marker of fatigue » (Buchheit 2014): never « fatigue ».
+  it (H; Nuuttila 2022: against the previous 2 weeks); for 21 days after an
+  ultra (sante_training.after_ultra, H) the same runs are annotated « après
+  ultra » instead, the fold left closed (Chambers 1998, n = 8: HR at fixed
+  speeds higher to day 25 after 90 km). One model (sante_training.easy_model
+  / easy_watch), shared with Santé's « FC en footing » tile, which prints the
+  bpm: here the line says it in words. HR alone is « not a clear marker of
+  fatigue » (Buchheit 2014): never « fatigue ».
 """
 import logging
 import statistics
@@ -49,6 +52,8 @@ WEEKS, USUAL_WEEKS, MIN_USUAL_WEEKS = 12, 26, 8  # (H)
 SPIKE, SPIKE_DAYS, SPIKE_RECENT = 1.10, 30, 10  # Frandsen 2025; the line names a spike of the last 10 days (H)
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
+FLAG_LINE = "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
+AFTER_ULTRA = "après ultra"  # the fold's note instead of « à surveiller », 21 days after an ultra (H)
 
 
 # ── A1 Semaines ─────────────────────────────────────────────────────────────
@@ -196,9 +201,12 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
     c = viz.dots(days, points, band=band, min_span=10)
     watch = st.easy_watch(model, today)
     flagged = bool(watch and watch["flag"])
+    # for 21 days after an ultra a raised easy-pace HR is « après ultra », never flagged (Chambers 1998, H)
+    ultra = flagged and st.after_ultra(st.efforts(sessions), watch["deltas"][-1][0]) is not None
+    flagged = flagged and not ultra
     mins, secs = divmod(model["pace"], 60)
-    c.update(flagged=flagged, pace=f"{mins}:{secs:02d}/km",
-             line="Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure." if flagged else None,
+    line = FLAG_LINE if flagged else f"{FLAG_LINE[:-1]}, {AFTER_ULTRA}." if ultra else None
+    c.update(flagged=flagged, after_ultra=ultra, pace=f"{mins}:{secs:02d}/km", line=line,
              summary=(f"FC en footing sur 6 mois, ramenée à {mins}:{secs:02d} par kilomètre : {len(points)} sortie"
                       f"{'s' if len(points) > 1 else ''} facile{'s' if len(points) > 1 else ''}"))
     return c

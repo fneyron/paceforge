@@ -117,9 +117,9 @@ METHOD = [
     "moins de 6 h de sommeil sur 24 h, 65 ; VFC basse et FC de nuit haute ensemble, 69 ; sans VFC ni FC de nuit, 80 : une longue nuit seule ne fait pas un 100.",
     "Grosses sorties (H), à leur durée arrêts compris, courses comprises, deux activités à moins de 30 min d'écart "
     "comptant pour une : 10 h et plus → score plafonné à 40 dès la fin et les 3 jours qui suivent, puis à 65 "
-    "jusqu'au 10e ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à pied → 65 pendant 2 jours. Une fin "
-    "dans la nuit compte du matin même. Les 3 nuits (H) qui suivent 6 h et plus restent hors de ta normale "
-    "(Hynynen 2010).",
+    "jusqu'au 10e (13e après 24 h ou une nuit dehors) ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à "
+    "pied → 65 jusqu'au 3e (5e pour une course). Une fin dans la nuit compte du matin même. Les nuits qui suivent "
+    "(H) restent hors de ta normale : 1 après 3 h, 3 après 6 h, 4 après 10 h (Hynynen 2010).",
     "Une différence de quelques points ne veut rien dire : la VFC varie d'environ 12 % d'une nuit à l'autre "
     "(Buchheit 2014). Ta normale est « provisoire » de 7 à 13 nuits (H), pleine à 14 ; l'alerte FC de nuit attend "
     "14 nuits (Quer 2021). L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 "
