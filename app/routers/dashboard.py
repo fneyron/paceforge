@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,8 +18,8 @@ from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
 from app.services.training_view import MEASURES, spike_ids, training_top
+from app.services.viz import d_short, hm
 from app.services.viz import dplus as dplus_fmt
-from app.services.viz import hm
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -84,17 +84,25 @@ async def activities_page(
     page: int = Query(default=1, ge=1),
     sport: str | None = None,
     m: str | None = None,
+    depuis: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Training log: the 7 / 28-day volume at the top, « Semaines » on page 1 (one measure, `m`: duree, distance
-    or dplus; the sport filter applies to it and to the list), then the activities grouped by week."""
+    or dplus; the sport filter applies to it and to the list), then the activities grouped by week. `depuis` (a
+    day of the last month, Santé's Entraînement card's link): only the activities from that day, as the card
+    counts them."""
     sport = sport if sport in _FILTER_KEYS else None
     m = m if m in {k for k, _, _ in MEASURES} else None
     now = datetime.now(timezone.utc)
+    training_load = await calculate_training_load(db, user.id, now)
+    recent = await _recent(db, user.id, depuis) if depuis else None
+    if recent is not None:
+        return templates.TemplateResponse(request, "activities.html", context={
+            "user": user, "recent": recent, "training_load": training_load, "weeks": [], "has_more": False,
+            "page": 1, "sport": None, "filters": FILTERS, "training": None, "spikes": set()})
 
     weeks, has_more, spikes = await _week_groups(db, user.id, page, sport)
-    training_load = await calculate_training_load(db, user.id, now)
     # Semaines and FC en footing: on the first page, for the sport chosen
     training = await training_top(db, user.id, now, sport, m) if page == 1 else None
 
@@ -158,6 +166,34 @@ async def manual_sync(
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
+RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
+
+
+async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
+    """What Santé's Entraînement card counts, for its link (owner, 2026-10-09: « Ça ne filtre pas sur la
+    semaine ? »): the sessions from `depuis` (the athlete's local day) to now, duplicates and false starts left out
+    exactly as Santé reads them, newest first, their moving time summed alike (the card's figure); None for a day
+    that is not a date of the last month (the whole list then)."""
+    from app.services import sante_training as st
+
+    try:
+        since = date.fromisoformat(depuis)
+    except ValueError:
+        return None
+    today = await st.athlete_today(db, user_id)
+    if not today - timedelta(days=RECENT_MAX_DAYS) <= since <= today:
+        return None
+    sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.day >= since),
+                      key=lambda s: s.start, reverse=True)
+    ids = [s.id for s in sessions]
+    rows = {a.id: a for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars()} if ids else {}
+    dplus = sum(s.dplus for s in sessions)
+    return {"label": "7 derniers jours" if (today - since).days in (6, 7) else f"Depuis le {d_short(since)}",
+            "activities": [_activity_to_summary(rows[s.id]) for s in sessions if s.id in rows],
+            "hours": hm(sum(s.minutes for s in sessions)), "km": sum(s.km for s in sessions),
+            "dplus_formatted": dplus_fmt(dplus) if round(dplus) >= 1 else None}
+
 
 def _monday(dt: datetime) -> datetime:
     return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)

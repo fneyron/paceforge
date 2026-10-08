@@ -62,9 +62,10 @@
 {% set t = p.training %}
 <section id="entrainement" class="pf-sec" aria-labelledby="h-train">
     <div class="pf-card pf-sum">
-        {{ card_title("h-train", "Entraînement", "/activities") }}
+        {#- one link, its title: these 7 days' activities in Activités (owner, 2026-10-09: « C'est deux fois le même
+            lien ? Ça ne filtre pas sur la semaine ? ») -#}
+        {{ card_title("h-train", "Entraînement", "/activities?depuis=" ~ t.since.isoformat()) }}
         <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b> <span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
-        <a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>
     </div>
 </section>
 

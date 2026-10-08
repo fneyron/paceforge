@@ -301,16 +301,18 @@ def training(sessions, today: date, until: date | None = None) -> dict:
     d'habitude »; without a usual week, the 7 days' time itself and « pas encore d'habitude ». The card prints the
     7 days' time and the usual week's (to 5 min: a typical value), each once: without a usual week the dial
     prints the time, the card only its words. `until`: the calendar day when the page still reads yesterday's
-    cycle (cycle_day): the activities since midnight count in it. {dial, week, usual, word}."""
-    until = until or today
-    week = sum(s.minutes for s in sessions if today - timedelta(days=6) <= s.day <= until)  # moving time, as Activités
+    cycle (cycle_day): the activities since midnight count in it. `since`: the 7 days' first day, the card's link
+    to them in Activités (owner, 2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word,
+    since}."""
+    until, since = until or today, today - timedelta(days=6)
+    week = sum(s.minutes for s in sessions if since <= s.day <= until)  # moving time, as Activités
     usual = usual_week(sessions, today)
     href = "#entrainement"
     if usual is None:
         return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", NO_HABIT, tone="accent",
                                  href=href, aria=f"Entraînement : {viz.hm_long(week)} d'activité ces 7 derniers "
                                                  f"jours, {NO_HABIT}."),
-                "week": None, "usual": None, "word": NO_USUAL}
+                "week": None, "usual": None, "word": NO_USUAL, "since": since}
     ratio = week / usual
     word = ("plus que d'habitude" if ratio > 1 + USUAL_SPREAD else
             "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
@@ -319,7 +321,7 @@ def training(sessions, today: date, until: date | None = None) -> dict:
                              tone="accent", unit="%", href=href,
                              aria=f"Entraînement {sc.pct(p)} de ta semaine habituelle, {word}."),
             "week": viz.hm(week), "usual": f"ta semaine habituelle{viz.NBSP}: {viz.hm(round(usual / 5) * 5)}",
-            "word": None}
+            "word": None, "since": since}
 
 
 def _row(key: str, name: str, value: str | None, word: str, tone: str | None, qual: str | None = None,

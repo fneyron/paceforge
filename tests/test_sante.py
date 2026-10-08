@@ -293,7 +293,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         ("FC de nuit", "7 nuits", None, "en construction", "prête après ta prochaine nuit", "none"),
         ("Effort récent", None, "8\u00a0jours", "avant d'être récupéré", None, "warn")]
     assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
-                                "word": "pas encore de semaine habituelle"}
+                                "word": "pas encore de semaine habituelle", "since": date(2026, 10, 2)}
     # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over the 8-h need,
     # its hours printed once (the dial says 100 %)
     s = page["sleep"]
@@ -392,6 +392,33 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     assert d["t"][11] == "danger" and [ln["label"] for ln in rec["lines"]] == ["70\u00a0%", "40\u00a0%"]
 
 
+async def test_the_entrainement_link_lists_the_7_days_it_counts(as_user: AsyncClient, db_session: AsyncSession,
+                                                                 test_user: User, monkeypatch):
+    """Owner, 2026-10-09: « C'est deux fois le même lien ? Ça ne filtre pas sur la semaine ? »: the card's one link
+    opens Activités on the activities its 7 days count — the same sessions, the same total — with a way back to
+    all; a day that is not one of the last month opens the whole list."""
+    from app.services import sante_training as st_
+
+    await seed_owner_v4(db_session, test_user)
+
+    async def today(*a, **k):
+        return D8
+    monkeypatch.setattr(sante, "athlete_today", today)
+    monkeypatch.setattr(st_, "athlete_today", today)
+    page = await sante.health_page(db_session, test_user.id, today=D8)
+    since = page["training"]["since"]
+    sessions = [s for s in await st_.load_sessions(db_session, test_user.id, D8) if s.day >= since]
+    html = (await as_user.get(f"/activities?depuis={since.isoformat()}")).text
+    recent = html.split('<section id="recent"')[1].split("</section>")[0]
+    assert '<h2 id="recent-h" class="pf-h3">7 derniers jours</h2>' in recent and "15h35" in recent  # the dial's
+    assert recent.count('class="pf-activity-row') == len(sessions) > 0
+    assert '<a class="pf-sum-link" href="/activities">Toutes tes activités ›</a>' in recent
+    assert '<section id="semaines"' not in html and 'id="load-more"' not in html  # the 7 days alone
+    assert "7 j :" not in html  # their kilometres printed once, in their own line
+    for bad in ("abc", "2026-07-01", "2026-12-01"):
+        assert 'id="recent"' not in (await as_user.get(f"/activities?depuis={bad}")).text, bad
+
+
 async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_owner_day):
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
@@ -412,7 +439,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     titles = re.findall(r'<h2 id="h-(\w+)" class="pf-sum-h"><a class="pf-sum-go" href="([^"]+)">([^<]+)<span '
                         r'class="pf-sum-chev" aria-hidden="true">›</span></a></h2>', main)
     assert titles == [("recup", "#recuperation-detail", "Récupération"), ("sommeil", "#sommeil-detail", "Sommeil"),
-                      ("train", "/activities", "Entraînement")]
+                      ("train", "/activities?depuis=2026-10-02", "Entraînement")]
     # three dials, in WHOOP's order, each a link to its card (a full aria-label), the state said in words
     dials = re.findall(r'<a class="pf-ring pf-ring-(\w+) is-(\w+)" href="(#\w+)" aria-label="([^"]+)">(.*?)</a>',
                        main, re.S)
@@ -453,8 +480,10 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # Entraînement: the 7 days (the dial prints their time: no usual week yet), the link to Activités
     train = main.split('<section id="entrainement"')[1].split(">", 1)[1].split("</section>")[0]
     assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train)).strip()) == (
-        "Entraînement › 7 derniers jours pas encore de semaine habituelle Voir tes semaines dans Activités ›")
-    assert '<a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>' in train
+        "Entraînement › 7 derniers jours pas encore de semaine habituelle")
+    # one link, its title, to these 7 days in Activités (owner, 2026-10-09: « C'est deux fois le même lien ? Ça ne
+    # filtre pas sur la semaine ? »)
+    assert train.count("<a ") == 1 and "Voir tes semaines" not in train
     assert "Détail du score" not in main and "Contributeurs" not in main and "En bref" not in main
     # each number printed once before a tap (the closed folds are the accessible alternative): the dials' (the
     # score, this morning's sleep as a percentage, the week's time), the effort's days, last night's hours, the VFC
