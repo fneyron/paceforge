@@ -94,7 +94,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["fc"] = _night_card(nights, "hr", today)
         out.update(_top(day, sessions, today, bool(sources), out))
     out["day_label"] = viz.d_short(today)
-    out["method"], out["refs"] = sc.METHOD, sc.linked(sc.REFS)
+    out["method"], out["refs"] = sc.typo(sc.METHOD), sc.linked(sc.REFS)
     return out
 
 

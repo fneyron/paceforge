@@ -37,7 +37,7 @@
     <defs><pattern id="pf-hatch-rn" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
     {% for tk in n.ticks %}<line x1="0" x2="{{ n.X1 }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="pf-viz-grid"/><text x="{{ n.W }}" y="{{ tk.y + 4 }}" text-anchor="end">{{ tk.label }}</text>{% endfor %}
     {% if n.goal %}<rect x="{{ n.goal.x }}" y="{{ n.goal.y }}" width="{{ n.goal.w }}" height="{{ n.goal.h }}" class="pf-viz-band"/>
-    <line x1="0" x2="{{ n.goal.w }}" y1="{{ n.goal.y }}" y2="{{ n.goal.y }}" class="pf-viz-edge"/><line x1="0" x2="{{ n.goal.w }}" y1="{{ n.goal.y + n.goal.h }}" y2="{{ n.goal.y + n.goal.h }}" class="pf-viz-edge"/>{% endif %}
+    <line x1="{{ n.goal.x }}" x2="{{ n.goal.x + n.goal.w }}" y1="{{ n.goal.y }}" y2="{{ n.goal.y }}" class="pf-viz-edge"/><line x1="{{ n.goal.x }}" x2="{{ n.goal.x + n.goal.w }}" y1="{{ n.goal.y + n.goal.h }}" y2="{{ n.goal.y + n.goal.h }}" class="pf-viz-edge"/>{% endif %}
     <line x1="0" x2="{{ n.X1 }}" y1="{{ n.amount[1] }}" y2="{{ n.amount[1] }}" class="pf-viz-grid"/>
     {% for col in n.cols %}
     <g class="pf-viz-col" data-i="{{ col.i }}">

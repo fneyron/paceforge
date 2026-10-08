@@ -3,9 +3,11 @@ against the −41–60 % band, nights J-14 → J-1 against usual + 30–60 min, 
 race week, the hot-race line; after the race « Cœur la nuit » J+1 → J+14 and
 the driving line. The owner's Transjeju 100M (02/10 21:00, 16h53) as a fixture."""
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -267,3 +269,12 @@ async def test_race_page_sleep_banking_the_last_week_and_the_eve_reassurance(cli
         assert 'data-viz-key="nuits-course"' in html, k
         assert (bank in html, eve in html) == lines, k
         assert html.count(eve) <= 1
+        # the target J-7 → J-2 (when a usual exists): the band and both its edges start at J-7, never at the left
+        chart = html.split('data-viz-key="nuits-course"')[1]
+        band = re.search(r'<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="[\d.]+" class="pf-viz-band"/>\s*'
+                         r'<line x1="([\d.]+)" x2="([\d.]+)"[^>]*class="pf-viz-edge"/><line x1="([\d.]+)" '
+                         r'x2="([\d.]+)"', chart)
+        assert bool(band) is ("cible" in chart.split("</figcaption>")[0]), k
+        if band:
+            x, w, *edges = (float(v) for v in band.groups())
+            assert x > 0 and edges == pytest.approx([x, x + w, x, x + w]), k

@@ -506,7 +506,7 @@ def test_the_method_fold_marks_every_choice_h_and_cites_the_brief():
     texts, what is PaceForge's choice (H), what the score does not know; then the references in two groups."""
     assert [h for h, _ in sc.METHOD] == ["Ton score", "Ce qui vient des textes officiels",
                                          "Ce qui est notre choix (H)", "Ce que le score ne sait pas"]
-    text = sc.flat(sc.METHOD)
+    text = sc.flat(sc.METHOD).replace("\u00a0", " ")  # no-break spaces inside « »
     for phrase in ("Poids (H) : VFC 25, FC de nuit 25, sommeil 30, charge 20 pendant une récupération",
                    "Plafonds (H) : alerte FC de nuit 39 ; grosse sortie 40, 45 ou 65 ; sommeil sous 6 h, 65",
                    "69 (H) : un signal sous 40, ou VFC basse avec FC de nuit haute ; 80 sans VFC ni FC",
@@ -520,21 +520,22 @@ def test_the_method_fold_marks_every_choice_h_and_cites_the_brief():
                    "Tes siestes comptent dans tes 24 h (Schwellnus 2016 ; Walsh 2021)",
                    "aucun texte n'en fixe les jours (Kellmann 2018)",
                    "FC de nuit : 100 jusqu'à +2 bpm sur ta médiane, 40 à +5, 0 à +8 (Alavi 2022 ; Bosquet 2008)",
-                   "Une VFC basse avec une FC de nuit normale arrive aussi quand l'entraînement est bien encaissé : "
-                   "seule, elle ne plafonne pas ton score (Buchheit 2014)",
+                   "VFC basse avec FC de nuit normale : ça arrive aussi quand l'entraînement est bien encaissé. "
+                   "Seule, une VFC basse ne plafonne donc pas ton score (Buchheit 2014)",  # the brief's words, 2 bullets
                    "Fenêtres indicatives : 3 h ou 1 500 m D+ à pied, 65 jusqu'au 3e jour (5e si course)",
                    "6 à 10 h : 45 les 2 premiers jours, puis 65 jusqu'au 5e",
-                   "10 h et plus : 40 les 3 premiers jours, 65 jusqu'au 10e (13e après 24 h ou une nuit dehors)",
+                   "10 h et plus : 40 trois jours, puis 65 jusqu'au 10e (13e après 24 h ou une nuit blanche)",
                    "« provisoire » de 7 à 13 nuits, pleine à 14",
                    "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %)",
                    "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm",
-                   "questionnaire conseillé (Saw 2016 ; Schwellnus 2016), écarté à ta demande",
+                   "Comment tu te sens : rien ne le mesure ici, à ta demande",
+                   "conseillent pourtant un questionnaire (Saw 2016 ; Schwellnus 2016)",
                    "Ta VFC est estimée par la montre (variabilité du pouls ; Sammito 2024 ; Quigley 2024)",
                    "La montre surestime le sommeil (Walsh 2021)"):
         assert phrase in text, phrase
     assert "séance" not in text.lower() and "ressenti" not in text.lower() and "place" not in text
-    # short: ≤ 2 lines at 358 px (≈ 96 characters at 14 px), but the brief's own Buchheit sentence
-    assert all(len(b) <= 96 for _, items in sc.METHOD for b in items if "bien encaissé" not in b)
+    # short: ≤ 2 lines at 358 px (≈ 96 characters at 14 px; measured on the screenshots)
+    assert all(len(b) <= 96 for _, items in sc.METHOD for b in items)
     # the references: official texts, then studies, ≤ 16, each one cited in the text and each citation listed
     assert [g for g, _ in sc.REFS] == ["Textes officiels", "Études"]
     labels = [n for _, items in sc.REFS for n, _ in items]

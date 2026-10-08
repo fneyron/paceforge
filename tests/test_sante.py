@@ -598,7 +598,7 @@ async def test_the_charge_ring_runs_to_twice_the_usual_week(db_session: AsyncSes
         "moins que d'habitude"]
     assert sante.charge_word(300, None) is None and sante.charge_word(300, 0) is None
     choice = dict(sante.sc.METHOD)["Ce qui est notre choix (H)"]  # the word's band, a heuristic
-    assert "Le mot sous l'anneau dit « comme d'habitude » à 20 % près." in choice
+    assert "Le mot sous l'anneau dit «\u00a0comme d'habitude\u00a0» à 20 % près." in choice
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

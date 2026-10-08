@@ -61,16 +61,16 @@ METHOD = [
         "Décalage : 1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021).",
         "Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM, stades du laboratoire (CTA/NSF 2052.3).",
         "Le sommeil léger occupe normalement la plus grande partie de la nuit.",
-        "Aucune instance scientifique ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017).",
+        "Aucune instance ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017).",
     ]),
     ("Ce qui est notre choix (H)", [
         "L'anneau Sommeil : les 24 h avant ton réveil, plein à 8 h, une échelle, pas un objectif.",
         "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021).",
-        "Un jour sous 6 h est « court », score plafonné à 65 (6 h : Craven 2022 ; 65 : notre choix).",
+        "Un jour sous 6 h est «\u00a0court\u00a0», score plafonné à 65 (6 h : Craven 2022 ; 65 : notre choix).",
         "Régularité : tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021).",
         "Hors de ta normale : 1 nuit après 3 h, 3 après 6 h, 4 après 10 h ; l'altitude ; un fuseau.",
         "Après un ultra, tes 4 nuits restent aussi hors de tes horaires habituels (Fachan 2026).",
-        "Sieste « tardive » après 16 h ou à moins de 7 h de ton coucher (Mograss 2022 ; Walsh 2021).",
+        "Sieste «\u00a0tardive\u00a0» après 16 h ou à moins de 7 h de ton coucher (Mograss 2022 ; Walsh 2021).",
         "Coucher et lever arrondis à 5 min, phases à 10 min.",
     ]),
     ("Ce que la montre ne sait pas", [
@@ -284,9 +284,9 @@ def rows(nights: dict, today: date) -> list[dict]:
 def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None) -> dict:
     """Everything the Sommeil section draws. state: never (no night ever, one
     line) | old (nothing in 90 days) | ok."""
-    from app.services.sante_score import linked
+    from app.services.sante_score import linked, typo
 
-    base = {"method": METHOD, "refs": linked(REFS)}
+    base = {"method": typo(METHOD), "refs": linked(REFS)}
     if not any(_measured(n) for d, n in nights.items() if d <= today):
         return {**base, "state": "never"}
     h = hero(nights, today, samples)

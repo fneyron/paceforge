@@ -179,7 +179,7 @@ def test_the_method_fold_marks_its_heuristics_and_names_no_race():
                    "1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021)",
                    "Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM",
                    "Le sommeil léger occupe normalement la plus grande partie de la nuit",
-                   "Aucune instance scientifique ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017)",
+                   "Aucune instance ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017)",
                    "plein à 8 h, une échelle, pas un objectif",
                    "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021)",
                    "(6 h : Craven 2022 ; 65 : notre choix)",

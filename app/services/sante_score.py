@@ -74,6 +74,7 @@ from what was known that day, with the same rule (sante._history); nothing is
 persisted.
 """
 import math
+import re
 import statistics
 from datetime import date
 
@@ -127,21 +128,22 @@ METHOD = [
         "Les poids, les plafonds, les seuils d'état, les notes : aucun texte ne les donne.",
         "FC de nuit : 100 jusqu'à +2 bpm sur ta médiane, 40 à +5, 0 à +8 (Alavi 2022 ; Bosquet 2008).",
         "VFC : 100 dans ta normale ou au-dessus, sans bonus ; 0 à 2,5 écarts-types sous ta moyenne.",
-        "Une VFC basse avec une FC de nuit normale arrive aussi quand l'entraînement est bien encaissé : seule, "
-        "elle ne plafonne pas ton score (Buchheit 2014).",
+        "VFC basse avec FC de nuit normale : ça arrive aussi quand l'entraînement est bien encaissé.",
+        "Seule, une VFC basse ne plafonne donc pas ton score (Buchheit 2014).",
         "Fenêtres indicatives : 3 h ou 1 500 m D+ à pied, 65 jusqu'au 3e jour (5e si course).",
         "6 à 10 h : 45 les 2 premiers jours, puis 65 jusqu'au 5e.",
-        "10 h et plus : 40 les 3 premiers jours, 65 jusqu'au 10e (13e après 24 h ou une nuit dehors).",
+        "10 h et plus : 40 trois jours, puis 65 jusqu'au 10e (13e après 24 h ou une nuit blanche).",
         "2 jours de plus pour un dénivelé 1,5 fois ton plus gros des 8 semaines d'avant.",
         "Des jours de 3 h enchaînés font une sortie ; à vélo ou en nageant, une classe de moins.",
-        "Ta normale : 60 jours, une par montre, « provisoire » de 7 à 13 nuits, pleine à 14.",
+        "Ta normale : 60 jours, une par montre, «\u00a0provisoire\u00a0» de 7 à 13 nuits, pleine à 14.",
         "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %) et devient la tienne au fil des nuits.",
         "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm.",
-        "L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 dernières.",
-        "Le mot sous l'anneau dit « comme d'habitude » à 20 % près.",
+        "L'anneau Charge fait le tour au double de ta semaine type, la médiane des 12 dernières.",
+        "Le mot sous l'anneau dit «\u00a0comme d'habitude\u00a0» à 20 % près.",
     ]),
     ("Ce que le score ne sait pas", [
-        "Comment tu te sens : questionnaire conseillé (Saw 2016 ; Schwellnus 2016), écarté à ta demande.",
+        "Comment tu te sens : rien ne le mesure ici, à ta demande.",
+        "Les textes officiels conseillent pourtant un questionnaire (Saw 2016 ; Schwellnus 2016).",
         "Ta VFC est estimée par la montre (variabilité du pouls ; Sammito 2024 ; Quigley 2024).",
         "La montre surestime le sommeil (Walsh 2021).",
     ]),
@@ -162,6 +164,16 @@ REFS = [
         ("Bosquet 2008", "10.1136/bjsm.2007.042200"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
     ]),
 ]
+
+
+def typo(method: list) -> list:
+    """French typography for a fold at 358 px: a no-break space ties a number to its unit (« 6 h », « 10 min »,
+    « +5 bpm », « 12 % », « 1 500 m ») and the groups of a large number, so a line never ends on « 6 »."""
+    def tie(t: str) -> str:
+        t = re.sub(r" ([=≈+]) ", "\u00a0\\1\u00a0", t)  # « Paradoxal = REM », « N1 + N2 »
+        t = re.sub(r"(\d) (?=\d{3}\b)", "\\1\u00a0", t)
+        return re.sub(r"(\d) (?=(?:h|min|bpm|ms|m|%)(?![\w]))", "\\1\u00a0", t)
+    return [(head, [tie(b) for b in items]) for head, items in method]
 
 
 def flat(method: list) -> str:
