@@ -51,7 +51,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
-from app.models.user import User
 from app.services import nights as nt
 from app.services import sante_score as sc
 from app.services import sante_sleep as sl
@@ -68,11 +67,10 @@ SPARSE_NIGHTS, SPARSE_DAYS = 10, 14  # fewer measured nights in the 30: the axis
 
 
 async def health_page(db: AsyncSession, user_id: int, today: date | None = None, now: datetime | None = None,
-                      r: str | None = None, ask: bool = False) -> dict:
+                      r: str | None = None) -> dict:
     """Everything /sante draws. `has_data` is False when neither a watch nor an
     activity ever arrived. `r`: the sleep bars' range (14 or 90; else the
-    first holding a night). `ask`: the Sommeil card asks the sleep need again
-    (« Changer »)."""
+    first holding a night)."""
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
@@ -94,8 +92,6 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
-    # the athlete's answer to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » (None: 8 h)
-    base = (await db.execute(select(User.sleep_need_min).where(User.id == user_id))).scalar()
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
@@ -110,8 +106,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         return out
     with nt.memo():  # the nights no longer change: their bands and alerts are computed once
         nt.freeze(nights)
-        day = _assess(nights, sessions, efforts, today, base)
-        history = (_history(nights, sessions, efforts, today, rest_of, day_alt, base)
+        day = _assess(nights, sessions, efforts, today)
+        history = (_history(nights, sessions, efforts, today, rest_of, day_alt)
                    + [(today, day["state"], day["score"])])
         out["recup"] = sc.history_card(history, today)
         hero = sl.hero(nights, today)
@@ -119,11 +115,10 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         raced = st.raced_nights(efforts)
 
         def need_of(x: date) -> int:
-            return sl.sleep_need(nights, x, base, raced)["total"]
+            return sl.sleep_need(nights, x, raced)["total"]
         out["sleep"] = sl.sleep_section(nights, today, r, samples, need_of)
-        if out["sleep"].get("hero"):  # the need of the night shown: its line, the question until answered
-            out["sleep"]["need"] = sl.need_card(sl.sleep_need(nights, out["sleep"]["hero"]["day"], base, raced),
-                                                base is not None, ask)
+        if out["sleep"].get("hero"):  # the need of the night shown: its line when something adds to the 8 h
+            out["sleep"]["need"] = sl.need_line(sl.sleep_need(nights, out["sleep"]["hero"]["day"], raced))
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
         # the Entraînement dial reads every week with today's bounds (H): the night tags' resting HR and peak
@@ -183,27 +178,26 @@ def _night_stat(nights, metric: str, d: date) -> dict:
     return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen}
 
 
-def _assess(nights, sessions, efforts, d: date, base: int | None = None) -> dict:
+def _assess(nights, sessions, efforts, d: date) -> dict:
     """What day `d` reads — today, or a past day of the 14-day card (_history:
     the rows and activities known that day) — and its score and state (the
     band of the score). Every measured night counts in the 7-night means (an
     alert episode's own nights too: the score shows the episode, never « dans
-    tes valeurs habituelles » the morning the alert stops). `base`: the
-    athlete's sleep need (None: 8 h); the day's need (sante_sleep.sleep_need)
-    is what its 24 h are read against, by the Sommeil dial and the score; `resp`:
-    the breathing rate's 2 nights over its usual line (nights.resp_up_nights)."""
+    tes valeurs habituelles » the morning the alert stops). The day's sleep
+    need (sante_sleep.sleep_need) is what its 24 h are read against, by the
+    Sommeil dial and the score; `resp`: the breathing rate's 2 nights over its
+    usual line (nights.resp_up_nights)."""
     alert = nt.illness_alert(nights, d)
     stats = {k: _night_stat(nights, k, d) for k in ("hr", "hrv")}
     tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
-    day = {"day": d, "stats": stats, "tst24": tst, "need": sl.sleep_need(nights, d, base, st.raced_nights(efforts)),
+    day = {"day": d, "stats": stats, "tst24": tst, "need": sl.sleep_need(nights, d, st.raced_nights(efforts)),
            "window": st.effort_window(efforts, d), "alert": alert, "resp": nt.resp_up_nights(nights, d)}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
     return day
 
 
-def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None,
-             need_base: int | None = None) -> list:
+def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights up to that day (the bands, the
     means, the alert and the 24 h read nothing dated after it) and the
@@ -252,7 +246,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None,
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
             nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
             nt.freeze(nd)
-        past = _assess(nd, ss, efs, d, need_base)
+        past = _assess(nd, ss, efs, d)
         out.append((d, past["state"], past["score"]))
     return out
 
@@ -289,8 +283,8 @@ def sleep_word(tst24: int, need: int) -> str:
 
 def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
     """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), as a
-    percentage of the day's need (sante_sleep.sleep_need: the athlete's own, 8 h without an answer, a little more
-    after a big effort or when sleep is owed), at most 100 % (the hours are the Sommeil card's, printed once), its
+    percentage of the day's need (sante_sleep.sleep_need: 8 h, a little more after a big effort or when sleep is
+    owed), at most 100 % (the hours are the Sommeil card's, printed once), its
     arc in the sleep colour (one stable hue), in the warning colour under 6 h; its word (sleep_word); « — » and
     « pas enregistré » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a
     plain dial)."""

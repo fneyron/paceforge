@@ -6,10 +6,9 @@
   too; sleep is counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and
   its 24-h total « sur 9h00 de besoin » (2026-10-08: the Sommeil dial at the top
   says it as a percentage of that need, so its hours are printed here, once).
-- The need is the athlete's own (2026-10-09, owner: « Le besoin diffère en
-  fonction des personnes »): their answer to « Combien d'heures de sommeil te
-  faut-il pour te sentir reposé ? » (asked once on the card, 8 h without one),
-  a little more after a big effort and when sleep is owed (sleep_need).
+- The need is computed, never asked (2026-10-09, owner: « Ne demande pas, ce
+  doit être auto comme WHOOP »): 8 h, a little more after a big effort and when
+  sleep is owed (sleep_need), naps in the 24 h.
 - Its stages, like WHOOP and Oura (the owner's request, a deliberate
   departure from research_sleep.md §b: shown for COROS and Garmin, no
   collapse, no setting), never judged: one bar of the four phases (Éveil ·
@@ -54,13 +53,13 @@ RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
-# the personal need (owner, 2026-10-09: « Le besoin diffère en fonction des personnes »; research_ind_sleep_resp.md
-# A4): the base is the athlete's answer to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? »
-# (Sargent 2021's question; Walsh 2021: « the athlete's perceived sleep needs »), never learned from the nights (their
-# habit is often a deficit: Klerman & Dijk 2005; Sargent 2021: 6.7 h slept against 8.3 h needed); a little more
-# after a big effort (the direction: WHOOP, Garmin, Roberts 2019; no source gives a dose) and when sleep is owed
-NEED_DEFAULT = 8 * 60  # (H) min without an answer (Sargent 2021: 8.3 h; Van Dongen 2003: 8.16 h)
-NEED_CHOICES = tuple(range(7 * 60, 10 * 60 + 1, 30))  # (H) the answers offered: 7 h → 10 h by 30 min (Watson 2015a's 7 h)
+# the need, computed and never asked (owner, 2026-10-09: « Ne demande pas, ce doit être auto comme WHOOP »), built
+# as WHOOP's and Garmin's are: a base, more after a big effort (WHOOP's strain, Garmin's activity; the direction only:
+# Roberts 2019, no source gives a dose) and the sleep owed (both); naps count in the 24 h (both take them off the
+# need: the same). WHOOP learns its base from the member's physiology by a method it does not publish, Garmin takes
+# 8 h under 35 years old: one base for everyone here, never learned from the nights (the habit is often a deficit:
+# Klerman & Dijk 2005; Sargent 2021: athletes slept 6.7 h against the 8.3 h they said they needed)
+NEED_DEFAULT = 8 * 60  # (H) min: Garmin's base under 35 (Sargent 2021: 8.3 h; Van Dongen 2003: 8.16 h)
 NEED_EFFORT = 30  # (H) min on a night after a big effort (nights tagged long, big, ultra: sante_training.NIGHT_TAGS)
 NEED_DEBT_DAYS = 7  # (H) the days whose shortfall is owed
 NEED_DEBT_SHARE = 0.25  # a quarter of it each night: 1 h of debt takes about 4 days to recover (Kitamura 2016)
@@ -75,8 +74,8 @@ EFFORT_TAGS = ("long", "big", "ultra")
 # 2026-10-08: no bullet about nights left out); the references (REFS) are on /sante/sources
 METHOD = [
     "Je compte ton sommeil sur 24 h, siestes comprises.",
-    "Ton besoin part de ta réponse (8 h sans réponse). Il augmente un peu après un gros effort ou des nuits trop "
-    "courtes. Une nuit sous 6 h est courte.",
+    "Ton besoin part de 8 h. Il augmente un peu après un gros effort ou des nuits trop courtes. Une nuit sous 6 h "
+    "est courte.",
     "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
     "Ta montre détecte tes heures de coucher et de lever.",
     "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas arrivée, tu vois la "
@@ -217,15 +216,15 @@ def phases(stages: dict | None) -> dict | None:
     return {"parts": parts, "aria": f"Phases estimées par ta montre : {said}."}
 
 
-def sleep_need(nights: dict, d: date, base: int | None = None, raced=frozenset()) -> dict:
+def sleep_need(nights: dict, d: date, raced=frozenset()) -> dict:
     """The sleep the morning of `d` asks for, in minutes: {total, base, effort, debt} (the parts add up to the
-    total, rounded to 10 min): `base` (the athlete's answer, else 8 h), + 30 min when last night came after a big
-    effort (its tags), + a quarter of the shortfall of the 7 days before against the same need (base + their own
-    effort addition, never the inflated one: it never compounds), at most 1 h; a day without a 24-h total is
-    skipped, never counted as 0 h, but a night spent running (`raced`: the wake days whose 01:00–05:00 an effort
-    covered, sante_training.raced_nights) counts as its naps only (Kishi 2024); surplus days repay the debt. Naps
-    stay in the 24 h, never taken off the need."""
-    base = base or NEED_DEFAULT
+    total, rounded to 10 min): the base (8 h), + 30 min when last night came after a big effort (its tags), + a
+    quarter of the shortfall of the 7 days before against the same need (the base + their own effort addition,
+    never the inflated one: it never compounds), at most 1 h; a day without a 24-h total is skipped, never counted
+    as 0 h, but a night spent running (`raced`: the wake days whose 01:00–05:00 an effort covered,
+    sante_training.raced_nights) counts as its naps only (Kishi 2024); surplus days repay the debt. Naps stay in the
+    24 h, never taken off the need."""
+    base = NEED_DEFAULT
 
     def effort(x: date) -> int:
         n = nights.get(x)
@@ -254,22 +253,17 @@ def hm_words(minutes: int) -> str:
     return f"{h}{viz.NBSP}h" + (f"{viz.NBSP}{m:02d}" if m else "")
 
 
-def need_card(need: dict, answered: bool, ask: bool) -> dict:
-    """The Sommeil card's need line and question (the approved mockup, 2026-10-09): « Ton besoin aujourd'hui : 8 h,
-    + 1 h de sommeil en retard. » when something adds to the base (else « Ton besoin : 8 h 30. » once answered,
-    nothing before); the question « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » with its
-    answers while unanswered, or when the athlete asked to change it (`ask`)."""
+def need_line(need: dict) -> str | None:
+    """The Sommeil card's line under the night, when something adds to the base: « Ton besoin aujourd'hui : 8 h,
+    + 1 h de sommeil en retard. »; None on a plain 8-h day (the night's row says « sur 8h00 de besoin »)."""
     adds = []
     if need["effort"]:
         adds.append(f"+ {hm_words(need['effort'])} après un gros effort")
     if need["debt"] > 0:
         adds.append(f"+ {hm_words(need['debt'])} de sommeil en retard")
-    if adds:
-        line = f"Ton besoin aujourd'hui{viz.NBSP}: {hm_words(need['base'])}, " + ", ".join(adds) + "."
-    else:
-        line = f"Ton besoin{viz.NBSP}: {hm_words(need['base'])}." if answered else None
-    return {"line": line, "answered": answered, "ask": ask or not answered,
-            "choices": [(m, hm_words(m), answered and m == need["base"]) for m in NEED_CHOICES]}
+    if not adds:
+        return None
+    return f"Ton besoin aujourd'hui{viz.NBSP}: {hm_words(need['base'])}, " + ", ".join(adds) + "."
 
 
 def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -> dict | None:

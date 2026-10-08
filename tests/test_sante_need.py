@@ -1,7 +1,7 @@
-"""The athlete's own sleep need (owner, 2026-10-09: « Le besoin diffère en fonction des personnes »;
+"""The sleep need, computed and never asked (owner, 2026-10-09: « Ne demande pas, ce doit être auto comme WHOOP »;
 research_ind_sleep_resp.md A4) and the breathing rate (« utilise la respiration aussi si tu l'as »; B3): the need's
-parts, the Sommeil dial and score read against it, its question on the Sommeil card and its answer; the breathing
-rate's usual line, its row, its cap and the alert's sentence."""
+parts, the Sommeil dial and score read against it, its line on the Sommeil card; the breathing rate's usual line,
+its row, its cap and the alert's sentence."""
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 
@@ -34,11 +34,11 @@ def _asleep(rows: dict, minutes: dict) -> dict:
     return rows
 
 
-# ── the need ────────────────────────────────────────────────────────────────
+# ── the need: computed, never asked (owner, 2026-10-09: « Ne demande pas, ce doit être auto comme WHOOP ») ──
 
-def test_without_an_answer_the_need_is_8_h_and_a_short_week_adds_at_most_1_h():
-    """7h20 every night, no answer: 40 min short each of the 7 days before, a quarter of it is 70 min, 1 h at most:
-    a 9-h need; 7h20 is 81 % of it, « un peu court », its sub-score between ¾ and ⅞ of it."""
+def test_the_need_is_8_h_and_a_short_week_adds_at_most_1_h():
+    """7h20 every night: 40 min short each of the 7 days before, a quarter of it is 70 min, 1 h at most: a 9-h need;
+    7h20 is 81 % of it, « un peu court », its sub-score between ¾ and ⅞ of it. 8 h every night: 8 h, nothing to say."""
     rows = night_rows(range(0, 20))
     assert sl.sleep_need(_nights(rows), D) == {"total": 540, "base": 480, "effort": 0, "debt": 60}
     day = _day(rows, base=None)
@@ -47,25 +47,19 @@ def test_without_an_answer_the_need_is_8_h_and_a_short_week_adds_at_most_1_h():
     assert (dial["value"], dial["sub"], dial["tone"]) == ("81", "un peu court", "sleep")
     sleep = next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]
     assert sleep == sc.sleep_sub(440, 540) and 60 < sleep < 100
-
-
-def test_the_answer_is_the_base_and_only_a_shortfall_is_owed():
-    """« 7 h 30 » answered: 10 min short a night, 70 over the week, a quarter: 17,5 → 7h50 (rounded half up to
-    10 min); « 7 h »: 20 min over each night, nothing owed, never less than the answer."""
-    nights = _nights(night_rows(range(0, 20)))
-    assert sl.sleep_need(nights, D, 450) == {"total": 470, "base": 450, "effort": 0, "debt": 20}
-    assert sl.sleep_need(nights, D, 420) == {"total": 420, "base": 420, "effort": 0, "debt": 0}
+    rested = sl.sleep_need(_nights(night_rows(range(0, 20), asleep=480)), D)
+    assert rested == {"total": 480, "base": 480, "effort": 0, "debt": 0} and sl.need_line(rested) is None
 
 
 def test_a_long_night_repays_the_short_ones_and_a_day_without_a_night_is_skipped():
-    """8 h asked: 3 nights of 9 h and 4 of 7 h owe (4 − 3) × 60 = 60 min, a quarter: 15 → 8h20 (8h15 half up); a
-    night not recorded is never 0 h (its day skipped): the 7 h nights alone then."""
+    """3 nights of 9 h and 4 of 7 h owe (4 − 3) × 60 = 60 min, a quarter: 15 → 8h20 (8h15 half up); a night not
+    recorded is never 0 h (its day skipped): the 7 h nights alone then."""
     rows = _asleep(night_rows(range(0, 20)), {1: 540, 2: 540, 3: 540, 4: 420, 5: 420, 6: 420, 7: 420})
-    assert sl.sleep_need(_nights(rows), D, 480) == {"total": 500, "base": 480, "effort": 0, "debt": 20}
+    assert sl.sleep_need(_nights(rows), D) == {"total": 500, "base": 480, "effort": 0, "debt": 20}
     for k in (1, 2, 3):
         for metric in rows:
             rows[metric].pop(D - timedelta(days=k), None)
-    assert sl.sleep_need(_nights(rows), D, 480)["debt"] == 60  # 4 × 60 owed, a quarter, 1 h at most
+    assert sl.sleep_need(_nights(rows), D)["debt"] == 60  # 4 × 60 owed, a quarter, 1 h at most
 
 
 def test_a_big_effort_adds_30_min_to_its_night_and_to_the_nights_it_owes():
@@ -73,10 +67,10 @@ def test_a_big_effort_adds_30_min_to_its_night_and_to_the_nights_it_owes():
     own larger need, never against today's (no compounding)."""
     nights = _nights(night_rows(range(0, 20), asleep=480))
     nights[D].tags.add("ultra")
-    assert sl.sleep_need(nights, D, 480) == {"total": 510, "base": 480, "effort": 30, "debt": 0}
+    assert sl.sleep_need(nights, D) == {"total": 510, "base": 480, "effort": 30, "debt": 0}
     nights[D].tags.discard("ultra")
     nights[D - timedelta(days=1)].tags.add("long")  # 8 h slept against 8h30: 30 min owed, a quarter
-    assert sl.sleep_need(nights, D, 480) == {"total": 490, "base": 480, "effort": 0, "debt": 10}  # 7,5 half up
+    assert sl.sleep_need(nights, D) == {"total": 490, "base": 480, "effort": 0, "debt": 10}  # 7,5 half up
 
 
 def test_a_night_spent_racing_counts_as_its_naps_only():
@@ -86,9 +80,9 @@ def test_a_night_spent_racing_counts_as_its_naps_only():
     for metric in rows:
         rows[metric].pop(D - timedelta(days=2), None)
     nights = _nights(rows)
-    assert sl.sleep_need(nights, D, 480)["debt"] == 0  # not recorded: skipped
+    assert sl.sleep_need(nights, D)["debt"] == 0  # not recorded: skipped
     raced = frozenset({D - timedelta(days=2)})
-    assert sl.sleep_need(nights, D, 480, raced) == {"total": 540, "base": 480, "effort": 0, "debt": 60}
+    assert sl.sleep_need(nights, D, raced) == {"total": 540, "base": 480, "effort": 0, "debt": 60}
     start = datetime(2026, 10, 2, 21, 0)  # Friday 21:00 → Sunday 0:00 local: the nights of Saturday and Sunday
     race = Effort(session_id=1, kind="ultra", minutes=27 * 60, end=start + timedelta(hours=27), day=date(2026, 10, 3))
     assert st.raced_nights([race]) == {date(2026, 10, 3)}  # Sunday's 01:00 → 05:00 not covered: its night slept
@@ -105,62 +99,40 @@ def test_a_rendormi_nap_counts_once_with_its_own_night():
     rows["nap"][y] = (120, {"windows": [[f"{y}T07:00", f"{y}T09:00"]]}, "Garmin")  # back to sleep 2 h
     nights = _nights(rows)
     assert nt.slept_before_wake(nights, y) == 420 and nt.day_tst24(nights, D) == 480  # never the next morning's
-    assert sl.sleep_need(nights, D, 480)["debt"] == 20  # 60 min short, a quarter: 15 → half up with the base
+    assert sl.sleep_need(nights, D)["debt"] == 20  # 60 min short, a quarter: 15 → half up with the base
     rows["nap"][y] = (120, {"windows": [[f"{y}T15:00", f"{y}T17:00"]]}, "Garmin")  # an afternoon nap
     nights = _nights(rows)
     assert nt.slept_before_wake(nights, y) == 300 and nt.slept_before_wake(nights, D) == 600
-    assert sl.sleep_need(nights, D, 480)["debt"] == 50  # its 3 h owed, a quarter: 45 → half up 50 (it is today's)
+    assert sl.sleep_need(nights, D)["debt"] == 50  # its 3 h owed, a quarter: 45 → half up 50 (it is today's)
 
 
 # ── the need on the Sommeil card ────────────────────────────────────────────
 
-def test_the_need_line_says_what_adds_to_the_answer():
-    def need(base, effort=0, debt=0):
-        return {"total": base + effort + debt, "base": base, "effort": effort, "debt": debt}
-    assert sl.need_card(need(480, debt=60), False, False)["line"] == (
-        f"Ton besoin aujourd'hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard.")
-    assert sl.need_card(need(450, 30, 20), True, False)["line"] == (
-        f"Ton besoin aujourd'hui{NB}: 7{NB}h{NB}30, + 30{NB}min après un gros effort, + 20{NB}min de sommeil en retard.")
-    plain = sl.need_card(need(510), True, False)
-    assert plain["line"] == f"Ton besoin{NB}: 8{NB}h{NB}30." and not plain["ask"]
-    first = sl.need_card(need(480), False, False)  # nothing to say before an answer: the question says it
-    assert first["line"] is None and first["ask"] and not any(on for *_, on in first["choices"])
-    again = sl.need_card(need(510), True, True)
-    assert again["ask"] and [(m, label) for m, label, on in again["choices"] if on] == [(510, f"8{NB}h{NB}30")]
-    assert [label for _, label, _ in again["choices"]] == [
-        f"7{NB}h", f"7{NB}h{NB}30", f"8{NB}h", f"8{NB}h{NB}30", f"9{NB}h", f"9{NB}h{NB}30", f"10{NB}h"]
+def test_the_need_line_says_what_adds_to_the_8_h():
+    def need(effort=0, debt=0):
+        return {"total": 480 + effort + debt, "base": 480, "effort": effort, "debt": debt}
+    assert sl.need_line(need(debt=60)) == f"Ton besoin aujourd'hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard."
+    assert sl.need_line(need(30, 20)) == (
+        f"Ton besoin aujourd'hui{NB}: 8{NB}h, + 30{NB}min après un gros effort, + 20{NB}min de sommeil en retard.")
+    assert sl.need_line(need()) is None  # a plain 8-h day: the night's row says « sur 8h00 de besoin »
     assert (sl.hm_words(30), sl.hm_words(60), sl.hm_words(545)) == (f"30{NB}min", f"1{NB}h", f"9{NB}h{NB}05")
 
 
-async def test_the_question_its_answer_and_changer(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
-                                                   monkeypatch):
-    """Unanswered: the Sommeil card asks « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » with its
-    7 answers (a form: no script needed) and says 8 h is counted meanwhile; an answer is kept (one of the 7 only)
-    and the card then says the need with « Changer », which asks again (?besoin), the answer pressed."""
+async def test_the_card_never_asks_the_need(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
+                                            monkeypatch):
+    """No question, no form, no « Changer »: the card says the need computed for that morning, once; the old
+    answer's address is gone and ?besoin, from an old page, changes nothing."""
     async def today(*a, **k):
         return D
     monkeypatch.setattr(sante, "athlete_today", today)
     await _seed_rows(db_session, test_user, _garmin_rows(D))
-    html = (await as_user.get("/sante")).text
-    card = html.split('<section id="sommeil"')[1].split("</section>")[0]
-    assert '<form class="pf-need-ask" method="post" action="/sante/besoin">' in card
-    assert "Combien d'heures de sommeil te faut-il pour te sentir reposé&nbsp;?" in card
-    assert card.count('class="pf-need-chip"') == 7 and 'aria-pressed="true"' not in card
-    assert "Sans réponse, je compte 8&nbsp;h." in card and "Changer" not in card
-    assert f"Ton besoin aujourd&#39;hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard." in card
-    for bad in ("1000", "abc", ""):
-        r = await as_user.post("/sante/besoin", data={"need": bad})
-        assert r.status_code == 303 and test_user.sleep_need_min is None, bad
-    r = await as_user.post("/sante/besoin", data={"need": "450"})
-    assert (r.status_code, r.headers["location"], test_user.sleep_need_min) == (303, "/sante#sommeil", 450)
-    card = (await as_user.get("/sante")).text.split('<section id="sommeil"')[1].split("</section>")[0]
-    assert "pf-need-ask" not in card and '<a class="pf-need-change" href="/sante?besoin=1#sommeil">Changer</a>' in card
-    assert f"Ton besoin aujourd&#39;hui{NB}: 7{NB}h{NB}30, + 20{NB}min de sommeil en retard." in card
-    again = (await as_user.get("/sante?besoin=1")).text.split('<section id="sommeil"')[1].split("</section>")[0]
-    assert "pf-need-ask" in again and "Changer" not in again and "Sans réponse" not in again
-    assert again.count('aria-pressed="true"') == 1 and 'value="450" class="pf-need-chip" aria-pressed="true"' in again
-    r = await as_user.post("/sante/besoin", data={"need": "480"}, headers={"HX-Request": "true"})
-    assert (r.status_code, r.headers["HX-Redirect"], test_user.sleep_need_min) == (204, "/sante#sommeil", 480)
+    for path in ("/sante", "/sante?besoin=1"):
+        card = (await as_user.get(path)).text.split('<section id="sommeil"')[1].split("</section>")[0]
+        assert "<form" not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
+        assert card.count(f"Ton besoin aujourd&#39;hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard.") == 1
+        assert "sur 9h00 de besoin" in card
+    assert (await as_user.post("/sante/besoin", data={"need": "450"})).status_code in (404, 405)
+    assert not hasattr(User, "sleep_need_min")
 
 
 # ── the breathing rate ──────────────────────────────────────────────────────

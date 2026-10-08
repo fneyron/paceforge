@@ -25,6 +25,7 @@ from app.models.route import Route
 from app.models.user import User
 from app.services import nights as nt
 from app.services import sante
+from app.services import sante_sleep as sl
 from tests import test_coros
 from tests.owner_v4 import D8, seed_owner_v4
 from tests.test_coros import _link
@@ -275,7 +276,7 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
 
 async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user: User):
     """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
-    dials — Sommeil 96 % « suffisant » (8h36 of a 9-h need: 8 h without his answer, + 1 h owed since the race,
+    dials — Sommeil 96 % « suffisant » (8h36 of a 9-h need: 8 h, + 1 h owed since the race,
     in the sleep hue), Récupération 65 % « en cours »,
     Entraînement 15h35 (moving time, as Activités) « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
     usual week, so the 7 days' time itself, no arc, and no « Intensité » row: no usual week to weigh them against) —
@@ -300,13 +301,12 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
                                 "word": "pas encore de semaine habituelle", "intensity": None,
                                 "since": date(2026, 10, 2)}
     # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over its 9-h need,
-    # its hours printed once (the dial says 96 %); the need said under it, and asked (no answer yet)
+    # its hours printed once (the dial says 96 %); the need said under it, computed (2026-10-09: never asked)
     s = page["sleep"]
     h = s["hero"]
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "22:40 → 07:30", None, "8h36",
                                                                          "sur 9h00 de besoin")
-    assert s["need"]["line"] == "Ton besoin aujourd'hui\u00a0: 8\u00a0h, + 1\u00a0h de sommeil en retard."
-    assert s["need"]["ask"] and not s["need"]["answered"] and not any(on for *_, on in s["need"]["choices"])
+    assert s["need"] == "Ton besoin aujourd'hui\u00a0: 8\u00a0h, + 1\u00a0h de sommeil en retard."  # never asked
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]
@@ -544,9 +544,8 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     html = (await as_user.get("/sante")).text
     main = _main(html)
     assert 'role="tablist"' not in html and 'role="tab"' not in html and "pf-stab" not in html
-    # no form but the sleep need's question (2026-10-09), no chip: the « Ressenti » check-in never comes back
-    assert main.count("<form") == 1 and '<form class="pf-need-ask" method="post" action="/sante/besoin">' in main
-    assert "pf-chip" not in main
+    # no form, no chip: the « Ressenti » check-in never comes back, and the sleep need is never asked (2026-10-09)
+    assert "<form" not in main and "pf-chip" not in main and "Combien d" not in main
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word
@@ -585,12 +584,11 @@ async def _seed_rows(db: AsyncSession, user: User, rows: dict):
     await db.flush()
 
 
-async def _rested(db: AsyncSession, user: User, need: int = 450):
-    """The athlete answered « 7 h 30 » to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? »: their
-    7h20 nights owe 10 min each, a 7h50 need, « suffisant » (the rules a test reads stay alone; the default 8-h
-    need has its own tests: test_sante_need)."""
-    user.sleep_need_min = need
-    await db.flush()
+@pytest.fixture
+def rested(monkeypatch):
+    """These athletes need 7h30 (the app counts 8 h for everyone since 2026-10-09): their 7h20 nights owe 10 min
+    each, a 7h50 need, « suffisant », so the rules a test reads stay alone (the 8-h need: test_sante_need)."""
+    monkeypatch.setattr(sl, "NEED_DEFAULT", 450)
 
 
 async def _runs(db: AsyncSession, user: User, today: date, n: int = 10):
@@ -603,7 +601,7 @@ async def _runs(db: AsyncSession, user: User, today: date, n: int = 10):
     await db.flush()
 
 
-async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSession, test_user: User):
+async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSession, test_user: User, rested):
     """A full band, HR in it, the 7-night HRV under it (sub-score 40–69): the score is the weighted mean of VFC,
     FC de nuit and Sommeil (no window: no Charge, v4.2), no placement: still « Bonne récupération » (≥ 70), lower;
     the VFC row is orange (under its normal), and its card says so in words (v4.3); no sub-score shown (v4.4). The
@@ -611,7 +609,6 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=60.0))
     await _runs(db_session, test_user, today)
-    await _rested(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"]["key"] == "ok" and page["state"]["text"] is None
     s = page["score"]
@@ -623,7 +620,7 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     raw = (25 * sub + 25 * 100 + 30 * 100) / 80
     assert not b["provisional"] and -2.5 < z < -0.5 and 40 <= sub < 70
     assert s["value"] == math.floor(raw + 0.5) and 70 <= s["value"] < 90 and s["caps"] == []
-    # the dials, in percent: Sommeil 7h20 of his 7h50 need (7 h 30 answered, + 20 min owed), 94 % « suffisant »
+    # the dials, in percent: Sommeil 7h20 of his 7h50 need (7h30, + 20 min owed), 94 % « suffisant »
     # (the sleep colour); Récupération the score, « bonne »; the rows: no Effort récent (no window); VFC's 7-night
     # mean (60 ms, every night) against its usual value (the band's centre), orange; FC de nuit's 44,86 against 45:
     # −0,3 %, to the percent 0 %: « comme d'habitude »
@@ -642,7 +639,7 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
 
 
-async def test_rich_wearer_a_red_hrv_makes_the_dial_69_en_cours(db_session: AsyncSession, test_user: User):
+async def test_rich_wearer_a_red_hrv_makes_the_dial_69_en_cours(db_session: AsyncSession, test_user: User, rested):
     """The judges' rich user: the 7-night VFC far under its normal (an empty bar) with FC de nuit in its normal:
     alone it caps nothing (v4.2, Buchheit 2014 Table 2), so its row is orange, never red; the mean
     (25 × 0 + 25 × 100 + 30 × 100) / 80 = 68,75 → 69, « Récupération en cours » (the reason is data: no sentence).
@@ -652,7 +649,6 @@ async def test_rich_wearer_a_red_hrv_makes_the_dial_69_en_cours(db_session: Asyn
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=35.0))
     await _runs(db_session, test_user, today)
-    await _rested(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=today)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["text"]) == ("hrv", "warn", None)

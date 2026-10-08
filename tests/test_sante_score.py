@@ -11,12 +11,14 @@ import math
 import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from unittest import mock
 
 import pytest
 
 from app.services import nights as nt
 from app.services import sante
 from app.services import sante_score as sc
+from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services.sante_training import Session
@@ -59,10 +61,15 @@ def _nights(rows, sessions=(), today=D):
     return nights
 
 
-# the athletes of these tests sleep 7h20 and answered « 7 h 30 » to « Combien d'heures de sommeil te faut-il pour te
-# sentir reposé ? » (2026-10-09): their nights owe 10 min each, their need is 7h50 and a 7h20 night is « suffisant »,
-# so the rules tested here are read alone; the default 8-h need has its own tests (test_the_sleep_need_*)
+# the athletes of these tests sleep 7h20 and need 7h30 (the app counts 8 h for everyone since 2026-10-09: 7h20 nights
+# would then owe sleep): each night owes 10 min, their need is 7h50 and a 7h20 night is « suffisant », so the rules
+# tested here are read alone; the 8-h need has its own tests (test_sante_need)
 RESTED = 450
+
+
+def _rested(base=RESTED):
+    """The need's base for a test (sante_sleep.NEED_DEFAULT; None: the app's 8 h)."""
+    return mock.patch.object(sl, "NEED_DEFAULT", base or sl.NEED_DEFAULT)
 
 
 def _day(rows, sessions=(), today=D, base=RESTED):
@@ -70,18 +77,17 @@ def _day(rows, sessions=(), today=D, base=RESTED):
     the nights, as health_page does)."""
     sessions = list(sessions)
     nights = _nights(rows, sessions, today)
-    with nt.memo():
+    with nt.memo(), _rested(base):
         nt.freeze(nights)
-        return sante._assess(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today, base)
+        return sante._assess(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today)
 
 
 def _history(rows, sessions=(), today=D, base=RESTED):
     sessions = list(sessions)
     nights = _nights(rows, sessions, today)
-    with nt.memo():
+    with nt.memo(), _rested(base):
         nt.freeze(nights)
-        return sante._history(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today,
-                              need_base=base)
+        return sante._history(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today)
 
 
 # ── effort classes, from the activities alone ───────────────────────────────
@@ -432,10 +438,10 @@ def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
     (v4.3); faint 40 and 70 lines labelled on the right; today on a disc."""
     rows = _rich()
     nights = _nights(rows, _runs())
-    with nt.memo():
+    with nt.memo(), _rested():
         nt.freeze(nights)
-        day = sante._assess(nights, _runs(), [], D, RESTED)
-        hist = sante._history(nights, _runs(), [], D, need_base=RESTED) + [(D, day["state"], day["score"])]
+        day = sante._assess(nights, _runs(), [], D)
+        hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
     assert c["read"] == ["100\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13  # v4.4: in percent
@@ -754,11 +760,11 @@ def test_a_past_day_says_its_date_its_score_and_its_state_only():
     big = _session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=44, name="Transjeju 100M")
     rows, sessions = night_rows([0, 1, 2, 9, 10, 11, 12, 13]), _runs() + [big]  # no night D-8 → D-3, no band
     nights = _nights(rows, sessions)
-    with nt.memo():
+    with nt.memo(), _rested():
         nt.freeze(nights)
         efs = nt.anchor_efforts(nights, st.efforts(sessions))
-        day = sante._assess(nights, sessions, efs, D, RESTED)
-        hist = sante._history(nights, sessions, efs, D, need_base=RESTED) + [(D, day["state"], day["score"])]
+        day = sante._assess(nights, sessions, efs, D)
+        hist = sante._history(nights, sessions, efs, D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
     for word in ("Transjeju", "sortie", "il y a"):

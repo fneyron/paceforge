@@ -56,20 +56,8 @@
         {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
         {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
-        {#- the need (2026-10-09, the approved mockup): its line when something adds to the base (or once answered),
-            « Changer » to ask it again; the question with its answers until answered -#}
-        {% if s.need %}{% set nd = s.need %}
-        {% if nd.line %}<p class="pf-need-line">{{ nd.line }}{% if nd.answered and not nd.ask %} <a class="pf-need-change" href="/sante?besoin=1#sommeil">Changer</a>{% endif %}</p>{% endif %}
-        {% if nd.ask %}
-        <form class="pf-need-ask" method="post" action="/sante/besoin">
-            <p id="need-q" class="pf-need-q">Combien d'heures de sommeil te faut-il pour te sentir reposé&nbsp;?</p>
-            <div class="pf-need-choices" role="group" aria-labelledby="need-q">
-                {% for m, label, on in nd.choices %}<button type="submit" name="need" value="{{ m }}" class="pf-need-chip" aria-pressed="{{ 'true' if on else 'false' }}">{{ label }}</button>{% endfor %}
-            </div>
-            <p class="pf-need-hint">Pense à la fin de tes vacances, quand tu te réveilles sans réveil.{% if not nd.answered %} Sans réponse, je compte 8&nbsp;h.{% endif %}</p>
-        </form>
-        {% endif %}
-        {% endif %}
+        {#- the need (2026-10-09: computed, never asked): its line when something adds to the 8 h -#}
+        {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
         {% endif %}
     </div>
 </section>

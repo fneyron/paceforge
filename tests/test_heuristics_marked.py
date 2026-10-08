@@ -98,9 +98,8 @@ HEURISTICS = [
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
-    # 2026-10-09 (owner: « Le besoin diffère en fonction des personnes »): the sleep need, its answers, its additions
+    # 2026-10-09 (owner: « Ne demande pas, ce doit être auto comme WHOOP »): the sleep need, its base, its additions
     ("app/services/sante_sleep.py", "NEED_DEFAULT", 480),
-    ("app/services/sante_sleep.py", "NEED_CHOICES", (420, 450, 480, 510, 540, 570, 600)),
     ("app/services/sante_sleep.py", "NEED_EFFORT", 30),
     ("app/services/sante_sleep.py", "NEED_DEBT_DAYS", 7),
     ("app/services/sante_sleep.py", "NEED_DEBT_MAX", 60),

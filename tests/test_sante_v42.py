@@ -25,9 +25,11 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros  # the linked athlete's client fixture (as_user)
 from tests.test_nights import night_rows
+from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
 from tests.test_sante_score import _day, _history, _rich, _runs, _session, _then
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
+
 D = date(2026, 10, 8)
 ROOT = Path(__file__).resolve().parent.parent
 HRV_BAND = {"center": 70.0, "sd": 0.1, "provisional": False, "lo": 70 * math.exp(-0.05), "hi": 70 * math.exp(0.05)}
@@ -331,19 +333,18 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
     assert '{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>' in html
 
 
-async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user):
+async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user, rested):
     """A Garmin athlete every night, a 3h30 marathon marked as a race on Strava 4 days ago: a Longue, 65 until D+5
     (v4.2; an unmarked one ends at D+3); its night D+1 never fires the alert. Raw ≈ (25·100 + 25·100 + 30·100)
     / 80 = 100 (no Charge: 2026-10-08), capped at 65: « Récupération en cours », the word only (v4.3: no activity
     named); « Effort récent » on the Récupération card, orange (cap 65), the days to the window's end."""
     from app.models.activity import Activity
     from app.services import sante
-    from tests.test_sante import _garmin_rows, _rested, _seed_rows
+    from tests.test_sante import _garmin_rows, _seed_rows
     from tests.test_sante import _runs as _db_runs
 
     await _seed_rows(db_session, test_user, _garmin_rows(D))
     await _db_runs(db_session, test_user, D)
-    await _rested(db_session, test_user)  # 7 h 30 answered: his 7h20 nights read « suffisant »
     d = D - timedelta(days=4)
     act = Activity(user_id=test_user.id, strava_activity_id=8850, sport_type="Run", name="Marathon de Lyon",
                    start_date=datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc), distance=42_195,

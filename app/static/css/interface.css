@@ -635,17 +635,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-intensity .pf-row-val > span { font-size: 15px; color: rgb(var(--pf-ink)); }   /* its word alone, in ink at the name's size (the mockup) */
 .pf-sum .pf-tl { margin-top: 4px; }
 .pf-sum .pf-phases { margin-top: 6px; padding-bottom: 8px; }
-/* the Sommeil card's need (2026-10-09): its line, « Changer », the question once and its answers as chips (44 px) */
+/* the Sommeil card's need line (2026-10-09: computed, never asked) */
 .pf-need-line { margin: 2px 0 10px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
-.pf-need-change { display: inline-block; padding: 12px 0 12px 4px; margin: -12px 0; font-weight: 650; color: rgb(var(--pf-accent-strong)); text-decoration: none; }
-.dark .pf-need-change { color: rgb(var(--pf-accent)); }
-.pf-need-ask { border-top: 1px solid rgb(var(--pf-line)); padding: 12px 0 10px; }
-.pf-need-q { font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); }
-.pf-need-choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.pf-need-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid rgb(var(--pf-gray-400) / .8); background: rgb(var(--pf-surface)); font-size: 14.5px; font-weight: 600; color: rgb(var(--pf-ink)); }
-.pf-need-chip[aria-pressed="true"] { border-color: rgb(var(--pf-accent)); box-shadow: inset 0 0 0 1px rgb(var(--pf-accent)); }
-.pf-need-chip:focus-visible, .pf-need-change:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
-.pf-need-hint { margin-top: 8px; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
 .pf-sum-link { display: block; padding: 11px 0 12px; font-size: 14.5px; font-weight: 650; line-height: 21px; color: rgb(var(--pf-accent-strong)); text-decoration: none; }   /* 44 px */
 .dark .pf-sum-link { color: rgb(var(--pf-accent)); }
 .pf-sum-link:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }

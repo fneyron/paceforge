@@ -180,8 +180,8 @@ def test_the_method_fold_is_four_plain_bullets_and_names_no_race():
     from app.services import sante_score as sc
 
     assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
-                         "Ton besoin part de ta réponse (8 h sans réponse). Il augmente un peu après un gros "
-                         "effort ou des nuits trop courtes. Une nuit sous 6 h est courte.",
+                         "Ton besoin part de 8 h. Il augmente un peu après un gros effort ou des nuits trop "
+                         "courtes. Une nuit sous 6 h est courte.",
                          "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
                          "Ta montre détecte tes heures de coucher et de lever.",
                          "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas "

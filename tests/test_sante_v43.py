@@ -22,7 +22,7 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros, test_garmin
 from tests.owner_v4 import D8, seed_owner_v4
-from tests.test_sante import _rested
+from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 D = date(2026, 10, 8)
@@ -239,13 +239,12 @@ def garmin_rows_without_tz(days) -> dict:
 
 # ── every user (brief §H) ────────────────────────────────────────────────────
 
-async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
+async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day, rested):
     """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
     no window), « Bonne récupération »; the dials, the Récupération card's rows and the chart cards' status lines;
     no Effort récent; no activity: « 0 min » over « pas encore d'habitude »; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
-    await _rested(db_session, test_user)  # 7 h 30 answered: 7h20 is 94 % of his 7h50 need, « suffisant »
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
@@ -353,13 +352,13 @@ async def test_a_brand_new_user(as_user: AsyncClient, db_session: AsyncSession, 
     assert "Aucune activité dans cette catégorie" in (await as_user.get("/activities?sport=bike")).text
 
 
-async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User):
+async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User,
+                                                                     rested):
     """A normal « being built » only after a signal measured lately: a watch that never measures HRV just misses
     it, and neither its card nor its row exists (v4.4: no « pas encore de normale » for a signal never seen)."""
     rows = garmin_rows(D, range(0, 40))
     rows.pop("hrv")
     await _seed(db_session, test_user, rows)
-    await _rested(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["score"]["absent"] == ["hrv"] and page["score"]["building"] == [] and page["vfc"] is None
     assert [f["key"] for f in page["rows"]] == ["fc"] and page["dials"][0]["sub"] == "suffisant"

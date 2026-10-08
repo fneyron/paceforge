@@ -67,9 +67,6 @@ class User(Base):
 
     # Physical
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # minutes: the answer to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » (Santé's Sommeil
-    # card); None until answered, Santé then counts 8 h (sante_sleep.NEED_DEFAULT)
-    sleep_need_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # FTP typed by the athlete (W); overrides the Strava-based estimate when set
     ftp_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
 
