@@ -452,6 +452,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-nu-sum .pf-nu-zone { font-size: 14px; line-height: 1.45; font-weight: 400; color: rgb(var(--pf-gray-600)); }
 .pf-nu-sum .pf-nu-zone.is-ok { color: rgb(var(--pf-ok)); font-weight: 500; }
 .pf-nu-sum .pf-nu-zone.is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
+.pf-nu-sum .pf-nu-na { margin-top: 6px; }  /* a hot race's sodium per hour and its sentence, under the carbs' */
 .pf-nu-whole { color: rgb(var(--pf-gray-500)); }   /* one product all race long: « toute la course », no « de … à … » */
 .pf-nu-caf { display: flex; align-items: flex-start; gap: 6px; color: rgb(var(--pf-gray-700)); }
 .pf-nu-caf svg { margin-top: 3px; }
@@ -465,6 +466,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-nu-at small { flex: none; font-size: 12px; font-weight: 600; color: rgb(var(--pf-accent)); white-space: nowrap; }
 .pf-nu-take { flex: 0 1 auto; text-align: right; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
 .pf-nu-take.is-none { font-weight: 400; color: rgb(var(--pf-gray-500)); }
+.pf-nu-water { color: rgb(var(--pf-gray-500)); white-space: nowrap; }  /* « · 1 L »: the water to the next ravito, after what to take */
 .pf-nu-left { font-weight: 400; color: rgb(var(--pf-gray-600)); }
 .pf-nu-left.is-wide { display: none; }  /* « (il t'en reste 1 prise) »: past one line on a phone, shown from 560 px */
 @media (min-width: 560px) { .pf-nu-left.is-wide { display: inline; } }

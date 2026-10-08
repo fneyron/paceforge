@@ -2,10 +2,11 @@
 
 The athlete says when he eats each product (a rhythm: 1 every N min, from h to
 h); the aid stations are only where the bag is refilled, and each refill point
-gets the intakes until the next one in whole units. Older plans are read in
-memory (mapped when they map cleanly, else started over with one line), reading
-never writes, every form works without JS (303 back to the race page, the card
-open there)."""
+gets the intakes until the next one in whole units, and the water to carry, an
+« Eau » point on the way cutting the stretch (more when the race is hot, its
+sodium said then). Older plans are read in memory (mapped when they map
+cleanly, else started over with one line), reading never writes, every form
+works without JS (303 back to the race page, the card open there)."""
 
 import json
 import math
@@ -22,7 +23,8 @@ from app.models.route import Route
 from app.models.user import User
 from app.services import nutrition as N
 from app.services import nutrition_plan as NP
-from tests.nutri_course import LONG_CPS, long_sections
+from app.services.race_simulator import compute_passage_times
+from tests.nutri_course import LONG_CPS, long_course, long_sections
 from tests.test_race_plan_services import CPS, _course
 
 P = "/partials/simulator/nutrition"
@@ -104,9 +106,8 @@ def test_a_product_switch_at_8_h_on_a_16_h_race_with_ten_ravitos():
     assert shop == {1: 8, 2: math.ceil(25 / 3)}  # the opened pouch carries on: 25 prises, 9 pouches
     assert sum(it["prises"] for r in rows for it in r["items"]) == 8 + 25
     g = NP._round(NP.carbs_per_hour(il, PRODUCTS, end))
-    assert g == NP._round((8 * 25 + 25 * 30) / 16.5) == 58  # an ultra: over its 30–50 g/h, train the gut
-    assert NP.carbs_note(g, 16.5) == ("Plus que le repère pour un ultra (30 à 50 g par heure) : habitue ton ventre à "
-                                      "cette dose à l'entraînement.", "plain")
+    assert g == NP._round((8 * 25 + 25 * 30) / 16.5) == 58  # an ultra: inside its 30–90 g/h, under the split at 60
+    assert NP.carbs_note(g, 16.5) == ("Dans le repère pour un ultra : 30 à 90 g par heure.", "ok")
     # each row is one short line on a phone: the pouches, the opened pouch's prises only when there is room
     for r in rows:
         room = NP.ROW_CHARS - len(r["name"])
@@ -143,24 +144,60 @@ def test_caffeine_against_the_24_h_cap():
 
 def test_the_carbs_per_hour_read_against_the_range_of_the_race_duration():
     """2026-10-09 (owner, on the mockup: « la maquette est parfaite »): the range follows the race's duration —
-    under 1 h eating is not needed, 30–60 g/h up to 2 h 30 (ACSM 2016), 60–90 g/h to 6 h (Jeukendrup 2014),
-    30–50 g/h past 6 h, an ultra (ISSN 2019); over it, train the gut (plain), under it, the warning colour."""
-    assert [N.carbs_zone(h) for h in (0.5, 1, 2.4, 2.5, 5.9, 6, 6.1, 30)] == [
-        None, (30, 60), (30, 60), (60, 90), (60, 90), (60, 90), (30, 50), (30, 50)]
-    assert NP.carbs_note(45, 16.5) == ("Dans le repère pour un ultra : 30 à 50 g par heure.", "ok")
-    assert NP.carbs_note(20, 16.5) == ("Moins que le repère pour un ultra : 30 à 50 g par heure.", "warn")
+    under 1 h eating is not needed, 30–60 g/h up to 2 h 30 (ACSM 2016), 60–90 g/h to 6 h (Jeukendrup 2014); over
+    it, train the gut (plain), under it, the warning colour. Up to 6 h this stays as approved."""
+    assert [N.carbs_zone(h) for h in (0.5, 1, 2.4, 2.5, 5.9, 6)] == [
+        None, (30, 60), (30, 60), (60, 90), (60, 90), (60, 90)]
     assert NP.carbs_note(70, 5) == ("Dans le repère pour cette durée : 60 à 90 g par heure.", "ok")
-    assert NP.carbs_note(50, 5)[1] == "warn" and NP.carbs_note(95, 5)[1] == "plain"
+    assert NP.carbs_note(59, 5) == ("Moins que le repère pour cette durée : 60 à 90 g par heure.", "warn")
+    assert NP.carbs_note(91, 6) == ("Plus que le repère pour cette durée (60 à 90 g par heure) : habitue ton ventre à "
+                                    "cette dose à l'entraînement.", "plain")  # 6 h exactly: not an ultra yet
     assert NP.carbs_note(40, 2) == ("Dans le repère pour cette durée : 30 à 60 g par heure.", "ok")
+    assert NP.carbs_note(61, 2) == ("Plus que le repère pour cette durée (30 à 60 g par heure) : habitue ton ventre à "
+                                    "cette dose à l'entraînement.", "plain")
+    assert NP.carbs_note(29, 2)[1] == "warn"
     assert NP.carbs_note(0, 0.75) == ("Sur moins d'une heure, manger n'est pas nécessaire.", "plain")
+    # up to 6 h every value reads as before: its own band, « pour cette durée », one of the three sentences
+    for h in (1, 2, 2.5, 4, 6):
+        lo, hi = N.carbs_zone(h)
+        for g in range(131):
+            want = ((f"Moins que le repère pour cette durée : {lo} à {hi} g par heure.", "warn") if g < lo
+                    else (f"Plus que le repère pour cette durée ({lo} à {hi} g par heure) : habitue ton ventre à cette "
+                          "dose à l'entraînement.", "plain") if g > hi
+                    else (f"Dans le repère pour cette durée : {lo} à {hi} g par heure.", "ok"))
+            assert NP.carbs_note(g, h) == want, (g, h)
     # « Plan type » aims at the guideline for the duration: 50 g/h on an ultra, no longer 80
     assert [N.starter_carbs(h) for h in (2, 5, 6, 6.5, 16.5)] == [60, 75, 75, 50, 50]
     il = NP.intakes([_line(1, 20)], 6 * 3600)  # 25 g every 20 min = 75 g/h, the last one before the finish
     assert NP._round(NP.carbs_per_hour(il, PRODUCTS, 6 * 3600)) == NP._round(17 * 25 / 6) == 71
 
 
+def test_an_ultra_reads_its_carbs_against_30_to_90_split_at_60():
+    """2026-10-09 (owner: « fait la combinaison nutrition »; nutri_study.md C1-a): past 6 h, 30 to 90 g/h (ISSN 2019's
+    floor; the ceiling of ACSM 2016 and Costa 2019), read in two halves split at 60 (H: about one transporter's
+    absorption, Jeukendrup 2014). ISSN 2019's 30–50 is gone: it called the typical 161-km finisher (≈ 66 g/h) « Plus
+    que le repère »."""
+    assert [N.carbs_zone(h) for h in (6.1, 16.5, 30)] == [(30, 90)] * 3 and N.ULTRA_GUT_G_H == 60
+    below = ("Moins que le repère pour un ultra : 30 à 90 g par heure.", "warn")
+    inside = ("Dans le repère pour un ultra : 30 à 90 g par heure.", "ok")
+    gut = ("Dans le repère pour un ultra (30 à 90 g par heure). Au-delà de 60 g par heure, habitue ton ventre à cette "
+           "dose à l'entraînement.", "ok")
+    above = ("Plus que le repère pour un ultra (30 à 90 g par heure) : seulement si ton ventre y est entraîné.",
+             "plain")
+    assert [NP.carbs_note(g, 16.5) for g in (0, 29, 30, 45, 60, 61, 75, 90, 91, 120)] == [
+        below, below, inside, inside, inside, gut, gut, gut, above, above]
+    assert NP.carbs_note(29, 6.1) == below and NP.carbs_note(91, 6.1) == above  # just past 6 h: an ultra
+    # the old ultra verdict is gone, and « Plan type » (50 g/h) reads « Dans le repère »
+    assert all("30 à 50" not in NP.carbs_note(g, 16.5)[0] for g in range(131))
+    assert NP.carbs_note(N.starter_carbs(16.5), 16.5) == inside
+
+
 def test_plan_type_aims_at_the_guideline_for_the_race_duration():
-    assert N.default_targets(10, None)["carbs_g_per_h"] == 80
+    # the triathlon plan's carbs (its only reader): no fluid nor sodium formula any more (nutri_study.md C5), the
+    # water and the sodium are the race card's
+    assert [N.default_targets(h) for h in (2, 4, 10)] == [{"carbs_g_per_h": 60}, {"carbs_g_per_h": 75},
+                                                         {"carbs_g_per_h": 80}]
+    assert not hasattr(N, "_FLUID_BASE") and not hasattr(N, "_SODIUM_BASE")
     assert NP.starter_interval(N.GENERIC_BY_ID[-1], 80) == 20  # 25 g: every 20 min (75 g/h)
     assert NP.starter_interval(PF90, 80) == 20  # a prise of 30 g: every 20 min (90 g/h; 30 min would be 60)
     assert NP.starter_interval({"name": "Maurten Gel 160", "carbs_g": 40, "servings": 1}, 75) == 30  # 80 g/h
@@ -201,6 +238,127 @@ def test_no_aid_station_is_one_stretch_from_the_start_to_the_finish():
     secs, cps = _toy([("Eau", 8.0, 50, "water"), ("Photo", 12.0, 80, "none")], 240)
     rows, _, _ = _count([_line(1, 30)], secs, cps)
     assert [r["name"] for r in rows] == ["Départ"] and _texts(rows) == ["7 Maurten 100"]
+
+
+# ── water and sodium (ISSN 2019; owner, 2026-10-09: « Oui vas-y ») ──────────────
+
+def test_the_water_to_carry_to_the_next_ravito():
+    """Each row but « Arrivée », its stretch without an « Eau » point: the stretch's predicted time (the one its
+    food is for, its arrival to the next row's) × 0,5 L/h, 0,75 L/h on a hot race, rounded UP to half a litre, at
+    least half a litre (H)."""
+    mn = 60
+    # 0,45 L → 0,5; exactly 0,5 L stays; 0,51 → 1 L; 0,55 → 1 L; 1 L; 1,11 → 1,5 L
+    assert [NP.water_ml(0, m * mn) for m in (54, 60, 61, 66, 120, 133)] == [500, 500, 1000, 1000, 1000, 1500]
+    assert NP.water_ml(0, 3600 + 1) == 1000  # one second past half a litre: up
+    assert NP.water_ml(0, 10 * mn) == 500 and NP.water_ml(3600, 3600) == 500  # never less than half a litre
+    # hot: 0,75 L/h — 40 min is 0,5 L, 41 min 1 L, 1 h 27 (1,09 L) 1,5 L, 2 h 13 (1,66 L) 2 L
+    assert [NP.water_ml(0, m * mn, hot=True) for m in (40, 41, 87, 133)] == [500, 1000, 1500, 2000]
+    assert [NP.litres(ml) for ml in (500, 1000, 1500, 2000, 750)] == ["0,5 L", "1 L", "1,5 L", "2 L", "0,75 L"]
+    # across midnight: the time on the race's own clock (seconds after the start), never the hour the row shows
+    secs, cps = _toy([("Col", 10.0, 150, "full"), ("Village", 20.0, 225, "full")], 300, start_h=21)
+    rows, _il, end = _count([_line(1, 30)], secs, cps, start_h=21)
+    assert [NP.clock_hm(r["clock_s"]) for r in rows] == ["21:00", "23:30", "00:45"] and end == 5 * 3600
+    assert [NP.water_ml(r["t_s"], r["end_s"]) for r in rows] == [1500, 1000, 1000]  # 2 h 30, 1 h 15, 1 h 15 to 02:00
+    assert [NP.water_ml(r["t_s"], r["end_s"], hot=True) for r in rows] == [2000, 1000, 1000]  # 1,875 L; 0,94 L
+    # the line that goes with them: drink to thirst first, then the rate the rows are counted at, to the next place
+    # to drink (a ravito or an « Eau » point); without predicted times (no rows, no litres) the first sentence only
+    assert NP.water_note(False) == "Eau : bois à ta soif. Je compte 0,5 L par heure jusqu'au prochain point d'eau."
+    assert NP.water_note(True) == ("Eau : bois à ta soif. Il fera chaud : je compte 0,75 L par heure jusqu'au prochain "
+                                   "point d'eau.")
+    assert NP.water_note(timed=False) == NP.water_note(True, timed=False) == "Eau : bois à ta soif."
+
+
+def test_a_water_point_cuts_the_stretch_and_the_longest_piece_counts():
+    """2026-10-09 (owner: « fait la combinaison nutrition »; nutri_study.md C3, refinement 1): an « Eau » point (kind
+    water: the flasks are filled, the bag is not) cuts the stretch to the next refill point; a row carries the water
+    for the longest piece without water (H): its predicted time × 0,5 L/h (0,75 hot), rounded up to half a litre, at
+    least half a litre. A stretch without a water point is unchanged; « Arrivée » has no row."""
+    mn = 60
+    # one water point: Départ → A (2 h 30) cut at W (0:50): 50 min and 1 h 40 → 0,83 L → 1 L (1,5 L uncut);
+    # A → the finish (1 h 30), no water point: unchanged, 0,75 L → 1 L
+    secs, cps = _toy([("W", 8.0, 50, "water"), ("A", 20.0, 150, "full")], 240)
+    rows, _il, end = _count([_line(1, 30)], secs, cps)
+    ws = NP.water_times(secs, cps, 6 * 3600)
+    assert ws == [50 * mn] and [r["name"] for r in rows] == ["Départ", "A"]  # W is no row: the bag is not refilled
+    assert [NP.longest_dry_s(r["t_s"], r["end_s"], ws) for r in rows] == [100 * mn, 90 * mn]
+    assert [NP.water_ml(r["t_s"], r["end_s"], False, ws) for r in rows] == [1000, 1000]
+    assert [NP.water_ml(r["t_s"], r["end_s"]) for r in rows] == [1500, 1000]  # without the cut
+    assert [NP.water_ml(r["t_s"], r["end_s"], True, ws) for r in rows] == [1500, 1500]  # hot: 1,25 L; 1,125 L
+    # two water points on one stretch, the longest piece in the middle: Départ → B (3 h 20) cut at 0:30 and 2:31:
+    # 30 min, 2 h 01, 49 min → 2 h 01 is 1,008 L, rounded up to 1,5 L (hot: 1,51 L → 2 L)
+    secs, cps = _toy([("W1", 5.0, 30, "water"), ("W2", 25.0, 151, "water"), ("B", 32.0, 200, "full")], 260)
+    rows, _il, _end = _count([_line(1, 30)], secs, cps)
+    ws = NP.water_times(secs, cps, 6 * 3600)
+    assert ws == [30 * mn, 151 * mn] and NP.longest_dry_s(rows[0]["t_s"], rows[0]["end_s"], ws) == 121 * mn
+    assert NP.water_ml(rows[0]["t_s"], rows[0]["end_s"], False, ws) == 1500
+    assert NP.water_ml(rows[0]["t_s"], rows[0]["end_s"], True, ws) == 2000
+    assert NP.water_ml(rows[1]["t_s"], rows[1]["end_s"], False, ws) == 500  # B → the finish, 1 h: 0,5 L exactly
+    # exactly on a step stays; short pieces still carry half a litre; points out of the stretch or at its ends
+    # do not cut it
+    assert NP.water_ml(0, 3 * 3600, False, [3600, 2 * 3600]) == 500  # three hours: 0,5 L exactly each
+    assert NP.water_ml(0, 40 * mn, False, [20 * mn]) == NP.water_ml(0, 40 * mn, True, [20 * mn]) == 500
+    assert NP.longest_dry_s(3600, 7200, [0, 3600, 7200, 9000]) == 3600 and NP.longest_dry_s(3600, 7200) == 3600
+    # an « Eau » point with a crew is a refill point (a row of its own), not a water point; a « Point » is neither
+    secs, cps = _toy([("W", 8.0, 50, "water"), ("P", 12.0, 80, "none"), ("A", 20.0, 150, "full")], 240)
+    cps[0]["crew"] = True
+    assert NP.water_times(secs, cps, 6 * 3600) == [] and [p["name"] for p in NP.refill_points(secs, cps, 6 * 3600)] == [
+        "Départ", "W", "A"]
+    # the long race: Gwanumsa (11:31) → Seongpanak (13:43), 2 h 12, cut at Jeongseok (12:54): 1 h 23 is the longest,
+    # 1 L (1,5 L uncut); hot 1,5 L (2 L uncut); every other row has no water point and keeps its litres
+    _, secs = long_sections()
+    pts = NP.refill_points(secs, LONG_CPS, 6 * 3600)
+    rows = NP.ravito_rows(pts, NP.race_end_s(secs, 6 * 3600), [], PRODUCTS)
+    ws = NP.water_times(secs, LONG_CPS, 6 * 3600)
+    assert [NP.clock_hm(w + 6 * 3600) for w in ws] == ["12:54"]
+    g = next(r for r in rows if r["name"] == "Gwanumsa")
+    assert (NP.clock_hm(g["clock_s"]), NP.clock_hm(g["end_s"] + 6 * 3600)) == ("11:31", "13:43")
+    assert (NP.water_ml(g["t_s"], g["end_s"], False, ws), NP.water_ml(g["t_s"], g["end_s"])) == (1000, 1500)
+    assert (NP.water_ml(g["t_s"], g["end_s"], True, ws), NP.water_ml(g["t_s"], g["end_s"], True)) == (1500, 2000)
+    for r in rows:
+        if r is not g:
+            assert NP.water_ml(r["t_s"], r["end_s"], False, ws) == NP.water_ml(r["t_s"], r["end_s"]), r["name"]
+
+
+def test_a_hot_race_is_25_c_or_more_on_average_over_its_predicted_hours():
+    """Hot (H): the temperatures the simulator read in the race's saved forecast (each section's, at its arrival
+    point and hour, as the passage table shows them), weighted by each section's time on the plan's clocks: 25 °C
+    or more. No forecast saved, no temperature: not hot (no guess)."""
+    secs, _cps = _toy([("A", 10.0, 60, "full")], 240)  # 06:00, A at 07:00, the finish at 10:00
+    assert NP.mean_temp_c(secs, 6 * 3600) is None and not NP.is_hot(secs, 6 * 3600)
+
+    def wx(a: float, b: float) -> list[dict]:
+        return [{**secs[0], "temperature_c": a}, {**secs[1], "temperature_c": b}]
+    assert NP.mean_temp_c(wx(37, 21), 6 * 3600) == 25.0 and NP.is_hot(wx(37, 21), 6 * 3600)  # (37 × 1 h + 21 × 3 h) / 4 h
+    assert NP.mean_temp_c(wx(36, 21), 6 * 3600) == 24.75 and not NP.is_hot(wx(36, 21), 6 * 3600)
+    assert not NP.is_hot([{**secs[0], "temperature_c": 40}, secs[1]], 6 * 3600)  # a section without one: no guess
+    # the simulator's own: 25 °C all day at the start of a mountain race is 18 °C up there on average; 35 °C is hot
+    course = long_course()
+    aid = {cp["distance_km"] for cp in LONG_CPS if cp["kind"] != "none"}
+
+    def race(temp_c: float) -> list[dict]:
+        hourly = {"temps": [temp_c] * 48, "humidity": [50] * 48}
+        return compute_passage_times(course, LONG_CPS, int(16.5 * 3600), 1.0, 6, 0, hourly, aid_kms=aid)
+    assert all(s["temperature_c"] is not None for s in race(25))
+    assert round(NP.mean_temp_c(race(25), 6 * 3600)) == 18 and not NP.is_hot(race(25), 6 * 3600)
+    assert NP.is_hot(race(35), 6 * 3600)
+    assert not NP.is_hot(long_sections()[1], 6 * 3600)  # the same race without a forecast
+
+
+def test_the_sodium_per_hour_and_its_three_sentences():
+    """Counted like the carbs (the plan's products' label values, per prise, the intakes over the race's hours);
+    said only on a hot race, against ISSN 2019's 300 to 600 mg an hour in the heat."""
+    il = NP.intakes([_line(1, 30)], 10 * 3600)  # a Maurten 100 (20 mg) every 30 min: 19 before the finish
+    assert NP._round(NP.sodium_per_hour(il, PRODUCTS, 10 * 3600)) == 38  # 19 × 20 mg / 10 h
+    salty = {**PRODUCTS, 5: {"id": 5, "name": "Gel salé", "carbs_g": 90, "sodium_mg": 300, "servings": 3}}
+    il = NP.intakes([_line(5, 20)], 3 * 3600)  # one prise (100 mg) at 0:20 … 2:40: 8
+    assert NP.sodium_per_hour(il, salty, 3 * 3600) == 8 * 100 / 3 and NP.sodium_per_hour([], PRODUCTS, 0) == 0.0
+    # under the range (2026-10-09, nutri_study.md C2-b: the soup at the ravitos counts too, Hoffman 2015)
+    warn = ("Il fera chaud : vise 300 à 600 mg de sodium par heure. Ajoute du sel à ton plan (pastilles, boisson salée "
+            "ou soupe aux ravitos).", "warn")
+    assert NP.sodium_note(38) == warn and NP.sodium_note(299) == warn
+    ok = ("Dans le repère par temps chaud : 300 à 600 mg de sodium par heure.", "ok")
+    assert NP.sodium_note(300) == ok and NP.sodium_note(450) == ok and NP.sodium_note(600) == ok
+    assert NP.sodium_note(601) == ("Plus que le repère par temps chaud (300 à 600 mg par heure).", "plain")
 
 
 # ── the card, the race page, the forms ──────────────────────────────────────
@@ -271,8 +429,16 @@ async def test_an_empty_plan_offers_plan_type_and_the_products_are_open(as_user:
     # 14 gels before the finish of a 5 h race, against 60–90 g/h
     assert "≈ 70 g de glucides par heure Dans le repère pour cette durée : 60 à 90 g par heure." in _text(t)
     assert 'id="nu-produits" class="pf-nu-fold">' in t and 'data-focus="nu-l0-p"' in t  # closed now the plan has a line
-    assert _rows(t) == ["21:00 Départ : 6 gels", "23:05 Col assistance : 4 gels", "00:25 Village : 4 gels", "02:00 Arrivée"]
-    assert "Eau : bois à ta soif, remplis tes flasques à chaque ravito." in t
+    # after what to take, the water to carry: Départ → Col (2 h 05) is cut at « Eau 1 » (21:52), its longest piece
+    # without water 1 h 13: 0,61 L → 1 L (1,5 L uncut); 1 h 21 → 1 L; across midnight (00:25 → 02:00, 1 h 34) → 1 L;
+    # none at the finish
+    assert _rows(t) == ["21:00 Départ : 6 gels · 1 L", "23:05 Col assistance : 4 gels · 1 L", "00:25 Village : 4 gels · 1 L",
+                        "02:00 Arrivée"]
+    assert t.count('<span class="pf-nu-water">· ') == 3  # muted after the products, never on « Arrivée »
+    assert "Ce que tu prends en repartant, et l'eau à emporter." in _text(t)
+    assert "Eau : bois à ta soif. Je compte 0,5 L par heure jusqu'au prochain point d'eau." in _text(t)
+    assert "remplis tes flasques" not in t and "mg de sodium par heure" not in t  # no forecast saved: not hot, no sodium
+    assert "ravito suivant" not in t
     # « Plan type » takes his first gel when he has one (a caffeinated gel is not « a gel »)
     rid2 = await _route(as_user, name="Deux")
     caf = await _product(db_session, as_user._transport.app.dependency_overrides[get_current_user](), name="Gel CAF", carbs_g=25, caffeine_mg=75)
@@ -302,7 +468,8 @@ async def test_lines_add_change_and_go_and_the_rows_follow(as_user: AsyncClient,
     assert "<option value=\"180\"" not in t.split('id="nu-l0-f"')[1].split("</select>")[0]
     # Départ → Col (23:05): Maurten at 0:20 … 2:00; PF 90 from 2:20: 4 prises to Village (2 pouches, 2 prises left),
     # 4 more to the finish (1 pouch with them); the opened pouch's prises only where the row has room
-    assert _rows(t) == ["21:00 Départ : 6 Maurten 100", "23:05 Col assistance : 2 PF 90", "00:25 Village : 1 PF 90", "02:00 Arrivée"]
+    assert _rows(t) == ["21:00 Départ : 6 Maurten 100 · 1 L", "23:05 Col assistance : 2 PF 90 · 1 L",
+                        "00:25 Village : 1 PF 90 · 1 L", "02:00 Arrivée"]
     assert '2 PF 90<span class="pf-nu-left is-wide"> (il t&#39;en reste 2 prises)</span>' in t  # past one line on a phone: wider screens
     # (6 × 25 + 8 × 30) / 5 h; two lines: each with its « de … à … »
     assert "≈ 78 g de glucides par heure Dans le repère pour cette durée : 60 à 90 g par heure." in _text(t)
@@ -328,12 +495,14 @@ async def test_spare_and_copy(as_user: AsyncClient, db_session: AsyncSession):
     await as_user.post(f"{P}/{rid}/starter", headers=HX)
     r = await as_user.post(f"{P}/{rid}/spare", data={"spare": "1"}, headers=HX)
     assert (await _nj(db_session, rid))["spare"] is True and 'id="nu-spare" class="pf-nu-toggle" aria-pressed="true"' in r.text
-    assert _rows(r.text)[:3] == ["21:00 Départ : 7 gels", "23:05 Col assistance : 5 gels", "00:25 Village : 5 gels"]
+    assert _rows(r.text)[:3] == ["21:00 Départ : 7 gels · 1 L", "23:05 Col assistance : 5 gels · 1 L", "00:25 Village : 5 gels · 1 L"]
     r = await as_user.post(f"{P}/{rid}/spare", data={"spare": "1"}, headers=HX)  # a stale tap sets, never flips back
     assert (await _nj(db_session, rid))["spare"] is True
     copy = r.text.split('id="nu-copytext"')[1].split(">", 1)[1].split("</textarea>")[0]
+    # « Copier » carries the same litres on its rows (Départ's cut at « Eau 1 » too)
     assert copy.splitlines() == ["Jeju test : nutrition", "", "Ta liste", "17 gels", "", "À chaque ravito",
-                                 "21:00 Départ : 7 gels", "23:05 Col : 5 gels", "00:25 Village : 5 gels", "02:00 Arrivée"]
+                                 "21:00 Départ : 7 gels · 1 L", "23:05 Col : 5 gels · 1 L", "00:25 Village : 5 gels · 1 L",
+                                 "02:00 Arrivée"]
 
 
 @pytest.mark.asyncio
@@ -358,15 +527,76 @@ async def test_caffeine_is_said_against_his_cap(as_user: AsyncClient, db_session
 
 
 @pytest.mark.asyncio
+async def test_a_hot_race_counts_more_water_and_says_its_sodium(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """The race's saved forecast at 32 °C (the temperatures the passage table shows): 0,75 L an hour on every row,
+    the hot water line, and under the carbs the sodium per hour with its sentence; a mild one: none of it."""
+    rid = await _route(as_user)
+    await as_user.post(f"{P}/{rid}/starter", headers=HX)  # the generic gel (0 mg of sodium) every 20 min
+    route = await db_session.get(Route, rid)
+    route.weather_json = {"hourly": {"temps": [32] * 48, "humidity": [50] * 48}}
+    await db_session.flush()
+    t = (await as_user.get(f"{P}/{rid}")).text
+    # Départ's longest piece without water (« Eau 1 » cuts it), 1 h 13 × 0,75 L/h = 0,92 L → 1 L (2 L uncut);
+    # 1 h 20 min 38 s → 1,01 L → 1,5 L; 1 h 34 → 1,18 L → 1,5 L
+    assert _rows(t) == ["21:00 Départ : 6 gels · 1 L", "23:05 Col assistance : 4 gels · 1,5 L",
+                        "00:25 Village : 4 gels · 1,5 L", "02:00 Arrivée"]
+    assert ("Eau : bois à ta soif. Il fera chaud : je compte 0,75 L par heure jusqu'au prochain point d'eau."
+            in _text(t))
+    totals = t.split('<p class="pf-nu-sum">')[1].split("</p>")[0]
+    assert _text(totals) == ("≈ 70 g de glucides par heure Dans le repère pour cette durée : 60 à 90 g par heure. "
+                             "≈ 0 mg de sodium par heure Il fera chaud : vise 300 à 600 mg de sodium par heure. "
+                             "Ajoute du sel à ton plan (pastilles, boisson salée ou soupe aux ravitos).")
+    assert '<span class="pf-nu-na">≈ 0 mg de sodium par heure</span><span class="pf-nu-zone is-warn">Il fera chaud' in t
+    copy = t.split('id="nu-copytext"')[1].split(">", 1)[1].split("</textarea>")[0]
+    assert "21:00 Départ : 6 gels · 1 L\n23:05 Col : 4 gels · 1,5 L\n00:25 Village : 4 gels · 1,5 L\n02:00 Arrivée" in copy
+    # salt in his plan: a PH 1000 (500 mg) every hour, 4 before the finish: 400 mg an hour, in the range
+    salt = await _product(db_session, test_user, name="Precision Hydration PH 1000 (pastille, 500 ml)", kind="salt",
+                          carbs_g=0, sodium_mg=500)
+    route.nutrition_json = NP.plan_json([_line(-1, 20), _line(salt, 60)], False)
+    await db_session.flush()
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert ('≈ 400 mg de sodium par heure</span><span class="pf-nu-zone is-ok">Dans le repère par temps chaud : 300 à '
+            '600 mg de sodium par heure.</span>') in t
+    route.nutrition_json = NP.plan_json([_line(-1, 20), _line(salt, 30)], False)  # 9 of them: 900 mg an hour
+    await db_session.flush()
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert ('≈ 900 mg de sodium par heure</span><span class="pf-nu-zone is-plain">Plus que le repère par temps chaud '
+            '(300 à 600 mg par heure).</span>') in t
+    # without JS: the race page renders the same card
+    page = (await as_user.get(f"/simulator/routes/{rid}?vue=nutrition")).text
+    assert "≈ 900 mg de sodium par heure" in page and "je compte 0,75 L par heure" in _text(page)
+    # a mild forecast: 0,5 L an hour, no sodium line at all
+    route.weather_json = {"hourly": {"temps": [14] * 48, "humidity": [50] * 48}}
+    await db_session.flush()
+    t = (await as_user.get(f"{P}/{rid}")).text
+    assert "sodium par heure" not in t and "pf-nu-na" not in t and "Il fera chaud" not in t
+    assert "Eau : bois à ta soif. Je compte 0,5 L par heure jusqu'au prochain point d'eau." in _text(t)
+    assert [r.rsplit(" · ", 1)[-1] for r in _rows(t)[:3]] == ["1 L", "1 L", "1 L"]
+
+
+@pytest.mark.asyncio
 async def test_no_simulation_keeps_the_plan_editable(as_user: AsyncClient, db_session: AsyncSession):
     rid = await _route(as_user, target_s=None)
     route = await db_session.get(Route, rid)
     route.course_json = {**route.course_json, "segments": []}
     route.nutrition_json = NP.plan_json([_line(-1, 30)], False)
+    route.weather_json = {"hourly": {"temps": [32] * 48, "humidity": [50] * 48}}  # a hot forecast, but no times
     await db_session.flush()
     r = await as_user.get(f"{P}/{rid}")
     assert r.status_code == 200 and "Lance une simulation pour avoir tes heures de passage." in r.text
     assert 'id="nu-l0-e"' in r.text and "pf-nu-rows" not in r.text and "g de glucides par heure" not in r.text
+    # no predicted times: no litres, no water rate, no sodium; the water line is drinking to thirst alone
+    assert "pf-nu-water" not in r.text and "compte 0," not in r.text and "sodium par heure" not in r.text
+    plan = r.text.split('id="nu-plan"')[1].split("</section>")[0]
+    assert '<p class="pf-nu-fine">Eau : bois à ta soif.</p>' in plan and _text(r.text).count("bois à ta soif") == 1
+    assert "point d'eau" not in r.text and "remplis tes flasques" not in r.text
+    page = (await as_user.get(f"/simulator/routes/{rid}?vue=nutrition")).text  # the same without JS
+    assert '<p class="pf-nu-fine">Eau : bois à ta soif.</p>' in page and "pf-nu-water" not in page
+    route.nutrition_json = None  # no plan: no water line either
+    await db_session.flush()
+    assert "bois à ta soif" not in (await as_user.get(f"{P}/{rid}")).text
+    route.nutrition_json = NP.plan_json([_line(-1, 30)], False)
+    await db_session.flush()
     assert (await as_user.post(f"{P}/{rid}/rhythms/0", data={"every_min": "45"}, headers=HX)).status_code == 200
     assert (await _nj(db_session, rid))["rhythms"][0]["every_min"] == 45
 
@@ -375,7 +605,8 @@ async def test_no_simulation_keeps_the_plan_editable(as_user: AsyncClient, db_se
 async def test_a_race_without_aid_stations_takes_everything_at_the_start(as_user: AsyncClient):
     rid = await _route(as_user, cps=[])
     await as_user.post(f"{P}/{rid}/starter", headers=HX)
-    assert _rows((await as_user.get(f"{P}/{rid}")).text) == ["21:00 Départ : 14 gels", "02:00 Arrivée"]
+    # no water point either: the whole 5 h × 0,5 L/h
+    assert _rows((await as_user.get(f"{P}/{rid}")).text) == ["21:00 Départ : 14 gels · 2,5 L", "02:00 Arrivée"]
 
 
 @pytest.mark.asyncio
@@ -389,6 +620,10 @@ async def test_every_form_works_without_js(as_user: AsyncClient, db_session: Asy
     assert "hidden" not in tool and 'id="rpanel-plan" class="pf-col hidden"' in page
     assert 'id="tool-title" class="pf-h1 mb-6" tabindex="-1">Nutrition<' in page and 'id="nutrition-card"' in page
     assert 'action="/partials/simulator/nutrition/%d/rhythms/0" hx-post' % rid in page and "<noscript>" in page
+    # the water is the server's too: the litres on the rows, the lead and water lines, without a line of JS
+    assert _rows(page)[0] == "21:00 Départ : 6 gels · 1 L"
+    assert "Ce que tu prends en repartant, et l'eau à emporter." in _text(page)
+    assert "Eau : bois à ta soif. Je compte 0,5 L par heure jusqu'au prochain point d'eau." in _text(page)
     r = await as_user.post(f"{P}/{rid}/rhythms/0", data={"product_id": "-1", "every_min": "30", "from_min": "0", "to_min": ""})
     assert r.status_code == 303 and (await _nj(db_session, rid))["rhythms"][0]["every_min"] == 30
     assert _selected((await as_user.get(r.headers["location"])).text, "nu-l0-e") == "30"

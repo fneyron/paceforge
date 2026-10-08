@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.services import nights as nt
+from app.services import nutrition as nu
 from app.services import race_prep as rp
 from app.services import sante
 from app.services import sante_score as sc
@@ -109,6 +110,15 @@ HEURISTICS = [
     ("app/services/sante.py", "USUAL_WEEKS", 11),
     ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),
     ("app/services/sante.py", "USUAL_SPREAD", 0.2),
+    # 2026-10-09 (owner, on the mockup: « Oui vas-y »): the water to carry to the next ravito, inside ISSN 2019's
+    # 450–750 ml/h, rounded up to half a litre, and the hot race that raises it and says its sodium
+    ("app/services/nutrition.py", "WATER_ML_H", 500),
+    ("app/services/nutrition.py", "WATER_HOT_ML_H", 750),
+    ("app/services/nutrition.py", "WATER_STEP_ML", 500),
+    ("app/services/nutrition.py", "WATER_MIN_ML", 500),
+    ("app/services/nutrition.py", "HOT_RACE_C", 25),
+    # 2026-10-09 (owner: « fait la combinaison nutrition »): an ultra's carbs, 30 to 90 g/h, read in two halves
+    ("app/services/nutrition.py", "ULTRA_GUT_G_H", 60),
     # 2026-10-09 (« Oui vas-y », research_ind_train.md): the dial from heart rate (Banister 1991's weighting), its
     # glitch guard, its fallback for minutes without a readable HR, and the card's « Intensité »
     ("app/services/sante_training.py", "LOAD_A", 0.64),
@@ -126,7 +136,7 @@ HEURISTICS = [
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
-           "app/services/sante_today.py": td}
+           "app/services/sante_today.py": td, "app/services/nutrition.py": nu}
 
 
 @pytest.mark.parametrize("path,name,value", HEURISTICS)
@@ -158,6 +168,14 @@ def test_the_late_session_gap_is_marked_h():
                 if ln.startswith("LATE_SESSION_GAP ="))
     assert "(H)" in line and "Stutz 2019" in line
     assert not hasattr(nt, "EVENING") and not hasattr(sc, "CAP_LOW_HRV") and not hasattr(sc, "place")
+
+
+def test_the_nutrition_rules_are_marked_h_where_they_are_explained():
+    """The race card's own rules (2026-10-09): the water for the longest stretch without water, an « Eau » point
+    cutting it; its rates, rounding and minimum; the hot race; an ultra's carbs split at 60."""
+    from app.services import nutrition_plan as nplan
+    assert "(H)" in nplan.longest_dry_s.__doc__ and "(H)" in nplan.water_ml.__doc__ and "(H)" in nplan.is_hot.__doc__
+    assert "(H" in nplan.carbs_note.__doc__
 
 
 def test_the_heuristics_are_marked_h_where_they_are_explained():
