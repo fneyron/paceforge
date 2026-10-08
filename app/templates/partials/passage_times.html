@@ -93,10 +93,8 @@
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {# what to do here for the next stretch: the product change, a pointer to the sachet (its contents live in Ravitaillement only), water, the drop bag #}
-            {% if lg and lg.switch %}<p class="pf-detnote" data-switch><span class="pf-pill pf-pill-accent">{{ lg.switch }}</span></p>{% endif %}
-            {% if lg and lg.ravito %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span><button type="button" class="pf-link pf-rv-hit" onclick="window.switchRouteTab && window.switchRouteTab('nutrition', 's:{{ lg.ravito.key }}')">Ton sachet jusqu'à {{ lg.ravito.to }}</button></span></p>{% endif %}
-            {% if lg and lg.water_note %}<p class="pf-detnote{% if lg.water_alert %} is-alert{% endif %}">{{ gl.glyph('water', 'w-4 h-4') }}<span>{{ lg.water_note }}</span></p>{% endif %}
+            {# what to do here for the next stretch: a pointer to what to take (its contents live in Nutrition only), the drop bag #}
+            {% if lg and lg.ravito %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span><button type="button" class="pf-link pf-nu-hit" onclick="window.switchRouteTab && window.switchRouteTab('nutrition', 's:{{ lg.ravito.key }}')">Ta nutrition jusqu'à {{ lg.ravito.to }}</button></span></p>{% endif %}
             {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">

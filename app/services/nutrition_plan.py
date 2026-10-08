@@ -1,24 +1,20 @@
-"""The stretch plan: « Tu prépares par tronçon, tu manges au bip ».
+"""Nutrition v2: « tes produits une fois, un rythme par produit, le reste calculé ».
 
-One row per stretch between two food ravitos (start, full / base vie, crew or
-drop bag: the boundaries of checkpoints.autonomy_legs), timed on the section
-CLOCKS arrival to arrival, so the stops count and Σ d_s = race time. Each row
-is one sachet of WHOLE units (or whole prises of a multi-serve product, PF 90
-= 3 prises of 30 g). The target is a cumulative line, rate × elapsed time;
-each automatic row takes the whole servings that bring the running total
-closest to it and the rounding remainder passes to the next row (|B| ≤ g/2).
-A row the athlete set by hand stays as set: the following automatic rows
-catch up, each by at most +17 % / −12 % of its need (PLAN_BAND), so a hand
-edit never makes another row too much for the stomach (drink, bars beside the
-gels and salt carry no backlog past it: the next row takes its own share). It
-is the stretch it was set on, start and end: a food ravito added or removed
-inside it sends it back to auto. Its caffeine counts against the 24 h cap at
-the clock the schedule would give it, and the doses fit around it.
+You eat on a clock; you refill at aid stations. The athlete says only WHEN he
+eats each product: a rhythm, « 1 toutes les 60 min, de 0 h à la fin » (two
+lines switch product mid-race: Maurten until 8 h, Precision 90 from 8 h). The
+aid stations are only where the bag is refilled: each refill point gets the
+intakes that fall before the next one, in whole units. A ravito at 30 min
+simply gets what the next stretch needs (0 or 1 gel), never half a gel. A
+product taken in prises (a PF 90 pouch, 3 × 30 g) is taken in whole pouches,
+and the prises left in an opened pouch count toward the next stretch.
 
-Products change by phase (« À partir d'ici : autre produit »), one watch beep
-fits every phase (the band-constrained common interval I*), the bags are the
-sums of their rows plus a reserve in minutes, the shopping list the sum of
-the bags. Pure functions: no database, no request.
+Times are seconds after the start, on the plan's arrival clocks (stops
+included). Pure functions: no database, no request.
+
+Route.nutrition_json, v2:
+    {"v": 2, "rhythms": [{"product_id", "every_min", "from_min", "to_min" | null}], "spare": false}
+Older shapes are read by read_plan, never rewritten by a read.
 """
 
 from __future__ import annotations
@@ -28,14 +24,10 @@ import math
 from app.services import nutrition as N
 from app.services.checkpoints import is_resupply
 
-PLAN_BAND = (0.88, 1.17)   # what one beep must keep every phase inside (× the target)
-CATCH_UP = (0.17, 0.12)    # the most a row takes on for a balance: above, below (from PLAN_BAND)
-BEEPS = (15, 20, 25, 30, 35, 40, 45)  # watch nutrition alerts take 5–60 min
-BLOCK_H = {"trail": 3.0, "bike": 2.0}  # no food ravito yet: stretches of about this long
-NIGHT = (21.0, 6.0)
-HEAT_C = 25.0
-ALTITUDE_M = 2500
-CATS = 5  # --pf-cat-1..5
+INTERVALS = (15, 20, 30, 40, 45, 60, 90, 120)  # minutes between two intakes of one line
+MAX_LINES = 8
+MAX_MIN = 7 * 24 * 60  # a « de » or « à » past a week is a typo
+ROW_CHARS = 36  # characters a ravito row holds on one line at 358 px, its name and what to take (the clock aside)
 
 
 def _round(x: float) -> int:
@@ -43,20 +35,14 @@ def _round(x: float) -> int:
     return int(math.floor(x + 0.5))
 
 
-def arrival_clock(s: dict, start_offset_s: int) -> float:
-    v = s.get("adjusted_clock_time_s")
-    if v is None:
-        v = s.get("clock_time_s")
-    if v is None:
-        v = start_offset_s + float(moving_cum(s))
-    return float(v)
+def _int(v) -> int | None:
+    try:
+        return int(float(v))
+    except (TypeError, ValueError, OverflowError):  # « abc », « nan », « inf »
+        return None
 
 
-def moving_time(s: dict) -> float:
-    if s.get("adjusted_clock_time_s") is not None and s.get("adjusted_time_s") is not None:
-        return float(s["adjusted_time_s"])
-    return float(s.get("predicted_time_s") or 0)
-
+# ── the clocks (the simulator's sections) ───────────────────────────────────
 
 def moving_cum(s: dict) -> float:
     v = s.get("adjusted_cumulative_time_s")
@@ -65,566 +51,420 @@ def moving_cum(s: dict) -> float:
     return float(v or 0)
 
 
-def _night(clock_s: float) -> bool:
-    h = (clock_s % 86400) / 3600.0
-    return h >= NIGHT[0] or h < NIGHT[1]
+def arrival_clock(s: dict, start_offset_s: int) -> float:
+    """A section's arrival clock: the plan's when there is one, else the prediction's."""
+    v = s.get("adjusted_clock_time_s")
+    if v is None:
+        v = s.get("clock_time_s")
+    if v is None:
+        v = start_offset_s + moving_cum(s)
+    return float(v)
 
 
-def fluid_rate(temp_c: float | None, sweat_factor: float = 1.0, custom: float | None = None) -> float:
-    """Water to CARRY per hour (drink to thirst): 500 ml at ≤ 15 °C, +25 ml per °C
-    above, at most 900, × the sweat self-rating."""
-    if custom:
-        return float(custom)
-    base = 500.0 + 25.0 * max(0.0, float(temp_c) - 15.0) if temp_c is not None else 500.0
-    return min(900.0, base) * float(sweat_factor or 1.0)
+def clock_hm(clock_s: float) -> str:
+    s = int(clock_s) % 86400
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}"
 
 
-# ── stretches ───────────────────────────────────────────────────────────────
-
-def _new_stretch(name: str, km: float, clock: float, cp: dict | None) -> dict:
-    crew, drop = bool(cp and cp.get("crew")), bool(cp and cp.get("drop_bag"))
-    return {
-        "from_name": name, "from_km": round(float(km), 1), "key": round(float(km), 1), "start_clock_s": clock,
-        "moving_s": 0.0, "temp_w": 0.0, "temp_t": 0.0, "max_elev": None, "section_idx": [],
-        "bag": cp is None or crew or drop, "bag_kind": "start" if cp is None else ("drop" if drop else ("crew" if crew else None)),
-        "aid_food": bool(cp and ((cp.get("kind") in ("full", "base")) or crew)), "is_block": False,
-    }
+def race_end_s(sections: list[dict], start_offset_s: int) -> int | None:
+    """Seconds from the start to the finish, or None without a simulation (no
+    sections, or no running time in them: the stops alone are no race)."""
+    if not sections or moving_cum(sections[-1]) <= 0:
+        return None
+    end = _round(arrival_clock(sections[-1], start_offset_s) - start_offset_s)
+    return end if end > 0 else None
 
 
-def _fold_point(cur: dict, cp: dict) -> None:
-    """A resupply point at the km where ``cur`` starts joins it (the keys are
-    the start km: two stretches there would share one)."""
-    crew, drop = bool(cp.get("crew")), bool(cp.get("drop_bag"))
-    if cur["bag_kind"] != "start":
-        cur["bag_kind"] = "drop" if (drop or cur["bag_kind"] == "drop") else ("crew" if crew else cur["bag_kind"])
-    cur["bag"] = cur["bag"] or crew or drop
-    cur["aid_food"] = cur["aid_food"] or cp.get("kind") in ("full", "base") or crew
-
-
-def food_stretches(sections: list[dict], checkpoints: list[dict], start_offset_s: int, sport: str = "trail") -> list[dict]:
-    """The stretches between food ravitos, timed arrival to arrival on the
-    section clocks (target plan when there is one, the prediction otherwise).
-    No food ravito at all: blocks of about 3 h (2 h on a bike). Two points at
-    the same km (to 0.1) make one stretch start: the keys stay unique."""
-    if not sections:
-        return []
-    out: list[dict] = []
-    cur = _new_stretch("Départ", 0.0, float(start_offset_s), None)
-    for i, s in enumerate(sections):
-        mt = moving_time(s)
-        cur["moving_s"] += mt
-        if s.get("temperature_c") is not None:
-            cur["temp_w"] += float(s["temperature_c"]) * mt
-            cur["temp_t"] += mt
-        if s.get("end_elevation") is not None:
-            cur["max_elev"] = max(cur["max_elev"] or -1e9, float(s["end_elevation"]))
-        cur["section_idx"].append(i)
+def refill_points(sections: list[dict], checkpoints: list[dict], start_offset_s: int) -> list[dict]:
+    """Départ, then every point where the bag is refilled (a food ravito, a base
+    vie, a crew or drop-bag point: checkpoints.is_resupply), in race order, with
+    its arrival time. Two points at the same km are one stop."""
+    pts = [{"key": 0.0, "name": "Départ", "km": 0.0, "t_s": 0, "clock_s": float(start_offset_s),
+            "crew": False, "base": False, "drop": False, "start": True}]
+    for s in sections[:-1]:  # the last section ends at the finish
         idx = s.get("end_checkpoint_index")
-        cp = checkpoints[idx] if idx is not None and 0 <= idx < len(checkpoints) else None
-        last = i == len(sections) - 1
-        if not last and cp and is_resupply(cp) and round(float(s.get("end_km") or 0), 1) == cur["key"]:
-            # a second point at the same km (a crew point next to the ravito, a
-            # base vie as « in » / « out »): one stop, one stretch, its flags kept
-            _fold_point(cur, cp)
+        cp = checkpoints[idx] if isinstance(idx, int) and 0 <= idx < len(checkpoints) else None
+        if not cp or not is_resupply(cp):
             continue
-        if last or (cp and is_resupply(cp)):
-            end = arrival_clock(s, start_offset_s)
-            cur.update({"to_name": "Arrivée" if last else s.get("end_name", ""), "to_km": round(float(s.get("end_km") or 0), 1),
-                        "end_clock_s": end, "end_cp_index": None if last else idx})
-            out.append(cur)
-            if not last:
-                cur = _new_stretch(s.get("end_name", ""), float(s.get("end_km") or 0), end, cp)
-                cur["start_cp_index"] = idx
-    if len(out) == 1:
-        out = _blocks(out[0], sections, start_offset_s, BLOCK_H.get(sport, 3.0))
-    for k, st in enumerate(out):
-        st["i"] = k
-        st["d_s"] = max(0.0, st["end_clock_s"] - st["start_clock_s"])
-        st["temp_c"] = round(st["temp_w"] / st["temp_t"], 1) if st["temp_t"] else None
-        st["night"] = _night(st["start_clock_s"])
-        st.setdefault("start_cp_index", None)
-    return out
-
-
-def _blocks(whole: dict, sections: list[dict], start_offset_s: int, block_h: float) -> list[dict]:
-    """No food ravito: the race in blocks of about ``block_h`` (whole units and
-    the balance still hold; the rows say they are blocks, not ravitos)."""
-    total = whole["end_clock_s"] - whole["start_clock_s"]
-    n = max(1, _round(total / 3600.0 / block_h))
-    if n == 1:
-        whole["is_block"] = False
-        return [whole]
-    pts = [(float(start_offset_s), 0.0)]  # (clock, km): the stops are flat steps
-    prev_end, prev_stop = float(start_offset_s), 0.0
-    for s in sections:
-        start = prev_end + prev_stop
-        pts.append((start, float(s.get("start_km") or 0)))
-        end = arrival_clock(s, start_offset_s)
-        pts.append((end, float(s.get("end_km") or 0)))
-        prev_end, prev_stop = end, float(s.get("stop_s") or 0)
-
-    def km_at(t: float) -> float:
-        for (t0, k0), (t1, k1) in zip(pts, pts[1:], strict=False):
-            if t <= t1:
-                return k0 + (k1 - k0) * ((t - t0) / (t1 - t0) if t1 > t0 else 1.0)
-        return pts[-1][1]
-    out = []
-    for b in range(n):
-        a, z = whole["start_clock_s"] + total * b / n, whole["start_clock_s"] + total * (b + 1) / n
-        st = {**whole, "from_km": round(km_at(a), 1), "key": round(km_at(a), 1), "start_clock_s": a, "end_clock_s": z,
-              "to_km": round(km_at(z), 1), "moving_s": whole["moving_s"] / n, "is_block": True,
-              "from_name": N._clock(a), "to_name": "Arrivée" if b == n - 1 else N._clock(z),
-              "bag": b == 0, "bag_kind": "start" if b == 0 else None, "aid_food": False, "section_idx": list(whole["section_idx"])}
-        out.append(st)
-    keys = set()
-    for st in out:  # keys stay unique (a long stop can hold two block starts)
-        while st["key"] in keys:
-            st["key"] = round(st["key"] + 0.1, 1)
-        keys.add(st["key"])
-    return out
-
-
-def _snapper(keys: list[float]):
-    def snap(km: float | None) -> float | None:
-        if km is None or not keys:
-            return None
-        best = min(keys, key=lambda k: abs(k - km))
-        return best if abs(best - km) <= 0.5 + 1e-9 else None
-    return snap
-
-
-# ── water ───────────────────────────────────────────────────────────────────
-
-def water_segments(sections: list[dict], stretches: list[dict], refill_kms: set, fluid_fn) -> list[dict]:
-    """Water to carry between two refill points (water points and ravitos):
-    Σ rate(section temperature) × moving time."""
-    bounds = {round(float(k), 1) for k in (refill_kms or set())} | {st["to_km"] for st in stretches}
-    segs, need, time_s = [], 0.0, 0.0
-    frm, frm_km = "Départ", 0.0
-    for i, s in enumerate(sections):
-        mt = moving_time(s)
-        need += fluid_fn(s.get("temperature_c")) * mt / 3600.0
-        time_s += mt
         km = round(float(s.get("end_km") or 0), 1)
-        if km in bounds or i == len(sections) - 1:
-            to = "Arrivée" if i == len(sections) - 1 else s.get("end_name", "")
-            segs.append({"from_name": frm, "from_km": frm_km, "to_name": to, "to_km": km, "need_ml": round(need), "time_s": int(time_s)})
-            frm, frm_km, need, time_s = to, km, 0.0, 0.0
-    return segs
+        flags = {"crew": bool(cp.get("crew")), "base": cp.get("kind") == "base", "drop": bool(cp.get("drop_bag"))}
+        last = pts[-1]
+        if not last["start"] and abs(km - last["km"]) < 0.05:
+            for k, v in flags.items():
+                last[k] = last[k] or v
+            continue
+        clock = arrival_clock(s, start_offset_s)
+        pts.append({"key": km, "name": s.get("end_name") or cp.get("name") or "", "km": km,
+                    "t_s": max(last["t_s"], _round(clock - start_offset_s)), "clock_s": clock, **flags, "start": False})
+    return pts
 
 
 # ── the plan ────────────────────────────────────────────────────────────────
 
-def _serving_g(p: dict) -> float:
-    return float(p.get("carbs_g") or 0) / N.servings_of(p)
-
-
-def _snap5(minutes: float) -> int:
-    return int(min(max(5 * _round(minutes / 5.0), BEEPS[0]), BEEPS[-1]))
-
-
-def pill_label(n: int, p: dict) -> str:
-    """'4 Maurten 160', '10 prises PF 90', '3 gels'."""
-    if N.servings_of(p) > 1:
-        return f"{n} prise{'s' if n > 1 else ''} {N.short_label(p)}"
-    return N.unit_label(n, p)
-
-
-def build_plan(stretches: list[dict], inp: dict, *, sections: list[dict], start_offset_s: int,
-               refill_kms: set | None = None, sport: str = "trail") -> dict:
-    """Rows, phases, beep, bags, list. ``inp`` = nutrition.resolve_inputs()."""
-    products: dict = inp["products_by_id"]
-    picks: list[int] = inp["picks"]
-    race_s = sum(st["d_s"] for st in stretches)
-    rate = N.race_rate(inp["level_carbs"], race_s)
-    keys = [st["key"] for st in stretches]
-    snap = _snapper(keys)
-    sweat = inp.get("sweat_factor", 1.0)
-    custom_fluid = (inp.get("custom") or {}).get("fluid_ml_per_h")
-
-    mean_temp = inp.get("mean_temp")
-
-    def fluid_fn(t):  # a section without a forecast takes the race's
-        return fluid_rate(t if t is not None else mean_temp, sweat, custom_fluid)
-
-    # colours: the fuel products of the list, in its order
-    fuel_order = [p for p in picks if N.is_fuel(products[p])]
-    cat = {p: (i % CATS) + 1 for i, p in enumerate(fuel_order)}
-
-    # ── phases, rows, ravito food on the stretch keys (km keys drift when a point moves)
-    phases: list[dict] = []
-    for ph in inp["phases"]:
-        k = snap(ph["km"]) if ph["km"] > 0 else (keys[0] if keys else 0.0)
-        if k is None:
-            k = next((x for x in keys if x >= ph["km"]), None)
-        if k is None:
-            continue
-        mix = {p: s for p, s in ph["mix"].items() if p in products}
-        if phases and abs(phases[-1]["km"] - k) < 0.05:
-            phases[-1]["mix"] = mix
-        else:
-            phases.append({"km": k, "mix": mix})
-    if not phases:
-        phases = [{"km": keys[0] if keys else 0.0, "mix": {}}]
-    phases[0]["km"] = keys[0] if keys else 0.0
-    # a hand-set row is the stretch it was set on: its start AND its end (a food
-    # ravito added or removed inside it changes the stretch, so it is recalculated)
-    by_key = {st["key"]: st for st in stretches}
-    ends = inp.get("row_to") or {}
-    rows, row_to, dropped = {}, {}, 0
-    for k, v in inp["rows"].items():
-        sk = snap(k)
-        end = ends.get(k)
-        if sk is None or (end is not None and not by_key[sk]["is_block"] and abs(by_key[sk]["to_km"] - end) > 0.5 + 1e-9):
-            dropped += 1
-        else:
-            rows[sk] = v
-            row_to[sk] = by_key[sk]["to_km"]
-    aid = {}
-    for k, v in inp["aid"].items():
-        sk = snap(k)
-        if sk is not None:
-            aid[sk] = v
-
-    def phase_index(st: dict) -> int:
-        j = 0
-        for i, ph in enumerate(phases):
-            if ph["km"] <= st["key"] + 1e-6:
-                j = i
-        return j
-
-    # ── caffeine: doses on moving time, placed on the stretches by their CLOCK.
-    # Every mg is per PRISE (a multi-serve caffeinated product gives its mg in
-    # servings goes). What counts against the 24 h cap: cola eaten at a food
-    # ravito, the caffeine already in the hand-set rows, the scheduled doses.
-    caf_pid = inp.get("caf_pid")
-    caf = products.get(caf_pid) if caf_pid is not None else None
-    cola = []
-    for st in stretches:
-        if not st.get("aid_food"):
-            continue  # stored food at a point that is no longer a food ravito: not eaten, not counted
-        for a, n in (aid.get(st["key"]) or {}).items():
-            mg = float(N.AID_BY_ID[a].get("caffeine_mg") or 0) * n
-            if mg:
-                cola.append((st["start_clock_s"], mg))
-
-    def _stretch_of(clock_s: float) -> int:
-        return next((st["i"] for st in stretches if clock_s < st["end_clock_s"]), len(stretches) - 1)
-
-    frozen_caf: dict[int, list[float]] = {}  # stretch → mg of each caffeinated prise set by hand
-    for st in stretches:
-        for p, n in (rows.get(st["key"]) or {}).items():
-            prod = products.get(p)
-            mg = float((prod or {}).get("caffeine_mg") or 0) / N.servings_of(prod) if prod else 0.0
-            if mg > 0 and n:
-                frozen_caf.setdefault(st["i"], []).extend([mg] * int(n))
-    blocked = [(st["start_clock_s"], st["end_clock_s"]) for st in stretches if st["key"] in rows]
-    doses_by_k: dict[int, list] = {}
-    caffeine = None
-    legs = [{"cum_s": moving_cum(s), "clock_s": arrival_clock(s, start_offset_s), "to_name": s.get("end_name", "")} for s in sections]
-
-    def _schedule(events, blocked_):
-        return N.caffeine_schedule(legs[-1]["cum_s"], legs, inp["caffeine"], start_offset_s, inp.get("weight_kg"), N.short_label(caf),
-                                   unit_mg=float(caf.get("caffeine_mg") or 0) / N.servings_of(caf), events=events, blocked=blocked_)
-    # a hand-set row's caffeine is taken when the schedule would give it there
-    # (the stretch's middle for any unit beyond those): freezing a row for
-    # another product never moves its caffeine
-    ref_clocks: dict[int, list[float]] = {}
-    if caf and sections and frozen_caf:
-        for d in (_schedule(cola, None) or {}).get("doses") or []:
-            ref_clocks.setdefault(_stretch_of(d["clock_s"]), []).extend([float(d["clock_s"])] * int(d.get("units") or 1))
-    frozen_events = []
-    for i, units in frozen_caf.items():
-        clocks, mid = ref_clocks.get(i, []), stretches[i]["start_clock_s"] + stretches[i]["d_s"] / 2
-        frozen_events += [(clocks[j] if j < len(clocks) else mid, mg) for j, mg in enumerate(units)]
-    if caf and sections:
-        # the doses skip the hand-set stretches (their own caffeine stands there) and fit around it
-        caffeine = _schedule(cola + frozen_events, blocked)
-        for d in (caffeine or {}).get("doses") or []:
-            doses_by_k.setdefault(_stretch_of(d["clock_s"]), []).append(d)
-
-    segs = water_segments(sections, stretches, refill_kms or set(), fluid_fn) if sections else []
-    cap = inp.get("carry_ml")
-    salts = [p for p in picks if N.role(products[p]) == "salt"]
-
-    # ── the rows
-    P = T = 0.0
-    used: dict = {}            # servings handed out so far, per product (round robin)
-    due: dict = {}             # drinks, bars, salt: owed so far (rate × time), whole units handed out below
-    given: dict = {}
-    open_prises: dict = {}     # multi-serve: prises left in the open pouch
+def intakes(rhythms: list[dict], end_s: int) -> list[tuple[int, int, int]]:
+    """[(t_s, product_id, prises)], in time order. A line's first intake is
+    its start plus one interval; « à » is the last moment it may fall on, the
+    finish is not (nobody eats on the line)."""
     out = []
-    for st in stretches:
-        k, key = st["i"], st["key"]
-        need = rate * st["d_s"] / 3600.0
-        pi = phase_index(st)
-        mix = phases[pi]["mix"]
-        mix_p = [products[p] for p in mix]
-        gels = [p for p in mix_p if N.role(p) == "gel"]
-        drinks = [p for p in mix_p if N.role(p) == "drink"]
-        bars = [p for p in mix_p if N.role(p) == "bar"]
-        # gels fill, a bar now and then beside them; without a gel the bars fill
-        # (a bottle and bars: the bars make up what the drink leaves)
-        base_bars = bars if gels else []
-        fill = gels if gels else bars
-        g_max = max((_serving_g(p) for p in fill), default=25.0) or 25.0
-        moving_h = st["moving_s"] / 3600.0
-        fluid_ml = fluid_fn(st.get("temp_c")) * moving_h
-        fluid_h = fluid_ml / moving_h if moving_h > 0 else 0.0
-        for d in drinks:
-            vol = float(d.get("volume_ml") or 500)
-            r = max(0.5, math.floor(fluid_h / vol / len(drinks) * 2 + 1e-9) / 2)
-            due[d["id"]] = due.get(d["id"], 0.0) + r * moving_h
-        for b in base_bars:
-            due[b["id"]] = due.get(b["id"], 0.0) + 0.5 * moving_h
-        frozen = key in rows
-        counts: dict = {}
-        aid_here = dict(aid.get(key) or {}) if st.get("aid_food") else {}
-        if frozen:
-            counts = {p: int(n) for p, n in rows[key].items() if p in products}
-        else:
-            for d in doses_by_k.get(k, []):
-                counts[caf_pid] = counts.get(caf_pid, 0) + int(d.get("units") or 1)
-            for p in drinks + base_bars:
-                n = max(0, _round(due[p["id"]]) - given.get(p["id"], 0))
-                if n:
-                    counts[p["id"]] = n
-            fixed = sum(n * _serving_g(products[p]) for p, n in counts.items())
-            fixed += sum(n * float(N.AID_BY_ID[a]["carbs_g"]) for a, n in aid_here.items())
-            bal = P - T
-            hi, lo = max(g_max / 2, CATCH_UP[0] * need), max(g_max / 2, CATCH_UP[1] * need)
-            gap = need - min(max(bal, -hi), lo) - fixed
-            order = {p["id"]: i for i, p in enumerate(fill)}
-            while fill:
-                cands = sorted(fill, key=lambda p: (used.get(p["id"], 0) / max(mix.get(p["id"], 1.0), 1e-6), order[p["id"]]))
-                pick = next((p for p in cands if abs(gap - _serving_g(p)) < abs(gap) - 1e-9), None)
-                if pick is None:
-                    break
-                counts[pick["id"]] = counts.get(pick["id"], 0) + 1
-                used[pick["id"]] = used.get(pick["id"], 0) + 1
-                gap -= _serving_g(pick)
-        # salt: one tablet per flask of water drunk on the stretch (not the drink's)
-        drink_ml = sum(n * float(products[p].get("volume_ml") or 500) for p, n in counts.items() if N.role(products[p]) == "drink")
-        water_ml = max(0.0, fluid_ml - drink_ml)
-        for s_ in salts:
-            vol = float(products[s_].get("volume_ml") or 500)
-            due[s_] = due.get(s_, 0.0) + water_ml / vol / len(salts)
-            if not frozen:
-                n = max(0, _round(due[s_]) - given.get(s_, 0))
-                if n:
-                    counts[s_] = n
-        for p, n in counts.items():
-            given[p] = given.get(p, 0) + n
-            if frozen and p in mix:
-                used[p] = used.get(p, 0) + n
-        if frozen:
-            # nothing owed carries past a stretch set by hand: the next automatic
-            # row takes its own share of drink, bar and salt, never a backlog
-            for p in set(due) | {p for p in given if N.role(products[p]) in ("drink", "bar", "salt")}:
-                due[p] = float(given.get(p, 0))
-
-        items, carbs, sodium, caf_mg, beep_n, beep_g = [], 0.0, 0.0, 0.0, 0, 0.0
-        order_ids = {p: i for i, p in enumerate(picks)}
-        for p in sorted(counts, key=lambda x: order_ids.get(x, 999)):
-            n, prod = counts[p], products[p]
-            u = N.servings_of(prod)
-            o_in = open_prises.get(p, 0)
-            if u > 1:
-                pouches = math.ceil(max(0, n - o_in) / u)
-                open_prises[p] = o_in + pouches * u - n
-                packed = pouches
-            else:
-                packed = n
-            r = N.role(prod)
-            items.append({"pid": p, "n": n, "packed": packed, "servings": u, "open_in": o_in if u > 1 else 0,
-                          "open_out": open_prises.get(p, 0) if u > 1 else 0, "role": r, "cat": cat.get(p, 0),
-                          "name": N.short_label(prod), "title": prod.get("name") or "", "label": pill_label(n, prod), "at_aid": False})
-            carbs += n * _serving_g(prod)
-            sodium += n * float(prod.get("sodium_mg") or 0) / u
-            caf_mg += n * float(prod.get("caffeine_mg") or 0) / u
-            if r in ("gel", "bar", "caf") and not (r == "bar" and p in {b["id"] for b in base_bars}):
-                beep_n += n
-                beep_g += n * _serving_g(prod)
-        for a, n in aid_here.items():
-            f = N.AID_BY_ID[a]
-            items.append({"pid": a, "n": n, "packed": 0, "servings": 1, "open_in": 0, "open_out": 0, "role": "aid", "cat": 0,
-                          "name": f["label"], "title": f["name"], "label": f"≈ {f['label']} {n}" if n > 1 else f"≈ {f['label']}", "at_aid": True})
-            carbs += n * float(f["carbs_g"])
-            sodium += n * float(f.get("sodium_mg") or 0)
-            caf_mg += n * float(f.get("caffeine_mg") or 0)
-        P += carbs
-        T += need
-        bal = P - T
-        d_h = st["d_s"] / 3600.0
-        band = max(g_max, 0.15 * need)
-        status = "ok" if abs(bal) <= band + 1e-6 else ("ahead" if bal > 0 else "behind")
-        stomach = d_h >= 1 and carbs > 1.2 * need + g_max / 2
-        # water: what to leave with (the first refill-to-refill segment), and any segment the flasks cannot hold
-        mine = [s_ for s_ in segs if st["from_km"] - 0.05 <= s_["from_km"] < st["to_km"] - 0.05]
-        first = mine[0] if mine else None
-        worst = max(mine, key=lambda s_: s_["need_ml"], default=None)
-        water_ml_out = int(N.ceil_half_l(first["need_ml"]) * 1000) if first else 0
-        over = bool(cap and worst and worst["need_ml"] > cap + 1)
-        if st["is_block"] and not refill_kms:  # no water point known: no litres to promise
-            water_ml_out, over, first, worst = 0, False, None, None
-        main = max((it for it in items if it["role"] in ("gel", "drink", "bar")), key=lambda it: it["n"] * _serving_g(products[it["pid"]]), default=None)
-        out.append({
-            **{x: st[x] for x in ("i", "key", "from_name", "to_name", "from_km", "to_km", "start_clock_s", "end_clock_s", "d_s",
-                                   "moving_s", "max_elev", "night", "bag", "bag_kind", "aid_food", "is_block", "start_cp_index")},
-            "temp_c": st.get("temp_c") if st.get("temp_c") is not None else mean_temp,
-            "clock": N._clock(st["start_clock_s"]), "phase": pi, "phase_start": pi > 0 and abs(phases[pi]["km"] - key) < 0.05,
-            "items": items, "labels": [it["label"] for it in items if it["n"] and not it["at_aid"]],
-            "carbs_g": round(carbs), "need_g": round(need), "g_h": _round(carbs / d_h) if d_h > 0 else 0,
-            "sodium_h": int(100 * _round(sodium / d_h / 100)) if d_h > 0 else 0, "caffeine_mg": _round(caf_mg),
-            "balance_g": _round(bal), "band_g": round(band), "status": status, "stomach": stomach, "frozen": frozen,
-            "g_max": g_max, "beep_n": beep_n, "beep_g": beep_g, "has_fill": bool(fill), "water_ml": water_ml_out, "water_over": over,
-            "water_worst": worst if over else None, "water_first": first, "fluid_ml": round(fluid_ml),
-            "main_cat": main["cat"] if main else 0,
-        })
-
-    beep = _beep(out, phases, rate)
-    for r in out:
-        # a phase with nothing to fill with (a bottle only, or emptied) has no beep of its own
-        r["interval_min"] = _snap5(r["d_s"] / 60.0 / r["beep_n"]) if (r["beep_n"] and r["has_fill"]) else None
-        ph_iv = beep["per_phase"].get(r["phase"]) if beep else None
-        r["beep_note"] = ph_iv if (beep and r["phase_start"] and ph_iv and ph_iv != beep["prev_phase_iv"].get(r["phase"])) else None
-        r["own_interval"] = r["interval_min"] if (beep and r["interval_min"] and r["interval_min"] != (ph_iv or beep["interval"])) else None
-
-    # ── phases as the header names them
-    ph_out = []
-    for i, ph in enumerate(phases):
-        ids = [p for p in picks if p in ph["mix"]] + [p for p in ph["mix"] if p not in picks]
-        start = next((r["i"] for r in out if r["phase"] == i), None)
-        prev = set(phases[i - 1]["mix"]) if i else set()
-        new = [p for p in ids if p not in prev] or ids
-        ph_out.append({"i": i, "key": ph["km"], "start_idx": start, "pids": ids, "names": [N.short_label(products[p]) for p in ids],
-                       "cat": cat.get(ids[0], 0) if ids else 0, "from_name": out[start]["from_name"] if start is not None else "",
-                       "new_names": [N.short_label(products[p]) for p in new], "end_key": phases[i + 1]["km"] if i + 1 < len(phases) else None})
-    switch_notes = {}
-    for ph in ph_out[1:]:
-        if ph["start_idx"] is not None and ph["new_names"]:
-            switch_notes[out[ph["start_idx"]]["from_km"]] = "Dès ici : " + " · ".join(ph["new_names"])
-
-    bags = _bags(out, products, rate, inp, picks, race_s, sport)
-    shop = _shop(bags, products, picks, inp.get("have") or {})
-    # the 24 h check counts what the rows hold, each at the clock it is taken
-    events = cola + frozen_events + [(d["clock_s"], d["mg"]) for k, ds in doses_by_k.items() if not out[k]["frozen"] for d in ds]
-    caf_24 = N.rolling_max_mg(events)
-    water_notes = {}
-    food_kms = {r["from_km"] for r in out}
-    for s_ in segs:
-        if s_["from_km"] <= 0 or s_["from_km"] in food_kms:
-            continue  # a ravito's water is in its row
-        if cap and s_["need_ml"] > cap + 1:
-            water_notes[s_["from_km"]] = (f"Remplis tout ici : il faut {N._fr(N.ceil_half_l(s_['need_ml']))} L jusqu'à {s_['to_name']}, tu portes {N.liters(cap)} L.", True)
-        elif not cap and s_["need_ml"] >= 1000:
-            water_notes[s_["from_km"]] = (f"Remplis {N._fr(N.ceil_half_l(s_['need_ml']))} L ici : pas d'eau avant {s_['to_name']}.", False)
-    return {
-        "stretches": out, "phases": ph_out, "beep": beep, "bags": bags, "shop": shop, "caffeine": caffeine,
-        "caffeine_24h_mg": caf_24, "caffeine_over": caf_24 > inp.get("cap_mg", N.CAFFEINE_MAX_MG) + 1,
-        "rate_g_h": rate, "race_s": race_s, "segments": segs, "water_notes": water_notes, "switch_notes": switch_notes,
-        "dropped_rows": dropped, "fluid_ml_per_h": fluid_fn(None),
-        "state_snapped": {"phases": [{"km": ph["km"], "mix": dict(ph["mix"])} for ph in phases], "rows": rows, "row_to": row_to, "aid": aid},
-    }
+    for order, r in enumerate(rhythms):
+        every = int(r["every_min"]) * 60
+        if every <= 0:
+            continue
+        to = r.get("to_min")
+        limit, inclusive = (to * 60, True) if to is not None and to * 60 < end_s else (end_s, False)
+        t = int(r.get("from_min") or 0) * 60 + every
+        while t < limit or (inclusive and t == limit):
+            out.append((t, order, int(r["product_id"])))
+            t += every
+    out.sort()
+    return [(t, pid, 1) for t, _order, pid in out]
 
 
-def _beep(rows: list[dict], phases: list[dict], rate: float) -> dict | None:
-    """One watch interval for the whole race: the I in 15…45 min that keeps
-    every phase inside PLAN_BAND (one beep = one gel or one prise), closest to
-    the target over the race, ties to the longer interval. When no common I
-    exists, each phase gets its own and the switch row says it. A phase with
-    no gel nor bar to fill with (a bottle only, or emptied by « à partir
-    d'ici ») is left out: a caffeinated gel every few hours is no beep."""
-    if rate <= 0:
-        return None
-    per = {}
+def _units(n: int, per: int, have: int) -> tuple[int, int]:
+    """(whole units to take, prises left in the opened one) for ``n`` prises
+    with ``have`` prises already in an opened unit."""
+    if per <= 1:
+        return n, 0
+    units = math.ceil(max(0, n - have) / per)
+    return units, have + units * per - n
+
+
+def ravito_rows(points: list[dict], end_s: int, intake_list: list[tuple[int, int, int]], products: dict,
+                order: list[int] | None = None, spare_pid: int | None = None) -> list[dict]:
+    """One row per refill point: what to take when leaving it, the intakes of
+    [this point, the next one) in whole units. ``spare_pid``: one more unit of
+    it on every row (« +1 de secours »)."""
+    rank = {p: i for i, p in enumerate(order or [])}
+    bounds = [p["t_s"] for p in points[1:]] + [end_s]
+    open_left: dict[int, int] = {}
+    rows, j = [], 0
+    for i, p in enumerate(points):
+        counts: dict[int, int] = {}
+        while j < len(intake_list) and intake_list[j][0] < bounds[i]:
+            t, pid, n = intake_list[j]
+            if t >= p["t_s"]:
+                counts[pid] = counts.get(pid, 0) + n
+            j += 1
+        items = []
+        for pid in sorted(counts, key=lambda x: rank.get(x, 999)):
+            have = open_left.get(pid, 0)
+            units, left = _units(counts[pid], N.servings_of(products[pid]), have)
+            if N.servings_of(products[pid]) > 1:
+                open_left[pid] = left
+            items.append({"pid": pid, "units": units, "prises": counts[pid], "left": left, "spare": 0})
+        if spare_pid is not None and spare_pid in products:
+            it = next((x for x in items if x["pid"] == spare_pid), None)
+            if it is None:
+                it = {"pid": spare_pid, "units": 0, "prises": 0, "left": 0, "spare": 0}
+                items.append(it)
+            it["units"] += 1
+            it["spare"] = 1
+        rows.append({**p, "end_s": bounds[i], "items": items})
+    return rows
+
+
+def shopping(rows: list[dict]) -> dict[int, int]:
+    """Units per product for the race: the sum of the rows (spares included)."""
+    out: dict[int, int] = {}
     for r in rows:
-        if not r.get("has_fill"):
-            continue
-        a = per.setdefault(r["phase"], {"n": 0, "g": 0.0, "fixed_g": 0.0, "h": 0.0})
-        a["n"] += r["beep_n"]
-        a["g"] += r["beep_g"]
-        a["h"] += r["d_s"] / 3600.0
-        # drinks and a bar now and then come on top of the beep; ravito food is eaten there
-        aid_g = sum(it["n"] * float(N.AID_BY_ID[it["pid"]]["carbs_g"]) for it in r["items"] if it["at_aid"])
-        a["fixed_g"] += max(0.0, r["carbs_g"] - r["beep_g"] - aid_g)
-    per = {p: a for p, a in per.items() if a["n"] > 0 and a["h"] > 0}
-    if not per:
+        for it in r["items"]:
+            if it["units"]:
+                out[it["pid"]] = out.get(it["pid"], 0) + it["units"]
+    return out
+
+
+def carbs_per_hour(intake_list: list[tuple[int, int, int]], products: dict, end_s: int) -> float:
+    """Σ carbs eaten / race hours."""
+    if not end_s or end_s <= 0:
+        return 0.0
+    g = sum(n * N.per_prise(products[pid], "carbs_g") for _t, pid, n in intake_list)
+    return g / (end_s / 3600.0)
+
+
+def caffeine_24h(intake_list: list[tuple[int, int, int]], products: dict) -> int:
+    """The most caffeine in any 24 h of the plan (mg)."""
+    return N.rolling_max_mg([(t, n * N.per_prise(products[pid], "caffeine_mg")) for t, pid, n in intake_list])
+
+
+def holds_caffeine(rhythms: list[dict], products: dict) -> bool:
+    return any(N.per_prise(products[r["product_id"]], "caffeine_mg") > 0 for r in rhythms if r["product_id"] in products)
+
+
+def main_product(rhythms: list[dict], intake_list: list[tuple[int, int, int]], products: dict) -> int | None:
+    """The plan's main product: the most carbs over the race, then the most
+    prises, then the first line."""
+    order = [r["product_id"] for r in rhythms if r["product_id"] in products]
+    if not order:
         return None
-
-    def r_of(a: dict, iv: int) -> float:
-        return a["g"] / a["n"] * 60.0 / iv + max(0.0, a["fixed_g"]) / a["h"]
-
-    def score(iv: int, items) -> tuple[bool, float]:
-        ok = all(PLAN_BAND[0] - 1e-9 <= r_of(a, iv) / rate <= PLAN_BAND[1] + 1e-9 for _, a in items)
-        err = sum(a["h"] * abs(r_of(a, iv) / rate - 1) for _, a in items)
-        return ok, err
-    items = list(per.items())
-    common = [(score(iv, items)[1], -iv, iv) for iv in BEEPS if score(iv, items)[0]]
-    per_phase = {}
-    for p, a in items:
-        per_phase[p] = min(BEEPS, key=lambda iv: (abs(r_of(a, iv) / rate - 1), -iv))
-    if common:
-        iv = min(common)[2]
-        return {"interval": iv, "common": True, "per_phase": {p: iv for p in per_phase}, "prev_phase_iv": {p: iv for p in per_phase}}
-    first = min(per_phase)
-    prev, last = {}, per_phase[first]
-    for p in sorted(per_phase):
-        prev[p] = last
-        last = per_phase[p]
-    return {"interval": per_phase[first], "common": False, "per_phase": per_phase, "prev_phase_iv": prev}
+    g: dict[int, float] = {}
+    n: dict[int, int] = {}
+    for _t, pid, k in intake_list:
+        g[pid] = g.get(pid, 0.0) + k * N.per_prise(products[pid], "carbs_g")
+        n[pid] = n.get(pid, 0) + k
+    return max(dict.fromkeys(order), key=lambda p: (round(g.get(p, 0.0), 6), n.get(p, 0), -order.index(p)))
 
 
-def _bags(rows: list[dict], products: dict, rate: float, inp: dict, picks: list[int], race_s: float, sport: str) -> list[dict]:
-    """A bag = its stretches until the next load point (start, drop bag, crew),
-    plus a reserve of its main product (minutes of the target, in whole units).
-    An open pouch carried over is in the pocket: the ledger already left it out."""
-    reserve_min = inp.get("reserve_set")
-    if reserve_min is None:
-        reserve_min = 60 if race_s >= 6 * 3600 else 30
-    starts = [r["i"] for r in rows if r["bag"] or r["i"] == 0] if sport != "bike" else [0]
+def carbs_word(g_h: int) -> tuple[str, str]:
+    """(the word, its tone) for a plan's carbs per hour, against the zone."""
+    lo, hi = N.CARBS_ZONE_G_H
+    if g_h < lo:
+        return "un peu bas", "warn"
+    if g_h > hi:
+        return "seulement si ton ventre y est entraîné", "warn"
+    return "dans la zone conseillée", "ok"
+
+
+def snap_interval(minutes: float | None) -> int | None:
+    """The nearest allowed interval (ties: the longer one)."""
+    if minutes is None or minutes <= 0:
+        return None
+    return min(INTERVALS, key=lambda i: (abs(i - minutes), -i))
+
+
+def starter_interval(product: dict, target_g_h: float) -> int:
+    """« Plan type »: one prise every N min, N so that the carbs per hour come
+    closest to the target (ties: the longer interval, easier on the stomach)."""
+    g = N.per_prise(product, "carbs_g")
+    if g <= 0 or target_g_h <= 0:
+        return 60
+    return min(INTERVALS, key=lambda i: (abs(g * 60.0 / i - target_g_h), -i))
+
+
+# ── words ───────────────────────────────────────────────────────────────────
+
+def unit_words(n: int, p: dict) -> str:
+    """'2 Maurten 100', '1 gel', '3 gels' (a generic product says its own words)."""
+    if p.get("one"):
+        return f"{n} {p['one'] if n == 1 else p['many']}"
+    return f"{n} {N.short_label(p)}"
+
+
+def hours_words(minutes: int) -> str:
+    """480 → '8 h', 527 → '8 h 47', 0 → '0 h'."""
+    h, m = divmod(int(minutes), 60)
+    return f"{h} h {m:02d}" if m else f"{h} h"
+
+
+def line_words(r: dict, products: dict) -> str:
+    """A plan line in words: « PF 90 · 1 prise toutes les 20 min dès 8 h »."""
+    p = products[r["product_id"]]
+    one = "1 prise" if N.servings_of(p) > 1 else "1"
+    when = ""
+    if r["from_min"] and r.get("to_min") is not None:
+        when = f" de {hours_words(r['from_min'])} à {hours_words(r['to_min'])}"
+    elif r["from_min"]:
+        when = f" dès {hours_words(r['from_min'])}"
+    elif r.get("to_min") is not None:
+        when = f" jusqu'à {hours_words(r['to_min'])}"
+    return f"{N.short_label(p)} · {one} toutes les {r['every_min']} min{when}"
+
+
+def take_parts(items: list[dict], products: dict) -> list[dict]:
+    """A row's products to take: [{"words": "1 PF 90", "note": "(il t'en reste 1 prise)" | None}]."""
+    return [{"words": unit_words(it["units"], products[it["pid"]]),
+             "note": f"(il t'en reste {it['left']} prise{'s' if it['left'] > 1 else ''})" if it["left"] else None}
+            for it in items if it["units"] > 0]
+
+
+def take_text(items: list[dict], products: dict, room: int | None = None) -> str:
+    """What a row says: « 2 Maurten 100 · 1 PF 90 », « rien à prendre » when
+    there is nothing to take. The prises left in an opened pouch, « 1 PF 90
+    (il t'en reste 1 prise) », only when that stays within ``room`` characters
+    (one short line; None: always)."""
+    parts = take_parts(items, products)
+    if not parts:
+        return "rien à prendre"
+    text = " · ".join(p["words"] + (f" {p['note']}" if p["note"] else "") for p in parts)
+    return text if room is None or len(text) <= room else " · ".join(p["words"] for p in parts)
+
+
+# ── the stored plan ─────────────────────────────────────────────────────────
+
+def _clean_line(r, products: dict) -> dict | None:
+    if not isinstance(r, dict):
+        return None
+    pid = _int(r.get("product_id"))
+    every = snap_interval(_int(r.get("every_min")))
+    if pid is None or pid not in products or every is None:
+        return None
+    frm = min(max(_int(r.get("from_min")) or 0, 0), MAX_MIN)
+    to = _int(r.get("to_min")) if r.get("to_min") is not None else None
+    if to is not None and not (frm < to <= MAX_MIN):
+        to = None
+    return {"product_id": pid, "every_min": every, "from_min": frm, "to_min": to}
+
+
+def clean_lines(raw, products: dict) -> list[dict]:
+    """The lines of a stored plan, each one checked: a product he still has,
+    an allowed interval, « de » before « à » (else « à la fin »)."""
     out = []
-    order = {p: i for i, p in enumerate(picks)}
-    for j, s in enumerate(starts):
-        end = starts[j + 1] if j + 1 < len(starts) else len(rows)
-        units: dict = {}
-        for r in rows[s:end]:
-            for it in r["items"]:
-                if not it["at_aid"] and it["packed"]:
-                    units[it["pid"]] = units.get(it["pid"], 0) + it["packed"]
-        main = max((p for p in units if N.role(products[p]) in ("gel", "drink", "bar")),
-                   key=lambda p: (units[p] * float(products[p].get("carbs_g") or 0), -order.get(p, 999)), default=None)
-        reserve = 0
-        if main is not None and reserve_min and rate > 0:
-            reserve = max(1, math.ceil(rate * reserve_min / 60.0 / max(float(products[main].get("carbs_g") or 1), 1.0) - 1e-9))
-        first = rows[s]
-        kind = first.get("bag_kind") or "start"
-        title = "Sac au départ" if s == 0 else f"{'Assistance' if kind == 'crew' else 'Drop bag'} · {first['from_name']}"
-        pids = sorted(units, key=lambda p: order.get(p, 999))
-        labels = [N.unit_label(units[p] + (reserve if p == main else 0), products[p]) for p in pids]
-        out.append({"key": first["key"], "title": title, "stretch_idx": list(range(s, end)), "is_start": s == 0, "kind": kind,
-                    "units": {p: units[p] for p in pids}, "main": main, "reserve": reserve, "reserve_min": reserve_min,
-                    "pills": [{"pid": p, "n": units[p] + (reserve if p == main else 0), "cat": 0, "label": lb} for p, lb in zip(pids, labels, strict=True)],
-                    "labels": labels})
+    for r in raw if isinstance(raw, list) else []:
+        line = _clean_line(r, products)
+        if line:
+            out.append(line)
+        if len(out) >= MAX_LINES:
+            break
     return out
 
 
-def _shop(bags: list[dict], products: dict, picks: list[int], have: dict) -> list[dict]:
-    """What to buy = every bag and its reserve, less what he has."""
-    need: dict = {}
-    for g in bags:
-        for p, n in g["units"].items():
-            need[p] = need.get(p, 0) + n
-        if g["main"] is not None and g["reserve"]:
-            need[g["main"]] = need.get(g["main"], 0) + g["reserve"]
-    order = {p: i for i, p in enumerate(picks)}
-    pids = sorted(set(need) | {p for p, n in have.items() if n and p in products}, key=lambda p: order.get(p, 999))
+def plan_json(rhythms: list[dict], spare: bool, refills: list | None = None) -> dict:
+    """The stored v2 shape. ``refills`` (an older plan's extra stops, read by
+    the passage table) are carried as they were."""
+    nj = {"v": 2, "rhythms": [{"product_id": int(r["product_id"]), "every_min": int(r["every_min"]),
+                               "from_min": int(r["from_min"]), "to_min": None if r.get("to_min") is None else int(r["to_min"])}
+                              for r in rhythms],
+          "spare": bool(spare)}
+    if refills:
+        nj["refills"] = list(refills)
+    return nj
+
+
+def read_plan(nj, products: dict, *, time_at_km=None, race_s: float | None = None) -> dict:
+    """{"rhythms", "spare", "old"} from whatever is stored, never failing.
+
+    v2 is read as stored (each line checked). An older plan is mapped to lines
+    when it maps cleanly: one product per phase, at the interval its beep had,
+    each phase from the time its ravito is reached (``time_at_km``: km →
+    seconds after the start). Otherwise the plan starts empty and ``old`` says
+    so once (« Ton ancien plan était trop compliqué… »)."""
+    empty = {"rhythms": [], "spare": False, "old": False}
+    if not isinstance(nj, dict):
+        return empty
+    if nj.get("v") == 2 and isinstance(nj.get("rhythms"), list):
+        return {"rhythms": clean_lines(nj["rhythms"], products), "spare": nj.get("spare") is True, "old": False}
+    try:
+        lines = _map_old(nj, products, time_at_km, race_s)
+    except Exception:  # malformed beyond what the reader expects: start over, say so
+        lines = None
+    if lines is None:
+        return {**empty, "old": True}
+    return {**empty, "rhythms": lines[:MAX_LINES]}
+
+
+# older plans ────────────────────────────────────────────────────────────────
+
+def _ids(raw) -> list[int]:
     out = []
-    for p in pids:
-        n, h = need.get(p, 0), int(have.get(p, 0))
-        prod = products[p]
-        out.append({"pid": p, "need": n, "have": h, "to_buy": max(0, n - h), "left": max(0, h - n),
-                    "label": N.short_label(prod) if not prod.get("one") else (prod["one"] if max(0, n - h) == 1 else prod["many"]),
-                    "name": N.short_label(prod), "title": prod.get("name") or "", "role": N.role(prod),
-                    "reserve": sum(g["reserve"] for g in bags if g["main"] == p)})
+    for x in raw if isinstance(raw, list) else []:
+        v = _int(x)
+        if v is not None and v not in out:
+            out.append(v)
     return out
+
+
+def _mix_ids(mix) -> list[int]:
+    if isinstance(mix, list):
+        return _ids(mix)
+    if isinstance(mix, dict):
+        out = []
+        for k, v in mix.items():
+            pid, share = _int(k), _num(v)
+            if pid is not None and (share is None or share > 0) and pid not in out:
+                out.append(pid)
+        return out
+    return []
+
+
+def _num(v) -> float | None:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _old_rate(nj: dict, race_s: float | None) -> float:
+    """The carbs per hour an older plan was built on, with its duration ladder
+    (under 1 h nothing, 1–2 h up to 30 g/h, 2–3 h up to 60)."""
+    custom = nj.get("custom") if isinstance(nj.get("custom"), dict) else {}
+    targets = nj.get("targets") if isinstance(nj.get("targets"), dict) else {}
+    rate = _num(custom.get("carbs_g_per_h")) or N.LEVEL_CARBS.get(nj.get("level")) or _num(targets.get("carbs_g_per_h")) or 75.0
+    h = float(race_s or 0) / 3600.0
+    if race_s and h < 1:
+        return 0.0
+    if race_s and h < 2:
+        return min(rate, 30.0)
+    if race_s and h < 3:
+        return min(rate, 60.0)
+    return float(rate)
+
+
+def _every(p: dict, rate: float, per_hour: float | None = None) -> int | None:
+    """The interval of one prise: from an older plan's units per hour when it
+    had them, else from its carbs per hour."""
+    if per_hour and per_hour > 0:
+        return snap_interval(60.0 / (per_hour * N.servings_of(p)))
+    g = N.per_prise(p, "carbs_g")
+    return snap_interval(60.0 * g / rate) if g > 0 and rate > 0 else None
+
+
+def _fuel(pid: int, products: dict) -> bool:
+    return pid in products and N.role(products[pid]) in ("gel", "drink", "bar")
+
+
+def _map_old(nj: dict, products: dict, time_at_km, race_s: float | None) -> list[dict] | None:
+    """[] when there is nothing to map, None when it does not map cleanly."""
+    rate = _old_rate(nj, race_s)
+    if nj.get("v") == 3 or isinstance(nj.get("phases"), list):
+        picks = [p for p in _ids(nj.get("picks")) if p in products]
+        rows = nj.get("rows") if isinstance(nj.get("rows"), dict) else {}
+        if any(isinstance(v, dict) and any((_int(n) or 0) > 0 for n in v.values()) for v in rows.values()):
+            return None  # stretches set by hand
+        phases = []
+        for ph in nj.get("phases") or []:
+            km = _num(ph.get("km")) if isinstance(ph, dict) else None
+            if km is not None:
+                phases.append((km, ph.get("mix")))
+        phases.sort(key=lambda x: x[0])
+        if not phases or phases[0][0] > 0:
+            phases.insert(0, (0.0, None))
+        default = [p for p in picks if _fuel(p, products)]
+        seq = []
+        for km, mix in phases:
+            pids = [p for p in (default if mix is None else _mix_ids(mix)) if p in products]
+            seq.append((km, pids))
+        used = {p for _km, pids in seq for p in pids}
+        if not used and not picks:
+            return []
+        if any(len(pids) != 1 or not _fuel(pids[0], products) for _km, pids in seq) or any(p not in used for p in picks):
+            return None
+        return _phase_lines([(km, pids[0], None) for km, pids in seq], products, rate, time_at_km)
+    if nj.get("v") == 2:  # before the stretches: a list and its rates per hour
+        picks = [p for p in _ids(nj.get("picks")) if p in products]
+        if not picks:
+            return []
+        manual = nj.get("manual") if isinstance(nj.get("manual"), dict) else {}
+        if len(picks) != 1 or not _fuel(picks[0], products):
+            return None
+        return _phase_lines([(0.0, picks[0], _num(manual.get(str(picks[0]))))], products, rate, time_at_km)
+    items = [it for it in (nj.get("items") or []) if isinstance(it, dict)] if isinstance(nj.get("items"), list) else []
+    kept = [(_int(it.get("product_id")), _num(it.get("per_hour"))) for it in items]
+    kept = [(pid, ph) for pid, ph in kept if pid is not None and pid in products]
+    if not kept:
+        return []
+    if len(kept) != 1 or not _fuel(kept[0][0], products):
+        return None
+    return _phase_lines([(0.0, kept[0][0], kept[0][1])], products, rate, time_at_km)
+
+
+def _phase_lines(seq: list[tuple[float, int, float | None]], products: dict, rate: float, time_at_km) -> list[dict] | None:
+    lines: list[dict] = []
+    for km, pid, per_hour in seq:
+        every = _every(products[pid], rate, per_hour)
+        if every is None:
+            return None
+        if km <= 0:
+            start = 0
+        else:
+            t = time_at_km(km) if time_at_km else None
+            if t is None:
+                return None
+            start = int(t // 60)  # the ravito's minute, as its row shows it
+        if lines:
+            if start <= lines[-1]["from_min"]:
+                return None
+            if lines[-1]["product_id"] == pid and lines[-1]["every_min"] == every:
+                continue  # the same product at the same interval: one line
+            lines[-1]["to_min"] = start
+        lines.append({"product_id": pid, "every_min": every, "from_min": start, "to_min": None})
+    return lines

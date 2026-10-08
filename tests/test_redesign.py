@@ -109,9 +109,9 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     # no « Outils » column, no sticky side column, no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
-    # Préparer: one row, « Ravitaillement », no subtitle (Pilotage lives in the rows now)
+    # Préparer: one row, « Nutrition », no subtitle (Pilotage lives in the rows now)
     prep = html.split('class="pf-prep"')[1].split("</section>")[0]
-    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Ravitaillement"]
+    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Nutrition"]
     assert "<small" not in prep and 'id="nutri-sub"' not in prep
     # nothing explains the obvious, nothing duplicated
     for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
@@ -137,7 +137,7 @@ def test_plan_column_css_is_single_and_centred():
     assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
     assert "pf-plan-tools" not in css and "pf-plan-grid" not in css and "position: sticky; top: 88px" not in css
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
-    assert 'id="rpanel-plan" class="pf-col"' in route
+    assert 'id="rpanel-plan" class="pf-col{% if nutrition_html %} hidden{% endif %}"' in route  # hidden: the page opened on Nutrition
 
 
 @pytest.mark.asyncio
@@ -315,6 +315,7 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
 @pytest.mark.asyncio
 async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two_actions(as_user: AsyncClient):
     rid = await _route(as_user)
+    await as_user.post(f"/partials/simulator/nutrition/{rid}/starter", headers={"HX-Request": "true"})  # a nutrition plan: Plan type
     t = await _rows(as_user, rid, CPS)
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
@@ -323,8 +324,8 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     # (flat legs: the ceiling only, running steady goes without saying)
     assert "pf-tiles" not in t and re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Très raide|très raide|Descente|descente) :", text), text
     assert "roulant" not in text.lower(), text
-    # the food: a pointer to the stretch's sachet in Ravitaillement, never its contents again
-    assert "Ton sachet jusqu'à Village" in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
+    # the food: a pointer to that point's row in Nutrition once the race has a plan (Plan type, posted above), never its contents
+    assert "Ta nutrition jusqu'à Village" in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated
     assert re.search(r"Ravito · assistance · barrière 10:30 · marge [+−]\d+h\d\d", text) and "arrêt" not in text, text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text

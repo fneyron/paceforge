@@ -1,13 +1,11 @@
 """Deterministic race-plan services: checkpoints, pacing guide, scenarios,
-nutrition per leg, race calibration, pace export, debrief, reference finisher."""
+race calibration, pace export, debrief, reference finisher (nutrition: test_nutrition.py)."""
 
 import math
 
 from app.schemas.simulator import CourseProfile, CourseSegment
 from app.services import checkpoints as cpsvc
 from app.services.debrief import leg_debrief
-from app.services import nutrition as N
-from app.services import nutrition_plan as NP
 from app.services.pace_export import (
     build_pace_csv,
     build_pace_gpx,
@@ -189,37 +187,6 @@ def test_scenarios_flag_cutoff_breach():
     village = next(r for r in sc["rows"] if r["name"] == "Village")
     assert village["safe_s"] > village["cutoff_clock_s"] and village["safe_ok"] is False
     assert any(r["name"] == "Village" for r in sc["cutoff_breach"])
-
-
-# ── 3. nutrition per stretch ──
-
-def _legs(secs):
-    return [{"cum_s": NP.moving_cum(s), "clock_s": NP.arrival_clock(s, 21 * 3600), "to_name": s["end_name"]} for s in secs]
-
-
-def test_nutrition_stretches_follow_the_food_ravitos_and_the_clock():
-    _, secs = _sections(target=5 * 3600, start_hour=21, stop_min=3)
-    st = NP.food_stretches(secs, CPS, 21 * 3600)
-    # the water point at km 6 does not cut a stretch: Départ → Col → Village → Arrivée
-    assert [(s["from_name"], s["to_name"]) for s in st] == [("Départ", "Col"), ("Col", "Village"), ("Village", "Arrivée")]
-    # arrival to arrival on the clocks: the stops count, the stretches add up to the race time
-    assert sum(s["d_s"] for s in st) == 5 * 3600
-    assert st[0]["night"] is True and st[0]["bag"] and st[1]["bag_kind"] == "drop" and st[1]["aid_food"]
-
-
-def test_caffeine_doses_are_capped_per_rolling_day_and_never_in_the_last_half_hour():
-    _, secs = _sections(target=5 * 3600, start_hour=21)
-    cf = N.caffeine_schedule(NP.moving_cum(secs[-1]), _legs(secs), {"enabled": True, "from_h": 1, "every_h": 2, "dose_mg": 50, "boost_dawn": True},
-                             21 * 3600, 70)
-    assert [d["elapsed_s"] for d in cf["doses"]] == [3600, 3 * 3600]
-    assert cf["total_mg"] == 100 and cf["over"] is False and cf["max_mg"] == 400
-    # 60 kg → 360 mg in any 24 h: the dawn double still fits once, the rest is skipped, never planned past the cap
-    _, secs = _sections(target=10 * 3600, start_hour=21)
-    cf = N.caffeine_schedule(NP.moving_cum(secs[-1]), _legs(secs), {"enabled": True, "from_h": 3, "every_h": 2, "dose_mg": 100, "boost_dawn": True},
-                             21 * 3600, 60, "Gel caféiné", unit_mg=100)
-    assert cf["max_mg"] == 360 and cf["total_mg"] <= 360 and cf["over"] is False
-    assert all(d["elapsed_s"] < NP.moving_cum(secs[-1]) - 30 * 60 for d in cf["doses"])
-    assert cf["doses"][0]["product"] == "Gel caféiné"
 
 
 # ── 1. race calibration ──
@@ -411,22 +378,6 @@ def test_best_efforts_ignore_hikes_and_slow_duplicates():
     assert 10.2 <= at20 <= 11.5
     m_all = fit_effort_model(pts)
     assert m_all["a"] * 20 ** (-m_all["b"]) < at20
-
-
-def test_caffeinated_gel_follows_the_caffeine_plan():
-    _, secs = _sections(target=18 * 3600, start_hour=21)
-    caf = {"id": 4, "name": "CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None, "kcal": 100}
-    inp = N.resolve_inputs({"v": 3, "picks": [-1, 4]}, {4: caf}, 18 * 3600, None, 70, moving_s=NP.moving_cum(secs[-1]), start_offset_s=21 * 3600)
-    st = NP.food_stretches(secs, CPS, 21 * 3600)
-    plan = NP.build_plan(st, inp, sections=secs, start_offset_s=21 * 3600)
-    cf = plan["caffeine"]
-    assert cf["doses"] and all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
-    # one gel per dose, in the stretch whose clock holds it, never « per hour »
-    placed = [sum(it["n"] for it in r["items"] if it["pid"] == 4) for r in plan["stretches"]]
-    assert sum(placed) == len(cf["doses"])
-    for d in cf["doses"]:
-        r = next(r for r in plan["stretches"] if r["start_clock_s"] <= d["clock_s"] < r["end_clock_s"])
-        assert placed[r["i"]] >= 1
 
 
 def test_elevation_at_km_reads_the_full_resolution_trace():

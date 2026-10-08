@@ -34,7 +34,8 @@ class Route(Base):
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
-    # Per-race nutrition plan: {"targets": {...}, "items": [{"product_id", "per_hour"}]}.
+    # Per-race nutrition plan, v2: {"v": 2, "rhythms": [{"product_id", "every_min", "from_min", "to_min"}],
+    # "spare": bool}; older shapes are read by app.services.nutrition_plan.read_plan.
     nutrition_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Actual race result matched to this route (Strava activity) for predicted-vs-
     # actual calibration: {"activity_id", "activity_name", "activity_date",
