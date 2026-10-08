@@ -96,6 +96,10 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
             raw_data=data,
         )
         activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
+        await db.flush()
+        from app.services.activity_env import enrich
+
+        await enrich(db, user.id)  # its altitude and weather, saved with it (Open-Meteo; never fails the sync)
         await db.commit()
 
         logger.info(

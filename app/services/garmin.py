@@ -55,6 +55,7 @@ from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric
+from app.services import activity_env
 from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
     HRV_METHOD,
@@ -647,17 +648,26 @@ def parse_naps(data) -> tuple[date, dict] | None:
     return day, {"asleep": round(asleep / 60), "period": round(period) if period else None, "windows": windows}
 
 
+ALTITUDE_PLAUSIBLE = (-500, 9000)  # m
+
+
 def parse_summary(data) -> dict | None:
     """usersummary of one day: steps, kcal and intensity minutes (the « watch
-    worn » marker; stress, body battery and resting HR are not read)."""
+    worn » marker; stress, body battery and resting HR are not read), and the
+    day's average altitude where the watch was worn
+    (`averageMonitoringEnvironmentAltitude`, m, barometric models; key from
+    python-garminconnect and ha_garmin, no live account seen: without it, the
+    night's altitude comes from the activities, Santé v4.4)."""
     if not isinstance(data, dict) or not _d(data.get("calendarDate")):
         return None
     mod, vig = _f(data.get("moderateIntensityMinutes")), _f(data.get("vigorousIntensityMinutes"))
+    alt = _f(data.get("averageMonitoringEnvironmentAltitude"))
     return {
         "day": _d(data["calendarDate"]),
         "steps": _f(data.get("totalSteps")),
         "kcal": _f(data.get("totalKilocalories")),
         "exercise": round((mod or 0) + (vig or 0)) if mod is not None or vig is not None else None,
+        **({"alt": alt} if alt is not None and ALTITUDE_PLAUSIBLE[0] <= alt <= ALTITUDE_PLAUSIBLE[1] else {}),
     }
 
 
@@ -684,9 +694,15 @@ SPORT_TYPES = {
 }
 
 
+INDOOR_TYPES = {"treadmill_running", "indoor_running", "virtual_run", "indoor_cycling", "virtual_ride",
+                "indoor_rowing"}
+
+
 def activity_fields(a: dict) -> dict | None:
     """The Activity columns of one Garmin session (activitylist), in Strava's
-    units (m, s, m/s, run cadence per leg)."""
+    units (m, s, m/s, run cadence per leg); an indoor one is marked
+    `trainer`, as Strava and COROS mark theirs (never « chaud », never a
+    place to sleep)."""
     try:
         gid = int(a["activityId"])
         start = datetime.strptime(str(a["startTimeGMT"])[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -714,7 +730,7 @@ def activity_fields(a: dict) -> dict | None:
         "max_watts": _f(a.get("maxPower")),
         "weighted_average_watts": _f(a.get("normPower")),
         "calories": _f(a.get("calories")),
-        "raw_data": {**a, "source": "garmin"},
+        "raw_data": {**a, "source": "garmin", **({"trainer": True} if type_key in INDOOR_TYPES else {})},
     }
 
 
@@ -803,7 +819,10 @@ def build_daily(data: dict, today: date) -> list[Daily]:
     out: list[Daily] = []
     for d, v in data["summaries"].items():
         if _ok(v.get("steps"), 1, 200_000):  # 0 steps: the watch wasn't worn that day
-            out.append(Daily("steps", d, v["steps"], {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
+            det = {"kcal": v.get("kcal"), "exercise": v.get("exercise")}
+            if v.get("alt") is not None:  # the night after it reads it (nights: « en altitude »)
+                det["alt"] = v["alt"]
+            out.append(Daily("steps", d, v["steps"], det))
     for night in (data.get("nights") or {}).values():
         out += night_dailies(night, bool(night_samples(night)))
     nights = data.get("nights") or {}
@@ -899,8 +918,11 @@ async def import_activities(db: AsyncSession, user_id: int, rows: list[dict]) ->
                 db.add(Activity(user_id=user_id, **f))
                 inserted += 1
         elif act.strava_activity_id is None and act.coros_activity_id is None:  # Garmin's own row: keep it current
+            env = (act.raw_data or {}).get(activity_env.ENV_KEY)
             for k, v in f.items():
                 setattr(act, k, v)
+            if env is not None:  # what was looked up for it stays
+                act.raw_data = {**f["raw_data"], activity_env.ENV_KEY: env}
             updated += 1
     await db.flush()
     merged = await merge_twins(db, user_id, min(starts)) if starts else 0
@@ -946,6 +968,8 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     result["updated"] += daily["updated"] + acts["updated"] + acts["linked"]
     result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
     result["activities"] = acts
+    # each new outdoor session's altitude and weather (Open-Meteo), the backlog a few at a time; never fails a sync
+    result["env"] = await activity_env.enrich(db, conn.user_id)
     # Garmin stopped answering halfway through the history: keep it, but ask for it all again next time
     result["backfill_partial"] = call.stopped and (days == BACKFILL_DAYS or activity_days == ACTIVITY_BACKFILL_DAYS)
     logger.info("Garmin sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",

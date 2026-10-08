@@ -179,6 +179,12 @@ async def _run_initial_sync(user_id: int) -> dict:
             except Exception:
                 logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
 
+            # Phase 4: the activities' altitude and weather (Open-Meteo), the first ones; the poll does the rest
+            from app.services.activity_env import enrich
+
+            await db.flush()
+            await enrich(db, user.id)
+
             # Mark initial sync as done
             user.initial_sync_done = True
             await db.commit()

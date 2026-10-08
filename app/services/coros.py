@@ -55,6 +55,7 @@ from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.coros import CorosConnection, OAuthClient
 from app.models.health import HealthMetric
+from app.services import activity_env
 from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
     DAILY_LABELS,
@@ -93,7 +94,8 @@ SESSION_CHUNK_DAYS = 60
 SESSION_LIMIT = 200  # records per querySportRecords call
 DETAILS_PER_SYNC = 10  # sessions only COROS has whose detail (the D+) or laps (the max HR) are read, newest first
 DETAIL, LAPS = "detail", "lap_data"  # raw_data keys: what was read once for a session only COROS has
-KEPT = (DETAIL, LAPS)  # kept when the session list rewrites its raw_data
+KEPT = (DETAIL, LAPS, activity_env.ENV_KEY)  # kept when the session list rewrites its raw_data
+RECORD_FORMAT = 2  # raw_data["format"]: the session list read with its « Start Coordinates » (Santé v4.4)
 
 # tests swap in an httpx.MockTransport here
 _transport: httpx.AsyncBaseTransport | None = None
@@ -683,9 +685,21 @@ def _clock_s(text: str | None) -> int | None:
     return out
 
 
+_COORD = r"(-?\d{1,3}(?:\.\d+)?)"
+
+
+def _latlng(m) -> list[float] | None:
+    """« Start Coordinates: 33.245998, 126.510002 » → [lat, lon]; None when absent, out of range or 0, 0."""
+    if not m:
+        return None
+    lat, lon = float(m.group(1)), float(m.group(2))
+    return [lat, lon] if -90 <= lat <= 90 and -180 <= lon <= 180 and (lat, lon) != (0, 0) else None
+
+
 def parse_sport_records(text: str) -> list[dict]:
     """querySportRecords: one dict per session {label, code, name, day, start,
-    end (UTC timestamps), duration (s), km, hr, kcal}."""
+    end (UTC timestamps), duration (s), km, hr, kcal, start_latlng (« Start
+    Coordinates », outdoor GPS sessions only: Strava's key, R2 and R4)}."""
     out = []
     heads = list(re.finditer(r"^\s*\d+\.\s+(.+?)\s+—\s+(\d{4})-(\d{2})-(\d{2})\s*$", text or "", re.M))
     for i, h in enumerate(heads):
@@ -701,6 +715,7 @@ def parse_sport_records(text: str) -> list[dict]:
         dist = re.search(r"Distance:\s*" + _NUM + r"\s*(km|m)\b", block)  # under 1 km COROS writes metres
         hr = re.search(r"Avg HR:\s*" + _NUM + r"\s*bpm", block)
         kcal = re.search(r"Calories:\s*([\d,  ]+)\s*kcal", block)
+        coords = re.search(r"Start Coordinates:\s*" + _COORD + r"\s*,\s*" + _COORD, block)
         out.append({
             "label": int(label.group(1)), "code": int(code.group(1)), "type": h.group(1).strip(),
             "name": name.group(1) if name else None, "day": "-".join(h.groups()[1:]),
@@ -709,6 +724,7 @@ def parse_sport_records(text: str) -> list[dict]:
             "km": (_num(dist.group(1)) / (1000 if dist.group(2) == "m" else 1)) if dist else None,
             "hr": _num(hr.group(1)) if hr else None,
             "kcal": _int(kcal.group(1)) if kcal else None,
+            "start_latlng": _latlng(coords),
         })
     return out
 
@@ -801,7 +817,7 @@ def session_fields(rec: dict, utc_offset: float | None) -> dict | None:
     if moving <= 0:
         return None
     meters = (rec.get("km") or 0) * 1000
-    raw = {**rec, "source": "coros"}
+    raw = {**rec, "source": "coros", "format": RECORD_FORMAT}
     offset = session_offset(rec["start"], rec.get("day"), utc_offset)
     if offset is not None:
         raw["utc_offset"] = offset  # the key Strava uses: the session's local day
@@ -1215,6 +1231,22 @@ async def import_sessions(db: AsyncSession, user_id: int, records: list[dict],
     return {"inserted": inserted, "linked": linked, "updated": updated, "merged": merged}, todo
 
 
+async def sessions_upgraded(db: AsyncSession, user_id: int) -> bool:
+    """False while the sessions only COROS has, of the 180 days a history
+    reads, were all read before their « Start Coordinates » were (no
+    RECORD_FORMAT): the history is then read once more (3 calls). Older ones,
+    or none, never ask again (as health.nights_upgraded)."""
+    fmt = Activity.raw_data["format"].as_integer()
+    base = (Activity.user_id == user_id, Activity.coros_activity_id.is_not(None),
+            Activity.strava_activity_id.is_(None), Activity.garmin_activity_id.is_(None))
+    since = datetime.now(timezone.utc) - timedelta(days=ACTIVITY_BACKFILL_DAYS)
+    old = (await db.execute(select(func.count(Activity.id)).where(
+        *base, Activity.start_date >= since, fmt.is_distinct_from(RECORD_FORMAT)))).scalar()
+    if not old:
+        return True
+    return bool((await db.execute(select(func.count(Activity.id)).where(*base, fmt == RECORD_FORMAT))).scalar())
+
+
 def _coros_only(act: Activity) -> bool:
     return act.strava_activity_id is None and act.garmin_activity_id is None
 
@@ -1308,8 +1340,10 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
     days = BACKFILL_DAYS if owed else RECENT_DAYS
-    # the sessions' history comes once too: until every piece of it was read
-    activity_days = ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None else RECENT_DAYS
+    # the sessions' history comes once too: until every piece of it was read, and once more when it was read
+    # before their start coordinates were (Santé v4.4)
+    activity_days = (ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None
+                     or not await sessions_upgraded(db, conn.user_id) else RECENT_DAYS)
     sessions: dict = {}
 
     async def on_sessions(records, utc_offset):
@@ -1349,6 +1383,8 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["updated"] += sessions.get("updated", 0) + sessions.get("linked", 0)
     if activity_days == ACTIVITY_BACKFILL_DAYS and data.get("sessions_complete"):
         conn.sessions_synced_at = datetime.now(timezone.utc)
+    # each new outdoor session's altitude and weather (Open-Meteo), the backlog a few at a time; never fails a sync
+    result["env"] = await activity_env.enrich(db, conn.user_id)
     # COROS stopped answering halfway through the health history: keep it, but ask for it all again next
     # time (the sessions have their own flag above)
     result["backfill_partial"] = bool(data.get("health_stopped")) and days == BACKFILL_DAYS
