@@ -120,12 +120,11 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
                   (Activity.sport_type.in_(BIKE), 1_000_000), else_=1_000_000_000)
-    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too, read without
-    # detoasting it (PostgreSQL's pg_column_size; SQLite stores JSON as text)
+    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too
     pg = db.get_bind().dialect.name == "postgresql"
-    size = func.pg_column_size(Activity.raw_data) if pg else func.length(Activity.raw_data)
     key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
-        select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at), func.sum(size),
+        select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
+               func.sum(env.raw_size(db)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
                func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
                func.sum(func.coalesce(Activity.average_heartrate, 0)),

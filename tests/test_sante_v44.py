@@ -609,3 +609,15 @@ async def test_the_looked_up_weather_reaches_the_sessions(db_session: AsyncSessi
     assert [(s.feels, s.alt, s.located, s.indoor) for s in ss] == [
         (26.5, 1050.0, True, False), (None, None, False, True), (None, None, False, False)]
     assert [st.is_hot(s) for s in ss] == [True, False, False]
+
+
+async def test_coordinates_added_in_place_are_looked_up(db_session: AsyncSession, test_user: User, meteo):
+    """A pass that found nothing to do is skipped until the activities change, a rewrite in place included
+    (COROS's sessions read again with their start coordinates: no new row)."""
+    a = _act(test_user, datetime.now(timezone.utc) - timedelta(days=2), coros_activity_id=91, source="coros")
+    db_session.add(a)
+    await db_session.flush()
+    assert await activity_env.enrich(db_session, test_user.id) == {"alt": 0, "feels": 0, "left": 0}
+    a.raw_data = {**a.raw_data, "start_latlng": [45.92, 6.86], "format": 2}
+    await db_session.flush()
+    assert (await activity_env.enrich(db_session, test_user.id))["alt"] == 1

@@ -16,7 +16,6 @@ from app.models.activity import Activity
 from app.models.route import Route
 from app.models.user import User
 from app.services import race_prep as rp
-from app.services import sante_training as st
 from app.services import training_view as tv
 from app.services.sante_training import Session
 

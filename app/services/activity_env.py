@@ -137,6 +137,14 @@ def start_hour(start: datetime) -> datetime:
 
 # ── the pass ────────────────────────────────────────────────────────────────
 
+def raw_size(db: AsyncSession):
+    """The stored size of raw_data, an aggregate that sees it rewritten in place (a lookup written, coordinates
+    added by a re-read) without detoasting it: PostgreSQL's pg_column_size; SQLite stores JSON as text."""
+    if db.get_bind().dialect.name == "postgresql":
+        return func.pg_column_size(Activity.raw_data)
+    return func.length(Activity.raw_data)
+
+
 async def _rows(db: AsyncSession, user_id: int, since: datetime):
     """(id, start, sport, moving s, distance m, {raw key: value}) of the user's activities since `since`: one
     read of each raw_data (PostgreSQL detoasts it once, as sante_training.load_sessions)."""
@@ -154,10 +162,11 @@ async def _rows(db: AsyncSession, user_id: int, since: datetime):
 
 
 async def _key(db: AsyncSession, user_id: int, since: datetime) -> tuple:
-    """What a sync changes when it adds activities or hands one to another service (no JSON read)."""
+    """What a sync changes when it adds activities, hands one to another service or rewrites one (no JSON
+    read)."""
     return tuple((await db.execute(select(
         func.count(Activity.id), func.max(Activity.id), func.count(Activity.strava_activity_id),
-        func.count(Activity.garmin_activity_id), func.count(Activity.coros_activity_id))
+        func.count(Activity.garmin_activity_id), func.count(Activity.coros_activity_id), func.sum(raw_size(db)))
         .where(Activity.user_id == user_id, Activity.start_date >= since))).one())
 
 
