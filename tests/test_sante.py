@@ -372,6 +372,9 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "Phases estimées par la montre." in main and "pf-tl-night" not in main
     # the Sommeil hero is not the race page's grid (UX3)
     assert 'class="pf-card pf-nhero"' in main and "pf-hero\"" not in main
+    # a five-character ring value is set smaller on a wide screen, so it stays inside the ring
+    assert '<span class="pf-ring-value is-long" aria-hidden="true">16h53</span>' in main
+    assert '<span class="pf-ring-value" aria-hidden="true">8h36</span>' in main
 
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,

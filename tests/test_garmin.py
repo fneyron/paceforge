@@ -450,6 +450,23 @@ async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_us
     assert (await garmin.run_sync(db_session, conn))["ok"]
 
 
+async def test_a_sync_that_fails_at_once_lets_go_of_the_link(db_session: AsyncSession, test_user: User, fake,
+                                                              no_commit, monkeypatch):
+    """Garmin down before the sync touched the database: the claim is released, so « Synchroniser
+    maintenant » pressed again is a new try, not « déjà en cours » for the claim's 15 min."""
+    conn = await _link(db_session, test_user)
+    await db_session.refresh(conn)  # as read for a request: sync_claimed_at loaded (None)
+
+    async def down(db, c):
+        raise httpx.ConnectError("down")
+    monkeypatch.setattr(garmin, "sync_connection", down)
+    assert (await garmin.run_sync(db_session, conn))["ok"] is False
+    claimed = (await db_session.execute(
+        select(GarminConnection.sync_claimed_at).where(GarminConnection.id == conn.id))).scalar_one()
+    assert claimed is None
+    assert (await garmin.run_sync(db_session, conn)) is not None  # tried again
+
+
 async def test_garmin_hrv_is_on_the_watch_scale(db_session: AsyncSession, test_user: User, fake, no_commit):
     from app.services.health import RMSSD_SOURCES
 

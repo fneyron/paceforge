@@ -652,7 +652,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring-sub { margin-top: 1px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); }
 .pf-ring-note { margin-top: 1px; font-size: 12.5px; font-weight: 600; line-height: 1.25; color: rgb(var(--pf-gray-700)); text-wrap: balance; }   /* the Charge ring: this week against the usual one */
 @media (max-width: 374px) { .pf-ring-value { font-size: 19px; } .pf-ring-label { font-size: 13px; } }
-@media (min-width: 900px) { .pf-rings { max-width: 560px; gap: 20px; } .pf-ring-value { font-size: 26px; } }
+@media (min-width: 900px) { .pf-rings { max-width: 560px; gap: 20px; } .pf-ring-value { font-size: 26px; }
+    .pf-ring-value.is-long { font-size: 22px; } }   /* « 16h53 » inside the 104 px dial's 76 px hole */
 /* the state: its word large, at most one sentence */
 .pf-state { margin-top: 14px; }
 .pf-state-word { font-family: var(--pf-font-display); font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; color: rgb(var(--pf-ink)); }

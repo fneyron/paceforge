@@ -46,6 +46,7 @@ import httpx
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
 from app.crypto import decrypt_secret, encrypt_secret
@@ -1304,7 +1305,9 @@ async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
     await db.commit()
     if res.rowcount != 1:
         return False
-    conn.sync_claimed_at = now  # so that releasing it later is seen as a change
+    # as if read back: releasing it is then a change, even when nothing was written in between
+    # (a plain assignment over a loaded None, set back to None, writes nothing)
+    set_committed_value(conn, "sync_claimed_at", now)
     return True
 
 
