@@ -77,6 +77,17 @@ async def sante_page(
     )
 
 
+@router.get("/sante/sources", response_class=HTMLResponse)
+async def sante_sources(request: Request, user: User = Depends(get_current_user)):
+    """The references of Santé's two folds (v4.3: the folds keep a few plain bullets, their sources are here):
+    « Récupération » then « Sommeil », each the official texts first, then the studies, as links."""
+    from app.services import sante_score, sante_sleep
+
+    sections = [("Récupération", "recuperation", sante_score.linked(sante_score.REFS)),
+                ("Sommeil", "sommeil", sante_score.linked(sante_sleep.REFS))]
+    return templates.TemplateResponse(request, "sante_sources.html", context={"user": user, "sections": sections})
+
+
 @router.get("/sante/sommeil")
 async def sante_sleep_range(request: Request, r: str | None = None, user: User = Depends(get_current_user)):
     """The old Sommeil range swap: the one page, its Sommeil section, the range kept."""

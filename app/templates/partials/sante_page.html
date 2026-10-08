@@ -1,11 +1,12 @@
-{#- Santé v4.1, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
-    (the band of the score) and at most one sentence, the Contributeurs, the cards « Récupération · 14 jours », the
-    Sommeil section (last night, its stages, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30
-    nuits », « FC de nuit · 30 nuits », then the closed folds. The activities themselves are Activités' (no Charge
-    card: the Charge ring links there). Each number is printed once on the page: the rings print today's score, this
-    morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on something else until a tap (a mean,
-    the latest night of a card no ring prints). The tone is in a glyph and a word too, never colour alone; no mark
-    without a label or a legend. -#}
+{#- Santé v4.3, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
+    (the band of the score: its word and glyph, a sentence only for the illness alert; no activity named), « Détail
+    du score » (each note as a number and a bar), the cards « Récupération · 14 jours », the Sommeil section (last
+    night, its stages, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30 nuits », « FC de nuit ·
+    30 nuits » (each opening on its status line), then the closed folds (each ending on its « Sources » link). The
+    activities themselves are Activités' (the Charge ring links there). Each number is printed once on the page: the
+    rings print today's score, this morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on
+    something else until a tap (a mean, the latest night of a card no ring prints). The tone is in a glyph and a word
+    too, never colour alone; no mark without a label or a legend. -#}
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 
@@ -16,23 +17,24 @@
 <section class="pf-state{% if p.state %} is-{{ p.state.tone }}{% endif %}">
     {% if p.state %}
     <h2 class="pf-state-word"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ p.state.word }}</h2>
-    {% if p.state.text %}<p class="pf-state-text">{% if p.state.href %}<a href="{{ p.state.href }}">{{ p.state.text }}</a>{% else %}{{ p.state.text }}{% endif %}</p>{% endif %}
+    {% if p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
     {% if p.connect %}<p class="pf-state-line"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
     {% else %}
     <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a>{% endif %}</p>
     {% endif %}
 </section>
 
-{% if p.contrib %}
-<section id="contributeurs" class="pf-card pf-contrib" aria-labelledby="h-contrib">
-    <h2 id="h-contrib" class="pf-card-h">Contributeurs</h2>
-    <p class="pf-contrib-key">Chaque barre : la note du signal.</p>
+{#- « Détail du score », like WHOOP's and Oura's: each component's note out of 100, a number in its bar's colour (the
+    number says it, never colour alone), the bar under it; the components not in the score in one muted line -#}
+{% if p.detail %}
+<section id="detail" class="pf-card pf-contrib" aria-labelledby="h-detail">
+    <h2 id="h-detail" class="pf-card-h">Détail du score</h2>
     <ul>
-        {% for c in p.contrib.rows %}
-        <li><span class="pf-contrib-name">{{ c.name }}</span><span class="pf-contrib-word">{{ c.word }}</span><span class="pf-contrib-bar is-{{ c.tone }}" role="img" aria-label="{{ c.aria }}"><i style="width: {{ [c.sub, 2]|max }}%"></i></span></li>
+        {% for c in p.detail.rows %}
+        <li><span class="pf-contrib-name">{{ c.name }}</span><b class="pf-contrib-num is-{{ c.tone }}">{{ c.sub }}<span class="sr-only"> sur 100</span></b><span class="pf-contrib-bar is-{{ c.tone }}" aria-hidden="true"><i style="width: {{ [c.sub, 2]|max }}%"></i></span></li>
         {% endfor %}
     </ul>
-    {% if p.contrib.absent %}<p class="pf-contrib-absent">{{ p.contrib.absent }}</p>{% endif %}
+    {% if p.detail.absent %}<p class="pf-contrib-absent">{{ p.detail.absent }}</p>{% endif %}
 </section>
 {% endif %}
 
@@ -40,7 +42,8 @@
 <section id="recuperation" class="pf-card" aria-labelledby="h-recup">
     <h2 id="h-recup" class="pf-card-h">Récupération · 14 jours</h2>
     {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
-    {% if p.recup.bars|selectattr("miss")|list %}{{ viz.viz_legend([("is-gap", "pas de score")]) }}{% endif %}
+    {% set marks = ([("is-est", "sans nuit mesurée")] if p.recup.hatched else []) + ([("is-gap", "pas de score")] if p.recup.bars|selectattr("miss")|list else []) %}
+    {% if marks %}{{ viz.viz_legend(marks) }}{% endif %}
 </section>
 {% endif %}
 
@@ -87,30 +90,32 @@
 </section>
 {% endif %}
 
-{#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »); the legend names
-    every mark drawn: a night's dot, the 7-night line (when a segment of it is drawn), the normal's band -#}
+{#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »), opening on its
+    status line (the last 7 nights against the normal: a word and a dot in its Détail row's colour, what it often
+    means when it is out of it on the side that matters; or how many nights until there is a normal); the legend
+    names every mark drawn: a night's dot, the 7-night line (when a segment of it is drawn), the normal's band -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
+    {% if c.status %}<p class="pf-card-status {{ "is-" ~ c.status.tone if c.status.tone else "is-plain" }}">{% if c.status.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status.text }}</p>
+    {% if c.status.meaning %}<p class="pf-card-meaning">{{ c.status.meaning }}</p>{% endif %}{% endif %}
     {{ viz.viz_night_card(c, c.title) }}
     {{ viz.viz_legend([("is-dot", "nuit")] + ([("is-mean", "moyenne sur 7 nuits")] if c.mean else []) + ([("is-band", "ta normale")] if c.band else [])) }}
 </section>
 {% endfor %}
 
 <div class="pf-folds">
-    {#- the two method folds: short bullets in titled groups, then the references in two groups (official texts,
-        studies), each a link (a DOI, else the text's own address) -#}
-    {% macro method_fold(title, groups, refs) %}
+    {#- the two method folds (v4.3: a few plain bullets, no citation), each ending on one small link to the sources
+        page (/sante/sources: both folds' references, as links) -#}
+    {% macro method_fold(title, items, anchor) %}
     <details class="pf-fold pf-method">
         <summary>{{ title }}</summary>
-        {% for head, items in groups %}<h3 class="pf-method-h">{{ head }}</h3>
-        <ul>{% for l in items %}<li>{{ l }}</li>{% endfor %}</ul>{% endfor %}
-        {% for head, items in refs %}<h3 class="pf-method-h">{{ head }}</h3>
-        <ul class="pf-refs" aria-label="{{ head }}">{% for name, href in items %}<li><a href="{{ href }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>{% endfor %}
+        <ul>{% for l in items %}<li>{{ l }}</li>{% endfor %}</ul>
+        <a class="pf-method-src" href="/sante/sources#{{ anchor }}">Sources</a>
     </details>
     {% endmacro %}
-    {{ method_fold("Comment je calcule ta récupération", p.method, p.refs) }}
-    {% if s and s.state != "never" %}{{ method_fold("Comment je lis tes nuits", s.method, s.refs) }}{% endif %}
+    {{ method_fold("Comment je calcule ta récupération", p.method, "recuperation") }}
+    {% if s and s.state != "never" %}{{ method_fold("Comment je lis tes nuits", s.method, "sommeil") }}{% endif %}
     {% if s and s.rows %}
     <details class="pf-fold pf-ntable-fold">
         <summary>Les chiffres de chaque nuit</summary>

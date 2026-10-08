@@ -504,7 +504,8 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
              stack: list | None = None, classes: list | None = None, links: list | None = None,
              y_max: float | None = None, reference: tuple[float, str] | None = None, lines=(),
              clip: float | None = None, tones: list | None = None, trend: list | None = None,
-             today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0) -> dict:
+             today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0,
+             hatched: list | None = None) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
     slot, a faint dot on the base line), an optional lighter part on top
     (`stack`: the naps over the night), a class per bar (`classes`: the
@@ -515,7 +516,9 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     others (that bar runs to the top with a break mark, its value in the
     readout), `tones` (a tone per day for the readout's word), `trend` (a
     value per day drawn as a line over faint bars: a long range's 7-night
-    mean), today's day number on a disc (`today`). Under the bars: the day of
+    mean), today's day number on a disc (`today`), `hatched` (a bar drawn
+    hatched and outlined in its colour: a score estimated without a night
+    measured; the card's legend says so). Under the bars: the day of
     the month for 16 slots or fewer, Mondays or months beyond (x_labels). The
     readouts are the caller's ([value, word, the day · context], Santé's
     compact two lines); links go through the readout."""
@@ -535,7 +538,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     out = []
     for i, v in enumerate(values):
         b = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
-             "today": i == today}
+             "today": i == today, "est": bool(hatched and hatched[i] and v is not None)}
         nap = stack[i] if stack else None
         if v is None and not nap:
             b["miss"] = True
@@ -553,6 +556,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     else:
         xt = x_labels(days, xs)
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "base": base, "top": y0, "bars": out, "xt": xt,
+            "hatched": sorted({b["cls"] for b in out if b["est"]}),
             "slot": round(slot, 2), "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
             "lines": [{"y": y(v), "label": lab} for v, lab in lines], "rx": round(min(3.0, bw / 2), 1),
             # over measured days only, broken on any day without one: never a line with no bar under it

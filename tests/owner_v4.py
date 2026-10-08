@@ -7,7 +7,12 @@ stage minutes from its « Sleep Summary », e.g. 07/10: Profond 49 min · Léger
 3h25 · Paradoxal 1h36 · Éveil 13 min) and the Transjeju 100M as a plain
 activity (02/10 21:00 in Korea, 16h53 stops included, marked as a race on
 Strava: just an activity for Santé). His real log has no activity after it. No
-Route is read by Santé."""
+Route is read by Santé. v4.3: his two real days at Les Houches (Strava, read the
+evening of 08/10): 18/09 « Morning Trail Run » 10:09 local (UTC+2), 9h04
+stops included, +3 511 m, and 19/09 « Morning Trail Run » 09:49, 7h04,
++2 847 m — two Très longues, each its own window (v4.2's M3 merged them into
+one 16-h ultra that held 65 until 29/09, named after the 18th: the owner's
+« Récupération morning trail run … je ne comprends pas »)."""
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,12 +66,27 @@ def transjeju(user_id: int, sid: int = 8200) -> Activity:
                     raw_data={"utc_offset": 32400, "workout_type": 1, "elev_high": 1100})
 
 
+def houches(user_id: int) -> list[Activity]:
+    """His real Les Houches days as Strava wrote them (20230888613, 20242644104): France, UTC+2."""
+    return [
+        Activity(user_id=user_id, strava_activity_id=20230888613, sport_type="TrailRun", name="Morning Trail Run",
+                 start_date=datetime(2026, 9, 18, 8, 9, 10, tzinfo=timezone.utc), distance=52718.8,
+                 moving_time=29498, elapsed_time=32638, total_elevation_gain=3511, average_speed=1.787,
+                 average_heartrate=138.37, max_heartrate=185, suffer_score=522, raw_data={"utc_offset": 7200}),
+        Activity(user_id=user_id, strava_activity_id=20242644104, sport_type="TrailRun", name="Morning Trail Run",
+                 start_date=datetime(2026, 9, 19, 7, 49, 3, tzinfo=timezone.utc), distance=44775.5,
+                 moving_time=23994, elapsed_time=25423, total_elevation_gain=2847, average_speed=1.866,
+                 average_heartrate=134.249, max_heartrate=186, suffer_score=424, raw_data={"utc_offset": 7200}),
+    ]
+
+
 async def seed_owner_v4(db: AsyncSession, user: User) -> Activity:
-    """The owner's rows and the Transjeju activity (no Route: Santé never reads one)."""
+    """The owner's rows, his Les Houches days and the Transjeju activity (no Route: Santé never reads one)."""
     for metric, per_day in owner_rows_v4().items():
         for d, (v, det, src) in per_day.items():
             db.add(HealthMetric(user_id=user.id, date=d, metric=metric, value=v, source=src, details=det,
                                 n_samples=1))
+    db.add_all(houches(user.id))
     act = transjeju(user.id)
     db.add(act)
     await db.flush()

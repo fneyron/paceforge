@@ -578,7 +578,7 @@ def test_every_ring_and_card_anchor_lands_under_the_top_bar():
                  ".pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }"):
         assert rule in phone, rule
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    for anchor in ("contributeurs", "recuperation", "sommeil"):
+    for anchor in ("detail", "recuperation", "sommeil"):
         assert f'id="{anchor}"' in page, anchor
     assert 'id="charge"' not in page  # no Charge card: the ring links to Activités
     assert '(("vfc", p.vfc), ("fc", p.fc))' in page and "{{ c.title }}" in page
@@ -615,8 +615,9 @@ def test_bars_never_collapse_after_being_seen_whole():
 
 
 def test_the_small_targets_reach_44_px():
-    """UX15: « Synchroniser maintenant » (Réglages, 44 px), the method fold's references; UX9: the empty states'
-    links and buttons (a 22-px line with 11 px above and under it: exactly 44)."""
+    """UX15: « Synchroniser maintenant » (Réglages, 44 px), the references on /sante/sources and the folds'
+    « Sources » link (v4.3); UX9: the empty states' links and buttons (a 22-px line with 11 px above and under
+    it: exactly 44)."""
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-sync-now { min-height: 44px; }" in css
     link = re.search(r"\.pf-state-line a \{[^}]*\}", css).group(0)
@@ -625,7 +626,9 @@ def test_the_small_targets_reach_44_px():
     assert (".pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px "
             "rgb(var(--pf-gray-400)); }") in css
     refs = re.search(r"\.pf-refs a \{ display: inline-block;[^}]*\}", css).group(0)
-    assert "min-height: 44px" in refs and "white-space: nowrap" in refs
+    assert "min-height: 44px" in refs
+    src = re.search(r"\.pf-method-src \{ display: inline-block;[^}]*\}", css).group(0)
+    assert "min-height: 44px" in src
 
 
 def test_band_chart_says_a_provisional_normal():

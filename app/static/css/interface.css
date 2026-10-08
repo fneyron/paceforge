@@ -699,13 +699,17 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-card .pf-viz-cross .pf-viz-at { display: none; stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 3 3; }
 .pf-viz-card .pf-viz-cross.is-none .pf-viz-at { display: inline; }
 @media (min-width: 900px) { .pf-card { padding: 20px 20px 12px; } }
-/* Contributeurs, Oura-like: a name, a short word, a bar of the sub-score on a filled track (no number) */
-.pf-contrib-key { font-size: 12px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 1px; }   /* what the bars are */
+/* « Détail du score », WHOOP/Oura-like: a name, its note out of 100 as a number in its bar's colour, the bar under */
 .pf-contrib ul { margin-top: 4px; }
 .pf-contrib li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; row-gap: 6px; padding: 9px 0 8px; }
 .pf-contrib li + li { border-top: 1px solid rgb(var(--pf-line)); }
 .pf-contrib-name { font-size: 14px; font-weight: 600; color: rgb(var(--pf-ink)); }
-.pf-contrib-word { font-size: 13px; color: rgb(var(--pf-gray-600)); text-align: right; }
+.pf-contrib-num { font-family: var(--pf-font-display); font-size: 17px; font-weight: 700; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; color: rgb(var(--pf-ink)); }
+.pf-contrib-num.is-ok { color: rgb(var(--pf-ok)); }
+.pf-contrib-num.is-warn { color: rgb(var(--pf-warn)); }
+.pf-contrib-num.is-danger { color: rgb(var(--pf-danger)); }
+.pf-contrib-num.is-accent { color: rgb(var(--pf-accent-strong)); }
+.dark .pf-contrib-num.is-accent { color: rgb(var(--pf-accent)); }
 .pf-contrib-bar { grid-column: 1 / -1; position: relative; display: block; height: 7px; border-radius: 4px; background: rgb(var(--pf-ink) / .1); overflow: hidden; }
 .pf-contrib-bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: rgb(var(--pf-ink)); }
 .pf-contrib-bar.is-ok > i { background: rgb(var(--pf-ok)); }
@@ -713,6 +717,15 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-contrib-bar.is-danger > i { background: rgb(var(--pf-danger)); }
 .pf-contrib-bar.is-accent > i { background: rgb(var(--pf-accent)); }   /* Charge récente describes, never warns */
 .pf-contrib-absent { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin: 2px 0 6px; }
+/* a night card's status line: a dot in its Détail row's colour and the words (never colour alone), then what it
+   often means when it is out of the normal on the side that matters */
+.pf-card-status { display: flex; align-items: baseline; gap: 7px; margin-top: 2px; font-size: 14px; font-weight: 600; line-height: 1.4; color: rgb(var(--pf-gray-700)); }
+.pf-card-status.is-plain { font-weight: 500; color: rgb(var(--pf-gray-600)); }
+.pf-dot { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--pf-accent)); transform: translateY(-1px); }
+.pf-card-status.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
+.pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-card-meaning { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 1px; }
 /* the cards' bars: one per day, a lighter part on top (the naps), today's day on an ink disc */
 .pf-bar { fill: rgb(var(--pf-accent)); }
 .pf-bar.is-ok { fill: rgb(var(--pf-ok)); }
@@ -720,12 +733,18 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-bar.is-danger { fill: rgb(var(--pf-danger)); }
 .pf-bar-top { fill: rgb(var(--pf-accent) / .38); stroke: rgb(var(--pf-accent)); stroke-width: 1; }   /* the nap's edge ≥ 3:1 on the card */
 .pf-bar-brk { fill: rgb(var(--pf-soft)); }   /* a bar past the axis: a gap across it */
+/* a score estimated without a night measured: hatched and outlined in its state's colour, named in the legend */
+.pf-bar-est { stroke-width: 1.25; }
+.pf-bar-est.is-ok, .pf-est-hatch.is-ok { stroke: rgb(var(--pf-ok)); }
+.pf-bar-est.is-warn, .pf-est-hatch.is-warn { stroke: rgb(var(--pf-warn-mark)); }
+.pf-bar-est.is-danger, .pf-est-hatch.is-danger { stroke: rgb(var(--pf-danger)); }
+.pf-est-hatch { stroke-width: 1.6; }
 .pf-viz-faint .pf-bar { opacity: .4; }   /* a long range: each day's 24 h faint, the 7-night mean is the mark */
 .pf-viz-gap { fill: rgb(var(--pf-viz-mark)); }
 .pf-viz-hair { stroke: rgb(var(--pf-gray-400) / .55); stroke-width: 1; stroke-dasharray: 2 3; shape-rendering: crispEdges; }
 .pf-viz-svg .pf-viz-todisc { fill: rgb(var(--pf-ink)); }
 .pf-viz-svg text.pf-viz-today { fill: rgb(var(--pf-bg)); font-weight: 700; }
-.pf-viz-col.is-sel .pf-bar, .pf-viz-col.is-sel .pf-bar-top { stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+.pf-viz-col.is-sel .pf-bar, .pf-viz-col.is-sel .pf-bar-top, .pf-viz-col.is-sel .pf-bar-est { stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
 /* the legend under a card's chart */
 .pf-viz-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; font-size: 12px; line-height: 16px; color: rgb(var(--pf-gray-600)); }
 .pf-viz-legend > span { display: inline-flex; align-items: center; gap: 5px; }
@@ -745,6 +764,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-lg.is-dplus { width: 10px; height: 4px; border-radius: 0; background: rgb(var(--pf-gray-500)); }   /* D+ under the bars */
 .pf-lg.is-usual { width: 14px; height: 8px; background: rgb(var(--pf-accent-soft)); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the usual week (page background) */
 .pf-lg.is-hot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-bg)); box-shadow: inset 0 0 0 1.5px rgb(var(--pf-ink)); }   /* a hot run, hollow */
+.pf-lg.is-est { background: repeating-linear-gradient(45deg, rgb(var(--pf-gray-600)) 0 1.5px, transparent 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-600)); }   /* a score without a night measured, hatched */
 /* Sommeil: last night, its timeline, the habits */
 .pf-sec-h { font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: rgb(var(--pf-ink)); margin-top: 30px; }
 .pf-sleep4 .pf-sec-h + .pf-card, .pf-sleep4 .pf-sec-h + .pf-sante-note { margin-top: 10px; }
@@ -795,12 +815,13 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ntable tbody th { font-weight: 600; }
 .pf-method ul { list-style: disc; padding-left: 18px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
 .pf-method li + li { margin-top: 6px; }
-.pf-method-h { margin: 12px 0 4px; font-size: 13px; font-weight: 650; line-height: 1.3; color: rgb(var(--pf-gray-700)); }   /* the folds' groups */
-/* the references: one per line, two columns, each a 44 px target */
-.pf-method ul.pf-refs { list-style: none; padding-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; margin-top: 8px; font-size: 12px; line-height: 20px; }
-.pf-method .pf-refs li + li { margin-top: 0; }
-.pf-refs a { display: inline-block; min-height: 44px; padding: 12px 0; line-height: 20px; white-space: nowrap; }
-.pf-refs a { color: rgb(var(--pf-accent-strong)); }
+.pf-method-src { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 13px; font-weight: 600; line-height: 20px; color: rgb(var(--pf-accent-strong)); }   /* « Sources », a 44 px target */
+.dark .pf-method-src { color: rgb(var(--pf-accent)); }
+/* Santé › Sources: each fold's references, the official texts then the studies, one per line, each a 44 px target */
+.pf-sources .pf-sec-h { margin-top: 22px; }
+.pf-method-h { margin: 12px 0 0; font-size: 13px; font-weight: 650; line-height: 1.3; color: rgb(var(--pf-gray-700)); }
+.pf-refs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; font-size: 13px; line-height: 20px; }
+.pf-refs a { display: inline-block; min-height: 44px; padding: 12px 0; line-height: 20px; color: rgb(var(--pf-accent-strong)); }
 .dark .pf-refs a { color: rgb(var(--pf-accent)); }
 @media (prefers-reduced-motion: no-preference) {
     .pf-ring-arc { animation: pf-ring-in .3s ease-out both; }
@@ -819,11 +840,14 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-viz-svg .pf-viz-todisc { fill: CanvasText; }
     .pf-viz-svg text.pf-viz-today { fill: Canvas; }
     .pf-contrib-bar { border: 1px solid CanvasText; background: Canvas; }
+    .pf-dot { forced-color-adjust: none; background: CanvasText; }
+    .pf-bar-est, .pf-est-hatch { stroke: CanvasText; }
+    .pf-viz-col.is-sel .pf-bar-est { stroke: Highlight; }
     .pf-contrib-bar > i, .pf-contrib-bar.is-ok > i, .pf-contrib-bar.is-warn > i, .pf-contrib-bar.is-danger > i, .pf-contrib-bar.is-accent > i { background: CanvasText; forced-color-adjust: none; }
     .pf-lg { forced-color-adjust: none; background: CanvasText; }
     /* (0,3,0): over the tones' (0,2,0) swatches, so the legend matches the forced bars */
     .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-long, .is-spike, .is-dot, .is-gap, .is-week) { background: CanvasText; box-shadow: none; }
-    .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur, .is-est) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
     .pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }
     .pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }
     .pf-tl-step { stroke: CanvasText; opacity: 1; }

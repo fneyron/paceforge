@@ -1,6 +1,8 @@
 """SANTE_DECISIONS: « thresholds not from a study are marked (H) in code
 comments and tests ». Each heuristic constant below is (H) on the line that
-sets it, and its value is pinned here (H) so a change is a decision."""
+sets it, and its value is pinned here (H) so a change is a decision. v4.3
+(owner: « trop d'explication … ne mets pas les citations »): the (H) stays in
+the code comments and the tests, never in the text the page prints."""
 import re
 from datetime import time
 from pathlib import Path
@@ -41,7 +43,7 @@ HEURISTICS = [
     ("app/services/sante_training.py", "EFFORT_LONG", 180),
     ("app/services/sante_training.py", "EFFORT_DPLUS", 1500),
     ("app/services/sante_training.py", "STOPPED_WATCH", 2),
-    ("app/services/sante_training.py", "EFFORT_RULES", {"ultra": (((3, 40), (10, 65)), 20),
+    ("app/services/sante_training.py", "EFFORT_RULES", {"ultra": (((3, 35), (10, 65)), 20),  # v4.3: 35 (H)
                                                        "very_long": (((2, 45), (5, 65)), 30),
                                                        "long": (((3, 65),), 50)}),
     # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018)
@@ -49,10 +51,6 @@ HEURISTICS = [
     ("app/services/sante_training.py", "ULTRA_LONG_MIN", 1440),
     ("app/services/sante_training.py", "ULTRA_LONG_LAST", 13),
     ("app/services/sante_training.py", "NIGHT_SPAN", (time(1), time(5))),
-    ("app/services/sante_training.py", "CLIMB_RATIO", 1.5),
-    ("app/services/sante_training.py", "CLIMB_MIN_M", 200),
-    ("app/services/sante_training.py", "CLIMB_DAYS", 56),
-    ("app/services/sante_training.py", "CLIMB_EXTRA", 2),
     ("app/services/sante_training.py", "LOWER", {"ultra": "very_long", "very_long": "long", "long": None}),
     ("app/services/sante_training.py", "NIGHT_TAGS", {"long": ("long", 1), "very_long": ("big", 3),
                                                      "ultra": ("ultra", 4)}),
@@ -65,7 +63,6 @@ HEURISTICS = [
     ("app/services/nights.py", "NAP_LATEST", time(16)),
     ("app/services/nights.py", "USUAL_BED_NIGHTS", 5),
     ("app/services/nights.py", "USUAL_BED_DAYS", 28),
-    ("app/services/sante_today.py", "HR_UP_BPM", 3),
     # v4.2 (research_recovery.md §3.2): the weights, Charge only in a window, the FC de nuit anchors (Alavi 2022;
     # Bosquet 2008), the joint VFC/FC cap (Buchheit 2014, Table 2)
     ("app/services/sante_score.py", "WEIGHTS", {"hrv": 25, "hr": 25, "sleep": 30, "load": 20}),
@@ -110,18 +107,15 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
     assert "(H)" in line, line
 
 
-def test_the_score_method_marks_its_heuristics():
-    """The fold says the weights, thresholds, caps, the effort classes and the provisional normal are (H): marked
-    one by one in « Ton score », the whole group « Ce qui est notre choix (H) » after; the sleep fold alike."""
-    text = sc.flat(sc.METHOD)
-    assert "Poids (H)" in text and "Plafonds (H)" in text and "69 (H)" in text and "État (H)" in text
-    groups = dict(sc.METHOD)
-    choice = " ".join(groups["Ce qui est notre choix (H)"]).replace("\u00a0", " ")
-    assert "Fenêtres indicatives" in choice and "« provisoire » de 7 à 13 nuits" in choice and "+2 bpm" in choice
-    assert "quelques points d'écart ne veulent rien dire" in text
-    sleep = dict(sl.METHOD)["Ce qui est notre choix (H)"]
-    assert any("plein à 8 h" in b for b in sleep) and any("plafonné à 65" in b for b in sleep)
-    assert any("phases à 10 min" in b for b in sleep)
+def test_the_folds_print_no_h_and_no_citation():
+    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 6 at most, « Comment je
+    lis tes nuits » 5 at most) with no « (H) » and no citation (their sources are on /sante/sources); the (H)
+    marks stay on the constants' lines (above) and in these tests."""
+    assert len(sc.METHOD) <= 6 and len(sl.METHOD) <= 5
+    for text in (sc.flat(sc.METHOD), sc.flat(sl.METHOD)):
+        assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
+    assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)
+    assert not hasattr(st, "CLIMB_RATIO") and not hasattr(st, "back_to_back") and not hasattr(td, "HR_UP_BPM")
 
 
 def test_the_late_session_gap_is_marked_h():

@@ -135,9 +135,11 @@
 
 {# V2 card bars: one bar per day (a lighter part on top: the naps), a faint dot for a day without data, today's day
    on a disc, the reference line (« 7 h »), faint labelled lines (the score's 40 and 70), a bar past the axis broken,
-   a line over faint bars (a long range's mean); the selection is a soft column behind its bar #}
+   a line over faint bars (a long range's mean), a bar hatched and outlined in its colour (a score estimated without a
+   night measured: its card's legend names it); the selection is a soft column behind its bar #}
 {% macro viz_day_bars(c, title, unit_word="journée", prev="Jour précédent", next="Jour suivant") %}
 {% call figure(c, title, c.key, None, unit_word, prev, next, cls="pf-viz-card" ~ (" pf-viz-faint" if c.trend else ""), card=True) %}
+{% if c.hatched %}<defs>{% for t in c.hatched %}<pattern id="pf-est-{{ c.key }}-{{ t }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="pf-est-hatch is-{{ t }}"/></pattern>{% endfor %}</defs>{% endif %}
 <g class="pf-viz-cross"><rect x="{{ (-c.slot / 2)|round(2) }}" y="0" width="{{ c.slot }}" height="{{ c.base + 2 }}" rx="4"/></g>
 {% for l in c.lines %}<line x1="0" x2="{{ c.X1 }}" y1="{{ l.y }}" y2="{{ l.y }}" class="pf-viz-hair"/><text x="{{ c.W }}" y="{{ l.y + 4 }}" text-anchor="end">{{ l.label }}</text>{% endfor %}
 <line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
@@ -145,7 +147,8 @@
 <g class="pf-viz-col{% if b.today %} is-today{% endif %}" data-i="{{ b.i }}">
     {% if b.miss %}<circle cx="{{ b.cx }}" cy="{{ c.base - 3 }}" r="1.6" class="pf-viz-gap"/>{% else %}
     {% if b.top %}<rect x="{{ b.x }}" y="{{ b.top.y }}" width="{{ b.w }}" height="{{ b.top.h + b.h }}" rx="{{ c.rx }}" class="pf-bar-top"/>{% endif %}
-    {% if b.h %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar{% if b.cls %} is-{{ b.cls }}{% endif %}"/>{% endif %}
+    {% if b.h and b.est %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar-est is-{{ b.cls }}" fill="url(#pf-est-{{ c.key }}-{{ b.cls }})"/>
+    {% elif b.h %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar{% if b.cls %} is-{{ b.cls }}{% endif %}"/>{% endif %}
     {% if b.brk %}<path d="M{{ b.x - 1 }} {{ b.brk + 3 }}l{{ b.w + 2 }} -4v3.5l-{{ b.w + 2 }} 4z" class="pf-bar-brk"/>{% endif %}
     {% endif %}
 </g>

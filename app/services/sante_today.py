@@ -4,116 +4,49 @@ the visual judges: « the state comes from the score, like WHOOP »).
 
 No planned race, no check-in, no training prescription: the state says how
 recovered the athlete is, never what to train. It is the band of the final
-score (sante_score.score_of): ≥ 70 « Bien récupéré » (ok), 40–69
-« Récupération en cours » (warn), < 40 « À ménager » (danger), so the number
-and the state never disagree. Under « Bien récupéré » one sentence names the
-main reason (sante_score.reason; evidence_final.md, SANTE_V4_SPEC.md §8;
-(H) = a PaceForge heuristic, never shown as a finding):
-- the nightly-HR illness alert (2 untagged nights in a row, each ≥ median +
-  max(2 robust SD, 5 bpm), on a full 14-night band: nights.illness_alert;
-  Altini & Plews 2021, Quer 2021: specific, not sensitive; score ≤ 39, H);
-- a recovery window after a big effort (sante_training.effort_window, its
-  « fenêtres indicatives » from the day it ends, H: no official text gives
-  days, Kellmann 2018): the activity by its name and how long ago it started
-  (« Grosse sortie il y a 6 jours : Transjeju 100M. », « … aujourd'hui : … »,
-  linked to it), never its time: this week's Charge ring may print those very
-  hours (each number printed once). It holds without any night measured: the
-  score is then the window's cap (sante_score.score_of);
-- a 24-h total under 6 h (Craven 2022): « Nuit courte. » (never « fatigue »);
-- VFC under its band with FC de nuit ≥ median + 3 bpm (the 69 cap, Buchheit
-  2014, Table 2): « VFC basse et FC de nuit haute sur 7 nuits. »;
-- else the lowest component: « VFC basse sur 7 nuits. », « FC de nuit haute
-  sur 7 nuits. », « Sommeil plus court que d'habitude cette semaine. » or
-  « Nuit un peu courte. ».
+score (sante_score.score_of): ≥ 70 « Bonne récupération » (ok), 40–69
+« Récupération en cours » (warn), < 40 « Récupération faible » (danger) (H),
+so the number and the state never disagree (v4.3, owner: « à ménager » is
+not good French).
+
+v4.3 (owner, 2026-10-08 evening: « Ne mentionne pas les sorties dans la
+partie Santé, ça complexifie : mets juste les scores »): the page says the
+state's word and its glyph, nothing else — no activity named, no reason
+sentence — but for the nightly-HR illness alert (2 untagged nights in a
+row, each ≥ median + max(2 robust SD, 5 bpm), on a full 14-night band:
+nights.illness_alert; Altini & Plews 2021, Quer 2021: specific, not
+sensitive; score ≤ 39, H), whose one sentence says what it can mean. The
+reason (sante_score.reason: the alert, the cap that binds, the joint VFC/FC
+pattern, the lowest component) stays as data (`key`), never printed. A score
+from a recovery window alone (no nightly signal measured, sante_score: its
+cap) is « estimé ».
 No score (no nightly signal measured, no recovery window) → no state: one
 line, « Connecte ta montre pour ta récupération. » (a watch already sending:
 « Pas de nuit mesurée ce matin. »). A quiet chart is not a clean bill of
 health (Quer 2021).
 """
-HR_UP_BPM = 3  # (H) the 7-night nightly HR this far over its median: « un peu haute » on a green Contributeurs bar
-WORDS = {"danger": "À ménager", "warn": "Récupération en cours", "ok": "Bien récupéré"}
+WORDS = {"danger": "Récupération faible", "warn": "Récupération en cours", "ok": "Bonne récupération"}
 # the tone is also a shape next to the state's word (a disc, a half disc, a square), never colour alone
 GLYPHS = {"ok": "●", "warn": "◐", "danger": "■"}
 ILL = ("FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant un rhume, après de "
        "l'alcool ou une grosse journée.")
-TEXTS = {"hrv": "VFC basse sur 7 nuits.", "hr": "FC de nuit haute sur 7 nuits.", "short": "Nuit courte.",
-         "joint": "VFC basse et FC de nuit haute sur 7 nuits.",
-         "debt": "Sommeil plus court que d'habitude cette semaine.", "sleep": "Nuit un peu courte."}
 NO_WATCH = "Connecte ta montre pour ta récupération."
 NO_NIGHT = "Pas de nuit mesurée ce matin."
-NAME_MAX = 40  # characters of an activity's name in the sentence (a longer one ends with « … »)
 
 
-def ago(k: int) -> str:
-    """« aujourd'hui », « hier », « il y a 5 jours »."""
-    return "aujourd'hui" if k <= 0 else "hier" if k == 1 else f"il y a {k} jours"
-
-
-def ago_short(k: int) -> str:
-    """The Contributeurs' shorter form: « aujourd'hui », « hier », « il y a 5 j »."""
-    return "aujourd'hui" if k <= 0 else "hier" if k == 1 else f"il y a {k} j"
-
-
-def activity_name(name: str | None) -> str:
-    n = " ".join((name or "").split())
-    return n if len(n) <= NAME_MAX else n[:NAME_MAX - 1].rstrip() + "…"
-
-
-def effort_text(window: dict) -> str:
-    """« Grosse sortie il y a 6 jours : Transjeju 100M. »: the activity by its
-    name and how long ago it started (its day on Activités and its Charge
-    bar's), never by its time."""
-    name = activity_name(window["effort"].name)
-    when = ago(window["ago"])
-    return f"Grosse sortie {when} : {name}." if name else f"Grosse sortie {when}."
-
-
-# a past day's compact readout (one line at 358 px)
-SHORT = {"ill": "FC de nuit nettement haute", "debt": "Sommeil sous ton habitude", "joint": "VFC basse, FC de nuit haute"}
-
-
-def short_text(st: dict, day: dict) -> str:
-    """The sentence as a past day's readout says it (« mar. 6 oct. · … »), one
-    line at 358 px: no « il y a » (it would count from that day, not today), no
-    final stop, the long sentences in a compact form: « Grosse sortie :
-    Transjeju 100M », « VFC basse sur 7 nuits », « FC de nuit nettement
-    haute », « VFC basse, FC de nuit haute », « Sommeil sous ton habitude »."""
-    if st["key"] == "effort":
-        name = activity_name(day["window"]["effort"].name)
-        return f"Grosse sortie : {name}" if name else "Grosse sortie"
-    if st["key"] in ("ill", "joint"):
-        return SHORT[st["key"]]
-    if st["text"] == TEXTS["debt"]:
-        return SHORT["debt"]
-    return (st["text"] or "").rstrip(".")
-
-
-def _sleep_text(score: dict) -> str:
-    p = next((p for p in score["parts"] if p["key"] == "sleep"), None)
-    return TEXTS["debt"] if p and p["debt"] else TEXTS["sleep"]
-
-
-def state(score: dict, day: dict) -> dict | None:
-    """{key, tone, word, glyph, text, href, aria} from the day's score
-    (sante_score.score_of) and the day it read (sante._assess: window, …), or
-    None without a score. `key`: the reason (ill, effort, short, joint, hrv,
-    hr, sleep) or « ok »."""
+def state(score: dict, day: dict | None = None) -> dict | None:
+    """{key, tone, word, glyph, text, estimated, aria} from the day's score
+    (sante_score.score_of), or None without a score. `key`: the reason (ill,
+    effort, short, joint, hrv, hr, sleep) or « ok », data only; `text`: the
+    illness alert's sentence, else None (the page prints the word and the
+    glyph only)."""
     if score.get("value") is None:
         return None
     tone, key = score["tone"], score["reason"] or "ok"
-    text = href = None
-    if key == "ill":
-        text = ILL
-    elif key == "effort":
-        w = day["window"]
-        text, href = effort_text(w), f"/activity/{w['effort'].session_id}"
-    elif key == "sleep":
-        text = _sleep_text(score)
-    elif key != "ok":
-        text = TEXTS[key]
+    text = ILL if key == "ill" else None
     word = WORDS[tone]
-    return {"key": key, "tone": tone, "word": word, "glyph": GLYPHS[tone], "text": text, "href": href,
-            "aria": f"{word}." + (f" {text}" if text else "")}
+    return {"key": key, "tone": tone, "word": word, "glyph": GLYPHS[tone], "text": text,
+            "estimated": bool(score.get("estimated")), "aria": f"{word}." + (f" {text}" if text else "")}
 
 
 def no_state_line(has_watch: bool) -> str:

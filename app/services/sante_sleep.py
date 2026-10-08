@@ -35,7 +35,8 @@
   wake leaves the wake median (H).
 - The closed « Les chiffres de chaque nuit » table (30 nights, their stage
   minutes too, to 10 min: the accessible alternative of the charts) and the
-  closed « Comment je lis tes nuits » fold (METHOD).
+  closed « Comment je lis tes nuits » fold (METHOD, 5 plain bullets; its
+  sources on /sante/sources).
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
@@ -50,38 +51,17 @@ USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are s
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
 
-# « Comment je lis tes nuits » (V42_BRIEF.md §C–§D): the same shape as the recovery fold, every PaceForge number
-# marked (H), only the sources the research reports cite
+# « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
+# citations »): 5 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the code
+# and the tests); the references (REFS) are on /sante/sources
 METHOD = [
-    ("Ce qui vient des textes officiels", [
-        "Ton sommeil se compte sur 24 h, siestes comprises (Watson 2015b ; Hirshkowitz 2015).",
-        "Les 7 h parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a ; Hirshkowitz 2015).",
-        "Une longue nuit n'est jamais signalée : elle peut aider à récupérer (Watson 2015a).",
-        "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A).",
-        "Décalage : 1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021).",
-        "Au labo, Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM (CTA/NSF 2052.3).",
-        "Le sommeil léger occupe normalement la plus grande partie de la nuit.",
-        "Aucune instance ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017).",
-    ]),
-    ("Ce qui est notre choix (H)", [
-        "L'anneau Sommeil : les 24 h avant ton réveil, plein à 8 h, une échelle, pas un objectif.",
-        "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021).",
-        "Un jour sous 6 h est «\u00a0court\u00a0», score plafonné à 65 (6 h : Craven 2022 ; 65 : notre choix).",
-        "Régularité : tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021).",
-        "Hors de ta normale : la nuit après 1h30 de sortie ou une sortie intense le soir.",
-        "Aussi : 3 nuits après 6 h, 4 après 10 h, en altitude ou après un changement de fuseau.",
-        "Après un ultra, tes 4 nuits restent aussi hors de tes horaires habituels (Fachan 2026).",
-        "Sieste «\u00a0tardive\u00a0» après 16 h ou à moins de 7 h de ton coucher (Mograss 2022 ; Walsh 2021).",
-        "Coucher et lever arrondis à 5 min, phases à 10 min.",
-    ]),
-    ("Ce que la montre ne sait pas", [
-        "Ton sommeil est estimé par la montre, qui le surestime (Walsh 2021 ; de Zambotti 2024).",
-        "Coucher et lever détectés par la montre, pas déclarés par toi (de Zambotti 2024).",
-        "Phases : 50 à 70 % des moments de la nuit bien classés (de Zambotti 2024).",
-        "Sur une nuit, profond ou paradoxal peut différer d'environ 1 h du labo (Chinoy 2021, Garmin).",
-        "COROS : aucune étude publiée sur la précision de ses phases.",
-    ]),
+    "Ton sommeil se compte sur 24 h, siestes comprises.",
+    "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
+    "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
+    "Les nuits après une grosse sortie, un voyage ou en altitude restent hors de ta normale.",
+    "Coucher et lever détectés par la montre.",
 ]
+# the sources « Comment je lis tes nuits » rests on (label, DOI or URL), listed on /sante/sources
 REFS = [
     ("Textes officiels", [
         ("Watson 2015a", "10.5665/sleep.4716"), ("Watson 2015b", "10.5665/sleep.4886"),
@@ -285,9 +265,9 @@ def rows(nights: dict, today: date) -> list[dict]:
 def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None) -> dict:
     """Everything the Sommeil section draws. state: never (no night ever, one
     line) | old (nothing in 90 days) | ok."""
-    from app.services.sante_score import linked, typo
+    from app.services.sante_score import typo
 
-    base = {"method": typo(METHOD), "refs": linked(REFS)}
+    base = {"method": typo(METHOD)}
     if not any(_measured(n) for d, n in nights.items() if d <= today):
         return {**base, "state": "never"}
     h = hero(nights, today, samples)

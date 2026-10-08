@@ -154,11 +154,12 @@ def test_the_stage_colours_reach_3_to_1_on_the_cards():
 
 async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncClient, db_session: AsyncSession,
                                             test_user: User, monkeypatch):
-    """The owner's Transjeju: Santé names it (the state, with the Charge ring as its input linked to Activités);
-    Activités shows it as a ◆ outing of its week, with no recovery line, no taper line, no fatigue model."""
-    act = await seed_owner_v4(db_session, test_user)
+    """The owner's Transjeju: Santé reads it (its window caps the score; the Charge ring, its input, links to
+    Activités) without naming it (v4.3); Activités shows it as an outing of its week, with no recovery line, no
+    taper line, no fatigue model."""
+    await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
-    assert f'<a href="/activity/{act.id}">Grosse sortie il y a 6 jours : Transjeju 100M.</a>' in html
+    assert "Transjeju" not in _main(html) and "/activity/" not in _main(html)
     assert re.search(r'<a class="pf-ring pf-ring-charge is-accent" href="/activities"', html)
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
@@ -168,15 +169,16 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
     activites = (await as_user.get("/activities")).text
     for gone in ("Récupération", "volume bas", "Affûtage", "Fond et fatigue", 'id="fatigue"', "fatigue"):
         assert gone not in activites, gone
-    assert "pf-viz-long is-warn" not in activites  # the ultra is not a « spike »
+    assert "plus longue que d'habitude" not in activites  # the ultra is not a « spike »
 
 
 # ── A4: no unlabelled mark ──────────────────────────────────────────────────
 
 async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                              monkeypatch):
-    """The Charge ring: a word, never a tick; the Contributeurs' bars: what they are; the VFC and FC cards: a
-    legend for the dot, the 7-night line and the normal; a day without data: named in its card's legend."""
+    """The Charge ring: a word, never a tick; « Détail du score »: each bar under its name and its note (v4.3); the
+    VFC and FC cards: a status line, a legend for the dot, the 7-night line and the normal; a day without data:
+    named in its card's legend."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     for d in (today - timedelta(days=4), today - timedelta(days=9)):  # two nights missing
@@ -189,17 +191,19 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     charge = re.search(r'<a class="pf-ring pf-ring-charge.*?</a>', main, re.S).group(0)
     assert re.search(r'<span class="pf-ring-note" aria-hidden="true">(comme|plus que|moins que) d&#39;habitude</span>',
                      charge)
-    assert '<p class="pf-contrib-key">Chaque barre : la note du signal.</p>' in main
+    detail = main.split('<section id="detail"')[1].split("</section>")[0]
+    names = re.findall(r'<span class="pf-contrib-name">([^<]+)</span><b class="pf-contrib-num is-\w+">(\d+)<', detail)
+    assert [n for n, _ in names] == ["VFC", "FC de nuit", "Sommeil"] and detail.count('class="pf-contrib-bar') == 3
     for key in ("vfc", "fc"):
         card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
+        # its status line: a dot and its words (the 2 missing nights leave the VFC week a little under its normal)
+        assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i>'
+                         r'(dans|sous) ta normale</p>', card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
                 and "ta normale" in legend), key
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
     assert '<i class="pf-lg is-gap"></i>pas de mesure' in sleep  # 2 nights missing: a dot, named
-    method = sante.sc.flat(sante.sc.METHOD)
-    assert "la barre de chaque contributeur" in method and "L'anneau Charge fait le tour au double" in method
-    assert "L'anneau Sommeil : les 24 h avant ton réveil, plein à 8 h" in sante.sc.flat(sl.METHOD)
 
 
 # ── B: the review's findings at page level ──────────────────────────────────
@@ -207,25 +211,28 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                                    test_user: User, monkeypatch):
     """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): the state
-    comes from the activity, « Récupération en cours », the activity named; the score is the window's cap (40)."""
+    comes from the activity, its window's cap alone: 35 (v4.3), « Récupération faible », « estimé » under the
+    ring; the page names no activity (v4.3, owner: « mets juste les scores »)."""
     await _link(db_session, test_user)
-    act = await seed_owner_v4(db_session, test_user)
+    await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
     st_, score = page["state"], page["score"]
-    assert (st_["key"], st_["tone"], st_["word"]) == ("effort", "warn", "Récupération en cours")
-    assert st_["text"] == "Grosse sortie il y a 3 jours : Transjeju 100M." and st_["href"] == f"/activity/{act.id}"
-    assert (score["value"], score["measured"]) == (40, False) and page["line"] is None
-    assert [r["value"] for r in page["rings"]] == ["40", "—", "16h53"]
-    assert [(r["name"], r["word"]) for r in page["contrib"]["rows"]] == [("Charge récente", "grosse sortie")]
-    assert page["contrib"]["absent"] == "Pas encore dans le score : VFC, FC de nuit, Sommeil."
+    assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
+    assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
+    assert [(r["value"], r["sub"]) for r in page["rings"]] == [("35", "estimé"), ("—", "24 h"), ("16h53", "7 jours")]
+    assert page["rings"][0]["aria"] == "Récupération 35 sur 100, estimée sans nuit mesurée. Récupération faible."
+    assert [(r["name"], r["sub"]) for r in page["detail"]["rows"]] == [("Charge récente", 20)]
+    assert page["detail"]["absent"] == ("Pas encore dans le score : VFC, FC de nuit (ta normale se construit), "
+                                        "Sommeil.")
     html = await _page(as_user, monkeypatch, D5)
-    assert "Grosse sortie il y a 3 jours : Transjeju 100M." in html and "Pas de nuit mesurée ce matin." not in html
+    assert '<span class="pf-ring-sub" aria-hidden="true">estimé</span>' in html
+    assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
 
 
 async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncClient, db_session: AsyncSession,
                                                                  test_user: User, monkeypatch):
-    """OWN-A: no watch, an ultra 2 days ago: « Récupération en cours » from the activity, the connect links still
-    there (how to add the nights)."""
+    """OWN-A: no watch, an ultra 2 days ago: « Récupération faible » (its 35, estimé) from the activity alone, the
+    connect links still there (how to add the nights)."""
     today = date(2026, 10, 8)
     await _runs(db_session, test_user, today, n=8)
     d = today - timedelta(days=2)
@@ -235,16 +242,16 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
                             raw_data={"utc_offset": 7200}))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["key"] == "effort" and page["score"]["value"] == 40 and page["connect"]
-    assert page["state"]["text"] == "Grosse sortie il y a 2 jours : Grand Raid."
+    assert page["state"]["key"] == "effort" and page["score"]["value"] == 35 and page["connect"]
+    assert page["state"]["text"] is None and page["score"]["estimated"]
     html = await _page(as_user, monkeypatch, today)
-    assert "Récupération en cours" in html and 'href="/settings#coros"' in html
+    assert "Récupération faible" in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
     assert "Connecte ta montre pour ta récupération." not in html
 
 
 async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSession, test_user: User):
-    """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (« hier »,
-    capped at 40), Contributeurs never « pas de grosse sortie »; that sleep is « après ultra »."""
+    """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (D+1,
+    capped at 35), Charge récente in its detail; that sleep is « après ultra »."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     rows["sleep"][today] = (400, {"main_start": f"{today}T04:00", "main_end": f"{today}T11:00", "timeline": True},
@@ -258,8 +265,8 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
                             total_elevation_gain=9000, raw_data={"utc_offset": 7200}))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"]["text"] == "Grosse sortie hier : 100 miles." and page["score"]["value"] == 40
-    assert {r["key"]: r["word"] for r in page["contrib"]["rows"]}["load"] == "grosse sortie"
+    assert page["state"]["key"] == "effort" and page["state"]["text"] is None and page["score"]["value"] == 35
+    assert {r["key"]: r["sub"] for r in page["detail"]["rows"]}["load"] == 20
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert "◇ après ultra" in marks[today.isoformat()]  # 22 h: an ultra (v4.2)
 
@@ -307,15 +314,12 @@ async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, 
 
 
 def test_the_readouts_fit_one_line_at_358_px():
-    """UX2: a past day's readout in compact words (no « il y a », no long sentence): « FC de nuit nettement haute »,
-    « Sommeil sous ton habitude »; a provisional normal says « (provisoire) » after its numbers."""
-    ill = {"key": "ill", "text": td.ILL}
-    assert td.short_text(ill, {}) == "FC de nuit nettement haute"
-    debt = {"key": "sleep", "text": td.TEXTS["debt"]}
-    assert td.short_text(debt, {}) == "Sommeil sous ton habitude"
-    assert td.short_text({"key": "hrv", "text": td.TEXTS["hrv"]}, {}) == "VFC basse sur 7 nuits"
-    for text in (td.SHORT["ill"], td.SHORT["debt"]):
-        assert len("mer. 30 sept. · " + text) <= 44  # ≈ 290 px at 13 px
+    """UX2: a past day's readout in compact words (v4.3: the date, the score, the state; « estimé, sans nuit
+    mesurée » the longest); a provisional normal says « (provisoire) » after its numbers."""
+    from app.services import sante_score as sc
+
+    assert len("mer. 30 sept. · " + sc.EST_READ) <= 44  # ≈ 290 px at 13 px
+    assert max(len(f"{td.GLYPHS[t]} {w}") for t, w in td.WORDS.items()) <= 24  # the word line, 15 px
 
 
 def test_the_large_readouts_keep_their_unit_apart():
@@ -356,12 +360,6 @@ def test_the_sommeil_hero_is_not_the_race_pages_grid():
     assert 'class="pf-card pf-nhero"' in page and '"pf-card pf-hero"' not in page
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-nhero" not in css  # no rule: a plain block
-
-
-def test_history_card_aria_and_json_never_say_il_y_a_for_a_past_day():
-    """OWN-3 / OWN-F, on the owner's own card (the full page path: test_sante.test_owner_cards)."""
-    assert "il y a" not in json.dumps(td.short_text({"key": "effort"}, {"window": {"effort": type(
-        "E", (), {"name": "Transjeju 100M"})()}}), ensure_ascii=False)
 
 
 # ── the VFC and FC de nuit cards: « la barre à côté des points » ─────────────

@@ -123,10 +123,10 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
-    # nightly HR ~6 bpm over the usual two nights running: the HR alert, « À ménager » (Santé v4), its sentence
-    assert "À ménager" in r.text
+    # nightly HR ~6 bpm over the usual two nights running: the HR alert, « Récupération faible » (v4.3), its sentence
+    assert "Récupération faible" in r.text and "À ménager" not in r.text
     assert "FC de nuit nettement au-dessus de ta normale 2 nuits de suite" in r.text
-    assert r.text.index('id="contributeurs"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
+    assert r.text.index('id="detail"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
 
 
 # ── migration ───────────────────────────────────────────────────────────────

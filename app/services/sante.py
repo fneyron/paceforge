@@ -13,14 +13,19 @@ seul », « plus de graphiques »). Top to bottom:
   mark; a neutral colour, it describes, never warns). Each ring links to what
   it sums up (Charge: Activités, where the weeks are), and is a plain ring
   when there is nothing;
-- the recovery state (the band of the score) and at most one sentence
-  (sante_today);
-- the Contributeurs (sante_score.contributors);
+- the recovery state (the band of the score): its word and its glyph, one
+  sentence only for the illness alert (sante_today; v4.3, owner: « Ne
+  mentionne pas les sorties dans la partie Santé, ça complexifie : mets juste
+  les scores »: no activity is named on the page);
+- « Détail du score » (sante_score.detail): each component's note as a
+  number and a bar;
 - the cards « Récupération · 14 jours », the Sommeil section (sante_sleep),
-  « VFC · 30 nuits », « FC de nuit · 30 nuits »: the activities themselves
-  are Activités' (v4.1: no « Charge · 14 jours » card, never twice);
+  « VFC · 30 nuits », « FC de nuit · 30 nuits », each night card opening on
+  one status line, the last 7 nights against the normal the score reads
+  (v4.3, owner: « est-ce que c'est bien ou pas bien ? »): the activities
+  themselves are Activités' (v4.1: no « Charge · 14 jours » card);
 - the closed folds (how the recovery is computed, how the nights are read,
-  the nights' table).
+  each ending on a link to /sante/sources; the nights' table).
 From past activities and the nights only: no planned race, no check-in, no
 training prescription, no sync status (Réglages': the page syncs on its own
 when it opens and reloads quietly when something new arrived). Only
@@ -90,11 +95,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         hero = sl.hero(nights, today)
         samples = await _timeline(db, user_id, nights, hero["day"]) if hero else {}
         out["sleep"] = sl.sleep_section(nights, today, r, samples)
-        out["vfc"] = _night_card(nights, "hrv", today)
-        out["fc"] = _night_card(nights, "hr", today)
+        out["vfc"] = _night_card(nights, "hrv", today, day)
+        out["fc"] = _night_card(nights, "hr", today, day)
         out.update(_top(day, sessions, today, bool(sources), out))
     out["day_label"] = viz.d_short(today)
-    out["method"], out["refs"] = sc.typo(sc.METHOD), sc.linked(sc.REFS)
+    out["method"] = sc.typo(sc.METHOD)
     return out
 
 
@@ -104,12 +109,19 @@ def _night_stat(nights, metric: str, d: date, ignore=()) -> dict:
     """The 7-night mean of the usable nights (3 at least, Plews 2014; Lau 2022)
     and the band it is read against: the 60 days before its window, on the
     watch that mean reads (one band per watch, Dial 2025; « provisoire » from 7
-    to 13 nights, H). The status is judged on the unrounded mean. `ignore`:
-    tags kept in the mean (an alert episode's own nights, when the alert is
-    the state: the score then reads them, never the band)."""
+    to 13 nights, H); the band even without a mean (« ta normale se
+    construit » is said only when there is none). The status is judged on the
+    unrounded mean. `seen`: the metric measured in the band's 60 days or the
+    week after them. `ignore`: tags kept in the mean (an alert episode's own
+    nights, when the alert is the state: the score then reads them, never the
+    band)."""
     m = nt.mean7(nights, metric, d, ignore=ignore)
-    b = nt.band(nights, metric, d - timedelta(days=6), source=nt.mean_source(nights, metric, d)) if m else None
-    return {"value": m["value"] if m else None, "normal": b, "status": nt.status(m["value"], b) if b else None}
+    src = nt.mean_source(nights, metric, d)
+    b = nt.band(nights, metric, d - timedelta(days=6), source=src)
+    v = m["value"] if m else None
+    lo = d - timedelta(days=nt.BAND_DAYS + 6)
+    seen = src is not None and any(lo <= x <= d and n.value(metric) is not None for x, n in nights.items())
+    return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen}
 
 
 def _assess(nights, sessions, efforts, d: date) -> dict:
@@ -133,10 +145,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
                      "prov": bool(usual and usual["provisional"])},
            "window": st.effort_window(efforts, d), "alert": alert}
     score = sc.score_of(day)
-    state = td.state(score, day)
-    if state:
-        state["short"] = td.short_text(state, day)
-    day.update(score=score, state=state)
+    day.update(score=score, state=td.state(score, day))
     return day
 
 
@@ -145,8 +154,8 @@ def _history(nights, sessions, efforts, today: date) -> list:
     computed it on that day: from the nights and the activities known then
     only — an activity is known once it ended (it is uploaded then), so one
     still running at midnight belongs to the next day — and the efforts as
-    that day saw them (st.efforts on those activities: back-to-back days, M3,
-    join a later day, so a past day may have seen a smaller effort). A night's
+    that day saw them (st.efforts on those activities: a chain across
+    midnight joins a later day, so a past day may have seen a smaller effort). A night's
     tags as of that day are today's (an effort tags the nights after it, a
     session the night after it: both known by then) but for « sortie intense
     le soir » (it reads that day's HR bounds) and « FC de nuit haute » (an
@@ -174,7 +183,7 @@ def _history(nights, sessions, efforts, today: date) -> list:
         ss = [s for s in sessions if ends[s.id] <= midnight]  # finished by the end of `d`
         known = {s.id for s in ss}
         # the efforts as that day saw them: today's that it knew whole; computed anew when one was only partly
-        # known (back-to-back days, M3, or a chain across midnight: that day saw a smaller effort)
+        # known (a chain across midnight: that day saw a smaller effort)
         same = not any(e.ids & known and not e.ids <= known for e in efforts)
         efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss))
         running = any(s.day <= d and s.id not in known for s in sessions)
@@ -196,7 +205,7 @@ def _history(nights, sessions, efforts, today: date) -> list:
     return out
 
 
-# ── the top: rings, state, contributors ─────────────────────────────────────
+# ── the top: rings, state, « Détail du score » ──────────────────────────────
 
 def _usual_week(sessions, today: date) -> float | None:
     """The median of the activities' hours (stops included) of the last 12
@@ -225,12 +234,12 @@ def charge_word(week: float, usual: float | None) -> str | None:
 
 
 def _top(day: dict, sessions, today: date, has_watch: bool, page: dict) -> dict:
-    """The rings, the state line and the Contributeurs. A ring links to what
-    it sums up, never to a section the page lacks: Récupération to its 14
-    days (else the Contributeurs), Sommeil to its section, Charge to
-    Activités (the weeks, the activities themselves)."""
+    """The rings, the state line and « Détail du score ». A ring links to
+    what it sums up, never to a section the page lacks: Récupération to its
+    14 days (else its detail), Sommeil to its section, Charge to Activités
+    (the weeks, the activities themselves)."""
     state, score = day["state"], day["score"]
-    href = "#recuperation" if page.get("recup") else "#contributeurs" if score.get("value") is not None else None
+    href = "#recuperation" if page.get("recup") else "#detail" if score.get("value") is not None else None
     rings = [sc.ring(score, state, href)]
     sleep_href = "#sommeil" if (page.get("sleep") or {}).get("state", "never") != "never" else None
     tst = day["tst24"]
@@ -258,7 +267,7 @@ def _top(day: dict, sessions, today: date, has_watch: bool, page: dict) -> dict:
                           + (" Ouvre tes activités." if charge_href else "")))
     return {"rings": rings, "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line or under the state
-            "contrib": sc.contributors(score, state), "score": score}
+            "detail": sc.detail(score), "score": score}
 
 
 # ── the cards ───────────────────────────────────────────────────────────────
@@ -277,11 +286,57 @@ def _span(metric: str, values: list, bands: list) -> float:
     return max(14.0, 2 * widest)
 
 
-def _night_card(nights, metric: str, today: date) -> dict | None:
+# each night card's status line (v4.3): its last 7 nights against the normal the score reads, in the words and the
+# colour of its Détail row (sante_score.heart_tone); what it often means, only out of the normal on the side that
+# matters; without a normal yet, how many ordinary nights until there is one
+STATUS = {"in": "dans ta normale", "below": "sous ta normale", "above": "au-dessus de ta normale"}
+BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over it: the side that matters
+MEANING = {"hrv": "Souvent : fatigue, stress, alcool ou début de maladie.",
+           "hr": "Souvent : fatigue, chaleur, alcool ou début de maladie."}
+NO_MEAN = "Trop peu de nuits ordinaires ces 7 jours pour comparer."
+
+
+def nights_to_normal(nights, metric: str, d: date) -> int:
+    """How many nights until the normal the score reads on `metric` exists, every coming night being an
+    ordinary one: the first j ≥ 1 for which the band day d + j reads (the 60 days before its 7-night window, on
+    the latest watch: 7 usable nights at least, H) holds 7 nights — those already slept and the coming ones."""
+    src = nt.mean_source(nights, metric, d)
+    known = [x for x, n in nights.items() if x <= d and n.usable(metric) and n.source_of(metric) == src]
+    for j in range(1, nt.BAND_DAYS + 8):
+        until = d + timedelta(days=j - 6)  # the band of day d + j: the nights before d + j − 6
+        lo = until - timedelta(days=nt.BAND_DAYS)
+        if sum(1 for x in known if lo <= x < until) + max(0, (until - d).days - 1) >= nt.MIN_PROVISIONAL_NIGHTS:
+            return j
+    return nt.MIN_PROVISIONAL_NIGHTS
+
+
+def card_status(nights, metric: str, day: dict) -> dict:
+    """{text, tone, meaning}: « dans ta normale » / « sous ta normale » / « au-dessus de ta normale » with a dot in
+    its Détail row's colour (heart_tone: green in it, orange or red out of it on the side that matters, neutral on
+    the other side, never praised), and « Souvent : … » only out of it on the side that matters; « Pas encore de
+    normale : encore N nuits ordinaires (…) » without a normal; a plain line when the week holds under 3 usable
+    nights. The FC de nuit under the illness alert reads the alert's 2 nights, as the score does."""
+    s = day["stats"][metric]
+    if not s["normal"]:
+        n = nights_to_normal(nights, metric, day["day"])
+        return {"text": f"Pas encore de normale : encore {n} nuit{'s' if n > 1 else ''} ordinaire{'s' if n > 1 else ''}"
+                        " (hors voyage, altitude et récupération).", "tone": None, "meaning": None}
+    part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
+    if s["value"] is None or part is None:
+        return {"text": NO_MEAN, "tone": None, "meaning": None}
+    tone = sc.row_tone(part)
+    status = BAD[metric] if tone in ("warn", "danger") else s["status"]
+    return {"text": STATUS[status], "tone": tone, "meaning": MEANING[metric] if status == BAD[metric] else None}
+
+
+def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     """« VFC · 30 nuits » / « FC de nuit · 30 nuits » (viz.night_card): None
     without a night measured in the 30 days. With fewer than 10 measured
     nights the axis spans them (from the first, 14 days at least), not 30
-    nights with a few dots against the right edge."""
+    nights with a few dots against the right edge. Each day's band is the
+    normal its 7-night mean is read against (the 60 days before that week, on
+    the watch the mean reads: v4.3, one normal for the card, its status line
+    and the score), its status line opens the card (card_status)."""
     days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
     values = [nights[d].value(metric) if d in nights else None for d in days]
     seen = [i for i, v in enumerate(values) if v is not None]
@@ -292,14 +347,15 @@ def _night_card(nights, metric: str, today: date) -> dict | None:
         days, values = days[-keep:], values[-keep:]
     bands, prov = [], []
     for d in days:
-        n = nights.get(d)
-        b = nt.band(nights, metric, d, source=n.source_of(metric) if n and n.value(metric) is not None else None)
+        b = nt.band(nights, metric, d - timedelta(days=6), source=nt.mean_source(nights, metric, d))
         bands.append((b["lo"], b["hi"]) if b else None)
         prov.append(bool(b and b["provisional"]))
     means = [(nt.mean7(nights, metric, d) or {}).get("value") for d in days]
     key, name, unit, unit_long = CARDS[metric]
-    return viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
-                          name=name, min_span=_span(metric, values, bands))
+    c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
+                       name=name, min_span=_span(metric, values, bands))
+    c["status"] = card_status(nights, metric, day)
+    return c
 
 
 # ── reading ─────────────────────────────────────────────────────────────────

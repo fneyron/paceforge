@@ -162,41 +162,25 @@ def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
     assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
 
-def test_the_method_fold_marks_its_heuristics_and_names_no_race():
-    """« Comment je lis tes nuits » (V42_BRIEF.md §C–§D): the official texts, PaceForge's choices (H), what the
-    watch does not know; the references in two groups, only the sources the text uses."""
+def test_the_method_fold_is_five_plain_bullets_and_names_no_race():
+    """« Comment je lis tes nuits » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets pas les
+    citations »): 5 one-line bullets in plain words, no citation, no « (H) »; its references stay in the code
+    (REFS), listed on /sante/sources."""
     import re
 
     from app.services import sante_score as sc
 
-    assert [h for h, _ in sl.METHOD] == ["Ce qui vient des textes officiels", "Ce qui est notre choix (H)",
-                                         "Ce que la montre ne sait pas"]
+    assert sl.METHOD == ["Ton sommeil se compte sur 24 h, siestes comprises.",
+                         "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
+                         "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
+                         "Les nuits après une grosse sortie, un voyage ou en altitude restent hors de ta normale.",
+                         "Coucher et lever détectés par la montre."]
     text = sc.flat(sl.METHOD)
-    for phrase in ("Ton sommeil se compte sur 24 h, siestes comprises (Watson 2015b ; Hirshkowitz 2015)",
-                   "Les 7 h parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a ; Hirshkowitz 2015)",
-                   "Une longue nuit n'est jamais signalée",
-                   "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A)",
-                   "1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021)",
-                   "Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM",
-                   "Le sommeil léger occupe normalement la plus grande partie de la nuit",
-                   "Aucune instance ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017)",
-                   "plein à 8 h, une échelle, pas un objectif",
-                   "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021)",
-                   "(6 h : Craven 2022 ; 65 : notre choix)",
-                   "tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021)",
-                   "la nuit après 1h30 de sortie ou une sortie intense le soir", "4 après 10 h", "(Fachan 2026)", "(Mograss 2022 ; Walsh 2021)",
-                   "Coucher et lever arrondis à 5 min, phases à 10 min",
-                   "Ton sommeil est estimé par la montre, qui le surestime (Walsh 2021 ; de Zambotti 2024)",
-                   "50 à 70 % des moments de la nuit bien classés (de Zambotti 2024)",
-                   "d'environ 1 h du labo (Chinoy 2021, Garmin)", "COROS : aucune étude publiée"):
-        assert phrase in text, phrase
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text
-    assert all(len(b) <= 96 for _, items in sl.METHOD for b in items)  # ≤ 2 lines at 358 px
+    assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text)
     assert [g for g, _ in sl.REFS] == ["Textes officiels", "Études"]
     labels = [n for _, items in sl.REFS for n, _ in items]
-    assert len(labels) == len(set(labels)) <= 16 and all(n in text for n in labels)
-    cited = set(re.findall(r"(?:de |Janse van )?[A-Z][A-Za-z]+ (?:19\d\d|20[0-3]\d)[ab]?", text))
-    assert cited | {"CTA/NSF 2052.1‑A", "CTA/NSF 2052.3"} == set(labels), cited ^ set(labels)
+    assert len(labels) == len(set(labels)) <= 16
     links = dict(n_l for _, items in sc.linked(sl.REFS) for n_l in items)
     assert links["CTA/NSF 2052.1‑A"] == "https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"
     assert links["Watson 2015b"] == "https://doi.org/10.5665/sleep.4886"
