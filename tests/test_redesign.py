@@ -61,7 +61,8 @@ async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
     assert '/static/css/theme.css' in page and "pf-sidebar" not in page
     assert 'class="pf-top"' in page and 'class="pf-tabbar"' in page
     tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
-    assert [label for label in ("Courses", "Activités", "Santé", "Réglages") if label in tabbar] == ["Courses", "Activités", "Santé", "Réglages"]
+    labels = re.findall(r"<span>([^<]+)</span>", tabbar)
+    assert labels == ["Santé", "Activités", "Courses", "Réglages"]  # owner, 2026-10-09: Activités before Courses
     assert "Vélo" not in tabbar and "Triathlon" not in tabbar
 
 
