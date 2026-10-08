@@ -2676,7 +2676,7 @@ async def nutrition_delete_product(route_id: int, product_id: int, request: Requ
     product = (await db.execute(select(NutritionProduct).where(NutritionProduct.id == product_id, NutritionProduct.user_id == user.id))).scalar_one_or_none()
     if not product:
         return await _nu_reply(request, route, db, user, anchor="nu-produits", open_="produits")
-    plan, _products, _pantry_, b = await _nu_state(route, db, user)
+    plan, _products, pantry, b = await _nu_state(route, db, user)
     uses = await _product_uses(db, user, route, product_id, plan)
     if (uses["here"] or uses["others"]) and str(form.get("confirm")) != "1":
         return await _nu_reply(request, route, db, user, anchor="nu-produits", b=b, open_="produits", confirm=product_id,
@@ -2691,7 +2691,8 @@ async def nutrition_delete_product(route_id: int, product_id: int, request: Requ
             nj["rhythms"] = [r for r in nj.get("rhythms") or [] if not (isinstance(r, dict) and r.get("product_id") == product_id)]
             other.nutrition_json = nj
         await db.flush()
-    return await _nu_reply(request, route, db, user, anchor="nu-produits", b=b, open_="produits", focus="nu-prods")
+    # the focus lands on the list, or on the fold when it was his last product
+    return await _nu_reply(request, route, db, user, anchor="nu-produits", b=b, open_="produits", focus="nu-prods" if len(pantry) > 1 else "nu-produits")
 
 
 @router.post(_NU + "/plan", response_class=HTMLResponse)

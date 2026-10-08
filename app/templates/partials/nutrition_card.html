@@ -30,7 +30,7 @@
         <ul class="pf-nu-lines">
             {% for l in lines %}
             <li>
-                <form class="pf-nu-line" method="post" action="{{ P }}/rhythms/{{ l.i }}" hx-post="{{ P }}/rhythms/{{ l.i }}" hx-trigger="change">
+                <form class="pf-nu-line" method="post" action="{{ P }}/rhythms/{{ l.i }}" hx-post="{{ P }}/rhythms/{{ l.i }}" hx-trigger="change delay:150ms">
                     <div class="pf-nu-l1">
                         <span class="pf-nu-sel pf-nu-sel-p"><select id="nu-l{{ l.i }}-p" name="product_id" aria-label="Produit, ligne {{ l.i + 1 }}">{% for pid, lbl, on in l.products %}<option value="{{ pid }}"{% if on %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>{{ chev() }}</span>
                         <button type="submit" id="nu-l{{ l.i }}-x" class="pf-nu-x" formaction="{{ P }}/rhythms/{{ l.i }}/delete" hx-post="{{ P }}/rhythms/{{ l.i }}/delete" aria-label="Retirer {{ l.label }} du plan" title="Retirer du plan">{{ ic.icon('close', 'w-5 h-5', '2') }}</button>
