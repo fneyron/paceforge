@@ -419,7 +419,8 @@ def _tag_altitude(nights: dict[date, Night], sessions, day_alt: dict[date, float
 
 def hr_segments(laps, splits) -> tuple:
     """((minutes, average HR), …) of an activity's laps, else of its km splits
-    (Strava's shapes): what « ≥ 20 min above » reads; () without them."""
+    (Strava's shapes): what « ≥ 20 min above » and the Entraînement dial's
+    load (sante_training.session_load) read; () without them."""
     for rows in (laps, splits):
         if not isinstance(rows, list):
             continue
@@ -439,20 +440,17 @@ def hr_segments(laps, splits) -> tuple:
     return ()
 
 
-async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -> None:
-    """Each session that could tag a night « late » (late_candidates) gets its
-    laps' (else its splits') HR segments as `segs`, in one read; the others
-    keep None (their average alone is read)."""
+async def read_segments(db: AsyncSession, sessions) -> None:
+    """Each of `sessions` with an average HR and no `segs` yet gets its laps'
+    (else its splits') HR segments (hr_segments), in one read; () without
+    them. The laps are Strava's, or COROS's auto laps stored in Strava's
+    shape (coros.apply_details)."""
     from app.models.activity import Activity
 
-    by_day = defaultdict(list)
-    for s in sessions:
-        by_day[s.day].append(s)
     want = {}
-    for d, n in nights.items():
-        for s in late_candidates(n, by_day.get(d - timedelta(days=1), []) + by_day.get(d, [])):
-            if s.hr and getattr(s, "segs", None) is None:
-                want.setdefault(s.id, []).append(s)
+    for s in sessions:
+        if s.hr and getattr(s, "segs", None) is None:
+            want.setdefault(s.id, []).append(s)
     if not want:
         return
     rows = (await db.execute(select(Activity.id, Activity.laps, Activity.splits_metric)
@@ -461,6 +459,17 @@ async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -
     for i, ss in want.items():
         for s in ss:
             s.segs = found.get(i, ())
+
+
+async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -> None:
+    """Each session that could tag a night « late » (late_candidates) gets its
+    laps' (else its splits') HR segments as `segs` (read_segments); the others
+    keep None (their average alone is read)."""
+    by_day = defaultdict(list)
+    for s in sessions:
+        by_day[s.day].append(s)
+    await read_segments(db, [s for d, n in nights.items()
+                             for s in late_candidates(n, by_day.get(d - timedelta(days=1), []) + by_day.get(d, []))])
 
 
 def tz_nights(step: float) -> tuple[str, int]:

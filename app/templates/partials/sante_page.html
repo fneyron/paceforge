@@ -3,7 +3,8 @@
     Entraînement (each a percentage over its name and a plain word, a link to its card), the illness alert's sentence
     under them only when it fires (or the line that says why there is no score); then their three cards right under
     them, in the same order: Récupération (its rows: VFC, FC de nuit, Effort récent), Sommeil (last night: its times,
-    its hours over the 8-h need, its stages), Entraînement (the last 7 days and the usual week, a link to Activités);
+    its hours over the 8-h need, its stages), Entraînement (the last 7 days and the usual week, « Intensité » in a
+    word, a link to Activités);
     then the details: Récupération's 14 days and its VFC and FC de nuit charts, Sommeil's 24-h chart and the habits;
     then the closed folds (each ending on its « Sources » link). No sub-score anywhere.
     Each number is printed once on the page: a dial's percentage on the dial, the hours and the values on the cards;
@@ -31,8 +32,8 @@
 
 {#- the three cards of the mockup, right under the dials and in their order (each dial links to its card): Récupération
     (its rows: VFC, FC de nuit, Effort récent), Sommeil (last night: its times, the naps its 24 h counts, its hours
-    over the 8-h need, its stages), Entraînement (the last 7 days and the usual week); each title a link « › » to its
-    details further down (Activités for Entraînement) -#}
+    over the 8-h need, its stages), Entraînement (the last 7 days and the usual week, « Intensité »); each title a
+    link « › » to its details further down (Activités for Entraînement) -#}
 {% macro card_title(id, text, href) %}<h2 id="{{ id }}" class="pf-sum-h"><a class="pf-sum-go" href="{{ href }}">{{ text }}<span class="pf-sum-chev" aria-hidden="true">›</span></a></h2>{% endmacro %}
 {% set has_recup_detail = p.recup or p.vfc or p.fc %}
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
@@ -80,6 +81,9 @@
             lien ? Ça ne filtre pas sur la semaine ? ») -#}
         {{ card_title("h-train", "Entraînement", "/activities?depuis=" ~ t.since.isoformat()) }}
         <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b> <span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
+        {#- the minutes' weight against the usual week's, in a word (the approved mockup, owner 2026-10-09: « Oui
+            vas-y »): never a number, never a colour -#}
+        {% if t.intensity %}<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span class="pf-row-val"><span>{{ t.intensity }}</span></span></div>{% endif %}
     </div>
 </section>
 

@@ -631,6 +631,8 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-row.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
 .pf-row.is-none .pf-dot { background: rgb(var(--pf-gray-400)); }   /* nothing to compare yet: grey, its words say why */
 .pf-row.pf-night, .pf-row.pf-week { padding-top: 8px; }   /* the first row under the card's title, no rule above it */
+.pf-row.pf-intensity { border-top: 1px solid rgb(var(--pf-line)); }   /* « Intensité » under the 7 days, a rule between them as between the rows */
+.pf-intensity .pf-row-val > span { font-size: 15px; color: rgb(var(--pf-ink)); }   /* its word alone, in ink at the name's size (the mockup) */
 .pf-sum .pf-tl { margin-top: 4px; }
 .pf-sum .pf-phases { margin-top: 6px; padding-bottom: 8px; }
 /* the Sommeil card's need (2026-10-09): its line, « Changer », the question once and its answers as chips (44 px) */

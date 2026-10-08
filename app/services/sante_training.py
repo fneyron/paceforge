@@ -13,7 +13,11 @@ built on it are gone; nothing drew it since Santé v4.1).
   just an activity; activities chained without a real stop are one effort),
   and the recovery window it opens (`efforts`, `effort_window`); a Longue run
   like a race keeps it longer, for every user (v4.4, R3: marked so on
-  Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve).
+  Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve);
+- each activity's heart-rate load, the Entraînement dial's (owner, 2026-10-09:
+  « Oui vas-y », research_ind_train.md): its minutes weighted by their share
+  of the heart-rate reserve (Banister 1991), from its laps when it has them;
+  shown only as a ratio to the athlete's own usual week, never as a number.
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it.
 """
@@ -61,7 +65,7 @@ class Session:
     alt: float | None = None  # m, the ground altitude where it ended (Open-Meteo, looked up in the sync)
     elev_low: float | None = None  # m, its lowest point (Strava elev_low)
     feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
-    segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.load_segments)
+    segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.read_segments)
 
 
 def _utc(dt: datetime) -> datetime:
@@ -120,11 +124,13 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
                   (Activity.sport_type.in_(BIKE), 1_000_000), else_=1_000_000_000)
-    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too
+    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too; the laps' and splits'
+    # too (what load_hr_segments keeps with the sessions), measured the same way, without detoasting them
     pg = db.get_bind().dialect.name == "postgresql"
+    stored = func.pg_column_size if pg else func.length
     key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
-               func.sum(env.raw_size(db)),
+               func.sum(env.raw_size(db)), func.sum(stored(Activity.laps)), func.sum(stored(Activity.splits_metric)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
                func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
                func.sum(func.coalesce(Activity.average_heartrate, 0)),
@@ -187,6 +193,30 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     return [replace(s) for s in out]
 
 
+_SEGS: dict[int, tuple[tuple, dict[int, tuple]]] = {}  # user → (load_sessions' key, {activity id: its segs})
+
+
+async def load_hr_segments(db: AsyncSession, user_id: int, sessions: list[Session], since: date) -> None:
+    """`segs` on every session with an average HR from `since` on (nights.read_segments: its laps, else its km
+    splits, as (minutes, average HR)), what the Entraînement dial weighs. Kept per worker with the sessions: read
+    again only once a sync added or rewrote an activity, its laps or its splits (load_sessions' key; a year of laps
+    is a heavy read). Kept under the key seen before the read, and only while it still holds."""
+    from app.services.nights import read_segments
+
+    key = (_CACHE.get(user_id) or (None,))[0]
+    kept = _SEGS.get(user_id)
+    memo = kept[1] if key is not None and kept and kept[0] == key else {}
+    want = [s for s in sessions if s.hr and s.day >= since]
+    for s in want:
+        if s.segs is None and s.id in memo:
+            s.segs = memo[s.id]
+    await read_segments(db, want)
+    if key is not None and (_CACHE.get(user_id) or (None,))[0] == key:
+        if user_id not in _SEGS and len(_SEGS) >= _CACHE_SIZE:
+            _SEGS.pop(next(iter(_SEGS)))
+        _SEGS[user_id] = (key, {**memo, **{s.id: s.segs for s in want}})
+
+
 async def utc_offset(db: AsyncSession, user_id: int) -> float | None:
     """The athlete's UTC offset (s) from their latest sessions (Strava or Garmin), if any."""
     rows = (await db.execute(
@@ -236,6 +266,78 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
         if len(vals) >= 3:
             return statistics.median(vals)
     return 50.0
+
+
+# ── heart-rate load: the Entraînement dial (owner, 2026-10-09: « Oui vas-y »; research_ind_train.md) ──────────
+# Each minute of an activity weighs x·0.64·e^(1.92x), x its share of the heart-rate reserve (Banister 1991): an easy
+# minute at 60 % of the reserve about 1.2, a hard one at 90 % about 3.2. Internal load is the consensus construct
+# (Impellizzeri 2019; Bourdon 2017), yet never validated as an absolute dose (Passfield 2022): Santé shows it only
+# against the athlete's own usual week, as a ratio, never as a number (no TRIMP, no points). No brand load is read.
+LOAD_A, LOAD_B = 0.64, 1.92  # (H) Banister 1991's men's constants for everyone: no sex known (women's: ≤ 3.5 points)
+SEG_COVER = 0.8  # (H) laps (else km splits) with HR over 80 % of the moving time: their load, scaled to it
+HR_FLOOR, HR_OVER_MAX = 40, 10  # (H) an average under 40 bpm or over max + 10 bpm: a glitch, no HR
+RUN_MIN_HRR = 0.3  # (H) a run under 30 % of the heart-rate reserve: an optical dropout, no HR
+RUN_TYPES = RUNS | {"VirtualRun"}
+# (H) HR under-reads strength and studio work (Polar's Training Load Pro; WHOOP added a muscular load): by time
+BY_TIME = frozenset({"WeightTraining", "Crossfit", "Workout", "Yoga", "Pilates"})  # (H)
+RATE_DAYS, RATE_MIN = 365, 5  # (H) the athlete's own load per minute: 12 months, 5 sessions read from their HR
+RATE_DEFAULT = 1.2  # (H) else an easy minute's (60 % of the reserve)
+
+
+def minute_load(hr: float, rest: float, peak: float) -> float:
+    """One minute's weight at `hr` (Banister 1991): x·0.64·e^(1.92x), x = (hr − rest) ÷ (peak − rest) kept in
+    [0, 1]."""
+    x = min(1.0, max(0.0, (hr - rest) / max(peak - rest, 1.0)))
+    return x * LOAD_A * math.exp(LOAD_B * x)
+
+
+def hr_readable(s: Session, rest: float, peak: float) -> bool:
+    """Its average HR can weigh its minutes (H): from 40 bpm to max + 10, and a run at 30 % of the reserve at least
+    (under it, an optical dropout); never a strength, Workout, yoga or Pilates session (BY_TIME)."""
+    if not s.hr or s.sport in BY_TIME or not HR_FLOOR <= s.hr <= peak + HR_OVER_MAX:
+        return False
+    return s.sport not in RUN_TYPES or (s.hr - rest) / max(peak - rest, 1.0) >= RUN_MIN_HRR
+
+
+def session_load(s: Session, rest: float, peak: float) -> float | None:
+    """One activity's heart-rate load (Banister 1991): its laps', else its km splits' (`segs`, laps or splits with a
+    plausible HR) minutes × each one's minute weight, scaled to its moving time when they cover 80 % of it at least
+    (H), else its moving minutes at its average HR (summed per segment, a load reads ≈ 9 % higher, more on hard
+    sessions: García-Ramos 2015). None when its HR cannot be read (hr_readable): `loads` counts it by time."""
+    if not hr_readable(s, rest, peak):
+        return None
+    segs = [(m, hr) for m, hr in s.segs or () if HR_FLOOR <= hr <= peak + HR_OVER_MAX]
+    covered = sum(m for m, _ in segs)
+    if covered and covered >= SEG_COVER * s.minutes:
+        return s.minutes * sum(m * minute_load(hr, rest, peak) for m, hr in segs) / covered
+    return s.minutes * minute_load(s.hr, rest, peak)
+
+
+def load_family(sport: str) -> str:
+    """Whose minutes a session without a readable HR borrows (H): the runs (road, trail, treadmill), the rides
+    (BIKE), else its own sport."""
+    return "run" if sport in RUN_TYPES else "bike" if sport in BIKE else sport
+
+
+def loads(sessions: list[Session], today: date, rest: float, peak: float) -> dict[int, tuple[float, bool]]:
+    """{session id: (its heart-rate load, read from its HR)}, every session with the same bounds, today's (H: a new
+    max or resting HR never moves the dial by itself). A session whose HR cannot be read, and every strength,
+    Workout, yoga or Pilates session, counts its moving minutes at the athlete's own median load per minute (H):
+    over the 12 months up to `today`, that of the sessions read from their HR in its family (load_family, 5 at
+    least), else of all of them (a strength session: always all of them), else 1.2 (an easy minute). Without any
+    HR, every minute weighs the same: the dial is the time's."""
+    own = {s.id: session_load(s, rest, peak) for s in sessions}
+    lo = today - timedelta(days=RATE_DAYS)
+    per = defaultdict(list)
+    for s in sessions:
+        if own[s.id] is not None and s.minutes > 0 and lo < s.day <= today:
+            per[load_family(s.sport)].append(own[s.id] / s.minutes)
+    every = [r for rates in per.values() for r in rates]
+    base = statistics.median(every) if len(every) >= RATE_MIN else RATE_DEFAULT
+    rate = {f: statistics.median(rates) for f, rates in per.items() if len(rates) >= RATE_MIN}
+    return {s.id: (own[s.id], True) if own[s.id] is not None else (s.minutes * rate.get(load_family(s.sport), base),
+                                                                    False)
+            for s in sessions}
 
 
 # ── weeks (as Activités counts them) ────────────────────────────────────────

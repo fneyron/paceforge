@@ -713,7 +713,8 @@ def test_the_method_fold_is_six_plain_bullets():
         "pouls moyen pendant ton sommeil.",
         "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
         "Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine "
-        "habituelle.",  # 2026-10-09: the need is the athlete's own
+        "habituelle. Chaque minute d'activité compte, et davantage quand ton pouls est haut.",  # 2026-10-09: the
+        # need is the athlete's own, the week's load reads the heart rate (Banister)
         "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
         "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",  # v4.4 (R3): no number
         "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score. Une respiration plus rapide que "

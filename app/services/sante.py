@@ -9,9 +9,10 @@ comme WHOOP, ça doit rester simple »). Top to bottom:
   « court » under 6 h (Craven 2022), its arc then in the warning colour),
   Récupération (the 0–100 score as a percentage in its state's colour,
   « bonne », « en cours », « faible »; empty, « pas de score », when no night
-  was measured, like WHOOP: sante_score.dial), Entraînement (the last 7 days' activity time
-  against the usual week, as a percentage; « comme d'habitude » within ± 20 %,
-  H); the illness alert's one sentence under them (sante_today; v4.3, owner:
+  was measured, like WHOOP: sante_score.dial), Entraînement (the last 7 days'
+  heart-rate load against the usual week's, as a percentage, owner 2026-10-09:
+  « Oui vas-y »; « comme d'habitude » within ± 20 %, H); the illness alert's
+  one sentence under them (sante_today; v4.3, owner:
   « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
   activity named). No sub-score anywhere, no « Détail du score »;
 - three cards right under the dials, in their order (the approved mockup):
@@ -20,7 +21,8 @@ comme WHOOP, ça doit rester simple »). Top to bottom:
   0 %, « en construction » and when the usual values will be ready — and
   « Effort récent », the days left in a recovery window whenever one is
   open), Sommeil (sante_sleep: last night, its stages), Entraînement (the
-  last 7 days and the usual week, a link to Activités, where the weeks are);
+  last 7 days' hours and the usual week's, « Intensité » in a word, a link to
+  Activités, where the weeks are);
   each title a link to its details further down: « Récupération · 14 jours »,
   « VFC · 30 nuits » and « FC de nuit · 30 nuits », each night card opening
   on its status line in words, the last 7 nights against the usual values the
@@ -79,6 +81,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         clock = await local_clock(db, user_id, now)
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
+    # the laps (else km splits) of the sessions with HR the Entraînement dial weighs: its 12 months of own rates
+    await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.RATE_DAYS))
     # Garmin's day altitudes: where the athlete slept, first (R2)
     day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
     # the nights' tags read the efforts' classes only
@@ -122,7 +126,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
                                                 base is not None, ask)
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out.update(_top(day, efforts, sessions, bool(sources), out, until, nights))
+        # the Entraînement dial reads every week with today's bounds (H): the night tags' resting HR and peak
+        out.update(_top(day, efforts, sessions, bool(sources), out, until, nights, nt.rest_hr(nights, until), peak))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     return out
@@ -264,6 +269,10 @@ TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
 USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
 NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
+# its card's « Intensité » (owner, 2026-10-09, the approved mockup): the minutes' weight against the usual week's
+INTENSITY_SPREAD = 0.1  # (H) within ± 10 %: « comme d'habitude »
+INTENSITY_READ = 0.5  # (H) half of the minutes read from their HR, the 7 days' and the usual weeks', or no row
+INTENSITY_WORDS = ("plus élevée que d'habitude", "comme d'habitude", "plus basse que d'habitude")
 EFFORT_ORANGE = 65  # a recovery window's cap from which « Effort récent » wears orange (its 65 days); red under it
 NIGHT_ROWS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
 ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit row under the illness alert
@@ -295,52 +304,76 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
                     aria=f"Sommeil {sc.pct(p)} de ton besoin de {viz.hm_long(need)}, {word}.")
 
 
-def usual_week(sessions, today: date) -> float | None:
+def usual_week(sessions, today: date, value=None) -> float | None:
     """The usual week (H), the figure Activités › « Semaines » prints as « par semaine en moyenne »: the mean of
     the activities' moving minutes over the last 11 complete weeks (Monday → Sunday, local days) since the first
-    activity's week; None with fewer than 4 of those weeks holding an activity."""
+    activity's week; None with fewer than 4 of those weeks holding an activity. `value(s)`: what a session counts
+    over those same weeks instead of its minutes (its heart-rate load: the Entraînement dial)."""
     if not sessions:
         return None
+    value = value or (lambda s: s.minutes)
     monday = today - timedelta(days=today.weekday())
     first = min(s.day for s in sessions)
-    per = defaultdict(float)
+    held, per = defaultdict(float), defaultdict(float)
     for s in sessions:
-        per[s.day - timedelta(days=s.day.weekday())] += s.minutes
+        m = s.day - timedelta(days=s.day.weekday())
+        held[m] += s.minutes
+        per[m] += value(s)
     weeks = [m for m in (monday - timedelta(days=7 * k) for k in range(1, USUAL_WEEKS + 1))
              if m + timedelta(days=6) >= first]
-    if sum(1 for m in weeks if per.get(m, 0.0) > 0) < USUAL_MIN_WEEKS:
+    if sum(1 for m in weeks if held.get(m, 0.0) > 0) < USUAL_MIN_WEEKS:
         return None
     return statistics.fmean(per.get(m, 0.0) for m in weeks) or None
 
 
-def training(sessions, today: date, until: date | None = None) -> dict:
-    """« Entraînement », the third dial and its card: the activities' time of the last 7 days (stops included)
-    against the usual week (usual_week), as a percentage, 100 % as usual, the arc full at twice it, in the accent
-    colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que d'habitude » or « moins que
-    d'habitude »; without a usual week, the 7 days' time itself and « pas encore d'habitude ». The card prints the
-    7 days' time and the usual week's (to 5 min: a typical value), each once: without a usual week the dial
-    prints the time, the card only its words. `until`: the calendar day when the page still reads yesterday's
-    cycle (cycle_day): the activities since midnight count in it. `since`: the 7 days' first day, the card's link
-    to them in Activités (owner, 2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word,
-    since}."""
+def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0) -> dict:
+    """« Entraînement », the third dial and its card (owner, 2026-10-09: « Oui vas-y », research_ind_train.md): the
+    heart-rate load of the last 7 days (sante_training.loads: each minute weighted by its share of the heart-rate
+    reserve, Banister 1991; a minute without a readable HR, or of strength, at the athlete's usual minute) against
+    the usual week's (the same 11 complete weeks as usual_week), as a percentage, 100 % as usual, the arc full at
+    twice it, in the accent colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que
+    d'habitude » or « moins que d'habitude »; without a usual week, the 7 days' time itself and « pas encore
+    d'habitude ». The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
+    hours), each once, and « Intensité »: the minutes' weight against the usual week's (the load's ratio over the
+    hours', so the dial is the hours' ratio times it: no number contradicts another), « plus élevée que
+    d'habitude » / « comme d'habitude » / « plus basse que d'habitude » within ± 10 % (H), a word, never a number;
+    left out when under half of the minutes, of the 7 days or of the usual weeks, were read from their HR (H): the
+    dial is then nearly the hours' ratio. Without a usual week the dial prints the time, the card only its words.
+    `rest`, `peak`: today's heart-rate bounds, for every week compared (H). `until`: the calendar day when the page
+    still reads yesterday's cycle (cycle_day): the activities since midnight count in it. `since`: the 7 days' first
+    day, the card's link to them in Activités (owner, 2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial,
+    week, usual, word, intensity, since}."""
     until, since = until or today, today - timedelta(days=6)
-    week = sum(s.minutes for s in sessions if since <= s.day <= until)  # moving time, as Activités
+    days7 = [s for s in sessions if since <= s.day <= until]
+    week = sum(s.minutes for s in days7)  # moving time, as Activités
     usual = usual_week(sessions, today)
     href = "#entrainement"
     if usual is None:
         return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", NO_HABIT, tone="accent",
                                  href=href, aria=f"Entraînement : {viz.hm_long(week)} d'activité ces 7 derniers "
                                                  f"jours, {NO_HABIT}."),
-                "week": None, "usual": None, "word": NO_USUAL, "since": since}
-    ratio = week / usual
+                "week": None, "usual": None, "word": NO_USUAL, "intensity": None, "since": since}
+    load = st.loads(sessions, until, rest, peak)
+    usual_load = usual_week(sessions, today, lambda s: load[s.id][0])
+    # snapped to 1e-9 (as sante_score.rounded): minutes that all weigh the same (no HR at all) give exactly the
+    # hours' ratio
+    intensity = (round(sum(load[s.id][0] for s in days7) / week / (usual_load / usual), 9)
+                 if week and usual_load else 1.0)
+    ratio = week / usual * intensity
     word = ("plus que d'habitude" if ratio > 1 + USUAL_SPREAD else
             "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
     p = sc.rounded(100 * ratio)
-    return {"dial": viz.ring("entrainement", week / (TRAIN_TURN * usual), str(p), "Entraînement", word,
+    read7 = sum(s.minutes for s in days7 if load[s.id][1])
+    read_usual = usual_week(sessions, today, lambda s: s.minutes if load[s.id][1] else 0.0) or 0.0
+    pace = None
+    if week and read7 >= INTENSITY_READ * week and read_usual >= INTENSITY_READ * usual:
+        pace = (INTENSITY_WORDS[0] if intensity > 1 + INTENSITY_SPREAD else
+                INTENSITY_WORDS[2] if intensity < 1 - INTENSITY_SPREAD else INTENSITY_WORDS[1])
+    return {"dial": viz.ring("entrainement", ratio / TRAIN_TURN, str(p), "Entraînement", word,
                              tone="accent", unit="%", href=href,
                              aria=f"Entraînement {sc.pct(p)} de ta semaine habituelle, {word}."),
             "week": viz.hm(week), "usual": f"ta semaine habituelle{viz.NBSP}: {viz.hm(round(usual / 5) * 5)}",
-            "word": None, "since": since}
+            "word": None, "intensity": pace, "since": since}
 
 
 def _row(key: str, name: str, value: str | None, word: str, tone: str | None, qual: str | None = None,
@@ -415,11 +448,12 @@ def effort_row(efforts, day: dict) -> dict | None:
 
 
 def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None,
-         nights=None) -> dict:
+         nights=None, rest: float = 50.0, peak: float = 190.0) -> dict:
     """The three dials, each a link to its card right under the dials, else to its details further down (a plain
     dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
     sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
-    (VFC, FC de nuit, Effort récent) and the Entraînement card."""
+    (VFC, FC de nuit, Respiration when measured: `nights`, Effort récent) and the Entraînement card (`rest`,
+    `peak`: today's heart-rate bounds)."""
     state, score = day["state"], day["score"]
     sleep = page.get("sleep") or {}
     sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
@@ -428,7 +462,7 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
                         resp_row(nights, day["day"], day) if nights is not None else None,
                         effort_row(efforts, day)) if r]
     recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
-    train = training(sessions, day["day"], until)
+    train = training(sessions, day["day"], until, rest, peak)
     return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),
                       train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
