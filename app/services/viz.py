@@ -18,17 +18,21 @@ Formats (the house formats, one per kind, used everywhere):
 - climbs: « +2 401 m » (dplus);
 - clock times: « 23:35 », rounded to 5 min for sleep times (approximate);
 - numbers: decimal comma, true minus U+2212, narrow no-break space U+202F
-  before units: « 58 ms », « −3 bpm »;
+  before units: « 58 ms », « −3 bpm »; a plain no-break space U+00A0 in the
+  large readouts (a card's value, the habits, a ring): the display fonts have
+  no U+202F, so it would glue the unit to the number (« 53ms »);
 - dates: « mar. 6 oct. »; spoken « mardi 6 octobre ».
 Layout: viewBox width 320 (the 358 px phone's content width), plot 0–288, the
 y ticks right-aligned at 320; one slot per day/week, marks at slot centres so
 stacked figures share an x axis.
 
 Santé v4 (one page, WHOOP/Oura-like) adds: `ring` (the three rings at the
-top), `day_bars` (a card's bars, one per day: Récupération, Sommeil, Charge),
+top), `day_bars` (a card's bars, one per day: Récupération, Sommeil),
 `night_card` (a nightly signal's dots, 7-night line and normal: VFC, FC de
 nuit) and `timeline` (last night on a clock axis, or its hypnogram). The race
-page and Activités keep `band_chart`, `bars`, `lines` and `dots`.
+page and Activités keep `band_chart`, `bars`, `lines` and `dots`. No mark
+without a label or a legend: the rings say their value and a word, the
+cards' bars and lines have a legend or labelled lines.
 """
 import json
 import math
@@ -36,6 +40,7 @@ import statistics
 from datetime import date, datetime, time, timedelta
 
 NNBSP = " "
+NBSP = " "
 MINUS = "−"
 JOURS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
 JOURS_L = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
@@ -472,25 +477,19 @@ RING_C = round(2 * math.pi * RING_R, 2)
 
 
 def ring(key: str, fill: float | None, value: str, label: str, sub: str | None = None, *, tone: str = "accent",
-         href: str | None = None, aria: str = "", tick: float | None = None) -> dict:
+         href: str | None = None, aria: str = "", note: str | None = None) -> dict:
     """One ring: the track, an arc up to `fill` (0–1, from the top, clockwise;
     None or 0: the track alone), the value in the middle (formatted by the
-    caller, printed once), the label and a short word under it. `tone` (ok,
-    warn, danger, accent) is the CSS's colour; the value and the words say it
-    too, never colour alone. `href`: the section it sums up (None: a plain
-    ring, never a link to nothing). `tick` (0–1): a mark across the track at
-    that share of the turn (the Charge ring's usual week, 1× on a 0–2× ring)."""
+    caller, printed once), the label and a short word under it (`sub`), and
+    `note`, a word that says what the arc compares (the Charge ring: « plus
+    que d'habitude »): no mark without words. `tone` (ok, warn, danger,
+    accent) is the CSS's colour; the value and the words say it too, never
+    colour alone. `href`: what it sums up (None: a plain ring, never a link
+    to nothing)."""
     f = 0.0 if fill is None else max(0.0, min(1.0, fill))
     dash = round(f * RING_C, 2)
-    mark = None
-    if tick is not None:
-        a = 2 * math.pi * max(0.0, min(1.0, tick))
-        sx, sy = math.sin(a), -math.cos(a)
-        r0, r1 = RING_R - RING_W / 2 - 3, RING_R + RING_W / 2 + 3
-        mark = {"x1": round(50 + r0 * sx, 2), "y1": round(50 + r0 * sy, 2), "x2": round(50 + r1 * sx, 2),
-                "y2": round(50 + r1 * sy, 2)}
     return {"key": key, "value": value, "label": label, "sub": sub, "tone": tone, "href": href, "aria": aria,
-            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "tick": mark}
+            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "note": note}
 
 
 # ── V2 card bars: one bar per day (Récupération, Sommeil, Charge) ───────────
@@ -571,9 +570,10 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     athlete's normal as a band (the 60 days before each night, on that
     night's watch; « provisoire » from 7 to 13 nights, H). Readout, two
     compact lines: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · normale
-    85–110 »] (« normale provisoire … » from 7 to 13 nights); the latest
+    85–110 »] (« … (provisoire) » from 7 to 13 nights); the latest
     measured night is selected: its value is the card's. `min_span`: the
-    y axis never narrower (noise must not look like a cliff)."""
+    y axis never narrower (noise must not look like a cliff). « (provisoire) »
+    comes after the band's numbers: at 358 px the ellipsis only ever cuts it."""
     n = len(days)
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
@@ -592,9 +592,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
         if b:
             pv = bool(prov[i])
-            line += f" · normale {'provisoire ' if pv else ''}{num(b[0], digits)}–{num(b[1], digits)}"
+            line += f" · normale {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
             spoken += f", ta normale{' provisoire' if pv else ''} de {num(b[0], digits)} à {num(b[1], digits)}"
-        r.append([num(v, digits, unit), "", line])
+        r.append([f"{num(v, digits)}{NBSP}{unit}", "", line])
         a.append(spoken)
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
@@ -612,9 +612,11 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
 
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────
 
-TL_X0, TL_X1 = 52, 302  # the lane names on the left; the last hour's label centred inside the 320 width
+TL_X0, TL_X1 = 60, 302  # the lane names on the left; the last hour's label centred inside the 320 width
 TL_LANE, TL_GAP, TL_MAIN = 12, 6, 22
-STAGE_LANES = (("Éveil", "awake"), ("REM", "rem"), ("Léger", "core"), ("Profond", "deep"))
+# the hypnogram's lanes, top to bottom (Garmin's sleepLevels kinds; « core » is light sleep), named as the legend
+STAGE_LANES = (("Éveil", "awake"), ("Paradoxal", "rem"), ("Léger", "core"), ("Profond", "deep"))
+STAGE_CLASS = {"awake": "awake", "rem": "rem", "core": "light", "deep": "deep"}  # the stages bar's colours
 TL_LO, TL_HI = time(18, 0), time(14, 0)  # the axis never runs past 18:00 the evening before → 14:00
 
 
@@ -626,8 +628,9 @@ def timeline(start: datetime, end: datetime, *, stages=None, naps=()) -> dict:
     """The night ending on `end` on a clock axis, Oura-like: one bar from
     bedtime to wake, or, for a night with real stage intervals (Garmin
     sleepLevels: [(stage, start, end)]), the hypnogram instead (lanes by
-    position, one neutral hue, no minutes, no %: a shape, not a measure;
-    Schyvens 2025; Lee 2023). Naps (`naps`: [(start, end)] of that day) on
+    position, each lane named, in its stage's calm colour, the one of the
+    stages bar under it; no %: a shape, not a measure; Schyvens 2025; Lee
+    2023). Naps (`naps`: [(start, end)] counted that morning) on
     their own lane when they fit the axis (18:00 the evening before → 14:00);
     `out` lists the others (the caller prints their times). Hours every 2 h
     under it; the times themselves are printed once, by the caller."""
@@ -651,7 +654,8 @@ def timeline(start: datetime, end: datetime, *, stages=None, naps=()) -> dict:
         cut = sorted((k, max(a, start), min(b, end)) for k, a, b in stages if k in rows and b > a and b > start
                      and a < end)
         cut.sort(key=lambda s: s[1])
-        segs = [{"x": x(a), "w": max(round(x(b) - x(a), 1), 1.0), "y": rows[k]} for k, a, b in cut]
+        segs = [{"x": x(a), "w": max(round(x(b) - x(a), 1), 1.0), "y": rows[k], "k": STAGE_CLASS[k]}
+                for k, a, b in cut]
         for (k0, _, _), (k1, a1, _) in zip(cut, cut[1:]):
             y0, y1 = sorted((rows[k0], rows[k1]))
             steps.append({"x": x(a1), "y0": y0 + TL_LANE / 2, "y1": y1 + TL_LANE / 2})

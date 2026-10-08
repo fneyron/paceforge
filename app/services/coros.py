@@ -17,11 +17,15 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   asleep), the day's naps (local windows, guarded), nightly HRV computed from
   the raw readings inside the main window, the « Sleep HR » line of the main
   sleep's summary, plus the day's heart rate and steps as « watch worn »
-  markers. No brand value is read (recovery, load, stress, sleep score, HRV
-  range, fitness and VO2 max, the daytime resting HR), and no stage interval
-  is written (COROS has no stage timeline). Sessions go to Activity.
+  markers, and the main night's stage minutes from its « Sleep Summary »
+  when that summary is the main sleep's (its total is the main period within
+  15 min, H: never the « daily » stage ratios, which mix the naps in). No
+  brand value is read (recovery, load, stress, sleep score, HRV range,
+  fitness and VO2 max, the daytime resting HR), and no stage interval is
+  written (COROS has no stage timeline). Sessions go to Activity.
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
-  beat, app.tasks.coros_sync), right after connecting and on demand.
+  beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
+  the 60 days once more when the stored nights predate a format change.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.
 """
@@ -53,6 +57,7 @@ from app.services.health import (
     DAILY_LABELS,
     DAILY_METRICS,
     HRV_METHOD,
+    STAGES_READ,
     Daily,
     _ago,
     _today,
@@ -854,10 +859,30 @@ def _main_period(ov: dict) -> int:
     return ov.get("period") or round((ov["end"] - ov["start"]).total_seconds() / 60)
 
 
-def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None) -> list[Daily]:
+def night_stages(row: dict | None, ov: dict) -> dict | None:
+    """The main night's stage minutes {deep, light, rem, awake} from its
+    « Sleep Summary » (parse_daily_sleep), only when that summary is the main
+    sleep's: its total is the main period within 15 min (H, as hr_night) and
+    its stages add up to that total within 15 min (H). Never the « Sleep
+    metrics scope: daily » ratios (the naps are mixed in)."""
+    if not row or row.get("total") is None or abs(row["total"] - _main_period(ov)) > HR_PERIOD_TOLERANCE:
+        return None
+    parts = {"deep": row.get("deep"), "light": row.get("core"), "rem": row.get("rem"), "awake": row.get("awake") or 0}
+    if any(parts[k] is None for k in ("deep", "light", "rem")) or not parts["deep"] + parts["light"] + parts["rem"]:
+        return None
+    if abs(sum(parts.values()) - row["total"]) > HR_PERIOD_TOLERANCE:
+        return None
+    return parts
+
+
+def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None, daily: dict[date, dict] | None = None,
+                  read: tuple[date, date] | None = None) -> list[Daily]:
     """One `sleep` value per main night: minutes asleep in the main episode,
-    its window (local ISO), period and timezone. COROS gives no stage
-    timeline, so no stage intervals are written (timeline False)."""
+    its window (local ISO), period and timezone, and its stage minutes
+    (night_stages) from `daily` (parse_daily_sleep). COROS gives no stage
+    timeline, so no stage intervals are written (timeline False). `read`: the
+    days queryDailyHealthData answered for: their nights are marked
+    STAGES_READ (their stages were looked for, found or not)."""
     out = []
     for d, ov in overview.items():
         period = _main_period(ov)
@@ -872,6 +897,11 @@ def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None)
             det["tz"] = tz[d] * 15
         if _ok(ov.get("daily"), 1, 24 * 60):
             det["daily"] = ov["daily"]
+        stages = night_stages((daily or {}).get(d), ov)
+        if stages:
+            det["stages"] = stages
+        if read and read[0] <= d <= read[1]:
+            det[STAGES_READ] = True
         out.append(Daily("sleep", d, asleep, det))
     return out
 
@@ -939,7 +969,7 @@ def build_daily(data: dict, today: date) -> list[Daily]:
     points = data.get("hrv_points") or []
     hrv = hrv_dailies(points, overview, data.get("hrv_days"))
     tz = {r.day: r.details["tz"] // 15 for r in hrv}
-    out += sleep_dailies(overview, tz)
+    out += sleep_dailies(overview, tz, data.get("daily") or {}, data.get("daily_read"))
     out += hrv
     out += hr_night_dailies(data.get("daily") or {}, overview, data.get("naps") or {})
     out += nap_dailies(data.get("naps") or {}, overview)
@@ -969,6 +999,7 @@ class _Fetcher:
 
     def __init__(self, mcp: McpSession):
         self.mcp, self.calls, self.failed, self.down, self.stopped = mcp, 0, 0, 0, False
+        self.answered = 0
 
     async def __call__(self, tool: str, args: dict) -> str | None:
         if self.stopped:
@@ -1001,10 +1032,13 @@ class _Fetcher:
         return out
 
     async def recent(self, tool: str, days: int, fallback: int = RECENT_DAYS) -> str | None:
-        """A `days`-only tool: all at once, else the last `fallback` days."""
+        """A `days`-only tool: all at once, else the last `fallback` days
+        (`self.answered`: how many days the answer covers, 0 without one)."""
         text = await self(tool, {"days": days})
+        self.answered = days if text is not None else 0
         if text is None and days > fallback:
             text = await self(tool, {"days": fallback})
+            self.answered = fallback if text is not None else 0
         return text
 
 
@@ -1049,6 +1083,8 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     text = await call.recent("queryDailyHealthData", days)
     data["daily"] = _parsed(parse_daily_sleep, text)
     data["activity"] = _parsed(parse_daily_activity, text)
+    # the nights whose stages were looked for: the days that answer covers (a day ahead, as the nights)
+    data["daily_read"] = (hi - timedelta(days=call.answered - 1), hi) if call.answered else None
     # the sessions last: the nights matter more on a morning when COROS is slow; their
     # failures never make the health history count as cut short
     data["health_stopped"] = call.stopped
@@ -1195,14 +1231,16 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     # the history comes once: on the first sync, or while no daily value
     # arrived yet (a first sync that read nothing must not lose the 60 days;
     # a link made before the daily values were read gets them too), and once
-    # more when the nights are still in their pre-2026-10 format
+    # more when the nights are still in their pre-2026-10 format, or were
+    # written before their stage minutes were read (2026-10-08)
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
     owed = (conn.last_sync_at is None or not have or conn.last_error == PARTIAL
-            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS))
+            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
     days = BACKFILL_DAYS if owed else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read
     activity_days = ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None else RECENT_DAYS

@@ -1,22 +1,9 @@
-{# Santé: the one place to sync on demand, for every linked watch (Réglages show each link's state). An icon button at
-   the right of the page's head (44 px); its messages, when there are any, run under the head, full width #}
+{#- Santé: the silent sync. Opening the page syncs, in the background, every linked watch not synced lately
+    (app.routers.sante._sync_stale); this invisible element asks every 3 s how it went and the page reloads only when
+    something new arrived (HX-Refresh). Nothing is shown: the watches' state and « Synchroniser maintenant » are
+    Réglages' (owner, 2026-10-08: « Retire les infos de synchro dans la page Santé »). -#}
 {% if auto_sync is defined and auto_sync %}
-{# a sync runs in the background: the page reloads only if something new arrives #}
-<div id="sante-sync" class="pf-sante-sync" hx-get="/sante/sync-status?v={{ sync_v }}&n={{ sync_n }}" hx-trigger="load delay:3s" hx-swap="outerHTML">
-    <span class="pf-sync-btn is-busy" role="status"><svg class="animate-spin pf-sync-ic" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg><span class="sr-only">Mise à jour de tes données…</span></span>
-</div>
+<div id="sante-sync" hx-get="/sante/sync-status?v={{ sync_v }}&n={{ sync_n }}" hx-trigger="load delay:3s" hx-swap="outerHTML"></div>
 {% else %}
-<div id="sante-sync" class="pf-sante-sync">
-    <button type="button" hx-post="/sante/sync" hx-target="#sante-sync" hx-swap="outerHTML" hx-indicator="#sante-sync-spin" class="pf-sync-btn">
-        <i data-lucide="refresh-cw" class="pf-sync-ic" aria-hidden="true"></i>
-        <span id="sante-sync-spin" class="htmx-indicator"><svg class="animate-spin pf-sync-ic" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
-        <span class="sr-only">Synchroniser maintenant</span>
-    </button>
-    {% if errors is defined %}
-    {% for name, error in errors %}<p class="pf-sync-msg text-warn">{{ name }} : {{ error }}</p>{% endfor %}
-    {% if busy and not errors %}<p class="pf-sync-msg">Une synchro est déjà en cours : réessaie dans une minute.</p>
-    {% elif not errors %}<p class="pf-sync-msg">Rien de nouveau.</p>{% endif %}
-    {% endif %}
-    <script>window.lucide && lucide.createIcons();</script>
-</div>
+<div id="sante-sync"></div>
 {% endif %}

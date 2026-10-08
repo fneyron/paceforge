@@ -20,10 +20,13 @@
    Figures of one data-viz-group follow each other by date (silently); a figure without that date shows « — ».
    The readout's height is reserved for its tallest line (measured once the figure is laid out, again when
    its width changes), so selecting never moves the plot. A touch selects on a tap or a horizontal drag only:
-   a vertical swipe scrolls the page and leaves the selection as it was.
+   a vertical swipe scrolls the page and leaves the selection as it was; a second tap on the selected day goes
+   back to the resting readout. A mouse reads by hovering, like a tooltip: leaving the figure goes back to the
+   default (the resting readout), so no hovered value stays printed twice.
    Range toggles: [data-viz-ranges] [data-range] show the matching [data-range-panel] in the closest
-   [data-viz-scope] and write ?r= (history.replaceState). Lazy panels (hx-get, hx-trigger="click once")
-   are picked up on htmx:afterSettle. */
+   [data-viz-scope] and write ?r= (history.replaceState); a toggle that is a GET form works without JS too (its
+   submit is the fallback, prevented here). Lazy panels (hx-get, hx-trigger="click once") are picked up on
+   htmx:afterSettle. */
 (function () {
   "use strict";
   var motion = !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -235,13 +238,20 @@
       if (touch) {
         var t = touch;
         touch = null;
-        if (!t.scrub && Math.abs(e.clientX - t.x) <= SLOP && Math.abs(e.clientY - t.y) <= SLOP) select(indexAt(e));
+        if (!t.scrub && Math.abs(e.clientX - t.x) <= SLOP && Math.abs(e.clientY - t.y) <= SLOP) {
+          var i = indexAt(e);
+          select(i === cur && cur !== dflt ? dflt : i);   // the selected day again: back to the rest
+        }
         announce();
         return;
       }
       if (drag) { drag = false; announce(); }
     });
     svg.addEventListener("pointercancel", function () { touch = null; drag = false; });
+    // a mouse that leaves the figure (not just the plot: its readout's link stays reachable) puts it back to rest
+    fig.addEventListener("pointerleave", function (e) {
+      if (e.pointerType === "mouse" && !drag) select(dflt, { silent: true });
+    });
 
     for (var s = 0; s < steps.length; s++) {
       steps[s].addEventListener("click", function () {
@@ -306,7 +316,10 @@
       scan(scope);   // panels that were hidden get their interaction now
     }
     for (var b = 0; b < btns.length; b++) {
-      btns[b].addEventListener("click", function () { show(this.getAttribute("data-range"), true); });
+      btns[b].addEventListener("click", function (e) {
+        e.preventDefault();   // a GET form's submit: the fallback without JS
+        show(this.getAttribute("data-range"), true);
+      });
     }
   }
 

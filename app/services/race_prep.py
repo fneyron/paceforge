@@ -331,10 +331,10 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
                              f"cible J{NBH}14 → J{NBH}1 : {range_hm(*t)} par semaine"],
                        f"Affûtage, 7 semaines jusqu'à la course : ta base {hm_long(round(base / 5) * 5)} par semaine, cible "
                        f"de J-14 à J-1 {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)} par semaine, au "
-                       "prorata des jours d'une semaine entamée. Touche une semaine pour ses heures.", back=back)
+                       "prorata des jours d'une semaine entamée. Choisis une semaine pour ses heures.", back=back)
     else:
         out = viz.rest(out, [f"S{NBH}6 → S0", "heures par semaine", ""],
-                       "Affûtage, 7 semaines jusqu'à la course, heures par semaine. Touche une semaine pour ses heures.",
+                       "Affûtage, 7 semaines jusqu'à la course, heures par semaine. Choisis une semaine pour ses heures.",
                        back=back)
     return out
 
@@ -431,10 +431,10 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
         return viz.rest(out, [f"J{NBH}14 → J{NBH}1", f"cible {range_hm(*goal)} par jour",
                               "normale provisoire" if prov else ""],
                         f"Sommeil sur 24 heures de J-14 à J-1 : cible {hm_long(round(goal[0] / 5) * 5)} à "
-                        f"{hm_long(round(goal[1] / 5) * 5)} par jour, siestes comprises. Touche une nuit pour la "
+                        f"{hm_long(round(goal[1] / 5) * 5)} par jour, siestes comprises. Choisis une nuit pour la "
                         "sienne.", back=sel)
     return viz.rest(out, [f"J{NBH}14 → J{NBH}1", "sommeil sur 24 h", ""],
-                    "Sommeil sur 24 heures de J-14 à J-1, siestes comprises. Touche une nuit pour la sienne.", back=sel)
+                    "Sommeil sur 24 heures de J-14 à J-1, siestes comprises. Choisis une nuit pour la sienne.", back=sel)
 
 
 # ── Récupération: Cœur la nuit, J+1 → J+14 ──────────────────────────────────
@@ -474,7 +474,7 @@ def recovery(nights: dict, rd: date, today: date) -> dict:
     return viz.rest(c, ["J+1 → J+14", "VFC et FC de nuit",
                         ("bande : ta normale avant la course" + prov) if c["banded"] else ""],
                     "Cœur la nuit de J+1 à J+14, VFC en haut, FC en bas"
-                    + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Touche une nuit pour ses "
+                    + (", contre ta normale d'avant la course" if c["banded"] else "") + ". Choisis une nuit pour ses "
                     "valeurs.", back=sel)
 
 
@@ -522,12 +522,16 @@ def hot(route) -> bool:
 # ── the section ─────────────────────────────────────────────────────────────
 
 async def _nights(db: AsyncSession, user_id: int, today: date, lo: date, sessions, races) -> dict:
-    """The nights from `lo` to today, tagged as Santé tags them (nights.load_nights)."""
+    """The nights from `lo` to today, tagged as Santé tags them (nights.load_nights: « sortie intense le soir »
+    from the laps or splits too, the 3 nights after an effort of 6 h or more), plus the race window and the
+    check-in's « alcool » and « malade » this page keeps."""
     rows = await nt.read_rows(db, user_id, lo, today)
     feel = {d: feel_of(v, det) for d, (v, det, _) in rows.get("feel", {}).items()}
     nights = nt.build_nights(rows, today)
     rest = st.hr_rest({d: n.hr for d, n in nights.items() if n.hr}, {}, today)
+    await nt.load_segments(db, nights, sessions)
     nt.tag_nights(nights, sessions, races, feel, rest, st.hr_max(sessions, today))
+    nt.tag_efforts(nights, nt.anchor_efforts(nights, st.efforts(sessions)))
     nt.tag_alerts(nights, today, races)
     return nights
 

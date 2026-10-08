@@ -1,10 +1,11 @@
-{#- Santé v4, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
+{#- Santé v4.1, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
     (the band of the score) and at most one sentence, the Contributeurs, the cards « Récupération · 14 jours », the
-    Sommeil section (last night, its timeline, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30
-    nuits », « FC de nuit · 30 nuits », « Charge · 14 jours », then the closed folds. Each number is printed once on
-    the page: the rings print today's score, this morning's 24-h sleep and the last 7 days' hours; the cards' readouts
-    rest on something else until a tap (a mean, a count, the latest night of a card no ring prints). The tone is in a
-    glyph and a word too, never colour alone. -#}
+    Sommeil section (last night, its stages, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30
+    nuits », « FC de nuit · 30 nuits », then the closed folds. The activities themselves are Activités' (no Charge
+    card: the Charge ring links there). Each number is printed once on the page: the rings print today's score, this
+    morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on something else until a tap (a mean,
+    the latest night of a card no ring prints). The tone is in a glyph and a word too, never colour alone; no mark
+    without a label or a legend. -#}
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 
@@ -24,6 +25,7 @@
 {% if p.contrib %}
 <section id="contributeurs" class="pf-card pf-contrib" aria-labelledby="h-contrib">
     <h2 id="h-contrib" class="pf-card-h">Contributeurs</h2>
+    <p class="pf-contrib-key">Chaque barre : la note du signal.</p>
     <ul>
         {% for c in p.contrib.rows %}
         <li><span class="pf-contrib-name">{{ c.name }}</span><span class="pf-contrib-word">{{ c.word }}</span><span class="pf-contrib-bar is-{{ c.tone }}" role="img" aria-label="{{ c.aria }}"><i style="width: {{ [c.sub, 2]|max }}%"></i></span></li>
@@ -37,6 +39,7 @@
 <section id="recuperation" class="pf-card" aria-labelledby="h-recup">
     <h2 id="h-recup" class="pf-card-h">Récupération · 14 jours</h2>
     {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
+    {% if p.recup.bars|selectattr("miss")|list %}{{ viz.viz_legend([("is-gap", "pas de score")]) }}{% endif %}
 </section>
 {% endif %}
 
@@ -47,26 +50,30 @@
     <p class="pf-sante-note">Aucune nuit mesurée ces 3 derniers mois.</p>
     {% else %}
     {% if s.hero %}{% set h = s.hero %}
-    <div class="pf-card pf-hero">
+    {#- last night: its times, the naps its 24 h counts, its stages (the bar and its legend; with real intervals, the
+        hypnogram above it), else its plain bar on a clock axis -#}
+    <div class="pf-card pf-nhero">
         <p class="pf-hero-label">{{ h.label }}</p>
         <p class="pf-hero-times">{{ h.times }}</p>
         {% set sub = [h.total, h.night, h.nap]|select|list %}
         {% if sub %}<p class="pf-hero-sub">{{ sub|join(' · ') }}</p>{% endif %}
-        {{ viz.viz_timeline(h.timeline, h.aria) }}
+        {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
+        {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
-        {% if h.stages %}<p class="pf-viz-cap">Stades estimés par la montre.</p>{% endif %}
+        {% if h.phases or h.stages %}<p class="pf-viz-cap">Phases estimées par la montre.</p>{% endif %}
     </div>
     {% endif %}
     <div class="pf-card" data-viz-scope>
         <div class="pf-card-top">
             <h3 class="pf-card-h">Sommeil sur 24 h</h3>
-            {% if s.ranges|length > 1 %}{{ viz.viz_ranges(s.ranges, s.r) }}{% endif %}
+            {% if s.ranges|length > 1 %}{{ viz.viz_ranges(s.ranges, s.r, action="/sante#sommeil") }}{% endif %}
         </div>
-        {% for key, label in s.ranges %}
+        {% for key, label in s.ranges %}{% set b = s.bars[key] %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
-            {{ viz.viz_day_bars(s.bars[key], "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
-            {% if s.bars[key].trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")]) }}
-            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")]) }}{% endif %}
+            {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
+            {% set gap = [("is-gap", "pas de mesure")] if b.bars|selectattr("miss")|list else [] %}
+            {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")] + gap) }}
+            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")] + gap) }}{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -77,20 +84,15 @@
 </section>
 {% endif %}
 
-{#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits ») -#}
+{#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »); the legend names
+    every mark: a night's dot, the 7-night line, the normal's band -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
     {{ viz.viz_night_card(c, c.title) }}
+    {{ viz.viz_legend([("is-dot", "nuit")] + ([("is-mean", "moyenne sur 7 nuits")] if c.mean else []) + ([("is-band", "ta normale")] if c.band else [])) }}
 </section>
 {% endfor %}
-
-{% if p.charge %}
-<section id="charge" class="pf-card" aria-labelledby="h-charge">
-    <h2 id="h-charge" class="pf-card-h">Charge · 14 jours</h2>
-    {{ viz.viz_day_bars(p.charge, "Charge sur 14 jours") }}
-</section>
-{% endif %}
 
 <div class="pf-folds">
     <details class="pf-fold pf-method">

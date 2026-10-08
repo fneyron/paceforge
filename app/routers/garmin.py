@@ -1,6 +1,6 @@
 """Garmin link from Réglages: login (email + password, then the MFA code when
-Garmin asks for one), disconnect (syncing on demand is on the Santé page,
-app.routers.sante).
+Garmin asks for one), disconnect (syncing on demand is Réglages' too:
+app.routers.settings.watch_sync).
 
 The login runs in the background (app.services.garmin.start_login): the page
 polls its state with HTMX. The ticket rides in the (signed) session cookie;

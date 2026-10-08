@@ -18,7 +18,8 @@ Garmin Connect the way its mobile app does, with no AI involved:
   becomes PaceForge's own values (HealthMetric via health.store_daily, source
   "Garmin"): the main sleep (window, minutes asleep), the day's naps (local
   windows, guarded), nightly HR, HRV and respiration computed from the raw
-  readings inside the main window, plus steps as a « watch worn » marker. The
+  readings inside the main window, the main night's stage minutes (the DTO's,
+  else its sleepLevels summed), plus steps as a « watch worn » marker. The
   real stage intervals (sleepLevels) are kept as HealthSample rows, the
   hypnogram's timeline. No brand value is read (Training Readiness, Body
   Battery, stress, sleep score, HRV status and averages, load, VO2 max, race
@@ -28,7 +29,8 @@ Garmin Connect the way its mobile app does, with no AI involved:
   from python-garminconnect, not from a real account.
   60 days of health and 180 days of sessions the first time, then the last
   7 days, at most every 2 hours (Celery beat, app.tasks.garmin_sync), right
-  after connecting and on demand.
+  after connecting and on demand (Réglages); the 60 days once more when the
+  stored nights predate a format change.
 
 Times are the athlete's local wall clock (naive), as Garmin's *Local fields are.
 """
@@ -55,6 +57,7 @@ from app.models.health import HealthMetric
 from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
     HRV_METHOD,
+    STAGES_READ,
     Daily,
     Sample,
     _ago,
@@ -593,7 +596,7 @@ def parse_sleep(data) -> dict | None:
     asleep = _f(dto.get("sleepTimeSeconds"))
     asleep = round(asleep / 60) if asleep else sum(stages.get(k, 0) for k in ("deep", "core", "rem")) or None
     out = {"day": day, "start": start, "end": end, "asleep": asleep, "intervals": [], "tz": None,
-           "hr": [], "hrv": [], "resp": [], "resp_avg": _f(dto.get("averageRespirationValue"))}
+           "hr": [], "hrv": [], "resp": [], "resp_avg": _f(dto.get("averageRespirationValue")), "stages": stages}
     gmt_start = _f(dto.get("sleepStartTimestampGMT"))
     if gmt_start is not None:
         offset = timedelta(milliseconds=_f(dto.get("sleepStartTimestampLocal")) - gmt_start)
@@ -746,10 +749,25 @@ def _ok(value, lo: float, hi: float) -> bool:
     return isinstance(value, (int, float)) and lo <= value <= hi
 
 
+def night_stages(night: dict) -> dict | None:
+    """The main night's stage minutes {deep, light, rem, awake}: the DTO's
+    (deep/light/rem/awake seconds), else summed from its real sleepLevels
+    intervals inside the main window; None without any sleep stage."""
+    st = night.get("stages") or {}
+    parts = {"deep": st.get("deep"), "light": st.get("core"), "rem": st.get("rem"), "awake": st.get("awake") or 0}
+    if all(parts[k] is not None for k in ("deep", "light", "rem")) and parts["deep"] + parts["light"] + parts["rem"]:
+        return parts
+    summed = {"deep": 0.0, "light": 0.0, "rem": 0.0, "awake": 0.0}
+    for x in night_samples(night):
+        summed["light" if x.kind == "core" else x.kind] += x.value
+    out = {k: round(v) for k, v in summed.items()}
+    return out if out["deep"] + out["light"] + out["rem"] else None
+
+
 def night_dailies(night: dict, timeline: bool) -> list[Daily]:
-    """PaceForge's values of one night: main sleep, HRV (exp of the mean ln
-    RMSSD), heart rate and respiration (means), each from the readings inside
-    the main window (12 at least, H)."""
+    """PaceForge's values of one night: main sleep (with its stage minutes,
+    night_stages), HRV (exp of the mean ln RMSSD), heart rate and respiration
+    (means), each from the readings inside the main window (12 at least, H)."""
     d, out = night["day"], []
     if _ok(night.get("asleep"), 1, 16 * 60):
         det = {"main_start": iso_min(night["start"]), "main_end": iso_min(night["end"]),
@@ -758,6 +776,10 @@ def night_dailies(night: dict, timeline: bool) -> list[Daily]:
                "timeline": timeline}
         if night.get("tz") is not None:
             det["tz"] = night["tz"]
+        stages = night_stages(night)
+        if stages:
+            det["stages"] = stages
+        det[STAGES_READ] = True
         out.append(Daily("sleep", d, night["asleep"], det))
     hrv = [v for v in _inside(night["hrv"], night) if 5 <= v <= 300]
     if len(hrv) >= MIN_READINGS:
@@ -889,14 +911,16 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     GarminAuthError when the athlete must reconnect, GarminError when Garmin
     can't be read."""
     # the history comes once: on the first sync, or while no daily value arrived yet,
-    # and once more when the nights are still in their pre-2026-10 format
+    # and once more when the nights are still in their pre-2026-10 format, or were
+    # written before their stage minutes were read (2026-10-08)
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("steps", "sleep")))
     )).scalar()
     first = conn.last_sync_at is None or conn.last_error == PARTIAL
-    upgraded = await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+    upgraded = (await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+                and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
     days = BACKFILL_DAYS if first or not have or not upgraded else RECENT_DAYS
     activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()

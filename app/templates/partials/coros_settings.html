@@ -26,8 +26,7 @@
         <a href="/coros/connect" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter</a>
     </div>
     {% else %}
-    <p class="pf-label"><span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if coros.last_error else 'bg-ok' }} mr-1 align-middle"></span>{% if coros.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ coros.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
-    {% if coros.last_error %}<p class="text-[12px] text-warn">Dernière synchro échouée : {{ coros.last_error }}</p>{% endif %}
+    {% set w = coros %}{% set key = "coros" %}{% include "partials/watch_sync.html" %}
     {% endif %}
     <div class="flex flex-wrap items-center justify-between gap-2">
         <form method="post" action="/settings/coros/disconnect"

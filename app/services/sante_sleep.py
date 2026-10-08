@@ -1,13 +1,19 @@
 """Santé v4 › the Sommeil section of the one page (Oura-like): « comment je dors ? ».
 
 - Last night (the hero): bed → wake (the watch's detection, approximate,
-  rounded to 5 min: de Zambotti 2024) and the nap when there is one
-  (« + sieste 2h20 »). Its 24-h total is the Sommeil ring's, printed once
-  there; the hero prints it only for a night that is not this morning's (the
-  ring is then empty).
-- Its timeline: one bar on a clock axis, or the hypnogram from real Garmin
-  intervals (a shape, not a measure: Schyvens 2025; Lee 2023); the naps on
-  their own lane (never in the night's timing, HR or HRV: Mollicone 2008).
+  rounded to 5 min: de Zambotti 2024) and the naps its 24 h counts
+  (« + sieste 2h20 », nights.day_naps: yesterday afternoon's too). Its 24-h
+  total is the Sommeil ring's, printed once there; the hero prints it only
+  for a night that is not this morning's (the ring is then empty).
+- Its stages, like WHOOP and Oura, shown and never judged (owner,
+  2026-10-08): one bar of the four phases (Éveil · Léger · Profond ·
+  Paradoxal, calm colours that are no good/bad colours), each named with its
+  minutes in a legend (colour never alone), « Phases estimées par la
+  montre. » (Schyvens 2025: wrist κ 0.21–0.53; Lee 2023): no target, no word,
+  no score. A Garmin night with real intervals also gets its hypnogram above
+  it (lanes, the same colours). A night without stage minutes: its plain bar
+  on a clock axis (bed → wake, the naps on their own lane: never in the
+  night's timing, HR or HRV: Mollicone 2008).
 - 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
   naps lighter on top), the ≈ 7 h line (Johnston 2020), a tiny legend (nuit ·
   sieste · 7 h); « 3 mois » only with a night 14 to 90 days old (else it would
@@ -46,14 +52,17 @@ METHOD = [
     "Tes siestes comptent dans le total sur 24 h ; une sieste que la montre n'a pas vue n'est pas zéro (Sargent "
     "2018 ; Chinoy 2023). Moins de 7 h par jour sur 2 semaines va avec plus de blessures (Johnston 2020).",
     "Régularité : de combien ton coucher bouge d'une nuit à l'autre, dès 8 nuits sur 28 (H ; Fischer 2021).",
-    "Les stades sont estimés par la montre, pas mesurés (Schyvens 2025 ; Lee 2023).",
+    "Les phases (éveil, léger, profond, paradoxal) sont estimées par la montre, pas mesurées : accord faible à moyen "
+    "avec le laboratoire (Schyvens 2025 ; Lee 2023). Elles sont montrées, jamais jugées.",
+    "L'anneau Sommeil compte les 24 h avant ton réveil, siestes comprises (celle d'hier après-midi aussi) ; il est "
+    "plein à 8 h (H) : vert dès 7 h (Johnston 2020), orange de 6 à 7 h, rouge sous 6 h (Craven 2022).",
 ]
 REFS = [
     ("Chinoy 2021", "10.1093/sleep/zsaa291"), ("Schyvens 2025", "10.1093/sleepadvances/zpaf021"),
     ("de Zambotti 2024", "10.1093/sleep/zsad325"), ("Sargent 2018", "10.1080/07420528.2018.1466800"),
     ("Chinoy 2023", "10.2147/NSS.S395732"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
     ("Fischer 2021", "10.1093/sleep/zsab103"), ("Quer 2021", "10.1038/s41591-020-1123-x"),
-    ("Lee 2023", "10.2196/50983"),
+    ("Lee 2023", "10.2196/50983"), ("Craven 2022", "10.1007/s40279-022-01706-y"),
 ]
 
 
@@ -122,33 +131,67 @@ def bars(nights: dict, today: date, key: str) -> dict:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
         return viz.rest(c, [viz.hm(mean), "en moyenne", ""],
                         f"Sommeil sur 24 heures, {RANGES[key][1]} : en moyenne {viz.hm_long(mean)}, siestes "
-                        "comprises. Touche une nuit pour la sienne.")
+                        "comprises. Choisis une nuit pour la sienne.")
     return viz.rest(c, ["—", "", ""], f"Sommeil, {RANGES[key][1]} : pas de nuit mesurée")
 
 
+PHASES = (("awake", "Éveil"), ("light", "Léger"), ("deep", "Profond"), ("rem", "Paradoxal"))  # WHOOP's order
+LEVEL = {"core": "light", "deep": "deep", "rem": "rem", "awake": "awake"}  # Garmin's sleepLevels kinds
+
+
+def summed(intervals, start, end) -> dict | None:
+    """{awake, light, deep, rem} minutes of real stage intervals [(kind, a, b)]
+    cut to the main window [start, end]; None without a sleep stage."""
+    out = {k: 0.0 for k, _ in PHASES}
+    for kind, a, b in intervals or ():
+        a, b = max(a, start), min(b, end)
+        if kind in LEVEL and b > a:
+            out[LEVEL[kind]] += (b - a).total_seconds() / 60
+    out = {k: round(v) for k, v in out.items()}
+    return out if out["light"] + out["deep"] + out["rem"] else None
+
+
+def phases(stages: dict | None) -> dict | None:
+    """The stages bar and its legend: [{key, name, min, hm}] in WHOOP's order
+    (Éveil · Léger · Profond · Paradoxal; a phase of 0 min left out), and the
+    spoken list; None without stage minutes."""
+    if not stages:
+        return None
+    parts = [{"key": k, "name": nm, "min": stages[k], "hm": viz.hm(stages[k])} for k, nm in PHASES if stages.get(k)]
+    if not parts:
+        return None
+    said = ", ".join(f"{p['name'].lower()} {viz.hm_long(p['min'])}" for p in parts)
+    return {"parts": parts, "aria": f"Phases estimées par la montre : {said}."}
+
+
 def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
-    """Last night (the latest main night of the last 90 days): its times, its
-    naps, its timeline; the 24-h total only when it is not this morning's
+    """Last night (the latest main night of the last 90 days): its times, the
+    naps its 24 h counts (nights.day_naps), its stages (the stages bar and
+    legend; with real Garmin intervals, the hypnogram above it), else its plain
+    bar on a clock axis; the 24-h total only when it is not this morning's
     (the ring prints this morning's)."""
     last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
                default=None)
     if last is None:
         return None
     n = nights[last]
-    naps = [(a, b) for a, b, _ in n.naps if a is not None]
-    stages = (samples or {}).get(last) if n.timeline else None
-    t = viz.timeline(n.start, n.end, stages=stages, naps=naps)
+    counted = nt.day_naps(nights, last)
+    nap_min = sum(m for _, _, m in counted)
+    naps = [(a, b) for a, b, _ in counted if a is not None]
+    intervals = (samples or {}).get(last) if n.timeline else None
+    ph = phases(n.stages or summed(intervals, n.start, n.end))
+    draw = bool(intervals) or ph is None  # the hypnogram above the stages bar, else the plain bar without stages
+    t = viz.timeline(n.start, n.end, stages=intervals, naps=naps) if draw else None
     times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
-    nap = None
-    if n.nap_min:
-        nap = f"+ sieste{'s' if len(n.naps) > 1 else ''} {viz.hm(n.nap_min)}"
-    out_naps = [f"sieste {viz.clock(a)} → {viz.clock(b)}" for a, b in t["out"]]
+    nap = f"+ sieste{'s' if len(counted) > 1 else ''} {viz.hm(nap_min)}" if nap_min else None
+    listed = t["out"] if t else naps  # the naps no lane draws: their times in words
+    out_naps = [f"sieste {viz.clock(a)} → {viz.clock(b)}" for a, b in listed]
     aria = (f"{viz.night_label(last)} : couché vers {viz.clock(n.start)}, levé vers {viz.clock(n.end)}"
-            + (f", sieste de {viz.hm_long(n.nap_min)}" if n.nap_min else ""))
+            + (f", sieste de {viz.hm_long(nap_min)}" if nap_min else ""))
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
-            "times": times, "nap": nap, "night": f"nuit {viz.hm(n.asleep)}" if n.nap_min else None,
-            "total": None if last == today else f"{viz.hm(n.tst24)} sur 24{viz.NNBSP}h",
-            "timeline": t, "out_naps": out_naps, "stages": bool(stages), "aria": aria}
+            "times": times, "nap": nap, "night": f"nuit {viz.hm(n.asleep)}" if nap_min else None,
+            "total": None if last == today else f"{viz.hm(n.asleep + nap_min)} sur 24{viz.NNBSP}h",
+            "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 
 def habits(nights: dict, today: date) -> dict | None:
@@ -162,7 +205,7 @@ def habits(nights: dict, today: date) -> dict | None:
     if t["wake"] is not None:
         items.append(("Lever", nt.clock5(t["wake"])))
     if t["regular_ok"] and t["bed_sd"] is not None:
-        items.append(("Régularité", f"±{viz.NNBSP}{max(5, int(round(t['bed_sd'] / 5)) * 5)}{viz.NNBSP}min"))
+        items.append(("Régularité", f"±{viz.NBSP}{max(5, int(round(t['bed_sd'] / 5)) * 5)}{viz.NBSP}min"))
     return {"stats": items, "n": t["n"]}
 
 

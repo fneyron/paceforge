@@ -10,6 +10,8 @@ from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
+from app.services import coros as coros_service
+from app.services import garmin as garmin_service
 from app.services.coros import coros_status
 from app.services.garmin import garmin_status
 from app.services.nutrition import caffeine_cap_mg
@@ -83,6 +85,42 @@ async def save_settings(
 
     ctx = await _settings_context(request, user, db, saved=not ftp_bad, ftp_bad=ftp_bad)
     return templates.TemplateResponse(request, "settings.html", context=ctx)
+
+
+# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08)
+_WATCHES = {"coros": (coros_service, coros_status), "garmin": (garmin_service, garmin_status)}
+
+
+@router.post("/settings/{watch}/sync", response_class=HTMLResponse)
+async def watch_sync(
+    watch: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sync one linked watch now; the answer is the new content of its
+    #{watch}-sync-state (partials/watch_sync_state.html): the last sync and how
+    it went. A link that is gone or must be reconnected reloads the page (its
+    block then shows how to reconnect)."""
+    if watch not in _WATCHES:
+        return HTMLResponse("", status_code=404)
+    service, status_of = _WATCHES[watch]
+    conn = await service.connection_for(db, user.id)
+    if conn is None or conn.needs_reauth:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    outcome = await service.run_sync(db, conn)
+    if conn.needs_reauth:  # refused while syncing: reconnect
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    if outcome is None:
+        msg = "Une synchro est déjà en cours : réessaie dans une minute."
+    elif outcome.get("ok"):
+        res = outcome.get("result") or {}
+        msg = ("Synchro faite : tes nouvelles données sont dans Santé." if res.get("inserted") or res.get("updated")
+               else "Synchro faite : rien de nouveau.")
+    else:
+        msg = None  # « Dernière synchro échouée : … » says it
+    return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
+        "request": request, "w": await status_of(db, user.id), "key": watch, "msg": msg})
 
 
 def _to_float(raw: str) -> float | None:

@@ -106,27 +106,30 @@
 {% endcall %}
 {% endmacro %}
 
-{# K6 range toggle: one per view, above everything it scopes; ?r= keeps the choice #}
-{% macro viz_ranges(options, current, label="Période") %}
-<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" aria-label="{{ label }}">
-    {% for value, text in options %}<button type="button" data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
-</div>
+{# K6 range toggle: one per view, above everything it scopes; ?r= keeps the choice. With `action` it is a GET form,
+   so it works without JS too (the page comes back with ?r=…); pf-viz.js switches the panels in place #}
+{% macro viz_ranges(options, current, label="Période", action=None) %}
+{% set tag = "form" if action else "div" %}
+<{{ tag }} class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" aria-label="{{ label }}"{% if action %} method="get" action="{{ action }}"{% endif %}>
+    {% for value, text in options %}<button type="{{ 'submit' if action else 'button' }}"{% if action %} name="r" value="{{ value }}"{% endif %} data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
+</{{ tag }}>
 {% endmacro %}
 
 {#- Santé v4 (one page, WHOOP/Oura-like) -#}
 
 {# V1 ring: the arc from the top, clockwise, in the tone's colour; the value in the middle, the label and a word under
-   it. The whole ring is one link to the section it sums up; a plain image when the page has no such section. A tick
-   across the track marks a reference (the Charge ring's usual week) #}
+   it, then a note that says what the arc compares (the Charge ring: « plus que d'habitude »): no mark without words.
+   The whole ring is one link to what it sums up; a plain image when there is nothing #}
 {% macro viz_ring(r) %}
 {% set tag = "a" if r.href else "div" %}
 <{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
     <span class="pf-ring-dial">
-        <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-track"/>{% if r.dash %}<circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-arc" stroke-dasharray="{{ r.dash }} {{ r.c }}" transform="rotate(-90 50 50)" style="--pf-dash: {{ r.dash }}"/>{% endif %}{% if r.tick %}<line x1="{{ r.tick.x1 }}" y1="{{ r.tick.y1 }}" x2="{{ r.tick.x2 }}" y2="{{ r.tick.y2 }}" class="pf-ring-tick"/>{% endif %}</svg>
+        <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-track"/>{% if r.dash %}<circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-arc" stroke-dasharray="{{ r.dash }} {{ r.c }}" transform="rotate(-90 50 50)" style="--pf-dash: {{ r.dash }}"/>{% endif %}</svg>
         <span class="pf-ring-value" aria-hidden="true">{{ r.value }}</span>
     </span>
     <span class="pf-ring-label" aria-hidden="true">{{ r.label }}</span>
     {% if r.sub %}<span class="pf-ring-sub" aria-hidden="true">{{ r.sub }}</span>{% endif %}
+    {% if r.note %}<span class="pf-ring-note" aria-hidden="true">{{ r.note }}</span>{% endif %}
 </{{ tag }}>
 {% endmacro %}
 
@@ -167,15 +170,15 @@
 {% endcall %}
 {% endmacro %}
 
-{# V4 timeline: last night on a clock axis — one bar, or the hypnogram (lanes by position, one hue, no minutes); the
-   naps on their own lane #}
+{# V4 timeline: last night on a clock axis — one bar, or the hypnogram (lanes by position, each named, in its stage's
+   colour, the stages bar's); the naps on their own lane #}
 {% macro viz_timeline(t, aria) %}
 <svg class="pf-tl" viewBox="0 0 {{ t.W }} {{ t.H }}" role="img" aria-label="{{ aria }}">
     {% for k in t.ticks %}<line x1="{{ k.x }}" x2="{{ k.x }}" y1="0" y2="{{ t.base }}" class="pf-tl-grid"/><text x="{{ k.x }}" y="{{ t.H - 2 }}" text-anchor="middle">{{ k.label }}</text>{% endfor %}
     {% for name, y, h in t.lanes %}<text x="0" y="{{ y + h / 2 + 4 }}" class="pf-tl-lane">{{ name }}</text>{% endfor %}
     {% if t.main %}<rect x="{{ t.main.x }}" y="{{ t.main.y }}" width="{{ t.main.w }}" height="{{ t.main.h }}" rx="7" class="pf-tl-night"/>{% endif %}
     {% for s in t.steps %}<line x1="{{ s.x }}" x2="{{ s.x }}" y1="{{ s.y0 }}" y2="{{ s.y1 }}" class="pf-tl-step"/>{% endfor %}
-    {% for s in t.segs %}<rect x="{{ s.x }}" y="{{ s.y }}" width="{{ s.w }}" height="{{ t.lane_h }}" rx="2" class="pf-tl-seg"/>{% endfor %}
+    {% for s in t.segs %}<rect x="{{ s.x }}" y="{{ s.y }}" width="{{ s.w }}" height="{{ t.lane_h }}" rx="2" class="pf-tl-seg is-{{ s.k }}"/>{% endfor %}
     {% for n in t.naps %}<rect x="{{ n.x }}" y="{{ n.y }}" width="{{ n.w }}" height="{{ n.h }}" rx="4" class="pf-tl-nap"/>{% endfor %}
 </svg>
 {% endmacro %}
@@ -183,4 +186,13 @@
 {# V5 legend under a card's chart: a swatch per mark (aria-hidden: the readouts and the table say it all) #}
 {% macro viz_legend(items) %}
 <p class="pf-viz-legend" aria-hidden="true">{% for cls, word in items %}<span><i class="pf-lg {{ cls }}"></i>{{ word }}</span>{% endfor %}</p>
+{% endmacro %}
+
+{# V6 the stages bar: the four phases of the main night side by side, each in its calm colour (no good/bad colour),
+   named with its minutes in the legend under it (a list a screen reader reads; the bar itself is decoration) #}
+{% macro viz_phases(ph) %}
+<div class="pf-phases">
+    <div class="pf-phases-bar" aria-hidden="true">{% for p in ph.parts %}<i class="pf-ph is-{{ p.key }}" style="flex-grow: {{ p.min }}"></i>{% endfor %}</div>
+    <ul class="pf-phases-legend" aria-label="Phases de la nuit">{% for p in ph.parts %}<li><i class="pf-ph is-{{ p.key }}" aria-hidden="true"></i>{{ p.name }} <b>{{ p.hm }}</b></li>{% endfor %}</ul>
+</div>
 {% endmacro %}

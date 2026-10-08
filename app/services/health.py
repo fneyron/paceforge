@@ -9,7 +9,12 @@ day), values PaceForge computes from their raw data and writes once per day
                awake included), tz (min east of UTC, when known), timeline (True
                when real stage intervals were stored: Garmin sleepLevels),
                bedtime, wake ("HH:MM", what older readers use), daily (COROS's
-               own « Daily Sleep (incl. naps) », a cross-check only)}
+               own « Daily Sleep (incl. naps) », a cross-check only), stages
+               ({deep, light, rem, awake} minutes of the main night, the
+               watch's estimate: COROS's « Sleep Summary » when it is the main
+               sleep's, Garmin's DTO else its sleepLevels summed), stages_read
+               (written by a sync that reads the stages: the 60 days are read
+               again once for the nights written before, nights_upgraded)}
 - nap        : minutes asleep in the day's naps (a nap belongs to the day it
                ends); {period, windows: [["2026-10-07T06:42", "2026-10-07T09:07"]],
                legacy (COROS « includes legacy reported durations »)}. Rows
@@ -325,23 +330,28 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
     return {"inserted": inserted, "updated": updated, "by_metric": dict(by_metric)}
 
 
+STAGES_READ = "stages_read"  # in a `sleep` row's details: written by a sync that reads the stages (2026-10-08)
+
+
 async def nights_upgraded(db: AsyncSession, user_id: int, source: str, today: date | None = None,
-                          days: int = 60) -> bool:
-    """False while a watch still has nights in the format written before
-    2026-10 (no main window, the watch's HRV average, no nightly HR) inside
-    the window a backfill rewrites (the last `days` days) and none in the new
-    one: its sync then reads those days again, once. Old nights beyond the
-    window, or none in it (a watch no longer worn at night), can never be
-    rewritten: they never ask again (else every sync would read 60 days)."""
+                          days: int = 60, key: str = "main_start") -> bool:
+    """False while a watch still has nights without `key` in their details
+    inside the window a backfill rewrites (the last `days` days) and none with
+    it: its sync then reads those days again, once. `key` « main_start »: the
+    format written before 2026-10 (no main window, the watch's HRV average, no
+    nightly HR); STAGES_READ: the nights written before the stage minutes were
+    stored (2026-10-08). Old nights beyond the window, or none in it (a watch
+    no longer worn at night), can never be rewritten: they never ask again
+    (else every sync would read 60 days)."""
     today = today or _today(None)
     base = (HealthMetric.user_id == user_id, HealthMetric.source == source, HealthMetric.metric == "sleep")
     old = (await db.execute(select(func.count(HealthMetric.id)).where(
         *base, HealthMetric.date >= today - timedelta(days=days - 1),
-        HealthMetric.details["main_start"].as_string().is_(None)))).scalar()
+        HealthMetric.details[key].as_string().is_(None)))).scalar()
     if not old:
         return True
     new = (await db.execute(select(func.count(HealthMetric.id)).where(
-        *base, HealthMetric.details["main_start"].as_string().is_not(None)))).scalar()
+        *base, HealthMetric.details[key].as_string().is_not(None)))).scalar()
     return bool(new)
 
 

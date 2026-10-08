@@ -12,20 +12,28 @@ only when its own data rule holds (every threshold is (H) unless cited):
    2013; Bellenger 2016).
 2. FC de nuit · 7 nuits (the same rule): 100 while the mean is ≤ the band's
    median + 2 bpm, linear to 0 at + 10 bpm.
-3. Sommeil · 24 h (a main night this morning; the naps of the day count):
-   ≥ 7 h → 100 (Johnston 2020), 6 h → 60 (Craven 2022: sleep loss is ≤ 6 h
-   per 24 h), ≤ 4 h → 0, linear between; with a 7-day mean (≥ 3 usable days)
-   and a usual (the 24-h band's median) at most 100 − 2/3 point per minute of
-   that mean under the usual (90 min under → 40).
+   During the illness alert the row reads the alert's own 2 nights, at most
+   39 (red, « nettement haute »): never a green bar under the alert.
+3. Sommeil · 24 h (a main night this morning; the naps of the 24 h before
+   its wake count, nights.day_tst24): ≥ 7 h → 100 (Johnston 2020), 6 h → 60
+   (Craven 2022: sleep loss is ≤ 6 h per 24 h), ≤ 4 h → 0, linear between;
+   with a 7-day mean (≥ 3 usable days) and a usual (the 24-h band's median)
+   at most 100 − 2/3 point per minute of that mean under the usual (90 min
+   under → 40).
 4. Charge récente (≥ 6 activities in 42 days, or a recovery window open):
    100; during a window (sante_training.EFFORT_RULES) 50 after a long effort
-   (≥ 3 h, or ≥ 1 500 m D+ on foot), 30 after 6–10 h, 20 after ≥ 10 h.
+   (≥ 3 h, or ≥ 1 500 m D+ on foot), 30 after 6–10 h, 20 after ≥ 10 h (the
+   lowest of the windows open).
 Weights (H): VFC 30, FC de nuit 25, Sommeil 25, Charge 20, renormalised over
-the components present. No score without a nightly component (VFC, FC de
-nuit or Sommeil): the activities alone say nothing of recovery.
+the components present. Without a nightly component (VFC, FC de nuit or
+Sommeil) no score, but during a recovery window: the activities then say the
+athlete is recovering, so the score is the window's cap (nothing measured
+says otherwise: raw is taken as 100 and the caps bind), « Récupération en
+cours », the sentence naming the activity (owner: « tu te bases que sur les
+activités passées pour juger de la récupération »).
 Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
-nights.illness_alert) → 39; a recovery window (≥ 10 h: 40 on D+1 → D+3, then
-65 until D+10; 6–10 h: 45 on D+1 → D+2, then 65 until D+5; long: 65 on D+1 →
+nights.illness_alert) → 39; a recovery window (≥ 10 h: 40 on D+0 → D+3, then
+65 until D+10; 6–10 h: 45 on D+0 → D+2, then 65 until D+5; long: 65 on D+0 →
 D+2); a component under 40 → 69 (a red contributor never sits under a green
 ring); neither VFC nor FC de nuit in the score → 80 (sleep and load alone never
 say « fully recovered »: a watch worn some nights only would make every rested
@@ -36,11 +44,15 @@ score = the capped raw, rounded half up on the exact value (snapped to 1e-9:
 the number and the state never disagree. The state's sentence names the main
 reason (`reason`): the alert, else the cap that binds, else the lowest
 component. A difference of a few points means nothing: the method fold says so.
+The Contributeurs' words follow their bar's band (≥ 70 green, 40–69 orange,
+< 40 red): « dans ta normale » or « un peu haute / basse » on a green bar,
+« haute / basse » on an orange one, « nettement … » on a red one.
 History: the 13 days before today are recomputed from what is stored, each
 from what was known that day, with the same rule (sante._history); nothing is
 persisted.
 """
 import math
+import statistics
 from datetime import date
 
 from app.services import sante_today as td
@@ -50,7 +62,7 @@ from app.services.nights import SHORT_DAY_MIN
 BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}  # the state is the band of the score
 WEIGHTS = {"hrv": 30, "hr": 25, "sleep": 25, "load": 20}  # (H)
 ORDER = ("hrv", "hr", "sleep", "load")
-NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them
+NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (but in a recovery window)
 NAMES = {"hrv": "VFC", "hr": "FC de nuit", "sleep": "Sommeil", "load": "Charge récente"}
 SPOKEN = {"hrv": "VFC sur 7 nuits", "hr": "FC de nuit sur 7 nuits", "sleep": "sommeil sur 24 heures",
           "load": "charge récente"}
@@ -69,21 +81,26 @@ HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
 
 METHOD = [
-    "Ton score est la moyenne de tes signaux, chacun noté sur 100 : VFC sur 7 nuits, FC de nuit sur 7 nuits, sommeil "
-    "sur 24 h siestes comprises, charge récente. Les poids (H) : 30, 25, 25, 20, répartis sur les signaux présents ; "
-    "sans aucune nuit, pas de score. Ton état en découle : 70 et plus, bien récupéré ; 40 à 69, récupération en "
-    "cours ; moins de 40, à ménager.",
+    "Ton score est la moyenne de tes signaux, chacun noté sur 100 (la barre de chaque contributeur) : VFC sur 7 "
+    "nuits, FC de nuit sur 7 nuits, sommeil sur 24 h siestes comprises, charge récente. Les poids (H) : 30, 25, 25, "
+    "20, répartis sur les signaux présents ; sans aucune nuit, pas de score, sauf pendant la récupération d'une "
+    "grosse sortie : ton score est alors son plafond. Ton état en découle : 70 et plus, bien récupéré ; 40 à 69, "
+    "récupération en cours ; moins de 40, à ménager.",
     "Notes (H) : VFC pleine dans ta normale ou au-dessus (jamais un bonus : Plews 2013), nulle 2,5 écarts-types sous "
     "elle ; FC de nuit pleine jusqu'à +2 bpm sur ta médiane, nulle à +10 ; sommeil plein dès 7 h (Johnston 2020), "
-    "60 à 6 h (Craven 2022), 0 à 4 h, moins quand ta semaine dort bien sous ton habitude.",
+    "60 à 6 h (Craven 2022), 0 à 4 h, moins quand ta semaine dort bien sous ton habitude ; charge récente pleine "
+    "sans grosse sortie, 50, 30 ou 20 pendant la récupération d'une sortie de 3 h, 6 h, 10 h et plus.",
     "Plafonds (H) : FC de nuit nettement au-dessus de ta normale 2 nuits de suite, 39 ; un signal sous 40, 69 ; "
     "moins de 6 h de sommeil sur 24 h, 65 ; sans VFC ni FC de nuit, 80 : une longue nuit seule ne fait pas un 100.",
-    "Grosses sorties (H), à leur durée arrêts compris, courses comprises : 10 h et plus → score plafonné à 40 les 3 "
-    "jours qui suivent la fin, puis à 65 jusqu'au 10e ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à "
-    "pied → 65 pendant 2 jours. Les 3 nuits (H) qui suivent 6 h et plus restent hors de ta normale (Hynynen 2010).",
+    "Grosses sorties (H), à leur durée arrêts compris, courses comprises, deux activités à moins de 30 min d'écart "
+    "comptant pour une : 10 h et plus → score plafonné à 40 dès la fin et les 3 jours qui suivent, puis à 65 "
+    "jusqu'au 10e ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à pied → 65 pendant 2 jours. Une fin "
+    "dans la nuit compte du matin même. Les 3 nuits (H) qui suivent 6 h et plus restent hors de ta normale "
+    "(Hynynen 2010).",
     "Une différence de quelques points ne veut rien dire : la VFC varie d'environ 12 % d'une nuit à l'autre "
-    "(Buchheit 2014). Ta normale est « provisoire » de 7 à 14 nuits (H) ; l'alerte FC de nuit attend 14 nuits "
-    "(Quer 2021). Aucun score de marque n'y entre (Doherty 2025).",
+    "(Buchheit 2014). Ta normale est « provisoire » de 7 à 13 nuits (H), pleine à 14 ; l'alerte FC de nuit attend "
+    "14 nuits (Quer 2021). L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 "
+    "dernières (H). Aucun score de marque n'y entre (Doherty 2025).",
 ]
 REFS = [
     ("Plews 2013", "10.1007/s40279-013-0071-8"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
@@ -142,7 +159,10 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     for key, fn in (("hrv", hrv_sub), ("hr", hr_sub)):
         s = day["stats"][key]
         if s["value"] is not None and s["normal"]:
-            parts.append({"key": key, "sub": fn(s["value"], s["normal"]), "prov": bool(s["normal"]["provisional"]),
+            sub, alert = fn(s["value"], s["normal"]), key == "hr" and bool(day["alert"])
+            if alert:  # the alert's own 2 nights, red at most: never « dans ta normale » under the alert
+                sub = min(sub, fn(statistics.fmean(day["alert"]["values"]), s["normal"]), RED_SUB - 1)
+            parts.append({"key": key, "sub": sub, "prov": bool(s["normal"]["provisional"]), "alert": alert,
                           "status": s["status"], "delta": s["value"] - s["normal"]["center"]})
         else:
             absent.append(key)
@@ -213,19 +233,23 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
 
 def score_of(day: dict) -> dict:
     """{value, tone, raw, raw0, parts, absent, caps (binding keys, the lowest
-    first), reason} for one day, or {value: None, …} without a nightly
-    component (then no state either)."""
+    first), reason, measured} for one day, or {value: None, …} without a
+    nightly component outside a recovery window (then no state either). In a
+    window without a nightly component, raw is 100 (nothing measured says
+    otherwise) and the caps bind: the score is the window's cap."""
     parts, absent = components(day)
-    if not any(p["key"] in NIGHTLY for p in parts):
-        return {"value": None, "tone": None, "parts": parts, "absent": absent, "caps": [], "reason": None}
-    raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9)  # 49,99999999999999 is 50
+    measured = any(p["key"] in NIGHTLY for p in parts)
+    if not measured and not day["window"]:
+        return {"value": None, "tone": None, "parts": parts, "absent": absent, "caps": [], "reason": None,
+                "measured": False}
+    raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9) if measured else 100.0  # 49,99999999999999 is 50
     held = caps(day, parts)
     raw = min([raw0] + [c for c, _ in held])
     value = rounded(raw)
     tone = tone_of(value)
     binding = [k for _, _, k in sorted((c, CAPS.index(k), k) for c, k in held if c < raw0)]
     return {"value": value, "tone": tone, "raw": raw, "raw0": raw0, "parts": parts, "absent": absent,
-            "caps": binding, "reason": reason(tone, binding, parts, day)}
+            "caps": binding, "reason": reason(tone, binding, parts, day), "measured": measured}
 
 
 # ── what the page draws ─────────────────────────────────────────────────────
@@ -243,14 +267,26 @@ def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
 
 
 def _word(p: dict, state: dict | None) -> str:
-    """The Contributeurs' short word: no number the rings, the state line or the cards print."""
+    """The Contributeurs' short word: no number the rings, the state line or
+    the cards print. VFC and FC de nuit follow their bar's band (the sub-score
+    on the score's bands): green « dans ta normale », « au-dessus » (VFC) or
+    « un peu basse / haute » (out of the normal, still ≥ 70), orange « basse /
+    haute », red « nettement basse / haute »; the illness alert's FC de nuit
+    is « nettement haute ». Never « haute » on a green bar."""
     k = p["key"]
     prov = " (provisoire)" if p.get("prov") and k in ("hrv", "hr") else ""
+    band = tone_of(p["sub"])
     if k == "hrv":
-        return {"below": "basse", "above": "au-dessus"}.get(p["status"], "dans ta normale") + prov
+        if band != "ok":
+            return ("basse" if band == "warn" else "nettement basse") + prov
+        return {"below": "un peu basse", "above": "au-dessus"}.get(p["status"], "dans ta normale") + prov
     if k == "hr":
-        if p["delta"] >= td.HR_UP_BPM:
+        if p.get("alert") or band == "danger":
+            return "nettement haute" + prov
+        if band == "warn":
             return "haute" + prov
+        if p["delta"] >= td.HR_UP_BPM:
+            return "un peu haute" + prov
         return ("basse" if p["status"] == "below" else "dans ta normale") + prov
     if k == "sleep":
         t = p["tst24"]
@@ -284,7 +320,7 @@ def _tone(p: dict) -> str:
     if p["key"] == "sleep":
         ring = sleep_tone(p["tst24"])
         return max(ring, tone_of(p["sub"]), key=SEVERITY.index) if p["debt"] else ring
-    return tone_of(p["sub"])
+    return "danger" if p.get("alert") else tone_of(p["sub"])
 
 
 def contributors(score: dict, state: dict | None) -> dict | None:
@@ -324,12 +360,13 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
             a.append(f"{viz.d_long(d)} : pas de score")
             continue
         r.append([str(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {st['short']}" if st["short"] else "")])
-        a.append(f"{viz.d_long(d)} : récupération {v} sur 100, {st['word'].lower()}."
-                 + (f" {st['text']}" if st["text"] else ""))
+        # a past day is said as its readout prints it: no « il y a » (it would count from that day, not today)
+        said = st["text"] if d == today else (f"{st['short']}." if st["short"] else None)
+        a.append(f"{viz.d_long(d)} : récupération {v} sur 100, {st['word'].lower()}." + (f" {said}" if said else ""))
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((70, "70"), (40, "40")), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
     mean = rounded(sum(with_score) / len(with_score))
     return viz.rest(c, [str(mean), "en moyenne", ""],
-                    f"Récupération sur les {len(days)} derniers jours : {mean} en moyenne. Touche un jour pour son "
+                    f"Récupération sur les {len(days)} derniers jours : {mean} en moyenne. Choisis un jour pour son "
                     "score et son état.", back=len(days) - 1)

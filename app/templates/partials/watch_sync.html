@@ -1,0 +1,13 @@
+{#- Réglages › a linked watch (COROS, Garmin): when it last synced and « Synchroniser maintenant » (Santé syncs on its
+    own when it opens and shows no sync status: owner, 2026-10-08). Expects `w` (coros_status / garmin_status), `key`
+    (coros | garmin). The button posts to /settings/{key}/sync and the answer replaces the content of #{key}-sync-state,
+    a persistent polite live region: the result is said, and the button, never swapped, keeps the focus. htmx puts
+    htmx-request on the button itself (no hx-indicator): its spinner shows instead of its icon. -#}
+<div class="pf-watch-sync">
+    <div id="{{ key }}-sync-state" class="pf-watch-state" role="status" aria-live="polite">{% include "partials/watch_sync_state.html" %}</div>
+    <button id="{{ key }}-sync-btn" type="button" hx-post="/settings/{{ key }}/sync" hx-target="#{{ key }}-sync-state" hx-swap="innerHTML" class="pf-btn pf-btn-secondary pf-btn-sm pf-sync-now">
+        <svg class="pf-sync-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        <svg class="animate-spin pf-sync-spin" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        Synchroniser maintenant
+    </button>
+</div>

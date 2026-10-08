@@ -1,5 +1,5 @@
 """COROS link from Réglages: OAuth connect/callback, disconnect (syncing on
-demand is on the Santé page, app.routers.sante).
+demand is Réglages' too: app.routers.settings.watch_sync).
 
 The OAuth state and PKCE verifier ride in the (signed) session cookie between
 /coros/connect and /coros/callback, like the Strava setup credentials do.

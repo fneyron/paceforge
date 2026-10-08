@@ -5,12 +5,13 @@
 {% block content %}
 {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
 <div class="pf-health pf-sante4">
-    {#- WHOOP-like: the morning the rings describe, the watches' sync on one line, the sync as an icon: the rings sit
-        high on the first screen (the tab bar already says « Santé ») -#}
+    {#- WHOOP-like: the morning the rings describe; no sync status here (Réglages shows each watch's last sync and
+        syncs on demand): opening the page syncs a stale watch in the background and reloads quietly when something
+        new arrived (partials/sante_sync.html, invisible) -#}
     <div class="pf-sante-head">
         <h1 class="pf-sante-h1"><span class="sr-only">Santé · </span>Aujourd'hui</h1>
-        {% if (page and page.day_label) or lines %}<p class="pf-sante-lines">{% if page and page.day_label %}<span>{{ page.day_label }}</span>{% endif %}{% for l in lines %}<span><b>{{ l.name }}</b> · {{ l.night }}</span>{% endfor %}</p>{% endif %}
-        {% if watches %}{% include "partials/sante_sync.html" %}{% endif %}
+        {% if page and page.day_label %}<p class="pf-sante-lines"><span>{{ page.day_label }}</span></p>{% endif %}
+        {% if watches and auto_sync %}{% include "partials/sante_sync.html" %}{% endif %}
     </div>
 
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}

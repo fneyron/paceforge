@@ -1,17 +1,20 @@
 """Santé: one page (v4, WHOOP/Oura-like) from the athlete's COROS or Garmin
 nights and their activities (app.services.sante): no tabs, no check-in, no
-planned race.
+planned race, no sync status.
 
-Syncing on demand lives here only (one button for every linked watch);
-Réglages manage the links (status, last sync, errors, disconnect). The old
-views' links (?vue=sommeil, entrainement, course, tendances) land on the one
-page, at the section that holds what is left of them.
+Opening the page syncs a stale watch in the background and reloads quietly
+when something new arrived (sync-status); Réglages manage the links (status,
+last sync, errors, « Synchroniser maintenant », disconnect: app.routers.settings).
+The old views' links (?vue=sommeil, entrainement, course, tendances) land on
+the one page, at the section that holds what is left of them. An htmx call
+from a page left open since an older version gets a full navigation
+(HX-Redirect, HX-Refresh), never a page pasted inside the old one.
 """
 import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
@@ -26,13 +29,22 @@ templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["sante"])
 
-OLD_VIEWS = {"sommeil": "#sommeil", "entrainement": "#charge"}  # the others land at the top
+OLD_VIEWS = {"sommeil": "#sommeil"}  # the others land at the top (the Charge ring sums up the old Entraînement)
 RANGES = ("14", "90")
 
 
 def _landing(vue: str | None, r: str | None) -> str:
     """/sante (with the sleep range kept) and the section an old view's link meant."""
     return "/sante" + (f"?r={r}" if r in RANGES else "") + OLD_VIEWS.get(vue or "", "")
+
+
+def _away(request: Request, url: str) -> Response:
+    """A redirect, or for an htmx call (a v3 page left open: its check-in, its
+    range buttons) a full navigation: htmx would follow a 303 and paste the
+    whole page inside the old one."""
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers={"HX-Redirect": url})
+    return RedirectResponse(url, status_code=303)
 
 
 @router.get("/sante", response_class=HTMLResponse)
@@ -61,15 +73,14 @@ async def sante_page(
     return templates.TemplateResponse(
         request, "sante.html",
         context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
-                 "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0,
-                 "lines": _lines(((("COROS", status), ("Garmin", garmin_link))), page)},
+                 "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0},
     )
 
 
 @router.get("/sante/sommeil")
-async def sante_sleep_range(r: str | None = None, user: User = Depends(get_current_user)):
+async def sante_sleep_range(request: Request, r: str | None = None, user: User = Depends(get_current_user)):
     """The old Sommeil range swap: the one page, its Sommeil section, the range kept."""
-    return RedirectResponse(_landing("sommeil", r), status_code=303)
+    return _away(request, _landing("sommeil", r))
 
 
 async def data_version(db: AsyncSession, user_id: int) -> str:
@@ -83,27 +94,9 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     return f"{n}-{last.timestamp() if last else 0:.0f}"
 
 
-def _lines(links, page) -> list[dict]:
-    """One line per linked watch: « COROS · synchro il y a 25 min », and
-    « cette nuit pas encore reçue » while last night is missing (last night's
-    length is printed once, in Sommeil; errors and the link itself are
-    Réglages')."""
-    out = []
-    states = (page or {}).get("night_state") or {}
-    for name, link in links:
-        if not link.get("connected") or link.get("needs_reauth"):
-            continue
-        parts = [f"synchro {link['last_sync_ago']}"] if link.get("last_sync_ago") else []
-        st = states.get(name)
-        if st and st["state"] == "pending" and page and page.get("has_watch_data"):
-            parts.append("cette nuit pas encore reçue")
-        if parts:
-            out.append({"name": name, "night": " · ".join(parts)})
-    return out
-
-
 @router.post("/sante/feel")
 async def sante_feel(
+    request: Request,
     feel: int | None = Form(default=None),
     legs: int | None = Form(default=None),
     why: list[str] | None = Form(default=None),
@@ -155,7 +148,7 @@ async def sante_feel(
         det.pop("answered", None)  # a reply (rows without the key are replies)
     row.details = det
     await db.commit()
-    return RedirectResponse("/sante", status_code=303)
+    return _away(request, "/sante")
 
 
 _WATCHES = (("COROS", coros), ("Garmin", garmin))
@@ -175,8 +168,8 @@ def _fresh_at(link: dict, within: timedelta) -> bool:
 
 def _sync_stale(user_id: int, links, stale_after: timedelta) -> bool:
     """Opening Santé syncs, in the background, every watch not synced within
-    `stale_after` (not one that failed last time: « Synchroniser maintenant »
-    says why). True when a sync is running, so the page waits for it."""
+    `stale_after` (not one that failed last time: Réglages say why, and sync
+    on demand). True when a sync is running, so the page waits for it."""
     running = False
     for service, link in links:
         if not link.get("connected") or link.get("needs_reauth"):
@@ -212,21 +205,14 @@ async def sante_sync_status(
 
 @router.post("/sante/sync", response_class=HTMLResponse)
 async def sante_sync(
-    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """« Synchroniser maintenant »: every linked watch, one after the other.
-    Something new arrived → the page reloads to show it; else how it went."""
-    outcomes = []
-    for name, service in _WATCHES:
+    """The sync button of a Santé page left open since v4 (Santé has none any
+    more: « Synchroniser maintenant » is in Réglages, per watch): every linked
+    watch synced, then the page reloads (the new page, without the button)."""
+    for _, service in _WATCHES:
         conn = await service.connection_for(db, user.id)
         if conn and not conn.needs_reauth:
-            outcomes.append((name, await service.run_sync(db, conn)))
-    if any(o and o.get("ok") for _, o in outcomes):
-        return HTMLResponse("", headers={"HX-Refresh": "true"})
-    return templates.TemplateResponse(request, "partials/sante_sync.html", context={
-        "request": request,
-        "errors": [(name, o["error"]) for name, o in outcomes if o and not o.get("ok")],
-        "busy": any(o is None for _, o in outcomes),
-    })
+            await service.run_sync(db, conn)
+    return HTMLResponse("", headers={"HX-Refresh": "true"})

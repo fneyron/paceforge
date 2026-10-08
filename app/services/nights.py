@@ -10,8 +10,15 @@ Rules, with where they come from (evidence_final.md; (H) = a PaceForge
 heuristic, never shown as a finding):
 - Naps count in the 24-h total only, never in timing, regularity, nightly
   HR/HRV or the hypnogram (Mollicone 2008; Romyn 2018). A nap belongs to the
-  day it ends. A day with naps but no main episode has no 24-h total (« sieste
-  seule, pas de nuit mesurée »).
+  day it ends (each day's bar). The morning's 24 h (day_tst24: the Sommeil
+  ring, the score, the < 6 h rule) also counts a nap of the day before that
+  ended within the 24 h before the main wake (H; Craven 2022 counts sleep per
+  24 h), never a « rendormi » one (part of the night before). A day with naps
+  but no main episode has no 24-h total (« sieste seule, pas de nuit
+  mesurée »).
+- Sleep stages (Night.stages, minutes of the main night: deep, light, rem,
+  awake): the watch's estimate, shown, never judged (Schyvens 2025: wrist κ
+  0.21–0.53; Lee 2023).
 - Times are the watch's detection, approximate: printed rounded to 5 min
   (de Zambotti 2024).
 - « Rendormi » (H): a nap starting ≤ 3 h after the main wake leaves that wake
@@ -28,7 +35,8 @@ heuristic, never shown as a finding):
   zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
   change at home is none; the night it shows and the next 2, H), the nights
   D+1 → D+3 after an effort of 6 h or more (« après grosse sortie »: Hynynen
-  2010, nightly HR at 130 % after a marathon; D is the day it ended, H), and
+  2010, nightly HR at 130 % after a marathon; D is the day before the first
+  morning after it, H: anchor_efforts), and
   the nights of an alert episode (« FC de nuit haute », H; heart rate alone is
   never a diagnosis: evidence row 3). Santé (v4) reads nothing else: no planned
   race, no check-in (owner, 2026-10-08). The race page keeps its own: J-7 →
@@ -148,6 +156,7 @@ class Night:
     resp_source: str | None = None
     tz: int | None = None  # minutes east of UTC
     timeline: bool = False  # real stage intervals stored (Garmin)
+    stages: dict | None = None  # minutes of the main night per stage {deep, light, rem, awake}, the watch's estimate
     tags: set = field(default_factory=set)
     resettled: bool = False  # « rendormi »
 
@@ -199,6 +208,24 @@ class Night:
 
 # ── building the nights ─────────────────────────────────────────────────────
 
+STAGES = ("awake", "light", "deep", "rem")  # Éveil · Léger · Profond · Paradoxal (WHOOP's order)
+
+
+def stages_of(value) -> dict | None:
+    """{awake, light, deep, rem} minutes (ints) from a `sleep` row's
+    details["stages"], or None when it is missing or odd (no sleep stage, a
+    negative or implausible value). « awake » may be missing: 0."""
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for k in STAGES:
+        v = value.get(k, 0 if k == "awake" else None)
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 <= v <= 16 * 60:
+            return None
+        out[k] = int(round(v))
+    return out if out["light"] + out["deep"] + out["rem"] > 0 else None
+
+
 def _nap_parts(day: date, value: float, details: dict | None) -> list[tuple[datetime, datetime, int]]:
     """Each window with its share of the minutes asleep (in proportion to its length)."""
     wins = nap_windows(day, details)
@@ -224,6 +251,7 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
         n = night(d)
         n.start, n.end, n.asleep, n.source = win[0], win[1], round(v), src
         n.tz, n.timeline = (det or {}).get("tz"), bool((det or {}).get("timeline"))
+        n.stages = stages_of((det or {}).get("stages"))
     for d, (v, det, src) in rows.get("nap", {}).items():
         if d <= today and v:
             night(d).naps = [p for p in _nap_parts(d, v, det)]
@@ -388,20 +416,38 @@ def _tag_late_naps(nights: dict[date, Night]) -> None:
             n.tags.add("late_nap")
 
 
+def anchor_efforts(nights: dict[date, Night], efforts=()) -> list:
+    """The efforts with D moved to the day before when the athlete slept after
+    one and woke that same day (an ultra finished at 06:30, then asleep 07:00
+    → 13:00: that sleep is its first night after, its morning the first in its
+    window). sante_training.effort_day already does it for a finish before
+    06:00 (H); this reads the nights for a later dawn finish."""
+    from dataclasses import replace
+
+    out = []
+    for e in efforts:
+        d0 = e.end.date()
+        n = nights.get(d0)
+        if e.day == d0 and n is not None and n.start is not None and n.start >= e.end:
+            e = replace(e, day=d0 - timedelta(days=1))
+        out.append(e)
+    return out
+
+
 def tag_efforts(nights: dict[date, Night], efforts=()) -> None:
-    """« après grosse sortie » on the nights after an effort of 6 h or more
-    (sante_training.Effort with `big`), in place: D+1 → D+3 (D: the day it
-    ended), and a sleep that started after its end on D itself (an ultra
-    finished at 03:00). Out of the bands and the illness alert (H; Hynynen
-    2010); drawn like any night."""
+    """« après grosse sortie » on the 3 nights after an effort of 6 h or more
+    (sante_training.Effort with `big`, anchored: anchor_efforts), in place:
+    D+1 → D+3, D+1 only when that sleep started after the effort ended (the
+    sleep before a night start is not after it). Out of the bands and the
+    illness alert (H; Hynynen 2010); drawn like any night."""
     from app.services.sante_training import BIG_NIGHTS
 
     for e in efforts:
         if not e.big:
             continue
-        for k in range(BIG_NIGHTS + 1):
+        for k in range(1, BIG_NIGHTS + 1):
             n = nights.get(e.day + timedelta(days=k))
-            if n is not None and (k > 0 or (n.start is not None and n.start >= e.end)):
+            if n is not None and (k > 1 or n.start is None or n.start >= e.end):
                 n.tags.add("big")
 
 
@@ -569,6 +615,43 @@ def status(value: float | None, b: dict | None) -> str | None:
     return "above" if value > b["hi"] else "below" if value < b["lo"] else "in"
 
 
+# ── the 24 hours before the morning's wake ──────────────────────────────────
+
+def day_naps(nights: dict[date, Night], d: date) -> list[tuple[datetime | None, datetime | None, int]]:
+    """The naps the morning of `d` counts in its 24 h (day_tst24): the naps of
+    `d` (a nap belongs to the day it ends), and those of the day before that
+    ended within the 24 h before the main wake, only their minutes inside
+    those 24 h (H; Craven 2022 counts sleep per 24 h), never a « rendormi »
+    one (it starts ≤ 3 h after that day's own wake: part of its night)."""
+    n = nights.get(d)
+    if n is None or n.asleep is None or n.end is None:
+        return []
+    out = list(n.naps)
+    prev = nights.get(d - timedelta(days=1))
+    lo = n.end - timedelta(hours=24)
+    for a, b, m in (prev.naps if prev else []):
+        if a is None or b is None or b <= lo or b > n.start:
+            continue
+        if prev.end is not None and prev.end <= a <= prev.end + timedelta(hours=RESETTLE_H):
+            continue  # « rendormi »: the night before's, already counted there
+        if a < lo:
+            m = round(m * (b - lo).total_seconds() / (b - a).total_seconds())
+        if m > 0:
+            out.append((a, b, m))
+    return sorted(out, key=lambda x: x[0] or datetime.min)
+
+
+def day_tst24(nights: dict[date, Night], d: date) -> int | None:
+    """Minutes asleep in the 24 h before the main wake of `d`: the main night
+    and the naps day_naps counts. None without a main night that morning (a
+    nap alone has no 24-h total). Night.tst24 stays each day's own bar (its
+    night and the naps that end on it)."""
+    n = nights.get(d)
+    if n is None or n.asleep is None:
+        return None
+    return n.asleep + sum(m for _, _, m in day_naps(nights, d))
+
+
 # ── timing ──────────────────────────────────────────────────────────────────
 
 def timing(nights: dict[date, Night], today: date, days: int = 28) -> dict:
@@ -702,10 +785,11 @@ def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: flo
                    peak: float = 190.0) -> None:
     """Santé v4's tags, from the activities alone, in place: the context of
     each night (sortie longue la veille, sortie intense le soir, altitude,
-    fuseau) and « après grosse sortie » (`efforts`: sante_training.efforts).
-    No planned race, no check-in; « FC de nuit haute » comes after (tag_alerts)."""
+    fuseau) and « après grosse sortie » (`efforts`: sante_training.efforts,
+    anchored on these nights). No planned race, no check-in; « FC de nuit
+    haute » comes after (tag_alerts)."""
     tag_nights(nights, sessions, (), {}, rest, peak)
-    tag_efforts(nights, efforts)
+    tag_efforts(nights, anchor_efforts(nights, efforts))
 
 
 async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 400, sessions=(), efforts=(),

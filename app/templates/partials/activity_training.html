@@ -1,8 +1,9 @@
-{#- Activités, top (v3, moved from Santé): A1 « Semaines » open, A2 « Fond et fatigue » folded, A3 « FC en footing »
-    folded unless flagged. Expects `training` = training_view.training_top(...). Every number of a week is in the list
-    headings below, so A1 prints a week's own values only in its readout, on a tap. No selection sync across A1–A3. -#}
+{#- Activités, top (v3, moved from Santé): A1 « Semaines » open, A2 « FC en footing » folded unless flagged —
+    training only (v4.1: recovery is Santé's, no fond et fatigue model, no taper line). Expects `training` =
+    training_view.training_top(...). Every number of a week is in the list headings below, so A1 prints a week's own
+    values only in its readout, on a tap. A legend names every mark. No selection sync across A1–A2. -#}
 {% import "partials/_viz.html" as vz %}
-{% set w = training.weeks %}{% set f = training.form %}{% set e = training.easy %}
+{% set w = training.weeks %}{% set e = training.easy %}
 <section id="semaines" class="pf-train" aria-labelledby="semaines-h">
     <h2 id="semaines-h" class="pf-h2">Semaines</h2>
     {% call vz.figure(w, "Heures par semaine", "semaines", None, "semaine", "Semaine précédente", "Semaine suivante") %}
@@ -21,26 +22,14 @@
     {% for t in w.xt %}<text x="{{ t.x }}" y="{{ w.H - 2 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
     <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ w.base }}"/></g>
     {% endcall %}
-    {#- the markers under the bars, by shape too (never colour alone): ◆ a long outing, ▲ a run over 10 % longer -#}
-    {% set marks = ([("is-long", "sortie longue")] if w.longs else []) + ([("is-spike", "10 % de plus que ta plus longue du mois")] if w.spikes else []) %}
-    {% if marks %}{{ vz.viz_legend(marks) }}{% endif %}
+    {#- every mark named: the weeks' hours, this week (hatched, in progress), the usual week's band, D+ under the bars,
+        and the markers by shape too (never colour alone): ◆ a long outing, ▲ a run over 10 % longer -#}
+    {% set marks = [("is-week", "heures")] + ([("is-cur", "en cours")] if w.cols and w.cols[-1].h is defined else [])
+        + ([("is-usual", "semaine type")] if w.band else []) + ([("is-dplus", "D+")] if w.cols|selectattr("dplus")|list else [])
+        + ([("is-long", "sortie longue")] if w.longs else []) + ([("is-spike", "10 % de plus que ta plus longue du mois")] if w.spikes else []) %}
+    {{ vz.viz_legend(marks) }}
     {% if w.line %}<p class="pf-train-line"><a href="{{ w.line.href }}">{{ w.line.text }}</a></p>{% endif %}
 </section>
-
-<details id="fatigue" class="pf-train-fold">
-    <summary>Fond et fatigue</summary>
-    {% if f.wait %}<p class="pf-train-note">{{ f.wait }}</p>
-    {% else %}
-    {% call vz.figure(f, "Fond et fatigue", "fond", None, "journée", "Jour précédent", "Jour suivant") %}
-    {% for g in f.grid %}<line x1="0" x2="{{ f.X1 }}" y1="{{ g }}" y2="{{ g }}" class="pf-viz-grid"/>{% endfor %}
-    {% for s in f.series|reverse %}<path d="{{ s.path }}" class="pf-viz-line {{ s.cls }}" pathLength="1"/>{% endfor %}
-    {% for s in f.series %}<text x="{{ f.X1 - 2 }}" y="{{ s.ly }}" text-anchor="end" class="pf-viz-strong pf-viz-halo">{{ s.name }}</text>{% endfor %}
-    {% for t in f.xt %}<text x="{{ t.x }}" y="{{ f.H - 3 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
-    <g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/>{% for s in f.series %}<circle cx="0" cy="0" r="3.5"/>{% endfor %}</g>
-    {% endcall %}
-    <p class="pf-viz-cap">Charge = FC × durée, échelle relative.</p>
-    {% endif %}
-</details>
 
 {% if e %}
 <details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
@@ -48,12 +37,13 @@
     <span id="forme"></span>
     {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
     {{ vz.viz_dots(e, "FC en footing", "footing") }}
+    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "ta normale")] if e.band else [])) }}
     <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
 </details>
 {% endif %}
 <script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
 <script>
-// #fatigue, #fc-facile (old #forme) open their fold
+// #fc-facile (old #forme) opens its fold
 (function () {
     function show() {
         var h = (location.hash || "").slice(1), el = document.getElementById(h === "forme" ? "fc-facile" : h);
