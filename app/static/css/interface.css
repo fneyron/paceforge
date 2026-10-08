@@ -447,6 +447,12 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-nu-sum { display: grid; gap: 4px; margin-top: 10px; font-size: 15px; line-height: 1.4; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
 .pf-nu-sum .is-ok { color: rgb(var(--pf-ok)); font-weight: 600; }
 .pf-nu-sum .is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
+/* the carbs per hour against the range of the race's duration, one sentence under them: green in it, orange
+   under it, plain over it (train the gut) */
+.pf-nu-sum .pf-nu-zone { font-size: 14px; line-height: 1.45; font-weight: 400; color: rgb(var(--pf-gray-600)); }
+.pf-nu-sum .pf-nu-zone.is-ok { color: rgb(var(--pf-ok)); font-weight: 500; }
+.pf-nu-sum .pf-nu-zone.is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
+.pf-nu-whole { color: rgb(var(--pf-gray-500)); }   /* one product all race long: « toute la course », no « de … à … » */
 .pf-nu-caf { display: flex; align-items: flex-start; gap: 6px; color: rgb(var(--pf-gray-700)); }
 .pf-nu-caf svg { margin-top: 3px; }
 

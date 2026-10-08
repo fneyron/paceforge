@@ -204,14 +204,20 @@ def main_product(rhythms: list[dict], intake_list: list[tuple[int, int, int]], p
     return max(dict.fromkeys(order), key=lambda p: (round(g.get(p, 0.0), 6), n.get(p, 0), -order.index(p)))
 
 
-def carbs_word(g_h: int) -> tuple[str, str]:
-    """(the word, its tone) for a plan's carbs per hour, against the zone."""
-    lo, hi = N.CARBS_ZONE_G_H
+def carbs_note(g_h: int, duration_h: float) -> tuple[str, str]:
+    """(the sentence, its tone: ok, warn, plain) for a plan's carbs per hour, against the range of the race's
+    duration (nutrition.carbs_zone): « Dans le repère pour un ultra : 30 à 50 g par heure. »; above it, train
+    the gut (ISSN 2019), never a warning; below it, the warning colour."""
+    zone = N.carbs_zone(duration_h)
+    if zone is None:
+        return "Sur moins d'une heure, manger n'est pas nécessaire.", "plain"
+    lo, hi = zone
+    which, span = ("pour un ultra" if duration_h > N.ULTRA_H else "pour cette durée"), f"{lo} à {hi} g par heure"
     if g_h < lo:
-        return "un peu bas", "warn"
+        return f"Moins que le repère {which} : {span}.", "warn"
     if g_h > hi:
-        return "seulement si ton ventre y est entraîné", "warn"
-    return "dans la zone conseillée", "ok"
+        return f"Plus que le repère {which} ({span}) : habitue ton ventre à cette dose à l'entraînement.", "plain"
+    return f"Dans le repère {which} : {span}.", "ok"
 
 
 def snap_interval(minutes: float | None) -> int | None:

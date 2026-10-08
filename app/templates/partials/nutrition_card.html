@@ -37,7 +37,7 @@
                     </div>
                     <div class="pf-nu-l2">
                         <span class="pf-nu-grp">{{ '1 prise' if l.multi else '1' }} toutes les <span class="pf-nu-sel"><select id="nu-l{{ l.i }}-e" name="every_min" aria-label="{{ l.label }} : minutes entre deux prises">{% for m, on in l.every %}<option value="{{ m }}"{% if on %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>{{ chev() }}</span> min</span>
-                        <span class="pf-nu-grp">de <span class="pf-nu-sel"><select id="nu-l{{ l.i }}-f" name="from_min" aria-label="{{ l.label }} : à partir de">{% for val, lbl, on in l['from'] %}<option value="{{ val }}"{% if on %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>{{ chev() }}</span> à <span class="pf-nu-sel"><select id="nu-l{{ l.i }}-t" name="to_min" aria-label="{{ l.label }} : jusqu'à">{% for val, lbl, on in l.to %}<option value="{{ val }}"{% if on %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>{{ chev() }}</span></span>
+                        {% if l.whole %}<span class="pf-nu-grp pf-nu-whole">toute la course</span>{% else %}<span class="pf-nu-grp">de <span class="pf-nu-sel"><select id="nu-l{{ l.i }}-f" name="from_min" aria-label="{{ l.label }} : à partir de">{% for val, lbl, on in l['from'] %}<option value="{{ val }}"{% if on %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>{{ chev() }}</span> à <span class="pf-nu-sel"><select id="nu-l{{ l.i }}-t" name="to_min" aria-label="{{ l.label }} : jusqu'à">{% for val, lbl, on in l.to %}<option value="{{ val }}"{% if on %} selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>{{ chev() }}</span></span>{% endif %}
                     </div>
                     <noscript><button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm">Enregistrer</button></noscript>
                 </form>
@@ -46,7 +46,7 @@
         </ul>
         {% if can_add %}<form method="post" action="{{ P }}/rhythms" hx-post="{{ P }}/rhythms"><button type="submit" id="nu-add" class="pf-nu-add">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Ajouter un produit au plan</button></form>{% endif %}
         {% if carbs %}
-        <p class="pf-nu-sum"><span>≈ {{ carbs.g }} g de glucides par heure · <span class="is-{{ carbs.tone }}">{{ carbs.word }}</span></span>
+        <p class="pf-nu-sum"><span>≈ {{ carbs.g }} g de glucides par heure</span><span class="pf-nu-zone is-{{ carbs.tone }}">{{ carbs.note }}</span>
             {%- if caf %}<span class="pf-nu-caf{% if caf.over %} is-warn{% endif %}">{% if caf.over %}{{ ic.icon('alert', 'w-4 h-4') }}{% endif %}<span>caféine : {{ caf.mg }} mg, {% if caf.over %}au-dessus de la limite de {{ caf.cap }} mg sur 24 h{% else %}limite {{ caf.cap }} mg sur 24 h{% endif %}{% if caf.no_weight %} · <a class="pf-link" href="/settings#weight_kg">indique ton poids dans Réglages</a> pour l'ajuster{% endif %}</span></span>{% endif %}</p>
         {% endif %}
         {% else %}

@@ -104,7 +104,9 @@ def test_a_product_switch_at_8_h_on_a_16_h_race_with_ten_ravitos():
     assert shop == {1: 8, 2: math.ceil(25 / 3)}  # the opened pouch carries on: 25 prises, 9 pouches
     assert sum(it["prises"] for r in rows for it in r["items"]) == 8 + 25
     g = NP._round(NP.carbs_per_hour(il, PRODUCTS, end))
-    assert g == NP._round((8 * 25 + 25 * 30) / 16.5) == 58 and NP.carbs_word(g)[0] == "un peu bas"
+    assert g == NP._round((8 * 25 + 25 * 30) / 16.5) == 58  # an ultra: over its 30–50 g/h, train the gut
+    assert NP.carbs_note(g, 16.5) == ("Plus que le repère pour un ultra (30 à 50 g par heure) : habitue ton ventre à "
+                                      "cette dose à l'entraînement.", "plain")
     # each row is one short line on a phone: the pouches, the opened pouch's prises only when there is room
     for r in rows:
         room = NP.ROW_CHARS - len(r["name"])
@@ -139,11 +141,20 @@ def test_caffeine_against_the_24_h_cap():
     assert len(il) == 7 and NP.caffeine_24h(il, PRODUCTS) == 600
 
 
-def test_the_carbs_per_hour_say_one_word_against_the_zone():
-    assert [NP.carbs_word(g)[0] for g in (40, 59, 60, 82, 90, 91, 120)] == [
-        "un peu bas", "un peu bas", "dans la zone conseillée", "dans la zone conseillée", "dans la zone conseillée",
-        "seulement si ton ventre y est entraîné", "seulement si ton ventre y est entraîné"]
-    assert N.CARBS_ZONE_G_H == (60, 90)
+def test_the_carbs_per_hour_read_against_the_range_of_the_race_duration():
+    """2026-10-09 (owner, on the mockup: « la maquette est parfaite »): the range follows the race's duration —
+    under 1 h eating is not needed, 30–60 g/h up to 2 h 30 (ACSM 2016), 60–90 g/h to 6 h (Jeukendrup 2014),
+    30–50 g/h past 6 h, an ultra (ISSN 2019); over it, train the gut (plain), under it, the warning colour."""
+    assert [N.carbs_zone(h) for h in (0.5, 1, 2.4, 2.5, 5.9, 6, 6.1, 30)] == [
+        None, (30, 60), (30, 60), (60, 90), (60, 90), (60, 90), (30, 50), (30, 50)]
+    assert NP.carbs_note(45, 16.5) == ("Dans le repère pour un ultra : 30 à 50 g par heure.", "ok")
+    assert NP.carbs_note(20, 16.5) == ("Moins que le repère pour un ultra : 30 à 50 g par heure.", "warn")
+    assert NP.carbs_note(70, 5) == ("Dans le repère pour cette durée : 60 à 90 g par heure.", "ok")
+    assert NP.carbs_note(50, 5)[1] == "warn" and NP.carbs_note(95, 5)[1] == "plain"
+    assert NP.carbs_note(40, 2) == ("Dans le repère pour cette durée : 30 à 60 g par heure.", "ok")
+    assert NP.carbs_note(0, 0.75) == ("Sur moins d'une heure, manger n'est pas nécessaire.", "plain")
+    # « Plan type » aims at the guideline for the duration: 50 g/h on an ultra, no longer 80
+    assert [N.starter_carbs(h) for h in (2, 5, 6, 6.5, 16.5)] == [60, 75, 75, 50, 50]
     il = NP.intakes([_line(1, 20)], 6 * 3600)  # 25 g every 20 min = 75 g/h, the last one before the finish
     assert NP._round(NP.carbs_per_hour(il, PRODUCTS, 6 * 3600)) == NP._round(17 * 25 / 6) == 71
 
@@ -253,8 +264,12 @@ async def test_an_empty_plan_offers_plan_type_and_the_products_are_open(as_user:
     nj = await _nj(db_session, rid)
     assert nj == {"v": 2, "rhythms": [{"product_id": -1, "every_min": 20, "from_min": 0, "to_min": None}], "spare": False}
     t = r.text
-    assert _selected(t, "nu-l0-p") == "-1" and _selected(t, "nu-l0-e") == "20" and _selected(t, "nu-l0-t") == ""
-    assert "≈ 70 g de glucides par heure · dans la zone conseillée" in _text(t)  # 14 gels before the finish of a 5 h race
+    assert _selected(t, "nu-l0-p") == "-1" and _selected(t, "nu-l0-e") == "20"
+    # one product all race long: « toute la course », no « de … à … » (2026-10-09, the approved mockup)
+    assert '<span class="pf-nu-grp pf-nu-whole">toute la course</span>' in t and 'id="nu-l0-f"' not in t
+    assert 'id="nu-l0-t"' not in t
+    # 14 gels before the finish of a 5 h race, against 60–90 g/h
+    assert "≈ 70 g de glucides par heure Dans le repère pour cette durée : 60 à 90 g par heure." in _text(t)
     assert 'id="nu-produits" class="pf-nu-fold">' in t and 'data-focus="nu-l0-p"' in t  # closed now the plan has a line
     assert _rows(t) == ["21:00 Départ : 6 gels", "23:05 Col assistance : 4 gels", "00:25 Village : 4 gels", "02:00 Arrivée"]
     assert "Eau : bois à ta soif, remplis tes flasques à chaque ravito." in t
@@ -289,7 +304,9 @@ async def test_lines_add_change_and_go_and_the_rows_follow(as_user: AsyncClient,
     # 4 more to the finish (1 pouch with them); the opened pouch's prises only where the row has room
     assert _rows(t) == ["21:00 Départ : 6 Maurten 100", "23:05 Col assistance : 2 PF 90", "00:25 Village : 1 PF 90", "02:00 Arrivée"]
     assert '2 PF 90<span class="pf-nu-left is-wide"> (il t&#39;en reste 2 prises)</span>' in t  # past one line on a phone: wider screens
-    assert "≈ 78 g de glucides par heure · dans la zone conseillée" in _text(t)  # (6 × 25 + 8 × 30) / 5 h
+    # (6 × 25 + 8 × 30) / 5 h; two lines: each with its « de … à … »
+    assert "≈ 78 g de glucides par heure Dans le repère pour cette durée : 60 à 90 g par heure." in _text(t)
+    assert t.count('class="pf-nu-grp pf-nu-whole"') == 0 and 'id="nu-l1-f"' in t
     assert [_text(li) for li in re.findall(r"<li><b>.*?</li>", t.split('class="pf-nu-list"')[1].split("</ul>")[0])] == [
         "6 Maurten Gel 100", "3 Precision Fuel PF 90 Gel"]
     # a stale card (a line that is gone), an unknown product, « à » before « de »: no change, never a 500

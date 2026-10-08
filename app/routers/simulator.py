@@ -1863,10 +1863,10 @@ def _num_in(x) -> str:
 
 
 def _carbs_target(end_s: float | None) -> float:
-    """The carbs per hour « Plan type » aims at: the guideline for the race's duration."""
-    from app.services.nutrition import default_targets
+    """The carbs per hour « Plan type » aims at: the guideline for the race's duration (50 g/h on an ultra)."""
+    from app.services.nutrition import starter_carbs
 
-    return float(default_targets((end_s or 0) / 3600.0, None)["carbs_g_per_h"])
+    return float(starter_carbs((end_s or 0) / 3600.0))
 
 
 async def _product_uses(db: AsyncSession, user: User, route: Route, pid: int, plan: dict) -> dict:
@@ -1926,6 +1926,8 @@ async def _nutrition_card_context(
             "every": [(m, m == r["every_min"]) for m in NP.INTERVALS],
             "from": _hour_options(r["from_min"], hours, hi=r["to_min"]),
             "to": _hour_options(r["to_min"], hours, lo=r["from_min"], end=True),
+            # one product all race long: « toute la course », no « de … à … » (they come back with a second line)
+            "whole": len(lines) == 1 and not r["from_min"] and r["to_min"] is None,
         })
 
     carbs = caf = None
@@ -1935,8 +1937,8 @@ async def _nutrition_card_context(
     copy_text = ""
     if count and lines:
         g = NP._round(NP.carbs_per_hour(count["intakes"], products, end))
-        word, tone = NP.carbs_word(g)
-        carbs = {"g": g, "word": word, "tone": tone}
+        note, tone = NP.carbs_note(g, end / 3600)
+        carbs = {"g": g, "note": note, "tone": tone}
         if NP.holds_caffeine(lines, products):
             mg, cap = NP.caffeine_24h(count["intakes"], products), N.caffeine_cap_mg(user.weight_kg)
             caf = {"mg": mg, "cap": cap, "over": mg > cap, "no_weight": not user.weight_kg}

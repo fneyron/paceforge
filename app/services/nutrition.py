@@ -17,9 +17,32 @@ _CARBS_LONG = 80.0    # g/h, > 6h
 _FLUID_BASE = 500.0   # ml/h at mild temperature
 _SODIUM_BASE = 400.0  # mg/h at mild temperature
 
-# The zone a race plan is read against (Jeukendrup 2014): below 60 g/h a long
-# effort runs short of carbs; above 90 g/h only a gut trained for it copes.
-CARBS_ZONE_G_H = (60, 90)
+# The range a race plan is read against, from the race's duration (2026-10-09; owner, on the mockup: « la
+# maquette est parfaite »): under 1 h eating is not needed (Jeukendrup 2014); up to 2 h 30, 30 to 60 g/h (ACSM
+# 2016, Thomas); from 2 h 30 to 6 h, 60 to 90 g/h (Jeukendrup 2014; ACSM 2016: up to 90 g/h past 2.5–3 h); past
+# 6 h, an ultra, 30 to 50 g/h (ISSN 2019, Tiller: 90 g/h « may be unrealistic for longer ultra-marathon races
+# (> 6 h) »), more only with a gut trained for it (ISSN 2019: progressive gut training).
+ULTRA_H = 6.0  # an ultra: past 6 h (ISSN 2019)
+ULTRA_STARTER_G_H = 50  # « Plan type » on an ultra: the top of its range (ISSN 2019), never 80 any more
+
+
+def carbs_zone(duration_h: float) -> tuple[int, int] | None:
+    """The carbs per hour a race of `duration_h` hours is read against, (lo, hi) g/h; None under 1 h."""
+    if duration_h < 1:
+        return None
+    if duration_h < 2.5:
+        return 30, 60
+    if duration_h <= ULTRA_H:
+        return 60, 90
+    return 30, 50
+
+
+def starter_carbs(duration_h: float) -> int:
+    """The carbs per hour « Plan type » aims at: 60 g/h under 3 h, 75 g/h to 6 h, the top of the ultra range
+    past 6 h (50 g/h). The triathlon plan keeps default_targets."""
+    if duration_h > ULTRA_H:
+        return ULTRA_STARTER_G_H
+    return round(_CARBS_SHORT if duration_h < 3 else _CARBS_MID)
 
 # The carbs per hour of the level picker of older plans (fragile / normal /
 # solide), kept to read those plans.
