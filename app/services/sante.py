@@ -71,7 +71,10 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     first holding a night)."""
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    today = today or await athlete_today(db, user_id, now, latest)
+    clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
+    if today is None:
+        today = await athlete_today(db, user_id, now, latest)
+        clock = await local_clock(db, user_id, now)
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
     # Garmin's day altitudes: where the athlete slept, first (R2)
@@ -85,11 +88,14 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
+    # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
+    night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
+    until, today = today, cycle_day(nights, today, clock)
     out = {
         "has_data": bool(sources) or bool(sessions),  # older rows may come from another source (Apple Health)
         "has_watch_data": bool(sources),
         "today": today,
-        "night_state": await _night_state(db, user_id, today, sources & set(WATCH_SOURCES)),
+        "night_state": night_state,
     }
     if not out["has_data"]:
         out["day_label"] = viz.d_short(today)
@@ -105,10 +111,41 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["sleep"] = sl.sleep_section(nights, today, r, samples)
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out.update(_top(day, efforts, sessions, bool(sources), out))
+        out.update(_top(day, efforts, sessions, bool(sources), out, until))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     return out
+
+
+# ── the page's day: a cycle, like WHOOP's (from one sleep to the next), never midnight ─────────────────────
+
+CYCLE_NOON = 12  # (H) from noon, a day whose night never came is that day anyway (the watch was not worn)
+
+
+async def local_clock(db: AsyncSession, user_id: int, now: datetime) -> datetime | None:
+    """The athlete's wall-clock time (naive) from their UTC offset (their latest sessions, as athlete_today); None
+    without one (a seam the tests move)."""
+    offset = await st.utc_offset(db, user_id)
+    return None if offset is None else (now + timedelta(seconds=offset)).replace(tzinfo=None)
+
+
+def _slept(nights, d: date) -> bool:
+    """The night that ended on the morning of `d` reached the page (its sleep or its heart values)."""
+    n = nights.get(d)
+    return bool(n and (n.asleep is not None or n.hr is not None or n.hrv is not None))
+
+
+def cycle_day(nights, today: date, clock: datetime | None) -> date:
+    """The day Santé reads, like WHOOP's cycle, « from sleep onset to sleep onset » rather than midnight to
+    midnight (WHOOP's engineering blog; owner, 2026-10-09, awake at 1 a.m. on a plane: « J'ai sommeil vide »):
+    before noon (H), while this morning's night has not reached the page and last night's has, it is still
+    yesterday — its night, its score, its 7 days (and the activities since midnight); from noon, or as soon as the
+    night is in, today (a night without the watch then reads « pas enregistré »). `clock` None (no offset known,
+    or a day given): `today`."""
+    if clock is None or clock.date() != today or clock.hour >= CYCLE_NOON:
+        return today
+    yesterday = today - timedelta(days=1)
+    return yesterday if not _slept(nights, today) and _slept(nights, yesterday) else today
 
 
 # ── one day: its state and its score ────────────────────────────────────────
@@ -257,14 +294,16 @@ def usual_week(sessions, today: date) -> float | None:
     return statistics.fmean(per.get(m, 0.0) for m in weeks) or None
 
 
-def training(sessions, today: date) -> dict:
+def training(sessions, today: date, until: date | None = None) -> dict:
     """« Entraînement », the third dial and its card: the activities' time of the last 7 days (stops included)
     against the usual week (usual_week), as a percentage, 100 % as usual, the arc full at twice it, in the accent
     colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que d'habitude » or « moins que
     d'habitude »; without a usual week, the 7 days' time itself and « pas encore d'habitude ». The card prints the
     7 days' time and the usual week's (to 5 min: a typical value), each once: without a usual week the dial
-    prints the time, the card only its words. {dial, week, usual, word}."""
-    week = sum(s.minutes for s in sessions if today - timedelta(days=6) <= s.day <= today)  # moving time, as Activités
+    prints the time, the card only its words. `until`: the calendar day when the page still reads yesterday's
+    cycle (cycle_day): the activities since midnight count in it. {dial, week, usual, word}."""
+    until = until or today
+    week = sum(s.minutes for s in sessions if today - timedelta(days=6) <= s.day <= until)  # moving time, as Activités
     usual = usual_week(sessions, today)
     href = "#entrainement"
     if usual is None:
@@ -323,7 +362,7 @@ def effort_row(efforts, day: dict) -> dict | None:
                 "warn" if w["cap"] >= EFFORT_ORANGE else "danger")
 
 
-def _top(day: dict, efforts, sessions, has_watch: bool, page: dict) -> dict:
+def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None) -> dict:
     """The three dials, each a link to its card right under the dials, else to its details further down (a plain
     dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
     sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
@@ -335,7 +374,7 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict) -> dict:
     rows = [r for r in (night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
                         effort_row(efforts, day)) if r]
     recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
-    train = training(sessions, day["day"])
+    train = training(sessions, day["day"], until)
     return {"dials": [sleep_dial(day["tst24"], sleep_href), sc.dial(score, state, recup_href), train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line

@@ -160,6 +160,17 @@ def cycling_on(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_wall_clock(monkeypatch):
+    """Santé's day follows the athlete's sleep before noon (sante.cycle_day): the suite never reads the real wall
+    clock for it, whatever the hour it runs (a test of the cycle sets sante.local_clock itself)."""
+    from app.services import sante
+
+    async def none(*a, **k):
+        return None
+    monkeypatch.setattr(sante, "local_clock", none)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_sessions_cache():
     """Santé keeps each athlete's sessions per worker: never across tests."""
     from app.services import sante_training

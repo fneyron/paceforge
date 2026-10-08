@@ -180,7 +180,9 @@ def test_the_method_fold_is_four_plain_bullets_and_names_no_race():
     assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
                          "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
                          "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
-                         "Ta montre détecte tes heures de coucher et de lever."]
+                         "Ta montre détecte tes heures de coucher et de lever.",
+                         "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas "
+                         "arrivée, tu vois la précédente."]
     text = sc.flat(sl.METHOD)
     assert "ne compte" not in text
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text

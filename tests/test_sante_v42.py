@@ -574,7 +574,8 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     recup, nuits = folds
     assert "<summary>Comment je calcule ta récupération</summary>" in recup
     assert "<summary>Comment je lis tes nuits</summary>" in nuits
-    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 4  # 2026-10-08: 4
+    # 2026-10-09: 5, the day turns at the wake, not at midnight
+    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 5
     for fold, anchor in ((recup, "recuperation"), (nuits, "sommeil")):
         assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
         assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »

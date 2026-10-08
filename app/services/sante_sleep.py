@@ -62,6 +62,8 @@ METHOD = [
     "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
     "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
     "Ta montre détecte tes heures de coucher et de lever.",
+    "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas arrivée, tu vois la "
+    "précédente.",
 ]
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
