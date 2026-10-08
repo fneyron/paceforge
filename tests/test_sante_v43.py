@@ -133,7 +133,8 @@ def _coherent(html: str) -> str:
 async def test_owner_les_houches_two_efforts_from_his_activities(db_session: AsyncSession, test_user: User):
     """His real 18/09 (9h04 stops included, +3 511 m) and 19/09 (7h04, +2 847 m) at Les Houches: two Très
     longues, each its own window (45 to D+2, 65 to D+5): the last 65 day is 24/09, 25/09 is free. On 24/09 no
-    night was measured: the score is the window's cap alone, « estimé »; on 25/09 there is no score."""
+    night was measured: the score is the window's cap alone, « estimée » under the dial, and « Effort récent » says
+    it is the window's last day; on 25/09 there is no score and no Effort récent."""
     await seed_owner_v4(db_session, test_user)
     sessions = await st.load_sessions(db_session, test_user.id, D8)
     houches = [e for e in st.efforts(sessions) if e.start_day in (date(2026, 9, 18), date(2026, 9, 19))]
@@ -145,9 +146,12 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
     page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 24))
     assert (page["score"]["value"], page["score"]["estimated"], page["state"]["word"]) == (
         65, True, "Récupération en cours")
-    assert page["ring"]["sub"] == "estimé" and page["state"]["text"] is None
+    assert page["dials"][1]["sub"] == "estimée" and page["state"]["text"] is None
+    effort = {r["key"]: r for r in page["rows"]}["effort"]
+    assert (effort["value"], effort["word"], effort["tone"]) == ("dernier jour", "avant d'être récupéré", "warn")
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))
     assert free["score"]["value"] is None and free["state"] is None and free["line"] == td.NO_NIGHT
+    assert "effort" not in {r["key"] for r in free["rows"]}
 
 
 async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_session: AsyncSession,
@@ -237,7 +241,8 @@ def garmin_rows_without_tz(days) -> dict:
 
 async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
     """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
-    no window), « Bonne récupération »; the facts and the cards' status lines; no Effort récent; Activités empty."""
+    no window), « Bonne récupération »; the dials, the Récupération card's rows and the chart cards' status lines;
+    no Effort récent; no activity: « 0 min » over « pas encore d'habitude »; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
@@ -245,11 +250,13 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
-    assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("sommeil", "92\u00a0%", "suffisant", "ok"), ("vfc", None, "comme d'habitude", "ok"),
-        ("fc", None, "comme d'habitude", "ok")]
+    assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
+        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("entrainement", "0 min", None, "pas encore d'habitude", "accent")]
+    assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
+        ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-fact is-ok"' in main
+    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-row is-ok"' in main
     act = _coherent((await as_user.get("/activities")).text)
     assert 'id="semaines"' not in act and "Aucune activité pour l" in act
 
@@ -269,12 +276,12 @@ async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession
 
 async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
     """Strava, no watch: no nightly score (« Connecte ta montre pour ta récupération. », the connect links), no
-    facts, no cards, no folds but the recovery one; Activités: « Semaines » with its three measures."""
+    rows, no cards, no folds but the recovery one; Activités: « Semaines » with its three measures."""
     for k in range(1, 70, 2):
         db_session.add(_act(test_user, 50_000 + k, D - timedelta(days=k), 7, 55, dplus=120))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"] is None and page["line"] == td.NO_WATCH and page["facts"] == []
+    assert page["state"] is None and page["line"] == td.NO_WATCH and page["rows"] == []
     main = _coherent((await as_user.get("/sante")).text)
     assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Comment je lis tes nuits" not in main
     act = _coherent((await as_user.get("/activities")).text)
@@ -294,7 +301,7 @@ async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_us
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     w = page["score"]["parts"]
-    assert {p["key"] for p in w} == {"hrv", "hr", "sleep", "load"} and page["score"]["value"] == 65
+    assert {p["key"] for p in w} == {"hrv", "hr", "sleep"} and page["score"]["value"] == 65
     assert page["state"]["word"] == "Récupération en cours" and page["state"]["text"] is None
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert marks[D.isoformat()] == "◇ après un gros effort"  # 7 h: its nights follow its time (M4), no outing named
@@ -321,7 +328,7 @@ async def test_a_user_in_utc_minus_5(as_user: AsyncClient, db_session: AsyncSess
     nights = await nt.load_nights(db_session, test_user.id, D, sessions=sessions, efforts=st.efforts(sessions))
     assert not any(n.tags & {"tz", "jetlag"} for n in nights.values())
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["word"] in td.WORDS.values() and page["facts"]
+    assert page["state"]["word"] in td.WORDS.values() and page["rows"]
 
     async def today(*a, **k):
         return D
@@ -353,5 +360,5 @@ async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session:
     await _seed(db_session, test_user, rows)
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["score"]["absent"] == ["hrv"] and page["score"]["building"] == [] and page["vfc"] is None
-    assert [f["key"] for f in page["facts"]] == ["sommeil", "fc"]
+    assert [f["key"] for f in page["rows"]] == ["fc"] and page["dials"][0]["sub"] == "suffisant"
     assert page["score"]["value"] == sc.rounded((25 * 100 + 30 * 100) / 55)

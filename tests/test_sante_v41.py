@@ -88,8 +88,7 @@ async def test_owner_7_october_stages_from_the_daily_summary(db_session: AsyncSe
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=date(2026, 10, 7))
     h = page["sleep"]["hero"]
-    assert (h["label"], h["times"], h["night"], h["nap"]) == ("Cette nuit", "23:35 → 05:40", "nuit 5h50",
-                                                              "+ sieste 2h20")
+    assert (h["label"], h["times"], h["nap"], h["total"]) == ("Cette nuit", "23:35 → 05:40", "+ sieste 2h20", "8h10")
     # printed to 10 min (H, v4.2): 13, 205, 49 and 96 min
     assert [(p["name"], p["hm"]) for p in h["phases"]["parts"]] == [
         ("Éveil", "10 min"), ("Léger", "3h30"), ("Profond", "50 min"), ("Paradoxal", "1h40")]
@@ -118,15 +117,18 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
                                                                 test_user: User, monkeypatch):
     await seed_owner_v4(db_session, test_user)
     main = _main(await _page(as_user, monkeypatch, D8))
-    hero = main.split('class="pf-card pf-nhero"')[1].split('data-viz-scope')[0]
+    hero = main.split('<section id="sommeil"')[1].split('data-viz-scope')[0]  # the Sommeil card's first part
     bar = re.search(r'<div class="pf-phases-bar" aria-hidden="true">(.*?)</div>', hero).group(1)
     assert re.findall(r'class="pf-ph is-(\w+)" style="flex-grow: (\d+)"', bar) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
     legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
     assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
         "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
-    assert ("Ta montre estime les phases d'après ton pouls et tes mouvements. Elles montrent la forme de ta nuit, "
-            "pas sa qualité.") in hero
+    # that they are the watch's estimate, the shape of the night and not its quality: « Comment je lis tes nuits »
+    # says it (the card shows the bar and its legend, like the mockup the owner approved, 2026-10-08)
+    fold = main.split("<summary>Comment je lis tes nuits</summary>")[1].split("</details>")[0]
+    assert ("Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité."
+            in H.unescape(fold).replace("\u00a0", " "))
     for word in ("bon", "mauvais", "objectif", "insuffisant", "%"):  # shown, never judged
         assert word not in re.sub(r"<[^>]+>", " ", hero), word
     css = (ROOT / "app/static/css/interface.css").read_text()
@@ -178,10 +180,10 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
 
 async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                              monkeypatch):
-    """The ring: no tick, no line; the facts: each dot with its name and its word (v4.4); the VFC and FC cards: a
-    status line, a legend for the dot, the 7-night line and the normal; a day without data: no mark at all (owner,
-    2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de point »), so nothing in the legend, its readout
-    says it."""
+    """The dials: no tick, no line, each with its name and its word; the Récupération card's rows: each dot with
+    its name and its words (v4.4); the VFC and FC cards: a status line in words, a legend for the dot, the 7-night
+    line and the normal; a day without data: no mark at all (owner, 2026-10-08: « s'il n'y a pas de mesure tu ne
+    mets rien, pas de point »), so nothing in the legend, its readout says it."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     for d in (today - timedelta(days=4), today - timedelta(days=9)):  # two nights missing
@@ -190,22 +192,29 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     await _seed_rows(db_session, test_user, rows)
     await _runs(db_session, test_user, today)
     main = _main(await _page(as_user, monkeypatch, today))
-    top = main.split('<div class="pf-sante-top')[1].split("</h2>")[0]
+    top = main.split('<div class="pf-dials">')[1].split('<section id="recuperation"')[0]
     assert "pf-ring-tick" not in main and "<line" not in top
-    facts = main.split('<section class="pf-card pf-facts"')[1].split("</section>")[0]
-    rows = [H.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip().replace("\u00a0", " "))
-            for body in re.findall(r'<(?:a|div) class="pf-fact is-\w+"[^>]*>(.*?)</(?:a|div)>', facts)]
-    assert rows[0] == "Sommeil sur 8 h 92 % suffisant" and len(rows) == 3  # each dot with its name and its words
-    assert re.fullmatch(r"VFC 7 nuits \u2212\d+ % plus basse que d'habitude", rows[1]), rows[1]
+
+    def words(body):
+        return H.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip().replace("\u00a0", " "))
+
+    dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
+    assert dials[0] == "92 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
+    assert dials[2] == "100 % Entraînement comme d'habitude"  # a run every 3 days: the 7 days are its usual week
+    card = main.split('<section id="recuperation"')[1].split("</ul>")[0]
+    rows = [words(body) for body in re.findall(r'<li class="pf-row is-\w+">(.*?)</li>', card)]
+    assert len(rows) == 2  # each dot with its name and its words; no recovery window open: no Effort récent
+    assert re.fullmatch(r"VFC 7 nuits \u2212\d+ % plus basse que d'habitude", rows[0]), rows[0]
     assert re.fullmatch(r"FC de nuit 7 nuits (comme d'habitude|[+\u2212]\d+ % dans tes valeurs habituelles)",
-                        rows[2]), rows[2]
-    assert facts.count('<i class="pf-dot" aria-hidden="true"></i>') == 3
+                        rows[1]), rows[1]
+    assert card.count('<i class="pf-dot" aria-hidden="true"></i>') == 2
     for key in ("vfc", "fc"):
-        card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
-        # its status line: a dot and its words (the 2 missing nights leave the VFC week a little under its normal)
+        card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
+        # its status line: a dot and its words, no percentage (the row prints it: once; the 2 missing nights leave
+        # the VFC week a little under its normal)
         assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i>'
-                         r'(<b>[+\u2212]\d+\u00a0%</b> )?(dans tes valeurs habituelles|plus basse que d&#39;habitude|'
-                         r'comme d&#39;habitude)</p>', card), key
+                         r'(dans tes valeurs habituelles|plus basse que d&#39;habitude|comme d&#39;habitude)</p>',
+                         card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
                 and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
@@ -224,23 +233,26 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                                    test_user: User, monkeypatch):
     """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): the state
-    comes from the activity, its window's cap alone: 35 (v4.3), « Récupération faible », « estimé » under the
-    ring; the page names no activity (v4.3, owner: « mets juste les scores »). The facts (v4.4): no night this
-    morning (grey), the effort's window open to 16/10 at 35 (red), no normal yet for VFC nor FC de nuit."""
+    comes from the activity, its window's cap alone: 35 (v4.3), « Récupération faible », « estimée » under the
+    dial; the page names no activity (v4.3, owner: « mets juste les scores »). The Sommeil dial: no night this
+    morning; the Récupération card's rows: no usual values yet for VFC nor FC de nuit (when they will be ready),
+    the effort's window open to 16/10 at 35 (red)."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
     st_, score = page["state"], page["score"]
     assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
     assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
-    assert (page["ring"]["value"], page["ring"]["sub"]) == ("35", "estimé") and "rings" not in page
-    assert page["ring"]["aria"] == ("Récupération 35\u00a0%, estimée : ta montre n'a pas enregistré ta nuit. "
-                                    "Récupération faible.")
-    assert [(f["name"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("Sommeil", None, "pas enregistré", "none"), ("Effort récent", None, "encore 11 jours", "danger"),
-        ("VFC", None, "en construction", "none"), ("FC de nuit", None, "en construction", "none")]
+    sleep, recup = page["dials"][:2]
+    assert (sleep["value"], sleep["sub"]) == ("—", "pas enregistré") and "ring" not in page
+    assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("35", "%", "estimée", "danger")
+    assert recup["aria"] == "Récupération 35\u00a0%, faible, estimée : ta montre n'a pas enregistré ta nuit."
+    assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [
+        ("VFC", None, "en construction", "prête dans 4\u00a0nuits", "none"),
+        ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none"),
+        ("Effort récent", "11\u00a0jours", "avant d'être récupéré", None, "danger")]
     html = await _page(as_user, monkeypatch, D5)
-    assert '<span class="pf-ring-sub" aria-hidden="true">estimé</span>' in html
+    assert '<span class="pf-ring-sub" aria-hidden="true">estimée</span>' in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
 
 
@@ -266,7 +278,8 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
 
 async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSession, test_user: User):
     """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (D+1,
-    capped at 35), Charge récente among its components, « Effort récent » red; that sleep is « après ultra »."""
+    capped at 35), « Effort récent » red (no Charge récente in the score any more: like WHOOP, the effort weighs
+    through its window's cap, 2026-10-08); that sleep is « après ultra »."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     rows["sleep"][today] = (400, {"main_start": f"{today}T04:00", "main_end": f"{today}T11:00", "timeline": True},
@@ -281,8 +294,8 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"]["key"] == "effort" and page["state"]["text"] is None and page["score"]["value"] == 35
-    assert {p["key"]: p["sub"] for p in page["score"]["parts"]}["load"] == 20
-    assert {f["key"]: f["tone"] for f in page["facts"]}["effort"] == "danger"
+    assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"]
+    assert {f["key"]: f["tone"] for f in page["rows"]}["effort"] == "danger"
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert "◇ après un gros effort" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), no outing named (v4.3)
 
@@ -373,11 +386,12 @@ def test_the_a11y_fixes_in_css_and_js():
 
 
 def test_the_sommeil_hero_is_not_the_race_pages_grid():
-    """UX3: the Sommeil hero card stays a block at 1 024 px and more (.pf-hero is the race page's grid)."""
+    """UX3: the Sommeil card stays a block at 1 024 px and more (.pf-hero is the race page's grid)."""
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    assert 'class="pf-card pf-nhero"' in page and '"pf-card pf-hero"' not in page
+    assert 'class="pf-card pf-sum"' in page and "pf-hero" not in page
     css = (ROOT / "app/static/css/interface.css").read_text()
-    assert ".pf-nhero" not in css  # no rule: a plain block
+    rules = re.findall(r"\.pf-sum[^{]*\{[^}]*\}", css)
+    assert rules and not any("grid" in r for r in rules)  # a plain block
 
 
 # ── the VFC and FC de nuit cards: « la barre à côté des points » ─────────────
@@ -394,7 +408,7 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
     main = _main(await _page(as_user, monkeypatch, D8))
     drawn = {}
     for key in ("vfc", "fc"):
-        card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
+        card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
         svg = card.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
         data = json.loads(re.search(r'class="pf-viz-data">(.*?)</script>', card, re.S).group(1))
         days, xs = [date.fromisoformat(d) for d in data["d"]], data["x"]

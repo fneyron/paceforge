@@ -44,9 +44,10 @@ HEURISTICS = [
     ("app/services/sante_training.py", "EFFORT_LONG", 180),
     ("app/services/sante_training.py", "EFFORT_DPLUS", 1500),
     ("app/services/sante_training.py", "STOPPED_WATCH", 2),
-    ("app/services/sante_training.py", "EFFORT_RULES", {"ultra": (((3, 35), (10, 65)), 20),  # v4.3: 35 (H)
-                                                       "very_long": (((2, 45), (5, 65)), 30),
-                                                       "long": (((3, 65),), 50)}),
+    # 2026-10-08 (« Fais comme WHOOP »): a window caps the score, no Charge sub-score any more
+    ("app/services/sante_training.py", "EFFORT_RULES", {"ultra": ((3, 35), (10, 65)),  # v4.3: 35 (H)
+                                                       "very_long": ((2, 45), (5, 65)),
+                                                       "long": ((3, 65),)}),
     # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018)
     ("app/services/sante_training.py", "LONG_RACE_LAST", 5),
     # v4.4 (research_data.md R3): a Longue run like a race, whoever measured it (session RPE: Foster 2001)
@@ -66,7 +67,7 @@ HEURISTICS = [
     ("app/services/nights.py", "USUAL_BED_DAYS", 28),
     # v4.2 (research_recovery.md §3.2): the weights, Charge only in a window, the FC de nuit anchors (Alavi 2022;
     # Bosquet 2008), the joint VFC/FC cap (Buchheit 2014, Table 2)
-    ("app/services/sante_score.py", "WEIGHTS", {"hrv": 25, "hr": 25, "sleep": 30, "load": 20}),
+    ("app/services/sante_score.py", "WEIGHTS", {"hrv": 25, "hr": 25, "sleep": 30}),  # 2026-10-08: no Charge
     ("app/services/sante_score.py", "HRV_FULL_Z", -0.5),
     ("app/services/sante_score.py", "HRV_ZERO_Z", -2.5),
     ("app/services/sante_score.py", "HR_FULL_BPM", 2),
@@ -92,8 +93,12 @@ HEURISTICS = [
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
-    # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil row's 100 % (Sargent 2021: 8,3 h)
-    ("app/services/sante.py", "SLEEP_NEED", 480),
+    # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil dial's 100 % (Sargent 2021: 8,3 h)
+    ("app/services/sante_sleep.py", "SLEEP_NEED", 480),
+    # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week and its « comme d'habitude »
+    ("app/services/sante.py", "USUAL_WEEKS", 12),
+    ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),
+    ("app/services/sante.py", "USUAL_SPREAD", 0.2),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
@@ -118,8 +123,8 @@ def test_the_folds_print_no_h_and_no_citation():
         assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
     assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)
     assert not hasattr(st, "CLIMB_RATIO") and not hasattr(st, "back_to_back") and not hasattr(td, "HR_UP_BPM")
-    # every measured night counts (owner, 2026-10-08): no ≥ 20-h tail out of the band any more
-    assert not hasattr(st, "ULTRA_TAIL") and not hasattr(st, "ULTRA_TAIL_MIN")
+    # every measured night counts (owner, 2026-10-08): no ≥ 20-h tail out of the band any more; no Charge récente
+    assert not hasattr(st, "ULTRA_TAIL") and not hasattr(st, "ULTRA_TAIL_MIN") and not hasattr(sc, "load_sub")
 
 
 def test_the_late_session_gap_is_marked_h():

@@ -555,13 +555,13 @@ def test_the_selection_shows_in_forced_colours_and_on_a_short_night():
 
 
 def test_the_rings_bars_and_cards_show_in_forced_colours():
-    """A thin track and a thick arc (the ring's value without colour); the cards outlined; a selected bar in
-    Highlight whatever its tone; the facts' dots in CanvasText (their words say the tone)."""
+    """A thin track and a thick arc (a dial's value without colour, the Sommeil one too); the cards outlined; a
+    selected bar in Highlight whatever its tone; the rows' dots in CanvasText (their words say the tone)."""
     css = (ROOT / "app/static/css/interface.css").read_text()
     sante = css[css.index("/* ── Santé v4"):css.index("/* ── Réglages")]
     fc = sante[sante.index("@media (forced-colors: active)"):]
     assert ".pf-ring-track { stroke: CanvasText; stroke-width: 2; }" in fc
-    assert ".pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }" in fc
+    assert ".pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }" in fc and ".pf-ring.is-sleep .pf-ring-arc" in fc
     assert ".pf-card, .pf-habits > div { border: 1px solid CanvasText; }" in fc  # the cards keep an edge
     rule = next(ln for ln in fc.splitlines() if "fill: Highlight" in ln)
     sel = _split_top(rule.split("{")[0].strip())[0]
@@ -627,8 +627,10 @@ def test_the_small_targets_reach_44_px():
     assert ".pf-sync-now { min-height: 44px; }" in css
     link = re.search(r"\.pf-state-links a \{[^}]*\}", css).group(0)
     assert "padding: 11px 0; line-height: 22px;" in link
-    fact = re.search(r"\.pf-fact \{[^}]*\}", css).group(0)  # a facts row: a 48-px target (v4.4)
-    assert "min-height: 48px" in fact
+    row = re.search(r"\.pf-row \{[^}]*\}", css).group(0)  # a card's row under the dials: 48 px high
+    assert "min-height: 48px" in row
+    link = re.search(r"\.pf-sum-link \{[^}]*\}", css).group(0)  # « Voir tes semaines dans Activités › »: 44 px
+    assert "padding: 11px 0 12px;" in link and "line-height: 21px;" in link
     assert ".pf-health-connect .pf-btn { min-height: 44px; }" in css
     assert (".pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px "
             "rgb(var(--pf-gray-400)); }") in css
@@ -672,7 +674,7 @@ def test_the_warn_mark_is_a_brighter_amber_for_large_marks():
     assert ".dark { --pf-warn-mark: var(--pf-warn); }" in css
     for rule in (".pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }",
                  ".pf-bar.is-warn { fill: rgb(var(--pf-warn-mark)); }",
-                 ".pf-fact.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }"):
+                 ".pf-row.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }"):
         assert rule in css, rule
     # the card's pressed range button: the app's filled pill with a thin edge ≥ 3:1 on white (never a heavy ring)
     assert contrast(light["pf-gray-400"], light["pf-surface"]) >= 3

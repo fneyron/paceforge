@@ -1,36 +1,33 @@
 """Santé v4: one page (owner, 2026-10-08: « mets tout dans un seul », « plus
-de graphiques »). Top to bottom:
-- the top (v4.4, owner: « C'est toujours pas compréhensible : Sommeil 100,
-  Charge récente 20 avec les donuts au-dessus, on comprend rien »: one
-  answer, then plain facts, like Apple's Vitals and Garmin's recovery time):
-  ONE ring, Récupération (the 0–100 score as a percentage, « 65 % », in its
-  state's colour, sante_score; « estimé » under it when no night was
-  measured), the state's word and glyph next to it, one sentence only for the
-  illness alert (sante_today; v4.3, owner: « Ne mentionne pas les sorties
-  dans la partie Santé, ça complexifie »: no activity named); then a short
-  list of facts, one row each — a dot and the name on the left, the value
-  and a plain word on the right (never colour alone), a link to its section
-  below when there is one (owner: « Mets des pourcentages plutôt que des
-  valeurs (comme WHOOP / Oura) »): Sommeil (the last 24 h, naps in,
-  nights.day_tst24, as a percentage of an 8-h need, at most 100 % (H), its
-  hours printed in the Sommeil section; « suffisant » from 7 h, green
-  (Watson 2015a's habitual amount read on one day, H), « un peu court » from
-  6 h (H), « court » under 6 h (Craven 2022)), Effort récent (only while a
-  recovery window is open: « encore N jours », never a percentage), VFC
-  (7 nuits) and FC de nuit (7 nuits) (their card's status: the 7-night mean
-  as a signed percentage of the usual value and its word, « comme
-  d'habitude » at 0 %, « en construction » without usual values). No
-  sub-score anywhere, no Sommeil or Charge ring (the week's volume is
-  Activités'), no « Détail du score »;
-- the cards « Récupération · 14 jours », the Sommeil section (sante_sleep),
-  « VFC · 30 nuits », « FC de nuit · 30 nuits », each night card opening on
-  one status line, the last 7 nights against the usual values the score
-  reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »): every
-  measured night counts, last night included (owner, 2026-10-08: « Tous les
-  relevés VFC doivent compter en fait, pareil pour la FC »), and a night or a
-  day without a measure draws nothing (« s'il n'y a pas de mesure tu ne mets
-  rien, pas de point »); the activities themselves are Activités' (v4.1: no
-  « Charge · 14 jours » card);
+de graphiques »), like WHOOP (2026-10-08, the approved mockup, owner: « Fais
+comme WHOOP, ça doit rester simple »). Top to bottom:
+- three equal dials in a row, in WHOOP's order, each a percentage over its
+  name and a plain word (never colour alone) and a link to its card below:
+  Sommeil (the last 24 h, naps in, nights.day_tst24, as a percentage of an
+  8-h need, at most 100 % (H); « suffisant » from 7 h (Watson 2015a's
+  habitual amount read on one day, H), « un peu court » from 6 h (H),
+  « court » under 6 h (Craven 2022), its arc then in the warning colour),
+  Récupération (the 0–100 score as a percentage in its state's colour,
+  « bonne », « en cours », « faible », « estimée » when no night was
+  measured: sante_score.dial), Entraînement (the last 7 days' activity time
+  against the usual week, as a percentage; « comme d'habitude » within ± 20 %,
+  H); the illness alert's one sentence under them (sante_today; v4.3, owner:
+  « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
+  activity named). No sub-score anywhere, no « Détail du score »;
+- the cards, in the dials' order: Récupération (rows: VFC and FC de nuit
+  over 7 nights — the 7-night mean as a signed percentage of the usual value
+  and its word, « comme d'habitude » at 0 %, « en construction » and when the
+  usual values will be ready — and « Effort récent », the days left in a
+  recovery window whenever one is open; then « Récupération · 14 jours »,
+  « VFC · 30 nuits » and « FC de nuit · 30 nuits », each night card opening
+  on its status line in words, the last 7 nights against the usual values the
+  score reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »)), Sommeil
+  (sante_sleep: last night, its stages, the 24-h chart, the habits),
+  Entraînement (the last 7 days and the usual week, a link to Activités,
+  where the weeks are); every measured night counts, last night included
+  (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil
+  pour la FC »), and a night or a day without a measure draws nothing (« s'il
+  n'y a pas de mesure tu ne mets rien, pas de point »);
 - the closed folds (how the recovery is computed, how the nights are read,
   each ending on a link to /sante/sources; the nights' table).
 From past activities and the nights only: no planned race, no check-in, no
@@ -38,9 +35,8 @@ training prescription, no sync status (Réglages': the page syncs on its own
 when it opens and reloads quietly when something new arrived). Only
 PaceForge's own nightly values (nights.py), read against the athlete's own
 band; no brand value is read. A night without the watch is a gap, never a
-zero. Each number is printed once on the page, but a night signal's
-percentage: its card's status line, repeated on its facts row (one
-statement, its summary at the top and its detail on the card).
+zero. Each number is printed once on the page: a dial's percentage on the
+dial, the hours and the values on the cards.
 """
 import logging
 import statistics
@@ -108,7 +104,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["sleep"] = sl.sleep_section(nights, today, r, samples)
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out.update(_top(day, efforts, bool(sources), out))
+        out.update(_top(day, efforts, sessions, bool(sources), out))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     return out
@@ -207,85 +203,139 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     return out
 
 
-# ── the top: the Récupération ring, the state, the facts ───────────────────
+# ── the top: three dials, like WHOOP's (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple ») ─────
 
-# the Sommeil row's word and colour from this morning's 24 h (H): 7 h and more (Watson 2015a), 6 to 7 h, under 6 h
-# (Craven 2022)
-SLEEP_WORDS = ((sl.REF_MIN, "suffisant", "ok"), (nt.SHORT_DAY_MIN, "un peu court", "accent"), (0, "court", "warn"))
-SLEEP_NEED = 8 * 60  # (H) the Sommeil row's 100 %: an 8-h need (the old ring's full turn; Sargent 2021: 8,3 h)
+# the Sommeil dial's word from this morning's 24 h (H): 7 h and more (Watson 2015a), 6 to 7 h, under 6 h (Craven 2022)
+SLEEP_WORDS = ((sl.REF_MIN, "suffisant"), (nt.SHORT_DAY_MIN, "un peu court"), (0, "court"))
+SLEEP_NEED = sl.SLEEP_NEED
 NO_NIGHT_WORD = "pas enregistré"
+USUAL_WEEKS, USUAL_MIN_WEEKS = 12, 4  # (H) the usual week: the median of the last 12 complete weeks, 4 at least
+TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
+USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
+NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
+NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
 EFFORT_ORANGE = 65  # a recovery window's cap from which « Effort récent » wears orange (its 65 days); red under it
-NIGHT_FACTS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
+NIGHT_ROWS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
 ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit row under the illness alert
 SAME = "comme d'habitude"  # a 7-night mean at its usual value, to the percent: « 0 % » said in words
 
 
-def _fact(key: str, name: str, value: str | None, word: str, tone: str, href: str | None,
-          qual: str | None = None) -> dict:
-    """One row of the facts: a dot in `tone` (ok, accent: neutral, warn, danger, none: grey) and the name on the
-    left (`qual` under it, muted: what the percentage is of, « sur 8 h », « 7 nuits »), the value and the word
-    on the right, one above the other (never colour alone); `href`: its section on the page, None when there is
-    none (a plain row)."""
-    return {"key": key, "name": name, "qual": qual, "value": value, "word": word, "tone": tone, "href": href}
-
-
-def sleep_fact(tst24: int | None, href: str | None) -> dict | None:
+def sleep_dial(tst24: int | None, href: str | None) -> dict:
     """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), as a
-    percentage of an 8-h need, at most 100 % (v4.4, owner: « Mets des pourcentages plutôt que des valeurs »;
-    the hours themselves are the Sommeil section's, printed once), and a word from the hours: 7 h or more
-    « suffisant » (green; AASM/SRS: Watson 2015a), 6 to 7 h « un peu court » (neutral), under 6 h « court »
-    (warm: Craven 2022); no night this morning: « pas enregistré » (grey). None without a Sommeil section (no
-    night ever measured)."""
-    if href is None:
-        return None
+    percentage of an 8-h need, at most 100 % (H; the hours are the Sommeil card's, printed once), its arc in the
+    sleep colour (one stable hue), in the warning colour under 6 h; its word from the hours: 7 h or more
+    « suffisant » (AASM/SRS: Watson 2015a), 6 to 7 h « un peu court » (H), under 6 h « court » (Craven 2022); « — »
+    and « pas enregistré » without a night this morning. `href`: the Sommeil card, None without one (no night
+    ever: a plain dial)."""
     if tst24 is None:
-        return _fact("sommeil", "Sommeil", None, NO_NIGHT_WORD, "none", href)
-    word, tone = next((w, t) for lo, w, t in SLEEP_WORDS if tst24 >= lo)
-    return _fact("sommeil", "Sommeil", sc.pct(min(100, sc.rounded(100 * tst24 / SLEEP_NEED))), word, tone, href,
-                 qual=f"sur {SLEEP_NEED // 60}{viz.NBSP}h")
+        return viz.ring("sommeil", None, "—", "Sommeil", NO_NIGHT_WORD, tone="none", href=href,
+                        aria="Sommeil : pas de nuit enregistrée ce matin.")
+    word = next(w for lo, w in SLEEP_WORDS if tst24 >= lo)
+    p = min(100, sc.rounded(100 * tst24 / SLEEP_NEED))
+    return viz.ring("sommeil", tst24 / SLEEP_NEED, str(p), "Sommeil", word, unit="%", href=href,
+                    tone="warn" if tst24 < nt.SHORT_DAY_MIN else "sleep",
+                    aria=f"Sommeil {sc.pct(p)} de tes 8 heures de besoin, {word}.")
 
 
-def effort_fact(efforts, day: dict) -> dict | None:
-    """« Effort récent », only while a recovery window is open (sante_training.effort_window): « encore N
-    jours », N the days from today to the last day of the windows open (« dernier jour » on it); never the
-    activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the window is a step,
-    not a curve). A red dot while the window caps the score at 35 or 45 (its first days), orange at 65. No
-    section of the page sums it up: a plain row."""
+def usual_week(sessions, today: date) -> float | None:
+    """The usual week (H): the median of the activities' minutes (stops included, st.effort_minutes) of the last
+    12 complete weeks (Monday → Sunday, local days) since the first activity's week; None under 4 such weeks, or
+    when that median is no time at all."""
+    if not sessions:
+        return None
+    monday = today - timedelta(days=today.weekday())
+    first = min(s.day for s in sessions)
+    per = defaultdict(float)
+    for s in sessions:
+        per[s.day - timedelta(days=s.day.weekday())] += st.effort_minutes(s)
+    weeks = [m for m in (monday - timedelta(days=7 * k) for k in range(1, USUAL_WEEKS + 1))
+             if m + timedelta(days=6) >= first]
+    if len(weeks) < USUAL_MIN_WEEKS:
+        return None
+    return statistics.median(per.get(m, 0.0) for m in weeks) or None
+
+
+def training(sessions, today: date) -> dict:
+    """« Entraînement », the third dial and its card: the activities' time of the last 7 days (stops included)
+    against the usual week (usual_week), as a percentage, 100 % as usual, the arc full at twice it, in the accent
+    colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que d'habitude » or « moins que
+    d'habitude »; without a usual week, the 7 days' time itself and « pas encore d'habitude ». The card prints the
+    7 days' time and the usual week's (to 5 min: a typical value), each once: without a usual week the dial
+    prints the time, the card only its words. {dial, week, usual, word}."""
+    week = sum(st.effort_minutes(s) for s in sessions if today - timedelta(days=6) <= s.day <= today)
+    usual = usual_week(sessions, today)
+    href = "#entrainement"
+    if usual is None:
+        return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", NO_HABIT, tone="accent",
+                                 href=href, aria=f"Entraînement : {viz.hm_long(week)} d'activité ces 7 derniers "
+                                                 f"jours, {NO_HABIT}."),
+                "week": None, "usual": None, "word": NO_USUAL}
+    ratio = week / usual
+    word = ("plus que d'habitude" if ratio > 1 + USUAL_SPREAD else
+            "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
+    p = sc.rounded(100 * ratio)
+    return {"dial": viz.ring("entrainement", week / (TRAIN_TURN * usual), str(p), "Entraînement", word,
+                             tone="accent", unit="%", href=href,
+                             aria=f"Entraînement {sc.pct(p)} de ta semaine habituelle, {word}."),
+            "week": viz.hm(week), "usual": f"ta semaine habituelle{viz.NBSP}: {viz.hm(round(usual / 5) * 5)}",
+            "word": None}
+
+
+def _row(key: str, name: str, value: str | None, word: str, tone: str | None, qual: str | None = None,
+         detail: str | None = None) -> dict:
+    """One row of a card under the dials: a dot in `tone` (ok, accent: neutral, warn, danger, none: grey) and the
+    name on the left (`qual` under it, muted: « 7 nuits »), the value over its word on the right (`detail`, a
+    second line: when the usual values will be ready); never colour alone."""
+    return {"key": key, "name": name, "qual": qual, "value": value, "word": word, "detail": detail, "tone": tone}
+
+
+def night_row(card: dict | None, metric: str) -> dict | None:
+    """« VFC » / « FC de nuit » (7 nuits) in the Récupération card: its chart card's status (card_status: one
+    source of truth), its percentage and its word, in its colour: « −8 % plus basse que d'habitude », « +2 % dans
+    tes valeurs habituelles », « comme d'habitude » at 0 %; grey without a comparison, « en construction » over
+    when its usual values will be ready (« prête dans 2 nuits »), or « trop peu de nuits pour comparer »; under the
+    illness alert the FC de nuit row says « nettement plus haute depuis 2 nuits » (red). None without its card
+    (the watch never measured it in 30 days)."""
+    if card is None:
+        return None
+    key, name = NIGHT_ROWS[metric]
+    s = card["status"]
+    return _row(key, name, s["value"], s["word"], s["tone"] or "none", qual="7 nuits", detail=s.get("detail"))
+
+
+def effort_row(efforts, day: dict) -> dict | None:
+    """« Effort récent », whenever a recovery window is open (owner, 2026-10-08: « Un effort récent, il faut le
+    prendre en compte et afficher la fatigue quand même »), whether its cap binds the score or not: « 8 jours »
+    over « avant d'être récupéré », the days from today to the last day of the windows open (« dernier jour » on
+    it); never the activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the
+    window is a step, not a curve). A red dot while the window caps the score at 35 or 45 (its first days),
+    orange at 65."""
     w = day["window"]
     if not w:
         return None
     d = day["day"]
     last = max(x["until"] for e in efforts if (x := st.effort_window([e], d)))
     n = (last - d).days
-    word = "dernier jour" if n <= 0 else f"encore {n} jour{'s' if n > 1 else ''}"
-    return _fact("effort", "Effort récent", None, word, "warn" if w["cap"] >= EFFORT_ORANGE else "danger", None)
+    value = "dernier jour" if n <= 0 else f"{n}{viz.NBSP}jour{'s' if n > 1 else ''}"
+    return _row("effort", "Effort récent", value, "avant d'être récupéré",
+                "warn" if w["cap"] >= EFFORT_ORANGE else "danger")
 
 
-def night_fact(card: dict | None, metric: str, day: dict) -> dict | None:
-    """« VFC (7 nuits) » / « FC de nuit (7 nuits) »: its card's status (card_status: one source of truth), its
-    percentage and its word, never its explanation, in its colour: « −8 % plus basse que d'habitude », « +2 %
-    dans tes valeurs habituelles », « comme d'habitude » at 0 %; « en construction » and « trop peu de nuits pour
-    comparer » (grey) with no percentage; under the illness alert the FC de nuit row says « nettement plus haute
-    depuis 2 nuits » (red). Links to its card; None without one (the watch never measured it in 30 days)."""
-    if card is None:
-        return None
-    key, name = NIGHT_FACTS[metric]
-    s = card["status"]
-    return _fact(key, name, s["value"], s["word"], s["tone"] or "none", f"#{key}", qual="7 nuits")
-
-
-def _top(day: dict, efforts, has_watch: bool, page: dict) -> dict:
-    """The Récupération ring (a link to its 14 days, a plain ring when the page has none), the state and the
-    facts under it — Sommeil, Effort récent (in a recovery window), VFC and FC de nuit (each with its card) —
-    only with a state (no score: the line says why, the cards below show what there is)."""
+def _top(day: dict, efforts, sessions, has_watch: bool, page: dict) -> dict:
+    """The three dials, each a link to its card below (a plain dial when the page has none): Sommeil,
+    Récupération, Entraînement (WHOOP's order); the illness alert's sentence under them (sante_today), or the line
+    that says why there is no score; the Récupération card's rows (VFC, FC de nuit, Effort récent) and the
+    Entraînement card."""
     state, score = day["state"], day["score"]
     sleep_href = "#sommeil" if (page.get("sleep") or {}).get("state", "never") != "never" else None
-    facts = [f for f in (sleep_fact(day["tst24"], sleep_href), effort_fact(efforts, day),
-                         night_fact(page.get("vfc"), "hrv", day), night_fact(page.get("fc"), "hr", day)) if f]
-    return {"ring": sc.ring(score, state, "#recuperation" if page.get("recup") else None), "state": state,
-            "line": None if state else td.no_state_line(has_watch),
-            "connect": not has_watch,  # no watch: how to add the nights, under the line or under the state
-            "facts": facts if state else [], "score": score}
+    rows = [r for r in (night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
+                        effort_row(efforts, day)) if r]
+    recup_href = "#recuperation" if rows or page.get("recup") else None
+    train = training(sessions, day["day"])
+    return {"dials": [sleep_dial(day["tst24"], sleep_href), sc.dial(score, state, recup_href), train["dial"]],
+            "state": state, "line": None if state else td.no_state_line(has_watch),
+            "connect": not has_watch,  # no watch: how to add the nights, under the line
+            "rows": rows, "training": train, "score": score}
 
 
 # ── the cards ───────────────────────────────────────────────────────────────
@@ -316,6 +366,8 @@ MEANING = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début 
 NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
 FEW = "trop peu de nuits pour comparer"  # its row's word
 BUILDING = "en construction"  # a signal without usual values yet: its row's word, its card's first words
+# while they build, the chart card says it in words (the row prints when they will be ready: printed once)
+BUILDS = "En construction : chaque nuit où tu portes ta montre compte."
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
@@ -346,7 +398,8 @@ def signed_pct(value: float, centre: float) -> int:
 
 
 def card_status(nights, metric: str, day: dict) -> dict:
-    """{key, value, word, text, tone, meaning}, the card's status line and its facts row (one source of truth):
+    """{key, value, word, detail, text, tone, meaning}, the card's status line and its row in the Récupération card
+    (one source of truth):
     the 7-night mean as a signed percentage against the usual value (v4.4, owner: « Mets des pourcentages plutôt
     que des valeurs (comme WHOOP / Oura) »: « −8 % », « +3 % », « comme d'habitude » at 0 %) and its place against
     the usual values, « dans tes valeurs habituelles » / « plus basse que d'habitude » / « plus haute que
@@ -354,14 +407,15 @@ def card_status(nights, metric: str, day: dict) -> dict:
     red out of them on the side that matters, neutral on the other side, never praised), and « Ça arrive avec … »
     only out of them on the side that matters. Under the illness alert the FC de nuit reads the alert's 2 nights,
     as the score does: their percentage, « nettement plus haute depuis 2 nuits ». Without a band (none): « en
-    construction » and how many nights until there is one (nights_to_normal); a plain line when the week holds
-    under 3 measured nights (few). `text`: the line in words."""
+    construction » and, on the row (`detail`), how many nights until there is one (nights_to_normal: « prête dans
+    2 nuits », « prête après ta prochaine nuit »); a plain line when the week holds under 3 measured nights
+    (few). `text`: the chart card's line, in words (the row prints the numbers: each once)."""
     s = day["stats"][metric]
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
-        when = f"dans {n} nuits" if n > 1 else "après ta prochaine nuit"
-        return {"key": "none", "value": None, "word": BUILDING, "tone": None, "meaning": None,
-                "text": f"En construction : tes valeurs habituelles seront prêtes {when}, si tu portes ta montre."}
+        when = f"dans {n}{viz.NBSP}nuits" if n > 1 else "après ta prochaine nuit"
+        return {"key": "none", "value": None, "word": BUILDING, "detail": f"prête {when}", "tone": None,
+                "meaning": None, "text": BUILDS}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None or part is None:
         return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}

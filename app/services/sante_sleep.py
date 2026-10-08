@@ -1,19 +1,19 @@
-"""Santé v4 › the Sommeil section of the one page (Oura-like): « comment je dors ? ».
+"""Santé v4 › the Sommeil card of the one page (Oura-like): « comment je dors ? ».
 
-- Last night (the hero): bed → wake (the watch's detection, approximate,
-  rounded to 5 min, H: de Zambotti 2024) and the naps its 24 h counts
-  (« + sieste 2h20 », nights.day_naps: yesterday afternoon's too; sleep is
-  counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and its 24-h
-  total (v4.4: the Sommeil row at the top says it as a percentage of 8 h, so
-  its hours are printed here, once).
+- Last night (« Cette nuit », the card's first row): bed → wake (the watch's
+  detection, approximate, rounded to 5 min, H: de Zambotti 2024) and the naps
+  its 24 h counts (« + sieste 2h20 », nights.day_naps: yesterday afternoon's
+  too; sleep is counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and
+  its 24-h total « sur 8 h de besoin » (2026-10-08: the Sommeil dial at the top
+  says it as a percentage of that need, so its hours are printed here, once).
 - Its stages, like WHOOP and Oura (the owner's request, a deliberate
   departure from research_sleep.md §b: shown for COROS and Garmin, no
   collapse, no setting), never judged: one bar of the four phases (Éveil ·
   Léger · Profond · Paradoxal, calm colours that are no good/bad colours,
   the raw minutes: the night's shape), each named in a legend with its
-  minutes rounded to 10 min (H) (colour never alone), and « Estimées par la
-  montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa
-  qualité. » No %, no target, no norm, no comparison, the main window only
+  minutes rounded to 10 min (H) (colour never alone); « Comment je lis tes
+  nuits » says the watch estimates them: the shape of the night, not its
+  quality. No %, no target, no norm, no comparison, the main window only
   (watches classify 50–70 % of the night correctly: de Zambotti 2024; no body
   sets an ideal amount: Ohayon 2017). A Garmin night with real intervals also
   gets its hypnogram above it (lanes, the same colours). A night without
@@ -50,6 +50,7 @@ RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
+SLEEP_NEED = 8 * 60  # (H) the Sommeil dial's 100 % and the card's « sur 8 h de besoin » (Sargent 2021: 8,3 h)
 
 # « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
 # citations »): a few one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
@@ -201,8 +202,9 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
     """Last night (the latest main night of the last 90 days): its times, the
     naps its 24 h counts (nights.day_naps), its stages (the stages bar and
     legend; with real Garmin intervals, the hypnogram above it), else its plain
-    bar on a clock axis; its 24-h total, this morning's too (v4.4: the Sommeil
-    row says it as a percentage of 8 h, its hours are printed here, once)."""
+    bar on a clock axis; its 24-h total « sur 8 h de besoin », this morning's
+    too (the Sommeil dial says it as a percentage of that need, its hours are
+    printed here, once)."""
     last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
                default=None)
     if last is None:
@@ -222,8 +224,8 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
     aria = (f"{viz.night_label(last)} : couché vers {viz.clock(n.start)}, levé vers {viz.clock(n.end)}"
             + (f", sieste de {viz.hm_long(nap_min)}" if nap_min else ""))
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
-            "times": times, "nap": nap, "night": f"nuit {viz.hm(n.asleep)}" if nap_min else None,
-            "total": f"{viz.hm(n.asleep + nap_min)} sur 24{viz.NNBSP}h",
+            "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min),
+            "need": f"sur {SLEEP_NEED // 60}{viz.NBSP}h de besoin",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 

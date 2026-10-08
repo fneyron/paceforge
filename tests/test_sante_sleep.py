@@ -46,20 +46,19 @@ def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
 
 
 def test_the_hero_prints_the_times_the_nap_and_this_mornings_hours():
-    """v4.4: the Sommeil row at the top says this morning's 24 h as a percentage of 8 h, so the hero prints its
-    hours (once on the page), with the night and the nap it counts."""
+    """The Sommeil dial at the top says this morning's 24 h as a percentage of the 8-h need, so the Sommeil card's
+    first row prints its hours (once on the page) « sur 8 h de besoin », with the nap it counts."""
     rows = night_rows([0], asleep=350, start=(23, 35), end=(5, 38))
     rows["nap"][D] = (140, {"windows": [[f"{D}T06:42", f"{D}T09:07"]]}, "Garmin")
     h = sl.hero(_nights(rows), D)
-    assert (h["label"], h["times"], h["night"], h["nap"], h["total"]) == ("Cette nuit", "23:35 → 05:40",
-                                                                          "nuit 5h50", "+ sieste 2h20",
-                                                                          "8h10 sur 24\u202fh")
+    assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "23:35 → 05:40",
+                                                                         "+ sieste 2h20", "8h10",
+                                                                         "sur 8\u00a0h de besoin")
     t = h["timeline"]
     assert len(t["naps"]) == 1 and [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and not h["out_naps"]
-    # an older night (none this morning): the ring is empty, the hero prints its total
+    # an older night (none this morning): the dial is empty, the card prints that night's hours
     older = sl.hero(_nights(night_rows([2])), D)
-    assert older["label"] == "nuit du lun. 5 au mar. 6" and older["total"] == "7h20 sur 24 h"
-    assert older["night"] is None and older["nap"] is None
+    assert older["label"] == "nuit du lun. 5 au mar. 6" and older["total"] == "7h20" and older["nap"] is None
 
 
 def test_a_nap_outside_the_axis_is_listed_with_its_times():

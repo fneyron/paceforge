@@ -41,10 +41,11 @@ NEVER = ("séance", "pas jugée", "pas assez de nuits", "autour de la course", "
          # v4.1: no sync status (Réglages'), no Charge card (Activités'), no unlabelled tick on the Charge ring
          "synchro", "Synchroniser", "Dernière synchro", "pas encore reçue", "Charge · 14 jours", 'id="charge"',
          "pf-ring-tick", "pf-sync-btn",
-         # v4.4 (owner: « Sommeil 100, Charge récente 20 avec les donuts au-dessus, on comprend rien »): one ring, no
-         # sub-score, no « Détail du score »
-         "Détail du score", "Pas encore dans le score", "Charge récente", "pf-contrib", "pf-ring-sommeil",
-         "pf-ring-charge", 'class="pf-rings"')
+         # v4.4 (owner: « Sommeil 100, Charge récente 20 avec les donuts au-dessus, on comprend rien »): no
+         # sub-score, no « Détail du score », no Charge; 2026-10-08 (« Fais comme WHOOP »): three dials, no single
+         # ring with its state's word next to it, no « En bref » rows
+         "Détail du score", "Pas encore dans le score", "Charge récente", "pf-contrib", "pf-ring-charge",
+         'class="pf-rings"', "En bref", "pf-fact", "pf-sante-top", "pf-state-word", "pf-nhero")
 
 
 def _add(db: AsyncSession, user: User, metric: str, d: date, value: float, details=None, source="COROS"):
@@ -224,23 +225,25 @@ async def test_the_installed_app_opens_on_sante(as_user: AsyncClient, client: As
 
 async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_user: User):
     """The Transjeju (an activity: 16h53 stops included, ended 03/10 13:53 in Korea) is an ultra that ran
-    through the night (01:00 → 05:00 local, H): the raw score capped at 40 on D+1 → D+3, then at 65 until D+13
-    (16/10; v4.2); 08/10 is D+5 from its end, 6 days after it started. No band yet (no night of 7 usable), so
-    Sommeil (8h36 → 100, weight 30) and Charge récente (ultra → 20, weight 20: a window is open) make the score:
-    raw = (30 × 100 + 20 × 20) / 50 = 68; its window's 65 binds (69 for Charge's 20; 80 without VFC nor FC): 65,
-    « Récupération en cours ». v4.3: the page says that word only, no activity named (owner: « mets juste les
-    scores »); his Les Houches days of 18/09 and 19/09 have no window left (each ended on D+5: 23/09, 24/09)."""
+    through the night (01:00 → 05:00 local, H): the raw score capped at 35 on D+1 → D+3, then at 65 until D+13
+    (16/10; v4.2); 08/10 is D+5 from its end, 6 days after it started. No band yet (5 nights of VFC, 6 of FC de
+    nuit: 7 needed), so Sommeil alone makes the mean (8h36 → 100; no Charge récente in it since 2026-10-08, owner:
+    « Fais comme WHOOP »): raw 100; its window's 65 binds (80 without VFC nor FC de nuit): 65, « Récupération en
+    cours », as with v4.2's Charge (raw 68). v4.3: the page says the state in words only, no activity named (owner:
+    « mets juste les scores »); his Les Houches days of 18/09 and 19/09 have no window left (each ended on D+5:
+    23/09, 24/09)."""
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["word"], st["text"]) == ("effort", "warn", "Récupération en cours", None)
     assert "href" not in st and not st["estimated"] and st["aria"] == "Récupération en cours."
-    raw = (30 * 100 + 20 * 20) / 50
-    assert s["raw0"] == raw == 68 and s["value"] == 65 and s["tone"] == "warn" and s["reason"] == "effort"
-    assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100, "load": 20}
-    assert s["absent"] == ["hrv", "hr"] and s["caps"] == ["effort"]  # the window's 65 binds
-    load = next(p for p in s["parts"] if p["key"] == "load")
-    assert load["window"]["until"] == date(2026, 10, 16)  # D+13: it ran through the night (01:00 → 05:00, H)
+    assert s["raw0"] == 100 and s["value"] == 65 and s["tone"] == "warn" and s["reason"] == "effort"
+    assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100}
+    assert s["absent"] == ["hrv", "hr"] and s["caps"] == ["effort", "no_heart"]  # the window's 65 binds
+    from app.services import sante_training as st_
+    sessions = await st_.load_sessions(db_session, test_user.id, D8)
+    w = st_.effort_window(st_.efforts(sessions), D8)
+    assert (w["cap"], w["until"]) == (65, date(2026, 10, 16))  # D+13: it ran through the night (01:00 → 05:00, H)
 
 
 async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_user: User):
@@ -268,31 +271,35 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
     assert nt.illness_alert(nights, D8) is None
 
 
-async def test_owner_top_facts_and_sommeil(db_session: AsyncSession, test_user: User):
+async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user: User):
+    """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
+    dials — Sommeil 100 % « suffisant » (8h36 of an 8-h need, in the sleep hue), Récupération 65 % « en cours »,
+    Entraînement 16h53 « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
+    usual week, so the 7 days' time itself, no arc) — each a link to its card; the Récupération card's rows: VFC
+    and FC de nuit « en construction », ready in 2 nights and after his next night (every measured night counts),
+    « Effort récent » 8 days before he is recovered (the Transjeju's window to 16/10, at 65: orange)."""
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
-    # one ring (v4.4), Récupération: the score as a percentage (owner: « Mets des pourcentages plutôt que des
-    # valeurs »), in its state's colour, no label under it (the state's word next to it names it), nothing under it
-    # (a night was measured: not « estimé »); no Sommeil or Charge ring, no Détail
-    rec = page["ring"]
-    assert (rec["value"], rec["unit"], rec["tone"], rec["label"], rec["sub"], rec["href"]) == (
-        "65", "%", "warn", None, None, "#recuperation")
-    assert rec["aria"] == "Récupération 65\u00a0%. Récupération en cours."
-    assert "rings" not in page and "detail" not in page
-    # the facts: this morning's 24 h, 8h36 of an 8-h need, at most 100 % (≥ 7 h: « suffisant », green); the
-    # Transjeju's window open to 16/10 at 65 (« encore 8 jours », orange: no activity named, no date, no hours, no
-    # percentage); VFC and FC de nuit: no usual values yet, « en construction », no percentage (grey)
-    assert [(f["name"], f["qual"], f["value"], f["word"], f["tone"], f["href"]) for f in page["facts"]] == [
-        ("Sommeil", "sur 8\u00a0h", "100\u00a0%", "suffisant", "ok", "#sommeil"),
-        ("Effort récent", None, None, "encore 8 jours", "warn", None),
-        ("VFC", "7 nuits", None, "en construction", "none", "#vfc"),
-        ("FC de nuit", "7 nuits", None, "en construction", "none", "#fc")]
-    # Sommeil: the hero prints the times and this morning's 24 h, its hours printed once (the row says 100 %);
-    # 22:42 is approximate: 22:40
+    assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
+        ("sommeil", "100", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
+        ("recup", "65", "%", "Récupération", "en cours", "warn", "#recuperation"),
+        ("entrainement", "16h53", None, "Entraînement", "pas encore d'habitude", "accent", "#entrainement")]
+    assert [d["aria"] for d in page["dials"]] == [
+        "Sommeil 100\u00a0% de tes 8 heures de besoin, suffisant.", "Récupération 65\u00a0%, en cours.",
+        "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."]
+    assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
+    assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
+        ("VFC", "7 nuits", None, "en construction", "prête dans 2\u00a0nuits", "none"),
+        ("FC de nuit", "7 nuits", None, "en construction", "prête après ta prochaine nuit", "none"),
+        ("Effort récent", None, "8\u00a0jours", "avant d'être récupéré", None, "warn")]
+    assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
+                                "word": "pas encore de semaine habituelle"}
+    # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over the 8-h need,
+    # its hours printed once (the dial says 100 %)
     s = page["sleep"]
     h = s["hero"]
-    assert (h["label"], h["times"], h["nap"], h["night"], h["total"]) == ("Cette nuit", "22:40 → 07:30", None, None,
-                                                                          "8h36 sur 24\u202fh")
+    assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "22:40 → 07:30", None, "8h36",
+                                                                         "sur 8\u00a0h de besoin")
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]
@@ -338,11 +345,12 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # each card opens on its status line (v4.3): no usual values yet. Every measured night counts, last night
     # included (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil pour la FC »): VFC has 5
     # (29/09, 30/09, 01/10, 07/10, 08/10), 2 more make the 7 of a band; FC de nuit 6 (06/10 too), 1 more
-    when = {"vfc": "dans 2 nuits", "fc": "après ta prochaine nuit"}
+    # the row in the Récupération card says when they will be ready (printed once), the card says it in words
+    when = {"vfc": "dans 2\u00a0nuits", "fc": "après ta prochaine nuit"}
     for key, c in (("vfc", vfc), ("fc", fc)):
-        assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None, "meaning": None,
-                               "text": f"En construction : tes valeurs habituelles seront prêtes {when[key]}, si tu "
-                                       "portes ta montre."}
+        assert c["status"] == {"key": "none", "value": None, "word": "en construction", "detail": f"prête {when[key]}",
+                               "tone": None, "meaning": None,
+                               "text": "En construction : chaque nuit où tu portes ta montre compte."}
         assert not c["band"] and not c["band_prov"] and all(set(d) == {"i", "x", "y"} for d in c["dots"])  # filled
     # the 7-night line where 3 nights of the last 7 hold: FC de nuit from 06/10 (01/10 alone draws no segment)
     assert vfc["legend"] == [sante.LEGEND_DOT] and fc["legend"] == [sante.LEGEND_DOT, sante.LEGEND_MEAN]
@@ -391,66 +399,85 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
     main = _main(html)
-    # one page, in the spec's order
-    order = ['class="pf-sante-top', 'class="pf-card pf-facts"', 'id="recuperation"', 'id="sommeil"',
-             'id="vfc"', 'id="fc"', "Comment je calcule ta récupération", "Comment je lis tes nuits",
-             "Les chiffres de chaque nuit"]
+    # one page, the approved mockup's order (2026-10-08, « Fais comme WHOOP »): the dials, then their cards in the
+    # same order — Récupération (its rows, its 14 days, the VFC and FC de nuit charts), Sommeil, Entraînement —
+    # then the folds
+    order = ['class="pf-dials"', 'id="recuperation"', 'class="pf-rows"', "Récupération · 14 jours", 'id="vfc"',
+             'id="fc"', 'id="sommeil"', 'id="entrainement"', "Comment je calcule ta récupération",
+             "Comment je lis tes nuits", "Les chiffres de chaque nuit"]
     at = [main.index(k) for k in order]
     assert at == sorted(at)
-    assert 'aria-label="Récupération 65\u00a0%. Récupération en cours."' in main
-    assert main.count('class="pf-ring ') == 1  # one ring (v4.4)
-    # the state: its glyph and its word next to the ring, nothing else (v4.3: no activity named, no link to one)
-    state = re.search(r'<h2 class="pf-state-word">(.*?)</h2>', main, re.S).group(1)
-    assert re.sub(r"<[^>]+>", " ", state).split() == ["Récupération", "en", "cours"]
-    assert '<svg class="pf-state-glyph"' in state and "pf-state-text" not in main  # the tone in a shape too
-    assert "/activity/" not in main and "Transjeju" not in main and "Morning Trail Run" not in main
-    # the facts: a dot and the name, the value and its word; a link to its section when there is one (Effort
-    # récent has none); no title (the page's is « Aujourd'hui »), no sub-score
-    facts = main.split('<section class="pf-card pf-facts"')[1].split("</section>")[0]
-    rows = [(tag, href, unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()))
-            for tag, href, body in re.findall(r'<(a|div) class="pf-fact is-\w+"(?: href="([^"]+)")?>(.*?)</\1>', facts)]
-    assert rows == [("a", "#sommeil", "Sommeil sur 8 h 100 % suffisant"),
-                    ("div", "", "Effort récent encore 8 jours"), ("a", "#vfc", "VFC 7 nuits en construction"),
-                    ("a", "#fc", "FC de nuit 7 nuits en construction")]
-    for href in re.findall(r'href="#([\w-]+)"', facts + main.split('<div class="pf-sante-top')[1].split("</h2>")[0]):
+    # three dials, in WHOOP's order, each a link to its card (a full aria-label), the state said in words
+    dials = re.findall(r'<a class="pf-ring pf-ring-(\w+) is-(\w+)" href="(#\w+)" aria-label="([^"]+)">(.*?)</a>',
+                       main, re.S)
+    assert [(k, tone, href, unescape(aria)) for k, tone, href, aria, _ in dials] == [
+        ("sommeil", "sleep", "#sommeil", "Sommeil 100\u00a0% de tes 8 heures de besoin, suffisant."),
+        ("recup", "warn", "#recuperation", "Récupération 65\u00a0%, en cours."),
+        ("entrainement", "accent", "#entrainement",
+         "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude.")]
+    assert [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()) for *_, body in dials] == [
+        "100 % Sommeil suffisant", "65 % Récupération en cours", "16h53 Entraînement pas encore d'habitude"]
+    assert main.count('class="pf-ring ') == 3 and "pf-state-text" not in main  # no alert: no sentence
+    for href in re.findall(r'href="#([\w-]+)"', main.split('<div class="pf-dials">')[1].split("</div>\n")[0]):
         assert f'id="{href}"' in main, href  # never a link to nothing
-    assert "<h2" not in facts and "<h3" not in facts and "Détail du score" not in main and "Contributeurs" not in main
-    # each number printed once before a tap (the closed folds are the accessible alternative): the score, this
-    # morning's sleep (as a percentage at the top, its hours in the Sommeil section), the VFC and FC of last night,
-    # the means; the state word once (the title); no sub-score (no « 20 »), no week's hours (no Charge ring)
+    assert "/activity/" not in main and "Transjeju" not in main and "Morning Trail Run" not in main
+    # the Récupération card's rows: a dot and the name, the value over its word (never colour alone); no link
+    recup = main.split('<section id="recuperation"')[1].split("</section>")[0]
+    rows = [(tone, unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()))
+            for tone, body in re.findall(r'<li class="pf-row is-(\w+)">(.*?)</li>', recup, re.S)]
+    assert rows == [("none", "VFC 7 nuits en construction prête dans 2 nuits"),
+                    ("none", "FC de nuit 7 nuits en construction prête après ta prochaine nuit"),
+                    ("warn", "Effort récent 8 jours avant d'être récupéré")]
+    assert '<h2 id="h-recup" class="pf-sum-h">Récupération</h2>' in recup
+    assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
+    # the VFC and FC de nuit charts in words (the rows print the numbers)
+    assert recup.count('<p class="pf-card-status is-plain">En construction : chaque nuit où tu portes ta montre '
+                       "compte.</p>") == 2
+    # Sommeil: « Cette nuit », its times, its hours over the 8-h need; the stages; the 24-h chart; the habits
+    sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
+    night = re.search(r'<div class="pf-row pf-night">(.*?)</div>', sommeil, re.S).group(1)
+    assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", night)).strip()) == (
+        "Cette nuit 22:40 → 07:30 8h36 sur 8 h de besoin")
+    assert sommeil.index("pf-night") < sommeil.index("pf-phases") < sommeil.index("Sommeil sur 24 h") < sommeil.index(
+        "pf-habits")
+    # Entraînement: the 7 days (the dial prints their time: no usual week yet), the link to Activités
+    train = main.split('<section id="entrainement"')[1].split(">", 1)[1].split("</section>")[0]
+    assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train)).strip()) == (
+        "Entraînement 7 derniers jours pas encore de semaine habituelle Voir tes semaines dans Activités ›")
+    assert '<a class="pf-sum-link" href="/activities">Voir tes semaines dans Activités ›</a>' in train
+    assert "Détail du score" not in main and "Contributeurs" not in main and "En bref" not in main
+    # each number printed once before a tap (the closed folds are the accessible alternative): the dials' (the
+    # score, this morning's sleep as a percentage, the week's time), the effort's days, last night's hours, the VFC
+    # and FC of last night, the means, the stages; no sub-score (no « 20 »)
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("65 %", "100 %", "8h36", "100 ms", "35 bpm", "8h20", "57 %", "1h10", "5h30", "2h00"):
+    for number in ("65 %", "100 %", "16h53", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "57 %", "1h10", "5h30",
+                   "2h00"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
-    assert "16h53" not in seen and not re.search(r"(?<![\d,h:])20(?![\d,h:A-Za-z])", seen)
+    assert not re.search(r"(?<![\d,h:])20(?![\d,h:A-Za-z])", seen)
     words = re.sub(r"\s+", " ", seen)
-    assert words.count("Récupération en cours") == 1 and "en cours" not in words.replace("Récupération en cours", "")
-    # the Sommeil section's « Cette nuit » prints the window and this morning's 24 h (the row says it in %)
-    hero = main.split('<div class="pf-card pf-nhero">')[1].split("</div>")[0]
-    assert "22:40 → 07:30" in hero and "8h36 sur 24" in hero and "8h36" not in facts
+    assert words.count("en cours") == 1  # the dial's word, once
     assert "pf-viz-flag" not in main and "pf-viz-ev" not in main
     # Santé's cards: no ‹ › disc; a tap, a drag or the keyboard (the hidden range input) selects
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4  # 4 cards, no 3 mois
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4  # 4 charts, no 3 mois
     # a day or a night without a measure draws nothing and no legend names it (owner, 2026-10-08: « s'il n'y a pas
     # de mesure tu ne mets rien, pas de point »): no gap dot, no « pas de score » / « pas de mesure » swatch
-    recup = main.split('<section id="recuperation"')[1].split("</section>")[0]
-    sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
     for part in (recup, sommeil):
         assert "pf-viz-gap" not in part and "is-gap" not in part
         legends = "".join(re.findall(r'<p class="pf-viz-legend"[^>]*>(.*?)</p>', part, re.S))
         assert "pas de score" not in legends and "pas de mesure" not in legends
-    assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', recup) == [
+    history = recup.split("Récupération · 14 jours")[1].split('id="vfc"')[0]
+    assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', history) == [
         ("is-est", "estimé, nuit non enregistrée")]  # the one swatch left: the days estimated without a night
     assert "is-out" not in main and "ne compte" not in main
-    # the stages: one bar, its legend names each phase with its minutes (never colour alone), the caption
+    # the stages: one bar, its legend names each phase with its minutes (never colour alone); « Comment je lis tes
+    # nuits » says they are the watch's estimate
     assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
     assert '<li><i class="pf-ph is-deep" aria-hidden="true"></i>Profond <b>1h10</b></li>' in main
-    assert ("Ta montre estime les phases d'après ton pouls et tes mouvements. Elles montrent la forme de ta nuit, "
-            "pas sa qualité." in main and "pf-tl-night" not in main)
-    # the Sommeil hero is not the race page's grid (UX3)
-    assert 'class="pf-card pf-nhero"' in main and "pf-hero\"" not in main
-    # the ring prints the score alone, as a percentage (the « % » smaller): the state's word names it, no label
+    assert "pf-tl-night" not in main and "pf-nhero" not in main and "pf-hero\"" not in main
+    # the Récupération dial prints the score, as a percentage (the « % » smaller), its name and its word under it
     ring = main.split('<a class="pf-ring pf-ring-recup')[1].split("</a>")[0]
-    assert '<span>65<span class="pf-ring-unit">%</span></span>' in ring and "pf-ring-label" not in ring
+    assert '<span>65<span class="pf-ring-unit">%</span></span>' in ring
+    assert '<span class="pf-ring-label" aria-hidden="true">Récupération</span>' in ring
 
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
@@ -535,13 +562,15 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     raw = (25 * sub + 25 * 100 + 30 * 100) / 80
     assert not b["provisional"] and -2.5 < z < -0.5 and 40 <= sub < 70
     assert s["value"] == math.floor(raw + 0.5) and 70 <= s["value"] < 90 and s["caps"] == []
-    # the facts (v4.4, in percent): 7h20 of 8 h, 92 % « suffisant »; no Effort récent (no window); VFC's 7-night
-    # mean (60 ms, every night) against its usual value (the band's centre), orange; FC de nuit's 44,86 against 45:
-    # −0,3 %, to the percent 0 %: « comme d'habitude »
+    # the dials, in percent: Sommeil 7h20 of the 8-h need, 92 % « suffisant » (the sleep colour); Récupération the
+    # score, « bonne »; the rows: no Effort récent (no window); VFC's 7-night mean (60 ms, every night) against its
+    # usual value (the band's centre), orange; FC de nuit's 44,86 against 45: −0,3 %, to the percent 0 %: « comme
+    # d'habitude »
+    assert [(d["value"], d["sub"], d["tone"]) for d in page["dials"][:2]] == [("92", "suffisant", "sleep"),
+                                                                             (str(s["value"]), "bonne", "ok")]
     vfc = f"{sante.viz.signed(sante.sc.rounded(100 * (60.0 - b['center']) / b['center']))}\u00a0%"
-    assert vfc.startswith("\u2212") and [(f["name"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("Sommeil", "92\u00a0%", "suffisant", "ok"), ("VFC", vfc, "plus basse que d'habitude", "warn"),
-        ("FC de nuit", None, "comme d'habitude", "ok")]
+    assert vfc.startswith("\u2212") and [(f["name"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
+        ("VFC", vfc, "plus basse que d'habitude", "warn"), ("FC de nuit", None, "comme d'habitude", "ok")]
     # « bien ou pas bien ? »: each card opens on its status line, its row's percentage, word and colour
     assert page["vfc"]["status"] == {"key": "below", "value": vfc, "word": "plus basse que d'habitude",
                                      "text": f"{vfc} plus basse que d'habitude", "tone": "warn",
@@ -550,12 +579,11 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
                                     "tone": "ok", "meaning": None}
     assert page["vfc"]["read"][2].startswith("nuit du mer. 7 au jeu. 8 · d'habitude ")
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
-    assert page["ring"]["tone"] == "ok" and page["ring"]["sub"] is None
 
 
-async def test_rich_wearer_a_red_hrv_caps_the_ring_at_69(db_session: AsyncSession, test_user: User):
+async def test_rich_wearer_a_red_hrv_makes_the_dial_69_en_cours(db_session: AsyncSession, test_user: User):
     """The judges' rich user: the 7-night VFC far under its normal (an empty bar) with FC de nuit in its normal:
-    alone it caps nothing (v4.2, Buchheit 2014 Table 2), so its facts row is orange, never red; the mean
+    alone it caps nothing (v4.2, Buchheit 2014 Table 2), so its row is orange, never red; the mean
     (25 × 0 + 25 × 100 + 30 × 100) / 80 = 68,75 → 69, « Récupération en cours » (the reason is data: no sentence).
     The week's own nights are in the usual values now (owner, 2026-10-08): 7 nights at 35 ms (−46 %) empty the bar
     (z −2,6); 7 at 50 ms (−26 %) no longer do (test_sante_score: a low week is read against a band that holds
@@ -568,11 +596,12 @@ async def test_rich_wearer_a_red_hrv_caps_the_ring_at_69(db_session: AsyncSessio
     assert (st["key"], st["tone"], st["text"]) == ("hrv", "warn", None)
     assert s["value"] == 69 and s["caps"] == [] and s["raw0"] == 68.75
     assert next(p for p in s["parts"] if p["key"] == "hrv")["sub"] == 0
-    row = {f["key"]: f for f in page["facts"]}["vfc"]
+    row = {f["key"]: f for f in page["rows"]}["vfc"]
     assert (row["value"], row["word"], row["tone"]) == ("\u221246\u00a0%", "plus basse que d'habitude", "warn")
     assert (page["vfc"]["status"]["value"], page["vfc"]["status"]["word"], page["vfc"]["status"]["tone"]) == (
         row["value"], row["word"], row["tone"])  # one source of truth
-    assert page["ring"]["tone"] == "warn"
+    d = page["dials"][1]
+    assert (d["key"], d["value"], d["unit"], d["sub"], d["tone"]) == ("recup", "69", "%", "en cours", "warn")
 
 
 async def test_rich_wearer_hypnogram_in_the_hero(db_session: AsyncSession, test_user: User):
@@ -604,17 +633,21 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"] is None and page["score"]["value"] is None
     assert page["line"] == "Connecte ta montre pour voir ta récupération." and page["connect"]
-    assert page["ring"]["value"] == "—" and page["facts"] == [] and "rings" not in page
+    assert page["rows"] == [] and "ring" not in page and "facts" not in page
     assert page["recup"] is None and page["sleep"]["state"] == "never"
     assert page["vfc"] is None and page["fc"] is None and "charge" not in page
-    # no section for it: the empty ring is plain (never a link to nothing) and says nothing under it
-    assert (page["ring"]["href"], page["ring"]["sub"]) == (None, None)
+    # no card for them: the empty Sommeil and Récupération dials are plain (never a link to nothing), each with its
+    # word; Entraînement links to its card: the runs' time, « pas encore d'habitude » (under 4 complete weeks)
+    sleep, recup, train = page["dials"]
+    assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas enregistré", None)
+    assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", None)
+    assert (train["sub"], train["href"], train["unit"]) == ("pas encore d'habitude", "#entrainement", None)
     html = (await as_user.get("/sante")).text
     assert "Connecte ta montre pour voir ta récupération." in html
     assert 'href="/settings#coros"' in html and 'href="/settings#garmin"' in html
-    assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html and "pf-facts" not in html
+    assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html and 'id="recuperation"' not in html
     rings = re.findall(r'<(a|div) class="pf-ring pf-ring-(\w+)[^"]*"(?: href="([^"]+)")?', _main(html))
-    assert rings == [("div", "recup", "")]
+    assert rings == [("div", "sommeil", ""), ("div", "recup", ""), ("a", "entrainement", "#entrainement")]
 
 
 async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_session: AsyncSession,
@@ -625,7 +658,9 @@ async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_s
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"] is None and page["line"] == sante.td.NO_NIGHT and not page["connect"]
     assert sante.td.NO_NIGHT == "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
-    assert page["sleep"]["hero"]["total"] == "7h20 sur 24 h"  # an older night: its total, the ring is empty
+    h = page["sleep"]["hero"]  # an older night: its card, its hours; the dial is this morning's: empty
+    assert (h["label"], h["total"]) == ("nuit du lun. 5 au mar. 6", "7h20")
+    assert (page["dials"][0]["value"], page["dials"][0]["sub"]) == ("—", "pas enregistré")
 
 
 async def test_nothing_at_all_is_the_connect_panel(as_user: AsyncClient):
@@ -636,20 +671,29 @@ async def test_nothing_at_all_is_the_connect_panel(as_user: AsyncClient):
     assert "Connecter Strava" in page
 
 
-async def test_the_ring_links_to_a_section_the_page_has(db_session: AsyncSession, test_user: User):
-    """A watch that sent one night but none this morning, no score: Récupération is a plain ring (under 2 days
-    for its 14 days), no facts (no state: the line says why, the Sommeil section shows the night); with 2 past
-    days scored, Récupération links to its 14 days even without today's score."""
+def _sleep_only(rows: dict) -> dict:
+    """night_rows without the heart: the nights' sleep alone (no VFC, no FC de nuit card)."""
+    return {**rows, "hrv": {}, "hr_night": {}}
+
+
+async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession, test_user: User):
+    """A watch that sent one night (its sleep alone) but none this morning, no score: Sommeil links to its card,
+    Récupération is a plain dial (no row, under 2 days for its 14 days: nothing to link to), Entraînement always
+    links to its card; no state: the line says why. With 2 past days scored, Récupération links to its 14 days
+    even without today's score; a night with its heart values gives the card its rows (VFC, FC de nuit)."""
     today = date(2026, 10, 8)
-    await _seed_rows(db_session, test_user, night_rows([3], today=today, source="COROS",
-                                                       hr_method="coros_sleep_summary"))
+    kw = {"today": today, "source": "COROS", "hr_method": "coros_sleep_summary"}
+    await _seed_rows(db_session, test_user, _sleep_only(night_rows([3], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] is None and page["ring"]["href"] is None
-    assert page["facts"] == [] and page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
-    await _seed_rows(db_session, test_user, night_rows([2], today=today, source="COROS",
-                                                       hr_method="coros_sleep_summary"))
+    assert page["score"]["value"] is None and page["recup"] is None and page["rows"] == []
+    assert [d["href"] for d in page["dials"]] == ["#sommeil", None, "#entrainement"]
+    assert page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
+    await _seed_rows(db_session, test_user, _sleep_only(night_rows([2], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] and page["ring"]["href"] == "#recuperation"
+    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation"
+    await _seed_rows(db_session, test_user, night_rows([5], **kw))
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    assert [(r["key"], r["word"]) for r in page["rows"]] == [("vfc", "en construction"), ("fc", "en construction")]
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

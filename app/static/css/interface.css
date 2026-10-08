@@ -563,70 +563,67 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
    brighter amber for large marks (arcs, bars; ≥ 3:1 on the page and the cards), --pf-warn stays for text. */
 :root { --pf-warn-mark: 199 106 0; }
 .dark { --pf-warn-mark: var(--pf-warn); }
-.pf-sante4 [id] { scroll-margin-top: 80px; }   /* #recuperation, #sommeil, #vfc, #fc land under the top bar */
+.pf-sante4 [id] { scroll-margin-top: 80px; }   /* #recuperation, #sommeil, #entrainement land under the top bar */
 /* the head: the morning the rings describe, nothing else (no sync status: Réglages'; the silent sync is invisible) */
 .pf-sante-h1 { font-family: var(--pf-font-display); font-size: 24px; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; color: rgb(var(--pf-ink)); }
 .pf-sante-head .pf-sante-lines { margin-top: 2px; }
 .pf-sante-lines { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 0; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines > span + span::before { content: "·"; margin-right: 6px; }
 .pf-sante-head + * { margin-top: 14px; }
+.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 30px; letter-spacing: -.035em; }   /* « Aujourd'hui », as large as the dials */
+.pf-sante4 .pf-sante-head .pf-sante-lines { font-size: 14px; }
 @media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
 .pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
-/* the top (v4.4, owner: « on comprend rien »): ONE ring, the score in its state's colour, the state's word next to
-   it (it names the ring), the alert's sentence and the connect links under both */
-.pf-sante-top { display: grid; grid-template-columns: clamp(84px, 28vw, 104px) minmax(0, 1fr); align-items: center; column-gap: 16px; }
-.pf-sante-top > .pf-state-text, .pf-sante-top > .pf-state-links { grid-column: 1 / -1; }
-.pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+/* the top (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »): three equal dials in a row, Sommeil ·
+   Récupération · Entraînement, each a percentage over its name and a plain word (never colour alone), a link to its
+   card below; the alert's sentence (or the line that says why there is no score) and the connect links under them */
+.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 6px; margin-top: 22px; }
+.pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 2px 0 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
-.pf-ring-dial { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; }
+.pf-ring-dial { position: relative; display: block; width: min(100%, 100px); aspect-ratio: 1 / 1; }
 .pf-ring-dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 11; }
-.pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 11; stroke-linecap: round; }
+.pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 9; }
+.pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 9; stroke-linecap: round; }
 .pf-ring.is-ok .pf-ring-arc { stroke: rgb(var(--pf-ok)); }
 .pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }
 .pf-ring.is-danger .pf-ring-arc { stroke: rgb(var(--pf-danger)); }
-.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: clamp(26px, 9vw, 32px); font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-ring-recup.is-ok .pf-ring-value { color: rgb(var(--pf-ok)); }   /* the score in its state's colour */
-.pf-ring-recup.is-warn .pf-ring-value { color: rgb(var(--pf-warn)); }
-.pf-ring-recup.is-danger .pf-ring-value { color: rgb(var(--pf-danger)); }
+.pf-ring.is-sleep .pf-ring-arc { stroke: rgb(var(--pf-sleep)); }   /* Sommeil: one stable hue (the warning one under 6 h) */
+.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-ring-value.is-long { font-size: 17px; }   /* « 16h53 »: the week's time while there is no usual week */
 .pf-ring.is-none .pf-ring-value { color: rgb(var(--pf-gray-400)); }
-.pf-ring-unit { margin-left: .06em; font-size: .5em; letter-spacing: 0; }   /* « 65 % »: the « % » smaller, on the number's baseline */
-.pf-ring-label { margin-top: 6px; font-size: 14px; font-weight: 650; line-height: 1.2; color: rgb(var(--pf-ink)); }
-.pf-ring-sub { margin-top: 3px; font-size: 13px; line-height: 1.25; color: rgb(var(--pf-gray-500)); }   /* « estimé » */
-/* the state: its word large, next to the ring; at most one sentence, under both */
-.pf-state-word { font-family: var(--pf-font-display); font-size: clamp(21px, 7.2vw, 26px); font-weight: 700; letter-spacing: -.03em; line-height: 1.15; color: rgb(var(--pf-ink)); text-wrap: balance; }
-.pf-state-first { white-space: nowrap; }
-.pf-state-glyph { display: inline-block; width: .6em; height: .6em; margin-right: 9px; vertical-align: .08em; fill: currentColor; overflow: visible; }
-.pf-state-glyph .pf-state-ring { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.pf-sante-top.is-ok .pf-state-glyph { color: rgb(var(--pf-ok)); }
-.pf-sante-top.is-warn .pf-state-glyph { color: rgb(var(--pf-warn-mark)); }
-.pf-sante-top.is-danger .pf-state-glyph { color: rgb(var(--pf-danger)); }
+.pf-ring-unit { margin-left: .06em; font-size: .52em; letter-spacing: 0; }   /* « 65 % »: the « % » smaller, on the number's baseline */
+.pf-ring-label { margin-top: 8px; font-family: var(--pf-font-display); font-size: 14px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; color: rgb(var(--pf-ink)); }
+.pf-ring-sub { margin-top: 2px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); text-wrap: balance; }   /* its word: « en cours », « estimée » */
+.pf-dials + .pf-state-text, .pf-dials + .pf-state-line { margin-top: 10px; }
 .pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 34em; }
-.pf-state-text { margin-top: 10px; }
 .pf-state-links { margin-top: 4px; font-size: 15px; line-height: 1.45; }
 .pf-state-links a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 11px 0; line-height: 22px; margin-right: 10px; }   /* 44 px */
 .dark .pf-state-links a { color: rgb(var(--pf-accent)); }
-@media (min-width: 900px) { .pf-sante-top { grid-template-columns: 120px minmax(0, 1fr); column-gap: 20px; } .pf-ring-value { font-size: 36px; } .pf-state-word { font-size: 32px; } }
-/* the facts, like Apple's Vitals: a dot and the name on the left, the value and a plain word on the right (never
-   colour alone), each row a link to its section below when there is one (a chevron, its place kept on every row) */
-.pf-facts { padding-top: 2px; padding-bottom: 2px; }
-.pf-facts li + li { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-fact { display: flex; align-items: baseline; column-gap: 10px; min-height: 48px; padding: 13px 0 12px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
-.pf-fact::after { content: ""; flex: none; width: 8px; }
-a.pf-fact::after { content: "›"; content: "›" / ""; font-size: 17px; line-height: 1; color: rgb(var(--pf-gray-400)); }
-a.pf-fact:active { opacity: .6; }
-a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
-.pf-fact-name { flex: none; display: inline-flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); white-space: nowrap; }
-.pf-fact-name small { display: block; margin-top: 1px; font-size: 13px; font-weight: 500; line-height: 1.3; color: rgb(var(--pf-gray-500)); }   /* « 7 nuits », « sur 8 h »: what the percentage is of, under the name */
-.pf-fact-val { min-width: 0; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; text-align: right; font-size: 14px; font-weight: 500; line-height: 1.35; color: rgb(var(--pf-gray-700)); }
-.pf-fact-val b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 700; line-height: 1.25; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }   /* « 81 % », its word under it */
-.pf-fact-word { text-wrap: balance; }
-.pf-fact-val b + .pf-fact-word { margin-top: 1px; font-size: 13px; line-height: 1.3; }
-.pf-fact.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
-.pf-fact.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
-.pf-fact.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
-.pf-fact.is-none .pf-dot { background: rgb(var(--pf-gray-400)); }   /* nothing to compare yet: grey, its word says why */
+@media (min-width: 900px) { .pf-dials { max-width: 560px; } .pf-ring-dial { width: min(100%, 124px); } .pf-ring-value { font-size: 26px; } .pf-ring-value.is-long { font-size: 21px; } }
+/* the cards under the dials, in their order (Récupération, Sommeil, Entraînement): a title, then rows, like Apple's
+   Vitals — a dot and the name on the left, the value over its word on the right (never colour alone) */
+.pf-sum { padding-bottom: 4px; }
+.pf-sum-h { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; color: rgb(var(--pf-ink)); }
+.pf-rows { margin-top: 2px; }
+.pf-rows > li + li { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-row { display: flex; align-items: center; column-gap: 10px; min-height: 48px; padding: 11px 0; }
+.pf-row-name { flex: none; display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; line-height: 1.3; color: rgb(var(--pf-ink)); white-space: nowrap; }
+.pf-row-name small { display: block; margin-top: 1px; font-size: 12.5px; font-weight: 400; line-height: 1.3; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }   /* « 7 nuits », the night's times */
+.pf-row .pf-dot { transform: none; }
+.pf-row-val { min-width: 0; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; text-align: right; font-size: 13.5px; line-height: 1.35; color: rgb(var(--pf-gray-600)); }
+.pf-row-val > span { text-wrap: balance; }
+.pf-row-val b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; line-height: 1.25; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }   /* « −8 % », « 8h36 », its word under it */
+.pf-row.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
+.pf-row.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-row.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-row.is-none .pf-dot { background: rgb(var(--pf-gray-400)); }   /* nothing to compare yet: grey, its words say why */
+.pf-row.pf-night, .pf-row.pf-week { padding-top: 8px; }   /* the first row under the card's title, no rule above it */
+.pf-sum .pf-tl { margin-top: 4px; }
+.pf-sum .pf-phases { margin-top: 6px; padding-bottom: 8px; }
+.pf-sum-link { display: block; padding: 11px 0 12px; font-size: 14.5px; font-weight: 650; line-height: 21px; color: rgb(var(--pf-accent-strong)); text-decoration: none; }   /* 44 px */
+.dark .pf-sum-link { color: rgb(var(--pf-accent)); }
+.pf-sum-link:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
 /* cards: a soft background, the title, the chart */
 .pf-card { background: rgb(var(--pf-soft)); border-radius: 22px; padding: 16px 14px 10px; margin-top: 14px; }
 .pf-card-h { font-size: 15px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; color: rgb(var(--pf-ink)); }
@@ -709,10 +706,7 @@ a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-lg.is-est { background: repeating-linear-gradient(45deg, rgb(var(--pf-gray-600)) 0 1.5px, transparent 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-600)); }   /* a score without a night measured, hatched */
 /* Sommeil: last night, its timeline, the habits */
 .pf-sec-h { font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: rgb(var(--pf-ink)); margin-top: 30px; }
-.pf-sleep4 .pf-sec-h + .pf-card, .pf-sleep4 .pf-sec-h + .pf-sante-note { margin-top: 10px; }
-.pf-hero-label { font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-hero-times { font-family: var(--pf-font-display); font-size: 30px; font-weight: 700; letter-spacing: -.035em; line-height: 1.15; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); margin-top: 2px; white-space: nowrap; }
-.pf-hero-sub { font-size: 14px; color: rgb(var(--pf-gray-600)); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.pf-sec > .pf-sec-h + .pf-card { margin-top: 10px; }
 .pf-tl { display: block; width: 100%; max-width: 560px; height: auto; margin-top: 14px; overflow: visible; }
 .pf-tl text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-tl .pf-tl-lane { fill: rgb(var(--pf-gray-600)); }
@@ -771,7 +765,7 @@ a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 @keyframes pf-ring-in { from { stroke-dashoffset: var(--pf-dash); } to { stroke-dashoffset: 0; } }
 @media (forced-colors: active) {
     .pf-ring-track { stroke: CanvasText; stroke-width: 2; }   /* a thin track, a thick arc: the value without colour */
-    .pf-ring-arc, .pf-ring.is-ok .pf-ring-arc, .pf-ring.is-warn .pf-ring-arc, .pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }
+    .pf-ring-arc, .pf-ring.is-ok .pf-ring-arc, .pf-ring.is-warn .pf-ring-arc, .pf-ring.is-sleep .pf-ring-arc, .pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }
     .pf-card, .pf-habits > div { border: 1px solid CanvasText; }
     .pf-bar, .pf-bar.is-ok, .pf-bar.is-warn, .pf-bar.is-danger, .pf-tl-night, .pf-tl-seg { fill: CanvasText; }
     .pf-bar-top, .pf-tl-nap { fill: Canvas; stroke: CanvasText; stroke-width: 1; }

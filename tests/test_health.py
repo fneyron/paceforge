@@ -129,9 +129,11 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     # nightly HR ~7 bpm over the usual two nights running: the HR alert, « Récupération faible » (v4.3), its sentence
     assert "Récupération faible" in r.text and "À ménager" not in r.text
     assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
-    assert r.text.index('class="pf-card pf-facts"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
-    assert re.search(r'<a class="pf-fact is-danger" href="#fc">.*?<b>\+\d+\u00a0%</b> <span class="pf-fact-word">'
-                     r'nettement plus haute depuis 2 nuits</span>', r.text)  # its 2 nights in percent (v4.4)
+    assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
+    # the FC de nuit row of the Récupération card, red: its 2 nights in percent (v4.4)
+    assert re.search(r'<li class="pf-row is-danger"><span class="pf-row-name"><i class="pf-dot" aria-hidden="true">'
+                     r'</i><span>FC de nuit <small>7 nuits</small></span></span><span class="pf-row-val"><b>\+\d+'
+                     r'\u00a0%</b> <span>nettement plus haute depuis 2 nuits</span>', r.text)
 
 
 # ── migration ───────────────────────────────────────────────────────────────

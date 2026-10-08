@@ -26,18 +26,18 @@ def _card(rows, sessions=(), metric="hrv"):
 
 
 def test_without_usual_values_the_card_says_when_they_come():
-    """No band yet (under 7 measured nights in the 60 days up to last night): the status line says how many nights
-    until the usual values exist (nights_to_normal: every measured night counts, last night included, and every
-    coming night is counted), nothing about nights that would not count; no band drawn, no band in the legend."""
+    """No band yet (under 7 measured nights in the 60 days up to last night): the row says how many nights until the
+    usual values exist (nights_to_normal: every measured night counts, last night included, and every coming night
+    is counted), the chart card says in words that they build, nothing about nights that would not count; no band
+    drawn, no band in the legend."""
     c = _card(night_rows(range(0, 6)))  # 6 nights: the 7th makes the band
     assert c["status"] == {"key": "none", "value": None, "word": "en construction", "tone": None, "meaning": None,
-                           "text": "En construction : tes valeurs habituelles seront prêtes après ta prochaine nuit, "
-                                   "si tu portes ta montre."}
+                           "detail": "prête après ta prochaine nuit",
+                           "text": "En construction : chaque nuit où tu portes ta montre compte."}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert c["status"]["text"] == ("En construction : tes valeurs habituelles seront prêtes dans 2 nuits, si tu "
-                                   "portes ta montre.")
+    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 2\u00a0nuits", sante.BUILDS)
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
     # the nights older than 60 days leave the band as the coming ones enter it: 3 nights 56 to 58 days old and 2
