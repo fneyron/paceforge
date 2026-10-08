@@ -1,40 +1,38 @@
-{#- Santé v4.3, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
-    (the band of the score: its word and glyph, a sentence only for the illness alert; no activity named), « Détail
-    du score » (each note as a number and a bar), the cards « Récupération · 14 jours », the Sommeil section (last
-    night, its stages, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30 nuits », « FC de nuit ·
-    30 nuits » (each opening on its status line), then the closed folds (each ending on its « Sources » link). The
-    activities themselves are Activités' (the Charge ring links there). Each number is printed once on the page: the
-    rings print today's score, this morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on
-    something else until a tap (a mean, the latest night of a card no ring prints). The tone is in a glyph and a word
-    too, never colour alone; no mark without a label or a legend. -#}
+{#- Santé v4.4, one page (app.services.sante.health_page), top to bottom: ONE ring, Récupération (the score in its
+    state's colour, « estimé » under it without a night measured), the state's word and glyph next to it (a sentence
+    only for the illness alert; no activity named), the facts (one row each: a dot and the name, the value and a
+    plain word; a link to its section below when there is one; no title: the page's is « Aujourd'hui »), the cards
+    « Récupération · 14 jours », the Sommeil section (last night, its stages, the 14 nuits / 3 mois bars and their
+    legend, the habits), « VFC · 30 nuits », « FC de nuit · 30 nuits » (each opening on its status line), then the
+    closed folds (each ending on its « Sources » link). No sub-score anywhere. Each number is printed once on the
+    page: the ring prints today's score, the Sommeil row this morning's 24 h; the cards' readouts rest on something
+    else until a tap (a mean, the latest night of a card no row prints). The tone is in a glyph and a word too,
+    never colour alone; no mark without a label or a legend. -#}
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 
-<section class="pf-rings" aria-label="Aujourd'hui">
-    {% for r in p.rings %}{{ viz.viz_ring(r) }}{% endfor %}
-</section>
-
-<section class="pf-state{% if p.state %} is-{{ p.state.tone }}{% endif %}">
+<div class="pf-sante-top{% if p.state %} is-{{ p.state.tone }}{% endif %}">
+    {{ viz.viz_ring(p.ring) }}
     {% if p.state %}
-    <h2 class="pf-state-word"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ p.state.word }}</h2>
+    {#- the glyph stays with the first word (never alone on its line) -#}
+    {% set w = p.state.word.split(" ", 1) %}
+    <h2 class="pf-state-word"><span class="pf-state-first"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ w[0] }}</span>{% if w|length > 1 %} {{ w[1] }}{% endif %}</h2>
     {% if p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
-    {% if p.connect %}<p class="pf-state-line"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
     {% else %}
-    <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a>{% endif %}</p>
+    <p class="pf-state-line">{{ p.line }}</p>
     {% endif %}
-</section>
+    {% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
+</div>
 
-{#- « Détail du score », like WHOOP's and Oura's: each component's note out of 100, a number in its bar's colour (the
-    number says it, never colour alone), the bar under it; the components not in the score in one muted line -#}
-{% if p.detail %}
-<section id="detail" class="pf-card pf-contrib" aria-labelledby="h-detail">
-    <h2 id="h-detail" class="pf-card-h">Détail du score</h2>
+{#- the facts, like Apple's Vitals: a coloured dot and the name on the left, the value and its word on the right (the
+    colour is never alone), each row a link to its section below when there is one -#}
+{% if p.facts %}
+<section class="pf-card pf-facts" aria-label="Ce qui compte">
     <ul>
-        {% for c in p.detail.rows %}
-        <li><span class="pf-contrib-name">{{ c.name }}</span><b class="pf-contrib-num is-{{ c.tone }}">{{ c.sub }}<span class="sr-only"> sur 100</span></b><span class="pf-contrib-bar is-{{ c.tone }}" aria-hidden="true"><i style="width: {{ [c.sub, 2]|max }}%"></i></span></li>
+        {% for f in p.facts %}{% set tag = "a" if f.href else "div" %}
+        <li><{{ tag }} class="pf-fact is-{{ f.tone }}"{% if f.href %} href="{{ f.href }}"{% endif %}><span class="pf-fact-name"><i class="pf-dot" aria-hidden="true"></i><span>{{ f.name }}{% if f.qual %} <small>{{ f.qual }}</small>{% endif %}</span></span><span class="pf-fact-val">{% if f.value %}<b>{{ f.value }}</b> {% endif %}{{ f.word }}</span></{{ tag }}></li>
         {% endfor %}
     </ul>
-    {% if p.detail.absent %}<p class="pf-contrib-absent">{{ p.detail.absent }}</p>{% endif %}
 </section>
 {% endif %}
 

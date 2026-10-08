@@ -2,6 +2,7 @@
 
 import importlib.util
 import pathlib
+import re
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
@@ -126,7 +127,8 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     # nightly HR ~6 bpm over the usual two nights running: the HR alert, « Récupération faible » (v4.3), its sentence
     assert "Récupération faible" in r.text and "À ménager" not in r.text
     assert "FC de nuit nettement au-dessus de ta normale 2 nuits de suite" in r.text
-    assert r.text.index('id="detail"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
+    assert r.text.index('class="pf-card pf-facts"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
+    assert re.search(r'<a class="pf-fact is-danger" href="#fc">.*?nettement au-dessus, 2 nuits</span></a>', r.text)
 
 
 # ── migration ───────────────────────────────────────────────────────────────

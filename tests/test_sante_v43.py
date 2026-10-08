@@ -145,7 +145,7 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
     page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 24))
     assert (page["score"]["value"], page["score"]["estimated"], page["state"]["word"]) == (
         65, True, "Récupération en cours")
-    assert page["rings"][0]["sub"] == "estimé" and page["state"]["text"] is None
+    assert page["ring"]["sub"] == "estimé" and page["state"]["text"] is None
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))
     assert free["score"]["value"] is None and free["state"] is None and free["line"] == td.NO_NIGHT
 
@@ -235,16 +235,17 @@ def garmin_rows_without_tz(days) -> dict:
 
 async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
     """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
-    no window), « Bonne récupération »; the cards' status lines; the Charge ring a plain « 0 h »; Activités empty."""
+    no window), « Bonne récupération »; the facts and the cards' status lines; no Effort récent; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
-    assert [r["key"] for r in page["detail"]["rows"]] == ["hrv", "hr", "sleep"] and page["detail"]["absent"] is None
+    assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
     assert page["vfc"]["status"]["text"] == "dans ta normale" and page["fc"]["status"]["text"] == "dans ta normale"
-    assert page["rings"][2]["value"] == "0 h" and page["rings"][2]["href"] is None
+    assert [(f["key"], f["word"], f["tone"]) for f in page["facts"]] == [
+        ("sommeil", "suffisant", "ok"), ("vfc", "dans ta normale", "ok"), ("fc", "dans ta normale", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Détail du score" in main and "pf-card-status is-ok" in main
+    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-fact is-ok"' in main
     act = _coherent((await as_user.get("/activities")).text)
     assert 'id="semaines"' not in act and "Aucune activité pour l" in act
 
@@ -264,12 +265,12 @@ async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession
 
 async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
     """Strava, no watch: no nightly score (« Connecte ta montre pour ta récupération. », the connect links), no
-    Détail, no cards, no folds but the recovery one; Activités: « Semaines » with its three measures."""
+    facts, no cards, no folds but the recovery one; Activités: « Semaines » with its three measures."""
     for k in range(1, 70, 2):
         db_session.add(_act(test_user, 50_000 + k, D - timedelta(days=k), 7, 55, dplus=120))
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"] is None and page["line"] == td.NO_WATCH and page["detail"] is None
+    assert page["state"] is None and page["line"] == td.NO_WATCH and page["facts"] == []
     main = _coherent((await as_user.get("/sante")).text)
     assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Comment je lis tes nuits" not in main
     act = _coherent((await as_user.get("/activities")).text)
@@ -316,7 +317,7 @@ async def test_a_user_in_utc_minus_5(as_user: AsyncClient, db_session: AsyncSess
     nights = await nt.load_nights(db_session, test_user.id, D, sessions=sessions, efforts=st.efforts(sessions))
     assert not any(n.tags & {"tz", "jetlag"} for n in nights.values())
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["word"] in td.WORDS.values() and page["detail"]["rows"]
+    assert page["state"]["word"] in td.WORDS.values() and page["facts"]
 
     async def today(*a, **k):
         return D
@@ -341,11 +342,12 @@ async def test_a_brand_new_user(as_user: AsyncClient, db_session: AsyncSession, 
 
 
 async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User):
-    """« (ta normale se construit) » only after a signal measured lately: a watch that never measures HRV just
-    misses it (« Pas encore dans le score : VFC. »), and its card does not exist."""
+    """A normal « being built » only after a signal measured lately: a watch that never measures HRV just misses
+    it, and neither its card nor its row exists (v4.4: no « pas encore de normale » for a signal never seen)."""
     rows = garmin_rows(D, range(0, 40))
     rows.pop("hrv")
     await _seed(db_session, test_user, rows)
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["detail"]["absent"] == "Pas encore dans le score : VFC." and page["vfc"] is None
+    assert page["score"]["absent"] == ["hrv"] and page["score"]["building"] == [] and page["vfc"] is None
+    assert [f["key"] for f in page["facts"]] == ["sommeil", "fc"]
     assert page["score"]["value"] == sc.rounded((25 * 100 + 30 * 100) / 55)

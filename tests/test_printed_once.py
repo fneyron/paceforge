@@ -1,8 +1,8 @@
 """Each number is printed once across Santé, Activités and the race page: a
 figure whose latest value another block already prints opens on a resting
-readout (viz.rest): on the one-page Santé (v4), the rings print today's
-score and last night's 24 h, so « Récupération · 14 jours » and « Sommeil sur
-24 h » rest on a hint and on the mean. The server prints every default
+readout (viz.rest): on the one-page Santé (v4.4), the ring prints today's
+score and the Sommeil row this morning's 24 h, so « Récupération · 14 jours »
+and « Sommeil sur 24 h » rest on their means. The server prints every default
 readout, so the HTML is enough to check it."""
 import html
 import re
@@ -46,10 +46,10 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
 
     # no VFC in the seed: no card; no Charge card (v4.1: the activities are Activités')
     assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc"}
-    # the rings print today's score and last night's total: their cards rest on their means, one line each…
+    # the ring prints today's score, the Sommeil row last night's total: their cards rest on their means…
     assert sante["recuperation"][1:] == ("en moyenne", "") and sante["recuperation"][0].isdigit()
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
-    # …the nightly HR card prints last night's value (no ring, no other block does)…
+    # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
     assert sante["fc"][0] == "45\u00a0bpm" and " · normale " in sante["fc"][2]
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race
     assert "recup" not in after  # v4.3: no recovery part on the race page after the race

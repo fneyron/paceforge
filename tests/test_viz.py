@@ -552,7 +552,7 @@ def test_the_selection_shows_in_forced_colours_and_on_a_short_night():
 
 def test_the_rings_bars_and_cards_show_in_forced_colours():
     """A thin track and a thick arc (the ring's value without colour); the cards outlined; a selected bar in
-    Highlight whatever its tone; the contributors' bars keep their length."""
+    Highlight whatever its tone; the facts' dots in CanvasText (their words say the tone)."""
     css = (ROOT / "app/static/css/interface.css").read_text()
     sante = css[css.index("/* ── Santé v4"):css.index("/* ── Réglages")]
     fc = sante[sante.index("@media (forced-colors: active)"):]
@@ -563,7 +563,8 @@ def test_the_rings_bars_and_cards_show_in_forced_colours():
     sel = _split_top(rule.split("{")[0].strip())[0]
     assert _specificity(sel) >= _specificity(".pf-viz-col.is-sel .pf-bar") == (0, 3, 0), sel
     assert _specificity(sel) > _specificity(".pf-bar.is-danger")  # a tone's forced fill never hides the selection
-    assert "forced-color-adjust: none" in fc.split(".pf-contrib-bar > i")[1].split("}")[0]
+    assert ".pf-dot { forced-color-adjust: none; background: CanvasText; }" in fc
+    assert "pf-contrib" not in css  # « Détail du score » is gone (v4.4)
 
 
 def test_every_ring_and_card_anchor_lands_under_the_top_bar():
@@ -578,9 +579,9 @@ def test_every_ring_and_card_anchor_lands_under_the_top_bar():
                  ".pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }"):
         assert rule in phone, rule
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    for anchor in ("detail", "recuperation", "sommeil"):
+    for anchor in ("recuperation", "sommeil"):
         assert f'id="{anchor}"' in page, anchor
-    assert 'id="charge"' not in page  # no Charge card: the ring links to Activités
+    assert 'id="charge"' not in page and 'id="detail"' not in page  # no Charge card, no « Détail du score » (v4.4)
     assert '(("vfc", p.vfc), ("fc", p.fc))' in page and "{{ c.title }}" in page
     assert 'id="{{ key }}"' in page
 
@@ -620,8 +621,10 @@ def test_the_small_targets_reach_44_px():
     it: exactly 44)."""
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-sync-now { min-height: 44px; }" in css
-    link = re.search(r"\.pf-state-line a \{[^}]*\}", css).group(0)
+    link = re.search(r"\.pf-state-links a \{[^}]*\}", css).group(0)
     assert "padding: 11px 0; line-height: 22px;" in link
+    fact = re.search(r"\.pf-fact \{[^}]*\}", css).group(0)  # a facts row: a 48-px target (v4.4)
+    assert "min-height: 48px" in fact
     assert ".pf-health-connect .pf-btn { min-height: 44px; }" in css
     assert (".pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px "
             "rgb(var(--pf-gray-400)); }") in css
@@ -665,7 +668,7 @@ def test_the_warn_mark_is_a_brighter_amber_for_large_marks():
     assert ".dark { --pf-warn-mark: var(--pf-warn); }" in css
     for rule in (".pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }",
                  ".pf-bar.is-warn { fill: rgb(var(--pf-warn-mark)); }",
-                 ".pf-contrib-bar.is-warn > i { background: rgb(var(--pf-warn-mark)); }"):
+                 ".pf-fact.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }"):
         assert rule in css, rule
     # the card's pressed range button: the app's filled pill with a thin edge ≥ 3:1 on white (never a heavy ring)
     assert contrast(light["pf-gray-400"], light["pf-surface"]) >= 3

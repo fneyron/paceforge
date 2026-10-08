@@ -26,13 +26,13 @@ Layout: viewBox width 320 (the 358 px phone's content width), plot 0–288, the
 y ticks right-aligned at 320; one slot per day/week, marks at slot centres so
 stacked figures share an x axis.
 
-Santé v4 (one page, WHOOP/Oura-like) adds: `ring` (the three rings at the
-top), `day_bars` (a card's bars, one per day: Récupération, Sommeil),
+Santé v4 (one page) adds: `ring` (the Récupération ring at the top),
+`day_bars` (a card's bars, one per day: Récupération, Sommeil),
 `night_card` (a nightly signal's dots, 7-night line and normal: VFC, FC de
 nuit) and `timeline` (last night on a clock axis, or its hypnogram). The race
 page and Activités keep `band_chart`, `bars`, `lines` and `dots`. No mark
-without a label or a legend: the rings say their value and a word, the
-cards' bars and lines have a legend or labelled lines.
+without a label or a legend: the ring says its value and a word names it,
+the cards' bars and lines have a legend or labelled lines.
 """
 import json
 import math
@@ -476,22 +476,22 @@ def dots(days: list[date], points: list[dict], *, band: list | None = None, min_
             "xt": x_labels(days, xs_all), **_data(xs, [ys], ds, r, a, h=h, sel=sel)}
 
 
-# ── V1 rings: Santé's three rings (Récupération, Sommeil, Charge) ───────────
+# ── V1 ring: Santé's Récupération ring (v4.4: the only one) ─────────────────
 
 RING_R, RING_W = 42, 11  # viewBox 100 × 100: the radius and a bold stroke
 RING_C = round(2 * math.pi * RING_R, 2)
 
 
-def ring(key: str, fill: float | None, value: str, label: str, sub: str | None = None, *, tone: str = "accent",
-         href: str | None = None, aria: str = "", note: str | None = None) -> dict:
+def ring(key: str, fill: float | None, value: str, label: str | None, sub: str | None = None, *,
+         tone: str = "accent", href: str | None = None, aria: str = "", note: str | None = None) -> dict:
     """One ring: the track, an arc up to `fill` (0–1, from the top, clockwise;
     None or 0: the track alone), the value in the middle (formatted by the
-    caller, printed once), the label and a short word under it (`sub`), and
-    `note`, a word that says what the arc compares (the Charge ring: « plus
-    que d'habitude »): no mark without words. `tone` (ok, warn, danger,
-    accent) is the CSS's colour; the value and the words say it too, never
-    colour alone. `href`: what it sums up (None: a plain ring, never a link
-    to nothing)."""
+    caller, printed once), the label under it (None when a word next to the
+    ring names it: Santé's state) and a short word (`sub`), and `note`, a
+    word that says what the arc compares (« plus que d'habitude »): no mark
+    without words. `tone` (ok, warn, danger, accent) is the CSS's colour; the
+    value and the words say it too, never colour alone. `href`: what it sums
+    up (None: a plain ring, never a link to nothing)."""
     f = 0.0 if fill is None else max(0.0, min(1.0, fill))
     dash = round(f * RING_C, 2)
     return {"key": key, "value": value, "label": label, "sub": sub, "tone": tone, "href": href, "aria": aria,

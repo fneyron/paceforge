@@ -19,8 +19,8 @@ only when its own data rule holds:
    median + 2 bpm, 40 at + 5, 0 at + 8, linear between (H; anchors: + 4 bpm
    on 2 nights, Alavi 2022's alert; ≈ + 4,5 bpm in a short overload, Bosquet
    2008; ≈ + 6 % when sick, Altini & Plews 2021).
-   During the illness alert the row reads the alert's own 2 nights, at most
-   39 (red, « nettement haute »): never a green bar under the alert.
+   During the illness alert it reads the alert's own 2 nights, at most 39
+   (its facts row red, « nettement au-dessus »): never green under the alert.
 3. Sommeil · 24 h (a main night this morning; the naps of the 24 h before
    its wake count, nights.day_tst24): ≥ 7 h → 100 (AASM/SRS: Watson 2015a;
    NSF: Hirshkowitz 2015), 6 h → 60 (Craven 2022: sleep loss is ≤ 6 h per
@@ -32,7 +32,7 @@ only when its own data rule holds:
    effort windows): 50 after a Longue, 30 after a Très longue, 20 after an
    Ultra (the lowest of the windows open). Outside a window it is no
    component at all: a constant 100 would only dilute the other signals
-   (OECD/JRC 2008 on compensation); the Charge ring still shows the week.
+   (OECD/JRC 2008 on compensation); the week's volume is Activités'.
 Weights (H): VFC 25, FC de nuit 25, Sommeil 30, Charge 20, renormalised over
 the components present (the two heart signals together at most half: one
 domain never counted twice, OECD/JRC 2008; sleep the largest single weight,
@@ -64,14 +64,14 @@ VFC/FC pattern, else the lowest component) is data: the page prints the
 alert's sentence only (v4.3, owner: « mets juste les scores »). A difference
 of a few points means nothing (BASES 2023: unvalidated; the HRV moves ≈ 12 %
 night to night, Buchheit 2014): the method fold says so.
-« Détail du score » (v4.3, owner: « WHOOP et Oura mettent des scores
-plutôt »): one row per component, its note out of 100 as a number and a bar,
-no word. A heart row's colour is its place against the normal, the same on
-its card's status line (heart_tone): green in it, orange out of it on the
-side that matters (VFC under, FC de nuit over), red when its note is under
-40 and counts for the 69 cap (never a red VFC that caps nothing), at least
-orange under the joint cap, red under the alert, neutral on the other side
-(never praised); Sommeil as its ring, Charge récente neutral.
+No sub-score is shown (v4.4, owner: « Sommeil 100, Charge récente 20 …
+on comprend rien »: « Détail du score » is gone): the page shows the score,
+its state and plain facts (sante._top). A heart signal's colour is its place
+against the normal, the same on its facts row and on its card's status line
+(row_tone): green in it, orange out of it on the side that matters (VFC
+under, FC de nuit over), red when its note is under 40 and counts for the 69
+cap (never a red VFC that caps nothing), at least orange under the joint
+cap, red under the alert, neutral on the other side (never praised).
 History: the 13 days before today are recomputed from what is stored, each
 from what was known that day, with the same rule (sante._history); nothing is
 persisted.
@@ -88,9 +88,6 @@ BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}  # (H) the state 
 WEIGHTS = {"hrv": 25, "hr": 25, "sleep": 30, "load": 20}  # (H) research_recovery.md §3.2; Charge only in a window
 ORDER = ("hrv", "hr", "sleep", "load")
 NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (but in a recovery window)
-NAMES = {"hrv": "VFC", "hr": "FC de nuit", "sleep": "Sommeil", "load": "Charge récente"}
-SPOKEN = {"hrv": "VFC sur 7 nuits", "hr": "FC de nuit sur 7 nuits", "sleep": "sommeil sur 24 heures",
-          "load": "charge récente"}
 HRV_FULL_Z, HRV_ZERO_Z = -0.5, -2.5  # z of ln RMSSD: 100 from the band's floor (the trials' ± 0.5 SD), 0 at −2.5 (H)
 HR_FULL_BPM, HR_MID_BPM, HR_ZERO_BPM = 2, 5, 8  # (H) over the band's median: 100, 40, 0 (Alavi 2022; Bosquet 2008)
 HR_MID_SUB = 40  # (H) the FC de nuit sub-score at + 5 bpm
@@ -109,10 +106,10 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 
 # « Comment je calcule ta récupération » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets
 # pas les citations »): 6 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in
 # the code and the tests); one plain bullet on the cap after a big outing, the only outing Santé mentions (« Ne
-# mentionne pas les sorties dans la partie Santé »: bullet 1 names « ta charge récente », the Détail row); the
+# mentionne pas les sorties dans la partie Santé »: bullet 1 names « tes gros efforts récents », v4.4); the
 # references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et ta charge récente.",
+    "Ton score sur 100 combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
     "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
     "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 semaines "
     "après un ultra.",
@@ -339,28 +336,29 @@ EST_READ = "estimé, sans nuit mesurée"  # its readout in the 14-day card (v4.3
 
 
 def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
-    """The Récupération ring: the score, the arc in the state's colour; under
-    it the label, and « estimé » when no night was measured (the window's cap
-    alone, v4.3). `href`: the section it sums up, None when the page has none
-    (a plain ring)."""
+    """The Récupération ring, the only one (v4.4): the score, the arc in the
+    state's colour; no label under it (the state's word next to it names it:
+    « Récupération en cours »), only « estimé » when no night was measured
+    (the window's cap alone, v4.3). `href`: the section it sums up, None when
+    the page has none (a plain ring)."""
     v = score.get("value")
     if v is None:
-        return viz.ring("recup", None, "—", "Récupération", tone="none", href=href,
+        return viz.ring("recup", None, "—", None, tone="none", href=href,
                         aria="Récupération : pas de score ce matin")
     est = bool(score.get("estimated"))
-    return viz.ring("recup", v / 100, str(v), "Récupération", ESTIMATED if est else None, tone=state["tone"],
+    return viz.ring("recup", v / 100, str(v), None, ESTIMATED if est else None, tone=state["tone"],
                     href=href, aria=f"Récupération {v} sur 100" + (", estimée sans nuit mesurée" if est else "")
                     + f". {state['aria']}")
 
 
 def heart_tone(key: str, status: str | None, sub: float, red: bool = True, joint: bool = False,
                alert: bool = False) -> str:
-    """A heart signal's colour: its place against the normal, the same on its Détail row and on its card's status
+    """A heart signal's colour: its place against the normal, the same on its facts row and on its card's status
     line (v4.3, owner: « est-ce que c'est bien ou pas bien ? »): green in it; orange out of it on the side that
     matters (VFC under it, FC de nuit over it), red when its note is under 40 and counts for the 69 cap (a VFC
     that caps nothing is never red: no red row under a green ring); at least orange under the joint cap (both
-    rows), red under the illness alert (FC de nuit); neutral out on the other side (VFC over it, FC de nuit under
-    it: never praised, Plews 2013; Bellenger 2016)."""
+    signals), red under the illness alert (FC de nuit); neutral out on the other side (VFC over it, FC de nuit
+    under it: never praised, Plews 2013; Bellenger 2016)."""
     if alert:
         return "danger"
     bad = status == ("below" if key == "hrv" else "above")
@@ -371,56 +369,11 @@ def heart_tone(key: str, status: str | None, sub: float, red: bool = True, joint
     return "ok"
 
 
-def sleep_tone(tst24: float) -> str:
-    """The Sommeil ring's colour, and its Détail bar's: one day is marked only
-    under 6 h (warm, with the word « court »: Craven 2022's acute loss, ≤ 6 h
-    « inappropriate » for AASM/SRS); else the neutral sleep hue, no good/bad
-    colour (the 7 h is about habitual sleep, « on a regular basis »: Watson
-    2015a), never a flag on a long night."""
-    return "warn" if tst24 < SHORT_DAY_MIN else "accent"
-
-
-SEVERITY = ("accent", "ok", "warn", "danger")
-
-
 def row_tone(p: dict) -> str:
-    """A Détail row's colour (its bar's and its number's): the sleep row as the
-    Sommeil ring, so one name never wears two colours, or worse when the week
-    sleeps well under the usual (its note's band then: a habitual signal),
-    never green; Charge récente neutral, as the Charge ring (it describes the
-    activities, never warns); the heart rows by their place against the
-    normal (heart_tone)."""
-    if p["key"] == "load":
-        return "accent"
-    if p["key"] == "sleep":
-        ring = sleep_tone(p["tst24"])
-        if not p["debt"]:
-            return ring
-        worse = max(ring, tone_of(p["sub"]), key=SEVERITY.index)
-        return "accent" if worse == "ok" else worse
+    """A heart component's colour (`p`: one of score_of's parts, VFC or FC de nuit): heart_tone on its status,
+    its note, whether it counts for the 69 cap, the joint cap and the alert."""
     return heart_tone(p["key"], p.get("status"), p["sub"], p.get("red", True), p.get("joint", False),
                       p.get("alert", False))
-
-
-BUILDING = "ta normale se construit"
-
-
-def detail(score: dict) -> dict | None:
-    """« Détail du score » (v4.3, owner: « WHOOP et Oura mettent des scores plutôt »), always open: one row per
-    component present — its name, its note out of 100 as a number and a bar in its colour (row_tone), no word —
-    then the missing ones in one muted line, « (ta normale se construit) » after the heart signals whose normal
-    is still being built; None without a score."""
-    if score.get("value") is None:
-        return None
-    rows = []
-    for p in sorted(score["parts"], key=lambda p: ORDER.index(p["key"])):
-        n = round(p["sub"])
-        rows.append({"key": p["key"], "name": NAMES[p["key"]], "sub": n, "tone": row_tone(p),
-                     "aria": f"{SPOKEN[p['key']]} : {n} sur 100"})
-    built = [k for k in ORDER if k in score.get("building", ())]
-    rest = [k for k in ORDER if k in score["absent"] and k not in built]
-    missing = ([", ".join(NAMES[k] for k in built) + f" ({BUILDING})"] if built else []) + [NAMES[k] for k in rest]
-    return {"rows": rows, "absent": f"Pas encore dans le score : {', '.join(missing)}." if missing else None}
 
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:

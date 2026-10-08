@@ -37,7 +37,7 @@ HEURISTICS = [
     ("app/services/nights.py", "TZ_CHANGE_MIN", 60),
     ("app/services/race_prep.py", "HOT_FACTOR", 1.06),
     ("app/services/nights.py", "MIN_PROVISIONAL_NIGHTS", 7),
-    # Santé v4 (SANTE_V4_SPEC.md): the effort classes, their windows and Charge, the score, the rings, the habits
+    # Santé v4 (SANTE_V4_SPEC.md): the effort classes, their windows and Charge, the score, the habits
     ("app/services/sante_training.py", "EFFORT_ULTRA", 600),
     ("app/services/sante_training.py", "EFFORT_VERY_LONG", 360),
     ("app/services/sante_training.py", "EFFORT_LONG", 180),
@@ -90,8 +90,6 @@ HEURISTICS = [
     # « sortie intense le soir »: only a vigorous session close to sleep (Stutz 2019; Myllymäki 2012)
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
-    ("app/services/sante.py", "SLEEP_FULL", 480),
-    ("app/services/sante.py", "USUAL_WEEKS", 12),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,

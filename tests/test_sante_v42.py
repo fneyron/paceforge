@@ -54,7 +54,16 @@ def _example(z=None, hr=None, tst=None, window=None) -> dict:
 
 
 def _rows(x: dict) -> dict:
-    return {r["key"]: r for r in sc.detail(x["score"])["rows"]}
+    """Each component's note (rounded) and the colour its row wears on the page (v4.4: no sub-score is shown; a
+    heart signal's facts row is sante_score.row_tone, the Sommeil row its 24 h's word), in the score's order."""
+    from app.services import sante
+
+    out = {}
+    for p in sorted(x["score"]["parts"], key=lambda p: sc.ORDER.index(p["key"])):
+        tone = (sc.row_tone(p) if p["key"] in sc.HEART else
+                sante.sleep_fact(p["tst24"], "#sommeil")["tone"] if p["key"] == "sleep" else None)
+        out[p["key"]] = {"sub": round(p["sub"]), "tone": tone}
+    return out
 
 
 # ── §A: research_recovery.md §3.4, the example days ─────────────────────────
@@ -151,16 +160,13 @@ def test_the_nightly_hr_scale():
 
 
 def test_charge_is_no_component_outside_a_window():
-    """Outside a recovery window: no Charge row in « Détail du score » and never « Pas encore dans le score :
-    … Charge récente » (§A1); the Charge ring still shows the week (sante._top)."""
+    """Outside a recovery window: no Charge component and never missing (§A1); the week's volume is Activités'."""
     day = _day(_rich(), _runs(n=12))
-    c = sc.detail(day["score"])
-    assert [r["key"] for r in c["rows"]] == ["hrv", "hr", "sleep"] and c["absent"] is None
+    assert [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr", "sleep"] and day["score"]["absent"] == []
     young = _day(night_rows(range(0, 3), today=D), _runs(n=12))  # no band yet: VFC and FC missing, not Charge
-    assert sc.detail(young["score"])["absent"] == ("Pas encore dans le score : VFC, FC de nuit (ta normale se "
-                                                   "construit).")
+    assert young["score"]["absent"] == ["hrv", "hr"] and young["score"]["building"] == ["hrv", "hr"]
     big = _day(_rich(), _runs(n=12) + [_session(D - timedelta(days=1), 200, sid=9)])
-    assert [r["key"] for r in sc.detail(big["score"])["rows"]] == ["hrv", "hr", "sleep", "load"]
+    assert [p["key"] for p in big["score"]["parts"]] == ["hrv", "hr", "sleep", "load"]
 
 
 # ── §A4: the bands' SDs shrunk towards a prior ──────────────────────────────
@@ -355,24 +361,23 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
 
 # ── §C: sleep (research_sleep.md §a–§b; the owner's requests win) ───────────
 
-async def test_the_sommeil_ring_marks_one_day_only_under_6_hours(db_session, test_user):
-    """The ring's value is the last 24 h, full at 8 h (a scale, not a goal, H); one day is marked only under 6 h
-    (warm, the word « court »: Craven 2022), else the neutral sleep hue (the 7 h is habitual sleep: Watson 2015a);
-    a long night is never flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »)."""
+async def test_the_sommeil_row_marks_a_short_day_only(db_session, test_user):
+    """v4.4: the Sommeil row prints the last 24 h with a word: under 6 h « court » (warm: Craven 2022), 6 to 7 h
+    « un peu court » (neutral), 7 h and more « suffisant » (green; Watson 2015a); a long night is never flagged,
+    no ceiling (Watson 2015a: > 9 h « may be appropriate »); the score's note follows its own scale."""
     from app.services import sante
     from tests.test_sante import _seed_rows
 
-    for asleep, tone, note in ((330, "warn", "court"), (390, "accent", None), (600, "accent", None)):
+    for asleep, value, word, tone in ((330, "5h30", "court", "warn"), (390, "6h30", "un peu court", "accent"),
+                                      (600, "10h00", "suffisant", "ok")):
         rows = night_rows(range(0, 20), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
         await _seed_rows(db_session, test_user, rows)
         page = await sante.health_page(db_session, test_user.id, today=D)
-        ring = page["rings"][1]
-        assert (ring["tone"], ring["note"]) == (tone, note), asleep
-        assert ring["aria"].endswith(("court." if note else "siestes comprises.") + " Ouvre la section Sommeil.")
-        row = next(r for r in page["detail"]["rows"] if r["key"] == "sleep")
-        assert row["tone"] == tone and (row["sub"] == 100) is (asleep >= 420), asleep
-        if asleep == 600:
-            assert row["sub"] == 100 and ring["dash"] == ring["c"]  # 10 h: full, never « too long »
+        row = page["facts"][0]
+        assert (row["name"], row["value"], row["word"], row["tone"], row["href"]) == (
+            "Sommeil", value, word, tone, "#sommeil"), asleep
+        sub = next(p for p in page["score"]["parts"] if p["key"] == "sleep")["sub"]
+        assert (sub == 100) is (asleep >= 420), asleep  # 10 h: 100, never « too long »
         from sqlalchemy import delete
 
         from app.models.health import HealthMetric

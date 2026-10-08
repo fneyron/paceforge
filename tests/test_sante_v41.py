@@ -154,13 +154,13 @@ def test_the_stage_colours_reach_3_to_1_on_the_cards():
 
 async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncClient, db_session: AsyncSession,
                                             test_user: User, monkeypatch):
-    """The owner's Transjeju: Santé reads it (its window caps the score; the Charge ring, its input, links to
-    Activités) without naming it (v4.3); Activités shows it as an outing of its week, with no recovery line, no
-    taper line, no fatigue model."""
+    """The owner's Transjeju: Santé reads it (its window caps the score; « Effort récent » counts its days down)
+    without naming it (v4.3); no Charge ring (v4.4: the week's volume is Activités'); Activités shows it as an
+    outing of its week, with no recovery line, no taper line, no fatigue model."""
     await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
     assert "Transjeju" not in _main(html) and "/activity/" not in _main(html)
-    assert re.search(r'<a class="pf-ring pf-ring-charge is-accent" href="/activities"', html)
+    assert "pf-ring-charge" not in html and "Effort récent" in html
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
     async def today(*a, **k):
@@ -176,9 +176,9 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
 
 async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                              monkeypatch):
-    """The Charge ring: a word, never a tick; « Détail du score »: each bar under its name and its note (v4.3); the
-    VFC and FC cards: a status line, a legend for the dot, the 7-night line and the normal; a day without data:
-    named in its card's legend."""
+    """The ring: no tick, no line; the facts: each dot with its name and its word (v4.4); the VFC and FC cards: a
+    status line, a legend for the dot, the 7-night line and the normal; a day without data: named in its card's
+    legend."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     for d in (today - timedelta(days=4), today - timedelta(days=9)):  # two nights missing
@@ -187,13 +187,14 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     await _seed_rows(db_session, test_user, rows)
     await _runs(db_session, test_user, today)
     main = _main(await _page(as_user, monkeypatch, today))
-    assert "pf-ring-tick" not in main and "<line" not in main.split('class="pf-rings"')[1].split("</section>")[0]
-    charge = re.search(r'<a class="pf-ring pf-ring-charge.*?</a>', main, re.S).group(0)
-    assert re.search(r'<span class="pf-ring-note" aria-hidden="true">(comme|plus que|moins que) d&#39;habitude</span>',
-                     charge)
-    detail = main.split('<section id="detail"')[1].split("</section>")[0]
-    names = re.findall(r'<span class="pf-contrib-name">([^<]+)</span><b class="pf-contrib-num is-\w+">(\d+)<', detail)
-    assert [n for n, _ in names] == ["VFC", "FC de nuit", "Sommeil"] and detail.count('class="pf-contrib-bar') == 3
+    top = main.split('<div class="pf-sante-top')[1].split("</h2>")[0]
+    assert "pf-ring-tick" not in main and "<line" not in top
+    facts = main.split('<section class="pf-card pf-facts"')[1].split("</section>")[0]
+    rows = re.findall(r'<(?:a|div) class="pf-fact is-(\w+)"[^>]*><span class="pf-fact-name"><i class="pf-dot" '
+                      r'aria-hidden="true"></i><span>([^<]+)(?:<small>[^<]+</small>)?</span></span>'
+                      r'<span class="pf-fact-val">(.*?)</span>', facts)
+    assert [(n.strip(), re.sub(r"<[^>]+>", "", v)) for _, n, v in rows] == [
+        ("Sommeil", "7h20 suffisant"), ("VFC", "sous ta normale"), ("FC de nuit", "dans ta normale")]
     for key in ("vfc", "fc"):
         card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
         # its status line: a dot and its words (the 2 missing nights leave the VFC week a little under its normal)
@@ -212,18 +213,19 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
                                                                    test_user: User, monkeypatch):
     """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): the state
     comes from the activity, its window's cap alone: 35 (v4.3), « Récupération faible », « estimé » under the
-    ring; the page names no activity (v4.3, owner: « mets juste les scores »)."""
+    ring; the page names no activity (v4.3, owner: « mets juste les scores »). The facts (v4.4): no night this
+    morning (grey), the effort's window open to 16/10 at 35 (red), no normal yet for VFC nor FC de nuit."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
     st_, score = page["state"], page["score"]
     assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
     assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
-    assert [(r["value"], r["sub"]) for r in page["rings"]] == [("35", "estimé"), ("—", "24 h"), ("16h53", "7 jours")]
-    assert page["rings"][0]["aria"] == "Récupération 35 sur 100, estimée sans nuit mesurée. Récupération faible."
-    assert [(r["name"], r["sub"]) for r in page["detail"]["rows"]] == [("Charge récente", 20)]
-    assert page["detail"]["absent"] == ("Pas encore dans le score : VFC, FC de nuit (ta normale se construit), "
-                                        "Sommeil.")
+    assert (page["ring"]["value"], page["ring"]["sub"]) == ("35", "estimé") and "rings" not in page
+    assert page["ring"]["aria"] == "Récupération 35 sur 100, estimée sans nuit mesurée. Récupération faible."
+    assert [(f["name"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
+        ("Sommeil", None, "pas de nuit mesurée", "none"), ("Effort récent", None, "encore 11 jours", "danger"),
+        ("VFC", None, "pas encore de normale", "none"), ("FC de nuit", None, "pas encore de normale", "none")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">estimé</span>' in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
@@ -251,7 +253,7 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
 
 async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSession, test_user: User):
     """DAWN-FINISH: a 22-h 100-miler finishing at 03:00, asleep 04:00 → 11:00: that morning reads it (D+1,
-    capped at 35), Charge récente in its detail; that sleep is « après ultra »."""
+    capped at 35), Charge récente among its components, « Effort récent » red; that sleep is « après ultra »."""
     today = date(2026, 10, 8)
     rows = _garmin_rows(today)
     rows["sleep"][today] = (400, {"main_start": f"{today}T04:00", "main_end": f"{today}T11:00", "timeline": True},
@@ -266,7 +268,8 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"]["key"] == "effort" and page["state"]["text"] is None and page["score"]["value"] == 35
-    assert {r["key"]: r["sub"] for r in page["detail"]["rows"]}["load"] == 20
+    assert {p["key"]: p["sub"] for p in page["score"]["parts"]}["load"] == 20
+    assert {f["key"]: f["tone"] for f in page["facts"]}["effort"] == "danger"
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert "◇ récupération" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), « récupération » on Santé (v4.3)
 

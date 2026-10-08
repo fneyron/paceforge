@@ -1,24 +1,22 @@
-"""Santé v4: one page, WHOOP/Oura-like (owner, 2026-10-08: « mets tout dans un
-seul », « plus de graphiques »). Top to bottom:
-- the three rings: Récupération (the 0–100 score in its state's colour,
-  sante_score; under it only its label), Sommeil (the 24 h before this
-  morning's wake: the main night and the naps it counts, nights.day_tst24,
-  full at 8 h (H): a scale, not a goal; one day is marked only under 6 h,
-  warm with the word « court » (Craven 2022), else the neutral sleep hue: the
-  7 h is about habitual sleep, Watson 2015a), Charge (the activities' hours of the last 7 days, stops
-  included: the recovery's input, WHOOP's strain dial; the ring runs from 0
-  to twice the usual week, the median of the last 12 complete weeks (H), and
-  a word under it says how the week compares, « comme d'habitude » within
-  ± 20 % (H), « plus que d'habitude », « moins que d'habitude »: no unlabelled
-  mark; a neutral colour, it describes, never warns). Each ring links to what
-  it sums up (Charge: Activités, where the weeks are), and is a plain ring
-  when there is nothing;
-- the recovery state (the band of the score): its word and its glyph, one
-  sentence only for the illness alert (sante_today; v4.3, owner: « Ne
-  mentionne pas les sorties dans la partie Santé, ça complexifie : mets juste
-  les scores »: no activity is named on the page);
-- « Détail du score » (sante_score.detail): each component's note as a
-  number and a bar;
+"""Santé v4: one page (owner, 2026-10-08: « mets tout dans un seul », « plus
+de graphiques »). Top to bottom:
+- the top (v4.4, owner: « C'est toujours pas compréhensible : Sommeil 100,
+  Charge récente 20 avec les donuts au-dessus, on comprend rien »: one
+  answer, then plain facts, like Apple's Vitals and Garmin's recovery time):
+  ONE ring, Récupération (the 0–100 score in its state's colour,
+  sante_score; « estimé » under it when no night was measured), the state's
+  word and glyph next to it, one sentence only for the illness alert
+  (sante_today; v4.3, owner: « Ne mentionne pas les sorties dans la partie
+  Santé, ça complexifie »: no activity is named on the page); then a short
+  list of facts, one row each — a dot and the name on the left, the value
+  and a plain word on the right (never colour alone), a link to its section
+  below when there is one: Sommeil (the last 24 h, naps in, nights.day_tst24:
+  « suffisant » from 7 h, green (Watson 2015a's habitual amount read on one
+  day, H), « un peu court » from 6 h (H), « court » under 6 h (Craven 2022)),
+  Effort récent (only while a recovery window is open: « encore N jours »),
+  VFC (7 nuits) and FC de nuit (7 nuits) (their card's status word). No
+  sub-score anywhere, no Sommeil or Charge ring (the week's volume is
+  Activités'), no « Détail du score »;
 - the cards « Récupération · 14 jours », the Sommeil section (sante_sleep),
   « VFC · 30 nuits », « FC de nuit · 30 nuits », each night card opening on
   one status line, the last 7 nights against the normal the score reads
@@ -55,11 +53,6 @@ logger = logging.getLogger(__name__)
 HISTORY_DAYS = 400
 CARD_NIGHTS = 30  # the VFC and FC de nuit cards
 SPARSE_NIGHTS, SPARSE_DAYS = 10, 14  # fewer measured nights in the 30: the axis spans them (14 days at least)
-SLEEP_FULL = 8 * 60  # (H) the Sommeil ring is full at 8 h: a scale, not a goal (no official source; Sargent 2021: 8,3 h)
-SHORT_WORD = "court"  # under the Sommeil ring on a day under 6 h (Craven 2022), with its warm colour
-USUAL_WEEKS = 12  # (H) the Charge ring's usual week: the median of the last 12 complete weeks
-CHARGE_TURN = 2  # the Charge ring's full turn: twice the usual week
-USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
 
 
 async def health_page(db: AsyncSession, user_id: int, today: date | None = None, now: datetime | None = None,
@@ -97,7 +90,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["sleep"] = sl.sleep_section(nights, today, r, samples)
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out.update(_top(day, sessions, today, bool(sources), out))
+        out.update(_top(day, efforts, bool(sources), out))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     return out
@@ -137,7 +130,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     # an episode's nights are read even 5 to 7 nights after a ≥ 20-h ultra (out of the band only: the alert fires)
     ignore = (*nt.EPISODE, "ultra_tail") if episode else ()
     stats = {k: _night_stat(nights, k, d, ignore=ignore) for k in ("hr", "hrv")}
-    tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the ring's number and the score's
+    tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
     m7 = nt.mean7(nights, "tst24", d)
     usual = nt.band(nights, "tst24", d - timedelta(days=6), source=nt.mean_source(nights, "tst24", d)) if m7 else None
     day = {"day": d, "stats": stats, "tst24": tst,
@@ -205,69 +198,83 @@ def _history(nights, sessions, efforts, today: date) -> list:
     return out
 
 
-# ── the top: rings, state, « Détail du score » ──────────────────────────────
+# ── the top: the Récupération ring, the state, the facts ───────────────────
 
-def _usual_week(sessions, today: date) -> float | None:
-    """The median of the activities' hours (stops included) of the last 12
-    complete weeks (Monday → Sunday, local days) since the first one (H)."""
-    if not sessions:
+# the Sommeil row's word and colour from this morning's 24 h (H): 7 h and more (Watson 2015a), 6 to 7 h, under 6 h
+# (Craven 2022)
+SLEEP_WORDS = ((sl.REF_MIN, "suffisant", "ok"), (nt.SHORT_DAY_MIN, "un peu court", "accent"), (0, "court", "warn"))
+NO_NIGHT_WORD = "pas de nuit mesurée"
+EFFORT_ORANGE = 65  # a recovery window's cap from which « Effort récent » wears orange (its 65 days); red under it
+NIGHT_FACTS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
+FACT_WORDS = {"none": "pas encore de normale", "few": "trop peu de nuits"}  # a card's status without a comparison
+ALERT_WORD = "nettement au-dessus, 2 nuits"  # the FC de nuit row under the illness alert
+
+
+def _fact(key: str, name: str, value: str | None, word: str, tone: str, href: str | None,
+          qual: str | None = None) -> dict:
+    """One row of the facts: a dot in `tone` (ok, accent: neutral, warn, danger, none: grey) and the name on the
+    left (`qual` after it, muted: « 7 nuits »), the value and the word on the right (never colour alone);
+    `href`: its section on the page, None when there is none (a plain row)."""
+    return {"key": key, "name": name, "qual": qual, "value": value, "word": word, "tone": tone, "href": href}
+
+
+def sleep_fact(tst24: int | None, href: str | None) -> dict | None:
+    """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), and a
+    word: 7 h or more « suffisant » (green; AASM/SRS: Watson 2015a), 6 to 7 h « un peu court » (neutral), under
+    6 h « court » (warm: Craven 2022); no night this morning: « pas de nuit mesurée » (grey). None without a
+    Sommeil section (no night ever measured)."""
+    if href is None:
         return None
-    monday = today - timedelta(days=today.weekday())
-    first = min(s.day for s in sessions)
-    per = defaultdict(float)
-    for s in sessions:
-        per[s.day - timedelta(days=s.day.weekday())] += st.effort_minutes(s)
-    weeks = [monday - timedelta(days=7 * k) for k in range(1, USUAL_WEEKS + 1)]
-    weeks = [m for m in weeks if m + timedelta(days=6) >= first]
-    return statistics.median(per.get(m, 0.0) for m in weeks) if weeks else None
+    if tst24 is None:
+        return _fact("sommeil", "Sommeil", None, NO_NIGHT_WORD, "none", href)
+    word, tone = next((w, t) for lo, w, t in SLEEP_WORDS if tst24 >= lo)
+    return _fact("sommeil", "Sommeil", viz.hm(tst24), word, tone, href)
 
 
-def charge_word(week: float, usual: float | None) -> str | None:
-    """The word under the Charge ring: this week against the usual one,
-    « comme d'habitude » within ± 20 % (H), else « plus que d'habitude » or
-    « moins que d'habitude »; None without a usual week."""
-    if not usual:
+def effort_fact(efforts, day: dict) -> dict | None:
+    """« Effort récent », only while a recovery window is open (sante_training.effort_window): « encore N
+    jours », N the days from today to the last day of the windows open (« dernier jour » on it); never the
+    activity, its date or its hours (v4.3: no activity named on Santé). A red dot while the window caps the
+    score at 35 or 45 (its first days), orange at 65. No section of the page sums it up: a plain row."""
+    w = day["window"]
+    if not w:
         return None
-    ratio = week / usual
-    return ("plus que d'habitude" if ratio > 1 + USUAL_SPREAD else
-            "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
+    d = day["day"]
+    last = max(x["until"] for e in efforts if (x := st.effort_window([e], d)))
+    n = (last - d).days
+    word = "dernier jour" if n <= 0 else f"encore {n} jour{'s' if n > 1 else ''}"
+    return _fact("effort", "Effort récent", None, word, "warn" if w["cap"] >= EFFORT_ORANGE else "danger", None)
 
 
-def _top(day: dict, sessions, today: date, has_watch: bool, page: dict) -> dict:
-    """The rings, the state line and « Détail du score ». A ring links to
-    what it sums up, never to a section the page lacks: Récupération to its
-    14 days (else its detail), Sommeil to its section, Charge to Activités
-    (the weeks, the activities themselves)."""
-    state, score = day["state"], day["score"]
-    href = "#recuperation" if page.get("recup") else "#detail" if score.get("value") is not None else None
-    rings = [sc.ring(score, state, href)]
-    sleep_href = "#sommeil" if (page.get("sleep") or {}).get("state", "never") != "never" else None
-    tst = day["tst24"]
-    if tst is None:
-        rings.append(viz.ring("sommeil", None, "—", "Sommeil", "24 h" if sleep_href else None, tone="none",
-                              href=sleep_href, aria="Sommeil : pas de nuit mesurée ce matin"))
+def night_fact(card: dict | None, metric: str, day: dict) -> dict | None:
+    """« VFC (7 nuits) » / « FC de nuit (7 nuits) »: the word of its card's status line (card_status), never its
+    explanation, in its colour: « dans ta normale » (green), « sous ta normale » or « au-dessus de ta normale »
+    (orange or red on the side that matters, neutral on the other), « pas encore de normale » and « trop peu de
+    nuits » (grey); under the illness alert the FC de nuit row says « nettement au-dessus, 2 nuits » (red).
+    Links to its card; None without one (the watch never measured it in 30 days)."""
+    if card is None:
+        return None
+    key, name = NIGHT_FACTS[metric]
+    s = card["status"]
+    if metric == "hr" and day["alert"]:
+        word, tone = ALERT_WORD, "danger"
     else:
-        # one day is marked only under 6 h (warm, and the word « court »); else the neutral sleep hue (sleep_tone)
-        tone = sc.sleep_tone(tst)
-        short = SHORT_WORD if tone == "warn" else None
-        rings.append(viz.ring("sommeil", tst / SLEEP_FULL, viz.hm(tst), "Sommeil", "24 h", tone=tone,
-                              href=sleep_href, note=short,
-                              aria=f"Sommeil : {viz.hm_long(tst)} sur 24 heures, siestes comprises"
-                                   + (f", {short}" if short else "") + "."
-                                   + (" Ouvre la section Sommeil." if sleep_href else "")))
-    week = sum(st.effort_minutes(s) for s in sessions if today - timedelta(days=6) <= s.day <= today)
-    usual = _usual_week(sessions, today)
-    word = charge_word(week, usual)
-    charge_href = "/activities" if sessions else None
-    spoken = f"Charge : {viz.hm_long(week)} d'activité sur 7 jours" if week else "Charge : aucune activité sur 7 jours"
-    rings.append(viz.ring("charge", week / (CHARGE_TURN * usual) if usual else None,
-                          viz.hm(week) if week else f"0{viz.NBSP}h", "Charge", "7 jours", tone="accent",
-                          href=charge_href, note=word,
-                          aria=spoken + (f", {word}" if word else "") + "."
-                          + (" Ouvre tes activités." if charge_href else "")))
-    return {"rings": rings, "state": state, "line": None if state else td.no_state_line(has_watch),
+        word, tone = FACT_WORDS.get(s["key"], s["text"]), s["tone"] or "none"
+    return _fact(key, name, None, word, tone, f"#{key}", qual="7 nuits")
+
+
+def _top(day: dict, efforts, has_watch: bool, page: dict) -> dict:
+    """The Récupération ring (a link to its 14 days, a plain ring when the page has none), the state and the
+    facts under it — Sommeil, Effort récent (in a recovery window), VFC and FC de nuit (each with its card) —
+    only with a state (no score: the line says why, the cards below show what there is)."""
+    state, score = day["state"], day["score"]
+    sleep_href = "#sommeil" if (page.get("sleep") or {}).get("state", "never") != "never" else None
+    facts = [f for f in (sleep_fact(day["tst24"], sleep_href), effort_fact(efforts, day),
+                         night_fact(page.get("vfc"), "hrv", day), night_fact(page.get("fc"), "hr", day)) if f]
+    return {"ring": sc.ring(score, state, "#recuperation" if page.get("recup") else None), "state": state,
+            "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line or under the state
-            "detail": sc.detail(score), "score": score}
+            "facts": facts if state else [], "score": score}
 
 
 # ── the cards ───────────────────────────────────────────────────────────────
@@ -287,7 +294,7 @@ def _span(metric: str, values: list, bands: list) -> float:
 
 
 # each night card's status line (v4.3): its last 7 nights against the normal the score reads, in the words and the
-# colour of its Détail row (sante_score.heart_tone); what it often means, only out of the normal on the side that
+# colour of its facts row (sante_score.row_tone); what it often means, only out of the normal on the side that
 # matters; without a normal yet, how many ordinary nights until there is one
 STATUS = {"in": "dans ta normale", "below": "sous ta normale", "above": "au-dessus de ta normale"}
 BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over it: the side that matters
@@ -311,22 +318,25 @@ def nights_to_normal(nights, metric: str, d: date) -> int:
 
 
 def card_status(nights, metric: str, day: dict) -> dict:
-    """{text, tone, meaning}: « dans ta normale » / « sous ta normale » / « au-dessus de ta normale » with a dot in
-    its Détail row's colour (heart_tone: green in it, orange or red out of it on the side that matters, neutral on
-    the other side, never praised), and « Souvent : … » only out of it on the side that matters; « Pas encore de
-    normale : encore N nuits ordinaires (…) » without a normal; a plain line when the week holds under 3 usable
-    nights. The FC de nuit under the illness alert reads the alert's 2 nights, as the score does."""
+    """{key, text, tone, meaning}: « dans ta normale » / « sous ta normale » / « au-dessus de ta normale » (key:
+    in, below, above) with a dot in its facts row's colour (sante_score.row_tone: green in it, orange or red out
+    of it on the side that matters, neutral on the other side, never praised), and « Souvent : … » only out of it
+    on the side that matters; « Pas encore de normale : encore N nuits ordinaires (…) » without a normal (none); a
+    plain line when the week holds under 3 usable nights (few). The FC de nuit under the illness alert reads the
+    alert's 2 nights, as the score does."""
     s = day["stats"][metric]
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
-        return {"text": f"Pas encore de normale : encore {n} nuit{'s' if n > 1 else ''} ordinaire{'s' if n > 1 else ''}"
-                        " (hors voyage, altitude et récupération).", "tone": None, "meaning": None}
+        return {"key": "none", "tone": None, "meaning": None,
+                "text": f"Pas encore de normale : encore {n} nuit{'s' if n > 1 else ''} ordinaire{'s' if n > 1 else ''}"
+                        " (hors voyage, altitude et récupération)."}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None or part is None:
-        return {"text": NO_MEAN, "tone": None, "meaning": None}
+        return {"key": "few", "text": NO_MEAN, "tone": None, "meaning": None}
     tone = sc.row_tone(part)
     status = BAD[metric] if tone in ("warn", "danger") else s["status"]
-    return {"text": STATUS[status], "tone": tone, "meaning": MEANING[metric] if status == BAD[metric] else None}
+    return {"key": status, "text": STATUS[status], "tone": tone,
+            "meaning": MEANING[metric] if status == BAD[metric] else None}
 
 
 def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:

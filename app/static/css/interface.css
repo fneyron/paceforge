@@ -563,7 +563,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
    brighter amber for large marks (arcs, bars; ≥ 3:1 on the page and the cards), --pf-warn stays for text. */
 :root { --pf-warn-mark: 199 106 0; }
 .dark { --pf-warn-mark: var(--pf-warn); }
-.pf-sante4 [id] { scroll-margin-top: 80px; }   /* #sommeil, #vfc, #fc, #charge land under the top bar */
+.pf-sante4 [id] { scroll-margin-top: 80px; }   /* #recuperation, #sommeil, #vfc, #fc land under the top bar */
 /* the head: the morning the rings describe, nothing else (no sync status: Réglages'; the silent sync is invisible) */
 .pf-sante-h1 { font-family: var(--pf-font-display); font-size: 24px; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; color: rgb(var(--pf-ink)); }
 .pf-sante-head .pf-sante-lines { margin-top: 2px; }
@@ -572,42 +572,58 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-sante-head + * { margin-top: 14px; }
 @media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
 .pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
-/* the three rings: one value size for the row */
-.pf-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 4px 2px 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+/* the top (v4.4, owner: « on comprend rien »): ONE ring, the score in its state's colour, the state's word next to
+   it (it names the ring), the alert's sentence and the connect links under both */
+.pf-sante-top { display: grid; grid-template-columns: clamp(84px, 28vw, 104px) minmax(0, 1fr); align-items: center; column-gap: 16px; }
+.pf-sante-top > .pf-state-text, .pf-sante-top > .pf-state-links { grid-column: 1 / -1; }
+.pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
-.pf-ring-dial { position: relative; display: block; width: 100%; max-width: 104px; aspect-ratio: 1 / 1; }
+.pf-ring-dial { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; }
 .pf-ring-dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 11; }
 .pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 11; stroke-linecap: round; }
 .pf-ring.is-ok .pf-ring-arc { stroke: rgb(var(--pf-ok)); }
 .pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }
 .pf-ring.is-danger .pf-ring-arc { stroke: rgb(var(--pf-danger)); }
-.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-ring-recup.is-ok .pf-ring-value { color: rgb(var(--pf-ok)); }   /* the score in its state's colour, as WHOOP */
+.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: clamp(26px, 9vw, 32px); font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-ring-recup.is-ok .pf-ring-value { color: rgb(var(--pf-ok)); }   /* the score in its state's colour */
 .pf-ring-recup.is-warn .pf-ring-value { color: rgb(var(--pf-warn)); }
 .pf-ring-recup.is-danger .pf-ring-value { color: rgb(var(--pf-danger)); }
 .pf-ring.is-none .pf-ring-value { color: rgb(var(--pf-gray-400)); }
 .pf-ring-label { margin-top: 6px; font-size: 14px; font-weight: 650; line-height: 1.2; color: rgb(var(--pf-ink)); }
-.pf-ring-sub { margin-top: 1px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); }
-.pf-ring-note { margin-top: 1px; font-size: 12.5px; font-weight: 600; line-height: 1.25; color: rgb(var(--pf-gray-700)); text-wrap: balance; }   /* the Charge ring: this week against the usual one */
-@media (max-width: 374px) { .pf-ring-value { font-size: 19px; } .pf-ring-label { font-size: 13px; } }
-@media (min-width: 900px) { .pf-rings { max-width: 560px; gap: 20px; } .pf-ring-value { font-size: 26px; }
-    .pf-ring-value.is-long { font-size: 22px; } }   /* « 16h53 » inside the 104 px dial's 76 px hole */
-/* the state: its word large, at most one sentence */
-.pf-state { margin-top: 14px; }
-.pf-state-word { font-family: var(--pf-font-display); font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; color: rgb(var(--pf-ink)); }
+.pf-ring-sub { margin-top: 3px; font-size: 13px; line-height: 1.25; color: rgb(var(--pf-gray-500)); }   /* « estimé » */
+/* the state: its word large, next to the ring; at most one sentence, under both */
+.pf-state-word { font-family: var(--pf-font-display); font-size: clamp(21px, 7.2vw, 26px); font-weight: 700; letter-spacing: -.03em; line-height: 1.15; color: rgb(var(--pf-ink)); text-wrap: balance; }
+.pf-state-first { white-space: nowrap; }
 .pf-state-glyph { display: inline-block; width: .6em; height: .6em; margin-right: 9px; vertical-align: .08em; fill: currentColor; overflow: visible; }
 .pf-state-glyph .pf-state-ring { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.pf-state.is-ok .pf-state-glyph { color: rgb(var(--pf-ok)); }
-.pf-state.is-warn .pf-state-glyph { color: rgb(var(--pf-warn-mark)); }
-.pf-state.is-danger .pf-state-glyph { color: rgb(var(--pf-danger)); }
-.pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 6px; max-width: 34em; }
-.pf-state-text a { color: inherit; text-decoration: underline; text-decoration-color: rgb(var(--pf-gray-400)); text-underline-offset: 3px; padding: 13px 0; }   /* a 44 px target */
-.pf-state-line a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 11px 0; line-height: 22px; margin-right: 10px; }   /* 44 px */
-.dark .pf-state-line a { color: rgb(var(--pf-accent)); }
-@media (min-width: 900px) { .pf-state-word { font-size: 32px; } }
+.pf-sante-top.is-ok .pf-state-glyph { color: rgb(var(--pf-ok)); }
+.pf-sante-top.is-warn .pf-state-glyph { color: rgb(var(--pf-warn-mark)); }
+.pf-sante-top.is-danger .pf-state-glyph { color: rgb(var(--pf-danger)); }
+.pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 34em; }
+.pf-state-text { margin-top: 10px; }
+.pf-state-links { margin-top: 4px; font-size: 15px; line-height: 1.45; }
+.pf-state-links a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 11px 0; line-height: 22px; margin-right: 10px; }   /* 44 px */
+.dark .pf-state-links a { color: rgb(var(--pf-accent)); }
+@media (min-width: 900px) { .pf-sante-top { grid-template-columns: 120px minmax(0, 1fr); column-gap: 20px; } .pf-ring-value { font-size: 36px; } .pf-state-word { font-size: 32px; } }
+/* the facts, like Apple's Vitals: a dot and the name on the left, the value and a plain word on the right (never
+   colour alone), each row a link to its section below when there is one (a chevron, its place kept on every row) */
+.pf-facts { padding-top: 2px; padding-bottom: 2px; }
+.pf-facts li + li { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-fact { display: flex; align-items: baseline; column-gap: 10px; min-height: 48px; padding: 13px 0 12px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.pf-fact::after { content: ""; flex: none; width: 8px; }
+a.pf-fact::after { content: "›"; content: "›" / ""; font-size: 17px; line-height: 1; color: rgb(var(--pf-gray-400)); }
+a.pf-fact:active { opacity: .6; }
+a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
+.pf-fact-name { flex: none; display: inline-flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); white-space: nowrap; }
+.pf-fact-name small { display: block; margin-top: 1px; font-size: 13px; font-weight: 500; line-height: 1.3; color: rgb(var(--pf-gray-500)); }   /* « 7 nuits »: the period, under the name */
+.pf-fact-val { min-width: 0; margin-left: auto; text-align: right; font-size: 14px; font-weight: 500; line-height: 1.35; color: rgb(var(--pf-gray-700)); text-wrap: balance; }
+.pf-fact-val b { margin-right: 3px; font-family: var(--pf-font-display); font-size: 17px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-fact.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
+.pf-fact.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-fact.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-fact.is-none .pf-dot { background: rgb(var(--pf-gray-400)); }   /* nothing to compare yet: grey, its word says why */
 /* cards: a soft background, the title, the chart */
 .pf-card { background: rgb(var(--pf-soft)); border-radius: 22px; padding: 16px 14px 10px; margin-top: 14px; }
 .pf-card-h { font-size: 15px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; color: rgb(var(--pf-ink)); }
@@ -639,25 +655,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-card .pf-viz-cross .pf-viz-at { display: none; stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 3 3; }
 .pf-viz-card .pf-viz-cross.is-none .pf-viz-at { display: inline; }
 @media (min-width: 900px) { .pf-card { padding: 20px 20px 12px; } }
-/* « Détail du score », WHOOP/Oura-like: a name, its note out of 100 as a number in its bar's colour, the bar under */
-.pf-contrib ul { margin-top: 4px; }
-.pf-contrib li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; row-gap: 6px; padding: 9px 0 8px; }
-.pf-contrib li + li { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-contrib-name { font-size: 14px; font-weight: 600; color: rgb(var(--pf-ink)); }
-.pf-contrib-num { font-family: var(--pf-font-display); font-size: 17px; font-weight: 700; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; color: rgb(var(--pf-ink)); }
-.pf-contrib-num.is-ok { color: rgb(var(--pf-ok)); }
-.pf-contrib-num.is-warn { color: rgb(var(--pf-warn)); }
-.pf-contrib-num.is-danger { color: rgb(var(--pf-danger)); }
-.pf-contrib-num.is-accent { color: rgb(var(--pf-accent-strong)); }
-.dark .pf-contrib-num.is-accent { color: rgb(var(--pf-accent)); }
-.pf-contrib-bar { grid-column: 1 / -1; position: relative; display: block; height: 7px; border-radius: 4px; background: rgb(var(--pf-ink) / .1); overflow: hidden; }
-.pf-contrib-bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: rgb(var(--pf-ink)); }
-.pf-contrib-bar.is-ok > i { background: rgb(var(--pf-ok)); }
-.pf-contrib-bar.is-warn > i { background: rgb(var(--pf-warn-mark)); }
-.pf-contrib-bar.is-danger > i { background: rgb(var(--pf-danger)); }
-.pf-contrib-bar.is-accent > i { background: rgb(var(--pf-accent)); }   /* Charge récente describes, never warns */
-.pf-contrib-absent { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin: 2px 0 6px; }
-/* a night card's status line: a dot in its Détail row's colour and the words (never colour alone), then what it
+/* a night card's status line: a dot in its facts row's colour and the words (never colour alone), then what it
    often means when it is out of the normal on the side that matters */
 .pf-card-status { display: flex; align-items: baseline; gap: 7px; margin-top: 2px; font-size: 14px; font-weight: 600; line-height: 1.4; color: rgb(var(--pf-gray-700)); }
 .pf-card-status.is-plain { font-weight: 500; color: rgb(var(--pf-gray-600)); }
@@ -775,11 +773,9 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-viz-card .pf-viz-cross circle.pf-viz-ring, .pf-viz-card .pf-viz-cross .pf-viz-at { stroke: Highlight; }
     .pf-viz-svg .pf-viz-todisc { fill: CanvasText; }
     .pf-viz-svg text.pf-viz-today { fill: Canvas; }
-    .pf-contrib-bar { border: 1px solid CanvasText; background: Canvas; }
     .pf-dot { forced-color-adjust: none; background: CanvasText; }
     .pf-bar-est, .pf-est-hatch { stroke: CanvasText; }
     .pf-viz-col.is-sel .pf-bar-est { stroke: Highlight; }
-    .pf-contrib-bar > i, .pf-contrib-bar.is-ok > i, .pf-contrib-bar.is-warn > i, .pf-contrib-bar.is-danger > i, .pf-contrib-bar.is-accent > i { background: CanvasText; forced-color-adjust: none; }
     .pf-lg { forced-color-adjust: none; background: CanvasText; }
     /* (0,3,0): over the tones' (0,2,0) swatches, so the legend matches the forced bars */
     .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot, .is-gap) { background: CanvasText; box-shadow: none; }
