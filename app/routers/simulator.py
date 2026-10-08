@@ -2045,7 +2045,7 @@ def _aid_stops(cps: list[dict], refills=None, override_min: int | None = None) -
 
 async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     """Everything derived from a saved trail route, computed ONE way for every
-    consumer (pacing guide, exports, reference, debrief): the predicted course,
+    consumer (pacing guide, exports, debrief): the predicted course,
     the checkpoints with their metadata, the plan sections (target + stops +
     weather), cutoffs, start offset."""
     from app.schemas.simulator import CourseProfile
@@ -2292,123 +2292,6 @@ async def export_pace_strategy(
     body = build_pace_gpx(route.name, coords, segs, b["sections"], b["use_target"], route.race_date, b["start_offset_s"], leg_codes=leg_codes, notes_by_km=notes)
     return Response(content=body, media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe_name}-plan.gpx"'})
-
-
-# ── Reference finisher ──
-
-async def _reference_context(request: Request, route: Route, db: AsyncSession, user: User, error: str | None = None) -> dict:
-    from app.services.reference import align_reference, compare_to_plan
-
-    b = await _plan_bundle(route, db, user)
-    ref = route.reference_json
-    comparison = None
-    if ref and ref.get("points"):
-        aligned = align_reference(ref["points"], b["checkpoints"], route.total_distance_km, ref.get("total_km"))
-        plan_total = None
-        if b["sections"]:
-            last = b["sections"][-1]
-            plan_total = last["adjusted_cumulative_time_s"] if (b["use_target"] and last.get("adjusted_cumulative_time_s") is not None) else last["cumulative_time_s"]
-            # the plan total including planned stops = clock − start
-            clock = last["adjusted_clock_time_s"] if (b["use_target"] and last.get("adjusted_clock_time_s") is not None) else last["clock_time_s"]
-            plan_total = int(clock) - b["start_offset_s"] if clock is not None else plan_total
-        comparison = compare_to_plan(aligned, b["sections"], b["use_target"], ref.get("total_s"), int(plan_total) if plan_total else None)
-    return {
-        "request": request, "route_id": route.id, "reference": ref, "comparison": comparison,
-        "error": error, "basis": "plan" if b["use_target"] else "prediction", "has_checkpoints": bool(b["checkpoints"]),
-    }
-
-
-@router.get("/api/simulator/routes/{route_id}/reference", response_class=HTMLResponse)
-async def reference_card(
-    route_id: int,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    route = await _get_owned_route(route_id, user, db)
-    if not route or not route.course_json:
-        return HTMLResponse("", status_code=404)
-    ctx = await _reference_context(request, route, db, user)
-    return templates.TemplateResponse(request, "partials/reference_card.html", context=ctx, headers={"Cache-Control": "no-store"})
-
-
-@router.post("/api/simulator/routes/{route_id}/reference", response_class=HTMLResponse)
-async def save_reference(
-    route_id: int,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    source: str = Form(default=""),
-    label: str = Form(default=""),
-    total_time: str = Form(default=""),
-):
-    """``source`` is a Strava activity URL (fetched via the API when public) or
-    a pasted passage table (name / km / race time per line)."""
-    from app.services.reference import (
-        parse_pasted_splits,
-        parse_strava_activity_id,
-        points_from_splits_metric,
-    )
-
-    route = await _get_owned_route(route_id, user, db)
-    if not route or not route.course_json:
-        return HTMLResponse("", status_code=404)
-    error = None
-    points: list[dict] = []
-    total_km = None
-    total_s = None
-    strava_id = parse_strava_activity_id(source)
-    if strava_id:
-        try:
-            from app.services.strava import StravaService
-
-            data = await StravaService.for_user(db, user).get_activity(user, strava_id)
-            points = points_from_splits_metric(data.get("splits_metric") or [])
-            total_km = round((data.get("distance") or 0) / 1000, 2) or None
-            total_s = int(data.get("elapsed_time") or 0) or None
-            label = label.strip() or f"{data.get('name', 'Activité Strava')} — {(data.get('athlete') or {}).get('firstname', '')}".strip(" —")
-            if not points:
-                error = "Cette activité n'expose pas ses splits (activité privée ou d'un autre athlète) : colle plutôt ses temps de passage."
-        except Exception:
-            logger.exception("reference strava fetch failed")
-            error = "Impossible de lire cette activité Strava (privée, ou d'un autre athlète). Colle ses temps de passage à la place."
-    else:
-        points = parse_pasted_splits(source)
-        if not points:
-            error = "Aucune ligne avec un temps (HH:MM ou HH:MM:SS) trouvée."
-    if total_time.strip():
-        parsed = parse_pasted_splits("total " + total_time.strip())
-        if parsed:
-            total_s = parsed[0]["time_s"]
-    if points and not error:
-        # the last point often IS the finish
-        if total_s is None and points[-1].get("km") is not None and abs(points[-1]["km"] - (total_km or route.total_distance_km)) < 1.5:
-            total_s = points[-1]["time_s"]
-        route.reference_json = {
-            "label": (label.strip() or "Finisher de référence")[:120],
-            "source": "strava" if strava_id else "paste",
-            "source_text": source.strip()[:4000] if not strava_id else source.strip()[:200],
-            "points": points[:400], "total_km": total_km, "total_s": total_s,
-        }
-        await db.flush()
-    ctx = await _reference_context(request, route, db, user, error=error)
-    return templates.TemplateResponse(request, "partials/reference_card.html", context=ctx)
-
-
-@router.post("/api/simulator/routes/{route_id}/reference/clear", response_class=HTMLResponse)
-async def clear_reference(
-    route_id: int,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    route = await _get_owned_route(route_id, user, db)
-    if not route:
-        return HTMLResponse("", status_code=404)
-    route.reference_json = None
-    await db.flush()
-    ctx = await _reference_context(request, route, db, user)
-    return templates.TemplateResponse(request, "partials/reference_card.html", context=ctx)
 
 
 _NU = "/partials/simulator/nutrition/{route_id}"

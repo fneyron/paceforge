@@ -4,8 +4,11 @@
   detection, approximate, rounded to 5 min, H: de Zambotti 2024) and the naps
   its 24 h counts (« + sieste 2h20 », nights.day_naps: yesterday afternoon's
   too; sleep is counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and
-  its 24-h total « sur 8 h de besoin » (2026-10-08: the Sommeil dial at the top
+  its 24-h total « sur 9h00 de besoin » (2026-10-08: the Sommeil dial at the top
   says it as a percentage of that need, so its hours are printed here, once).
+- The need is computed, never asked (2026-10-09, owner: « Ne demande pas, ce
+  doit être auto comme WHOOP »): 8 h, a little more after a big effort and when
+  sleep is owed (sleep_need), naps in the 24 h.
 - Its stages, like WHOOP and Oura (the owner's request, a deliberate
   departure from research_sleep.md §b: shown for COROS and Garmin, no
   collapse, no setting), never judged: one bar of the four phases (Éveil ·
@@ -50,7 +53,19 @@ RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
-SLEEP_NEED = 8 * 60  # (H) the Sommeil dial's 100 % and the card's « sur 8 h de besoin » (Sargent 2021: 8,3 h)
+# the need, computed and never asked (owner, 2026-10-09: « Ne demande pas, ce doit être auto comme WHOOP »), built
+# as WHOOP's and Garmin's are: a base, more after a big effort (WHOOP's strain, Garmin's activity; the direction only:
+# Roberts 2019, no source gives a dose) and the sleep owed (both); naps count in the 24 h (both take them off the
+# need: the same). WHOOP learns its base from the member's physiology by a method it does not publish, Garmin takes
+# 8 h under 35 years old: one base for everyone here, never learned from the nights (the habit is often a deficit:
+# Klerman & Dijk 2005; Sargent 2021: athletes slept 6.7 h against the 8.3 h they said they needed)
+NEED_DEFAULT = 8 * 60  # (H) min: Garmin's base under 35 (Sargent 2021: 8.3 h; Van Dongen 2003: 8.16 h)
+NEED_EFFORT = 30  # (H) min on a night after a big effort (nights tagged long, big, ultra: sante_training.NIGHT_TAGS)
+NEED_DEBT_DAYS = 7  # (H) the days whose shortfall is owed
+NEED_DEBT_SHARE = 0.25  # a quarter of it each night: 1 h of debt takes about 4 days to recover (Kitamura 2016)
+NEED_DEBT_MAX = 60  # (H) min a night at most: one night never repays a debt (Banks 2010; Belenky 2003)
+NEED_STEP = 10  # (H) min
+EFFORT_TAGS = ("long", "big", "ultra")
 
 # « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
 # citations »): a few one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
@@ -59,7 +74,8 @@ SLEEP_NEED = 8 * 60  # (H) the Sommeil dial's 100 % and the card's « sur 8 h de
 # 2026-10-08: no bullet about nights left out); the references (REFS) are on /sante/sources
 METHOD = [
     "Je compte ton sommeil sur 24 h, siestes comprises.",
-    "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
+    "Ton besoin part de 8 h. Il augmente un peu après un gros effort ou des nuits trop courtes. Une nuit sous 6 h "
+    "est courte.",
     "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
     "Ta montre détecte tes heures de coucher et de lever.",
     "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas arrivée, tu vois la "
@@ -200,13 +216,63 @@ def phases(stages: dict | None) -> dict | None:
     return {"parts": parts, "aria": f"Phases estimées par ta montre : {said}."}
 
 
-def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
+def sleep_need(nights: dict, d: date, raced=frozenset()) -> dict:
+    """The sleep the morning of `d` asks for, in minutes: {total, base, effort, debt} (the parts add up to the
+    total, rounded to 10 min): the base (8 h), + 30 min when last night came after a big effort (its tags), + a
+    quarter of the shortfall of the 7 days before against the same need (the base + their own effort addition,
+    never the inflated one: it never compounds), at most 1 h; a day without a 24-h total is skipped, never counted
+    as 0 h, but a night spent running (`raced`: the wake days whose 01:00–05:00 an effort covered,
+    sante_training.raced_nights) counts as its naps only (Kishi 2024); surplus days repay the debt. Naps stay in the
+    24 h, never taken off the need."""
+    base = NEED_DEFAULT
+
+    def effort(x: date) -> int:
+        n = nights.get(x)
+        return NEED_EFFORT if n is not None and not n.tags.isdisjoint(EFFORT_TAGS) else 0
+
+    owed = 0.0
+    for k in range(1, NEED_DEBT_DAYS + 1):
+        x = d - timedelta(days=k)
+        slept = nt.slept_before_wake(nights, x)  # each nap once
+        if slept is None:
+            if x not in raced:
+                continue
+            slept = sum(m for _, _, m in nt.day_naps(nights, x))
+        owed += base + effort(x) - slept
+    e = effort(d)
+    total = NEED_STEP * math.floor((base + e + min(NEED_DEBT_MAX, max(0.0, owed) * NEED_DEBT_SHARE)) / NEED_STEP
+                                   + 0.5)  # half up: 7h45 is 7h50
+    return {"total": total, "base": base, "effort": e, "debt": total - base - e}
+
+
+def hm_words(minutes: int) -> str:
+    """« 8 h », « 8 h 30 », « 30 min », « 1 h »: a duration in words, as the need's line says it."""
+    h, m = divmod(int(round(minutes)), 60)
+    if not h:
+        return f"{m}{viz.NBSP}min"
+    return f"{h}{viz.NBSP}h" + (f"{viz.NBSP}{m:02d}" if m else "")
+
+
+def need_line(need: dict) -> str | None:
+    """The Sommeil card's line under the night, when something adds to the base: « Ton besoin aujourd'hui : 8 h,
+    + 1 h de sommeil en retard. »; None on a plain 8-h day (the night's row says « sur 8h00 de besoin »)."""
+    adds = []
+    if need["effort"]:
+        adds.append(f"+ {hm_words(need['effort'])} après un gros effort")
+    if need["debt"] > 0:
+        adds.append(f"+ {hm_words(need['debt'])} de sommeil en retard")
+    if not adds:
+        return None
+    return f"Ton besoin aujourd'hui{viz.NBSP}: {hm_words(need['base'])}, " + ", ".join(adds) + "."
+
+
+def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -> dict | None:
     """Last night (the latest main night of the last 90 days): its times, the
     naps its 24 h counts (nights.day_naps), its stages (the stages bar and
     legend; with real Garmin intervals, the hypnogram above it), else its plain
-    bar on a clock axis; its 24-h total « sur 8 h de besoin », this morning's
-    too (the Sommeil dial says it as a percentage of that need, its hours are
-    printed here, once)."""
+    bar on a clock axis; its 24-h total « sur 9h00 de besoin », the need of its
+    morning (`need_of(day)`, minutes; 8 h without it) (the Sommeil dial says it
+    as a percentage of that need, its hours are printed here, once)."""
     last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
                default=None)
     if last is None:
@@ -227,7 +293,7 @@ def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
             + (f", sieste de {viz.hm_long(nap_min)}" if nap_min else ""))
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
             "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min),
-            "need": f"sur {SLEEP_NEED // 60}{viz.NBSP}h de besoin",
+            "need": f"sur {viz.hm(need_of(last) if need_of else NEED_DEFAULT)} de besoin",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 
@@ -271,7 +337,8 @@ def rows(nights: dict, today: date) -> list[dict]:
     return out
 
 
-def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None) -> dict:
+def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None,
+                  need_of=None) -> dict:
     """Everything the Sommeil section draws. state: never (no night ever, one
     line) | old (nothing in 90 days) | ok."""
     from app.services.sante_score import typo
@@ -279,7 +346,7 @@ def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict
     base = {"method": typo(METHOD)}
     if not any(_measured(n) for d, n in nights.items() if d <= today):
         return {**base, "state": "never"}
-    h = hero(nights, today, samples)
+    h = hero(nights, today, samples, need_of)
     offered = offered_ranges(nights, today)
     if h is None and "90" not in offered and not any(
             today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items()):

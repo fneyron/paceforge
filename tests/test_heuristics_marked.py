@@ -75,8 +75,8 @@ HEURISTICS = [
     ("app/services/sante_score.py", "HR_MID_BPM", 5),
     ("app/services/sante_score.py", "HR_MID_SUB", 40),
     ("app/services/sante_score.py", "HR_ZERO_BPM", 8),
-    ("app/services/sante_score.py", "SLEEP_POINTS", ((240, 0), (360, 60), (420, 100))),
-    ("app/services/sante_score.py", "SLEEP_DEBT", 2 / 3),
+    # 2026-10-09: the 24 h against the day's need (4 h, 6 h, 7 h for 8 h), the debt in the need
+    ("app/services/sante_score.py", "SLEEP_SHARES", ((0.5, 0), (0.75, 60), (0.875, 100))),
     ("app/services/sante_score.py", "CAP_JOINT", 69),
     ("app/services/sante_score.py", "JOINT_HR_BPM", 3),
     ("app/services/sante_score.py", "BANDS", {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}),
@@ -90,12 +90,22 @@ HEURISTICS = [
     ("app/services/sante_score.py", "RED_SUB", 40),
     ("app/services/sante_score.py", "CAP_SHORT", 65),
     ("app/services/sante_score.py", "CAP_NO_HEART", 80),
+    # 2026-10-09 (owner: « utilise la respiration aussi si tu l'as »): the breathing rate's line and its cap
+    ("app/services/sante_score.py", "CAP_RESP", 69),
+    ("app/services/nights.py", "RESP_UP_MIN", 1.0),
+    ("app/services/nights.py", "RESP_UP_SD", 2),
+    ("app/services/nights.py", "RESP_SD_PRIOR", 0.5),
     # « sortie intense le soir »: only a vigorous session close to sleep (Stutz 2019; Myllymäki 2012)
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
-    # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil dial's 100 % (Sargent 2021: 8,3 h)
-    ("app/services/sante_sleep.py", "SLEEP_NEED", 480),
+    # 2026-10-09 (owner: « Ne demande pas, ce doit être auto comme WHOOP »): the sleep need, its base, its additions
+    ("app/services/sante_sleep.py", "NEED_DEFAULT", 480),
+    ("app/services/sante_sleep.py", "NEED_EFFORT", 30),
+    ("app/services/sante_sleep.py", "NEED_DEBT_DAYS", 7),
+    ("app/services/sante_sleep.py", "NEED_DEBT_MAX", 60),
+    ("app/services/sante_sleep.py", "NEED_STEP", 10),
+    ("app/services/sante.py", "SUFFICIENT_SHARE", 7 / 8),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week and its « comme d'habitude »
     ("app/services/sante.py", "USUAL_WEEKS", 11),
     ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),
@@ -107,6 +117,20 @@ HEURISTICS = [
     ("app/services/nutrition.py", "WATER_STEP_ML", 500),
     ("app/services/nutrition.py", "WATER_MIN_ML", 500),
     ("app/services/nutrition.py", "HOT_RACE_C", 25),
+    # 2026-10-09 (« Oui vas-y », research_ind_train.md): the dial from heart rate (Banister 1991's weighting), its
+    # glitch guard, its fallback for minutes without a readable HR, and the card's « Intensité »
+    ("app/services/sante_training.py", "LOAD_A", 0.64),
+    ("app/services/sante_training.py", "LOAD_B", 1.92),
+    ("app/services/sante_training.py", "SEG_COVER", 0.8),
+    ("app/services/sante_training.py", "HR_FLOOR", 40),
+    ("app/services/sante_training.py", "HR_OVER_MAX", 10),
+    ("app/services/sante_training.py", "RUN_MIN_HRR", 0.3),
+    ("app/services/sante_training.py", "BY_TIME", {"WeightTraining", "Crossfit", "Workout", "Yoga", "Pilates"}),
+    ("app/services/sante_training.py", "RATE_DAYS", 365),
+    ("app/services/sante_training.py", "RATE_MIN", 5),
+    ("app/services/sante_training.py", "RATE_DEFAULT", 1.2),
+    ("app/services/sante.py", "INTENSITY_SPREAD", 0.1),
+    ("app/services/sante.py", "INTENSITY_READ", 0.5),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
@@ -148,3 +172,5 @@ def test_the_heuristics_are_marked_h_where_they_are_explained():
     assert "(H)" in st.easy_runs.__doc__ and "(H)" in st.easy_model.__doc__
     assert "(H" in sl.habits.__doc__ and "(H)" in st.effort_of.__doc__ and "(H)" in st.effort_window.__doc__
     assert "(H)" in sante.__doc__ and "(H)" in td.__doc__ and "(H)" in sc.__doc__
+    assert "(H)" in st.hr_readable.__doc__ and "(H)" in st.session_load.__doc__ and "(H)" in st.loads.__doc__
+    assert "(H)" in st.load_family.__doc__ and "(H)" in sante.training.__doc__

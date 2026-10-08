@@ -25,9 +25,11 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros  # the linked athlete's client fixture (as_user)
 from tests.test_nights import night_rows
+from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
 from tests.test_sante_score import _day, _history, _rich, _runs, _session, _then
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
+
 D = date(2026, 10, 8)
 ROOT = Path(__file__).resolve().parent.parent
 HRV_BAND = {"center": 70.0, "sd": 0.1, "provisional": False, "lo": 70 * math.exp(-0.05), "hi": 70 * math.exp(0.05)}
@@ -48,8 +50,8 @@ def _example(z=None, hr=None, tst=None, window=None) -> dict:
     if hr is not None:
         v = 45.0 + hr
         stats["hr"] = {"value": v, "normal": HR_BAND, "status": nt.status(v, HR_BAND)}
-    day = {"day": D, "stats": stats, "tst24": tst, "sleep": {"mean7": None, "usual": None, "prov": False},
-           "window": window, "alert": None}
+    day = {"day": D, "stats": stats, "tst24": tst, "need": {"total": 480, "base": 480, "effort": 0, "debt": 0},
+           "window": window, "alert": None}  # an 8-h need, nothing owed: the example days read the sleep as before
     score = sc.score_of(day)
     return {"score": score, "state": td.state(score, day), "day": day}
 
@@ -62,7 +64,7 @@ def _rows(x: dict) -> dict:
     out = {}
     for p in sorted(x["score"]["parts"], key=lambda p: sc.ORDER.index(p["key"])):
         tone = (sc.row_tone(p) if p["key"] in sc.HEART else
-                sante.sleep_dial(p["tst24"], "#sommeil")["tone"] if p["key"] == "sleep" else None)
+                sante.sleep_dial(p["tst24"], 480, "#sommeil")["tone"] if p["key"] == "sleep" else None)
         out[p["key"]] = {"sub": round(p["sub"]), "tone": tone}
     return out
 
@@ -331,7 +333,7 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
     assert '{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>' in html
 
 
-async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user):
+async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user, rested):
     """A Garmin athlete every night, a 3h30 marathon marked as a race on Strava 4 days ago: a Longue, 65 until D+5
     (v4.2; an unmarked one ends at D+3); its night D+1 never fires the alert. Raw ≈ (25·100 + 25·100 + 30·100)
     / 80 = 100 (no Charge: 2026-10-08), capped at 65: « Récupération en cours », the word only (v4.3: no activity
@@ -376,26 +378,29 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
 # ── §C: sleep (research_sleep.md §a–§b; the owner's requests win) ───────────
 
 async def test_the_sommeil_dial_marks_a_short_day_only(db_session, test_user):
-    """The Sommeil dial prints the last 24 h as a percentage of an 8-h need, at most 100 % (owner: « Mets des
-    pourcentages plutôt que des valeurs »; 2026-10-08: « Fais comme WHOOP »), with a word from the hours: under
-    6 h « court », its arc in the warning colour (Craven 2022), 6 to 7 h « un peu court », 7 h and more « suffisant »
-    (Watson 2015a), both in the sleep colour; a long night is never flagged, no ceiling (Watson 2015a: > 9 h « may
-    be appropriate »); the score's note follows its own scale."""
+    """The Sommeil dial prints the last 24 h as a percentage of the day's need, at most 100 % (owner: « Mets des
+    pourcentages plutôt que des valeurs »; 2026-10-08: « Fais comme WHOOP »): 8 h without an answer, 9 h after a
+    week of 5h30 or 6h30 nights (1 h owed at most, 2026-10-09), 8 h after a week of 10-h nights (nothing owed);
+    with a word from the hours: under 6 h « court », its arc in the warning colour (Craven 2022), from 6 h
+    « un peu court », from 7 h and ⅞ of the need « suffisant » (Watson 2015a), both in the sleep colour; a long
+    night is never flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »); the score's note follows
+    its own scale (100 from ⅞ of the need)."""
     from app.services import sante
     from tests.test_sante import _seed_rows
 
-    for asleep, value, word, tone in ((330, "69", "court", "warn"), (390, "81", "un peu court", "sleep"),
-                                      (600, "100", "suffisant", "sleep")):
+    for asleep, need, value, word, tone in ((330, 540, "61", "court", "warn"), (390, 540, "72", "un peu court", "sleep"),
+                                            (600, 480, "100", "suffisant", "sleep")):
         rows = night_rows(range(0, 20), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
         await _seed_rows(db_session, test_user, rows)
         page = await sante.health_page(db_session, test_user.id, today=D)
         dial = page["dials"][0]
         assert (dial["key"], dial["value"], dial["unit"], dial["sub"], dial["tone"], dial["href"]) == (
             "sommeil", value, "%", word, tone, "#sommeil"), asleep
-        # the arc: the hours of the 8-h need, at most full
-        assert dial["dash"] == pytest.approx(min(1, asleep / 480) * dial["c"], abs=0.01)
+        assert page["sleep"]["hero"]["need"] == f"sur {sante.viz.hm(need)} de besoin", asleep
+        # the arc: the hours of the need, at most full
+        assert dial["dash"] == pytest.approx(min(1, asleep / need) * dial["c"], abs=0.01)
         sub = next(p for p in page["score"]["parts"] if p["key"] == "sleep")["sub"]
-        assert (sub == 100) is (asleep >= 420), asleep  # 10 h: 100, never « too long »
+        assert (sub == 100) is (asleep >= 7 / 8 * need), asleep  # 10 h: 100, never « too long »
         from sqlalchemy import delete
 
         from app.models.health import HealthMetric

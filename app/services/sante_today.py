@@ -30,6 +30,8 @@ GLYPHS = {"ok": "●", "warn": "◐", "danger": "■"}
 # instead of « ta normale »; the alert's 2 nights are said once, on the FC de nuit row (sante.ALERT_WORD)
 ILL = ("Ta FC de nuit est nettement plus haute que d'habitude. Ça arrive avant un rhume, après de l'alcool ou une "
        "grosse journée.")
+# the alert's sentence when the breathing rate is over its usual line too (nights.illness_alert's resp_up)
+ILL_RESP = "Ta respiration aussi est plus rapide que d'habitude."
 NO_WATCH = "Connecte ta montre pour voir ta récupération."
 NO_NIGHT = "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
 
@@ -37,13 +39,15 @@ NO_NIGHT = "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
 def state(score: dict, day: dict | None = None) -> dict | None:
     """{key, tone, word, glyph, text, aria} from the day's score
     (sante_score.score_of), or None without a score. `key`: the reason (ill,
-    effort, short, joint, hrv, hr, sleep) or « ok », data only; `text`: the
+    effort, short, joint, resp, hrv, hr, sleep) or « ok », data only; `text`: the
     illness alert's sentence, else None (the page prints the word and the
     glyph only)."""
     if score.get("value") is None:
         return None
     tone, key = score["tone"], score["reason"] or "ok"
     text = ILL if key == "ill" else None
+    if text and day and (day.get("alert") or {}).get("resp_up"):
+        text = f"{text} {ILL_RESP}"
     word = WORDS[tone]
     return {"key": key, "tone": tone, "word": word, "glyph": GLYPHS[tone], "text": text,
             "aria": f"{word}." + (f" {text}" if text else "")}

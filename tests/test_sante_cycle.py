@@ -29,12 +29,13 @@ def _at(monkeypatch, at: datetime | None, day: date = D9):
 async def test_awake_after_midnight_the_page_is_still_last_nights(db_session: AsyncSession, test_user: User,
                                                                   monkeypatch):
     """01:09 on the 9th, not slept yet (the owner's nights end on the morning of the 8th): the 8th's cycle — its
-    date, last night's 8h36 (100 %, « suffisant »), its score — never an empty Sommeil."""
+    date, last night's 8h36 (96 % of its 9-h need: 8 h and 1 h owed, « suffisant »), its score — never an empty
+    Sommeil."""
     await seed_owner_v4(db_session, test_user)
     _at(monkeypatch, datetime(2026, 10, 9, 1, 9))
     page = await sante.health_page(db_session, test_user.id)
     assert page["today"] == D8 and page["day_label"] == "jeu. 8 oct."
-    assert [(d["value"], d["sub"]) for d in page["dials"][:2]] == [("100", "suffisant"), ("65", "en cours")]
+    assert [(d["value"], d["sub"]) for d in page["dials"][:2]] == [("96", "suffisant"), ("65", "en cours")]
     assert page["sleep"]["hero"]["label"] == "Cette nuit"
     # the night awaited is still the 9th's: the page keeps syncing sooner for it
     assert all(s["state"] != "received" for s in page["night_state"].values())

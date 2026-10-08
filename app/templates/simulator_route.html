@@ -68,19 +68,16 @@ summary::-webkit-details-marker { display: none; }
             {% if show_debrief or compare_activity_id %}<div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="intersect once" hx-swap="innerHTML"></div>{% endif %}
         </div>
 
-        <div id="rpanel-reference" class="hidden">
-            <div hx-get="/api/simulator/routes/{{ saved_route_id }}/reference?v=1" hx-trigger="intersect once" hx-swap="innerHTML"></div>
-        </div>
     </div>
 </div>
 {% endblock content %}
 
 {% block scripts %}
 <script>
-var TOOL_TITLES = { nutrition: 'Nutrition', realise: 'Débrief', reference: 'Finisher de référence' };
+var TOOL_TITLES = { nutrition: 'Nutrition', realise: 'Débrief' };
 var planScrollY = 0;
 function switchRouteTab(tab, anchor) {
-    var tools = ['nutrition', 'realise', 'reference'];
+    var tools = ['nutrition', 'realise'];
     if (tab !== 'plan' && tools.indexOf(tab) < 0) tab = 'plan';
     if (tab !== 'plan' && !document.getElementById('rpanel-' + tab)) tab = 'plan';
     var plan = document.getElementById('rpanel-plan'), tool = document.getElementById('rpanel-tool'), back = document.getElementById('back-courses');
@@ -134,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var h = (location.hash || '').slice(1);
     if (h === 'pacing') switchRouteTab('plan');
     else if (h === 'nutrition' || h === 'ravito' || h === 'bags') switchRouteTab('nutrition', h === 'bags' ? 'bags' : undefined);
-    else if (['realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h);
+    else if (h === 'realise') switchRouteTab(h);
 });
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief.

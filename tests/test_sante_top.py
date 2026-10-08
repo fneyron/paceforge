@@ -34,10 +34,10 @@ def _fill(dial: dict) -> float:
 # ── the dials ───────────────────────────────────────────────────────────────
 
 def test_the_sommeil_dial():
-    """This morning's 24 h as a percentage of an 8-h need, at most 100 % (H): its arc in the sleep colour, the
-    warning colour under 6 h; its word from the hours (7 h « suffisant », 6 h « un peu court », under 6 h
+    """This morning's 24 h as a percentage of the day's need (8 h here), at most 100 % (H): its arc in the sleep
+    colour, the warning colour under 6 h; its word from the hours (7 h « suffisant », 6 h « un peu court », under 6 h
     « court »); « — » and « pas enregistré » without a night; a link to the Sommeil card when there is one."""
-    dials = {t: sante.sleep_dial(t, "#sommeil") for t in (600, 480, 420, 419, 360, 359, 300)}
+    dials = {t: sante.sleep_dial(t, 480, "#sommeil") for t in (600, 480, 420, 419, 360, 359, 300)}
     assert {t: (d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for t, d in dials.items()} == {
         600: ("100", "%", "Sommeil", "suffisant", "sleep", 1.0),
         480: ("100", "%", "Sommeil", "suffisant", "sleep", 1.0),
@@ -46,11 +46,24 @@ def test_the_sommeil_dial():
         360: ("75", "%", "Sommeil", "un peu court", "sleep", 0.75), 359: ("75", "%", "Sommeil", "court", "warn", 0.748),
         300: ("63", "%", "Sommeil", "court", "warn", 0.625)}
     assert dials[420]["href"] == "#sommeil"
-    assert sante.sleep_dial(516, "#sommeil")["aria"] == "Sommeil 100 % de tes 8 heures de besoin, suffisant."
-    none = sante.sleep_dial(None, "#sommeil")
+    assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % de ton besoin de 8 heures, suffisant."
+    none = sante.sleep_dial(None, 480, "#sommeil")
     assert (none["value"], none["sub"], none["tone"], none["dash"]) == ("—", "pas enregistré", "none", 0)
     assert none["aria"] == "Sommeil : pas de nuit enregistrée ce matin."
-    assert sante.sleep_dial(420, None)["href"] is None  # no Sommeil card: a plain dial
+    assert sante.sleep_dial(420, 480, None)["href"] is None  # no Sommeil card: a plain dial
+
+
+def test_the_sommeil_dial_reads_a_larger_need():
+    """A 9-h need (2026-10-09: the athlete's own, or 8 h with sleep owed): 8h36 is 96 % and « suffisant » (⅞ of it,
+    7h53, reached), 7h50 is 87 % and « un peu court » though over 7 h; 7 h stays the floor of « suffisant » for a
+    smaller need (7 h: 6h30 is « un peu court »); 6 h and « court » never move."""
+    d = sante.sleep_dial(516, 540, "#sommeil")
+    assert (d["value"], d["sub"], d["tone"]) == ("96", "suffisant", "sleep")
+    assert d["aria"] == "Sommeil 96 % de ton besoin de 9 heures, suffisant."
+    short = sante.sleep_dial(470, 540, None)
+    assert (short["value"], short["sub"], short["tone"]) == ("87", "un peu court", "sleep")
+    assert sante.sleep_word(390, 420) == "un peu court" and sante.sleep_word(420, 420) == "suffisant"
+    assert sante.sleep_word(359, 420) == "court" and sante.sleep_word(359, 600) == "court"
 
 
 def test_the_recuperation_dial():
@@ -88,10 +101,12 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
 
 
 def test_the_entrainement_dial_against_the_usual_week():
-    """The last 7 days' moving time against the usual week, the mean of the last 11 complete weeks (H; the
-    figure Activités prints « par semaine en moyenne »), as a percentage (100 % as usual), the arc full at twice
-    it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que d'habitude »;
-    the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each once."""
+    """The last 7 days' heart-rate load against the usual week's, the mean of the same last 11 complete weeks (H;
+    the weeks Activités prints « par semaine en moyenne » over), as a percentage (100 % as usual), the arc full at
+    twice it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que
+    d'habitude »; the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each
+    once. Every session here runs at the same HR: every minute weighs the same, the dial is the hours' ratio (the
+    weighting itself: test_sante_train_hr)."""
     usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350)
     assert sante.usual_week(_weeks(usual), D) == 350
     cases = {350: ("100", "comme d'habitude", 0.5), 420: ("120", "comme d'habitude", 0.6),
@@ -106,20 +121,24 @@ def test_the_entrainement_dial_against_the_usual_week():
         assert t["week"] == sante.viz.hm(minutes) and t["usual"] == "ta semaine habituelle : 5h50"
     assert sante.training(_weeks(usual, 350), D)["dial"]["aria"] == ("Entraînement 100 % de ta semaine "
                                                                      "habituelle, comme d'habitude.")
-    none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %
-    assert (none["dial"]["value"], none["dial"]["sub"], none["week"]) == ("0", "moins que d'habitude", "0 min")
+    none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %, no « Intensité »
+    assert (none["dial"]["value"], none["dial"]["sub"], none["week"], none["intensity"]) == (
+        "0", "moins que d'habitude", "0 min", None)
+    assert sante.training(_weeks(usual, 421), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
     # the usual week to 5 min: 4 weeks of 47, 48, 52 and 53 min → 50 min
     assert sante.training(_weeks([47, 48, 52, 53], 50), D)["usual"] == "ta semaine habituelle : 50 min"
 
 
 def test_without_a_usual_week_the_dial_prints_the_time():
     """Fewer than 4 complete weeks holding an activity (H): no usual week, the dial prints the 7 days' time itself
-    and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words."""
+    and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words, and no
+    « Intensité » (nothing to weigh the minutes against)."""
     t = sante.training(_weeks([300, 300, 300], 1013), D)
     d = t["dial"]
     assert (d["value"], d["unit"], d["sub"], d["tone"], d["dash"]) == ("16h53", None, "pas encore d'habitude",
                                                                       "accent", 0)
-    assert (t["week"], t["usual"], t["word"]) == (None, None, "pas encore de semaine habituelle")
+    assert (t["week"], t["usual"], t["word"], t["intensity"]) == (None, None, "pas encore de semaine habituelle",
+                                                                  None)
     assert d["aria"] == "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."
     assert sante.usual_week(_weeks([300, 300, 300, 300]), D) == 300  # 4 weeks: there is one
     assert sante.usual_week([], D) is None and sante.training([], D)["dial"]["value"] == "0 min"
@@ -253,7 +272,7 @@ def test_the_night_rows_in_percent_from_real_nights():
 
 def test_the_percentages_are_said_in_the_fold():
     """« 65 % »: the same number on the dial, the 14-day card and the fold; the fold says what each percentage
-    compares (the nights to 8 h and to the usual values, the last 7 days to the usual week)."""
+    compares (the 24 h to the need, the last 7 days to the usual week)."""
     assert sc.pct(100) == "100 %" and "70 % et plus" in sc.flat(sc.typo(sc.METHOD)).replace(" ", " ")
-    assert ("Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles. Entraînement "
-            "compare tes 7 derniers jours à ta semaine habituelle.") in sc.METHOD
+    assert ("Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine "
+            "habituelle. Chaque minute d'activité compte, et davantage quand ton pouls est haut.") in sc.METHOD

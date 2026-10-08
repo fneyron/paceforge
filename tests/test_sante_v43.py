@@ -22,6 +22,7 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros, test_garmin
 from tests.owner_v4 import D8, seed_owner_v4
+from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 D = date(2026, 10, 8)
@@ -238,7 +239,7 @@ def garmin_rows_without_tz(days) -> dict:
 
 # ── every user (brief §H) ────────────────────────────────────────────────────
 
-async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
+async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day, rested):
     """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
     no window), « Bonne récupération »; the dials, the Récupération card's rows and the chart cards' status lines;
     no Effort récent; no activity: « 0 min » over « pas encore d'habitude »; Activités empty."""
@@ -250,7 +251,7 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("sommeil", "94", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
         ("entrainement", "0 min", None, "pas encore d'habitude", "accent")]
     assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
         ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
@@ -351,7 +352,8 @@ async def test_a_brand_new_user(as_user: AsyncClient, db_session: AsyncSession, 
     assert "Aucune activité dans cette catégorie" in (await as_user.get("/activities?sport=bike")).text
 
 
-async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User):
+async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session: AsyncSession, test_user: User,
+                                                                     rested):
     """A normal « being built » only after a signal measured lately: a watch that never measures HRV just misses
     it, and neither its card nor its row exists (v4.4: no « pas encore de normale » for a signal never seen)."""
     rows = garmin_rows(D, range(0, 40))

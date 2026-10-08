@@ -42,7 +42,6 @@
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.sharePlan()">{{ ic.icon('share') }}Partager le plan</button>
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.printPlan()">{{ ic.icon('printer') }}Bande imprimable</button>
                 {% if saved_route_id %}
-                <button type="button" role="menuitem" id="rtab-reference" onclick="window.switchRouteTab && window.switchRouteTab('reference')">{{ ic.icon('trophy') }}Finisher de référence</button>
                 {% if dmode == 'menu' %}<button type="button" role="menuitem" id="rtab-realise" onclick="window.switchRouteTab && window.switchRouteTab('realise')">{{ ic.icon('chart') }}Débrief</button>{% endif %}
                 {% endif %}
                 <hr class="pf-menu-sep">

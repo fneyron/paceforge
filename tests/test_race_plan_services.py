@@ -1,5 +1,5 @@
 """Deterministic race-plan services: checkpoints, pacing guide, scenarios,
-race calibration, pace export, debrief, reference finisher (nutrition: test_nutrition.py)."""
+race calibration, pace export, debrief (nutrition: test_nutrition.py)."""
 
 import math
 
@@ -21,12 +21,6 @@ from app.services.race_calibration import (
     predict_total_s,
 )
 from app.services.race_simulator import build_scenarios, compute_passage_times, replan_from_passage
-from app.services.reference import (
-    align_reference,
-    compare_to_plan,
-    parse_pasted_splits,
-    parse_strava_activity_id,
-)
 
 # ── fixtures: a synthetic 30 km course — flat, a 6 km climb with a 22 % km, a descent ──
 
@@ -261,34 +255,6 @@ def test_debrief_blames_stops_and_fast_start():
     assert first["tag"] == "over" and first["hr_over"]
     assert d2["summary"]["fade"] > 0.08 and "début" in d2["summary"]["verdict"].lower()
     assert d2["summary"]["lost"] and d2["summary"]["lost"][0]["delta_s"] > 0
-
-
-# ── 2. reference finisher ──
-
-def test_parse_pasted_splits_and_strava_url():
-    txt = "Ravito Seogwipo\tkm 32\t3:41:05\nHallasan sommet 97 km 12:08:30\nArrivée 148km 18:52:10 | 15:52\n"
-    pts = parse_pasted_splits(txt)
-    assert [p["km"] for p in pts] == [32.0, 97.0, 148.0]
-    assert pts[0]["time_s"] == 3 * 3600 + 41 * 60 + 5 and pts[0]["name"] == "Ravito Seogwipo"
-    assert pts[2]["time_s"] == 18 * 3600 + 52 * 60 + 10  # the clock time (15:52) is ignored
-    assert parse_strava_activity_id("https://www.strava.com/activities/12345678901/overview") == 12345678901
-    assert parse_strava_activity_id("no url") is None
-
-
-def test_align_and_compare_reference():
-    course, secs = _sections(target=5 * 3600)
-    # reference finisher: 10 min/km cumulative points every 5 km, recorded as 30.6 km
-    ref_pts = [{"name": "", "km": 5.1 * i, "time_s": 600 * 5 * i} for i in range(1, 7)]
-    aligned = align_reference(ref_pts, CPS, 30.0, ref_total_km=30.6)
-    assert [a["matched_by"] for a in aligned] == ["km", "km", "km"]
-    assert abs(aligned[1]["time_s"] - 100 * 60) < 60  # Col at km 10 ≈ 100 min
-    cmp = compare_to_plan(aligned, secs, True, ref_total_s=300 * 60, plan_total_s=5 * 3600)
-    assert cmp["rows"][-1]["name"] == "Arrivée" and cmp["rows"][-1]["delta_s"] == 0
-    assert len(cmp["faster"]) + len(cmp["slower"]) >= 1
-    # names only → matched by name, then by order
-    named = [{"name": "eau", "km": None, "time_s": 3000}, {"name": "col", "km": None, "time_s": 6000}, {"name": "xx", "km": None, "time_s": 9000}]
-    al2 = align_reference(named, CPS, 30.0)
-    assert al2[0]["matched_by"] == "nom" and al2[1]["matched_by"] == "nom" and al2[2]["matched_by"] == "ordre"
 
 
 def test_effort_km():
