@@ -684,8 +684,8 @@ def test_the_method_fold_is_six_plain_bullets():
     assert sc.METHOD == [
         "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et ta charge récente.",
         "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
-        "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 "
-        "semaines après un ultra.",
+        "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, plus longtemps "
+        "après une course ou une sortie très intense, jusqu'à 2 semaines après un ultra.",  # v4.4 (R3): no number
         "Une nuit sous 6 h ou une FC de nuit nettement haute font baisser ton état.",
         "70 et plus : bonne récupération ; 40 à 69 : en cours ; moins de 40 : faible.",
         "Une estimation : quelques points d'écart ne veulent rien dire."]

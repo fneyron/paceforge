@@ -346,8 +346,13 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     assert s["value"] == 65 and s["caps"] == ["effort"]
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
         "◇ récupération"  # v4.3: Santé names no outing
-    act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not a race: its window ended on D+3
+    act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not marked as a race on Strava
     act.name = "Marathon de Lyon "  # a change the sessions' cache sees
+    await db_session.flush()
+    page = await sante.health_page(db_session, test_user.id, today=D)
+    # v4.4 (R3): 162 bpm for 3h30 is ≥ 80 % of the heart-rate reserve (rest ≈ 45, peak 190: 161, H): run like a race
+    assert page["state"]["key"] == "effort" and page["score"]["value"] == 65
+    act.average_heartrate = 140  # an easy long run: its window ended on D+3
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["key"] == "ok" and page["score"]["value"] == 100

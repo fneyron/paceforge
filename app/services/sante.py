@@ -37,6 +37,7 @@ import logging
 import statistics
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,10 +73,13 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     today = today or await athlete_today(db, user_id, now, latest)
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
-    efforts = st.efforts(sessions)
-    nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions, efforts=efforts,
-                                  peak=peak)
-    efforts = nt.anchor_efforts(nights, efforts)  # a dawn finish: D on the day before its first morning
+    # the nights' tags read the efforts' classes only
+    nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
+                                  efforts=st.efforts(sessions), peak=peak)
+    # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
+    rest_of = partial(nt.rest_hr, nights)
+    # a dawn finish: D on the day before its first morning
+    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
     out = {
@@ -90,7 +94,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     with nt.memo():  # the nights no longer change: their bands and alerts are computed once
         nt.freeze(nights)
         day = _assess(nights, sessions, efforts, today)
-        history = _history(nights, sessions, efforts, today) + [(today, day["state"], day["score"])]
+        history = _history(nights, sessions, efforts, today, rest_of) + [(today, day["state"], day["score"])]
         out["recup"] = sc.history_card(history, today)
         hero = sl.hero(nights, today)
         samples = await _timeline(db, user_id, nights, hero["day"]) if hero else {}
@@ -149,7 +153,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     return day
 
 
-def _history(nights, sessions, efforts, today: date) -> list:
+def _history(nights, sessions, efforts, today: date, rest_of=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights and the activities known then
     only — an activity is known once it ended (it is uploaded then), so one
@@ -164,7 +168,9 @@ def _history(nights, sessions, efforts, today: date) -> list:
     whose « late » tags and efforts are the same, with no activity still
     running at its midnight, reads them, with that day's own alert episodes on
     top, and shares their bands (nights.memo); any other day is tagged anew
-    from what it knew."""
+    from what it knew. `rest_of`: what the efforts were computed with
+    (st.efforts): a Longue's heart-rate test reads the bounds as of its own
+    day, the same whichever later day reads it."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
     nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today))
@@ -185,7 +191,7 @@ def _history(nights, sessions, efforts, today: date) -> list:
         # the efforts as that day saw them: today's that it knew whole; computed anew when one was only partly
         # known (a chain across midnight: that day saw a smaller effort)
         same = not any(e.ids & known and not e.ids <= known for e in efforts)
-        efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss))
+        efs = [e for e in efforts if e.ids <= known] if same else nt.anchor_efforts(base, st.efforts(ss, rest_of))
         running = any(s.day <= d and s.id not in known for s in sessions)
         peak, rest = st.hr_max(ss, d), nt.rest_hr(base, d)
         if not running and same and all(any(nt.vigorous(s, rest, peak) for s in c) == ("late" in base[x].tags)

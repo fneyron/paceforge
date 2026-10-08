@@ -11,7 +11,9 @@ built on it are gone; nothing drew it since Santé v4.1).
   activités passées pour juger de la récupération »): each activity sized by
   its own time, stops included, whatever it was (a race marked on Strava is
   just an activity; activities chained without a real stop are one effort),
-  and the recovery window it opens (`efforts`, `effort_window`).
+  and the recovery window it opens (`efforts`, `effort_window`); a Longue run
+  like a race keeps it longer, for every user (v4.4, R3: marked so on
+  Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve).
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it.
 """
@@ -53,6 +55,7 @@ class Session:
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
     offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
     elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
+    rpe: float | None = None  # Strava's perceived exertion (1–10), when the athlete rated it (its detail only)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.load_segments)
 
 
@@ -69,7 +72,7 @@ def monday(dt: datetime) -> datetime:
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
 _CACHE_SIZE = 256
 RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "elev_high",
-            "maxElevation")
+            "maxElevation", "perceived_exertion")
 
 
 def _float(v) -> float | None:
@@ -82,6 +85,12 @@ def _float(v) -> float | None:
 def _int(v) -> int | None:
     f = _float(v)
     return int(f) if f is not None else None
+
+
+def _rpe(v) -> float | None:
+    """Strava's perceived exertion, 1–10; None when unrated or odd."""
+    f = _float(v)
+    return f if f is not None and 1 <= f <= 10 else None
 
 
 def _offset(strava: float | None, local: str | None, gmt: str | None) -> float | None:
@@ -162,7 +171,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             speed=speed or None, hr=r.average_heartrate or None, hr_peak=r.max_heartrate or None,
             workout_type=_int(x["workout_type"]), temp=_float(x["average_temp"]), name=r.name or "",
             elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known,
-            elev_high=high if high is not None else _float(x["maxElevation"])))
+            elev_high=high if high is not None else _float(x["maxElevation"]), rpe=_rpe(x["perceived_exertion"])))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)
@@ -200,10 +209,11 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
 # ── heart-rate bounds ───────────────────────────────────────────────────────
 
 def hr_max(sessions: list[Session], today: date) -> float:
-    """98th percentile of the sessions' peaks over 12 months (wrist spikes
-    left out by the percentile), clamped to 150–215; 190 without enough."""
+    """98th percentile of the sessions' peaks over the 12 months up to `today`
+    (wrist spikes left out by the percentile), clamped to 150–215; 190
+    without enough (COROS's own sessions have theirs from their laps, v4.4)."""
     lo = today - timedelta(days=365)
-    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and s.day >= lo)
+    peaks = sorted(s.hr_peak for s in sessions if s.hr_peak and lo <= s.day <= today)
     if len(peaks) < 10:
         return 190.0
     return min(215.0, max(150.0, peaks[min(len(peaks) - 1, math.ceil(0.98 * len(peaks)) - 1)]))
@@ -370,7 +380,11 @@ DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that mor
 EFFORT_RULES = {"ultra": (((3, 35), (10, 65)), 20),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
                 "very_long": (((2, 45), (5, 65)), 30),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
                 "long": (((3, 65),), 50)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
-LONG_RACE_LAST = 5  # (H) a Longue marked as a race on Strava: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+LONG_RACE_LAST = 5  # (H) a Longue run like a race: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+# v4.4 (R3): run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
+# Foster 2001; Haddad 2017), or its average HR ≥ 80 % of the heart-rate reserve as of its day (nights.VIGOROUS_HRR,
+# the « vigorous » test: harder efforts bring more damage, Martínez-Navarro 2021b; Bernat-Adell 2021)
+INTENSE_RPE = 8  # (H)
 ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) an ultra ≥ 24 h, or run through a night: 65 until D+13
 NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
 RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
@@ -489,9 +503,36 @@ class _Unit:
     def race(self) -> bool:
         return any(s.workout_type in RACE_TYPES for s in self.sessions)
 
+    def raced(self, bounds) -> bool:
+        """Run like a race (H, R3): marked so on Strava, rated ≥ 8/10 there, or its average HR (by time, over
+        its parts with one) ≥ rest + 80 % of (peak − rest), the athlete's bounds as of the day it started
+        (`bounds(day)` → (rest, peak); None: no heart-rate test)."""
+        if self.race or any((s.rpe or 0) >= INTENSE_RPE for s in self.sessions):
+            return True
+        timed = [(s.minutes, s.hr) for s in self.sessions if s.hr and s.minutes]
+        if bounds is None or not timed:
+            return False
+        from app.services.nights import VIGOROUS_HRR
+
+        rest, peak = bounds(self.first.day)
+        return sum(m * hr for m, hr in timed) / sum(m for m, _ in timed) >= rest + VIGOROUS_HRR * (peak - rest)
+
+
+def hr_bounds(sessions: list[Session], rest_of):
+    """`bounds(day)` → (rest, peak) as of that day: `rest_of(day)` (nights.rest_hr on the nights: the median
+    nightly HR of the 60 days up to it, else 50) and hr_max of the sessions up to it; each day computed once.
+    The same whichever later day reads it: a past day of the score's history sees what today sees."""
+    memo: dict[date, tuple[float, float]] = {}
+
+    def bounds(d: date) -> tuple[float, float]:
+        if d not in memo:
+            memo[d] = (rest_of(d), hr_max(sessions, d))
+        return memo[d]
+    return bounds
+
 
 def _rules(kind: str | None, minutes: float, race: bool, night: bool) -> tuple[tuple, int | None]:
-    """The class's window with its modifiers (H): a Longue marked as a race → 65 until D+5; an Ultra ≥ 24 h or
+    """The class's window with its modifiers (H): a Longue run like a race → 65 until D+5; an Ultra ≥ 24 h or
     run through a night → 65 until D+13 (function back only at D+16 after 37 h: Millet 2011; jump height down to
     day 18 after 90 km: Chambers 1998). No D+ scaling (CK does not follow the descent: Lecina 2024; duration, not
     elevation, shapes fatigue: Giandolini 2016b)."""
@@ -506,17 +547,17 @@ def _rules(kind: str | None, minutes: float, race: bool, night: bool) -> tuple[t
     return (*head, (last, cap)), load
 
 
-def _effort(u: _Unit) -> Effort | None:
+def _effort(u: _Unit, bounds=None) -> Effort | None:
     """One effort from one unit (an activity, or a chain), or None. Its class by its time (and the legs rule on
     foot), one lower when no part is on foot (M4: cycling 230 km gave « only modest » damage, Koller 1998;
     troponin about half as often after cycling, Shave 2007); its nights by its time whatever the sport. A chain
-    is named and linked after its first activity."""
+    is named and linked after its first activity. `bounds`: hr_bounds, for a Longue's heart-rate test (R3)."""
     minutes = u.minutes
     nights = _kind(minutes, u.dplus if u.foot else 0)
     if nights is None:
         return None
     kind = nights if u.foot else LOWER[nights]
-    caps, load = _rules(kind, minutes, u.race, through_night(u.start, u.end))
+    caps, load = _rules(kind, minutes, kind == "long" and u.raced(bounds), through_night(u.start, u.end))
     return Effort(u.first.id, kind, minutes, u.end, effort_day(u.end), u.first.name, u.first.day, nights,
                   caps, load, nights == "ultra" and minutes >= ULTRA_TAIL_MIN, frozenset(s.id for s in u.sessions))
 
@@ -546,19 +587,23 @@ def _chains(sessions: list[Session]) -> list[tuple[list[Session], datetime, date
     return out
 
 
-def efforts(sessions: list[Session]) -> list[Effort]:
+def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
     """The big efforts among the sessions, by end: each activity, or chain of
     activities without a real stop (< 30 min apart, H), is its own effort,
     sized from its first start to its last end (stops included), named and
-    linked after its first activity; a race flag and a night run through set
-    its window (_rules); a low-impact effort is one class lower (M4) but its
-    nights follow its time. Two efforts close together keep their own windows:
-    the lowest cap of those open holds each day (effort_window)."""
+    linked after its first activity; a Longue run like a race (_Unit.raced)
+    and a night run through set its window (_rules); a low-impact effort is one
+    class lower (M4) but its nights follow its time. Two efforts close
+    together keep their own windows: the lowest cap of those open holds each
+    day (effort_window). `rest_of(day)`: the athlete's resting HR as of a day
+    (nights.rest_hr on the nights) for a Longue's heart-rate test; None: no
+    such test (the night tags and Activités read only the classes)."""
     # only the units that can be an effort: 3 h and more, or the legs rule
     units = [_Unit(run, start, end) for run, start, end in _chains(sessions)
              if end - start >= timedelta(minutes=EFFORT_LONG)
              or sum(s.dplus for s in run if s.sport in FOOT) >= EFFORT_DPLUS]
-    return sorted((e for u in units if (e := _effort(u))), key=lambda e: e.end)
+    bounds = hr_bounds(sessions, rest_of) if rest_of is not None else None
+    return sorted((e for u in units if (e := _effort(u, bounds))), key=lambda e: e.end)
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:

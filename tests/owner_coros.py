@@ -838,3 +838,38 @@ Sleep Summary:
   Total: 9h 22min | Deep: 53 min | Light: 5h 19min | REM: 2h 49min | Awake: 21 min
   Sleep HR: Avg 36 bpm | Min 30 bpm | Max 51 bpm
 """
+
+# queryActivityLapData (2026-10-08), the owner's real answers, laps trimmed (the JSON shape and the rows kept):
+# the 30/09 run (« J-2 Seogwipo »: 3 of its 10 auto laps, its whole-activity row of type −1, max HR 171)
+LAPS_2026_09_30 = (
+    '{"source":"activityDetail","labelId":"480704849237803113","sportType":100,"mode":8,"subMode":1,'
+    '"columns":[{"name":"lapIndex","label":"圈数"},{"name":"avgHr","label":"平均心率"},'
+    '{"name":"maxHr","label":"最大心率"},{"name":"bodyTemperature","label":"体温"}],'
+    '"lapGroups":[{"type":10,"lapDistance":100000,"fastLapIndexList":[3],"laps":['
+    '{"lapIndex":1,"distance":100000,"time":312.38,"totalLength":312.38,"avgHr":103,"maxHr":130,"elevGain":5.0,'
+    '"totalDescent":14.0,"bodyTemperature":0},'
+    '{"lapIndex":5,"distance":47558,"time":120.00,"totalLength":1001.01,"avgHr":158,"maxHr":162,"elevGain":7.0,'
+    '"totalDescent":6.0,"bodyTemperature":0},'
+    '{"lapIndex":10,"distance":77265,"time":231.75,"totalLength":1806.13,"avgHr":151,"maxHr":171,"elevGain":44.0,'
+    '"totalDescent":0.0,"bodyTemperature":0}]},'
+    '{"type":-1,"lapDistance":617322,"fastLapIndexList":[1],"laps":[{"lapIndex":1,"distance":617322,'
+    '"time":1806.13,"totalLength":1811.95,"avgHr":132,"maxHr":171,"elevGain":110.0,"totalDescent":121.0,'
+    '"bodyTemperature":0}]}],"sportDataDetails":[]}')
+# a pilates session (09/09): one plain lap, no whole-activity row
+LAPS_PILATES = (
+    '{"source":"activityDetail","labelId":"480224769338277894","sportType":905,"mode":43,"subMode":2,'
+    '"columns":[{"name":"lapIndex","label":"圈数"},{"name":"time","label":"时间"},{"name":"totalLength",'
+    '"label":"累计时间"},{"name":"avgHr","label":"平均心率"},{"name":"maxHr","label":"最大心率"},'
+    '{"name":"bodyTemperature","label":"体温"}],"lapGroups":[{"type":2,"lapDistance":100000,'
+    '"fastLapIndexList":[],"laps":[{"lapIndex":1,"time":3016.02,"totalLength":3016.02,"avgHr":67,"maxHr":98,'
+    '"bodyTemperature":0}]}],"sportDataDetails":[]}')
+# the Nice triathlon (13/09): no lap at the top, one block per leg, each with its whole-activity row
+LAPS_TRIATHLON = (
+    '{"source":"activityDetail","labelId":"480310530171502896","sportType":10000,"mode":13,"subMode":1,'
+    '"columns":[],"lapGroups":[],"sportDataDetails":['
+    '{"childIndex":0,"sportType":301,"lapGroups":[{"type":2,"laps":[{"lapIndex":1,"avgHr":121,"maxHr":147}]},'
+    '{"type":-1,"laps":[{"lapIndex":1,"time":2124.70,"avgHr":137,"maxHr":160}]}]},'
+    '{"childIndex":1,"sportType":200,"lapGroups":[{"type":-1,"laps":[{"lapIndex":1,"time":10071.79,"avgHr":140,'
+    '"maxHr":153}]}]},'
+    '{"childIndex":2,"sportType":100,"lapGroups":[{"type":10,"laps":[{"lapIndex":5,"avgHr":159,"maxHr":162}]},'
+    '{"type":-1,"laps":[{"lapIndex":1,"time":4869.44,"avgHr":152,"maxHr":162}]}]}]}')

@@ -46,6 +46,8 @@ HEURISTICS = [
                                                        "long": (((3, 65),), 50)}),
     # v4.2 (research_efforts.md §b): « fenêtres indicatives », no official body gives days (Kellmann 2018)
     ("app/services/sante_training.py", "LONG_RACE_LAST", 5),
+    # v4.4 (research_data.md R3): a Longue run like a race, whoever measured it (session RPE: Foster 2001)
+    ("app/services/sante_training.py", "INTENSE_RPE", 8),
     ("app/services/sante_training.py", "ULTRA_LONG_MIN", 1440),
     ("app/services/sante_training.py", "ULTRA_LONG_LAST", 13),
     ("app/services/sante_training.py", "NIGHT_SPAN", (time(1), time(5))),
