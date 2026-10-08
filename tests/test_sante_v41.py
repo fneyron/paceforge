@@ -202,7 +202,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
                          r'(dans|sous) ta normale</p>', card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
-                and "ta normale" in legend), key
+                and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
+        assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
     assert '<i class="pf-lg is-gap"></i>pas de mesure' in sleep  # 2 nights missing: a dot, named
 

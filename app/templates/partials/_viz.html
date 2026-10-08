@@ -161,18 +161,22 @@
 {% endcall %}
 {% endmacro %}
 
-{# V3 night card: a dot per night, the 7-night line over the measured nights only (broken on a night without one), the
-   normal as a band (no out-of-band word on one night). The selection is a ring around its dot (the dot in ink), no
-   column that would read as a bar; a selected night without a measure (‹ › or the keyboard) shows a thin dashed
-   hairline at its place instead (pf-viz.js sets .is-none on the group when the day has no value) #}
+{# V3 night card: a dot per night (filled when it counts toward the usual values, hollow when it does not), the 7-night
+   line over the measured nights only (broken on a night without one), the usual values as a band, its edges dashed
+   and its fill lighter while provisional (no out-of-band word on one night). The selection is a ring around its dot
+   (the dot in ink), no column that would read as a bar; a selected night without a measure (‹ › or the keyboard)
+   shows a thin dashed hairline at its place instead (pf-viz.js sets .is-none on the group when the day has no
+   value) #}
 {% macro viz_night_card(c, title) %}
 {% call figure(c, title, c.key, None, "nuit", "Nuit précédente", "Nuit suivante", cls="pf-viz-card", card=True) %}
 <g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
 {% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+{% for poly in c.band_prov %}<polygon points="{{ poly }}" class="pf-viz-band is-prov"/>{% endfor %}
 {% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
-<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>
+{% if c.edge_prov_lo %}<path d="{{ c.edge_prov_lo }}" class="pf-viz-edge is-prov"/><path d="{{ c.edge_prov_hi }}" class="pf-viz-edge is-prov"/>{% endif %}
+{% if c.edge_lo %}<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>{% endif %}
 {% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
-{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r }}" class="pf-viz-dot{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ (c.dot_r + 0.6)|round(1) if d.out else c.dot_r }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
 {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
 {% endcall %}
 {% endmacro %}

@@ -301,6 +301,14 @@ BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over i
 MEANING = {"hrv": "Souvent : fatigue, stress, alcool ou début de maladie.",
            "hr": "Souvent : fatigue, chaleur, alcool ou début de maladie."}
 NO_MEAN = "Trop peu de nuits ordinaires ces 7 jours pour comparer."
+COUNTS = "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas."  # while the band builds
+# the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
+# a filled dot counts toward the usual values, a hollow one does not; the band solid, or dashed while provisional
+LEGEND_DOTS = {"both": [("is-dot", "compte"), ("is-out", "ne compte pas (voyage, gros effort, altitude)")],
+               "in": [("is-dot", "nuit")], "out": [("is-out", "ne compte pas (voyage, gros effort, altitude)")]}
+LEGEND_MEAN = ("is-mean", "moyenne sur 7 nuits")
+LEGEND_BAND = ("is-band", "tes valeurs habituelles")
+LEGEND_PROV = ("is-band-prov", "valeurs habituelles (provisoires)")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
@@ -321,15 +329,15 @@ def card_status(nights, metric: str, day: dict) -> dict:
     """{key, text, tone, meaning}: « dans ta normale » / « sous ta normale » / « au-dessus de ta normale » (key:
     in, below, above) with a dot in its facts row's colour (sante_score.row_tone: green in it, orange or red out
     of it on the side that matters, neutral on the other side, never praised), and « Souvent : … » only out of it
-    on the side that matters; « Pas encore de normale : encore N nuits ordinaires (…) » without a normal (none); a
-    plain line when the week holds under 3 usable nights (few). The FC de nuit under the illness alert reads the
-    alert's 2 nights, as the score does."""
+    on the side that matters; without a normal (none) how many nights until there is one (nights_to_normal) and
+    which nights do not count; a plain line when the week holds under 3 usable nights (few). The FC de nuit under
+    the illness alert reads the alert's 2 nights, as the score does."""
     s = day["stats"][metric]
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
-        return {"key": "none", "tone": None, "meaning": None,
-                "text": f"Pas encore de normale : encore {n} nuit{'s' if n > 1 else ''} ordinaire{'s' if n > 1 else ''}"
-                        " (hors voyage, altitude et récupération)."}
+        when = f"dans {n} nuits" if n > 1 else "après ta prochaine nuit"
+        return {"key": "none", "tone": None, "meaning": COUNTS,
+                "text": f"Tes valeurs habituelles arrivent {when}, si tu portes ta montre."}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None or part is None:
         return {"key": "few", "text": NO_MEAN, "tone": None, "meaning": None}
@@ -346,7 +354,10 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     nights with a few dots against the right edge. Each day's band is the
     normal its 7-night mean is read against (the 60 days before that week, on
     the watch the mean reads: v4.3, one normal for the card, its status line
-    and the score), its status line opens the card (card_status)."""
+    and the score), its status line opens the card (card_status). v4.4: a
+    night that does not count toward the usual values (Night.usable: time
+    zone, after a big effort, altitude, an alert episode…) is a hollow dot,
+    the provisional band is dashed; the legend names only what is drawn."""
     days = [today - timedelta(days=CARD_NIGHTS - 1 - i) for i in range(CARD_NIGHTS)]
     values = [nights[d].value(metric) if d in nights else None for d in days]
     seen = [i for i, v in enumerate(values) if v is not None]
@@ -361,10 +372,15 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
         bands.append((b["lo"], b["hi"]) if b else None)
         prov.append(bool(b and b["provisional"]))
     means = [(nt.mean7(nights, metric, d) or {}).get("value") for d in days]
+    counts = [v is None or nights[d].usable(metric) for d, v in zip(days, values, strict=True)]
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
-                       name=name, min_span=_span(metric, values, bands))
+                       name=name, min_span=_span(metric, values, bands), counts=counts)
     c["status"] = card_status(nights, metric, day)
+    out = {d["out"] for d in c["dots"]}
+    c["legend"] = (LEGEND_DOTS["both" if len(out) > 1 else "out" if out == {True} else "in"]
+                   + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
+                   + ([LEGEND_PROV] if c["band_prov"] else []))
     return c
 
 

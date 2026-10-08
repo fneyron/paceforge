@@ -664,6 +664,13 @@ a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
 .pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
 .pf-card-meaning { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 1px; }
+/* v4.4 (owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »): a night that does
+   not count toward the usual values is a hollow dot (a ring in the dots' colour); the provisional band has dashed
+   edges and a lighter fill; the legend names both only when both are drawn */
+.pf-viz-card .pf-viz-dot.is-out { fill: rgb(var(--pf-soft)); stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; }
+.pf-viz-card .pf-viz-dot.is-out.is-sel { stroke: rgb(var(--pf-ink)); }
+.pf-card .pf-viz-band.is-prov { fill: rgb(var(--pf-accent) / .08); }
+.pf-viz-edge.is-prov { stroke-dasharray: 3 3; }
 /* the cards' bars: one per day, a lighter part on top (the naps), today's day on an ink disc */
 .pf-bar { fill: rgb(var(--pf-accent)); }
 .pf-bar.is-ok { fill: rgb(var(--pf-ok)); }
@@ -695,6 +702,8 @@ a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
 .pf-lg.is-dot { width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a night's dot */
 .pf-lg.is-gap { width: 4px; height: 4px; margin: 0 3px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a day without data */
 .pf-lg.is-band { width: 14px; height: 8px; background: rgb(var(--pf-accent) / .16); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the normal */
+.pf-lg.is-band-prov { width: 14px; height: 8px; border-radius: 0; background: rgb(var(--pf-accent) / .08); border-top: 1px dashed rgb(var(--pf-gray-400)); border-bottom: 1px dashed rgb(var(--pf-gray-400)); }   /* the usual values, provisional */
+.pf-lg.is-out { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px rgb(var(--pf-viz-mark)); }   /* a night that does not count, hollow */
 .pf-lg.is-cur { background: repeating-linear-gradient(45deg, rgb(var(--pf-viz-mark)) 0 1.5px, rgb(var(--pf-bg)) 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-viz-mark)); }   /* the week in progress, hatched */
 .pf-lg.is-usual { width: 14px; height: 8px; background: rgb(var(--pf-accent-soft)); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the usual week (page background) */
 .pf-lg.is-hot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-bg)); box-shadow: inset 0 0 0 1.5px rgb(var(--pf-ink)); }   /* a hot run, hollow */
@@ -779,7 +788,9 @@ a.pf-fact:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offs
     .pf-lg { forced-color-adjust: none; background: CanvasText; }
     /* (0,3,0): over the tones' (0,2,0) swatches, so the legend matches the forced bars */
     .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot, .is-gap) { background: CanvasText; box-shadow: none; }
-    .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur, .is-est) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur, .is-est, .is-out) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-viz-legend .pf-lg.is-band-prov { background: Canvas; box-shadow: none; border-color: CanvasText; }
+    .pf-viz-card .pf-viz-dot.is-out { fill: Canvas; stroke: CanvasText; }
     .pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }
     .pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }
     .pf-tl-step { stroke: CanvasText; opacity: 1; }

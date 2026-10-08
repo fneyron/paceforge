@@ -89,16 +89,17 @@
 {% endif %}
 
 {#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »), opening on its
-    status line (the last 7 nights against the normal: a word and a dot in its Détail row's colour, what it often
-    means when it is out of it on the side that matters; or how many nights until there is a normal); the legend
-    names every mark drawn: a night's dot, the 7-night line (when a segment of it is drawn), the normal's band -#}
+    status line (the last 7 nights against the usual values: a word and a dot in its facts row's colour, what it
+    often means when it is out of them on the side that matters; or how many nights until they exist); the legend
+    names every mark drawn (sante._night_card): a night's dot, filled when it counts, hollow when it does not, the
+    7-night line (when a segment of it is drawn), the usual values' band, dashed while provisional -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
     {% if c.status %}<p class="pf-card-status {{ "is-" ~ c.status.tone if c.status.tone else "is-plain" }}">{% if c.status.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status.text }}</p>
     {% if c.status.meaning %}<p class="pf-card-meaning">{{ c.status.meaning }}</p>{% endif %}{% endif %}
     {{ viz.viz_night_card(c, c.title) }}
-    {{ viz.viz_legend([("is-dot", "nuit")] + ([("is-mean", "moyenne sur 7 nuits")] if c.mean else []) + ([("is-band", "ta normale")] if c.band else [])) }}
+    {{ viz.viz_legend(c.legend) }}
 </section>
 {% endfor %}
 

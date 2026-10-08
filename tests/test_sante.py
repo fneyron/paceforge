@@ -330,13 +330,14 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     # never a cliff from a few ms: the VFC axis spans ≥ 30 % of its median, the FC axis ≥ 14 bpm
     assert [t["label"] for t in vfc["ticks"]] == ["80", "100"] and [t["label"] for t in fc["ticks"]] == ["30", "40"]
     assert "charge" not in page  # no « Charge · 14 jours »: the activities are Activités' (v4.1)
-    # each card opens on its status line (v4.3): no normal yet — none of his nights since 29/09 is ordinary (Korea,
-    # 7 zones east, then the ultra) and 08/10 alone is: 6 more ordinary nights make the 7 of a normal, read by the
-    # score once they are before its 7-night window: 13 nights from now (21/10)
+    # each card opens on its status line (v4.3): no usual values yet — none of his nights since 29/09 counts (Korea,
+    # 7 zones east, then the ultra) and 08/10 alone does: 6 more make the 7 of a band, read by the score once they
+    # are before its 7-night window: 13 nights from now (21/10); v4.4: the nights that do not count are hollow
     for c in (vfc, fc):
-        assert c["status"] == {"key": "none", "tone": None, "meaning": None,
-                               "text": "Pas encore de normale : encore 13 nuits ordinaires (hors voyage, altitude et "
-                                       "récupération)."}
+        assert c["status"] == {"key": "none", "tone": None, "meaning": sante.COUNTS,
+                               "text": "Tes valeurs habituelles arrivent dans 13 nuits, si tu portes ta montre."}
+        assert [d["out"] for d in c["dots"]][-1] is False and all(d["out"] for d in c["dots"][:-1])
+        assert c["legend"] == sante.LEGEND_DOTS["both"] and not c["band"] and not c["band_prov"]
     # Récupération · 14 jours: each day as computed that day, with the same rule; it rests on the mean
     rec = page["recup"]
     d = json.loads(rec["data"])
