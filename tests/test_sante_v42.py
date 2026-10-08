@@ -22,9 +22,11 @@ from app.services import nights as nt
 from app.services import sante_score as sc
 from app.services import sante_today as td
 from app.services import sante_training as st
+from tests import test_coros  # the linked athlete's client fixture (as_user)
 from tests.test_nights import night_rows
 from tests.test_sante_score import _day, _history, _rich, _runs, _session, _then
 
+as_user, no_commit = test_coros.as_user, test_coros.no_commit
 D = date(2026, 10, 8)
 ROOT = Path(__file__).resolve().parent.parent
 HRV_BAND = {"center": 70.0, "sd": 0.1, "provisional": False, "lo": 70 * math.exp(-0.05), "hi": 70 * math.exp(0.05)}
@@ -515,3 +517,35 @@ def test_no_8_to_10_hour_norm_anywhere():
         text = path.read_text(encoding="utf-8")
         for norm in ("8 à 10", "9 à 10", "8–10 h", "8-10 h", "9–10 h", "surentraînement", "surmenage"):
             assert norm not in text, (path.name, norm)
+
+
+# ── §D: the method folds on the page ────────────────────────────────────────
+
+async def test_the_method_folds_on_the_page(as_user, db_session, test_user, monkeypatch):
+    """Both folds, closed: their groups titled, then « Textes officiels » and « Études », each reference a link (a
+    DOI, or the text's own address for BASES 2023 and CTA/NSF 2052.1-A)."""
+    import re
+
+    from app.services import sante
+    from tests.owner_v4 import D8, seed_owner_v4
+
+    async def today(*a, **k):
+        return D8
+    monkeypatch.setattr(sante, "athlete_today", today)
+    await seed_owner_v4(db_session, test_user)
+    html = (await as_user.get("/sante")).text
+    folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', html, re.S)
+    assert len(folds) == 2
+    recup, nuits = folds
+    assert "<summary>Comment je calcule ta récupération</summary>" in recup
+    assert re.findall(r'<h3 class="pf-method-h">([^<]+)</h3>', recup) == [
+        "Ton score", "Ce qui vient des textes officiels", "Ce qui est notre choix (H)", "Ce que le score ne sait pas",
+        "Textes officiels", "Études"]
+    assert re.findall(r'<h3 class="pf-method-h">([^<]+)</h3>', nuits) == [
+        "Ce qui vient des textes officiels", "Ce qui est notre choix (H)", "Ce que la montre ne sait pas",
+        "Textes officiels", "Études"]
+    assert '<a href="https://doi.org/10.1123/ijspp.2017-0759" rel="noopener" target="_blank">Kellmann 2018</a>' in recup
+    assert 'href="https://westminsterresearch.westminster.ac.uk/item/wxx7y/' in recup
+    assert 'href="https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"' in nuits
+    assert '<ul class="pf-refs" aria-label="Textes officiels">' in recup and '<ul class="pf-refs" aria-label="Études">' \
+        in nuits

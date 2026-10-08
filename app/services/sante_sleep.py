@@ -1,33 +1,41 @@
 """Santé v4 › the Sommeil section of the one page (Oura-like): « comment je dors ? ».
 
 - Last night (the hero): bed → wake (the watch's detection, approximate,
-  rounded to 5 min: de Zambotti 2024) and the naps its 24 h counts
-  (« + sieste 2h20 », nights.day_naps: yesterday afternoon's too). Its 24-h
-  total is the Sommeil ring's, printed once there; the hero prints it only
-  for a night that is not this morning's (the ring is then empty).
-- Its stages, like WHOOP and Oura, shown and never judged (owner,
-  2026-10-08): one bar of the four phases (Éveil · Léger · Profond ·
-  Paradoxal, calm colours that are no good/bad colours), each named with its
-  minutes in a legend (colour never alone), « Phases estimées par la
-  montre. » (Schyvens 2025: wrist κ 0.21–0.53; Lee 2023): no target, no word,
-  no score. A Garmin night with real intervals also gets its hypnogram above
-  it (lanes, the same colours). A night without stage minutes: its plain bar
-  on a clock axis (bed → wake, the naps on their own lane: never in the
-  night's timing, HR or HRV: Mollicone 2008).
+  rounded to 5 min, H: de Zambotti 2024) and the naps its 24 h counts
+  (« + sieste 2h20 », nights.day_naps: yesterday afternoon's too; sleep is
+  counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015). Its 24-h total
+  is the Sommeil ring's, printed once there; the hero prints it only for a
+  night that is not this morning's (the ring is then empty).
+- Its stages, like WHOOP and Oura (the owner's request, a deliberate
+  departure from research_sleep.md §b: shown for COROS and Garmin, no
+  collapse, no setting), never judged: one bar of the four phases (Éveil ·
+  Léger · Profond · Paradoxal, calm colours that are no good/bad colours,
+  the raw minutes: the night's shape), each named in a legend with its
+  minutes rounded to 10 min (H) (colour never alone), and « Estimées par la
+  montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa
+  qualité. » No %, no target, no norm, no comparison, the main window only
+  (watches classify 50–70 % of the night correctly: de Zambotti 2024; no body
+  sets an ideal amount: Ohayon 2017). A Garmin night with real intervals also
+  gets its hypnogram above it (lanes, the same colours). A night without
+  stage minutes: its plain bar on a clock axis (bed → wake, the naps on their
+  own lane: never in the night's timing, HR or HRV).
 - 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
-  naps lighter on top), the ≈ 7 h line (Johnston 2020), a tiny legend (nuit ·
-  sieste · 7 h); « 3 mois » only with a night 14 to 90 days old (else it would
-  draw the 14 nights again), its 90 bars (each day's 24 h in one) faint under
-  the 7-night mean (Oura's long ranges). Tap a bar → « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 →
-  07:30 »; it rests on the range's mean (printed nowhere else: the latest
-  night is the ring's).
+  naps lighter on top), the 7 h line (Watson 2015a: about habitual sleep), a
+  tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
+  days old (else it would draw the 14 nights again), its 90 bars (each day's
+  24 h in one) faint under the 7-night mean (Oura's long ranges). Tap a bar →
+  « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; it rests on the
+  range's mean (printed nowhere else: the latest night is the ring's). No
+  ceiling, never a long night flagged (Watson 2015a).
 - Habitudes: the median bedtime and wake of 28 days (5 nights at least, H),
-  rounded to 5 min, and « Régularité ± 35 min », the SD of bedtime once 8
-  nights are there (H; Fischer 2021). Time-zone nights and the nights after a
-  big effort stay out; a « rendormi » wake leaves the wake median (H).
+  rounded to 5 min, and once 8 nights are there (H; ANSI/CTA/NSF-2052.1-A's
+  « 1 week or more ») « 9 nuits sur 11 à moins d'1 h de ton coucher
+  habituel » (the RU-SATED window: Ravyts 2021), no colour, no score.
+  Time-zone nights and the 4 nights after an ultra stay out; a « rendormi »
+  wake leaves the wake median (H).
 - The closed « Les chiffres de chaque nuit » table (30 nights, their stage
-  minutes too: the accessible alternative of the charts) and the closed
-  « Comment je lis tes nuits » fold.
+  minutes too, to 10 min: the accessible alternative of the charts) and the
+  closed « Comment je lis tes nuits » fold (METHOD).
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
@@ -40,31 +48,53 @@ from app.services import viz
 RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
-REF_MIN = 7 * 60  # ≈ 7 h line (Johnston 2020)
+REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
 
+# « Comment je lis tes nuits » (V42_BRIEF.md §C–§D): the same shape as the recovery fold, every PaceForge number
+# marked (H), only the sources the research reports cite
 METHOD = [
-    "Je calcule ta FC et ta VFC de nuit sur les mesures brutes de ta montre, pendant ta nuit principale "
-    "seulement : jamais un score de marque.",
-    "Ta normale : tes nuits sans contexte (les 3 nuits après une grosse sortie, une sortie longue la veille ou "
-    "intense le soir, l'altitude, un changement de fuseau) sur 60 jours (H), une par montre ; « provisoire » dès "
-    "7 nuits (H), elle bouge encore jusqu'à 14 (H). L'alerte FC de nuit attend 14 nuits : une normale provisoire la "
-    "ferait sonner pour du bruit (Quer 2021).",
-    "La montre surestime le sommeil, davantage les mauvaises nuits : lis le sens, pas la taille (Chinoy 2021 ; "
-    "Schyvens 2025). Ses heures de coucher et de lever sont approximatives (de Zambotti 2024).",
-    "Tes siestes comptent dans le total sur 24 h ; une sieste que la montre n'a pas vue n'est pas zéro (Sargent "
-    "2018 ; Chinoy 2023). Moins de 7 h par jour sur 2 semaines va avec plus de blessures (Johnston 2020).",
-    "Régularité : de combien ton coucher bouge d'une nuit à l'autre, dès 8 nuits sur 28 (H ; Fischer 2021).",
-    "Les phases (éveil, léger, profond, paradoxal) sont estimées par la montre, pas mesurées : accord faible à moyen "
-    "avec le laboratoire (Schyvens 2025 ; Lee 2023). Elles sont montrées, jamais jugées.",
-    "L'anneau Sommeil compte les 24 h avant ton réveil, siestes comprises (celle d'hier après-midi aussi) ; il est "
-    "plein à 8 h (H) : vert dès 7 h (Johnston 2020), orange de 6 à 7 h, rouge sous 6 h (Craven 2022).",
+    ("Ce qui vient des textes officiels", [
+        "Ton sommeil se compte sur 24 h, siestes comprises (Watson 2015b ; Hirshkowitz 2015).",
+        "Les 7 h recommandées parlent de ton sommeil habituel, pas d'une nuit (Watson 2015a).",
+        "Une longue nuit n'est jamais signalée : elle peut aider à récupérer (Watson 2015a).",
+        "Régularité : la variation de ton coucher, sur une semaine au moins (CTA/NSF 2052.1‑A).",
+        "Décalage : 1 nuit par fuseau vers l'est, une demie vers l'ouest (Janse van Rensburg 2021).",
+        "Léger ≈ N1 + N2, Profond ≈ N3, Paradoxal = REM, stades du laboratoire (CTA/NSF 2052.3).",
+        "Le sommeil léger occupe normalement la plus grande partie de la nuit.",
+        "Aucune instance scientifique ne fixe de dose idéale de profond ou de paradoxal (Ohayon 2017).",
+    ]),
+    ("Ce qui est notre choix (H)", [
+        "L'anneau Sommeil : les 24 h avant ton réveil, plein à 8 h, une échelle, pas un objectif.",
+        "Aucun texte officiel ne donne ce 8 h ; besoin ressenti des athlètes : 8,3 h (Sargent 2021).",
+        "Un jour sous 6 h est « court », score plafonné à 65 (6 h : Craven 2022 ; 65 : notre choix).",
+        "Régularité : tes nuits à moins d'1 h de ton coucher habituel, dès 8 sur 28 (Ravyts 2021).",
+        "Hors de ta normale : 1 nuit après 3 h, 3 après 6 h, 4 après 10 h ; l'altitude ; un fuseau.",
+        "Après un ultra, tes 4 nuits restent aussi hors de tes horaires habituels (Fachan 2026).",
+        "Sieste « tardive » après 16 h ou à moins de 7 h de ton coucher (Mograss 2022 ; Walsh 2021).",
+        "Coucher et lever arrondis à 5 min, phases à 10 min.",
+    ]),
+    ("Ce que la montre ne sait pas", [
+        "Ton sommeil est estimé par la montre, qui le surestime (Walsh 2021 ; de Zambotti 2024).",
+        "Coucher et lever détectés par la montre, pas déclarés par toi (de Zambotti 2024).",
+        "Phases : 50 à 70 % des moments de la nuit bien classés (de Zambotti 2024).",
+        "Sur une nuit, profond ou paradoxal peut différer d'environ 1 h du labo (Chinoy 2021, Garmin).",
+        "COROS : aucune étude publiée sur la précision de ses phases.",
+    ]),
 ]
 REFS = [
-    ("Chinoy 2021", "10.1093/sleep/zsaa291"), ("Schyvens 2025", "10.1093/sleepadvances/zpaf021"),
-    ("de Zambotti 2024", "10.1093/sleep/zsad325"), ("Sargent 2018", "10.1080/07420528.2018.1466800"),
-    ("Chinoy 2023", "10.2147/NSS.S395732"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
-    ("Fischer 2021", "10.1093/sleep/zsab103"), ("Quer 2021", "10.1038/s41591-020-1123-x"),
-    ("Lee 2023", "10.2196/50983"), ("Craven 2022", "10.1007/s40279-022-01706-y"),
+    ("Textes officiels", [
+        ("Watson 2015a", "10.5665/sleep.4716"), ("Watson 2015b", "10.5665/sleep.4886"),
+        ("Hirshkowitz 2015", "10.1016/j.sleh.2014.12.010"),
+        ("CTA/NSF 2052.1‑A", "https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"),
+        ("CTA/NSF 2052.3", "https://www.thensf.org/wp-content/uploads/2025/03/ANSI-CTA-NSF-2052.3-FINAL.pdf"),
+        ("Janse van Rensburg 2021", "10.1007/s40279-021-01502-0"), ("Ohayon 2017", "10.1016/j.sleh.2016.11.006"),
+        ("Walsh 2021", "10.1136/bjsports-2020-102025"), ("de Zambotti 2024", "10.1093/sleep/zsad325"),
+    ]),
+    ("Études", [
+        ("Craven 2022", "10.1007/s40279-022-01706-y"), ("Sargent 2021", "10.1123/ijspp.2020-0896"),
+        ("Ravyts 2021", "10.1080/15402002.2019.1701474"), ("Fachan 2026", "10.1016/j.sleepx.2026.100197"),
+        ("Mograss 2022", "10.1111/jsr.13578"), ("Chinoy 2021", "10.1093/sleep/zsaa291"),
+    ]),
 ]
 
 
@@ -254,7 +284,9 @@ def rows(nights: dict, today: date) -> list[dict]:
 def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None) -> dict:
     """Everything the Sommeil section draws. state: never (no night ever, one
     line) | old (nothing in 90 days) | ok."""
-    base = {"method": METHOD, "refs": REFS}
+    from app.services.sante_score import linked
+
+    base = {"method": METHOD, "refs": linked(REFS)}
     if not any(_measured(n) for d, n in nights.items() if d <= today):
         return {**base, "state": "never"}
     h = hero(nights, today, samples)

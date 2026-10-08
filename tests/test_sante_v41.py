@@ -197,9 +197,9 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
                 and "ta normale" in legend), key
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
     assert '<i class="pf-lg is-gap"></i>pas de mesure' in sleep  # 2 nights missing: a dot, named
-    method = " ".join(sante.sc.METHOD)
+    method = sante.sc.flat(sante.sc.METHOD)
     assert "la barre de chaque contributeur" in method and "L'anneau Charge fait le tour au double" in method
-    assert "L'anneau Sommeil compte les 24 h avant ton réveil" in " ".join(sl.METHOD)
+    assert "L'anneau Sommeil : les 24 h avant ton réveil, plein à 8 h" in sante.sc.flat(sl.METHOD)
 
 
 # ── B: the review's findings at page level ──────────────────────────────────

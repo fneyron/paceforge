@@ -103,35 +103,76 @@ HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
 
+# « Comment je calcule ta récupération » (V42_BRIEF.md §D): short bullets in groups, then the references in two
+# groups; every PaceForge number marked (H); only the sources the three research reports cite, each one used here
 METHOD = [
-    "Ton score est la moyenne de tes signaux, chacun noté sur 100 (la barre de chaque contributeur) : VFC sur 7 "
-    "nuits, FC de nuit sur 7 nuits, sommeil sur 24 h siestes comprises, et la charge récente pendant la récupération d'une grosse sortie. Les "
-    "poids (H) : 25, 25, 30, 20, répartis sur les signaux présents ; sans aucune nuit, pas de score, sauf pendant la récupération d'une "
-    "grosse sortie : ton score est alors son plafond. Ton état en découle : 70 et plus, bien récupéré ; 40 à 69, "
-    "récupération en cours ; moins de 40, à ménager.",
-    "Notes (H) : VFC pleine dans ta normale ou au-dessus (jamais un bonus : Plews 2013), nulle 2,5 écarts-types sous "
-    "elle ; FC de nuit pleine jusqu'à +2 bpm sur ta médiane, 40 à +5, nulle à +8 ; sommeil plein dès 7 h (Watson "
-    "2015a), 60 à 6 h (Craven 2022), 0 à 4 h, moins quand ta semaine dort bien sous ton habitude ; charge récente "
-    "50, 30 ou 20 pendant la récupération d'une sortie de 3 h, 6 h, 10 h et plus.",
-    "Plafonds (H) : FC de nuit nettement au-dessus de ta normale 2 nuits de suite, 39 ; un signal sous 40, 69 ; "
-    "moins de 6 h de sommeil sur 24 h, 65 ; VFC basse et FC de nuit haute ensemble, 69 ; sans VFC ni FC de nuit, 80 : une longue nuit seule ne fait pas un 100.",
-    "Grosses sorties (H), à leur durée arrêts compris, courses comprises, deux activités à moins de 30 min d'écart "
-    "comptant pour une : 10 h et plus → score plafonné à 40 dès la fin et les 3 jours qui suivent, puis à 65 "
-    "jusqu'au 10e (13e après 24 h ou une nuit dehors) ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à "
-    "pied → 65 jusqu'au 3e (5e pour une course). Une fin dans la nuit compte du matin même. Les nuits qui suivent "
-    "(H) restent hors de ta normale : 1 après 3 h, 3 après 6 h, 4 après 10 h (Hynynen 2010).",
-    "Une différence de quelques points ne veut rien dire : la VFC varie d'environ 12 % d'une nuit à l'autre "
-    "(Buchheit 2014). Ta normale est « provisoire » de 7 à 13 nuits (H), pleine à 14 ; l'alerte FC de nuit attend "
-    "14 nuits (Quer 2021). L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 "
-    "dernières (H) ; le mot dessous dit « comme d'habitude » à 20 % près (H). Aucun score de marque n'y entre "
-    "(Doherty 2025).",
+    ("Ton score", [
+        "La moyenne de tes signaux, chacun noté sur 100 : la barre de chaque contributeur.",
+        "Poids (H) : VFC 25, FC de nuit 25, sommeil 30, charge 20 pendant une récupération.",
+        "Plafonds (H) : alerte FC de nuit 39 ; grosse sortie 40, 45 ou 65 ; sommeil sous 6 h, 65.",
+        "69 (H) : un signal sous 40, ou VFC basse avec FC de nuit haute ; 80 sans VFC ni FC.",
+        "État (H) : 70 et plus, bien récupéré ; 40 à 69, en cours ; moins de 40, à ménager.",
+        "Sans nuit mesurée, pas de score, sauf après une grosse sortie : c'est alors son plafond.",
+        "Score maison, non validé : quelques points d'écart ne veulent rien dire (BASES 2023).",
+        "Ta VFC varie d'environ 12 % d'une nuit à l'autre (Buchheit 2014).",
+    ]),
+    ("Ce qui vient des textes officiels", [
+        "Lu contre ta normale, jamais sur une nuit ni un signal seuls (Kellmann 2018 ; Meeusen 2013).",
+        "Des moyennes sur 7 nuits, 3 au moins (Plews 2013 ; Plews 2014).",
+        "Au moins 7 h de sommeil d'habitude (Watson 2015a ; Hirshkowitz 2015).",
+        "Tes siestes comptent dans tes 24 h (Schwellnus 2016 ; Walsh 2021).",
+        "Une compétition demande du temps ; aucun texte n'en fixe les jours (Kellmann 2018).",
+    ]),
+    ("Ce qui est notre choix (H)", [
+        "Les poids, les plafonds, les seuils d'état, les notes : aucun texte ne les donne.",
+        "FC de nuit : 100 jusqu'à +2 bpm sur ta médiane, 40 à +5, 0 à +8 (Alavi 2022 ; Bosquet 2008).",
+        "VFC : 100 dans ta normale ou au-dessus, sans bonus ; 0 à 2,5 écarts-types sous ta moyenne.",
+        "Une VFC basse avec une FC de nuit normale arrive aussi quand l'entraînement est bien encaissé : seule, "
+        "elle ne plafonne pas ton score (Buchheit 2014).",
+        "Fenêtres indicatives : 3 h ou 1 500 m D+ à pied, 65 jusqu'au 3e jour (5e si course).",
+        "6 à 10 h : 45 les 2 premiers jours, puis 65 jusqu'au 5e.",
+        "10 h et plus : 40 les 3 premiers jours, 65 jusqu'au 10e (13e après 24 h ou une nuit dehors).",
+        "2 jours de plus pour un dénivelé 1,5 fois ton plus gros des 8 semaines d'avant.",
+        "Des jours de 3 h enchaînés font une sortie ; à vélo ou en nageant, une classe de moins.",
+        "Ta normale : 60 jours, une par montre, « provisoire » de 7 à 13 nuits, pleine à 14.",
+        "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %) et devient la tienne au fil des nuits.",
+        "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm.",
+        "L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 dernières.",
+        "Le mot sous l'anneau dit « comme d'habitude » à 20 % près.",
+    ]),
+    ("Ce que le score ne sait pas", [
+        "Comment tu te sens : questionnaire conseillé (Saw 2016 ; Schwellnus 2016), écarté à ta demande.",
+        "Ta VFC est estimée par la montre (variabilité du pouls ; Sammito 2024 ; Quigley 2024).",
+        "La montre surestime le sommeil (Walsh 2021).",
+    ]),
 ]
+# (label, DOI or URL): « Textes officiels » (consensus, position stands, guidelines), then « Études »
 REFS = [
-    ("Plews 2013", "10.1007/s40279-013-0071-8"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
-    ("Craven 2022", "10.1007/s40279-022-01706-y"), ("Hynynen 2010", "10.1055/s-0030-1249625"),
-    ("Buchheit 2014", "10.3389/fphys.2014.00073"), ("Altini & Plews 2021", "10.3390/s21237932"),
-    ("Quer 2021", "10.1038/s41591-020-1123-x"), ("Doherty 2025", "10.1515/teb-2025-0001"),
+    ("Textes officiels", [
+        ("Kellmann 2018", "10.1123/ijspp.2017-0759"), ("Meeusen 2013", "10.1249/MSS.0b013e318279a10a"),
+        ("Watson 2015a", "10.5665/sleep.4716"), ("Hirshkowitz 2015", "10.1016/j.sleh.2014.12.010"),
+        ("Schwellnus 2016", "10.1136/bjsports-2016-096572"), ("Walsh 2021", "10.1136/bjsports-2020-102025"),
+        ("BASES 2023", "https://westminsterresearch.westminster.ac.uk/item/wxx7y/"
+                       "bases-expert-statement-methods-to-monitor-athletes-sleep"),
+        ("Sammito 2024", "10.1186/s12995-024-00414-9"), ("Quigley 2024", "10.1111/psyp.14604"),
+    ]),
+    ("Études", [
+        ("Buchheit 2014", "10.3389/fphys.2014.00073"), ("Plews 2013", "10.1123/ijspp.8.6.688"),
+        ("Plews 2014", "10.1123/ijspp.2013-0455"), ("Alavi 2022", "10.1038/s41591-021-01593-2"),
+        ("Bosquet 2008", "10.1136/bjsm.2007.042200"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
+    ]),
 ]
+
+
+def flat(method: list) -> str:
+    """A fold's text in one string (its groups' titles and bullets), for reading it whole."""
+    return " ".join(f"{head} : " + " ".join(items) for head, items in method)
+
+
+def linked(refs: list) -> list:
+    """[(group, [(label, href)])]: a DOI as its doi.org link, a plain URL as it is (BASES 2023, CTA/NSF)."""
+    return [(group, [(name, link if link.startswith("http") else f"https://doi.org/{link}") for name, link in items])
+            for group, items in refs]
 
 
 def _lin(x: float, x0: float, y0: float, x1: float, y1: float) -> float:

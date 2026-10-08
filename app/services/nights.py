@@ -17,8 +17,9 @@ heuristic, never shown as a finding):
   but no main episode has no 24-h total (« sieste seule, pas de nuit
   mesurée »).
 - Sleep stages (Night.stages, minutes of the main night: deep, light, rem,
-  awake): the watch's estimate, shown, never judged (Schyvens 2025: wrist κ
-  0.21–0.53; Lee 2023).
+  awake): the watch's estimate, shown, never judged (watches classify 50–70 %
+  of the night correctly: de Zambotti 2024; deep or REM off by about an hour
+  on one night: Chinoy 2021; no ideal amount: Ohayon 2017).
 - Times are the watch's detection, approximate: printed rounded to 5 min
   (de Zambotti 2024).
 - « Rendormi » (H): a nap starting ≤ 3 h after the main wake leaves that wake

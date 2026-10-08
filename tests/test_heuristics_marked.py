@@ -105,10 +105,17 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
 
 
 def test_the_score_method_marks_its_heuristics():
-    """The fold says the weights, thresholds, caps, the effort classes and the provisional normal are (H)."""
-    text = " ".join(sc.METHOD)
-    assert text.count("(H)") >= 6 and "Les poids (H)" in text and "Plafonds (H)" in text and "13 nuits (H)" in text
-    assert "Grosses sorties (H)" in text and "Une différence de quelques points ne veut rien dire" in text
+    """The fold says the weights, thresholds, caps, the effort classes and the provisional normal are (H): marked
+    one by one in « Ton score », the whole group « Ce qui est notre choix (H) » after; the sleep fold alike."""
+    text = sc.flat(sc.METHOD)
+    assert "Poids (H)" in text and "Plafonds (H)" in text and "69 (H)" in text and "État (H)" in text
+    groups = dict(sc.METHOD)
+    choice = " ".join(groups["Ce qui est notre choix (H)"])
+    assert "Fenêtres indicatives" in choice and "« provisoire » de 7 à 13 nuits" in choice and "+2 bpm" in choice
+    assert "quelques points d'écart ne veulent rien dire" in text
+    sleep = dict(sl.METHOD)["Ce qui est notre choix (H)"]
+    assert any("plein à 8 h" in b for b in sleep) and any("plafonné à 65" in b for b in sleep)
+    assert any("phases à 10 min" in b for b in sleep)
 
 
 def test_the_late_session_gap_is_marked_h():

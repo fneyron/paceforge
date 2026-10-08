@@ -98,18 +98,19 @@
 {% endfor %}
 
 <div class="pf-folds">
+    {#- the two method folds: short bullets in titled groups, then the references in two groups (official texts,
+        studies), each a link (a DOI, else the text's own address) -#}
+    {% macro method_fold(title, groups, refs) %}
     <details class="pf-fold pf-method">
-        <summary>Comment je calcule ta récupération</summary>
-        <ul>{% for l in p.method %}<li>{{ l }}</li>{% endfor %}</ul>
-        <ul class="pf-refs" aria-label="Références">{% for name, doi in p.refs %}<li><a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>
+        <summary>{{ title }}</summary>
+        {% for head, items in groups %}<h3 class="pf-method-h">{{ head }}</h3>
+        <ul>{% for l in items %}<li>{{ l }}</li>{% endfor %}</ul>{% endfor %}
+        {% for head, items in refs %}<h3 class="pf-method-h">{{ head }}</h3>
+        <ul class="pf-refs" aria-label="{{ head }}">{% for name, href in items %}<li><a href="{{ href }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>{% endfor %}
     </details>
-    {% if s and s.state != "never" %}
-    <details class="pf-fold pf-method">
-        <summary>Comment je lis tes nuits</summary>
-        <ul>{% for l in s.method %}<li>{{ l }}</li>{% endfor %}</ul>
-        <ul class="pf-refs" aria-label="Références">{% for name, doi in s.refs %}<li><a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>
-    </details>
-    {% endif %}
+    {% endmacro %}
+    {{ method_fold("Comment je calcule ta récupération", p.method, p.refs) }}
+    {% if s and s.state != "never" %}{{ method_fold("Comment je lis tes nuits", s.method, s.refs) }}{% endif %}
     {% if s and s.rows %}
     <details class="pf-fold pf-ntable-fold">
         <summary>Les chiffres de chaque nuit</summary>

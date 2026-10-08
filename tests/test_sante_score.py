@@ -7,6 +7,7 @@ reason its sentence names, the 14-day history as each day computed it, and
 the (H) heuristics pinned."""
 import json
 import math
+import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
@@ -501,24 +502,48 @@ def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
 # ── the method and the heuristics ───────────────────────────────────────────
 
 def test_the_method_fold_marks_every_choice_h_and_cites_the_brief():
-    text = " ".join(sc.METHOD)
-    assert text.count("(H)") >= 6 and "Les poids (H)" in text and "Plafonds (H)" in text
-    assert "Grosses sorties (H)" in text and "Hynynen 2010" in text and "courses comprises" in text
-    assert "Une différence de quelques points ne veut rien dire" in text
-    assert "séance" not in text.lower() and "ressenti" not in text.lower()
-    # short (« simple ») and true to the numbers: the state from the score, the caps as the score shows them
-    assert len(sc.METHOD) <= 5
-    assert "70 et plus, bien récupéré ; 40 à 69, récupération en cours ; moins de 40, à ménager" in text
-    assert "plafonné à 40 dès la fin et les 3 jours qui suivent, puis à 65" in text and "sans VFC ni FC de nuit, 80" in text
-    # OWN-4: provisional from 7 to 13 nights, full at 14 (nights.MIN_BAND_NIGHTS), as the sleep fold says
-    assert "« provisoire » de 7 à 13 nuits (H), pleine à 14" in text and "7 à 14" not in text
-    # OWN-E: how Charge récente is scored; OWN-1: the score without a night during a window
-    assert "charge récente \"\n" not in text and "poids (H) : 25, 25, 30, 20" in text  # v4.2 (the fold is rewritten in §D)
-    assert "sans aucune nuit, pas de score, sauf pendant la récupération d'une grosse sortie" in text
-    assert "2 nuits de suite, 39" in text and "un signal sous 40, 69" in text and "24 h, 65" in text
-    assert "place" not in text and "plage" not in text  # no placement inside a band
-    assert [name for name, _ in sc.REFS] == ["Plews 2013", "Johnston 2020", "Craven 2022", "Hynynen 2010",
-                                             "Buchheit 2014", "Altini & Plews 2021", "Quer 2021", "Doherty 2025"]
+    """« Comment je calcule ta récupération » (V42_BRIEF.md §D): « Ton score », then what comes from the official
+    texts, what is PaceForge's choice (H), what the score does not know; then the references in two groups."""
+    assert [h for h, _ in sc.METHOD] == ["Ton score", "Ce qui vient des textes officiels",
+                                         "Ce qui est notre choix (H)", "Ce que le score ne sait pas"]
+    text = sc.flat(sc.METHOD)
+    for phrase in ("Poids (H) : VFC 25, FC de nuit 25, sommeil 30, charge 20 pendant une récupération",
+                   "Plafonds (H) : alerte FC de nuit 39 ; grosse sortie 40, 45 ou 65 ; sommeil sous 6 h, 65",
+                   "69 (H) : un signal sous 40, ou VFC basse avec FC de nuit haute ; 80 sans VFC ni FC",
+                   "70 et plus, bien récupéré ; 40 à 69, en cours ; moins de 40, à ménager",
+                   "Sans nuit mesurée, pas de score, sauf après une grosse sortie : c'est alors son plafond",
+                   "Score maison, non validé : quelques points d'écart ne veulent rien dire (BASES 2023)",
+                   "Ta VFC varie d'environ 12 % d'une nuit à l'autre (Buchheit 2014)",
+                   "jamais sur une nuit ni un signal seuls (Kellmann 2018 ; Meeusen 2013)",
+                   "Des moyennes sur 7 nuits, 3 au moins (Plews 2013 ; Plews 2014)",
+                   "Au moins 7 h de sommeil d'habitude (Watson 2015a ; Hirshkowitz 2015)",
+                   "Tes siestes comptent dans tes 24 h (Schwellnus 2016 ; Walsh 2021)",
+                   "aucun texte n'en fixe les jours (Kellmann 2018)",
+                   "FC de nuit : 100 jusqu'à +2 bpm sur ta médiane, 40 à +5, 0 à +8 (Alavi 2022 ; Bosquet 2008)",
+                   "Une VFC basse avec une FC de nuit normale arrive aussi quand l'entraînement est bien encaissé : "
+                   "seule, elle ne plafonne pas ton score (Buchheit 2014)",
+                   "Fenêtres indicatives : 3 h ou 1 500 m D+ à pied, 65 jusqu'au 3e jour (5e si course)",
+                   "6 à 10 h : 45 les 2 premiers jours, puis 65 jusqu'au 5e",
+                   "10 h et plus : 40 les 3 premiers jours, 65 jusqu'au 10e (13e après 24 h ou une nuit dehors)",
+                   "« provisoire » de 7 à 13 nuits, pleine à 14",
+                   "Sa largeur part d'une valeur type (VFC 10 %, FC 4 %)",
+                   "Alerte (dès 14 nuits) : 2 nuits à +5 bpm ou 2 écarts-types ; Alavi 2022 dit +4 bpm",
+                   "questionnaire conseillé (Saw 2016 ; Schwellnus 2016), écarté à ta demande",
+                   "Ta VFC est estimée par la montre (variabilité du pouls ; Sammito 2024 ; Quigley 2024)",
+                   "La montre surestime le sommeil (Walsh 2021)"):
+        assert phrase in text, phrase
+    assert "séance" not in text.lower() and "ressenti" not in text.lower() and "place" not in text
+    # short: ≤ 2 lines at 358 px (≈ 96 characters at 14 px), but the brief's own Buchheit sentence
+    assert all(len(b) <= 96 for _, items in sc.METHOD for b in items if "bien encaissé" not in b)
+    # the references: official texts, then studies, ≤ 16, each one cited in the text and each citation listed
+    assert [g for g, _ in sc.REFS] == ["Textes officiels", "Études"]
+    labels = [n for _, items in sc.REFS for n, _ in items]
+    assert len(labels) == len(set(labels)) <= 16 and all(n in text for n in labels)
+    cited = set(re.findall(r"(?:de |Janse van )?[A-Z][A-Za-z]+ (?:19\d\d|20[0-3]\d)[ab]?", text))
+    assert cited == set(labels), cited ^ set(labels)
+    links = dict(n_l for _, items in sc.linked(sc.REFS) for n_l in items)
+    assert links["Kellmann 2018"] == "https://doi.org/10.1123/ijspp.2017-0759"
+    assert links["BASES 2023"].startswith("https://westminsterresearch.westminster.ac.uk/")  # no DOI: its URL
 
 
 def test_an_alert_episode_is_read_by_the_score_never_by_the_band():
