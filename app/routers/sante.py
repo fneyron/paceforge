@@ -1,10 +1,11 @@
-"""Santé: « Aujourd'hui | Sommeil » from the athlete's COROS or Garmin nights,
-their sessions and their morning check-in (app.services.sante).
+"""Santé: one page (v4, WHOOP/Oura-like) from the athlete's COROS or Garmin
+nights and their activities (app.services.sante): no tabs, no check-in, no
+planned race.
 
 Syncing on demand lives here only (one button for every linked watch);
 Réglages manage the links (status, last sync, errors, disconnect). The old
-views (Entraînement, Course, Tendances) moved to Activités and the race page:
-their links redirect there.
+views' links (?vue=sommeil, entrainement, course, tendances) land on the one
+page, at the section that holds what is left of them.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -25,29 +26,13 @@ templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["sante"])
 
+OLD_VIEWS = {"sommeil": "#sommeil", "entrainement": "#charge"}  # the others land at the top
+RANGES = ("14", "90")
 
-MOVED = {"entrainement": "/activities#semaines", "tendances": "/activities#fatigue"}  # Tendances led with « Ton fond »
 
-
-async def _moved(db: AsyncSession, user: User, vue: str) -> str | None:
-    """Where an old Santé view lives now. Course, as the old view chose: the
-    next race when it is 14 days away or less (or no race was run in the last
-    14 days), else the recovery of the one just run, else Activités; « #prep »
-    only when that page shows its preparation (J-42 → J+14)."""
-    if vue in MOVED:
-        return MOVED[vue]
-    if vue == "course":
-        from app.services import race_prep as rp
-        from app.services.sante import _races, athlete_today
-
-        today = await athlete_today(db, user.id)
-        nxt, last, _ = await _races(db, user.id, today)
-        race = nxt if nxt and (not last or (rp.race_day(nxt) - today).days <= 14) else (last or nxt)
-        if not race:
-            return "/activities"
-        k = (today - rp.race_day(race)).days
-        return f"/simulator/routes/{race.id}" + ("#prep" if -rp.PREP_BEFORE <= k <= rp.PREP_AFTER else "")
-    return None
+def _landing(vue: str | None, r: str | None) -> str:
+    """/sante (with the sleep range kept) and the section an old view's link meant."""
+    return "/sante" + (f"?r={r}" if r in RANGES else "") + OLD_VIEWS.get(vue or "", "")
 
 
 @router.get("/sante", response_class=HTMLResponse)
@@ -58,12 +43,12 @@ async def sante_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if vue and (to := await _moved(db, user, vue)):
-        return RedirectResponse(to, status_code=302)
+    if vue is not None:  # an old view's link: the one page, at its section
+        return RedirectResponse(_landing(vue, r), status_code=302)
     status = await coros.coros_status(db, user.id)
     garmin_link = await garmin.garmin_status(db, user.id)
     try:
-        page = await health_page(db, user.id, weight_kg=user.weight_kg, r=r)
+        page = await health_page(db, user.id, r=r)
     except Exception:  # shown as an error, never as "connect your watch"
         logger.exception("Santé page failed for user %d", user.id)
         page = None
@@ -77,29 +62,14 @@ async def sante_page(
         request, "sante.html",
         context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
                  "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0,
-                 "vue": "sommeil" if vue == "sommeil" else "aujourdhui",
                  "lines": _lines(((("COROS", status), ("Garmin", garmin_link))), page)},
     )
 
 
-@router.get("/sante/sommeil", response_class=HTMLResponse)
-async def sante_sleep_range(
-    request: Request,
-    r: str | None = None,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Sommeil for another range (the range toggle swaps it in place; without
-    scripts the toggle is a plain GET of /sante?vue=sommeil&r=…)."""
-    if not request.headers.get("HX-Request"):
-        return RedirectResponse(f"/sante?vue=sommeil&r={r or ''}", status_code=303)
-    try:
-        page = await health_page(db, user.id, r=r, parts=("sleep",))
-    except Exception:
-        logger.exception("Santé › Sommeil failed for user %d", user.id)
-        return HTMLResponse('<div id="sommeil-range"><p class="pf-note mt-4">Impossible d\'afficher tes nuits pour '
-                            "l'instant. Réessaie dans quelques minutes.</p></div>")
-    return templates.TemplateResponse(request, "partials/sante_sleep_range.html", context={"page": page})
+@router.get("/sante/sommeil")
+async def sante_sleep_range(r: str | None = None, user: User = Depends(get_current_user)):
+    """The old Sommeil range swap: the one page, its Sommeil section, the range kept."""
+    return RedirectResponse(_landing("sommeil", r), status_code=303)
 
 
 async def data_version(db: AsyncSession, user_id: int) -> str:
@@ -134,7 +104,6 @@ def _lines(links, page) -> list[dict]:
 
 @router.post("/sante/feel")
 async def sante_feel(
-    request: Request,
     feel: int | None = Form(default=None),
     legs: int | None = Form(default=None),
     why: list[str] | None = Form(default=None),
@@ -143,13 +112,12 @@ async def sante_feel(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The morning check-in: one row a day. `feel` 1 mieux · 2 comme d'habitude
-    · 3 moins bien; with « moins bien », `why` (jambes, fatigue, malade, stress:
-    legs, fatigue, sick, stress) or `toggle` one of them (a chip); `alcohol`
-    1/0 tags last night (« alcool hier »), apart. `legs` 1/0 is the older
-    « jambes lourdes » toggle (kept as why legs). From the page (htmx) the
-    answer swaps the view in place: the decision updates, the check-in folds
-    to « Noté : … — modifier »."""
+    """The morning check-in of v3, kept harmlessly: the page no longer asks it
+    (owner, 2026-10-08) and Santé never reads it, but an old form or a client
+    still posting gets its answer stored, as before, and the page back. `feel`
+    1 mieux · 2 comme d'habitude · 3 moins bien; with « moins bien », `why`
+    (legs, fatigue, sick, stress) or `toggle` one of them; `alcohol` 1/0;
+    `legs` 1/0 the older « jambes lourdes » toggle."""
     from app.models.health import HealthMetric
     from app.services.health import FEEL_WHY
     from app.services.sante import athlete_today
@@ -181,22 +149,12 @@ async def sante_feel(
     if alcohol in (0, 1):
         det["alcohol"] = bool(alcohol)
     det["why"] = [w for w in FEEL_WHY if w in reasons]
-    det["legs_heavy"] = "legs" in reasons  # what the readers written before v3 look at
+    det["legs_heavy"] = "legs" in reasons
     det.setdefault("alcohol", False)
     if answered:
         det.pop("answered", None)  # a reply (rows without the key are replies)
     row.details = det
     await db.commit()
-    if request.headers.get("HX-Request"):
-        # the answer is saved: a failure to redraw reloads the page (never a 500 htmx would not swap, leaving the
-        # chip unpressed so that a second tap undoes the answer)
-        try:
-            page = await health_page(db, user.id, today=today, parts=("today",))
-            return templates.TemplateResponse(request, "partials/sante_today.html", context={
-                "page": page, "swap": True, "open_feel": row.value == 3 and (feel == 3 or toggle in FEEL_WHY)})
-        except Exception:
-            logger.exception("Santé › check-in redraw failed for user %d", user.id)
-            return HTMLResponse("", headers={"HX-Refresh": "true"})
     return RedirectResponse("/sante", status_code=303)
 
 

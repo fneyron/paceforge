@@ -585,3 +585,80 @@ Sleep HRV Time Series
   timestamp=1761669590, timezone=8, hrv=96 ms, status=4, confidence=95238
   timestamp=1761670490, timezone=8, hrv=106 ms, status=4, confidence=100000
 """
+
+# ── 2026-10-08 (Santé v4's owner fixture), read from COROS that morning (08:00 in Korea) ─────────────────────────
+
+# querySleepOverview 2026-10-08: the night 22:42 → 07:30, 8h36 asleep, no nap
+OVERVIEW_2026_10_08 = """Sleep Overview
+========================
+Note: each record below is dated by its wake-up day.
+
+2026-10-08
+Sleep Score: 90
+Daily Sleep: 8h 36min (incl. naps)
+Main Sleep (asleep): 8h 36min
+Main Sleep Period (incl. awake): 8h 48min
+Sleep metrics scope: daily
+Deep Sleep Ratio: 13%
+Light Sleep Ratio: 62%
+REM Ratio: 23%
+Awake Ratio: 2%
+Awake Time: 12 min
+Awake Count (>5 min): 0
+Main Sleep Window: 2026-10-07 22:42 - 2026-10-08 07:30
+Naps Total: 0 min
+"""
+
+# queryDailyHealthData: the 2026-10-08 Sleep Summary (« Sleep HR » 35 bpm)
+DAILY_2026_10_08 = """Daily Health Data — Last 2 days | Resting HR: 32 bpm | HRV Baseline: 42 ms
+Note: sleep entries are dated by their wake-up day.
+
+--- 20261008 ---
+Steps: 70 | Calories: 14 kcal | Exercise: 0 min
+Stress: Avg 7
+Sleep Summary:
+  Total: 8h 48min | Deep: 1h 11min | Light: 5h 26min | REM: 1h 59min | Awake: 12 min
+  Sleep HR: Avg 35 bpm | Min 31 bpm | Max 59 bpm
+"""
+
+# querySleepHrv 2026-10-07 → 2026-10-08 (Korea, timezone=36): both local days of the 07 → 08 night
+HRV_2026_10_08 = """Sleep HRV — 2026-10-07 to 2026-10-08
+========================
+Note: dates are wake-up days (each value comes from the night that ended that morning).
+
+HRV Assessment — Last 2 days
+========================
+
+2026-10-08:
+  HRV Avg: 103 ms — Above normal
+  Normal Range: 70 - 86 ms
+  Baseline: 78 ms
+2026-10-07:
+  HRV Avg: 97 ms — Above normal
+  Normal Range: 70 - 84 ms
+  Baseline: 77 ms
+
+Sleep HRV Time Series — Last 2 days
+========================
+
+2026-10-07:
+""" + "".join(f"  timestamp={ts}, timezone=36, hrv={v} ms, status=4, confidence=100000\n" for ts, v in (
+    (1791299990, 111), (1791300590, 99), (1791301190, 73), (1791301790, 75), (1791302390, 61), (1791302990, 80),
+    (1791304490, 71), (1791305090, 78), (1791305690, 126), (1791306290, 106), (1791306890, 149), (1791307790, 119),
+    (1791308390, 92), (1791308990, 94), (1791309590, 70), (1791310190, 102), (1791310790, 94), (1791311690, 97),
+    (1791312290, 142), (1791312890, 105), (1791313490, 110), (1791314090, 97), (1791314690, 130), (1791315590, 133),
+    (1791316190, 88), (1791316790, 104), (1791317390, 64), (1791317990, 101), (1791318590, 110), (1791320090, 63),
+    (1791323090, 125), (1791323390, 113), (1791323690, 117), (1791324290, 117), (1791324590, 114), (1791325190, 63),
+    (1791325790, 171), (1791326690, 75), (1791327890, 135), (1791328490, 97), (1791329390, 97), (1791329990, 65),
+    (1791330590, 101), (1791331190, 78), (1791370190, 108), (1791377390, 93), (1791380690, 110), (1791380990, 112),
+    (1791381590, 69), (1791381890, 102), (1791382190, 125), (1791383090, 111), (1791383690, 82), (1791384290, 81),
+    (1791384890, 84))) + "2026-10-08:\n" + "".join(
+    f"  timestamp={ts}, timezone=36, hrv={v} ms, status=4, confidence=100000\n" for ts, v in (
+        (1791385490, 102), (1791386090, 105), (1791387590, 107), (1791388190, 94), (1791388790, 97), (1791389390, 157),
+        (1791390290, 76), (1791390890, 117), (1791391490, 83), (1791392090, 97), (1791392690, 111), (1791393290, 162),
+        (1791393890, 162), (1791394790, 93), (1791395390, 142), (1791395990, 103), (1791398690, 84), (1791400790, 90),
+        (1791401390, 70), (1791402590, 100), (1791403190, 75), (1791403790, 86), (1791405290, 94), (1791405890, 126),
+        (1791406490, 90), (1791407990, 103), (1791408590, 74), (1791411890, 102)))
+
+# querySportRecords: the Transjeju 100M as COROS recorded it (trail run, 02/10 21:00 in Korea, 16:53:27)
+TRANSJEJU_START, TRANSJEJU_END = 1790942428, 1791003235

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+HOME = "/sante"  # where a sign-in, a verified email, a new password or a Strava link land (Santé first)
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +114,7 @@ async def verify_email(
     request.session["user_id"] = user.id
     logger.info("Email verified for user %d", user.id)
 
-    return RedirectResponse(url="/simulator", status_code=302)
+    return RedirectResponse(url=HOME, status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +147,7 @@ async def login(
     request.session["user_id"] = user.id
     logger.info("User %d logged in: %s", user.id, email)
 
-    return RedirectResponse(url="/simulator", status_code=302)
+    return RedirectResponse(url=HOME, status_code=302)
 
 
 @router.get("/auth/logout")
@@ -229,7 +230,7 @@ async def reset_password(
     request.session["user_id"] = user.id
     logger.info("Password reset for user %d", user.id)
 
-    return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url=HOME, status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +432,7 @@ async def strava_callback(
     next_url = request.session.pop("strava_next", None)
     if next_url:
         request.session["strava_ok"] = "Strava connecté. Tes séances arrivent."
-    return RedirectResponse(url=next_url or "/dashboard", status_code=302)
+    return RedirectResponse(url=next_url or HOME, status_code=302)  # an explicit « next » first
 
 
 # ---------------------------------------------------------------------------

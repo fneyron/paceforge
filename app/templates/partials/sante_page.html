@@ -1,0 +1,116 @@
+{#- Santé v4, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
+    and at most one sentence, the Contributeurs, the cards « Récupération · 14 jours », the Sommeil section (last night,
+    its timeline, the 14 nuits / 3 mois bars, the habits), « VFC · 30 nuits », « FC de nuit · 30 nuits », « Charge ·
+    14 jours », then the closed folds. Each number is printed once on the page: the rings print today's score, this
+    morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on something else until a tap. The tone
+    is in a glyph and a word too, never colour alone. -#}
+{% import "partials/_viz.html" as viz %}
+{% set p = page %}{% set s = p.sleep %}
+
+<section class="pf-rings" aria-label="Aujourd'hui">
+    {% for r in p.rings %}{{ viz.viz_ring(r) }}{% endfor %}
+</section>
+
+<section class="pf-state{% if p.state %} is-{{ p.state.tone }}{% endif %}">
+    {% if p.state %}
+    <h2 class="pf-state-word"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ p.state.word }}</h2>
+    {% if p.state.text %}<p class="pf-state-text">{% if p.state.href %}<a href="{{ p.state.href }}">{{ p.state.text }}</a>{% else %}{{ p.state.text }}{% endif %}</p>{% endif %}
+    {% else %}
+    <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter une montre ›</a>{% endif %}</p>
+    {% endif %}
+</section>
+
+{% if p.contrib %}
+<section id="contributeurs" class="pf-card pf-contrib" aria-labelledby="h-contrib">
+    <h2 id="h-contrib" class="pf-card-h">Contributeurs</h2>
+    <ul>
+        {% for c in p.contrib.rows %}
+        <li><span class="pf-contrib-name">{{ c.name }}</span><span class="pf-contrib-word">{{ c.word }}</span><span class="pf-contrib-bar is-{{ c.tone }}" role="img" aria-label="{{ c.aria }}"><i style="width: {{ [c.sub, 2]|max }}%"></i></span></li>
+        {% endfor %}
+    </ul>
+    {% if p.contrib.absent %}<p class="pf-contrib-absent">{{ p.contrib.absent }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if p.recup %}
+<section id="recuperation" class="pf-card" aria-labelledby="h-recup">
+    <h2 id="h-recup" class="pf-card-h">Récupération · 14 jours</h2>
+    {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
+</section>
+{% endif %}
+
+{% if s and s.state != "never" %}
+<section id="sommeil" class="pf-sleep4" aria-labelledby="h-sommeil">
+    <h2 id="h-sommeil" class="pf-sec-h">Sommeil</h2>
+    {% if s.state == "old" %}
+    <p class="pf-sante-note">Aucune nuit mesurée ces 3 derniers mois.</p>
+    {% else %}
+    {% if s.hero %}{% set h = s.hero %}
+    <div class="pf-card pf-hero">
+        <p class="pf-hero-label">{{ h.label }}</p>
+        <p class="pf-hero-times">{{ h.times }}</p>
+        {% set sub = [h.total, h.night, h.nap]|select|list %}
+        {% if sub %}<p class="pf-hero-sub">{{ sub|join(' · ') }}</p>{% endif %}
+        {{ viz.viz_timeline(h.timeline, h.aria) }}
+        {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
+        {% if h.stages %}<p class="pf-viz-cap">Stades estimés par la montre : une allure, pas une mesure.</p>{% endif %}
+    </div>
+    {% endif %}
+    <div class="pf-card" data-viz-scope>
+        <div class="pf-card-top">
+            <h3 class="pf-card-h">Sommeil sur 24 h</h3>
+            {% if s.ranges|length > 1 %}{{ viz.viz_ranges(s.ranges, s.r) }}{% endif %}
+        </div>
+        {% for key, label in s.ranges %}
+        <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
+            {{ viz.viz_day_bars(s.bars[key], "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
+        </div>
+        {% endfor %}
+    </div>
+    {% if s.habits %}
+    <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
+    {% endif %}
+    {% endif %}
+</section>
+{% endif %}
+
+{% for key, title, c in (("vfc", "VFC · 30 nuits", p.vfc), ("fc", "FC de nuit · 30 nuits", p.fc)) if c %}
+<section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
+    <h2 id="h-{{ key }}" class="pf-card-h">{{ title }}</h2>
+    {{ viz.viz_night_card(c, title) }}
+</section>
+{% endfor %}
+
+{% if p.charge %}
+<section id="charge" class="pf-card" aria-labelledby="h-charge">
+    <h2 id="h-charge" class="pf-card-h">Charge · 14 jours</h2>
+    {{ viz.viz_day_bars(p.charge, "Charge sur 14 jours") }}
+</section>
+{% endif %}
+
+<div class="pf-folds">
+    <details class="pf-fold pf-method">
+        <summary>Comment je calcule ta récupération</summary>
+        <ul>{% for l in p.method %}<li>{{ l }}</li>{% endfor %}</ul>
+        <p class="pf-refs">{% for name, doi in p.refs %}<a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a>{{ " · " if not loop.last }}{% endfor %}</p>
+    </details>
+    {% if s and s.state != "never" %}
+    <details class="pf-fold pf-method">
+        <summary>Comment je lis tes nuits</summary>
+        <ul>{% for l in s.method %}<li>{{ l }}</li>{% endfor %}</ul>
+        <p class="pf-refs">{% for name, doi in s.refs %}<a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a>{{ " · " if not loop.last }}{% endfor %}</p>
+    </details>
+    {% endif %}
+    {% if s and s.rows %}
+    <details class="pf-fold pf-ntable-fold">
+        <summary>Les chiffres de chaque nuit</summary>
+        <div class="pf-ntable-wrap" tabindex="0" role="region" aria-label="Les chiffres de chaque nuit">
+            <table class="pf-ntable">
+                <caption class="sr-only">Les chiffres de chaque nuit des 30 derniers jours, la plus récente d'abord ; « — » : pas de mesure</caption>
+                <thead><tr><th scope="col">Jour</th><th scope="col">24 h</th><th scope="col">Nuit</th><th scope="col">Sieste</th><th scope="col">Coucher → lever</th><th scope="col">FC</th><th scope="col">VFC</th><th scope="col">Repère</th></tr></thead>
+                <tbody>{% for r in s.rows %}<tr><th scope="row">{{ r.date }}</th><td>{{ r.tst }}</td><td>{{ r.night }}</td><td>{{ r.nap }}</td><td>{{ r.times }}</td><td>{{ r.hr }}</td><td>{{ r.hrv }}</td><td>{{ r.marks }}</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+    </details>
+    {% endif %}
+</div>

@@ -43,11 +43,11 @@
     <a href="#main-content" class="pf-skip-link">Aller au contenu</a>
     <header class="pf-top">
         <div class="pf-wrap pf-top-in">
-            <a href="/simulator" class="pf-logo" aria-label="PaceForge — mes courses">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
+            <a href="/sante" class="pf-logo" aria-label="PaceForge — accueil">{% include "partials/_logo_mark.html" %}<span>PaceForge</span></a>
             <nav aria-label="Navigation principale" class="pf-nav">
+                {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><span>Santé</span></a>
                 {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><span>Courses</span></a>
                 {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><span>Activités</span></a>
-                {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><span>Santé</span></a>
                 {% set _on = request.url.path == '/settings' %}<a href="/settings"{% if _on %} aria-current="page"{% endif %}><span>Réglages</span></a>
             </nav>
             <div class="pf-top-right">
@@ -72,9 +72,9 @@
     </main>
 
     <nav aria-label="Navigation mobile" class="pf-tabbar">
+        {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Santé</span></a>
         {% set _on = request.url.path.startswith('/simulator') %}<a href="/simulator"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h12l-2 4 2 4H4"/></svg><span>Courses</span></a>
         {% set _on = request.url.path.startswith('/activities') or request.url.path.startswith('/activity') %}<a href="/activities"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activités</span></a>
-        {% set _on = request.url.path.startswith('/sante') %}<a href="/sante"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Santé</span></a>
         {% set _on = request.url.path == '/settings' %}<a href="/settings"{% if _on %} aria-current="page"{% endif %}><svg class="pf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>Réglages</span></a>
     </nav>
     {% else %}

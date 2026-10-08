@@ -1,175 +1,141 @@
-"""Santé › Sommeil (app/services/sante_sleep.py): the range choice and its
-empty states, the « 1 an » weekly view, the one-sentence rules (Johnston 2020
-quiet line, shorter week, regularity from onset only after « rendormi »
-mornings), the hypnogram from real intervals only, « Cœur la nuit » (never
-judging a context night; respiration only with the HR alert), the nights'
-table."""
+"""Santé v4 › the Sommeil section (app/services/sante_sleep.py, SANTE_V4_SPEC.md
+§4): last night's hero (the times and the nap, the total only when the ring
+does not print it), its timeline (one bar, or the hypnogram from real
+intervals; naps on their own lane), the 14 nuits / 3 mois bars with the 7 h
+line, the habits (medians to 5 min, regularity from 8 nights), the nights'
+table, the method fold; no race, no « Cœur la nuit », no clock-window chart."""
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.services import nights as nt
 from app.services import sante_sleep as sl
-from tests.test_nights import D, night_rows, owner_rows
+from app.services import viz
+from tests.test_nights import night_rows as _night_rows
+
+D = date(2026, 10, 8)
 
 
-def _nights(rows, tag=True):
-    nights = nt.build_nights(rows, D)
-    if tag:
-        nt.tag_nights(nights)
+def night_rows(days, **kw):
+    kw.setdefault("today", D)
+    return _night_rows(days, **kw)
+
+
+def _nights(rows, today=D):
+    nights = nt.build_nights(rows, today)
+    nt.tag_activities(nights)
     return nights
 
 
-def test_no_night_ever_is_one_line():
-    s = sl.sleep_view({}, D, None)
-    assert s["state"] == "never" and s["wear"].startswith("Porte ta montre au moins 3 nuits par semaine")
-    assert "J-14 à J+14" in s["wear"]
+def test_no_night_ever_is_nothing_and_an_old_series_one_line():
+    assert sl.sleep_section({}, D)["state"] == "never"
+    old = sl.sleep_section(_nights(night_rows(range(120, 140))), D)
+    assert old["state"] == "old" and "hero" not in old
 
 
-def test_default_range_is_the_first_holding_data_and_an_empty_range_says_where_the_last_series_is():
-    nights = _nights(night_rows(range(120, 160)))  # 40 nights, 4 to 5 months ago
-    assert sl.offered_ranges(nights, D) == ["14", "365"]  # ≥ 30 nights older than 90 days, none 14–90 days old
-    s = sl.sleep_view(nights, D, None)
-    assert s["state"] == "ok" and s["r"] == "365" and s["weekly"]
-    s = sl.sleep_view(nights, D, "14")
-    first, last = D - timedelta(days=159), D - timedelta(days=120)
-    assert s["state"] == "empty" and s["go"] == ("365", "Voir 1 an")
-    assert (first, last) == (date(2026, 5, 1), date(2026, 6, 9))
-    assert s["empty"] == "Rien sur 14 jours · ta dernière série : 1 mai → 9 juin"
-    # UX12: too few old nights for « 1 an », none for « 3 mois »: nothing can open them, so never name them
-    few = _nights(night_rows(range(100, 110)))
-    s = sl.sleep_view(few, D, None)
-    assert [k for k, _ in s["ranges"]] == ["14"] and s["state"] == "empty" and s["go"] is None
-    assert s["empty"] == "Rien sur 14 jours. " + sl.WEAR and "dernière série" not in s["empty"]
-    assert sl.sleep_view(few, D, "365")["r"] == "14" and sl.sleep_view(few, D, "90")["r"] == "14"  # not offered
-    # UX13: « 3 mois » only with a measured night 14 to 90 days old
-    assert sl.offered_ranges(_nights(night_rows(range(0, 14))), D) == ["14"]
-    assert sl.offered_ranges(_nights(night_rows(range(0, 15))), D) == ["14", "90"]
-    mid = _nights(night_rows(range(40, 50)))
-    s = sl.sleep_view(mid, D, None)
-    assert s["r"] == "90" and s["state"] == "ok"
+def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
+    recent = _nights(night_rows(range(0, 10)))
+    assert sl.offered_ranges(recent, D) == ["14"]
+    both = _nights(night_rows(range(0, 60)))
+    assert sl.offered_ranges(both, D) == ["14", "90"]
+    s = sl.sleep_section(both, D, "90")
+    assert s["r"] == "90" and set(s["bars"]) == {"14", "90"} and s["bars"]["90"]["n"] == 90
+    assert sl.sleep_section(both, D, "365")["r"] == "14"  # « 1 an » is gone: the first range
+    # nothing in the last 14 days, a series 3 to 8 weeks ago: « 3 mois » opens first
+    mid = _nights(night_rows(range(20, 60)))
+    assert sl.sleep_section(mid, D)["r"] == "90"
 
 
-def test_one_year_is_one_mark_per_week():
-    nights = _nights(night_rows(range(0, 200)))
-    s = sl.sleep_view(nights, D, "365")
-    c = s["nights"]
-    assert s["weekly"] and c["n"] == 30 and s["heart"]["n"] == 30  # weeks since the first data point
-    data = json.loads(c["data"])
-    assert data["r"][-1][0].startswith("sem. du lun. 5 oct. · moyenne de 3 nuits")
-    assert c["cols"][-1]["night"] and not s["hyps"]
-    assert "semaines" in c["summary"] and "médianes par semaine" in s["heart"]["summary"]
+def test_the_hero_prints_the_times_and_the_nap_not_the_rings_total():
+    rows = night_rows([0], asleep=350, start=(23, 35), end=(5, 38))
+    rows["nap"][D] = (140, {"windows": [[f"{D}T06:42", f"{D}T09:07"]]}, "Garmin")
+    h = sl.hero(_nights(rows), D)
+    assert (h["label"], h["times"], h["night"], h["nap"], h["total"]) == ("Cette nuit", "23:35 → 05:40",
+                                                                          "nuit 5h50", "+ sieste 2h20", None)
+    t = h["timeline"]
+    assert len(t["naps"]) == 1 and [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and not h["out_naps"]
+    # an older night (none this morning): the ring is empty, the hero prints its total
+    older = sl.hero(_nights(night_rows([2])), D)
+    assert older["label"] == "nuit du lun. 5 au mar. 6" and older["total"] == "7h20 sur 24 h"
+    assert older["night"] is None and older["nap"] is None
 
 
-def test_the_quiet_14_day_line_and_the_shorter_week():
-    nights = _nights(night_rows(range(0, 14), asleep=400))  # 6h40 a night
-    s = sl.sleep_view(nights, D, "14")
-    assert s["amount_line"] == "Moins de 7 h en moyenne sur tes nuits mesurées des 14 derniers jours."
-    rows = night_rows(range(7, 60), asleep=480)
-    rows["sleep"].update(night_rows(range(0, 7), asleep=430)["sleep"])
-    s = sl.sleep_view(_nights(rows), D, "14")
-    assert s["amount_line"] == "Nuits plus courtes que d'habitude cette semaine."
-    assert s["nights"]["band"] and s["nights"]["mean"]  # the usual ± 30 min and the 7-night mean are drawn
+def test_a_nap_outside_the_axis_is_listed_with_its_times():
+    rows = night_rows([0])
+    rows["nap"][D] = (60, {"windows": [[f"{D}T14:10", f"{D}T15:15"]]}, "Garmin")
+    h = sl.hero(_nights(rows), D)
+    assert h["out_naps"] == ["sieste 14:10 → 15:15"] and not h["timeline"]["naps"]
 
 
-def test_regularity_in_minutes_from_onset_only_after_rendormi_mornings():
-    rows = night_rows(range(0, 10), start=(23, 0), end=(7, 0))
-    for k in range(3):
-        rows["sleep"][D - timedelta(days=k)] = night_rows([k], start=(23, 50), end=(6, 0))["sleep"][D - timedelta(days=k)]
-    s = sl.sleep_view(_nights(rows), D, "14")
-    assert s["timing_line"].startswith("D'une nuit à l'autre, ton coucher bouge de ± ") and ", ton lever de" in s["timing_line"]
-    # a nap ≤ 3 h after the wake: that morning leaves the wake spread (H)
-    for k in range(3):
-        d = D - timedelta(days=k)
-        rows["nap"][d] = (60, {"windows": [[f"{d}T07:30", f"{d}T08:30"]]}, "Garmin")
-    s = sl.sleep_view(_nights(rows), D, "14")
-    assert "lever" not in s["timing_line"]
-    assert s["nights"]["med_bands"]  # the ±1 SD band around the median onset
+def test_the_timeline_is_one_bar_or_the_hypnogram():
+    start, end = datetime(2026, 10, 7, 22, 40), datetime(2026, 10, 8, 7, 30)
+    t = viz.timeline(start, end)
+    assert t["main"] and not t["segs"]
+    assert [k["label"] for k in t["ticks"]] == ["22:00", "00:00", "02:00", "04:00", "06:00", "08:00"]
+    stages = [("core", start, start + timedelta(hours=2)), ("deep", start + timedelta(hours=2),
+                                                             start + timedelta(hours=3)),
+              ("rem", start + timedelta(hours=3), end), ("light", start, end)]  # an unknown stage is left out
+    t = viz.timeline(start, end, stages=stages)
+    assert t["main"] is None and len(t["segs"]) == 3 and len(t["steps"]) == 2 and t["stages"]
+    assert [nm for nm, _, _ in t["lanes"]] == ["Éveil", "REM", "Léger", "Profond"]
+    # the axis never runs past 18:00 the evening before → 14:00
+    t = viz.timeline(datetime(2026, 10, 7, 17, 30), datetime(2026, 10, 8, 13, 50))
+    assert t["ticks"][0]["label"] == "18:00" and t["ticks"][-1]["label"] == "14:00"
 
 
-def test_hypnogram_only_from_real_intervals_and_labelled_by_night():
-    nights = _nights(night_rows(range(0, 3)))
-    n = nights[D]
-    segs = [("core", n.start, n.start + timedelta(hours=2)), ("deep", n.start + timedelta(hours=2), n.end)]
-    s = sl.sleep_view(nights, D, "14", samples={D: segs})
-    assert [i for i, _ in s["hyps"]] == [13] and s["hyp_has_sel"]
-    assert s["hyps"][0][1]["aria"].startswith("Forme de la nuit du mar. 6 au mer. 7")
-    assert sl.sleep_view(nights, D, "14", samples={})["hyps"] == []
-    owner = _nights(owner_rows())
-    assert sl.sleep_view(owner, D, "14", samples={})["hyps"] == []  # COROS: never a hypnogram
+def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
+    rows = night_rows(range(1, 14))
+    rows["sleep"].update(night_rows([0], asleep=516, start=(22, 42), end=(7, 30))["sleep"])
+    c = sl.bars(_nights(rows), D, "14")
+    d = json.loads(c["data"])
+    mean = round((13 * 440 + 516) / 14 / 5) * 5
+    assert c["read"] == ["14 nuits", f"moyenne {viz.hm(mean)}", "sur 24 h, siestes comprises"]
+    assert d["r"][13] == ["nuit du mer. 7 au jeu. 8", "Nuit 8h36", "22:40 → 07:30"]
+    assert c["ref"]["label"] == "7 h" and c["bars"][13]["today"]
+    assert all(not b.get("miss") for b in c["bars"])
+    gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
+    assert gap["bars"][12]["miss"] and json.loads(gap["data"])["r"][12][1:] == ["—", "pas de montre cette nuit"]
 
 
-def test_heart_never_judges_one_night_and_breath_only_with_the_alert():
-    rows = night_rows(range(1, 40), hr=45, hrv=60)
-    rows["hr_night"][D] = (60, {"method": "points"}, "Garmin")
-    rows["hrv"][D] = (40, {"method": "ln_mean_main", "n": 60}, "Garmin")
-    rows["sleep"][D] = night_rows([0])["sleep"][D]
-    rows["resp_night"] = {d: (14.0, {}, "Garmin") for d in rows["sleep"]}
+def test_a_short_main_night_may_be_cut_in_two():
+    rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
+    d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
+    assert d["r"][13][2].endswith("nuit incomplète ?")
+
+
+def test_habits_medians_to_5_min_and_regularity_from_8_nights():
+    few = _nights(night_rows(range(0, 4)))
+    assert sl.habits(few, D) is None  # 4 nights: no median yet (H)
+    five = _nights(night_rows(range(0, 5), start=(23, 12), end=(7, 18)))
+    assert sl.habits(five, D)["stats"] == [("Coucher", "23:10"), ("Lever", "07:20")]
+    nine = night_rows(range(0, 9), start=(23, 0), end=(7, 0))
+    nine["sleep"].update(night_rows([0], start=(0, 10), end=(7, 0))["sleep"])
+    h = sl.habits(_nights(nine), D)
+    assert h["stats"][2][0] == "Régularité" and h["stats"][2][1].startswith("±")
+
+
+def test_habits_leave_out_time_zone_nights_and_the_nights_after_a_big_effort():
+    rows = night_rows(range(0, 8), start=(23, 0), end=(7, 0))
+    rows["sleep"].update(night_rows([0, 1, 2], start=(3, 0), end=(10, 0))["sleep"])  # 3 nights at odd times
     nights = _nights(rows)
-    s = sl.sleep_view(nights, D, "14")
-    # one night is never judged: its value and the normal, a plain dot (the trend is the 7-night line's)
-    assert s["heart"]["read"][1].replace("\u202f", " ") == "VFC 40 ms · FC 60 bpm"
-    assert s["heart"]["read"][2] == "normale VFC 59–62, FC 42–48"  # SD floored at 0.05 (H)
-    assert not any(d["out"] for p in s["heart"]["panels"] for d in p["dots"])
-    assert len(s["heart"]["panels"]) == 2 and s["heart_line"] is None
-    nights[D].tags.add("alcohol")  # a context night: a diamond and its word
-    s = sl.sleep_view(nights, D, "14")
-    assert "◇ alcool" in s["heart"]["read"][2] and s["heart"]["panels"][0]["dots"][-1]["tag"]
-    nights[D].tags.discard("alcohol")
-    s = sl.sleep_view(nights, D, "14", alert=True)
-    assert [p["name"] for p in s["heart"]["panels"]] == ["VFC", "FC", "Resp."]
-    assert s["heart_line"] == "FC de nuit nettement au-dessus de ta normale 2 nuits de suite."
+    assert sl.habits(nights, D)["stats"][0] == ("Coucher", "23:00")  # the median holds
+    for k in (0, 1, 2):
+        nights[D - timedelta(days=k)].tags.add("big")
+    h = sl.habits(nights, D)
+    assert h["n"] == 5 and h["stats"][:2] == [("Coucher", "23:00"), ("Lever", "07:00")]
 
 
-def test_the_nights_table_newest_first_dashes_for_missing():
-    s = sl.sleep_view(_nights(owner_rows()), D, "14", races=[(date(2026, 10, 2), "Transjeju 100M")])
-    rows = s["rows"]
-    assert rows[0] == {"date": "mer. 7 oct.", "iso": "2026-10-07", "tst": "8h10", "night": "5h50", "nap": "2h20",
-                       "times": "23:35 → 05:40", "hr": "37", "hrv": "95", "marks": "—"}
-    lone = next(r for r in rows if r["iso"] == "2026-09-25")
-    assert (lone["tst"], lone["night"], lone["nap"], lone["times"]) == ("—", "—", "1h22", "—")
-    assert s["coverage"] == "5 nuits mesurées sur 14"
-    assert s["building"] == "Ta normale se construit : 1 nuit sur 7."  # untagged here: no « hors course »
+def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
+    nights = _nights(night_rows(range(0, 40)))
+    nights[D - timedelta(days=2)].tags |= {"big", "race"}
+    out = sl.rows(nights, D)
+    assert len(out) == 30 and out[0]["iso"] == D.isoformat()
+    marks = {r["iso"]: r["marks"] for r in out}
+    assert marks[(D - timedelta(days=2)).isoformat()] == "◇ après grosse sortie"
+    assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
 
-# ── review fixes (v3) ───────────────────────────────────────────────────────
-
-def test_one_year_never_judges_a_race_week_median():
-    """F6 / L-F9 / UX10: a year at 45 bpm and 60 ms, a race on Sunday 30 Aug, the
-    nights J+1 → J+5 at 55 bpm and 45 ms: their week is drawn from all its
-    nights, never judged (no word, no hollow dot), with its tag word; an
-    ordinary week is judged against the 60 days before its Monday."""
-    rd = date(2026, 8, 30)
-    rows = night_rows(range(0, 300), hr=lambda k: 45.0 if not 1 <= (D - timedelta(days=k) - rd).days <= 5 else 55.0,
-                      hrv=lambda k: 60.0 if not 1 <= (D - timedelta(days=k) - rd).days <= 5 else 45.0)
-    nights = nt.build_nights(rows, D)
-    nt.tag_nights(nights, (), [(rd, "Trail du Lac")], {})
-    s = sl.sleep_view(nights, D, "365", races=[(rd, "Trail du Lac")])
-    d = json.loads(s["heart"]["data"])
-    i = d["d"].index("2026-08-31")
-    assert "au-dessus" not in d["r"][i][1] and "en dessous" not in d["r"][i][1]
-    assert "FC 55" in d["r"][i][1] and "◇ autour de la course" in d["r"][i][2]
-    assert not any(dot["out"] for p in s["heart"]["panels"] for dot in p["dots"])
-    # an ordinary week out of its band is still judged
-    rows2 = night_rows(range(0, 300), hr=lambda k: 52.0 if k < 7 else 45.0)
-    s2 = sl.sleep_view(nt.build_nights(rows2, D), D, "365")
-    d2 = json.loads(s2["heart"]["data"])
-    assert "FC 52 bpm au-dessus" in d2["r"][-1][1].replace(" ", " ")
-
-
-def test_one_year_steps_by_week_and_says_so():
-    """UX11: in « 1 an » the step buttons and the range input name a week."""
-    from tests.test_viz import _env
-
-    nights = _nights(night_rows(range(0, 200)))
-    page = _env().get_template("partials/sante_sleep_range.html")
-    html = page.render(page={"som": sl.sleep_view(nights, D, "365")})
-    assert html.count('aria-label="Semaine précédente"') == 2 and html.count('aria-label="Semaine suivante"') == 2
-    assert "Nuit suivante" not in html and html.count("choisis une semaine") == 2 and "choisis une nuit" not in html
-    daily = page.render(page={"som": sl.sleep_view(nights, D, "14")})
-    assert daily.count('aria-label="Nuit précédente"') == 2 and "Semaine" not in daily
-
-
-def test_the_method_fold_marks_its_heuristics():
-    """F11: the fold's numbers that no study gives are marked (H) where they are said."""
-    assert "dès 7 nuits (H)" in sl.METHOD[1] and "jusqu'à 14 (H)" in sl.METHOD[1]
-    assert "J-7 → J+7 (H)" in sl.METHOD[1] and "60 jours (H)" in sl.METHOD[1] and "Quer 2021" in sl.METHOD[1]
+def test_the_method_fold_marks_its_heuristics_and_names_no_race():
+    text = " ".join(sl.METHOD)
+    assert text.count("(H") >= 4 and "Fischer 2021" in text and "grosse sortie" in text
+    assert "course" not in text and "séance" not in text and "J-" not in text
+    assert ("Fischer 2021", "10.1093/sleep/zsab103") in sl.REFS

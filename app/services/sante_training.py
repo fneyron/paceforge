@@ -8,8 +8,13 @@ night needed, so it works for an athlete who never wears the watch to bed.
   daily load (Activités › Fond et fatigue: two lines, never a ratio);
 - the weeks exactly as Activités counts them (UTC Monday, duplicates and false
   starts left out), so a bar's total is the week's total there;
-- heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), one
-  model for Activités › FC en footing and Santé's tile (Nuuttila 2022).
+- heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), the
+  model of Activités › FC en footing (Nuuttila 2022);
+- the big efforts (Santé v4, owner 2026-10-08: « tu te bases que sur les
+  activités passées pour juger de la récupération »): each activity sized by
+  its own time, stops included, whatever it was (a race marked on Strava is
+  just an activity), and the recovery window it opens (`effort_of`,
+  `effort_window`).
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it.
 """
@@ -399,3 +404,79 @@ def easy_watch(model: dict | None, today: date) -> dict | None:
         return None
     return {"deltas": deltas, "value": statistics.fmean(v for _, v in deltas),
             "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}
+
+
+# ── big efforts: the recovery windows Santé reads (v4) ──────────────────────
+# Santé judges recovery from past activities only (owner, 2026-10-08): a planned race is never read. Each
+# activity is sized by its own time, stops included (elapsed), whatever it was: a race marked on Strava is
+# just an activity. The classes keep the old post-race and legs rules (H), now for any activity:
+EFFORT_ULTRA, EFFORT_VERY_LONG, EFFORT_LONG = 600, 360, 180  # (H) minutes, stops included: ≥ 10 h, 6–10 h, ≥ 3 h
+EFFORT_DPLUS = 1500  # (H) m: an outing on foot this steep is « long » whatever its time (the legs rule)
+STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
+# class → ((last day from D+1, cap on the score's raw value), …), the Charge récente sub-score (H)
+EFFORT_RULES = {"ultra": (((3, 40), (10, 65)), 20),  # (H)
+                "very_long": (((2, 45), (5, 65)), 30),
+                "long": (((2, 65),), 50)}
+BIG_NIGHTS = 3  # (H) nights D+1 → D+3 after an effort ≥ 6 h stay out of the normal (Hynynen 2010: nightly HR at 130 %)
+
+
+@dataclass(frozen=True)
+class Effort:
+    """An activity big enough to open a recovery window. D is `day`, the local
+    day it ended (an ultra started in the evening ends the next day: its first
+    night after is the night after the finish)."""
+    session_id: int
+    kind: str  # ultra | very_long | long
+    minutes: float  # its own time, stops included (effort_minutes)
+    end: datetime  # local, naive
+    day: date
+    name: str = ""
+
+    @property
+    def big(self) -> bool:
+        """≥ 6 h: its nights D+1 → D+3 are « après grosse sortie » (out of the bands and the illness alert)."""
+        return self.kind in ("ultra", "very_long")
+
+
+def effort_minutes(s: Session) -> float:
+    """An activity's own time, stops included; the moving time when the watch
+    was left running (elapsed over twice the moving time, H)."""
+    elapsed = s.elapsed or s.minutes
+    return s.minutes if elapsed > STOPPED_WATCH * s.minutes else elapsed
+
+
+def effort_of(s: Session) -> Effort | None:
+    """ultra (≥ 10 h), very_long (6–10 h), long (≥ 3 h, or ≥ 1 500 m D+ on foot:
+    the legs rule), else None (H)."""
+    m = effort_minutes(s)
+    kind = ("ultra" if m >= EFFORT_ULTRA else "very_long" if m >= EFFORT_VERY_LONG
+            else "long" if m >= EFFORT_LONG or (s.sport in FOOT and s.dplus >= EFFORT_DPLUS) else None)
+    if kind is None:
+        return None
+    end = (_utc(s.start) + timedelta(seconds=s.offset or 0)).replace(tzinfo=None) + timedelta(minutes=m)
+    return Effort(s.id, kind, m, end, end.date(), s.name)
+
+
+def efforts(sessions: list[Session]) -> list[Effort]:
+    """The big efforts among the sessions, by end."""
+    return sorted((e for e in map(effort_of, sessions) if e), key=lambda e: e.end)
+
+
+def effort_window(efs: list[Effort], d: date) -> dict | None:
+    """The recovery window that holds day `d` (D+1 → the class's last day
+    (H)), the one with the lowest cap on that day, then the lowest Charge, then
+    the latest: {effort, days (d − D), cap, load, until}; None outside any."""
+    best = None
+    for e in efs:
+        k = (d - e.day).days
+        if k < 1:
+            continue
+        caps, load = EFFORT_RULES[e.kind]
+        cap = next((c for last, c in caps if k <= last), None)
+        if cap is None:
+            continue
+        key = (cap, load, k)
+        if best is None or key < best[0]:
+            best = (key, {"effort": e, "days": k, "cap": cap, "load": load,
+                          "until": e.day + timedelta(days=caps[-1][0])})
+    return best[1] if best else None

@@ -10,7 +10,6 @@
     {% if w.band %}<rect x="0" y="{{ w.band.y }}" width="{{ w.X1 }}" height="{{ w.band.h }}" class="pf-viz-band"/>
     <line x1="0" x2="{{ w.X1 }}" y1="{{ w.band.y }}" y2="{{ w.band.y }}" class="pf-viz-edge"/><line x1="0" x2="{{ w.X1 }}" y1="{{ w.band.y + w.band.h }}" y2="{{ w.band.y + w.band.h }}" class="pf-viz-edge"/>{% endif %}
     <line x1="0" x2="{{ w.X1 }}" y1="{{ w.base }}" y2="{{ w.base }}" class="pf-viz-grid"/>
-    {% for r in w.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="12" y2="{{ w.base }}" class="pf-viz-ev"/><path d="M{{ r.x }} 11v-10l7 2.5l-7 2.5z" class="pf-viz-flag"/><text {% if r.x > 190 %}x="{{ r.x - 4 }}" text-anchor="end"{% else %}x="{{ r.x + 10 }}"{% endif %} y="10" class="pf-viz-strong">{{ r.name|truncate(16, True, '…') }}</text>{% endfor %}
     {% for b in w.cols %}
     <g class="pf-viz-col" data-i="{{ b.i }}">
         {% if b.h is defined %}{% if b.cur %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-sem)"/>{% else %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}{% endif %}
@@ -31,7 +30,6 @@
     {% else %}
     {% call vz.figure(f, "Fond et fatigue", "fond", None, "journée", "Jour précédent", "Jour suivant") %}
     {% for g in f.grid %}<line x1="0" x2="{{ f.X1 }}" y1="{{ g }}" y2="{{ g }}" class="pf-viz-grid"/>{% endfor %}
-    {% for r in f.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="12" y2="120" class="pf-viz-ev"/><path d="M{{ r.x }} 11v-10l7 2.5l-7 2.5z" class="pf-viz-flag"/>{% endfor %}
     {% for s in f.series|reverse %}<path d="{{ s.path }}" class="pf-viz-line {{ s.cls }}" pathLength="1"/>{% endfor %}
     {% for s in f.series %}<text x="{{ f.X1 - 2 }}" y="{{ s.ly }}" text-anchor="end" class="pf-viz-strong pf-viz-halo">{{ s.name }}</text>{% endfor %}
     {% for t in f.xt %}<text x="{{ t.x }}" y="{{ f.H - 3 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}

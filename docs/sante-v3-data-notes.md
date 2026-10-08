@@ -103,9 +103,11 @@ Garmin:
 - Every (H) threshold is a choice.
 - The 400-day COROS history backfill is not built: the first sync still reads 60 days.
 
-## 7. « Forme du jour »: nothing stored
+## 7. « Récupération » (Santé v4): nothing stored
 
-- The score is never persisted: Aujourd'hui recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night, feel), the sessions and the Routes (`sante._decide_day`, then `sante_score.score_of`). No table, no migration, and a night synced late corrects its own day.
-- The 14-day line is « what is known now », not a log: a past day reads the nights tagged since (an alert episode that starts the next night, a Route added later).
-- Cost on the seeded Postgres (400 nights, 730 days of sessions): about 50–65 ms more on Aujourd'hui.
-- Normals are « provisoire » from 7 usable nights (`nights.band`), full from 14; the illness alert, its episodes and « Reprise » read a full band only (`full=True`).
+- The score is never persisted: /sante recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night) and the activities only (`sante._assess`, then `sante_score.score_of`): no Route, no check-in. No table, no migration, and a night synced late corrects its own day.
+- Each past day is computed with what that day knew (`sante._history`): its own normals, alert episodes and effort windows, from the nights and activities up to that day, nothing dated after it.
+- The check-in rows (`feel`) are still accepted by `POST /sante/feel` and kept; Santé no longer reads them.
+- Efforts come from the activities' own time, stops included (`sante_training.effort_of`, H): ≥ 10 h ultra, 6–10 h very long, ≥ 3 h (or ≥ 1 500 m D+ on foot) long. The three nights after a ≥ 6 h effort (and a sleep started after it ended, the same day) are tagged `big` and left out of the normals and of the illness alert.
+- Normals are « provisoire » from 7 usable nights (`nights.band`), full from 14; the illness alert and its episodes read a full band only (`full=True`).
+- Cost on the seeded Postgres (400 nights, 730 days of activities): the whole one-page /sante, rings to folds, 82–90 ms median, against 87–117 ms for main's Aujourd'hui alone.

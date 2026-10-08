@@ -4,12 +4,12 @@
 
 {% block content %}
 {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
-<div class="pf-health pf-sante3">
-    <div class="pf-head flex-col !items-start !gap-1">
+<div class="pf-health pf-sante4">
+    <div class="pf-sante-head">
         <h1 class="pf-h1">Santé</h1>
-        {% if lines %}<p class="pf-sante-lines">{% for l in lines %}<span><b>{{ l.name }}</b> · {{ l.night }}</span>{% endfor %}</p>{% endif %}
         {% if watches %}{% include "partials/sante_sync.html" %}{% endif %}
     </div>
+    {% if lines %}<p class="pf-sante-lines">{% for l in lines %}<span><b>{{ l.name }}</b> · {{ l.night }}</span>{% endfor %}</p>{% endif %}
 
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}
     <section class="pf-health-connect pf-panel space-y-3">
@@ -25,8 +25,8 @@
     <section class="pf-note mt-4"><p>Pas encore de données de {{ watches|join(' ni de ') }}. Elles arrivent dans quelques minutes.</p></section>
     {% else %}
     <section class="pf-health-connect pf-panel space-y-3 mt-4">
-        <h2 class="pf-h2">Ta montre et tes séances</h2>
-        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ce que tu peux faire aujourd'hui et tes nuits s'afficheront ici.</p>
+        <h2 class="pf-h2">Ta montre et tes activités</h2>
+        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ta récupération et tes nuits s'afficheront ici.</p>
         <div class="flex flex-wrap gap-2">
             <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
             <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>
@@ -34,78 +34,7 @@
     </section>
     {% endif %}
     {% else %}
-    {# two views, server-rendered: a plain link without scripts (?vue=sommeil), an instant switch with them #}
-    <nav class="pf-stabs pf-stabs-2" role="tablist" aria-label="Santé">
-        {% for key, label, href in (('aujourdhui', "Aujourd'hui", '/sante'), ('sommeil', 'Sommeil', '/sante?vue=sommeil')) %}
-        <a role="tab" id="tab-{{ key }}" href="{{ href }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if key == vue else 'false' }}" tabindex="{{ '0' if key == vue else '-1' }}" class="pf-stab">{{ label }}</a>
-        {% endfor %}
-    </nav>
-    <section id="aujourdhui" role="tabpanel" aria-labelledby="tab-aujourdhui" class="pf-tabpanel"{% if vue != 'aujourdhui' %} hidden{% endif %}>
-        {% include "partials/sante_today.html" %}
-    </section>
-    <section id="sommeil" role="tabpanel" aria-labelledby="tab-sommeil" class="pf-tabpanel"{% if vue != 'sommeil' %} hidden{% endif %}>
-        {% include "partials/sante_sommeil.html" %}
-    </section>
-    <script>
-    (function () {
-        var tabs = Array.from(document.querySelectorAll(".pf-stabs-2 .pf-stab"));
-        function show(key, focus) {
-            tabs.forEach(function (t) {
-                var on = t.getAttribute("aria-controls") === key;
-                t.setAttribute("aria-selected", on ? "true" : "false");
-                t.tabIndex = on ? 0 : -1;
-                document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
-                if (on && focus) t.focus();
-            });
-            try {
-                var u = new URL(location.href);
-                if (key === "aujourdhui") u.searchParams.delete("vue"); else u.searchParams.set("vue", key);
-                u.hash = "";
-                history.replaceState(null, "", u);
-            } catch (e) {}
-        }
-        tabs.forEach(function (t, i) {
-            t.addEventListener("click", function (e) { e.preventDefault(); show(t.getAttribute("aria-controls")); window.scrollTo({ top: 0 }); });
-            t.addEventListener("keydown", function (e) {
-                var to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length
-                    : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
-                if (to >= 0) { e.preventDefault(); show(tabs[to].getAttribute("aria-controls"), true); }
-            });
-        });
-        // a link from Aujourd'hui to Sommeil (a tile, a driver) opens it in place, at its figure, and takes the
-        // focus there (the link it came from is now hidden): the figure's heading, else the Sommeil tab
-        document.addEventListener("click", function (e) {
-            var a = e.target.closest && e.target.closest('a[href^="/sante?vue=sommeil"]');
-            if (!a || e.metaKey || e.ctrlKey || e.shiftKey || a.closest(".pf-stabs")) return;
-            e.preventDefault();
-            show("sommeil");
-            var id = a.getAttribute("href").split("#")[1] || "", el = id && document.getElementById(id);
-            if (el) el.scrollIntoView(); else window.scrollTo({ top: 0 });
-            (el || document.getElementById("tab-sommeil")).focus({ preventScroll: true });
-        });
-        // the check-in swaps its own block: when the answer folds it, the focus goes to « Noté : … — modifier »
-        // (never lost to the page's top)
-        // the score (in #sante-decision, swapped out of band) keeps its breakdown open if it was, and its 14-day
-        // line gets its interaction (pf-viz scans the swapped target only)
-        var feelFocus = false, scoreOpen = false;
-        document.addEventListener("htmx:beforeRequest", function (e) {
-            var rest = document.getElementById("sante-today-rest");
-            feelFocus = !!(rest && e.target && rest.contains(e.target) && rest.contains(document.activeElement));
-            scoreOpen = !!document.querySelector("#sante-decision details.pf-score[open]");
-        });
-        document.addEventListener("htmx:afterSettle", function () {
-            var dec = document.getElementById("sante-decision"), fold = dec && dec.querySelector("details.pf-score");
-            if (fold && scoreOpen) fold.open = true;
-            if (dec && window.PFViz) window.PFViz.scan(dec);
-            if (!feelFocus) return;
-            feelFocus = false;
-            var active = document.activeElement;
-            if (active && active !== document.body && document.body.contains(active) && active.offsetParent) return;
-            var to = document.getElementById("feel-summary") || document.querySelector("#sante-today-rest .pf-chip");
-            if (to) to.focus();
-        });
-    })();
-    </script>
+    {% include "partials/sante_page.html" %}
     {% endif %}
 </div>
 {% endblock content %}

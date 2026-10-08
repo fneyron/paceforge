@@ -1,7 +1,8 @@
-"""Santé v3 nights (app/services/nights.py): the owner's real October (Transjeju
+"""The nights (app/services/nights.py): the owner's real October (Transjeju
 100M started 02/10 21:00 in Korea, a 2h20 nap on 7 Oct), then each rule on
 synthetic nights: the 24-h total, « rendormi », context tags and excluded
-nights, one band per watch, 7-night means, the illness alert, « Reprise »."""
+nights, one band per watch, 7-night means, the illness alert. The race window
+and the check-in tags stay for the race page only (Santé v4 reads neither)."""
 from datetime import date, datetime, timedelta, timezone
 
 from app.services import coros
@@ -47,7 +48,7 @@ def test_owner_october():
     nt.tag_nights(nights, sessions, [RACE], {})
     n7 = nights[D]
     assert (n7.asleep, n7.nap_min, n7.tst24) == (350, 140, 490)  # 5h50 + 2h20 = 8h10 sur 24 h
-    assert nt.day_tst24(nights, D) == 490 >= nt.SHORT_DAY_MIN  # no short-night line on 7 Oct
+    assert n7.tst24 >= nt.SHORT_DAY_MIN  # no short night on 7 Oct
     assert (n7.bed5, n7.wake5) == (datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 40))
     [(a, b, m)] = n7.naps
     assert (a, b, m) == (datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7), 140)
@@ -103,13 +104,13 @@ def test_bands_need_14_untagged_nights_on_one_watch():
     assert nt.band(nights, "hr", D)["n"] == 14 and not nt.band(nights, "hr", D)["provisional"]
     nights[D - timedelta(days=3)].tags.add("long")
     # 13 nights: « provisoire » (owner decision: from 7, H), never a full band (the alert's)
-    assert nt.band(nights, "hr", D)["provisional"] and nt.band_count(nights, "hr", D) == 13
+    assert nt.band(nights, "hr", D)["provisional"] and nt.band(nights, "hr", D)["n"] == 13
     assert nt.band(nights, "hr", D, full=True) is None
     for k in (5, 7, 9, 11, 13, 15):  # 7 nights left: still provisional; 6: none
         nights[D - timedelta(days=k)].tags.add("alcohol")
     assert nt.band(nights, "hr", D)["n"] == 7 and nt.band(nights, "hr", D)["provisional"]
     nights[D - timedelta(days=17)].tags.add("alcohol")
-    assert nt.band(nights, "hr", D) is None and nt.band_count(nights, "hr", D) == 6
+    assert nt.band(nights, "hr", D) is None
     # a new watch: its band starts again
     rows2 = night_rows(range(1, 30, 2))
     rows2["hr_night"][D] = (50.0, {"method": "coros_sleep_summary"}, "COROS")
@@ -161,8 +162,8 @@ def test_late_nap_annotates_without_excluding():
     nights = nt.build_nights(rows, D)
     nt.tag_nights(nights)
     assert "late_nap" in nights[D].tags and not nights[D].excluded  # 6 h before 23:00 (Mograss 2022)
-    assert nights[D].tst24 == 440 and nt.day_tst24(nights, D) == 480  # a pre-night nap counts for the morning
-    assert nights[D - timedelta(days=1)].tst24 == 480  # and on its own day's bar
+    assert nights[D].tst24 == 440  # a nap belongs to the day it ends: the day before's 24-h total
+    assert nights[D - timedelta(days=1)].tst24 == 480
 
 
 def test_race_window_and_illness_days():
@@ -201,72 +202,6 @@ def test_illness_alert():
     assert nt.illness_alert(few, D) is None  # no band, no alert
 
 
-def test_reprise():
-    base = night_rows(range(3, 60), hr=lambda k: 44 + k % 3)
-    rows = {m: dict(base[m]) for m in base}
-    nights = nt.build_nights(rows, D)
-    sick = {D - timedelta(days=2): {"value": 3, "why": ["sick"]}}
-    r = nt.reprise(nights, sick, D)
-    assert r is None  # no « malade » for 2 days, no night or run to wait for: closed
-    sick[D - timedelta(days=1)] = {"value": 3, "why": ["sick"]}
-    r = nt.reprise(nights, sick, D)
-    assert r["since"] == D - timedelta(days=2) and r["cause"] == "malade" and r["gates"]["no_sick"] is False
-    # the chip is gone, the first easy run is still 5 bpm high: open
-    r = nt.reprise(nights, sick, D + timedelta(days=2), easy=[(D - timedelta(days=30), 0.5),
-                                                               (D + timedelta(days=1), 5.0)])
-    assert r["gates"] == {"no_sick": True, "easy_hr": False, "night_hr": True}
-    assert nt.reprise(nights, sick, D + timedelta(days=2), easy=[(D - timedelta(days=30), 0.5),
-                                                                  (D + timedelta(days=1), 2.0)]) is None
-    # no easy run since: intensity stays off (unmeasured), but that never sends to a doctor
-    late = nt.reprise(nights, sick, D + timedelta(days=13), easy=[(D - timedelta(days=30), 0.5)])
-    assert late["gates"]["easy_hr"] is False and late["days"] == 15 and late["see_doctor"] is False
-    # still high on the latest run after 2 weeks: « vois un médecin » (H; Schwellnus 2022)
-    high = nt.reprise(nights, sick, D + timedelta(days=13), easy=[(D - timedelta(days=30), 0.5),
-                                                                  (D + timedelta(days=12), 4.5)])
-    assert high["see_doctor"] is True
-    # still « malade » after 2 weeks: the same
-    still = {**sick, **{D + timedelta(days=k): {"value": 3, "why": ["sick"]} for k in range(1, 14, 3)}}
-    assert nt.reprise(nights, still, D + timedelta(days=13))["see_doctor"] is True
-
-
-def test_reprise_easy_gate_reads_the_latest_run_never_only_the_first():
-    """F3: « malade » 15 days ago, nightly HR back for 10 days, the first easy
-    run +5 bpm, every later one normal: Reprise closes (no « vois un médecin »)."""
-    nights = nt.build_nights(night_rows(range(0, 60), hr=lambda k: 44 + k % 3), D)
-    sick = {D - timedelta(days=15): {"value": 3, "why": ["sick"]}}
-    before = [(D - timedelta(days=30), 0.5)]
-    runs = [(D - timedelta(days=12), 5.0)] + [(D - timedelta(days=k), 0.0) for k in (10, 7, 4, 1)]
-    assert nt.reprise(nights, sick, D, easy=before + runs) is None
-    # still open the day after the high run, closed once a later one is back
-    r = nt.reprise(nights, sick, D - timedelta(days=11), easy=before + runs[:1])
-    assert r["gates"]["easy_hr"] is False and r["see_doctor"] is False
-    # a run below the usual never holds the gate (only « not more than 3 bpm over »)
-    assert nt.reprise(nights, sick, D, easy=before + [(D - timedelta(days=2), -4.5)]) is None
-    # no qualifying run since (hot weather, trail): kept shut, never « vois un médecin »
-    r = nt.reprise(nights, sick, D, easy=before)
-    assert r["gates"] == {"no_sick": True, "easy_hr": False, "night_hr": True} and r["see_doctor"] is False
-
-
-def test_reprise_night_gate_without_a_band_reads_the_nights_before():
-    """L-F2: 10 nights at 45 bpm (no band), « malade » once: a flat, normal
-    nightly HR closes the night gate (the nights before + 3 bpm, H); integer
-    noise never reopens it; a still-high night keeps it shut."""
-    nights = nt.build_nights(night_rows(range(0, 16), hr=45.0), D)  # 9 nights before the illness: no band
-    start = D - timedelta(days=6)
-    sick = {start: {"value": 3, "why": ["sick"]}}
-    assert nt.band(nights, "hr", start, full=True) is None and nt.band(nights, "hr", start)["provisional"]
-    nt.tag_nights(nights, (), [], sick)
-    for today in (start + timedelta(days=2), start + timedelta(days=6)):
-        assert nt.reprise(nights, sick, today) is None
-    noisy = nt.build_nights(night_rows(range(0, 20), hr=lambda k: 44 + k % 3), D)
-    nt.tag_nights(noisy, (), [], sick)
-    assert all(nt.reprise(noisy, sick, start + timedelta(days=k)) is None for k in range(2, 7))
-    high = nt.build_nights(night_rows(range(0, 20), hr=lambda k: 52.0 if k < 6 else 45.0), D)
-    nt.tag_nights(high, (), [], sick)
-    r = nt.reprise(high, sick, D)
-    assert r["gates"]["night_hr"] is False  # 52 against 45 + 3, flat: not back, not falling
-
-
 def test_timing_rounding_and_resettled_wakes():
     rows = night_rows(range(0, 10), start=(23, 7), end=(6, 38))
     rows["nap"][D] = (60, {"windows": [["2026-10-07T07:30", "2026-10-07T08:30"]]}, "Garmin")
@@ -275,23 +210,16 @@ def test_timing_rounding_and_resettled_wakes():
     t = nt.timing(nights, D)
     assert t["n"] == 10 and t["regular_ok"] and nt.clock5(t["bed"]) == "23:05" and nt.clock5(t["wake"]) == "06:40"
     assert t["bed_sd"] == 0 and t["wake_sd"] == 0  # the « rendormi » 04:52 is out of the wake spread
-    assert nights[D].resettled and not nt.early_wake(nights[D - timedelta(days=1)], t)
-    assert nt.early_wake(nights[D], t) and nt.early_wake(nights[D], {"wake": None})
-    assert nt.nap_tip_hour(t) == "16:00" and nt.nap_tip_hour({"bed": nt.clock_min(datetime(2026, 1, 1, 21, 50))}) \
-        == "14:50"
+    assert nights[D].resettled and not nights[D - timedelta(days=1)].resettled
     assert nt.round5(datetime(2026, 10, 7, 5, 38)) == datetime(2026, 10, 7, 5, 40)
     assert nt.round5(datetime(2026, 10, 6, 23, 57, 40)) == datetime(2026, 10, 7, 0, 0)
 
 
-def test_quiet_short_sleep_line():
-    short = nt.build_nights(night_rows(range(0, 14, 2), asleep=400), D)
-    assert nt.quiet_short_sleep(short, D)
-    ok = nt.build_nights(night_rows(range(0, 14, 2), asleep=430), D)
-    assert not nt.quiet_short_sleep(ok, D)
-
-
-async def test_load_nights_reads_the_rows_and_the_check_ins(db_session, test_user):
+async def test_load_nights_reads_the_nights_never_the_check_ins_nor_a_race(db_session, test_user):
+    """Santé v4: the nights tagged from the activities alone; a stored check-in (« alcool hier », « malade ») and
+    a planned race are never read (owner, 2026-10-08)."""
     from app.models.health import HealthMetric
+    from app.services import sante_training as st
 
     rows = owner_rows()
     for metric, by_day in rows.items():
@@ -299,13 +227,15 @@ async def test_load_nights_reads_the_rows_and_the_check_ins(db_session, test_use
             db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=v, details=det,
                                         source=src, n_samples=1))
     db_session.add(HealthMetric(user_id=test_user.id, date=D, metric="feel", value=3, source="PaceForge",
-                                details={"legs_heavy": True, "alcohol": True}, n_samples=1))
+                                details={"why": ["sick", "legs"], "alcohol": True}, n_samples=1))
     db_session.add(HealthMetric(user_id=test_user.id, date=D, metric="hrv_norm", value=77, source="COROS",
                                 details={"lo": 70, "hi": 84}, n_samples=1))  # a brand row: never read
     await db_session.flush()
-    nights, feel = await nt.load_nights(db_session, test_user.id, D, races=[RACE])
-    assert feel[D] == {"value": 3, "why": ["legs"], "alcohol": True, "answered": True}
-    assert nights[D].tst24 == 490 and {"race", "alcohol"} <= nights[D].tags
+    race = session(date(2026, 10, 2), 21, 935, offset=32400, sid=8)
+    race.elapsed, race.workout_type = 1013, 1
+    nights = await nt.load_nights(db_session, test_user.id, D, sessions=[race], efforts=st.efforts([race]))
+    assert nights[D].tst24 == 490 and nights[D].tags == set()  # no « alcool », no « malade », no race window
+    assert nights[date(2026, 10, 6)].tags == {"big"}  # D+3 after the 16h53 effort (it ended on 03/10)
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}
 
@@ -336,12 +266,11 @@ async def test_alert_nights_say_fc_de_nuit_haute_never_malade(db_session, test_u
             db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=v, details=det,
                                         source=src, n_samples=1))
     await db_session.flush()
-    nights, _ = await nt.load_nights(db_session, test_user.id, D)
+    nights = await nt.load_nights(db_session, test_user.id, D)
     assert nights[D].tags == {"alert"} and nights[D - timedelta(days=1)].tags == {"alert"}
     assert nights[D].excluded and not nights[D].usable("hr")  # out of the band and the means, as before
     assert nt.TAG_WORDS["alert"] == "FC de nuit haute" and "malade" not in nt.TAG_WORDS["alert"]
-    s = sl.sleep_view(nights, D, "14", alert=True)
-    text = repr(s)
+    text = repr(sl.rows(nights, D))
     assert "◇ FC de nuit haute" in text and "malade" not in text
     prep = await rp._nights(db_session, test_user.id, D, D - timedelta(days=70), [], [])
     assert prep[D].tags == {"alert"}
@@ -362,8 +291,8 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
     nights = nt.build_nights({m: {**rows[m], **new[m]} for m in rows}, D)
     assert nt.mean_source(nights, "hr", D) == "COROS" and nt.mean7(nights, "hr", D)["value"] == 49
     for metric in ("hr", "hrv"):
-        st = sante._night_stats(nights, metric, D)
-        assert st["text"] is not None and st["status"] is None and st["band"] is None  # « ta normale se construit »
+        st = sante._night_stat(nights, metric, D)
+        assert st["value"] is not None and st["status"] is None and st["normal"] is None  # no band yet: no word
     # 2 COROS nights at 51 after Garmin nights at 44–46: never the Garmin alert line
     rows = night_rows(range(2, 62), hr=lambda k: 44 + k % 3)
     hot = night_rows([0, 1], hr=51.0, source="COROS")

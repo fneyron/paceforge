@@ -27,6 +27,8 @@ templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["dashboard"])
 
+HOME = "/sante"  # where a signed-in athlete lands: « Mets Santé en premier dans l'application »
+
 # The history is paginated by WEEKS (not by row count) so a week is never split
 # across two "load more" chunks and weekly totals stay honest.
 WEEKS_PER_PAGE = 6
@@ -41,8 +43,8 @@ async def landing(
     error: str | None = None,
     user: User | None = Depends(get_optional_user),
 ):
-    if user:
-        return RedirectResponse(url="/simulator", status_code=302)
+    if user:  # signed in: Santé is the home (owner, 2026-10-08)
+        return RedirectResponse(url=HOME, status_code=302)
     return templates.TemplateResponse(
         request, "login.html", context={"error": error, "stats": load_model_stats()}
     )

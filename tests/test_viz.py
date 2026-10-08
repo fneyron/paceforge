@@ -1,17 +1,18 @@
-"""The chart kit: French formats (the house duration everywhere), geometry
-builders on the owner's real nights, the Jinja macros' accessible structure,
-and the CSS/JS rules (contrast of marks and selected states in both themes,
-motion ≤ 300 ms under no-preference only, no colour or number formatting in JS)."""
+"""The chart kit: French formats (the house duration everywhere), the geometry
+builders (the race page's and Activités' figures, Santé v4's rings, day bars,
+night cards and timeline), the Jinja macros' accessible structure, and the
+CSS/JS rules (contrast of marks and selected states in both themes, motion
+≤ 300 ms under no-preference only, forced colours, no colour or number
+formatting in JS)."""
 import json
+import math
 import pathlib
 import re
 from datetime import date, datetime, timedelta
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app.services import nights as nt
 from app.services import sante_today, viz
-from tests.test_nights import RACE, owner_rows
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 D = date(2026, 10, 7)
@@ -67,17 +68,6 @@ def test_helpers():
 
 # ── builders ────────────────────────────────────────────────────────────────
 
-def test_tile_end_dot_is_the_printed_value():
-    means = [None, None, 46, 46.5, 47, None, 48]
-    t = viz.tile("FC de nuit · 7 nuits", "48", "bpm", means, (43, 47), word="au-dessus", glyph="▲", tone="warn",
-                 href="/sante?vue=sommeil#coeur", aria="FC de nuit sur 7 nuits : 48 battements par minute")
-    assert t["path"].startswith("M") and t["end"]["x"] == 106 and t["band"]["h"] > 0
-    ys = [float(p.split()[1]) for p in t["path"].split("M")[1:] for p in [p]]
-    assert t["end"]["y"] == min(float(seg.split()[-1]) for seg in t["path"].replace("L", "M").split("M")[1:])
-    sparse = viz.tile("VFC · 7 nuits", None, "ms", [None] * 14, None, gap="2 nuits sur 7 · il en faut 3")
-    assert sparse["path"] is None and sparse["gap"] == "2 nuits sur 7 · il en faut 3"
-    assert ys  # the line exists
-
 
 def test_band_chart_prints_per_night_values_and_normal_only():
     days = [D - timedelta(days=13 - i) for i in range(14)]
@@ -107,42 +97,72 @@ def test_band_chart_prints_per_night_values_and_normal_only():
     assert c["summary"] == "Cœur la nuit, 14 nuits : 12 mesurées"
 
 
-def test_nights_chart_on_the_owner():
-    nights = nt.build_nights(owner_rows(), D)
-    nt.tag_nights(nights, (), [RACE], {})
+def test_ring_arc_is_the_fill_and_the_value_is_printed_by_the_caller():
+    """V1: an arc from the top, clockwise, up to the fill (capped at one turn); none at 0 or without a value."""
+    r = viz.ring("recup", 0.59, "59", "Récupération", "en cours", tone="warn", href="#contributeurs",
+                 aria="Récupération : 59 sur 100, récupération en cours")
+    assert r["c"] == round(2 * math.pi * 42, 2) and r["dash"] == round(0.59 * r["c"], 2) and not r["long"]
+    assert viz.ring("sommeil", 1.4, "8h36", "Sommeil")["dash"] == r["c"]  # more than the full mark: one turn
+    assert viz.ring("charge", None, "—", "Charge")["dash"] == 0 and viz.ring("x", -1, "0", "x")["dash"] == 0
+    assert viz.ring("charge", .5, "16h53", "Charge")["long"]  # 5 characters: a smaller size in the dial
+
+
+def test_day_bars_stack_the_naps_mark_today_and_leave_a_gap():
+    """V2: one bar per day; a lighter part on top (the naps); a day without data is a dot, never a zero;
+    the reference line; the day of the month under 16 slots or fewer, the months beyond."""
     days = [D - timedelta(days=13 - i) for i in range(14)]
-    tags = {d: [nt.TAG_WORDS[t] for t in sorted(n.tags)] for d, n in nights.items() if n.tags}
-    c = viz.nights_chart(days, nights, races=[(RACE[0], RACE[1])], tags=tags, link="#hyp")
-    data = json.loads(c["data"])
-    col = c["cols"][-1]
-    assert col["night"] and col["nap"] and not col["short"]  # 5h50 solid + 2h20 hatched on one bar
-    assert col["nap"]["y"] < col["night"]["y"]  # stacked on top of the night
-    assert len(col["nap_segs"]) == 1 and not col["nap_edges"]  # the 06:42 → 09:07 nap sits in the axis
-    seg, win = col["nap_segs"][0], col["win"]
-    assert seg["y"] > win["y"] + win["h"]  # after the wake, with its 64-min gap
-    assert c["read"] == ["nuit du mar. 6 au mer. 7", f"Nuit 5h50 · sieste 2h20 · 8h10 sur 24{NN}h",
-                         "23:35 → 05:40 · sieste 06:40 → 09:05 · ◇ autour de la course"]  # times to 5 min
-    assert data["link"] == "#hyp"
-    short = c["cols"][days.index(date(2026, 10, 6))]
-    assert short["short"]  # 5h33 with no nap: under 6 h, drawn as an outlined bar
-    lone = c["cols"][days.index(date(2026, 9, 25))]
-    assert "night" not in lone and lone["nap"] and data["r"][days.index(date(2026, 9, 25))][1] == \
-        "Sieste 1h22 · nuit incomplète ?"
-    assert c["cols"][days.index(date(2026, 10, 3))].get("miss")  # the race night: no watch, a gap, never zero
-    hours = [h["label"] for h in c["hours"]]
-    assert hours == ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00"]  # 23:00 → 11:00 fits windows and naps
-    assert seg["y"] + seg["h"] <= c["timing"][1]
-    assert "moins de 6 heures sur 24 heures" in data["a"][days.index(date(2026, 10, 6))]
+    vals = [440.0] * 14
+    vals[3] = None
+    naps = [None] * 13 + [140.0]
+    c = viz.day_bars("sommeil-14", days, vals, readouts=[["a", "b", "c"]] * 14, arias=["a"] * 14, stack=naps,
+                     reference=(420, "7 h"), today=13, sel=13)
+    b = c["bars"]
+    assert b[3]["miss"] and "h" not in b[3] and not any(x.get("miss") for i, x in enumerate(b) if i != 3)
+    assert b[13]["today"] and b[13]["top"]["y"] < b[13]["y"] and b[13]["top"]["y"] + b[13]["top"]["h"] == b[13]["y"]
+    assert c["ref"]["label"] == "7 h" and b[0]["y"] < c["ref"]["y"] < c["base"]  # 7h20 reaches above the 7 h line
+    assert [t["label"] for t in c["xt"]] == [str(d.day) for d in days] and c["xt"][13]["today"]
+    score = viz.day_bars("recuperation", days[:2], [50, 100], readouts=[["a", "b", "c"]] * 2, arias=["a"] * 2,
+                         y_max=100)
+    assert score["bars"][1]["y"] == 8 and abs(2 * score["bars"][0]["h"] - score["bars"][1]["h"]) < 0.2
+    many = [D - timedelta(days=89 - i) for i in range(90)]
+    m = viz.day_bars("sommeil-90", many, [400.0] * 90, readouts=[["a", "b", "c"]] * 90, arias=["a"] * 90)
+    assert [t["label"] for t in m["xt"]] == ["août", "sept.", "oct."] and m["bars"][0]["w"] >= 1.4
 
 
-def test_hypnogram_only_from_real_intervals():
-    start, end = datetime(2026, 10, 4, 23, 0), datetime(2026, 10, 5, 6, 30)
-    assert viz.hypnogram(None, start, end) is None and viz.hypnogram([], start, end) is None
-    h = viz.hypnogram([("core", start, start + timedelta(minutes=90)),
-                       ("deep", start + timedelta(minutes=90), start + timedelta(minutes=180)),
-                       ("awake", start + timedelta(minutes=180), end)], start, end)
-    assert [n for n, _ in h["lanes"]] == ["Éveil", "REM", "Léger", "Profond"] and len(h["steps"]) == 2
-    assert "bed" not in h and "wake" not in h  # no end labels: the times are in the readout
+def test_night_card_prints_the_night_and_its_normal_never_a_verdict():
+    """V3: a dot per measured night, the latest selected; the readout says the night's value and the normal
+    (« provisoire » from 7 to 13 nights), never above or below on one night (Buchheit 2014)."""
+    days = [D - timedelta(days=29 - i) for i in range(30)]
+    vals = [60.0 + (i % 5) for i in range(30)]
+    vals[10] = None
+    band = [None] * 7 + [(55.0, 66.0)] * 23
+    prov = [False] * 7 + [True] * 7 + [False] * 16
+    mean = [viz.rolling(vals, i, log=True) for i in range(30)]
+    c = viz.night_card("vfc", days, vals, band=band, prov=prov, mean=mean, unit="ms", unit_long="millisecondes",
+                       name="VFC", min_span=20)
+    d = json.loads(c["data"])
+    assert d["sel"] == 29 and c["read"] == [viz.night_label(D), f"64{NN}ms", "normale 55–66"]
+    assert d["r"][10] == [viz.night_label(days[10]), "—", "pas de mesure cette nuit"]
+    assert d["a"][10] == f"{viz.night_label(days[10])} : pas de mesure"  # spoken as it reads
+    assert d["r"][8][2] == "normale provisoire 55–66" and d["r"][2][2] == ""
+    printed = json.dumps(d["r"], ensure_ascii=False)
+    assert not any(w in printed for w in ("au-dessus", "en dessous", "▲", "▼"))
+    assert len(c["dots"]) == 29 and c["summary"] == "VFC, 30 nuits : 29 mesurées" and c["mean"].startswith("M")
+    assert d["a"][-1] == "nuit du mar. 6 au mer. 7 : VFC 64 millisecondes, ta normale de 55 à 66"
+    for m in mean:  # the 7-night mean is drawn, never printed
+        if m is not None and m != int(m):
+            assert viz.num(m, 1) not in printed
+
+
+def test_the_timeline_draws_the_night_and_its_nap_on_a_clock_axis():
+    """V4: one bar from bedtime to wake, the nap on its own lane, the hours every 2 h; the times
+    themselves are printed once, above it, by the page."""
+    t = viz.timeline(datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 38),
+                     naps=[(datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7))])
+    assert [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and len(t["naps"]) == 1 and not t["out"]
+    assert t["main"]["x"] < t["naps"][0]["x"] and t["main"]["x"] + t["main"]["w"] < t["naps"][0]["x"]
+    assert [k["label"] for k in t["ticks"]] == ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00"]
+    assert t["X0"] <= t["main"]["x"] and t["naps"][0]["x"] + t["naps"][0]["w"] <= t["X1"]
 
 
 def test_bars_lines_dots():
@@ -167,11 +187,16 @@ def test_bars_lines_dots():
 
 # ── macros ──────────────────────────────────────────────────────────────────
 
+
 def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     days = [D - timedelta(days=13 - i) for i in range(14)]
-    nights = nt.build_nights(owner_rows(), D)
+    sleep = viz.day_bars("sommeil-14", days, [None] + [440.0] * 13, readouts=[["n", "Nuit 7h20", "c"]] * 14,
+                         arias=["a"] * 14, stack=[None] * 13 + [60.0], reference=(420, "7 h"), today=13)
+    card = viz.night_card("vfc", days, [60.0] * 14, band=[(55.0, 65.0)] * 14, prov=[False] * 14, mean=[None] * 14,
+                          unit="ms", unit_long="millisecondes", name="VFC")
     figs = {
-        "nights": ("{{ v.viz_nights(c, 'Tes nuits', 'nuits', 'sommeil') }}", viz.nights_chart(days, nights)),
+        "day_bars": ("{{ v.viz_day_bars(c, 'Sommeil sur 24 heures', 'nuit') }}", sleep),
+        "night_card": ("{{ v.viz_night_card(c, 'VFC · 30 nuits') }}", card),
         "band": ("{{ v.viz_band(c, 'Cœur la nuit', 'sommeil') }}", viz.band_chart("coeur", days, [
             {"name": "VFC", "unit": "ms", "unit_long": "millisecondes", "values": [60.0] * 14, "band": [None] * 14}])),
         "bars": ("{{ v.viz_bars(c, 'Semaines', 'semaines') }}", viz.bars(
@@ -189,9 +214,12 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
         assert f"<b data-r>{c['read'][1]}</b>".replace("'", "&#39;") in html or c["read"][1] in html, name
         assert data_of(html)["sel"] == c["sel"], name
         assert "<a " not in html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0], name  # links via the readout
-    html = render("{{ v.viz_nights(c, 'Tes nuits', 'nuits', 'sommeil') }}", c=figs["nights"][1])
-    assert 'data-viz-group="sommeil"' in html and 'fill="url(#pf-hatch-nuits)"' in html
-    assert "Nuit 5h50 · sieste 2h20 · 8h10 sur 24" in html
+    html = render(figs["day_bars"][0], c=sleep)
+    assert 'class="pf-viz pf-viz-card"' in html and "choisis une nuit" in html
+    assert html.count('class="pf-bar-top"') == 1 and html.count('class="pf-viz-gap"') == 1
+    assert 'class="pf-viz-col is-today"' in html and ">7 h</text>" in html
+    html = render(figs["night_card"][0], c=card)
+    assert html.count('class="pf-viz-dot"') == 14 and 'class="pf-viz-band"' in html and "choisis une nuit" in html
 
 
 def test_json_cannot_close_the_script_tag():
@@ -202,14 +230,37 @@ def test_json_cannot_close_the_script_tag():
     assert html.count("</script>") == 1 and data_of(html)["r"][0][1].startswith("</script><b>")
 
 
-def test_tile_and_ranges_macros():
-    t = viz.tile("VFC · 7 nuits", "58", "ms", [60, 59, 58], (55, 65), word="dans ta normale", glyph="●",
-                 href="/sante?vue=sommeil#coeur", aria="VFC sur 7 nuits : 58 millisecondes, dans ta normale", driver=True)
-    html = render("{{ v.viz_tile(t) }}", t=t)
-    assert 'class="pf-tile is-driver"' in html and "● dans ta normale" in html and 'aria-hidden="true"' in html
-    assert "55" not in re.sub(r"<svg.*</svg>", "", html, flags=re.S).replace("aria-label", "")  # no band edge printed
+def test_ring_and_ranges_macros():
+    """A ring is one link to the section it sums up; its name starts with the visible label (WCAG 2.5.3);
+    the dial is drawn, the value, label and word printed once."""
+    r = viz.ring("recup", .59, "59", "Récupération", "en cours", tone="warn", href="#contributeurs",
+                 aria="Récupération : 59 sur 100, récupération en cours")
+    html = render("{{ v.viz_ring(r) }}", r=r)
+    assert html.count("<a ") == 1 and 'href="#contributeurs"' in html
+    assert 'aria-label="Récupération : 59 sur 100, récupération en cours"' in html
+    assert 'class="pf-ring pf-ring-recup is-warn"' in html and f'stroke-dasharray="{r["dash"]} {r["c"]}"' in html
+    assert 'aria-hidden="true" focusable="false"' in html and 'transform="rotate(-90 50 50)"' in html
+    assert re.sub(r"<[^>]+>", " ", html).split() == ["59", "Récupération", "en", "cours"]
+    empty = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", 0, "0 min", "Charge", "7 jours"))
+    assert "pf-ring-arc" not in empty and "pf-ring-track" in empty  # the track alone
+    assert "is-long" in render("{{ v.viz_ring(r) }}", r=viz.ring("charge", .4, "16h53", "Charge"))
     html = render("{{ v.viz_ranges([('14', '14 nuits'), ('90', '3 mois')], '14') }}")
     assert 'data-viz-ranges role="group"' in html and html.count('aria-pressed="true"') == 1
+
+
+def test_the_timeline_is_one_image_with_hours_only():
+    t = viz.timeline(datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 38),
+                     naps=[(datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7))])
+    html = render("{{ v.viz_timeline(t, 'Nuit de 23 h 35 à 5 h 40, sieste de 6 h 40 à 9 h 05') }}", t=t)
+    assert html.count("<svg") == 1 and 'role="img" aria-label="Nuit de 23 h 35' in html
+    assert html.count('class="pf-tl-night"') == 1 and html.count('class="pf-tl-nap"') == 1
+    texts = re.findall(r">([^<]+)</text>", html)
+    assert {"nuit", "sieste"} <= set(texts) and set(texts) - {"nuit", "sieste"} <= {f"{h:02d}:00" for h in range(24)}
+    stages = viz.timeline(datetime(2026, 10, 6, 23, 0), datetime(2026, 10, 7, 6, 30), stages=[
+        ("core", datetime(2026, 10, 6, 23, 0), datetime(2026, 10, 7, 1, 0)),
+        ("deep", datetime(2026, 10, 7, 1, 0), datetime(2026, 10, 7, 6, 30))])
+    html = render("{{ v.viz_timeline(t, 'x') }}", t=stages)
+    assert html.count('class="pf-tl-seg"') == 2 and html.count('class="pf-tl-step"') == 1 and "pf-tl-night" not in html
 
 
 # ── CSS and JS rules ────────────────────────────────────────────────────────
@@ -257,6 +308,32 @@ def test_motion_is_short_and_only_under_no_preference():
     assert "@media (forced-colors: active)" in section and "Highlight" in section and "CanvasText" in section
 
 
+def test_santes_marks_reach_3_to_1_on_the_page_and_on_the_cards():
+    """The rings' arcs and the cards' bars (accent, ok, warn, danger) on the page, on the soft cards and
+    against the ring's track; a nap's lighter part keeps an accent edge."""
+    theme = (ROOT / "app/static/css/theme.css").read_text()
+    light, dark = _tokens(theme, ":root"), {**_tokens(theme, ":root"), **_tokens(theme, ".dark")}
+    for name, t in (("light", light), ("dark", dark)):
+        for tone in ("pf-accent", "pf-ok", "pf-warn", "pf-danger"):
+            for ground in ("pf-bg", "pf-soft", "pf-line"):
+                assert contrast(t[tone], t[ground]) >= 3, (name, tone, ground)
+        assert contrast(t["pf-gray-400"], t["pf-soft"]) >= 3, name  # a missing day's dot, the band's edges on a card
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert ".pf-bar-top { fill: rgb(var(--pf-accent) / .38); stroke: rgb(var(--pf-accent)); stroke-width: 1; }" in css
+    assert ".pf-tl-nap { fill: rgb(var(--pf-accent) / .4); stroke: rgb(var(--pf-accent)); stroke-width: 1; }" in css
+
+
+def test_santes_motion_is_short_and_only_under_no_preference():
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    section = css[css.index("/* ── Santé v4"):css.index("/* ── Réglages")]
+    for dur in re.findall(r"(\d*\.?\d+)(ms|s)\b", section):
+        v = float(dur[0]) / (1000 if dur[1] == "ms" else 1)
+        assert v <= 0.3, dur
+    outside = re.sub(r"@media \(prefers-reduced-motion: no-preference\) \{.*?\n\}", "", section, flags=re.S)
+    assert "transition" not in outside and "animation:" not in outside
+    assert ".pf-ring-arc { animation: pf-ring-in .3s ease-out both; }" in section
+
+
 def test_js_moves_the_selection_only():
     js = (ROOT / "app/static/js/pf-viz.js").read_text()
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", js)  # no colour
@@ -293,19 +370,14 @@ def test_the_link_row_is_reserved_never_inserted():
     assert 'classList.toggle("is-off"' in js and 'hrefEl.toggleAttribute("hidden"' not in js
 
 
-def test_the_readout_and_the_hypnogram_reserve_their_height():
-    """UX2: pf-viz.js sets the readout's min-height to its tallest line; the
-    hypnogram sits in a box of its own height that also holds « Pas de forme »."""
+def test_the_readout_reserves_its_height():
+    """UX2: pf-viz.js sets the readout's min-height to its tallest line; a card's readout reserves two
+    lines; the timeline is drawn by the server at its own height (nothing to swap)."""
     js = (ROOT / "app/static/js/pf-viz.js").read_text()
     assert "function reserve()" in js and "readBox.style.minHeight" in js and "ResizeObserver" in js
     css = (ROOT / "app/static/css/interface.css").read_text()
-    assert ".pf-hyp-box { max-width: 560px; aspect-ratio: 320 / 72;" in css
-    tpl = (ROOT / "app/templates/partials/sante_sleep_range.html").read_text()
-    box = tpl[tpl.index('<div class="pf-hyp-box">'):]
-    box = box[:box.index("</div>")]
-    assert "viz_hyp" in box and 'data-night="none"' in box
-    assert viz.hypnogram([("core", datetime(2026, 10, 7, 0), datetime(2026, 10, 7, 1))], datetime(2026, 10, 7),
-                         datetime(2026, 10, 7, 6))["H"] == 72 and viz.W == 320
+    assert ".pf-viz-card .pf-viz-read { min-height: 60px; }" in css
+    assert ".pf-tl { display: block; width: 100%; max-width: 560px; height: auto;" in css
 
 
 def test_a_touch_selects_on_a_tap_or_a_sideways_drag_only():
@@ -375,21 +447,39 @@ def test_the_selection_shows_in_forced_colours_and_on_a_short_night():
     """UX6: the forced-colors selected rule is at least as specific as the
     normal-mode one it must beat; a selected < 6 h night is filled."""
     css = (ROOT / "app/static/css/interface.css").read_text()
+    kit = css[css.index("/* ── viz: the chart kit"):]  # the race page's nights figure
     normal = ".pf-viz-col.is-sel .pf-viz-night:not(.is-short)"
-    fc = css[css.index("@media (forced-colors: active)"):]
+    fc = kit[kit.index("@media (forced-colors: active)"):]
     rule = next(ln for ln in fc.splitlines() if "fill: Highlight" in ln and ".pf-viz-col.is-sel" in ln)
     sel = next(s for s in _split_top(rule.split("{")[0]) if "pf-viz-col.is-sel" in s)
     assert _specificity(sel) >= _specificity(normal) == (0, 4, 0), (sel, _specificity(sel))
     assert ".pf-viz-col.is-sel .pf-viz-night.is-short { fill: rgb(var(--pf-ink)); }" in css
 
 
-def test_the_selected_tab_and_the_pressed_answers_show_in_forced_colours():
-    """UX7."""
+def test_the_rings_bars_and_cards_show_in_forced_colours():
+    """A thin track and a thick arc (the ring's value without colour); the cards outlined; a selected bar in
+    Highlight whatever its tone; the contributors' bars keep their length."""
     css = (ROOT / "app/static/css/interface.css").read_text()
-    fc = css[css.index("@media (forced-colors: active)"):]
-    assert '.pf-stab[aria-selected="true"] { border-bottom-color: Highlight; }' in fc
-    assert ".pf-stab { border-bottom-color: Canvas; }" in fc
-    assert '.pf-chip[aria-pressed="true"] { forced-color-adjust: none; background: Highlight;' in fc
+    sante = css[css.index("/* ── Santé v4"):css.index("/* ── Réglages")]
+    fc = sante[sante.index("@media (forced-colors: active)"):]
+    assert ".pf-ring-track { stroke: CanvasText; stroke-width: 2; }" in fc
+    assert ".pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }" in fc
+    assert ".pf-card, .pf-habits > div { border: 1px solid CanvasText; }" in fc  # the cards keep an edge
+    rule = next(ln for ln in fc.splitlines() if "fill: Highlight" in ln)
+    sel = _split_top(rule.split("{")[0].strip())[0]
+    assert _specificity(sel) >= _specificity(".pf-viz-col.is-sel .pf-bar") == (0, 3, 0), sel
+    assert _specificity(sel) > _specificity(".pf-bar.is-danger")  # a tone's forced fill never hides the selection
+    assert "forced-color-adjust: none" in fc.split(".pf-contrib-bar > i")[1].split("}")[0]
+
+
+def test_every_ring_and_card_anchor_lands_under_the_top_bar():
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    assert ".pf-sante4 [id] { scroll-margin-top: 80px; }" in css
+    page = (ROOT / "app/templates/partials/sante_page.html").read_text()
+    for anchor in ("contributeurs", "recuperation", "sommeil", "charge"):
+        assert f'id="{anchor}"' in page, anchor
+    assert '("vfc", "VFC · 30 nuits", p.vfc), ("fc", "FC de nuit · 30 nuits", p.fc)' in page
+    assert 'id="{{ key }}"' in page
 
 
 def test_a_race_name_never_runs_past_the_plot():
@@ -429,19 +519,6 @@ def test_the_small_targets_reach_44_px():
     assert "min-height: 44px" in refs and "white-space: nowrap" in refs
 
 
-def test_focus_follows_the_in_place_switches():
-    """UX4 / UX16: the check-in fold's summary takes the focus after a swap that
-    folds it; a tile or driver opening Sommeil focuses the figure's heading."""
-    page = (ROOT / "app/templates/sante.html").read_text()
-    assert '(el || document.getElementById("tab-sommeil")).focus({ preventScroll: true })' in page
-    assert 'document.getElementById("feel-summary")' in page and "htmx:afterSettle" in page
-    today = (ROOT / "app/templates/partials/sante_today.html").read_text()
-    assert '<summary id="feel-summary">' in today
-    sleep = (ROOT / "app/templates/partials/sante_sleep_range.html").read_text()
-    assert '<h2 id="nuits" class="pf-sante-h" tabindex="-1">' in sleep and \
-        '<h2 id="coeur" class="pf-sante-h" tabindex="-1">' in sleep
-
-
 def test_band_chart_says_a_provisional_normal():
     """A band from 7 to 13 nights (H): « normale provisoire » once when every panel's is, else per panel; a judged
     value's word gets « (provisoire) »; the spoken sentence says it."""
@@ -461,16 +538,3 @@ def test_band_chart_says_a_provisional_normal():
     assert full["read"][2] == "normale VFC 55–65, FC 43–49" and "provisoire" not in full["read"][1]
 
 
-def test_score_gauge_and_line():
-    g = viz.gauge(59)
-    assert g["track"] == "M12.0 82.0 A68 68 0 0 1 148.0 82.0" and g["arc"].endswith("98.97 16.7")  # 59 % of the half turn
-    assert len(g["cuts"]) == 2 and viz.gauge(0)["arc"] == ""
-    days = [D - timedelta(days=13 - i) for i in range(14)]
-    c = viz.score_days(days, [{"day": days[2], "value": 100, "word": "bon", "action": "Séance prévue"},
-                              {"day": D, "value": 59, "word": "moyen", "action": "Footing facile seulement"}])
-    data = json.loads(c["data"])
-    assert c["n"] == 2 and data["d"] == [days[2].isoformat(), D.isoformat()]
-    assert data["r"][-1] == ["mer. 7 oct.", "59 · moyen", "Footing facile seulement"]
-    assert data["a"][-1] == "mercredi 7 octobre : forme du jour 59 sur 100, moyen. Footing facile seulement"
-    assert [z["label"] for z in c["zones"]] == ["bon", "moyen", "bas"] and c["line"].count("M") == 2  # a gap breaks it
-    assert max(data["x"]) < viz.SCORE_X1  # the zone words have the right edge to themselves

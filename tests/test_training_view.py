@@ -85,49 +85,56 @@ def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
                                                                          "dénivelé en dessous"]
 
 
-def test_weeks_mark_races_long_outings_and_the_spike():
+def test_weeks_mark_long_outings_and_the_spike_never_a_race_flag():
+    """No race flag on the weekly bars (owner, 2026-10-08: everything is not planned in the app): a race is an
+    outing like any other, its week keeps the ◆ of a long outing."""
     ss = steady() + [S(16, minutes=200, km=18, dplus=1800, id=2, name="Grand tour")]  # long, not longer
     ss += [S(2, minutes=150, km=26, id=3)]  # +44 % on the 30-day longest (18 km): a spike, and the line
+    ss += [S(40, minutes=300, km=40, dplus=2400, id=4, workout_type=1, name="Trail des Crêtes")]  # a Strava race
     st.set_loads(ss, 50, 185)
-    rc = race(-30, name="Trail des Crêtes", hour=6)
+    rc = race(-40, name="Trail des Crêtes", hour=6)
     c = tv.semaines(ss, [rc], T, NOW)
     d = data(c)
-    assert [r["name"] for r in c["races"]] == ["Trail des Crêtes"]
-    assert len(c["longs"]) == 1 and len(c["spikes"]) == 1
-    assert "◆ sortie 44 % plus longue" in d["r"][-1][2]
-    assert "◆ sortie de 3h20" in d["r"][-3][2] and "⚑ Trail des Crêtes" in " ".join(r[2] for r in d["r"])
-    assert c["line"] == {"text": "Sortie de lundi 44 % plus longue que ta plus longue du mois.",
+    assert c["races"] == [] and len(c["longs"]) == 2 and len(c["spikes"]) == 1
+    assert "◆ sortie 44\u202f% plus longue" in d["r"][-1][2]
+    assert "◆ sortie de 3h20" in d["r"][-3][2] and "◆ sortie de 5h00" in d["r"][-7][2]
+    assert "⚑" not in json.dumps(d, ensure_ascii=False) and "course" not in json.dumps(d, ensure_ascii=False)
+    assert c["line"] == {"text": "Sortie de lundi 44\u202f% plus longue que ta plus longue du mois.",
                          "href": "/activity/3"}
 
 
-def test_the_line_after_the_spike_is_the_taper_then_the_recovery():
+def test_the_line_after_the_spike_is_the_taper_then_the_recovery_from_the_activities():
     ss = steady()
     rc = race(5, rid=9)  # Monday 12 Oct: the taper started at J-14, 28 Sept
     assert tv.a1_line(ss, [rc], set(), T) == {"text": "Affûtage pour Transjeju 100M ›",
                                               "href": "/simulator/routes/9#prep"}
     assert tv.a1_line(ss, [race(14)], set(), T)  # J-14 is today
     assert tv.a1_line(ss, [race(15)], set(), T) is None  # taper not started
+    # after the race: from the activities alone, the Route is never read for it
     done = race(-5, rid=4, result={"total_actual_s": 60780})
-    assert tv.a1_line(ss, [done], set(), T) == {
-        "text": "Récupération après Transjeju 100M\u00a0: volume bas, c'est voulu.", "href": "/simulator/routes/4#prep"}
-    short = race(-9, rid=5, km=10, result={"total_actual_s": 2700})
-    assert tv.a1_line(ss, [short], set(), T) is None  # 7 days after a race under 3 h
-    assert tv.a1_line(ss, [race(-15, result={"total_actual_s": 60780})], set(), T) is None
+    assert tv.a1_line(ss, [done], set(), T) is None
+    ultra = S(5, minutes=935, km=160, dplus=6000, id=77, workout_type=1, elapsed=1013, name="Transjeju 100M")
+    assert tv.a1_line(ss + [ultra], [done], set(), T) == {
+        "text": "Récupération après ta sortie de 16h53\u00a0: volume bas, c'est voulu.", "href": "/activity/77"}
+    long = S(1, minutes=200, km=18, dplus=900, id=78, elapsed=210)
+    assert tv.a1_line(ss + [long], [], set(), T) is None  # a 3-h outing: the line waits for 6 h and more
+    old = S(11, minutes=935, km=160, dplus=6000, id=79, elapsed=1013)
+    assert tv.a1_line(ss + [old], [], set(), T) is None  # the ultra's 10 days are over
 
 
 # ── A2 Fond et fatigue ──────────────────────────────────────────────────────
 
 def test_fond_and_fatigue_wait_six_weeks_then_print_the_date_only():
     young = steady(30)
-    assert tv.fond_fatigue(young, [], T)["wait"].startswith("Il faut 6 semaines de séances : encore ")
-    c = tv.fond_fatigue(steady(), [race(-40, name="Trail des Crêtes")], T)
+    assert tv.fond_fatigue(young, T)["wait"].startswith("Il faut 6 semaines de séances : encore ")
+    c = tv.fond_fatigue(steady(), T)
     d = data(c)
     assert [s["name"] for s in c["series"]] == ["fond", "fatigue"] and len(d["x"]) == 120
     assert d["r"][-1] == ["", "mer. 7 oct.", ""] and d["a"][-1] == "mercredi 7 octobre"
     text = json.dumps(d, ensure_ascii=False)
     for word in ("%", "au-dessus", "proche", "sous ton", "ratio"):
         assert word not in text
-    assert [r["name"] for r in c["races"]] == ["Trail des Crêtes"]
+    assert c["races"] == []  # no race flag
     ends = [s["ly"] for s in c["series"]]
     assert abs(ends[0] - ends[1]) >= 13  # the two names never overlap
 

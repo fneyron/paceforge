@@ -23,6 +23,12 @@ Formats (the house formats, one per kind, used everywhere):
 Layout: viewBox width 320 (the 358 px phone's content width), plot 0–288, the
 y ticks right-aligned at 320; one slot per day/week, marks at slot centres so
 stacked figures share an x axis.
+
+Santé v4 (one page, WHOOP/Oura-like) adds: `ring` (the three rings at the
+top), `day_bars` (a card's bars, one per day: Récupération, Sommeil, Charge),
+`night_card` (a nightly signal's dots, 7-night line and normal: VFC, FC de
+nuit) and `timeline` (last night on a clock axis, or its hypnogram). The race
+page and Activités keep `band_chart`, `bars`, `lines` and `dots`.
 """
 import json
 import math
@@ -254,32 +260,6 @@ def _context(d: date, races=(), longs=(), tags: dict | None = None) -> list[str]
     return out
 
 
-# ── K1 tile ─────────────────────────────────────────────────────────────────
-
-def tile(label: str, value: str | None, unit: str, means: list, band: tuple | None, *, word: str | None = None,
-         glyph: str | None = None, tone: str = "muted", href: str = "#", aria: str = "", driver: bool = False,
-         gap: str | None = None) -> dict:
-    """One signal tile: the label, ONE number (the window value, e.g. a 7-night
-    mean, formatted by the caller), the status word with its glyph, and a
-    112×40 sparkline of the rolling mean over 14 days whose end dot is that
-    same number. Band edges are never printed on a tile. Without a value: « — »
-    and `gap` (« 2 nuits sur 7 · il en faut 3 »), no line."""
-    t = {"label": label, "value": value, "unit": unit, "word": word, "glyph": glyph, "tone": tone, "href": href,
-         "aria": aria, "driver": driver, "gap": gap, "path": None}
-    pts = [v for v in means if v is not None]
-    if value is None or not pts:
-        return t
-    Wt, Ht, P = 112, 40, 4
-    lo, hi = span_of(pts + list(band or ()), 0, pad=0.15)
-    y = scale(lo, hi, P, Ht - P)
-    xs = [round(i * (Wt - 6) / max(len(means) - 1, 1), 1) for i in range(len(means))]
-    ys = [y(v) for v in means]
-    last = max(i for i, v in enumerate(ys) if v is not None)
-    t.update(path=paths(xs, ys), end={"x": xs[last], "y": ys[last]},
-             band={"y": y(band[1]), "h": round(y(band[0]) - y(band[1]), 1)} if band else None)
-    return t
-
-
 # ── K2 band chart: one to three stacked panels on one x axis ────────────────
 
 PANEL_H, PANEL_GAP, FLAG = 92, 18, 22
@@ -378,163 +358,6 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
             "summary": f"{title}, {n} {unit_word} : {measured} mesuré{'e' if unit_word == 'nuits' else ''}"
                        f"{'s' if measured > 1 else ''}",
             **_data(xs, y_series, days, r, a, sel=sel)}
-
-
-# ── K3 nights: 24-h amounts above, bed → wake windows below ─────────────────
-
-AMOUNT = (8, 112)
-TIMING = (132, 236)
-REF_MIN = 7 * 60  # ≈ 7 h line (Johnston 2020)
-AXIS_LO, AXIS_HI = 20 * 60, 36 * 60  # 20:00 → 12:00, minutes after midnight of the evening's day
-
-
-def _axis_min(t: datetime, day: date) -> float:
-    """Minutes after midnight of the evening before the wake day `day`."""
-    return (t - datetime.combine(day - timedelta(days=1), time(0))).total_seconds() / 60
-
-
-SHORT_MAIN_MIN = 180  # (H) a main episode shorter than this may be a night cut in two: « nuit incomplète ? »
-
-
-def nights_chart(days: list[date], nights: dict, *, usual: dict | None = None, races=(), longs=(),
-                 tags: dict | None = None, link: str | None = None, sel=None, mean: list | None = None,
-                 band: list | None = None, slot_labels: list[tuple[str, str]] | None = None,
-                 unit_word: str = "jours") -> dict:
-    """One linked figure over the days: 24-h amounts (night solid, nap lighter
-    and hatched, < 6 h drawn as an outlined bar, ≈ 7 h line, 7-night mean
-    line) above the bed → wake windows (floating bars on a 20:00 → 12:00 axis
-    fitted over the main windows AND the in-axis naps; a nap inside the axis
-    is its own segment with a gap, outside it an edge mark; real wake gaps cut
-    out; faint median lines, and ±1 SD bands around them once the spread is
-    known). `nights`: {day: nights.Night}. `usual`: nights.timing() (bed,
-    wake, bed_sd, wake_sd as minutes after 18:00). `mean`: the 7-night mean
-    line per slot (default: a rolling mean of the shown totals); `band`: the
-    athlete's 24-h normal per slot ((lo, hi) | None); `slot_labels`:
-    [(readout, spoken)] per slot when the slots are weeks."""
-    n = len(days)
-    xs = slot_x(n)
-    slot = X1 / max(n, 1)
-    bw = round(min(14, slot * 0.62), 1)
-    tot = [nights[d].tst24 if d in nights else None for d in days]
-    amounts = [v for v in tot if v is not None] + [nights[d].nap_min for d in days if d in nights]
-    top_v = max(amounts + [REF_MIN + 60])
-    ya = scale(0, top_v, AMOUNT[0], AMOUNT[1])
-    # timing axis: fitted over main windows and in-axis naps (± 30 min), inside 20:00 → 12:00
-    spans = []
-    for d in days:
-        nt = nights.get(d)
-        if nt and nt.start:
-            spans += [_axis_min(nt.start, d), _axis_min(nt.end, d)]
-        for a, b, _ in (nt.naps if nt else []):
-            if a and nt.in_axis(a, b):
-                spans += [_axis_min(a, d), _axis_min(b, d)]
-    t0 = max(AXIS_LO, (math.floor((min(spans) - 30) / 60) * 60) if spans else AXIS_LO)
-    t1 = min(AXIS_HI, (math.ceil((max(spans) + 30) / 60) * 60) if spans else AXIS_HI)
-    yt = scale(t1, t0, TIMING[0], TIMING[1])  # earlier times at the top
-
-    cols, r, a = [], [], []
-    mean = mean if mean is not None else [rolling(tot, i) for i in range(n)]
-    for i, d in enumerate(days):
-        nt = nights.get(d)
-        cx = xs[i]
-        col = {"i": i, "x": round(cx - bw / 2, 1), "w": bw, "cx": cx}
-        ctx = _context(d, races, longs, tags)
-        label, said = slot_labels[i] if slot_labels else (night_label(d), night_label(d))
-        main, nap = (nt.asleep, nt.nap_min) if nt else (None, None)
-        if nt and nt.asleep is not None:
-            y_night = ya(nt.asleep)
-            col.update(night={"y": y_night, "h": round(AMOUNT[1] - y_night, 1)}, short=nt.tst24 < 6 * 60)
-            if nt.nap_min:
-                y_top = ya(nt.tst24)
-                col["nap"] = {"y": y_top, "h": round(y_night - y_top, 1)}
-            w0, w1 = _axis_min(nt.start, d), _axis_min(nt.end, d)
-            col["win"] = {"y": yt(max(w0, t0)), "h": round(yt(min(w1, t1)) - yt(max(w0, t0)), 1)}
-        elif nt and nt.nap_min:  # a nap-only day: its nap alone, lighter (no 24-h total)
-            y_top = ya(nt.nap_min)
-            col["nap"] = {"y": y_top, "h": round(AMOUNT[1] - y_top, 1)}
-        else:
-            col["miss"] = True
-        segs, edges = [], []
-        for na, nb, _ in (nt.naps if nt else []):
-            if na is None:
-                continue
-            if nt.in_axis(na, nb):
-                s0, s1 = _axis_min(na, d), _axis_min(nb, d)
-                segs.append({"y": yt(s0), "h": round(yt(s1) - yt(s0), 1)})
-            else:
-                edges.append({"y": TIMING[1] + 3 if _axis_min(na, d) > t1 else TIMING[0] - 6})
-        col.update(nap_segs=segs, nap_edges=edges)
-        cols.append(col)
-        times = f"{clock(nt.start)} → {clock(nt.end)}" if nt and nt.start else ""
-        naps = [f"sieste {clock(na)} → {clock(nb)}" for na, nb, _ in (nt.naps if nt else []) if na is not None]
-        partial = bool(nt and nt.asleep is not None and nt.asleep < SHORT_MAIN_MIN)
-        extra = ([times] if times else []) + naps + (["nuit incomplète ?"] if partial else []) + ctx
-        r.append([label, sleep_readout(main, nap) if nt else "—",
-                  " · ".join(extra) or ("pas de montre cette nuit" if not nt and not slot_labels else "")])
-        sentence = f"{said} : {sleep_spoken(main, nap) if nt else 'pas de mesure'}"
-        if times:
-            sentence += f", couché vers {clock(nt.start)}, levé vers {clock(nt.end)}"
-        for na, nb, _ in (nt.naps if nt else []):
-            if na is not None:
-                sentence += f", sieste de {clock(na)} à {clock(nb)}"
-        if nt and nt.tst24 is not None and nt.tst24 < 6 * 60:
-            sentence += ", moins de 6 heures sur 24 heures"
-        a.append(sentence + "".join(f". {c}" for c in ctx))
-    hours = [{"y": yt(m), "label": f"{(m // 60) % 24:02d}:00"} for m in range(int(t0 // 60 * 60) + 60, int(t1), 120)]
-    med, med_bands = {}, []
-    if usual and usual.get("bed") is not None:
-        for k in ("bed", "wake"):
-            if usual.get(k) is not None:
-                m = usual[k] + 18 * 60  # minutes after 18:00 → after midnight of the evening
-                if t0 <= m <= t1:
-                    med[k] = yt(m)
-                    sd = usual.get(f"{k}_sd")
-                    if sd:
-                        a0, a1 = max(t0, m - sd), min(t1, m + sd)
-                        med_bands.append({"y": yt(a0), "h": round(yt(a1) - yt(a0), 1)})
-    band_poly, band_lo, band_hi = [], "", ""
-    if band and any(band):
-        lo = [ya(b[0]) if b else None for b in band]
-        hi = [ya(b[1]) if b else None for b in band]
-        band_poly, band_lo, band_hi = band_polys(xs, lo, hi), paths(xs, lo), paths(xs, hi)
-    ev = events(days, xs, races, longs)
-    measured = sum(1 for d in days if d in nights and nights[d].asleep is not None)
-    what = "nuit" if unit_word == "jours" else "semaine"
-    return {"n": n, "W": W, "H": 262, "X1": X1, "cols": cols, "hours": hours, "med": med, "med_bands": med_bands,
-            "ref": {"y": ya(REF_MIN), "label": "7" + NNBSP + "h"}, "mean": paths(xs, [ya(v) for v in mean]),
-            "band": band_poly, "band_lo": band_lo, "band_hi": band_hi,
-            "amount": AMOUNT, "timing": TIMING, "xt": x_labels(days, xs), **ev,
-            "summary": f"Sommeil sur 24 h et horaires, {n} {unit_word} : {measured} {what}{'s' if measured > 1 else ''}"
-                       f" mesurée{'s' if measured > 1 else ''}",
-            **_data(xs, [], days, r, a, sel=sel, link=link)}
-
-
-# ── K4 hypnogram: real intervals only ───────────────────────────────────────
-
-LANES = {"awake": 0, "rem": 1, "core": 2, "deep": 3}
-LANE_NAMES = (("Éveil", "awake"), ("REM", "rem"), ("Léger", "core"), ("Profond", "deep"))
-
-
-def hypnogram(segs: list[tuple[str, datetime, datetime]] | None, start: datetime, end: datetime) -> dict | None:
-    """The selected night's shape, from real stage intervals (Garmin) only:
-    None otherwise (COROS has no timeline). Lanes by position, one neutral hue,
-    no minutes, no %, no end labels (the times are in the readout)."""
-    if not segs or not start or not end or end <= start:
-        return None
-    X0, XE, LH, GAP = 52, 316, 12, 6
-    span = (end - start).total_seconds()
-    x = lambda t: round(X0 + (t - start).total_seconds() / span * (XE - X0), 1)  # noqa: E731
-    ly = lambda st: 2 + LANES[st] * (LH + GAP)  # noqa: E731
-    segs = sorted((k, max(a, start), min(b, end)) for k, a, b in segs if k in LANES and b > a)
-    segs.sort(key=lambda s: s[1])
-    rects = [{"x": x(a), "w": max(round(x(b) - x(a), 1), 1.0), "y": ly(k)} for k, a, b in segs]
-    steps = []
-    for (k0, _, _), (k1, a1, _) in zip(segs, segs[1:]):
-        y0, y1 = sorted((ly(k0), ly(k1)))
-        steps.append({"x": x(a1), "y0": y0 + LH / 2, "y1": y1 + LH / 2})
-    return {"W": W, "H": 4 * (LH + GAP), "X0": X0, "X1": XE, "LH": LH, "segs": rects, "steps": steps,
-            "lanes": [(nm, ly(k)) for nm, k in LANE_NAMES],
-            "aria": "Forme de la nuit estimée par la montre : une allure, pas une mesure"}
 
 
 # ── K7 bars: weeks, taper (planned vs done), 24-h nights on the race page ───
@@ -637,59 +460,177 @@ def dots(days: list[date], points: list[dict], *, band: list | None = None, min_
             "xt": x_labels(days, xs_all), **_data(xs, [ys], ds, r, a, h=h, sel=sel)}
 
 
-# ── K9 score: the half-gauge 0–100 and the 14-day line (« Forme du jour ») ──
+# ── V1 rings: Santé's three rings (Récupération, Sommeil, Charge) ───────────
 
-GAUGE = {"W": 160, "H": 92, "cx": 80, "cy": 82, "r": 68}
-SCORE_ZONES = ((70, 100, "bon"), (40, 70, "moyen"), (0, 40, "bas"))
-
-
-def gauge(value: float) -> dict:
-    """A half ring, 0 on the left to 100 on the right: the track, the arc up to
-    `value` (the tone's colour is the CSS's; the word is printed beside it,
-    never colour alone) and two cuts at 40 and 70, the tone bands' edges."""
-    cx, cy, r = GAUGE["cx"], GAUGE["cy"], GAUGE["r"]
-
-    def pt(v, rr=r):
-        a = math.pi * (1 - max(0.0, min(100.0, v)) / 100)
-        return round(cx + rr * math.cos(a), 2), round(cy - rr * math.sin(a), 2)
-
-    (x0, y0), (x1, y1), (xv, yv) = pt(0), pt(100), pt(value)
-    cuts = []
-    for v in (40, 70):
-        (ax, ay), (bx, by) = pt(v, r - 9), pt(v, r + 9)
-        cuts.append({"x1": ax, "y1": ay, "x2": bx, "y2": by})
-    return {"W": GAUGE["W"], "H": GAUGE["H"], "track": f"M{x0} {y0} A{r} {r} 0 0 1 {x1} {y1}",
-            "arc": f"M{x0} {y0} A{r} {r} 0 0 1 {xv} {yv}" if value > 0 else "", "cuts": cuts}
+RING_R, RING_W = 42, 11  # viewBox 100 × 100: the radius and a bold stroke
+RING_C = round(2 * math.pi * RING_R, 2)
 
 
-SCORE_PLOT = (8, 68)
-SCORE_X1 = 262  # the zone words (« moyen ») need more room than the y numbers of the other figures
+def ring(key: str, fill: float | None, value: str, label: str, sub: str | None = None, *, tone: str = "accent",
+         href: str = "#", aria: str = "") -> dict:
+    """One ring: the track, an arc up to `fill` (0–1, from the top, clockwise;
+    None or 0: the track alone), the value in the middle (formatted by the
+    caller, printed once), the label and a short word under it. `tone` (ok,
+    warn, danger, accent) is the CSS's colour; the value and the words say it
+    too, never colour alone."""
+    f = 0.0 if fill is None else max(0.0, min(1.0, fill))
+    dash = round(f * RING_C, 2)
+    return {"key": key, "value": value, "label": label, "sub": sub, "tone": tone, "href": href, "aria": aria,
+            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "long": len(value) >= 5}  # « 16h53 »: a smaller size
 
 
-def score_days(days: list[date], points: list[dict]) -> dict:
-    """The score of each day that has one ({day, value, word, action}) on the
-    days' axis: dots, a line broken where a day has none, the three tone zones
-    named at the right edge (« bon », « moyen », « bas »: no number on the axis;
-    a fixed 0–100 scale, so a few points never look like a trend). Readout:
-    [date, « 59 · moyen », the action]; it steps from score to score."""
-    xs_all = [round(SCORE_X1 / max(len(days), 1) * (i + 0.5), 1) for i in range(len(days))]
-    idx = {d: i for i, d in enumerate(days)}
-    y = scale(0, 100, *SCORE_PLOT)
-    by_day = {p["day"]: p for p in points}
-    line = paths(xs_all, [y(by_day[d]["value"]) if d in by_day else None for d in days])
-    dots, xs, ys, ds, r, a = [], [], [], [], [], []
-    for p in sorted(points, key=lambda p: p["day"]):
-        x = xs_all[idx[p["day"]]]
-        dots.append({"i": len(xs), "x": x, "y": y(p["value"])})
-        xs.append(x)
-        ys.append(y(p["value"]))
-        ds.append(p["day"])
-        r.append([d_short(p["day"]), f"{p['value']} · {p['word']}", p["action"]])
-        a.append(f"{d_long(p['day'])} : forme du jour {p['value']} sur 100, {p['word']}. {p['action']}")
-    zones = [{"y": y(hi), "label_y": round((y(lo) + y(hi)) / 2 + 4, 1), "label": word,
-              "edge": lo > 0} for lo, hi, word in SCORE_ZONES]
-    H = SCORE_PLOT[1] + 20
-    return {"n": len(xs), "W": W, "H": H, "X1": SCORE_X1 + 6, "top": SCORE_PLOT[0], "bottom": SCORE_PLOT[1],
-            "cuts": [y(40), y(70)], "zones": zones, "line": line, "dots": dots, "xt": x_labels(days, xs_all),
-            "summary": f"Forme du jour sur {len(days)} jours : {len(xs)} jours avec un score",
-            **_data(xs, [ys], ds, r, a)}
+# ── V2 card bars: one bar per day (Récupération, Sommeil, Charge) ───────────
+
+def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[str]], arias: list[str],
+             stack: list | None = None, classes: list | None = None, links: list | None = None,
+             y_max: float | None = None, reference: tuple[float, str] | None = None, today: int | None = None,
+             sel=None, H: int = 128, summary: str = "", min_top: float = 0) -> dict:
+    """Vertical bars, one per day (Santé's cards): `values` (None: an empty
+    slot, a faint dot on the base line), an optional lighter part on top
+    (`stack`: the naps over the night), a class per bar (`classes`: the
+    state's tone), a fixed top (`y_max`: 100 for a score) or the data's, a
+    `reference` line (value, label: « 7 h », Johnston 2020), today's bar
+    marked (`today`). Under the bars: the day of the month for 16 slots or
+    fewer, Mondays or months beyond (x_labels). Links go through the readout."""
+    n = len(days)
+    xs = slot_x(n)
+    slot = X1 / max(n, 1)
+    bw = round(max(1.4, min(14.0, slot * 0.64)), 1)
+    tops = [(v or 0) + ((stack[i] or 0) if stack else 0) for i, v in enumerate(values)]
+    top = y_max if y_max is not None else max(tops + [min_top, reference[0] if reference else 0, 1]) * 1.12
+    base = H - 22
+    y = scale(0, top, 8, base)
+    out = []
+    for i, v in enumerate(values):
+        b = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
+             "today": i == today}
+        nap = stack[i] if stack else None
+        if v is None and not nap:
+            b["miss"] = True
+        else:
+            yv = y(v or 0)
+            b.update(y=yv, h=round(base - yv, 1))
+            if nap:
+                yt = y((v or 0) + nap)
+                b["top"] = {"y": yt, "h": round(yv - yt, 1)}
+        out.append(b)
+    if n <= 16:
+        xt = [{"x": xs[i], "label": str(d.day), "today": i == today} for i, d in enumerate(days)]
+    else:
+        xt = x_labels(days, xs)
+    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "base": base, "bars": out, "xt": xt,
+            "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
+            "rx": round(min(3.0, bw / 2), 1), "summary": summary,
+            **_data(xs, [], days, readouts, arias, h=links, sel=sel)}
+
+
+# ── V3 night card: one nightly signal, a dot per night, the 7-night line, the normal ──
+
+def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
+               unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132) -> dict:
+    """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
+    dot per measured night, never judged one by one (Buchheit 2014: ≈ 12 %
+    night to night), the 7-night mean as a line (drawn, never printed), the
+    athlete's normal as a band (the 60 days before each night, on that
+    night's watch; « provisoire » from 7 to 13 nights, H). Readout: [the
+    night, « 100 ms », « normale 85–110 » or « normale provisoire 85–110 »];
+    the latest measured night is selected: its value is the card's."""
+    n = len(days)
+    xs = slot_x(n)
+    lo_b = [b[0] if b else None for b in band]
+    hi_b = [b[1] if b else None for b in band]
+    lo, hi = span_of(values + lo_b + hi_b + mean, min_span)
+    top, bottom = 10, H - 22
+    y = scale(lo, hi, top, bottom)
+    yv = [y(v) for v in values]
+    r, a = [], []
+    for i, d in enumerate(days):
+        v, b = values[i], band[i]
+        if v is None:
+            r.append([night_label(d), "—", "pas de mesure cette nuit"])
+            a.append(f"{night_label(d)} : pas de mesure")  # the readout's night, as for a measured one
+            continue
+        normal, spoken = "", f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
+        if b:
+            pv = bool(prov[i])
+            normal = f"normale {'provisoire ' if pv else ''}{num(b[0], digits)}–{num(b[1], digits)}"
+            spoken += f", ta normale{' provisoire' if pv else ''} de {num(b[0], digits)} à {num(b[1], digits)}"
+        r.append([night_label(d), num(v, digits, unit), normal])
+        a.append(spoken)
+    last = max((i for i, v in enumerate(values) if v is not None), default=None)
+    measured = sum(1 for v in values if v is not None)
+    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": top, "bottom": bottom,
+            "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b]),
+            "edge_lo": paths(xs, [y(v) for v in lo_b]), "edge_hi": paths(xs, [y(v) for v in hi_b]),
+            "mean": paths(xs, [y(v) for v in mean]),
+            "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
+            "dot_r": 2.6 if n <= 31 else 1.6,
+            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": x_labels(days, xs),
+            "summary": f"{name}, {n} nuits : {measured} mesurée{'s' if measured > 1 else ''}",
+            **_data(xs, [yv], days, r, a, sel=last)}
+
+
+# ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────
+
+TL_X0, TL_X1 = 52, 302  # the lane names on the left; the last hour's label centred inside the 320 width
+TL_LANE, TL_GAP, TL_MAIN = 12, 6, 22
+STAGE_LANES = (("Éveil", "awake"), ("REM", "rem"), ("Léger", "core"), ("Profond", "deep"))
+TL_LO, TL_HI = time(18, 0), time(14, 0)  # the axis never runs past 18:00 the evening before → 14:00
+
+
+def _hour_floor(t: datetime) -> datetime:
+    return t.replace(minute=0, second=0, microsecond=0)
+
+
+def timeline(start: datetime, end: datetime, *, stages=None, naps=()) -> dict:
+    """The night ending on `end` on a clock axis, Oura-like: one bar from
+    bedtime to wake, or, for a night with real stage intervals (Garmin
+    sleepLevels: [(stage, start, end)]), the hypnogram instead (lanes by
+    position, one neutral hue, no minutes, no %: a shape, not a measure;
+    Schyvens 2025; Lee 2023). Naps (`naps`: [(start, end)] of that day) on
+    their own lane when they fit the axis (18:00 the evening before → 14:00);
+    `out` lists the others (the caller prints their times). Hours every 2 h
+    under it; the times themselves are printed once, by the caller."""
+    day = end.date()
+    lo = datetime.combine(day - timedelta(days=1), TL_LO)
+    hi = datetime.combine(day, TL_HI)
+    fit = [(a, b) for a, b in naps if a and b and lo <= a and b <= hi]
+    out = [(a, b) for a, b in naps if a and b and (a, b) not in fit]
+    t0 = max(lo, _hour_floor(min([start] + [a for a, _ in fit]) - timedelta(minutes=30)))
+    t1 = min(hi, _hour_floor(max([end] + [b for _, b in fit]) + timedelta(minutes=89)))
+    span = (t1 - t0).total_seconds() or 1
+
+    def x(t):
+        return round(TL_X0 + max(0.0, min(1.0, (t - t0).total_seconds() / span)) * (TL_X1 - TL_X0), 1)
+
+    lanes, segs, steps, main = [], [], [], None
+    y = 4
+    if stages:
+        rows = {k: 4 + i * (TL_LANE + TL_GAP) for i, (_, k) in enumerate(STAGE_LANES)}
+        lanes = [(nm, rows[k], TL_LANE) for nm, k in STAGE_LANES]
+        cut = sorted((k, max(a, start), min(b, end)) for k, a, b in stages if k in rows and b > a and b > start
+                     and a < end)
+        cut.sort(key=lambda s: s[1])
+        segs = [{"x": x(a), "w": max(round(x(b) - x(a), 1), 1.0), "y": rows[k]} for k, a, b in cut]
+        for (k0, _, _), (k1, a1, _) in zip(cut, cut[1:]):
+            y0, y1 = sorted((rows[k0], rows[k1]))
+            steps.append({"x": x(a1), "y0": y0 + TL_LANE / 2, "y1": y1 + TL_LANE / 2})
+        y = 4 + len(STAGE_LANES) * (TL_LANE + TL_GAP)
+    else:
+        lanes = [("nuit", y, TL_MAIN)]
+        main = {"x": x(start), "w": max(round(x(end) - x(start), 1), 2.0), "y": y, "h": TL_MAIN}
+        y += TL_MAIN + TL_GAP
+    nap_bars = []
+    if fit:
+        lanes.append(("sieste", y, TL_LANE))
+        nap_bars = [{"x": x(a), "w": max(round(x(b) - x(a), 1), 2.0), "y": y, "h": TL_LANE} for a, b in fit]
+        y += TL_LANE + TL_GAP
+    ticks = []
+    t = t0 + timedelta(hours=(t0.hour % 2))  # even hours
+    while t <= t1:
+        ticks.append({"x": x(t), "label": f"{t.hour:02d}:00"})
+        t += timedelta(hours=2)
+    H = y + 14
+    return {"W": W, "H": H, "X0": TL_X0, "X1": TL_X1, "lanes": lanes, "main": main, "segs": segs, "steps": steps,
+            "naps": nap_bars, "out": out, "ticks": ticks, "base": y - TL_GAP + 2, "stages": bool(stages),
+            "lane_h": TL_LANE}

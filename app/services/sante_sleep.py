@@ -1,66 +1,58 @@
-"""Santé › Sommeil: « comment je dors, et est-ce dans ma normale ? ».
+"""Santé v4 › the Sommeil section of the one page (Oura-like): « comment je dors ? ».
 
-One range toggle (14 nuits · 3 mois · 1 an, ?r=) scopes the whole view:
-- the Nuits figure: 24-h amounts (night solid, nap lighter and hatched, < 6 h
-  outlined; ≈ 7 h line, Johnston 2020; the athlete's usual ± 30 min (H) and
-  the 7-night mean line once there) above the bed → wake windows (main window
-  only; times detected by the watch, approximate, rounded to 5 min: de
-  Zambotti 2024; naps as their own segments, never in the timing);
-- the selected night's hypnogram, from real Garmin intervals only (shape, not
-  a measure: Schyvens 2025; Lee 2023);
-- « Cœur la nuit »: VFC above, FC de nuit below, one axis, one scrub, one
-  readout of per-night values and « normale x–y » (the 7-night means are
-  printed once, on Aujourd'hui); respiration as a slim third panel only while
-  the HR alert is on (Budig 2022: it supports, never starts, an alert);
-- the closed « Les chiffres de chaque nuit » table (the accessible
-  alternative), and the closed « Comment je lis tes nuits » fold.
-At most one sentence per figure. Empty states: no night ever → the wear
-advice; nothing in the range → « Rien sur 3 mois · ta dernière série : … » and
-the range that holds it, else (no range holds it) « Rien sur 14 jours. » and
-the wear advice. « 3 mois » shows only with a measured night between 14 and
-90 days old (else it would draw the 14 nights again); « 1 an » (weekly
-marks) only once 30 measured nights are older than 90 days (H). In « 1 an »
-a week is judged only on its usable nights (3 at least, the 7-night means'
-exclusions), against the band of the 60 days before its Monday; a week
-holding fewer is drawn from all its nights, never judged, with its tag word.
+- Last night (the hero): bed → wake (the watch's detection, approximate,
+  rounded to 5 min: de Zambotti 2024) and the nap when there is one
+  (« + sieste 2h20 »). Its 24-h total is the Sommeil ring's, printed once
+  there; the hero prints it only for a night that is not this morning's (the
+  ring is then empty).
+- Its timeline: one bar on a clock axis, or the hypnogram from real Garmin
+  intervals (a shape, not a measure: Schyvens 2025; Lee 2023); the naps on
+  their own lane (never in the night's timing, HR or HRV: Mollicone 2008).
+- 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
+  naps lighter on top), the ≈ 7 h line (Johnston 2020); « 3 mois » only with
+  a night 14 to 90 days old (else it would draw the 14 nights again). Tap a
+  bar → « Nuit 8h36 · 22:40 → 07:30 »; it rests on the range's mean (printed
+  nowhere else: the latest night is the ring's).
+- Habitudes: the median bedtime and wake of 28 days (5 nights at least, H),
+  rounded to 5 min, and « Régularité ± 35 min », the SD of bedtime once 8
+  nights are there (H; Fischer 2021). Time-zone nights and the nights after a
+  big effort stay out; a « rendormi » wake leaves the wake median (H).
+- The closed « Les chiffres de chaque nuit » table (30 nights: the accessible
+  alternative of the charts) and the closed « Comment je lis tes nuits » fold.
+The nights are drawn as they are: no race, no event marker, no tag glyph on a
+chart (the table names the tags).
 """
-import statistics
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from app.services import nights as nt
 from app.services import viz
 
-RANGES = {"14": (14, "14 nuits", "14 jours"), "90": (90, "3 mois", "3 mois"), "365": (365, "1 an", "1 an")}
-YEAR_OLD_NIGHTS = 30  # (H) measured nights older than 90 days before « 1 an » is offered
-SERIES_GAP = 21  # days (H): a longer gap ends a series of measured nights
-VALID_MAIN = 180  # min asleep (H): a night that counts in the coverage
-MAX_PERIOD = timedelta(hours=16)  # (H)
-MAX_HYPNOGRAMS = 14  # the last 14 real nights of the range (payload)
-WEAR = ("Porte ta montre au moins 3 nuits par semaine, des jours variés, et toutes les nuits de J-14 à J+14 "
-        "autour d'une course.")
+RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
+USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
+SHORT_MAIN_MIN = 180  # (H) a main episode shorter than this may be a night cut in two: « nuit incomplète ? »
+TABLE_DAYS = 30
+REF_MIN = 7 * 60  # ≈ 7 h line (Johnston 2020)
 
 METHOD = [
     "Je calcule ta FC et ta VFC de nuit sur les mesures brutes de ta montre, pendant ta nuit principale "
     "seulement : jamais un score de marque.",
-    "Ta normale : tes nuits sans contexte (course J-7 → J+7 (H), alcool, fuseau, altitude, longue séance, "
-    "maladie) sur 60 jours (H), une par montre ; « provisoire » dès 7 nuits (H), elle bouge encore jusqu'à 14 (H). "
-    "L'alerte FC de nuit attend 14 nuits : une normale provisoire la ferait sonner pour du bruit (Quer 2021). Les "
-    "seuils marqués (H) sont des choix de PaceForge.",
+    "Ta normale : tes nuits sans contexte (les 3 nuits après une grosse sortie, une sortie longue la veille ou "
+    "intense le soir, l'altitude, un changement de fuseau) sur 60 jours (H), une par montre ; « provisoire » dès "
+    "7 nuits (H), elle bouge encore jusqu'à 14 (H). L'alerte FC de nuit attend 14 nuits : une normale provisoire la "
+    "ferait sonner pour du bruit (Quer 2021).",
     "La montre surestime le sommeil, davantage les mauvaises nuits : lis le sens, pas la taille (Chinoy 2021 ; "
     "Schyvens 2025). Ses heures de coucher et de lever sont approximatives (de Zambotti 2024).",
     "Tes siestes comptent dans le total sur 24 h ; une sieste que la montre n'a pas vue n'est pas zéro (Sargent "
     "2018 ; Chinoy 2023). Moins de 7 h par jour sur 2 semaines va avec plus de blessures (Johnston 2020).",
-    "L'alerte FC rate beaucoup de maladies : un graphique calme n'est pas un certificat de bonne santé (Quer 2021).",
+    "Régularité : de combien ton coucher bouge d'une nuit à l'autre, dès 8 nuits sur 28 (H ; Fischer 2021).",
     "Les stades donnent une allure, pas une mesure (Schyvens 2025 ; Lee 2023).",
-    "Aujourd'hui : des jambes lourdes après 3 h ou 1 500 m D+, ou « moins bien » seul, rendent la séance facile. "
-    "Ce sont des choix (H) : ton ressenti compte (Saw 2016).",
 ]
 REFS = [
     ("Chinoy 2021", "10.1093/sleep/zsaa291"), ("Schyvens 2025", "10.1093/sleepadvances/zpaf021"),
     ("de Zambotti 2024", "10.1093/sleep/zsad325"), ("Sargent 2018", "10.1080/07420528.2018.1466800"),
     ("Chinoy 2023", "10.2147/NSS.S395732"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
-    ("Quer 2021", "10.1038/s41591-020-1123-x"), ("Lee 2023", "10.2196/50983"),
-    ("Saw 2016", "10.1136/bjsports-2015-094758"), ("Plews 2014", "10.1123/ijspp.2013-0455"),
+    ("Fischer 2021", "10.1093/sleep/zsab103"), ("Quer 2021", "10.1038/s41591-020-1123-x"),
+    ("Lee 2023", "10.2196/50983"),
 ]
 
 
@@ -68,328 +60,114 @@ def _measured(n) -> bool:
     return n.asleep is not None or bool(n.nap_min)
 
 
-def _valid(n) -> bool:
-    return n.asleep is not None and n.asleep >= VALID_MAIN and n.end - n.start <= MAX_PERIOD
-
-
-def _dm(d: date) -> str:
-    """« 9 oct. »."""
-    return f"{d.day} {viz.MOIS[d.month - 1]}"
-
-
-def last_series(days: list[date]) -> tuple[date, date]:
-    """The last run of measured days with no gap over SERIES_GAP days."""
-    end = start = days[-1]
-    for d in reversed(days[:-1]):
-        if (start - d).days > SERIES_GAP:
-            break
-        start = d
-    return start, end
-
-
 def offered_ranges(nights: dict, today: date) -> list[str]:
-    """« 14 nuits », « 3 mois » when a measured day is 14 to 90 days old (else
-    it shows the 14 nights again), « 1 an » once 30 measured nights are older
-    than 90 days (H)."""
-    old = sum(1 for d, n in nights.items() if n.asleep is not None and d <= today - timedelta(days=90))
+    """« 14 nuits », and « 3 mois » when a measured day is 14 to 90 days old."""
     mid = any(today - timedelta(days=90) < d <= today - timedelta(days=14) and _measured(n) for d, n in nights.items())
-    return ["14"] + (["90"] if mid else []) + (["365"] if old >= YEAR_OLD_NIGHTS else [])
+    return ["14"] + (["90"] if mid else [])
 
 
-def choose(nights: dict, today: date, r: str | None) -> str | None:
-    """The range drawn for `r`: `r` when offered, else the first one holding data; None without any night."""
-    days_with = sorted(d for d, n in nights.items() if d <= today and _measured(n))
-    if not days_with:
+def choose(nights: dict, today: date, r: str | None) -> str:
+    """The range drawn first: `r` when offered, else the first one holding a measured day."""
+    offered = offered_ranges(nights, today)
+    if r in offered:
+        return r
+    recent = any(today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items())
+    return "14" if recent or len(offered) == 1 else "90"
+
+
+def _readout(n, d: date) -> tuple[list[str], str]:
+    """« Nuit 8h36 » · « 22:40 → 07:30 »; with a nap « Nuit 5h50 · sieste 2h20 » ·
+    « 23:35 → 05:40 · 8h10 sur 24 h »; a nap alone « Sieste 1h22 » · « nuit incomplète ? »."""
+    label = viz.night_label(d)
+    if n is None or not _measured(n):
+        return [label, "—", "pas de montre cette nuit"], f"{viz.night_label(d)} : pas de mesure"
+    if n.asleep is None:
+        return ([label, f"Sieste {viz.hm(n.nap_min)}", "nuit incomplète ?"],
+                f"{label} : sieste {viz.hm_long(n.nap_min)}, nuit incomplète")
+    times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
+    said = (f"{label} : {viz.sleep_spoken(n.asleep, n.nap_min)}, couché vers {viz.clock(n.start)}, "
+            f"levé vers {viz.clock(n.end)}")
+    extra = " · nuit incomplète ?" if n.asleep < SHORT_MAIN_MIN else ""
+    if n.nap_min:
+        return ([label, f"Nuit {viz.hm(n.asleep)} · sieste {viz.hm(n.nap_min)}",
+                 f"{times} · {viz.hm(n.tst24)} sur 24{viz.NNBSP}h{extra}"], said)
+    return [label, f"Nuit {viz.hm(n.asleep)}", times + extra], said
+
+
+def bars(nights: dict, today: date, key: str) -> dict:
+    """The 14-night or 3-month bars (see the module docstring)."""
+    n_days = RANGES[key][0]
+    days = [today - timedelta(days=n_days - 1 - i) for i in range(n_days)]
+    values = [nights[d].asleep if d in nights else None for d in days]
+    stack = [(nights[d].nap_min or None) if d in nights else None for d in days]
+    r, a = [], []
+    for d in days:
+        read, said = _readout(nights.get(d), d)
+        r.append(read)
+        a.append(said)
+    totals = [nights[d].tst24 for d in days if d in nights and nights[d].tst24 is not None]
+    c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a,
+                     reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
+                     summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
+                             f"mesurée{'s' if len(totals) > 1 else ''}")
+    if totals:
+        mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
+        return viz.rest(c, [RANGES[key][1], f"moyenne {viz.hm(mean)}", "sur 24 h, siestes comprises"],
+                        f"Sommeil sur 24 heures, {RANGES[key][1]} : en moyenne {viz.hm_long(mean)}, siestes "
+                        "comprises. Touche une nuit pour la sienne.")
+    return viz.rest(c, [RANGES[key][1], "—", ""], f"Sommeil, {RANGES[key][1]} : pas de nuit mesurée")
+
+
+def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
+    """Last night (the latest main night of the last 90 days): its times, its
+    naps, its timeline; the 24-h total only when it is not this morning's
+    (the ring prints this morning's)."""
+    last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
+               default=None)
+    if last is None:
         return None
-    offered = offered_ranges(nights, today)
-    return r if r in offered else next((k for k in offered if days_with[-1] > today - timedelta(days=RANGES[k][0])),
-                                       "14")
+    n = nights[last]
+    naps = [(a, b) for a, b, _ in n.naps if a is not None]
+    stages = (samples or {}).get(last) if n.timeline else None
+    t = viz.timeline(n.start, n.end, stages=stages, naps=naps)
+    times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
+    nap = None
+    if n.nap_min:
+        nap = f"+ sieste{'s' if len(n.naps) > 1 else ''} {viz.hm(n.nap_min)}"
+    out_naps = [f"sieste {viz.clock(a)} → {viz.clock(b)}" for a, b in t["out"]]
+    aria = (f"{viz.night_label(last)} : couché vers {viz.clock(n.start)}, levé vers {viz.clock(n.end)}"
+            + (f", sieste de {viz.hm_long(n.nap_min)}" if n.nap_min else ""))
+    return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
+            "times": times, "nap": nap, "night": f"nuit {viz.hm(n.asleep)}" if n.nap_min else None,
+            "total": None if last == today else f"{viz.hm(n.tst24)} sur 24{viz.NNBSP}h",
+            "timeline": t, "out_naps": out_naps, "stages": bool(stages), "aria": aria}
 
 
-def sleep_view(nights: dict, today: date, r: str | None, *, races=(), longs=(), samples=None,
-               alert: bool = False) -> dict:
-    """Everything the Sommeil view draws for range `r` (else the first range
-    holding data). state: never | empty | ok."""
-    days_with = sorted(d for d, n in nights.items() if d <= today and _measured(n))
-    base = {"method": METHOD, "refs": REFS, "wear": WEAR}
-    if not days_with:
-        return {**base, "state": "never"}
-    offered = offered_ranges(nights, today)
-
-    def holds(key):
-        return days_with[-1] > today - timedelta(days=RANGES[key][0])
-
-    chosen = choose(nights, today, r)
-    base.update(ranges=[(k, RANGES[k][1]) for k in offered], r=chosen)
-    if not holds(chosen):
-        a, b = last_series(days_with)
-        go = next((k for k in offered if b > today - timedelta(days=RANGES[k][0])), None)
-        if go is None:  # no range can open those nights: never name what cannot be seen
-            return {**base, "state": "empty", "empty": f"Rien sur {RANGES[chosen][2]}. {WEAR}", "go": None}
-        return {**base, "state": "empty", "empty": f"Rien sur {RANGES[chosen][2]} · ta dernière série : {_dm(a)} → {_dm(b)}",
-                "go": (go, f"Voir {RANGES[go][1]}")}
-    if chosen == "365":
-        return {**base, "state": "ok", **_year(nights, today, races, longs, alert)}
-    n_days = RANGES[chosen][0]
-    first = today - timedelta(days=n_days - 1)
-    if chosen != "14":  # the axis starts at the first data point
-        first = max(first, next(d for d in days_with if d >= first))
-    days = [first + timedelta(days=i) for i in range((today - first).days + 1)]
-    return {**base, "state": "ok", **_daily(nights, days, today, chosen, races, longs, samples or {}, alert)}
-
-
-def _tags(nights, days) -> dict:
-    return {d: [nt.TAG_WORDS[t] for t in sorted(nights[d].tags)] for d in days if d in nights and nights[d].tags}
-
-
-def _usual(nights, today: date) -> dict | None:
-    """Median onset and wake (≥ 5 nights) and their spread (≥ 8 nights) over 28 days (H)."""
+def habits(nights: dict, today: date) -> dict | None:
+    """« Coucher 23:10 · Lever 07:20 » (medians of 28 days, 5 nights at least
+    (H)) and « Régularité ± 35 min » (the SD of bedtime, 8 nights in 28 at
+    least (H); Fischer 2021)."""
     t = nt.timing(nights, today)
-    if t["n"] < 5:
+    if t["n"] < USUAL_NIGHTS or t["bed"] is None:
         return None
-    return t
+    items = [("Coucher", nt.clock5(t["bed"]))]
+    if t["wake"] is not None:
+        items.append(("Lever", nt.clock5(t["wake"])))
+    if t["regular_ok"] and t["bed_sd"] is not None:
+        items.append(("Régularité", f"±{viz.NNBSP}{max(5, int(round(t['bed_sd'] / 5)) * 5)}{viz.NNBSP}min"))
+    return {"stats": items, "n": t["n"]}
 
 
-def _coverage(nights, days, chosen) -> str:
-    k = sum(1 for d in days if d in nights and _valid(nights[d]))
-    s = "s" if k > 1 else ""
-    return f"{k} nuit{s} mesurée{s} sur {14 if chosen == '14' else RANGES[chosen][1]}"
-
-
-def _building(nights, today: date) -> str | None:
-    """« Ta normale se construit : 3 nuits sur 7 hors course. » while neither HR
-    nor HRV has a band; « Ta normale est provisoire : 9 nuits sur 14. » while
-    the best of them is provisional (7 to 13 nights, H); nothing once full."""
-    until = today + timedelta(days=1)
-    have = [n for d, n in nights.items() if today - timedelta(days=nt.BAND_DAYS) < d <= today
-            and (n.hr is not None or n.hrv is not None)]
-    bands = [nt.band(nights, m, until) for m in ("hr", "hrv")]
-    if not have or any(b and not b["provisional"] for b in bands):
-        return None
-    k = max(nt.band_count(nights, "hr", until), nt.band_count(nights, "hrv", until))
-    race = " hors course" if any("race" in n.tags for n in have) else ""
-    if any(bands):
-        return f"Ta normale est provisoire : {k} nuits sur {nt.MIN_BAND_NIGHTS}{race}."
-    return f"Ta normale se construit : {k} nuit{'s' if k > 1 else ''} sur {nt.MIN_PROVISIONAL_NIGHTS}{race}."
-
-
-def _band7(nights, metric: str, d: date) -> dict | None:
-    """The band the 7-night mean of `d` is read against: the 60 days before its
-    window, on the watch that mean reads (one band per watch, Dial 2025)."""
-    src = nt.mean_source(nights, metric, d)
-    return nt.band(nights, metric, d - timedelta(days=6), source=src) if src else None
-
-
-def _amount_line(nights, today: date) -> str | None:
-    if nt.quiet_short_sleep(nights, today):
-        return "Moins de 7 h en moyenne sur tes nuits mesurées des 14 derniers jours."
-    m = nt.mean7(nights, "tst24", today)
-    b = _band7(nights, "tst24", today)
-    if m and b and m["value"] < b["lo"]:
-        return "Nuits plus courtes que d'habitude cette semaine."
-    return None
-
-
-def _timing_line(usual: dict | None) -> str | None:
-    """Regularity as minutes only, once 8 nights are there (H; Fischer 2021); a
-    « rendormi » morning leaves the wake out (its spread then goes unsaid)."""
-    if not usual or not usual.get("regular_ok"):
-        return None
-    r5 = lambda sd: max(5, int(round(sd / 5)) * 5)  # noqa: E731
-    out = f"D'une nuit à l'autre, ton coucher bouge de ± {r5(usual['bed_sd'])} min"
-    if usual.get("wake_sd"):
-        out += f", ton lever de ± {r5(usual['wake_sd'])} min"
-    return out + "."
-
-
-def _heart_line(nights, today: date, alert: bool) -> str | None:
-    if alert:
-        return "FC de nuit nettement au-dessus de ta normale 2 nuits de suite."
-    k, prov = 0, False
-    while k < 60:
-        d = today - timedelta(days=k)
-        m, b = nt.mean7(nights, "hrv", d), _band7(nights, "hrv", d)
-        if not (m and b and m["value"] < b["lo"]):
-            break
-        prov = prov or (k == 0 and b["provisional"])
-        k += 1
-    return f"VFC sous ta normale{' (provisoire)' if prov else ''} depuis {k} nuits." if k >= 3 else None
-
-
-def _panels(nights, days, alert: bool, weekly=None) -> list[dict]:
-    """VFC above, FC de nuit below (respiration while the HR alert is on):
-    per-night values (never judged one by one), the rolling band of the 60
-    days before each night on that night's own watch (one band per watch), the
-    7-night mean line (the trend the band is for). `weekly`: {monday: {metric:
-    median, metric_judge: bool, metric_src: watch}} (« 1 an »): a week is judged
-    only on its usable nights, against the 60 days before its Monday."""
-    def vals(metric):
-        if weekly:
-            return [weekly[d].get(metric) for d in days]
-        return [(nights[d].value(metric) if d in nights else None) for d in days]
-
-    def band_of(metric):
-        out = []
-        for d in days:
-            if weekly:
-                b = nt.band(nights, metric, d, source=weekly[d].get(f"{metric}_src"))
-            else:
-                n = nights.get(d)
-                b = nt.band(nights, metric, d, source=n.source_of(metric) if n and n.value(metric) is not None
-                            else None)
-            if b and metric == "resp":
-                b = {**b, "lo": b["center"] - 1, "hi": b["center"] + 1}  # (H) median ± 1 breath/min
-            out.append(b if b and b.get("lo") is not None else None)
-        return out
-
-    cache = {}
-
-    def cached(metric):  # each metric's rolling band once (setdefault would compute it again on every call)
-        if metric not in cache:
-            cache[metric] = band_of(metric)
-        return cache[metric]
-
-    def bands(metric):
-        return [(b["lo"], b["hi"]) if b else None for b in cached(metric)]
-
-    def prov(metric):  # a « provisoire » band (7 to 13 nights, H) says so in the readout
-        return [bool(b and b["provisional"]) for b in cached(metric)]
-
-    def means(metric):
-        if weekly:
-            return [None] * len(days)
-        return [(nt.mean7(nights, metric, d) or {}).get("value") for d in days]
-
-    def judge(metric):
-        # one night is never judged (Buchheit 2014: ≈ 12 % night to night; the band is the 7-night mean's):
-        # its dot stays plain, the readout prints its value and « normale x–y »; a weekly median is judged
-        # only when it rests on 3 usable nights at least (no race window, tag or illness episode in it)
-        return [bool(weekly[d].get(f"{metric}_judge")) for d in days] if weekly else [False] * len(days)
-
-    panels = [
-        {"name": "VFC", "unit": "ms", "unit_long": "millisecondes", "values": vals("hrv"), "band": bands("hrv"),
-         "prov": prov("hrv"), "mean": means("hrv"), "judge": judge("hrv"), "min_span": 20},
-        {"name": "FC", "unit": "bpm", "unit_long": "battements par minute", "values": vals("hr"), "band": bands("hr"),
-         "prov": prov("hr"), "mean": means("hr"), "judge": judge("hr"), "min_span": 8},
-    ]
-    if alert and not weekly and any(v is not None for v in vals("resp")):
-        panels.append({"name": "Resp.", "unit": "/min", "unit_long": "respirations par minute", "values": vals("resp"),
-                       "band": bands("resp"), "mean": [None] * len(days), "judge": judge("resp"), "min_span": 4,
-                       "digits": 1, "h": 48})
-    return panels
-
-
-def _last(days, ok) -> int:
-    return max((i for i, d in enumerate(days) if ok(d)), default=len(days) - 1)
-
-
-def _daily(nights, days, today, chosen, races, longs, samples, alert) -> dict:
-    tags = _tags(nights, days)
-    usual = _usual(nights, today)
-    sel = _last(days, lambda d: d in nights and _measured(nights[d]))
-    band = [(b["lo"], b["hi"]) if (b := nt.band(nights, "tst24", d)) else None for d in days]
-    mean = [(nt.mean7(nights, "tst24", d) or {}).get("value") for d in days]
-    chart = viz.nights_chart(days, nights, usual=usual, races=races, longs=longs, tags=tags, link="#hyp", sel=sel,
-                             mean=mean, band=band)
-    hyps = []
-    for i, d in enumerate(days):
-        n = nights.get(d)
-        if n and n.timeline and samples.get(d):
-            h = viz.hypnogram(samples[d], n.start, n.end)
-            if h:
-                h["aria"] = f"Forme de la {viz.night_label(d)}, estimée par la montre : une allure, pas une mesure"
-                hyps.append((i, h))
-    hyps = hyps[-MAX_HYPNOGRAMS:]
-    heart = None
-    if any(d in nights and (nights[d].hr is not None or nights[d].hrv is not None) for d in days):
-        hsel = _last(days, lambda d: d in nights and (nights[d].hr is not None or nights[d].hrv is not None))
-        heart = viz.band_chart("coeur", days, _panels(nights, days, alert), races=races, longs=longs, tags=tags,
-                               sel=hsel, title="Cœur la nuit")
-    return {"weekly": False, "coverage": _coverage(nights, days, chosen), "building": _building(nights, today),
-            "nights": chart, "amount_line": _amount_line(nights, today), "timing_line": _timing_line(usual),
-            "hyps": hyps, "hyp_sel": sel, "hyp_has_sel": any(i == sel for i, _ in hyps),
-            "heart": heart, "heart_line": _heart_line(nights, today, alert) if heart else None,
-            "rows": _rows(nights, days, races)}
-
-
-def _monday(d: date) -> date:
-    return d - timedelta(days=d.weekday())
-
-
-YEAR_WEEK_NIGHTS = 3  # (H) nights a week needs for a weekly mark (and usable nights for its word)
-
-
-def _year(nights, today, races, longs, alert) -> dict:
-    """« 1 an »: one mark per week (weeks with ≥ 3 nights): the mean 24-h
-    amount, the median bed → wake window, the weekly medians of VFC and FC
-    (from the usable nights when 3 are there, then judged against the band of
-    the 60 days before the Monday; else from all of them, never judged, with
-    the week's commonest tag word)."""
-    lo = today - timedelta(days=364)
-    first = min(d for d, n in nights.items() if d >= lo and _measured(n))
-    weeks = []
-    m = _monday(first)
-    while m <= today:
-        weeks.append(m)
-        m += timedelta(days=7)
-    pseudo, weekly, labels, tags = {}, {}, [], {}
-    for m in weeks:
-        wd = [m + timedelta(days=k) for k in range(7) if m + timedelta(days=k) <= today]
-        mains = [nights[d] for d in wd if d in nights and nights[d].asleep is not None]
-        per = {}
-        unjudged = []
-        for metric in ("hr", "hrv"):
-            have = [nights[d] for d in wd if d in nights and nights[d].value(metric) is not None]
-            ok = [n for n in have if n.usable(metric)]
-            use = ok if len(ok) >= YEAR_WEEK_NIGHTS else have
-            per[metric] = statistics.median(n.value(metric) for n in use) if len(use) >= YEAR_WEEK_NIGHTS else None
-            per[f"{metric}_judge"] = per[metric] is not None and use is ok
-            per[f"{metric}_src"] = use[-1].source_of(metric) if use else None
-            if per[metric] is not None and use is not ok:
-                unjudged += [t for n in have for t in sorted(n.tags) if t in nt.EXCLUDING]
-        if unjudged:
-            tags[m] = [nt.TAG_WORDS[statistics.mode(unjudged)]]
-        weekly[m] = per
-        k = len(mains)
-        if k >= 3:
-            ref = datetime.combine(m - timedelta(days=1), time(0))
-            bed = statistics.median(viz._axis_min(n.start, n.day) for n in mains)
-            wake = statistics.median(viz._axis_min(n.end, n.day) for n in mains)
-            nap = statistics.fmean(n.nap_min for n in mains)
-            pseudo[m] = nt.Night(day=m, start=ref + timedelta(minutes=bed), end=ref + timedelta(minutes=wake),
-                                 asleep=round(statistics.fmean(n.asleep for n in mains)),
-                                 naps=[(None, None, round(nap))] if nap >= 1 else [])
-        labels.append((f"sem. du {viz.d_short(m)}" + (f" · moyenne de {k} nuits" if k >= 3 else ""),
-                       f"semaine du {viz.d_long(m)}" + (f", moyenne de {k} nuits" if k >= 3 else "")))
-    races_w = [(_monday(d), name) for d, name in races if d >= weeks[0]]
-    longs_w = sorted({_monday(d) for d in longs if d >= weeks[0]})
-    sel = _last(weeks, lambda m: m in pseudo)
-    chart = viz.nights_chart(weeks, pseudo, races=races_w, longs=longs_w, sel=sel, mean=[None] * len(weeks),
-                             slot_labels=labels, unit_word="semaines")
-    heart = None
-    if any(weekly[m]["hr"] is not None or weekly[m]["hrv"] is not None for m in weeks):
-        hsel = _last(weeks, lambda m: weekly[m]["hr"] is not None or weekly[m]["hrv"] is not None)
-        hl = [(f"sem. du {viz.d_short(m)}", f"semaine du {viz.d_long(m)}") for m in weeks]
-        heart = viz.band_chart("coeur", weeks, _panels(nights, weeks, alert, weekly), races=races_w, longs=longs_w,
-                               tags=tags, sel=hsel, title="Cœur la nuit, médianes par semaine", slot_labels=hl,
-                               unit_word="semaines")
-    days = [lo + timedelta(days=i) for i in range(365)]
-    return {"weekly": True, "coverage": _coverage(nights, days, "365"), "building": _building(nights, today),
-            "nights": chart, "amount_line": None, "timing_line": None, "hyps": [], "hyp_sel": None,
-            "hyp_has_sel": False, "heart": heart, "heart_line": _heart_line(nights, today, alert) if heart else None,
-            "rows": _rows(nights, days, races)}
-
-
-def _rows(nights, days, races) -> list[dict]:
-    """« Les chiffres de chaque nuit », newest first: « — » when missing, tags as words."""
-    race_of = {d: name for d, name in races}
+def rows(nights: dict, today: date) -> list[dict]:
+    """« Les chiffres de chaque nuit », 30 nights, newest first: « — » when
+    missing, the tags as words (the only place they are written)."""
     out = []
-    for d in reversed(days):
+    for k in range(TABLE_DAYS):
+        d = today - timedelta(days=k)
         n = nights.get(d)
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
-        marks = ([f"{viz.GLYPH['race']} {race_of[d]}"] if d in race_of else []) + \
-            [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(n.tags)]
+        marks = [f"{viz.GLYPH['tag']} {nt.TAG_WORDS[t]}" for t in sorted(n.tags) if t != "race"]
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
                     "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",
@@ -399,3 +177,20 @@ def _rows(nights, days, races) -> list[dict]:
                     "hrv": viz.num(n.hrv) if n.hrv is not None else "—",
                     "marks": " · ".join(marks) or "—"})
     return out
+
+
+def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict | None = None) -> dict:
+    """Everything the Sommeil section draws. state: never (no night ever, one
+    line) | old (nothing in 90 days) | ok."""
+    base = {"method": METHOD, "refs": REFS}
+    if not any(_measured(n) for d, n in nights.items() if d <= today):
+        return {**base, "state": "never"}
+    h = hero(nights, today, samples)
+    offered = offered_ranges(nights, today)
+    if h is None and "90" not in offered and not any(
+            today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items()):
+        return {**base, "state": "old", "rows": rows(nights, today)}
+    chosen = choose(nights, today, r)
+    return {**base, "state": "ok", "hero": h, "ranges": [(k, RANGES[k][1]) for k in offered], "r": chosen,
+            "bars": {k: bars(nights, today, k) for k in offered}, "habits": habits(nights, today),
+            "rows": rows(nights, today)}

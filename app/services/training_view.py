@@ -5,16 +5,18 @@ partials/activity_training.html draws it on page 1 without a sport filter.
 
 - A1 « Semaines » (open): 12 weeks of hours as Activités counts them (UTC
   Mondays, duplicates and false starts out), D+ as a thin second mark, the
-  usual week as a band (P25–P75 of the active weeks of the last 26, H), ⚑ race
-  weeks, ◆ weeks holding a long outing (≥ 3 h or ≥ 1 500 m D+, H), the
-  single-run spike in the warn tone: a run > 10 % longer, on distance, than
-  the longest of the 30 days before it, races excluded (Frandsen 2025: 1.5–
-  2.3× overuse injuries; no weekly % flag, evidence row 15). Resting readout
-  « semaine type : 7h40 » (the median of those weeks), « heures par semaine »
-  before 8 active weeks; a week's own values only on tap (the list's week
-  headings print them). One line at most: the spike, else « Affûtage pour {course} › »
-  during the taper, else « Récupération après {course} : volume bas, c'est
-  voulu. » after a race.
+  usual week as a band (P25–P75 of the active weeks of the last 26, H), ◆
+  weeks holding a long outing (≥ 3 h or ≥ 1 500 m D+, H; a race is an outing
+  like any other: no race flag, owner 2026-10-08), the single-run spike in the
+  warn tone: a run > 10 % longer, on distance, than the longest of the 30 days
+  before it, races excluded (Frandsen 2025: 1.5–2.3× overuse injuries; no
+  weekly % flag, evidence row 15). Resting readout « semaine type : 7h40 »
+  (the median of those weeks), « heures par semaine » before 8 active weeks;
+  a week's own values only on tap (the list's week headings print them). One
+  line at most: the spike, else « Affûtage pour {course} › » during the taper
+  of a dated race, else, from the activities alone, « Récupération après ta
+  sortie de 16h53 : volume bas, c'est voulu. » while the recovery window of
+  an effort of 6 h or more is open (sante_training.effort_window, as Santé).
 - A2 « Fond et fatigue » (closed): fond (42-day EWMA) and fatigue (7-day) of
   the session load over 120 days, two directly labelled lines, no y numbers,
   the readout is the date only: no ratio, no %, no « au-dessus / proche /
@@ -85,22 +87,12 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
         usual = {"lo": q[0], "hi": q[2], "mid": statistics.median(w["minutes"] for w in hist)}
     mondays = [w["monday"] for w in wk]
     this_monday = mondays[-1]
-    race_days = {rp.race_day(r) for r in routes}
+    race_days = {rp.race_day(r) for r in routes}  # the spike rule leaves races out (they are marked, never flagged)
     by_week: dict[date, list] = {}
     for s in sessions:
         by_week.setdefault(st.monday(s.start).date(), []).append(s)
-    flags = []  # (monday, name): Routes first, then sessions marked as races
-    for r in routes:
-        m = rp.race_day(r) - timedelta(days=rp.race_day(r).weekday())
-        if mondays[0] <= m <= this_monday and m not in dict(flags):
-            flags.append((m, r.name))
-    for s in sessions:
-        m = st.monday(s.start).date()
-        if s.workout_type == 1 and mondays[0] <= m <= this_monday and m not in dict(flags):
-            flags.append((m, s.name or "course"))
-    flagged = dict(flags)
     spk = {st.monday(s.start).date(): (s, ratio) for s, ratio in spikes(sessions, race_days, mondays[0])}
-    longs = [m for m in mondays if m not in flagged and m not in spk and any(
+    longs = [m for m in mondays if m not in spk and any(
         s.minutes >= rp.LONG_OUTING_MIN or s.dplus >= rp.LONG_OUTING_DPLUS for s in by_week.get(m, []))]
 
     n = len(wk)
@@ -124,9 +116,6 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
         if w["count"]:
             ctx.append(f"{w['count']} séance{'s' if w['count'] > 1 else ''}")
             said.append(ctx[-1])
-        if m in flagged:
-            ctx.append(f"{viz.GLYPH['race']} {flagged[m]}")
-            said.append(f"course : {flagged[m]}")
         if m in spk:
             s, ratio = spk[m]
             ctx.append(f"{viz.GLYPH['long']} sortie {round((ratio - 1) * 100)}{NNBSP}% plus longue")
@@ -147,7 +136,7 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
         weeks_ago = (this_monday - m).days // 7
         href = f"#week-{w['key']}" if weeks_ago < 6 else rp.activities_href(m, this_monday)
         h.append({"href": href, "label": "Voir la semaine ›"} if ss else None)
-    ev = viz.events(mondays, xs, races=flags, longs=longs)
+    ev = viz.events(mondays, xs, longs=longs)
     c = {"n": n, "W": viz.W, "H": 168, "X1": X1, "cols": cols, "base": 132,
          "band": {"y": y(usual["hi"]), "h": round(y(usual["lo"]) - y(usual["hi"]), 1)} if usual else None,
          "spikes": [{"x": xs[mondays.index(m)]} for m in spk if m in mondays], **ev,
@@ -168,7 +157,8 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
 
 
 def a1_line(sessions, routes: list, race_days: set[date], today: date) -> dict | None:
-    """{text, href}: the spike, else the taper, else the quiet line after a race."""
+    """{text, href}: the spike, else the taper, else the quiet line while a
+    big effort's recovery window is open (from the activities alone)."""
     recent = spikes(sessions, race_days, today - timedelta(days=SPIKE_RECENT - 1))
     if recent:
         s, ratio = recent[-1]
@@ -182,19 +172,17 @@ def a1_line(sessions, routes: list, race_days: set[date], today: date) -> dict |
         start, rd = rp.taper_weeks(rp.race_day(nxt))
         if start <= today <= rd:
             return {"text": f"Affûtage pour {nxt.name} ›", "href": f"/simulator/routes/{nxt.id}#prep"}
-    for r in reversed(routes):
-        rd = rp.race_day(r)
-        if rd < today:
-            if (today - rd).days <= rp.recovery_days(r, sessions):
-                return {"text": rp.fr(f"Récupération après {r.name} : volume bas, c'est voulu."),
-                        "href": f"/simulator/routes/{r.id}#prep"}
-            break
+    w = st.effort_window([e for e in st.efforts(sessions) if e.big], today)
+    if w:
+        e = w["effort"]
+        return {"text": rp.fr(f"Récupération après ta sortie de {hm(e.minutes)} : volume bas, c'est voulu."),
+                "href": f"/activity/{e.session_id}"}
     return None
 
 
 # ── A2 Fond et fatigue ──────────────────────────────────────────────────────
 
-def fond_fatigue(sessions: list[st.Session], routes: list, today: date) -> dict:
+def fond_fatigue(sessions: list[st.Session], today: date) -> dict:
     """{wait: sentence} before 6 weeks, else the two-line figure."""
     series = st.fitness(st.daily_loads(sessions), today)
     first = min(series) if series else today
@@ -217,11 +205,10 @@ def fond_fatigue(sessions: list[st.Session], routes: list, today: date) -> dict:
     up, down = sorted(out, key=lambda o: o["end"])
     up["ly"] = round(max(up["end"] - 6, 10), 1)
     down["ly"] = round(max(down["end"] + 14, up["ly"] + 13), 1)
-    races = [(rp.race_day(r), r.name) for r in routes if days[0] <= rp.race_day(r) <= today]
     r = [["", viz.d_short(d), ""] for d in days]
     a = [d_long(d) for d in days]
     return {"n": n, "W": viz.W, "H": 140, "X1": X1, "series": out, "xt": viz.x_labels(days, xs),
-            **viz.events(days, xs, races=races), "grid": [round(18 + k * (120 - 18) / 3, 1) for k in range(4)],
+            **viz.events(days, xs), "grid": [round(18 + k * (120 - 18) / 3, 1) for k in range(4)],
             "summary": f"Fond et fatigue sur {n} jours : deux courbes de ta charge, sans échelle",
             **viz._data(xs, [[y(v) for v in vals] for _, vals, _ in lines], days, r, a)}
 
@@ -286,11 +273,10 @@ async def training_top(db: AsyncSession, user_id: int, now: datetime | None = No
         peak = st.hr_max(sessions, today)
         st.set_loads(sessions, await _rest_hr(db, user_id, today), peak)
         routes = [r for r in await rp.load_races(db, user_id, today)]
-        past = [r for r in routes if rp.race_day(r) <= today]
         weeks = semaines(sessions, routes, today, now)
         if weeks is None:
             return None
-        return {"weeks": weeks, "form": fond_fatigue(sessions, past, today), "easy": footing(sessions, today, peak)}
+        return {"weeks": weeks, "form": fond_fatigue(sessions, today), "easy": footing(sessions, today, peak)}
     except Exception:
         logger.exception("Activités › training block failed for user %d", user_id)
         return None

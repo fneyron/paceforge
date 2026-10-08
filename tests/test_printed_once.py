@@ -1,7 +1,10 @@
 """Each number is printed once across Santé, Activités and the race page: a
-figure whose latest value another page already prints opens on a resting
-readout (viz.rest). The server prints every default readout, so the HTML is
-enough to check it."""
+figure whose latest value another block already prints opens on a resting
+readout (viz.rest): on the one-page Santé (v4), the rings print today's
+score and last night's 24 h, so « Récupération · 14 jours » and « Sommeil sur
+24 h » rest on a hint and on the mean. The server prints every default
+readout, so the HTML is enough to check it."""
+import html
 import re
 from datetime import timedelta
 
@@ -17,8 +20,8 @@ READ = re.compile(r'data-viz-key="([^"]+)".*?<span data-r>(.*?)</span><b data-r>
                   re.S)
 
 
-def readouts(html: str) -> dict[str, tuple[str, str, str]]:
-    return {k: (a, b, c) for k, a, b, c in READ.findall(html)}
+def readouts(page: str) -> dict[str, tuple[str, str, str]]:
+    return {k: (html.unescape(a), html.unescape(b), html.unescape(c)) for k, a, b, c in READ.findall(page)}
 
 
 async def test_no_default_readout_repeats_a_number_of_another_page(client: AsyncClient, db_session: AsyncSession,
@@ -30,21 +33,28 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     soon = await _race(db_session, test_user, today + timedelta(days=5))
     done = await _race(db_session, test_user, today - timedelta(days=5), name="Trail passé")
 
-    sommeil = readouts((await client.get("/sante?vue=sommeil")).text)
+    page = (await client.get("/sante")).text
+    sante = readouts(page)
     activites = (await client.get("/activities")).text
     before = readouts((await client.get(f"/simulator/routes/{soon}")).text)
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
-    last_night = sommeil["nuits"][1]
-    assert last_night.startswith("Nuit ") and "sur 24" in last_night  # Sommeil prints last night's total…
-    assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # …not the race
-    assert "FC" in sommeil["coeur"][1]
+    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "charge"}  # no VFC in the seed: no card
+    # the rings print today's score and last night's total: their cards rest on something else…
+    assert sante["recuperation"] == ("", "", "Touche un jour pour son score et son état.")
+    assert sante["sommeil-14"][:2] == ("14 nuits", "moyenne 7h20") and sante["sommeil-90"][:2] == ("3 mois",
+                                                                                                  "moyenne 7h20")
+    # …the nightly HR card prints last night's value (no ring, no other block does)…
+    assert sante["fc"][1] == "45\u202fbpm" and sante["fc"][2].startswith("normale ")
+    # …and Charge today's hours (the ring prints the last 7 days')
+    assert sante["charge"][0] == "aujourd'hui" and sante["charge"][1] == "aucune activité"
+    assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race…
     assert after["recup"][:2] == ("J+1 → J+14", "VFC et FC de nuit")  # …nor last night's VFC and FC
     # this week's hours: Activités' week heading prints them; neither A1 nor the taper does by default
     week = readouts(activites)["semaines"]
     assert week[0] == "12 semaines" and "en cours" not in week[0]
     taper = before["affutage"]
     assert taper[0] == "S‑6 → S0" and taper[1].startswith("base : ") and "en cours" not in taper[0]
-    shown = {v for r in (sommeil, readouts(activites)) for t in r.values() for v in t if re.search(r"\d", v)}
+    shown = {v for r in (sante, readouts(activites)) for t in r.values() for v in t if re.search(r"\d", v)}
     for r in (before, after):
         assert not shown & {v for t in r.values() for v in t}

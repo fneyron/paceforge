@@ -194,13 +194,6 @@ def taper_days(m: date, rd: date) -> tuple[int, int]:
     return max(0, (min(nxt, lo) - m).days), max(0, (min(nxt, rd) - max(m, lo)).days)
 
 
-def recovery_days(route, sessions=()) -> int:
-    """How long Activités' quiet line « volume bas, c'est voulu » lasts: 14
-    days after a race of 3 h or more (or of unknown length), else 7 (H)."""
-    secs = race_duration(route, sessions)[0]
-    return PREP_AFTER if secs is None or secs >= LONG_S else 7
-
-
 # ── formats ─────────────────────────────────────────────────────────────────
 
 def j_label(k: int) -> str:
