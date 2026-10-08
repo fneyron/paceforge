@@ -25,8 +25,9 @@
   rounded to 5 min, and « Régularité ± 35 min », the SD of bedtime once 8
   nights are there (H; Fischer 2021). Time-zone nights and the nights after a
   big effort stay out; a « rendormi » wake leaves the wake median (H).
-- The closed « Les chiffres de chaque nuit » table (30 nights: the accessible
-  alternative of the charts) and the closed « Comment je lis tes nuits » fold.
+- The closed « Les chiffres de chaque nuit » table (30 nights, their stage
+  minutes too: the accessible alternative of the charts) and the closed
+  « Comment je lis tes nuits » fold.
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
@@ -211,7 +212,8 @@ def habits(nights: dict, today: date) -> dict | None:
 
 def rows(nights: dict, today: date) -> list[dict]:
     """« Les chiffres de chaque nuit », 30 nights, newest first: « — » when
-    missing, the tags as words (the only place they are written)."""
+    missing, each night's stage minutes (the watch's estimate), the tags as
+    words (the only place they are written)."""
     out = []
     for k in range(TABLE_DAYS):
         d = today - timedelta(days=k)
@@ -226,6 +228,7 @@ def rows(nights: dict, today: date) -> list[dict]:
                     "times": f"{viz.clock(n.start)} → {viz.clock(n.end)}" if n.start else "—",
                     "hr": viz.num(n.hr) if n.hr is not None else "—",
                     "hrv": viz.num(n.hrv) if n.hrv is not None else "—",
+                    "phases": [viz.hm(n.stages[k]) if n.stages else "—" for k, _ in PHASES],
                     "marks": " · ".join(marks) or "—"})
     return out
 

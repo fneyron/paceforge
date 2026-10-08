@@ -245,7 +245,7 @@ def _top(day: dict, sessions, today: date, has_watch: bool, page: dict) -> dict:
                           aria=spoken + (f", {word}" if word else "") + "."
                           + (" Ouvre tes activités." if charge_href else "")))
     return {"rings": rings, "state": state, "line": None if state else td.no_state_line(has_watch),
-            "connect": not has_watch and state is None,
+            "connect": not has_watch,  # no watch: how to add the nights, under the line or under the state
             "contrib": sc.contributors(score, state), "score": score}
 
 

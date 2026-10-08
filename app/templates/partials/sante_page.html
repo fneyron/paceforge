@@ -17,6 +17,7 @@
     {% if p.state %}
     <h2 class="pf-state-word"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ p.state.word }}</h2>
     {% if p.state.text %}<p class="pf-state-text">{% if p.state.href %}<a href="{{ p.state.href }}">{{ p.state.text }}</a>{% else %}{{ p.state.text }}{% endif %}</p>{% endif %}
+    {% if p.connect %}<p class="pf-state-line"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
     {% else %}
     <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a>{% endif %}</p>
     {% endif %}
@@ -112,9 +113,9 @@
         <summary>Les chiffres de chaque nuit</summary>
         <div class="pf-ntable-wrap" tabindex="0" role="region" aria-label="Les chiffres de chaque nuit">
             <table class="pf-ntable">
-                <caption class="sr-only">Les chiffres de chaque nuit des 30 derniers jours, la plus récente d'abord ; « — » : pas de mesure</caption>
-                <thead><tr><th scope="col">Jour</th><th scope="col">24 h</th><th scope="col">Nuit</th><th scope="col">Sieste</th><th scope="col">Coucher → lever</th><th scope="col">FC</th><th scope="col">VFC</th><th scope="col">Repère</th></tr></thead>
-                <tbody>{% for r in s.rows %}<tr><th scope="row">{{ r.date }}</th><td>{{ r.tst }}</td><td>{{ r.night }}</td><td>{{ r.nap }}</td><td>{{ r.times }}</td><td>{{ r.hr }}</td><td>{{ r.hrv }}</td><td>{{ r.marks }}</td></tr>{% endfor %}</tbody>
+                <caption class="sr-only">Les chiffres de chaque nuit des 30 derniers jours, la plus récente d'abord, les phases estimées par la montre ; « — » : pas de mesure</caption>
+                <thead><tr><th scope="col">Jour</th><th scope="col">24 h</th><th scope="col">Nuit</th><th scope="col">Sieste</th><th scope="col">Coucher → lever</th><th scope="col">FC</th><th scope="col">VFC</th><th scope="col">Éveil</th><th scope="col">Léger</th><th scope="col">Profond</th><th scope="col">Paradoxal</th><th scope="col">Repère</th></tr></thead>
+                <tbody>{% for r in s.rows %}<tr><th scope="row">{{ r.date }}</th><td>{{ r.tst }}</td><td>{{ r.night }}</td><td>{{ r.nap }}</td><td>{{ r.times }}</td><td>{{ r.hr }}</td><td>{{ r.hrv }}</td>{% for ph in r.phases %}<td>{{ ph }}</td>{% endfor %}<td>{{ r.marks }}</td></tr>{% endfor %}</tbody>
             </table>
         </div>
     </details>
