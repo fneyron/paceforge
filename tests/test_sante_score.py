@@ -209,24 +209,32 @@ def test_rung_2_an_effort_window_names_the_activity_never_its_time():
 
 
 def test_a_red_component_never_sits_under_a_green_ring():
-    """VFC far under its band (sub-score 0): the others full make raw 70, but a component under 40 caps the score at
-    69 (H): « Récupération en cours », the sentence names it. A VFC just under its band (sub-score ≥ 40) only lowers
-    the score: still « Bien récupéré », no sentence; with the nightly HR 4 bpm up, lower again (no special rule)."""
+    """A component under 40 caps the score at 69 (H): FC de nuit, Sommeil and Charge always, VFC only when FC de
+    nuit is measured and its 7-night mean is over its median + 2 bpm (v4.2; Buchheit 2014, Table 2: a low VFC with
+    a normal HR is the « saturation » of an athlete coping well). VFC far under its band (sub-score 0), FC de nuit
+    in it: nothing caps, raw (25·0 + 25·100 + 30·100) / 80 = 68,75 → 69, the row « basse » in orange (never a red
+    row the ring does not show). With FC de nuit at + 2,5 bpm (sub-score 90) a VFC of 39 counts: raw 77,8 → 69."""
     far = _day(_rich(hrv_last=50.0), _runs())
     vfc = next(p for p in far["score"]["parts"] if p["key"] == "hrv")
-    assert vfc["sub"] == 0 and far["score"]["raw0"] == 70
-    assert far["score"]["value"] == 69 == sc.CAP_RED and far["score"]["caps"] == ["red"]
+    assert vfc["sub"] == 0 and not vfc["red"] and far["score"]["raw0"] == 68.75
+    assert far["score"]["value"] == 69 and far["score"]["caps"] == [] and far["score"]["tone"] == "warn"
     st_ = far["state"]
     assert (st_["key"], st_["tone"], st_["text"]) == ("hrv", "warn", "VFC basse sur 7 nuits.")
-    near = _day(_rich(hrv_last=58.0), _runs())
+    row = {r["key"]: r for r in sc.contributors(far["score"], far["state"])["rows"]}["hrv"]
+    assert (row["word"], row["tone"], row["sub"]) == ("basse", "warn", 0)
+    up = _day(_rich(hrv_last=58.0, hr_last=47.5), _runs())  # VFC 39,1 (z −1,72), FC de nuit + 2,5 bpm → 90
+    parts = {p["key"]: p for p in up["score"]["parts"]}
+    assert round(parts["hrv"]["sub"], 1) == 39.1 and parts["hrv"]["red"] and parts["hr"]["sub"] == 90
+    assert not parts["hrv"]["joint"]  # + 2,5 bpm is under the joint cap's + 3
+    assert up["score"]["raw0"] == pytest.approx((25 * parts["hrv"]["sub"] + 25 * 90 + 30 * 100) / 80)
+    assert up["score"]["value"] == 69 == sc.CAP_RED and up["score"]["caps"] == ["red"]
+    assert (up["state"]["key"], up["state"]["text"]) == ("hrv", "VFC basse sur 7 nuits.")
+    rows = {r["key"]: r for r in sc.contributors(up["score"], up["state"])["rows"]}
+    assert (rows["hrv"]["word"], rows["hrv"]["tone"]) == ("nettement basse", "danger")  # red under an orange ring
+    near = _day(_rich(hrv_last=60.0), _runs())  # VFC 54,2: lowers the score only
     sub = next(p for p in near["score"]["parts"] if p["key"] == "hrv")["sub"]
-    assert 40 <= sub < 70 and near["score"]["value"] == round(70 + 0.3 * sub)
+    assert 40 <= sub < 70 and near["score"]["value"] == sc.rounded((25 * sub + 25 * 100 + 30 * 100) / 80) == 86
     assert (near["state"]["key"], near["state"]["text"]) == ("ok", None)
-    both = _day(_rich(hrv_last=58.0, hr_last=49.0), _runs())  # +4 bpm over a median of 45: FC de nuit 75
-    assert both["state"]["key"] == "ok" and both["score"]["value"] < near["score"]["value"]
-    # its bar is green (75): its word too, never « haute » on a green bar
-    hr = {r["key"]: r for r in sc.contributors(both["score"], both["state"])["rows"]}["hr"]
-    assert (hr["word"], hr["tone"], hr["sub"]) == ("un peu haute", "ok", 75)
 
 
 def test_the_reason_is_the_binding_cap_else_the_lowest_component():
@@ -286,24 +294,32 @@ def test_components():
     assert sc.hrv_sub(70 * math.exp(-0.25), band) == pytest.approx(0)  # z = −2.5
     assert sc.hrv_sub(90, band) == 100  # above: never praised, never more
     assert round(sc.hrv_sub(70 * math.exp(-0.15), band)) == 50
-    assert sc.hr_sub(47, {"center": 45}) == 100 and sc.hr_sub(55, {"center": 45}) == 0
-    assert sc.hr_sub(51, {"center": 45}) == 50
+    # FC de nuit (v4.2, H): 100 up to + 2 bpm, 40 at + 5, 0 at + 8 (Alavi 2022: + 4 on 2 nights; Bosquet 2008: + 4,5)
+    hr = {"center": 45}
+    assert sc.hr_sub(47, hr) == 100 and sc.hr_sub(48, hr) == 80 and sc.hr_sub(49, hr) == 60
+    assert sc.hr_sub(50, hr) == 40 and sc.hr_sub(51, hr) == pytest.approx(80 / 3) and sc.hr_sub(53, hr) == 0
+    assert sc.hr_sub(56, hr) == 0 and sc.hr_sub(40, hr) == 100
     assert sc.sleep_sub(420) == sc.sleep_sub(520) == 100 and sc.sleep_sub(360) == 60 and sc.sleep_sub(240) == 0
     assert sc.sleep_sub(390) == 80 and sc.sleep_sub(300) == 30
     assert sc.sleep_sub(480, mean7=380, usual=470) == 40  # 90 min under the usual
     assert sc.load_sub(None) == 100 and sc.load_sub({"load": 20}) == 20
 
 
-def test_weights_are_renormalised_and_charge_needs_activities_or_a_window():
-    assert sc.WEIGHTS == {"hrv": 30, "hr": 25, "sleep": 25, "load": 20}  # (H)
-    day = _day(_rich(hrv_last=58.0), [])  # no activity: no Charge, the three nightly signals share 100 %
+def test_weights_are_renormalised_and_charge_only_in_a_window():
+    """VFC 25, FC de nuit 25, Sommeil 30, Charge 20 (H, v4.2), renormalised over the components present. Charge
+    récente enters only while a recovery window is open: outside one it is no component (a constant 100 diluted
+    the others: OECD/JRC 2008), and never listed as missing."""
+    assert sc.WEIGHTS == {"hrv": 25, "hr": 25, "sleep": 30, "load": 20}  # (H)
+    day = _day(_rich(hrv_last=60.0), _runs(n=20))  # plenty of activities, no window: no Charge
     parts = {p["key"]: p for p in day["score"]["parts"]}
-    assert set(parts) == {"hrv", "hr", "sleep"} and day["score"]["absent"] == ["load"]
-    assert [round(parts[k]["weight"], 4) for k in ("hrv", "hr", "sleep")] == [0.375, 0.3125, 0.3125]
-    few = _day(_rich(), _runs(n=5))  # 5 activities in 42 days: no Charge (H)
-    assert "load" in few["score"]["absent"]
-    window = _day(_rich(), [_session(D - timedelta(days=1), 200, sid=9)])  # a window alone brings it
-    assert {p["key"]: p["sub"] for p in window["score"]["parts"]}["load"] == 50
+    assert set(parts) == {"hrv", "hr", "sleep"} and day["score"]["absent"] == []
+    assert [parts[k]["weight"] for k in ("hrv", "hr", "sleep")] == [0.3125, 0.3125, 0.375]
+    c = sc.contributors(day["score"], day["state"])
+    assert [r["key"] for r in c["rows"]] == ["hrv", "hr", "sleep"] and c["absent"] is None
+    window = _day(_rich(), [_session(D - timedelta(days=1), 200, sid=9)])  # a long effort: Charge 50, weight 20 %
+    parts = {p["key"]: p for p in window["score"]["parts"]}
+    assert parts["load"]["sub"] == 50 and parts["load"]["weight"] == 0.2 and parts["sleep"]["weight"] == 0.3
+    assert window["score"]["raw0"] == 90 and window["score"]["value"] == 65  # (25+25+30)·100 + 20·50 → its cap
 
 
 @pytest.mark.parametrize("raw,score,tone", [(100, 100, "ok"), (70, 70, "ok"), (69.5, 70, "ok"), (69.49, 69, "warn"),
@@ -331,24 +347,25 @@ def test_the_effort_caps_bind_and_the_ultra_window_ends_after_10_days():
 
 
 def test_owner_like_day_the_exact_score():
-    """Sommeil 100 and Charge 20 (an ultra on D+5): raw 64,4 under the 65 cap, inside 40–69: 64."""
+    """Sommeil 100 and Charge 20 (an ultra on D+5): raw (30·100 + 20·20) / 50 = 68, its window's 65 binds: 65
+    (v4.2; it was 64 with the v4 weights, Sommeil 25: raw 64,4 under the cap)."""
     rows = night_rows([0], asleep=516, start=(22, 42), end=(7, 30), source="COROS",
                       hr_method="coros_sleep_summary")
     day = _day(rows, [_session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=8)])
-    raw = (25 * 100 + 20 * 20) / 45
-    assert day["window"]["days"] == 5 and day["score"]["raw"] == round(raw, 9)
-    assert day["score"]["value"] == 64 == math.floor(raw + 0.5) and day["score"]["caps"] == []  # 65 is above
-    assert (day["state"]["key"], day["state"]["tone"]) == ("effort", "warn")  # the lowest component: Charge (20)
+    raw = (30 * 100 + 20 * 20) / 50
+    assert day["window"]["days"] == 5 and day["score"]["raw0"] == raw == 68 and day["score"]["raw"] == 65
+    assert day["score"]["value"] == 65 and day["score"]["caps"] == ["effort"]  # the window's cap binds
+    assert (day["state"]["key"], day["state"]["tone"]) == ("effort", "warn")  # the cap that binds: the window
 
 
 def test_no_100_from_sleep_alone():
     """Neither VFC nor FC de nuit in the score (the watch worn some nights only, no normal yet): capped at 80 (H),
     so a long night alone never makes a rested 100; with them, a 100 stays possible."""
     rows = night_rows([0], asleep=588, start=(23, 52), end=(9, 54), source="COROS", hr_method="coros_sleep_summary")
-    day = _day(rows, _runs())  # 9h48 → Sommeil 100, Charge 100: raw 100
+    day = _day(rows, _runs())  # 9h48 → Sommeil 100 (no window: no Charge): raw 100
     assert day["state"]["key"] == "ok" and day["score"]["raw0"] == 100
     assert day["score"]["value"] == 80 == sc.CAP_NO_HEART and day["score"]["caps"] == ["no_heart"]
-    assert {p["key"] for p in day["score"]["parts"]} == {"sleep", "load"}
+    assert {p["key"] for p in day["score"]["parts"]} == {"sleep"}
     assert _day(_rich(), _runs())["score"]["value"] == 100
 
 
@@ -372,21 +389,24 @@ def test_contributors_print_no_number_and_say_what_is_missing():
 
 
 def test_a_contributors_bar_wears_the_colour_its_ring_wears():
-    """The sleep row as the Sommeil ring (≥ 7 h, 6–7 h, < 6 h), whatever its sub-score: 6h30 is 80, still
-    orange; Charge récente neutral, as the Charge ring (it describes, never warns); the others by their sub-score
-    on the score's bands. A red VFC caps the ring at 69: never green over it."""
-    assert [sc.sleep_tone(t) for t in (420, 419, 360, 359)] == ["ok", "warn", "warn", "danger"]
-    day = _day(_rich(hrv_last=52.0, asleep=390), _runs())  # VFC far under its band, FC in it
-    assert day["state"]["tone"] == "warn" and day["score"]["value"] <= sc.CAP_RED
+    """The sleep row as the Sommeil ring (v4.2): one day is marked only under 6 h (warm, « court »: Craven 2022),
+    else the neutral sleep hue, never a good or bad colour (the 7 h is about habitual sleep: Watson 2015a); a week
+    under the usual (a habitual signal) can make it worse, as its word says, never green. Charge récente neutral,
+    as the Charge ring. VFC far under its band with FC de nuit normal caps nothing: orange « basse », never red."""
+    assert [sc.sleep_tone(t) for t in (600, 420, 419, 360, 359)] == ["accent", "accent", "accent", "accent", "warn"]
+    day = _day(_rich(hrv_last=52.0, asleep=390), _runs())  # VFC far under its band, FC in it, 6h30
+    assert day["score"]["raw0"] == (25 * 0 + 25 * 100 + 30 * 80) / 80 == 61.25 and day["score"]["value"] == 61
     rows = {r["key"]: r for r in sc.contributors(day["score"], day["state"])["rows"]}
-    assert rows["sleep"]["sub"] == 80 and rows["sleep"]["tone"] == "warn"
-    assert rows["hrv"]["word"] == "nettement basse" and rows["hrv"]["tone"] == "danger" and rows["hr"]["tone"] == "ok"
-    assert rows["load"]["sub"] == 100 and rows["load"]["tone"] == "accent"
-    rested = _day(_rich(asleep=440), _runs())
-    assert {r["key"]: r["tone"] for r in sc.contributors(rested["score"], rested["state"])["rows"]}["sleep"] == "ok"
-    # a week short of the usual: the row as its word says it, never better than the ring
+    assert (rows["sleep"]["sub"], rows["sleep"]["word"], rows["sleep"]["tone"]) == (80, "un peu court", "accent")
+    assert (rows["hrv"]["word"], rows["hrv"]["tone"], rows["hr"]["tone"]) == ("basse", "warn", "ok")
+    assert "load" not in rows  # no window: no Charge row
+    short = _day(_rich(asleep=330), _runs())  # 5h30: warm, « court »
+    assert {r["key"]: (r["word"], r["tone"]) for r in sc.contributors(short["score"], short["state"])["rows"]}[
+        "sleep"] == ("court", "warn")
+    # a week short of the usual: the row as its word says it, never better than the ring, never green
     short_week = {"key": "sleep", "tst24": 390, "sub": 76, "debt": True}
-    assert sc._tone(short_week) == "warn" and sc._tone({**short_week, "tst24": 450, "sub": 35}) == "danger"
+    assert sc._tone(short_week) == "accent" and sc._tone({**short_week, "sub": 55}) == "warn"
+    assert sc._tone({**short_week, "tst24": 450, "sub": 35}) == "danger"
     window = {"key": "load", "sub": 20, "window": {"ago": 3}}
     assert sc._tone(window) == "accent"
 
@@ -489,7 +509,7 @@ def test_the_method_fold_marks_every_choice_h_and_cites_the_brief():
     # OWN-4: provisional from 7 to 13 nights, full at 14 (nights.MIN_BAND_NIGHTS), as the sleep fold says
     assert "« provisoire » de 7 à 13 nuits (H), pleine à 14" in text and "7 à 14" not in text
     # OWN-E: how Charge récente is scored; OWN-1: the score without a night during a window
-    assert "charge récente pleine sans grosse sortie, 50, 30 ou 20" in text
+    assert "charge récente \"\n" not in text and "poids (H) : 25, 25, 30, 20" in text  # v4.2 (the fold is rewritten in §D)
     assert "sans aucune nuit, pas de score, sauf pendant la récupération d'une grosse sortie" in text
     assert "2 nuits de suite, 39" in text and "un signal sous 40, 69" in text and "24 h, 65" in text
     assert "place" not in text and "plage" not in text  # no placement inside a band
@@ -579,8 +599,10 @@ def test_the_day_after_an_alert_stops_firing_the_episode_is_still_read():
     day = _day(rows, _runs())
     assert day["alert"] is None and day["stats"]["hr"]["normal"]["center"] == 45
     hr = next(p for p in day["score"]["parts"] if p["key"] == "hr")
-    assert round(day["stats"]["hr"]["value"], 2) == 48.57 and round(hr["sub"]) == 80
-    assert sc._word(hr, day["state"]) != "dans ta normale" and day["score"]["value"] == 95
+    assert round(day["stats"]["hr"]["value"], 2) == 48.57 and hr["sub"] == pytest.approx(100 - 60 * (3.5714 - 2) / 3,
+                                                                                         abs=0.01)
+    assert sc._word(hr, day["state"]) == "haute"  # + 3,6 bpm: 68,6, orange (never « dans ta normale »)
+    assert day["score"]["value"] == sc.rounded((25 * 100 + 25 * hr["sub"] + 30 * 100) / 80) == 90
 
 
 def test_the_illness_alert_makes_the_nightly_hr_row_red():
@@ -617,9 +639,9 @@ def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
     rows["nap"][y] = (100, {"windows": [[f"{y}T16:00", f"{y}T17:45"]]}, "Garmin")
     day = _day(rows, _runs())
     assert day["tst24"] == 400 and "short" not in day["score"]["caps"]
-    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 97)
+    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 95)  # (25·100 + 25·100 + 30·86,7) / 80 = 95
     row = {r["key"]: r for r in sc.contributors(day["score"], day["state"])["rows"]}["sleep"]
-    assert (row["word"], row["tone"]) == ("un peu court", "warn")
+    assert (row["word"], row["tone"]) == ("un peu court", "accent")  # 6h40: no colour on one day over 6 h
     nights = nt.build_nights(rows, D)
     assert nights[D].tst24 == 300 and nights[y].tst24 == 540  # each day's bar keeps its own nap
     # a « rendormi » nap of the day before (06:42, its wake 06:40): never counted again

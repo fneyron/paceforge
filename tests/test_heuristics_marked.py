@@ -45,14 +45,24 @@ HEURISTICS = [
                                                        "long": (((2, 65),), 50)}),
     ("app/services/sante_training.py", "BIG_NIGHTS", 3),
     ("app/services/sante_today.py", "HR_UP_BPM", 3),
-    ("app/services/sante_score.py", "WEIGHTS", {"hrv": 30, "hr": 25, "sleep": 25, "load": 20}),
+    # v4.2 (research_recovery.md §3.2): the weights, Charge only in a window, the FC de nuit anchors (Alavi 2022;
+    # Bosquet 2008), the joint VFC/FC cap (Buchheit 2014, Table 2)
+    ("app/services/sante_score.py", "WEIGHTS", {"hrv": 25, "hr": 25, "sleep": 30, "load": 20}),
     ("app/services/sante_score.py", "HRV_FULL_Z", -0.5),
     ("app/services/sante_score.py", "HRV_ZERO_Z", -2.5),
     ("app/services/sante_score.py", "HR_FULL_BPM", 2),
-    ("app/services/sante_score.py", "HR_ZERO_BPM", 10),
+    ("app/services/sante_score.py", "HR_MID_BPM", 5),
+    ("app/services/sante_score.py", "HR_MID_SUB", 40),
+    ("app/services/sante_score.py", "HR_ZERO_BPM", 8),
     ("app/services/sante_score.py", "SLEEP_POINTS", ((240, 0), (360, 60), (420, 100))),
     ("app/services/sante_score.py", "SLEEP_DEBT", 2 / 3),
-    ("app/services/sante_score.py", "MIN_LOAD_SESSIONS", 6),
+    ("app/services/sante_score.py", "CAP_JOINT", 69),
+    ("app/services/sante_score.py", "JOINT_HR_BPM", 3),
+    ("app/services/sante_score.py", "BANDS", {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}),
+    # the bands' SDs shrunk towards a prior (Kellmann 2018's Bayesian individualisation; Mishica 2022)
+    ("app/services/nights.py", "PRIOR_NIGHTS", 7),
+    ("app/services/nights.py", "HRV_SD_PRIOR", 0.10),
+    ("app/services/nights.py", "HR_SD_PRIOR", 0.04),
     # §8 (after the visual judges): the state is the band of the score, the caps decide what it can reach
     ("app/services/sante_score.py", "CAP_ILL", 39),
     ("app/services/sante_score.py", "CAP_RED", 69),

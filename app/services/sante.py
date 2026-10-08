@@ -3,8 +3,9 @@ seul », « plus de graphiques »). Top to bottom:
 - the three rings: Récupération (the 0–100 score in its state's colour,
   sante_score; under it only its label), Sommeil (the 24 h before this
   morning's wake: the main night and the naps it counts, nights.day_tst24,
-  full at 8 h (H): green from 7 h, Johnston 2020; orange 6–7 h; red under
-  6 h, Craven 2022), Charge (the activities' hours of the last 7 days, stops
+  full at 8 h (H): a scale, not a goal; one day is marked only under 6 h,
+  warm with the word « court » (Craven 2022), else the neutral sleep hue: the
+  7 h is about habitual sleep, Watson 2015a), Charge (the activities' hours of the last 7 days, stops
   included: the recovery's input, WHOOP's strain dial; the ring runs from 0
   to twice the usual week, the median of the last 12 complete weeks (H), and
   a word under it says how the week compares, « comme d'habitude » within
@@ -49,7 +50,8 @@ logger = logging.getLogger(__name__)
 HISTORY_DAYS = 400
 CARD_NIGHTS = 30  # the VFC and FC de nuit cards
 SPARSE_NIGHTS, SPARSE_DAYS = 10, 14  # fewer measured nights in the 30: the axis spans them (14 days at least)
-SLEEP_FULL = 8 * 60  # (H) the Sommeil ring is full at 8 h
+SLEEP_FULL = 8 * 60  # (H) the Sommeil ring is full at 8 h: a scale, not a goal (no official source; Sargent 2021: 8,3 h)
+SHORT_WORD = "court"  # under the Sommeil ring on a day under 6 h (Craven 2022), with its warm colour
 USUAL_WEEKS = 12  # (H) the Charge ring's usual week: the median of the last 12 complete weeks
 CHARGE_TURN = 2  # the Charge ring's full turn: twice the usual week
 USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
@@ -127,8 +129,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     day = {"day": d, "stats": stats, "tst24": tst,
            "sleep": {"mean7": m7["value"] if m7 else None, "usual": usual["center"] if usual else None,
                      "prov": bool(usual and usual["provisional"])},
-           "window": st.effort_window(efforts, d), "alert": alert,
-           "sessions42": sum(1 for s in sessions if d - timedelta(days=42) < s.day <= d)}
+           "window": st.effort_window(efforts, d), "alert": alert}
     score = sc.score_of(day)
     state = td.state(score, day)
     if state:
@@ -229,11 +230,14 @@ def _top(day: dict, sessions, today: date, has_watch: bool, page: dict) -> dict:
         rings.append(viz.ring("sommeil", None, "—", "Sommeil", "24 h" if sleep_href else None, tone="none",
                               href=sleep_href, aria="Sommeil : pas de nuit mesurée ce matin"))
     else:
+        # one day is marked only under 6 h (warm, and the word « court »); else the neutral sleep hue (sleep_tone)
         tone = sc.sleep_tone(tst)
-        word = {"ok": "", "warn": ", moins de 7 heures", "danger": ", moins de 6 heures"}[tone]
+        short = SHORT_WORD if tone == "warn" else None
         rings.append(viz.ring("sommeil", tst / SLEEP_FULL, viz.hm(tst), "Sommeil", "24 h", tone=tone,
-                              href=sleep_href, aria=f"Sommeil : {viz.hm_long(tst)} sur 24 heures, siestes comprises"
-                                                    f"{word}." + (" Ouvre la section Sommeil." if sleep_href else "")))
+                              href=sleep_href, note=short,
+                              aria=f"Sommeil : {viz.hm_long(tst)} sur 24 heures, siestes comprises"
+                                   + (f", {short}" if short else "") + "."
+                                   + (" Ouvre la section Sommeil." if sleep_href else "")))
     week = sum(st.effort_minutes(s) for s in sessions if today - timedelta(days=6) <= s.day <= today)
     usual = _usual_week(sessions, today)
     word = charge_word(week, usual)

@@ -50,13 +50,16 @@ heuristic, never shown as a finding):
   « provisoire » band (owner decision 2026-10-07), labelled so wherever it is
   read, until 14 — never for the illness alert nor its episodes (specific,
   not sensitive: Quer 2021; a provisional band would make the alert fire on
-  noise). HR: median ± 3 bpm;
-  HRV: exp(mean ln ± 0.5 SD), SD floored at 0.05 (the SWC convention of
-  HRV-guided training); 24-h sleep: median ± 30 min; respiration: median.
+  noise). HR: median ± 3 bpm; HRV: exp(mean ln ± 0.5 SD) (the SWC convention
+  of HRV-guided training); both SDs shrunk towards a prior (H, Kellmann
+  2018's Bayesian individualisation): σ0 = 0.10 ln units for HRV, 4 % of the
+  median for the robust HR SD behind the alert line (Mishica 2022), as if
+  7 nights had it; 24-h sleep: median ± 30 min; respiration: median.
 - 7-night means need ≥ 3 nights in the last 7 (Plews 2014; Lau 2022).
 - Illness alert (H): the HR band of the watch that measured both nights, then
-  2 nights in a row each ≥ median + max(2 robust SD, 5 bpm) (Altini & Plews
-  2021; Quer 2021: specific, not sensitive). Context-tagged nights (« après
+  2 nights in a row each ≥ median + max(2 robust SD, 5 bpm) (Alavi 2022:
+  2 nights at + 4 bpm over the median; ours stricter, specific, not
+  sensitive: Quer 2021). Context-tagged nights (« après
   grosse sortie » included) never fire it; on the race page, neither do the
   nights after its race. Respiration ≥ median + 2/min only backs it up.
 """
@@ -82,7 +85,11 @@ MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 WEEK_DAYS = 7
 HR_BAND_BPM = 3  # (H)
 HRV_BAND_SD = 0.5  # (H) the SWC convention of HRV-guided training
-HRV_SD_FLOOR = 0.05  # (H) ≈ 5 %: a very steady band must not make a 2 % dip a signal
+# the band's SD is shrunk towards a prior, √((n·s² + k·σ0²)/(n + k)): the Bayesian individualisation of reference
+# ranges (Kellmann 2018), which matters most at 7–13 nights (an SD from 7 nights is 0.64–2.20 × the true one)
+PRIOR_NIGHTS = 7  # (H) k: the prior weighs as much as 7 nights
+HRV_SD_PRIOR = 0.10  # (H) σ0 in ln units (nocturnal RMSSD CV 9.5–12.4 %: Mishica 2022; ≈ 12 %: Buchheit 2014)
+HR_SD_PRIOR = 0.04  # (H) σ0 as a share of the median (nocturnal HR CV ≈ 4.1 %: Mishica 2022)
 SLEEP_BAND_MIN = 30  # (H)
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
 RESP_UP = 2  # breaths/min (H)
@@ -532,6 +539,11 @@ def retagged(n: Night, tags=()) -> Night:
     return out
 
 
+def shrunk_sd(s: float, n: int, prior: float) -> float:
+    """An SD of `n` nights shrunk towards `prior`: √((n·s² + k·σ0²)/(n + k)), k = 7 (H)."""
+    return math.sqrt((n * s * s + PRIOR_NIGHTS * prior * prior) / (n + PRIOR_NIGHTS))
+
+
 def band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
          full: bool = False) -> dict | None:
     kept = _kept(nights)
@@ -560,15 +572,17 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
         return None
     if metric == "hrv":
         logs = [math.log(v) for v in vals if v > 0]
-        mean, sd = statistics.fmean(logs), max(statistics.stdev(logs), HRV_SD_FLOOR)
+        mean, sd = statistics.fmean(logs), shrunk_sd(statistics.stdev(logs), len(logs), HRV_SD_PRIOR)
         out.update(center=math.exp(mean), lo=math.exp(mean - HRV_BAND_SD * sd), hi=math.exp(mean + HRV_BAND_SD * sd),
                    sd=sd)
         return out
     med = statistics.median(vals)
-    mad = statistics.median(abs(v - med) for v in vals)
-    out.update(center=med, sd=1.4826 * mad)
+    sd = 1.4826 * statistics.median(abs(v - med) for v in vals)  # robust
+    if metric == "hr":  # the SD behind the alert line, shrunk towards 4 % of the median (H)
+        sd = shrunk_sd(sd, len(vals), HR_SD_PRIOR * med)
+    out.update(center=med, sd=sd)
     if metric == "hr":
-        out.update(lo=med - HR_BAND_BPM, hi=med + HR_BAND_BPM, alert=med + max(ALERT_SD * 1.4826 * mad, ALERT_MIN_BPM))
+        out.update(lo=med - HR_BAND_BPM, hi=med + HR_BAND_BPM, alert=med + max(ALERT_SD * sd, ALERT_MIN_BPM))
     elif metric == "tst24":
         out.update(lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
     else:  # resp: no band drawn, only « + 2/min » backs the alert
