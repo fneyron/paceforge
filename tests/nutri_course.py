@@ -1,5 +1,6 @@
-"""A Transjeju-like course for the stretch-plan tests and the screenshots:
-145 km, 11 points (7 food ravitos, 4 water points, 2 drop bags), a 21:00 start."""
+"""A long course for the Nutrition tests and the screenshots: 145 km, ten
+points where the bag is refilled (two bases vie with a drop bag, a crew point)
+and one water point, a 06:00 start."""
 
 from app.schemas.simulator import CourseProfile, CourseSegment
 from app.services import checkpoints as cpsvc
@@ -10,17 +11,17 @@ _PROFILE = [(8, 3), (6, 9), (9, 6), (5, -8), (5, 2), (6, -6), (6, 4), (7, 10), (
             (6, -5), (7, 3), (6, -3), (8, 2), (6, 6), (7, -6), (6, 1), (5, 4), (6, -7), (10, -1)]
 
 LONG_CPS = [
-    {"name": "Healing Forest", "distance_km": 14.0, "kind": "water"},
+    {"name": "Healing Forest", "distance_km": 12.0, "kind": "full"},
     {"name": "Yeongsil", "distance_km": 23.0, "kind": "full"},
     {"name": "Eorimok", "distance_km": 33.0, "kind": "full"},
     {"name": "Gwanumsa", "distance_km": 45.0, "kind": "full"},
     {"name": "Jeongseok", "distance_km": 52.0, "kind": "water"},
     {"name": "Seongpanak", "distance_km": 64.0, "kind": "full"},
-    {"name": "Saryeoni", "distance_km": 75.0, "kind": "water"},
+    {"name": "Saryeoni", "distance_km": 75.0, "kind": "full"},
     {"name": "Gasiri", "distance_km": 88.0, "kind": "base", "drop_bag": True},
-    {"name": "Meochewat", "distance_km": 104.0, "kind": "full"},
+    {"name": "Meochewat", "distance_km": 104.0, "kind": "full", "crew": True},
     {"name": "Camping", "distance_km": 118.0, "kind": "base", "drop_bag": True},
-    {"name": "Sumeunmul", "distance_km": 130.0, "kind": "water"},
+    {"name": "Sumeunmul", "distance_km": 130.0, "kind": "full"},
 ]
 LONG_CPS = [{"elevation": None, "crew": False, "drop_bag": False, "cutoff_clock": None, **cp} for cp in LONG_CPS]
 
@@ -52,7 +53,7 @@ def long_course() -> CourseProfile:
     cum = 0.0
     for s in course.segments:
         factor = 1 + max(0.0, s.avg_gradient_pct) * 0.12 - max(0.0, -s.avg_gradient_pct) * 0.03
-        s.base_time_s = 540 * factor
+        s.base_time_s = 380 * factor
         s.predicted_time_s = s.base_time_s
         s.predicted_pace_s_per_km = s.predicted_time_s
         cum += s.predicted_time_s
@@ -61,23 +62,10 @@ def long_course() -> CourseProfile:
     return course
 
 
-def long_sections(target_s: int | None = 27 * 3600, start_hour: int = 21, cps: list[dict] | None = None, temps: float | None = None):
+def long_sections(target_s: int | None = int(16.5 * 3600), start_hour: int = 6, cps: list[dict] | None = None):
     cps = LONG_CPS if cps is None else cps
     course = long_course()
     aid = {cp["distance_km"] for cp in cps if cp.get("kind", "none") != "none"}
     stops = {cp["distance_km"]: {"water": 120, "full": 300, "base": 900}[cp["kind"]] for cp in cps if cp.get("kind", "none") != "none"}
     secs = compute_passage_times(course, cps, target_s, 1.0, start_hour, 0, None, aid_kms=aid, aid_stops=stops)
-    if temps is not None:
-        for s in secs:
-            s["temperature_c"] = temps
     return course, cpsvc.annotate_cutoffs(secs, cps, start_hour * 3600)
-
-
-# the owner's products (ids as in a pantry)
-PANTRY = {
-    1: {"id": 1, "name": "Maurten Gel 160", "kind": "gel", "carbs_g": 40, "sodium_mg": 30, "kcal": 160, "caffeine_mg": None, "volume_ml": None, "servings": 1},
-    2: {"id": 2, "name": "Baouw Gel", "kind": "gel", "carbs_g": 30, "sodium_mg": 0, "kcal": 120, "caffeine_mg": None, "volume_ml": None, "servings": 1},
-    3: {"id": 3, "name": "Precision Fuel PF 90 Gel", "kind": "gel", "carbs_g": 90, "sodium_mg": 0, "kcal": 360, "caffeine_mg": None, "volume_ml": None, "servings": 3},
-    4: {"id": 4, "name": "Maurten Gel 100 CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "kcal": 100, "caffeine_mg": 100, "volume_ml": None, "servings": 1},
-    5: {"id": 5, "name": "Precision Hydration PH 1500 (pastille, 500 ml)", "kind": "salt", "carbs_g": 0, "sodium_mg": 750, "kcal": None, "caffeine_mg": None, "volume_ml": 500, "servings": 1},
-}

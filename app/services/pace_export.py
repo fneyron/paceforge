@@ -144,7 +144,7 @@ def _coord_at_km(coords: list, km: float):
 
 
 def _note_at(notes_by_km: dict | None, km: float) -> str:
-    """The point's own note (« Dès ici : PF 90 » where the product changes)."""
+    """The point's own note (« Prends 2 Maurten 100 » where the bag is refilled)."""
     return (notes_by_km or {}).get(round(float(km), 1)) or ""
 
 

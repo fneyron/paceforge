@@ -114,12 +114,12 @@
     <div id="recalc-error" class="hidden py-2 text-sm text-danger">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
     <button type="button" id="add-pt" onclick="window._sim && window._sim.openAddSheet()" class="pf-addpt">{{ ic.icon('plus', 'w-4 h-4', '2.4') }}Ajouter un point</button>
 
-    {# ── Préparer: what to eat, drink and leave in the bags ───────────────── #}
+    {# ── Préparer: what to eat at each ravito (a link: the page opens on it without JS) ── #}
     {% if saved_route_id %}
     <section class="pf-prep" aria-labelledby="prep-title">
         <h2 id="prep-title" class="pf-h2">Préparer</h2>
         <div class="pf-tools">
-            <button type="button" class="pf-tool" id="rtab-nutrition" onclick="window.switchRouteTab && window.switchRouteTab('nutrition')"><span>{{ ic.icon('bag') }}<span>Ravitaillement</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</button>
+            <a class="pf-tool" id="rtab-nutrition" href="/simulator/routes/{{ saved_route_id }}?vue=nutrition#nutrition" onclick="if (window.switchRouteTab) { window.switchRouteTab('nutrition'); return false; }"><span>{{ ic.icon('utensils') }}<span>Nutrition</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</a>
         </div>
     </section>
     {% endif %}
@@ -918,8 +918,6 @@ window._sim = {};
         if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
         if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
-        // a forecast not saved yet: its heat sets the rows' water and salt, as it will in Ravitaillement once saved
-        if (currentWeather && currentWeather.temperature_c != null && !(currentRouteId && hourlySaved)) b.append('weather_temp_c', currentWeather.temperature_c);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
         var out = document.getElementById('passage-times-result'), seq = ++recalcSeq;
@@ -1089,13 +1087,13 @@ window._sim = {};
             .then(function(d) {
                 if (!d.id) { saveFailed(); return; }
                 currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
-                // a new forecast just saved while Ravitaillement is open: its water and salt follow the heat, like the rows
+                // a new forecast just saved while Nutrition is open: its rows follow the new passage clocks
                 if (withWeather && wxAt !== savedWxAt) { savedWxAt = wxAt; var rp = document.getElementById('rpanel-nutrition'); if (rp && !rp.classList.contains('hidden')) refreshNutrition(); }
             }).catch(function() { saveFailed(); });
     }
     var saveRetried = false, hourlySaved = false, savedWxAt = null;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=19', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
+    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=20', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }
