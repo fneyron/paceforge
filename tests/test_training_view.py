@@ -74,7 +74,7 @@ def test_weeks_rest_on_the_usual_week_and_print_a_week_only_on_a_tap():
     assert c["read"][1] == "semaine type : 7h20" and c["band"] is not None
     # a week on a tap: its hours and D+, the sessions, the link to it in the list (page 1: in place)
     last = d["r"][-2]
-    assert last[0] == "sem. du 28 sept." and last[1] == "7h20 · +200 m" and last[2] == "4 séances"
+    assert last[0] == "sem. du 28 sept." and last[1] == "7h20 · +200 m" and last[2] == "4 activités"
     assert d["h"][-2] == {"href": "#week-2026-09-28", "label": "Voir la semaine ›"}
     assert d["h"][0]["href"] == "/activities?page=2#week-2026-07-20"
     assert d["r"][-1][0] == "sem. du 5 oct. · en cours" and c["cols"][-1]["cur"]
@@ -96,7 +96,7 @@ def test_weeks_mark_long_outings_and_the_spike_never_a_race_flag():
     c = tv.semaines(ss, [rc], T, NOW)
     d = data(c)
     assert c["races"] == [] and len(c["longs"]) == 2 and len(c["spikes"]) == 1
-    assert "◆ sortie 44\u202f% plus longue" in d["r"][-1][2]
+    assert "▲ sortie 44\u202f% plus longue" in d["r"][-1][2]  # a spike by its shape too, never colour alone
     assert "◆ sortie de 3h20" in d["r"][-3][2] and "◆ sortie de 5h00" in d["r"][-7][2]
     assert "⚑" not in json.dumps(d, ensure_ascii=False) and "course" not in json.dumps(d, ensure_ascii=False)
     assert c["line"] == {"text": "Sortie de lundi 44\u202f% plus longue que ta plus longue du mois.",
@@ -126,7 +126,7 @@ def test_the_line_after_the_spike_is_the_taper_then_the_recovery_from_the_activi
 
 def test_fond_and_fatigue_wait_six_weeks_then_print_the_date_only():
     young = steady(30)
-    assert tv.fond_fatigue(young, T)["wait"].startswith("Il faut 6 semaines de séances : encore ")
+    assert tv.fond_fatigue(young, T)["wait"].startswith("Il faut 6 semaines d'activités : encore ")
     c = tv.fond_fatigue(steady(), T)
     d = data(c)
     assert [s["name"] for s in c["series"]] == ["fond", "fatigue"] and len(d["x"]) == 120
@@ -203,6 +203,10 @@ async def test_activities_page_has_the_three_blocks_on_page_one_only(client: Asy
     assert "Affûtage pour Trail des Crêtes ›" in html and "#prep" in html
     assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
     assert html.index('id="semaines"') < html.index('aria-label="Filtrer les activités par sport"')
+    semaines = html.split('id="semaines"')[1].split("</section>")[0]
+    if "pf-viz-long" in semaines:  # a marker under the bars: its legend, by shape (◆ long, ▲ spike), never colour alone
+        assert '<p class="pf-viz-legend" aria-hidden="true">' in semaines
+        assert ('<i class="pf-lg is-long"></i>sortie longue' in semaines) == ('class="pf-viz-long"' in semaines)
     for url in ("/activities?sport=run", "/activities?page=2"):
         assert 'id="semaines"' not in (await client.get(url)).text
 

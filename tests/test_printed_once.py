@@ -16,16 +16,21 @@ from app.models.user import User
 from app.services import sante_training as st
 from tests.test_race_prep import _race, _seed
 
-READ = re.compile(r'data-viz-key="([^"]+)".*?<span data-r>(.*?)</span><b data-r>(.*?)</b><span data-r>(.*?)</span>',
-                  re.S)
+FIG = re.compile(r'data-viz-key="([^"]+)"(.*?)</figure>', re.S)
+SLOT = re.compile(r'<(span|b)\b[^>]*?\sdata-r(?:\s[^>]*)?>(.*?)</\1>', re.S)
 
 
-def readouts(page: str) -> dict[str, tuple[str, str, str]]:
-    return {k: (html.unescape(a), html.unescape(b), html.unescape(c)) for k, a, b, c in READ.findall(page)}
+def readouts(page: str) -> dict[str, tuple[str, ...]]:
+    """Each figure's default readout as the server printed it: [date, value, context] on the race page and
+    Activités, [value, word, the day · context] on Santé's cards (two compact rows)."""
+    out = {}
+    for key, body in FIG.findall(page):
+        out[key] = tuple(html.unescape(re.sub(r"<[^>]+>", "", v)) for _, v in SLOT.findall(body))[:3]
+    return out
 
 
 async def test_no_default_readout_repeats_a_number_of_another_page(client: AsyncClient, db_session: AsyncSession,
-                                                                  test_user: User, monkeypatch):
+                                                                  test_user: User, monkeypatch, same_today):
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     today = await st.athlete_today(db_session, test_user.id)
@@ -40,14 +45,13 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
     assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "charge"}  # no VFC in the seed: no card
-    # the rings print today's score and last night's total: their cards rest on something else…
-    assert sante["recuperation"] == ("", "", "Touche un jour pour son score et son état.")
-    assert sante["sommeil-14"][:2] == ("14 nuits", "moyenne 7h20") and sante["sommeil-90"][:2] == ("3 mois",
-                                                                                                  "moyenne 7h20")
+    # the rings print today's score and last night's total: their cards rest on their means, one line each…
+    assert sante["recuperation"][1:] == ("en moyenne", "") and sante["recuperation"][0].isdigit()
+    assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (no ring, no other block does)…
-    assert sante["fc"][1] == "45\u202fbpm" and sante["fc"][2].startswith("normale ")
-    # …and Charge today's hours (the ring prints the last 7 days')
-    assert sante["charge"][0] == "aujourd'hui" and sante["charge"][1] == "aucune activité"
+    assert sante["fc"][0] == "45\u202fbpm" and " · normale " in sante["fc"][2]
+    # …and Charge the number of its activities (the ring prints the last 7 days' hours; nothing selected)
+    assert sante["charge"][1] == "activités" and sante["charge"][0].isdigit()
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race…
     assert after["recup"][:2] == ("J+1 → J+14", "VFC et FC de nuit")  # …nor last night's VFC and FC
     # this week's hours: Activités' week heading prints them; neither A1 nor the taper does by default

@@ -21,7 +21,7 @@
     <p class="text-sm text-gray-500">Strava refuse les clés de ton app : indique les nouvelles en te connectant.</p>
     <a href="/setup?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
     {% else %}
-    <p class="text-sm text-gray-500">Tes séances arrivent automatiquement depuis Strava.</p>
+    <p class="text-sm text-gray-500">Tes activités arrivent automatiquement depuis Strava.</p>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
         <a href="/auth/strava?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
         {% if strava_error is defined and strava_error %}<a href="/setup?next=settings" class="text-[13px] text-gray-500 underline hover:text-gray-600">Changer les clés de ton app Strava</a>{% endif %}
@@ -30,7 +30,7 @@
     {% else %}
     {% if strava.needs_reauth %}
     <div class="space-y-2.5">
-        <p class="text-xs text-gray-600">Strava refuse l'accès de PaceForge : reconnecte-toi. Les séances déjà reçues restent.</p>
+        <p class="text-xs text-gray-600">Strava refuse l'accès de PaceForge : reconnecte-toi. Les activités déjà reçues restent.</p>
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <a href="/auth/strava?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter</a>
             <a href="/setup?next=settings" class="text-[13px] text-gray-500 underline hover:text-gray-600">Changer les clés de ton app Strava</a>
@@ -41,7 +41,7 @@
     {% endif %}
     <div class="flex flex-wrap items-center justify-between gap-2">
         <form method="post" action="/settings/strava/disconnect"
-              onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter Strava ? Les séances déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
+              onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter Strava ? Les activités déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
             <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>
         </form>
     </div>

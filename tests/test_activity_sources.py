@@ -95,7 +95,9 @@ def _strava(user: User, start: datetime, km: float, seconds: int, sport: str = "
 
 async def test_coros_links_what_strava_has_and_adds_what_it_lacks(db_session: AsyncSession, test_user: User,
                                                                   fake, no_commit):
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    # 03:00 UTC (12:00 in Korea, the fake's HRV time zone): each session's UTC and local dates agree whatever the
+    # hour the suite runs (from `now` itself, a late-evening run gave the sessions another quarter-hour offset)
+    now = datetime.now(timezone.utc).replace(hour=3, minute=0, second=0, microsecond=0)
     on_strava = now - timedelta(days=3, hours=2)
     db_session.add(_strava(test_user, on_strava + timedelta(seconds=50), 12.2, 3700, suffer_score=60))
     fake.sessions = [

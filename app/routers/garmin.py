@@ -34,7 +34,7 @@ def _login_partial(request: Request, state: dict | None) -> HTMLResponse:
 def _done(request: Request) -> Response:
     """The link is stored: back to Réglages, where the first sync shows."""
     request.session.pop(_TICKET, None)
-    request.session["garmin_ok"] = "Garmin connecté. Tes 60 derniers jours et tes séances arrivent : compte quelques minutes."
+    request.session["garmin_ok"] = "Garmin connecté. Tes 60 derniers jours et tes activités arrivent : compte quelques minutes."
     return Response(status_code=204, headers={"HX-Redirect": _SETTINGS})
 
 

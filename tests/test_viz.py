@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app.services import sante_today, viz
+from app.services import race_prep, training_view, viz
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 D = date(2026, 10, 7)
@@ -37,12 +37,12 @@ def data_of(html: str) -> dict:
 def test_one_duration_format_everywhere():
     assert (viz.hm(350), viz.hm(140), viz.hm(490), viz.hm(45), viz.hm(60)) == ("5h50", "2h20", "8h10", "45 min",
                                                                                   "1h00")
-    assert sante_today.hm is viz.hm  # Activités and the race page print durations through the same function
+    assert training_view.hm is viz.hm and race_prep.hm is viz.hm  # Activités and the race page: the same function
     owner = viz.sleep_readout(350, 140)
     assert owner == f"Nuit 5h50 · sieste 2h20 · 8h10 sur 24{NN}h"
     assert owner.replace(NN, " ") == "Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h"  # the 7 Oct readout
     assert viz.sleep_readout(440, 0) == f"Nuit 7h20 sur 24{NN}h"
-    assert viz.sleep_readout(None, 82) == "Sieste 1h22 · nuit incomplète ?"
+    assert viz.sleep_readout(None, 82) == "Sieste 1h22 · pas de nuit mesurée"  # said plainly, no « ? »
     assert viz.sleep_spoken(350, 140) == "nuit 5 heures 50, sieste 2 heures 20, 8 heures 10 sur 24 heures"
     assert (viz.hm_long(65), viz.hm_long(1), viz.hm_long(45)) == ("1 heure 05", "1 minute", "45 minutes")
 
@@ -98,13 +98,18 @@ def test_band_chart_prints_per_night_values_and_normal_only():
 
 
 def test_ring_arc_is_the_fill_and_the_value_is_printed_by_the_caller():
-    """V1: an arc from the top, clockwise, up to the fill (capped at one turn); none at 0 or without a value."""
-    r = viz.ring("recup", 0.59, "59", "Récupération", "en cours", tone="warn", href="#contributeurs",
+    """V1: an arc from the top, clockwise, up to the fill (capped at one turn); none at 0 or without a value; a
+    tick across the track at a share of the turn (the Charge ring's usual week, 1× on a ring that runs to 2×)."""
+    r = viz.ring("recup", 0.59, "59", "Récupération", tone="warn", href="#recuperation",
                  aria="Récupération : 59 sur 100, récupération en cours")
-    assert r["c"] == round(2 * math.pi * 42, 2) and r["dash"] == round(0.59 * r["c"], 2) and not r["long"]
+    assert r["c"] == round(2 * math.pi * 42, 2) and r["dash"] == round(0.59 * r["c"], 2) and r["tick"] is None
     assert viz.ring("sommeil", 1.4, "8h36", "Sommeil")["dash"] == r["c"]  # more than the full mark: one turn
     assert viz.ring("charge", None, "—", "Charge")["dash"] == 0 and viz.ring("x", -1, "0", "x")["dash"] == 0
-    assert viz.ring("charge", .5, "16h53", "Charge")["long"]  # 5 characters: a smaller size in the dial
+    assert viz.ring("charge", .5, "16h53", "Charge")["href"] is None  # no section to sum up: a plain ring
+    t = viz.ring("charge", .7, "9h40", "Charge", tick=.5)["tick"]
+    assert t["x1"] == t["x2"] == 50 and t["y1"] < t["y2"] and t["y1"] > 50 + 42 - 11  # across the track, at 6 o'clock
+    q = viz.ring("charge", .7, "9h40", "Charge", tick=.25)["tick"]
+    assert q["y1"] == q["y2"] == 50 and q["x1"] > 50  # a quarter turn: at 3 o'clock
 
 
 def test_day_bars_stack_the_naps_mark_today_and_leave_a_gap():
@@ -141,10 +146,15 @@ def test_night_card_prints_the_night_and_its_normal_never_a_verdict():
     c = viz.night_card("vfc", days, vals, band=band, prov=prov, mean=mean, unit="ms", unit_long="millisecondes",
                        name="VFC", min_span=20)
     d = json.loads(c["data"])
-    assert d["sel"] == 29 and c["read"] == [viz.night_label(D), f"64{NN}ms", "normale 55–66"]
-    assert d["r"][10] == [viz.night_label(days[10]), "—", "pas de mesure cette nuit"]
+    # two compact rows: the value (no word: a night is never judged alone), the night and its normal
+    assert d["sel"] == 29 and c["read"] == [f"64{NN}ms", "", f"{viz.night_label(D)} · normale 55–66"]
+    assert d["r"][10] == ["—", "", f"{viz.night_label(days[10])} · pas de mesure"]
     assert d["a"][10] == f"{viz.night_label(days[10])} : pas de mesure"  # spoken as it reads
-    assert d["r"][8][2] == "normale provisoire 55–66" and d["r"][2][2] == ""
+    assert d["r"][8][2].endswith(" · normale provisoire 55–66") and d["r"][2][2] == viz.night_label(days[2])
+    assert c["title"] == "VFC · 30 nuits" and [t["label"] for t in c["xt"]][0].startswith("lun.")
+    short = viz.night_card("vfc", days[-14:], vals[-14:], band=band[-14:], prov=prov[-14:], mean=mean[-14:],
+                           unit="ms", unit_long="millisecondes", name="VFC")
+    assert short["title"] == "VFC · 14 nuits" and [t["label"] for t in short["xt"]] == [str(x.day) for x in days[-14:]]
     printed = json.dumps(d["r"], ensure_ascii=False)
     assert not any(w in printed for w in ("au-dessus", "en dessous", "▲", "▼"))
     assert len(c["dots"]) == 29 and c["summary"] == "VFC, 30 nuits : 29 mesurées" and c["mean"].startswith("M")
@@ -207,19 +217,31 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     }
     for name, (src, c) in figs.items():
         html = render(src, c=c)
-        assert html.count('class="pf-viz-step"') == 2 and 'data-step="-1"' in html and 'data-step="1"' in html, name
+        is_card = name in ("day_bars", "night_card")  # Santé's cards (WHOOP/Oura): no ‹ › disc, a tap selects
+        if is_card:
+            assert "pf-viz-step" not in html and "data-step" not in html, name
+            assert 'class="pf-viz-l1" aria-hidden="true"' in html and 'class="pf-viz-l2"' in html, name
+        else:
+            assert html.count('class="pf-viz-step"') == 2 and 'data-step="-1"' in html and 'data-step="1"' in html, name
         assert html.count('class="pf-viz-range sr-only"') == 1 and "aria-valuetext=" in html, name
         assert 'aria-live="polite" data-live' in html and '<svg class="pf-viz-svg"' in html, name
         assert 'aria-hidden="true" focusable="false"' in html, name
-        assert f"<b data-r>{c['read'][1]}</b>".replace("'", "&#39;") in html or c["read"][1] in html, name
+        value = c["read"][0 if is_card else 1]
+        assert f"<b data-r>{value}</b>".replace("'", "&#39;") in html, name
         assert data_of(html)["sel"] == c["sel"], name
         assert "<a " not in html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0], name  # links via the readout
     html = render(figs["day_bars"][0], c=sleep)
     assert 'class="pf-viz pf-viz-card"' in html and "choisis une nuit" in html
     assert html.count('class="pf-bar-top"') == 1 and html.count('class="pf-viz-gap"') == 1
     assert 'class="pf-viz-col is-today"' in html and ">7 h</text>" in html
+    assert 'class="pf-viz-todisc"' in html and 'class="pf-viz-today">' in html  # today's day on a disc
+    # the selection: a soft column behind the bars (first in the SVG), never a full-height rule
+    cross = html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
+    assert cross.index('class="pf-viz-cross"') < cross.index('class="pf-viz-col')
+    assert '<line x1="0" x2="0"' not in cross
     html = render(figs["night_card"][0], c=card)
     assert html.count('class="pf-viz-dot"') == 14 and 'class="pf-viz-band"' in html and "choisis une nuit" in html
+    assert '<circle cx="0" cy="0" r="5.5" class="pf-viz-ring"/>' in html  # a ring around the selected night's dot
 
 
 def test_json_cannot_close_the_script_tag():
@@ -232,18 +254,21 @@ def test_json_cannot_close_the_script_tag():
 
 def test_ring_and_ranges_macros():
     """A ring is one link to the section it sums up; its name starts with the visible label (WCAG 2.5.3);
-    the dial is drawn, the value, label and word printed once."""
-    r = viz.ring("recup", .59, "59", "Récupération", "en cours", tone="warn", href="#contributeurs",
+    the dial is drawn, the value and label printed once (under the Récupération ring only its label: the state's
+    word is the title just below). Without a section to sum up, a plain image (never a link to nothing)."""
+    r = viz.ring("recup", .59, "59", "Récupération", tone="warn", href="#recuperation",
                  aria="Récupération : 59 sur 100, récupération en cours")
     html = render("{{ v.viz_ring(r) }}", r=r)
-    assert html.count("<a ") == 1 and 'href="#contributeurs"' in html
+    assert html.count("<a ") == 1 and 'href="#recuperation"' in html
     assert 'aria-label="Récupération : 59 sur 100, récupération en cours"' in html
     assert 'class="pf-ring pf-ring-recup is-warn"' in html and f'stroke-dasharray="{r["dash"]} {r["c"]}"' in html
     assert 'aria-hidden="true" focusable="false"' in html and 'transform="rotate(-90 50 50)"' in html
-    assert re.sub(r"<[^>]+>", " ", html).split() == ["59", "Récupération", "en", "cours"]
-    empty = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", 0, "0 min", "Charge", "7 jours"))
+    assert re.sub(r"<[^>]+>", " ", html).split() == ["59", "Récupération"]
+    empty = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", 0, "0 h", "Charge", "7 jours"))
     assert "pf-ring-arc" not in empty and "pf-ring-track" in empty  # the track alone
-    assert "is-long" in render("{{ v.viz_ring(r) }}", r=viz.ring("charge", .4, "16h53", "Charge"))
+    assert "<a " not in empty and '<div class="pf-ring pf-ring-charge is-accent" role="img" aria-label=' in empty
+    tick = render("{{ v.viz_ring(r) }}", r=viz.ring("charge", .4, "16h53", "Charge", href="#charge", tick=.5))
+    assert 'class="pf-ring-tick"' in tick and "is-long" not in tick  # one value size for the row
     html = render("{{ v.viz_ranges([('14', '14 nuits'), ('90', '3 mois')], '14') }}")
     assert 'data-viz-ranges role="group"' in html and html.count('aria-pressed="true"') == 1
 
@@ -376,7 +401,11 @@ def test_the_readout_reserves_its_height():
     js = (ROOT / "app/static/js/pf-viz.js").read_text()
     assert "function reserve()" in js and "readBox.style.minHeight" in js and "ResizeObserver" in js
     css = (ROOT / "app/static/css/interface.css").read_text()
-    assert ".pf-viz-card .pf-viz-read { min-height: 60px; }" in css
+    # a Santé card's readout: two one-line rows, so nothing wraps, nothing jumps, no empty block is reserved
+    assert ".pf-viz-read.pf-viz-read2 { display: block; min-height: 0;" in css
+    assert (".pf-viz-l1 { display: flex; align-items: baseline; column-gap: 8px; min-height: 30px; "
+            "white-space: nowrap;") in css
+    assert "text-overflow: ellipsis; white-space: nowrap; }" in css.split(".pf-viz-l2 > span {")[1].split("\n")[0]
     assert ".pf-tl { display: block; width: 100%; max-width: 560px; height: auto;" in css
 
 
@@ -478,7 +507,7 @@ def test_every_ring_and_card_anchor_lands_under_the_top_bar():
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
     for anchor in ("contributeurs", "recuperation", "sommeil", "charge"):
         assert f'id="{anchor}"' in page, anchor
-    assert '("vfc", "VFC · 30 nuits", p.vfc), ("fc", "FC de nuit · 30 nuits", p.fc)' in page
+    assert '(("vfc", p.vfc), ("fc", p.fc))' in page and "{{ c.title }}" in page
     assert 'id="{{ key }}"' in page
 
 
@@ -512,9 +541,9 @@ def test_bars_never_collapse_after_being_seen_whole():
 
 
 def test_the_small_targets_reach_44_px():
-    """UX15: « Synchroniser maintenant » and the method fold's references."""
+    """UX15: « Synchroniser maintenant » (an icon now, 44 × 44) and the method fold's references."""
     css = (ROOT / "app/static/css/interface.css").read_text()
-    assert ".pf-sante-sync > button { min-height: 44px; }" in css
+    assert re.search(r"\.pf-sync-btn \{[^}]*width: 44px; height: 44px;", css)
     refs = re.search(r"\.pf-refs a \{ display: inline-block;[^}]*\}", css).group(0)
     assert "min-height: 44px" in refs and "white-space: nowrap" in refs
 
@@ -538,3 +567,46 @@ def test_band_chart_says_a_provisional_normal():
     assert full["read"][2] == "normale VFC 55–65, FC 43–49" and "provisoire" not in full["read"][1]
 
 
+
+
+def test_the_warn_mark_is_a_brighter_amber_for_large_marks():
+    """The orange arcs and bars use --pf-warn-mark (≥ 3:1 on the page, the soft cards and the track), brighter than
+    the text's --pf-warn so a large fill never reads brown; dark mode keeps --pf-warn."""
+    theme = (ROOT / "app/static/css/theme.css").read_text()
+    css = (ROOT / "app/static/css/interface.css").read_text()
+    light = _tokens(theme, ":root")
+    mark = tuple(int(x) for x in re.search(r":root \{ --pf-warn-mark: (\d+ \d+ \d+); \}", css).group(1).split())
+    for ground in ("pf-bg", "pf-soft", "pf-line"):
+        assert contrast(mark, light[ground]) >= 3, ground
+    assert _lum(mark) > _lum(light["pf-warn"])  # brighter than the text's amber
+    assert ".dark { --pf-warn-mark: var(--pf-warn); }" in css
+    for rule in (".pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }",
+                 ".pf-bar.is-warn { fill: rgb(var(--pf-warn-mark)); }",
+                 ".pf-contrib-bar.is-warn > i { background: rgb(var(--pf-warn-mark)); }"):
+        assert rule in css, rule
+    # the card's pressed range button: the app's filled pill with a thin edge ≥ 3:1 on white (never a heavy ring)
+    assert contrast(light["pf-gray-400"], light["pf-surface"]) >= 3
+    assert "0 0 0 1px rgb(var(--pf-gray-400) / .9)" in css
+
+
+def test_day_bars_lines_clip_trend_and_tones():
+    """Faint labelled lines (the score's 40 and 70), a bar past the axis broken (one day dwarfing the others),
+    a line over faint bars (a long range's mean), a tone per day for the readout's word."""
+    days = [D - timedelta(days=13 - i) for i in range(14)]
+    r = [["1", "", "x"]] * 14
+    c = viz.day_bars("recuperation", days, [50] * 13 + [80], readouts=r, arias=["a"] * 14, y_max=100,
+                     lines=((70, "70"), (40, "40")), tones=["warn"] * 13 + ["ok"], today=13)
+    assert [ln["label"] for ln in c["lines"]] == ["70", "40"] and c["lines"][0]["y"] < c["lines"][1]["y"]
+    assert json.loads(c["data"])["t"][-1] == "ok" and c["tone_now"] == "ok" and c["slot"] == round(288 / 14, 2)
+    html = render("{{ v.viz_day_bars(c, 'Récupération sur 14 jours') }}", c=c)
+    assert html.count('class="pf-viz-hair"') == 2 and ">70</text>" in html and 'data-tone="ok"' in html
+    vals = [30.0] * 13 + [1013.0]
+    clip = viz.day_bars("charge", days, vals, readouts=r, arias=["a"] * 14, clip=60)
+    assert clip["bars"][13]["y"] == clip["top"] and clip["bars"][13]["brk"] and "brk" not in clip["bars"][0]
+    assert clip["bars"][0]["h"] > 40  # 30 min on a 60-min axis: half the plot, not a sliver
+    html = render("{{ v.viz_day_bars(c, 'Charge sur 14 jours') }}", c=clip)
+    assert html.count('class="pf-bar-brk"') == 1
+    many = [D - timedelta(days=89 - i) for i in range(90)]
+    t = viz.day_bars("sommeil-90", many, [400.0] * 90, readouts=[["a", "b", "c"]] * 90, arias=["a"] * 90,
+                     trend=[None] * 6 + [400.0] * 84)
+    assert t["trend"].startswith("M") and "pf-viz-faint" in render("{{ v.viz_day_bars(c, 'x') }}", c=t)

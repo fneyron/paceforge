@@ -431,7 +431,7 @@ async def strava_callback(
     await db.commit()
     next_url = request.session.pop("strava_next", None)
     if next_url:
-        request.session["strava_ok"] = "Strava connecté. Tes séances arrivent."
+        request.session["strava_ok"] = "Strava connecté. Tes activités arrivent."
     return RedirectResponse(url=next_url or HOME, status_code=302)  # an explicit « next » first
 
 

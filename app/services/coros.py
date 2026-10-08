@@ -764,7 +764,7 @@ def session_fields(rec: dict, utc_offset: float | None) -> dict | None:
     return {
         "coros_activity_id": label,
         "sport_type": SPORTS.get(rec.get("code"), "Workout"),
-        "name": (rec.get("name") or rec.get("type") or "Séance COROS")[:255],
+        "name": (rec.get("name") or rec.get("type") or "Activité COROS")[:255],
         "start_date": start,
         "distance": meters,
         "moving_time": int(moving),

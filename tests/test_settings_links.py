@@ -120,7 +120,7 @@ async def test_connect_from_settings_comes_back_to_settings(client: AsyncClient,
         assert user.strava_credentials_valid and user.strava_access_token == "at"
         client._transport.app.dependency_overrides[get_current_user] = lambda: user  # type: ignore[attr-defined]
         page = (await c.get("/settings")).text
-        assert "Strava connecté. Tes séances arrivent." in page
+        assert "Strava connecté. Tes activités arrivent." in page
 
 
 async def test_disconnect_revokes_and_forgets_the_tokens(as_user: AsyncClient, db_session: AsyncSession,
@@ -142,7 +142,7 @@ async def test_disconnect_revokes_and_forgets_the_tokens(as_user: AsyncClient, d
     # reconnecting fetches what was recorded meanwhile; Réglages say so
     assert test_user.initial_sync_done is False and test_user.last_activity_poll_at is None
     page = (await as_user.get("/settings")).text
-    assert "Strava déconnecté. Les séances déjà reçues restent." in page and "Connecter Strava" in page
+    assert "Strava déconnecté. Les activités déjà reçues restent." in page and "Connecter Strava" in page
 
 
 async def test_a_disconnected_link_is_left_alone_by_the_syncs(db_session: AsyncSession, test_user: User,

@@ -113,9 +113,9 @@ def night_label(d: date) -> str:
 
 def sleep_readout(main: float | None, nap: float | None) -> str:
     """« Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h »; without a nap « Nuit 7h20 sur 24 h »;
-    without a main episode « Sieste 1h22 · nuit incomplète ? »."""
+    without a main episode « Sieste 1h22 · pas de nuit mesurée »."""
     if main is None:
-        return f"Sieste {hm(nap)} · nuit incomplète ?" if nap else "—"
+        return f"Sieste {hm(nap)} · pas de nuit mesurée" if nap else "—"
     if nap:
         return f"Nuit {hm(main)} · sieste {hm(nap)} · {hm(main + nap)} sur 24{NNBSP}h"
     return f"Nuit {hm(main)} sur 24{NNBSP}h"
@@ -123,7 +123,7 @@ def sleep_readout(main: float | None, nap: float | None) -> str:
 
 def sleep_spoken(main: float | None, nap: float | None) -> str:
     if main is None:
-        return f"sieste {hm_long(nap)}, nuit incomplète" if nap else "pas de mesure"
+        return f"sieste {hm_long(nap)}, pas de nuit mesurée" if nap else "pas de mesure"
     if nap:
         return f"nuit {hm_long(main)}, sieste {hm_long(nap)}, {hm_long(main + nap)} sur 24 heures"
     return f"{hm_long(main)} de sommeil sur 24 heures"
@@ -199,18 +199,23 @@ def band_polys(xs, lo, hi) -> list[str]:
     return polys
 
 
-def _data(xs, ys, days, r, a, h=None, sel=None, link=None) -> dict:
+def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
     """{data: the JSON pf-viz.js reads, read: the default readout (printed by
-    the server: the chart is complete without JS), sel, n}."""
+    the server: the chart is complete without JS), sel, n}. `t`: a tone per
+    point (ok, warn, danger or ""), set on the figure as data-tone with the
+    selection (the readout's word wears it: CSS, never JS colour)."""
     sel = (len(xs) - 1 if sel is None else sel) if xs else None
     h = h or [None] * len(xs)
     out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "r": r, "a": a, "h": h, "sel": sel}
     if link:
         out["link"] = link
+    if t:
+        out["t"] = t
     data = json.dumps(out, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     # `links`: a slot has a link, so the figure reserves its row; `link_now`: the default slot's (printed by the server)
     return {"data": data, "read": r[sel] if xs else ["", "—", ""], "aria_now": a[sel] if xs else "", "sel": sel,
-            "n": len(xs), "links": any(h), "link_now": h[sel] if xs else None}
+            "n": len(xs), "links": any(h), "link_now": h[sel] if xs else None,
+            "tone_now": (t[sel] if t and xs and sel is not None and sel < len(t) else "") or ""}
 
 
 def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
@@ -225,7 +230,7 @@ def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
     if back is not None:
         data["back"] = back
     c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True, link_now=None)
+    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True, link_now=None, tone_now="")
     return c
 
 
@@ -467,39 +472,61 @@ RING_C = round(2 * math.pi * RING_R, 2)
 
 
 def ring(key: str, fill: float | None, value: str, label: str, sub: str | None = None, *, tone: str = "accent",
-         href: str = "#", aria: str = "") -> dict:
+         href: str | None = None, aria: str = "", tick: float | None = None) -> dict:
     """One ring: the track, an arc up to `fill` (0–1, from the top, clockwise;
     None or 0: the track alone), the value in the middle (formatted by the
     caller, printed once), the label and a short word under it. `tone` (ok,
     warn, danger, accent) is the CSS's colour; the value and the words say it
-    too, never colour alone."""
+    too, never colour alone. `href`: the section it sums up (None: a plain
+    ring, never a link to nothing). `tick` (0–1): a mark across the track at
+    that share of the turn (the Charge ring's usual week, 1× on a 0–2× ring)."""
     f = 0.0 if fill is None else max(0.0, min(1.0, fill))
     dash = round(f * RING_C, 2)
+    mark = None
+    if tick is not None:
+        a = 2 * math.pi * max(0.0, min(1.0, tick))
+        sx, sy = math.sin(a), -math.cos(a)
+        r0, r1 = RING_R - RING_W / 2 - 3, RING_R + RING_W / 2 + 3
+        mark = {"x1": round(50 + r0 * sx, 2), "y1": round(50 + r0 * sy, 2), "x2": round(50 + r1 * sx, 2),
+                "y2": round(50 + r1 * sy, 2)}
     return {"key": key, "value": value, "label": label, "sub": sub, "tone": tone, "href": href, "aria": aria,
-            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "long": len(value) >= 5}  # « 16h53 »: a smaller size
+            "r": RING_R, "w": RING_W, "c": RING_C, "dash": dash, "tick": mark}
 
 
 # ── V2 card bars: one bar per day (Récupération, Sommeil, Charge) ───────────
 
 def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[str]], arias: list[str],
              stack: list | None = None, classes: list | None = None, links: list | None = None,
-             y_max: float | None = None, reference: tuple[float, str] | None = None, today: int | None = None,
-             sel=None, H: int = 128, summary: str = "", min_top: float = 0) -> dict:
+             y_max: float | None = None, reference: tuple[float, str] | None = None, lines=(),
+             clip: float | None = None, tones: list | None = None, trend: list | None = None,
+             today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
     slot, a faint dot on the base line), an optional lighter part on top
     (`stack`: the naps over the night), a class per bar (`classes`: the
     state's tone), a fixed top (`y_max`: 100 for a score) or the data's, a
-    `reference` line (value, label: « 7 h », Johnston 2020), today's bar
-    marked (`today`). Under the bars: the day of the month for 16 slots or
-    fewer, Mondays or months beyond (x_labels). Links go through the readout."""
+    `reference` line (value, label: « 7 h », Johnston 2020), faint `lines`
+    [(value, label)] labelled on the right (the score's 40 and 70: the bands,
+    never colour alone), `clip`: the top of the axis when one day dwarfs the
+    others (that bar runs to the top with a break mark, its value in the
+    readout), `tones` (a tone per day for the readout's word), `trend` (a
+    value per day drawn as a line over faint bars: a long range's 7-night
+    mean), today's day number on a disc (`today`). Under the bars: the day of
+    the month for 16 slots or fewer, Mondays or months beyond (x_labels). The
+    readouts are the caller's ([value, word, the day · context], Santé's
+    compact two lines); links go through the readout."""
     n = len(days)
     xs = slot_x(n)
     slot = X1 / max(n, 1)
     bw = round(max(1.4, min(14.0, slot * 0.64)), 1)
     tops = [(v or 0) + ((stack[i] or 0) if stack else 0) for i, v in enumerate(values)]
-    top = y_max if y_max is not None else max(tops + [min_top, reference[0] if reference else 0, 1]) * 1.12
-    base = H - 22
-    y = scale(0, top, 8, base)
+    if clip is not None:
+        top = clip
+    elif y_max is not None:
+        top = y_max
+    else:
+        top = max(tops + [min_top, reference[0] if reference else 0, 1]) * 1.12
+    base, y0 = H - 22, 8
+    y = scale(0, top, y0, base)
     out = []
     for i, v in enumerate(values):
         b = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i], "cls": (classes[i] if classes else "") or "",
@@ -507,6 +534,8 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
         nap = stack[i] if stack else None
         if v is None and not nap:
             b["miss"] = True
+        elif clip is not None and tops[i] > clip:
+            b.update(y=y0, h=round(base - y0, 1), brk=y0 + 9)  # past the axis: to the top, broken
         else:
             yv = y(v or 0)
             b.update(y=yv, h=round(base - yv, 1))
@@ -518,10 +547,18 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
         xt = [{"x": xs[i], "label": str(d.day), "today": i == today} for i, d in enumerate(days)]
     else:
         xt = x_labels(days, xs)
-    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "base": base, "bars": out, "xt": xt,
-            "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
-            "rx": round(min(3.0, bw / 2), 1), "summary": summary,
-            **_data(xs, [], days, readouts, arias, h=links, sel=sel)}
+    return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "base": base, "top": y0, "bars": out, "xt": xt,
+            "slot": round(slot, 2), "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
+            "lines": [{"y": y(v), "label": lab} for v, lab in lines], "rx": round(min(3.0, bw / 2), 1),
+            "trend": paths(xs, [y(min(v, top)) if v is not None else None for v in trend]) if trend else None,
+            "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones)}
+
+
+def day_ticks(days: list[date], xs: list[float]) -> list[dict]:
+    """The day of the month under each slot (16 or fewer), else Mondays or months (x_labels)."""
+    if len(days) <= 16:
+        return [{"x": x, "label": str(d.day)} for d, x in zip(days, xs, strict=True)]
+    return x_labels(days, xs)
 
 
 # ── V3 night card: one nightly signal, a dot per night, the 7-night line, the normal ──
@@ -532,9 +569,11 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     dot per measured night, never judged one by one (Buchheit 2014: ≈ 12 %
     night to night), the 7-night mean as a line (drawn, never printed), the
     athlete's normal as a band (the 60 days before each night, on that
-    night's watch; « provisoire » from 7 to 13 nights, H). Readout: [the
-    night, « 100 ms », « normale 85–110 » or « normale provisoire 85–110 »];
-    the latest measured night is selected: its value is the card's."""
+    night's watch; « provisoire » from 7 to 13 nights, H). Readout, two
+    compact lines: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · normale
+    85–110 »] (« normale provisoire … » from 7 to 13 nights); the latest
+    measured night is selected: its value is the card's. `min_span`: the
+    y axis never narrower (noise must not look like a cliff)."""
     n = len(days)
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
@@ -547,27 +586,28 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     for i, d in enumerate(days):
         v, b = values[i], band[i]
         if v is None:
-            r.append([night_label(d), "—", "pas de mesure cette nuit"])
+            r.append(["—", "", f"{night_label(d)} · pas de mesure"])
             a.append(f"{night_label(d)} : pas de mesure")  # the readout's night, as for a measured one
             continue
-        normal, spoken = "", f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
+        line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
         if b:
             pv = bool(prov[i])
-            normal = f"normale {'provisoire ' if pv else ''}{num(b[0], digits)}–{num(b[1], digits)}"
+            line += f" · normale {'provisoire ' if pv else ''}{num(b[0], digits)}–{num(b[1], digits)}"
             spoken += f", ta normale{' provisoire' if pv else ''} de {num(b[0], digits)} à {num(b[1], digits)}"
-        r.append([night_label(d), num(v, digits, unit), normal])
+        r.append([num(v, digits, unit), "", line])
         a.append(spoken)
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": top, "bottom": bottom,
+            "slot": round(X1 / max(n, 1), 2),
             "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b]),
             "edge_lo": paths(xs, [y(v) for v in lo_b]), "edge_hi": paths(xs, [y(v) for v in hi_b]),
             "mean": paths(xs, [y(v) for v in mean]),
             "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
             "dot_r": 2.6 if n <= 31 else 1.6,
-            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": x_labels(days, xs),
+            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
             "summary": f"{name}, {n} nuits : {measured} mesurée{'s' if measured > 1 else ''}",
-            **_data(xs, [yv], days, r, a, sel=last)}
+            "title": f"{name} · {n} nuits", **_data(xs, [yv], days, r, a, sel=last)}
 
 
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────

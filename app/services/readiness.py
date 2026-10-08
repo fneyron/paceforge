@@ -144,7 +144,7 @@ async def calculate_race_readiness(
             f"Visez une sortie longue de {long_run_target:.0f} km dans les prochaines semaines"
         )
     if consistency_pct < 75:
-        recommendations.append("Améliorez la régularité : visez au moins 3 séances par semaine")
+        recommendations.append("Améliorez la régularité : visez au moins 3 sorties par semaine")
     if weeks_remaining < 3 and total_score < 60:
         recommendations.append("Concentrez-vous sur la récupération et la confiance avant la course")
     if not recommendations:

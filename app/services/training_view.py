@@ -114,22 +114,22 @@ def semaines(sessions: list[st.Session], routes: list, today: date, now: datetim
         big = max(ss, key=lambda s: s.minutes, default=None)
         ctx, said = [], []  # printed (glyph + word), spoken
         if w["count"]:
-            ctx.append(f"{w['count']} séance{'s' if w['count'] > 1 else ''}")
+            ctx.append(f"{w['count']} activité{'s' if w['count'] > 1 else ''}")
             said.append(ctx[-1])
         if m in spk:
             s, ratio = spk[m]
-            ctx.append(f"{viz.GLYPH['long']} sortie {round((ratio - 1) * 100)}{NNBSP}% plus longue")
+            ctx.append(f"{viz.GLYPH['up']} sortie {round((ratio - 1) * 100)}{NNBSP}% plus longue")
             said.append(f"une sortie {round((ratio - 1) * 100)} % plus longue que ta plus longue du mois")
         elif m in longs and big:
             ctx.append(f"{viz.GLYPH['long']} sortie de {hm(big.minutes)}")
             said.append(f"une sortie longue de {hm_long(big.minutes)}")
         head = rp.week_label(m) + (" · en cours" if w["current"] else "")
-        value = hm(w["minutes"]) if w["minutes"] else "aucune séance"
+        value = hm(w["minutes"]) if w["minutes"] else "aucune activité"
         if round(w["dplus"]) >= 1:
             value += f" · {viz.dplus(w['dplus'])}"  # as the list's week heading prints it
         r.append([head, value, " · ".join(ctx)])
         spoken = f"Semaine du {d_long(m)}" + (", en cours" if w["current"] else "") + " : "
-        spoken += (hm_long(w["minutes"]) if w["minutes"] else "aucune séance")
+        spoken += (hm_long(w["minutes"]) if w["minutes"] else "aucune activité")
         if round(w["dplus"]) >= 1:
             spoken += f", {int(round(w['dplus']))} mètres de dénivelé positif"
         a.append(spoken + "".join(f", {c}" for c in said))
@@ -189,7 +189,7 @@ def fond_fatigue(sessions: list[st.Session], today: date) -> dict:
     have = (today - first).days
     if not series or have < st.MIN_HISTORY_DAYS or len(sessions) < st.MIN_SESSIONS:
         left = max(1, st.MIN_HISTORY_DAYS - have) if series else None
-        return {"wait": "Il faut 6 semaines de séances" + (f" : encore {left} jour{'s' if left > 1 else ''}."
+        return {"wait": "Il faut 6 semaines d'activités" + (f" : encore {left} jour{'s' if left > 1 else ''}."
                                                             if left and len(sessions) >= st.MIN_SESSIONS else ".")}
     lo = max(today - timedelta(days=FORM_DAYS - 1), first + timedelta(days=st.MIN_HISTORY_DAYS))
     days = [lo + timedelta(days=i) for i in range((today - lo).days + 1)]

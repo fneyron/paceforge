@@ -88,18 +88,37 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     c = sl.bars(_nights(rows), D, "14")
     d = json.loads(c["data"])
     mean = round((13 * 440 + 516) / 14 / 5) * 5
-    assert c["read"] == ["14 nuits", f"moyenne {viz.hm(mean)}", "sur 24 h, siestes comprises"]
-    assert d["r"][13] == ["nuit du mer. 7 au jeu. 8", "Nuit 8h36", "22:40 → 07:30"]
-    assert c["ref"]["label"] == "7 h" and c["bars"][13]["today"]
+    # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
+    assert c["read"] == [viz.hm(mean), "en moyenne", ""]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30"]
+    assert c["ref"]["label"] == "7\u202fh" and c["bars"][13]["today"] and c["trend"] is None
     assert all(not b.get("miss") for b in c["bars"])
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
-    assert gap["bars"][12]["miss"] and json.loads(gap["data"])["r"][12][1:] == ["—", "pas de montre cette nuit"]
+    assert gap["bars"][12]["miss"] and json.loads(gap["data"])["r"][12] == ["—", "", "nuit du mar. 6 au mer. 7 · "
+                                                                                  "pas de mesure"]
 
 
-def test_a_short_main_night_may_be_cut_in_two():
+def test_a_short_main_night_is_said_plainly():
+    """No more « nuit incomplète ? » (a hedge with a question mark): a short night is its length and its times;
+    a nap without a night says so plainly."""
     rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
     d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
-    assert d["r"][13][2].endswith("nuit incomplète ?")
+    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40"]
+    nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
+    d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
+    assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · pas de nuit mesurée"]
+    assert "?" not in json.dumps(d, ensure_ascii=False)
+
+
+def test_three_months_draws_the_7_night_mean_over_faint_bars():
+    """Oura's long ranges: 90 slivers become faint 24-h bars (nap and night in one) under the 7-night mean."""
+    rows = night_rows(range(0, 60))
+    rows["nap"][D - timedelta(days=3)] = (60, {"windows": [[f"{D - timedelta(days=3)}T13:00",
+                                                            f"{D - timedelta(days=3)}T14:00"]]}, "Garmin")
+    c = sl.bars(_nights(rows), D, "90")
+    assert c["trend"].startswith("M") and not any(b.get("top") for b in c["bars"])
+    assert c["bars"][-4]["h"] > c["bars"][-5]["h"]  # the nap is in that day's one bar
+    assert c["read"][1] == "en moyenne"
 
 
 def test_habits_medians_to_5_min_and_regularity_from_8_nights():

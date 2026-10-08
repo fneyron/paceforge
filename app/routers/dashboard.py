@@ -74,8 +74,8 @@ async def methode_page(request: Request, user: User | None = Depends(get_optiona
 
 @router.get("/dashboard")
 async def dashboard(user: User = Depends(get_current_user)):
-    """Legacy home: the weekly summary now lives on the activities page."""
-    return RedirectResponse(url="/activities", status_code=302)
+    """Legacy home (an installed app opened from an old manifest lands here): the home, Santé."""
+    return RedirectResponse(url=HOME, status_code=302)
 
 
 @router.get("/activities", response_class=HTMLResponse)

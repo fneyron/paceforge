@@ -104,7 +104,7 @@ async def strava_disconnect(
 ):
     if user.has_strava_linked:
         await strava_disconnect_link(db, user)
-    request.session["strava_ok"] = "Strava déconnecté. Les séances déjà reçues restent."
+    request.session["strava_ok"] = "Strava déconnecté. Les activités déjà reçues restent."
     return RedirectResponse(url="/settings#strava", status_code=303)
 
 

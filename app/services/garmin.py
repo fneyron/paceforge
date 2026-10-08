@@ -695,7 +695,7 @@ def activity_fields(a: dict) -> dict | None:
     return {
         "garmin_activity_id": gid,
         "sport_type": SPORT_TYPES.get(type_key, "Workout"),
-        "name": (a.get("activityName") or "Séance Garmin")[:255],
+        "name": (a.get("activityName") or "Activité Garmin")[:255],
         "start_date": start,
         "distance": _f(a.get("distance")) or 0.0,
         "moving_time": round(moving),

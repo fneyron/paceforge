@@ -7,14 +7,16 @@
      svg.pf-viz-svg ....... fixed viewBox; optional g.pf-viz-cross (a line + one circle per y series, at x=0)
      [data-i="k"] ......... per-mark elements: the selected one gets .is-sel
      [data-r] ............. readout slots, filled in DOM order from D.r[k]
-     [data-step="±1"] ..... the 44×44 ‹ › buttons (aria-disabled at either end, never disabled: they keep focus)
+     [data-step="±1"] ..... the 44×44 ‹ › buttons, when the figure has them (aria-disabled at either end, never
+                            disabled: they keep focus); Santé's cards have none: a tap selects, a drag scrubs
+     data-tone ............ on the figure, D.t[k] (the selected point's tone: its readout's word wears it, by CSS)
      [data-r-href] ........ a link following D.h[k]: its row is always there (visibility only, so the plot never
                             moves under the finger); hidden, aria-hidden and out of the tab order when null
      input.pf-viz-range ... visually hidden native range: arrows ±1, PageUp/PageDown ±7, Home/End, Esc back
                             to the default; aria-valuetext = D.a[k]
      [data-live] .......... polite live region: speaks once after a pointer scrub or a step, only in the
                             figure being touched
-     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?, back?}
+     script.pf-viz-data ... {x, y, d (ISO dates), r, a, h, sel, link, rest?, restA?, back?, t?}
    Figures of one data-viz-group follow each other by date (silently); a figure without that date shows « — ».
    The readout's height is reserved for its tallest line (measured once the figure is laid out, again when
    its width changes), so selecting never moves the plot. A touch selects on a tap or a horizontal drag only:
@@ -63,6 +65,10 @@
     function mark(i, on) {
       var ms = byI[i] || [];
       for (var j = 0; j < ms.length; j++) ms[j].classList.toggle("is-sel", on);
+    }
+
+    function tone(i) {   // a class-like attribute, never a colour: CSS colours the readout's word
+      if (D.t) fig.setAttribute("data-tone", (i >= 0 && i < D.t.length && D.t[i]) || "");
     }
 
     function nights(i) {
@@ -146,6 +152,7 @@
       }
       var r = (D.r && D.r[i]) || [];
       for (var k = 0; k < slots.length; k++) slots[k].textContent = r[k] || "";
+      tone(i);
       if (input) { input.value = i; input.setAttribute("aria-valuetext", D.a ? D.a[i] : r.join(" ")); }
       link(D.h && D.h[i]);
       nights(i);
@@ -160,6 +167,7 @@
       cur = END; pending = null;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
+      tone(-1);
       if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
       link(null);
       nights(-1);
@@ -171,6 +179,7 @@
       cur = -1; pending = date;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = k === 1 ? "—" : "";
+      tone(-1);
       link(null);
       nights(-1);
       stepState();

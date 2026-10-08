@@ -662,3 +662,179 @@ Sleep HRV Time Series — Last 2 days
 
 # querySportRecords: the Transjeju 100M as COROS recorded it (trail run, 02/10 21:00 in Korea, 16:53:27)
 TRANSJEJU_START, TRANSJEJU_END = 1790942428, 1791003235
+
+# querySleepHrv 2026-09-28 (Korea): answered, no reading (the night ending 29/09 started at 00:31 on 29/09)
+HRV_2026_09_28 = """Sleep HRV — 2026-09-28
+========================
+Note: dates are wake-up days (each value comes from the night that ended that morning).
+
+HRV Assessment — Last 1 days
+========================
+
+2026-09-28:
+  No data
+
+Sleep HRV Time Series — Last 1 days
+========================
+
+2026-09-28: no official sleep HRV value for this day; raw HRV points omitted."""
+
+# querySleepHrv 2026-09-29 → 2026-10-01 (Korea, timezone=36): the three nights before the Transjeju, read on 2026-10-08
+HRV_2026_10_01 = """Sleep HRV — 2026-09-29 to 2026-10-01
+========================
+Note: dates are wake-up days (each value comes from the night that ended that morning).
+
+HRV Assessment — Last 3 days
+========================
+
+2026-10-01:
+  HRV Avg: 80 ms — Normal
+  Normal Range: 70 - 84 ms
+  Baseline: 77 ms
+2026-09-30:
+  HRV Avg: 83 ms — Normal
+  Normal Range: 70 - 84 ms
+  Baseline: 77 ms
+2026-09-29:
+  HRV Avg: 90 ms — Above normal
+  Normal Range: 70 - 84 ms
+  Baseline: 77 ms
+
+Sleep HRV Time Series — Last 3 days
+========================
+
+2026-09-29:
+  timestamp=1790610290, timezone=36, hrv=77 ms, status=4, confidence=100000
+  timestamp=1790610590, timezone=36, hrv=101 ms, status=4, confidence=100000
+  timestamp=1790610890, timezone=36, hrv=92 ms, status=4, confidence=90000
+  timestamp=1790611190, timezone=36, hrv=44 ms, status=4, confidence=100000
+  timestamp=1790612090, timezone=36, hrv=84 ms, status=4, confidence=86842
+  timestamp=1790612690, timezone=36, hrv=117 ms, status=4, confidence=94117
+  timestamp=1790613890, timezone=36, hrv=58 ms, status=4, confidence=100000
+  timestamp=1790614490, timezone=36, hrv=69 ms, status=4, confidence=100000
+  timestamp=1790615390, timezone=36, hrv=87 ms, status=4, confidence=100000
+  timestamp=1790615990, timezone=36, hrv=60 ms, status=4, confidence=100000
+  timestamp=1790617190, timezone=36, hrv=91 ms, status=4, confidence=94444
+  timestamp=1790617790, timezone=36, hrv=94 ms, status=4, confidence=95000
+  timestamp=1790620490, timezone=36, hrv=122 ms, status=4, confidence=89473
+  timestamp=1790621090, timezone=36, hrv=108 ms, status=4, confidence=100000
+  timestamp=1790622590, timezone=36, hrv=56 ms, status=4, confidence=100000
+  timestamp=1790623790, timezone=36, hrv=62 ms, status=4, confidence=100000
+  timestamp=1790625290, timezone=36, hrv=78 ms, status=4, confidence=94444
+  timestamp=1790625890, timezone=36, hrv=68 ms, status=4, confidence=100000
+  timestamp=1790626490, timezone=36, hrv=79 ms, status=4, confidence=100000
+  timestamp=1790627090, timezone=36, hrv=59 ms, status=4, confidence=86363
+  timestamp=1790628590, timezone=36, hrv=100 ms, status=4, confidence=93750
+  timestamp=1790629190, timezone=36, hrv=101 ms, status=4, confidence=100000
+  timestamp=1790629790, timezone=36, hrv=100 ms, status=4, confidence=100000
+  timestamp=1790630390, timezone=36, hrv=95 ms, status=4, confidence=89473
+  timestamp=1790631290, timezone=36, hrv=115 ms, status=4, confidence=100000
+  timestamp=1790631890, timezone=36, hrv=139 ms, status=4, confidence=91176
+  timestamp=1790634590, timezone=36, hrv=60 ms, status=4, confidence=88461
+  timestamp=1790635190, timezone=36, hrv=59 ms, status=4, confidence=100000
+  timestamp=1790636690, timezone=36, hrv=159 ms, status=4, confidence=83055
+  timestamp=1790638490, timezone=36, hrv=102 ms, status=4, confidence=86585
+  timestamp=1790639390, timezone=36, hrv=70 ms, status=4, confidence=94736
+  timestamp=1790639990, timezone=36, hrv=130 ms, status=4, confidence=94444
+  timestamp=1790640590, timezone=36, hrv=118 ms, status=4, confidence=100000
+  timestamp=1790641190, timezone=36, hrv=126 ms, status=4, confidence=85637
+  timestamp=1790641790, timezone=36, hrv=93 ms, status=4, confidence=88235
+  timestamp=1790649590, timezone=36, hrv=98 ms, status=4, confidence=91954
+  timestamp=1790649890, timezone=36, hrv=74 ms, status=4, confidence=100000
+  timestamp=1790658290, timezone=36, hrv=73 ms, status=4, confidence=91470
+  timestamp=1790693690, timezone=36, hrv=53 ms, status=4, confidence=100000
+  timestamp=1790693990, timezone=36, hrv=88 ms, status=4, confidence=85714
+2026-09-30:
+  timestamp=1790694590, timezone=36, hrv=98 ms, status=4, confidence=95000
+  timestamp=1790694890, timezone=36, hrv=43 ms, status=4, confidence=100000
+  timestamp=1790695790, timezone=36, hrv=56 ms, status=4, confidence=100000
+  timestamp=1790697290, timezone=36, hrv=99 ms, status=4, confidence=88888
+  timestamp=1790698790, timezone=36, hrv=69 ms, status=4, confidence=95238
+  timestamp=1790699390, timezone=36, hrv=76 ms, status=4, confidence=100000
+  timestamp=1790699990, timezone=36, hrv=62 ms, status=4, confidence=100000
+  timestamp=1790700590, timezone=36, hrv=59 ms, status=4, confidence=100000
+  timestamp=1790701190, timezone=36, hrv=82 ms, status=4, confidence=89473
+  timestamp=1790701790, timezone=36, hrv=66 ms, status=4, confidence=95238
+  timestamp=1790702390, timezone=36, hrv=81 ms, status=4, confidence=100000
+  timestamp=1790703890, timezone=36, hrv=108 ms, status=4, confidence=87058
+  timestamp=1790705990, timezone=36, hrv=159 ms, status=4, confidence=100000
+  timestamp=1790706590, timezone=36, hrv=70 ms, status=4, confidence=100000
+  timestamp=1790707190, timezone=36, hrv=74 ms, status=4, confidence=100000
+  timestamp=1790707790, timezone=36, hrv=74 ms, status=4, confidence=90476
+  timestamp=1790709290, timezone=36, hrv=114 ms, status=4, confidence=85000
+  timestamp=1790709890, timezone=36, hrv=73 ms, status=4, confidence=94736
+  timestamp=1790711690, timezone=36, hrv=109 ms, status=4, confidence=100000
+  timestamp=1790712290, timezone=36, hrv=82 ms, status=4, confidence=94444
+  timestamp=1790713190, timezone=36, hrv=89 ms, status=4, confidence=100000
+  timestamp=1790713790, timezone=36, hrv=77 ms, status=4, confidence=100000
+  timestamp=1790714390, timezone=36, hrv=60 ms, status=4, confidence=100000
+  timestamp=1790715590, timezone=36, hrv=97 ms, status=4, confidence=89473
+  timestamp=1790716190, timezone=36, hrv=67 ms, status=4, confidence=95238
+  timestamp=1790717090, timezone=36, hrv=119 ms, status=4, confidence=93333
+  timestamp=1790717690, timezone=36, hrv=67 ms, status=4, confidence=100000
+  timestamp=1790720390, timezone=36, hrv=110 ms, status=4, confidence=100000
+  timestamp=1790723090, timezone=36, hrv=94 ms, status=4, confidence=88095
+  timestamp=1790723690, timezone=36, hrv=69 ms, status=4, confidence=100000
+  timestamp=1790724290, timezone=36, hrv=82 ms, status=4, confidence=94117
+  timestamp=1790724890, timezone=36, hrv=93 ms, status=4, confidence=100000
+  timestamp=1790726090, timezone=36, hrv=103 ms, status=4, confidence=100000
+  timestamp=1790727590, timezone=36, hrv=76 ms, status=4, confidence=100000
+  timestamp=1790728790, timezone=36, hrv=94 ms, status=4, confidence=87931
+  timestamp=1790729990, timezone=36, hrv=88 ms, status=4, confidence=90909
+2026-10-01:
+  timestamp=1790780690, timezone=36, hrv=74 ms, status=4, confidence=100000
+  timestamp=1790781590, timezone=36, hrv=64 ms, status=4, confidence=100000
+  timestamp=1790781890, timezone=36, hrv=87 ms, status=4, confidence=100000
+  timestamp=1790782490, timezone=36, hrv=35 ms, status=4, confidence=100000
+  timestamp=1790783390, timezone=36, hrv=95 ms, status=4, confidence=85000
+  timestamp=1790783990, timezone=36, hrv=104 ms, status=4, confidence=90476
+  timestamp=1790784590, timezone=36, hrv=87 ms, status=4, confidence=100000
+  timestamp=1790785190, timezone=36, hrv=41 ms, status=4, confidence=100000
+  timestamp=1790785790, timezone=36, hrv=96 ms, status=4, confidence=90000
+  timestamp=1790787290, timezone=36, hrv=79 ms, status=4, confidence=95000
+  timestamp=1790787890, timezone=36, hrv=55 ms, status=4, confidence=100000
+  timestamp=1790789090, timezone=36, hrv=90 ms, status=4, confidence=100000
+  timestamp=1790789990, timezone=36, hrv=116 ms, status=4, confidence=100000
+  timestamp=1790790590, timezone=36, hrv=84 ms, status=4, confidence=90476
+  timestamp=1790791190, timezone=36, hrv=95 ms, status=4, confidence=100000
+  timestamp=1790791790, timezone=36, hrv=51 ms, status=4, confidence=100000
+  timestamp=1790795090, timezone=36, hrv=86 ms, status=4, confidence=100000
+  timestamp=1790797790, timezone=36, hrv=62 ms, status=4, confidence=96428
+  timestamp=1790799890, timezone=36, hrv=122 ms, status=4, confidence=100000
+  timestamp=1790801390, timezone=36, hrv=143 ms, status=4, confidence=100000
+  timestamp=1790804090, timezone=36, hrv=45 ms, status=4, confidence=100000
+  timestamp=1790804690, timezone=36, hrv=68 ms, status=4, confidence=100000
+  timestamp=1790806490, timezone=36, hrv=80 ms, status=4, confidence=94736
+  timestamp=1790808590, timezone=36, hrv=77 ms, status=4, confidence=94736
+  timestamp=1790809190, timezone=36, hrv=82 ms, status=4, confidence=95454
+  timestamp=1790810690, timezone=36, hrv=63 ms, status=4, confidence=95454
+  timestamp=1790811890, timezone=36, hrv=72 ms, status=4, confidence=100000
+  timestamp=1790812490, timezone=36, hrv=72 ms, status=4, confidence=100000
+  timestamp=1790813090, timezone=36, hrv=113 ms, status=4, confidence=100000
+  timestamp=1790822390, timezone=36, hrv=70 ms, status=4, confidence=100000"""
+
+# queryDailyHealthData read on 2026-10-08: the three nights before the Transjeju (« Sleep HR » of the main sleep)
+DAILY_2026_10_01 = """Daily Health Data — Last 12 days | Resting HR: 32 bpm | HRV Baseline: 42 ms
+Note: sleep entries are dated by their wake-up day.
+
+--- 20260929 ---
+Steps: 18,055 | Calories: 786 kcal | Exercise: 39 min
+Stress: Avg 23
+Sleep Summary:
+  Total: 9h 0min | Deep: 1h 0min | Light: 5h 41min | REM: 2h 5min | Awake: 14 min
+  Sleep HR: Avg 35 bpm | Min 30 bpm | Max 53 bpm
+
+--- 20260930 ---
+Steps: 15,411 | Calories: 965 kcal | Exercise: 36 min
+Stress: Avg 24
+Sleep Summary:
+  Total: 10h 2min | Deep: 1h 16min | Light: 5h 43min | REM: 2h 49min | Awake: 14 min
+  Sleep HR: Avg 35 bpm | Min 30 bpm | Max 52 bpm
+
+--- 20261001 ---
+Steps: 16,599 | Calories: 730 kcal | Exercise: 21 min
+Stress: Avg 23
+Sleep Summary:
+  Total: 9h 22min | Deep: 53 min | Light: 5h 19min | REM: 2h 49min | Awake: 21 min
+  Sleep HR: Avg 36 bpm | Min 30 bpm | Max 51 bpm
+"""

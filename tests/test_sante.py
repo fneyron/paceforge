@@ -196,20 +196,35 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
         assert r.headers["location"] == "/settings#strava"  # an explicit « next » is kept
 
 
+async def test_the_installed_app_opens_on_sante(as_user: AsyncClient, client: AsyncClient):
+    """The phone app (the PWA manifest) starts on /sante; an app installed with the old start_url (/dashboard)
+    lands there too; the error pages' button goes home, not to the races."""
+    manifest = json.loads((ROOT / "app/static/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["start_url"] == "/sante"
+    r = await as_user.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"] == "/sante"
+    for f in ("404.html", "500.html"):
+        html = (ROOT / "app/templates" / f).read_text(encoding="utf-8")
+        assert "Retour à mes courses" not in html and '<a href="/sante" class="pf-btn' in html, f
+    r = await as_user.get("/nulle-part")
+    assert r.status_code == 404 and "Retour à l'accueil" in r.text
+
+
 # ── the owner, 8 Oct 2026 ───────────────────────────────────────────────────
 
 async def test_owner_8_october_state_and_score(db_session: AsyncSession, test_user: User):
     """The Transjeju (an activity: 16h53 stops included, ended 03/10 13:53 in Korea) is an ultra: 10 days of
-    recovery, the raw score capped at 40 on D+1 → D+3, then at 65; 08/10 is D+5. No band yet (no night of 7
-    usable), so Sommeil (8h36 → 100) and Charge récente (ultra → 20) make the score:
-    raw = (25 × 100 + 20 × 20) / 45 = 64,4, under the cap; placed in 40–69: 40 + 29 × 0,644 = 58,7 → 59."""
+    recovery, the raw score capped at 40 on D+1 → D+3, then at 65; 08/10 is D+5 from its end, 6 days after it
+    started. No band yet (no night of 7 usable), so Sommeil (8h36 → 100) and Charge récente (ultra → 20) make the
+    score: raw = (25 × 100 + 20 × 20) / 45 = 64,4, under every cap (65; 69 for Charge's 20; 80 without VFC nor FC):
+    64, « Récupération en cours » (its band); the sentence names the activity, never its 16h53 (the ring's)."""
     act = await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     st, s = page["state"], page["score"]
     assert (st["key"], st["tone"], st["word"]) == ("effort", "warn", "Récupération en cours")
-    assert st["text"] == "Grosse sortie de 16h53 il y a 5 jours." and st["href"] == f"/activity/{act.id}"
+    assert st["text"] == "Grosse sortie il y a 6 jours : Transjeju 100M." and st["href"] == f"/activity/{act.id}"
     raw = (25 * 100 + 20 * 20) / 45
-    assert s["value"] == 59 == math.floor(40 + 29 * raw / 100 + 0.5)
+    assert s["value"] == 64 == math.floor(raw + 0.5) and s["tone"] == "warn"
     assert {p["key"]: round(p["sub"]) for p in s["parts"]} == {"sleep": 100, "load": 20}
     assert s["absent"] == ["hrv", "hr"] and s["caps"] == []  # the 65 cap is above raw: not binding
 
@@ -226,6 +241,10 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
     assert owned == {date(2026, 9, 29): [], date(2026, 9, 30): [], date(2026, 10, 1): [], date(2026, 10, 6): ["big"],
                      date(2026, 10, 7): [], D8: []}
     assert (nights[D8].asleep, nights[D8].tst24, nights[D8].hrv, nights[D8].hr) == (516, 516, 99.7, 35.0)
+    # his real nights before the race: PaceForge's own VFC from COROS's raw series (COROS says 90, 83, 80)
+    assert [(nights[date(2026, 9, d)].hrv, nights[date(2026, 9, d)].hr) for d in (29, 30)] == [(86.8, 35.0),
+                                                                                               (80.8, 35.0)]
+    assert (nights[date(2026, 10, 1)].hrv, nights[date(2026, 10, 1)].hr) == (76.8, 36.0)
     for metric in ("hr", "hrv", "tst24"):
         assert nt.band(nights, metric, D8) is None
     assert nt.illness_alert(nights, D8) is None
@@ -235,16 +254,18 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     rec, sleep, charge = page["rings"]
-    assert (rec["value"], rec["tone"], rec["sub"], rec["href"]) == ("59", "warn", "en cours", "#contributeurs")
-    assert rec["aria"] == ("Récupération 59 sur 100. Récupération en cours. "
-                           "Grosse sortie de 16 heures 53 il y a 5 jours.")
+    # under the Récupération ring only its label: the state's word is the title just below (said once)
+    assert (rec["value"], rec["tone"], rec["sub"], rec["href"]) == ("64", "warn", None, "#recuperation")
+    assert rec["aria"] == ("Récupération 64 sur 100. Récupération en cours. "
+                           "Grosse sortie il y a 6 jours : Transjeju 100M.")
     assert (sleep["value"], sleep["tone"], sleep["href"]) == ("8h36", "ok", "#sommeil")  # ≥ 7 h: green
     assert sleep["dash"] == sleep["c"]  # 8h36 ≥ 8 h: a full ring
     assert (charge["value"], charge["tone"], charge["href"]) == ("16h53", "accent", "#charge")
+    assert charge["tick"]  # the usual week, 1× on a ring that runs to 2×
     # Contributeurs: no number; Charge says « grosse sortie » without the days the state line already prints
     c = page["contrib"]
-    assert [(r["name"], r["word"], r["sub"]) for r in c["rows"]] == [("Sommeil", "suffisante", 100),
-                                                                     ("Charge récente", "grosse sortie", 20)]
+    assert [(r["name"], r["word"], r["sub"], r["tone"]) for r in c["rows"]] == [
+        ("Sommeil", "suffisant", 100, "ok"), ("Charge récente", "grosse sortie", 20, "accent")]
     assert c["absent"] == "Pas encore dans le score : VFC, FC de nuit."
     # Sommeil: the hero prints the times, not the total (the ring's); 22:42 is approximate: 22:40
     s = page["sleep"]
@@ -255,10 +276,12 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
     assert [k for k, _ in s["ranges"]] == ["14"] and s["r"] == "14"  # nothing 14 to 90 days old: no « 3 mois »
     bars = s["bars"]["14"]
     d = json.loads(bars["data"])
-    assert bars["read"] == ["14 nuits", "moyenne 8h20", "sur 24 h, siestes comprises"]  # the latest is the ring's
-    assert d["r"][13] == ["nuit du mer. 7 au jeu. 8", "Nuit 8h36", "22:40 → 07:30"]
-    assert d["r"][12] == ["nuit du mar. 6 au mer. 7", "Nuit 5h50 · sieste 2h20", "23:35 → 05:40 · 8h10 sur 24\u202fh"]
-    assert d["r"][0] == ["nuit du jeu. 24 au ven. 25", "Sieste 1h22", "nuit incomplète ?"]
+    # it rests on the mean (the latest night is the ring's); a tap: the 24 h, its parts, the night and its times
+    assert bars["read"] == ["8h20", "en moyenne", ""]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30"]
+    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40"]
+    assert d["r"][0] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · pas de nuit mesurée"]  # no « ? »
+    assert "?" not in json.dumps(d["r"], ensure_ascii=False)
     assert s["habits"]["stats"] == [("Coucher", "23:50"), ("Lever", "09:25")]  # 5 nights: no regularity yet
     marks = {r["iso"]: r["marks"] for r in s["rows"]}
     assert marks["2026-10-06"] == "◇ après grosse sortie" and marks["2026-10-08"] == "—"
@@ -267,25 +290,40 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
 async def test_owner_cards(db_session: AsyncSession, test_user: User):
     act = await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
-    assert page["vfc"]["read"] == ["nuit du mer. 7 au jeu. 8", "100 ms", ""]  # PaceForge's own 99,7 ms
-    assert page["fc"]["read"] == ["nuit du mer. 7 au jeu. 8", "35 bpm", ""]  # no band yet: no normal
+    # a watch worn some nights only: the axis spans the measured nights (14 days at least), not 30 with dots at
+    # the right edge; the latest night selected (its value is the card's): PaceForge's own 99,7 ms, no band yet
+    vfc, fc = page["vfc"], page["fc"]
+    assert (vfc["title"], vfc["n"], vfc["read"]) == ("VFC · 14 nuits", 14,
+                                                     ["100\u202fms", "", "nuit du mer. 7 au jeu. 8"])
+    assert (fc["title"], fc["n"], fc["read"]) == ("FC de nuit · 14 nuits", 14,
+                                                  ["35\u202fbpm", "", "nuit du mer. 7 au jeu. 8"])
+    assert [t["label"] for t in vfc["xt"]] == ["25", "26", "27", "28", "29", "30", "1", "2", "3", "4", "5", "6", "7",
+                                               "8"]
+    assert len(vfc["dots"]) == 5 and len(fc["dots"]) == 6
+    # never a cliff from a few ms: the VFC axis spans ≥ 30 % of its median, the FC axis ≥ 14 bpm
+    assert [t["label"] for t in vfc["ticks"]] == ["80", "100"] and [t["label"] for t in fc["ticks"]] == ["30", "40"]
     ch = page["charge"]
     d = json.loads(ch["data"])
-    assert ch["read"] == ["aujourd'hui", "aucune activité", ""] and ch["sel"] == 13
-    assert d["r"][7] == ["ven. 2 oct.", "16h53", "Transjeju 100M"]  # the long effort is simply a tall bar
-    assert d["h"][7] == {"href": f"/activity/{act.id}", "label": "Voir la sortie ›"}
-    # Récupération · 14 jours: each day as computed that day; it rests on a hint (today's score is the ring's)
+    # it rests on the count (nothing selected: an empty day is never the default; the hours are the ring's)
+    assert ch["read"] == ["1", "activité", ""] and d["sel"] == 14 and ch["rest"]
+    assert d["r"][7] == ["16h53", "", "ven. 2 oct. · Transjeju 100M"]  # the long effort is simply a tall bar
+    assert d["h"][7] == {"href": f"/activity/{act.id}", "label": "Voir ›"}
+    assert d["r"][12] == ["—", "", "mer. 7 oct. · aucune activité"] and d["h"][12] is None
+    # Récupération · 14 jours: each day as computed that day, with the same rule; it rests on the mean
     rec = page["recup"]
     d = json.loads(rec["data"])
-    points = {day: r[1] for day, r in zip(d["d"], d["r"], strict=True)}
-    assert points["2026-09-29"] == points["2026-10-01"] == "100 · Bien récupéré"
-    # 06/10: D+3 (cap 40), 5h33 → 46,5, Charge 20: raw (25 × 46,5 + 20 × 20) / 45 = 34,7 → 40 + 29 × 0,347 = 50
-    assert points["2026-10-06"] == "50 · Récupération en cours"
-    assert points["2026-10-07"] == points["2026-10-08"] == "59 · Récupération en cours"
-    assert points["2026-10-02"] == points["2026-10-04"] == "—"  # no night: no score
-    assert rec["read"] == ["", "", "Touche un jour pour son score et son état."]
+    points = {day: r[:2] for day, r in zip(d["d"], d["r"], strict=True)}
+    # before the race: Sommeil alone (no band, too few activities for Charge): 100, capped at 80 without VFC nor FC
+    assert points["2026-09-29"] == points["2026-10-01"] == ["80", "● Bien récupéré"]
+    # 06/10: D+3, 5h33 → 46,5, Charge 20: raw (25 × 46,5 + 20 × 20) / 45 = 34,7 under every cap → 35, à ménager
+    assert points["2026-10-06"] == ["35", "■ À ménager"]
+    assert points["2026-10-07"] == points["2026-10-08"] == ["64", "◐ Récupération en cours"]
+    assert d["r"][11][2] == "mar. 6 oct. · Grosse sortie : Transjeju 100M"  # no « il y a », counted from that day
+    assert points["2026-10-02"] == points["2026-10-04"] == ["—", ""]  # no night: no score
+    assert rec["read"] == ["67", "en moyenne", ""]  # (80 × 3 + 35 + 64 × 2) / 6 = 67,2
     classes = [b["cls"] for b in rec["bars"]]
-    assert classes[4] == "ok" and classes[11] == "warn" and rec["bars"][-1]["today"]
+    assert classes[4] == "ok" and classes[11] == "danger" and classes[12] == "warn" and rec["bars"][-1]["today"]
+    assert d["t"][11] == "danger" and [ln["label"] for ln in rec["lines"]] == ["70", "40"]
 
 
 async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_owner_day):
@@ -299,15 +337,18 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
              "Comment je lis tes nuits", "Les chiffres de chaque nuit"]
     at = [main.index(k) for k in order]
     assert at == sorted(at)
-    assert 'aria-label="Récupération 59 sur 100. Récupération en cours.' in main
-    assert f'<a href="/activity/{act.id}">Grosse sortie de 16h53 il y a 5 jours.</a>' in main
+    assert 'aria-label="Récupération 64 sur 100. Récupération en cours.' in main
+    assert f'<a href="/activity/{act.id}">Grosse sortie il y a 6 jours : Transjeju 100M.</a>' in main
     assert '<svg class="pf-state-glyph"' in main  # the tone in a shape too
     # each number printed once before a tap (the closed folds are the accessible alternative): the score, the
-    # night, the VFC and FC of last night; 16h53 is both the effort and, this week, the whole Charge
+    # night, the week's hours, the VFC and FC of last night, the means; the state word once (the title)
     seen = _visible(html)
-    for number in ("59", "8h36", "100", "35", "8h20"):
-        assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:])", seen)) == 1, number
+    for number in ("64", "8h36", "16h53", "100", "35", "8h20", "67"):
+        assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
+    assert seen.count("Récupération en cours") == 1 and "en cours" not in seen.replace("Récupération en cours", "")
     assert "pf-viz-flag" not in main and "pf-viz-ev" not in main
+    # Santé's cards: no ‹ › disc; a tap, a drag or the keyboard (the hidden range input) selects
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5  # 5 cards, no 3 mois
 
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
@@ -331,7 +372,8 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word
-    assert "Transjeju 100M" not in _visible(html)  # the race's name: never a chip (the Charge readout names it on tap)
+    # the race's name: never a chip, a flag or a countdown; the activity is named once, in the state's sentence
+    assert _visible(html).count("Transjeju 100M") == 1 and "Grosse sortie il y a 6 jours : Transjeju 100M." in main
     assert "pf-viz-win" not in main and "pf-hyp" not in main
 
 
@@ -371,9 +413,9 @@ async def _runs(db: AsyncSession, user: User, today: date, n: int = 10):
     await db.flush()
 
 
-async def test_rich_wearer_a_low_hrv_alone_is_green_low_in_its_band(db_session: AsyncSession, test_user: User):
-    """A full band, HR in it, the 7-night HRV under it: a single signal never moves the state (H): « Bien
-    récupéré », placed low in 70–100; Contributeurs say « basse » for VFC."""
+async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSession, test_user: User):
+    """A full band, HR in it, the 7-night HRV under it (sub-score 40–69): the score is the weighted mean, no
+    placement: still « Bien récupéré » (≥ 70), lower; the Contributeurs say « basse » for VFC, an orange bar."""
     today = date(2026, 10, 8)
     await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=58.0))
     await _runs(db_session, test_user, today)
@@ -385,26 +427,29 @@ async def test_rich_wearer_a_low_hrv_alone_is_green_low_in_its_band(db_session: 
     z = (math.log(58.0) - math.log(b["center"])) / b["sd"]
     sub = 100 * (z + 2.5) / 2
     raw = (30 * sub + 25 * 100 + 25 * 100 + 20 * 100) / 100
-    assert not b["provisional"] and -2.5 < z < -0.5
-    assert s["value"] == math.floor(70 + 30 * raw / 100 + 0.5) and 70 <= s["value"] < 100
-    words = {r["name"]: r["word"] for r in page["contrib"]["rows"]}
-    assert words == {"VFC": "basse", "FC de nuit": "dans ta normale", "Sommeil": "suffisante",
-                     "Charge récente": "pas de grosse sortie"}
-    assert page["contrib"]["absent"] is None
-    assert page["vfc"]["read"][2].startswith("normale ") and "provisoire" not in page["vfc"]["read"][2]
-    assert page["rings"][0]["tone"] == "ok" and page["rings"][0]["sub"] == "bien récupéré"
+    assert not b["provisional"] and -2.5 < z < -0.5 and 40 <= sub < 70
+    assert s["value"] == math.floor(raw + 0.5) and 70 <= s["value"] < 90 and s["caps"] == []
+    rows = {r["name"]: r for r in page["contrib"]["rows"]}
+    assert {k: r["word"] for k, r in rows.items()} == {"VFC": "basse", "FC de nuit": "dans ta normale",
+                                                       "Sommeil": "suffisant", "Charge récente": "pas de grosse sortie"}
+    assert rows["VFC"]["tone"] == "warn" and page["contrib"]["absent"] is None
+    assert page["vfc"]["read"][2].startswith("nuit du mer. 7 au jeu. 8 · normale ")
+    assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
+    assert page["rings"][0]["tone"] == "ok" and page["rings"][0]["sub"] is None
 
 
-async def test_rich_wearer_hrv_down_and_hr_up_is_recovering(db_session: AsyncSession, test_user: User):
+async def test_rich_wearer_a_red_hrv_caps_the_ring_at_69(db_session: AsyncSession, test_user: User):
+    """The judges' rich user: the 7-night VFC far under its normal (a red, empty bar) can never sit under a
+    green ring: 69, « Récupération en cours », « VFC basse sur 7 nuits. »."""
     today = date(2026, 10, 8)
-    await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=58.0, hr_last=49.0))  # +4 bpm, no alert
+    await _seed_rows(db_session, test_user, _garmin_rows(today, hrv_last=50.0))
     await _runs(db_session, test_user, today)
     page = await sante.health_page(db_session, test_user.id, today=today)
     st, s = page["state"], page["score"]
-    assert (st["key"], st["word"], st["text"]) == ("hrv", "Récupération en cours",
-                                                   "VFC basse et FC de nuit haute sur 7 nuits.")
-    assert 40 <= s["value"] <= 40 + round(29 * 0.60) and "VFC basse et FC de nuit haute" in s["caps"]
-    assert {r["name"]: r["word"] for r in page["contrib"]["rows"]}["FC de nuit"] == "haute"
+    assert (st["key"], st["tone"], st["text"]) == ("hrv", "warn", "VFC basse sur 7 nuits.")
+    assert s["value"] == 69 and s["caps"] == ["red"] and s["raw0"] == 70
+    assert {r["name"]: (r["word"], r["tone"]) for r in page["contrib"]["rows"]}["VFC"] == ("basse", "danger")
+    assert page["rings"][0]["tone"] == "warn"
 
 
 async def test_rich_wearer_hypnogram_in_the_hero(db_session: AsyncSession, test_user: User):
@@ -435,9 +480,17 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     assert [r["value"] for r in page["rings"][:2]] == ["—", "—"] and page["rings"][2]["value"] != "—"
     assert page["contrib"] is None and page["recup"] is None and page["sleep"]["state"] == "never"
     assert page["vfc"] is None and page["fc"] is None and page["charge"] is not None
+    # no section for them: the two empty rings are plain (never a link to nothing) and say nothing under the label
+    assert [(r["href"], r["sub"]) for r in page["rings"][:2]] == [(None, None), (None, None)]
+    assert page["rings"][2]["href"] == "#charge"
     html = (await as_user.get("/sante")).text
-    assert "Connecte ta montre pour ta récupération." in html and 'href="/settings#coros"' in html
+    assert "Connecte ta montre pour ta récupération." in html
+    assert 'href="/settings#coros"' in html and 'href="/settings#garmin"' in html
     assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html
+    rings = re.findall(r'<(a|div) class="pf-ring pf-ring-(\w+)[^"]*"(?: href="([^"]+)")?', _main(html))
+    assert rings == [("div", "recup", ""), ("div", "sommeil", ""), ("a", "charge", "#charge")]
+    for href in re.findall(r'class="pf-ring[^"]*" href="#([\w-]+)"', html):
+        assert f'id="{href}"' in html, href
 
 
 async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_session: AsyncSession,
@@ -453,6 +506,49 @@ async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_s
 async def test_nothing_at_all_is_the_connect_panel(as_user: AsyncClient):
     page = (await as_user.get("/sante")).text
     assert "Ta montre et tes activités" in page and "pf-rings" not in page
+    for anchor in ("coros", "garmin", "strava"):  # Strava too: the panel names it, a button connects it
+        assert f'href="/settings#{anchor}"' in page, anchor
+    assert "Connecter Strava" in page
+
+
+async def test_every_ring_links_to_a_section_the_page_has(db_session: AsyncSession, test_user: User):
+    """A watch that sent one night but none this morning, no score: Sommeil still links to its section,
+    Récupération is a plain ring (no Contributeurs, under 2 days for its 14 days), Charge too (no activity in 14
+    days: no card); with 2 past days scored, Récupération links to its 14 days even without today's score."""
+    today = date(2026, 10, 8)
+    await _seed_rows(db_session, test_user, night_rows([3], today=today, source="COROS",
+                                                       hr_method="coros_sleep_summary"))
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    rec, sleep, charge = page["rings"]
+    assert page["score"]["value"] is None and page["recup"] is None and rec["href"] is None
+    assert sleep["href"] == "#sommeil" and sleep["value"] == "—" and page["sleep"]["state"] == "ok"
+    # no activity in 14 days: no card, a plain Charge ring that says « 0 h », never « 0 min »
+    assert charge["href"] is None and charge["value"] == "0\u202fh" and page["charge"] is None
+    await _seed_rows(db_session, test_user, night_rows([2], today=today, source="COROS",
+                                                       hr_method="coros_sleep_summary"))
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    assert page["score"]["value"] is None and page["recup"] and page["rings"][0]["href"] == "#recuperation"
+
+
+async def test_the_charge_ring_runs_to_twice_the_usual_week(db_session: AsyncSession, test_user: User):
+    """The arc runs from 0 to 2 × the usual week (the median of the last 12 complete weeks, H), a tick at 1 ×: a
+    double week looks different from a normal one; the usual week is said, never printed."""
+    today = date(2026, 10, 8)
+    await _seed_rows(db_session, test_user, _garmin_rows(today))
+    for i in range(90):  # 50 min every 3 days for 90 days: the usual week ≈ 1h40 to 2h30
+        d = today - timedelta(days=1 + 3 * i)
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=9900 + i, sport_type="Run", name="Footing",
+                                start_date=datetime(d.year, d.month, d.day, 6, tzinfo=timezone.utc), distance=9000,
+                                moving_time=3000, elapsed_time=3000, total_elevation_gain=40,
+                                average_heartrate=140, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    charge = page["rings"][2]
+    week = sum(1 for i in range(90) if 1 + 3 * i <= 6) * 50
+    usual = sante._usual_week(await sante.st.load_sessions(db_session, test_user.id, today), today)
+    assert charge["value"] == sante.viz.hm(week) and charge["tick"]["x1"] == 50.0 and charge["tick"]["y1"] > 50
+    assert charge["dash"] == round(min(1, week / (2 * usual)) * charge["c"], 2) and charge["dash"] < charge["c"]
+    assert "semaine habituelle" in charge["aria"] and sante.viz.hm(usual) not in charge["aria"]
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

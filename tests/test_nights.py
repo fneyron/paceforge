@@ -142,8 +142,8 @@ def test_context_tags_exclude_nights():
     d = lambda k: D - timedelta(days=k)  # noqa: E731
     sessions = [
         session(d(1), 9, 95, sid=1),  # ≥ 90 min the day before: tags the night ending the next morning (D)
-        session(d(3), 21, 60, hr=170, sid=2),  # vigorous, ends 22:00 local, sleep at 23:00: ≤ 1 h (Stutz 2019)
-        session(d(4), 18, 45, hr=168, sid=3),  # hard evening session (Myllymäki 2012)
+        session(d(3), 21, 60, hr=170, sid=2),  # vigorous, ends 22:00 local, sleep at 23:00: ≤ 2 h (H; Stutz 2019)
+        session(d(4), 18, 45, hr=168, sid=3),  # vigorous but ending 18:45, 4 h before sleep: nothing (§8)
         session(d(5), 18, 45, hr=110, sid=4),  # easy evening run: nothing
         session(d(2), 9, 60, elev=2100, sid=5),  # at 2 100 m that day: the night after is at altitude
     ]
@@ -152,8 +152,69 @@ def test_context_tags_exclude_nights():
     assert nights[D].tags == {"long"}
     # the night after the high session, and the one before it (a morning run up there: slept there, H)
     assert nights[d(1)].tags == {"alcohol", "altitude"} and nights[d(2)].tags == {"late", "altitude"}
-    assert nights[d(3)].tags == {"late"} and nights[d(4)].tags == set()
-    assert all(nights[d(k)].excluded for k in range(0, 4)) and not nights[d(4)].excluded
+    assert nights[d(3)].tags == set() and nights[d(4)].tags == set()
+    assert all(nights[d(k)].excluded for k in range(0, 3)) and not nights[d(3)].excluded
+
+
+def test_an_easy_evening_run_leaves_the_night_in_the_normal():
+    """« sortie intense le soir » (§8): only a vigorous session — average HR ≥ 80 % of the heart-rate reserve, or
+    ≥ 20 min above it in its laps (else its km splits) — ending ≤ 2 h before sleep onset (Stutz 2019; Myllymäki
+    2012; the 80 % and the 2 h are H). The owner's easy 40-min evening runs, 66 % of his reserve (136 bpm on a rest
+    of 35 and a peak of 188), never drop a night from his normal, even 1 h before bed; a hard 30 min at 165 bpm
+    (85 %) ending 1 h 30 before sleep does; the same 5 h before sleep does not; an interval session averaging 70 %
+    with 24 min of laps above 80 % does."""
+    nights = nt.build_nights(night_rows(range(0, 5)), D)  # sleep onset 23:00
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    easy = session(d(1), 21, 40, hr=136, sid=1)  # ends 21:40, 1 h 20 before sleep: easy
+    hard = session(d(2), 21, 30, hr=165, sid=2)  # ends 21:30
+    early = session(d(3), 17, 45, hr=170, sid=3)  # ends 17:45, 5 h 15 before sleep
+    intervals = session(d(4), 20, 60, hr=142, sid=4)  # ends 21:00, average 70 %
+    intervals.segs = ((6, 168),) * 4 + ((3, 120),) * 12  # 4 × 6 min at 168: 24 min above 157
+    nt.tag_nights(nights, [easy, hard, early, intervals], [], {}, rest=35, peak=188)
+    hard_hr = 35 + nt.VIGOROUS_HRR * (188 - 35)
+    assert 136 < 142 < hard_hr < 165 and nights[D].tags == set()
+    assert nights[d(1)].tags == {"late"} and nights[d(2)].tags == set() and nights[d(3)].tags == {"late"}
+    intervals.segs = ((6, 168),) * 3 + ((3, 120),) * 12  # 18 min above: under 20, no tag
+    again = nt.build_nights(night_rows(range(0, 5)), D)
+    nt.tag_nights(again, [intervals], [], {}, rest=35, peak=188)
+    assert again[d(3)].tags == set()
+
+
+def test_hr_segments_read_the_laps_else_the_splits():
+    laps = [{"moving_time": 360, "average_heartrate": 168.0}, {"elapsed_time": 180, "average_heartrate": 120},
+            {"moving_time": 60}, "noise", {"moving_time": "x", "average_heartrate": 150}]
+    assert nt.hr_segments(laps, None) == ((6.0, 168.0), (3.0, 120.0))
+    splits = [{"moving_time": 300, "average_heartrate": 150.5}]
+    assert nt.hr_segments([], splits) == ((5.0, 150.5),) and nt.hr_segments(None, None) == ()
+    assert nt.hr_segments([{"moving_time": 60}], splits) == ((5.0, 150.5),)  # laps without HR: the splits
+
+
+async def test_load_nights_reads_the_laps_of_a_session_close_to_sleep(db_session, test_user):
+    """An interval session ending 1 h before sleep, its average under 80 % of the reserve, 24 min of its laps
+    above: the night after it is « sortie intense le soir »; an easy evening run's laps are never read."""
+    from app.models.activity import Activity
+    from app.models.health import HealthMetric
+    from app.services import sante_training as st
+
+    today = date(2026, 10, 7)
+    for metric, by_day in night_rows(range(0, 20), today=today).items():  # Garmin, sleep 23:00 → 06:40
+        for d, (v, det, src) in by_day.items():
+            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=v, details=det,
+                                        source=src, n_samples=1))
+    eve = today - timedelta(days=1)
+    laps = [{"moving_time": 360, "average_heartrate": 172}] * 4 + [{"moving_time": 180, "average_heartrate": 120}] * 8
+    for sid, (hour, hr, lp) in enumerate(((20, 140, laps), (18, 130, None))):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=4400 + sid, sport_type="Run", name=f"r{sid}",
+                                start_date=datetime(eve.year, eve.month, eve.day, hour, tzinfo=timezone.utc)
+                                - timedelta(hours=2) - timedelta(days=sid), distance=12000,
+                                moving_time=3600, elapsed_time=3600, total_elevation_gain=20, average_heartrate=hr,
+                                max_heartrate=185, laps=lp, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    sessions = await st.load_sessions(db_session, test_user.id, today)
+    nights = await nt.load_nights(db_session, test_user.id, today, sessions=sessions, rest=45, peak=185)
+    assert "late" in nights[today].tags  # the intervals: 24 min above 45 + 0,8 × 140 = 157 bpm
+    late, easy = sorted(sessions, key=lambda s: s.day, reverse=True)
+    assert late.segs and easy.segs is None  # ended 1 h before sleep: read; the other, 2 days ago at 19:00: never
 
 
 def test_late_nap_annotates_without_excluding():

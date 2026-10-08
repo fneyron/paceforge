@@ -17,10 +17,13 @@
     </g>
     {% endfor %}
     {% for l in w.longs %}<path d="M{{ l.x }} {{ w.base + 14 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
-    {% for l in w.spikes %}<path d="M{{ l.x }} {{ w.base + 14 }}l4 4l-4 4l-4 -4z" class="pf-viz-long is-warn"/>{% endfor %}
+    {% for l in w.spikes %}<path d="M{{ l.x }} {{ w.base + 14 }}l4.5 8h-9z" class="pf-viz-long is-warn"/>{% endfor %}
     {% for t in w.xt %}<text x="{{ t.x }}" y="{{ w.H - 2 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
     <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ w.base }}"/></g>
     {% endcall %}
+    {#- the markers under the bars, by shape too (never colour alone): ◆ a long outing, ▲ a run over 10 % longer -#}
+    {% set marks = ([("is-long", "sortie longue")] if w.longs else []) + ([("is-spike", "10 % de plus que ta plus longue du mois")] if w.spikes else []) %}
+    {% if marks %}{{ vz.viz_legend(marks) }}{% endif %}
     {% if w.line %}<p class="pf-train-line"><a href="{{ w.line.href }}">{{ w.line.text }}</a></p>{% endif %}
 </section>
 

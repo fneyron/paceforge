@@ -1,9 +1,11 @@
 """The owner on 2026-10-08, Santé v4's fixture: his real COROS nights 29/09 →
 08/10 as the COROS sync writes them (the 07 → 08 night read from COROS that
 morning: 22:42 → 07:30, 8h36, no nap; PaceForge's own VFC from the raw series,
-100 ms; « Sleep HR » 35 bpm) and the Transjeju 100M as a plain activity
-(02/10 21:00 in Korea, 16h53 stops included, marked as a race on Strava:
-just an activity for Santé). No Route is read by Santé."""
+100 ms; « Sleep HR » 35 bpm; the three nights before the Transjeju with their
+own raw HRV series and « Sleep HR », read the same morning) and the Transjeju
+100M as a plain activity (02/10 21:00 in Korea, 16h53 stops included, marked
+as a race on Strava: just an activity for Santé). His real log has no activity
+after it. No Route is read by Santé."""
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,8 +22,17 @@ TRANSJEJU_ELAPSED = oc.TRANSJEJU_END - oc.TRANSJEJU_START  # 16:53:27
 
 
 def owner_rows_v4() -> dict:
-    """{metric: {day: (value, details, source)}}: owner_rows (29/09 → 07/10) and the 08/10 night."""
+    """{metric: {day: (value, details, source)}}: owner_rows (29/09 → 07/10), the
+    VFC and FC de nuit of 29/09 → 01/10, and the 08/10 night."""
     rows = owner_rows()
+    old = coros.parse_sleep_overview(oc.OVERVIEW_2026)
+    early = coros.parse_hrv_points(oc.HRV_2026_10_01)
+    read = coros.hrv_days(oc.HRV_2026_09_28) | coros.hrv_days(oc.HRV_2026_10_01)
+    for r in coros.hrv_dailies(early, old, read):
+        rows["hrv"][r.day] = (r.value, r.details, "COROS")
+    for r in coros.hr_night_dailies(coros.parse_daily_sleep(oc.DAILY_2026_10_01), old,
+                                    coros.parse_naps(oc.OVERVIEW_2026)):
+        rows["hr_night"][r.day] = (r.value, r.details, "COROS")
     ov = coros.parse_sleep_overview(oc.OVERVIEW_2026_10_08)
     naps = coros.parse_naps(oc.OVERVIEW_2026_10_08)
     for r in coros.sleep_dailies(ov, {d: 36 for d in ov}):

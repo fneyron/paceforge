@@ -225,7 +225,7 @@ async def _seed(db: AsyncSession, user: User, today: date):
 
 
 async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_session: AsyncSession,
-                                                        test_user: User, monkeypatch):
+                                                        test_user: User, monkeypatch, same_today):
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     today = await st.athlete_today(db_session, test_user.id)

@@ -740,7 +740,7 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
                                                          test_user: User, fake):
     page = (await as_user.get("/settings")).text
-    assert "Tes nuits et tes séances arrivent automatiquement depuis ta montre COROS." in page
+    assert "Tes nuits et tes activités arrivent automatiquement depuis ta montre COROS." in page
     assert 'href="/sante"' in page
     assert 'href="/coros/connect?region=monde"' in page and "Connecter COROS" in page
 

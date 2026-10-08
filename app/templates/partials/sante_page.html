@@ -1,9 +1,10 @@
 {#- Santé v4, one page (app.services.sante.health_page), WHOOP/Oura-like, top to bottom: the three rings, the state
-    and at most one sentence, the Contributeurs, the cards « Récupération · 14 jours », the Sommeil section (last night,
-    its timeline, the 14 nuits / 3 mois bars, the habits), « VFC · 30 nuits », « FC de nuit · 30 nuits », « Charge ·
-    14 jours », then the closed folds. Each number is printed once on the page: the rings print today's score, this
-    morning's 24-h sleep and the last 7 days' hours; the cards' readouts rest on something else until a tap. The tone
-    is in a glyph and a word too, never colour alone. -#}
+    (the band of the score) and at most one sentence, the Contributeurs, the cards « Récupération · 14 jours », the
+    Sommeil section (last night, its timeline, the 14 nuits / 3 mois bars and their legend, the habits), « VFC · 30
+    nuits », « FC de nuit · 30 nuits », « Charge · 14 jours », then the closed folds. Each number is printed once on
+    the page: the rings print today's score, this morning's 24-h sleep and the last 7 days' hours; the cards' readouts
+    rest on something else until a tap (a mean, a count, the latest night of a card no ring prints). The tone is in a
+    glyph and a word too, never colour alone. -#}
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 
@@ -16,7 +17,7 @@
     <h2 class="pf-state-word"><svg class="pf-state-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">{% if p.state.tone == 'ok' %}<circle cx="8" cy="8" r="6.5"/>{% elif p.state.tone == 'warn' %}<circle cx="8" cy="8" r="5.75" class="pf-state-ring"/><path d="M8 2.25a5.75 5.75 0 0 0 0 11.5z"/>{% else %}<rect x="2" y="2" width="12" height="12" rx="2"/>{% endif %}</svg>{{ p.state.word }}</h2>
     {% if p.state.text %}<p class="pf-state-text">{% if p.state.href %}<a href="{{ p.state.href }}">{{ p.state.text }}</a>{% else %}{{ p.state.text }}{% endif %}</p>{% endif %}
     {% else %}
-    <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter une montre ›</a>{% endif %}</p>
+    <p class="pf-state-line">{{ p.line }}{% if p.connect %} <a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a>{% endif %}</p>
     {% endif %}
 </section>
 
@@ -53,7 +54,7 @@
         {% if sub %}<p class="pf-hero-sub">{{ sub|join(' · ') }}</p>{% endif %}
         {{ viz.viz_timeline(h.timeline, h.aria) }}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
-        {% if h.stages %}<p class="pf-viz-cap">Stades estimés par la montre : une allure, pas une mesure.</p>{% endif %}
+        {% if h.stages %}<p class="pf-viz-cap">Stades estimés par la montre.</p>{% endif %}
     </div>
     {% endif %}
     <div class="pf-card" data-viz-scope>
@@ -64,6 +65,8 @@
         {% for key, label in s.ranges %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
             {{ viz.viz_day_bars(s.bars[key], "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
+            {% if s.bars[key].trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")]) }}
+            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")]) }}{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -74,10 +77,11 @@
 </section>
 {% endif %}
 
-{% for key, title, c in (("vfc", "VFC · 30 nuits", p.vfc), ("fc", "FC de nuit · 30 nuits", p.fc)) if c %}
+{#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits ») -#}
+{% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
-    <h2 id="h-{{ key }}" class="pf-card-h">{{ title }}</h2>
-    {{ viz.viz_night_card(c, title) }}
+    <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>
+    {{ viz.viz_night_card(c, c.title) }}
 </section>
 {% endfor %}
 
@@ -92,13 +96,13 @@
     <details class="pf-fold pf-method">
         <summary>Comment je calcule ta récupération</summary>
         <ul>{% for l in p.method %}<li>{{ l }}</li>{% endfor %}</ul>
-        <p class="pf-refs">{% for name, doi in p.refs %}<a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a>{{ " · " if not loop.last }}{% endfor %}</p>
+        <ul class="pf-refs" aria-label="Références">{% for name, doi in p.refs %}<li><a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>
     </details>
     {% if s and s.state != "never" %}
     <details class="pf-fold pf-method">
         <summary>Comment je lis tes nuits</summary>
         <ul>{% for l in s.method %}<li>{{ l }}</li>{% endfor %}</ul>
-        <p class="pf-refs">{% for name, doi in s.refs %}<a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a>{{ " · " if not loop.last }}{% endfor %}</p>
+        <ul class="pf-refs" aria-label="Références">{% for name, doi in s.refs %}<li><a href="https://doi.org/{{ doi }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>
     </details>
     {% endif %}
     {% if s and s.rows %}

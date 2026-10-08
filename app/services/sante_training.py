@@ -60,6 +60,7 @@ class Session:
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
     offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
     elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
+    segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.load_segments)
 
 
 def _utc(dt: datetime) -> datetime:
@@ -431,6 +432,7 @@ class Effort:
     end: datetime  # local, naive
     day: date
     name: str = ""
+    start_day: date | None = None  # the local day it started (its Charge bar's day)
 
     @property
     def big(self) -> bool:
@@ -454,7 +456,7 @@ def effort_of(s: Session) -> Effort | None:
     if kind is None:
         return None
     end = (_utc(s.start) + timedelta(seconds=s.offset or 0)).replace(tzinfo=None) + timedelta(minutes=m)
-    return Effort(s.id, kind, m, end, end.date(), s.name)
+    return Effort(s.id, kind, m, end, end.date(), s.name, s.day)
 
 
 def efforts(sessions: list[Session]) -> list[Effort]:
@@ -465,7 +467,9 @@ def efforts(sessions: list[Session]) -> list[Effort]:
 def effort_window(efs: list[Effort], d: date) -> dict | None:
     """The recovery window that holds day `d` (D+1 → the class's last day
     (H)), the one with the lowest cap on that day, then the lowest Charge, then
-    the latest: {effort, days (d − D), cap, load, until}; None outside any."""
+    the latest: {effort, days (d − D, D its end's day), ago (d − the day it
+    started: what the page says, as Activités and the Charge bar date it),
+    cap, load, until}; None outside any."""
     best = None
     for e in efs:
         k = (d - e.day).days
@@ -477,6 +481,6 @@ def effort_window(efs: list[Effort], d: date) -> dict | None:
             continue
         key = (cap, load, k)
         if best is None or key < best[0]:
-            best = (key, {"effort": e, "days": k, "cap": cap, "load": load,
-                          "until": e.day + timedelta(days=caps[-1][0])})
+            best = (key, {"effort": e, "days": k, "ago": (d - (e.start_day or e.day)).days, "cap": cap,
+                          "load": load, "until": e.day + timedelta(days=caps[-1][0])})
     return best[1] if best else None

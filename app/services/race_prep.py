@@ -565,7 +565,7 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
         if -k <= CARBS_DAYS:
             out["food"] = food_plan(route, expected_s(route), getattr(user, "weight_kg", None))
         if 1 <= -k <= HOT_DAYS and hot(route):
-            out["hot"] = fr("Course chaude : quelques séances à la chaleur sur 1 à 2 semaines t'y préparent.")
+            out["hot"] = fr("Course chaude : quelques sorties à la chaleur sur 1 à 2 semaines t'y préparent.")
     else:
         out["title"] = f"Récupération · {j_label(k)}"
         races = all_races(await load_races(db, user.id, today), sessions)

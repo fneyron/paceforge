@@ -53,12 +53,18 @@ HEURISTICS = [
     ("app/services/sante_score.py", "SLEEP_POINTS", ((240, 0), (360, 60), (420, 100))),
     ("app/services/sante_score.py", "SLEEP_DEBT", 2 / 3),
     ("app/services/sante_score.py", "MIN_LOAD_SESSIONS", 6),
-    ("app/services/sante_score.py", "CAP_LOW_HRV", 60),
+    # §8 (after the visual judges): the state is the band of the score, the caps decide what it can reach
+    ("app/services/sante_score.py", "CAP_ILL", 39),
+    ("app/services/sante_score.py", "CAP_RED", 69),
+    ("app/services/sante_score.py", "RED_SUB", 40),
     ("app/services/sante_score.py", "CAP_SHORT", 65),
+    ("app/services/sante_score.py", "CAP_NO_HEART", 80),
+    # « sortie intense le soir »: only a vigorous session close to sleep (Stutz 2019; Myllymäki 2012)
+    ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
+    ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante.py", "SLEEP_FULL", 480),
     ("app/services/sante.py", "USUAL_WEEKS", 12),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
-    ("app/services/sante_sleep.py", "SHORT_MAIN_MIN", 180),
 ]
 MODULES = {"app/services/sante.py": sante, "app/services/sante_training.py": st, "app/services/nights.py": nt,
            "app/services/sante_sleep.py": sl, "app/services/race_prep.py": rp, "app/services/sante_score.py": sc,
@@ -78,6 +84,15 @@ def test_the_score_method_marks_its_heuristics():
     text = " ".join(sc.METHOD)
     assert text.count("(H)") >= 6 and "Les poids (H)" in text and "Plafonds (H)" in text and "14 nuits (H)" in text
     assert "Grosses sorties (H)" in text and "Une différence de quelques points ne veut rien dire" in text
+
+
+def test_the_late_session_gap_is_marked_h():
+    from datetime import timedelta
+    assert nt.LATE_SESSION_GAP == timedelta(hours=2)  # (H)
+    line = next(ln for ln in (ROOT / "app/services/nights.py").read_text().splitlines()
+                if ln.startswith("LATE_SESSION_GAP ="))
+    assert "(H)" in line and "Stutz 2019" in line
+    assert not hasattr(nt, "EVENING") and not hasattr(sc, "CAP_LOW_HRV") and not hasattr(sc, "place")
 
 
 def test_the_heuristics_are_marked_h_where_they_are_explained():

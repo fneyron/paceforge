@@ -1,13 +1,8 @@
 """Santé v4: « Récupération », PaceForge's own 0–100 score (owner decisions
 2026-10-07, « un score juste comme WHOOP, plus simple », and 2026-10-08:
-past activities only, no check-in, no race). No brand metric enters it.
+past activities only, no check-in, no race; after the visual judges: the
+state comes from the score, like WHOOP). No brand metric enters it.
 
-The state (sante_today.state) comes first; the score is placed INSIDE the
-band of its tone, so the number and the state never disagree:
-    ok « Bien récupéré » → 70–100, warn « Récupération en cours » → 40–69,
-    danger « À ménager » → 0–39;
-    score = low + (high − low) × raw / 100, rounded half up on the exact value
-    (raw and the placed value snapped to 1e-9 first: 6,5 is never 6,4999…).
 raw (0–100) is the weighted mean of the components present, each scored 0–100
 only when its own data rule holds (every threshold is (H) unless cited):
 1. VFC · 7 nuits (≥ 3 usable nights in the last 7 and a band, full or
@@ -28,21 +23,31 @@ only when its own data rule holds (every threshold is (H) unless cited):
 Weights (H): VFC 30, FC de nuit 25, Sommeil 25, Charge 20, renormalised over
 the components present. No score without a nightly component (VFC, FC de
 nuit or Sommeil): the activities alone say nothing of recovery.
-Caps on raw (H): the recovery window's (≥ 10 h: 40 on D+1 → D+3, then 65
-until D+10; 6–10 h: 45 on D+1 → D+2, then 65 until D+5; long: 65 on D+1 →
-D+2); the 7-night HRV under its band with the nightly HR ≥ its median + 3 bpm:
-60; a 24-h total under 6 h: 65. The illness alert sets the tone (0–39).
-A difference of a few points means nothing: the method fold says so.
+Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
+nights.illness_alert) → 39; a recovery window (≥ 10 h: 40 on D+1 → D+3, then
+65 until D+10; 6–10 h: 45 on D+1 → D+2, then 65 until D+5; long: 65 on D+1 →
+D+2); a component under 40 → 69 (a red contributor never sits under a green
+ring); neither VFC nor FC de nuit in the score → 80 (sleep and load alone never
+say « fully recovered »: a watch worn some nights only would make every rested
+morning a 100); a 24-h total under 6 h → 65.
+score = the capped raw, rounded half up on the exact value (snapped to 1e-9:
+64,5 is 65, never 64,4999…). The state is its band (sante_today.state):
+≥ 70 « Bien récupéré », 40–69 « Récupération en cours », < 40 « À ménager »:
+the number and the state never disagree. The state's sentence names the main
+reason (`reason`): the alert, else the cap that binds, else the lowest
+component. A difference of a few points means nothing: the method fold says so.
 History: the 13 days before today are recomputed from what is stored, each
-from what was known that day (sante._history); nothing is persisted.
+from what was known that day, with the same rule (sante._history); nothing is
+persisted.
 """
 import math
 from datetime import date
 
 from app.services import sante_today as td
 from app.services import viz
+from app.services.nights import SHORT_DAY_MIN
 
-BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}
+BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}  # the state is the band of the score
 WEIGHTS = {"hrv": 30, "hr": 25, "sleep": 25, "load": 20}  # (H)
 ORDER = ("hrv", "hr", "sleep", "load")
 NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them
@@ -54,34 +59,31 @@ HR_FULL_BPM, HR_ZERO_BPM = 2, 10  # (H) the 7-night mean over the band's median
 SLEEP_POINTS = ((240, 0), (360, 60), (420, 100))  # (H) 24-h minutes → sub-score (7 h: Johnston 2020; 6 h: Craven 2022)
 SLEEP_DEBT = 2 / 3  # (H) points off per minute of the 7-day mean under the usual
 MIN_LOAD_SESSIONS = 6  # (H) activities in 42 days before « Charge récente » counts outside a window
-CAP_LOW_HRV, CAP_SHORT = 60, 65  # (H) caps on raw: HRV under its band with nightly HR up; a 24-h total < 6 h
+CAP_ILL = 39  # (H) the nightly-HR illness alert: « À ménager »
+CAP_RED, RED_SUB = 69, 40  # (H) a component under 40: never a green ring over a red contributor
+CAP_SHORT = 65  # (H) a 24-h total under 6 h (Craven 2022)
+CAP_NO_HEART = 80  # (H) neither VFC nor FC de nuit in the score: sleep and Charge alone never make a 100
+CAPS = ("ill", "effort", "short", "red", "no_heart")  # equal caps: the first names the reason
+HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
 
 METHOD = [
-    "Ton état vient d'abord, de tes activités passées et de tes nuits seulement : FC de nuit nettement au-dessus "
-    "de ta normale 2 nuits de suite → à ménager ; une grosse sortie récente, une VFC basse avec une FC de nuit "
-    "haute, ou moins de 6 h de sommeil sur 24 h → récupération en cours ; sinon, bien récupéré.",
-    "Le score se place dans la plage de cet état : 70–100 bien récupéré, 40–69 récupération en cours, 0–39 à "
-    "ménager. Le chiffre et l'état ne peuvent pas se contredire.",
-    "Il fait la moyenne de 4 signaux au plus, notés de 0 à 100, chacun seulement quand ses données suffisent : VFC "
-    "sur 7 nuits (poids 30), FC de nuit sur 7 nuits (25), sommeil sur 24 h siestes comprises (25), charge récente "
-    "(20). Les poids (H) se répartissent sur les signaux présents ; sans aucune nuit, pas de score.",
-    "VFC (H) : pleine note dans ta normale ou au-dessus (au-dessus n'est jamais un bonus : Plews 2013), zéro à 2,5 "
-    "écarts-types en dessous. FC de nuit (H) : pleine note jusqu'à +2 bpm sur ta médiane, zéro à +10.",
-    "Sommeil (H) : pleine note dès 7 h (le seuil de Johnston 2020), 60 à 6 h (le seuil de Craven 2022), 0 à 4 h ; "
-    "au plus 40 quand ta moyenne sur 7 jours est 90 min sous ton habitude.",
-    "Grosses sorties (H), d'après leur durée arrêts compris, courses comprises : 10 h et plus → 10 jours de "
-    "récupération (score plafonné à 40 les 3 premiers jours, puis à 65) ; 6 à 10 h → 5 jours (45, puis 65) ; 3 h "
-    "ou 1 500 m D+ à pied → 2 jours (65). La charge récente vaut alors 20, 30 ou 50. Les 3 nuits après 6 h et "
-    "plus restent hors de ta normale : la FC de nuit peut y monter très haut (Hynynen 2010).",
-    "Plafonds (H) : VFC basse avec FC de nuit haute, 60 ; moins de 6 h sur 24 h, 65. L'alerte FC de nuit place le "
-    "score entre 0 et 39.",
-    "Une différence de quelques points ne veut rien dire : d'une nuit à l'autre la VFC varie d'environ 12 % "
-    "(Buchheit 2014). Regarde l'état et la tendance sur 14 jours.",
-    "Ta normale est « provisoire » de 7 à 14 nuits (H) : elle bouge encore. L'alerte FC de nuit attend 14 nuits "
-    "pour rester spécifique (Quer 2021) : un graphique calme n'est pas un certificat de bonne santé. Aucun score "
-    "de marque n'y entre : peu sont validés (Doherty 2025).",
+    "Ton score est la moyenne de tes signaux, chacun noté sur 100 : VFC sur 7 nuits, FC de nuit sur 7 nuits, sommeil "
+    "sur 24 h siestes comprises, charge récente. Les poids (H) : 30, 25, 25, 20, répartis sur les signaux présents ; "
+    "sans aucune nuit, pas de score. Ton état en découle : 70 et plus, bien récupéré ; 40 à 69, récupération en "
+    "cours ; moins de 40, à ménager.",
+    "Notes (H) : VFC pleine dans ta normale ou au-dessus (jamais un bonus : Plews 2013), nulle 2,5 écarts-types sous "
+    "elle ; FC de nuit pleine jusqu'à +2 bpm sur ta médiane, nulle à +10 ; sommeil plein dès 7 h (Johnston 2020), "
+    "60 à 6 h (Craven 2022), 0 à 4 h, moins quand ta semaine dort bien sous ton habitude.",
+    "Plafonds (H) : FC de nuit nettement au-dessus de ta normale 2 nuits de suite, 39 ; un signal sous 40, 69 ; "
+    "moins de 6 h de sommeil sur 24 h, 65 ; sans VFC ni FC de nuit, 80 : une longue nuit seule ne fait pas un 100.",
+    "Grosses sorties (H), à leur durée arrêts compris, courses comprises : 10 h et plus → score plafonné à 40 les 3 "
+    "jours qui suivent la fin, puis à 65 jusqu'au 10e ; 6 à 10 h → 45, puis 65 jusqu'au 5e ; 3 h ou 1 500 m D+ à "
+    "pied → 65 pendant 2 jours. Les 3 nuits (H) qui suivent 6 h et plus restent hors de ta normale (Hynynen 2010).",
+    "Une différence de quelques points ne veut rien dire : la VFC varie d'environ 12 % d'une nuit à l'autre "
+    "(Buchheit 2014). Ta normale est « provisoire » de 7 à 14 nuits (H) ; l'alerte FC de nuit attend 14 nuits "
+    "(Quer 2021). Aucun score de marque n'y entre (Doherty 2025).",
 ]
 REFS = [
     ("Plews 2013", "10.1007/s40279-013-0071-8"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),
@@ -163,57 +165,81 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     return parts, absent
 
 
-def caps(day: dict) -> list[tuple[float, str]]:
-    """[(cap on raw, why)] of the rules that hold on this day."""
+def caps(day: dict, parts: list[dict]) -> list[tuple[float, str]]:
+    """[(cap on raw, key)] of the rules that hold on this day (`parts`: its
+    components): ill, effort, short, red, no_heart (see the module docstring)."""
     out = []
-    w = day["window"]
-    if w:
-        out.append((w["cap"], "grosse sortie"))
-    s = day["stats"]
-    if s["hrv"]["status"] == "below" and day["hr_up"]:
-        out.append((CAP_LOW_HRV, "VFC basse et FC de nuit haute"))
-    if day["tst24"] is not None and day["tst24"] < td.SHORT_DAY_MIN:
-        out.append((CAP_SHORT, "nuit courte"))
+    if day["alert"]:
+        out.append((CAP_ILL, "ill"))
+    if day["window"]:
+        out.append((day["window"]["cap"], "effort"))
+    if day["tst24"] is not None and day["tst24"] < SHORT_DAY_MIN:
+        out.append((CAP_SHORT, "short"))
+    if any(p["sub"] < RED_SUB for p in parts):
+        out.append((CAP_RED, "red"))
+    if not any(p["key"] in HEART for p in parts):
+        out.append((CAP_NO_HEART, "no_heart"))
     return out
 
 
-def place(tone: str, raw: float) -> int:
-    """The score inside the tone's band, rounded half up on the exact value
-    (snapped to 1e-9: 39 × 16,67 % is 6,5 → 7, never 6,4999… → 6)."""
-    lo, hi = BANDS[tone]
-    return int(math.floor(round(lo + (hi - lo) * raw / 100, 9) + 0.5))
+def tone_of(value: float) -> str:
+    """The state is the band of the score: ok ≥ 70, warn 40–69, danger < 40."""
+    return next(tone for tone, (lo, _) in BANDS.items() if value >= lo)
 
 
-def score_of(day: dict, state: dict | None) -> dict:
-    """{value, tone, raw, raw0, parts, absent, caps (binding)} for one day, or
-    {value: None, parts, absent} (no state, or no nightly component)."""
+def rounded(x: float) -> int:
+    """Half up on the exact value (snapped to 1e-9: 64,5 is 65, never 64,4999… → 64)."""
+    return int(math.floor(round(x, 9) + 0.5))
+
+
+def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str | None:
+    """What the state's sentence names, None on a green day: the illness alert
+    (whenever it holds), else the cap that binds (effort, short), else the
+    lowest component (a red one under its cap, or the plain lowest): hrv, hr,
+    sleep (« short » under 6 h), load (its recovery window: « effort »)."""
+    if tone == "ok":
+        return None
+    if day["alert"]:
+        return "ill"
+    if binding and binding[0] in ("effort", "short"):
+        return binding[0]
+    low = min(parts, key=lambda p: (p["sub"], ORDER.index(p["key"])))["key"]
+    if low == "load":
+        return "effort" if day["window"] else None
+    if low == "sleep" and day["tst24"] is not None and day["tst24"] < SHORT_DAY_MIN:
+        return "short"
+    return low
+
+
+def score_of(day: dict) -> dict:
+    """{value, tone, raw, raw0, parts, absent, caps (binding keys, the lowest
+    first), reason} for one day, or {value: None, …} without a nightly
+    component (then no state either)."""
     parts, absent = components(day)
-    if state is None or not any(p["key"] in NIGHTLY for p in parts):
-        return {"value": None, "tone": state["tone"] if state else None, "parts": parts, "absent": absent}
+    if not any(p["key"] in NIGHTLY for p in parts):
+        return {"value": None, "tone": None, "parts": parts, "absent": absent, "caps": [], "reason": None}
     raw0 = round(sum(p["sub"] * p["weight"] for p in parts), 9)  # 49,99999999999999 is 50
-    held = caps(day)
+    held = caps(day, parts)
     raw = min([raw0] + [c for c, _ in held])
-    return {"value": place(state["tone"], raw), "tone": state["tone"], "raw": raw, "raw0": raw0, "parts": parts,
-            "absent": absent, "caps": [w for c, w in held if c < raw0]}
-
-
-def measured(day: dict) -> bool:
-    """A nightly component holds today (the state's « at least one measured signal »)."""
-    return any(p["key"] in NIGHTLY for p in components(day)[0])
+    value = rounded(raw)
+    tone = tone_of(value)
+    binding = [k for _, _, k in sorted((c, CAPS.index(k), k) for c, k in held if c < raw0)]
+    return {"value": value, "tone": tone, "raw": raw, "raw0": raw0, "parts": parts, "absent": absent,
+            "caps": binding, "reason": reason(tone, binding, parts, day)}
 
 
 # ── what the page draws ─────────────────────────────────────────────────────
 
-def ring(score: dict, state: dict | None) -> dict:
-    """The Récupération ring: the score, the arc in the state's colour, the
-    state's short word under it (the state line below says it in full)."""
+def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
+    """The Récupération ring: the score, the arc in the state's colour; under
+    it only the label (the state's word is the title just below). `href`:
+    the section it sums up, None when the page has none (a plain ring)."""
     v = score.get("value")
     if v is None:
-        aria = f"Récupération : pas de score. {state['aria']}" if state else "Récupération : pas de score"
-        return viz.ring("recup", None, "—", "Récupération", state["short"] if state else None,
-                        tone=state["tone"] if state else "none", href="#contributeurs", aria=aria)
-    return viz.ring("recup", v / 100, str(v), "Récupération", state["short"], tone=state["tone"],
-                    href="#contributeurs", aria=f"Récupération {v} sur 100. {state['aria']}")
+        return viz.ring("recup", None, "—", "Récupération", tone="none", href=href,
+                        aria="Récupération : pas de score ce matin")
+    return viz.ring("recup", v / 100, str(v), "Récupération", tone=state["tone"], href=href,
+                    aria=f"Récupération {v} sur 100. {state['aria']}")
 
 
 def _word(p: dict, state: dict | None) -> str:
@@ -228,28 +254,37 @@ def _word(p: dict, state: dict | None) -> str:
         return ("basse" if p["status"] == "below" else "dans ta normale") + prov
     if k == "sleep":
         t = p["tst24"]
-        return ("courte" if t < td.SHORT_DAY_MIN else "plus courte que d'habitude" if p["debt"]
-                else "un peu courte" if t < SLEEP_POINTS[2][0] else "suffisante")
+        return ("court" if t < SHORT_DAY_MIN else "plus court que d'habitude" if p["debt"]
+                else "un peu court" if t < SLEEP_POINTS[2][0] else "suffisant")
     w = p.get("window")
     if not w:
         return "pas de grosse sortie"
     # the state line already says when: only the words here (each number printed once)
-    return "grosse sortie" if state and state["key"] == "effort" else f"grosse sortie {td.ago_short(w['days'])}"
+    return "grosse sortie" if state and state["key"] == "effort" else f"grosse sortie {td.ago_short(w['ago'])}"
 
 
 def sleep_tone(tst24: float) -> str:
     """The Sommeil ring's colour, and its Contributeurs bar's: ≥ 7 h ok
     (Johnston 2020), 6–7 h warn, < 6 h danger (Craven 2022)."""
-    return "ok" if tst24 >= SLEEP_POINTS[2][0] else "warn" if tst24 >= td.SHORT_DAY_MIN else "danger"
+    return "ok" if tst24 >= SLEEP_POINTS[2][0] else "warn" if tst24 >= SHORT_DAY_MIN else "danger"
+
+
+SEVERITY = ("ok", "warn", "danger")
 
 
 def _tone(p: dict) -> str:
     """A Contributeurs bar's colour (its word says it too): the sleep row as
-    the Sommeil ring, so one name never wears two colours; the others by
-    their sub-score, on the score's bands (≥ 70, 40–69, < 40)."""
+    the Sommeil ring, so one name never wears two colours, or worse when the
+    week sleeps well under the usual (its sub-score's then, as its word
+    says); Charge récente neutral, as the Charge ring (it describes the
+    activities, never warns); the others by their sub-score, on the score's
+    bands (≥ 70, 40–69, < 40)."""
+    if p["key"] == "load":
+        return "accent"
     if p["key"] == "sleep":
-        return sleep_tone(p["tst24"])
-    return next(tone for tone, (lo, _) in BANDS.items() if p["sub"] >= lo)
+        ring = sleep_tone(p["tst24"])
+        return max(ring, tone_of(p["sub"]), key=SEVERITY.index) if p["debt"] else ring
+    return tone_of(p["sub"])
 
 
 def contributors(score: dict, state: dict | None) -> dict | None:
@@ -269,29 +304,32 @@ def contributors(score: dict, state: dict | None) -> dict | None:
 
 def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> dict | None:
     """« Récupération · 14 jours »: one bar per day with a score, in its
-    state's colour (and its word in the readout: never colour alone), today
-    marked; tap a bar → [the day, « 59 · Récupération en cours », the
-    sentence]. It rests on a hint, no number: today's score is the ring's.
-    None under 2 days with a score."""
+    state's colour, with faint 40 and 70 lines labelled on the right (the
+    bands: never colour alone), today's day on a disc; tap a bar → « 64 »
+    « ◐ Récupération en cours » / « mer. 7 oct. · the sentence ». It rests on
+    the mean of the days with a score (nothing selected: today's score is
+    the ring's). None under 2 days with a score."""
     days = [d for d, _, _ in history]
-    with_score = [(d, st, s) for d, st, s in history if s.get("value") is not None]
+    with_score = [s["value"] for _, _, s in history if s.get("value") is not None]
     if len(with_score) < 2:
         return None
-    values, classes, r, a = [], [], [], []
+    values, classes, tones, r, a = [], [], [], [], []
     for d, st, s in history:
         v = s.get("value")
         values.append(v)
         classes.append(s["tone"] if v is not None else "")
+        tones.append(s["tone"] if v is not None else "")
         if v is None:
-            r.append([viz.d_short(d), "—", "pas de score"])
+            r.append(["—", "", f"{viz.d_short(d)} · pas de score"])
             a.append(f"{viz.d_long(d)} : pas de score")
             continue
-        r.append([viz.d_short(d), f"{v} · {st['word']}", st["text"] or ""])
+        r.append([str(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {st['short']}" if st["short"] else "")])
         a.append(f"{viz.d_long(d)} : récupération {v} sur 100, {st['word'].lower()}."
                  + (f" {st['text']}" if st["text"] else ""))
-    c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, y_max=100,
-                     today=len(days) - 1 if days and days[-1] == today else None,
+    c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
+                     lines=((70, "70"), (40, "40")), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
-    return viz.rest(c, ["", "", "Touche un jour pour son score et son état."],
-                    f"Récupération sur les {len(days)} derniers jours. Touche un jour pour son score et son état.",
-                    back=len(days) - 1)
+    mean = rounded(sum(with_score) / len(with_score))
+    return viz.rest(c, [str(mean), "en moyenne", ""],
+                    f"Récupération sur les {len(days)} derniers jours : {mean} en moyenne. Touche un jour pour son "
+                    "score et son état.", back=len(days) - 1)

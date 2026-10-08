@@ -9,10 +9,12 @@
   intervals (a shape, not a measure: Schyvens 2025; Lee 2023); the naps on
   their own lane (never in the night's timing, HR or HRV: Mollicone 2008).
 - 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
-  naps lighter on top), the ≈ 7 h line (Johnston 2020); « 3 mois » only with
-  a night 14 to 90 days old (else it would draw the 14 nights again). Tap a
-  bar → « Nuit 8h36 · 22:40 → 07:30 »; it rests on the range's mean (printed
-  nowhere else: the latest night is the ring's).
+  naps lighter on top), the ≈ 7 h line (Johnston 2020), a tiny legend (nuit ·
+  sieste · 7 h); « 3 mois » only with a night 14 to 90 days old (else it would
+  draw the 14 nights again), its 90 bars (each day's 24 h in one) faint under
+  the 7-night mean (Oura's long ranges). Tap a bar → « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 →
+  07:30 »; it rests on the range's mean (printed nowhere else: the latest
+  night is the ring's).
 - Habitudes: the median bedtime and wake of 28 days (5 nights at least, H),
   rounded to 5 min, and « Régularité ± 35 min », the SD of bedtime once 8
   nights are there (H; Fischer 2021). Time-zone nights and the nights after a
@@ -29,7 +31,6 @@ from app.services import viz
 
 RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
-SHORT_MAIN_MIN = 180  # (H) a main episode shorter than this may be a night cut in two: « nuit incomplète ? »
 TABLE_DAYS = 30
 REF_MIN = 7 * 60  # ≈ 7 h line (Johnston 2020)
 
@@ -45,7 +46,7 @@ METHOD = [
     "Tes siestes comptent dans le total sur 24 h ; une sieste que la montre n'a pas vue n'est pas zéro (Sargent "
     "2018 ; Chinoy 2023). Moins de 7 h par jour sur 2 semaines va avec plus de blessures (Johnston 2020).",
     "Régularité : de combien ton coucher bouge d'une nuit à l'autre, dès 8 nuits sur 28 (H ; Fischer 2021).",
-    "Les stades donnent une allure, pas une mesure (Schyvens 2025 ; Lee 2023).",
+    "Les stades sont estimés par la montre, pas mesurés (Schyvens 2025 ; Lee 2023).",
 ]
 REFS = [
     ("Chinoy 2021", "10.1093/sleep/zsaa291"), ("Schyvens 2025", "10.1093/sleepadvances/zpaf021"),
@@ -76,22 +77,22 @@ def choose(nights: dict, today: date, r: str | None) -> str:
 
 
 def _readout(n, d: date) -> tuple[list[str], str]:
-    """« Nuit 8h36 » · « 22:40 → 07:30 »; with a nap « Nuit 5h50 · sieste 2h20 » ·
-    « 23:35 → 05:40 · 8h10 sur 24 h »; a nap alone « Sieste 1h22 » · « nuit incomplète ? »."""
+    """[value, word, the night · its times] and the spoken sentence: « 8h36 » ·
+    « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap « 8h10 » « nuit
+    5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone « 1h22 »
+    « sieste seule » · « … · pas de nuit mesurée » (said plainly: no « ? »)."""
     label = viz.night_label(d)
     if n is None or not _measured(n):
-        return [label, "—", "pas de montre cette nuit"], f"{viz.night_label(d)} : pas de mesure"
+        return ["—", "", f"{label} · pas de mesure"], f"{label} : pas de mesure"
     if n.asleep is None:
-        return ([label, f"Sieste {viz.hm(n.nap_min)}", "nuit incomplète ?"],
-                f"{label} : sieste {viz.hm_long(n.nap_min)}, nuit incomplète")
+        return ([viz.hm(n.nap_min), "sieste seule", f"{label} · pas de nuit mesurée"],
+                f"{label} : sieste de {viz.hm_long(n.nap_min)} seule, pas de nuit mesurée")
     times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
     said = (f"{label} : {viz.sleep_spoken(n.asleep, n.nap_min)}, couché vers {viz.clock(n.start)}, "
             f"levé vers {viz.clock(n.end)}")
-    extra = " · nuit incomplète ?" if n.asleep < SHORT_MAIN_MIN else ""
     if n.nap_min:
-        return ([label, f"Nuit {viz.hm(n.asleep)} · sieste {viz.hm(n.nap_min)}",
-                 f"{times} · {viz.hm(n.tst24)} sur 24{viz.NNBSP}h{extra}"], said)
-    return [label, f"Nuit {viz.hm(n.asleep)}", times + extra], said
+        return [viz.hm(n.tst24), f"nuit {viz.hm(n.asleep)} + sieste {viz.hm(n.nap_min)}", f"{label} · {times}"], said
+    return [viz.hm(n.asleep), "", f"{label} · {times}"], said
 
 
 def bars(nights: dict, today: date, key: str) -> dict:
@@ -100,22 +101,29 @@ def bars(nights: dict, today: date, key: str) -> dict:
     days = [today - timedelta(days=n_days - 1 - i) for i in range(n_days)]
     values = [nights[d].asleep if d in nights else None for d in days]
     stack = [(nights[d].nap_min or None) if d in nights else None for d in days]
+    if n_days > 14:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
+        values = [nights[d].tst24 if d in nights else None for d in days]
+        stack = None
     r, a = [], []
     for d in days:
         read, said = _readout(nights.get(d), d)
         r.append(read)
         a.append(said)
     totals = [nights[d].tst24 for d in days if d in nights and nights[d].tst24 is not None]
-    c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a,
+    trend = None
+    if n_days > 14:  # the long range: the 7-night mean over faint bars
+        tst = [nights[d].tst24 if d in nights else None for d in days]
+        trend = [viz.rolling(tst, i) for i in range(n_days)]
+    c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
                      reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
                      summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
                              f"mesurée{'s' if len(totals) > 1 else ''}")
     if totals:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
-        return viz.rest(c, [RANGES[key][1], f"moyenne {viz.hm(mean)}", "sur 24 h, siestes comprises"],
+        return viz.rest(c, [viz.hm(mean), "en moyenne", ""],
                         f"Sommeil sur 24 heures, {RANGES[key][1]} : en moyenne {viz.hm_long(mean)}, siestes "
                         "comprises. Touche une nuit pour la sienne.")
-    return viz.rest(c, [RANGES[key][1], "—", ""], f"Sommeil, {RANGES[key][1]} : pas de nuit mesurée")
+    return viz.rest(c, ["—", "", ""], f"Sommeil, {RANGES[key][1]} : pas de nuit mesurée")
 
 
 def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:

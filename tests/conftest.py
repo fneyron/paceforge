@@ -163,3 +163,18 @@ def _fresh_sessions_cache():
     from app.services import sante_training
     sante_training._CACHE.clear()
     yield
+
+
+@pytest.fixture
+def same_today(monkeypatch):
+    """The test and the pages read one « today »: the athlete's date moves with the seeded sessions' UTC offset
+    (+2 h in tests/test_race_prep._seed), so between 22:00 and 24:00 UTC a page would be a day ahead of a date
+    read before the seed. The real UTC date, the same for both, whatever the hour the suite runs."""
+    from app.services import sante_training
+
+    day = datetime.now(timezone.utc).date()
+
+    async def today(*a, **k):
+        return day
+    monkeypatch.setattr(sante_training, "athlete_today", today)
+    return day

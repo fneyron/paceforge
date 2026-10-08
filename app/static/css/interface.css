@@ -618,21 +618,30 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 
 /* ── Santé v4: one page, WHOOP/Oura-like (sante.html, partials/sante_page.html) ─────────────────────
    Bold rings, cards on a soft background, charts first, very little text. The tone is in a glyph and a word
-   too, never colour alone. Hit areas 44 px. Motion ≤ 300 ms, only under no-preference. */
+   too, never colour alone. Hit areas 44 px. Motion ≤ 300 ms, only under no-preference. --pf-warn-mark: a
+   brighter amber for large marks (arcs, bars; ≥ 3:1 on the page and the cards), --pf-warn stays for text. */
+:root { --pf-warn-mark: 199 106 0; }
+.dark { --pf-warn-mark: var(--pf-warn); }
 .pf-sante4 [id] { scroll-margin-top: 80px; }   /* #sommeil, #vfc, #fc, #charge land under the top bar */
-.pf-sante-head { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
-.pf-sante-head .pf-h1 { font-size: 30px; }
-.pf-sante-head .pf-sante-sync { align-items: flex-end; text-align: right; margin-top: 0; }
-.pf-sante4 .pf-sante-lines { margin: 0 0 12px; }
-.pf-sante-head + :not(.pf-sante-lines) { margin-top: 12px; }
-.pf-sante-sync { margin-top: 4px; }
-.pf-sante-sync > button { min-height: 44px; }   /* « Synchroniser maintenant »: a 44 px target */
-@media (min-width: 900px) { .pf-sante-head .pf-h1 { font-size: 40px; } }
-.pf-sante-lines { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: rgb(var(--pf-gray-500)); }
+/* the head: the morning, the watches' sync on one line, the sync as a 44 px icon; messages under it, full width */
+.pf-sante-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; }
+.pf-sante-h1 { grid-column: 1; font-family: var(--pf-font-display); font-size: 24px; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; color: rgb(var(--pf-ink)); }
+.pf-sante-head .pf-sante-lines { grid-column: 1; margin-top: 2px; }
+.pf-sante-head .pf-sante-sync { display: contents; }
+.pf-sync-btn { grid-column: 2; grid-row: 1 / span 2; justify-self: end; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; color: rgb(var(--pf-accent-strong)); background: rgb(var(--pf-soft)); }
+.dark .pf-sync-btn { color: rgb(var(--pf-accent)); }
+.pf-sync-btn:hover { background: rgb(var(--pf-line)); }
+.pf-sync-ic { width: 18px; height: 18px; flex: none; }
+.pf-sync-btn.htmx-request > .pf-sync-ic, .pf-sync-btn.htmx-request > svg.pf-sync-ic { display: none; }
+.pf-sync-msg { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 4px; }
+.pf-sante-lines { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 0; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
+.pf-sante-lines > span + span::before { content: "·"; margin-right: 6px; }
 .pf-sante-lines b { font-weight: 600; color: rgb(var(--pf-gray-700)); }
+.pf-sante-head + * { margin-top: 14px; }
+@media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
 .pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
-/* the three rings */
-.pf-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 2px; }
+/* the three rings: one value size for the row */
+.pf-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 4px 2px 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
@@ -641,29 +650,29 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 11; }
 .pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 11; stroke-linecap: round; }
 .pf-ring.is-ok .pf-ring-arc { stroke: rgb(var(--pf-ok)); }
-.pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn)); }
+.pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }
 .pf-ring.is-danger .pf-ring-arc { stroke: rgb(var(--pf-danger)); }
-.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 24px; font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-ring-value.is-long { font-size: 20px; letter-spacing: -.05em; }
+.pf-ring-tick { stroke: rgb(var(--pf-ink)); stroke-width: 2.5; stroke-linecap: round; }   /* the Charge ring's usual week (1×) */
+.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-ring-recup.is-ok .pf-ring-value { color: rgb(var(--pf-ok)); }   /* the score in its state's colour, as WHOOP */
+.pf-ring-recup.is-warn .pf-ring-value { color: rgb(var(--pf-warn)); }
+.pf-ring-recup.is-danger .pf-ring-value { color: rgb(var(--pf-danger)); }
 .pf-ring.is-none .pf-ring-value { color: rgb(var(--pf-gray-400)); }
 .pf-ring-label { margin-top: 6px; font-size: 14px; font-weight: 650; line-height: 1.2; color: rgb(var(--pf-ink)); }
 .pf-ring-sub { margin-top: 1px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); }
-.pf-ring-recup.is-ok .pf-ring-sub { color: rgb(var(--pf-ok)); font-weight: 600; }
-.pf-ring-recup.is-warn .pf-ring-sub { color: rgb(var(--pf-warn)); font-weight: 600; }
-.pf-ring-recup.is-danger .pf-ring-sub { color: rgb(var(--pf-danger)); font-weight: 600; }
-@media (max-width: 374px) { .pf-ring-value { font-size: 22px; } .pf-ring-value.is-long { font-size: 18.5px; } .pf-ring-label { font-size: 13px; } }
-@media (min-width: 900px) { .pf-rings { max-width: 560px; gap: 20px; } .pf-ring-value { font-size: 28px; } .pf-ring-value.is-long { font-size: 24px; } }
+@media (max-width: 374px) { .pf-ring-value { font-size: 19px; } .pf-ring-label { font-size: 13px; } }
+@media (min-width: 900px) { .pf-rings { max-width: 560px; gap: 20px; } .pf-ring-value { font-size: 26px; } }
 /* the state: its word large, at most one sentence */
-.pf-state { margin-top: 16px; }
+.pf-state { margin-top: 14px; }
 .pf-state-word { font-family: var(--pf-font-display); font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; color: rgb(var(--pf-ink)); }
 .pf-state-glyph { display: inline-block; width: .6em; height: .6em; margin-right: 9px; vertical-align: .08em; fill: currentColor; overflow: visible; }
 .pf-state-glyph .pf-state-ring { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .pf-state.is-ok .pf-state-glyph { color: rgb(var(--pf-ok)); }
-.pf-state.is-warn .pf-state-glyph { color: rgb(var(--pf-warn)); }
+.pf-state.is-warn .pf-state-glyph { color: rgb(var(--pf-warn-mark)); }
 .pf-state.is-danger .pf-state-glyph { color: rgb(var(--pf-danger)); }
 .pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 6px; max-width: 34em; }
-.pf-state-text a { color: inherit; text-decoration: underline; text-decoration-color: rgb(var(--pf-gray-400)); text-underline-offset: 3px; padding: 10px 0; }
-.pf-state-line a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 10px 0; }
+.pf-state-text a { color: inherit; text-decoration: underline; text-decoration-color: rgb(var(--pf-gray-400)); text-underline-offset: 3px; padding: 13px 0; }   /* a 44 px target */
+.pf-state-line a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 10px 0; margin-right: 10px; }
 .dark .pf-state-line a { color: rgb(var(--pf-accent)); }
 @media (min-width: 900px) { .pf-state-word { font-size: 32px; } }
 /* cards: a soft background, the title, the chart */
@@ -672,32 +681,65 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-card-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
 .pf-card-top .pf-viz-ranges { margin-top: 0; }
 .pf-card .pf-viz { margin-top: 2px; }
-.pf-card .pf-viz-step:not([aria-disabled="true"]) { background: rgb(var(--pf-surface)); }
 .pf-card .pf-viz-band { fill: rgb(var(--pf-accent) / .16); }   /* the normal stays visible on the soft card */
-.pf-card .pf-viz-ranges > [aria-pressed="true"] { background: rgb(var(--pf-surface)); }
-.pf-viz-card .pf-viz-read { min-height: 60px; }
-.pf-viz-card .pf-viz-read-txt b { font-size: 22px; font-weight: 700; letter-spacing: -.03em; }
+/* the range toggle on a card: the app's filled pill (surface, a soft shadow) and a thin edge, never a heavy ring */
+.pf-card .pf-viz-ranges { background: rgb(var(--pf-line) / .7); }
+.pf-card .pf-viz-ranges > [aria-pressed="true"] { background: rgb(var(--pf-surface)); box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 0 0 1px rgb(var(--pf-gray-400) / .9); }
+/* a card's readout: two one-line rows across the card — the value and its word, the day and its context (a link
+   at its end) — so nothing wraps, nothing jumps, nothing reserves an empty block */
+.pf-viz-read.pf-viz-read2 { display: block; min-height: 0; margin-top: 4px; }   /* over the kit's 3-column grid */
+.pf-viz-l1 { display: flex; align-items: baseline; column-gap: 8px; min-height: 30px; white-space: nowrap; overflow: hidden; }
+.pf-viz-l1 > b { flex: none; font-family: var(--pf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 30px; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-viz-l1 > .pf-viz-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-600)); }
+.pf-viz[data-tone="ok"] .pf-viz-w { color: rgb(var(--pf-ok)); }
+.pf-viz[data-tone="warn"] .pf-viz-w { color: rgb(var(--pf-warn)); }
+.pf-viz[data-tone="danger"] .pf-viz-w { color: rgb(var(--pf-danger)); }
+.pf-viz-l2 { display: flex; align-items: baseline; column-gap: 10px; min-height: 20px; font-size: 13px; line-height: 20px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-l2 > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-viz-l2 > .pf-viz-link { flex: none; min-height: 0; padding: 12px 8px; margin: -12px -8px -12px 0; font-size: 13px; line-height: 20px; }   /* a 44 px target in a 20 px row */
+.pf-viz-l2 > .pf-viz-link.is-off { display: none; }   /* inline: nothing to reserve */
+/* the selection: a soft column behind the bar (an outline on it), a ring around a night's dot */
+.pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .07); }
+.dark .pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .1); }
+.pf-viz-card .pf-viz-cross circle.pf-viz-ring { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
 @media (min-width: 900px) { .pf-card { padding: 20px 20px 12px; } }
-/* Contributeurs, Oura-like: a name, a short word, a bar of the sub-score (no number) */
+/* Contributeurs, Oura-like: a name, a short word, a bar of the sub-score on a filled track (no number) */
 .pf-contrib ul { margin-top: 4px; }
 .pf-contrib li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; row-gap: 6px; padding: 9px 0 8px; }
 .pf-contrib li + li { border-top: 1px solid rgb(var(--pf-line)); }
 .pf-contrib-name { font-size: 14px; font-weight: 600; color: rgb(var(--pf-ink)); }
 .pf-contrib-word { font-size: 13px; color: rgb(var(--pf-gray-600)); text-align: right; }
-.pf-contrib-bar { grid-column: 1 / -1; position: relative; display: block; height: 7px; border-radius: 4px; background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-300)); overflow: hidden; }
+.pf-contrib-bar { grid-column: 1 / -1; position: relative; display: block; height: 7px; border-radius: 4px; background: rgb(var(--pf-ink) / .1); overflow: hidden; }
 .pf-contrib-bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: rgb(var(--pf-ink)); }
 .pf-contrib-bar.is-ok > i { background: rgb(var(--pf-ok)); }
-.pf-contrib-bar.is-warn > i { background: rgb(var(--pf-warn)); }
+.pf-contrib-bar.is-warn > i { background: rgb(var(--pf-warn-mark)); }
 .pf-contrib-bar.is-danger > i { background: rgb(var(--pf-danger)); }
+.pf-contrib-bar.is-accent > i { background: rgb(var(--pf-accent)); }   /* Charge récente describes, never warns */
 .pf-contrib-absent { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin: 2px 0 6px; }
-/* the cards' bars: one per day, a lighter part on top (the naps), today's label in bold */
+/* the cards' bars: one per day, a lighter part on top (the naps), today's day on an ink disc */
 .pf-bar { fill: rgb(var(--pf-accent)); }
 .pf-bar.is-ok { fill: rgb(var(--pf-ok)); }
-.pf-bar.is-warn { fill: rgb(var(--pf-warn)); }
+.pf-bar.is-warn { fill: rgb(var(--pf-warn-mark)); }
 .pf-bar.is-danger { fill: rgb(var(--pf-danger)); }
 .pf-bar-top { fill: rgb(var(--pf-accent) / .38); stroke: rgb(var(--pf-accent)); stroke-width: 1; }   /* the nap's edge ≥ 3:1 on the card */
+.pf-bar-brk { fill: rgb(var(--pf-soft)); }   /* a bar past the axis: a gap across it */
+.pf-viz-faint .pf-bar { opacity: .4; }   /* a long range: each day's 24 h faint, the 7-night mean is the mark */
 .pf-viz-gap { fill: rgb(var(--pf-viz-mark)); }
-.pf-viz-col.is-sel .pf-bar, .pf-viz-col.is-sel .pf-bar-top { stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+.pf-viz-hair { stroke: rgb(var(--pf-gray-400) / .55); stroke-width: 1; stroke-dasharray: 2 3; shape-rendering: crispEdges; }
+.pf-viz-svg .pf-viz-todisc { fill: rgb(var(--pf-ink)); }
+.pf-viz-svg text.pf-viz-today { fill: rgb(var(--pf-bg)); font-weight: 700; }
+.pf-viz-col.is-sel .pf-bar, .pf-viz-col.is-sel .pf-bar-top { stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+/* the legend under a card's chart */
+.pf-viz-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; font-size: 12px; line-height: 16px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.pf-lg { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.pf-lg.is-night { background: rgb(var(--pf-accent)); }
+.pf-lg.is-nap { background: rgb(var(--pf-accent) / .38); box-shadow: inset 0 0 0 1px rgb(var(--pf-accent)); }
+.pf-lg.is-day { background: rgb(var(--pf-accent) / .4); }
+.pf-lg.is-ref { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed rgb(var(--pf-gray-500)); }
+.pf-lg.is-mean { width: 14px; height: 0; border-radius: 0; border-top: 2px solid rgb(var(--pf-ink)); }
+.pf-lg.is-long { width: 8px; height: 8px; margin: 0 1px; border-radius: 1px; background: rgb(var(--pf-gray-600)); transform: rotate(45deg); }   /* Activités' ◆ */
+.pf-lg.is-spike { width: 10px; height: 9px; border-radius: 0; background: rgb(var(--pf-warn)); clip-path: polygon(50% 0, 100% 100%, 0 100%); }   /* Activités' ▲ */
 /* Sommeil: last night, its timeline, the habits */
 .pf-sec-h { font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: rgb(var(--pf-ink)); margin-top: 30px; }
 .pf-sleep4 .pf-sec-h + .pf-card, .pf-sleep4 .pf-sec-h + .pf-sante-note { margin-top: 10px; }
@@ -731,8 +773,9 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ntable tbody th { font-weight: 600; }
 .pf-method ul { list-style: disc; padding-left: 18px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
 .pf-method li + li { margin-top: 6px; }
-.pf-refs { font-size: 12px; line-height: 1.8; color: rgb(var(--pf-gray-500)); margin-top: 10px; }
-/* each reference a 44 px target, never split across two lines */
+/* the references: one per line, two columns, each a 44 px target */
+.pf-method ul.pf-refs { list-style: none; padding-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; margin-top: 8px; font-size: 12px; line-height: 20px; }
+.pf-method .pf-refs li + li { margin-top: 0; }
 .pf-refs a { display: inline-block; min-height: 44px; padding: 12px 0; line-height: 20px; white-space: nowrap; }
 .pf-refs a { color: rgb(var(--pf-accent-strong)); }
 .dark .pf-refs a { color: rgb(var(--pf-accent)); }
@@ -743,12 +786,18 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 @media (forced-colors: active) {
     .pf-ring-track { stroke: CanvasText; stroke-width: 2; }   /* a thin track, a thick arc: the value without colour */
     .pf-ring-arc, .pf-ring.is-ok .pf-ring-arc, .pf-ring.is-warn .pf-ring-arc, .pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }
+    .pf-ring-tick { stroke: CanvasText; }
     .pf-card, .pf-habits > div { border: 1px solid CanvasText; }
     .pf-bar, .pf-bar.is-ok, .pf-bar.is-warn, .pf-bar.is-danger, .pf-tl-night, .pf-tl-seg, .pf-viz-gap { fill: CanvasText; }
     .pf-bar-top, .pf-tl-nap { fill: Canvas; stroke: CanvasText; stroke-width: 1; }
+    .pf-bar-brk { fill: Canvas; }
     .pf-viz-col.is-sel :is(.pf-bar, .pf-bar-top) { fill: Highlight; stroke: Highlight; }
+    .pf-viz-card .pf-viz-cross rect { fill: transparent; stroke: Highlight; stroke-width: 1; }
+    .pf-viz-svg .pf-viz-todisc { fill: CanvasText; }
+    .pf-viz-svg text.pf-viz-today { fill: Canvas; }
     .pf-contrib-bar { border: 1px solid CanvasText; background: Canvas; }
-    .pf-contrib-bar > i, .pf-contrib-bar.is-ok > i, .pf-contrib-bar.is-warn > i, .pf-contrib-bar.is-danger > i { background: CanvasText; forced-color-adjust: none; }
+    .pf-contrib-bar > i, .pf-contrib-bar.is-ok > i, .pf-contrib-bar.is-warn > i, .pf-contrib-bar.is-danger > i, .pf-contrib-bar.is-accent > i { background: CanvasText; forced-color-adjust: none; }
+    .pf-lg { forced-color-adjust: none; background: CanvasText; }
 }
 
 /* ── Réglages ─────────────────────────────────────────────────────────── */

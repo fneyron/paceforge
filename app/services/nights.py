@@ -10,8 +10,8 @@ Rules, with where they come from (evidence_final.md; (H) = a PaceForge
 heuristic, never shown as a finding):
 - Naps count in the 24-h total only, never in timing, regularity, nightly
   HR/HRV or the hypnogram (Mollicone 2008; Romyn 2018). A nap belongs to the
-  day it ends. A day with naps but no main episode has no 24-h total (« nuit
-  incomplète ? »).
+  day it ends. A day with naps but no main episode has no 24-h total (« sieste
+  seule, pas de nuit mesurée »).
 - Times are the watch's detection, approximate: printed rounded to 5 min
   (de Zambotti 2024).
 - « Rendormi » (H): a nap starting ≤ 3 h after the main wake leaves that wake
@@ -19,9 +19,11 @@ heuristic, never shown as a finding):
 - « Après sieste tardive »: a nap ending < 7 h before the next main onset
   annotates that night (Mograss 2022); it does not exclude it.
 - Excluded nights (H), out of the band and of the 7-night means: a session
-  ≥ 90 min the day before (Myllymäki 2012), a vigorous session ending ≤ 1 h
-  before sleep onset (Stutz 2019) or a hard evening session (Myllymäki 2012;
-  the 17:00 start that defines « evening » is H), sleeping at altitude
+  ≥ 90 min the day before (Myllymäki 2012), a vigorous session ending ≤ 2 h
+  before sleep onset (« sortie intense le soir »: average HR ≥ 80 % of the
+  heart-rate reserve, or ≥ 20 min above it in its laps or km splits; Stutz
+  2019's ≤ 1 h and Myllymäki 2012's vigorous evening session, the 2 h and
+  the 80 % are H: an easy evening run never drops a night), sleeping at altitude
   (Latshang 2013; inferred from the day's highest point ≥ 1 600 m, H), a time
   zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
   change at home is none; the night it shows and the next 2, H), the nights
@@ -81,9 +83,9 @@ REGULARITY_NIGHTS = 8  # of 28 days, any order (H; Fischer 2021)
 RESETTLE_H = 3  # (H) a nap starting this soon after the wake: « rendormi »
 LATE_NAP_H = 7  # nap ending < 7 h before onset (Mograss 2022)
 LONG_SESSION_MIN = 90  # Myllymäki 2012
-LATE_SESSION_GAP = timedelta(hours=1)  # Stutz 2019
-EVENING = time(17, 0)  # (H) a hard session starting after 17:00 is an « evening » one
-VIGOROUS_HRR = 0.6  # (H) average HR ≥ 60 % of the heart-rate reserve
+LATE_SESSION_GAP = timedelta(hours=2)  # (H) a vigorous session ending this soon before sleep onset (Stutz 2019: ≤ 1 h)
+VIGOROUS_HRR = 0.8  # (H) average HR ≥ 80 % of the heart-rate reserve: vigorous (Myllymäki 2012); easy is ≈ 60–70 %
+VIGOROUS_MIN = 20  # (H) or this many minutes above it in its laps, else its km splits (an interval session)
 ALTITUDE_M = 1600  # (H) Latshang 2013 studied 1 630–2 590 m
 TZ_CHANGE_MIN = 60  # (H) a step of MORE than this: a 1-h clock change (DST) at home is no time zone change
 TZ_NIGHTS = 3  # the night the change shows and the next 2 (H)
@@ -254,8 +256,14 @@ def _local(s, t: datetime) -> datetime:
 
 
 def vigorous(s, rest: float, peak: float) -> bool:
-    """A session whose average HR is ≥ 60 % of the heart-rate reserve (H): « late » reads it."""
-    return bool(s.hr) and s.hr >= rest + VIGOROUS_HRR * (peak - rest)
+    """A vigorous session (H): its average HR ≥ 80 % of the heart-rate reserve,
+    or ≥ 20 min above that in its laps (else its km splits: `s.segs`, loaded
+    by load_segments for the sessions that could tag a night). « late » reads
+    it; an easy evening run (≈ 60–70 %) is not one."""
+    if not s.hr:
+        return False
+    hard = rest + VIGOROUS_HRR * (peak - rest)
+    return s.hr >= hard or sum(m for m, hr in (getattr(s, "segs", None) or ()) if hr >= hard) >= VIGOROUS_MIN
 
 
 def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date, dict] | None = None,
@@ -289,16 +297,62 @@ def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date
 
 def late_candidates(n: Night, sessions) -> list:
     """The sessions (of the day before and of the day) that tag night `n`
-    « late » when they are vigorous: one ending ≤ 1 h before sleep onset
-    (Stutz 2019), or a hard evening session (Myllymäki 2012; 17:00 is H)."""
+    « late » when they are vigorous: those ending ≤ 2 h before its sleep onset
+    (H; Stutz 2019: ≤ 1 h). A night without a known onset has none."""
+    if not n.start:
+        return []
     out = []
     for s in sessions:
-        start = _local(s, s.start)
-        end = start + timedelta(minutes=s.elapsed or s.minutes)
-        if (n.start and timedelta(0) <= n.start - end <= LATE_SESSION_GAP) or (
-                s.day == n.day - timedelta(days=1) and start.time() >= EVENING and (not n.start or end <= n.start)):
+        end = _local(s, s.start) + timedelta(minutes=s.elapsed or s.minutes)
+        if timedelta(0) <= n.start - end <= LATE_SESSION_GAP:
             out.append(s)
     return out
+
+
+def hr_segments(laps, splits) -> tuple:
+    """((minutes, average HR), …) of an activity's laps, else of its km splits
+    (Strava's shapes): what « ≥ 20 min above » reads; () without them."""
+    for rows in (laps, splits):
+        if not isinstance(rows, list):
+            continue
+        out = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            try:
+                hr = float(r.get("average_heartrate") or 0)
+                sec = float(r.get("moving_time") or r.get("elapsed_time") or 0)
+            except (TypeError, ValueError):
+                continue
+            if hr > 0 and sec > 0:
+                out.append((sec / 60, hr))
+        if out:
+            return tuple(out)
+    return ()
+
+
+async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -> None:
+    """Each session that could tag a night « late » (late_candidates) gets its
+    laps' (else its splits') HR segments as `segs`, in one read; the others
+    keep None (their average alone is read)."""
+    from app.models.activity import Activity
+
+    by_day = defaultdict(list)
+    for s in sessions:
+        by_day[s.day].append(s)
+    want = {}
+    for d, n in nights.items():
+        for s in late_candidates(n, by_day.get(d - timedelta(days=1), []) + by_day.get(d, [])):
+            if s.hr and getattr(s, "segs", None) is None:
+                want.setdefault(s.id, []).append(s)
+    if not want:
+        return
+    rows = (await db.execute(select(Activity.id, Activity.laps, Activity.splits_metric)
+                             .where(Activity.id.in_(list(want))))).all()
+    found = {i: hr_segments(laps, splits) for i, laps, splits in rows}
+    for i, ss in want.items():
+        for s in ss:
+            s.segs = found.get(i, ())
 
 
 def _tag_timezones(nights: dict[date, Night], sessions) -> None:
@@ -663,6 +717,7 @@ async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 4
     nights = build_nights(rows, today)
     if rest is None:
         rest = rest_hr(nights, today)
+    await load_segments(db, nights, sessions)
     tag_activities(nights, sessions, efforts, rest, peak)
     tag_alerts(nights, today)
     return nights

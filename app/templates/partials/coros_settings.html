@@ -17,7 +17,7 @@
     <div class="pf-note !text-danger">{{ coros_error }}</div>
     {% endif %}
     {% if not coros.connected %}
-    <p class="text-sm text-gray-500">Tes nuits et tes séances arrivent automatiquement depuis ta montre COROS.</p>
+    <p class="text-sm text-gray-500">Tes nuits et tes activités arrivent automatiquement depuis ta montre COROS.</p>
     {% include "partials/coros_connect.html" %}
     {% else %}
     {% if coros.needs_reauth %}
