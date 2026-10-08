@@ -93,6 +93,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
             average_cadence=data.get("average_cadence"),
             average_watts=data.get("average_watts"),
             splits_metric=data.get("splits_metric"),
+            laps=data.get("laps"),  # the detail has them: Santé's Entraînement dial weighs them (else the splits)
             raw_data=data,
         )
         activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first

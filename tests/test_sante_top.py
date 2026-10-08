@@ -88,10 +88,12 @@ def _weeks(minutes_per_week: list, this_week: float | None = None) -> list:
 
 
 def test_the_entrainement_dial_against_the_usual_week():
-    """The last 7 days' moving time against the usual week, the mean of the last 11 complete weeks (H; the
-    figure Activités prints « par semaine en moyenne »), as a percentage (100 % as usual), the arc full at twice
-    it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que d'habitude »;
-    the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each once."""
+    """The last 7 days' heart-rate load against the usual week's, the mean of the same last 11 complete weeks (H;
+    the weeks Activités prints « par semaine en moyenne » over), as a percentage (100 % as usual), the arc full at
+    twice it, in the accent colour; within ± 20 % « comme d'habitude » (H), else « plus » or « moins que
+    d'habitude »; the card prints the 7 days' time and the usual week's (to 5 min), the dial the percentage: each
+    once. Every session here runs at the same HR: every minute weighs the same, the dial is the hours' ratio (the
+    weighting itself: test_sante_train_hr)."""
     usual = [300, 400] * 5 + [350] + [900]  # a 12th week back: out of the 11 (mean 350)
     assert sante.usual_week(_weeks(usual), D) == 350
     cases = {350: ("100", "comme d'habitude", 0.5), 420: ("120", "comme d'habitude", 0.6),
@@ -106,20 +108,24 @@ def test_the_entrainement_dial_against_the_usual_week():
         assert t["week"] == sante.viz.hm(minutes) and t["usual"] == "ta semaine habituelle : 5h50"
     assert sante.training(_weeks(usual, 350), D)["dial"]["aria"] == ("Entraînement 100 % de ta semaine "
                                                                      "habituelle, comme d'habitude.")
-    none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %
-    assert (none["dial"]["value"], none["dial"]["sub"], none["week"]) == ("0", "moins que d'habitude", "0 min")
+    none = sante.training(_weeks(usual), D)  # nothing in the last 7 days: 0 %, no « Intensité »
+    assert (none["dial"]["value"], none["dial"]["sub"], none["week"], none["intensity"]) == (
+        "0", "moins que d'habitude", "0 min", None)
+    assert sante.training(_weeks(usual, 421), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
     # the usual week to 5 min: 4 weeks of 47, 48, 52 and 53 min → 50 min
     assert sante.training(_weeks([47, 48, 52, 53], 50), D)["usual"] == "ta semaine habituelle : 50 min"
 
 
 def test_without_a_usual_week_the_dial_prints_the_time():
     """Fewer than 4 complete weeks holding an activity (H): no usual week, the dial prints the 7 days' time itself
-    and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words."""
+    and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words, and no
+    « Intensité » (nothing to weigh the minutes against)."""
     t = sante.training(_weeks([300, 300, 300], 1013), D)
     d = t["dial"]
     assert (d["value"], d["unit"], d["sub"], d["tone"], d["dash"]) == ("16h53", None, "pas encore d'habitude",
                                                                       "accent", 0)
-    assert (t["week"], t["usual"], t["word"]) == (None, None, "pas encore de semaine habituelle")
+    assert (t["week"], t["usual"], t["word"], t["intensity"]) == (None, None, "pas encore de semaine habituelle",
+                                                                  None)
     assert d["aria"] == "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."
     assert sante.usual_week(_weeks([300, 300, 300, 300]), D) == 300  # 4 weeks: there is one
     assert sante.usual_week([], D) is None and sante.training([], D)["dial"]["value"] == "0 min"

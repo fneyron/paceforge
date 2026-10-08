@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BRAND = ("Récup COROS", "calculée par COROS", "Training Readiness", "Body Battery", "Score de sommeil", "×1,",
          "forte hausse", "84 %", "VO2", "Stress de jour", "fatigue %", "Fraîcheur")
 NEVER = ("séance", "pas jugée", "pas assez de nuits", "autour de la course", "Ce matin",
-         "Comment je vais", "⚑", "J+", "J‑", "Jour de course", "Footing facile", "intensité", "Reprise",
+         "Comment je vais", "⚑", "J+", "J‑", "Jour de course", "Footing facile", "Reprise",
          "Forme du jour", "Cœur la nuit",
          # v4.1: no sync status (Réglages'), no Charge card (Activités'), no unlabelled tick on the Charge ring
          "synchro", "Synchroniser", "Dernière synchro", "pas encore reçue", "Charge · 14 jours", 'id="charge"',
@@ -275,7 +275,8 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
     dials — Sommeil 100 % « suffisant » (8h36 of an 8-h need, in the sleep hue), Récupération 65 % « en cours »,
     Entraînement 15h35 (moving time, as Activités) « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
-    usual week, so the 7 days' time itself, no arc) — each a link to its card; the Récupération card's rows: VFC
+    usual week, so the 7 days' time itself, no arc, and no « Intensité » row: no usual week to weigh them against) —
+    each a link to its card; the Récupération card's rows: VFC
     and FC de nuit « en construction », ready in 2 nights and after his next night (every measured night counts),
     « Effort récent » 8 days before he is recovered (the Transjeju's window to 16/10, at 65: orange)."""
     await seed_owner_v4(db_session, test_user)
@@ -293,7 +294,8 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         ("FC de nuit", "7 nuits", None, "en construction", "prête après ta prochaine nuit", "none"),
         ("Effort récent", None, "8\u00a0jours", "avant d'être récupéré", None, "warn")]
     assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
-                                "word": "pas encore de semaine habituelle", "since": date(2026, 10, 2)}
+                                "word": "pas encore de semaine habituelle", "intensity": None,
+                                "since": date(2026, 10, 2)}
     # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over the 8-h need,
     # its hours printed once (the dial says 100 %)
     s = page["sleep"]
@@ -540,6 +542,9 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word
+    # no training prescription (« Pas d'intensité aujourd'hui », « Reprends l'intensité »): « Intensité » is only the
+    # Entraînement card's row, a word on the 7 days (2026-10-09, the approved mockup)
+    assert not re.search(r"[dl]'intensité", unescape(main).lower())
     # the race's name: never a chip, a flag or a countdown, and no activity named at all (v4.3, owner: « Ne
     # mentionne pas les sorties dans la partie Santé »)
     assert "Transjeju" not in main and "Grosse sortie" not in main and "/activity/" not in main

@@ -24,7 +24,9 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   fitness and VO2 max, the daytime resting HR), and no stage interval is
   written (COROS has no stage timeline). Sessions go to Activity; for those
   only COROS has, their detail (D+, times) and their laps' whole-activity row
-  (its max HR: hr_max() then has real peaks, Santé v4.4) are read once each.
+  (its max HR: hr_max() then has real peaks, Santé v4.4) are read once each;
+  that same answer's auto laps (time, average HR) are kept as Strava's laps
+  (Santé's Entraînement dial weighs them).
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
   the 60 days once more when the stored nights predate a format change.
@@ -773,22 +775,61 @@ def _block_max_hr(block: dict) -> float | None:
     return max(whole or every, default=None)
 
 
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _strava_lap(lap) -> dict | None:
+    """One COROS lap in Strava's shape — moving_time (s), average_heartrate, and its max_heartrate and distance (m:
+    COROS counts centimetres) when it has them — or None without a time or a plausible average HR."""
+    if not isinstance(lap, dict):
+        return None
+    t, hr = lap.get("time"), lap.get("avgHr")
+    if not (_number(t) and round(t) > 0 and _number(hr) and HR_PLAUSIBLE[0] <= hr <= HR_PLAUSIBLE[1]):
+        return None
+    out = {"moving_time": round(t), "average_heartrate": float(hr)}
+    if _number(peak := lap.get("maxHr")) and HR_PLAUSIBLE[0] <= peak <= HR_PLAUSIBLE[1]:
+        out["max_heartrate"] = float(peak)
+    if _number(cm := lap.get("distance")) and cm > 0:
+        out["distance"] = cm / 100
+    return out
+
+
+def _block_laps(block: dict) -> list[dict]:
+    """One record's (or one leg's) laps in Strava's shape: its first lap group other than the whole-activity row
+    whose laps carry a time and an average HR (COROS's auto laps), else that whole-activity row (type −1)."""
+    groups = [g for g in block.get("lapGroups") or [] if isinstance(g, dict)]
+    for g in sorted(groups, key=lambda g: g.get("type") == -1):  # the whole-activity row last
+        laps = [x for x in map(_strava_lap, g.get("laps") if isinstance(g.get("laps"), list) else []) if x]
+        if laps:
+            return laps
+    return []
+
+
 def parse_laps(text: str) -> dict:
-    """queryActivityLapData: the session's highest heart rate, {"hr_max": bpm} or {} (Live 2026-10-08: a JSON
-    object, its `lapGroups` hold a whole-activity row of type −1 with `maxHr`; a yoga or pilates session has
-    one plain lap, a multisport record one block per leg in `sportDataDetails`). Not JSON: any « maxHr » or
-    « Max HR » figure the text carries."""
+    """queryActivityLapData: the session's highest heart rate and its laps, {"hr_max": bpm, "laps": [...]} with
+    what it has, or {} (Live 2026-10-08: a JSON object, its `lapGroups` hold the auto laps — each one's `time`,
+    `avgHr` — and a whole-activity row of type −1 with `maxHr`; a yoga or pilates session has one plain lap, a
+    multisport record one block per leg in `sportDataDetails`: its laps are its legs'). The laps in Strava's shape
+    (_strava_lap), what nights.hr_segments reads: Santé's Entraînement dial and « sortie intense le soir » see a
+    COROS-only session's laps as a Strava one's (no other call: the max HR's answer). Not JSON: any « maxHr » or
+    « Max HR » figure the text carries, no laps."""
     try:
         data = json.loads(text or "")
     except ValueError:
         data = None
+    laps = []
     if isinstance(data, dict):
-        blocks = [data] + [c for c in data.get("sportDataDetails") or [] if isinstance(c, dict)]
-        peak = max((v for b in blocks if (v := _block_max_hr(b)) is not None), default=None)
+        legs = [c for c in data.get("sportDataDetails") or [] if isinstance(c, dict)]
+        peak = max((v for b in [data] + legs if (v := _block_max_hr(b)) is not None), default=None)
+        laps = [x for b in legs or [data] for x in _block_laps(b)]
     else:
         found = [_num(m) for m in re.findall(r"max\s*_?\s*(?:hr|heart\s*rate)\"?\s*[:=]\s*" + _NUM, text or "", re.I)]
         peak = max((v for v in found if HR_PLAUSIBLE[0] <= v <= HR_PLAUSIBLE[1]), default=None)
-    return {"hr_max": peak} if peak is not None else {}
+    out = {"hr_max": peak} if peak is not None else {}
+    if laps:
+        out["laps"] = laps
+    return out
 
 
 def session_offset(start_ts: int, day: str | None, hint: float | None) -> float | None:
@@ -1279,8 +1320,9 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
                         laps: dict[int, dict] | None = None) -> int:
     """What was read for sessions only COROS has: the detail (D+, total and
     moving time, cadence, power) and the laps (the max HR of the whole
-    activity: COROS's detail has none). Each is kept on the session, read once
-    even when it said nothing new."""
+    activity: COROS's detail has none; the auto laps' time and average HR, in
+    Activity.laps as Strava's laps are: what Santé's Entraînement dial reads).
+    Each is kept on the session, read once even when it said nothing new."""
     laps = laps or {}
     n = 0
     for label in sorted(set(details) | set(laps)):
@@ -1292,7 +1334,9 @@ async def apply_details(db: AsyncSession, user_id: int, details: dict[int, dict]
             lp = laps[label]
             if lp.get("hr_max"):
                 act.max_heartrate = lp["hr_max"]
-            act.raw_data = {**(act.raw_data or {}), LAPS: lp}
+            if lp.get("laps"):
+                act.laps = lp["laps"]
+            act.raw_data = {**(act.raw_data or {}), LAPS: {k: v for k, v in lp.items() if k != "laps"}}
         if label not in details:
             n += 1
             continue

@@ -38,11 +38,12 @@ def run(day, minutes=50, hr=130, hour=8, sid=1, sport="Run", dplus=0, offset=0, 
 
 def test_coros_laps_give_the_whole_activitys_max_hr():
     """queryActivityLapData answers JSON (Live 2026-10-08): the whole-activity row (type −1) holds the max HR; a
-    pilates session has one plain lap; a triathlon one block per leg. Anything else: no value, never a guess."""
-    assert coros.parse_laps(oc.LAPS_2026_09_30) == {"hr_max": 171}
-    assert coros.parse_laps(oc.LAPS_PILATES) == {"hr_max": 98}
-    assert coros.parse_laps(oc.LAPS_TRIATHLON) == {"hr_max": 162}  # the run leg's
-    assert coros.parse_laps("Lap 1\nMax HR: 171 bpm") == {"hr_max": 171}  # prose: the figure it carries
+    pilates session has one plain lap; a triathlon one block per leg. Anything else: no value, never a guess. (The
+    same answer's laps, for the Entraînement dial: test_sante_train_hr.)"""
+    assert coros.parse_laps(oc.LAPS_2026_09_30)["hr_max"] == 171
+    assert coros.parse_laps(oc.LAPS_PILATES)["hr_max"] == 98
+    assert coros.parse_laps(oc.LAPS_TRIATHLON)["hr_max"] == 162  # the run leg's
+    assert coros.parse_laps("Lap 1\nMax HR: 171 bpm") == {"hr_max": 171}  # prose: the figure it carries, no laps
     assert coros.parse_laps("") == {} and coros.parse_laps("Erreur interne") == {} and coros.parse_laps(None) == {}
     glitch = '{"lapGroups":[{"type":-1,"laps":[{"maxHr":0}]},{"type":2,"laps":[{"maxHr":300},{"maxHr":"x"}]}]}'
     assert coros.parse_laps(glitch) == {}  # a sensor without HR, a spike: nothing
