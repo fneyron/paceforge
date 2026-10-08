@@ -268,7 +268,7 @@ EASY_FIT_DAYS = 365  # (H) one Theil–Sen slope over the cool runs of 12 months
 EASY_WINDOW, EASY_MIN, EASY_BPM, FLAG_DAYS = 28, 3, 3, 14  # (H) the drawn band; Nuuttila 2022's 3–4 bpm edge
 FLAG_REF_DAYS, FLAG_REF_MIN = 14, 2  # (H) each run against the cool runs of the 14 days before it (Nuuttila 2022)
 LINE_DAYS, LINE_RUNS = 42, 6  # (H) the line needs ≥ 6 qualifying runs in 6 weeks (evidence row 16)
-HOT_C = 25  # (H)
+HOT_C = 25  # (H) °C felt at the start (Open-Meteo's apparent temperature), else the device's (R4)
 EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 150, 12, 0.82  # (H) a flat easy run
 
 
@@ -282,7 +282,15 @@ def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
 
 
 def is_hot(s: Session) -> bool:
-    return s.temp is not None and s.temp >= HOT_C
+    """A hot run (H, v4.4 R4): 25 °C or more felt at its start place and hour (Open-Meteo's apparent
+    temperature, looked up in the sync: every user with a GPS run), else its device's temperature as before
+    (Strava average_temp: the wrist reads body heat too); never indoors (a treadmill, a home trainer). Heat
+    raises HR at a given pace (Racinais 2015): a hot run is drawn hollow, out of the slope and the normal;
+    never a score nor a recovery modifier."""
+    if s.indoor:
+        return False
+    t = s.feels if s.feels is not None else s.temp
+    return t is not None and t >= HOT_C
 
 
 def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:

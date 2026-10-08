@@ -1,6 +1,7 @@
 """Santé v4.4 — the same features for every user (brief V44, research_data.md §4 R2–R4): race-like efforts and a
 real max HR without Strava (R3), « en altitude » where the athlete sleeps (R2), « journée chaude » from the weather
 (R4). Every threshold below is a PaceForge heuristic (H). No network: Open-Meteo is an httpx.MockTransport."""
+import json
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
 
@@ -564,3 +565,47 @@ def test_the_history_tags_altitude_as_each_day_knew_it():
     nt.tag_activities(nights, sessions, (), 45, 190, day_alt)
     # d10 (the outing), d9 (carried), d8 and d7 (Garmin's days), then d6 → d4 carried: 3 nights at most
     assert _alt_tags(nights) == [d(10), d(9), d(8), d(7), d(6), d(5), d(4)]
+
+
+# ── R4: « journée chaude » from the weather, for every user ─────────────────
+
+def test_a_run_is_hot_from_the_weather_else_its_device_never_indoors():
+    """R4 (H): 25 °C or more felt at its start place and hour (Open-Meteo's apparent temperature, looked up in
+    the sync), else the device's temperature as before; a treadmill or a home trainer is never hot."""
+    d = D - timedelta(days=3)
+    assert st.is_hot(run(d, feels=27.0))  # a COROS-only or Garmin-only run: the weather says it
+    assert st.is_hot(run(d, feels=25.0)) and not st.is_hot(run(d, feels=24.9)) and st.HOT_C == 25  # (H)
+    assert not st.is_hot(run(d, feels=21.0, temp=31.0))  # the wrist read body heat: the weather wins
+    assert st.is_hot(run(d, temp=31.0)) and not st.is_hot(run(d))  # no lookup: the device, as before
+    assert not st.is_hot(run(d, temp=31.0, indoor=True)) and not st.is_hot(run(d, feels=30.0, indoor=True))
+    # the lookups gate on the easy-run gates (sante_training.easy_runs): the same numbers in both places
+    assert (activity_env.RUN_KM, activity_env.RUN_MIN_MIN, activity_env.RUN_MAX_MIN) == (
+        st.EASY_KM, st.EASY_MIN_MIN, st.EASY_MAX_MIN) and set(activity_env.RUN_SPORTS) == st.RUNS
+
+
+def test_a_hot_run_from_the_weather_is_a_hollow_dot_on_activites():
+    """Activités › FC en footing: the same hollow dot and « journée chaude » as before, now for every user."""
+    from app.services import training_view as tv
+    base = [run(D - timedelta(days=k), 60, hr=140 + (k % 3) - 1, sid=50_000 + k) for k in range(3, 200, 4)]
+    hot = run(D - timedelta(days=6), 60, hr=150, hour=9, sid=7, feels=28.0)
+    indoor = run(D - timedelta(days=10), 60, hr=150, hour=9, sid=8, temp=33.0, indoor=True)
+    c = tv.footing(base + [hot, indoor], D, 185)
+    assert len([p for p in c["dots"] if p["hot"]]) == 1  # the weather's, never the treadmill's 33 °C
+    rows = json.loads(c["data"].replace("<\\/", "</"))["r"]
+    assert [r[0] for r in rows if "journée chaude" in r[2]] == ["ven. 2 oct."]  # D − 6: the weather's hot run
+
+
+async def test_the_looked_up_weather_reaches_the_sessions(db_session: AsyncSession, test_user: User):
+    """What the sync stored on the activity (raw_data) is what the pages read: feels-like, indoor, position."""
+    start = datetime(2026, 10, 1, 6, tzinfo=timezone.utc)
+    db_session.add_all([
+        _act(test_user, start, end_latlng=[45.9, 6.8], start_latlng=[45.9, 6.8],
+             **{activity_env.ENV_KEY: {"v": 1, "alt": 1050.0, "feels": 26.5}}),
+        _act(test_user, start - timedelta(days=1), trainer=True, average_temp=31.0),
+        _act(test_user, start - timedelta(days=2), **{activity_env.ENV_KEY: {"v": 0, "feels": 40.0}}),  # older format
+    ])
+    await db_session.flush()
+    ss = sorted(await st.load_sessions(db_session, test_user.id, D), key=lambda s: s.start, reverse=True)
+    assert [(s.feels, s.alt, s.located, s.indoor) for s in ss] == [
+        (26.5, 1050.0, True, False), (None, None, False, True), (None, None, False, False)]
+    assert [st.is_hot(s) for s in ss] == [True, False, False]
