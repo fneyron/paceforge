@@ -53,12 +53,13 @@ REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015
 
 # « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
 # citations »): 5 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the code
-# and the tests); the references (REFS) are on /sante/sources
+# and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »: « en récupération »); the
+# references (REFS) are on /sante/sources
 METHOD = [
     "Ton sommeil se compte sur 24 h, siestes comprises.",
     "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
     "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
-    "Les nuits après une grosse sortie, un voyage ou en altitude restent hors de ta normale.",
+    "Les nuits en récupération, en voyage ou en altitude restent hors de ta normale.",
     "Coucher et lever détectés par la montre.",
 ]
 # the sources « Comment je lis tes nuits » rests on (label, DOI or URL), listed on /sante/sources
@@ -242,14 +243,14 @@ def habits(nights: dict, today: date) -> dict | None:
 def rows(nights: dict, today: date) -> list[dict]:
     """« Les chiffres de chaque nuit », 30 nights, newest first: « — » when
     missing, each night's stage minutes (the watch's estimate), the tags as
-    words (the only place they are written)."""
+    words (the only place they are written; the nights after an effort: « récupération »)."""
     out = []
     for k in range(TABLE_DAYS):
         d = today - timedelta(days=k)
         n = nights.get(d)
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
-        marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags)]
+        marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags, words=nt.RECOVERY_WORDS)]
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
                     "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",

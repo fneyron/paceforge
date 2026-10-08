@@ -268,7 +268,7 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
     assert page["state"]["key"] == "effort" and page["state"]["text"] is None and page["score"]["value"] == 35
     assert {r["key"]: r["sub"] for r in page["detail"]["rows"]}["load"] == 20
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
-    assert "◇ après ultra" in marks[today.isoformat()]  # 22 h: an ultra (v4.2)
+    assert "◇ récupération" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), « récupération » on Santé (v4.3)
 
 
 async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_session: AsyncSession, test_user: User,

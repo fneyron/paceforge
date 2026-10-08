@@ -153,12 +153,17 @@ def test_habits_leave_out_time_zone_nights_and_the_nights_after_an_ultra():
 
 
 def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
+    """v4.3 (owner: « Ne mentionne pas les sorties dans la partie Santé »): a night after an effort says
+    « récupération », as the cards do (« hors voyage, altitude et récupération »), never the outing."""
     nights = _nights(night_rows(range(0, 40)))
     nights[D - timedelta(days=2)].tags |= {"big", "race"}
+    nights[D - timedelta(days=3)].tags |= {"late", "jetlag"}
     out = sl.rows(nights, D)
     assert len(out) == 30 and out[0]["iso"] == D.isoformat()
     marks = {r["iso"]: r["marks"] for r in out}
-    assert marks[(D - timedelta(days=2)).isoformat()] == "◇ après grosse sortie"
+    assert marks[(D - timedelta(days=2)).isoformat()] == "◇ récupération"
+    assert marks[(D - timedelta(days=3)).isoformat()] == "◇ décalage horaire · ◇ récupération"
+    assert not any("sortie" in m or "ultra" in m for m in marks.values())
     assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
 
@@ -173,7 +178,7 @@ def test_the_method_fold_is_five_plain_bullets_and_names_no_race():
     assert sl.METHOD == ["Ton sommeil se compte sur 24 h, siestes comprises.",
                          "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
                          "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
-                         "Les nuits après une grosse sortie, un voyage ou en altitude restent hors de ta normale.",
+                         "Les nuits en récupération, en voyage ou en altitude restent hors de ta normale.",
                          "Coucher et lever détectés par la montre."]
     text = sc.flat(sl.METHOD)
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text

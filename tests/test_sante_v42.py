@@ -345,7 +345,7 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     assert s["raw0"] == pytest.approx((25 * subs["hrv"] + 25 * 100 + 30 * 100 + 20 * 50) / 100)
     assert s["value"] == 65 and s["caps"] == ["effort"]
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
-        "◇ après une sortie longue"
+        "◇ récupération"  # v4.3: Santé names no outing
     act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not a race: its window ended on D+3
     act.name = "Marathon de Lyon "  # a change the sessions' cache sees
     await db_session.flush()
@@ -485,14 +485,15 @@ def test_the_history_sees_a_chain_across_midnight_as_each_day_knew_it():
 
 
 def test_a_night_says_each_word_once():
-    """Two overlapping ultras can leave a night both « ultra » and « ultra_tail »: « après ultra » once."""
+    """Two overlapping ultras can leave a night both « ultra » and « ultra_tail »: « après ultra » once (the race
+    page's words); Santé's table says « récupération » once (v4.3: Santé names no outing)."""
     from app.services import sante_sleep as sl
 
     nights = nt.build_nights(night_rows(range(0, 3), today=D), D)
     nights[D].tags |= {"ultra", "ultra_tail", "late_nap", "race"}
     assert nt.tag_words(nights[D].tags) == ["après sieste tardive", "après ultra"]
     assert {r["iso"]: r["marks"] for r in sl.rows(nights, D)}[D.isoformat()] == \
-        "◇ après sieste tardive · ◇ après ultra"
+        "◇ après sieste tardive · ◇ récupération"
 
 
 def test_a_big_climb_is_no_modifier_any_more():

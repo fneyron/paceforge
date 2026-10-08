@@ -135,15 +135,20 @@ TAG_WORDS = {"long": "après une sortie longue", "late": "sortie intense le soir
              "tz": "fuseau changé", "jetlag": "décalage horaire", "big": "après grosse sortie",
              "ultra": "après ultra", "ultra_tail": "après ultra", "alcohol": "alcool", "race": "autour de la course",
              "ill": "malade", "alert": "FC de nuit haute", "late_nap": "après sieste tardive"}
+# Santé names no outing (v4.3, owner: « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »): the
+# nights after an effort say « récupération » there, as its cards do (« hors voyage, altitude et récupération »)
+RECOVERY_WORDS = {t: "récupération" for t in ("long", "late", "big", "ultra", "ultra_tail")}
 # « ultra_tail » (D+5 → D+7 after ≥ 20 h) is out of the band and the 7-night means, never out of the alert
 EXCLUDING = ("long", "late", "altitude", "tz", "jetlag", "big", "ultra", "ultra_tail", "alcohol", "race",
              "ill", "alert")
 EPISODE = ("ill", "alert")  # the nights of an illness episode
 
 
-def tag_words(tags, skip=("race",)) -> list[str]:
-    """A night's tags as the readouts print them, each word once (« ultra » and « ultra_tail » say the same)."""
-    return list(dict.fromkeys(TAG_WORDS[t] for t in sorted(tags) if t not in skip))
+def tag_words(tags, skip=("race",), words=None) -> list[str]:
+    """A night's tags as the readouts print them, each word once (« ultra » and « ultra_tail » say the same);
+    `words` replaces some of TAG_WORDS (Santé: RECOVERY_WORDS)."""
+    w = {**TAG_WORDS, **(words or {})}
+    return list(dict.fromkeys(w[t] for t in sorted(tags) if t not in skip))
 _EXCLUDING = frozenset(EXCLUDING)
 _VALUE = {"hr": "hr", "hrv": "hrv", "resp": "resp"}
 _SOURCE = {"hr": "hr_source", "hrv": "hrv_source", "tst24": "source", "resp": "resp_source"}

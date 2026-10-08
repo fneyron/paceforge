@@ -682,7 +682,7 @@ def test_the_method_fold_is_six_plain_bullets():
     pas les citations pour gagner de la place »): 6 one-line bullets in plain words, no citation, no « (H) »; the
     references stay in the code, listed on /sante/sources, each a link (a DOI, else the text's own address)."""
     assert sc.METHOD == [
-        "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et tes grosses sorties récentes.",
+        "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et ta charge récente.",
         "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
         "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 "
         "semaines après un ultra.",

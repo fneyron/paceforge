@@ -314,7 +314,7 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
     # 4 nights left for the medians in 28 days (06/10 and 07/10 are D+3 and D+4 after the ultra): none yet (5, H)
     assert s["habits"] is None
     marks = {r["iso"]: r["marks"] for r in s["rows"]}
-    assert marks["2026-10-06"] == marks["2026-10-07"] == "◇ après ultra" and marks["2026-10-08"] == "—"
+    assert marks["2026-10-06"] == marks["2026-10-07"] == "◇ récupération" and marks["2026-10-08"] == "—"
 
 
 async def test_owner_cards(db_session: AsyncSession, test_user: User):

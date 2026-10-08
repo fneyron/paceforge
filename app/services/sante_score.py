@@ -108,9 +108,11 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 
 
 # « Comment je calcule ta récupération » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets
 # pas les citations »): 6 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in
-# the code and the tests); the references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
+# the code and the tests); one plain bullet on the cap after a big outing, the only outing Santé mentions (« Ne
+# mentionne pas les sorties dans la partie Santé »: bullet 1 names « ta charge récente », the Détail row); the
+# references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et tes grosses sorties récentes.",
+    "Ton score sur 100 combine ta VFC et ta FC de nuit, ton sommeil sur 24 h et ta charge récente.",
     "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
     "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 semaines "
     "après un ultra.",
