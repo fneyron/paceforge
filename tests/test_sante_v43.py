@@ -206,17 +206,17 @@ def test_strava_activities_give_the_offset_when_the_nights_have_none():
     nights = nt.build_nights(rows, D)
     assert all(n.tz is None for n in nights.values())
     fr = st.Session(id=1, start=datetime(2026, 10, 3, 6, tzinfo=timezone.utc), day=date(2026, 10, 3), sport="Run",
-                    minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None, suffer=None, workout_type=None,
+                    minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None, workout_type=None,
                     temp=None, offset=7200)
     kr = st.Session(id=2, start=datetime(2026, 10, 5, 0, tzinfo=timezone.utc), day=date(2026, 10, 5), sport="Run",
-                    minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None, suffer=None, workout_type=None,
+                    minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None, workout_type=None,
                     temp=None, offset=32400)
     nt.tag_activities(nights, [fr, kr])
     tagged = sorted(d for d, n in nights.items() if "jetlag" in n.tags)
     assert tagged[0] == date(2026, 10, 5) and len(tagged) == 4  # 05/10 → 08/10 (7 nights from 05/10: the rest ahead)
     bare = nt.build_nights(garmin_rows_without_tz(range(0, 20)), D)
     unknown = [st.Session(id=3, start=datetime(2026, 10, 3, 6, tzinfo=timezone.utc), day=date(2026, 10, 3),
-                          sport="Run", minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None, suffer=None,
+                          sport="Run", minutes=50, dplus=0, km=9, speed=3, hr=None, hr_peak=None,
                           workout_type=None, temp=None, offset=None)]
     nt.tag_activities(bare, unknown)
     assert _tags(bare) == {}

@@ -23,8 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 HEURISTICS = [
     ("app/services/sante_training.py", "MIN_FIT_RUNS", 6),
     ("app/services/sante_training.py", "EASY_FIT_DAYS", 365),
-    ("app/services/sante_training.py", "MIN_HISTORY_DAYS", 42),
-    ("app/services/sante_training.py", "CTL_DAYS", 42),
     ("app/services/sante_training.py", "FLAG_REF_DAYS", 14),
     ("app/services/sante_training.py", "LINE_RUNS", 6),
     ("app/services/sante_training.py", "EASY_KM", 5),

@@ -5,7 +5,7 @@ creates the row; the others only attach their id to it:
 - a watch (Garmin, COROS) finding the outing already there links its id to
   that row (`find_twin`);
 - Strava finding a watch-only row of the outing takes it over: Strava's fields
-  (splits, name, suffer score…) replace the watch's, the watch ids stay
+  (splits, name…) replace the watch's, the watch ids stay
   (`adopt_watch_twin`);
 - rows that were saved twice before this rule existed are merged
   (`merge_twins`).

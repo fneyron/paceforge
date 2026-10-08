@@ -35,7 +35,7 @@ def owner_rows():
 def session(day, hour, minutes, hr=None, offset=7200, elev=None, sid=1):
     start = datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc) - timedelta(seconds=offset)
     return Session(id=sid, start=start, day=day, sport="Run", minutes=minutes, dplus=0, km=10, speed=3.0, hr=hr,
-                   hr_peak=None, suffer=None, workout_type=None, temp=None, elapsed=minutes, offset=offset,
+                   hr_peak=None, workout_type=None, temp=None, elapsed=minutes, offset=offset,
                    elev_high=elev)
 
 
@@ -419,7 +419,7 @@ def test_a_race_marked_on_strava_only_keeps_its_nights_out_and_never_fires_the_a
     from app.services import race_prep as rp
 
     race = Session(id=5, start=datetime(2026, 10, 4, 7, tzinfo=timezone.utc), day=date(2026, 10, 4), sport="Run",
-                   minutes=200, dplus=200, km=42.2, speed=3.5, hr=160, hr_peak=180, suffer=None, workout_type=1,
+                   minutes=200, dplus=200, km=42.2, speed=3.5, hr=160, hr_peak=180, workout_type=1,
                    temp=None, name="Marathon de Lyon")
     races = rp.all_races([], [race, session(D - timedelta(days=9), 8, 60, sid=9)])
     assert races == [(date(2026, 10, 4), "Marathon de Lyon")]

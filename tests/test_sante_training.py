@@ -1,4 +1,4 @@
-"""The training model (sante_training): load, fond and fatigue, weeks, easy-pace HR."""
+"""The training model (sante_training): weeks, heart-rate bounds, easy-pace HR (no Relative Effort, v4.4)."""
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -13,29 +13,24 @@ T = date(2026, 10, 6)
 
 
 def S(days_ago: int, minutes: float = 60, sport: str = "Run", dplus: float = 50, km: float = 10,
-      hr: float | None = 140, suffer: float | None = None, i: int = 0, **kw) -> Session:
+      hr: float | None = 140, i: int = 0, **kw) -> Session:
     day = T - timedelta(days=days_ago)
     start = datetime(day.year, day.month, day.day, 7, 0, tzinfo=timezone.utc) + timedelta(minutes=i)
     speed = km * 1000 / (minutes * 60) if km else None
     return Session(id=kw.pop("id", days_ago * 100 + i), start=start, day=day, sport=sport, minutes=minutes,
-                   dplus=dplus, km=km, speed=speed, hr=hr, hr_peak=kw.pop("hr_peak", 180), suffer=suffer,
+                   dplus=dplus, km=km, speed=speed, hr=hr, hr_peak=kw.pop("hr_peak", 180),
                    workout_type=kw.pop("workout_type", 0), temp=kw.pop("temp", None), **kw)
 
 
-def test_trimp_grows_with_intensity_and_time():
-    easy, hard = st.trimp(60, 135, 50, 185), st.trimp(60, 165, 50, 185)
-    assert 60 < easy < 110 and hard > 1.5 * easy
-    assert st.trimp(120, 135, 50, 185) == pytest.approx(2 * easy)
-    assert st.trimp(60, 40, 50, 185) == 0  # below rest: nothing
-
-
-def test_loads_put_relative_effort_on_the_trimp_scale_and_fill_sessions_without_hr():
-    ss = [S(k, hr=140, suffer=60, i=k) for k in range(12)]
-    ss.append(S(20, minutes=60, hr=None, suffer=None, id=999))  # no heart rate
-    st.set_loads(ss, 50, 185)
-    trimp = st.trimp(60, 140, 50, 185)
-    assert ss[0].load == pytest.approx(trimp)  # k = trimp / 60 on every pair
-    assert ss[-1].load == pytest.approx(trimp)  # the athlete's own load per minute on foot
+def test_the_relative_effort_path_is_gone():
+    """v4.4 (research « Also »): Strava's Relative Effort is a brand metric (« only available for subscribers »).
+    Nothing reads it any more: no Session.suffer, no load model built on it (set_loads, daily_loads, fitness and
+    what only they used)."""
+    for name in ("set_loads", "daily_loads", "fitness", "trimp", "_family", "CTL_DAYS", "ATL_DAYS",
+                 "MIN_HISTORY_DAYS", "MIN_SESSIONS"):
+        assert not hasattr(st, name), name
+    fields = {f.name for f in st.Session.__dataclass_fields__.values()}
+    assert "suffer" not in fields and "load" not in fields
 
 
 def test_hr_bounds():
@@ -138,5 +133,5 @@ async def test_load_sessions_reads_strava_fields_and_drops_duplicates(db_session
     assert len(ss) == 1
     s = ss[0]
     assert s.day == date(2026, 10, 6)  # 22:30 UTC is the next morning in Tokyo
-    assert s.workout_type == 3 and s.temp == 12.5 and s.minutes == 55 and s.suffer == 50
+    assert s.workout_type == 3 and s.temp == 12.5 and s.minutes == 55 and not hasattr(s, "suffer")
     assert await st.utc_offset(db_session, test_user.id) == 32400

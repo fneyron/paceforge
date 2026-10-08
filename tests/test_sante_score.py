@@ -35,7 +35,7 @@ def _session(day, minutes, dplus=0, sid=7, sport="Run", hr=125, elapsed=None, ho
     start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=hour) \
         - timedelta(seconds=offset)
     return Session(id=sid, start=start, day=day, sport=sport, minutes=minutes, dplus=dplus, km=minutes / 6,
-                   speed=2.8, hr=hr, hr_peak=160, suffer=None, workout_type=workout_type, temp=None,
+                   speed=2.8, hr=hr, hr_peak=160, workout_type=workout_type, temp=None,
                    elapsed=elapsed if elapsed is not None else minutes, offset=offset, name=name)
 
 
