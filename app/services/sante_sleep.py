@@ -25,7 +25,7 @@
   days old (else it would draw the 14 nights again), its 90 bars (each day's
   24 h in one) faint under the 7-night mean (Oura's long ranges). Tap a bar →
   « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; it rests on the
-  range's mean (printed nowhere else: the latest night is the ring's). No
+  range's mean (printed nowhere else: the latest night is the Sommeil row's). No
   ceiling, never a long night flagged (Watson 2015a).
 - Habitudes: the median bedtime and wake of 28 days (5 nights at least, H),
   rounded to 5 min, and once 8 nights are there (H; ANSI/CTA/NSF-2052.1-A's
@@ -53,18 +53,23 @@ REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015
 
 # « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
 # citations »): 5 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the code
-# and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »: « en récupération »); the
-# references (REFS) are on /sante/sources
+# and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »: « un gros effort »); v4.4
+# (owner: « les explications en français ne sont pas claires »): active sentences of 15 words at most, the words
+# of the cards (« ne comptent pas »); the references (REFS) are on /sante/sources
 METHOD = [
-    "Ton sommeil se compte sur 24 h, siestes comprises.",
-    "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
-    "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
-    "Les nuits en récupération, en voyage ou en altitude restent hors de ta normale.",
-    "Coucher et lever détectés par la montre.",
+    "Je compte ton sommeil sur 24 h, siestes comprises.",
+    "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
+    "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
+    "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas.",
+    "Ta montre détecte tes heures de coucher et de lever.",
 ]
+# the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
+# nights.TAG_WORDS'
+WORDS = {**{t: "après un gros effort" for t in ("long", "big", "ultra", "ultra_tail")},
+         "late": "effort intense le soir", "tz": "changement de fuseau", "late_nap": "après une sieste tardive"}
 # the sources « Comment je lis tes nuits » rests on (label, DOI or URL), listed on /sante/sources
 REFS = [
-    ("Textes officiels", [
+    ("Recommandations officielles", [
         ("Watson 2015a", "10.5665/sleep.4716"), ("Watson 2015b", "10.5665/sleep.4886"),
         ("Hirshkowitz 2015", "10.1016/j.sleh.2014.12.010"),
         ("CTA/NSF 2052.1‑A", "https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"),
@@ -72,7 +77,7 @@ REFS = [
         ("Janse van Rensburg 2021", "10.1007/s40279-021-01502-0"), ("Ohayon 2017", "10.1016/j.sleh.2016.11.006"),
         ("Walsh 2021", "10.1136/bjsports-2020-102025"), ("de Zambotti 2024", "10.1093/sleep/zsad325"),
     ]),
-    ("Études", [
+    ("Études scientifiques", [
         ("Craven 2022", "10.1007/s40279-022-01706-y"), ("Sargent 2021", "10.1123/ijspp.2020-0896"),
         ("Ravyts 2021", "10.1080/15402002.2019.1701474"), ("Fachan 2026", "10.1016/j.sleepx.2026.100197"),
         ("Mograss 2022", "10.1111/jsr.13578"), ("Chinoy 2021", "10.1093/sleep/zsaa291"),
@@ -103,13 +108,13 @@ def _readout(n, d: date) -> tuple[list[str], str]:
     """[value, word, the night · its times] and the spoken sentence: « 8h36 » ·
     « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap « 8h10 » « nuit
     5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone « 1h22 »
-    « sieste seule » · « … · pas de nuit mesurée » (said plainly: no « ? »)."""
+    « sieste seule » · « … · nuit non enregistrée » (said plainly: no « ? »)."""
     label = viz.night_label(d)
     if n is None or not _measured(n):
         return ["—", "", f"{label} · pas de mesure"], f"{label} : pas de mesure"
     if n.asleep is None:
-        return ([viz.hm(n.nap_min), "sieste seule", f"{label} · pas de nuit mesurée"],
-                f"{label} : sieste de {viz.hm_long(n.nap_min)} seule, pas de nuit mesurée")
+        return ([viz.hm(n.nap_min), "sieste seule", f"{label} · nuit non enregistrée"],
+                f"{label} : sieste de {viz.hm_long(n.nap_min)} seule, nuit non enregistrée")
     times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
     said = (f"{label} : {viz.sleep_spoken(n.asleep, n.nap_min)}, couché vers {viz.clock(n.start)}, "
             f"levé vers {viz.clock(n.end)}")
@@ -140,13 +145,13 @@ def bars(nights: dict, today: date, key: str) -> dict:
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
                      reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
                      summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
-                             f"mesurée{'s' if len(totals) > 1 else ''}")
+                             f"enregistrée{'s' if len(totals) > 1 else ''}")
     if totals:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
         return viz.rest(c, [viz.hm(mean), "en moyenne", ""],
-                        f"Sommeil sur 24 heures, {RANGES[key][1]} : en moyenne {viz.hm_long(mean)}, siestes "
-                        "comprises. Choisis une nuit pour la sienne.")
-    return viz.rest(c, ["—", "", ""], f"Sommeil, {RANGES[key][1]} : pas de nuit mesurée")
+                        f"Sommeil sur 24 heures, {RANGES[key][1]} : {viz.hm_long(mean)} en moyenne, siestes "
+                        "comprises. Choisis une nuit pour voir la sienne.")
+    return viz.rest(c, ["—", "", ""], f"Sommeil, {RANGES[key][1]} : aucune nuit enregistrée")
 
 
 PHASES = (("awake", "Éveil"), ("light", "Léger"), ("deep", "Profond"), ("rem", "Paradoxal"))  # WHOOP's order
@@ -190,7 +195,7 @@ def phases(stages: dict | None) -> dict | None:
     if not parts:
         return None
     said = ", ".join(f"{p['name'].lower()} {stage_spoken(p['min'])}" for p in parts)
-    return {"parts": parts, "aria": f"Phases estimées par la montre : {said}."}
+    return {"parts": parts, "aria": f"Phases estimées par ta montre : {said}."}
 
 
 def hero(nights: dict, today: date, samples: dict | None = None) -> dict | None:
@@ -243,14 +248,14 @@ def habits(nights: dict, today: date) -> dict | None:
 def rows(nights: dict, today: date) -> list[dict]:
     """« Les chiffres de chaque nuit », 30 nights, newest first: « — » when
     missing, each night's stage minutes (the watch's estimate), the tags as
-    words (the only place they are written; the nights after an effort: « récupération »)."""
+    words (the only place they are written: WORDS; the nights after an effort: « après un gros effort »)."""
     out = []
     for k in range(TABLE_DAYS):
         d = today - timedelta(days=k)
         n = nights.get(d)
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
-        marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags, words=nt.RECOVERY_WORDS)]
+        marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags, words=WORDS)]
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
                     "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",

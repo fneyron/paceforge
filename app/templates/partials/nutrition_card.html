@@ -25,7 +25,7 @@
     {# ── Ton plan: one line per rhythm ───────────────────────────────────── #}
     <section id="nu-plan" class="pf-nu-sec" aria-labelledby="nu-plan-t">
         <h2 id="nu-plan-t" class="pf-nu-h">Ton plan</h2>
-        {% if old_notice %}<p class="pf-nu-note">Ton ancien plan était trop compliqué : refais-le ici en une minute.</p>{% endif %}
+        {% if old_notice %}<p class="pf-nu-note">Ton ancien plan ne peut pas s'afficher ici : refais-le, ça prend une minute.</p>{% endif %}
         {% if lines %}
         <ul class="pf-nu-lines">
             {% for l in lines %}
@@ -47,11 +47,11 @@
         {% if can_add %}<form method="post" action="{{ P }}/rhythms" hx-post="{{ P }}/rhythms"><button type="submit" id="nu-add" class="pf-nu-add">{{ ic.icon('plus', 'w-4 h-4', '2.2') }}Ajouter un produit au plan</button></form>{% endif %}
         {% if carbs %}
         <p class="pf-nu-sum"><span>≈ {{ carbs.g }} g de glucides par heure · <span class="is-{{ carbs.tone }}">{{ carbs.word }}</span></span>
-            {%- if caf %}<span class="pf-nu-caf{% if caf.over %} is-warn{% endif %}">{% if caf.over %}{{ ic.icon('alert', 'w-4 h-4') }}{% endif %}<span>caféine : {{ caf.mg }} mg, {% if caf.over %}au-dessus du plafond de {{ caf.cap }} mg sur 24 h{% else %}plafond {{ caf.cap }} mg sur 24 h{% endif %}{% if caf.no_weight %} · <a class="pf-link" href="/settings#weight_kg">indique ton poids dans Réglages</a> pour l'ajuster{% endif %}</span></span>{% endif %}</p>
+            {%- if caf %}<span class="pf-nu-caf{% if caf.over %} is-warn{% endif %}">{% if caf.over %}{{ ic.icon('alert', 'w-4 h-4') }}{% endif %}<span>caféine : {{ caf.mg }} mg, {% if caf.over %}au-dessus de la limite de {{ caf.cap }} mg sur 24 h{% else %}limite {{ caf.cap }} mg sur 24 h{% endif %}{% if caf.no_weight %} · <a class="pf-link" href="/settings#weight_kg">indique ton poids dans Réglages</a> pour l'ajuster{% endif %}</span></span>{% endif %}</p>
         {% endif %}
         {% else %}
         <p class="pf-nu-lead">Dis quand tu prends chaque produit : l'app compte ce qu'il te faut à chaque ravito.</p>
-        <form method="post" action="{{ P }}/starter" hx-post="{{ P }}/starter"><button type="submit" id="nu-starter" class="pf-btn pf-btn-primary">Plan type</button></form>
+        <form method="post" action="{{ P }}/starter" hx-post="{{ P }}/starter"><button type="submit" id="nu-starter" class="pf-btn pf-btn-primary">Commencer avec un plan type</button></form>
         {% endif %}
         {% if not has_times %}<p class="pf-nu-note">Lance une simulation pour avoir tes heures de passage.</p>{% endif %}
     </section>

@@ -203,11 +203,12 @@ def _history(nights, sessions, efforts, today: date) -> list:
 # the Sommeil row's word and colour from this morning's 24 h (H): 7 h and more (Watson 2015a), 6 to 7 h, under 6 h
 # (Craven 2022)
 SLEEP_WORDS = ((sl.REF_MIN, "suffisant", "ok"), (nt.SHORT_DAY_MIN, "un peu court", "accent"), (0, "court", "warn"))
-NO_NIGHT_WORD = "pas de nuit mesurée"
+NO_NIGHT_WORD = "pas enregistré"
 EFFORT_ORANGE = 65  # a recovery window's cap from which « Effort récent » wears orange (its 65 days); red under it
 NIGHT_FACTS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
-FACT_WORDS = {"none": "pas encore de normale", "few": "trop peu de nuits"}  # a card's status without a comparison
-ALERT_WORD = "nettement au-dessus, 2 nuits"  # the FC de nuit row under the illness alert
+# a card's status without a comparison
+FACT_WORDS = {"none": "pas encore de valeurs habituelles", "few": "trop peu de nuits pour comparer"}
+ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit row under the illness alert
 
 
 def _fact(key: str, name: str, value: str | None, word: str, tone: str, href: str | None,
@@ -221,8 +222,8 @@ def _fact(key: str, name: str, value: str | None, word: str, tone: str, href: st
 def sleep_fact(tst24: int | None, href: str | None) -> dict | None:
     """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), and a
     word: 7 h or more « suffisant » (green; AASM/SRS: Watson 2015a), 6 to 7 h « un peu court » (neutral), under
-    6 h « court » (warm: Craven 2022); no night this morning: « pas de nuit mesurée » (grey). None without a
-    Sommeil section (no night ever measured)."""
+    6 h « court » (warm: Craven 2022); no night this morning: « pas enregistré » (grey). None without a Sommeil
+    section (no night ever measured)."""
     if href is None:
         return None
     if tst24 is None:
@@ -234,8 +235,9 @@ def sleep_fact(tst24: int | None, href: str | None) -> dict | None:
 def effort_fact(efforts, day: dict) -> dict | None:
     """« Effort récent », only while a recovery window is open (sante_training.effort_window): « encore N
     jours », N the days from today to the last day of the windows open (« dernier jour » on it); never the
-    activity, its date or its hours (v4.3: no activity named on Santé). A red dot while the window caps the
-    score at 35 or 45 (its first days), orange at 65. No section of the page sums it up: a plain row."""
+    activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the window is a step,
+    not a curve). A red dot while the window caps the score at 35 or 45 (its first days), orange at 65. No
+    section of the page sums it up: a plain row."""
     w = day["window"]
     if not w:
         return None
@@ -248,10 +250,11 @@ def effort_fact(efforts, day: dict) -> dict | None:
 
 def night_fact(card: dict | None, metric: str, day: dict) -> dict | None:
     """« VFC (7 nuits) » / « FC de nuit (7 nuits) »: the word of its card's status line (card_status), never its
-    explanation, in its colour: « dans ta normale » (green), « sous ta normale » or « au-dessus de ta normale »
-    (orange or red on the side that matters, neutral on the other), « pas encore de normale » and « trop peu de
-    nuits » (grey); under the illness alert the FC de nuit row says « nettement au-dessus, 2 nuits » (red).
-    Links to its card; None without one (the watch never measured it in 30 days)."""
+    explanation, in its colour: « dans tes valeurs habituelles » (green), « plus basse que d'habitude » or « plus
+    haute que d'habitude » (orange or red on the side that matters, neutral on the other), « pas encore de valeurs
+    habituelles » and « trop peu de nuits pour comparer » (grey); under the illness alert the FC de nuit row says
+    « nettement plus haute depuis 2 nuits » (red). Links to its card; None without one (the watch never measured
+    it in 30 days)."""
     if card is None:
         return None
     key, name = NIGHT_FACTS[metric]
@@ -293,14 +296,16 @@ def _span(metric: str, values: list, bands: list) -> float:
     return max(14.0, 2 * widest)
 
 
-# each night card's status line (v4.3): its last 7 nights against the normal the score reads, in the words and the
-# colour of its facts row (sante_score.row_tone); what it often means, only out of the normal on the side that
-# matters; without a normal yet, how many ordinary nights until there is one
-STATUS = {"in": "dans ta normale", "below": "sous ta normale", "above": "au-dessus de ta normale"}
+# each night card's status line (v4.3): its last 7 nights against the usual values the score reads, in the words
+# and the colour of its facts row (sante_score.row_tone); what it often means, only out of them on the side that
+# matters; without usual values yet, how many nights until they exist (v4.4, owner: « les explications en
+# français ne sont pas claires »: « tes valeurs habituelles », « d'habitude », never « ta normale »)
+STATUS = {"in": "dans tes valeurs habituelles", "below": "plus basse que d'habitude",
+          "above": "plus haute que d'habitude"}
 BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over it: the side that matters
-MEANING = {"hrv": "Souvent : fatigue, stress, alcool ou début de maladie.",
-           "hr": "Souvent : fatigue, chaleur, alcool ou début de maladie."}
-NO_MEAN = "Trop peu de nuits ordinaires ces 7 jours pour comparer."
+MEANING = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie.",
+           "hr": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
+NO_MEAN = "Trop peu de nuits qui comptent ces 7 derniers jours pour comparer."
 COUNTS = "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas."  # while the band builds
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # a filled dot counts toward the usual values, a hollow one does not; the band solid, or dashed while provisional
@@ -326,18 +331,18 @@ def nights_to_normal(nights, metric: str, d: date) -> int:
 
 
 def card_status(nights, metric: str, day: dict) -> dict:
-    """{key, text, tone, meaning}: « dans ta normale » / « sous ta normale » / « au-dessus de ta normale » (key:
-    in, below, above) with a dot in its facts row's colour (sante_score.row_tone: green in it, orange or red out
-    of it on the side that matters, neutral on the other side, never praised), and « Souvent : … » only out of it
-    on the side that matters; without a normal (none) how many nights until there is one (nights_to_normal) and
-    which nights do not count; a plain line when the week holds under 3 usable nights (few). The FC de nuit under
-    the illness alert reads the alert's 2 nights, as the score does."""
+    """{key, text, tone, meaning}: « dans tes valeurs habituelles » / « plus basse que d'habitude » / « plus haute
+    que d'habitude » (key: in, below, above) with a dot in its facts row's colour (sante_score.row_tone: green in
+    them, orange or red out of them on the side that matters, neutral on the other side, never praised), and « Ça
+    arrive avec … » only out of them on the side that matters; without a band (none) how many nights until there
+    is one (nights_to_normal) and which nights do not count; a plain line when the week holds under 3 usable
+    nights (few). The FC de nuit under the illness alert reads the alert's 2 nights, as the score does."""
     s = day["stats"][metric]
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
         when = f"dans {n} nuits" if n > 1 else "après ta prochaine nuit"
         return {"key": "none", "tone": None, "meaning": COUNTS,
-                "text": f"Tes valeurs habituelles arrivent {when}, si tu portes ta montre."}
+                "text": f"Tes valeurs habituelles seront prêtes {when}, si tu portes ta montre."}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None or part is None:
         return {"key": "few", "text": NO_MEAN, "tone": None, "meaning": None}

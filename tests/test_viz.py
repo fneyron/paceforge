@@ -145,22 +145,22 @@ def test_night_card_prints_the_night_and_its_normal_never_a_verdict():
     c = viz.night_card("vfc", days, vals, band=band, prov=prov, mean=mean, unit="ms", unit_long="millisecondes",
                        name="VFC", min_span=20)
     d = json.loads(c["data"])
-    # two compact rows: the value (no word: a night is never judged alone), the night and its normal
+    # two compact rows: the value (no word: a night is never judged alone), the night and its usual values
     # the value: a no-break space (the display font has no narrow one: « 64ms » glued, UX11)
-    assert d["sel"] == 29 and c["read"] == ["64\u00a0ms", "", f"{viz.night_label(D)} · normale 55–66"]
+    assert d["sel"] == 29 and c["read"] == ["64\u00a0ms", "", f"{viz.night_label(D)} · d'habitude 55–66"]
     assert d["r"][10] == ["—", "", f"{viz.night_label(days[10])} · pas de mesure"]
     assert d["a"][10] == f"{viz.night_label(days[10])} : pas de mesure"  # spoken as it reads
     # « (provisoire) » after the numbers: at 358 px the ellipsis only ever cuts it, never the band (UX2)
-    assert d["r"][8][2].endswith(" · normale 55–66 (provisoire)") and d["r"][2][2] == viz.night_label(days[2])
-    assert "ta normale provisoire de 55 à 66" in d["a"][8]
+    assert d["r"][8][2].endswith(" · d'habitude 55–66 (provisoire)") and d["r"][2][2] == viz.night_label(days[2])
+    assert "d'habitude entre 55 et 66, valeurs provisoires" in d["a"][8] and "normale" not in c["data"]
     assert c["title"] == "VFC · 30 nuits" and [t["label"] for t in c["xt"]][0].startswith("lun.")
     short = viz.night_card("vfc", days[-14:], vals[-14:], band=band[-14:], prov=prov[-14:], mean=mean[-14:],
                            unit="ms", unit_long="millisecondes", name="VFC")
     assert short["title"] == "VFC · 14 nuits" and [t["label"] for t in short["xt"]] == [str(x.day) for x in days[-14:]]
     printed = json.dumps(d["r"], ensure_ascii=False)
     assert not any(w in printed for w in ("au-dessus", "en dessous", "▲", "▼"))
-    assert len(c["dots"]) == 29 and c["summary"] == "VFC, 30 nuits : 29 mesurées" and c["mean"].startswith("M")
-    assert d["a"][-1] == "nuit du mar. 6 au mer. 7 : VFC 64 millisecondes, ta normale de 55 à 66"
+    assert len(c["dots"]) == 29 and c["summary"] == "VFC, 30 nuits : 29 enregistrées" and c["mean"].startswith("M")
+    assert d["a"][-1] == "nuit du mar. 6 au mer. 7 : VFC 64 millisecondes, d'habitude entre 55 et 66"
     for m in mean:  # the 7-night mean is drawn, never printed
         if m is not None and m != int(m):
             assert viz.num(m, 1) not in printed

@@ -106,10 +106,10 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
 
 
 def test_the_folds_print_no_h_and_no_citation():
-    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 6 at most, « Comment je
-    lis tes nuits » 5 at most) with no « (H) » and no citation (their sources are on /sante/sources); the (H)
-    marks stay on the constants' lines (above) and in these tests."""
-    assert len(sc.METHOD) <= 6 and len(sl.METHOD) <= 5
+    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 7 at most since v4.4
+    explains VFC and FC de nuit, « Comment je lis tes nuits » 5 at most) with no « (H) » and no citation (their
+    sources are on /sante/sources); the (H) marks stay on the constants' lines (above) and in these tests."""
+    assert len(sc.METHOD) <= 7 and len(sl.METHOD) <= 5
     for text in (sc.flat(sc.METHOD), sc.flat(sl.METHOD)):
         assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
     assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)

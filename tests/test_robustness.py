@@ -71,8 +71,8 @@ async def test_nutrition_card_with_incomplete_saved_targets(as_user: AsyncClient
     route.nutrition_json = {"targets": {"carbs_g_per_h": 60}, "items": []}
     await db_session.flush()
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    # nothing to map (no product): an empty plan, no « trop compliqué »
-    assert r.status_code == 200 and ">Plan type<" in r.text and "trop compliqué" not in r.text
+    # nothing to map (no product): an empty plan, no « ne peut pas s'afficher »
+    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "ne peut pas s'afficher" not in r.text
 
 
 @pytest.mark.asyncio

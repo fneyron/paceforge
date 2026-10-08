@@ -124,7 +124,8 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
     legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
     assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
         "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
-    assert "Estimées par la montre à partir du pouls et des mouvements : la forme de ta nuit, pas sa qualité." in hero
+    assert ("Ta montre estime les phases d'après ton pouls et tes mouvements. Elles montrent la forme de ta nuit, "
+            "pas sa qualité.") in hero
     for word in ("bon", "mauvais", "objectif", "insuffisant", "%"):  # shown, never judged
         assert word not in re.sub(r"<[^>]+>", " ", hero), word
     css = (ROOT / "app/static/css/interface.css").read_text()
@@ -194,12 +195,13 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
                       r'aria-hidden="true"></i><span>([^<]+)(?:<small>[^<]+</small>)?</span></span>'
                       r'<span class="pf-fact-val">(.*?)</span>', facts)
     assert [(n.strip(), re.sub(r"<[^>]+>", "", v)) for _, n, v in rows] == [
-        ("Sommeil", "7h20 suffisant"), ("VFC", "sous ta normale"), ("FC de nuit", "dans ta normale")]
+        ("Sommeil", "7h20 suffisant"), ("VFC", "plus basse que d&#39;habitude"),
+        ("FC de nuit", "dans tes valeurs habituelles")]
     for key in ("vfc", "fc"):
         card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
         # its status line: a dot and its words (the 2 missing nights leave the VFC week a little under its normal)
         assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i>'
-                         r'(dans|sous) ta normale</p>', card), key
+                         r'(dans tes valeurs habituelles|plus basse que d&#39;habitude)</p>', card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
                 and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
@@ -223,10 +225,12 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "danger", "Récupération faible", None)
     assert (score["value"], score["measured"], score["estimated"]) == (35, False, True) and page["line"] is None
     assert (page["ring"]["value"], page["ring"]["sub"]) == ("35", "estimé") and "rings" not in page
-    assert page["ring"]["aria"] == "Récupération 35 sur 100, estimée sans nuit mesurée. Récupération faible."
+    assert page["ring"]["aria"] == ("Récupération 35 sur 100, estimée : ta montre n'a pas enregistré ta nuit. "
+                                    "Récupération faible.")
     assert [(f["name"], f["value"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("Sommeil", None, "pas de nuit mesurée", "none"), ("Effort récent", None, "encore 11 jours", "danger"),
-        ("VFC", None, "pas encore de normale", "none"), ("FC de nuit", None, "pas encore de normale", "none")]
+        ("Sommeil", None, "pas enregistré", "none"), ("Effort récent", None, "encore 11 jours", "danger"),
+        ("VFC", None, "pas encore de valeurs habituelles", "none"),
+        ("FC de nuit", None, "pas encore de valeurs habituelles", "none")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">estimé</span>' in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html
@@ -272,7 +276,7 @@ async def test_the_morning_after_a_dawn_finish_on_the_page(db_session: AsyncSess
     assert {p["key"]: p["sub"] for p in page["score"]["parts"]}["load"] == 20
     assert {f["key"]: f["tone"] for f in page["facts"]}["effort"] == "danger"
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
-    assert "◇ récupération" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), « récupération » on Santé (v4.3)
+    assert "◇ après un gros effort" in marks[today.isoformat()]  # 22 h: an ultra (v4.2), no outing named (v4.3)
 
 
 async def test_the_range_toggle_works_without_js(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
@@ -318,8 +322,8 @@ async def test_the_race_page_tags_the_nights_as_sante(db_session: AsyncSession, 
 
 
 def test_the_readouts_fit_one_line_at_358_px():
-    """UX2: a past day's readout in compact words (v4.3: the date, the score, the state; « estimé, sans nuit
-    mesurée » the longest); a provisional normal says « (provisoire) » after its numbers."""
+    """UX2: a past day's readout in compact words (v4.3: the date, the score, the state; « estimé, nuit non
+    enregistrée » the longest); a provisional normal says « (provisoire) » after its numbers."""
     from app.services import sante_score as sc
 
     assert len("mer. 30 sept. · " + sc.EST_READ) <= 44  # ≈ 290 px at 13 px

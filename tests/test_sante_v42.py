@@ -315,7 +315,8 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
     ultra = S(11, minutes=700, km=100, dplus=4000, sport="TrailRun", id=99_999, name="Ultra")  # D = T-11
     after = tv.footing(runs + [ultra], T, 185)
     assert not after["flagged"] and after["after_ultra"]
-    assert after["line"] == "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure, après ultra."
+    assert after["line"] == ("Tes 2 dernières sorties faciles : cœur plus haut que d'habitude, à la même allure, après "
+                             "ultra.")
     old = S(30, minutes=700, km=100, dplus=4000, sport="TrailRun", id=99_998, name="Ultra")  # D+28: flagged again
     assert tv.footing(runs + [old], T, 185)["flagged"]
     long_ride = S(11, minutes=700, km=300, dplus=2000, sport="Ride", id=99_997, name="Vélo")  # Très longue (M4)
@@ -351,7 +352,7 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     assert s["raw0"] == pytest.approx((25 * subs["hrv"] + 25 * 100 + 30 * 100 + 20 * 50) / 100)
     assert s["value"] == 65 and s["caps"] == ["effort"]
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
-        "◇ récupération"  # v4.3: Santé names no outing
+        "◇ après un gros effort"  # v4.3: Santé names no outing (v4.4: its plain words)
     act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not a race: its window ended on D+3
     act.name = "Marathon de Lyon "  # a change the sessions' cache sees
     await db_session.flush()
@@ -430,7 +431,7 @@ def test_stages_rounded_to_10_min_the_bar_keeps_its_shape():
     ph = sl.phases({"awake": 4, "light": 205, "deep": 49, "rem": 0})
     assert [(p["key"], p["min"], p["hm"]) for p in ph["parts"]] == [("awake", 4, "< 10 min"),
                                                                     ("light", 205, "3h30"), ("deep", 49, "50 min")]
-    assert ph["aria"] == ("Phases estimées par la montre : éveil moins de 10 minutes, léger 3 heures 30, profond "
+    assert ph["aria"] == ("Phases estimées par ta montre : éveil moins de 10 minutes, léger 3 heures 30, profond "
                           "50 minutes.")
     for word in ("%", "objectif", "idéal", "norme"):
         assert word not in str(ph)
@@ -498,7 +499,7 @@ def test_a_night_says_each_word_once():
     nights[D].tags |= {"ultra", "ultra_tail", "late_nap", "race"}
     assert nt.tag_words(nights[D].tags) == ["après sieste tardive", "après ultra"]
     assert {r["iso"]: r["marks"] for r in sl.rows(nights, D)}[D.isoformat()] == \
-        "◇ après sieste tardive · ◇ récupération"
+        "◇ après une sieste tardive · ◇ après un gros effort"
 
 
 def test_a_big_climb_is_no_modifier_any_more():
@@ -556,7 +557,7 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     recup, nuits = folds
     assert "<summary>Comment je calcule ta récupération</summary>" in recup
     assert "<summary>Comment je lis tes nuits</summary>" in nuits
-    assert len(re.findall(r"<li>", recup)) == 6 and len(re.findall(r"<li>", nuits)) == 5
+    assert len(re.findall(r"<li>", recup)) == 7 and len(re.findall(r"<li>", nuits)) == 5
     for fold, anchor in ((recup, "recuperation"), (nuits, "sommeil")):
         assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
         assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »
@@ -567,7 +568,7 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     assert '<a href="/sante" class="pf-back">‹ Santé</a>' in page and '<h1 class="pf-sante-h1">Sources</h1>' in page
     assert re.findall(r'<h2 id="h-(\w+)" class="pf-sec-h">([^<]+)</h2>', page) == [("recuperation", "Récupération"),
                                                                                    ("sommeil", "Sommeil")]
-    assert re.findall(r'<h3 class="pf-method-h">([^<]+)</h3>', page) == ["Textes officiels", "Études"] * 2
+    assert re.findall(r'<h3 class="pf-method-h">([^<]+)</h3>', page) == ["Recommandations officielles", "Études scientifiques"] * 2
     for refs in (sc.REFS, sl.REFS):
         for _, items in sc.linked(refs):
             for name, href in items:

@@ -1883,15 +1883,17 @@ async def _product_uses(db: AsyncSession, user: User, route: Route, pid: int, pl
 
 
 def _delete_question(uses: dict, name: str) -> str:
+    """What deleting a product also does, in one active sentence (v4.4 copy pass): « Supprimer Maurten Gel 100 le
+    retire aussi de ton plan et de celui d'une autre course. »"""
     n = len(uses["others"])
-    elsewhere = "d'une autre course" if n == 1 else f"de {n} autres courses"
     if uses["here"] and n:
-        where = f"dans ton plan et dans celui {elsewhere}"
+        where = ("de ton plan et de celui d'une autre course" if n == 1
+                 else f"de ton plan et de ceux de {n} autres courses")
     elif uses["here"]:
-        where = "dans ton plan"
+        where = "de ton plan"
     else:
-        where = f"dans le plan {elsewhere}"
-    return f"{name} est {where} : il en sera retiré."
+        where = "du plan d'une autre course" if n == 1 else f"des plans de {n} autres courses"
+    return f"Supprimer {name} le retire aussi {where}."
 
 
 async def _nutrition_card_context(

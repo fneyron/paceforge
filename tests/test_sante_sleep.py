@@ -107,7 +107,7 @@ def test_a_short_main_night_is_said_plainly():
     assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40"]
     nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
     d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
-    assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · pas de nuit mesurée"]
+    assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]
     assert "?" not in json.dumps(d, ensure_ascii=False)
 
 
@@ -161,8 +161,8 @@ def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
     out = sl.rows(nights, D)
     assert len(out) == 30 and out[0]["iso"] == D.isoformat()
     marks = {r["iso"]: r["marks"] for r in out}
-    assert marks[(D - timedelta(days=2)).isoformat()] == "◇ récupération"
-    assert marks[(D - timedelta(days=3)).isoformat()] == "◇ décalage horaire · ◇ récupération"
+    assert marks[(D - timedelta(days=2)).isoformat()] == "◇ après un gros effort"
+    assert marks[(D - timedelta(days=3)).isoformat()] == "◇ décalage horaire · ◇ effort intense le soir"
     assert not any("sortie" in m or "ultra" in m for m in marks.values())
     assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
@@ -170,20 +170,20 @@ def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
 def test_the_method_fold_is_five_plain_bullets_and_names_no_race():
     """« Comment je lis tes nuits » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets pas les
     citations »): 5 one-line bullets in plain words, no citation, no « (H) »; its references stay in the code
-    (REFS), listed on /sante/sources."""
+    (REFS), listed on /sante/sources. v4.4: active sentences of 15 words at most, the cards' words."""
     import re
 
     from app.services import sante_score as sc
 
-    assert sl.METHOD == ["Ton sommeil se compte sur 24 h, siestes comprises.",
-                         "7 h ou plus en moyenne, c'est recommandé ; une nuit sous 6 h est courte.",
-                         "Phases estimées par la montre : la forme de ta nuit, pas sa qualité.",
-                         "Les nuits en récupération, en voyage ou en altitude restent hors de ta normale.",
-                         "Coucher et lever détectés par la montre."]
+    assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
+                         "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
+                         "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
+                         "Les nuits en voyage, en altitude ou après un gros effort ne comptent pas.",
+                         "Ta montre détecte tes heures de coucher et de lever."]
     text = sc.flat(sl.METHOD)
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text
     assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text)
-    assert [g for g, _ in sl.REFS] == ["Textes officiels", "Études"]
+    assert [g for g, _ in sl.REFS] == ["Recommandations officielles", "Études scientifiques"]
     labels = [n for _, items in sl.REFS for n, _ in items]
     assert len(labels) == len(set(labels)) <= 16
     links = dict(n_l for _, items in sc.linked(sl.REFS) for n_l in items)

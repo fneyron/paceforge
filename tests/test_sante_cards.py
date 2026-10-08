@@ -28,11 +28,12 @@ def test_without_usual_values_the_card_says_when_they_come():
     band in the legend."""
     c = _card(night_rows(range(0, 13)))  # tomorrow's band reads 7 nights (offsets 6 → 12)
     assert c["status"] == {"key": "none", "tone": None, "meaning": sante.COUNTS,
-                           "text": "Tes valeurs habituelles arrivent après ta prochaine nuit, si tu portes ta montre."}
+                           "text": "Tes valeurs habituelles seront prêtes après ta prochaine nuit, si tu portes ta "
+                                   "montre."}
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert c["status"]["text"] == "Tes valeurs habituelles arrivent dans 9 nuits, si tu portes ta montre."
+    assert c["status"]["text"] == "Tes valeurs habituelles seront prêtes dans 9 nuits, si tu portes ta montre."
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
 
@@ -81,7 +82,7 @@ def test_a_night_that_does_not_count_is_a_hollow_dot():
     assert out == [27]  # 06/10, the night after the outing of 05/10
     assert c["legend"][:2] == [("is-dot", "compte"), ("is-out", "ne compte pas (voyage, gros effort, altitude)")]
     data = c["data"]
-    assert '"ne compte pas"' in data and "une nuit qui ne compte pas" in data
+    assert '"ne compte pas"' in data and "cette nuit ne compte pas" in data
     html = render("{{ v.viz_night_card(c, 'VFC · 30 nuits') }}", c=c)
     assert len(re.findall(r'<circle [^>]*r="3.2" class="pf-viz-dot is-out"', html)) == 1
     assert len(re.findall(r'class="pf-viz-dot(?: is-sel)?" data-i', html)) == len(c["dots"]) - 1

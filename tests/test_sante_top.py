@@ -55,19 +55,20 @@ def test_a_night_row_repeats_its_cards_word_never_its_explanation():
     def card(key, text, tone):
         return {"status": {"key": key, "text": text, "tone": tone, "meaning": "x"}}
     plain = {"day": D, "window": None, "alert": None}
-    rows = [sante.night_fact(card("in", "dans ta normale", "ok"), "hrv", plain),
-            sante.night_fact(card("below", "sous ta normale", "danger"), "hrv", plain),
-            sante.night_fact(card("above", "au-dessus de ta normale", "accent"), "hrv", plain),
-            sante.night_fact(card("none", "Pas encore de normale : encore 3 nuits …", None), "hr", plain),
+    rows = [sante.night_fact(card("in", sante.STATUS["in"], "ok"), "hrv", plain),
+            sante.night_fact(card("below", sante.STATUS["below"], "danger"), "hrv", plain),
+            sante.night_fact(card("above", sante.STATUS["above"], "accent"), "hrv", plain),
+            sante.night_fact(card("none", "Tes valeurs habituelles seront prêtes dans 3 nuits …", None), "hr", plain),
             sante.night_fact(card("few", sante.NO_MEAN, None), "hr", plain)]
     assert [(r["name"], r["qual"], r["word"], r["tone"], r["href"]) for r in rows] == [
-        ("VFC", "7 nuits", "dans ta normale", "ok", "#vfc"), ("VFC", "7 nuits", "sous ta normale", "danger", "#vfc"),
-        ("VFC", "7 nuits", "au-dessus de ta normale", "accent", "#vfc"),
-        ("FC de nuit", "7 nuits", "pas encore de normale", "none", "#fc"),
-        ("FC de nuit", "7 nuits", "trop peu de nuits", "none", "#fc")]
+        ("VFC", "7 nuits", "dans tes valeurs habituelles", "ok", "#vfc"),
+        ("VFC", "7 nuits", "plus basse que d'habitude", "danger", "#vfc"),
+        ("VFC", "7 nuits", "plus haute que d'habitude", "accent", "#vfc"),
+        ("FC de nuit", "7 nuits", "pas encore de valeurs habituelles", "none", "#fc"),
+        ("FC de nuit", "7 nuits", "trop peu de nuits pour comparer", "none", "#fc")]
     assert all(r["value"] is None for r in rows)  # a word, no number: the card prints last night's value
     assert sante.night_fact(None, "hrv", plain) is None
     ill = {**plain, "alert": {"values": [53.0, 53.0]}}
-    assert sante.night_fact(card("above", "au-dessus de ta normale", "danger"), "hr", ill)["word"] == (
-        "nettement au-dessus, 2 nuits")
-    assert sante.night_fact(card("in", "dans ta normale", "ok"), "hrv", ill)["word"] == "dans ta normale"
+    assert sante.night_fact(card("above", sante.STATUS["above"], "danger"), "hr", ill)["word"] == (
+        "nettement plus haute depuis 2 nuits")
+    assert sante.night_fact(card("in", sante.STATUS["in"], "ok"), "hrv", ill)["word"] == "dans tes valeurs habituelles"

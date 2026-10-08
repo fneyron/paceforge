@@ -16,7 +16,7 @@
 
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}
     <section class="pf-health-connect pf-panel space-y-3">
-        <p class="text-[15px] text-gray-700">{{ link.last_error or "La connexion à " ~ name ~ " a expiré : reconnecte-toi." }} Les données déjà reçues restent.</p>
+        <p class="text-[15px] text-gray-700">{{ link.last_error or "La connexion à " ~ name ~ " a expiré : reconnecte-toi." }} Tes données déjà reçues sont gardées.</p>
         <a href="/settings#{{ anchor }}" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter {{ name }} dans les réglages</a>
     </section>
     {% endfor %}
@@ -29,7 +29,7 @@
     {% else %}
     <section class="pf-health-connect pf-panel space-y-3 mt-4">
         <h2 class="pf-h2">Ta montre et tes activités</h2>
-        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, et Strava : ta récupération et tes nuits s'afficheront ici.</p>
+        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, puis Strava. Ta récupération et tes nuits s'afficheront ici.</p>
         <div class="flex flex-wrap gap-2">
             <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
             <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>

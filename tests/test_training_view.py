@@ -87,7 +87,7 @@ def test_easy_pace_hr_dots_hollow_hot_runs_and_a_band_from_the_28_days_before():
     hot = [p for p in c["dots"] if p["hot"]]
     assert len(hot) == 1
     i = next(k for k, r in enumerate(d["r"]) if "journée chaude" in r[2])
-    assert d["r"][i][1] == "150 bpm" and "normale 137–143" in d["r"][i][2]
+    assert d["r"][i][1] == "150 bpm" and "d'habitude 137–143" in d["r"][i][2]
     assert d["h"][i] == {"href": f"/activity/{50_000 + 6 * 10 + 1}", "label": "Ouvrir la sortie ›"}
     assert c["band"]  # the rolling band is drawn
 
@@ -96,7 +96,8 @@ def test_easy_pace_hr_is_flagged_after_two_runs_3_bpm_above():
     runs = [easy(k, 140) for k in range(10, 200, 3)]
     assert not tv.footing(runs + [easy(2, 144)], T, 185)["flagged"]  # one run
     c = tv.footing(runs + [easy(5, 144), easy(2, 146)], T, 185)
-    assert c["flagged"] and c["line"] == "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
+    assert c["flagged"] and c["line"] == ("Tes 2 dernières sorties faciles : cœur plus haut que d'habitude, à la même "
+                                          "allure.")
     assert not tv.footing(runs + [easy(5, 144), easy(2, 142)], T, 185)["flagged"]  # +2: within the band
     assert not tv.footing(runs + [easy(5, 150, temp=30), easy(2, 150, temp=30)], T, 185)["flagged"]  # hot
     assert tv.footing([easy(k, 140) for k in range(3, 17, 3)], T, 185) is None  # under 6 runs (H)
@@ -188,7 +189,7 @@ def test_weeks_one_measure_twelve_bars_and_the_average():
     mean = round(sum(minutes[:11]) / 11 / 5) * 5  # 745 → to 5 min
     assert d["rest"] == ["sur 11 semaines", tv.hm(mean), "par semaine en moyenne"] and d["sel"] == 12
     assert d["restA"] == (f"{tv.hm_long(mean)} par semaine en moyenne, sur 11 semaines complètes. Choisis une "
-                          "semaine pour son total.")
+                          "semaine pour voir son total.")
     assert d["r"][-2] == ["sem. du 28 sept.", "18h56", ""] and d["r"][-1] == ["sem. du 5 oct.", "3h10", "en cours"]
     assert d["a"][-2] == "Semaine du lundi 28 septembre : 18 heures 56"
     assert d["a"][-1] == "Semaine du lundi 5 octobre, en cours : 3 heures 10"

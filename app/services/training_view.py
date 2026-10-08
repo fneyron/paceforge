@@ -62,7 +62,7 @@ WEEKS = 12
 SPIKE, SPIKE_DAYS = 1.10, 30  # Frandsen 2025
 FORM_DAYS = 120
 EASY_DAYS = 182  # the dots of 6 months
-FLAG_LINE = "Tes 2 dernières sorties faciles : cœur au-dessus de ta normale, à même allure."
+FLAG_LINE = "Tes 2 dernières sorties faciles : cœur plus haut que d'habitude, à la même allure."
 AFTER_ULTRA = "après ultra"  # the fold's note instead of « à surveiller », 21 days after an ultra (H)
 SPIKE_TAG = "plus longue que d'habitude"  # the list row's tag of a single-run spike (v4.3)
 # « Durée · Distance · D+ »: (key, the toggle's word, the figure's title, the spoken unit)
@@ -207,8 +207,8 @@ def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | Non
          "avg": y(avg) if avg else None, "cur": bool(cols[-1].get("h")),
          "xt": [{"x": xs[i], "label": f"{w['monday'].day} {MOIS[w['monday'].month - 1]}"}
                 for i, w in enumerate(weeks) if (n - 1 - i) % 3 == 0],
-         "summary": f"{title} sur 12 semaines, la semaine en cours plus claire"
-                    + (", une ligne à la moyenne des semaines complètes" if avg else ""),
+         "summary": f"{title} sur 12 semaines. La semaine en cours est hachurée"
+                    + (", une ligne marque la moyenne des semaines complètes." if avg else "."),
          "title": title, **viz._data(xs, [], [w["monday"] for w in weeks], r, a, h=h)}
     # resting readout: the average (each week's own total is its list heading's: printed there, on a tap here)
     if avg is not None:
@@ -216,9 +216,9 @@ def _chart(weeks: list[dict], key: str, title: str, n_avg: int, sport: str | Non
         over = f"sur {n_avg} semaine{'s' if n_avg > 1 else ''}"
         return viz.rest(c, [over, _big(mean, key), "par semaine en moyenne"],
                         f"{_said(mean, key)} par semaine en moyenne, {over} complète{'s' if n_avg > 1 else ''}. "
-                        "Choisis une semaine pour son total.", back=n - 1)
-    return viz.rest(c, ["12 semaines", title, ""], f"{title} sur 12 semaines. Choisis une semaine pour son total.",
-                    back=n - 1)
+                        "Choisis une semaine pour voir son total.", back=n - 1)
+    return viz.rest(c, ["12 semaines", title, ""],
+                    f"{title} sur 12 semaines. Choisis une semaine pour voir son total.", back=n - 1)
 
 
 def semaines(weeks: list[dict], first: date | None, measure: str | None, sport: str | None = None) -> dict | None:
@@ -261,7 +261,7 @@ def footing(sessions: list[st.Session], today: date, peak: float) -> dict | None
     for s in shown:
         m = centre(s.day)
         points.append({"day": s.day, "value": value[s.id], "hot": st.is_hot(s),
-                       "label": f"normale {num(m - st.EASY_BPM)}–{num(m + st.EASY_BPM)}" if m is not None else "",
+                       "label": f"d'habitude {num(m - st.EASY_BPM)}–{num(m + st.EASY_BPM)}" if m is not None else "",
                        "href": {"href": f"/activity/{s.id}", "label": "Ouvrir la sortie ›"}})
     c = viz.dots(days, points, band=band, min_span=10)
     watch = st.easy_watch(model, today)

@@ -186,8 +186,8 @@ def test_rung_1_the_alert_comes_first_even_in_a_window():
     assert day["window"]["days"] == 7
     assert (day["state"]["key"], day["state"]["word"]) == ("ill", "Récupération faible")
     # the one sentence the page still prints (v4.3): what the alert can mean
-    assert day["state"]["text"] == ("FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant "
-                                    "un rhume, après de l'alcool ou une grosse journée.")
+    assert day["state"]["text"] == ("Ta FC de nuit est nettement plus haute que d'habitude. Ça arrive avant un rhume, "
+                                    "après de l'alcool ou une grosse journée.")  # its 2 nights: the FC de nuit row
     assert 0 <= day["score"]["value"] <= 39 and day["score"]["tone"] == "danger"
     # a provisional band (13 nights) never fires it: specific, not sensitive (Quer 2021)
     young = night_rows(range(0, 15), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)
@@ -257,7 +257,7 @@ def test_rung_5_well_recovered_needs_a_nightly_signal():
     assert day["score"]["value"] == 100 and not day["score"]["estimated"]
     strava = _day({}, _runs())  # activities only: nothing measured
     assert strava["state"] is None and strava["score"]["value"] is None
-    assert td.no_state_line(False) == "Connecte ta montre pour ta récupération."
+    assert td.no_state_line(False) == "Connecte ta montre pour voir ta récupération."
     # without a nightly signal, a recovery window still makes the state, from the activities alone (OWN-1): the
     # score is the window's cap (nothing measured says otherwise), « estimé » (v4.3): an ultra's 35 the first 3 days
     ultra = _day({}, _runs() + [_session(D - timedelta(days=3), 700, sid=9, name="Ultra des Crêtes")])
@@ -516,8 +516,8 @@ def test_the_day_after_an_alert_stops_firing_the_episode_is_still_read():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hr", D, day)
-    assert card["status"] == {"key": "above", "text": "au-dessus de ta normale", "tone": "warn",
-                              "meaning": "Souvent : fatigue, chaleur, alcool ou début de maladie."}
+    assert card["status"] == {"key": "above", "text": "plus haute que d'habitude", "tone": "warn",
+                              "meaning": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
     assert day["score"]["value"] == sc.rounded((25 * 100 + 25 * hr["sub"] + 30 * 100) / 80) == 90
 
 
@@ -535,11 +535,11 @@ def test_the_illness_alert_makes_the_nightly_hr_row_red():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hr", D, day)
-    assert card["status"] == {"key": "above", "text": "au-dessus de ta normale", "tone": "danger",
-                              "meaning": "Souvent : fatigue, chaleur, alcool ou début de maladie."}
+    assert card["status"] == {"key": "above", "text": "plus haute que d'habitude", "tone": "danger",
+                              "meaning": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
     row = sante.night_fact(card, "hr", day)
     assert (row["name"], row["qual"], row["word"], row["tone"], row["href"]) == (
-        "FC de nuit", "7 nuits", "nettement au-dessus, 2 nuits", "danger", "#fc")
+        "FC de nuit", "7 nuits", "nettement plus haute depuis 2 nuits", "danger", "#fc")
 
 
 def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
@@ -644,7 +644,7 @@ def test_a_row_wears_the_colour_its_card_wears():
              for t in (600, 420, 419, 360, 359)}
     assert words == {600: ("suffisant", "ok"), 420: ("suffisant", "ok"), 419: ("un peu court", "accent"),
                      360: ("un peu court", "accent"), 359: ("court", "warn")}
-    assert sante.sleep_fact(None, "#sommeil")["word"] == "pas de nuit mesurée" and sante.sleep_fact(400, None) is None
+    assert sante.sleep_fact(None, "#sommeil")["word"] == "pas enregistré" and sante.sleep_fact(400, None) is None
     day = _day(_rich(hrv_last=52.0, asleep=390), _runs())  # VFC far under its band, FC in it, 6h30
     assert day["score"]["raw0"] == (25 * 0 + 25 * 100 + 30 * 80) / 80 == 61.25 and day["score"]["value"] == 61
     parts = {p["key"]: p for p in day["score"]["parts"]}
@@ -662,26 +662,34 @@ def test_provisional_bands_say_so_on_the_cards():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hrv", D, day)
-    assert card["read"][2].endswith(" (provisoire)") and card["status"]["text"] == "dans ta normale"
+    assert card["read"][2].endswith(" (provisoire)") and card["status"]["text"] == "dans tes valeurs habituelles"
 
 
 def test_the_method_fold_is_six_plain_bullets():
     """« Comment je calcule ta récupération » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets
-    pas les citations pour gagner de la place »): 6 one-line bullets in plain words, no citation, no « (H) »; the
-    references stay in the code, listed on /sante/sources, each a link (a DOI, else the text's own address)."""
+    pas les citations pour gagner de la place »): a few bullets in plain words, no citation, no « (H) »; the
+    references stay in the code, listed on /sante/sources, each a link (a DOI, else the text's own address). v4.4
+    (owner: « les explications en français ne sont pas claires »): sentences of 15 words at most, VFC and FC de
+    nuit each said once in one plain sentence, « tes valeurs habituelles », never « ta normale »."""
     assert sc.METHOD == [
-        "Ton score sur 100 combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
-        "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
-        "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 "
-        "semaines après un ultra.",
-        "Une nuit sous 6 h ou une FC de nuit nettement haute font baisser ton état.",
+        "Ton score est une note sur 100. Elle combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts "
+        "récents.",
+        "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
+        "pouls moyen pendant ton sommeil.",
+        "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
+        "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après "
+        "un ultra.",
+        "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
         "70 et plus : bonne récupération ; 40 à 69 : en cours ; moins de 40 : faible.",
-        "Une estimation : quelques points d'écart ne veulent rien dire."]
+        "C'est une estimation : quelques points d'écart ne veulent rien dire."]
+    for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
+        assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence
+    assert "normale" not in sc.flat(sc.METHOD)
     text = sc.flat(sc.METHOD)
     assert "(H)" not in text and not re.search(r"\(\w+ (19|20)\d\d", text) and "séance" not in text.lower()
     assert not any(n in text for _, items in sc.REFS for n, _ in items)  # no citation in the fold
     assert all(" :" in b or ":" not in b for b in sc.typo(sc.METHOD))  # « : » never alone at a line start
-    assert [g for g, _ in sc.REFS] == ["Textes officiels", "Études"]
+    assert [g for g, _ in sc.REFS] == ["Recommandations officielles", "Études scientifiques"]
     links = dict(n_l for _, items in sc.linked(sc.REFS) for n_l in items)
     assert links["Kellmann 2018"] == "https://doi.org/10.1123/ijspp.2017-0759"
     assert links["BASES 2023"].startswith("https://westminsterresearch.westminster.ac.uk/")  # no DOI: its URL
@@ -702,7 +710,7 @@ def test_a_heart_signal_wears_its_place_against_the_normal():
 def test_a_past_day_says_its_date_its_score_and_its_state_only():
     """OWN-3, v4.3 (owner: « Ne mentionne pas les sorties dans la partie Santé »): in the 14-day card a day says its
     date, its score and its state, never an activity, never « il y a »; a day estimated without a night measured
-    says so (« estimé, sans nuit mesurée »), its bar hatched."""
+    says so (« estimé, nuit non enregistrée »), its bar hatched."""
     big = _session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=44, name="Transjeju 100M")
     rows, sessions = night_rows([0, 1, 2, 9, 10, 11, 12, 13]), _runs() + [big]  # no night D-8 → D-3, no band
     nights = _nights(rows, sessions)
@@ -716,6 +724,6 @@ def test_a_past_day_says_its_date_its_score_and_its_state_only():
     for word in ("Transjeju", "sortie", "il y a"):
         assert word not in c["data"], word
     est = [i for i, b in enumerate(c["bars"]) if b["est"]]
-    assert est == [8, 9, 10] and all(d["r"][i][2].endswith(" · estimé, sans nuit mesurée") for i in est)
-    assert all(d["a"][i].endswith(", estimé sans nuit mesurée.") for i in est)
+    assert est == [8, 9, 10] and all(d["r"][i][2].endswith(" · estimé, nuit non enregistrée") for i in est)
+    assert all(d["a"][i].endswith(", estimé car ta montre n'a pas enregistré la nuit.") for i in est)
     assert all(b["cls"] == "danger" for b in (c["bars"][i] for i in est)) and c["hatched"] == ["danger"]

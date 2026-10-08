@@ -605,8 +605,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     edges from 14 nights, dashed edges and a lighter fill while provisional
     (7 to 13 nights, H; `band_prov`, `edge_prov_lo/hi`). Readout, two compact
     lines: [« 100 ms », the word « ne compte pas » for a hollow night, « nuit
-    du mer. 7 au jeu. 8 · normale 85–110 »] (« … (provisoire) » from 7 to 13
-    nights); the latest measured night is selected: its value is the card's.
+    du mer. 7 au jeu. 8 · d'habitude 85–110 »] (« … (provisoire) » from 7 to
+    13 nights); the latest measured night is selected: its value is the card's.
     `min_span`: the y axis never narrower (noise must not look like a cliff).
     « (provisoire) » comes after the band's numbers: at 358 px the ellipsis
     only ever cuts it."""
@@ -629,11 +629,12 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             continue
         line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
         if not counts[i]:
-            spoken += ", une nuit qui ne compte pas"
+            spoken += ", cette nuit ne compte pas"
         if b:
             pv = bool(prov[i])
-            line += f" · normale {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
-            spoken += f", ta normale{' provisoire' if pv else ''} de {num(b[0], digits)} à {num(b[1], digits)}"
+            line += f" · d'habitude {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
+            spoken += (f", d'habitude entre {num(b[0], digits)} et {num(b[1], digits)}"
+                       + (", valeurs provisoires" if pv else ""))
         r.append([f"{num(v, digits)}{NBSP}{unit}", "" if counts[i] else NOT_COUNTED, line])
         a.append(spoken)
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
@@ -653,7 +654,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
-            "summary": f"{name}, {n} nuits : {measured} mesurée{'s' if measured > 1 else ''}",
+            "summary": f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
             "title": f"{name} · {n} nuits", **_data(xs, [yv], days, r, a, sel=last)}
 
 

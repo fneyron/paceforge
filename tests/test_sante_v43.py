@@ -164,11 +164,11 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
         assert name not in main, name
     folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', main, flags=re.S)
     calc = re.findall(r"<li>(.*?)</li>", folds[0])
-    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[2]]
+    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[3]]
     rest = H.unescape(main.replace(folds[0], ""))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
-    assert "◇ récupération" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today
+    assert "◇ après un gros effort" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today
 
 
 # ── time zones: from each user's own data (brief §H) ────────────────────────
@@ -241,9 +241,10 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
-    assert page["vfc"]["status"]["text"] == "dans ta normale" and page["fc"]["status"]["text"] == "dans ta normale"
+    assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "dans tes valeurs habituelles"
     assert [(f["key"], f["word"], f["tone"]) for f in page["facts"]] == [
-        ("sommeil", "suffisant", "ok"), ("vfc", "dans ta normale", "ok"), ("fc", "dans ta normale", "ok")]
+        ("sommeil", "suffisant", "ok"), ("vfc", "dans tes valeurs habituelles", "ok"),
+        ("fc", "dans tes valeurs habituelles", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
     assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-fact is-ok"' in main
     act = _coherent((await as_user.get("/activities")).text)
@@ -293,7 +294,7 @@ async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_us
     assert {p["key"] for p in w} == {"hrv", "hr", "sleep", "load"} and page["score"]["value"] == 65
     assert page["state"]["word"] == "Récupération en cours" and page["state"]["text"] is None
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
-    assert marks[D.isoformat()] == "◇ récupération"  # 7 h: its nights follow its time (M4), no outing named
+    assert marks[D.isoformat()] == "◇ après un gros effort"  # 7 h: its nights follow its time (M4), no outing named
     _coherent((await as_user.get("/sante")).text)
     act = _coherent((await as_user.get("/activities?sport=bike")).text)
     assert re.findall(r'data-range="(\w+)"', act) == ["duree", "distance"] and "Vélo" in act

@@ -21,17 +21,19 @@ pattern, the lowest component) stays as data (`key`), never printed. A score
 from a recovery window alone (no nightly signal measured, sante_score: its
 cap) is « estimé ».
 No score (no nightly signal measured, no recovery window) → no state: one
-line, « Connecte ta montre pour ta récupération. » (a watch already sending:
-« Pas de nuit mesurée ce matin. »). A quiet chart is not a clean bill of
-health (Quer 2021).
+line, « Connecte ta montre pour voir ta récupération. » (a watch already
+sending: « Pas de score ce matin : ta montre n'a pas enregistré ta nuit. »).
+A quiet chart is not a clean bill of health (Quer 2021).
 """
 WORDS = {"danger": "Récupération faible", "warn": "Récupération en cours", "ok": "Bonne récupération"}
 # the tone is also a shape next to the state's word (a disc, a half disc, a square), never colour alone
 GLYPHS = {"ok": "●", "warn": "◐", "danger": "■"}
-ILL = ("FC de nuit nettement au-dessus de ta normale 2 nuits de suite : ça arrive avant un rhume, après de "
-       "l'alcool ou une grosse journée.")
-NO_WATCH = "Connecte ta montre pour ta récupération."
-NO_NIGHT = "Pas de nuit mesurée ce matin."
+# v4.4 (owner: « les explications en français ne sont pas claires »): short sentences, « tes valeurs habituelles »
+# instead of « ta normale »; the alert's 2 nights are said once, on the FC de nuit row (sante.ALERT_WORD)
+ILL = ("Ta FC de nuit est nettement plus haute que d'habitude. Ça arrive avant un rhume, après de l'alcool ou une "
+       "grosse journée.")
+NO_WATCH = "Connecte ta montre pour voir ta récupération."
+NO_NIGHT = "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
 
 
 def state(score: dict, day: dict | None = None) -> dict | None:

@@ -244,7 +244,7 @@ def _selected(html: str, select_id: str) -> str:
 async def test_an_empty_plan_offers_plan_type_and_the_products_are_open(as_user: AsyncClient, db_session: AsyncSession):
     rid = await _route(as_user)
     t = (await as_user.get(f"{P}/{rid}")).text
-    assert 'id="nu-starter"' in t and ">Plan type<" in t and "pf-nu-rows" not in t and "Ta liste" not in t
+    assert 'id="nu-starter"' in t and ">Commencer avec un plan type<" in t and "pf-nu-rows" not in t and "Ta liste" not in t
     assert 'id="nu-produits" class="pf-nu-fold" open' in t  # « Tes produits » open while the plan is empty
     for gone in ("Fragile", "Bip", "bip", "phase", "sachet", "Sac au départ", "flasque de", "Tu transpires", "Réserve", "Marque"):
         assert gone not in t, gone
@@ -330,10 +330,10 @@ async def test_caffeine_is_said_against_his_cap(as_user: AsyncClient, db_session
     test_user.weight_kg = None
     t = _text((await as_user.get(f"{P}/{rid}")).text)
     # one at 4, 6 and 8 h (10 h is the finish): 300 mg; without his weight the cap is 400 mg
-    assert "caféine : 300 mg, plafond 400 mg sur 24 h · indique ton poids dans Réglages pour l'ajuster" in t
+    assert "caféine : 300 mg, limite 400 mg sur 24 h · indique ton poids dans Réglages pour l'ajuster" in t
     test_user.weight_kg = 45.0  # 6 mg/kg: 270 mg
     html = (await as_user.get(f"{P}/{rid}")).text
-    assert "caféine : 300 mg, au-dessus du plafond de 270 mg sur 24 h" in _text(html) and 'class="pf-nu-caf is-warn"' in html
+    assert "caféine : 300 mg, au-dessus de la limite de 270 mg sur 24 h" in _text(html) and 'class="pf-nu-caf is-warn"' in html
     assert "Réglages" not in _text(html).split("caféine")[1]
     route.nutrition_json = NP.plan_json([_line(gel, 20)], False)
     await db_session.flush()
@@ -414,14 +414,14 @@ async def test_products_are_his_for_every_race_and_a_used_one_asks_before_it_goe
     await as_user.post(f"{P}/{other}/starter", headers=HX)
     assert (await _nj(db_session, other))["rhythms"][0]["product_id"] == pid
     r = await as_user.post(f"{P}/{rid}/products/{pid}/delete", headers=HX)
-    assert "Maurten Gel 100 est dans ton plan et dans celui d'une autre course : il en sera retiré." in _text(r.text)
+    assert "Supprimer Maurten Gel 100 le retire aussi de ton plan et de celui d'une autre course." in _text(r.text)
     assert f'data-focus="nu-yes-{pid}"' in r.text and await db_session.get(NutritionProduct, pid) is not None
     page = (await as_user.get(f"/simulator/routes/{rid}?vue=nutrition&open=produits&confirm={pid}")).text  # the same question without JS
-    assert "il en sera retiré" in page
+    assert "le retire aussi" in page
     r = await as_user.post(f"{P}/{rid}/products/{pid}/delete", data={"confirm": "1"}, headers=HX)
     assert r.status_code == 200 and "Maurten Gel 100" not in _text(r.text).split("Du catalogue")[0]
     assert (await _nj(db_session, rid))["rhythms"] == [] and (await _nj(db_session, other))["rhythms"] == []
-    assert ">Plan type<" in r.text
+    assert ">Commencer avec un plan type<" in r.text
     # a product no plan uses goes at once
     g = await _product(db_session, test_user, name="Gel maison", carbs_g=30)
     await as_user.post(f"{P}/{rid}/products/{g}/delete", headers=HX)
@@ -441,7 +441,7 @@ async def test_an_old_plan_is_read_in_memory_and_stored_as_v2_on_the_first_chang
     before = await _nj(db_session, rid)
     t = (await as_user.get(f"{P}/{rid}")).text
     assert await _nj(db_session, rid) == before  # reading never writes
-    assert "trop compliqué" not in t and _selected(t, "nu-l0-p") == str(gel) and _selected(t, "nu-l1-p") == str(pf)
+    assert "ne peut pas s'afficher" not in t and _selected(t, "nu-l0-p") == str(gel) and _selected(t, "nu-l1-p") == str(pf)
     village = _rows(t)[2].split()[0]  # the switch at Village's time, the minute kept as its own option
     h, mn = map(int, village.split(":"))
     switch = ((h - 21) % 24) * 60 + mn
@@ -455,11 +455,11 @@ async def test_an_old_plan_is_read_in_memory_and_stored_as_v2_on_the_first_chang
     route.nutrition_json = {"v": 3, "picks": [gel, pf, -3], "phases": [{"km": 0.0, "mix": {str(gel): 1, str(pf): 2}}], "rows": {"20.0": {str(gel): 2}}}
     await db_session.flush()
     t = (await as_user.get(f"{P}/{other}")).text
-    assert "Ton ancien plan était trop compliqué : refais-le ici en une minute." in t and ">Plan type<" in t
+    assert "Ton ancien plan ne peut pas s'afficher ici : refais-le, ça prend une minute." in t and ">Commencer avec un plan type<" in t
     assert (await _nj(db_session, other))["phases"]
     await as_user.post(f"{P}/{other}/starter", headers=HX)
     t = (await as_user.get(f"{P}/{other}")).text
-    assert "trop compliqué" not in t and (await _nj(db_session, other))["v"] == 2
+    assert "ne peut pas s'afficher" not in t and (await _nj(db_session, other))["v"] == 2
 
 
 @pytest.mark.asyncio
@@ -529,7 +529,7 @@ async def test_back_from_nutrition_redoes_the_rows_and_its_links_land_on_the_car
     bike = (await as_user.get(f"/simulator/routes/{bike_id}?vue=nutrition")).text  # its forms land there without JS
     assert 'id="rpanel-plan" class="hidden"' in bike and 'id="nutrition-card"' in bike
     r = await as_user.get(f"{P}/{bike_id}")
-    assert r.status_code == 200 and ">Plan type<" in r.text and "Drop bag ici" not in r.text
+    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "Drop bag ici" not in r.text
 
 
 @pytest.mark.asyncio

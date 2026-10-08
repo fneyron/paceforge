@@ -40,7 +40,7 @@
     <span id="forme"></span>
     {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
     {{ vz.viz_dots(e, "FC en footing", "footing") }}
-    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "ta normale")] if e.band else [])) }}
+    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
     <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
 </details>
 {% endif %}

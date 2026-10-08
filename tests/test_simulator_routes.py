@@ -109,7 +109,7 @@ async def test_nutrition_card_with_a_caffeinated_gel_of_his_own(as_user: AsyncCl
     pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms", headers=hx)
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms/1", data={"product_id": pid, "every_min": 60, "from_min": 60}, headers=hx)
-    assert "caféine : 150 mg, plafond 400 mg sur 24 h" in r.text  # 2, 3 and 4 h on a 5 h race
+    assert "caféine : 150 mg, limite 400 mg sur 24 h" in r.text  # 2, 3 and 4 h on a 5 h race
     # an older client posting the previous form (use_ / qty_): nothing changes, the card comes back
     r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={"carbs_g_per_h": 75, "use_-1": 1, "qty_-1": "2.5"}, headers=hx)
     assert r.status_code == 200 and "caféine : 150 mg" in r.text
@@ -222,7 +222,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     assert r.status_code == 200 and "barrière 12:00" not in r.text
     # nutrition, exports and print work on the bike plan too
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and ">Plan type<" in r.text and "Drop bag ici" not in r.text
+    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "Drop bag ici" not in r.text
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
     assert r.status_code == 200 and "<CoursePoint>" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}/print")

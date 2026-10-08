@@ -104,23 +104,26 @@ HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its alert episodes (67 days, each on a 60-day band)
 
 # « Comment je calcule ta récupération » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets
-# pas les citations »): 6 one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in
-# the code and the tests); one plain bullet on the cap after a big outing, the only outing Santé mentions (« Ne
-# mentionne pas les sorties dans la partie Santé »: bullet 1 names « tes gros efforts récents », v4.4); the
-# references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
+# pas les citations »): a few bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
+# code and the tests); one plain bullet on the cap after a big effort, the only effort Santé names (« Ne mentionne
+# pas les sorties dans la partie Santé »). v4.4 (owner: « les explications en français ne sont pas claires »):
+# sentences of 15 words at most, VFC and FC de nuit each said in one plain sentence, « tes valeurs habituelles »
+# instead of « ta normale ». The references of both folds are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Ton score sur 100 combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
-    "Chaque signal est comparé à ta propre normale, celle de tes 60 derniers jours (7 nuits au moins).",
-    "Après une grosse sortie (3 h, 6 h, 10 h et plus), le score reste plafonné quelques jours, jusqu'à 2 semaines "
-    "après un ultra.",
-    "Une nuit sous 6 h ou une FC de nuit nettement haute font baisser ton état.",
+    "Ton score est une note sur 100. Elle combine ton sommeil, ta VFC, ta FC de nuit et tes gros efforts récents.",
+    "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
+    "pouls moyen pendant ton sommeil.",
+    "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
+    "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Jusqu'à 2 semaines après un "
+    "ultra.",
+    "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
     "70 et plus : bonne récupération ; 40 à 69 : en cours ; moins de 40 : faible.",
-    "Une estimation : quelques points d'écart ne veulent rien dire.",
+    "C'est une estimation : quelques points d'écart ne veulent rien dire.",
 ]
-# the references both folds rest on, listed on /sante/sources (label, DOI or URL): « Textes officiels » (consensus,
-# position stands, guidelines), then « Études »
+# the references both folds rest on, listed on /sante/sources (label, DOI or URL): « Recommandations officielles »
+# (consensus, position stands, guidelines), then « Études scientifiques »
 REFS = [
-    ("Textes officiels", [
+    ("Recommandations officielles", [
         ("Kellmann 2018", "10.1123/ijspp.2017-0759"), ("Meeusen 2013", "10.1249/MSS.0b013e318279a10a"),
         ("Watson 2015a", "10.5665/sleep.4716"), ("Hirshkowitz 2015", "10.1016/j.sleh.2014.12.010"),
         ("Schwellnus 2016", "10.1136/bjsports-2016-096572"), ("Walsh 2021", "10.1136/bjsports-2020-102025"),
@@ -128,7 +131,7 @@ REFS = [
                        "bases-expert-statement-methods-to-monitor-athletes-sleep"),
         ("Sammito 2024", "10.1186/s12995-024-00414-9"), ("Quigley 2024", "10.1111/psyp.14604"),
     ]),
-    ("Études", [
+    ("Études scientifiques", [
         ("Buchheit 2014", "10.3389/fphys.2014.00073"), ("Plews 2013", "10.1123/ijspp.8.6.688"),
         ("Plews 2014", "10.1123/ijspp.2013-0455"), ("Alavi 2022", "10.1038/s41591-021-01593-2"),
         ("Bosquet 2008", "10.1136/bjsm.2007.042200"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
@@ -332,7 +335,8 @@ def score_of(day: dict) -> dict:
 # ── what the page draws ─────────────────────────────────────────────────────
 
 ESTIMATED = "estimé"  # a score from a recovery window alone, no night measured (v4.3)
-EST_READ = "estimé, sans nuit mesurée"  # its readout in the 14-day card (v4.3, owner: no outing named on Santé)
+EST_READ = "estimé, nuit non enregistrée"  # its readout in the 14-day card (v4.4: what happened, in plain words)
+EST_SAID = "estimé car ta montre n'a pas enregistré la nuit"  # spoken
 
 
 def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
@@ -347,7 +351,8 @@ def ring(score: dict, state: dict | None, href: str | None = None) -> dict:
                         aria="Récupération : pas de score ce matin")
     est = bool(score.get("estimated"))
     return viz.ring("recup", v / 100, str(v), None, ESTIMATED if est else None, tone=state["tone"],
-                    href=href, aria=f"Récupération {v} sur 100" + (", estimée sans nuit mesurée" if est else "")
+                    href=href, aria=f"Récupération {v} sur 100" + (", estimée : ta montre n'a pas enregistré ta "
+                                                                    "nuit" if est else "")
                     + f". {state['aria']}")
 
 
@@ -381,8 +386,8 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     state's colour, hatched when it was estimated without a night measured
     (v4.3), with faint 40 and 70 lines labelled on the right (the bands:
     never colour alone), today's day on a disc; tap a bar → « 64 »
-    « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, sans nuit
-    mesurée »): the date, the score and the state only (v4.3, owner: « mets
+    « ◐ Récupération en cours » / « mer. 7 oct. » (« · estimé, nuit non
+    enregistrée »): the date, the score and the state only (v4.3, owner: « mets
     juste les scores »). It rests on the mean of the days with a score
     (nothing selected: today's score is the ring's). None under 2 days with a
     score."""
@@ -403,13 +408,12 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
             a.append(f"{viz.d_long(d)} : pas de score")
             continue
         r.append([str(v), f"{st['glyph']} {st['word']}", viz.d_short(d) + (f" · {EST_READ}" if e else "")])
-        a.append(f"{viz.d_long(d)} : {v} sur 100, {st['word'].lower()}" + (", estimé sans nuit mesurée" if e else "")
-                 + ".")
+        a.append(f"{viz.d_long(d)} : {v} sur 100, {st['word'].lower()}" + (f", {EST_SAID}" if e else "") + ".")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((70, "70"), (40, "40")), today=len(days) - 1 if days and days[-1] == today else None,
                      hatched=est,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
     mean = rounded(sum(with_score) / len(with_score))
     return viz.rest(c, [str(mean), "en moyenne", ""],
-                    f"Récupération sur les {len(days)} derniers jours : {mean} en moyenne. Choisis un jour pour son "
+                    f"Récupération des {len(days)} derniers jours : {mean} en moyenne. Choisis un jour pour voir son "
                     "score et son état.", back=len(days) - 1)
