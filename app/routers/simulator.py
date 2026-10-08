@@ -811,9 +811,9 @@ async def route_detail_page(
     route_id: int,
     request: Request,
     compare: int | None = None,
-    vue: str | None = Query(None, max_length=20),
-    open_: str | None = Query(None, alias="open", max_length=20),
-    confirm: int | None = Query(None),
+    vue: str | None = None,
+    open_: str | None = Query(None, alias="open"),
+    confirm: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -872,13 +872,13 @@ async def route_detail_page(
 
 
 async def _nutrition_html(request: Request, route: Route, db: AsyncSession, user: User, vue: str | None, open_: str | None,
-                          confirm: int | None):
+                          confirm: str | None):
     """The Nutrition card for the page itself when it opens on it (``vue=nutrition``), else None (htmx loads it)."""
     if vue != "nutrition":
         return None
     from markupsafe import Markup
 
-    ctx = await _nutrition_card_context(request, route, db, user, open_=open_, confirm=confirm)
+    ctx = await _nutrition_card_context(request, route, db, user, open_=open_, confirm=_id_or_none(confirm))
     return Markup(templates.get_template("partials/nutrition_card.html").render(ctx))
 
 
@@ -2399,8 +2399,8 @@ _NU = "/partials/simulator/nutrition/{route_id}"
 async def nutrition_card(
     route_id: int,
     request: Request,
-    open_: str | None = Query(None, alias="open", max_length=20),
-    confirm: int | None = Query(None),
+    open_: str | None = Query(None, alias="open"),
+    confirm: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2410,7 +2410,7 @@ async def nutrition_card(
     route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
-    ctx = await _nutrition_card_context(request, route, db, user, open_=open_, confirm=confirm)
+    ctx = await _nutrition_card_context(request, route, db, user, open_=open_, confirm=_id_or_none(confirm))
     # htmx GETs can be heuristically cached by the browser; force a fresh card.
     return templates.TemplateResponse(request, "partials/nutrition_card.html", context=ctx, headers={"Cache-Control": "no-store"})
 
@@ -2472,6 +2472,14 @@ async def _add_from_catalog(key: str, db: AsyncSession, user: User) -> int | Non
     db.add(prod)
     await db.flush()
     return prod.id
+
+
+def _id_or_none(raw: str | None) -> int | None:
+    """A product id from the address (« ?confirm=12 »); anything else is no id."""
+    try:
+        return int(raw) if raw not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _nu_page(route_id: int, anchor: str, **params) -> str:

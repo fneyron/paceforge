@@ -529,3 +529,13 @@ async def test_back_from_nutrition_redoes_the_rows_and_its_links_land_on_the_car
     assert 'id="rpanel-plan" class="hidden"' in bike and 'id="nutrition-card"' in bike
     r = await as_user.get(f"{P}/{bike_id}")
     assert r.status_code == 200 and ">Plan type<" in r.text and "Drop bag ici" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_odd_addresses_still_give_the_card(as_user: AsyncClient):
+    rid = await _route(as_user)
+    for q in ("?confirm=abc", "?open=" + "x" * 80, "?confirm=99999&open=produits"):
+        r = await as_user.get(f"{P}/{rid}{q}")
+        assert r.status_code == 200 and 'id="nutrition-card"' in r.text, q
+        page = await as_user.get(f"/simulator/routes/{rid}?vue=nutrition&{q[1:]}")
+        assert page.status_code == 200 and 'id="nutrition-card"' in page.text, q
