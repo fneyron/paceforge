@@ -4,7 +4,8 @@
    accessible state. No colour and no number formatting here (interface.css styles the classes on
    --pf-* tokens, so the theme toggle needs no redraw), no dependency.
    Contract, inside <figure class="pf-viz" data-viz [data-viz-group="…"]>:
-     svg.pf-viz-svg ....... fixed viewBox; optional g.pf-viz-cross (a line + one circle per y series, at x=0)
+     svg.pf-viz-svg ....... fixed viewBox; optional g.pf-viz-cross (a line + one circle per y series, at x=0;
+                            .is-none on it when the selected day has no value in any series)
      [data-i="k"] ......... per-mark elements: the selected one gets .is-sel
      [data-r] ............. readout slots, filled in DOM order from D.r[k]
      [data-step="±1"] ..... the 44×44 ‹ › buttons, when the figure has them (aria-disabled at either end, never
@@ -147,11 +148,14 @@
       if (cross) {
         cross.style.visibility = "";
         cross.style.transform = "translateX(" + D.x[i] + "px)";
+        var none = dots.length > 0;
         for (var s = 0; s < dots.length; s++) {
           var y = D.y && D.y[s] ? D.y[s][i] : null;
           dots[s].style.visibility = y == null ? "hidden" : "";
-          if (y != null) dots[s].setAttribute("cy", y);
+          if (y != null) { dots[s].setAttribute("cy", y); none = false; }
         }
+        // no value that day: a night card's dashed hairline (.pf-viz-at) marks the place instead of the ring
+        cross.classList.toggle("is-none", none);
       }
       var r = (D.r && D.r[i]) || [];
       for (var k = 0; k < slots.length; k++) slots[k].textContent = r[k] || "";

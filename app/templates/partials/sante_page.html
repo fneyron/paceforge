@@ -74,6 +74,7 @@
             {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
             {% set gap = [("is-gap", "pas de mesure")] if b.bars|selectattr("miss")|list else [] %}
             {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")] + gap) }}
+            {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "7 h")] + gap) }}
             {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")] + gap) }}{% endif %}
         </div>
         {% endfor %}
@@ -86,7 +87,7 @@
 {% endif %}
 
 {#- « VFC · 30 nuits », or the nights the axis spans when only a few were measured (« VFC · 14 nuits »); the legend names
-    every mark: a night's dot, the 7-night line, the normal's band -#}
+    every mark drawn: a night's dot, the 7-night line (when a segment of it is drawn), the normal's band -#}
 {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
 <section id="{{ key }}" class="pf-card" aria-labelledby="h-{{ key }}">
     <h2 id="h-{{ key }}" class="pf-card-h">{{ c.title }}</h2>

@@ -100,7 +100,8 @@ METHOD = [
     "Une différence de quelques points ne veut rien dire : la VFC varie d'environ 12 % d'une nuit à l'autre "
     "(Buchheit 2014). Ta normale est « provisoire » de 7 à 13 nuits (H), pleine à 14 ; l'alerte FC de nuit attend "
     "14 nuits (Quer 2021). L'anneau Charge fait le tour au double de ta semaine habituelle, la médiane de tes 12 "
-    "dernières (H). Aucun score de marque n'y entre (Doherty 2025).",
+    "dernières (H) ; le mot dessous dit « comme d'habitude » à 20 % près (H). Aucun score de marque n'y entre "
+    "(Doherty 2025).",
 ]
 REFS = [
     ("Plews 2013", "10.1007/s40279-013-0071-8"), ("Johnston 2020", "10.1016/j.jsams.2019.10.013"),

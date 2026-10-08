@@ -177,16 +177,22 @@ def rolling(values: list, i: int, k: int = 7, need: int = 3, log: bool = False) 
     return math.exp(statistics.fmean(math.log(v) for v in w)) if log else statistics.fmean(w)
 
 
-def paths(xs, ys) -> str:
-    """Polyline broken wherever a value is missing (never drawn across a gap)."""
-    out, pen = [], False
+def paths(xs, ys, lone: bool = True) -> str:
+    """Polyline broken wherever a value is missing (never drawn across a gap).
+    `lone=False` leaves out a point with no neighbour: a move alone draws
+    nothing, so the path is empty when no segment is drawn (and its legend
+    item can go with it)."""
+    runs, run = [], []
     for x, y in zip(xs, ys):
         if y is None:
-            pen = False
+            if run:
+                runs.append(run)
+            run = []
             continue
-        out.append(f"{'L' if pen else 'M'}{x:.1f} {y:.1f}")
-        pen = True
-    return " ".join(out)
+        run.append(f"{'L' if run else 'M'}{x:.1f} {y:.1f}")
+    if run:
+        runs.append(run)
+    return " ".join(" ".join(r) for r in runs if lone or len(r) > 1)
 
 
 def band_polys(xs, lo, hi) -> list[str]:
@@ -549,7 +555,9 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "base": base, "top": y0, "bars": out, "xt": xt,
             "slot": round(slot, 2), "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
             "lines": [{"y": y(v), "label": lab} for v, lab in lines], "rx": round(min(3.0, bw / 2), 1),
-            "trend": paths(xs, [y(min(v, top)) if v is not None else None for v in trend]) if trend else None,
+            # over measured days only, broken on any day without one: never a line with no bar under it
+            "trend": paths(xs, [y(min(v, top)) if v is not None and values[i] is not None else None
+                                for i, v in enumerate(trend)], lone=False) if trend else None,
             "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones)}
 
 
@@ -566,7 +574,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     dot per measured night, never judged one by one (Buchheit 2014: ≈ 12 %
-    night to night), the 7-night mean as a line (drawn, never printed), the
+    night to night), the 7-night mean as a line (drawn, never printed) over
+    the measured nights only, broken on any night without one (never a line
+    with no dot under it; "" when no segment is left: no legend item), the
     athlete's normal as a band (the 60 days before each night, on that
     night's watch; « provisoire » from 7 to 13 nights, H). Readout, two
     compact lines: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · normale
@@ -578,6 +588,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
     hi_b = [b[1] if b else None for b in band]
+    mean = [m if v is not None else None for v, m in zip(values, mean, strict=True)]
     lo, hi = span_of(values + lo_b + hi_b + mean, min_span)
     top, bottom = 10, H - 22
     y = scale(lo, hi, top, bottom)
@@ -602,8 +613,10 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "slot": round(X1 / max(n, 1), 2),
             "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b]),
             "edge_lo": paths(xs, [y(v) for v in lo_b]), "edge_hi": paths(xs, [y(v) for v in hi_b]),
-            "mean": paths(xs, [y(v) for v in mean]),
+            "mean": paths(xs, [y(v) for v in mean], lone=False),
             "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
+            # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)
+            "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
             "summary": f"{name}, {n} nuits : {measured} mesurée{'s' if measured > 1 else ''}",

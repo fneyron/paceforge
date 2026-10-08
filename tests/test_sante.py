@@ -303,7 +303,7 @@ async def test_owner_rings_contributors_and_sommeil(db_session: AsyncSession, te
 
 
 async def test_owner_cards(db_session: AsyncSession, test_user: User):
-    act = await seed_owner_v4(db_session, test_user)
+    await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D8)
     # a watch worn some nights only: the axis spans the measured nights (14 days at least), not 30 with dots at
     # the right edge; the latest night selected (its value is the card's): PaceForge's own 99,7 ms, no band yet
@@ -586,6 +586,8 @@ async def test_the_charge_ring_runs_to_twice_the_usual_week(db_session: AsyncSes
         "comme d'habitude", "comme d'habitude", "comme d'habitude", "plus que d'habitude", "moins que d'habitude",
         "moins que d'habitude"]
     assert sante.charge_word(300, None) is None and sante.charge_word(300, 0) is None
+    method = " ".join(sante.sc.METHOD)  # the method says the word's band, marked as a heuristic
+    assert "« comme d'habitude » à 20 % près (H)" in method
 
 
 # ── opening Santé syncs a stale link ────────────────────────────────────────

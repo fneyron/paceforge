@@ -29,11 +29,14 @@ from app.services import sante
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
+from tests import test_sante
 from tests.owner_v4 import D8, seed_owner_v4
 from tests.test_coros import _link
 from tests.test_nights import night_rows
-from tests.test_sante import _garmin_rows, _main, _runs, _seed_rows, _visible, as_user, no_commit  # noqa: F401
+from tests.test_sante import _garmin_rows, _main, _runs, _seed_rows
 
+# the shared fixtures (a linked athlete, commits turned into flushes)
+as_user, no_commit = test_sante.as_user, test_sante.no_commit
 ROOT = Path(__file__).resolve().parent.parent
 D5 = date(2026, 10, 5)
 
@@ -358,3 +361,48 @@ def test_history_card_aria_and_json_never_say_il_y_a_for_a_past_day():
     """OWN-3 / OWN-F, on the owner's own card (the full page path: test_sante.test_owner_cards)."""
     assert "il y a" not in json.dumps(td.short_text({"key": "effort"}, {"window": {"effort": type(
         "E", (), {"name": "Transjeju 100M"})()}}), ensure_ascii=False)
+
+
+# ── the VFC and FC de nuit cards: « la barre à côté des points » ─────────────
+
+async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
+                                                            test_user: User, monkeypatch):
+    """The owner's nights: 29/09 → 01/10, none 02/10 → 05/10 (the Transjeju and the days after), 06/10 → 08/10.
+    The 7-night mean used to run flat over 01/10 → 05/10 with no dot under it, and the selection was a grey
+    full-height column: both read as « la barre à côté des points ». Now the mean is drawn over the measured nights
+    only (broken on any night without one), the legend names it only when a segment of it is drawn, and the
+    selection is a ring around the night's dot."""
+    await _link(db_session, test_user)
+    await seed_owner_v4(db_session, test_user)
+    main = _main(await _page(as_user, monkeypatch, D8))
+    drawn = {}
+    for key in ("vfc", "fc"):
+        card = main.split(f'<section id="{key}"')[1].split("</section>")[0]
+        svg = card.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
+        data = json.loads(re.search(r'class="pf-viz-data">(.*?)</script>', card, re.S).group(1))
+        days, xs = [date.fromisoformat(d) for d in data["d"]], data["x"]
+        dots = {int(i) for i in re.findall(r'class="pf-viz-dot[^"]*" data-i="(\d+)"', svg)}
+        seen = {days[i] for i in dots}
+        assert {date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 7), D8} <= seen, key
+        assert not any(date(2026, 10, 2) <= d <= D5 for d in seen), key
+        legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+        line = re.search(r'<path d="([^"]*)" class="pf-viz-line"', svg)
+        drawn[key] = []
+        if line:
+            for seg in re.split(r" (?=M)", line.group(1)):
+                pts = [float(p[1:].split()[0]) for p in re.findall(r"[ML][\d.]+ [\d.]+", seg)]
+                idx = [min(range(len(xs)), key=lambda i, px=px: abs(xs[i] - px)) for px in pts]
+                assert len(idx) > 1 and idx == list(range(idx[0], idx[-1] + 1)), key  # adjacent nights only
+                assert set(idx) <= dots, key  # a dot under every point of it
+                drawn[key].append([days[i] for i in idx])
+            assert "moyenne sur 7 nuits" in legend, key
+        else:
+            assert "moyenne sur 7 nuits" not in legend, key
+        assert not any(date(2026, 10, 2) <= d <= D5 for seg in drawn[key] for d in seg), key
+        assert "<rect" not in svg, key  # no grey column behind the selected night
+        assert 'class="pf-viz-ring"/>' in svg and 'class="pf-viz-at"/>' in svg, key
+        assert f'class="pf-viz-dot is-sel" data-i="{days.index(D8)}"' in svg, key  # the latest night, in ink
+    # on 08/10 no 7-day window holds 3 usable nights next to another such night (02/10 → 05/10 have none, 06/10 is
+    # set aside after the ultra): no segment, so no « moyenne sur 7 nuits » in either legend; it used to run flat
+    # from 01/10 to 05/10, the window still finding 29/09 → 01/10
+    assert drawn == {"vfc": [], "fc": []}, drawn

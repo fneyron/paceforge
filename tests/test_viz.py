@@ -242,8 +242,60 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     assert cross.index('class="pf-viz-cross"') < cross.index('class="pf-viz-col')
     assert '<line x1="0" x2="0"' not in cross
     html = render(figs["night_card"][0], c=card)
-    assert html.count('class="pf-viz-dot"') == 14 and 'class="pf-viz-band"' in html and "choisis une nuit" in html
-    assert '<circle cx="0" cy="0" r="5.5" class="pf-viz-ring"/>' in html  # a ring around the selected night's dot
+    assert html.count('class="pf-viz-dot') == 14 and 'class="pf-viz-band"' in html and "choisis une nuit" in html
+    # the selection: a ring around the selected night's dot (the dot in ink), already in place without the script;
+    # no column that reads as a bar (« la barre à côté des points », owner): no rect in the card at all
+    svg = html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
+    at = card["at"]
+    assert at == {"x": card["dots"][-1]["x"], "y": card["dots"][-1]["y"]}
+    assert f'<g class="pf-viz-cross" transform="translate({at["x"]} 0)">' in svg
+    assert f'<circle cx="0" cy="{at["y"]}" r="5.5" class="pf-viz-ring"/>' in svg
+    assert svg.count('class="pf-viz-dot is-sel"') == 1 and f'is-sel" data-i="{card["sel"]}"' in svg
+    assert "<rect" not in svg
+    # a selected night without a measure: a thin dashed hairline at its place (shown by .is-none, set by the script)
+    assert f'<line x1="0" x2="0" y1="{card["top"]}" y2="{card["bottom"]}" class="pf-viz-at"/>' in svg
+    css = (pathlib.Path(__file__).parents[1] / "app/static/css/interface.css").read_text()
+    assert ".pf-viz-card .pf-viz-cross .pf-viz-at { display: none;" in css and "stroke-dasharray: 3 3" in css
+    assert ".pf-viz-card .pf-viz-cross.is-none .pf-viz-at { display: inline; }" in css
+    assert ".pf-viz-card .pf-viz-cross circle.pf-viz-ring, .pf-viz-card .pf-viz-cross .pf-viz-at { stroke: Highlight; }" in css
+    js = (pathlib.Path(__file__).parents[1] / "app/static/js/pf-viz.js").read_text()
+    assert 'cross.classList.toggle("is-none", none);' in js
+
+
+def test_the_night_cards_mean_is_drawn_over_measured_nights_only():
+    """« La barre à côté des points » (owner): the 7-night mean, sampled on the measured nights only and broken on
+    any night without one, is never a line with no dot under it; a measured night alone draws no segment, and with
+    no segment left the path is empty (no legend item, no empty path)."""
+    days = [D - timedelta(days=13 - i) for i in range(14)]
+    vals = [None] * 14
+    for i in (2, 3, 4, 10, 11, 12, 13):
+        vals[i] = 60.0 + i
+    mean = [61.0] * 14  # a mean that a 7-day window still finds on the empty days
+    c = viz.night_card("vfc", days, vals, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
+                       unit_long="millisecondes", name="VFC")
+    xs = viz.slot_x(14)
+    segs = [[float(p.split()[0][1:]) for p in re.findall(r"[ML][\d.]+ [\d.]+", seg)]
+            for seg in re.split(r" (?=M)", c["mean"])]
+    idx = [[min(range(14), key=lambda i: abs(xs[i] - x)) for x in seg] for seg in segs]
+    assert idx == [[2, 3, 4], [10, 11, 12, 13]]  # nothing over 5 → 9, each segment over dots
+    lone = list(vals)
+    lone[3] = lone[11] = None  # 2, 4, 10, 12, 13: only 12 → 13 is a segment
+    c2 = viz.night_card("vfc", days, lone, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
+                        unit_long="millisecondes", name="VFC")
+    assert c2["mean"].count("M") == 1 and c2["mean"].count("L") == 1
+    sparse = [60.0 if i % 2 else None for i in range(14)]  # never two measured nights in a row
+    c3 = viz.night_card("vfc", days, sparse, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
+                        unit_long="millisecondes", name="VFC")
+    assert c3["mean"] == ""
+    html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c3)
+    assert 'class="pf-viz-line"' not in html and 'd=""' not in html.replace('d="" class="pf-viz-edge"', "")
+    # the sleep card's long-range mean follows the same rule: no line over a day without a bar
+    bars = viz.day_bars("sommeil-90", days, vals, readouts=[["", "", ""]] * 14, arias=["a"] * 14,
+                        trend=[400.0] * 14)
+    assert [len(s.split(" L")) for s in re.split(r" (?=M)", bars["trend"])] == [3, 4]
+    assert viz.day_bars("sommeil-90", days, sparse, readouts=[["", "", ""]] * 14, arias=["a"] * 14,
+                        trend=[400.0] * 14)["trend"] == ""
+    assert viz.paths([0, 1, 2], [1.0, None, 2.0]) == "M0.0 1.0 M2.0 2.0"  # the other charts' paths as before
 
 
 def test_json_cannot_close_the_script_tag():

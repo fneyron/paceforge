@@ -690,10 +690,13 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz-l2 > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-viz-l2 > .pf-viz-link { flex: none; min-height: 0; padding: 12px 8px; margin: -12px -8px -12px 0; font-size: 13px; line-height: 20px; }   /* a 44 px target in a 20 px row */
 .pf-viz-l2 > .pf-viz-link.is-off { display: none; }   /* inline: nothing to reserve */
-/* the selection: a soft column behind the bar (an outline on it), a ring around a night's dot */
+/* the selection: a soft column behind the bar (an outline on it); on a night card no column (it would read as a
+   bar): a ring around the night's dot, or at a night without a measure a thin dashed hairline at its place */
 .pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .07); }
 .dark .pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .1); }
 .pf-viz-card .pf-viz-cross circle.pf-viz-ring { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+.pf-viz-card .pf-viz-cross .pf-viz-at { display: none; stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 3 3; }
+.pf-viz-card .pf-viz-cross.is-none .pf-viz-at { display: inline; }
 @media (min-width: 900px) { .pf-card { padding: 20px 20px 12px; } }
 /* Contributeurs, Oura-like: a name, a short word, a bar of the sub-score on a filled track (no number) */
 .pf-contrib-key { font-size: 12px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 1px; }   /* what the bars are */
@@ -809,6 +812,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     .pf-bar-brk { fill: Canvas; }
     .pf-viz-col.is-sel :is(.pf-bar, .pf-bar-top) { fill: Highlight; stroke: Highlight; }
     .pf-viz-card .pf-viz-cross rect { fill: transparent; stroke: Highlight; stroke-width: 1; }
+    .pf-viz-card .pf-viz-cross circle.pf-viz-ring, .pf-viz-card .pf-viz-cross .pf-viz-at { stroke: Highlight; }
     .pf-viz-svg .pf-viz-todisc { fill: CanvasText; }
     .pf-viz-svg text.pf-viz-today { fill: Canvas; }
     .pf-contrib-bar { border: 1px solid CanvasText; background: Canvas; }
