@@ -195,7 +195,7 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
     assert 'id="prep"' in html and "Affûtage · J‑5" in html and "pf-viz.js" in html
     assert 'data-viz-key="affutage"' in html and 'data-viz-key="nuits-course"' in html
     assert "Vise 30 à 60 min de plus par jour, siestes comprises." in html
-    assert "Semaine de course" in html and "700 à 840 g" in html and "Ravitaillement ›" in html
+    assert "Semaine de course" in html and "700 à 840 g" in html and "Nutrition ›" in html
     assert "Course chaude" in html
     assert "Prêt pour la distance" not in html and "Cœur la nuit" not in html
     day = await _race(db_session, test_user, today, name="Aujourd'hui")
