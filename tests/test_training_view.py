@@ -244,9 +244,9 @@ async def _week_page(client, db_session, user, url="/activities"):
 
 async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: AsyncClient, db_session: AsyncSession,
                                                                        test_user: User):
-    """Semaines (its toggle, the sport filter right under its title, one measure's 12 bars and nothing else: no band,
-    no ◆, no ▲, no D+ marks; the current week « en cours » in the legend; a dashed « moy. » line) and FC en
-    footing, training only: no recovery line, no taper line for a planned race, no « Fond et fatigue »."""
+    """Semaines (the sport filter right under its title, its measure toggle, one measure's 12 bars and nothing else:
+    no band, no ◆, no ▲, no D+ marks; the current week « en cours » in the legend; a dashed « moy. » line) and FC
+    en footing, training only: no recovery line, no taper line for a planned race, no « Fond et fatigue »."""
     today = datetime.now(timezone.utc).date()
     await _add_runs(db_session, test_user, today)
     db_session.add(Route(user_id=test_user.id, name="Trail des Crêtes", total_distance_km=42, total_elevation_gain=2000,
@@ -265,14 +265,14 @@ async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: A
         assert gone not in html, gone
     assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
     semaines = html.split('id="semaines"')[1].split("</section>")[0]
-    # the title, its toggle (a GET form: it works without JS), the filter right under them, then the chart
-    top = semaines.split('<nav aria-label="Filtrer les activités par sport"')[0]
-    assert '<h2 id="semaines-h" class="pf-h2">Semaines</h2>' in top
+    # the title, the filter right under it, the measure toggle (a GET form: it works without JS), then the chart
+    top, below = semaines.split('<nav aria-label="Filtrer les activités par sport"', 1)
+    assert '<h2 id="semaines-h" class="pf-h2">Semaines</h2>' in top and "pf-viz-ranges" not in top
+    toggle = below.split('data-viz-key="semaines-duree"')[0]
     assert re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges data-viz-param="m" role="group" '
-                     r'aria-label="Mesure" method="get" action="/activities#semaines">', top)
-    assert re.findall(r'name="m" value="(\w+)" data-range="\w+" aria-pressed="(\w+)">([^<]+)<', top) == [
+                     r'aria-label="Mesure" method="get" action="/activities#semaines">', toggle)
+    assert re.findall(r'name="m" value="(\w+)" data-range="\w+" aria-pressed="(\w+)">([^<]+)<', toggle) == [
         ("duree", "true", "Durée"), ("distance", "false", "Distance"), ("dplus", "false", "D+")]
-    assert semaines.index("Filtrer les activités par sport") < semaines.index('data-viz-key="semaines-duree"')
     assert html.count('aria-label="Filtrer les activités par sport"') == 1
     # one measure shown, the others in place for the toggle; nothing but bars, a base line and « moy. »
     assert '<div data-range-panel="duree">' in semaines and '<div data-range-panel="distance" hidden>' in semaines
@@ -323,8 +323,8 @@ async def test_the_filter_applies_to_the_chart_and_the_list(client: AsyncClient,
                              re.S).group(1))
     assert "2h00" not in {r[1] for r in d["r"]} and 'id="fc-facile"' in run  # no ride in the runs' weeks
     assert "Vélo" not in run.split('id="activity-list"')[1]
-    other = (await client.get("/activities?sport=other")).text  # nothing there: the filter, the empty state
-    assert 'id="semaines"' in other and 'data-viz-key="semaines' not in other
+    other = (await client.get("/activities?sport=other")).text  # nothing there: the filter alone, the empty state
+    assert 'id="semaines"' not in other and 'aria-current="true"\n       >Autre</a>' in other
     assert "Aucune activité dans cette catégorie" in other
 
 

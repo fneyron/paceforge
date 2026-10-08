@@ -168,12 +168,12 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-upload-zone label:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; }
 .pf-file-invalid { color: rgb(var(--pf-danger)) !important; }
 
-/* ── Activités, top: Semaines (its measure toggle, the sport filter under its title, one measure's 12 bars) and
+/* ── Activités, top: Semaines (the sport filter under its title, its measure toggle, one measure's 12 bars) and
    FC en footing (training_view.py, activity_training.html) ── */
 .pf-train { margin-top: 20px; }
-.pf-train-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
-.pf-train-top .pf-h2 { font-size: 20px; }
-.pf-train-top .pf-viz-ranges > button { min-height: 44px; }   /* « Durée · Distance · D+ »: 44 px targets */
+.pf-train > .pf-h2 { font-size: 20px; }
+.pf-train .pf-viz-ranges { margin-top: 10px; }
+.pf-train .pf-viz-ranges > button { min-height: 44px; }   /* « Durée · Distance · D+ »: 44 px targets */
 .pf-train .pf-filters { margin-top: 10px; }
 .pf-filters > a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .pf-train + .pf-filters, .pf-train + .pf-train-fold { margin-top: 8px; }

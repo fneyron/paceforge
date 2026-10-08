@@ -141,13 +141,13 @@ REFS = [
 
 def typo(method: list[str]) -> list[str]:
     """French typography for a fold at 358 px: a no-break space ties a number to its unit (« 6 h », « 10 min »,
-    « +5 bpm », « 12 % », « 1 500 m ») and the groups of a large number, so a line never ends on « 6 »; and
-    one before « : » and « ; »."""
+    « +5 bpm », « 12 % », « 1 500 m », « 2 semaines », « 7 nuits ») and the groups of a large number, so a line
+    never ends on « 6 »; and one before « : » and « ; »."""
     def tie(t: str) -> str:
         t = re.sub(r" ([=≈+]) ", "\u00a0\\1\u00a0", t)  # « Paradoxal = REM », « N1 + N2 »
         t = re.sub(r"(\d) (?=\d{3}\b)", "\\1\u00a0", t)
         t = re.sub(r" ([:;])", "\u00a0\\1", t)
-        return re.sub(r"(\d) (?=(?:h|min|bpm|ms|m|%)(?![\w]))", "\\1\u00a0", t)
+        return re.sub(r"(\d) (?=(?:h|min|bpm|ms|m|%|semaines?|jours?|nuits?)(?![\w]))", "\\1\u00a0", t)
     return [tie(b) for b in method]
 
 
