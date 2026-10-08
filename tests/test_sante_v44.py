@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.activity import Activity
+from app.models.health import HealthMetric
 from app.models.user import User
 from app.services import activity_env, coros, sante, weather
 from app.services import nights as nt
@@ -408,3 +409,158 @@ async def test_garmin_keeps_what_was_looked_up_when_it_rewrites_a_session(db_ses
     await db_session.flush()
     assert (await garmin.import_activities(db_session, test_user.id, [raw]))["updated"] == 1
     assert act.raw_data[activity_env.ENV_KEY] == {"v": 1, "alt": 1650.0} and act.raw_data["endLatitude"] == 45.9
+
+
+# ── R2: « en altitude » where the athlete sleeps, for every user ────────────
+
+def _nights(days=12, today=D):
+    return nt.build_nights(night_rows(range(0, days), today=today), today)  # asleep 23:00 → 06:40
+
+
+def _out(day, hour=9, minutes=60, alt=None, sid=1, elev_low=None, located=True, indoor=False, sport="Run"):
+    """An activity ended at `alt` m (looked up in the sync), local time = UTC here."""
+    return run(day, minutes, hour=hour, sid=sid, sport=sport, alt=alt, elev_low=elev_low, located=located,
+               indoor=indoor)
+
+
+def _alt_tags(nights):
+    return sorted(d for d, n in nights.items() if "altitude" in n.tags)
+
+
+def test_the_night_is_where_the_day_ended_first_from_garmins_day_altitude():
+    """Night altitude, first available of (H): (1) Garmin's average altitude of the day before; (2) the ground
+    altitude where the last outdoor activity ended before sleep onset (the day before or that day); (3) its
+    lowest point (Strava elev_low). Tagged from 1 600 m (Latshang 2013)."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(8), alt=600, sid=2)], day_alt={d(9): 1750.0})  # (1) wins over the activity
+    assert "altitude" in nights[d(8)].tags  # the night after Garmin's day at 1 750 m
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(8), alt=2000, sid=2)], day_alt={d(8): 900.0})  # Garmin says 900 m: not up there
+    assert "altitude" not in nights[d(7)].tags
+    nights = _nights()
+    sessions = [_out(d(5), hour=8, alt=2100, sid=3), _out(d(5), hour=15, alt=700, sid=4)]  # back down by evening
+    nt.tag_nights(nights, sessions)
+    assert "altitude" not in nights[d(4)].tags  # (2) the last activity before sleep: in the valley
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(5), hour=15, alt=None, elev_low=1700.0, sid=5)])  # (3) no lookup: elev_low
+    assert "altitude" in nights[d(4)].tags
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(5), hour=15, alt=1599.0, sid=6)])
+    assert "altitude" not in nights[d(4)].tags and nt.ALTITUDE_M == 1600  # (H)
+    # an activity after the night says nothing of it: a morning run up there, after a night down here
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(5), hour=7, alt=2400, sid=7)])
+    assert _alt_tags(nights) == [d(4), d(3), d(2), d(1)]  # the night after it, then carried 3 nights
+
+
+def test_a_summit_day_from_a_valley_is_no_night_at_altitude():
+    """The old highest-point rule goes: a day climbing to 3 000 m and back to a 700 m valley tags no night."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    nights = _nights()
+    summit = _out(d(5), hour=6, minutes=480, alt=700, sid=1)  # its highest point was 3 000 m; it ended at 700 m
+    nt.tag_nights(nights, [summit])
+    assert _alt_tags(nights) == []
+
+
+def test_altitude_carries_three_nights_without_any_activity():
+    """A rest day up there is still a night up there: the tag carries to the following nights without any
+    activity, 3 at most (H); an activity lower down, or one that cannot place the athlete, stops it."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(10), hour=15, alt=1900, sid=1)])
+    assert _alt_tags(nights) == [d(9), d(8), d(7), d(6)] and nt.ALTITUDE_CARRY == 3  # (H)
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(10), hour=15, alt=1900, sid=1), _out(d(8), hour=15, alt=500, sid=2)])
+    assert _alt_tags(nights) == [d(9), d(8)]  # down on d(8): no carry past it
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(10), hour=15, alt=1900, sid=1),
+                           _out(d(9), hour=15, located=False, sid=2)])  # a run without a position
+    assert _alt_tags(nights) == [d(9)]
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(10), hour=15, alt=1900, sid=1), _out(d(9), hour=15, indoor=True, sid=2)])
+    assert _alt_tags(nights) == [d(9)]  # a treadmill places nobody
+
+
+def test_a_failed_lookup_leaves_the_night_untagged():
+    """An outdoor activity whose altitude lookup failed (no value, no Strava elev_low): the night is untagged,
+    never guessed, and nothing carries across it."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(10), hour=15, alt=1900, sid=1), _out(d(9), hour=15, alt=None, sid=2)])
+    assert _alt_tags(nights) == [d(9)]
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(5), hour=15, alt=None, sid=3)])
+    assert _alt_tags(nights) == []
+
+
+def test_an_overnight_activity_places_the_night_after_it():
+    """By the day it ended: a hike through the night ending at 06:00 at 2 500 m places the night after it."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    nights = _nights()
+    nt.tag_nights(nights, [_out(d(6), hour=21, minutes=540, alt=2500, sid=1, sport="Hike")])  # → d(5) 06:00
+    assert _alt_tags(nights)[:1] == [d(4)]  # not the night it ran through (asleep from 23:00 on d(6))
+
+
+async def test_every_user_gets_the_tag_on_the_page(db_session: AsyncSession, test_user: User):
+    """End to end: a COROS-only outing that ended up there (its start coordinates looked up in the sync) and a
+    Garmin day at 1 750 m each tag the night after them on the page's nights table; a summit day back to the
+    valley does not."""
+    from tests.test_sante import _seed_rows
+    await _seed_rows(db_session, test_user, night_rows(range(0, 30), today=D))
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+
+    def act(day, alt, **ids):
+        start = datetime.combine(day, time(14), tzinfo=timezone.utc)
+        return Activity(user_id=test_user.id, sport_type="TrailRun", name="Sortie", start_date=start,
+                        distance=12_000, moving_time=7200, elapsed_time=7300, total_elevation_gain=900,
+                        average_heartrate=130, **ids,
+                        raw_data={"source": "coros", "format": 2, "start_latlng": [45.9, 6.8], "utc_offset": 0,
+                                  activity_env.ENV_KEY: {"v": 1, "alt": alt}})
+    db_session.add_all([act(d(20), 2050.0, coros_activity_id=1), act(d(12), 650.0, coros_activity_id=2)])
+    db_session.add(HealthMetric(user_id=test_user.id, date=d(6), metric="steps", value=9000, source="Garmin",
+                                details={"kcal": 2400, "exercise": 30, "alt": 1750.0}, n_samples=1))
+    await db_session.flush()
+    page = await sante.health_page(db_session, test_user.id, today=D)
+    marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
+    up = sorted((D - date.fromisoformat(iso)).days for iso, m in marks.items() if "en altitude" in m)
+    # the night after the COROS outing that ended at 2 050 m (d19) and after Garmin's day at 1 750 m (d5), each
+    # carried 3 nights without activity; the summit day that ended in the valley (d12) tags nothing
+    assert up == [2, 3, 4, 5, 16, 17, 18, 19]
+    ss = {s.id: s for s in await st.load_sessions(db_session, test_user.id, D)}
+    assert sorted((s.alt, s.located, s.indoor) for s in ss.values()) == [(650.0, True, False), (2050.0, True, False)]
+
+
+def _page(rows, sessions, today, day_alt=None):
+    """What health_page computes for `today`: (its day, its 14-day history)."""
+    nights = nt.build_nights(rows, today)
+    nt.tag_activities(nights, sessions, st.efforts(sessions), nt.rest_hr(nights, today), st.hr_max(sessions, today),
+                      day_alt)
+    nt.tag_alerts(nights, today)
+    rest_of = partial(nt.rest_hr, nights)
+    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
+    with nt.memo():
+        nt.freeze(nights)
+        return (sante._assess(nights, sessions, efforts, today),
+                sante._history(nights, sessions, efforts, today, rest_of, day_alt))
+
+
+def test_the_history_tags_altitude_as_each_day_knew_it():
+    """A week up there (an outing ended at 2 100 m, Garmin's days at 1 900 m), nightly HR + 6 bpm: each past day
+    of the 14-day card reads the nights as that day tagged them (rows and activities known then)."""
+    d = lambda k: D - timedelta(days=k)  # noqa: E731
+    rows = night_rows(range(0, 60), today=D, hr=lambda k: 52.0 if 4 <= k <= 9 else 44.0 + k % 3, hrv=60.0)
+    sessions = [run(D - timedelta(days=12 + 4 * i), 50, hr=130, sid=100 + i) for i in range(8)]  # before the trip
+    sessions += [_out(d(11), hour=15, alt=2100.0, sid=1)]
+    day_alt = {d(9): 1900.0, d(8): 1900.0}
+    day, hist = _page(rows, sessions, D, day_alt)
+    for x, state, score in hist:
+        past = {m: {k: v for k, v in per.items() if k <= x} for m, per in rows.items()}
+        midnight = datetime.combine(x + timedelta(days=1), time(0))
+        known = [s for s in sessions if st.local_end(s) <= midnight]
+        then = _page(past, known, x, {k: v for k, v in day_alt.items() if k < x})[0]
+        assert score["value"] == then["score"]["value"], x
+    nights = nt.build_nights(rows, D)
+    nt.tag_activities(nights, sessions, (), 45, 190, day_alt)
+    # d10 (the outing), d9 (carried), d8 and d7 (Garmin's days), then d6 → d4 carried: 3 nights at most
+    assert _alt_tags(nights) == [d(10), d(9), d(8), d(7), d(6), d(5), d(4)]

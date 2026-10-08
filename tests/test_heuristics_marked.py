@@ -33,6 +33,9 @@ HEURISTICS = [
     ("app/services/nights.py", "MIN_BAND_NIGHTS", 14),
     ("app/services/nights.py", "RACE_WINDOW", 7),
     ("app/services/nights.py", "TZ_CHANGE_MIN", 60),
+    # v4.4 (research_data.md R2): where the athlete sleeps (Latshang 2013), carried over rest days up there
+    ("app/services/nights.py", "ALTITUDE_M", 1600),
+    ("app/services/nights.py", "ALTITUDE_CARRY", 3),
     ("app/services/race_prep.py", "HOT_FACTOR", 1.06),
     ("app/services/nights.py", "MIN_PROVISIONAL_NIGHTS", 7),
     # Santé v4 (SANTE_V4_SPEC.md): the effort classes, their windows and Charge, the score, the rings, the habits

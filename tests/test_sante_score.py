@@ -571,7 +571,7 @@ def test_history_reads_only_the_activities_finished_that_day():
     05/10 bar is the page of 05/10 (the hike unknown: no « en altitude » on that night, no 6th activity)."""
     rows = _rich(hrv_last=58.0)
     hike = replace(_session(D - timedelta(days=3), 540, hour=21, sid=60, sport="Hike", name="Rando de nuit"),
-                   elev_high=2500.0)
+                   alt=2500.0, located=True)  # ended at 2 500 m (v4.4: the night after it is « en altitude »)
     sessions = _runs(n=5) + [hike]
     hist = {d: (state, score) for d, state, score in _history(rows, sessions)}
     for d, (state, score) in hist.items():

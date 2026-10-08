@@ -73,9 +73,11 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     today = today or await athlete_today(db, user_id, now, latest)
     sessions = await st.load_sessions(db, user_id, today)
     peak = st.hr_max(sessions, today)
+    # Garmin's day altitudes: where the athlete slept, first (R2)
+    day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
     # the nights' tags read the efforts' classes only
     nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
-                                  efforts=st.efforts(sessions), peak=peak)
+                                  efforts=st.efforts(sessions), peak=peak, day_alt=day_alt)
     # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
     rest_of = partial(nt.rest_hr, nights)
     # a dawn finish: D on the day before its first morning
@@ -94,7 +96,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     with nt.memo():  # the nights no longer change: their bands and alerts are computed once
         nt.freeze(nights)
         day = _assess(nights, sessions, efforts, today)
-        history = _history(nights, sessions, efforts, today, rest_of) + [(today, day["state"], day["score"])]
+        history = (_history(nights, sessions, efforts, today, rest_of, day_alt)
+                   + [(today, day["state"], day["score"])])
         out["recup"] = sc.history_card(history, today)
         hero = sl.hero(nights, today)
         samples = await _timeline(db, user_id, nights, hero["day"]) if hero else {}
@@ -153,7 +156,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     return day
 
 
-def _history(nights, sessions, efforts, today: date, rest_of=None) -> list:
+def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights and the activities known then
     only — an activity is known once it ended (it is uploaded then), so one
@@ -170,10 +173,11 @@ def _history(nights, sessions, efforts, today: date, rest_of=None) -> list:
     top, and shares their bands (nights.memo); any other day is tagged anew
     from what it knew. `rest_of`: what the efforts were computed with
     (st.efforts): a Longue's heart-rate test reads the bounds as of its own
-    day, the same whichever later day reads it."""
+    day, the same whichever later day reads it; `day_alt`: Garmin's day
+    altitudes the nights were tagged with (a night reads the day before)."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
-    nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today))
+    nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today), day_alt)
     nt.freeze(base)
     by_day = defaultdict(list)
     for s in sessions:
@@ -203,7 +207,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None) -> list:
             nd = tagged[alert]
         else:
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
-            nt.tag_activities(nd, ss, efs, rest, peak)
+            nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
             nt.tag_alerts(nd, d)
             nt.freeze(nd)
         past = _assess(nd, ss, efs, d)

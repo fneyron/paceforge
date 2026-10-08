@@ -34,7 +34,9 @@ heuristic, never shown as a finding):
   heart-rate reserve, or ≥ 20 min above it in its laps or km splits; Stutz
   2019's ≤ 1 h and Myllymäki 2012's vigorous evening session, the 2 h and
   the 80 % are H: an easy evening run never drops a night), sleeping at altitude
-  (Latshang 2013; inferred from the day's highest point ≥ 1 600 m, H), a time
+  (Latshang 2013: ≥ 1 600 m where the athlete slept, H: night_altitude, for
+  every user; carried to the next nights without any activity, 3 at most,
+  H; a summit day from a valley is no night at altitude), a time
   zone change (Janse van Rensburg 2021; a step of more than 1 h, so a clock
   change at home is none; from the night it shows, ⌈1 night per zone⌉
   eastwards, ⌈0.5⌉ westwards, « décalage horaire » from 3 zones, H), the nights
@@ -115,6 +117,7 @@ LATE_SESSION_GAP = timedelta(hours=2)  # (H) a vigorous session ending this soon
 VIGOROUS_HRR = 0.8  # (H) average HR ≥ 80 % of the heart-rate reserve: vigorous (Myllymäki 2012); easy is ≈ 60–70 %
 VIGOROUS_MIN = 20  # (H) or this many minutes above it in its laps, else its km splits (an interval session)
 ALTITUDE_M = 1600  # (H) Latshang 2013 studied 1 630–2 590 m
+ALTITUDE_CARRY = 3  # (H) nights an altitude night carries to while no activity says where the athlete is
 TZ_CHANGE_MIN = 60  # (H) a step of MORE than this: a 1-h clock change (DST) at home is no time zone change
 # nights per zone crossed, from the night the change shows: 1 eastwards, 0.5 westwards, rounded up, 1 at least
 # (Janse van Rensburg 2021: natural alignment ≈ 1 day per zone east, 0.5 west; the same rate under 3 zones, H)
@@ -332,10 +335,11 @@ def vigorous(s, rest: float, peak: float) -> bool:
 
 
 def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date, dict] | None = None,
-               rest: float = 50.0, peak: float = 190.0) -> None:
+               rest: float = 50.0, peak: float = 190.0, day_alt: dict[date, float] | None = None) -> None:
     """Context tags on each night (see the module docstring), in place.
     `sessions`: sante_training.Session; `races`: [(race day, name)];
-    `feel`: {day: feel_of(...)}; `rest`/`peak`: the athlete's HR bounds."""
+    `feel`: {day: feel_of(...)}; `rest`/`peak`: the athlete's HR bounds;
+    `day_alt`: {day: Garmin's average altitude that day} (day_altitudes)."""
     feel = feel or {}
     by_day = defaultdict(list)
     for s in sessions:
@@ -346,13 +350,12 @@ def tag_nights(nights: dict[date, Night], sessions=(), races=(), feel: dict[date
             n.tags.add("long")
         if any(vigorous(s, rest, peak) for s in late_candidates(n, before + by_day.get(d, []))):
             n.tags.add("late")
-        if any((s.elev_high or 0) >= ALTITUDE_M for s in before + by_day.get(d, [])):
-            n.tags.add("altitude")
         if (feel.get(d) or {}).get("alcohol"):
             n.tags.add("alcohol")
         for rd, _ in races:
             if abs((d - rd).days) <= RACE_WINDOW:
                 n.tags.add("race")
+    _tag_altitude(nights, sessions, day_alt or {})
     _tag_timezones(nights, sessions)
     _tag_late_naps(nights)
     for d in illness_days(feel):
@@ -372,6 +375,57 @@ def late_candidates(n: Night, sessions) -> list:
         if timedelta(0) <= n.start - end <= LATE_SESSION_GAP:
             out.append(s)
     return out
+
+
+def _end(s) -> datetime:
+    """A session's end on its local clock (naive), as late_candidates reads it."""
+    return _local(s, s.start) + timedelta(minutes=s.elapsed or s.minutes)
+
+
+def night_altitude(n: Night | None, d: date, by_end, day_alt: dict[date, float]) -> tuple[float | None, bool]:
+    """Where the athlete slept the night that wakes on `d` (R2, H): (altitude in m or None, whether that day
+    knew something: Garmin's altitude or an activity). First available of: (1) Garmin's average altitude of
+    the day before (`day_alt`); (2) the ground altitude where the last outdoor activity that ended before
+    sleep onset, the day before or that day (`by_end`: by the local day it ended; the day before only without
+    a known onset), ended: looked up in the sync (Session.alt); (3) that activity's lowest point (Strava
+    elev_low). An activity that cannot place the athlete (indoor, no position, a failed lookup) leaves the
+    night untagged, and nothing carries across it."""
+    if (a := day_alt.get(d - timedelta(days=1))) is not None:
+        return a, True
+    onset = n.start if n is not None else None
+    days = (d - timedelta(days=1), d) if onset else (d - timedelta(days=1),)
+    done = [s for x in days for s in by_end.get(x, ()) if onset is None or _end(s) <= onset]
+    outdoor = [s for s in done if (s.located or s.elev_low is not None) and not s.indoor]
+    if not outdoor:
+        return None, bool(done)
+    last = max(outdoor, key=_end)
+    return (last.alt if last.alt is not None else last.elev_low), True
+
+
+def _tag_altitude(nights: dict[date, Night], sessions, day_alt: dict[date, float]) -> None:
+    """« en altitude » on each night slept at ≥ 1 600 m (night_altitude, H; Latshang 2013), carried to the
+    following nights without any activity, 3 at most (H): a rest day up there is still a night up there. A
+    summit reached from a valley is not one (the old highest-point rule): the end of the day says where the
+    athlete slept."""
+    if not nights:
+        return
+    by_end = defaultdict(list)
+    for s in sessions:
+        by_end[_end(s).date()].append(s)
+    d, last, carry_until = min(nights), max(nights), None
+    while d <= last:
+        n = nights.get(d)
+        alt, placed = night_altitude(n, d, by_end, day_alt)
+        if alt is not None and alt >= ALTITUDE_M:
+            carry_until = d + timedelta(days=ALTITUDE_CARRY)
+            high = True
+        elif placed:  # lower down, or somewhere unknown (indoors, a failed lookup): no carry across it
+            carry_until, high = None, False
+        else:
+            high = carry_until is not None and d <= carry_until
+        if high and n is not None:
+            n.tags.add("altitude")
+        d += timedelta(days=1)
 
 
 def hr_segments(laps, splits) -> tuple:
@@ -885,26 +939,42 @@ SANTE_ROWS = ("sleep", "nap", "hrv", "hr_night", "resp_night")  # Santé v4: no 
 
 
 def tag_activities(nights: dict[date, Night], sessions=(), efforts=(), rest: float = 50.0,
-                   peak: float = 190.0) -> None:
+                   peak: float = 190.0, day_alt: dict[date, float] | None = None) -> None:
     """Santé v4's tags, from the activities alone, in place: the context of
-    each night (sortie longue la veille, sortie intense le soir, altitude,
-    fuseau) and « après grosse sortie » (`efforts`: sante_training.efforts,
-    anchored on these nights). No planned race, no check-in; « FC de nuit
-    haute » comes after (tag_alerts)."""
-    tag_nights(nights, sessions, (), {}, rest, peak)
+    each night (sortie longue la veille, sortie intense le soir, altitude
+    with Garmin's day altitudes `day_alt`, fuseau) and « après grosse
+    sortie » (`efforts`: sante_training.efforts, anchored on these nights).
+    No planned race, no check-in; « FC de nuit haute » comes after
+    (tag_alerts)."""
+    tag_nights(nights, sessions, (), {}, rest, peak, day_alt)
     tag_efforts(nights, anchor_efforts(nights, efforts))
 
 
+async def day_altitudes(db: AsyncSession, user_id: int, lo: date, hi: date) -> dict[date, float]:
+    """{day: Garmin's average altitude where the watch was worn} (its steps row, garmin.parse_summary): the
+    night after each day is placed by it first (night_altitude)."""
+    alt = HealthMetric.details["alt"].as_float()
+    rows = await db.execute(select(HealthMetric.date, alt).where(
+        HealthMetric.user_id == user_id, HealthMetric.metric == "steps", HealthMetric.source == "Garmin",
+        HealthMetric.date >= lo, HealthMetric.date <= hi, alt.is_not(None)))
+    return {d: float(v) for d, v in rows.all()}
+
+
 async def load_nights(db: AsyncSession, user_id: int, today: date, days: int = 400, sessions=(), efforts=(),
-                      rest: float | None = None, peak: float = 190.0) -> dict[date, Night]:
+                      rest: float | None = None, peak: float = 190.0,
+                      day_alt: dict[date, float] | None = None) -> dict[date, Night]:
     """Santé's nights of the last `days` days, tagged from the activities
-    (tag_activities), then « FC de nuit haute » (the alert episodes). `rest`
-    None: from the nights (rest_hr)."""
-    rows = await read_rows(db, user_id, today - timedelta(days=days), today, SANTE_ROWS)
+    and Garmin's day altitudes (`day_alt`, else day_altitudes: tag_activities),
+    then « FC de nuit haute » (the alert episodes). `rest` None: from the
+    nights (rest_hr)."""
+    lo = today - timedelta(days=days)
+    rows = await read_rows(db, user_id, lo, today, SANTE_ROWS)
     nights = build_nights(rows, today)
     if rest is None:
         rest = rest_hr(nights, today)
+    if day_alt is None:
+        day_alt = await day_altitudes(db, user_id, lo, today)
     await load_segments(db, nights, sessions)
-    tag_activities(nights, sessions, efforts, rest, peak)
+    tag_activities(nights, sessions, efforts, rest, peak, day_alt)
     tag_alerts(nights, today)
     return nights

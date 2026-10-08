@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import Activity
+from app.services import activity_env as env
 from app.services.activity_dedupe import find_duplicate_ids, is_false_start
 
 HISTORY_DAYS = 730
@@ -54,8 +55,12 @@ class Session:
     name: str = ""
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
     offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
-    elev_high: float | None = None  # m, the highest point (Strava elev_high, Garmin maxElevation)
     rpe: float | None = None  # Strava's perceived exertion (1–10), when the athlete rated it (its detail only)
+    indoor: bool = False  # a treadmill, a home trainer, a virtual ride (activity_env.is_indoor)
+    located: bool = False  # it carries a GPS position, start or end (Strava, Garmin, COROS)
+    alt: float | None = None  # m, the ground altitude where it ended (Open-Meteo, looked up in the sync)
+    elev_low: float | None = None  # m, its lowest point (Strava elev_low)
+    feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.load_segments)
 
 
@@ -71,8 +76,8 @@ def monday(dt: datetime) -> datetime:
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
 _CACHE_SIZE = 256
-RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "elev_high",
-            "maxElevation", "perceived_exertion")
+RAW_KEYS = ("workout_type", "average_temp", "utc_offset", "startTimeLocal", "startTimeGMT", "perceived_exertion",
+            "elev_low", "trainer", *env.POSITION_KEYS, env.ENV_KEY)
 
 
 def _float(v) -> float | None:
@@ -115,8 +120,12 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     # the sport's family weighs differently, so a re-import from one family to another is seen
     family = case((Activity.sport_type.in_(RUNS), 1), (Activity.sport_type.in_(FOOT), 1_000),
                   (Activity.sport_type.in_(BIKE), 1_000_000), else_=1_000_000_000)
+    # raw_data's stored size: a lookup written on an activity (activity_env) is a change too, read without
+    # detoasting it (PostgreSQL's pg_column_size; SQLite stores JSON as text)
+    pg = db.get_bind().dialect.name == "postgresql"
+    size = func.pg_column_size(Activity.raw_data) if pg else func.length(Activity.raw_data)
     key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
-        select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
+        select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at), func.sum(size),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
                func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
                func.sum(func.coalesce(Activity.average_heartrate, 0)),
@@ -131,7 +140,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     cols = (Activity.id, Activity.start_date, Activity.sport_type, Activity.moving_time, Activity.distance,
             Activity.total_elevation_gain, Activity.average_speed, Activity.average_heartrate,
             Activity.max_heartrate, Activity.name, Activity.elapsed_time)
-    if db.get_bind().dialect.name == "postgresql":
+    if pg:
         # one read of each raw_data (every ->> would detoast it again)
         obj = case((func.jsonb_typeof(Activity.raw_data) == "object", Activity.raw_data),
                    else_=literal({}, JSONB))
@@ -164,14 +173,15 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
         known = _offset(_float(x["utc_offset"]), x["startTimeLocal"], x["startTimeGMT"])
         offset = known or 0
         speed = r.average_speed if r.average_speed else ((r.distance or 0) / r.moving_time)
-        high = _float(x["elev_high"])
+        looked = env.env_of(x)
         out.append(Session(
             id=r.id, start=start, day=(start + timedelta(seconds=offset)).date(), sport=r.sport_type,
             minutes=r.moving_time / 60, dplus=r.total_elevation_gain or 0, km=(r.distance or 0) / 1000,
             speed=speed or None, hr=r.average_heartrate or None, hr_peak=r.max_heartrate or None,
             workout_type=_int(x["workout_type"]), temp=_float(x["average_temp"]), name=r.name or "",
-            elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known,
-            elev_high=high if high is not None else _float(x["maxElevation"]), rpe=_rpe(x["perceived_exertion"])))
+            elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known, rpe=_rpe(x["perceived_exertion"]),
+            indoor=env.is_indoor(r.sport_type, x), located=env.located(x), alt=_float(looked.get("alt")),
+            elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels"))))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[user_id] = (key, out)
