@@ -46,14 +46,16 @@ def test_three_months_only_with_a_night_14_to_90_days_old_and_r_is_honoured():
 
 
 def test_the_hero_prints_the_times_the_nap_and_this_mornings_hours():
-    """The Sommeil dial at the top says this morning's 24 h as a percentage of the 8-h need, so the Sommeil card's
-    first row prints its hours (once on the page) « sur 8 h de besoin », with the nap it counts."""
+    """The Sommeil dial at the top says this morning's 24 h as a percentage of the day's need, so the Sommeil card's
+    first row prints its hours (once on the page) « sur 8h00 de besoin » (8 h without an answer), with the nap it
+    counts; « sur 9h00 de besoin » when that morning's need is 9 h (sleep_need)."""
     rows = night_rows([0], asleep=350, start=(23, 35), end=(5, 38))
     rows["nap"][D] = (140, {"windows": [[f"{D}T06:42", f"{D}T09:07"]]}, "Garmin")
     h = sl.hero(_nights(rows), D)
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "23:35 → 05:40",
                                                                          "+ sieste 2h20", "8h10",
-                                                                         "sur 8\u00a0h de besoin")
+                                                                         "sur 8h00 de besoin")
+    assert sl.hero(_nights(rows), D, need_of=lambda d: 540)["need"] == "sur 9h00 de besoin"
     t = h["timeline"]
     assert len(t["naps"]) == 1 and [nm for nm, _, _ in t["lanes"]] == ["nuit", "sieste"] and not h["out_naps"]
     # an older night (none this morning): the dial is empty, the card prints that night's hours
@@ -178,7 +180,8 @@ def test_the_method_fold_is_four_plain_bullets_and_names_no_race():
     from app.services import sante_score as sc
 
     assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
-                         "7 h ou plus en moyenne, c'est ce qui est recommandé. Une nuit sous 6 h est courte.",
+                         "Ton besoin part de ta réponse (8 h sans réponse). Il augmente un peu après un gros "
+                         "effort ou des nuits trop courtes. Une nuit sous 6 h est courte.",
                          "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
                          "Ta montre détecte tes heures de coucher et de lever.",
                          "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas "

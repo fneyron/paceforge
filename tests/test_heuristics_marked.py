@@ -74,8 +74,8 @@ HEURISTICS = [
     ("app/services/sante_score.py", "HR_MID_BPM", 5),
     ("app/services/sante_score.py", "HR_MID_SUB", 40),
     ("app/services/sante_score.py", "HR_ZERO_BPM", 8),
-    ("app/services/sante_score.py", "SLEEP_POINTS", ((240, 0), (360, 60), (420, 100))),
-    ("app/services/sante_score.py", "SLEEP_DEBT", 2 / 3),
+    # 2026-10-09: the 24 h against the day's need (4 h, 6 h, 7 h for 8 h), the debt in the need
+    ("app/services/sante_score.py", "SLEEP_SHARES", ((0.5, 0), (0.75, 60), (0.875, 100))),
     ("app/services/sante_score.py", "CAP_JOINT", 69),
     ("app/services/sante_score.py", "JOINT_HR_BPM", 3),
     ("app/services/sante_score.py", "BANDS", {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}),
@@ -89,12 +89,23 @@ HEURISTICS = [
     ("app/services/sante_score.py", "RED_SUB", 40),
     ("app/services/sante_score.py", "CAP_SHORT", 65),
     ("app/services/sante_score.py", "CAP_NO_HEART", 80),
+    # 2026-10-09 (owner: « utilise la respiration aussi si tu l'as »): the breathing rate's line and its cap
+    ("app/services/sante_score.py", "CAP_RESP", 69),
+    ("app/services/nights.py", "RESP_UP_MIN", 1.0),
+    ("app/services/nights.py", "RESP_UP_SD", 2),
+    ("app/services/nights.py", "RESP_SD_PRIOR", 0.5),
     # « sortie intense le soir »: only a vigorous session close to sleep (Stutz 2019; Myllymäki 2012)
     ("app/services/nights.py", "VIGOROUS_HRR", 0.8),
     ("app/services/nights.py", "VIGOROUS_MIN", 20),
     ("app/services/sante_sleep.py", "USUAL_NIGHTS", 5),
-    # v4.4 (owner: « Mets des pourcentages plutôt que des valeurs »): the Sommeil dial's 100 % (Sargent 2021: 8,3 h)
-    ("app/services/sante_sleep.py", "SLEEP_NEED", 480),
+    # 2026-10-09 (owner: « Le besoin diffère en fonction des personnes »): the sleep need, its answers, its additions
+    ("app/services/sante_sleep.py", "NEED_DEFAULT", 480),
+    ("app/services/sante_sleep.py", "NEED_CHOICES", (420, 450, 480, 510, 540, 570, 600)),
+    ("app/services/sante_sleep.py", "NEED_EFFORT", 30),
+    ("app/services/sante_sleep.py", "NEED_DEBT_DAYS", 7),
+    ("app/services/sante_sleep.py", "NEED_DEBT_MAX", 60),
+    ("app/services/sante_sleep.py", "NEED_STEP", 10),
+    ("app/services/sante.py", "SUFFICIENT_SHARE", 7 / 8),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week and its « comme d'habitude »
     ("app/services/sante.py", "USUAL_WEEKS", 11),
     ("app/services/sante.py", "USUAL_MIN_WEEKS", 4),

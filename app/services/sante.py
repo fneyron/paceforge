@@ -49,6 +49,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
+from app.models.user import User
 from app.services import nights as nt
 from app.services import sante_score as sc
 from app.services import sante_sleep as sl
@@ -65,10 +66,11 @@ SPARSE_NIGHTS, SPARSE_DAYS = 10, 14  # fewer measured nights in the 30: the axis
 
 
 async def health_page(db: AsyncSession, user_id: int, today: date | None = None, now: datetime | None = None,
-                      r: str | None = None) -> dict:
+                      r: str | None = None, ask: bool = False) -> dict:
     """Everything /sante draws. `has_data` is False when neither a watch nor an
     activity ever arrived. `r`: the sleep bars' range (14 or 90; else the
-    first holding a night)."""
+    first holding a night). `ask`: the Sommeil card asks the sleep need again
+    (« Changer »)."""
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
@@ -88,6 +90,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
+    # the athlete's answer to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » (None: 8 h)
+    base = (await db.execute(select(User.sleep_need_min).where(User.id == user_id))).scalar()
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
@@ -102,16 +106,23 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         return out
     with nt.memo():  # the nights no longer change: their bands and alerts are computed once
         nt.freeze(nights)
-        day = _assess(nights, sessions, efforts, today)
-        history = (_history(nights, sessions, efforts, today, rest_of, day_alt)
+        day = _assess(nights, sessions, efforts, today, base)
+        history = (_history(nights, sessions, efforts, today, rest_of, day_alt, base)
                    + [(today, day["state"], day["score"])])
         out["recup"] = sc.history_card(history, today)
         hero = sl.hero(nights, today)
         samples = await _timeline(db, user_id, nights, hero["day"]) if hero else {}
-        out["sleep"] = sl.sleep_section(nights, today, r, samples)
+        raced = st.raced_nights(efforts)
+
+        def need_of(x: date) -> int:
+            return sl.sleep_need(nights, x, base, raced)["total"]
+        out["sleep"] = sl.sleep_section(nights, today, r, samples, need_of)
+        if out["sleep"].get("hero"):  # the need of the night shown: its line, the question until answered
+            out["sleep"]["need"] = sl.need_card(sl.sleep_need(nights, out["sleep"]["hero"]["day"], base, raced),
+                                                base is not None, ask)
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        out.update(_top(day, efforts, sessions, bool(sources), out, until))
+        out.update(_top(day, efforts, sessions, bool(sources), out, until, nights))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     return out
@@ -167,27 +178,27 @@ def _night_stat(nights, metric: str, d: date) -> dict:
     return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen}
 
 
-def _assess(nights, sessions, efforts, d: date) -> dict:
+def _assess(nights, sessions, efforts, d: date, base: int | None = None) -> dict:
     """What day `d` reads — today, or a past day of the 14-day card (_history:
     the rows and activities known that day) — and its score and state (the
     band of the score). Every measured night counts in the 7-night means (an
     alert episode's own nights too: the score shows the episode, never « dans
-    tes valeurs habituelles » the morning the alert stops)."""
+    tes valeurs habituelles » the morning the alert stops). `base`: the
+    athlete's sleep need (None: 8 h); the day's need (sante_sleep.sleep_need)
+    is what its 24 h are read against, by the Sommeil dial and the score; `resp`:
+    the breathing rate's 2 nights over its usual line (nights.resp_up_nights)."""
     alert = nt.illness_alert(nights, d)
     stats = {k: _night_stat(nights, k, d) for k in ("hr", "hrv")}
     tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
-    m7 = nt.mean7(nights, "tst24", d)
-    usual = nt.band(nights, "tst24", d - timedelta(days=6), source=nt.mean_source(nights, "tst24", d)) if m7 else None
-    day = {"day": d, "stats": stats, "tst24": tst,
-           "sleep": {"mean7": m7["value"] if m7 else None, "usual": usual["center"] if usual else None,
-                     "prov": bool(usual and usual["provisional"])},
-           "window": st.effort_window(efforts, d), "alert": alert}
+    day = {"day": d, "stats": stats, "tst24": tst, "need": sl.sleep_need(nights, d, base, st.raced_nights(efforts)),
+           "window": st.effort_window(efforts, d), "alert": alert, "resp": nt.resp_up_nights(nights, d)}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
     return day
 
 
-def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
+def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None,
+             need_base: int | None = None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
     computed it on that day: from the nights up to that day (the bands, the
     means, the alert and the 24 h read nothing dated after it) and the
@@ -236,16 +247,16 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
             nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
             nt.freeze(nd)
-        past = _assess(nd, ss, efs, d)
+        past = _assess(nd, ss, efs, d, need_base)
         out.append((d, past["state"], past["score"]))
     return out
 
 
 # ── the top: three dials, like WHOOP's (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple ») ─────
 
-# the Sommeil dial's word from this morning's 24 h (H): 7 h and more (Watson 2015a), 6 to 7 h, under 6 h (Craven 2022)
-SLEEP_WORDS = ((sl.REF_MIN, "suffisant"), (nt.SHORT_DAY_MIN, "un peu court"), (0, "court"))
-SLEEP_NEED = sl.SLEEP_NEED
+# the Sommeil dial's word from this morning's 24 h against the day's need: « suffisant » from the larger of 7 h
+# (Watson 2015a) and 7/8 of the need (H: an 8-h need gives the 7 h), « court » under 6 h (Craven 2022)
+SUFFICIENT_SHARE = 7 / 8  # (H)
 NO_NIGHT_WORD = "pas enregistré"
 USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the last 11 complete weeks (Activités'
 # « par semaine en moyenne », the same weeks and the same moving time), 4 weeks with an activity at least
@@ -259,21 +270,29 @@ ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit row under t
 SAME = "comme d'habitude"  # a 7-night mean at its usual value, to the percent: « 0 % » said in words
 
 
-def sleep_dial(tst24: int | None, href: str | None) -> dict:
+def sleep_word(tst24: int, need: int) -> str:
+    """The Sommeil dial's word: « suffisant » from the larger of 7 h and 7/8 of the need, « court » under 6 h,
+    « un peu court » between (an 8-h need reads as before: 7 h, 6 h)."""
+    if tst24 >= max(sl.REF_MIN, SUFFICIENT_SHARE * need):
+        return "suffisant"
+    return "court" if tst24 < nt.SHORT_DAY_MIN else "un peu court"
+
+
+def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
     """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), as a
-    percentage of an 8-h need, at most 100 % (H; the hours are the Sommeil card's, printed once), its arc in the
-    sleep colour (one stable hue), in the warning colour under 6 h; its word from the hours: 7 h or more
-    « suffisant » (AASM/SRS: Watson 2015a), 6 to 7 h « un peu court » (H), under 6 h « court » (Craven 2022); « — »
-    and « pas enregistré » without a night this morning. `href`: the Sommeil card, None without one (no night
-    ever: a plain dial)."""
+    percentage of the day's need (sante_sleep.sleep_need: the athlete's own, 8 h without an answer, a little more
+    after a big effort or when sleep is owed), at most 100 % (the hours are the Sommeil card's, printed once), its
+    arc in the sleep colour (one stable hue), in the warning colour under 6 h; its word (sleep_word); « — » and
+    « pas enregistré » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a
+    plain dial)."""
     if tst24 is None:
         return viz.ring("sommeil", None, "—", "Sommeil", NO_NIGHT_WORD, tone="none", href=href,
                         aria="Sommeil : pas de nuit enregistrée ce matin.")
-    word = next(w for lo, w in SLEEP_WORDS if tst24 >= lo)
-    p = min(100, sc.rounded(100 * tst24 / SLEEP_NEED))
-    return viz.ring("sommeil", tst24 / SLEEP_NEED, str(p), "Sommeil", word, unit="%", href=href,
+    word = sleep_word(tst24, need)
+    p = min(100, sc.rounded(100 * tst24 / need))
+    return viz.ring("sommeil", tst24 / need, str(p), "Sommeil", word, unit="%", href=href,
                     tone="warn" if tst24 < nt.SHORT_DAY_MIN else "sleep",
-                    aria=f"Sommeil {sc.pct(p)} de tes 8 heures de besoin, {word}.")
+                    aria=f"Sommeil {sc.pct(p)} de ton besoin de {viz.hm_long(need)}, {word}.")
 
 
 def usual_week(sessions, today: date) -> float | None:
@@ -346,6 +365,37 @@ def night_row(card: dict | None, metric: str) -> dict | None:
     return _row(key, name, s["value"], s["word"], s["tone"] or "none", qual="7 nuits", detail=s.get("detail"))
 
 
+RESP_WORDS = {"in": "dans tes valeurs habituelles", "up": "plus rapide que d'habitude",
+              "up2": "plus rapide depuis 2 nuits"}
+
+
+def resp_row(nights, d: date, day: dict) -> dict | None:
+    """« Respiration · cette nuit » in the Récupération card, only when the watch measured last night's breathing
+    (Garmin; COROS sends none: no row, nothing changes): last night against the usual values of the 60 days
+    before it, as a signed percentage, « comme d'habitude » at 0 %; « dans tes valeurs habituelles » under its
+    line, whatever the side (a slow night is never praised nor flagged), green; « plus rapide que d'habitude » one
+    night over it, neutral (about 2.5 % of nights by chance); « plus rapide depuis 2 nuits » in orange when the
+    score is capped (nights.resp_up_nights); « en construction » without usual values yet (7 nights), and when
+    they will be ready."""
+    n = nights.get(d)
+    if n is None or n.resp is None:
+        return None
+    b = nt.band(nights, "resp", d, source=n.resp_source)
+    if b is None:
+        k = nights_to_normal(nights, "resp", d)
+        return _row("resp", "Respiration", None, BUILDING, "none", qual="cette nuit",
+                    detail="prête " + (f"dans {k}{viz.NBSP}nuits" if k > 1 else "après ta prochaine nuit"))
+    p = signed_pct(n.resp, b["center"])
+    if day.get("resp"):
+        word, tone = RESP_WORDS["up2"], "warn"
+    elif n.resp >= b["up"]:
+        word, tone = RESP_WORDS["up"], "accent"
+    else:
+        word, tone = (SAME if p == 0 else RESP_WORDS["in"]), "ok"
+    return _row("resp", "Respiration", None if p == 0 else f"{viz.signed(p)}{viz.NBSP}%", word, tone,
+                qual="cette nuit")
+
+
 def effort_row(efforts, day: dict) -> dict | None:
     """« Effort récent », whenever a recovery window is open (owner, 2026-10-08: « Un effort récent, il faut le
     prendre en compte et afficher la fatigue quand même »), whether its cap binds the score or not: « 8 jours »
@@ -364,7 +414,8 @@ def effort_row(efforts, day: dict) -> dict | None:
                 "warn" if w["cap"] >= EFFORT_ORANGE else "danger")
 
 
-def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None) -> dict:
+def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None,
+         nights=None) -> dict:
     """The three dials, each a link to its card right under the dials, else to its details further down (a plain
     dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
     sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
@@ -374,10 +425,12 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
     sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
                   "#sommeil-detail" if sleep.get("state") == "ok" else None)
     rows = [r for r in (night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
+                        resp_row(nights, day["day"], day) if nights is not None else None,
                         effort_row(efforts, day)) if r]
     recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
     train = training(sessions, day["day"], until)
-    return {"dials": [sleep_dial(day["tst24"], sleep_href), sc.dial(score, state, recup_href), train["dial"]],
+    return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),
+                      train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
             "rows": rows, "training": train, "score": score}

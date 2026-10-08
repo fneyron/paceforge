@@ -25,7 +25,8 @@ def test_servings_migration_is_the_head_and_round_trips():
     assert mig.down_revision == "x8a9b0c1d2e3"
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    script = ScriptDirectory.from_config(cfg)
+    assert script.get_revision(mig.revision) is not None  # in the chain (the sleep need migration revises it)
 
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:

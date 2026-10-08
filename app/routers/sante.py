@@ -52,6 +52,7 @@ async def sante_page(
     request: Request,
     vue: str | None = None,
     r: str | None = None,
+    besoin: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -60,7 +61,7 @@ async def sante_page(
     status = await coros.coros_status(db, user.id)
     garmin_link = await garmin.garmin_status(db, user.id)
     try:
-        page = await health_page(db, user.id, r=r)
+        page = await health_page(db, user.id, r=r, ask=besoin is not None)  # ?besoin: the need asked again
     except Exception:  # shown as an error, never as "connect your watch"
         logger.exception("Santé page failed for user %d", user.id)
         page = None
@@ -75,6 +76,26 @@ async def sante_page(
         context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
                  "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0},
     )
+
+
+@router.post("/sante/besoin")
+async def sante_sleep_need(
+    request: Request,
+    need: str | None = Form(default=None),
+    user: User = Depends(get_current_user),
+):
+    """The answer to « Combien d'heures de sommeil te faut-il pour te sentir reposé ? » (the Sommeil card, 2026-10-09:
+    the need is the athlete's own): one of its answers in minutes (sante_sleep.NEED_CHOICES), anything else ignored;
+    back to the card (a form: no script needed)."""
+    from app.services.sante_sleep import NEED_CHOICES
+
+    try:
+        minutes = int(need or "")
+    except ValueError:
+        minutes = None
+    if minutes in NEED_CHOICES:
+        user.sleep_need_min = minutes
+    return _away(request, "/sante#sommeil")
 
 
 @router.get("/sante/sources", response_class=HTMLResponse)

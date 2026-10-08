@@ -491,6 +491,21 @@ def through_night(start: datetime, end: datetime) -> bool:
     return False
 
 
+def raced_nights(efs) -> frozenset:
+    """The wake days whose night an effort ran through (01:00 → 05:00 local covered: through_night): no main sleep
+    then, its naps only (the sleep need's debt: sante_sleep.sleep_need; Kishi 2024: a night spent racing is a real
+    debt)."""
+    out = set()
+    for e in efs:
+        start = e.end - timedelta(minutes=e.minutes)
+        d = start.date()
+        while d <= e.end.date():
+            if start <= datetime.combine(d, NIGHT_SPAN[0]) and e.end >= datetime.combine(d, NIGHT_SPAN[1]):
+                out.add(d)
+            d += timedelta(days=1)
+    return frozenset(out)
+
+
 @dataclass
 class _Unit:
     """Activities that are one effort (chains): their first start → last end, local."""

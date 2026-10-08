@@ -112,7 +112,12 @@ HRV_SD_PRIOR = 0.10  # (H) σ0 in ln units (nocturnal RMSSD CV 9.5–12.4 %: Mis
 HR_SD_PRIOR = 0.04  # (H) σ0 as a share of the median (nocturnal HR CV ≈ 4.1 %: Mishica 2022)
 SLEEP_BAND_MIN = 30  # (H)
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
-RESP_UP = 2  # breaths/min (H)
+# the breathing rate's usual line (owner, 2026-10-09: « utilise la respiration aussi si tu l'as »; research_ind_
+# sleep_resp.md B3): its night-to-night SD is small (0.51 ± 0.20 /min: Miller 2020, 25,000 WHOOP members), so the
+# line is the median + the larger of 1 /min and 2 SD, the SD shrunk towards 0.5 /min (H); one-sided, never a lower one
+RESP_UP_MIN = 1.0  # (H) breaths/min
+RESP_UP_SD = 2  # (H)
+RESP_SD_PRIOR = 0.5  # (H) σ0, breaths/min (Miller 2020)
 SHORT_DAY_MIN = 6 * 60  # ≤ 6 h per 24 h (Craven 2022)
 REGULARITY_NIGHTS = 8  # of 28 days, any order (H; « 1 week or more » of the main sleep: ANSI/CTA/NSF-2052.1-A)
 REGULAR_WINDOW = 60  # minutes: a bedtime « à moins d'1 h » of the usual one (the RU-SATED item: Ravyts 2021)
@@ -294,7 +299,9 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
     for d, (v, det, src) in rows.get("resp_night", {}).items():
         if d <= today:
             n = night(d)
-            n.resp, n.resp_source = v, src
+            # Garmin's own night average (no readings of ours) makes its own band, never mixed with ours (H)
+            summary = (det or {}).get("method") == "garmin_summary"
+            n.resp, n.resp_source = v, f"{src} (résumé)" if summary else src
     # « rendormi »: a nap starting ≤ 3 h after the main wake (H)
     for n in out.values():
         if n.end:
@@ -700,8 +707,9 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
         out.update(lo=med - HR_BAND_BPM, hi=med + HR_BAND_BPM, alert=med + max(ALERT_SD * sd, ALERT_MIN_BPM))
     elif metric == "tst24":
         out.update(lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
-    else:  # resp: no band drawn, only « + 2/min » backs the alert
-        out.update(lo=None, hi=None, up=med + RESP_UP)
+    else:  # resp: no band drawn, one upper line (RESP_UP_MIN, RESP_UP_SD)
+        sd = shrunk_sd(sd, len(vals), RESP_SD_PRIOR)
+        out.update(sd=sd, lo=None, hi=None, up=med + max(RESP_UP_MIN, RESP_UP_SD * sd))
     return out
 
 
@@ -775,6 +783,25 @@ def day_naps(nights: dict[date, Night], d: date) -> list[tuple[datetime | None, 
     return sorted(out, key=lambda x: x[0] or datetime.min)
 
 
+def slept_before_wake(nights: dict[date, Night], d: date) -> int | None:
+    """The sleep of the morning of `d`, each nap counted once across the days: its night, its « rendormi » naps
+    (≤ 3 h after its wake: part of its night, never the next morning's) and the naps that ended in the 24 h before
+    its wake (the day before's after its wake, as day_naps); a later nap of `d` is the next morning's. The sleep
+    owed reads it (sante_sleep.sleep_need): a nap is never repaid twice, nor lost. None without a main night."""
+    n = nights.get(d)
+    if n is None or n.asleep is None:
+        return None
+    own = {(a, b) for a, b, _ in n.naps}
+
+    def mine(a, b) -> bool:
+        if (a, b) not in own:
+            return True
+        if n.end is None:
+            return False
+        return (b is not None and b <= n.end) or (a is not None and n.end <= a <= n.end + timedelta(hours=RESETTLE_H))
+    return n.asleep + sum(m for a, b, m in day_naps(nights, d) if mine(a, b))
+
+
 def day_tst24(nights: dict[date, Night], d: date) -> int | None:
     """Minutes asleep in the 24 h before the main wake of `d`: the main night
     and the naps day_naps counts. None without a main night that morning (a
@@ -833,6 +860,25 @@ def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | No
     if key not in kept:
         kept[key] = _illness_alert(nights, today, races)
     return kept[key]
+
+
+def resp_up_nights(nights: dict[date, Night], today: date) -> dict | None:
+    """The breathing rate over its usual line 2 nights in a row (yesterday's and today's), each against the FULL
+    band (14 nights) of the 60 days before the first one, on the watch that measured both, neither night tagged
+    (CONTEXT: after an effort, altitude, a time zone, an evening session, alcohol: a faster breathing expected
+    there): {days, values, line}; None otherwise. The score is then capped (sante_score.CAP_RESP), as WHOOP's one-
+    sided adjustment does (« only when respiratory rate is elevated »); never an illness sentence on its own (about
+    5 % of healthy days flagged: Miller 2020)."""
+    d2, d1 = today, today - timedelta(days=1)
+    n1, n2 = nights.get(d1), nights.get(d2)
+    if not (n1 and n2) or n1.resp is None or n2.resp is None or n1.resp_source != n2.resp_source:
+        return None
+    if not (n1.tags.isdisjoint(CONTEXT) and n2.tags.isdisjoint(CONTEXT)):
+        return None
+    b = band(nights, "resp", d1, source=n1.resp_source, full=True)
+    if not b or not (n1.resp >= b["up"] and n2.resp >= b["up"]):
+        return None
+    return {"days": [d1, d2], "values": [n1.resp, n2.resp], "line": b["up"]}
 
 
 def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:

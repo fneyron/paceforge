@@ -79,12 +79,12 @@ def dplus(metres: float) -> str:
 
 
 def hm_long(minutes: float) -> str:
-    """Spoken: 350 → « 5 heures 50 », 65 → « 1 heure 05 », 45 → « 45 minutes »."""
+    """Spoken: 350 → « 5 heures 50 », 65 → « 1 heure 05 », 480 → « 8 heures », 45 → « 45 minutes »."""
     m = int(round(minutes))
     if m < 60:
         return f"{m} minute{'s' if m > 1 else ''}"
     h = m // 60
-    return f"{h} heure{'s' if h > 1 else ''} {m % 60:02d}"
+    return f"{h} heure{'s' if h > 1 else ''}" + (f" {m % 60:02d}" if m % 60 else "")
 
 
 def round5(t: datetime) -> datetime:

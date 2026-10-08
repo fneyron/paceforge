@@ -22,6 +22,7 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros, test_garmin
 from tests.owner_v4 import D8, seed_owner_v4
+from tests.test_sante import _rested
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 D = date(2026, 10, 8)
@@ -244,13 +245,14 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     no Effort récent; no activity: « 0 min » over « pas encore d'habitude »; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
+    await _rested(db_session, test_user)  # 7 h 30 answered: 7h20 is 94 % of his 7h50 need, « suffisant »
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"]["word"] == "Bonne récupération" and page["score"]["value"] == 100
     assert [p["key"] for p in page["score"]["parts"]] == ["hrv", "hr", "sleep"] and page["score"]["absent"] == []
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "92", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("sommeil", "94", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
         ("entrainement", "0 min", None, "pas encore d'habitude", "accent")]
     assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
         ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
@@ -357,6 +359,7 @@ async def test_a_watch_without_hrv_never_says_its_normal_is_building(db_session:
     rows = garmin_rows(D, range(0, 40))
     rows.pop("hrv")
     await _seed(db_session, test_user, rows)
+    await _rested(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["score"]["absent"] == ["hrv"] and page["score"]["building"] == [] and page["vfc"] is None
     assert [f["key"] for f in page["rows"]] == ["fc"] and page["dials"][0]["sub"] == "suffisant"

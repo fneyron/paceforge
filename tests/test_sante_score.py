@@ -59,22 +59,29 @@ def _nights(rows, sessions=(), today=D):
     return nights
 
 
-def _day(rows, sessions=(), today=D):
+# the athletes of these tests sleep 7h20 and answered « 7 h 30 » to « Combien d'heures de sommeil te faut-il pour te
+# sentir reposé ? » (2026-10-09): their nights owe 10 min each, their need is 7h50 and a 7h20 night is « suffisant »,
+# so the rules tested here are read alone; the default 8-h need has its own tests (test_the_sleep_need_*)
+RESTED = 450
+
+
+def _day(rows, sessions=(), today=D, base=RESTED):
     """What health_page computes for `today` (state, score) on these rows and activities (the efforts anchored on
     the nights, as health_page does)."""
     sessions = list(sessions)
     nights = _nights(rows, sessions, today)
     with nt.memo():
         nt.freeze(nights)
-        return sante._assess(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today)
+        return sante._assess(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today, base)
 
 
-def _history(rows, sessions=(), today=D):
+def _history(rows, sessions=(), today=D, base=RESTED):
     sessions = list(sessions)
     nights = _nights(rows, sessions, today)
     with nt.memo():
         nt.freeze(nights)
-        return sante._history(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today)
+        return sante._history(nights, sessions, nt.anchor_efforts(nights, st.efforts(sessions)), today,
+                              need_base=base)
 
 
 # ── effort classes, from the activities alone ───────────────────────────────
@@ -286,7 +293,10 @@ def test_components():
     assert sc.hr_sub(56, hr) == 0 and sc.hr_sub(40, hr) == 100
     assert sc.sleep_sub(420) == sc.sleep_sub(520) == 100 and sc.sleep_sub(360) == 60 and sc.sleep_sub(240) == 0
     assert sc.sleep_sub(390) == 80 and sc.sleep_sub(300) == 30
-    assert sc.sleep_sub(480, mean7=380, usual=470) == 40  # 90 min under the usual
+    # the need moves the three points (2026-10-09): a 9-h need → 7h52 for 100, 6h45 for 60, 4h30 for 0
+    assert sc.sleep_sub(472.5, 540) == 100 and sc.sleep_sub(405, 540) == 60 and sc.sleep_sub(270, 540) == 0
+    assert sc.sleep_sub(420, 540) < 100  # 7 h is « suffisant » for an 8-h need only
+    assert not hasattr(sc, "SLEEP_DEBT") and not hasattr(sc, "sleep_base")  # the debt lives in the need now
     assert not hasattr(sc, "load_sub")  # 2026-10-08: no Charge récente component
 
 
@@ -424,8 +434,8 @@ def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
     nights = _nights(rows, _runs())
     with nt.memo():
         nt.freeze(nights)
-        day = sante._assess(nights, _runs(), [], D)
-        hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
+        day = sante._assess(nights, _runs(), [], D, RESTED)
+        hist = sante._history(nights, _runs(), [], D, need_base=RESTED) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
     assert c["read"] == ["100\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13  # v4.4: in percent
@@ -571,10 +581,12 @@ def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
     rows["nap"][y] = (100, {"windows": [[f"{y}T16:00", f"{y}T17:45"]]}, "Garmin")
     day = _day(rows, _runs())
     assert day["tst24"] == 400 and "short" not in day["score"]["caps"]
-    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 95)  # (25·100 + 25·100 + 30·86,7) / 80 = 95
-    assert round(next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]) == 87
-    dial = sante.sleep_dial(day["tst24"], "#sommeil")
-    assert (dial["value"], dial["sub"], dial["tone"]) == ("83", "un peu court", "sleep")  # 6h40 of 8 h: its own hue
+    # its need: 7h30 + 20 min owed (a quarter of the 80 min under 7h30 the night before, its nap read once) = 7h50
+    assert day["need"] == {"total": 470, "base": 450, "effort": 0, "debt": 20}
+    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 97)  # (25·100 + 25·100 + 30·92,3) / 80 = 97
+    assert round(next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]) == 92
+    dial = sante.sleep_dial(day["tst24"], day["need"]["total"], "#sommeil")
+    assert (dial["value"], dial["sub"], dial["tone"]) == ("85", "un peu court", "sleep")  # 6h40 of 7h50: its own hue
     nights = nt.build_nights(rows, D)
     assert nights[D].tst24 == 300 and nights[y].tst24 == 540  # each day's bar keeps its own nap
     # a « rendormi » nap of the day before (06:42, its wake 06:40): never counted again
@@ -660,13 +672,16 @@ def test_a_row_wears_the_colour_its_card_wears():
     court », 7 h and more « suffisant » (Watson 2015a), in the sleep hue, never a flag on a long night; a heart
     row as its card's status line (v4.3): VFC far under its band with FC de nuit normal caps nothing: orange,
     never red; FC de nuit in its normal: green; no Effort récent row outside a window."""
-    words = {t: (sante.sleep_dial(t, "#sommeil")["sub"], sante.sleep_dial(t, "#sommeil")["tone"])
+    words = {t: (sante.sleep_dial(t, 480, "#sommeil")["sub"], sante.sleep_dial(t, 480, "#sommeil")["tone"])
              for t in (600, 420, 419, 360, 359)}
     assert words == {600: ("suffisant", "sleep"), 420: ("suffisant", "sleep"), 419: ("un peu court", "sleep"),
                      360: ("un peu court", "sleep"), 359: ("court", "warn")}
-    assert sante.sleep_dial(None, "#sommeil")["sub"] == "pas enregistré" and sante.sleep_dial(400, None)["href"] is None
-    day = _day(_rich(hrv_last=35.0, asleep=390), _runs())  # VFC far under its band, FC in it, 6h30
-    assert day["score"]["raw0"] == (25 * 0 + 25 * 100 + 30 * 80) / 80 == 61.25 and day["score"]["value"] == 61
+    assert sante.sleep_dial(None, 480, "#sommeil")["sub"] == "pas enregistré"
+    assert sante.sleep_dial(400, 480, None)["href"] is None
+    day = _day(_rich(hrv_last=35.0, asleep=390), _runs())  # VFC far under its band, FC in it, 6h30 every night
+    assert day["need"]["total"] == 510  # 7h30 + 1 h owed (a quarter of the 7 h short over 7 days, at most 1 h)
+    sleep = 60 + 40 * (390 - 0.75 * 510) / (0.125 * 510)  # between ¾ and ⅞ of 8h30
+    assert day["score"]["raw0"] == pytest.approx((25 * 0 + 25 * 100 + 30 * sleep) / 80) and day["score"]["value"] == 56
     parts = {p["key"]: p for p in day["score"]["parts"]}
     assert (sc.row_tone(parts["hrv"]), sc.row_tone(parts["hr"])) == ("warn", "ok")
     assert "load" not in parts and sante.effort_row([], day) is None  # no window: no Effort récent row
@@ -697,11 +712,12 @@ def test_the_method_fold_is_six_plain_bullets():
         "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
         "pouls moyen pendant ton sommeil.",
         "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
-        "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles. Entraînement compare "
-        "tes 7 derniers jours à ta semaine habituelle.",
+        "Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine "
+        "habituelle.",  # 2026-10-09: the need is the athlete's own
         "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
         "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",  # v4.4 (R3): no number
-        "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
+        "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score. Une respiration plus rapide que "
+        "d'habitude 2 nuits de suite aussi.",
         "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
         "C'est une estimation : quelques points d'écart ne veulent rien dire."]
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
@@ -740,8 +756,8 @@ def test_a_past_day_says_its_date_its_score_and_its_state_only():
     with nt.memo():
         nt.freeze(nights)
         efs = nt.anchor_efforts(nights, st.efforts(sessions))
-        day = sante._assess(nights, sessions, efs, D)
-        hist = sante._history(nights, sessions, efs, D) + [(D, day["state"], day["score"])]
+        day = sante._assess(nights, sessions, efs, D, RESTED)
+        hist = sante._history(nights, sessions, efs, D, need_base=RESTED) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
     for word in ("Transjeju", "sortie", "il y a"):

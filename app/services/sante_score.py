@@ -91,14 +91,16 @@ NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (like WHOOP: no
 HRV_FULL_Z, HRV_ZERO_Z = -0.5, -2.5  # z of ln RMSSD: 100 from the band's floor (the trials' ± 0.5 SD), 0 at −2.5 (H)
 HR_FULL_BPM, HR_MID_BPM, HR_ZERO_BPM = 2, 5, 8  # (H) over the band's median: 100, 40, 0 (Alavi 2022; Bosquet 2008)
 HR_MID_SUB = 40  # (H) the FC de nuit sub-score at + 5 bpm
-SLEEP_POINTS = ((240, 0), (360, 60), (420, 100))  # (H) 24-h minutes → sub-score (7 h: Watson 2015a; 6 h: Craven 2022)
-SLEEP_DEBT = 2 / 3  # (H) points off per minute of the 7-day mean under the usual
+# the 24 h against the day's need (sante_sleep.sleep_need) → sub-score: ½ → 0, ¾ → 60, ⅞ → 100, i.e. 4 h, 6 h and
+# 7 h for an 8-h need (7 h: Watson 2015a; 6 h: Craven 2022); the sleep owed is in the need (never counted twice)
+SLEEP_SHARES = ((0.5, 0), (0.75, 60), (0.875, 100))  # (H)
 CAP_ILL = 39  # (H) the nightly-HR illness alert: « Récupération faible »
 CAP_RED, RED_SUB = 69, 40  # (H) a component under 40: never a green dial over a red contributor
 CAP_JOINT, JOINT_HR_BPM = 69, 3  # (H) VFC under its band and FC de nuit ≥ median + 3 bpm (Buchheit 2014, Table 2)
 CAP_SHORT = 65  # (H) a 24-h total under 6 h (the 6 h: Craven 2022; the 65: PaceForge's)
 CAP_NO_HEART = 80  # (H) neither VFC nor FC de nuit in the score: sleep alone never makes a 100
-CAPS = ("ill", "effort", "short", "joint", "red", "no_heart")  # equal caps: the first names the reason
+CAP_RESP = 69  # (H) the breathing rate over its usual line 2 nights in a row (nights.resp_up_nights): never green
+CAPS = ("ill", "effort", "short", "joint", "resp", "red", "no_heart")  # equal caps: the first names the reason
 HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and its alert's (the 60 before), with room
@@ -117,11 +119,11 @@ METHOD = [
     "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
     "pouls moyen pendant ton sommeil.",
     "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
-    "Les pourcentages comparent tes nuits à 8 h de sommeil et à tes valeurs habituelles. Entraînement compare tes "
-    "7 derniers jours à ta semaine habituelle.",
+    "Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine habituelle.",
     "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
     "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",
-    "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score.",
+    "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score. Une respiration plus rapide que "
+    "d'habitude 2 nuits de suite aussi.",
     "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
     "C'est une estimation : quelques points d'écart ne veulent rien dire.",
 ]
@@ -192,25 +194,17 @@ def hr_sub(mean: float, band: dict) -> float:
         else _lin(d, HR_MID_BPM, HR_MID_SUB, HR_ZERO_BPM, 0)
 
 
-def sleep_base(tst24: float) -> float:
-    (a, ya), (b, yb), (c, yc) = SLEEP_POINTS
+def sleep_sub(tst24: float, need: float = 480) -> float:
+    """The 24 h against the day's need (minutes): ⅞ of it or more → 100, ¾ → 60, ½ or less → 0, linear between
+    (7 h, 6 h and 4 h for an 8-h need). Never less for a long night: no ceiling (Watson 2015a)."""
+    (a, ya), (b, yb), (c, yc) = ((share * need, y) for share, y in SLEEP_SHARES)
     return _lin(tst24, a, ya, b, yb) if tst24 < b else _lin(tst24, b, yb, c, yc)
-
-
-def sleep_sub(tst24: float, mean7: float | None = None, usual: float | None = None) -> float:
-    """≥ 7 h → 100, 6 h → 60, ≤ 4 h → 0, linear between; at most 100 − 2/3 per
-    minute of the 7-day mean under the usual, when both are there. Never less
-    for a long night: no ceiling (Watson 2015a)."""
-    sub = sleep_base(tst24)
-    if mean7 is not None and usual is not None:
-        sub = min(sub, max(0.0, 100 - SLEEP_DEBT * max(0.0, usual - mean7)))
-    return sub
 
 
 def components(day: dict) -> tuple[list[dict], list[str]]:
     """([{key, sub, prov, red, joint, …}] present, [keys] missing) for one day
     (sante._assess): stats {hr, hrv: {value, normal, status, seen}}, tst24,
-    sleep {mean7, usual, prov}; the recovery window is no component (it caps
+    need {total, …} (the 24 h are read against it); the recovery window is no component (it caps
     the score: caps). `red`: the component counts for the 69 cap (VFC only
     with FC de nuit measured and over its median + 2 bpm); `joint`: VFC under
     its band with FC de nuit ≥ median + 3 bpm (both rows)."""
@@ -227,10 +221,7 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
             absent.append(key)
     tst = day["tst24"]
     if tst is not None:
-        sl = day["sleep"]
-        sub = sleep_sub(tst, sl["mean7"], sl["usual"])
-        parts.append({"key": "sleep", "sub": sub, "prov": bool(sl["prov"]), "tst24": tst,
-                      "debt": sub < sleep_base(tst)})
+        parts.append({"key": "sleep", "sub": sleep_sub(tst, day["need"]["total"]), "prov": False, "tst24": tst})
     else:
         absent.append("sleep")
     by = {p["key"]: p for p in parts}
@@ -260,6 +251,8 @@ def caps(day: dict, parts: list[dict]) -> list[tuple[float, str]]:
         out.append((CAP_SHORT, "short"))
     if any(p["joint"] for p in parts):
         out.append((CAP_JOINT, "joint"))
+    if day.get("resp"):
+        out.append((CAP_RESP, "resp"))
     if any(p["red"] for p in parts):
         out.append((CAP_RED, "red"))
     if not any(p["key"] in HEART for p in parts):
@@ -281,8 +274,8 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
     """What the state's sentence names, None on a green day: the illness alert
     (whenever it holds), else the cap that binds (effort, short), else the
     joint VFC/FC pattern (whenever it holds: it explains the 69), else the
-    lowest component (a red one under its cap, or the plain lowest): hrv, hr,
-    sleep (« short » under 6 h)."""
+    breathing rate's 69 when it binds, else the lowest component (a red one
+    under its cap, or the plain lowest): hrv, hr, sleep (« short » under 6 h)."""
     if tone == "ok":
         return None
     if day["alert"]:
@@ -291,6 +284,8 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
         return binding[0]
     if any(p.get("joint") for p in parts):
         return "joint"
+    if "resp" in binding:
+        return "resp"
     low = min(parts, key=lambda p: (p["sub"], ORDER.index(p["key"])))["key"]
     if low == "sleep" and day["tst24"] is not None and day["tst24"] < SHORT_DAY_MIN:
         return "short"

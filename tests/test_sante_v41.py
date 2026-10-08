@@ -199,7 +199,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
         return H.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip().replace("\u00a0", " "))
 
     dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
-    assert dials[0] == "92 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
+    # 7h20 every night, no answer to the need's question: 8 h + 1 h owed, 81 % « un peu court » (2026-10-09)
+    assert dials[0] == "81 % Sommeil un peu court" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
     # a run every 3 days: 2 or 3 runs a week, the 7 days within 20 % of the weeks' mean (89 %)
     assert dials[2] == "89 % Entraînement comme d'habitude"
     card = main.split('<section id="recuperation"')[1].split("</ul>")[0]
