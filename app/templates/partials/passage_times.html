@@ -27,8 +27,6 @@
 {% set stop_set = (sections[:-1] | selectattr('end_checkpoint_index', 'ne', none) | map(attribute='stop_s', default=0) | select | unique | list) if sections else [] %}
 {% set stops_vary = stop_set | length > 1 %}
 {% if plan_data is defined %}<script type="application/json" id="plan-data">{{ plan_data | safe }}</script>{% endif %}
-{# the three plans' finish times: read by « Plan affiché » in the objective editor #}
-{% if sc %}<div data-scn-pill hidden data-end-fast="{{ fmt_time(sc.totals.fast_s) }}" data-end-target="{{ fmt_time(sc.totals.target_s) }}" data-end-safe="{{ fmt_time(sc.totals.safe_s) }}"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span>Cible</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></div>{% endif %}
 {% if rp %}{% set dm = (rp.delta_s / 60) | round | int %}
 <div data-replan class="pf-replan" title="{% if rp.mode == 'pin' %}heure fixée à {{ rp.pin_name }} ({{ hhmm(rp.pin_clock_s) }}) tenable : seuls les tronçons jusque-là changent{% elif rp.mode == 'target' %}objectif {{ fmt_time(rp.target_time_s) }} tenable{% if rp.required_ratio < 0.99 %}, {{ ((1 - rp.required_ratio) * 100) | round | int }} % plus vite sur la suite{% endif %}{% else %}{% if rp.target_time_s %}objectif hors de portée · {% endif %}arrivée à ton rythme {{ hhmm(rp.finish_clock_s) }}{% endif %} · recalé depuis {{ rp.anchor_name }} {{ hhmm(rp.anchor_clock_s) }}">
     <span><b>Recalée</b> <span class="tabular-nums {% if dm > 1 %}text-warn{% elif dm < -1 %}text-ok{% else %}text-gray-500{% endif %}">{{ '+' if dm > 0 }}{{ dm }} min</span> <span data-rp-mode class="text-gray-500">· {{ rp_mode(rp) }}</span></span>
@@ -42,7 +40,8 @@
     <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
 </div>
 {% endif %}
-<div id="plan-table" class="pf-pass" data-scn="target" role="list" aria-label="Heures de passage">
+{% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></span><span></span></div>{% endif %}
+<div id="plan-table" class="pf-pass{% if sc %} has-alt{% endif %}" role="list" aria-label="Heures de passage">
     {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
     {% for s in sections %}
     {% set use_adj = has_target and s.adjusted_time_s is not none %}
@@ -74,23 +73,21 @@
     <div data-row role="listitem" data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-key="{{ key }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
          class="pf-prow{% if is_finish %} is-finish{% endif %}{% if s.passed and not s.is_anchor %} is-passed{% endif %}">
         <div class="pf-prow-head" role="button" tabindex="0" aria-expanded="false" aria-controls="cp-det-{{ key }}">
-            <span class="pf-clk">{% if pin_on %}<span data-pin class="pf-pin {% if s.pin_clamped %}text-danger{% else %}text-accent{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="{% if late %}text-danger{% endif %}">{{ hhmm(clock_val) }}</span>{% if sc %}<span data-safe class="{% if row.safe_ok is defined and row.safe_ok == false %}text-danger{% endif %}">{{ hhmm(row.safe_s) }}</span><span data-fast>{{ hhmm(row.fast_s) }}</span>{% endif %}</span>
+            <span class="pf-clk">{% if pin_on %}<span data-pin class="pf-pin {% if s.pin_clamped %}text-danger{% else %}text-accent{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="{% if late %}text-danger{% endif %}">{{ hhmm(clock_val) }}</span></span>
             <span class="pf-prow-main">
                 <span class="pf-prow-name">{% if is_finish %}<span>Arrivée</span>{% else %}<span data-name-text class="pf-name">{{ s.end_name }}</span>{% endif %}{% if bar_close %}<span class="pf-bar-d {{ margin_cls(cm) }}">barrière {{ s.cutoff_clock }} · marge {{ margin_txt(cm) }}</span>{% endif %}</span>
                 <span class="pf-prow-sub tabular-nums">km <span data-km-text>{{ fr(s.end_km) }}</span>{% if bar_close %}<span class="pf-bar-m {{ margin_cls(cm) }}">barrière {{ s.cutoff_clock }} · marge {{ margin_txt(cm) }}</span>{% endif %}</span>
             </span>
+            {% if sc %}<span class="pf-prow-alt tabular-nums"><span data-fast>{{ hhmm(row.fast_s) }}</span><span data-safe class="{% if row.safe_ok is defined and row.safe_ok == false %}text-danger{% endif %}">{{ hhmm(row.safe_s) }}</span></span>{% endif %}
             <svg class="pf-prow-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
             <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
-            {# the leg that ends here: only what cannot be guessed from the profile (a very steep stretch) #}
-            {% if lg and lg.steep_text %}<p class="pf-detnote is-alert">{{ gl.glyph('alert', 'w-4 h-4') }}<span>{{ lg.steep_text }}</span></p>{% endif %}
             {% set has_kind = k in kind_word %}
             {% set has_wx = wx_on and s.temperature_c is not none %}
             {% if has_kind or s.crew or (stop_min > 0 and stops_vary) or s.cutoff_clock or has_wx %}
             <p class="pf-factline">{% set sep = joiner(' · ') %}{% if has_kind %}{{ sep() }}<span>{{ kind_word[k] }}</span>{% endif %}{% if s.crew %}{{ sep() }}<span>assistance</span>{% endif %}{% if stop_min > 0 and stops_vary %}{{ sep() }}<span class="tabular-nums">arrêt {{ stop_min }} min</span>{% endif %}{% if s.cutoff_clock %}{{ sep() }}<span class="tabular-nums" data-cutoff>barrière {{ s.cutoff_clock }}</span>{% if cm is not none %} · <span data-margin class="tabular-nums {{ margin_cls(cm) }}">marge {{ margin_txt(cm) }}</span>{% endif %}{% endif %}{% if has_wx %}{{ sep() }}{{ meteo(s) }}{% endif %}</p>
             {% endif %}
-            {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
             {# the drop bag; what to eat lives in Nutrition only #}
             {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
