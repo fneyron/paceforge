@@ -101,7 +101,7 @@ def test_owner_nights_and_the_24h_total():
     nap = {r.day: r for r in coros.nap_dailies(naps, ov)}
     assert sleep[D].value == 350 and sleep[D].details == {
         "main_start": "2026-10-06T23:35", "main_end": "2026-10-07T05:38", "period": 363, "bedtime": "23:35",
-        "wake": "05:38", "timeline": False, "tz": 540, "daily": 490}
+        "wake": "05:38", "timeline": False, "tz": 540, "daily": 490, "naps_folded": True}
     assert nap[D].value == 140 and nap[D].details == {"period": 145,
                                                        "windows": [["2026-10-07T06:42", "2026-10-07T09:07"]]}
     assert sleep[D].value + nap[D].value == 490 == sleep[D].details["daily"]  # 5h50 + 2h20 = 8h10, COROS agrees
@@ -141,12 +141,14 @@ def test_nap_guards():
     d = date(2026, 10, 7)
     main = (datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 38))
     w = lambda a, b: (datetime(2026, 10, *a), datetime(2026, 10, *b))  # noqa: E731
-    assert nap_guard(d, [w((7, 5, 0), (7, 6, 0))], main) == []  # overlaps the night
+    # over the night: kept since 2026-10-09, the night's end, folded into it when read (health.fold_naps); dropped
+    # here its minutes were lost (owner's report 2026-10-09)
+    assert nap_guard(d, [w((7, 5, 0), (7, 6, 0))], main) == [w((7, 5, 0), (7, 6, 0))]
     assert nap_guard(d, [w((7, 12, 0), (7, 18, 30))]) == []  # longer than 6 h
     assert nap_guard(d, [w((6, 13, 0), (6, 13, 40))]) == [w((6, 13, 0), (6, 13, 40))]  # the afternoon before
     assert nap_guard(d, [w((6, 10, 0), (6, 11, 0))]) == []  # ends before 12:00 the day before
     # one window of two goes: the minutes shrink in proportion
-    row = nap_daily(d, 90, 100, [w((7, 13, 0), (7, 13, 50)), w((7, 5, 0), (7, 5, 50))], main)
+    row = nap_daily(d, 90, 100, [w((7, 13, 0), (7, 13, 50)), w((6, 10, 0), (6, 10, 50))], main)
     assert row.value == 45 and row.details == {"period": 50, "windows": [["2026-10-07T13:00", "2026-10-07T13:50"]]}
     assert nap_daily(d, 20, None, []).details == {"period": None, "windows": []}  # Garmin's minutes alone
     assert nap_daily(d, 0, None, []) is None

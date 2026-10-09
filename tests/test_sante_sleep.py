@@ -64,10 +64,16 @@ def test_the_hero_prints_the_times_the_nap_and_this_mornings_hours():
 
 
 def test_a_nap_outside_the_axis_is_listed_with_its_times():
-    rows = night_rows([0])
-    rows["nap"][D] = (60, {"windows": [[f"{D}T14:10", f"{D}T15:15"]]}, "Garmin")
+    """Yesterday afternoon's nap is in last night's 24 h (outside its 20:00 → 12:00 axis: its times in words);
+    today's afternoon nap is tomorrow morning's, never on this card (each nap in one 24 h)."""
+    rows = night_rows([0, 1])
+    y = D - timedelta(days=1)
+    rows["nap"][y] = (60, {"windows": [[f"{y}T14:10", f"{y}T15:15"]]}, "Garmin")
     h = sl.hero(_nights(rows), D)
-    assert h["out_naps"] == ["sieste 14:10 → 15:15"] and not h["timeline"]["naps"]
+    assert h["out_naps"] == ["sieste 14:10 → 15:15"] and not h["timeline"]["naps"] and h["nap"]
+    rows["nap"] = {D: (60, {"windows": [[f"{D}T14:10", f"{D}T15:15"]]}, "Garmin")}
+    h = sl.hero(_nights(rows), D)
+    assert h["out_naps"] == [] and h["nap"] is None and h["total"] == "7h20"
 
 
 def test_the_timeline_is_one_bar_or_the_hypnogram():
@@ -122,7 +128,8 @@ def test_three_months_draws_the_7_night_mean_over_faint_bars():
                                                             f"{D - timedelta(days=3)}T14:00"]]}, "Garmin")
     c = sl.bars(_nights(rows), D, "90")
     assert c["trend"].startswith("M") and not any(b.get("top") for b in c["bars"])
-    assert c["bars"][-4]["h"] > c["bars"][-5]["h"]  # the nap is in that day's one bar
+    # the afternoon nap of D-3 is in the next morning's 24 h: D-2's one bar, never two
+    assert c["bars"][-3]["h"] > c["bars"][-4]["h"] == c["bars"][-5]["h"]
     assert c["read"][1] == "en moyenne"
 
 

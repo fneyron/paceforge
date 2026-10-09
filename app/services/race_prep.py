@@ -320,15 +320,16 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
     xs = viz.slot_x(n)
     slot = X1 / n
     bw = round(min(14, slot * 0.62), 1)
-    seen = [nights[d] for d in days if d in nights and d <= today]
-    vals = [x.tst24 or x.nap_min for x in seen] + [goal[1] if goal else 0, 8 * 60]
+    seen = [d for d in days if d in nights and d <= today]
+    nap_of = {d: nt.bar_nap_min(nights, d) for d in seen}  # the naps of the 24 h before each wake, as Santé's bars
+    vals = [nt.day_tst24(nights, d) or nap_of[d] for d in seen] + [goal[1] if goal else 0, 8 * 60]
     y = viz.scale(0, max(vals) * 1.05, AMOUNT[0], AMOUNT[1])
     cols, r, a = [], [], []
     for i, d in enumerate(days):
         k = (d - rd).days
         night = nights.get(d) if d <= today else None
         col = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i]}
-        main, nap = (night.asleep, night.nap_min) if night else (None, None)
+        main, nap = (night.asleep, nap_of[d]) if night else (None, None)
         if d > today:
             col["future"] = True
         elif main is not None:
@@ -354,8 +355,12 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
             continue
         if not night:
             ctx.append("pas de montre cette nuit")
-        r.append([viz.night_label(d), viz.sleep_readout(main, nap) if night else "—", " · ".join(ctx)])
-        spoken = f"{viz.night_label(d)}, {j_label(k)} : " + (viz.sleep_spoken(main, nap) if night else "pas de mesure")
+        read, said = (viz.sleep_readout(main, nap), viz.sleep_spoken(main, nap)) if night else ("—", "pas de mesure")
+        if night and main is None and not nap and night.nap_min:  # its nap is on the next morning's bar (each nap once)
+            read = f"Sieste {viz.hm(night.nap_min)} · comptée le lendemain"
+            said = f"sieste {hm_long(night.nap_min)}, comptée le lendemain"
+        r.append([viz.night_label(d), read, " · ".join(ctx)])
+        spoken = f"{viz.night_label(d)}, {j_label(k)} : " + said
         if banked:
             spoken += f", cible {hm_long(round(goal[0] / 5) * 5)} à {hm_long(round(goal[1] / 5) * 5)}"
         a.append(spoken)

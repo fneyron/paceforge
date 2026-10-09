@@ -119,10 +119,12 @@ def _pre_race_nights(rd: date, nap_day: date | None = None, days=range(0, 90)):
 
 def test_nights_before_the_race_against_usual_plus_30_to_60_min_the_eve_never_flagged():
     rd = D + timedelta(days=5)
-    c = rp.night_bars(_pre_race_nights(rd, nap_day=D - timedelta(days=1)), rd, D)
+    # the 13:30 nap of D-2 is in the next morning's 24 h, as on Santé (each nap on one bar)
+    c = rp.night_bars(_pre_race_nights(rd, nap_day=D - timedelta(days=2)), rd, D)
     d = data(c)
     assert c["n"] == 14 and d["d"][0] == (rd - timedelta(days=14)).isoformat() and c["goal"]
     i = d["d"].index((D - timedelta(days=1)).isoformat())
+    assert d["r"][i - 1][1] == "Nuit 7h20 sur 24\u202fh" and not c["cols"][i - 1].get("nap")
     assert d["r"][i][1] == "Nuit 7h20 · sieste 40 min · 8h00 sur 24 h" and c["cols"][i]["nap"]
     assert d["r"][i][2] == "J‑6 · cible 7h50–8h20"
     assert d["r"][-1] == ["nuit du sam. 10 au dim. 11", "à venir", "J‑1 · veille de course"]

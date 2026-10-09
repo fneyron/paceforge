@@ -3,8 +3,11 @@
 The athlete's COROS watch (app.services.coros, source "COROS") and Garmin watch
 (app.services.garmin, source "Garmin") give, per night (named by its wake-up
 day), values PaceForge computes from their raw data and writes once per day
-(store_daily → HealthMetric):
-- sleep      : minutes asleep in the MAIN sleep episode (naps never count in it);
+(store_daily → HealthMetric; a COROS sync also deletes the nightly rows it no
+longer yields for the days its parsers read, never a Garmin one):
+- sleep      : minutes asleep in the MAIN sleep episode, as the watch gives it
+               (naps never count in it; a « nap » that is the night's start is
+               folded into it when read: nights.build_nights, fold_naps);
                {main_start, main_end: local ISO "YYYY-MM-DDTHH:MM", period (min,
                awake included), tz (min east of UTC, when known), timeline (True
                when real stage intervals were stored: Garmin sleepLevels),
@@ -14,9 +17,13 @@ day), values PaceForge computes from their raw data and writes once per day
                watch's estimate: COROS's « Sleep Summary » when it is the main
                sleep's, Garmin's DTO else its sleepLevels summed), stages_read
                (written by a sync that reads the stages: the 60 days are read
-               again once for the nights written before, nights_upgraded)}
+               again once for the nights written before, nights_upgraded),
+               naps_folded (written by a COROS sync that keeps the naps over
+               the night and deletes its stale rows, NAPS_FOLDED)}
 - nap        : minutes asleep in the day's naps (a nap belongs to the day it
-               ends); {period, windows: [["2026-10-07T06:42", "2026-10-07T09:07"]],
+               ends; one over the main window or just before it is kept here,
+               folded into the night when read: fold_naps);
+               {period, windows: [["2026-10-07T06:42", "2026-10-07T09:07"]],
                legacy (COROS « includes legacy reported durations »)}. Rows
                written before 2026-10 keep « HH:MM » windows: read them with
                nap_windows().
@@ -165,17 +172,17 @@ def nap_guard(day: date, windows, main: tuple[datetime, datetime] | None = None)
     """The windows that can be a nap of `day` (H, PaceForge's own guards):
     - it lasts more than 0 and at most 6 h;
     - it ends between 12:00 the day before and 23:59 that day (COROS keeps
-      legacy naps dated 1982);
-    - it does not overlap the main window (the night is never counted twice)."""
+      legacy naps dated 1982).
+    A window over the main one (`main`, still passed) is kept since 2026-10-09: it is that
+    night's start or end, folded into it when the nights are read (fold_naps,
+    nights.build_nights: its minutes outside the night added once, the overlap
+    never twice). Dropped here, as before, its minutes were lost (owner's
+    report 2026-10-09: COROS's 23:03 → 00:09 « nap » of a 23:57 → 04:58
+    night); folded when stored, a later sync that read the night without it
+    would lose them too. Every watch's naps come through here (COROS and
+    Garmin: nap_daily)."""
     lo, hi = datetime.combine(day - timedelta(days=1), time(12, 0)), datetime.combine(day, time(23, 59, 59))
-    out = []
-    for a, b in windows or []:
-        if not (timedelta(0) < b - a <= NAP_MAX and lo <= b <= hi):
-            continue
-        if main and a < main[1] and b > main[0]:
-            continue
-        out.append((a, b))
-    return sorted(out)
+    return sorted((a, b) for a, b in windows or [] if timedelta(0) < b - a <= NAP_MAX and lo <= b <= hi)
 
 
 def nap_daily(day: date, asleep: float | None, period: float | None, windows,
@@ -203,6 +210,64 @@ def nap_daily(day: date, asleep: float | None, period: float | None, windows,
     if legacy:
         details["legacy"] = True
     return Daily("nap", day, round(asleep), details)
+
+
+# ── naps that are the night's start (H) ─────────────────────────────────────
+
+NAP_JOIN = timedelta(minutes=30)  # (H) a « nap » ending this soon before the night starts is its start
+
+
+def nap_shares(asleep: float, windows) -> list[tuple[datetime, datetime, float]]:
+    """Each window with its share of the day's minutes asleep, in proportion to
+    its length (a watch gives one total for the day's naps)."""
+    wins = [(a, b) for a, b in windows or [] if b > a]
+    span = sum((b - a).total_seconds() for a, b in wins)
+    return [(a, b, asleep * (b - a).total_seconds() / span) for a, b in wins] if span > 0 else []
+
+
+def fold_naps(start: datetime, end: datetime, asleep: float, parts, daily: float | None = None, own=()) -> tuple:
+    """The night [start, end] with the « naps » that are part of it folded in
+    (H; owner's report 2026-10-09: COROS's 23:03 → 00:09 « nap » was the start
+    of its 23:57 → 04:58 night, shown as « + sieste » over it, then its 57 min
+    lost once a guard dropped it). A nap joins the night when it overlaps its
+    window or ends at most 30 min before it starts (one 30 min before a nap
+    that joined, too): its start becomes the bedtime (its end the wake when it
+    runs past it), and only its minutes asleep outside the window are added
+    (its share by length: an overlap never counts twice). A nap starting after
+    the wake stays a nap (≤ 3 h after it: « rendormi », nights.RESETTLE_H).
+    `daily`: the watch's own total of the day (COROS's « Daily Sleep, incl.
+    naps », which holds the naps listed under that day, `own`): the night
+    never goes over it less those that stay, plus what the naps listed under
+    the day before added, nor under its own minutes. So a night can end over
+    its own day's « Daily Sleep »: a nap COROS lists under the day before (one
+    ending before midnight) is in that day's « Daily Sleep », and once folded
+    it leaves that day's 24 h for this one (each nap once, nights.day_naps):
+    the two days together never go over COROS's two figures. `parts`:
+    [(start, end, minutes asleep)] (nap_shares; a part without times never
+    joins). Returns (start, end, minutes asleep, joined, left)."""
+    left = [p for p in parts if p[0] is not None and p[1] is not None]
+    timeless = [p for p in parts if p[0] is None or p[1] is None]
+    joined, total, other, grew = [], float(asleep), 0.0, True
+    while grew:  # a nap that joined moves the bedtime: the one before it may now be within 30 min
+        grew = False
+        for p in sorted(left, key=lambda p: p[1], reverse=True):
+            a, b, m = p
+            if not timedelta(0) < b - a <= NAP_MAX:
+                continue
+            if (a < end and b > start) or timedelta(0) <= start - b <= NAP_JOIN:
+                inside = max(timedelta(0), min(b, end) - max(a, start))
+                added = m * (1 - inside / (b - a))
+                total += added
+                other += 0 if p in own else added
+                start, end = min(start, a), max(end, b)
+                joined.append(p)
+                left.remove(p)
+                grew = True
+    left += timeless
+    if daily is not None and joined:
+        stay = sum(p[2] for p in own if p in left)
+        total = max(asleep, min(total, daily - stay + other))
+    return start, end, round(total), joined, left
 
 
 # ── the check-in ────────────────────────────────────────────────────────────
@@ -304,11 +369,40 @@ class Daily:
     details: dict | None = None
 
 
-async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source: str) -> dict:
+STALE_MAX = 3  # (H) stale rows of one metric a sync may delete: more is an answer read wrong, not COROS's change
+
+
+async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source: str,
+                      covered: dict[str, set[date]] | None = None) -> dict:
     """Idempotent upsert of values that are already one per day (key: metric,
-    day). Returns {inserted, updated, by_metric}."""
+    day). `covered`: {metric: the days this sync's parsers read for it}: a row
+    of this `source` on one of those days that `rows` no longer holds is
+    deleted (a value the watch no longer gives, a night value its guards now
+    reject: else the stale row stays shown for good). Other sources' rows,
+    other metrics and days outside `covered` are never touched. A safety (H):
+    when a metric would lose more than STALE_MAX rows, or every row it has on
+    those days (2 or more), nothing of it is deleted and it is logged — an
+    answer worded anew that its parser half read must never erase the history
+    (main only stopped updating it). Returns {inserted, updated, deleted,
+    stale_kept, by_metric}."""
     keyed = {(r.metric, r.day): r for r in rows}
-    inserted = updated = 0
+    inserted = updated = deleted = kept = 0
+    for metric, days in sorted((covered or {}).items()):
+        if not days:
+            continue
+        mine = (HealthMetric.user_id == user_id, HealthMetric.source == source, HealthMetric.metric == metric)
+        have = set((await db.execute(select(HealthMetric.date).where(
+            *mine, HealthMetric.date.in_(sorted(days))))).scalars())
+        stale = sorted(have - {d for m, d in keyed if m == metric})
+        if not stale:
+            continue
+        if len(stale) > STALE_MAX or (len(stale) >= 2 and len(stale) == len(have)):
+            logger.warning("%s sync for user %d: %d stale %s rows of %d kept (%s → %s), not deleted",
+                           source, user_id, len(stale), metric, len(have), stale[0], stale[-1])
+            kept += len(stale)
+            continue
+        res = await db.execute(delete(HealthMetric).where(*mine, HealthMetric.date.in_(stale)))
+        deleted += res.rowcount or 0
     by_metric: dict[str, int] = defaultdict(int)
     for metric in sorted({m for m, _ in keyed}):
         items = [r for (m, _), r in keyed.items() if m == metric]
@@ -327,10 +421,15 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
                 row.value, row.details, row.source = r.value, r.details, source
                 updated += 1
     await db.flush()
-    return {"inserted": inserted, "updated": updated, "by_metric": dict(by_metric)}
+    return {"inserted": inserted, "updated": updated, "deleted": deleted, "stale_kept": kept,
+            "by_metric": dict(by_metric)}
 
 
 STAGES_READ = "stages_read"  # in a `sleep` row's details: written by a sync that reads the stages (2026-10-08)
+# in a `sleep` row's details: written by a COROS sync that keeps the « naps » over the night (nap_guard: folded into
+# it when read) and deletes the rows it no longer yields (2026-10-09; nights_upgraded: the 60 days are read again
+# once, so the naps the guard dropped before come back)
+NAPS_FOLDED = "naps_folded"
 
 
 async def nights_upgraded(db: AsyncSession, user_id: int, source: str, today: date | None = None,

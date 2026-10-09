@@ -4,7 +4,10 @@
   detection, approximate, rounded to 5 min, H: de Zambotti 2024) and the naps
   its 24 h counts (« + sieste 2h20 », nights.day_naps: yesterday afternoon's
   too; sleep is counted per 24 h, naps in: Watson 2015b; Hirshkowitz 2015) and
-  its 24-h total « sur 9h00 de besoin » (2026-10-08: the Sommeil dial at the top
+  its 24-h total « sur 9h00 de besoin »; a nap taken after that wake, which
+  the next morning will count, is listed under it, out of the total
+  (« sieste 14:00 → 15:00 · comptée dans ta prochaine nuit », nights.pending_naps:
+  each nap in one 24 h) (2026-10-08: the Sommeil dial at the top
   says it as a percentage of that need, so its hours are printed here, once).
 - The need is computed, never asked (2026-10-09, owner: « Ne demande pas, ce
   doit être auto comme WHOOP »): 8 h, a little more after a big effort and when
@@ -23,8 +26,11 @@
   stage minutes: its plain bar on a clock axis (bed → wake, the naps on their
   own lane: never in the night's timing, HR or HRV).
 - 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
-  naps lighter on top), the 7 h line (Watson 2015a: about habitual sleep), a
-  tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
+  naps its 24 h counts lighter on top: nights.day_naps, each nap on one bar
+  only, the ring's and the score's figure; a day without a main night: its
+  naps the next morning does not count, « sieste seule », the others on that
+  morning's bar, its readout says so), the 7 h line (Watson 2015a: about habitual
+  sleep), a tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
   days old (else it would draw the 14 nights again), its 90 bars (each day's
   24 h in one) faint under the 7-night mean (Oura's long ranges). Tap a bar →
   « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; it rests on the
@@ -109,22 +115,29 @@ def choose(nights: dict, today: date, r: str | None) -> str:
     return "14" if recent or len(offered) == 1 else "90"
 
 
-def _readout(n, d: date) -> tuple[list[str], str]:
+def _readout(nights: dict, d: date) -> tuple[list[str], str]:
     """[value, word, the night · its times] and the spoken sentence: « 8h36 » ·
-    « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap « 8h10 » « nuit
-    5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone « 1h22 »
-    « sieste seule » · « … · nuit non enregistrée » (said plainly: no « ? »)."""
+    « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap its 24 h counts
+    « 8h10 » « nuit 5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone
+    « 1h22 » « sieste seule » · « … · nuit non enregistrée », « sieste comptée
+    le lendemain » when the next morning's bar holds it (said plainly: no « ? »)."""
+    n = nights.get(d)
     label = viz.night_label(d)
     if n is None or not _measured(n):
         return ["—", "", f"{label} · pas de mesure"], f"{label} : pas de mesure"
     if n.asleep is None:
-        return ([viz.hm(n.nap_min), "sieste seule", f"{label} · nuit non enregistrée"],
-                f"{label} : sieste de {viz.hm_long(n.nap_min)} seule, nuit non enregistrée")
+        alone = nt.bar_nap_min(nights, d)
+        if not alone:  # the next morning's 24 h counts it: drawn on that bar, never two
+            return ([viz.hm(n.nap_min), "sieste comptée le lendemain", f"{label} · nuit non enregistrée"],
+                    f"{label} : sieste de {viz.hm_long(n.nap_min)}, comptée le lendemain, nuit non enregistrée")
+        return ([viz.hm(alone), "sieste seule", f"{label} · nuit non enregistrée"],
+                f"{label} : sieste de {viz.hm_long(alone)} seule, nuit non enregistrée")
+    nap = nt.bar_nap_min(nights, d)
     times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
-    said = (f"{label} : {viz.sleep_spoken(n.asleep, n.nap_min)}, couché vers {viz.clock(n.start)}, "
+    said = (f"{label} : {viz.sleep_spoken(n.asleep, nap)}, couché vers {viz.clock(n.start)}, "
             f"levé vers {viz.clock(n.end)}")
-    if n.nap_min:
-        return [viz.hm(n.tst24), f"nuit {viz.hm(n.asleep)} + sieste {viz.hm(n.nap_min)}", f"{label} · {times}"], said
+    if nap:
+        return [viz.hm(n.asleep + nap), f"nuit {viz.hm(n.asleep)} + sieste {viz.hm(nap)}", f"{label} · {times}"], said
     return [viz.hm(n.asleep), "", f"{label} · {times}"], said
 
 
@@ -132,20 +145,20 @@ def bars(nights: dict, today: date, key: str) -> dict:
     """The 14-night or 3-month bars (see the module docstring)."""
     n_days = RANGES[key][0]
     days = [today - timedelta(days=n_days - 1 - i) for i in range(n_days)]
+    tst = [nt.day_tst24(nights, d) for d in days]  # the 24 h before each wake, each nap once (day_naps)
     values = [nights[d].asleep if d in nights else None for d in days]
-    stack = [(nights[d].nap_min or None) if d in nights else None for d in days]
+    stack = [nt.bar_nap_min(nights, d) or None for d in days]
     if n_days > 14:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
-        values = [nights[d].tst24 if d in nights else None for d in days]
+        values = tst
         stack = None
     r, a = [], []
     for d in days:
-        read, said = _readout(nights.get(d), d)
+        read, said = _readout(nights, d)
         r.append(read)
         a.append(said)
-    totals = [nights[d].tst24 for d in days if d in nights and nights[d].tst24 is not None]
+    totals = [v for v in tst if v is not None]
     trend = None
     if n_days > 14:  # the long range: the 7-night mean over faint bars
-        tst = [nights[d].tst24 if d in nights else None for d in days]
         trend = [viz.rolling(tst, i) for i in range(n_days)]
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
                      reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
@@ -259,7 +272,9 @@ def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -
     legend; with real Garmin intervals, the hypnogram above it), else its plain
     bar on a clock axis; its 24-h total « sur 9h00 de besoin », the need of its
     morning (`need_of(day)`, minutes; 8 h without it) (the Sommeil dial says it
-    as a percentage of that need, its hours are printed here, once)."""
+    as a percentage of that need, its hours are printed here, once). `later`:
+    the naps taken after that wake no morning counts yet (nights.pending_naps:
+    the next morning's 24 h will), listed out of the total."""
     last = max((d for d, n in nights.items() if n.asleep is not None and today - timedelta(days=90) < d <= today),
                default=None)
     if last is None:
@@ -278,8 +293,15 @@ def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -
     out_naps = [f"sieste {viz.clock(a)} → {viz.clock(b)}" for a, b in listed]
     aria = (f"{viz.night_label(last)} : couché vers {viz.clock(n.start)}, levé vers {viz.clock(n.end)}"
             + (f", sieste de {viz.hm_long(nap_min)}" if nap_min else ""))
+    pending = [(a, b) for a, b, _ in nt.pending_naps(nights, last) if a is not None]
+    later = None
+    if pending:
+        s = "s" if len(pending) > 1 else ""
+        later = (f"sieste{s} " + ", ".join(f"{viz.clock(a)} → {viz.clock(b)}" for a, b in pending)
+                 + f" · compté{'es' if s else 'e'} dans ta prochaine nuit")
+        aria += f", {later.replace(' · ', ', ')}"
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
-            "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min),
+            "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
             "need": f"sur {viz.hm(need_of(last) if need_of else NEED_DEFAULT)} de besoin",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
@@ -312,10 +334,11 @@ def rows(nights: dict, today: date) -> list[dict]:
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
         marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags, words=WORDS)]
+        tst, nap = nt.day_tst24(nights, d), nt.bar_nap_min(nights, d)
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
-                    "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
+                    "tst": viz.hm(tst) if tst is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",
-                    "nap": viz.hm(n.nap_min) if n.nap_min else "—",
+                    "nap": viz.hm(nap) if nap else "—",
                     "times": f"{viz.clock(n.start)} → {viz.clock(n.end)}" if n.start else "—",
                     "hr": viz.num(n.hr) if n.hr is not None else "—",
                     "hrv": viz.num(n.hrv) if n.hrv is not None else "—",

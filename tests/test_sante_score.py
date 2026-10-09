@@ -259,13 +259,17 @@ def test_the_reason_is_the_binding_cap_else_the_lowest_component():
 
 def test_rung_4_a_short_24_hour_total():
     rows = _rich()
-    rows["sleep"].update(night_rows([0], asleep=330, start=(0, 30), end=(6, 30))["sleep"])  # 5h30, no nap
+    rows["sleep"].update(night_rows([0], asleep=330, start=(23, 30), end=(6, 30))["sleep"])  # 5h30, no nap
     day = _day(rows, _runs())
     assert (day["state"]["key"], day["state"]["text"]) == ("short", None)  # the reason, never printed (v4.3)
     assert day["score"]["caps"] == ["short"] and day["score"]["value"] == sc.CAP_SHORT == 65
-    # a nap that ends today lifts the 24-h total over 6 h: no short night (Craven 2022: per 24 h)
-    rows["nap"][D] = (60, {"windows": [[f"{D}T13:00", f"{D}T14:05"]]}, "Garmin")
+    # a nap in the 24 h before the wake (yesterday 13:00) lifts the total over 6 h: no short night (Craven 2022)
+    y = D - timedelta(days=1)
+    rows["nap"][y] = (60, {"windows": [[f"{y}T13:00", f"{y}T14:05"]]}, "Garmin")
     assert _day(rows, _runs())["state"]["key"] == "ok"
+    # today's afternoon nap is tomorrow morning's 24 h (each nap once: owner's report 2026-10-09)
+    rows["nap"] = {D: (60, {"windows": [[f"{D}T13:00", f"{D}T14:05"]]}, "Garmin")}
+    assert _day(rows, _runs())["state"]["key"] == "short"
 
 
 def test_rung_5_well_recovered_needs_a_nightly_signal():
@@ -596,15 +600,16 @@ def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
     dial = sante.sleep_dial(day["tst24"], day["need"]["total"], "#sommeil")
     assert (dial["value"], dial["sub"], dial["tone"]) == ("85", "un peu court", "sleep")  # 6h40 of 7h50: its own hue
     nights = nt.build_nights(rows, D)
-    assert nights[D].tst24 == 300 and nights[y].tst24 == 540  # each day's bar keeps its own nap
+    # each day's bar reads that figure: the nap on D's, never on y's too (owner's report 2026-10-09)
+    assert nt.day_tst24(nights, D) == 400 and nt.day_tst24(nights, y) == 440 and nt.bar_nap_min(nights, y) == 0
     # a « rendormi » nap of the day before (06:42, its wake 06:40): never counted again
     rows["nap"][y] = (100, {"windows": [[f"{y}T06:42", f"{y}T08:27"]]}, "Garmin")
     assert nt.day_tst24(nt.build_nights(rows, D), D) == 300
     # a nap partly before the 24 h (05:40 → 07:40, the wake at 06:40): only its part inside them
     rows["nap"][y] = (120, {"windows": [[f"{y}T05:40", f"{y}T07:40"]]}, "Garmin")
-    n = nt.build_nights(rows, D)
-    n[y].end = datetime.combine(y, datetime.min.time()).replace(hour=2)  # its own wake 02:00: not « rendormi »
-    assert nt.day_tst24(n, D) == 300 + 60  # 06:40 → 07:40 of its 2 h
+    v, det, src = rows["sleep"][y]
+    rows["sleep"][y] = (v, {**det, "main_end": f"{y}T02:00"}, src)  # its own wake 02:00: not « rendormi »
+    assert nt.day_tst24(nt.build_nights(rows, D), D) == 300 + 60  # 06:40 → 07:40 of its 2 h
 
 
 def test_history_reads_only_the_activities_finished_that_day():

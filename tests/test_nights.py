@@ -50,15 +50,15 @@ def test_owner_october():
     sessions = [session(date(2026, 9, 26), 8, 60, offset=7200), session(date(2026, 9, 28), 8, 60, offset=32400)]
     nt.tag_nights(nights, sessions)
     n7 = nights[D]
-    assert (n7.asleep, n7.nap_min, n7.tst24) == (350, 140, 490)  # 5h50 + 2h20 = 8h10 sur 24 h
-    assert n7.tst24 >= nt.SHORT_DAY_MIN  # no short night on 7 Oct
+    assert (n7.asleep, n7.nap_min, nt.day_tst24(nights, D)) == (350, 140, 490)  # 5h50 + 2h20 = 8h10 sur 24 h
+    assert nt.day_tst24(nights, D) >= nt.SHORT_DAY_MIN  # no short night on 7 Oct (its nap: « rendormi »)
     assert (n7.bed5, n7.wake5) == (datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 40))
     [(a, b, m)] = n7.naps
     assert (a, b, m) == (datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7), 140)
     assert n7.in_axis(a, b) and n7.resettled  # the nap sits in the 20:00 → 12:00 axis; « rendormi »
     assert n7.hrv == 95.1 and n7.hr == 37 and n7.hr_nap_day  # a COROS nap day: it counts, never fires the alert
     # the nap-only day stays a nap: no night, no 24-h total
-    assert nights[date(2026, 9, 25)].asleep is None and nights[date(2026, 9, 25)].tst24 is None
+    assert nights[date(2026, 9, 25)].asleep is None and nt.day_tst24(nights, date(2026, 9, 25)) is None
     owned = [d for d, n in nights.items() if n.asleep]
     assert owned == [date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 6), D]
     # France (UTC+2) → Korea (UTC+9), 7 zones east: « décalage horaire » for 7 nights from 28/09 (v4.2: ⌈1 × 7⌉;
@@ -255,8 +255,9 @@ def test_late_nap_annotates_only():
     nt.tag_nights(nights)
     assert "late_nap" in nights[D].tags  # 6 h before 23:00 (Mograss 2022)
     assert nt.mean7(nights, "hr", D)["n"] == 3 and nt.alert_night(nights, (), D)  # a word, nothing else
-    assert nights[D].tst24 == 440  # a nap belongs to the day it ends: the day before's 24-h total
-    assert nights[D - timedelta(days=1)].tst24 == 480
+    # an afternoon nap counts once, in the 24 h before the next wake (owner's report 2026-10-09: it was in two)
+    assert nt.day_tst24(nights, D) == 480 and nt.bar_nap_min(nights, D) == 40
+    assert nt.day_tst24(nights, D - timedelta(days=1)) == 440 and nt.bar_nap_min(nights, D - timedelta(days=1)) == 0
 
 
 def test_illness_days_from_the_malade_chip():
@@ -326,7 +327,7 @@ async def test_load_nights_reads_the_nights_never_the_check_ins_nor_a_race(db_se
     race.elapsed, race.workout_type = 1013, 1
     nights = await nt.load_nights(db_session, test_user.id, D, sessions=[race], efforts=st.efforts([race]))
     # no « alcool », no « malade », no race window; 07/10 is D+4 after the 16h53 ultra (it ended on 03/10)
-    assert nights[D].tst24 == 490 and nights[D].tags == {"ultra"}
+    assert nt.day_tst24(nights, D) == 490 and nights[D].tags == {"ultra"}
     assert nights[date(2026, 10, 6)].tags == {"ultra"}  # D+3: « après ultra », D+1 → D+4 (v4.2)
     assert set(nights) == {date(2026, 9, 25), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1),
                            date(2026, 10, 6), D}
