@@ -294,11 +294,11 @@ async def test_the_filter_applies_to_the_chart_and_the_list(client: AsyncClient,
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     today = datetime.now(timezone.utc).date()
     await _add_runs(db_session, test_user, today, n=60)
-    for k in range(2, 60, 7):  # a ride a week, flat (no D+ recorded)
+    for k in range(2, 60, 7):  # a ride a week, flat (no D+ recorded), 2h05: never a sum of the 1-h runs
         d = today - timedelta(days=k)
         db_session.add(Activity(user_id=test_user.id, strava_activity_id=770_000 + k, sport_type="Ride",
                                 name=f"Vélo {k}", start_date=datetime(d.year, d.month, d.day, 8, tzinfo=timezone.utc),
-                                distance=60_000, moving_time=7200, elapsed_time=7300, total_elevation_gain=0,
+                                distance=60_000, moving_time=7500, elapsed_time=7600, total_elevation_gain=0,
                                 raw_data={"utc_offset": 7200}))
     await db_session.flush()
     bike = (await client.get("/activities?sport=bike&m=distance")).text
@@ -318,7 +318,7 @@ async def test_the_filter_applies_to_the_chart_and_the_list(client: AsyncClient,
     run = (await client.get("/activities?sport=run")).text
     d = json.loads(re.search(r'data-viz-key="semaines-duree".*?class="pf-viz-data">(.*?)</script>', run,
                              re.S).group(1))
-    assert "2h00" not in {r[1] for r in d["r"]} and 'id="fc-facile"' in run  # no ride in the runs' weeks
+    assert not any("h05" in r[1] for r in d["r"]) and 'id="fc-facile"' in run  # no ride in the runs' weeks
     assert "Vélo" not in run.split('id="activity-list"')[1]
     other = (await client.get("/activities?sport=other")).text  # nothing there: the filter alone, the empty state
     assert 'id="semaines"' not in other and 'aria-current="true"\n       >Autre</a>' in other
