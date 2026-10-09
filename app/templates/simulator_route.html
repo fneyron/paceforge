@@ -31,50 +31,53 @@ summary::-webkit-details-marker { display: none; }
 {% block content %}
 <div class="pf-route">
     <div class="pf-col">
-        <a href="/simulator" class="pf-back" id="back-courses">
+        <a href="/simulator" class="pf-back{% if nutrition_html %} hidden{% endif %}" id="back-courses">
             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
             Mes courses
         </a>
     </div>
 
-    <div id="rpanel-plan" class="pf-col">
+    <div id="rpanel-plan" class="pf-col{% if nutrition_html %} hidden{% endif %}">
         {% include "partials/gpx_result.html" %}
+        {% include "partials/race_prep.html" %}
     </div>
 
-    {# the tools (Préparer, the … menu, the débrief button) open here, in place of the plan, with a way back #}
-    <div id="rpanel-tool" class="hidden">
-        <button type="button" onclick="switchRouteTab('plan')" class="pf-back">
+    {# the tools (Préparer, the … menu, the débrief button) open here, in place of the plan, with a way back.
+       ?vue=nutrition opens Nutrition from the server (where its forms land without JS) #}
+    <div id="rpanel-tool"{% if not nutrition_html %} class="hidden"{% endif %}>
+        <a href="/simulator/routes/{{ saved_route_id }}" onclick="switchRouteTab('plan'); return false;" class="pf-back">
             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
             <span id="tool-back-label">{{ saved_route_name }}</span>
-        </button>
-        <h1 id="tool-title" class="pf-h1 mb-6" tabindex="-1"></h1>
+        </a>
+        <h1 id="tool-title" class="pf-h1 mb-6" tabindex="-1">{% if nutrition_html %}Nutrition{% endif %}</h1>
 
-        <div id="rpanel-nutrition" class="hidden">
-            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=18" hx-trigger="intersect once" hx-swap="innerHTML">
+        <div id="rpanel-nutrition"{% if not nutrition_html %} class="hidden"{% endif %}>
+            {% if nutrition_html %}
+            <div id="nutrition-wrap">{{ nutrition_html }}</div>
+            {% else %}
+            <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ saved_route_id }}?v=20" hx-trigger="intersect once" hx-swap="innerHTML">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Ravitaillement…
+                    Nutrition…
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <div id="rpanel-realise" class="hidden space-y-4">
             {% if show_debrief or compare_activity_id %}<div hx-get="/api/simulator/routes/{{ saved_route_id }}/result?v=4{% if compare_activity_id %}&preselect={{ compare_activity_id }}{% endif %}" hx-trigger="intersect once" hx-swap="innerHTML"></div>{% endif %}
         </div>
 
-        <div id="rpanel-reference" class="hidden">
-            <div hx-get="/api/simulator/routes/{{ saved_route_id }}/reference?v=1" hx-trigger="intersect once" hx-swap="innerHTML"></div>
-        </div>
     </div>
 </div>
 {% endblock content %}
 
 {% block scripts %}
 <script>
-var TOOL_TITLES = { nutrition: 'Ravitaillement', realise: 'Débrief', reference: 'Finisher de référence' };
+var TOOL_TITLES = { nutrition: 'Nutrition', realise: 'Débrief' };
 var planScrollY = 0;
 function switchRouteTab(tab, anchor) {
-    var tools = ['nutrition', 'realise', 'reference'];
+    var tools = ['nutrition', 'realise'];
     if (tab !== 'plan' && tools.indexOf(tab) < 0) tab = 'plan';
     if (tab !== 'plan' && !document.getElementById('rpanel-' + tab)) tab = 'plan';
     var plan = document.getElementById('rpanel-plan'), tool = document.getElementById('rpanel-tool'), back = document.getElementById('back-courses');
@@ -82,26 +85,39 @@ function switchRouteTab(tab, anchor) {
     plan.classList.toggle('hidden', tab !== 'plan'); back.classList.toggle('hidden', tab !== 'plan');
     tool.classList.toggle('hidden', tab === 'plan');
     tools.forEach(function (t) { var p = document.getElementById('rpanel-' + t); if (p) p.classList.toggle('hidden', t !== tab); });
+    // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
+    var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
+    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=20', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
+    var reload = !!(urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv);
+    var rowAnchor = tab === 'nutrition' && anchor && String(anchor).indexOf('s:') === 0;
     if (tab !== 'plan') {
         var n = document.getElementById('save-name'), bl = document.getElementById('tool-back-label'); if (n && bl) bl.textContent = n.value || 'Plan de course';
         var tt = document.getElementById('tool-title'); tt.textContent = TOOL_TITLES[tab];
         window.scrollTo(0, 0); try { tt.focus({ preventScroll: true }); } catch (e) {}
-        if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap [data-packing], #nutrition-wrap #packing'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
+        if (anchor === 'bags') { var tryScroll = function (k) { var el = document.querySelector('#nutrition-wrap #nu-ravitos, #nutrition-wrap #nu-plan'); if (el) el.scrollIntoView({ block: 'start' }); else if (k > 0) setTimeout(function () { tryScroll(k - 1); }, 250); }; tryScroll(16); }
+        // « Ta nutrition jusqu'à X » in a passage row: that point's row in « À chaque ravito ». When the
+        // card is about to reload (the plan changed), it is scrolled to once the new card is in, not before
+        else if (rowAnchor) {
+            var sid = 's-' + String(anchor).slice(2);
+            var tryRow = function (k) { var el = document.getElementById(sid); if (el) { el.open = true; el.scrollIntoView({ block: 'start' }); } else if (k > 0) setTimeout(function () { tryRow(k - 1); }, 250); };
+            if (reload) {
+                var wrap = document.getElementById('nutrition-wrap');
+                var once = function (ev) { if (ev.target !== wrap) return; wrap.removeEventListener('htmx:afterSettle', once); tryRow(4); };
+                if (wrap) wrap.addEventListener('htmx:afterSettle', once); else tryRow(16);
+            } else tryRow(16);
+        }
     } else {
         setTimeout(function () { window.scrollTo(0, planScrollY); if (window._sim && window._sim._redraw) window._sim._redraw(); }, 0);
-        // a change in Ravitaillement (stomach, products, quantities…): the rows' food, water and bags follow it
+        // a change in Nutrition (a plan line added or removed): the rows' « Ta nutrition jusqu'à » links follow it
         if (ravitoDirty && window._sim && window._sim.recalc) { ravitoDirty = false; window._sim.recalc(); }
     }
-    // a tool reloads only when the plan changed since it was last loaded (planVersion from the plan page)
-    var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
-    var urls = { nutrition: ['/partials/simulator/nutrition/{{ saved_route_id }}?v=18', '#nutrition-wrap'], realise: ['/api/simulator/routes/{{ saved_route_id }}/result?v=4', '#rpanel-realise > div'] };
-    if (urls[tab] && window.htmx && tabLoadedAt[tab] !== undefined && tabLoadedAt[tab] !== pv) {
-        window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
+    if (reload) {
+        window.htmx.ajax('GET', urls[tab][0] + (rowAnchor ? '&open=' + encodeURIComponent(anchor) : ''), { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
     }
     try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + (anchor === 'bags' ? 'bags' : tab)); } catch (e) {}
 }
-var tabLoadedAt = {}, ravitoDirty = false;
+var tabLoadedAt = {% if nutrition_html %}{ nutrition: 0 }{% else %}{}{% endif %}, ravitoDirty = false;
 document.body.addEventListener('htmx:afterRequest', function (ev) {
     var d = ev.detail || {}, cfg = d.requestConfig || {}, path = (d.pathInfo && d.pathInfo.requestPath) || cfg.path || '';
     if (d.successful && String(cfg.verb).toLowerCase() === 'post' && /\/partials\/simulator\/nutrition\//.test(path)) ravitoDirty = true;
@@ -110,12 +126,12 @@ document.body.addEventListener('htmx:afterSwap', function (ev) {
     var id = ev.target && ev.target.id, pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
     if (id === 'nutrition-wrap') tabLoadedAt.nutrition = pv; else if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-// old links: #pacing (now in the passage rows) opens the plan; #nutrition, #ravito and #bags open Ravitaillement
+// old links: #pacing (now in the passage rows) opens the plan; #nutrition, #ravito and #bags open Nutrition
 document.addEventListener('DOMContentLoaded', function () {
     var h = (location.hash || '').slice(1);
     if (h === 'pacing') switchRouteTab('plan');
     else if (h === 'nutrition' || h === 'ravito' || h === 'bags') switchRouteTab('nutrition', h === 'bags' ? 'bags' : undefined);
-    else if (['realise', 'reference'].indexOf(h) >= 0) switchRouteTab(h);
+    else if (h === 'realise') switchRouteTab(h);
 });
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief.

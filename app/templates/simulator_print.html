@@ -115,17 +115,17 @@
     </div>
     {% endif %}
 
-    {% if nutrition_schedule %}
-    <!-- Race pack: nutrition plan on the same sheet (cut separately if needed) -->
+    {% if nutrition_rows %}
+    <!-- Race pack: the Nutrition card's rows (what to take when leaving each refill point) under the plan's lines -->
     <div class="bib bg-white border border-gray-300 rounded-lg p-3 mt-3">
         <p class="border-b border-gray-200 pb-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wide">Nutrition</p>
-        <table class="w-full text-[10px]">
+        {% for l in nutrition_lines %}<p class="text-[10px] text-gray-700">{{ l }}</p>{% endfor %}
+        <table class="w-full text-[10px] mt-1">
             <tbody class="divide-y divide-gray-100">
-                {% for leg in nutrition_schedule %}
+                {% for r in nutrition_rows %}
                 <tr>
-                    <td class="py-1 pr-2 text-gray-600">→ <b class="text-gray-900">{{ leg.to_name }}</b></td>
-                    <td class="py-1 pl-2 text-gray-700">{% if leg.labels %}{{ leg.labels | join(' · ') }}{% else %}<span class="text-gray-300">—</span>{% endif %}</td>
-                    <td class="py-1 pl-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{% if leg.water_ml >= 200 %}{{ ('%.1f'|format(leg.water_ml / 1000)).replace('.', ',') }} L d'eau{% endif %}</td>
+                    <td class="py-1 pr-2 text-gray-600 whitespace-nowrap tabular-nums">{{ r.clock }} <b class="text-gray-900">{{ r.name }}</b></td>
+                    <td class="py-1 pl-2 text-gray-700">{% if r.take %}{{ r.take }}{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

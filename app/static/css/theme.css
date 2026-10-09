@@ -43,6 +43,7 @@
     --pf-warn-soft: 252 241 223;
     --pf-danger: 191 42 34;          /* #C4281C */
     --pf-danger-soft: 253 236 234;
+    --pf-sleep: 79 70 229;           /* #4F46E5  indigo: the Sommeil dial's one stable hue (≥ 3:1 as a large mark) */
 
     /* neutrals: page, surfaces, ink. Tailwind's gray-* classes read this ramp. */
     --pf-bg: 255 255 255;            /* page */
@@ -80,6 +81,7 @@
     --pf-warn-soft: 56 38 14;
     --pf-danger: 248 128 116;
     --pf-danger-soft: 60 22 20;
+    --pf-sleep: 165 160 255;
 
     --pf-bg: 14 14 16;
     --pf-surface: 24 24 27;

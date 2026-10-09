@@ -1,6 +1,6 @@
 """End-to-end through the HTTP layer: save a route with typed checkpoints, then
 render every plan surface (passage times + scenarios, pacing guide, nutrition,
-exports, reference finisher, debrief)."""
+exports, debrief)."""
 
 import json
 import re
@@ -38,7 +38,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "Ravitaillement" in html and "Pilotage" not in html and "exportPace(" in html
+    assert "<span>Nutrition</span>" in html and "Pilotage" not in html and "exportPace(" in html
     assert '"kind": "full"' in html and '"drop_bag": true' in html  # checkpoint metadata round-trips to the page
 
     course = _course()
@@ -97,23 +97,22 @@ async def test_pacing_guide_and_params(as_user: AsyncClient, db_session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_nutrition_card_with_packing_and_caffeine(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_nutrition_card_with_a_caffeinated_gel_of_his_own(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
-    # « + Marque » › « Un produit à toi »: added to the pantry and picked at once
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel caf", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50})
+    hx = {"HX-Request": "true"}
+    # « Un produit à toi »: into « Tes produits », the plan says when it is eaten
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel caf", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50}, headers=hx)
     assert r.status_code == 200, r.text
-    t = r.text
-    assert 'aria-pressed="true" title="Gel caf"' in t
-    assert re.search(r"<b>1 Gel caf</b> à \d\d:\d\d", t)  # « Ta règle »: the caffeine clock line
-    assert "Sac au départ" in t and "Drop bag · Col" in t
-    # an older client posting the previous form (use_ / qty_) still works; a typed quantity is « à la main »
-    pid = int(re.search(r"/products/(\d+)/delete", t).group(1))
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={
-        "carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400, "flask_capacity_ml": 1000,
-        "use_-1": 1, "qty_-1": "2.5", f"use_{pid}": 1, "caffeine_enabled": 1, "caffeine_from_h": 3, "caffeine_every_h": 2.5, "caffeine_dose_mg": 50,
-    })
-    assert r.status_code == 200, r.text
-    assert "quantités à la main" in r.text and "<b>2,5</b>" in r.text and "à la main</span>" in r.text
+    assert "Gel caf" in r.text and "25 g de glucides · 50 mg de sodium · 50 mg de caféine" in r.text
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/starter", headers=hx)  # a caffeinated gel is not « a gel »
+    assert re.search(r'<option value="-1" selected>Gel</option>', r.text)
+    pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms", headers=hx)
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms/1", data={"product_id": pid, "every_min": 60, "from_min": 60}, headers=hx)
+    assert "caféine : 150 mg, limite 400 mg sur 24 h" in r.text  # 2, 3 and 4 h on a 5 h race
+    # an older client posting the previous form (use_ / qty_): nothing changes, the card comes back
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={"carbs_g_per_h": 75, "use_-1": 1, "qty_-1": "2.5"}, headers=hx)
+    assert r.status_code == 200 and "caféine : 150 mg" in r.text
 
 
 @pytest.mark.asyncio
@@ -127,17 +126,12 @@ async def test_pace_exports(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+async def test_no_reference_finisher_and_the_debrief(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
-    r = await as_user.get(f"/api/simulator/routes/{route_id}/reference")
-    # the panel's title is the page's: the card does not repeat it
-    assert r.status_code == 200 and 'name="source"' in r.text and "Finisher de référence" not in r.text
-    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={
-        "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00\nArrivée km 30 4:10:00", "total_time": "4:10:00",
-    })
-    assert r.status_code == 200, r.text
-    assert "Mamba" in r.text and "Où ta référence va plus vite" not in r.text  # the key gaps are marked in the table, not repeated beside it
-    assert r.text.count("4h10") == 1  # his finish, once (the Arrivée row), not again beside his name
+    # the « Finisher de référence » tool is gone (owner, 2026-10-09: « je ne pense pas qu'on l'ait pour toutes les
+    # courses »): its routes no longer exist
+    assert (await as_user.get(f"/api/simulator/routes/{route_id}/reference")).status_code == 404
+    assert (await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={"source": "x"})).status_code in (404, 405)
 
     # debrief: a matched activity with per-km splits (moving + elapsed + HR)
     splits = [{"distance": 1000, "moving_time": 600, "elapsed_time": 600 + (900 if k == 9 else 0), "average_heartrate": 150 if k < 8 else 130} for k in range(30)]
@@ -260,29 +254,6 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and 'name="activity_id"' in r.text
 
 
-@pytest.mark.asyncio
-async def test_reference_compares_race_times_with_the_plans_passages(as_user: AsyncClient):
-    """The reference's times are race times (stops included): the plan in front of them is the plan's
-    passage at each point (stops made before it), so the last leg does not swallow every stop."""
-    route_id = await _create_route(as_user)  # 3 min at each of the 3 aid stations
-    r = await as_user.post("/partials/simulator/passage-times", data={
-        "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id, "stop_minutes": 3,
-    })
-    plan = json.loads(r.text.split('id="plan-data">')[1].split("</script>")[0])
-    village_s = next(p for p in plan["points"] if p["name"] == "Village")["clock_s"] - 21 * 3600
-    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={
-        "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00", "total_time": "4:10:00",
-    })
-    rows = re.findall(r'<b>([^<]+)</b>.*?<i>plan</i> (\d+h\d\d)<', r.text, re.S)
-    plan_at = dict(rows)
-    m = (village_s + 30) // 60  # to the nearest minute, as the plan shows it
-    assert plan_at["Village"] == f"{m // 60}h{m % 60:02d}" and plan_at["Arrivée"] == "5h00"
-    # a pasted text with no time comes back as typed, with the reason
-    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference/clear")
-    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={"source": "Col sans temps", "label": "X"})
-    assert "Aucune ligne avec un temps" in r.text and ">Col sans temps</textarea>" in r.text and 'value="X"' in r.text
-
-
 async def _create_bike_route(client: AsyncClient) -> int:
     course = _course()
     r = await client.post("/api/simulator/routes", data={
@@ -318,7 +289,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     assert r.status_code == 200 and "barrière 12:00" not in r.text
     # nutrition, exports and print work on the bike plan too
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ta règle pour toute la course" in r.text
+    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "Drop bag ici" not in r.text
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
     assert r.status_code == 200 and "<CoursePoint>" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}/print")

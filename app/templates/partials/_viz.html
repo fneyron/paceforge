@@ -1,0 +1,210 @@
+{#- PaceForge chart kit: Jinja macros drawing what app/services/viz.py computed.
+    Every scrubbable figure has: the readout pinned above the plot (printed by the server, so the
+    chart is complete without JS), the SVG (aria-hidden, full-height hit area: a tap selects, a
+    sideways drag scrubs), a visually hidden native range input (keyboard, VoiceOver/TalkBack), a
+    polite live region and the JSON that app/static/js/pf-viz.js reads. The race page's and Activités'
+    figures add 44×44 ‹ › step buttons; Santé's cards (card=True, WHOOP/Oura-like) have none: a
+    compact readout of two one-line rows across the card (the value and its word; the day and its
+    context, a link at its end). No colour here: interface.css styles the classes on --pf-* tokens.
+    Glyphs (race page, Activités): ⚑ race, ◆ long outing, ◇ tagged night. -#}
+
+{% macro figure(c, title, key, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante", cls="",
+                card=False) %}
+{#- a step at either end is aria-disabled, never disabled: it keeps its focus (a disabled button drops it to <body>);
+    the link row is reserved whenever a slot has a link (visibility, never display: the plot never moves) -#}
+{% set top = (c.n or 0) - 1 + (1 if c.rest else 0) %}{% set ln = c.link_now %}
+{% set link %}{% if c.links %}<a class="pf-viz-link{% if not ln %} is-off{% endif %}" data-r-href href="{{ ln.href if ln else '#' }}"{% if not ln %} aria-hidden="true" tabindex="-1"{% endif %}>{{ ln.label if ln else 'Voir ›' }}</a>{% endif %}{% endset %}
+<figure class="pf-viz {{ cls }}" data-viz data-viz-key="{{ key }}"{% if group %} data-viz-group="{{ group }}"{% endif %}{% if card %} data-tone="{{ c.tone_now }}"{% endif %}>
+    <figcaption class="sr-only">{{ c.summary or title }}</figcaption>
+    {% if card %}
+    <div class="pf-viz-read pf-viz-read2">
+        <p class="pf-viz-l1" aria-hidden="true"><b data-r>{{ c.read[0] }}</b><span data-r class="pf-viz-w">{{ c.read[1] }}</span></p>
+        <p class="pf-viz-l2"><span data-r aria-hidden="true">{{ c.read[2] }}</span>{{ link }}</p>
+    </div>
+    {% else %}
+    <div class="pf-viz-read">
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="{{ prev }}"{% if not c.n or c.sel == 0 %} aria-disabled="true"{% endif %}><span aria-hidden="true">‹</span></button>
+        <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>{{ c.read[0] }}</span><b data-r>{{ c.read[1] }}</b><span data-r>{{ c.read[2] }}</span></div>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="{{ next }}"{% if not c.n or c.sel >= top %} aria-disabled="true"{% endif %}><span aria-hidden="true">›</span></button>
+    </div>
+    {{ link }}
+    {% endif %}
+    <div class="pf-viz-plot">
+        <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
+        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ c.n - 1 }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
+    </div>
+    <p class="sr-only" aria-live="polite" data-live></p>
+    <script type="application/json" class="pf-viz-data">{{ c.data|safe }}</script>
+</figure>
+{% endmacro %}
+
+{#- a race in the right part of the plot: its name ends at the flag (it never runs past the screen edge) -#}
+{% macro _events(c, top, bottom) %}
+{% for r in c.races %}<line x1="{{ r.x }}" x2="{{ r.x }}" y1="{{ top }}" y2="{{ bottom }}" class="pf-viz-ev"/><path d="M{{ r.x }} {{ top - 1 }}v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text {% if r.x > c.X1 * 0.6 %}x="{{ r.x - 4 }}" text-anchor="end"{% else %}x="{{ r.x + 10 }}"{% endif %} y="{{ top - 6 }}" class="pf-viz-strong">{{ r.name|truncate(18, True, '…') }}</text>{% endfor %}
+{% for l in c.longs %}<path d="M{{ l.x }} {{ bottom + 3 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
+{% endmacro %}
+
+{% macro _xlabels(c) %}{% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 3 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}{% endmacro %}
+
+{# K2 band chart: stacked panels (VFC above, FC below, respiration while the alert is on) #}
+{% macro viz_band(c, title, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante") %}
+{% call figure(c, title, c.key, group, unit_word, prev, next) %}
+{% for p in c.panels %}
+<g class="pf-viz-panel">
+    {% for t in p.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+    {% for poly in p.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
+    <path d="{{ p.edge_lo }}" class="pf-viz-edge"/><path d="{{ p.edge_hi }}" class="pf-viz-edge"/>
+    <path d="{{ p.mean }}" class="pf-viz-line" pathLength="1"/>
+    {% for d in p.dots %}{% set r = c.dot_r + (1 if d.out else 0) %}{% if d.tag %}<path d="M{{ d.x }} {{ d.y - r - 1 }}l{{ r + 1 }} {{ r + 1 }}l-{{ r + 1 }} {{ r + 1 }}l-{{ r + 1 }} -{{ r + 1 }}z" class="pf-viz-dot is-tag{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% else %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ r }}" class="pf-viz-dot{% if d.out %} is-out{% endif %}" data-i="{{ d.i }}"/>{% endif %}{% endfor %}
+    <text x="0" y="{{ p.label_y }}" class="pf-viz-strong">{{ p.name }}</text>
+</g>
+{% endfor %}
+{{ _events(c, c.flag_y, c.panels[-1].bottom) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ c.flag_y }}" y2="{{ c.panels[-1].bottom }}"/>{% for p in c.panels %}<circle cx="0" cy="0" r="4"/>{% endfor %}</g>
+{% endcall %}
+{% endmacro %}
+
+{# K7 bars: weeks (hours, D+ as a thin mark), taper (planned outlined vs done, target band) #}
+{% macro viz_bars(c, title, key, group=None, unit_word="semaine", prev="Semaine précédente", next="Semaine suivante") %}
+{% call figure(c, title, key, group, unit_word, prev, next) %}
+{% if c.target %}<rect x="0" y="{{ c.target.y }}" width="{{ c.X1 }}" height="{{ c.target.h }}" class="pf-viz-band"/>
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.target.y }}" y2="{{ c.target.y }}" class="pf-viz-edge"/><line x1="0" x2="{{ c.X1 }}" y1="{{ c.target.y + c.target.h }}" y2="{{ c.target.y + c.target.h }}" class="pf-viz-edge"/>{% endif %}
+{% if c.reference is not none %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.reference }}" y2="{{ c.reference }}" class="pf-viz-ref"/>{% endif %}
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+{% for b in c.bars %}
+<g class="pf-viz-col" data-i="{{ b.i }}">
+    {% if b.plan %}<rect x="{{ b.x }}" y="{{ b.plan.y }}" width="{{ b.w }}" height="{{ b.plan.h }}" rx="3" class="pf-viz-plan"/>{% endif %}
+    {% if b.h is defined %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}
+</g>
+{% endfor %}
+{% if c.secondary %}{% for s in c.secondary %}<rect x="{{ s.x }}" y="{{ c.base + 4 }}" width="{{ s.w }}" height="{{ s.h }}" class="pf-viz-sec"/>{% endfor %}{% endif %}
+{{ _events(c, 12, c.base) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ c.base }}"/></g>
+{% endcall %}
+{% endmacro %}
+
+{# two directly labelled lines (fond et fatigue): readout = the date only #}
+{% macro viz_lines(c, title, key, group=None) %}
+{% call figure(c, title, key, group, "journée", "Jour précédent", "Jour suivant") %}
+{% for s in c.series %}<path d="{{ s.path }}" class="pf-viz-line {{ s.cls }}" pathLength="1"/>{% if s.end %}<text x="{{ [s.end.x + 4, c.W - 40]|min }}" y="{{ s.end.y - 6 }}" class="pf-viz-strong">{{ s.name }}</text>{% endif %}{% endfor %}
+{{ _events(c, 12, 120) }}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/>{% for s in c.series %}<circle cx="0" cy="0" r="3.5"/>{% endfor %}</g>
+{% endcall %}
+{% endmacro %}
+
+{# K8 dots: one per run (hot runs hollow), the rolling band #}
+{% macro viz_dots(c, title, key, group=None) %}
+{% call figure(c, title, key, group, "sortie", "Sortie précédente", "Sortie suivante") %}
+{% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+{% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot{% if d.hot %} is-hot{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{{ _xlabels(c) }}
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/><circle cx="0" cy="0" r="5" class="pf-viz-ring"/></g>
+{% endcall %}
+{% endmacro %}
+
+{# K6 range toggle: one per view, above everything it scopes; ?r= (or ?`param`=) keeps the choice. With `action` it
+   is a GET form, so it works without JS too (the page comes back with ?r=…, `hidden` fields kept: Activités' sport
+   filter); pf-viz.js switches the panels in place and carries the choice into the links marked data-viz-carry #}
+{% macro viz_ranges(options, current, label="Période", action=None, param="r", hidden=None) %}
+{% set tag = "form" if action else "div" %}
+<{{ tag }} class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges{% if param != "r" %} data-viz-param="{{ param }}"{% endif %} role="group" aria-label="{{ label }}"{% if action %} method="get" action="{{ action }}"{% endif %}>
+    {% for k, v in (hidden or {}).items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for value, text in options %}<button type="{{ 'submit' if action else 'button' }}"{% if action %} name="{{ param }}" value="{{ value }}"{% endif %} data-range="{{ value }}" aria-pressed="{{ 'true' if value == current else 'false' }}">{{ text }}</button>{% endfor %}
+</{{ tag }}>
+{% endmacro %}
+
+{#- Santé v4 (one page, WHOOP/Oura-like) -#}
+
+{# V1 ring: the arc from the top, clockwise, in the tone's colour; the value in the middle, the label and a word under
+   it, then a note that says what the arc compares (the Charge ring: « plus que d'habitude »): no mark without words.
+   The whole ring is one link to what it sums up; a plain image when there is nothing #}
+{% macro viz_ring(r) %}
+{% set tag = "a" if r.href else "div" %}
+<{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
+    <span class="pf-ring-dial">
+        <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-track"/>{% if r.dash %}<circle cx="50" cy="50" r="{{ r.r }}" class="pf-ring-arc" stroke-dasharray="{{ r.dash }} {{ r.c }}" transform="rotate(-90 50 50)" style="--pf-dash: {{ r.dash }}"/>{% endif %}</svg>
+        <span class="pf-ring-value{% if r.value|length > 4 %} is-long{% endif %}" aria-hidden="true">{% if r.unit %}<span>{{ r.value }}<span class="pf-ring-unit">{{ r.unit }}</span></span>{% else %}{{ r.value }}{% endif %}</span>
+    </span>
+    {% if r.label %}<span class="pf-ring-label" aria-hidden="true">{{ r.label }}</span>{% endif %}
+    {% if r.sub %}<span class="pf-ring-sub" aria-hidden="true">{{ r.sub }}</span>{% endif %}
+    {% if r.note %}<span class="pf-ring-note" aria-hidden="true">{{ r.note }}</span>{% endif %}
+</{{ tag }}>
+{% endmacro %}
+
+{# V2 card bars: one bar per day (a lighter part on top: the naps), nothing for a day without data (no mark for a
+   missing measure: its readout says so), today's day on a disc, the reference line (« 7 h »), faint labelled lines
+   (the score's 40 and 70), a bar past the axis broken,
+   a line over faint bars (a long range's mean), a bar hatched and outlined in its colour (a score estimated without a
+   night measured: its card's legend names it); the selection is a soft column behind its bar #}
+{% macro viz_day_bars(c, title, unit_word="journée", prev="Jour précédent", next="Jour suivant") %}
+{% call figure(c, title, c.key, None, unit_word, prev, next, cls="pf-viz-card" ~ (" pf-viz-faint" if c.trend else ""), card=True) %}
+{% if c.hatched %}<defs>{% for t in c.hatched %}<pattern id="pf-est-{{ c.key }}-{{ t }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="pf-est-hatch is-{{ t }}"/></pattern>{% endfor %}</defs>{% endif %}
+<g class="pf-viz-cross"><rect x="{{ (-c.slot / 2)|round(2) }}" y="0" width="{{ c.slot }}" height="{{ c.base + 2 }}" rx="4"/></g>
+{% for l in c.lines %}<line x1="0" x2="{{ c.X1 }}" y1="{{ l.y }}" y2="{{ l.y }}" class="pf-viz-hair"/><text x="{{ c.W }}" y="{{ l.y + 4 }}" text-anchor="end">{{ l.label }}</text>{% endfor %}
+<line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+{% for b in c.bars %}
+<g class="pf-viz-col{% if b.today %} is-today{% endif %}" data-i="{{ b.i }}">
+    {% if not b.miss %}
+    {% if b.top %}<rect x="{{ b.x }}" y="{{ b.top.y }}" width="{{ b.w }}" height="{{ b.top.h + b.h }}" rx="{{ c.rx }}" class="pf-bar-top"/>{% endif %}
+    {% if b.h and b.est %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar-est is-{{ b.cls }}" fill="url(#pf-est-{{ c.key }}-{{ b.cls }})"/>
+    {% elif b.h %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ c.rx }}" class="pf-bar{% if b.cls %} is-{{ b.cls }}{% endif %}"/>{% endif %}
+    {% if b.brk %}<path d="M{{ b.x - 1 }} {{ b.brk + 3 }}l{{ b.w + 2 }} -4v3.5l-{{ b.w + 2 }} 4z" class="pf-bar-brk"/>{% endif %}
+    {% endif %}
+</g>
+{% endfor %}
+{% if c.ref %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/><text x="{{ c.W }}" y="{{ c.ref.y + 4 }}" text-anchor="end" class="pf-viz-strong">{{ c.ref.label }}</text>{% endif %}
+{% if c.trend %}<path d="{{ c.trend }}" class="pf-viz-line" pathLength="1"/>{% endif %}
+{% for t in c.xt %}{% if t.today %}<circle cx="{{ t.x }}" cy="{{ c.H - 9 }}" r="8.5" class="pf-viz-todisc"/>{% endif %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle"{% if t.today %} class="pf-viz-today"{% endif %}>{{ t.label }}</text>{% endfor %}
+{% endcall %}
+{% endmacro %}
+
+{# V3 night card: a filled dot per measured night (every one counts toward the usual values; nothing for a night
+   without a measure), the 7-night line over the measured nights only (broken on a night without one), the usual values
+   as a band, its edges dashed and its fill lighter while provisional (no out-of-band word on one night). The selection
+   is a ring around its dot (the dot in ink), no column that would read as a bar; a selected night without a measure
+   (‹ › or the keyboard) shows a thin dashed hairline at its place instead (pf-viz.js sets .is-none on the group when
+   the day has no value) #}
+{% macro viz_night_card(c, title) %}
+{% call figure(c, title, c.key, None, "nuit", "Nuit précédente", "Nuit suivante", cls="pf-viz-card", card=True) %}
+<g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
+{% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+{% for poly in c.band_prov %}<polygon points="{{ poly }}" class="pf-viz-band is-prov"/>{% endfor %}
+{% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
+{% if c.edge_prov_lo %}<path d="{{ c.edge_prov_lo }}" class="pf-viz-edge is-prov"/><path d="{{ c.edge_prov_hi }}" class="pf-viz-edge is-prov"/>{% endif %}
+{% if c.edge_lo %}<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>{% endif %}
+{% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
+{% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r }}" class="pf-viz-dot{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
+{% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+{% endcall %}
+{% endmacro %}
+
+{# V4 timeline: last night on a clock axis — one bar, or the hypnogram (lanes by position, each named, in its stage's
+   colour, the stages bar's); the naps on their own lane #}
+{% macro viz_timeline(t, aria) %}
+<svg class="pf-tl" viewBox="0 0 {{ t.W }} {{ t.H }}" role="img" aria-label="{{ aria }}">
+    {% for k in t.ticks %}<line x1="{{ k.x }}" x2="{{ k.x }}" y1="0" y2="{{ t.base }}" class="pf-tl-grid"/><text x="{{ k.x }}" y="{{ t.H - 2 }}" text-anchor="middle">{{ k.label }}</text>{% endfor %}
+    {% for name, y, h in t.lanes %}<text x="0" y="{{ y + h / 2 + 4 }}" class="pf-tl-lane">{{ name }}</text>{% endfor %}
+    {% if t.main %}<rect x="{{ t.main.x }}" y="{{ t.main.y }}" width="{{ t.main.w }}" height="{{ t.main.h }}" rx="7" class="pf-tl-night"/>{% endif %}
+    {% for s in t.steps %}<line x1="{{ s.x }}" x2="{{ s.x }}" y1="{{ s.y0 }}" y2="{{ s.y1 }}" class="pf-tl-step"/>{% endfor %}
+    {% for s in t.segs %}<rect x="{{ s.x }}" y="{{ s.y }}" width="{{ s.w }}" height="{{ t.lane_h }}" rx="2" class="pf-tl-seg is-{{ s.k }}"/>{% endfor %}
+    {% for n in t.naps %}<rect x="{{ n.x }}" y="{{ n.y }}" width="{{ n.w }}" height="{{ n.h }}" rx="4" class="pf-tl-nap"/>{% endfor %}
+</svg>
+{% endmacro %}
+
+{# V5 legend under a card's chart: a swatch per mark (aria-hidden: the readouts and the table say it all) #}
+{% macro viz_legend(items) %}
+<p class="pf-viz-legend" aria-hidden="true">{% for cls, word in items %}<span><i class="pf-lg {{ cls }}"></i>{{ word }}</span>{% endfor %}</p>
+{% endmacro %}
+
+{# V6 the stages bar: the four phases of the main night side by side, each in its calm colour (no good/bad colour),
+   named with its minutes in the legend under it (a list a screen reader reads; the bar itself is decoration) #}
+{% macro viz_phases(ph) %}
+<div class="pf-phases">
+    <div class="pf-phases-bar" aria-hidden="true">{% for p in ph.parts %}<i class="pf-ph is-{{ p.key }}" style="flex-grow: {{ p.min }}"></i>{% endfor %}</div>
+    <ul class="pf-phases-legend" aria-label="Phases de la nuit">{% for p in ph.parts %}<li><i class="pf-ph is-{{ p.key }}" aria-hidden="true"></i>{{ p.name }} <b>{{ p.hm }}</b></li>{% endfor %}</ul>
+</div>
+{% endmacro %}

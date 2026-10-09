@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Sources — PaceForge{% endblock title %}
+
+{% block content %}
+{#- Santé › Sources (v4.3): the references the two folds of Santé rest on, nothing else — « Récupération » (Comment je
+    calcule ta récupération) and « Sommeil » (Comment je lis tes nuits), each the official texts first (consensus,
+    position stands, guidelines), then the studies; each a link (a DOI, else the text's own address) -#}
+<div class="pf-health pf-sante4 pf-sources">
+    <a href="/sante" class="pf-back">‹ Santé</a>
+    <h1 class="pf-sante-h1">Sources</h1>
+    {% for title, anchor, groups in sections %}
+    <section id="{{ anchor }}" aria-labelledby="h-{{ anchor }}">
+        <h2 id="h-{{ anchor }}" class="pf-sec-h">{{ title }}</h2>
+        {% for head, items in groups %}
+        <h3 class="pf-method-h">{{ head }}</h3>
+        <ul class="pf-refs" aria-label="{{ title }} : {{ head|lower }}">{% for name, href in items %}<li><a href="{{ href }}" rel="noopener" target="_blank">{{ name }}</a></li>{% endfor %}</ul>
+        {% endfor %}
+    </section>
+    {% endfor %}
+</div>
+{% endblock content %}

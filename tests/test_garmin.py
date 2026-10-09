@@ -27,6 +27,7 @@ from app.models.garmin import GarminConnection
 from app.models.health import HealthMetric, HealthSample
 from app.models.user import User
 from app.services import garmin
+from app.services.sante import health_page
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIG = ROOT / "alembic" / "versions" / "w7f8a9b0c1d2_add_garmin.py"
@@ -43,9 +44,12 @@ def _ms(dt: datetime) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def night(day: date, levels: bool = True, hrv: float | None = 62.0) -> dict:
+def night(day: date, levels: bool = True, readings: bool = True, score: int | None = 82) -> dict:
     """dailySleepData of the night ending on `day`: 23:00 → 06:30 local, the
-    athlete 2 h ahead of GMT."""
+    athlete 2 h ahead of GMT, with its raw readings every 5 min (heart rate 48
+    then 50, HRV 60/64, respiration 14) from 22:30 to 07:00 (the 3 readings
+    before 23:00 and the 6 after 06:30 fall outside the main window), and the
+    brand fields PaceForge must never read."""
     start, end = datetime.combine(day - timedelta(days=1), datetime.min.time()) + timedelta(hours=23), \
         datetime.combine(day, datetime.min.time()) + timedelta(hours=6, minutes=30)
     gmt = timedelta(hours=2)
@@ -53,8 +57,18 @@ def night(day: date, levels: bool = True, hrv: float | None = 62.0) -> dict:
            "sleepStartTimestampLocal": _ms(start), "sleepEndTimestampLocal": _ms(end),
            "sleepStartTimestampGMT": _ms(start - gmt), "sleepEndTimestampGMT": _ms(end - gmt),
            "deepSleepSeconds": 5400, "lightSleepSeconds": 13800, "remSleepSeconds": 6000,
-           "awakeSleepSeconds": 1800}
-    out = {"dailySleepDTO": dto, "avgOvernightHrv": hrv, "restingHeartRate": 44}
+           "awakeSleepSeconds": 1800, "averageRespirationValue": 15.0}
+    if score is not None:
+        dto["sleepScores"] = {"totalDuration": {"qualifierKey": "EXCELLENT"},
+                              "overall": {"value": score, "qualifierKey": "GOOD" if score else None}}
+    out = {"dailySleepDTO": dto, "avgOvernightHrv": 99.0, "restingHeartRate": 44, "hrvStatus": "BALANCED",
+           "sleepBodyBattery": [{"value": 80}]}
+    if readings:
+        t0 = start - gmt - timedelta(minutes=30)
+        ts = [t0 + timedelta(minutes=5 * i) for i in range(103)]  # 22:30 → 07:00 local
+        out["sleepHeartRate"] = [{"value": 48 + 2 * (i % 2), "startGMT": _ms(t)} for i, t in enumerate(ts)]
+        out["hrvData"] = [{"value": 60.0 + 4 * (i % 2), "startGMT": _ms(t)} for i, t in enumerate(ts)]
+        out["wellnessEpochRespirationDataDTOList"] = [{"startTimeGMT": _ms(t), "respirationValue": 14.0} for t in ts]
     if levels:
         g = start - gmt
         fmt = lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.0")  # noqa: E731
@@ -94,6 +108,9 @@ class FakeGarmin:
         self.api_status: int | None = None
         self.reject_tokens: set[str] = set()
         self.refresh_status = 200
+        self.timeouts: set[str] = set()  # path prefixes whose call times out
+        self.days_before: date | None = None  # nights and summaries of days before this one time out
+        self.statuses: dict[str, int] = {}  # path prefix → HTTP status
         self.n = 0
         midnight = datetime.combine(today, datetime.min.time())
         self.activities = [activity(9001, midnight - timedelta(days=2) + timedelta(hours=6)),
@@ -120,6 +137,11 @@ class FakeGarmin:
             return httpx.Response(self.api_status, json={})
         assert request.headers["x-garmin-client-platform"] == "Android"
         path, t = url.path, self.today
+        if any(path.startswith(p) for p in self.timeouts):
+            raise httpx.ReadTimeout("timed out", request=request)
+        for prefix, status in self.statuses.items():
+            if path.startswith(prefix):
+                return httpx.Response(status, json={})
         if path == "/userprofile-service/socialProfile":
             return httpx.Response(200, json={"displayName": "runner 42", "fullName": "Test Runner"})
         if path == f"/metrics-service/metrics/trainingreadiness/{t}":
@@ -147,11 +169,22 @@ class FakeGarmin:
         if path == "/metrics-service/metrics/racepredictions/latest/runner%2042":
             return httpx.Response(200, json={"calendarDate": str(t), "time5K": 1190, "time10K": 2480,
                                              "timeHalfMarathon": 5520, "timeMarathon": 11800})
+        day = params.get("date") or params.get("calendarDate")
+        if self.days_before and day and date.fromisoformat(day) < self.days_before:
+            raise httpx.ReadTimeout("timed out", request=request)
         if path == "/wellness-service/wellness/dailySleepData/runner%2042":
             d = date.fromisoformat(params["date"])
-            return httpx.Response(200, json=night(d) if (t - d).days % 10 != 9 else {"dailySleepDTO": {}})
+            if d > t:  # a day that hasn't come yet: empty, as Garmin answers
+                return httpx.Response(200, json={"dailySleepDTO": {}})
+            if (t - d).days % 10 == 9:
+                return httpx.Response(200, json={"dailySleepDTO": {}})
+            return httpx.Response(200, json=night(d, score=0 if (t - d).days == 1 else 82))  # yesterday: not scored
         if path == "/usersummary-service/usersummary/daily/runner%2042":
-            return httpx.Response(200, json=summary(date.fromisoformat(params["calendarDate"])))
+            d = date.fromisoformat(params["calendarDate"])
+            if d > t:  # a day that hasn't come yet: Garmin's dated skeleton, every value null
+                return httpx.Response(200, json={"calendarDate": str(d), "totalSteps": None,
+                                                 "averageStressLevel": None, "bodyBatteryHighestValue": None})
+            return httpx.Response(200, json=summary(d))
         return httpx.Response(404, json={})
 
     def paths(self, prefix: str) -> list:
@@ -198,8 +231,9 @@ def test_parse_sleep_keeps_garmin_stage_times_on_the_local_clock():
     d = date(2026, 10, 5)
     n = garmin.parse_sleep(night(d))
     assert n["day"] == d and n["start"] == datetime(2026, 10, 4, 23, 0) and n["end"] == datetime(2026, 10, 5, 6, 30)
-    assert n["stages"] == {"deep": 90, "core": 230, "rem": 100, "awake": 30}
-    assert n["hrv"] == 62.0 and n["rhr"] == 44
+    assert n["asleep"] == 420 and n["tz"] == 120
+    assert n["hr"][0] == (datetime(2026, 10, 4, 22, 30), 48.0) and len(n["hrv"]) == 103 and len(n["resp"]) == 103
+    assert not {"score", "qualifier", "rhr"} & set(n)  # brand fields are not read
     samples = garmin.night_samples(n)
     assert [(s.kind, s.start.strftime("%H:%M"), s.value) for s in samples] == [
         ("core", "23:00", 90), ("deep", "00:30", 90), ("core", "02:00", 120), ("awake", "04:00", 30),
@@ -207,43 +241,42 @@ def test_parse_sleep_keeps_garmin_stage_times_on_the_local_clock():
     assert all(s.source == "Garmin" for s in samples)
 
 
-def test_sleep_without_levels_is_built_from_the_minutes():
+def test_nightly_values_come_from_the_readings_inside_the_main_window():
+    d = date(2026, 10, 5)
+    rows = {r.metric: r for r in garmin.night_dailies(garmin.parse_sleep(night(d)), True)}
+    assert set(rows) == {"sleep", "hrv", "hr_night", "resp_night"}
+    # the stage minutes of the main night (the DTO's seconds): shown on Santé, never judged
+    assert rows["sleep"].value == 420 and rows["sleep"].details == {
+        "main_start": "2026-10-04T23:00", "main_end": "2026-10-05T06:30", "period": 450, "bedtime": "23:00",
+        "wake": "06:30", "timeline": True, "tz": 120, "stages": {"deep": 90, "light": 230, "rem": 100, "awake": 30},
+        "stages_read": True}
+    # 91 readings from 23:00 to 06:30, 46 at 48 bpm / 60 ms and 45 at 50 bpm / 64 ms
+    assert rows["hr_night"].value == 49.0 and rows["hr_night"].details == {
+        "min": 48.0, "max": 50.0, "n": 91, "method": "points", "nap_day": False}
+    assert rows["hrv"].value == 61.9 and rows["hrv"].details == {"n": 91, "tz": 120, "method": "ln_mean_main"}
+    assert rows["resp_night"].value == 14.0 and rows["resp_night"].details["method"] == "points"
+    # without readings: no HR, no HRV, Garmin's sleep respiration average as context; never avgOvernightHrv
+    bare = {r.metric: r for r in garmin.night_dailies(garmin.parse_sleep(night(d, readings=False)), False)}
+    assert set(bare) == {"sleep", "resp_night"} and bare["resp_night"].details == {"method": "garmin_summary"}
+
+
+def test_sleep_without_levels_writes_no_timeline():
     n = garmin.parse_sleep(night(date(2026, 10, 5), levels=False))
-    samples = garmin.night_samples(n)
-    assert samples[0].start == datetime(2026, 10, 4, 23, 0)
-    assert {s.kind: s.value for s in samples} == {"deep": 90, "core": 230, "rem": 100, "awake": 30}
-
-
-def test_parse_readiness_status_predictions_and_hrv():
-    t = date(2026, 10, 6)
-    r = garmin.parse_readiness([{"calendarDate": str(t), "timestampLocal": "2026-10-06T06:00:00", "score": 30,
-                                 "level": "POOR", "recoveryTime": 2400},
-                                {"calendarDate": str(t), "timestampLocal": "2026-10-06T10:00:00", "score": 85,
-                                 "level": "PRIME", "recoveryTime": 0}])
-    assert r == {"day": t, "pct": 85, "level": "Ready for high intensity", "full_h": 0.0}
-    s = garmin.parse_training_status({"mostRecentTrainingStatus": {"latestTrainingStatusData": {
-        "1": {"calendarDate": str(t), "acuteTrainingLoadDTO": {"dailyTrainingLoadAcute": 400,
-                                                               "dailyTrainingLoadChronic": 500}}}}})
-    assert s == {"day": t, "short": 400, "long": 500, "ratio": 0.8, "comment": None}
-    assert garmin.parse_predictions({"time5K": 1190.4, "timeMarathon": 0}) == {"5k": 1190}
-    values, ranges = garmin.parse_hrv({"hrvSummaries": [
-        {"calendarDate": "2026-10-06", "lastNightAvg": 58, "baseline": {"balancedLow": 52, "balancedUpper": 66}},
-        {"calendarDate": "2026-10-05", "lastNightAvg": None}]})
-    assert values == {t: 58} and ranges == {t: {"lo": 52, "hi": 66, "base": None}}
+    assert garmin.night_samples(n) == []  # minutes laid out as blocks would be an invented timeline
+    assert garmin.night_dailies(n, False)[0].details["timeline"] is False
 
 
 def test_parsers_survive_unknown_shapes():
     for bad in (None, [], {}, "x", 3, {"dailySleepDTO": None}, [{"generic": None}], [None]):
         assert garmin.parse_sleep(bad) is None
-        assert garmin.parse_hrv(bad) == ({}, {})
         assert garmin.parse_summary(bad) is None
-        assert garmin.parse_vo2max(bad) == {}
-        assert garmin.parse_readiness(bad) is None
-        assert garmin.parse_training_status(bad) is None
-        assert garmin.parse_predictions(bad) == {}
+        assert garmin.parse_naps(bad) is None
         assert garmin.activity_fields(bad if isinstance(bad, dict) else {}) is None
     assert garmin.parse_sleep({"dailySleepDTO": {"calendarDate": "2026-10-05", "sleepStartTimestampLocal": 10,
                                                  "sleepEndTimestampLocal": 5}}) is None  # ends before it starts
+    odd = night(date(2026, 10, 5))
+    odd["sleepHeartRate"] = [None, {"value": "x"}, {"startGMT": 3}, 7]
+    assert garmin.parse_sleep(odd)["hr"] == []
 
 
 def test_activity_fields_in_strava_units():
@@ -258,16 +291,12 @@ def test_activity_fields_in_strava_units():
 
 def test_build_daily_keeps_plausible_values_only():
     t = date(2026, 10, 6)
-    data = {"load": {"day": t, "short": 812, "long": 520, "ratio": 99, "comment": "Excessive"},
-            "readiness": {"day": None, "pct": 140, "level": "Rest", "full_h": 3},
-            "summaries": {t: {"stress": -2, "steps": 0, "kcal": 0, "bb_wake": None, "bb_high": 77, "bb_low": 5}},
-            "hrv_range": {t: {"lo": 70, "hi": 60, "base": None}},
-            "vo2max": {t: 120}, "predictions": {"5k": 30, "10k": 2480}}
-    rows = {r.metric: r for r in garmin.build_daily(data, t)}
-    assert set(rows) == {"load", "body_battery", "fitness"}
-    assert rows["load"].details == {"long": 520, "ratio": None, "comment": "Excessive"}
-    assert rows["body_battery"].value == 77
-    assert rows["fitness"].details == {"pred": {"10k": 2480}}
+    data = {"summaries": {t: {"steps": 0, "kcal": 0}, t - timedelta(days=1): {"steps": 9000, "kcal": 2400,
+                                                                               "exercise": 30}},
+            "nights": {}, "naps": {}}
+    rows = {(r.metric, r.day): r for r in garmin.build_daily(data, t)}
+    assert set(rows) == {("steps", t - timedelta(days=1))}  # 0 steps: not worn
+    assert garmin.parse_summary(summary(t)) == {"day": t, "steps": 12000, "kcal": 2650.0, "exercise": 55}
 
 
 # ── tokens ──────────────────────────────────────────────────────────────────
@@ -322,10 +351,8 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     assert conn.display_name == "runner 42" and conn.last_sync_at and not conn.last_error
     assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60
     assert len(fake.paths("/usersummary-service/usersummary/daily/")) == 60
-    assert [p for p, _ in fake.paths("/hrv-service/")] == [
-        f"/hrv-service/hrv/daily/{t - timedelta(days=27)}/{t}",
-        f"/hrv-service/hrv/daily/{t - timedelta(days=55)}/{t - timedelta(days=28)}",
-        f"/hrv-service/hrv/daily/{t - timedelta(days=59)}/{t - timedelta(days=56)}"]
+    # no brand value is asked for: HRV status and averages, readiness, load, VO2 max, race predictions
+    assert not fake.paths("/hrv-service/") and not fake.paths("/metrics-service/")
     act_q = fake.paths("/activitylist-service/")[0][1]
     assert act_q["startDate"] == str(t - timedelta(days=179)) and act_q["start"] == "0"
 
@@ -333,37 +360,37 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     by = {}
     for r in rows:
         by.setdefault(r.metric, {})[r.date] = r
+    assert set(by) == {"sleep", "hrv", "hr_night", "resp_night", "steps"}
     assert by["sleep"][t].value == 420 and by["sleep"][t].source == "Garmin"  # 7 h asleep, the awake half hour out
-    assert by["sleep"][t].details["bedtime"] == "23:00" and by["sleep"][t].details["wake"] == "06:30"
+    assert by["sleep"][t].details["main_start"] == f"{t - timedelta(days=1)}T23:00"
+    assert by["sleep"][t].details["wake"] == "06:30" and by["sleep"][t].details["timeline"] is True
     assert len(by["sleep"]) == 54  # one night in ten had no data
-    assert by["hrv"][t].value == 60 + t.day % 7 and by["hrv"][t].source == "Garmin"
-    assert by["rhr"][t].value == 45
-    assert by["vo2max"][t - timedelta(days=3)].value == 54.3
-    assert by["recovery"][t].value == 72 and by["recovery"][t].details == {"level": "Moderate", "full_h": 25.0}
-    assert by["load"][t].value == 812 and by["load"][t].details["comment"] == "Excessive"
+    assert by["hrv"][t].value == 61.9 and by["hrv"][t].details["method"] == "ln_mean_main"
+    assert by["hr_night"][t].value == 49.0 and by["resp_night"][t].value == 14.0
     assert by["steps"][t].details == {"kcal": 2650.0, "exercise": 55}
-    assert by["stress"][t].value == 28 and by["body_battery"][t].value == 80
-    assert by["hrv_norm"][t].details == {"lo": 55, "hi": 70}
-    assert by["fitness"][t].details == {"vo2max": 54.3, "pred": {"5k": 1190, "10k": 2480, "half": 5520,
-                                                                 "marathon": 11800}}
+    timeline = (await db_session.execute(select(func.count(HealthSample.id)).where(
+        HealthSample.user_id == test_user.id, HealthSample.metric == "sleep"))).scalar()
+    assert timeline == 54 * 5  # Garmin's real intervals, the hypnogram's timeline
 
     acts = (await db_session.execute(select(Activity).where(Activity.user_id == test_user.id)
                                      .order_by(Activity.start_date))).scalars().all()
     assert [(a.strava_activity_id, a.garmin_activity_id, a.sport_type) for a in acts] == [
         (555, 9002, "TrailRun"), (None, 9001, "Run")]
     assert acts[0].name == "Strava trail"  # Strava's row is left as it is
-    assert outcome["result"]["activities"] == {"inserted": 1, "linked": 1, "updated": 0}
+    assert outcome["result"]["activities"] == {"inserted": 1, "linked": 1, "updated": 0, "merged": 0}
 
-    # then the last 7 days; the sessions already there are not duplicated
+    # then the last 7 days; the sessions already there are not duplicated, nor the intervals
     fake.calls.clear()
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)
     outcome = await garmin.run_sync(db_session, conn)
     assert outcome["ok"] and len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
     assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(t - timedelta(days=6))
     assert not fake.paths("/userprofile-service/")  # the display name is kept
-    assert outcome["result"]["activities"] == {"inserted": 0, "linked": 0, "updated": 1}
+    assert outcome["result"]["activities"] == {"inserted": 0, "linked": 0, "updated": 1, "merged": 0}
     n = (await db_session.execute(select(func.count(Activity.id)).where(Activity.user_id == test_user.id))).scalar()
     assert n == 2
+    assert (await db_session.execute(select(func.count(HealthSample.id)).where(
+        HealthSample.user_id == test_user.id, HealthSample.metric == "sleep"))).scalar() == timeline
 
 
 async def test_rate_limit_and_failures_are_shown_in_plain_french(as_user: AsyncClient, db_session: AsyncSession,
@@ -380,12 +407,64 @@ async def test_rate_limit_and_failures_are_shown_in_plain_french(as_user: AsyncC
     assert "Dernière synchro échouée" in (await as_user.get("/settings")).text
 
 
+async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: AsyncSession, test_user: User,
+                                                                 fake, no_commit):
+    t = fake.today
+    fake.statuses = {"/usersummary-service/": 502}
+    conn = await _link(db_session, test_user)
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert outcome["result"]["activities"]["inserted"] == 2  # the sync went on to the end
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    by = {(m.metric, m.date): m.value for m in rows}
+    assert by[("sleep", t)] == 420 and by[("hr_night", t)] == 49.0
+    assert not any(m == "steps" for m, _ in by)
+
+
+async def test_a_first_sync_cut_short_is_redone_in_full(db_session: AsyncSession, test_user: User,
+                                                         fake, no_commit):
+    """Garmin stops answering (3 timeouts in a row) halfway through the history: what came is
+    kept, the athlete is told, and the next sync asks for the whole history again."""
+    t = fake.today
+    fake.days_before = t - timedelta(days=10)
+    conn = await _link(db_session, test_user)
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"], outcome
+    assert not fake.paths("/activitylist-service/")
+    assert conn.last_sync_at and conn.last_error == garmin.PARTIAL
+    rows = (await db_session.execute(select(HealthMetric).where(HealthMetric.user_id == test_user.id))).scalars().all()
+    assert {(m.metric, m.date): m.value for m in rows}[("sleep", t)] == 420  # the nights stay
+
+    fake.days_before, fake.calls = None, []
+    outcome = await garmin.run_sync(db_session, conn)
+    assert outcome["ok"] and len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60
+    assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(t - timedelta(days=179))
+    assert conn.last_error is None and outcome["result"]["activities"]["inserted"] == 2
+
+
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):
     conn = await _link(db_session, test_user, sync_claimed_at=datetime.now(timezone.utc))
     assert await garmin.run_sync(db_session, conn) is None and not fake.calls
     conn.sync_claimed_at = datetime.now(timezone.utc) - timedelta(hours=1)  # a crashed worker's claim
     await db_session.flush()
     assert (await garmin.run_sync(db_session, conn))["ok"]
+
+
+async def test_a_sync_that_fails_at_once_lets_go_of_the_link(db_session: AsyncSession, test_user: User, fake,
+                                                              no_commit, monkeypatch):
+    """Garmin down before the sync touched the database: the claim is released, so « Synchroniser
+    maintenant » pressed again is a new try, not « déjà en cours » for the claim's 15 min."""
+    conn = await _link(db_session, test_user)
+    await db_session.refresh(conn)  # as read for a request: sync_claimed_at loaded (None)
+
+    async def down(db, c):
+        raise httpx.ConnectError("down")
+    monkeypatch.setattr(garmin, "sync_connection", down)
+    assert (await garmin.run_sync(db_session, conn))["ok"] is False
+    claimed = (await db_session.execute(
+        select(GarminConnection.sync_claimed_at).where(GarminConnection.id == conn.id))).scalar_one()
+    assert claimed is None
+    assert (await garmin.run_sync(db_session, conn)) is not None  # tried again
 
 
 async def test_garmin_hrv_is_on_the_watch_scale(db_session: AsyncSession, test_user: User, fake, no_commit):
@@ -401,7 +480,7 @@ async def test_garmin_hrv_is_on_the_watch_scale(db_session: AsyncSession, test_u
     hrv = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "hrv",
         HealthMetric.date == fake.today))).scalar_one()
-    assert hrv.value == 60 + fake.today.day % 7 and hrv.source == "Garmin"  # not mixed with Apple's SDNN
+    assert hrv.value == 61.9 and hrv.source == "Garmin"  # not mixed with Apple's SDNN, nor Garmin's own average
 
 
 # ── login ───────────────────────────────────────────────────────────────────
@@ -474,13 +553,13 @@ async def _until(ticket, user_id, state):
 
 
 async def test_login_stores_the_tokens_never_the_password(db_session: AsyncSession, test_user: User, login):
-    ticket = await garmin.start_login(test_user.id, " me@x.fr ", "s3cret", "chine")
+    ticket = await garmin.start_login(test_user.id, " me@x.fr ", "s3cret")
     await _settle()
     assert (await garmin.login_state(ticket, test_user.id))["state"] == "done"
     assert await garmin.login_state(ticket, test_user.id + 1) is None  # another athlete sees nothing
-    assert login["domain"] == "garmin.cn" and login["client"].seen == [("login", "me@x.fr", "s3cret", True)]
+    assert login["domain"] == "garmin.com" and login["client"].seen == [("login", "me@x.fr", "s3cret", True)]
     conn = await garmin.connection_for(db_session, test_user.id)
-    assert conn.domain == "garmin.cn" and decrypt_secret(conn.refresh_token_encrypted) == "rt-login"
+    assert conn.domain == "garmin.com" and decrypt_secret(conn.refresh_token_encrypted) == "rt-login"
     assert garmin._jwt_claims(decrypt_secret(conn.access_token_encrypted))["tag"] == "login"
     stored = json.dumps([str(getattr(conn, c.name)) for c in GarminConnection.__table__.columns])
     assert "s3cret" not in stored and "me@x.fr" not in stored
@@ -488,7 +567,7 @@ async def test_login_stores_the_tokens_never_the_password(db_session: AsyncSessi
 
 async def test_login_with_mfa_retries_a_wrong_code(db_session: AsyncSession, test_user: User, login):
     login["client"] = FakeLoginClient(mfa=True)
-    ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw", "monde")
+    ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw")
     await _until(ticket, test_user.id, "mfa")
     assert await garmin.submit_code(ticket, test_user.id, "000000")
     s = await _until(ticket, test_user.id, "mfa")
@@ -514,7 +593,7 @@ async def test_login_errors_in_plain_french(test_user: User, login):
                            (GarminConnectConnectionError("boom"),
                             "Garmin ne répond pas pour l'instant. Réessaie dans quelques minutes.")):
         login["client"] = FakeLoginClient(error=error)
-        ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw", None)
+        ticket = await garmin.start_login(test_user.id, "me@x.fr", "pw")
         await _settle()
         assert await garmin.login_state(ticket, test_user.id) == {"user_id": test_user.id, "state": "error",
                                                                  "message": message}
@@ -524,7 +603,7 @@ async def test_login_errors_in_plain_french(test_user: User, login):
 
 async def test_routes_require_login(client: AsyncClient):
     for method, path in (("POST", "/garmin/connect"), ("GET", "/garmin/login"), ("POST", "/garmin/mfa"),
-                         ("POST", "/settings/garmin/sync"), ("POST", "/settings/garmin/disconnect")):
+                         ("POST", "/sante/sync"), ("POST", "/settings/garmin/disconnect")):
         r = await client.request(method, path)
         assert r.status_code == 307 and r.headers["location"] == "/", path
 
@@ -532,12 +611,13 @@ async def test_routes_require_login(client: AsyncClient):
 async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: AsyncSession, test_user: User, login):
     page = (await as_user.get("/settings")).text
     assert 'id="garmin"' in page and 'hx-post="/garmin/connect"' in page and "PaceForge ne le garde pas" in page
+    assert "/garmin/authorize" not in page and 'name="region"' not in page  # one login, one server
 
     r = await as_user.post("/garmin/connect", data={"email": "", "password": ""})
     assert "Indique ton email et ton mot de passe Garmin." in r.text
 
     login["client"] = FakeLoginClient(mfa=True)
-    r = await as_user.post("/garmin/connect", data={"email": "me@x.fr", "password": "pw", "region": "monde"})
+    r = await as_user.post("/garmin/connect", data={"email": "me@x.fr", "password": "pw"})
     assert 'hx-get="/garmin/login"' in r.text and "Connexion à Garmin" in r.text
     for _ in range(200):
         r = await as_user.get("/garmin/login")
@@ -554,7 +634,7 @@ async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: Asyn
     r = await as_user.get("/garmin/login")
     assert r.status_code == 204 and r.headers["HX-Redirect"] == "/settings#garmin"
     page = (await as_user.get("/settings")).text
-    assert "Garmin connecté. Tes 60 derniers jours" in page and 'id="garmin-status"' in page
+    assert "Garmin connecté. Tes 60 derniers jours" in page and "Première synchro en cours" in page
     r = await as_user.get("/garmin/login")  # the ticket is gone once used
     assert "La connexion à Garmin a expiré. Recommence." in r.text
 
@@ -563,14 +643,21 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
                                                       test_user: User, fake):
     await _link(db_session, test_user)
     sante = (await as_user.get("/sante")).text
-    assert "Pas encore de données de Garmin" in sante and 'id="garmin-status"' in sante
-    assert "Connecter COROS" not in sante
+    assert "Pas encore de données de Garmin" in sante and "Connecter COROS" not in sante
+    # Santé: no sync button, no link status (Réglages': owner, 2026-10-08)
+    assert "/sante/sync\"" not in sante and "synchro" not in sante.lower()
+    settings_page = (await as_user.get("/settings")).text
+    block = settings_page.split('id="garmin"')[1]
+    assert "Première synchro en cours" in block and "Synchroniser maintenant" in block
+    assert 'hx-post="/settings/garmin/sync" hx-target="#garmin-sync-state"' in block
 
     r = await as_user.post("/settings/garmin/sync")
-    assert r.status_code == 200 and "Synchro terminée" in r.text and "HX-Refresh" not in r.headers
-    r = await as_user.post("/settings/garmin/sync", headers={"HX-Request": "true", "HX-Current-URL": "https://test/sante"})
-    assert r.headers.get("HX-Refresh") == "true"
-    assert "Récupération" in (await as_user.get("/sante")).text
+    assert r.status_code == 200 and "Synchro faite : tes nouvelles données sont dans Santé." in r.text
+    sante = (await as_user.get("/sante")).text
+    assert 'id="sommeil"' in sante and 'data-viz-key="sommeil-14"' in sante  # Sommeil: the nights' bars
+    for brand in ("Charge <small>", "Training Readiness", "Body Battery", "forte hausse"):
+        assert brand not in sante, brand
+    assert "Dernière synchro" in (await as_user.get("/settings")).text
 
     n = (await db_session.execute(select(func.count(HealthSample.id)).where(HealthSample.user_id == test_user.id))).scalar()
     r = await as_user.post("/settings/garmin/disconnect")
@@ -580,6 +667,23 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
     assert n == n2 > 0  # imported data stays
     page = (await as_user.get("/settings")).text
     assert "Garmin déconnecté" in page and 'hx-post="/garmin/connect"' in page
+
+
+async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession,
+                                                  test_user: User, fake):
+    conn = await _link(db_session, test_user)
+    fake.api_status = 503
+    r = await as_user.post("/settings/garmin/sync")
+    assert "HX-Refresh" not in r.headers
+    assert "Dernière synchro échouée : Garmin n&#39;a renvoyé aucune donnée lisible." in r.text
+    fake.api_status = None
+    conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
+    await db_session.flush()
+    r = await as_user.post("/settings/garmin/sync")
+    assert "Une synchro est déjà en cours" in r.text
+    # a Santé page left open since v4: its old button reloads it, harmlessly
+    r = await as_user.post("/sante/sync")
+    assert r.headers.get("HX-Refresh") == "true"
 
 
 async def test_sante_offers_both_watches_when_none_is_linked(as_user: AsyncClient):
@@ -600,7 +704,8 @@ def test_migration_is_the_head_and_round_trips():
     spec.loader.exec_module(mig)
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [mig.revision]
+    script = ScriptDirectory.from_config(cfg)
+    assert mig.revision in {r.revision for r in script.walk_revisions()}  # in the chain (COROS sessions came after)
 
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:
@@ -628,3 +733,118 @@ def test_migration_is_the_head_and_round_trips():
         insp = sa.inspect(c)
         assert "garmin_connections" not in insp.get_table_names()
         assert c.execute(sa.text("SELECT id FROM activities")).scalars().all() == [1]  # Garmin-only rows go
+
+
+async def test_the_nights_reach_the_athletes_today_ahead_of_utc(db_session: AsyncSession, test_user: User,
+                                                                fake, no_commit):
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    db_session.add(HealthMetric(user_id=test_user.id, date=fake.today, metric="steps", value=1,
+                                source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    days = [q["date"] for _, q in fake.paths("/wellness-service/wellness/dailySleepData/")]
+    assert days[0] == str(fake.today + timedelta(days=1)) and len(days) == 7
+    # the empty day ahead doesn't move « today »: the page stays on the UTC day
+    nights = (await db_session.execute(select(HealthMetric.date).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.metric == "sleep"))).scalars().all()
+    assert max(nights) == fake.today
+    noon = datetime(fake.today.year, fake.today.month, fake.today.day, 12, tzinfo=timezone.utc)
+    assert (await health_page(db_session, test_user.id, now=noon))["today"] == fake.today
+
+
+def test_garmin_naps_on_the_local_clock():
+    data = {"dailySleepDTO": {"calendarDate": "2026-10-06", "sleepStartTimestampGMT": 1791237600000,
+                              "sleepStartTimestampLocal": 1791237600000 + 2 * 3600_000},
+            "dailyNapDTOS": [{"napTimeSec": 1500, "napStartTimestampGMT": "2026-10-06T12:10:00.0",
+                              "napEndTimestampGMT": "2026-10-06T12:38:00.0", "calendarDate": "2026-10-06"}]}
+    day, nap = garmin.parse_naps(data)
+    assert day == date(2026, 10, 6) and nap["asleep"] == 25 and nap["period"] == 28
+    assert nap["windows"] == [(datetime(2026, 10, 6, 14, 10), datetime(2026, 10, 6, 14, 38))]  # 14:10 local
+    [row] = garmin.build_daily({"summaries": {}, "nights": {}, "naps": {day: nap}}, day)
+    assert row.details == {"period": 28, "windows": [["2026-10-06T14:10", "2026-10-06T14:38"]]}
+    assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06", "napTimeSeconds": 1200}})[1][
+        "asleep"] == 20
+    assert garmin.parse_naps({"dailySleepDTO": {"calendarDate": "2026-10-06"}}) is None
+
+
+async def test_old_format_nights_beyond_the_backfill_never_ask_for_60_days_again(db_session: AsyncSession,
+                                                                                  test_user: User, fake, no_commit):
+    """R2: a night stored before 2026-10 (no main window) 100 days ago, and none
+    since (the watch no longer worn at night): the re-read cannot rewrite it,
+    so it never asks for the 60 days; one inside the window asks once."""
+    from app.services.health import nights_upgraded
+
+    t = fake.today
+    old = {"bedtime": "23:00", "wake": "07:00"}
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=100), metric="sleep", value=450,
+                                details=old, source="Garmin", n_samples=1))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=1), metric="steps", value=9000,
+                                details={}, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=2))
+    fake.statuses = {"/wellness-service/wellness/dailySleepData/": 204}
+    for _ in range(3):
+        fake.calls.clear()
+        assert (await garmin.run_sync(db_session, conn))["ok"]
+        assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
+    # an old-format night inside the window: read again (once it is rewritten, never again)
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=20), metric="sleep", value=450,
+                                details=old, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert not await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=2), metric="sleep", value=450,
+                                details={"main_start": f"{t - timedelta(days=3)}T23:00"}, source="Garmin",
+                                n_samples=1))
+    await db_session.flush()
+    assert await nights_upgraded(db_session, test_user.id, "Garmin", today=t, days=60)
+
+
+def test_stage_minutes_from_the_levels_when_the_dto_has_none():
+    """A DTO without its stage seconds: the minutes summed from the real sleepLevels inside the main window; neither:
+    no stages (a watch that does not track them), still marked read."""
+    d = date(2026, 10, 5)
+    raw = night(d)
+    for k in ("deepSleepSeconds", "lightSleepSeconds", "remSleepSeconds", "awakeSleepSeconds"):
+        raw["dailySleepDTO"].pop(k)
+    n = garmin.parse_sleep(raw)
+    assert garmin.night_stages(n) == {"deep": 90, "light": 210, "rem": 120, "awake": 30}
+    bare = garmin.parse_sleep({**raw, "sleepLevels": []})
+    [sleep] = [r for r in garmin.night_dailies(bare, False) if r.metric == "sleep"]
+    assert "stages" not in sleep.details and sleep.details["stages_read"]
+
+
+async def test_garmin_nights_written_before_the_stages_are_read_again_once(db_session: AsyncSession,
+                                                                           test_user: User, fake, no_commit):
+    from app.services.health import STAGES_READ, nights_upgraded
+
+    t = fake.today
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=2))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=2), metric="sleep", value=450,
+                                details={"main_start": f"{t - timedelta(days=3)}T23:00"}, source="Garmin",
+                                n_samples=1))
+    db_session.add(HealthMetric(user_id=test_user.id, date=t - timedelta(days=1), metric="steps", value=9000,
+                                details={}, source="Garmin", n_samples=1))
+    await db_session.flush()
+    assert not await nights_upgraded(db_session, test_user.id, "Garmin", today=t, key=STAGES_READ)
+    fake.calls.clear()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60  # the 60 days, once
+    fake.calls.clear()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7  # then a week
+
+
+async def test_every_password_form_in_reglages_posts(as_user: AsyncClient):
+    """Without JS (htmx blocked or not loaded), a form without a method is a GET putting the password in the URL, and
+    in the server's logs: Garmin's login and code forms post."""
+    import re
+
+    page = (await as_user.get("/settings")).text
+    forms = [f for f in re.findall(r"<form\b[^>]*>.*?</form>", page, re.S) if 'type="password"' in f]
+    assert forms  # Garmin's
+    for form in forms:
+        head = form.split(">", 1)[0]
+        assert 'method="post"' in head and 'action="/garmin/connect"' in head, head
+    mfa = (ROOT / "app/templates/partials/garmin_login.html").read_text()
+    assert '<form method="post" action="/garmin/mfa"' in mfa

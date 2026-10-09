@@ -1,0 +1,58 @@
+{#- Activités, top, page 1 (v4.3): « Semaines » — the sport filter right under its title (filtering the chart and the
+    list), the measure toggle (Durée · Distance · D+, a GET form that keeps the sport; pf-viz.js switches in place),
+    then ONE measure's 12 weekly bars and nothing else: the current week hatched (« en cours », said in the legend
+    and its readout), a dashed line at the average of the complete weeks labelled « moy. »; a week's own total only
+    on a tap (the list's week headings print it). Without an activity in the 12 weeks for that filter: the filter
+    alone, no title. Then « FC en footing », folded unless flagged — training only (v4.1: recovery is Santé's, no
+    fond et fatigue model, no taper line). Expects `training` = training_view.training_top(...), `filters`,
+    `sport`. -#}
+{% import "partials/_viz.html" as vz %}
+{% set w = training.weeks %}{% set e = training.easy %}
+{% if w %}
+<section id="semaines" class="pf-train" aria-labelledby="semaines-h" data-viz-scope>
+    <h2 id="semaines-h" class="pf-h2">Semaines</h2>
+    {% set keep_m = w.m if w.m != "duree" else none %}{% set carry = w.measures|length > 1 %}
+    {% include "partials/activity_filters.html" %}
+    {% if w.measures|length > 1 %}{{ vz.viz_ranges(w.measures, w.m, label="Mesure", action="/activities#semaines", param="m", hidden={"sport": sport} if sport else none) }}{% endif %}
+    {% for key, label in w.measures %}{% set c = w.charts[key] %}
+    <div data-range-panel="{{ key }}"{% if key != w.m %} hidden{% endif %}>
+        {% call vz.figure(c, c.title, c.key, None, "semaine", "Semaine précédente", "Semaine suivante") %}
+        <defs><pattern id="pf-hatch-{{ key }}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+        <line x1="0" x2="{{ c.X1 }}" y1="{{ c.base }}" y2="{{ c.base }}" class="pf-viz-grid"/>
+        {% for b in c.cols %}
+        <g class="pf-viz-col" data-i="{{ b.i }}">{% if b.h is defined %}{% if b.cur %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-{{ key }})"/>{% else %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}{% endif %}</g>
+        {% endfor %}
+        {% if c.avg is not none %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.avg }}" y2="{{ c.avg }}" class="pf-viz-avg"/><text x="{{ c.W }}" y="{{ c.avg + 4 }}" text-anchor="end" class="pf-viz-strong">moy.</text>{% endif %}
+        {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 4 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ c.base }}"/></g>
+        {% endcall %}
+        {% if c.cur %}{{ vz.viz_legend([("is-cur", "semaine en cours")]) }}{% endif %}
+    </div>
+    {% endfor %}
+</section>
+{% else %}
+{% set keep_m, carry = none, false %}{% include "partials/activity_filters.html" %}
+{% endif %}
+
+{% if e %}
+<details id="fc-facile" class="pf-train-fold"{% if e.flagged %} open{% endif %}>
+    <summary>FC en footing{% if e.flagged %} <span class="pf-train-warn">· à surveiller</span>{% elif e.after_ultra %} <span class="pf-train-soft">· après ultra</span>{% endif %}</summary>
+    <span id="forme"></span>
+    {% if e.line %}<p class="pf-train-note">{{ e.line }}</p>{% endif %}
+    {{ vz.viz_dots(e, "FC en footing", "footing") }}
+    {{ vz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
+    <p class="pf-viz-cap">Sorties faciles et plates, FC ramenée à {{ e.pace }}.</p>
+</details>
+{% endif %}
+<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
+<script>
+// #fc-facile (old #forme) opens its fold
+(function () {
+    function show() {
+        var h = (location.hash || "").slice(1), el = document.getElementById(h === "forme" ? "fc-facile" : h);
+        if (el && el.tagName === "DETAILS" && el.classList.contains("pf-train-fold")) { el.open = true; el.scrollIntoView({ block: "start" }); }
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", show); else show();
+    window.addEventListener("hashchange", show);
+})();
+</script>

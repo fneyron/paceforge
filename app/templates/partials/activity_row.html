@@ -1,4 +1,6 @@
-{# One activity. No status badge, no polling: the list is a training log, not a queue. #}
+{# One activity. No status badge, no polling: the list is a training log, not a queue. A run more than 10 % longer
+   than the longest of the 30 days before it (never a race nor an effort of 6 h or more: training_view.spikes) says so
+   in words under its date (v4.3: no ▲ on the chart any more). #}
 {% set dim = activity.is_duplicate or activity.is_false_start %}
 {% set days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'] %}
 <a href="/activity/{{ activity.id }}"
@@ -29,6 +31,7 @@
             {% endif %}
         </span>
         <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
+        {% if spikes and activity.id in spikes %}<span class="pf-item-flag">plus longue que d'habitude</span>{% endif %}
     </span>
     <span class="sm:hidden pf-item-end"><b>{{ activity.distance_km }}<small class="text-[13px] font-medium text-gray-500"> km</small></b></span>
     {# a missing value leaves its cell empty (no dash): the columns stay aligned; on a desktop a column no loaded row fills is not drawn.

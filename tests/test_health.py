@@ -2,6 +2,7 @@
 
 import importlib.util
 import pathlib
+import re
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
@@ -113,17 +114,26 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     r = await as_user.get("/sante")
     assert "Connecter COROS" in r.text  # empty state
     today = date.today()
-    for metric, series in _series(today, 60, 45, 50, 56).items():
-        for d, v in series.items():
-            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric=metric, value=v, n_samples=1))
+    # 7 nights at + 7 bpm: every measured night counts in the band (owner, 2026-10-08), so the week's first 5 raise
+    # the alert's median a little (50,0 → 50,3 here): the last two nights stay over its line (55,3) at 56,1 and 56,7
+    for metric, series in _series(today, 60, 45, 50, 57).items():
+        for d, v in series.items():  # PaceForge's nightly HR is what the fitness signal reads as « rhr »
+            db_session.add(HealthMetric(user_id=test_user.id, date=d, metric="hr_night" if metric == "rhr" else metric,
+                                        value=v, n_samples=1))
     await db_session.flush()
     form = await current_form(db_session, test_user.id, today)
     assert form["status"] == "fatigue" and form["hrv_delta_pct"] < 0 and form["rhr_delta_bpm"] > 0
     assert set(form) >= {"status", "hrv_delta_pct", "rhr_delta_bpm", "sleep_avg_min", "days_of_data"}
     assert form["nights_recent"] == 7 and form["nights_base"] == 60
     r = await as_user.get("/sante")
-    assert "Fatigue probable" in r.text and '<svg viewBox="0 0 300 64"' in r.text
-    assert r.text.count("<title>") >= 90  # one hover target per day on each chart
+    # nightly HR ~7 bpm over the usual two nights running: the HR alert, « Récupération faible » (v4.3), its sentence
+    assert "Récupération faible" in r.text and "À ménager" not in r.text
+    assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
+    assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
+    # the FC de nuit row of the Récupération card, red: its 2 nights in percent (v4.4)
+    assert re.search(r'<li class="pf-row is-danger"><span class="pf-row-name"><i class="pf-dot" aria-hidden="true">'
+                     r'</i><span>FC de nuit <small>7 nuits</small></span></span><span class="pf-row-val"><b>\+\d+'
+                     r'\u00a0%</b> <span>nettement plus haute depuis 2 nuits</span>', r.text)
 
 
 # ── migration ───────────────────────────────────────────────────────────────

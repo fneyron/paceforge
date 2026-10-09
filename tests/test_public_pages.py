@@ -105,7 +105,8 @@ async def test_landing_renders_real_numbers(client: AsyncClient):
     r = await client.get("/")
     assert r.status_code == 200
     html = r.text
-    assert "Tes temps de passage" in html
+    assert "Ta forme et tes courses" in html  # 2026-10-09: the whole product, every watch
+    assert "Relie ta montre" in html and "Relie Strava" not in html
     assert fmt_int(raw["dataset"]["races"]) in html
     assert fmt_int(raw["dataset"]["finisher_results"]) in html
     assert fmt_dec(raw["validation"]["mean_abs_gap_min_after"]) + "&nbsp;min" in html

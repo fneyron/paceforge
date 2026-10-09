@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.celery_app import celery_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def _run_poll() -> dict:
                 User.initial_sync_done.is_(True),
                 User.strava_credentials_valid.is_(True),
                 User.strava_client_id.isnot(None),
+                User.strava_refresh_token.isnot(None),  # disconnected links have none
             )
         )
         users = result.scalars().all()
@@ -111,7 +113,7 @@ async def _run_poll() -> dict:
                         splits_metric=data.get("splits_metric"),
                         raw_data=data,
                     )
-                    db.add(activity)
+                    activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
                     logger.info(
                         "Poll saved new activity %d for user %d: %s",
                         strava_id, user.id, activity.name,
@@ -127,6 +129,13 @@ async def _run_poll() -> dict:
                     await backfill_race_dplus(db, user, strava, limit=3)
                 except Exception:
                     logger.warning("Race D+ backfill failed for user %d", user.id, exc_info=True)
+
+                # each new outdoor activity's altitude and weather (Open-Meteo), the backlog a few at a
+                # time; never fails the poll
+                from app.services.activity_env import enrich
+
+                await db.flush()
+                await enrich(db, user.id)
 
                 # Update poll timestamp
                 user.last_activity_poll_at = datetime.now(timezone.utc)

@@ -6,6 +6,8 @@ os.environ.setdefault("SURFACE_FETCH", "false")
 # no background COROS syncs either (the tests call the sync themselves, mocked)
 os.environ.setdefault("COROS_SYNC", "false")
 os.environ.setdefault("GARMIN_SYNC", "false")
+# no Open-Meteo lookups from the syncs either (the tests that read them mock Open-Meteo)
+os.environ.setdefault("ACTIVITY_ENV_FETCH", "false")
 # bike/triathlon off, whatever .env or the shell says (the cycling_on fixture turns it on)
 os.environ["CYCLING_ENABLED"] = "false"
 from collections.abc import AsyncGenerator
@@ -155,3 +157,37 @@ def cycling_on(monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "CYCLING_ENABLED", True)
+
+
+@pytest.fixture(autouse=True)
+def _no_wall_clock(monkeypatch):
+    """Santé's day follows the athlete's sleep before noon (sante.cycle_day): the suite never reads the real wall
+    clock for it, whatever the hour it runs (a test of the cycle sets sante.local_clock itself)."""
+    from app.services import sante
+
+    async def none(*a, **k):
+        return None
+    monkeypatch.setattr(sante, "local_clock", none)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_sessions_cache():
+    """Santé keeps each athlete's sessions per worker: never across tests."""
+    from app.services import sante_training
+    sante_training._CACHE.clear()
+    yield
+
+
+@pytest.fixture
+def same_today(monkeypatch):
+    """The test and the pages read one « today »: the athlete's date moves with the seeded sessions' UTC offset
+    (+2 h in tests/test_race_prep._seed), so between 22:00 and 24:00 UTC a page would be a day ahead of a date
+    read before the seed. The real UTC date, the same for both, whatever the hour the suite runs."""
+    from app.services import sante_training
+
+    day = datetime.now(timezone.utc).date()
+
+    async def today(*a, **k):
+        return day
+    monkeypatch.setattr(sante_training, "athlete_today", today)
+    return day

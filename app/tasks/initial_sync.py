@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.celery_app import celery_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +124,7 @@ async def _run_initial_sync(user_id: int) -> dict:
                 if exists.scalar() > 0:
                     continue
 
-                activity = _build_activity_from_data(data, user.id)
-                db.add(activity)
+                activity = await adopt_watch_twin(db, _build_activity_from_data(data, user.id))
                 new_strava_ids.append(strava_id)
                 synced += 1
 
@@ -178,6 +178,12 @@ async def _run_initial_sync(user_id: int) -> dict:
                 await backfill_race_dplus(db, user, strava, limit=40)
             except Exception:
                 logger.warning("Race D+ backfill failed for user %d", user_id, exc_info=True)
+
+            # Phase 4: the activities' altitude and weather (Open-Meteo), the first ones; the poll does the rest
+            from app.services.activity_env import enrich
+
+            await db.flush()
+            await enrich(db, user.id)
 
             # Mark initial sync as done
             user.initial_sync_done = True

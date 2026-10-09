@@ -52,7 +52,7 @@ def triathlon_nutrition(bike_h: float, run_h: float, weight_kg: float | None = N
     """Carbs plan across the event: the clock starts at T1 (no eating in the
     water); the bike carries most of the intake, the run a bit less."""
     active_h = max(0.0, bike_h + run_h)
-    base = float(carbs_override) if carbs_override else float(default_targets(active_h, None)["carbs_g_per_h"])
+    base = float(carbs_override) if carbs_override else float(default_targets(active_h)["carbs_g_per_h"])
     bike_rate = min(base + 10, 100.0)
     run_rate = max(base - 10, 40.0)
     bike_g = bike_rate * bike_h

@@ -1,12 +1,11 @@
 """Deterministic race-plan services: checkpoints, pacing guide, scenarios,
-nutrition per leg, race calibration, pace export, debrief, reference finisher."""
+race calibration, pace export, debrief (nutrition: test_nutrition.py)."""
 
 import math
 
 from app.schemas.simulator import CourseProfile, CourseSegment
 from app.services import checkpoints as cpsvc
 from app.services.debrief import leg_debrief
-from app.services.nutrition import compute_plan
 from app.services.pace_export import (
     build_pace_csv,
     build_pace_gpx,
@@ -22,12 +21,6 @@ from app.services.race_calibration import (
     predict_total_s,
 )
 from app.services.race_simulator import build_scenarios, compute_passage_times, replan_from_passage
-from app.services.reference import (
-    align_reference,
-    compare_to_plan,
-    parse_pasted_splits,
-    parse_strava_activity_id,
-)
 
 # ── fixtures: a synthetic 30 km course — flat, a 6 km climb with a 22 % km, a descent ──
 
@@ -190,60 +183,6 @@ def test_scenarios_flag_cutoff_breach():
     assert any(r["name"] == "Village" for r in sc["cutoff_breach"])
 
 
-# ── 3. nutrition per leg ──
-
-PRODUCTS = {
-    1: {"id": 1, "name": "Gel", "kind": "gel", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 0, "volume_ml": None, "kcal": 100},
-    2: {"id": 2, "name": "Gel caféiné", "kind": "gel", "carbs_g": 25, "sodium_mg": 0, "caffeine_mg": 50, "volume_ml": None, "kcal": 100},
-    3: {"id": 3, "name": "Sel", "kind": "salt", "carbs_g": 0, "sodium_mg": 300, "caffeine_mg": 0, "volume_ml": None, "kcal": 0},
-}
-
-
-def test_nutrition_real_rates_packing_and_caffeine():
-    _, secs = _sections(target=5 * 3600, start_hour=21)  # night start → dawn falls inside a 5 h race? (21:00 + 5h = 02:00: no)
-    targets = {"carbs_g_per_h": 75, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    items = [{"product_id": 1, "per_hour": 3}, {"product_id": 3, "per_hour": 1}]
-    plan = compute_plan(
-        5 * 3600, targets, items, PRODUCTS, secs, flask_capacity_ml=1000, refill_kms={10.0, 20.0},
-        resupply_points=[{"km": 10.0, "name": "Col"}], caffeine={"enabled": True, "from_h": 1, "every_h": 2, "dose_mg": 50, "boost_dawn": True},
-        start_offset_s=21 * 3600, weight_kg=70,
-    )
-    legs = plan["schedule"]
-    assert len(legs) == 4  # Eau 1, Col, Village, Arrivée
-    # whole units per leg, the fraction carried to the next leg: the race total
-    # stays within half a unit of rate × duration for every product, and a short
-    # leg no longer gets a full hour's worth of everything
-    hours = sum(l["leg_time_s"] for l in legs) / 3600
-    for ln in plan["lines"]:
-        assert abs(ln["total_units"] - ln["per_hour"] * hours) <= 0.5 + 1e-9
-    assert all(u["units"] >= 0 for l in legs for u in l["units"])
-    race_real = sum(l["carbs_real_g"] for l in legs) / hours
-    assert 60 <= race_real <= 90  # 3 gels + 1 drink per hour ≈ 75 g/h over the race
-    assert legs[0]["night"] is True
-    # packing: start bag until the Col drop bag, then the drop bag until the finish
-    assert [p["at"] for p in plan["packing"]] == ["Départ", "Col"]
-    assert plan["packing"][0]["until"] == "Col" and plan["packing"][1]["until"] == "Arrivée"
-    total_units_packed = sum(u["units"] for p in plan["packing"] for u in p["units"] if u["name"] == "Gel")
-    assert total_units_packed == next(l["total_units"] for l in plan["lines"] if l["name"] == "Gel")
-    # caffeine: doses at 1h, 3h (5h is inside the last 20 min guard? 5h == duration → excluded)
-    cf = plan["caffeine"]
-    assert [d["elapsed_s"] for d in cf["doses"]] == [3600, 3 * 3600]
-    assert cf["total_mg"] == 100 and cf["over"] is False and cf["max_mg"] == 400
-
-
-def test_caffeine_dawn_boost_and_cap():
-    _, secs = _sections(target=10 * 3600, start_hour=21)
-    targets = {"carbs_g_per_h": 60, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    plan = compute_plan(10 * 3600, targets, [{"product_id": 2, "per_hour": 2}], PRODUCTS, secs,
-                        caffeine={"enabled": True, "from_h": 3, "every_h": 2, "dose_mg": 100, "boost_dawn": True},
-                        start_offset_s=21 * 3600, weight_kg=60)
-    cf = plan["caffeine"]
-    dawn = [d for d in cf["doses"] if d["label"].startswith("dose pleine")]
-    assert len(dawn) == 1 and dawn[0]["mg"] == 200 and 5 <= (dawn[0]["clock_s"] % 86400) / 3600 < 7.5
-    assert cf["max_mg"] == 360 and cf["over"] is True
-    assert cf["doses"][0]["product"] == "Gel caféiné"
-
-
 # ── 1. race calibration ──
 
 def test_effort_model_fit_and_prediction():
@@ -357,50 +296,6 @@ def test_debrief_reasons_are_short_and_the_fade_never_breaks_inside_the_hr():
     assert "(FC 152 → 120 bpm)" in d["summary"]["verdict"] and d["summary"]["pace_verdict"]
 
 
-# ── 2. reference finisher ──
-
-def test_parse_pasted_splits_and_strava_url():
-    txt = "Ravito Seogwipo\tkm 32\t3:41:05\nHallasan sommet 97 km 12:08:30\nArrivée 148km 18:52:10 | 15:52\n"
-    pts = parse_pasted_splits(txt)
-    assert [p["km"] for p in pts] == [32.0, 97.0, 148.0]
-    assert pts[0]["time_s"] == 3 * 3600 + 41 * 60 + 5 and pts[0]["name"] == "Ravito Seogwipo"
-    assert pts[2]["time_s"] == 18 * 3600 + 52 * 60 + 10  # the clock time (15:52) is ignored
-    assert parse_strava_activity_id("https://www.strava.com/activities/12345678901/overview") == 12345678901
-    assert parse_strava_activity_id("no url") is None
-
-
-def test_align_and_compare_reference():
-    course, secs = _sections(target=5 * 3600)
-    # reference finisher: 10 min/km cumulative points every 5 km, recorded as 30.6 km
-    ref_pts = [{"name": "", "km": 5.1 * i, "time_s": 600 * 5 * i} for i in range(1, 7)]
-    aligned = align_reference(ref_pts, CPS, 30.0, ref_total_km=30.6)
-    assert [a["matched_by"] for a in aligned] == ["km", "km", "km"]
-    assert abs(aligned[1]["time_s"] - 100 * 60) < 60  # Col at km 10 ≈ 100 min
-    cmp = compare_to_plan(aligned, secs, True, ref_total_s=300 * 60, plan_total_s=5 * 3600)
-    assert cmp["rows"][-1]["name"] == "Arrivée" and cmp["rows"][-1]["delta_s"] == 0
-    assert len(cmp["faster"]) + len(cmp["slower"]) >= 1
-    # names only → matched by name, then by order
-    named = [{"name": "eau", "km": None, "time_s": 3000}, {"name": "col", "km": None, "time_s": 6000}, {"name": "xx", "km": None, "time_s": 9000}]
-    al2 = align_reference(named, CPS, 30.0)
-    assert al2[0]["matched_by"] == "nom" and al2[1]["matched_by"] == "nom" and al2[2]["matched_by"] == "ordre"
-
-
-def test_compare_reference_skips_points_without_a_reference_time_and_rounds_as_shown():
-    # the plan at Eau 1 1h00, Col 1h40, Village 3h20; a partial paste: no time at the Col
-    plan = [{"end_km": km, "end_checkpoint_index": i, "cumulative_time_s": cum, "adjusted_cumulative_time_s": cum}
-            for i, (km, cum) in enumerate([(6.0, 3600), (10.0, 6000), (20.0, 12000)])]
-    aligned = [{"name": "Eau 1", "km": 6.0, "time_s": 3330, "matched_by": "nom"},  # 55:30 → shown 0h56
-               {"name": "Col", "km": 10.0, "time_s": None, "matched_by": None},
-               {"name": "Village", "km": 20.0, "time_s": 11400, "matched_by": "nom"}]
-    rows = compare_to_plan(aligned, plan, True, None, None)["rows"]
-    assert rows[0]["delta_s"] == -4 * 60  # 0h56 − 1h00, the times shown
-    assert rows[1]["delta_s"] is None and rows[1]["leg_delta_s"] is None
-    # the Village leg runs from Eau 1, the last point both have: 2h14 against 2h20, not 2h14 against 1h40
-    v = rows[2]
-    assert v["from_name"] == "Eau 1" and (v["leg_ref_s"], v["leg_plan_s"], v["leg_delta_s"]) == (134 * 60, 140 * 60, -6 * 60)
-    assert v["delta_s"] == rows[0]["delta_s"] + v["leg_delta_s"]  # the legs add up to the gap
-
-
 def test_effort_km():
     assert math.isclose(effort_km(148, 5000), 198.0)
 
@@ -488,21 +383,6 @@ def test_best_efforts_ignore_hikes_and_slow_duplicates():
     assert 10.2 <= at20 <= 11.5
     m_all = fit_effort_model(pts)
     assert m_all["a"] * 20 ** (-m_all["b"]) < at20
-
-
-def test_caffeinated_gel_follows_the_caffeine_plan():
-    _, secs = _sections(target=18 * 3600, start_hour=21)
-    prods = {**PRODUCTS, 4: {"id": 4, "name": "CAF 100", "kind": "gel", "carbs_g": 25, "sodium_mg": 20, "caffeine_mg": 100, "volume_ml": None, "kcal": 100}}
-    targets = {"carbs_g_per_h": 60, "fluid_ml_per_h": 500, "sodium_mg_per_h": 400}
-    plan = compute_plan(18 * 3600, targets, [{"product_id": 1, "per_hour": 2}, {"product_id": 4, "per_hour": 1}], prods, secs,
-                        caffeine={"enabled": True, "from_h": 3, "every_h": 2.5, "dose_mg": 50, "boost_dawn": True},
-                        start_offset_s=21 * 3600, weight_kg=70)
-    cf = plan["caffeine"]
-    caf_line = next(l for l in plan["lines"] if l["name"] == "CAF 100")
-    assert caf_line["by_caffeine"] and caf_line["per_hour"] == 0
-    assert all(d["mg"] == 100 for d in cf["doses"]) and cf["total_mg"] <= cf["max_mg"]
-    assert caf_line["total_units"] == len(cf["doses"])  # one gel per dose, packed as such
-    assert sum(u["units"] for l in plan["schedule"] for u in l["units"] if u["name"] == "CAF 100") == len(cf["doses"])
 
 
 def test_elevation_at_km_reads_the_full_resolution_trace():

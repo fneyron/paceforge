@@ -71,8 +71,8 @@ async def test_nutrition_card_with_incomplete_saved_targets(as_user: AsyncClient
     route.nutrition_json = {"targets": {"carbs_g_per_h": 60}, "items": []}
     await db_session.flush()
     r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and "Ta règle pour toute la course" in r.text
-    assert '"v":"fragile"}\' aria-pressed="true"' in r.text  # the old 60 g/h is the « Fragile » stomach
+    # nothing to map (no product): an empty plan, no « ne peut pas s'afficher »
+    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "ne peut pas s'afficher" not in r.text
 
 
 @pytest.mark.asyncio
@@ -122,17 +122,15 @@ async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab
     assert r.status_code == 200 and "scenario_fast_pct" not in r.text
     r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
     assert r.status_code == 200 and "+12 % de temps" in r.text
-    # products: add (picked at once), edit, delete (and unpicked) from the race's Ravitaillement view
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": ""})
-    assert r.status_code == 200
-    assert 'aria-pressed="true" title="Gel maison"' in r.text  # a pressed chip
-    assert '<b title="Gel maison">Gel maison</b>' in r.text  # Ajuster › Tes produits
+    # products: add, edit, delete in the race's Nutrition card (« Tes produits », the same for every race)
+    hx = {"HX-Request": "true"}
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": ""}, headers=hx)
+    assert r.status_code == 200 and "<b>Gel maison</b>" in r.text
     pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40", "open": "adjust"})
-    assert r.status_code == 200 and "Gel maison 40" in r.text and 'id="rv-adjust" class="pf-rv-disc pf-rv-adjust" open' in r.text
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}/delete")
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40", "open": "adjust"}, headers=hx)
+    assert r.status_code == 200 and "Gel maison 40" in r.text and 'id="nu-produits" class="pf-nu-fold" open' in r.text
+    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}/delete", headers=hx)
     assert r.status_code == 200 and "Gel maison" not in r.text
-    assert 'aria-pressed="false" title="Gel"' in r.text  # unpicked: the quick pick « Gel » is offered again
     r = await as_user.get("/nutrition", follow_redirects=False)
     assert r.status_code == 303
     r = await as_user.get("/simulator")

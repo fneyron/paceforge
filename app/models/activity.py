@@ -17,12 +17,16 @@ class Activity(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # None for a session that only came from Garmin
+    # None for a session that only came from a watch (Garmin, COROS)
     strava_activity_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
     # set when Garmin Connect also has (or alone has) this session
     garmin_activity_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
+    )
+    # set when COROS also has (or alone has) this session (its labelId)
+    coros_activity_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
     user_id: Mapped[int] = mapped_column(
@@ -81,4 +85,5 @@ class Activity(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Activity {self.id} strava={self.strava_activity_id} garmin={self.garmin_activity_id} {self.sport_type}>"
+        return (f"<Activity {self.id} strava={self.strava_activity_id} garmin={self.garmin_activity_id} "
+                f"coros={self.coros_activity_id} {self.sport_type}>")

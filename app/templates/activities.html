@@ -7,7 +7,7 @@
     <div class="pf-head">
         <div>
             <h1 class="pf-h1">Activités</h1>
-            {% if training_load %}<p class="pf-label tabular-nums mt-1">7 j : {{ '%.0f'|format(training_load.volume_7d_km) }} km · 28 j : {{ '%.0f'|format(training_load.volume_28d_km) }} km</p>{% endif %}
+            {% if training_load and not recent %}<p class="pf-label tabular-nums mt-1">7 j : {{ '%.0f'|format(training_load.volume_7d_km) }} km · 28 j : {{ '%.0f'|format(training_load.volume_28d_km) }} km</p>{% endif %}
             <div id="sync-msg" role="status" aria-live="polite" class="pf-label"></div>
         </div>
         <button hx-post="/api/sync" hx-target="#sync-msg" hx-swap="innerHTML" hx-indicator="#sync-spinner" hx-disabled-elt="this"
@@ -18,14 +18,23 @@
         </button>
     </div>
 
-    <!-- Filters: four families, not thirteen sport codes -->
-    <nav aria-label="Filtrer les activités par sport" class="pf-filters pf-seg pf-seg-sm max-w-full overflow-x-auto">
-        {% for key, label in filters %}
-        <a href="/activities{% if key %}?sport={{ key }}{% endif %}"
-           {% if sport == key %}aria-current="true"{% endif %}
-           >{{ label }}</a>
-        {% endfor %}
-    </nav>
+    {#- Santé's Entraînement card's link (?depuis=): the activities it counts, its total, the way back to all -#}
+    {% if recent %}
+    <section id="recent" aria-labelledby="recent-h">
+        <div class="pf-week-heading">
+            <h2 id="recent-h" class="pf-h3">{{ recent.label }}</h2>
+            {% if recent.activities %}<p class="pf-label tabular-nums"><b class="text-gray-700">{{ '%.0f'|format(recent.km) }} km</b>{% if recent.dplus_formatted %} · {{ recent.dplus_formatted }}{% endif %} · {{ recent.hours }}</p>{% endif %}
+        </div>
+        {% for activity in recent.activities %}{% include "partials/activity_row.html" %}{% endfor %}
+        {% if not recent.activities %}<p class="pf-sante-note">Aucune activité sur ces jours.</p>{% endif %}
+        <a class="pf-sum-link" href="/activities">Toutes tes activités ›</a>
+    </section>
+    {% else %}
+
+    {#- page 1: « Semaines » with the sport filter right under its title (it filters the chart and the list); the
+        other pages, or no activity in 12 weeks and no filter chosen: the filter alone -#}
+    {% if training and (training.weeks or sport) %}{% include "partials/activity_training.html" %}
+    {% else %}{% set keep_m, carry = none, false %}{% include "partials/activity_filters.html" %}{% endif %}
 
     {% if weeks %}
     <div id="activity-list">
@@ -34,18 +43,26 @@
     <div id="load-more">
         {% include "partials/load_more.html" %}
     </div>
+    {% elif has_more %}
+    {#- nothing in these 6 weeks, older activities there: the way to them -#}
+    <p class="pf-sante-note">Aucune activité{% if sport %} dans cette catégorie{% endif %} ces 6 dernières semaines.</p>
+    <div id="activity-list"></div>
+    <div id="load-more">
+        {% include "partials/load_more.html" %}
+    </div>
     {% else %}
     <div class="pf-empty-state">
         <i data-lucide="activity" class="pf-empty-icon" aria-hidden="true"></i>
         <p class="text-gray-600">Aucune activité{% if sport %} dans cette catégorie{% endif %} pour l'instant.</p>
         {% if sport %}
-        <p class="text-sm text-gray-500 mt-1">Tes autres séances restent accessibles dans l’historique.</p>
+        <p class="text-sm text-gray-500 mt-1">Tes autres activités restent accessibles dans l’historique.</p>
         <a href="/activities" class="pf-secondary-button">Voir toutes les activités</a>
         {% else %}
-        <p class="text-sm text-gray-500 mt-1">Vérifie ta connexion Strava dans les réglages pour retrouver tes premières séances.</p>
+        <p class="text-sm text-gray-500 mt-1">Vérifie ta connexion Strava dans les réglages pour retrouver tes premières activités.</p>
         <a href="/settings" class="pf-secondary-button">Vérifier ma connexion Strava</a>
         {% endif %}
     </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock content %}

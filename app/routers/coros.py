@@ -1,24 +1,22 @@
-"""COROS link from Réglages and Santé: OAuth connect/callback, manual sync, disconnect.
+"""COROS link from Réglages: OAuth connect/callback, disconnect (syncing on
+demand is Réglages' too: app.routers.settings.watch_sync).
 
 The OAuth state and PKCE verifier ride in the (signed) session cookie between
 /coros/connect and /coros/callback, like the Strava setup credentials do.
 """
 import logging
 import secrets
-from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.templating import Jinja2Templates
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services import coros
 
 logger = logging.getLogger(__name__)
-templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["coros"])
 
@@ -116,23 +114,6 @@ async def coros_callback(
     coros.schedule_sync(user.id)
     return _back(request, ok="COROS connecté. Tes 60 derniers jours arrivent : compte une minute.")
 
-
-@router.post("/settings/coros/sync", response_class=HTMLResponse)
-async def coros_sync_now(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """« Synchroniser maintenant »: runs the sync here and shows how it went."""
-    conn = await coros.connection_for(db, user.id)
-    outcome = await coros.run_sync(db, conn) if conn else None
-    ctx = {"request": request, "coros": await coros.coros_status(db, user.id),
-           "outcome": outcome or {"busy": True}}
-    response = templates.TemplateResponse(request, "partials/coros_status.html", context=ctx)
-    # from the Santé page: reload it, so the new values show
-    if outcome and outcome.get("ok") and urlsplit(request.headers.get("HX-Current-URL", "")).path == "/sante":
-        response.headers["HX-Refresh"] = "true"
-    return response
 
 
 @router.post("/settings/coros/disconnect")

@@ -61,7 +61,8 @@ async def test_app_shell_top_bar_and_tab_bar(as_user: AsyncClient):
     assert '/static/css/theme.css' in page and "pf-sidebar" not in page
     assert 'class="pf-top"' in page and 'class="pf-tabbar"' in page
     tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
-    assert [label for label in ("Courses", "Activités", "Santé", "Réglages") if label in tabbar] == ["Courses", "Activités", "Santé", "Réglages"]
+    labels = re.findall(r"<span>([^<]+)</span>", tabbar)
+    assert labels == ["Santé", "Activités", "Courses", "Réglages"]  # owner, 2026-10-09: Activités before Courses
     assert "Vélo" not in tabbar and "Triathlon" not in tabbar
 
 
@@ -109,9 +110,9 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
-    # Préparer: one row, « Ravitaillement », no subtitle (Pilotage lives in the rows now)
+    # Préparer: one row, « Nutrition », no subtitle (Pilotage lives in the rows now)
     prep = html.split('class="pf-prep"')[1].split("</section>")[0]
-    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Ravitaillement"]
+    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Nutrition"]
     assert "<small" not in prep and 'id="nutri-sub"' not in prep
     # nothing explains the obvious, nothing duplicated
     for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
@@ -119,11 +120,11 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
                  "Pilotage", "Nutrition et sacs"):
         assert gone not in text, gone
     # the hooks the tools and scripts rely on are all still there
-    for hook in ('id="rtab-nutrition"', 'id="rtab-reference"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
+    for hook in ('id="rtab-nutrition"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
                  'id="race-sheet"', 'id="save-name"', 'id="race-date"', 'id="start-time"', 'name="scenario_fast_pct"', "/reimport",
-                 'id="rpanel-nutrition"', 'id="rpanel-reference"', 'class="pf-carte"', 'id="wx-block"'):
+                 'id="rpanel-nutrition"', 'class="pf-carte"', 'id="wx-block"'):
         assert hook in html, hook
-    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"'):
+    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"', 'id="rtab-reference"', 'id="rpanel-reference"'):
         assert gone not in html, gone
     # the map is an overlay, closed on load, never restored from a remembered state
     assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
@@ -141,8 +142,10 @@ async def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop(as_use
     # desktop: the profile and Préparer sticky in column 2 from the hero's row (3) beside the passages, no tools column
     assert re.search(r"#simulator-root > :is\(\.pf-profile, \.pf-prep\) \{[^}]*grid-row: 3 / span \d+;[^}]*position: sticky;", css)
     assert "pf-plan-tools" not in css and "pf-plan-grid" not in css
+    # Préparation (#prep, after the plan in #rpanel-plan) keeps the left pane's width under the passages
+    assert re.search(r"#rpanel-plan > \.pf-rp \{ max-width: calc\(100% - 380px - 56px\); \}", css)
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
-    assert 'id="rpanel-plan" class="pf-col"' in route
+    assert 'id="rpanel-plan" class="pf-col{% if nutrition_html %} hidden{% endif %}"' in route  # hidden: the page opened on Nutrition
     # the page in reading order: the title, the re-import error, the hero (grid row 3, where the side pane starts),
     # then the profile, the passages, Préparer
     rid = await _route(as_user)
@@ -233,14 +236,17 @@ async def test_missing_date_shows_the_pill_instead_of_date_and_start(as_user: As
 
 
 @pytest.mark.asyncio
-async def test_menu_lists_share_print_reference_then_race_settings_and_gpx(as_user: AsyncClient):
+async def test_menu_lists_share_print_then_race_settings_and_gpx(as_user: AsyncClient):
+    """No « Finisher de référence » any more (owner, 2026-10-09: « je ne pense pas qu'on l'ait pour toutes les
+    courses »)."""
     rid = await _route(as_user)
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence",
+    assert _menu_items(html) == ["Partager le plan", "Bande imprimable",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
+    assert "Finisher de référence" not in html and "/reference" not in html
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
     assert menu.count('class="pf-menu-sep"') == 1 and "<small" not in menu
-    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" in menu
+    assert "sharePlan()" in menu and "printPlan()" in menu and "switchRouteTab('reference')" not in menu
     assert "openRaceSheet()" in menu and "openTool('advanced')" in menu and 'type="file" name="gpx_file"' in menu
 
 
@@ -264,10 +270,10 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     # a future dated race: no debrief anywhere
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
     assert "Débrief" not in _visible(html) and "débrief" not in _visible(html) and "data-primary-debrief" not in html
-    # no date, or race day: in the menu, after « Finisher de référence »; the main button stays « Envoyer à la montre »
+    # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Envoyer à la montre »
     for rd in ("", date.today().isoformat()):
         html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
-        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Finisher de référence", "Débrief",
+        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Débrief",
                                      "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
         assert html.count("data-primary-export") == 1 and 'id="rpanel-realise"' in html and "/result?" in html
     # after race day: « Voir le débrief » is the main button, « Envoyer à la montre » heads the menu (the 4 formats stay)
@@ -275,7 +281,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
     assert _surface(html).count("pf-btn-primary") == 1
     assert 'id="heat-line"' not in html  # the forecast heat is for before the race
-    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable", "Finisher de référence",
+    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
@@ -329,6 +335,7 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
 @pytest.mark.asyncio
 async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two_actions(as_user: AsyncClient):
     rid = await _route(as_user)
+    await as_user.post(f"/partials/simulator/nutrition/{rid}/starter", headers={"HX-Request": "true"})  # a nutrition plan: Plan type
     t = await _rows(as_user, rid, CPS)
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
@@ -337,7 +344,8 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     # (flat legs: the ceiling only, running steady goes without saying)
     assert "pf-tiles" not in t and re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Très raide|très raide|Descente|descente) :", text), text
     assert "roulant" not in text.lower(), text
-    assert "À prendre en route :" in text and "depuis" not in text.lower(), text
+    # the food: a pointer to that point's row in Nutrition once the race has a plan (Plan type, posted above), never its contents
+    assert "Ta nutrition jusqu'à Village" in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated
     assert re.search(r"Ravito · assistance · barrière 10:30 · marge [+−]\d+h\d\d", text) and "arrêt" not in text, text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text

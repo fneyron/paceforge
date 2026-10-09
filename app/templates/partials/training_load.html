@@ -3,7 +3,7 @@
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">7 derniers jours</h3>
             <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-                {{ training_load.count_7d }} séance{{ 's' if training_load.count_7d != 1 else '' }}
+                {{ training_load.count_7d }} activité{{ 's' if training_load.count_7d != 1 else '' }}
             </span>
         </div>
         <div class="grid grid-cols-2 gap-4">
@@ -27,7 +27,7 @@
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">28 derniers jours</h3>
             <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-                {{ training_load.count_28d }} séance{{ 's' if training_load.count_28d != 1 else '' }}
+                {{ training_load.count_28d }} activité{{ 's' if training_load.count_28d != 1 else '' }}
             </span>
         </div>
         <div class="grid grid-cols-2 gap-4">

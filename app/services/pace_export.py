@@ -143,9 +143,14 @@ def _coord_at_km(coords: list, km: float):
     return coords[lo] if abs(coords[lo][2] - km) <= abs(coords[hi][2] - km) else coords[hi]
 
 
+def _note_at(notes_by_km: dict | None, km: float) -> str:
+    """The point's own note (« Prends 2 Maurten 100 » where the bag is refilled)."""
+    return (notes_by_km or {}).get(round(float(km), 1)) or ""
+
+
 def build_pace_gpx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
                    use_target: bool, race_date: str | None, start_offset_s: int,
-                   leg_codes: list[str] | None = None) -> str:
+                   leg_codes: list[str] | None = None, notes_by_km: dict | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
     curve = time_curve(course_segments, sections, use_target)
     rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes)
@@ -166,7 +171,8 @@ def build_pace_gpx(name: str, coords: list, course_segments: list[dict], section
         if r["elevation"] is not None:
             out.write(f"<ele>{float(r['elevation']):.1f}</ele>")
         out.write(f"<time>{t.strftime('%Y-%m-%dT%H:%M:%SZ')}</time><name>{escape(label)}</name>")
-        out.write(f"<desc>{escape('km ' + str(r['km']) + ' · ' + r['elapsed'] + ' de course')}</desc></wpt>\n")
+        note = "" if r["is_finish"] else _note_at(notes_by_km, r["km"])
+        out.write(f"<desc>{escape('km ' + str(r['km']) + ' · ' + r['elapsed'] + ' de course' + (' · ' + note if note else ''))}</desc></wpt>\n")
     out.write(f"  <trk><name>{escape(name)}</name><trkseg>\n")
     for c in coords:
         t = start + timedelta(seconds=elapsed_at(curve, float(c[2])))
@@ -178,7 +184,7 @@ def build_pace_gpx(name: str, coords: list, course_segments: list[dict], section
 
 def build_pace_tcx(name: str, coords: list, course_segments: list[dict], sections: list[dict],
                    use_target: bool, race_date: str | None, start_offset_s: int,
-                   leg_codes: list[str] | None = None) -> str:
+                   leg_codes: list[str] | None = None, notes_by_km: dict | None = None) -> str:
     start = _race_start(race_date, start_offset_s)
     curve = time_curve(course_segments, sections, use_target)
     rows = waypoint_rows(sections, use_target, start_offset_s, leg_codes)
@@ -212,7 +218,8 @@ def build_pace_tcx(name: str, coords: list, course_segments: list[dict], section
         out.write(f"<Position><LatitudeDegrees>{c[0]:.6f}</LatitudeDegrees><LongitudeDegrees>{c[1]:.6f}</LongitudeDegrees></Position>")
         kind = "Food" if r.get("kind") in ("full", "base") else ("Water" if r.get("kind") == "water" else "Generic")
         out.write(f"<PointType>{kind}</PointType>")
-        notes = f"km {r['km']} · {r['clock']} · {r['name']}" + (f" | {r['next_code']}" if r.get("next_code") else "")
+        note = "" if r["is_finish"] else _note_at(notes_by_km, r["km"])
+        notes = f"km {r['km']} · {r['clock']} · {r['name']}" + (f" · {note}" if note else "") + (f" | {r['next_code']}" if r.get("next_code") else "")
         out.write(f"<Notes>{escape(notes[:250])}</Notes></CoursePoint>\n")
     out.write("  </Course></Courses>\n</TrainingCenterDatabase>\n")
     return out.getvalue()

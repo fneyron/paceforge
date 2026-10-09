@@ -1,0 +1,351 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Kit</title>
+<link rel="stylesheet" href="/static/css/theme.css"><link rel="stylesheet" href="/static/css/tailwind.css">
+<link rel="stylesheet" href="/static/css/interface.css"></head><body class="bg-white">
+<main class="pf-wrap pf-page" style="padding:0 16px">
+<h1 class="pf-h1">Santé</h1>
+<div class="pf-tiles">
+<a class="pf-tile is-driver" href="#coeur" aria-label="FC de nuit sur 7 nuits : 48 battements par minute">
+    <span>
+        <span class="pf-tile-label">FC de nuit · 7 nuits</span>
+        <span class="pf-tile-main">
+            <span class="pf-tile-value">48<small>&#8239;bpm</small></span>
+            <span class="pf-tile-word pf-word-warn">▲ au-dessus</span>
+            
+        </span>
+    </span>
+    
+    <svg class="pf-spark" viewBox="0 0 112 40" aria-hidden="true" focusable="false">
+        <rect x="0" y="12.6" width="112" height="19.7" class="pf-viz-band"/>
+        <line x1="0" x2="112" y1="12.6" y2="12.6" class="pf-viz-edge"/>
+        <line x1="0" x2="112" y1="32.3" y2="32.3" class="pf-viz-edge"/>
+        <path d="M35.3 17.5 L53.0 15.1 L70.7 12.6 M106.0 7.7" class="pf-viz-line"/>
+        <circle cx="106.0" cy="7.7" r="4" class="pf-viz-now is-warn is-out"/>
+    </svg>
+    
+</a>
+
+<a class="pf-tile" href="#">
+    <span>
+        <span class="pf-tile-label">VFC · 7 nuits</span>
+        <span class="pf-tile-main">
+            <span class="pf-tile-value pf-tile-none">—</span>
+        </span>
+    </span>
+    <span class="pf-tile-gap">2 nuits sur 7 · il en faut 3</span>
+</a>
+</div>
+<section data-viz-scope>
+
+<div class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges role="group" aria-label="Période">
+    <button type="button" data-range="14" aria-pressed="true">14 nuits</button><button type="button" data-range="90" aria-pressed="false">3 mois</button>
+</div>
+
+<div data-range-panel="14">
+
+
+<figure class="pf-viz pf-viz-tall" data-viz data-viz-key="nuits" data-viz-group="sommeil">
+    <figcaption class="sr-only">Sommeil sur 24 h et horaires, 14 jours : 5 nuits mesurées</figcaption>
+    <div class="pf-viz-read">
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="Nuit précédente"><span aria-hidden="true">‹</span></button>
+        <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>nuit du mar. 6 au mer. 7</span><b data-r>Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h</b><span data-r>23:35 → 05:40 · ◇ autour de la course</span></div>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="Nuit suivante" disabled><span aria-hidden="true">›</span></button>
+    </div>
+    <a class="pf-viz-link" data-r-href href="#" hidden></a>
+    <div class="pf-viz-plot">
+        <svg class="pf-viz-svg" viewBox="0 0 320 262" aria-hidden="true" focusable="false">
+<defs><pattern id="pf-hatch-nuits" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+<line x1="0" x2="288" y1="37.7" y2="37.7" class="pf-viz-ref"/><text x="320" y="41.7" text-anchor="end" class="pf-viz-strong">7 h</text>
+<line x1="0" x2="288" y1="112" y2="112" class="pf-viz-grid"/>
+<line x1="0" x2="288" y1="140.7" y2="140.7" class="pf-viz-grid"/><text x="320" y="144.7" text-anchor="end">00:00</text><line x1="0" x2="288" y1="158.0" y2="158.0" class="pf-viz-grid"/><text x="320" y="162.0" text-anchor="end">02:00</text><line x1="0" x2="288" y1="175.3" y2="175.3" class="pf-viz-grid"/><text x="320" y="179.3" text-anchor="end">04:00</text><line x1="0" x2="288" y1="192.7" y2="192.7" class="pf-viz-grid"/><text x="320" y="196.7" text-anchor="end">06:00</text><line x1="0" x2="288" y1="210.0" y2="210.0" class="pf-viz-grid"/><text x="320" y="214.0" text-anchor="end">08:00</text><line x1="0" x2="288" y1="227.3" y2="227.3" class="pf-viz-grid"/><text x="320" y="231.3" text-anchor="end">10:00</text>
+
+
+<g class="pf-viz-col" data-i="0">
+    <line x1="10.3" x2="10.3" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="1">
+    
+    
+    <rect x="24.5" y="97.5" width="12.8" height="14.5" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-nuits)"/>
+    
+    <rect x="24.5" y="152.7" width="12.8" height="12.8" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-nuits)"/>
+    
+</g>
+
+<g class="pf-viz-col" data-i="2">
+    <line x1="51.4" x2="51.4" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="3">
+    <line x1="72.0" x2="72.0" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="4">
+    <line x1="92.6" x2="92.6" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="5">
+    
+    <rect x="106.7" y="19.0" width="12.8" height="93.0" rx="3" class="pf-viz-night"/>
+    
+    <rect x="106.7" y="145.1" width="12.8" height="78.0" rx="3" class="pf-viz-win"/>
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="6">
+    
+    <rect x="127.3" y="8.0" width="12.8" height="104.0" rx="3" class="pf-viz-night"/>
+    
+    <rect x="127.3" y="139.5" width="12.8" height="87.0" rx="3" class="pf-viz-win"/>
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="7">
+    
+    <rect x="147.9" y="16.3" width="12.8" height="95.7" rx="3" class="pf-viz-night"/>
+    
+    <rect x="147.9" y="139.9" width="12.8" height="81.2" rx="3" class="pf-viz-win"/>
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="8">
+    <line x1="174.9" x2="174.9" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="9">
+    <line x1="195.4" x2="195.4" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="10">
+    <line x1="216.0" x2="216.0" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="11">
+    <line x1="236.6" x2="236.6" y1="94" y2="112" class="pf-viz-miss"/>
+    
+    
+    
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="12">
+    
+    <rect x="250.7" y="53.1" width="12.8" height="58.9" rx="3" class="pf-viz-night is-short"/>
+    
+    <rect x="250.7" y="149.5" width="12.8" height="49.7" rx="3" class="pf-viz-win"/>
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="13">
+    
+    <rect x="271.3" y="50.1" width="12.8" height="61.9" rx="3" class="pf-viz-night"/>
+    <rect x="271.3" y="25.3" width="12.8" height="24.8" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-nuits)"/>
+    <rect x="271.3" y="137.1" width="12.8" height="52.4" rx="3" class="pf-viz-win"/>
+    <rect x="271.3" y="198.7" width="12.8" height="21.0" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-nuits)"/>
+    
+</g>
+
+
+<line x1="174.9" x2="174.9" y1="14" y2="236" class="pf-viz-ev"/><path d="M174.9 13v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text x="184.9" y="8" class="pf-viz-strong">Transjeju 100M</text>
+
+
+<text x="92.6" y="259" text-anchor="middle">lun. 28</text><text x="236.6" y="259" text-anchor="middle">lun. 5</text>
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="8" y2="236"/></g>
+</svg>
+        <input type="range" class="pf-viz-range sr-only" aria-label="Tes nuits : choisis une nuit" min="0" max="13" step="1" value="13" aria-valuetext="nuit du mar. 6 au mer. 7 : nuit 5 heures 50, sieste 2 heures 20, 8 heures 10 sur 24 heures, couché vers 23:35, levé vers 05:40. ◇ autour de la course">
+    </div>
+    <p class="sr-only" aria-live="polite" data-live></p>
+    <script type="application/json" class="pf-viz-data">{"x":[10.3,30.9,51.4,72.0,92.6,113.1,133.7,154.3,174.9,195.4,216.0,236.6,257.1,277.7],"y":[],"d":["2026-09-24","2026-09-25","2026-09-26","2026-09-27","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05","2026-10-06","2026-10-07"],"r":[["nuit du mer. 23 au jeu. 24","—","pas de montre cette nuit"],["nuit du jeu. 24 au ven. 25","Sieste 1h22 · nuit incomplète ?","◇ autour de la course"],["nuit du ven. 25 au sam. 26","—","pas de montre cette nuit"],["nuit du sam. 26 au dim. 27","—","pas de montre cette nuit"],["nuit du dim. 27 au lun. 28","—","pas de montre cette nuit"],["nuit du lun. 28 au mar. 29","Nuit 8h46 sur 24 h","00:30 → 09:30 · ◇ autour de la course"],["nuit du mar. 29 au mer. 30","Nuit 9h48 sur 24 h","23:50 → 09:55 · ◇ autour de la course"],["nuit du mer. 30 au jeu. 1","Nuit 9h01 sur 24 h","23:55 → 09:15 · ◇ autour de la course"],["nuit du jeu. 1 au ven. 2","—","⚑ Transjeju 100M"],["nuit du ven. 2 au sam. 3","—","pas de montre cette nuit"],["nuit du sam. 3 au dim. 4","—","pas de montre cette nuit"],["nuit du dim. 4 au lun. 5","—","pas de montre cette nuit"],["nuit du lun. 5 au mar. 6","Nuit 5h33 sur 24 h","01:00 → 06:45 · ◇ autour de la course"],["nuit du mar. 6 au mer. 7","Nuit 5h50 · sieste 2h20 · 8h10 sur 24 h","23:35 → 05:40 · ◇ autour de la course"]],"a":["nuit du mer. 23 au jeu. 24 : pas de mesure","nuit du jeu. 24 au ven. 25 : sieste 1 heure 22, nuit incomplète. ◇ autour de la course","nuit du ven. 25 au sam. 26 : pas de mesure","nuit du sam. 26 au dim. 27 : pas de mesure","nuit du dim. 27 au lun. 28 : pas de mesure","nuit du lun. 28 au mar. 29 : 8 heures 46 de sommeil sur 24 heures, couché vers 00:30, levé vers 09:30. ◇ autour de la course","nuit du mar. 29 au mer. 30 : 9 heures 48 de sommeil sur 24 heures, couché vers 23:50, levé vers 09:55. ◇ autour de la course","nuit du mer. 30 au jeu. 1 : 9 heures 01 de sommeil sur 24 heures, couché vers 23:55, levé vers 09:15. ◇ autour de la course","nuit du jeu. 1 au ven. 2 : pas de mesure. ⚑ Transjeju 100M","nuit du ven. 2 au sam. 3 : pas de mesure","nuit du sam. 3 au dim. 4 : pas de mesure","nuit du dim. 4 au lun. 5 : pas de mesure","nuit du lun. 5 au mar. 6 : 5 heures 33 de sommeil sur 24 heures, couché vers 01:00, levé vers 06:45, moins de 6 heures sur 24 heures. ◇ autour de la course","nuit du mar. 6 au mer. 7 : nuit 5 heures 50, sieste 2 heures 20, 8 heures 10 sur 24 heures, couché vers 23:35, levé vers 05:40. ◇ autour de la course"],"h":[null,null,null,null,null,null,null,null,null,null,null,null,null,null],"sel":13,"link":"#hyp"}</script>
+</figure>
+
+
+<div id="hyp">
+<svg class="pf-hyp" viewBox="0 0 320 72" data-night="13" role="img" aria-label="Forme de la nuit estimée par la montre : une allure, pas une mesure">
+    <line x1="52" x2="316" y1="8.0" y2="8.0" class="pf-hyp-lane"/><text x="0" y="12">Éveil</text><line x1="52" x2="316" y1="26.0" y2="26.0" class="pf-hyp-lane"/><text x="0" y="30">REM</text><line x1="52" x2="316" y1="44.0" y2="44.0" class="pf-hyp-lane"/><text x="0" y="48">Léger</text><line x1="52" x2="316" y1="62.0" y2="62.0" class="pf-hyp-lane"/><text x="0" y="66">Profond</text>
+    <line x1="110.2" x2="110.2" y1="44.0" y2="62.0" class="pf-hyp-step"/><line x1="175.6" x2="175.6" y1="8.0" y2="62.0" class="pf-hyp-step"/><line x1="182.9" x2="182.9" y1="8.0" y2="26.0" class="pf-hyp-step"/>
+    <rect x="52.0" y="38" width="58.2" height="12" rx="2" class="pf-hyp-seg"/><rect x="110.2" y="56" width="65.4" height="12" rx="2" class="pf-hyp-seg"/><rect x="175.6" y="2" width="7.3" height="12" rx="2" class="pf-hyp-seg"/><rect x="182.9" y="20" width="133.1" height="12" rx="2" class="pf-hyp-seg"/>
+</svg>
+<p class="pf-viz-cap" data-night="none" hidden>Pas de forme pour cette nuit.</p></div>
+<h3 id="coeur" class="pf-h3 mt-6">Cœur la nuit</h3>
+
+
+<figure class="pf-viz " data-viz data-viz-key="coeur" data-viz-group="sommeil">
+    <figcaption class="sr-only">Cœur la nuit, 13 nuits : 11 mesurées</figcaption>
+    <div class="pf-viz-read">
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="Nuit précédente"><span aria-hidden="true">‹</span></button>
+        <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>nuit du mar. 6 au mer. 7</span><b data-r>VFC 60 ms · FC 45 bpm</b><span data-r>normale VFC 58–66, FC 43–49</span></div>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="Nuit suivante" disabled><span aria-hidden="true">›</span></button>
+    </div>
+    <a class="pf-viz-link" data-r-href href="#" hidden></a>
+    <div class="pf-viz-plot">
+        <svg class="pf-viz-svg" viewBox="0 0 320 244" aria-hidden="true" focusable="false">
+
+<g class="pf-viz-panel">
+    <line x1="0" x2="288" y1="81.9" y2="81.9" class="pf-viz-grid"/><text x="320" y="85.9" text-anchor="end">60</text><line x1="0" x2="288" y1="42.2" y2="42.2" class="pf-viz-grid"/><text x="320" y="46.2" text-anchor="end">70</text>
+    <polygon points="11.1,58.1 33.2,58.1 55.4,58.1 77.5,58.1 99.7,58.1 121.8,58.1 144.0,58.1 166.2,58.1 188.3,58.1 210.5,58.1 232.6,58.1 254.8,58.1 276.9,58.1 276.9,89.8 254.8,89.8 232.6,89.8 210.5,89.8 188.3,89.8 166.2,89.8 144.0,89.8 121.8,89.8 99.7,89.8 77.5,89.8 55.4,89.8 33.2,89.8 11.1,89.8" class="pf-viz-band"/>
+    <path d="M11.1 89.8 L33.2 89.8 L55.4 89.8 L77.5 89.8 L99.7 89.8 L121.8 89.8 L144.0 89.8 L166.2 89.8 L188.3 89.8 L210.5 89.8 L232.6 89.8 L254.8 89.8 L276.9 89.8" class="pf-viz-edge"/><path d="M11.1 58.1 L33.2 58.1 L55.4 58.1 L77.5 58.1 L99.7 58.1 L121.8 58.1 L144.0 58.1 L166.2 58.1 L188.3 58.1 L210.5 58.1 L232.6 58.1 L254.8 58.1 L276.9 58.1" class="pf-viz-edge"/>
+    <path d="M77.5 66.4 L99.7 70.4 L121.8 70.4 L144.0 68.0 L166.2 60.8 L188.3 63.4 L210.5 64.5 L232.6 66.4 L254.8 60.4 L276.9 63.6" class="pf-viz-line" pathLength="1"/>
+    <circle cx="11.1" cy="81.9" r="2.5" class="pf-viz-dot" data-i="0"/><circle cx="33.2" cy="70.0" r="2.5" class="pf-viz-dot" data-i="1"/><circle cx="77.5" cy="46.2" r="3.5" class="pf-viz-dot is-out" data-i="3"/><circle cx="99.7" cy="81.9" r="2.5" class="pf-viz-dot" data-i="4"/><circle cx="144.0" cy="58.1" r="2.5" class="pf-viz-dot" data-i="6"/><circle cx="166.2" cy="46.2" r="3.5" class="pf-viz-dot is-out" data-i="7"/><circle cx="188.3" cy="81.9" r="2.5" class="pf-viz-dot" data-i="8"/><circle cx="210.5" cy="70.0" r="2.5" class="pf-viz-dot" data-i="9"/><circle cx="232.6" cy="58.1" r="2.5" class="pf-viz-dot" data-i="10"/><circle cx="254.8" cy="46.2" r="3.5" class="pf-viz-dot is-out" data-i="11"/><circle cx="276.9" cy="81.9" r="2.5" class="pf-viz-dot" data-i="12"/>
+    <text x="0" y="33" class="pf-viz-strong">VFC</text>
+</g>
+
+<g class="pf-viz-panel">
+    <line x1="0" x2="288" y1="187.9" y2="187.9" class="pf-viz-grid"/><text x="320" y="191.9" text-anchor="end">45</text><line x1="0" x2="288" y1="138.3" y2="138.3" class="pf-viz-grid"/><text x="320" y="142.3" text-anchor="end">50</text>
+    <polygon points="11.1,148.3 33.2,148.3 55.4,148.3 77.5,148.3 99.7,148.3 121.8,148.3 144.0,148.3 166.2,148.3 188.3,148.3 210.5,148.3 232.6,148.3 254.8,148.3 276.9,148.3 276.9,207.7 254.8,207.7 232.6,207.7 210.5,207.7 188.3,207.7 166.2,207.7 144.0,207.7 121.8,207.7 99.7,207.7 77.5,207.7 55.4,207.7 33.2,207.7 11.1,207.7" class="pf-viz-band"/>
+    <path d="M11.1 207.7 L33.2 207.7 L55.4 207.7 L77.5 207.7 L99.7 207.7 L121.8 207.7 L144.0 207.7 L166.2 207.7 L188.3 207.7 L210.5 207.7 L232.6 207.7 L254.8 207.7 L276.9 207.7" class="pf-viz-edge"/><path d="M11.1 148.3 L33.2 148.3 L55.4 148.3 L77.5 148.3 L99.7 148.3 L121.8 148.3 L144.0 148.3 L166.2 148.3 L188.3 148.3 L210.5 148.3 L232.6 148.3 L254.8 148.3 L276.9 148.3" class="pf-viz-edge"/>
+    <path d="" class="pf-viz-line" pathLength="1"/>
+    <circle cx="11.1" cy="187.9" r="2.5" class="pf-viz-dot" data-i="0"/><circle cx="33.2" cy="178.0" r="2.5" class="pf-viz-dot" data-i="1"/><circle cx="77.5" cy="187.9" r="2.5" class="pf-viz-dot" data-i="3"/><circle cx="99.7" cy="178.0" r="2.5" class="pf-viz-dot" data-i="4"/><circle cx="144.0" cy="187.9" r="2.5" class="pf-viz-dot" data-i="6"/><circle cx="166.2" cy="178.0" r="2.5" class="pf-viz-dot" data-i="7"/><circle cx="188.3" cy="168.1" r="2.5" class="pf-viz-dot" data-i="8"/><circle cx="210.5" cy="187.9" r="2.5" class="pf-viz-dot" data-i="9"/><circle cx="232.6" cy="178.0" r="2.5" class="pf-viz-dot" data-i="10"/><circle cx="254.8" cy="168.1" r="2.5" class="pf-viz-dot" data-i="11"/><circle cx="276.9" cy="187.9" r="2.5" class="pf-viz-dot" data-i="12"/>
+    <text x="0" y="143" class="pf-viz-strong">FC</text>
+</g>
+
+
+<line x1="166.2" x2="166.2" y1="19" y2="224" class="pf-viz-ev"/><path d="M166.2 18v-14l8 3.5l-8 3.5z" class="pf-viz-flag"/><text x="176.2" y="13" class="pf-viz-strong">Transjeju 100M</text>
+
+
+<text x="77.5" y="241" text-anchor="middle">lun. 28</text><text x="232.6" y="241" text-anchor="middle">lun. 5</text>
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="19" y2="224"/><circle cx="0" cy="0" r="4"/><circle cx="0" cy="0" r="4"/></g>
+</svg>
+        <input type="range" class="pf-viz-range sr-only" aria-label="Cœur la nuit : choisis une nuit" min="0" max="12" step="1" value="12" aria-valuetext="mercredi 7 octobre : VFC 60 millisecondes, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49">
+    </div>
+    <p class="sr-only" aria-live="polite" data-live></p>
+    <script type="application/json" class="pf-viz-data">{"x":[11.1,33.2,55.4,77.5,99.7,121.8,144.0,166.2,188.3,210.5,232.6,254.8,276.9],"y":[[81.9,70.0,null,46.2,81.9,null,58.1,46.2,81.9,70.0,58.1,46.2,81.9],[187.9,178.0,null,187.9,178.0,null,187.9,178.0,168.1,187.9,178.0,168.1,187.9]],"d":["2026-09-25","2026-09-26","2026-09-27","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05","2026-10-06","2026-10-07"],"r":[["nuit du jeu. 24 au ven. 25","VFC 60 ms · FC 45 bpm","normale VFC 58–66, FC 43–49"],["nuit du ven. 25 au sam. 26","VFC 63 ms · FC 46 bpm","normale VFC 58–66, FC 43–49"],["nuit du sam. 26 au dim. 27","—","pas de montre cette nuit"],["nuit du dim. 27 au lun. 28","VFC 69 ms au-dessus · FC 45 bpm","normale VFC 58–66, FC 43–49"],["nuit du lun. 28 au mar. 29","VFC 60 ms · FC 46 bpm","normale VFC 58–66, FC 43–49"],["nuit du mar. 29 au mer. 30","—","pas de montre cette nuit"],["nuit du mer. 30 au jeu. 1","VFC 66 ms · FC 45 bpm","normale VFC 58–66, FC 43–49"],["nuit du jeu. 1 au ven. 2","VFC 69 ms au-dessus · FC 46 bpm","normale VFC 58–66, FC 43–49 · ⚑ Transjeju 100M"],["nuit du ven. 2 au sam. 3","VFC 60 ms · FC 47 bpm","normale VFC 58–66, FC 43–49"],["nuit du sam. 3 au dim. 4","VFC 63 ms · FC 45 bpm","normale VFC 58–66, FC 43–49"],["nuit du dim. 4 au lun. 5","VFC 66 ms · FC 46 bpm","normale VFC 58–66, FC 43–49"],["nuit du lun. 5 au mar. 6","VFC 69 ms au-dessus · FC 47 bpm","normale VFC 58–66, FC 43–49"],["nuit du mar. 6 au mer. 7","VFC 60 ms · FC 45 bpm","normale VFC 58–66, FC 43–49"]],"a":["vendredi 25 septembre : VFC 60 millisecondes, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49","samedi 26 septembre : VFC 63 millisecondes, ta normale 58 à 66, FC 46 battements par minute, ta normale 43 à 49","dimanche 27 septembre : pas de mesure","lundi 28 septembre : VFC 69 millisecondes au-dessus, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49","mardi 29 septembre : VFC 60 millisecondes, ta normale 58 à 66, FC 46 battements par minute, ta normale 43 à 49","mercredi 30 septembre : pas de mesure","jeudi 1 octobre : VFC 66 millisecondes, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49","vendredi 2 octobre : VFC 69 millisecondes au-dessus, ta normale 58 à 66, FC 46 battements par minute, ta normale 43 à 49. ⚑ Transjeju 100M","samedi 3 octobre : VFC 60 millisecondes, ta normale 58 à 66, FC 47 battements par minute, ta normale 43 à 49","dimanche 4 octobre : VFC 63 millisecondes, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49","lundi 5 octobre : VFC 66 millisecondes, ta normale 58 à 66, FC 46 battements par minute, ta normale 43 à 49","mardi 6 octobre : VFC 69 millisecondes au-dessus, ta normale 58 à 66, FC 47 battements par minute, ta normale 43 à 49","mercredi 7 octobre : VFC 60 millisecondes, ta normale 58 à 66, FC 45 battements par minute, ta normale 43 à 49"],"h":[null,null,null,null,null,null,null,null,null,null,null,null,null],"sel":12}</script>
+</figure>
+
+
+</div>
+<div data-range-panel="90" hidden><p>3 mois</p></div>
+</section>
+<h3 class="pf-h3 mt-6">Semaines</h3>
+
+
+<figure class="pf-viz " data-viz data-viz-key="semaines">
+    <figcaption class="sr-only">Semaines</figcaption>
+    <div class="pf-viz-read">
+        <button type="button" class="pf-viz-step" data-step="-1" aria-label="Semaine précédente"><span aria-hidden="true">‹</span></button>
+        <div class="pf-viz-read-txt" aria-hidden="true"><span data-r>sem. du mer. 7 oct.</span><b data-r>1h00</b><span data-r></span></div>
+        <button type="button" class="pf-viz-step" data-step="1" aria-label="Semaine suivante" disabled><span aria-hidden="true">›</span></button>
+    </div>
+    <a class="pf-viz-link" data-r-href href="#" hidden></a>
+    <div class="pf-viz-plot">
+        <svg class="pf-viz-svg" viewBox="0 0 320 168" aria-hidden="true" focusable="false">
+
+
+<line x1="0" x2="288" y1="132" y2="132" class="pf-viz-grid"/>
+
+<g class="pf-viz-col" data-i="0">
+    
+    <rect x="4.5" y="54.0" width="14.9" height="78.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="1">
+    
+    <rect x="28.6" y="48.0" width="14.9" height="84.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="2">
+    
+    
+</g>
+
+<g class="pf-viz-col" data-i="3">
+    
+    <rect x="76.5" y="33.5" width="14.9" height="98.5" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="4">
+    
+    <rect x="100.5" y="42.0" width="14.9" height="90.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="5">
+    
+    <rect x="124.5" y="50.4" width="14.9" height="81.6" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="6">
+    
+    <rect x="148.6" y="22.7" width="14.9" height="109.3" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="7">
+    
+    <rect x="172.6" y="39.5" width="14.9" height="92.5" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="8">
+    
+    <rect x="196.6" y="35.9" width="14.9" height="96.1" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="9">
+    
+    <rect x="220.6" y="96.0" width="14.9" height="36.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="10">
+    
+    <rect x="244.6" y="102.0" width="14.9" height="30.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<g class="pf-viz-col" data-i="11">
+    
+    <rect x="268.6" y="120.0" width="14.9" height="12.0" rx="3" class="pf-viz-bar"/>
+</g>
+
+<rect x="4.5" y="136" width="14.9" height="3.6" class="pf-viz-sec"/><rect x="76.5" y="136" width="14.9" height="8.0" class="pf-viz-sec"/><rect x="100.5" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="124.5" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="148.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="172.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="196.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="220.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="244.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/><rect x="268.6" y="136" width="14.9" height="2.7" class="pf-viz-sec"/>
+
+
+
+
+<text x="36.0" y="165" text-anchor="middle">29</text><text x="84.0" y="165" text-anchor="middle">12</text><text x="132.0" y="165" text-anchor="middle">26</text><text x="180.0" y="165" text-anchor="middle">9</text><text x="228.0" y="165" text-anchor="middle">23</text><text x="276.0" y="165" text-anchor="middle">7</text>
+<g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="132"/></g>
+</svg>
+        <input type="range" class="pf-viz-range sr-only" aria-label="Semaines : choisis une semaine" min="0" max="11" step="1" value="11" aria-valuetext="semaine du mercredi 7 octobre">
+    </div>
+    <p class="sr-only" aria-live="polite" data-live></p>
+    <script type="application/json" class="pf-viz-data">{"x":[12.0,36.0,60.0,84.0,108.0,132.0,156.0,180.0,204.0,228.0,252.0,276.0],"y":[],"d":["2026-07-22","2026-07-29","2026-08-05","2026-08-12","2026-08-19","2026-08-26","2026-09-02","2026-09-09","2026-09-16","2026-09-23","2026-09-30","2026-10-07"],"r":[["sem. du mer. 22 juil.","6h30",""],["sem. du mer. 29 juil.","7h00",""],["sem. du mer. 5 août","—",""],["sem. du mer. 12 août","8h12",""],["sem. du mer. 19 août","7h30",""],["sem. du mer. 26 août","6h48",""],["sem. du mer. 2 sept.","9h06",""],["sem. du mer. 9 sept.","7h42",""],["sem. du mer. 16 sept.","8h00",""],["sem. du mer. 23 sept.","3h00",""],["sem. du mer. 30 sept.","2h30",""],["sem. du mer. 7 oct.","1h00",""]],"a":["semaine du mercredi 22 juillet","semaine du mercredi 29 juillet","semaine du mercredi 5 août","semaine du mercredi 12 août","semaine du mercredi 19 août","semaine du mercredi 26 août","semaine du mercredi 2 septembre","semaine du mercredi 9 septembre","semaine du mercredi 16 septembre","semaine du mercredi 23 septembre","semaine du mercredi 30 septembre","semaine du mercredi 7 octobre"],"h":[{"href":"#week-2026-07-22","label":"Voir la semaine ›"},{"href":"#week-2026-07-29","label":"Voir la semaine ›"},null,{"href":"#week-2026-08-12","label":"Voir la semaine ›"},{"href":"#week-2026-08-19","label":"Voir la semaine ›"},{"href":"#week-2026-08-26","label":"Voir la semaine ›"},{"href":"#week-2026-09-02","label":"Voir la semaine ›"},{"href":"#week-2026-09-09","label":"Voir la semaine ›"},{"href":"#week-2026-09-16","label":"Voir la semaine ›"},{"href":"#week-2026-09-23","label":"Voir la semaine ›"},{"href":"#week-2026-09-30","label":"Voir la semaine ›"},{"href":"#week-2026-10-07","label":"Voir la semaine ›"}],"sel":11}</script>
+</figure>
+
+
+</main><script src="/static/js/pf-viz.js"></script></body></html>

@@ -1,0 +1,9 @@
+{#- Santé: the silent sync. Opening the page syncs, in the background, every linked watch not synced lately
+    (app.routers.sante._sync_stale); this invisible element asks every 3 s how it went and the page reloads only when
+    something new arrived (HX-Refresh). Nothing is shown: the watches' state and « Synchroniser maintenant » are
+    Réglages' (owner, 2026-10-08: « Retire les infos de synchro dans la page Santé »). -#}
+{% if auto_sync is defined and auto_sync %}
+<div id="sante-sync" hx-get="/sante/sync-status?v={{ sync_v }}&n={{ sync_n }}" hx-trigger="load delay:3s" hx-swap="outerHTML"></div>
+{% else %}
+<div id="sante-sync"></div>
+{% endif %}

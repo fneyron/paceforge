@@ -1,0 +1,78 @@
+{#- Race page › Préparation (#prep), v3 (moved from Santé › Course). Expects `prep` = race_prep.prep_context(...):
+    None outside J-42 → J0 (nothing drawn; v4.3: no recovery part after the race, Santé's). Taper, nights J-14 → J-1
+    (the banking line from J-7, Walsh 2021's race-eve reassurance once from J-7 to J0), race-week carbs, the hot-race
+    line. The race eve is never flagged. -#}
+{% if prep %}{% import "partials/_viz.html" as vz %}{% set p = prep %}
+<section id="prep" class="pf-rp" aria-labelledby="prep-h">
+    <h2 id="prep-h" class="pf-h2">{{ p.title }}</h2>
+
+    {% set t = p.taper %}
+    {% if t %}
+    {% if t.sentence %}<p class="pf-rp-line">{{ t.sentence }}</p>{% endif %}
+    {% call vz.figure(t, "Affûtage, heures par semaine", "affutage", None, "semaine", "Semaine précédente", "Semaine suivante") %}
+    <defs><pattern id="pf-hatch-tap" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+    {% for b in t.cols if b.tgt %}<rect x="{{ b.tgt.x }}" y="{{ b.tgt.y }}" width="{{ b.tgt.w }}" height="{{ b.tgt.h }}" class="pf-viz-band"/>
+    <line x1="{{ b.tgt.x }}" x2="{{ b.tgt.x + b.tgt.w }}" y1="{{ b.tgt.y }}" y2="{{ b.tgt.y }}" class="pf-viz-edge"/><line x1="{{ b.tgt.x }}" x2="{{ b.tgt.x + b.tgt.w }}" y1="{{ b.tgt.y + b.tgt.h }}" y2="{{ b.tgt.y + b.tgt.h }}" class="pf-viz-edge"/>{% endfor %}
+    {% if t.base_y is not none %}<line x1="0" x2="{{ t.X1 }}" y1="{{ t.base_y }}" y2="{{ t.base_y }}" class="pf-viz-ref"/><text x="{{ t.W }}" y="{{ t.base_y + 4 }}" text-anchor="end">base</text>{% endif %}
+    <line x1="0" x2="{{ t.X1 }}" y1="{{ t.base }}" y2="{{ t.base }}" class="pf-viz-grid"/>
+    {% for b in t.cols %}
+    <g class="pf-viz-col" data-i="{{ b.i }}">{% if b.h is defined %}{% if b.cur %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-tap)"/>{% else %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3" class="pf-viz-bar"/>{% endif %}{% endif %}</g>
+    {% endfor %}
+    {% for l in t.longs %}<path d="M{{ l.x }} {{ t.base + 3 }}l4 4l-4 4l-4 -4z" class="pf-viz-long"/>{% endfor %}
+    {% for b in t.cols %}<text x="{{ b.cx }}" y="{{ t.H - 2 }}" text-anchor="middle"{% if loop.last %} class="pf-viz-strong"{% endif %}>{{ b.label }}</text>{% endfor %}
+    <g class="pf-viz-cross"><line x1="0" x2="0" y1="6" y2="{{ t.base }}"/></g>
+    {% endcall %}
+    {% endif %}
+
+    {% if p.hot %}<p class="pf-rp-line">{{ p.hot }}</p>{% endif %}
+
+    {% set n = p.nights %}
+    {% if n %}
+    <h3 class="pf-rp-h3">Tes nuits</h3>
+    {% if p.bank %}<p class="pf-rp-line">Vise 30 à 60 min de plus par jour, siestes comprises.</p>{% endif %}
+    {% if p.eve %}<p class="pf-rp-line">{{ p.eve }}</p>{% endif %}
+    {% if n.empty %}<p class="pf-rp-note">Porte ta montre toutes les nuits de J‑14 à la course.</p>
+    {% else %}
+    {% call vz.figure(n, "Sommeil sur 24 h avant la course", "nuits-course", None, "nuit", cls="pf-viz-tall") %}
+    <defs><pattern id="pf-hatch-rn" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" class="pf-viz-nap-bg"/><line x1="0" y1="0" x2="0" y2="4" class="pf-viz-hatch"/></pattern></defs>
+    {% for tk in n.ticks %}<line x1="0" x2="{{ n.X1 }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="pf-viz-grid"/><text x="{{ n.W }}" y="{{ tk.y + 4 }}" text-anchor="end">{{ tk.label }}</text>{% endfor %}
+    {% if n.goal %}<rect x="{{ n.goal.x }}" y="{{ n.goal.y }}" width="{{ n.goal.w }}" height="{{ n.goal.h }}" class="pf-viz-band"/>
+    <line x1="{{ n.goal.x }}" x2="{{ n.goal.x + n.goal.w }}" y1="{{ n.goal.y }}" y2="{{ n.goal.y }}" class="pf-viz-edge"/><line x1="{{ n.goal.x }}" x2="{{ n.goal.x + n.goal.w }}" y1="{{ n.goal.y + n.goal.h }}" y2="{{ n.goal.y + n.goal.h }}" class="pf-viz-edge"/>{% endif %}
+    <line x1="0" x2="{{ n.X1 }}" y1="{{ n.amount[1] }}" y2="{{ n.amount[1] }}" class="pf-viz-grid"/>
+    {% for col in n.cols %}
+    <g class="pf-viz-col" data-i="{{ col.i }}">
+        {% if col.miss %}<line x1="{{ col.cx }}" x2="{{ col.cx }}" y1="{{ n.amount[1] - 18 }}" y2="{{ n.amount[1] }}" class="pf-viz-miss"/>{% endif %}
+        {% if col.night %}<rect x="{{ col.x }}" y="{{ col.night.y }}" width="{{ col.w }}" height="{{ col.night.h }}" rx="3" class="pf-viz-night"/>{% endif %}
+        {% if col.nap %}<rect x="{{ col.x }}" y="{{ col.nap.y }}" width="{{ col.w }}" height="{{ col.nap.h }}" rx="3" class="pf-viz-nap" fill="url(#pf-hatch-rn)"/>{% endif %}
+    </g>
+    {% endfor %}
+    {% for t in n.xt %}<text x="{{ t.x }}" y="{{ n.H - 2 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+    <g class="pf-viz-cross"><line x1="0" x2="0" y1="{{ n.amount[0] }}" y2="{{ n.amount[1] }}"/></g>
+    {% endcall %}
+    {% endif %}
+    {% endif %}
+
+    {% set f = p.food %}
+    {% if f %}
+    <h3 class="pf-rp-h3">Semaine de course</h3>
+    {% if f.short %}<p class="pf-rp-line">{{ f.short }}</p>
+    {% else %}
+    <ul class="pf-rp-list">
+        <li>{{ f.load }}{% if f.weight_link %} <a href="{{ f.weight_link.href }}">{{ f.weight_link.text }}</a>{% endif %}</li>
+        <li>{{ f.equiv }}</li>
+        <li>{{ f.test }}</li>
+        <li>{{ f.breakfast }}</li>
+        <li>{{ f.fluid }}</li>
+    </ul>
+    {% endif %}
+    <button type="button" class="pf-rp-link" onclick="window.switchRouteTab && window.switchRouteTab('nutrition')">Pendant la course&#160;: Nutrition ›</button>
+    {% endif %}
+</section>
+<script defer src="/static/js/pf-viz.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
+<script>
+// /simulator/routes/{id}#prep (Activités, Aujourd'hui): land on this section once the plan above has laid out
+window.addEventListener("load", function () {
+    if (location.hash === "#prep") { var el = document.getElementById("prep"); if (el) el.scrollIntoView({ block: "start" }); }
+});
+</script>
+{% endif %}

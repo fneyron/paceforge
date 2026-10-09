@@ -32,11 +32,11 @@
         {% if error %}
         <div class="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
             {% if error == "invalid_credentials" %}
-                Les identifiants Strava sont incorrects. Verifie ton Client ID et Client Secret et reessaie.
+                Les identifiants Strava sont incorrects. Vérifie ton Client ID et ton Client Secret, puis réessaie.
             {% elif error == "missing_credentials" %}
                 Client ID et Client Secret sont requis.
             {% elif error == "auth_failed" %}
-                La connexion a Strava a echoue. Verifie que ton Authorization Callback Domain est bien <strong>paceforge.fr</strong>.
+                La connexion à Strava a échoué. Vérifie que ton Authorization Callback Domain est bien <strong>paceforge.fr</strong>.
             {% else %}
                 Une erreur est survenue : {{ error }}
             {% endif %}
@@ -46,9 +46,9 @@
         <!-- Step 1: Create Strava App -->
         <div x-show="step === 1" x-transition>
             <div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">Etape 1 : Creer ton application Strava</h2>
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Étape 1 : crée ton application Strava</h2>
                 <p class="text-sm text-gray-500 mb-6">
-                    PaceForge a besoin d'acceder a tes donnees Strava. Pour cela, tu dois creer une application gratuite sur Strava.
+                    Pour lire tes données Strava, PaceForge a besoin d'une application Strava à toi. Elle est gratuite et se crée en quelques minutes.
                 </p>
 
                 <div class="space-y-4 mb-6">
@@ -99,7 +99,7 @@
                         <svg class="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                         </svg>
-                        Ouvrir les reglages Strava
+                        Ouvrir les réglages Strava
                     </a>
                     <button @click="step = 2"
                             class="h-11 px-6 rounded-xl inline-flex items-center justify-center bg-accent hover:bg-accent-strong text-accent-ink font-semibold text-sm transition-colors">
@@ -115,7 +115,7 @@
         <!-- Step 2: Enter credentials -->
         <div x-show="step === 2" x-transition x-cloak>
             <div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">Etape 2 : Tes identifiants API</h2>
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Étape 2 : tes identifiants API</h2>
                 <p class="text-sm text-gray-500 mb-6">
                     Copie le <strong>Client ID</strong> et le <strong>Client Secret</strong> depuis la page de ton app Strava.
                 </p>
@@ -149,7 +149,7 @@
                         </button>
                         <button type="submit"
                                 class="h-11 px-6 rounded-xl inline-flex items-center justify-center bg-accent hover:bg-accent-strong text-accent-ink font-semibold text-sm transition-colors flex-1">
-                            Connecter a Strava
+                            Connecter Strava
                             <svg class="ml-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
                             </svg>
@@ -163,8 +163,8 @@
         <div x-show="step === 3" x-transition x-cloak>
             <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center">
                 <div class="animate-spin w-8 h-8 border-2 border-gray-300 border-t-gray-900 rounded-full mx-auto mb-4"></div>
-                <h2 class="text-lg font-semibold text-gray-900 mb-2">Connexion a Strava...</h2>
-                <p class="text-sm text-gray-500">Tu vas etre redirige vers Strava pour autoriser l'acces.</p>
+                <h2 class="text-lg font-semibold text-gray-900 mb-2">Connexion à Strava…</h2>
+                <p class="text-sm text-gray-500">Strava va te demander d'autoriser l'accès.</p>
             </div>
         </div>
 

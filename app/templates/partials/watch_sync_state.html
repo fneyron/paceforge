@@ -1,0 +1,5 @@
+{#- The content of #{key}-sync-state (partials/watch_sync.html): the last sync, its failure, and after a press of
+    « Synchroniser maintenant » how it went (`msg`). -#}
+<p class="pf-label"><span class="inline-block w-1.5 h-1.5 rounded-full {{ 'bg-warn' if w.last_error else 'bg-ok' }} mr-1 align-middle" aria-hidden="true"></span>{% if w.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ w.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
+{% if w.last_error %}<p class="text-[12px] text-warn">Dernière synchro échouée : {{ w.last_error }}</p>{% endif %}
+{% if msg is defined and msg %}<p class="pf-sync-msg">{{ msg }}</p>{% endif %}

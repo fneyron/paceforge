@@ -157,7 +157,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-activity-row:hover .pf-item-title { color: rgb(var(--pf-accent)); }
 .pf-sport-icon { width: 40px; height: 40px; border-radius: 12px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); display: flex; align-items: center; justify-content: center; flex: none; }
 .pf-week-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 28px 0 8px; flex-wrap: wrap; }
-.pf-act-u { display: none; }  /* a row's inline units: desktop only (« desktop: Santé, Réglages, Activités ») */
+.pf-act-u { display: none; }  /* a row's inline units: desktop only (« desktop: Réglages, Activités ») */
+.pf-item-flag { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3; color: rgb(var(--pf-warn)); }   /* a run over 10 % longer than the month's longest: in words */
 .pf-empty-state { padding: 44px 0; text-align: center; }
 .pf-empty-icon { display: block; width: 32px; height: 32px; color: rgb(var(--pf-accent)); margin: 0 auto 16px; }
 .pf-secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 999px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); font-size: 14px; font-weight: 600; border: 0; margin-top: 16px; }
@@ -167,6 +168,32 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-upload-zone:focus-within, .pf-upload-zone.is-over { border-color: rgb(var(--pf-accent)); background: rgb(var(--pf-accent-soft)); }
 .pf-upload-zone label:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; }
 .pf-file-invalid { color: rgb(var(--pf-danger)) !important; }
+
+/* ── Activités, top: Semaines (the sport filter under its title, its measure toggle, one measure's 12 bars) and
+   FC en footing (training_view.py, activity_training.html) ── */
+.pf-train { margin-top: 20px; }
+.pf-train > .pf-h2 { font-size: 20px; }
+.pf-train .pf-viz-ranges { margin-top: 10px; }
+.pf-train .pf-viz-ranges > button { min-height: 44px; }   /* « Durée · Distance · D+ »: 44 px targets */
+.pf-train .pf-filters { margin-top: 10px; }
+.pf-filters > a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.pf-train + .pf-filters, .pf-train + .pf-train-fold { margin-top: 8px; }
+.pf-train-fold { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-viz-avg { stroke: rgb(var(--pf-ink)); stroke-width: 1.25; stroke-dasharray: 5 4; shape-rendering: crispEdges; }   /* the average of the complete weeks, labelled « moy. » */
+.pf-train-fold > summary { display: flex; align-items: center; gap: 6px; min-height: 52px; cursor: pointer; list-style: none; font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-train-fold > summary::-webkit-details-marker { display: none; }
+.pf-train-fold > summary::after { content: "›"; content: "›" / ""; display: inline-block; margin-left: auto; font-size: 22px; line-height: 1; color: rgb(var(--pf-gray-400)); }
+.pf-train-fold[open] > summary::after { transform: rotate(90deg); }
+.pf-train-fold > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-train-fold[open] { padding-bottom: 14px; }
+.pf-train-warn { font-family: var(--pf-font-text); font-size: 15px; font-weight: 600; color: rgb(var(--pf-warn)); }
+.pf-train-soft { font-family: var(--pf-font-text); font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-600)); }   /* « après ultra »: a note, not a flag */
+.pf-train-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); padding-bottom: 6px; }
+.pf-viz-line.is-accent { stroke: rgb(var(--pf-accent)); stroke-width: 1.5; }
+.pf-viz-svg .pf-viz-halo { paint-order: stroke; stroke: rgb(var(--pf-bg)); stroke-width: 4px; stroke-linejoin: round; }
+.pf-viz-long.is-warn { fill: rgb(var(--pf-warn)); }
+@media (forced-colors: active) { .pf-viz-line.is-accent { stroke: CanvasText; } .pf-viz-long.is-warn { fill: CanvasText; }
+    .pf-viz-avg { stroke: CanvasText; } .pf-item-flag { color: CanvasText; } }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
@@ -336,6 +363,17 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-prep .pf-tool { min-height: 56px; padding: 0; }
 .pf-prep .pf-tools > :last-child { border-bottom: 1px solid rgb(var(--pf-line)); }
 
+/* race page › Préparation (#prep): taper, nights J-14 → J-1, race week, recovery (race_prep.py, race_prep.html) */
+.pf-rp { margin-top: 40px; scroll-margin-top: 72px; }
+.pf-rp > .pf-h2 { font-size: 22px; }
+.pf-rp-h3 { margin-top: 30px; font-size: 16px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-rp-line { margin-top: 8px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-rp-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
+.pf-rp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
+.pf-rp-list a, .pf-rp-link { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.pf-rp-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; text-align: left; }
+.dark :is(.pf-rp-list a, .pf-rp-link) { color: rgb(var(--pf-accent)); }
+
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }
 .pf-race-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; }
@@ -378,126 +416,131 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-detnote.is-alert { color: rgb(var(--pf-danger)); }
 .pf-detnote.is-alert svg, .dark .pf-detnote.is-alert svg { color: rgb(var(--pf-danger)) !important; }
 
-/* ── Ravitaillement: what you eat, drink and put in each bag ──────────── */
-/* big tap chips (44 px): a product, a drop bag. Pressed = tinted + check */
-.pf-chip-lg { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; max-width: 100%; padding: 0 16px; border-radius: 999px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 15px; font-weight: 500; line-height: 1.2; cursor: pointer; list-style: none; }
-.pf-chip-lg::-webkit-details-marker { display: none; }
-.pf-chip-lg:hover { border-color: rgb(var(--pf-accent)); }
-.pf-chip-lg[aria-pressed="true"] { background: rgb(var(--pf-accent-soft)); border-color: rgb(var(--pf-accent)); color: rgb(var(--pf-accent)); font-weight: 600; }
-.pf-chip-lg .pf-chip-check { display: none; }
-.pf-chip-lg[aria-pressed="true"] .pf-chip-check { display: inline-block; }
-.pf-chip-lbl { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pf-chip-lbl-wide { max-width: 24ch; }
-.pf-chip-dash { border-style: dashed; color: rgb(var(--pf-gray-600)); }
-.pf-rv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.pf-rv-more[open], .pf-rv-own[open] { flex-basis: 100%; }
-.pf-rv-more > summary, .pf-rv-own > summary, .pf-rv-disc > summary { list-style: none; cursor: pointer; }
-:is(.pf-rv-more, .pf-rv-own, .pf-rv-disc) > summary::-webkit-details-marker { display: none; }
-.pf-rv-more[open] > summary, .pf-rv-own[open] > summary { border-color: rgb(var(--pf-accent)); color: rgb(var(--pf-accent)); }
-.pf-rv-panel { margin-top: 10px; padding: 16px; border-radius: 20px; background: rgb(var(--pf-soft)); }
-.pf-rv-panel .pf-rv-own { margin-top: 14px; }
-.pf-rv-sublabel { font-size: 13px; font-weight: 600; color: rgb(var(--pf-gray-500)); margin: 14px 0 8px; }
-.pf-rv-panel > .pf-rv-sublabel:first-child { margin-top: 0; }
+/* ── Nutrition: tes produits une fois, un rythme par produit, le reste calculé ── */
+/* three blocks (Ton plan, À chaque ravito, Ta liste) and a fold (Tes produits); 44 px targets, native selects */
+.pf-nu-sec + .pf-nu-sec, .pf-nu-fold { margin-top: 32px; }
+.pf-nu-h { font-family: var(--pf-font-display); font-size: 18px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); margin-bottom: 8px; }
+.pf-nu-lead { font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-bottom: 12px; }
+.pf-nu-note { font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); background: rgb(var(--pf-soft)); border-radius: 12px; padding: 10px 14px; margin: 4px 0 12px; }
+.pf-nu-fine { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 8px; }
+.pf-nu .pf-btn-sm { min-height: 44px; }
+.pf-nu-hit { display: inline-flex; align-items: center; min-height: 44px; }  /* the passage rows' « Ta nutrition jusqu'à … » */
 
-/* layout: one column on the phone (Ajuster last), two on a desktop */
-.pf-rv-col > * + * { margin-top: 32px; }
-@media (max-width: 1023px) {
-    .pf-rv-cols { display: flex; flex-direction: column; gap: 32px; }
-    .pf-rv-col { display: contents; }
-    .pf-rv-col > * + * { margin-top: 0; }
-    .pf-rv-adjust { order: 10; margin-top: -33px; }  /* right under « Tronçon par tronçon »: one list, one rule between */
+/* a native select at 44 px with its own chevron (16 px text: no zoom on a phone) */
+.pf-nu-sel { position: relative; display: inline-flex; min-width: 0; }
+.pf-nu-sel select { -webkit-appearance: none; appearance: none; max-width: 100%; min-height: 44px; padding: 0 30px 0 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-family: inherit; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; cursor: pointer; }
+.pf-nu-sel select:hover { border-color: rgb(var(--pf-accent)); }
+.pf-nu-chev { position: absolute; right: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: rgb(var(--pf-gray-500)); pointer-events: none; }
+.pf-nu-sel-p { flex: 1 1 auto; }
+.pf-nu-sel-p select { width: 100%; }
+.pf-nu-x { flex: none; width: 44px; height: 44px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: rgb(var(--pf-gray-500)); }
+.pf-nu-x:hover { background: rgb(var(--pf-soft)); color: rgb(var(--pf-danger)); }
+
+/* Ton plan: one line per rhythm — the product, then « 1 toutes les [60] min · de [0 h] à [la fin] » */
+.pf-nu-lines { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-nu-lines > li { padding: 10px 0 12px; border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-nu-line { display: grid; gap: 8px; }
+.pf-nu-l1 { display: flex; align-items: center; gap: 4px; }
+.pf-nu-l2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 15px; color: rgb(var(--pf-ink)); }
+.pf-nu-grp { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pf-nu-line noscript .pf-btn { justify-self: start; }
+.pf-nu-add { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 4px; font-size: 15px; font-weight: 600; color: rgb(var(--pf-accent)); }
+.pf-nu-add:hover { text-decoration: underline; }
+.pf-nu-sum { display: grid; gap: 4px; margin-top: 10px; font-size: 15px; line-height: 1.4; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
+.pf-nu-sum .is-ok { color: rgb(var(--pf-ok)); font-weight: 600; }
+.pf-nu-sum .is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
+/* the carbs per hour against the range of the race's duration, one sentence under them: green in it, orange
+   under it, plain over it (train the gut) */
+.pf-nu-sum .pf-nu-zone { font-size: 14px; line-height: 1.45; font-weight: 400; color: rgb(var(--pf-gray-600)); }
+.pf-nu-sum .pf-nu-zone.is-ok { color: rgb(var(--pf-ok)); font-weight: 500; }
+.pf-nu-sum .pf-nu-zone.is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
+.pf-nu-sum .pf-nu-na { margin-top: 6px; }  /* a hot race's sodium per hour and its sentence, under the carbs' */
+.pf-nu-whole { color: rgb(var(--pf-gray-500)); }   /* one product all race long: « toute la course », no « de … à … » */
+.pf-nu-caf { display: flex; align-items: flex-start; gap: 6px; color: rgb(var(--pf-gray-700)); }
+.pf-nu-caf svg { margin-top: 3px; }
+
+/* À chaque ravito: one line a point — its clock, its name, what to take (the name gives way first) */
+.pf-nu-rows { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-nu-rows > li { display: flex; align-items: baseline; gap: 10px; min-height: 44px; padding: 11px 0; border-bottom: 1px solid rgb(var(--pf-line)); scroll-margin-top: 80px; }
+.pf-nu-clk { flex: none; width: 3.2em; font-family: var(--pf-font-display); font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; }
+.pf-nu-at { flex: 1 1 0; min-width: 4.5em; display: flex; align-items: baseline; gap: 6px; }
+.pf-nu-at b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; color: rgb(var(--pf-ink)); }
+.pf-nu-at small { flex: none; font-size: 12px; font-weight: 600; color: rgb(var(--pf-accent)); white-space: nowrap; }
+.pf-nu-take { flex: 0 1 auto; text-align: right; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
+.pf-nu-take.is-none { font-weight: 400; color: rgb(var(--pf-gray-500)); }
+.pf-nu-water { color: rgb(var(--pf-gray-500)); white-space: nowrap; }  /* « · 1 L »: the water to the next ravito, after what to take */
+.pf-nu-left { font-weight: 400; color: rgb(var(--pf-gray-600)); }
+.pf-nu-left.is-wide { display: none; }  /* « (il t'en reste 1 prise) »: past one line on a phone, shown from 560 px */
+@media (min-width: 560px) { .pf-nu-left.is-wide { display: inline; } }
+/* « +1 de secours à chaque ravito »: a switch (aria-pressed), its edge ≥ 3:1 in both themes */
+.pf-nu-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 10px; font-size: 15px; font-weight: 500; color: rgb(var(--pf-ink)); text-align: left; }
+.pf-nu-switch { flex: none; position: relative; width: 40px; height: 24px; border-radius: 999px; background: rgb(var(--pf-gray-200)); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-400)); }
+.pf-nu-switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: rgb(var(--pf-gray-500)); }
+.pf-nu-toggle[aria-pressed="true"] .pf-nu-switch { background: rgb(var(--pf-accent)); box-shadow: none; }
+.pf-nu-toggle[aria-pressed="true"] .pf-nu-switch::after { background: rgb(var(--pf-accent-ink)); transform: translateX(16px); }
+@media (prefers-reduced-motion: no-preference) { .pf-nu-switch::after { transition: transform .15s ease-out; } }
+
+/* Ta liste: one line a product, its count large; « Copier » (without a clipboard, the text opens to copy by hand) */
+.pf-nu-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px; }
+.pf-nu-head .pf-nu-h { margin-bottom: 0; }
+.pf-nu-copy > summary { list-style: none; cursor: pointer; }
+.pf-nu-copy > summary::-webkit-details-marker { display: none; }
+.pf-nu-copy[open] { flex-basis: 100%; }
+.pf-nu-copy textarea { display: block; width: 100%; margin-top: 10px; padding: 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); font-size: 14px; line-height: 1.45; }
+.pf-nu-list { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-nu-list > li { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-nu-list b { flex: none; min-width: 2ch; text-align: right; font-family: var(--pf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-nu-list span { min-width: 0; font-size: 15px; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
+
+/* Tes produits: a fold; each product opens on its form, × beside it */
+.pf-nu-fold { border-top: 1px solid rgb(var(--pf-line)); border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-nu-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 0; list-style: none; cursor: pointer; }
+.pf-nu-fold > summary::-webkit-details-marker { display: none; }
+.pf-nu-fold > summary b { display: block; font-size: 16px; font-weight: 650; color: rgb(var(--pf-ink)); }
+.pf-nu-fold > summary small { display: block; font-size: 13px; color: rgb(var(--pf-gray-500)); }
+.pf-nu-fold[open] > summary .pf-chev { transform: rotate(90deg); }
+.pf-nu-fold-in { padding: 0 0 20px; }
+.pf-nu-prods:focus { outline: none; }
+.pf-nu-prods > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 4px; border-top: 1px solid rgb(var(--pf-line)); }
+.pf-nu-prods > li:first-child { border-top: 0; }
+.pf-nu-edit > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px 0; list-style: none; cursor: pointer; }
+.pf-nu-edit > summary::-webkit-details-marker { display: none; }
+.pf-nu-prod-main { min-width: 0; }
+.pf-nu-prod-main b { display: block; font-size: 15px; font-weight: 600; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
+.pf-nu-prod-main small { display: block; font-size: 13px; line-height: 1.35; color: rgb(var(--pf-gray-500)); }
+.pf-nu-act { flex: none; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent)); }
+.pf-nu-prods .pf-nu-x { margin-top: 4px; }
+.pf-nu-ask { grid-column: 1 / -1; margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: rgb(var(--pf-danger-soft)); font-size: 14px; line-height: 1.4; color: rgb(var(--pf-ink)); }
+.pf-nu-ask-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.pf-nu-danger { background: rgb(var(--pf-danger)); color: rgb(var(--pf-bg)); }
+.pf-nu-cat { margin-top: 16px; }
+.pf-nu-cat > label { display: block; font-size: 13px; font-weight: 600; color: rgb(var(--pf-gray-600)); margin-bottom: 6px; }
+.pf-nu-cat > div { display: flex; align-items: center; gap: 8px; }
+.pf-nu-own { margin-top: 8px; }
+.pf-nu-own > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 15px; font-weight: 600; color: rgb(var(--pf-accent)); list-style: none; cursor: pointer; }
+.pf-nu-own > summary::-webkit-details-marker { display: none; }
+
+/* « Un produit à toi » and a product's edit: name, glucides, sodium, caféine, prises */
+.pf-nu-form { display: grid; gap: 12px; margin: 4px 0 16px; }
+.pf-nu-form label { display: grid; align-content: start; gap: 4px; min-width: 0; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-600)); }
+.pf-nu-form small { font-size: 12px; font-weight: 400; color: rgb(var(--pf-gray-500)); }
+.pf-nu-form .pf-nu-err { color: rgb(var(--pf-danger)); font-weight: 500; }
+.pf-nu-form input { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 16px; }
+.pf-nu-form input:focus { border-color: rgb(var(--pf-accent)); }
+.pf-nu-form input[aria-invalid="true"] { border-color: rgb(var(--pf-danger)); }
+.pf-nu-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pf-nu-unit { display: flex; align-items: center; gap: 4px; color: rgb(var(--pf-gray-500)); }
+.pf-nu-form-prises .pf-nu-unit { max-width: 6em; }
+.pf-nu-form .pf-btn { justify-self: start; }
+
+/* forced colours (Windows high contrast): the selects and the switch keep their edges, the switch its state */
+@media (forced-colors: active) {
+    .pf-nu-sel select { border-color: CanvasText; }
+    .pf-nu-switch { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-nu-switch::after { background: CanvasText; }
+    .pf-nu-toggle[aria-pressed="true"] .pf-nu-switch { background: Highlight; box-shadow: none; }
+    .pf-nu-toggle[aria-pressed="true"] .pf-nu-switch::after { background: HighlightText; }
 }
-
-/* « Ta règle »: whole units, plain intervals */
-.pf-rv-rule { background: rgb(var(--pf-accent-soft)); }
-.pf-rv-rule-title { font-size: 13px; font-weight: 650; color: rgb(var(--pf-accent-strong)); margin-bottom: 14px; }
-.pf-rv-rules { display: grid; gap: 12px; }
-.pf-rv-rules li { display: flex; gap: 12px; align-items: flex-start; font-size: 16px; line-height: 1.4; color: rgb(var(--pf-ink)); }
-.pf-rv-rules li > span:last-child { padding-top: 5px; min-width: 0; }
-.pf-rv-rules b { font-weight: 650; }
-.pf-rv-ic { flex: none; width: 32px; height: 32px; border-radius: 10px; background: rgb(var(--pf-surface)); color: rgb(var(--pf-accent)); display: inline-flex; align-items: center; justify-content: center; }
-.pf-rv-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4; margin-top: 10px; color: rgb(var(--pf-gray-600)); }
-.pf-rv-warn.is-warn { color: rgb(var(--pf-warn)); }
-.pf-rv-warn.is-alert { color: rgb(var(--pf-danger)); }
-.pf-rv-hand { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; margin-top: 4px; font-size: 14px; }
-.pf-rv-hit { display: inline-flex; align-items: center; min-height: 44px; }
-.pf-rv .pf-btn-sm { min-height: 44px; }
-.pf-rv-h { font-family: var(--pf-font-display); font-size: 18px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); margin-bottom: 12px; }
-.pf-rv-help { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 8px; font-weight: 400; }
-.pf-rv-text { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-700)); }
-.pf-rv-seg > button { min-height: 44px; }
-.pf-rv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.pf-rv-head small { font-size: 13px; color: rgb(var(--pf-gray-500)); text-align: right; }
-
-/* bags */
-.pf-rv-bags { display: grid; gap: 12px; margin-top: 16px; }
-.pf-rv-bag { border: 1px solid rgb(var(--pf-line)); border-radius: 20px; padding: 16px; background: rgb(var(--pf-surface)); }
-.pf-rv-bag.is-start { border-color: rgb(var(--pf-accent)); }
-.pf-rv-bag-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; color: rgb(var(--pf-ink)); }
-.pf-rv-bag-title svg { color: rgb(var(--pf-accent)); }
-.pf-rv-units { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.pf-rv-unit { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border-radius: 999px; background: rgb(var(--pf-soft)); font-size: 14px; font-weight: 600; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
-.pf-rv-water { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
-.pf-rv-water svg { color: rgb(var(--pf-accent)); }
-.pf-rv-water.is-alert, .pf-rv-water.is-alert svg { color: rgb(var(--pf-danger)); }
-
-/* shopping list */
-.pf-rv-shop li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; padding: 10px 0; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-rv-shop b { font-family: var(--pf-font-display); font-size: 24px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-rv-shop span { font-size: 15px; color: rgb(var(--pf-ink)); min-width: 0; }
-.pf-rv-shop small { font-size: 13px; color: rgb(var(--pf-gray-500)); text-align: right; }
-.pf-rv-copytext { white-space: pre-wrap; font-size: 13px; margin-top: 10px; padding: 12px; border-radius: 12px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); }
-
-/* disclosures: Tronçon par tronçon, Ajuster */
-.pf-rv-disc { border-top: 1px solid rgb(var(--pf-line)); border-bottom: 1px solid rgb(var(--pf-line)); }
-.pf-rv-disc > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 0; }
-.pf-rv-disc > summary b { display: block; font-size: 16px; font-weight: 600; color: rgb(var(--pf-ink)); }
-.pf-rv-disc > summary small { display: block; font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-rv-disc[open] > summary .pf-chev { transform: rotate(90deg); }
-.pf-rv-legs { padding-bottom: 8px; }
-.pf-rv-legs li { padding: 12px 0; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-rv-leg-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.pf-rv-leg-top b { font-family: var(--pf-font-display); font-weight: 650; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-rv-leg-to { font-weight: 600; color: rgb(var(--pf-ink)); min-width: 0; overflow-wrap: anywhere; }
-.pf-rv-leg-t { margin-left: auto; font-size: 13px; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pf-rv-legs p { font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 2px; }
-.pf-rv-adj { padding: 4px 0 20px; }
-.pf-rv-adj > div + div, .pf-rv-adj > p { border-top: 1px solid rgb(var(--pf-line)); padding-top: 18px; margin-top: 18px; }
-.pf-rv-adj h3 { font-size: 15px; font-weight: 600; color: rgb(var(--pf-ink)); margin-bottom: 10px; }
-.pf-rv-adj h3 small { display: block; margin-top: 0; }
-.pf-rv-qty { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 6px 0; }
-.pf-rv-qty-name { min-width: 0; }
-.pf-rv-qty-name b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--pf-ink)); }
-.pf-rv-qty-name small { display: block; font-size: 12px; color: rgb(var(--pf-gray-500)); }
-.pf-rv-qty-name small.is-hand { color: rgb(var(--pf-warn)); font-weight: 600; }
-.pf-rv-perh { font-size: 13px; color: rgb(var(--pf-gray-500)); white-space: nowrap; }
-.pf-rv-stepper { display: inline-flex; align-items: center; gap: 2px; background: rgb(var(--pf-soft)); border-radius: 999px; padding: 2px; }
-.pf-rv-stepper button { width: 44px; height: 44px; border-radius: 999px; font-size: 20px; line-height: 1; color: rgb(var(--pf-ink)); }
-.pf-rv-stepper button:hover { background: rgb(var(--pf-surface)); }
-.pf-rv-stepper b { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; color: rgb(var(--pf-ink)); }
-.pf-rv-prod { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-rv-prod:first-child { border-top: 0; }
-.pf-rv-prod-main { flex: 1 1 12ch; min-width: 0; }
-.pf-rv-prod-main b { display: block; font-weight: 600; color: rgb(var(--pf-ink)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pf-rv-prod-main small { display: block; font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-rv-editform { flex-basis: 100%; }
-.pf-rv-editform[hidden] { display: none; }
-.pf-rv-fine { font-size: 12px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
-
-/* « un produit à toi »: name, carbs, sodium, caffeine */
-.pf-rv-form { display: grid; gap: 12px; margin-top: 12px; }
-.pf-rv-form label { display: grid; align-content: start; gap: 4px; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-600)); min-width: 0; }
-.pf-rv-form label small { font-size: 12px; font-weight: 400; color: rgb(var(--pf-gray-500)); }
-.pf-rv-form label small[hidden] { display: none; }
-.pf-rv-form label small.pf-rv-err { color: rgb(var(--pf-danger)); font-weight: 500; }
-.pf-rv-form input[aria-invalid="true"] { border-color: rgb(var(--pf-danger)); }
-.pf-rv-form input:not([type=hidden]) { width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-200)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 16px; }
-.pf-rv-form input:focus { outline: none; border-color: rgb(var(--pf-accent)); box-shadow: 0 0 0 3px rgb(var(--pf-accent) / .18); }
-.pf-rv-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.pf-rv-unitin { display: flex; align-items: center; gap: 4px; color: rgb(var(--pf-gray-500)); }
-.pf-rv-form .pf-seg-sm { justify-self: start; }
-.pf-rv-form .pf-seg-sm > button { min-height: 44px; padding-left: 14px; padding-right: 14px; }
-.pf-rv-form .pf-btn { justify-self: start; }
 
 /* ── Mes courses ──────────────────────────────────────────────────────── */
 .pf-route-row { display: flex; align-items: center; gap: 4px; }
@@ -524,43 +567,282 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-item-sub.text-ok { color: rgb(var(--pf-ok)); }
 .pf-item-sub.text-danger { color: rgb(var(--pf-danger)); }
 
-/* ── Santé ────────────────────────────────────────────────────────────── */
-.pf-health-rec { display: flex; align-items: center; gap: 22px; margin: 12px 0 8px; }
-.pf-ring { position: relative; width: 132px; height: 132px; flex: none; }
-.pf-ring svg { transform: rotate(-90deg); }
-.pf-ring-v { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.pf-ring-v b { font-family: var(--pf-font-display); font-size: 40px; font-weight: 700; letter-spacing: -.05em; line-height: 1; color: rgb(var(--pf-ink)); }
-.pf-ring-v span { font-size: 12px; color: rgb(var(--pf-gray-500)); }
-.pf-health-verdict { font-family: var(--pf-font-display); font-size: 22px; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; color: rgb(var(--pf-ink)); }
-.pf-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid rgb(var(--pf-line)); margin-top: 24px; }
-.pf-kpis > div { padding: 16px 0; border-bottom: 1px solid rgb(var(--pf-line)); min-width: 0; }
-.pf-kpis > div:nth-child(odd) { padding-right: 16px; border-right: 1px solid rgb(var(--pf-line)); }
-.pf-kpis > div:nth-child(even) { padding-left: 16px; }
-.pf-kpis dd { font-family: var(--pf-font-display); font-size: 34px; font-weight: 700; letter-spacing: -.045em; line-height: 1.1; margin-top: 2px; color: rgb(var(--pf-ink)); }
-.pf-kpis dd small { font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-500)); letter-spacing: 0; margin-left: 3px; }
-.pf-load-top { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-end; margin: 14px 0 4px; }
-.pf-load-top b { display: block; font-family: var(--pf-font-display); font-size: 28px; font-weight: 700; letter-spacing: -.04em; line-height: 1.15; color: rgb(var(--pf-ink)); }
-.pf-load-top b .pf-pill { font-family: var(--pf-font-text); letter-spacing: 0; }
-.pf-loadchart .pf-sechead { display: none; }
-.pf-loadchart { margin-top: 18px; }
-.pf-health-grid { display: grid; gap: 8px; }
-.pf-health-grid .pf-health-chart { margin-top: 36px; }
-.pf-coros-status { margin-top: 4px; }
-@media (min-width: 900px) {
-    .pf-ring { width: 180px; height: 180px; }
-    .pf-ring-v b { font-size: 56px; }
-    .pf-health-verdict { font-size: 28px; }
-    .pf-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .pf-kpis > div, .pf-kpis > div:nth-child(odd), .pf-kpis > div:nth-child(even) { padding: 16px 20px; border-right: 1px solid rgb(var(--pf-line)); }
-    .pf-kpis > div:first-child { padding-left: 0; }
-    .pf-kpis > div:last-child { border-right: 0; }
-    .pf-health-grid { grid-template-columns: 1fr 1fr; column-gap: 56px; }
+/* ── Santé v4: one page, WHOOP/Oura-like (sante.html, partials/sante_page.html) ─────────────────────
+   Bold rings, cards on a soft background, charts first, very little text. The tone is in a glyph and a word
+   too, never colour alone. Hit areas 44 px. Motion ≤ 300 ms, only under no-preference. --pf-warn-mark: a
+   brighter amber for large marks (arcs, bars; ≥ 3:1 on the page and the cards), --pf-warn stays for text. */
+:root { --pf-warn-mark: 199 106 0; }
+.dark { --pf-warn-mark: var(--pf-warn); }
+.pf-sante4 [id] { scroll-margin-top: 80px; }   /* #recuperation, #sommeil, #entrainement land under the top bar */
+/* the head: the morning the rings describe, nothing else (no sync status: Réglages'; the silent sync is invisible) */
+.pf-sante-h1 { font-family: var(--pf-font-display); font-size: 24px; line-height: 1.15; font-weight: 700; letter-spacing: -.03em; color: rgb(var(--pf-ink)); }
+.pf-sante-head .pf-sante-lines { margin-top: 2px; }
+.pf-sante-lines { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 0; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
+.pf-sante-lines > span + span::before { content: "·"; margin-right: 6px; }
+.pf-sante-head + * { margin-top: 14px; }
+.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 30px; letter-spacing: -.035em; }   /* « Aujourd'hui », as large as the dials */
+.pf-sante4 .pf-sante-head .pf-sante-lines { font-size: 14px; }
+@media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
+.pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
+/* the top (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »): three equal dials in a row, Sommeil ·
+   Récupération · Entraînement, each a percentage over its name and a plain word (never colour alone), a link to its
+   card below; the alert's sentence (or the line that says why there is no score) and the connect links under them */
+.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 6px; margin-top: 22px; }
+.pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 2px 0 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+a.pf-ring:active { background: rgb(var(--pf-soft)); }
+.pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-ring-dial { position: relative; display: block; width: min(100%, 100px); aspect-ratio: 1 / 1; }
+.pf-ring-dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 9; }
+.pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 9; stroke-linecap: round; }
+.pf-ring.is-ok .pf-ring-arc { stroke: rgb(var(--pf-ok)); }
+.pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }
+.pf-ring.is-danger .pf-ring-arc { stroke: rgb(var(--pf-danger)); }
+.pf-ring.is-sleep .pf-ring-arc { stroke: rgb(var(--pf-sleep)); }   /* Sommeil: one stable hue (the warning one under 6 h) */
+.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-ring-value.is-long { font-size: 17px; }   /* « 16h53 »: the week's time while there is no usual week */
+.pf-ring.is-none .pf-ring-value { color: rgb(var(--pf-gray-400)); }
+.pf-ring-unit { margin-left: .06em; font-size: .52em; letter-spacing: 0; }   /* « 65 % »: the « % » smaller, on the number's baseline */
+.pf-ring-label { margin-top: 8px; font-family: var(--pf-font-display); font-size: 14px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; color: rgb(var(--pf-ink)); }
+.pf-ring-sub { margin-top: 2px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); text-wrap: balance; }   /* its word: « en cours », « estimée » */
+.pf-dials + .pf-state-text, .pf-dials + .pf-state-line { margin-top: 10px; }
+.pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 34em; }
+.pf-state-links { margin-top: 4px; font-size: 15px; line-height: 1.45; }
+.pf-state-links a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 11px 0; line-height: 22px; margin-right: 10px; }   /* 44 px */
+.dark .pf-state-links a { color: rgb(var(--pf-accent)); }
+@media (min-width: 900px) { .pf-dials { max-width: 560px; } .pf-ring-dial { width: min(100%, 124px); } .pf-ring-value { font-size: 26px; } .pf-ring-value.is-long { font-size: 21px; } }
+/* the cards under the dials, in their order (Récupération, Sommeil, Entraînement): a title, then rows, like Apple's
+   Vitals — a dot and the name on the left, the value over its word on the right (never colour alone) */
+.pf-sum { padding-bottom: 4px; }
+.pf-sum-h { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; color: rgb(var(--pf-ink)); }
+/* the title a link to its details (« › » at the card's right edge, as in the mockup): the whole row, 44 px tall, in
+   the plain title's place */
+.pf-sum-go { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: -11px 0; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.pf-sum-chev { font-family: var(--pf-font-text); font-size: 20px; font-weight: 400; line-height: 1; color: rgb(var(--pf-gray-500)); }
+.pf-sum-go:active .pf-sum-chev { color: rgb(var(--pf-ink)); }
+.pf-sum-go:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
+.pf-rows { margin-top: 2px; }
+.pf-rows > li + li { border-top: 1px solid rgb(var(--pf-line)); }
+.pf-row { display: flex; align-items: center; column-gap: 10px; min-height: 48px; padding: 11px 0; }
+.pf-row-name { flex: none; display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; line-height: 1.3; color: rgb(var(--pf-ink)); white-space: nowrap; }
+.pf-row-name small { display: block; margin-top: 1px; font-size: 12.5px; font-weight: 400; line-height: 1.3; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }   /* « 7 nuits », the night's times */
+.pf-row .pf-dot { transform: none; }
+.pf-row-val { min-width: 0; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; text-align: right; font-size: 13.5px; line-height: 1.35; color: rgb(var(--pf-gray-600)); }
+.pf-row-val > span { text-wrap: balance; }
+.pf-row-val b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; line-height: 1.25; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }   /* « −8 % », « 8h36 », its word under it */
+.pf-row.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
+.pf-row.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-row.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-row.is-none .pf-dot { background: rgb(var(--pf-gray-400)); }   /* nothing to compare yet: grey, its words say why */
+.pf-row.pf-night, .pf-row.pf-week { padding-top: 8px; }   /* the first row under the card's title, no rule above it */
+.pf-row.pf-intensity { border-top: 1px solid rgb(var(--pf-line)); }   /* « Intensité » under the 7 days, a rule between them as between the rows */
+.pf-intensity .pf-row-val > span { font-size: 15px; color: rgb(var(--pf-ink)); }   /* its word alone, in ink at the name's size (the mockup) */
+.pf-sum .pf-tl { margin-top: 4px; }
+.pf-sum .pf-phases { margin-top: 6px; padding-bottom: 8px; }
+/* the Sommeil card's need line (2026-10-09: computed, never asked) */
+.pf-need-line { margin: 2px 0 10px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
+.pf-sum-link { display: block; padding: 11px 0 12px; font-size: 14.5px; font-weight: 650; line-height: 21px; color: rgb(var(--pf-accent-strong)); text-decoration: none; }   /* 44 px */
+.dark .pf-sum-link { color: rgb(var(--pf-accent)); }
+.pf-sum-link:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 6px; }
+/* cards: a soft background, the title, the chart */
+.pf-card { background: rgb(var(--pf-soft)); border-radius: 22px; padding: 16px 14px 10px; margin-top: 14px; }
+.pf-card-h { font-size: 15px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; color: rgb(var(--pf-ink)); }
+.pf-card-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.pf-card-top .pf-viz-ranges { margin-top: 0; }
+.pf-card .pf-viz { margin-top: 2px; }
+.pf-card .pf-viz-band { fill: rgb(var(--pf-accent) / .16); }   /* the normal stays visible on the soft card */
+/* the range toggle on a card: the app's filled pill (surface, a soft shadow) and a thin edge, never a heavy ring */
+.pf-card .pf-viz-ranges { background: rgb(var(--pf-line) / .7); }
+.pf-card .pf-viz-ranges > [aria-pressed="true"] { background: rgb(var(--pf-surface)); box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 0 0 1px rgb(var(--pf-gray-400) / .9); }
+/* a card's readout: two one-line rows across the card — the value and its word, the day and its context (a link
+   at its end) — so nothing wraps, nothing jumps, nothing reserves an empty block */
+.pf-viz-read.pf-viz-read2 { display: block; min-height: 0; margin-top: 4px; }   /* over the kit's 3-column grid */
+.pf-viz-l1 { display: flex; align-items: baseline; column-gap: 8px; min-height: 30px; white-space: nowrap; overflow: hidden; }
+.pf-viz-l1 > b { flex: none; font-family: var(--pf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 30px; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-viz-l1 > .pf-viz-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 15px; font-weight: 600; color: rgb(var(--pf-gray-600)); }
+.pf-viz[data-tone="ok"] .pf-viz-w { color: rgb(var(--pf-ok)); }
+.pf-viz[data-tone="warn"] .pf-viz-w { color: rgb(var(--pf-warn)); }
+.pf-viz[data-tone="danger"] .pf-viz-w { color: rgb(var(--pf-danger)); }
+.pf-viz-l2 { display: flex; align-items: baseline; column-gap: 10px; min-height: 20px; font-size: 13px; line-height: 20px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-l2 > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-viz-l2 > .pf-viz-link { flex: none; min-height: 0; padding: 12px 8px; margin: -12px -8px -12px 0; font-size: 13px; line-height: 20px; }   /* a 44 px target in a 20 px row */
+.pf-viz-l2 > .pf-viz-link.is-off { display: none; }   /* inline: nothing to reserve */
+/* the selection: a soft column behind the bar (an outline on it); on a night card no column (it would read as a
+   bar): a ring around the night's dot, or at a night without a measure a thin dashed hairline at its place */
+.pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .07); }
+.dark .pf-viz-card .pf-viz-cross rect { fill: rgb(var(--pf-ink) / .1); }
+.pf-viz-card .pf-viz-cross circle.pf-viz-ring { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+.pf-viz-card .pf-viz-cross .pf-viz-at { display: none; stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 3 3; }
+.pf-viz-card .pf-viz-cross.is-none .pf-viz-at { display: inline; }
+@media (min-width: 900px) { .pf-card { padding: 20px 20px 12px; } }
+/* a night card's status line: a dot in its facts row's colour and the words (never colour alone), then what it
+   often means when it is out of the normal on the side that matters */
+.pf-card-status { display: flex; align-items: baseline; gap: 7px; margin-top: 2px; font-size: 14px; font-weight: 600; line-height: 1.4; color: rgb(var(--pf-gray-700)); }
+.pf-card-status.is-plain { font-weight: 500; color: rgb(var(--pf-gray-600)); }
+.pf-card-status b { font-family: var(--pf-font-display); font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }   /* « −8 % » */
+.pf-dot { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--pf-accent)); transform: translateY(-1px); }
+.pf-card-status.is-ok .pf-dot { background: rgb(var(--pf-ok)); }
+.pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
+.pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
+.pf-card-meaning { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 1px; }
+/* v4.4 (owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »): the provisional
+   band has dashed edges and a lighter fill; every measured night is a filled dot (each one counts, owner
+   2026-10-08) */
+.pf-card .pf-viz-band.is-prov { fill: rgb(var(--pf-accent) / .08); }
+.pf-viz-edge.is-prov { stroke-dasharray: 3 3; }
+/* the cards' bars: one per day, a lighter part on top (the naps), today's day on an ink disc */
+.pf-bar { fill: rgb(var(--pf-accent)); }
+.pf-bar.is-ok { fill: rgb(var(--pf-ok)); }
+.pf-bar.is-warn { fill: rgb(var(--pf-warn-mark)); }
+.pf-bar.is-danger { fill: rgb(var(--pf-danger)); }
+.pf-bar-top { fill: rgb(var(--pf-accent) / .38); stroke: rgb(var(--pf-accent)); stroke-width: 1; }   /* the nap's edge ≥ 3:1 on the card */
+.pf-bar-brk { fill: rgb(var(--pf-soft)); }   /* a bar past the axis: a gap across it */
+/* a score estimated without a night measured: hatched and outlined in its state's colour, named in the legend */
+.pf-bar-est { stroke-width: 1.25; }
+.pf-bar-est.is-ok, .pf-est-hatch.is-ok { stroke: rgb(var(--pf-ok)); }
+.pf-bar-est.is-warn, .pf-est-hatch.is-warn { stroke: rgb(var(--pf-warn-mark)); }
+.pf-bar-est.is-danger, .pf-est-hatch.is-danger { stroke: rgb(var(--pf-danger)); }
+.pf-est-hatch { stroke-width: 1.6; }
+.pf-viz-faint .pf-bar { opacity: .4; }   /* a long range: each day's 24 h faint, the 7-night mean is the mark */
+.pf-viz-hair { stroke: rgb(var(--pf-gray-400) / .55); stroke-width: 1; stroke-dasharray: 2 3; shape-rendering: crispEdges; }
+.pf-viz-svg .pf-viz-todisc { fill: rgb(var(--pf-ink)); }
+.pf-viz-svg text.pf-viz-today { fill: rgb(var(--pf-bg)); font-weight: 700; }
+.pf-viz-col.is-sel .pf-bar, .pf-viz-col.is-sel .pf-bar-top, .pf-viz-col.is-sel .pf-bar-est { stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+/* the legend under a card's chart */
+.pf-viz-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; font-size: 12px; line-height: 16px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.pf-lg { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.pf-lg.is-night { background: rgb(var(--pf-accent)); }
+.pf-lg.is-nap { background: rgb(var(--pf-accent) / .38); box-shadow: inset 0 0 0 1px rgb(var(--pf-accent)); }
+.pf-lg.is-day { background: rgb(var(--pf-accent) / .4); }
+.pf-lg.is-ref { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed rgb(var(--pf-gray-500)); }
+.pf-lg.is-mean { width: 14px; height: 0; border-radius: 0; border-top: 2px solid rgb(var(--pf-ink)); }
+.pf-lg.is-dot { width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-viz-mark)); }   /* a night's dot */
+.pf-lg.is-band { width: 14px; height: 8px; background: rgb(var(--pf-accent) / .16); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the normal */
+.pf-lg.is-band-prov { width: 14px; height: 8px; border-radius: 0; background: rgb(var(--pf-accent) / .08); border-top: 1px dashed rgb(var(--pf-gray-400)); border-bottom: 1px dashed rgb(var(--pf-gray-400)); }   /* the usual values, provisional */
+.pf-lg.is-cur { background: repeating-linear-gradient(45deg, rgb(var(--pf-viz-mark)) 0 1.5px, rgb(var(--pf-bg)) 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-viz-mark)); }   /* the week in progress, hatched */
+.pf-lg.is-usual { width: 14px; height: 8px; background: rgb(var(--pf-accent-soft)); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the usual week (page background) */
+.pf-lg.is-hot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-bg)); box-shadow: inset 0 0 0 1.5px rgb(var(--pf-ink)); }   /* a hot run, hollow */
+.pf-lg.is-est { background: repeating-linear-gradient(45deg, rgb(var(--pf-gray-600)) 0 1.5px, transparent 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-600)); }   /* a score without a night measured, hatched */
+/* Sommeil: last night, its timeline, the habits */
+.pf-sec-h { font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: rgb(var(--pf-ink)); margin-top: 30px; }
+.pf-sec > .pf-sec-h + .pf-card { margin-top: 10px; }
+.pf-tl { display: block; width: 100%; max-width: 560px; height: auto; margin-top: 14px; overflow: visible; }
+.pf-tl text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
+.pf-tl .pf-tl-lane { fill: rgb(var(--pf-gray-600)); }
+.pf-tl-grid { stroke: rgb(var(--pf-line)); stroke-width: 1; shape-rendering: crispEdges; }
+.pf-tl-night, .pf-tl-seg { fill: rgb(var(--pf-accent)); }
+.pf-tl-step { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; opacity: .6; }
+/* sleep stages (the hero's bar and legend, the hypnogram's lanes): calm colours, no good/bad colour, each ≥ 3:1 on
+   the cards in both themes; the legend names each one with its minutes (never colour alone) */
+:root { --pf-st-awake: 120 128 140; --pf-st-light: 52 120 190; --pf-st-deep: 37 45 128; --pf-st-rem: 124 79 200; }
+.dark { --pf-st-awake: 140 146 160; --pf-st-light: 96 165 232; --pf-st-deep: 108 116 232; --pf-st-rem: 196 150 255; }
+.pf-tl-seg.is-awake, .pf-ph.is-awake { fill: rgb(var(--pf-st-awake)); background: rgb(var(--pf-st-awake)); }
+.pf-tl-seg.is-light, .pf-ph.is-light { fill: rgb(var(--pf-st-light)); background: rgb(var(--pf-st-light)); }
+.pf-tl-seg.is-deep, .pf-ph.is-deep { fill: rgb(var(--pf-st-deep)); background: rgb(var(--pf-st-deep)); }
+.pf-tl-seg.is-rem, .pf-ph.is-rem { fill: rgb(var(--pf-st-rem)); background: rgb(var(--pf-st-rem)); }
+.pf-phases { margin-top: 14px; max-width: 560px; }
+.pf-phases-bar { display: flex; gap: 2px; height: 14px; }   /* a gap between phases: each one stands on the card */
+.pf-phases-bar > .pf-ph { display: block; min-width: 4px; flex-basis: 0; border-radius: 3px; }
+.pf-phases-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-top: 10px; font-size: 13px; line-height: 18px; color: rgb(var(--pf-gray-600)); }
+.pf-phases-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.pf-phases-legend b { font-weight: 650; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
+.pf-phases-legend .pf-ph { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 2px; }
+@media (min-width: 560px) { .pf-phases-legend { grid-template-columns: repeat(4, max-content); } }
+.pf-tl-nap { fill: rgb(var(--pf-accent) / .4); stroke: rgb(var(--pf-accent)); stroke-width: 1; }
+.pf-habits { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin-top: 10px; }
+.pf-habits > div { background: rgb(var(--pf-soft)); border-radius: 16px; padding: 10px 12px; }
+.pf-habits dt { font-size: 12px; color: rgb(var(--pf-gray-500)); }
+.pf-habits dd { font-family: var(--pf-font-display); font-size: 18px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); white-space: nowrap; }
+@media (max-width: 374px) { .pf-habits dd { font-size: 16px; } }
+.pf-habits-reg { margin-top: 8px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-600)); }   /* the regularity: words, no colour, no score */
+/* the closed folds at the end */
+.pf-folds { margin-top: 24px; }
+.pf-fold { margin-top: 4px; }
+.pf-fold > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); min-height: 44px; display: flex; align-items: center; list-style: none; }
+.pf-fold > summary::-webkit-details-marker { display: none; }
+.pf-fold > summary::after { content: " ›"; content: " ›" / ""; margin-left: 4px; color: rgb(var(--pf-gray-400)); }
+.pf-fold[open] > summary::after { content: " ⌄"; content: " ⌄" / ""; }
+.pf-ntable-wrap { overflow-x: auto; margin-top: 4px; border-radius: 6px; }
+.pf-ntable-wrap:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-ntable { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-ntable :is(th, td) { padding: 7px 10px 7px 0; text-align: left; border-bottom: 1px solid rgb(var(--pf-line)); color: rgb(var(--pf-ink)); }
+.pf-ntable thead th { font-weight: 600; color: rgb(var(--pf-gray-500)); }
+.pf-ntable tbody th { font-weight: 600; }
+.pf-method ul { list-style: disc; padding-left: 18px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
+.pf-method li + li { margin-top: 6px; }
+.pf-method-src { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 13px; font-weight: 600; line-height: 20px; color: rgb(var(--pf-accent-strong)); }   /* « Sources », a 44 px target */
+.dark .pf-method-src { color: rgb(var(--pf-accent)); }
+/* Santé › Sources: each fold's references, the official texts then the studies, one per line, each a 44 px target */
+.pf-sources .pf-sec-h { margin-top: 22px; }
+.pf-method-h { margin: 12px 0 0; font-size: 13px; font-weight: 650; line-height: 1.3; color: rgb(var(--pf-gray-700)); }
+.pf-refs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; font-size: 13px; line-height: 20px; }
+.pf-refs a { display: inline-block; min-height: 44px; padding: 12px 0; line-height: 20px; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-refs a { color: rgb(var(--pf-accent)); }
+@media (prefers-reduced-motion: no-preference) {
+    .pf-ring-arc { animation: pf-ring-in .3s ease-out both; }
+}
+@keyframes pf-ring-in { from { stroke-dashoffset: var(--pf-dash); } to { stroke-dashoffset: 0; } }
+@media (forced-colors: active) {
+    .pf-ring-track { stroke: CanvasText; stroke-width: 2; }   /* a thin track, a thick arc: the value without colour */
+    .pf-ring-arc, .pf-ring.is-ok .pf-ring-arc, .pf-ring.is-warn .pf-ring-arc, .pf-ring.is-sleep .pf-ring-arc, .pf-ring.is-danger .pf-ring-arc { stroke: CanvasText; }
+    .pf-card, .pf-habits > div { border: 1px solid CanvasText; }
+    .pf-bar, .pf-bar.is-ok, .pf-bar.is-warn, .pf-bar.is-danger, .pf-tl-night, .pf-tl-seg { fill: CanvasText; }
+    .pf-bar-top, .pf-tl-nap { fill: Canvas; stroke: CanvasText; stroke-width: 1; }
+    .pf-bar-brk { fill: Canvas; }
+    .pf-viz-col.is-sel :is(.pf-bar, .pf-bar-top) { fill: Highlight; stroke: Highlight; }
+    .pf-viz-card .pf-viz-cross rect { fill: transparent; stroke: Highlight; stroke-width: 1; }
+    .pf-viz-card .pf-viz-cross circle.pf-viz-ring, .pf-viz-card .pf-viz-cross .pf-viz-at { stroke: Highlight; }
+    .pf-viz-svg .pf-viz-todisc { fill: CanvasText; }
+    .pf-viz-svg text.pf-viz-today { fill: Canvas; }
+    .pf-dot { forced-color-adjust: none; background: CanvasText; }
+    .pf-bar-est, .pf-est-hatch { stroke: CanvasText; }
+    .pf-viz-col.is-sel .pf-bar-est { stroke: Highlight; }
+    .pf-lg { forced-color-adjust: none; background: CanvasText; }
+    /* (0,3,0): over the tones' (0,2,0) swatches, so the legend matches the forced bars */
+    .pf-viz-legend .pf-lg:is(.is-night, .is-day, .is-dot) { background: CanvasText; box-shadow: none; }
+    .pf-viz-legend .pf-lg:is(.is-nap, .is-band, .is-usual, .is-hot, .is-cur, .is-est) { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-viz-legend .pf-lg.is-band-prov { background: Canvas; box-shadow: none; border-color: CanvasText; }
+    .pf-viz-legend .pf-lg:is(.is-ref, .is-mean) { background: none; border-top-color: CanvasText; }
+    .pf-tl text, .pf-tl .pf-tl-lane, .pf-viz-svg text.pf-viz-strong { fill: CanvasText; }
+    .pf-tl-step { stroke: CanvasText; opacity: 1; }
+    .pf-viz-hair { stroke: CanvasText; }
+    /* the stages: shapes, not colours (the legend names them in the same order) */
+    .pf-ph { forced-color-adjust: none; }
+    .pf-ph.is-awake { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-ph.is-light { background: repeating-linear-gradient(45deg, CanvasText 0 1.5px, Canvas 1.5px 4px); box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-ph.is-deep { background: CanvasText; }
+    .pf-ph.is-rem { background: repeating-linear-gradient(90deg, CanvasText 0 2px, Canvas 2px 4px); box-shadow: inset 0 0 0 1px CanvasText; }
+    .pf-tl-seg.is-awake { fill: Canvas; stroke: CanvasText; stroke-width: 1; }
+    .pf-tl-seg:is(.is-light, .is-deep, .is-rem) { fill: CanvasText; }
+}
+
+/* the empty states: 44 px targets; the secondary « Connecter Strava » outlined (its fill is the panel's) */
+.pf-health-connect .pf-btn { min-height: 44px; }
+.pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-400)); }
+/* keyboard focus never lands under the sticky top bar or the bottom tab bar (UX8); the anchors keep their place */
+@media (max-width: 899px) {
+    html { scroll-padding-top: 72px; scroll-padding-bottom: 84px; }
+    .pf-sante4 [id] { scroll-margin-top: 8px; }
+    .pf-rp { scroll-margin-top: 0; }
+    .pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }
 }
 
 /* ── Réglages ─────────────────────────────────────────────────────────── */
 .pf-settings { max-width: 48rem; }  /* phone and tablet; the desktop spans the content width in side headings */
 .pf-section { border-top: 1px solid rgb(var(--pf-line)); padding: 28px 0; }
 .pf-settings .pf-head + .pf-section, .pf-settings .pf-note + .pf-section { border-top: 0; padding-top: 8px; }
+/* a linked watch: its last sync (a polite live region: a manual sync's result is said) and « Synchroniser
+   maintenant », 44 px; the spinner replaces the icon while it runs (htmx-request on the button itself) */
+.pf-watch-sync { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.pf-watch-state { min-width: 0; flex: 1 1 14rem; }
+.pf-watch-state > * + * { margin-top: 2px; }
+.pf-sync-now { min-height: 44px; }
+.pf-sync-now .pf-sync-ic, .pf-sync-now .pf-sync-spin { width: 16px; height: 16px; flex: none; }
+.pf-sync-now .pf-sync-spin { display: none; }
+.pf-sync-now.htmx-request .pf-sync-spin { display: inline-block; }
+.pf-sync-now.htmx-request .pf-sync-ic { display: none; }
+.pf-sync-msg { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); }
 
 /* ── public pages: landing, méthode, auth, legal ──────────────────────── */
 .pf-pubtop { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -619,9 +901,110 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 #tool-title:focus { outline: none; }
 .dark .pf-hero-in { background-color: transparent; border-color: transparent; border-bottom-color: rgb(var(--pf-accent)); }
 .dark .pf-seg > [aria-pressed="true"], .dark .pf-seg > [aria-current] { background: rgb(var(--pf-gray-200)); }
-.pf-health-load, .pf-health-fitness { margin-top: 48px; }
 .pf-courses-cols > div > .pf-sechead:first-child { margin-top: 28px; }
-@media (max-width: 899px) { .pf-ring { width: 108px; height: 108px; } .pf-ring-v b { font-size: 34px; } .pf-health-rec { gap: 18px; align-items: flex-start; } }
+
+/* ── viz: the chart kit (app/services/viz.py, partials/_viz.html, js/pf-viz.js) ─────────────────────
+   --pf-* tokens only. Marks are --pf-viz-mark: ≥ 3:1 on the page AND ≥ 3:1 against the selected ink,
+   in both themes (light 4.8:1 / 3.7:1, dark 4.5:1 / 3.9:1: tests/test_viz.py checks them). Status is
+   never colour alone (glyph + word + position). Motion: ≤ 300 ms, only under no-preference. */
+:root { --pf-viz-mark: var(--pf-gray-400); }
+.dark { --pf-viz-mark: 122 122 130; }
+
+.pf-viz { margin: 12px 0 0; }
+.pf-viz-read { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; column-gap: 4px; min-height: 64px; }
+.pf-viz-read-txt { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.pf-viz-read-txt [data-r]:first-child { flex-basis: 100%; font-size: 13px; color: rgb(var(--pf-gray-500)); }
+.pf-viz-tall .pf-viz-read { min-height: 100px; }   /* the nights' readout: 3 lines at 358 px, reserved */
+.pf-viz-read-txt b { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-viz-read-txt [data-r]:nth-child(3) { font-size: 13px; color: rgb(var(--pf-gray-600)); }
+.pf-viz-step { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; font-size: 22px; line-height: 1; color: rgb(var(--pf-ink)); background: rgb(var(--pf-soft)); }
+.pf-viz-step:disabled, .pf-viz-step[aria-disabled="true"] { color: rgb(var(--pf-gray-400)); background: transparent; cursor: default; }
+.pf-viz-step:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+.pf-viz-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-viz-link { color: rgb(var(--pf-accent)); }
+.pf-viz-link.is-off { visibility: hidden; }   /* the row stays: the plot never moves under the finger */
+.pf-viz-plot { position: relative; max-width: 560px; border-radius: 8px; }
+.pf-viz-plot:focus-within { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 4px; }
+.pf-viz-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.pf-viz-on .pf-viz-svg { cursor: crosshair; }
+.pf-viz-svg text { font-size: 11px; fill: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
+.pf-viz-svg .pf-viz-strong { fill: rgb(var(--pf-ink)); font-weight: 600; }
+.pf-viz-band { fill: rgb(var(--pf-accent-soft)); }
+.pf-viz-edge { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; shape-rendering: crispEdges; fill: none; }
+.pf-viz-grid { stroke: rgb(var(--pf-line)); stroke-width: 1; shape-rendering: crispEdges; }
+.pf-viz-ref { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 4 3; shape-rendering: crispEdges; }
+.pf-viz-med { stroke: rgb(var(--pf-gray-400)); stroke-width: 1; stroke-dasharray: 1 3; }
+.pf-viz-dot { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-dot.is-out, .pf-viz-dot.is-hot { fill: rgb(var(--pf-bg)); stroke: rgb(var(--pf-ink)); stroke-width: 1.5; }
+.pf-viz-dot.is-sel { fill: rgb(var(--pf-ink)); }
+.pf-viz-line { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pf-viz-line.is-soft { stroke: rgb(var(--pf-viz-mark)); }
+.pf-viz-now { fill: rgb(var(--pf-ink)); stroke: rgb(var(--pf-bg)); stroke-width: 2; }
+.pf-viz-now.is-warn { fill: rgb(var(--pf-warn)); }
+.pf-viz-now.is-danger { fill: rgb(var(--pf-danger)); }
+.pf-viz-now.is-ok { fill: rgb(var(--pf-ok)); }
+.pf-viz-now.is-out { fill: rgb(var(--pf-bg)); stroke: currentColor; stroke-width: 2; }
+.pf-viz-now.is-out.is-warn { stroke: rgb(var(--pf-warn)); }
+.pf-viz-now.is-out.is-danger { stroke: rgb(var(--pf-danger)); }
+.pf-viz-ev { stroke: rgb(var(--pf-gray-500)); stroke-width: 1; stroke-dasharray: 2 3; }
+.pf-viz-flag { fill: rgb(var(--pf-ink)); }
+.pf-viz-long { fill: rgb(var(--pf-gray-600)); }
+.pf-viz-cross { pointer-events: none; }
+.pf-viz-cross line { stroke: rgb(var(--pf-ink)); stroke-width: 1; }
+.pf-viz-cross circle { fill: rgb(var(--pf-ink)); stroke: rgb(var(--pf-bg)); stroke-width: 2; }
+.pf-viz-cross circle.pf-viz-ring { fill: none; stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+/* nights: 24-h bars (night solid, nap lighter and hatched, < 6 h outlined) and bed → wake windows */
+.pf-viz-night, .pf-viz-win, .pf-viz-bar { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-night.is-short { fill: rgb(var(--pf-bg)); stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+.pf-viz-nap { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1; }
+.pf-viz-nap-bg { fill: rgb(var(--pf-bg)); }
+.pf-viz-hatch { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; }
+.pf-viz-nap-edge { fill: rgb(var(--pf-viz-mark)); }
+.pf-viz-plan { fill: none; stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.pf-viz-sec { fill: rgb(var(--pf-gray-500)); }
+.pf-viz-miss { stroke: rgb(var(--pf-viz-mark)); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 0 4; }
+.pf-viz-col.is-sel .pf-viz-night:not(.is-short), .pf-viz-col.is-sel .pf-viz-win, .pf-viz-col.is-sel .pf-viz-bar { fill: rgb(var(--pf-ink)); }
+.pf-viz-col.is-sel .pf-viz-nap, .pf-viz-col.is-sel .pf-viz-night.is-short, .pf-viz-col.is-sel .pf-viz-plan { stroke: rgb(var(--pf-ink)); stroke-width: 2; }
+/* a selected < 6 h night is filled too (its outline alone would look unselected); the readout says « moins de 6 h » */
+.pf-viz-col.is-sel .pf-viz-night.is-short { fill: rgb(var(--pf-ink)); }
+.pf-viz-cap { margin-top: 0; padding-top: 6px; }
+.pf-viz-cap { font-size: 12px; color: rgb(var(--pf-gray-500)); margin-top: 6px; }
+/* range toggle: 44 px on touch; the pressed one carries a 2 px ink ring (≥ 3:1 in both themes) */
+.pf-viz-ranges { margin-top: 14px; }
+.pf-viz-ranges > button { min-height: 40px; }
+.pf-viz-ranges > [aria-pressed="true"] { box-shadow: inset 0 0 0 2px rgb(var(--pf-ink)); }
+.pf-viz-ranges > button:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
+@media (pointer: coarse) { .pf-viz-ranges > button { min-height: 44px; } }
+/* motion: only when the reader allows it, ≤ 300 ms, never looping. A figure off screen when pf-viz.js sets it
+   up waits drawn small (never seen whole, then collapsed); one already on screen stays as painted (pf-viz-still) */
+@media (prefers-reduced-motion: no-preference) {
+    .pf-viz-cross { transition: transform .14s ease-out; }
+    .pf-viz-on:not(.pf-viz-in) .pf-viz-line[pathLength] { stroke-dasharray: 1; stroke-dashoffset: 1; }
+    .pf-viz-on:not(.pf-viz-in) :is(.pf-viz-night, .pf-viz-bar) { transform: scaleY(.3); opacity: .3; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pf-viz-on:not(.pf-viz-in) :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { opacity: 0; }
+    .pf-viz-in:not(.pf-viz-still) .pf-viz-line[pathLength] { stroke-dasharray: 1; animation: pf-viz-draw .3s ease-out both; }
+    .pf-viz-in:not(.pf-viz-still) :is(.pf-viz-night, .pf-viz-bar) { animation: pf-viz-rise .3s ease-out both; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pf-viz-in:not(.pf-viz-still) :is(.pf-viz-win, .pf-viz-nap, .pf-viz-plan) { animation: pf-viz-fade .3s ease-out both; }
+}
+@keyframes pf-viz-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes pf-viz-rise { from { transform: scaleY(.3); opacity: .3; } to { transform: none; opacity: 1; } }
+@keyframes pf-viz-fade { from { opacity: 0; } to { opacity: 1; } }
+/* forced colours (Windows high contrast): marks in CanvasText, the selection in Highlight */
+@media (forced-colors: active) {
+    .pf-viz-line, .pf-viz-edge, .pf-viz-cross line, .pf-viz-ref, .pf-viz-ev, .pf-viz-nap, .pf-viz-hatch, .pf-viz-plan,
+    .pf-viz-miss, .pf-viz-night.is-short { stroke: CanvasText; }
+    .pf-viz-dot, .pf-viz-night, .pf-viz-win, .pf-viz-bar, .pf-viz-nap-edge, .pf-viz-flag, .pf-viz-long,
+    .pf-viz-cross circle, .pf-viz-now { fill: CanvasText; }
+    .pf-viz-band { fill: Canvas; }
+    .pf-viz-dot.is-out, .pf-viz-dot.is-hot, .pf-viz-night.is-short, .pf-viz-nap-bg { fill: Canvas; }
+    /* :is() takes its most specific argument: (0,4,0), as the normal-mode « .is-sel .pf-viz-night:not(.is-short) » */
+    .pf-viz-dot.is-sel, .pf-viz-col.is-sel :is(.pf-viz-night, .pf-viz-night:not(.is-short), .pf-viz-win, .pf-viz-bar) { fill: Highlight; }
+    .pf-viz-col.is-sel :is(.pf-viz-nap, .pf-viz-night.is-short, .pf-viz-plan) { stroke: Highlight; }
+    .pf-viz-svg text { fill: CanvasText; }
+    .pf-viz-ranges > [aria-pressed="true"] { outline: 2px solid Highlight; box-shadow: none; }
+    .pf-viz-step { border: 1px solid ButtonText; }
+    .pf-viz-step[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
+}
 
 /* ── desktop: race plan (two panes) ───────────────────────────────────── */
 /* @desk-plan */
@@ -640,6 +1023,8 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     /* the profile's margin box ends with Préparer (36 px + its 87.5 px): in a short window both leave together at the end of the list */
     #simulator-root > .pf-profile:has(~ .pf-prep) { margin-bottom: calc(36px + 87.5px); }
     #add-pt { justify-self: start; }
+    /* Préparation (#prep, partials/race_prep.html, after the plan in #rpanel-plan): in the left pane's width, under the passages */
+    #rpanel-plan > .pf-rp { max-width: calc(100% - 380px - 56px); }
     /* a closed row's head bleeds 10 px each side, as the anchor row's does: its highlight (hover, profile hover) clears the text */
     .pf-prow:not(.is-open) .pf-prow-head { margin: 0 -10px; padding-inline: 10px; }
 }
@@ -649,19 +1034,19 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 }
 @media (min-width: 1280px) {
     #simulator-root { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 72px; }
+    #rpanel-plan > .pf-rp { max-width: calc(100% - 400px - 72px); }
 }
 
-/* ── débrief & finisher de référence ──────────────────────────────────── */
+/* ── débrief ───────────────────────────────────────────────────────────── */
 /* @desk-tools */
-/* both tools: a lead line, notes, an error, the key gaps (one soft panel), the point-by-point rows */
+/* a lead line, notes, an error, the point-by-point rows */
 .pf-tl-lead { font-size: 16px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 36em; }
 .pf-tl-note { margin-top: 24px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
-.pf-tl-note.is-warn { margin-top: 12px; color: rgb(var(--pf-warn)); }
 .pf-tl-fine { margin-top: 12px; font-size: 13px; line-height: 1.45; color: rgb(var(--pf-gray-500)); max-width: 40em; }
 .pf-tl-err { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 16px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-danger)); }
 .pf-tl-sec { margin-top: 40px; }
-:is(.pf-db, .pf-ref) .is-ok { color: rgb(var(--pf-ok)); }
-:is(.pf-db, .pf-ref) .is-bad { color: rgb(var(--pf-danger)); }
+.pf-db .is-ok { color: rgb(var(--pf-ok)); }
+.pf-db .is-bad { color: rgb(var(--pf-danger)); }
 /* items separated by « · »: the line is shifted left by one dot and clipped, so no line starts with a dot */
 :is(.pf-db-facts, .pf-db-src, .pf-cmp-facts) { overflow: hidden; }
 .pf-dots { display: flex; flex-wrap: wrap; align-items: baseline; margin-left: -16px; }
@@ -687,7 +1072,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-cmp-name small { margin-left: 4px; font-size: 13px; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-cmp-gap { grid-area: gap; text-align: right; white-space: nowrap; font-family: var(--pf-font-display); font-size: 18px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
 .pf-cmp-gap small { font-size: 13px; font-weight: 600; letter-spacing: 0; }
-.pf-cmp-gap.is-none { font-family: var(--pf-font-text); font-weight: 400; color: rgb(var(--pf-gray-300)); }
 /* where you lost / gained the most: the gap in a soft pill (its figure stays on the column's right edge) */
 .pf-cmp-gap.is-top { justify-self: end; margin-right: -8px; padding: 0 8px; border-radius: 999px; }
 .pf-cmp-gap.is-top.is-bad { background: rgb(var(--pf-danger-soft)); }
@@ -695,25 +1079,10 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-cmp-facts { grid-area: facts; margin-top: 2px; font-size: 13px; line-height: 1.45; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-cmp-facts .pf-dots > * { white-space: nowrap; }
 .pf-cmp-facts i { font-style: normal; }
-.pf-cmp-facts small { font-size: inherit; }
 .pf-cmp-facts .is-none { display: none; }
 .pf-cmp-why { grid-area: why; margin-top: 2px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); text-wrap: pretty; }
 
-/* finisher de référence: who, then the form or the comparison */
-.pf-ref-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin-top: -10px; }
-.pf-ref-name { font-size: 17px; font-weight: 600; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
-.pf-ref-how { font-size: 14px; color: rgb(var(--pf-gray-500)); }
-.pf-ref-who .pf-link { min-height: 36px; font-size: 15px; }
-.pf-ref-note { margin-top: 4px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 40em; }
-/* the 3 biggest legs each way: the Tronçon figure in a soft pill */
-.pf-ref-top { margin: 0 -6px 0 -2px; padding: 0 6px; border-radius: 999px; background: rgb(var(--pf-accent-soft)); color: rgb(var(--pf-ink)); font-weight: 600; }
-.pf-ref-form { display: grid; gap: 18px; margin-top: 24px; max-width: 640px; }
-.pf-ref-form label { display: block; min-width: 0; }
-.pf-ref-form textarea.pf-input { display: block; min-height: 0; padding: 12px 16px; font-size: 15px; line-height: 1.5; resize: vertical; }
-.pf-ref-form small { display: block; margin-top: 6px; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
-.pf-ref-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 12px; }
-.pf-ref-form .pf-btn { justify-self: start; }
-@media (max-width: 639px) { .pf-ref-form .pf-btn, .pf-db-pick .pf-btn { justify-self: stretch; } }
+@media (max-width: 639px) { .pf-db-pick .pf-btn { justify-self: stretch; } }
 
 @media (min-width: 1024px) {
     .pf-db-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 72px; align-items: center; }
@@ -751,38 +1120,11 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-cmp-db .pf-cmp-gap { grid-column: 6; }
     .pf-cmp-db .pf-cmp-why { grid-column: 7; }
     .pf-cmp-db :is(.pf-cmp-why, .pf-cmp-head > :last-child) { padding-left: 8px; }  /* clear of a marked gap's pill */
-    /* référence: point · réf. · ton plan · tronçon · écart (the DOM order, so the cells meet their headers) */
-    .pf-cmp-ref :is(.pf-cmp-head, .pf-cmp-row) { grid-template-columns: minmax(0, 1fr) 76px 76px 84px 84px; column-gap: 16px; }
-    .pf-cmp-ref .pf-cmp-name { grid-column: 1; }
-    .pf-cmp-ref .pf-dots > :nth-child(1) { grid-column: 2; color: rgb(var(--pf-ink)); }
-    .pf-cmp-ref .pf-dots > :nth-child(2) { grid-column: 3; }
-    .pf-cmp-ref .pf-dots > :nth-child(3) { grid-column: 4; }
-    .pf-ref-top { margin: 0 -6px 0 0; }
-    .pf-cmp-ref .pf-cmp-gap { grid-column: 5; }
 }
 
-/* ── desktop: Santé, Réglages, Activités ──────────────────────────────── */
+/* ── desktop: Réglages, Activités ─────────────────────────────────────── */
 /* @desk-pages */
 @media (min-width: 1024px) {
-    /* Santé: today (ring + verdict) and the level share the first row, the load spans the width, the trends sit in one row */
-    .pf-health-full { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); column-gap: 48px;
-        grid-template-areas: "head head" "links links" "rec fit" "load load" "trends trends" "miss miss"; }
-    .pf-health-full > .pf-head { grid-area: head; }
-    .pf-health-full > .pf-health-links { grid-area: links; }
-    /* the verdict hangs 35 px down the 180 px ring (centred for its usual two lines); the level's title shares its first baseline */
-    .pf-health-full > .pf-health-rec { grid-area: rec; margin-bottom: 0; align-items: flex-start; }
-    .pf-health-full > .pf-health-rec > .pf-ring + div { margin-top: 35px; }
-    .pf-health-full > .pf-health-rec p { text-wrap: balance; }
-    .pf-health-full > .pf-health-fitness { grid-area: fit; align-self: start; margin-top: 19px; }
-    .pf-health-full:has(.pf-ring) > .pf-health-fitness { margin-top: 54px; }
-    .pf-health-full > .pf-health-load { grid-area: load; }
-    .pf-health-full > .pf-health-grid { grid-area: trends; }
-    .pf-health-full > .pf-health-missing { grid-area: miss; }
-    .pf-health-fitness .pf-kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-top: 16px; }
-    /* one column per chart (three: no orphan cell); the value goes under the title */
-    .pf-health-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); column-gap: 48px; }
-    .pf-health-grid .pf-sechead { flex-direction: column; align-items: flex-start; gap: 2px; }
-
     /* Réglages: side headings — a section's title (and its status) on the left third, its controls on the right */
     .pf-settings { max-width: none; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); grid-template-rows: repeat(19, auto) 1fr; column-gap: 56px; align-items: start; }
@@ -790,9 +1132,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > :not(:first-child) { grid-column: 2; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > :nth-child(2) { margin-top: 0; }
     .pf-settings .pf-section:not(.pf-set-id, .pf-set-danger) > div:first-child { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 10px; }
-    .pf-settings .pf-section > details { border-top: 0; padding-top: 0; }
     .pf-set-num { flex: none; width: 128px; }
-    .pf-set-keys { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }  /* a short id, a 40-character secret */
     .pf-settings .pf-section p { text-wrap: pretty; }  /* no lone word under a helper line */
     .pf-coros-connect p a { white-space: nowrap; }  /* « serveur Europe » is never split */
     /* the account deletion stays folded: its summary on the left, the form beside it when open */
@@ -801,11 +1141,11 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 
     /* Activités: the week on the left (its totals under it), its rows on the right; one line of values, units inline */
     #activity-list { margin-top: 28px; }
-    .pf-week, #load-more { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 32px; }  /* a label and its totals: ~140 px */
-    .pf-week { grid-template-rows: repeat(98, auto) 1fr; border-top: 1px solid rgb(var(--pf-line)); }
-    .pf-week > .pf-week-heading { grid-column: 1; grid-row: 1 / span 99; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 2px; padding: 15px 0 0; }
-    .pf-week > .pf-activity-row, #load-more > * { grid-column: 2; }
-    .pf-week > .pf-week-heading + .pf-activity-row { border-top-color: transparent; }
+    #activity-list > section, #load-more { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 32px; }  /* a label and its totals: ~140 px */
+    #activity-list > section { grid-template-rows: repeat(98, auto) 1fr; border-top: 1px solid rgb(var(--pf-line)); }
+    #activity-list > section > .pf-week-heading { grid-column: 1; grid-row: 1 / span 99; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 2px; padding: 15px 0 0; }
+    #activity-list > section > .pf-activity-row, #load-more > * { grid-column: 2; }
+    #activity-list > section > .pf-week-heading + .pf-activity-row { border-top-color: transparent; }
     /* the values: a compact block of fixed columns at the row's end; the name keeps the rest, on two lines at most */
     .pf-activity-row .pf-item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-wrap: pretty; }
     .pf-act-stats .pf-label { display: none; }
@@ -817,6 +1157,5 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     #activity-list:not(:has(.pf-act-dplus > b)) .pf-act-dplus, #activity-list:not(:has(.pf-act-pace > b)) .pf-act-pace, #activity-list:not(:has(.pf-act-hr > b)) .pf-act-hr { display: none; }
 }
 @media (min-width: 1280px) {
-    .pf-health-full { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); column-gap: 72px; }
-    .pf-week, #load-more { grid-template-columns: 176px minmax(0, 1fr); column-gap: 40px; }
+    #activity-list > section, #load-more { grid-template-columns: 176px minmax(0, 1fr); column-gap: 40px; }
 }

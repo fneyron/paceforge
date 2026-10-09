@@ -1,7 +1,11 @@
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 
 from app.config import settings
+
+logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs can carry tokens
 
 celery_app = Celery(
     "paceforge",
@@ -30,11 +34,11 @@ celery_app.conf.update(
         },
         "sync-coros": {
             "task": "paceforge.sync_coros",
-            "schedule": crontab(minute=17),  # hourly; each link is synced every 6 h
+            "schedule": crontab(minute=17),  # hourly; each link is synced every 2 h
         },
         "sync-garmin": {
             "task": "paceforge.sync_garmin",
-            "schedule": crontab(minute=47),  # hourly; each link is synced every 6 h
+            "schedule": crontab(minute=47),  # hourly; each link is synced every 2 h
         },
         # disabled: weekly-digest
     },

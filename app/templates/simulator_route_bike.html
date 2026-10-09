@@ -6,6 +6,8 @@
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="/static/js/elevation_profile.js?v=2"></script>
+{# the Nutrition card morphs each change in place (focus and open folds kept), as on the run page #}
+<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
 <style>
 .maplibregl-popup-content { font-family: Inter, system-ui, sans-serif; border-radius: 10px; padding: 12px; }
 .map-container { position: relative; z-index: 0; overflow: hidden; }
@@ -22,17 +24,22 @@ summary::-webkit-details-marker { display: none; }
         Mes courses
     </a>
     <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
-        <button id="rtab-plan" onclick="switchRouteTab('plan')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white text-gray-900 shadow-sm">Plan de course</button>
-        <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Nutrition</button>
+        <button id="rtab-plan" onclick="switchRouteTab('plan')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors {{ 'text-gray-500 hover:text-gray-700' if nutrition_html else 'bg-white text-gray-900 shadow-sm' }}">Plan de course</button>
+        <button id="rtab-nutrition" onclick="switchRouteTab('nutrition')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors {{ 'bg-white text-gray-900 shadow-sm' if nutrition_html else 'text-gray-500 hover:text-gray-700' }}">Nutrition</button>
         <button id="rtab-realise" onclick="switchRouteTab('realise')" class="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-700">Débrief</button>
     </div>
-    <div id="rpanel-plan">
+    <div id="rpanel-plan"{% if nutrition_html %} class="hidden"{% endif %}>
         {% include "partials/bike_plan.html" %}
     </div>
-    <div id="rpanel-nutrition" class="hidden">
-        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ route.id }}?v=17" hx-trigger="load" hx-swap="innerHTML">
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Plan nutritionnel…</div>
+    {# ?vue=nutrition opens Nutrition from the server (where its forms land without JS) #}
+    <div id="rpanel-nutrition"{% if not nutrition_html %} class="hidden"{% endif %}>
+        {% if nutrition_html %}
+        <div id="nutrition-wrap">{{ nutrition_html }}</div>
+        {% else %}
+        <div id="nutrition-wrap" hx-get="/partials/simulator/nutrition/{{ route.id }}?v=20" hx-trigger="load" hx-swap="innerHTML">
+            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-sm text-gray-400">Nutrition…</div>
         </div>
+        {% endif %}
     </div>
     <div id="rpanel-realise" class="hidden space-y-4">
         <div hx-get="/api/simulator/routes/{{ route.id }}/result?v=4" hx-trigger="load" hx-swap="innerHTML"></div>
@@ -53,7 +60,7 @@ function switchRouteTab(tab) {
     });
     // the plan may have changed (objective, checkpoints): reload the nutrition card when shown
     if (tab === 'nutrition' && window.htmx) {
-        window.htmx.ajax('GET', '/partials/simulator/nutrition/{{ route.id }}?v=17', { target: '#nutrition-wrap', swap: 'innerHTML' });
+        window.htmx.ajax('GET', '/partials/simulator/nutrition/{{ route.id }}?v=20', { target: '#nutrition-wrap', swap: 'innerHTML' });
     }
 }
 </script>

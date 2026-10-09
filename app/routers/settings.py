@@ -6,13 +6,16 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
-from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
+from app.services import coros as coros_service
+from app.services import garmin as garmin_service
 from app.services.coros import coros_status
 from app.services.garmin import garmin_status
+from app.services.strava import disconnect as strava_disconnect_link
+from app.services.strava import strava_status
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
@@ -37,6 +40,7 @@ async def _settings_context(request: Request, user: User, db: AsyncSession, **fl
     flags.setdefault("ftp_est", ftp_est)
     flags.setdefault("coros", await coros_status(db, user.id))
     flags.setdefault("garmin", await garmin_status(db, user.id))
+    flags.setdefault("strava", strava_status(user))
     return {"request": request, "user": user, "activity_count": total, **flags}
 
 
@@ -52,6 +56,8 @@ async def settings_page(
         coros_ok=request.session.pop("coros_ok", None),
         coros_error=request.session.pop("coros_error", None),
         garmin_ok=request.session.pop("garmin_ok", None),
+        strava_ok=request.session.pop("strava_ok", None),
+        strava_error=request.session.pop("strava_error", None),
         garmin_error=request.session.pop("garmin_error", None),
     )
     return templates.TemplateResponse(request, "settings.html", context=ctx)
@@ -79,6 +85,42 @@ async def save_settings(
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
 
+# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08)
+_WATCHES = {"coros": (coros_service, coros_status), "garmin": (garmin_service, garmin_status)}
+
+
+@router.post("/settings/{watch}/sync", response_class=HTMLResponse)
+async def watch_sync(
+    watch: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sync one linked watch now; the answer is the new content of its
+    #{watch}-sync-state (partials/watch_sync_state.html): the last sync and how
+    it went. A link that is gone or must be reconnected reloads the page (its
+    block then shows how to reconnect)."""
+    if watch not in _WATCHES:
+        return HTMLResponse("", status_code=404)
+    service, status_of = _WATCHES[watch]
+    conn = await service.connection_for(db, user.id)
+    if conn is None or conn.needs_reauth:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    outcome = await service.run_sync(db, conn)
+    if conn.needs_reauth:  # refused while syncing: reconnect
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    if outcome is None:
+        msg = "Une synchro est déjà en cours : réessaie dans une minute."
+    elif outcome.get("ok"):
+        res = outcome.get("result") or {}
+        msg = ("Synchro faite : tes nouvelles données sont dans Santé." if res.get("inserted") or res.get("updated")
+               else "Synchro faite : rien de nouveau.")
+    else:
+        msg = None  # « Dernière synchro échouée : … » says it
+    return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
+        "request": request, "w": await status_of(db, user.id), "key": watch, "msg": msg})
+
+
 def _to_float(raw: str) -> float | None:
     raw = (raw or "").strip().replace(",", ".")
     if not raw:
@@ -89,51 +131,17 @@ def _to_float(raw: str) -> float | None:
         return None
 
 
-@router.post("/settings/strava-credentials", response_class=HTMLResponse)
-async def update_strava_credentials(
+
+@router.post("/settings/strava/disconnect")
+async def strava_disconnect(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    client_id: str = Form(...),
-    client_secret: str = Form(...),
 ):
-    """Update the user's Strava API app credentials."""
-    client_id = client_id.strip()
-    client_secret = client_secret.strip()
-
-    # Secret may be left blank to keep the current one (only the ID changes).
-    if not client_id or (not client_secret and not user.has_own_strava_app):
-        ctx = await _settings_context(
-            request, user, db, credentials_error="Client ID et Client Secret sont requis."
-        )
-        return templates.TemplateResponse(request, "settings.html", context=ctx)
-
-    user.strava_client_id = client_id
-    if client_secret:
-        user.strava_client_secret_encrypted = encrypt_secret(client_secret)
-    user.strava_credentials_valid = True
-    await db.flush()
-
-    logger.info("Strava credentials updated for user %d", user.id)
-
-    # Re-create webhook subscription with new credentials
-    try:
-        from app.services.strava import StravaService
-        strava = StravaService.for_user(db, user)
-
-        # Delete old subscription if exists
-        if user.strava_webhook_subscription_id:
-            await strava.delete_webhook_subscription(user.strava_webhook_subscription_id)
-
-        sub_id = await strava.create_webhook_subscription(user)
-        if sub_id:
-            user.strava_webhook_subscription_id = sub_id
-            await db.flush()
-    except Exception:
-        logger.exception("Failed to update webhook for user %d", user.id)
-
-    ctx = await _settings_context(request, user, db, credentials_saved=True)
-    return templates.TemplateResponse(request, "settings.html", context=ctx)
+    if user.has_strava_linked:
+        await strava_disconnect_link(db, user)
+    request.session["strava_ok"] = "Strava déconnecté. Les activités déjà reçues restent."
+    return RedirectResponse(url="/settings#strava", status_code=303)
 
 
 @router.post("/settings/delete-account")

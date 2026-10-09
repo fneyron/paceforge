@@ -1,12 +1,12 @@
-"""Garmin link from Réglages and Santé: login (email + password, then the MFA
-code when Garmin asks for one), manual sync, disconnect.
+"""Garmin link from Réglages: login (email + password, then the MFA code when
+Garmin asks for one), disconnect (syncing on demand is Réglages' too:
+app.routers.settings.watch_sync).
 
 The login runs in the background (app.services.garmin.start_login): the page
 polls its state with HTMX. The ticket rides in the (signed) session cookie;
 the password is never stored.
 """
 import logging
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -26,16 +26,15 @@ _SETTINGS = "/settings#garmin"
 _TICKET = "garmin_login"
 
 
-def _login_partial(request: Request, state: dict | None, region: str | None = None) -> HTMLResponse:
-    return templates.TemplateResponse(request, "partials/garmin_login.html", context={
-        "request": request, "login": state, "region": region or garmin.DEFAULT_REGION,
-        "regions": garmin.REGIONS})
+def _login_partial(request: Request, state: dict | None) -> HTMLResponse:
+    return templates.TemplateResponse(request, "partials/garmin_login.html",
+                                      context={"request": request, "login": state})
 
 
 def _done(request: Request) -> Response:
     """The link is stored: back to Réglages, where the first sync shows."""
     request.session.pop(_TICKET, None)
-    request.session["garmin_ok"] = "Garmin connecté. Tes 60 derniers jours et tes séances arrivent : compte quelques minutes."
+    request.session["garmin_ok"] = "Garmin connecté. Tes 60 derniers jours et tes activités arrivent : compte quelques minutes."
     return Response(status_code=204, headers={"HX-Redirect": _SETTINGS})
 
 
@@ -44,21 +43,17 @@ async def garmin_connect(
     request: Request,
     email: str = Form(""),
     password: str = Form(""),
-    region: str = Form(garmin.DEFAULT_REGION),
     user: User = Depends(get_current_user),
 ):
-    region = region if region in garmin.REGIONS else garmin.DEFAULT_REGION
     if not email.strip() or not password:
-        return _login_partial(request, {"state": "error", "message": "Indique ton email et ton mot de passe Garmin."},
-                              region)
+        return _login_partial(request, {"state": "error", "message": "Indique ton email et ton mot de passe Garmin."})
     try:
-        ticket = await garmin.start_login(user.id, email, password, region)
+        ticket = await garmin.start_login(user.id, email, password)
     except Exception:
         logger.exception("Garmin login could not start for user %d", user.id)
-        return _login_partial(request, {"state": "error", "message": "La connexion à Garmin n'a pas pu démarrer. Réessaie."},
-                              region)
+        return _login_partial(request, {"state": "error", "message": "La connexion à Garmin n'a pas pu démarrer. Réessaie."})
     request.session[_TICKET] = ticket
-    return _login_partial(request, {"state": "running"}, region)
+    return _login_partial(request, {"state": "running"})
 
 
 @router.get("/garmin/login", response_class=HTMLResponse)
@@ -83,23 +78,6 @@ async def garmin_mfa(request: Request, code: str = Form(""), user: User = Depend
         return _login_partial(request, {"state": "error", "message": "La connexion à Garmin a expiré. Recommence."})
     return _login_partial(request, {"state": "running", "message": "Vérification du code…"})
 
-
-@router.post("/settings/garmin/sync", response_class=HTMLResponse)
-async def garmin_sync_now(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """« Synchroniser maintenant »: runs the sync here and shows how it went."""
-    conn = await garmin.connection_for(db, user.id)
-    outcome = await garmin.run_sync(db, conn) if conn else None
-    ctx = {"request": request, "garmin": await garmin.garmin_status(db, user.id),
-           "outcome": outcome or {"busy": True}}
-    response = templates.TemplateResponse(request, "partials/garmin_status.html", context=ctx)
-    # from the Santé page: reload it, so the new values show
-    if outcome and outcome.get("ok") and urlsplit(request.headers.get("HX-Current-URL", "")).path == "/sante":
-        response.headers["HX-Refresh"] = "true"
-    return response
 
 
 @router.post("/settings/garmin/disconnect")

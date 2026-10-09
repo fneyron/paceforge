@@ -34,7 +34,8 @@ class Route(Base):
     # Cached weather payload (see services/weather.get_weather_forecast) so a saved
     # route restores its conditions without re-fetching on every page view.
     weather_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
-    # Per-race nutrition plan: {"targets": {...}, "items": [{"product_id", "per_hour"}]}.
+    # Per-race nutrition plan, v2: {"v": 2, "rhythms": [{"product_id", "every_min", "from_min", "to_min"}],
+    # "spare": bool}; older shapes are read by app.services.nutrition_plan.read_plan.
     nutrition_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Actual race result matched to this route (Strava activity) for predicted-vs-
     # actual calibration: {"activity_id", "activity_name", "activity_date",
@@ -44,6 +45,8 @@ class Route(Base):
     result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Reference finisher aligned on this route: {"label", "source", "total_s",
     # "points": [{"km", "time_s"}]} — their passage time next to yours at each CP.
+    # unused since 2026-10-09: the « Finisher de référence » tool was removed (owner: « je ne pense pas qu'on l'ait
+    # pour toutes les courses »); the column stays so that no stored data is dropped
     reference_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

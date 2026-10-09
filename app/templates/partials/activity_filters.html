@@ -1,0 +1,11 @@
+{#- The sport filter: four families, not thirteen sport codes; links, so it works without JS. It filters « Semaines »
+    and the list alike; on page 1 it sits right under « Semaines » and keeps the measure shown (`keep_m`: ?m= when it
+    is not the default; pf-viz.js carries a measure switched in place into the links: data-viz-carry). Expects
+    `filters`, `sport`, `keep_m` (None: nothing to keep) and `carry`. -#}
+<nav aria-label="Filtrer les activités par sport" class="pf-filters pf-seg pf-seg-sm max-w-full overflow-x-auto">
+    {% for key, label in filters %}{% set q = ([("sport", key)] if key else []) + ([("m", keep_m)] if keep_m else []) %}
+    <a href="/activities{% if q %}?{{ q|map('join', '=')|join('&') }}{% endif %}"{% if carry %} data-viz-carry="m"{% endif %}
+       {% if sport == key %}aria-current="true"{% endif %}
+       >{{ label }}</a>
+    {% endfor %}
+</nav>

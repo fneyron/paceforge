@@ -1,5 +1,5 @@
-"""Santé, Réglages and Activités: the hooks of their desktop layouts, and no
-dash for a missing value in the activity rows (the cell stays, empty)."""
+"""Réglages and Activités: the hooks of their desktop layouts, and no dash for a
+missing value in the activity rows (the cell stays, empty)."""
 
 import re
 from datetime import datetime, timedelta, timezone
@@ -42,8 +42,8 @@ async def test_activity_rows_leave_missing_values_empty(as_user: AsyncClient, db
         assert f'class="{cell} ' in trail and f'class="{cell} ' in flat
     assert "allure" not in trail and "bpm" not in trail and ">+310<" in trail
     assert "D+" not in flat and '5:00<span class="pf-act-pu">/km</span>' in flat and ">152<" in flat
-    # one week: its rows sit beside its heading on a desktop
-    assert page.count('class="pf-week"') == 1
+    # one week, in the list: its rows sit beside its heading on a desktop (#activity-list > section)
+    assert page.split('id="activity-list"')[1].count('<section id="week-') == 1
 
 
 async def test_settings_sections_and_identity(as_user: AsyncClient):
@@ -53,7 +53,3 @@ async def test_settings_sections_and_identity(as_user: AsyncClient):
     assert 'id="coros" class="pf-section' in page and 'id="garmin" class="pf-section' in page
     assert 'pf-set-num' in page  # the weight field: a number, not a 300 px field
 
-
-async def test_sante_without_data_keeps_the_plain_flow(as_user: AsyncClient):
-    page = (await as_user.get("/sante")).text
-    assert 'class="pf-health"' in page and "pf-health-full" not in page

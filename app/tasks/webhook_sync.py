@@ -3,6 +3,7 @@ import logging
 from app.celery_app import celery_app
 from app.models.activity import Activity
 from app.models.user import User
+from app.services.activity_sources import adopt_watch_twin
 from sqlalchemy import select, func
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
                 User.strava_athlete_id == owner_id,
                 User.strava_credentials_valid.is_(True),
                 User.strava_client_id.isnot(None),
+                User.strava_refresh_token.isnot(None),  # disconnected links have none
             )
         )
         user = result.scalar_one_or_none()
@@ -91,9 +93,14 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
             average_cadence=data.get("average_cadence"),
             average_watts=data.get("average_watts"),
             splits_metric=data.get("splits_metric"),
+            laps=data.get("laps"),  # the detail has them: Santé's Entraînement dial weighs them (else the splits)
             raw_data=data,
         )
-        db.add(activity)
+        activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
+        await db.flush()
+        from app.services.activity_env import enrich
+
+        await enrich(db, user.id)  # its altitude and weather, saved with it (Open-Meteo; never fails the sync)
         await db.commit()
 
         logger.info(

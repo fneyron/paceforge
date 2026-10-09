@@ -3,26 +3,34 @@ sessions it recorded.
 
 Garmin publishes no MCP server or public athlete API, so PaceForge reads
 Garmin Connect the way its mobile app does, with no AI involved:
-- Login: the athlete types their Garmin email and password once, in Réglages.
-  The python-garminconnect library (mobile SSO, then the "DI" OAuth exchange)
-  does it in a thread; the password only lives in that thread's memory and is
-  never stored. When Garmin asks for a code (MFA) the login waits for it.
+- Login: the athlete types their Garmin email and password once, in Réglages
+  (Garmin's own sign-in page never sends them back to PaceForge: it loops on
+  itself for a site that isn't Garmin's). The python-garminconnect library
+  (mobile SSO, then the "DI" OAuth exchange) does it in a thread; the password
+  only lives in that thread's memory and is never stored. When Garmin asks for a code (MFA) the login waits for it.
   A login runs in the web worker that started it, while the code may arrive on
   another one: the state and the code go through Redis (`_store`).
 - Tokens: the DI access token (a JWT, ~1 day) and its refresh token are
   Fernet-encrypted. A refresh may ROTATE the refresh token, so the new pair is
   committed before anything else, one refresh at a time per athlete (row lock
   + per-process lock), like COROS.
-- Data: plain JSON from connectapi.garmin.com (httpx, async). Nights (sleep
-  stages with their real times, overnight HRV), resting HR and VO2 max become
-  HealthSample rows (source "Garmin") through health.store_samples; the values
-  Garmin gives per day (training readiness as recovery, acute/chronic load,
-  stress, steps, body battery, HRV normal range, race predictions) go straight
-  to HealthMetric (health.store_daily). Sessions go to Activity (a session
-  Strava already has only gets its Garmin id).
+- Data: plain JSON from connectapi.garmin.com (httpx, async). Each night
+  becomes PaceForge's own values (HealthMetric via health.store_daily, source
+  "Garmin"): the main sleep (window, minutes asleep), the day's naps (local
+  windows, guarded), nightly HR, HRV and respiration computed from the raw
+  readings inside the main window, the main night's stage minutes (the DTO's,
+  else its sleepLevels summed), plus steps as a « watch worn » marker. The
+  real stage intervals (sleepLevels) are kept as HealthSample rows, the
+  hypnogram's timeline. No brand value is read (Training Readiness, Body
+  Battery, stress, sleep score, HRV status and averages, load, VO2 max, race
+  predictions, the daytime resting HR). Sessions go to Activity (a session
+  Strava already has only gets its Garmin id). The key names of the raw
+  readings (sleepHeartRate, hrvData, wellnessEpochRespirationDataDTOList) come
+  from python-garminconnect, not from a real account.
   60 days of health and 180 days of sessions the first time, then the last
-  7 days, at most every 6 hours (Celery beat, app.tasks.garmin_sync), right
-  after connecting and on demand.
+  7 days, at most every 2 hours (Celery beat, app.tasks.garmin_sync), right
+  after connecting and on demand (Réglages); the 60 days once more when the
+  stored nights predate a format change.
 
 Times are the athlete's local wall clock (naive), as Garmin's *Local fields are.
 """
@@ -30,32 +38,36 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import secrets
+import statistics
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import httpx
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
 from app.crypto import decrypt_secret, encrypt_secret
 from app.models.activity import Activity
 from app.models.garmin import GarminConnection
-from app.models.health import HealthMetric, HealthSample
-from app.services.activity_dedupe import _DUP_DISTANCE_TOL, _DUP_WINDOW_S, _same_family
-from app.services.coros import _drop_stale_intervals, sleep_samples
+from app.models.health import HealthMetric
+from app.services import activity_env
+from app.services.activity_sources import find_twin, merge_twins
 from app.services.health import (
-    _RANGES,
-    DAILY_LABELS,
-    DAILY_METRICS,
-    METRIC_LABELS,
-    METRICS,
+    HRV_METHOD,
+    STAGES_READ,
     Daily,
     Sample,
     _ago,
     _today,
+    drop_stale_intervals,
+    iso_min,
+    nap_daily,
+    nights_upgraded,
     store_daily,
     store_samples,
 )
@@ -69,8 +81,10 @@ RECENT_DAYS = 7
 ACTIVITY_BACKFILL_DAYS = 180
 HRV_CHUNK_DAYS = 28  # hrv-service range: 28 days at most
 ACTIVITY_PAGE = 100
-SYNC_EVERY = timedelta(hours=6)
+SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
+# read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
+PARTIAL = "Garmin a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 REFRESH_MARGIN = timedelta(minutes=15)  # DI access tokens last about a day
 CALL_DELAY_S = 0.3
 MAX_CALLS = 160  # a 60-day backfill takes ~135
@@ -79,12 +93,8 @@ LOGIN_TTL = 15 * 60  # how long a login (and its MFA wait) is remembered
 MFA_WAIT_S = 10 * 60
 MFA_TRIES = 3
 
-# A Garmin account lives on garmin.com, or garmin.cn for China.
-REGIONS = {
-    "monde": ("Monde", "garmin.com"),
-    "chine": ("Chine", "garmin.cn"),
-}
-DEFAULT_REGION = "monde"
+# garmin.com serves every account outside China (garmin.cn is not offered)
+DOMAIN = "garmin.com"
 
 # the headers Garmin's Android app sends (the API tier checks them)
 _APP_HEADERS = {
@@ -117,10 +127,6 @@ class GarminAuthError(GarminError):
 
 class GarminRateLimited(GarminError):
     pass
-
-
-def region_domain(region: str | None) -> str:
-    return REGIONS.get(region or "", REGIONS[DEFAULT_REGION])[1]
 
 
 # ── tokens ──────────────────────────────────────────────────────────────────
@@ -414,12 +420,12 @@ def _done(task: asyncio.Task) -> None:
         logger.warning("Garmin background task failed: %r", task.exception())
 
 
-async def start_login(user_id: int, email: str, password: str, region: str | None) -> str:
+async def start_login(user_id: int, email: str, password: str) -> str:
     """Start the login in the background; returns the ticket the page polls."""
     ticket = secrets.token_urlsafe(18)
     await _set(ticket, user_id, "running")
     _keep(asyncio.get_running_loop().create_task(
-        _run_login(ticket, user_id, email.strip(), password, region_domain(region))))
+        _run_login(ticket, user_id, email.strip(), password, DOMAIN)))
     return ticket
 
 
@@ -477,12 +483,15 @@ class GarminApi:
 
 class _Fetcher:
     """Calls with a small pause between them and a cap per sync. A failed call
-    only loses that piece; a rate limit or a lost link stops the sync."""
+    (an error, a timeout, a 5xx) only loses that piece; a rate limit or a lost
+    link stops the sync."""
 
     def __init__(self, api: GarminApi):
-        self.api, self.calls, self.failed = api, 0, 0
+        self.api, self.calls, self.failed, self.down, self.stopped = api, 0, 0, 0, False
 
     async def __call__(self, path: str, params: dict | None = None):
+        if self.stopped:
+            return None
         if self.calls >= MAX_CALLS:
             logger.info("Garmin call cap reached, %s skipped", path)
             return None
@@ -490,13 +499,27 @@ class _Fetcher:
             await asyncio.sleep(CALL_DELAY_S)
         self.calls += 1
         try:
-            return await self.api.get(path, params)
+            out = await self.api.get(path, params)
         except (GarminAuthError, GarminRateLimited):
             raise
+        except httpx.TransportError as e:
+            # one slow call is skipped; after 3 in a row Garmin is down: fail at once when nothing
+            # came back, else stop calling and keep what arrived
+            self.failed += 1
+            self.down += 1
+            logger.info("Garmin %s failed: %r", path, e)
+            if self.down >= 3:
+                if self.failed == self.calls:
+                    raise GarminError("Garmin ne répond pas pour l'instant.") from e
+                self.stopped = True
+            return None
         except (GarminError, httpx.HTTPError) as e:
             self.failed += 1
+            self.down = 0  # an answer, not an outage
             logger.info("Garmin %s failed: %r", path, e)
             return None
+        self.down = 0
+        return out
 
 
 # ── parsers (pure, on Garmin's JSON; unknown shapes give nothing) ───────────
@@ -534,10 +557,31 @@ def _gmt(s) -> datetime | None:
 _LEVELS = {0: "deep", 1: "core", 2: "rem", 3: "awake"}
 
 
+def _ms_or_iso(v) -> datetime | None:
+    """A GMT time Garmin writes as epoch ms or as an ISO string."""
+    if _f(v) is not None:
+        return _local_ms(v)
+    return _gmt(v) if isinstance(v, str) else None
+
+
+def _readings(rows, value_keys, time_keys, offset: timedelta) -> list[tuple[datetime, float]]:
+    """[(local time, value)] of a list of raw readings (unknown shapes skipped)."""
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        if not isinstance(r, dict):
+            continue
+        v = next((_f(r.get(k)) for k in value_keys if _f(r.get(k)) is not None), None)
+        t = next((_ms_or_iso(r.get(k)) for k in time_keys if r.get(k) is not None), None)
+        if v is not None and t is not None:
+            out.append((t + offset, v))
+    return sorted(out)
+
+
 def parse_sleep(data) -> dict | None:
     """dailySleepData of one night (named by its wake-up day): the main sleep
-    window, minutes per stage, the stage intervals when Garmin gives them, and
-    the overnight HRV and resting HR it carries."""
+    window, minutes asleep, the stage intervals when Garmin gives them, its
+    timezone, and the raw readings PaceForge averages itself (heart rate, HRV,
+    respiration). Sleep scores, HRV status and averages are not read."""
     if not isinstance(data, dict):
         return None
     dto = data.get("dailySleepDTO") or {}
@@ -551,11 +595,14 @@ def parse_sleep(data) -> dict | None:
         v = _f(dto.get(key))
         if v is not None:
             stages[kind] = round(v / 60)
-    out = {"day": day, "start": start, "end": end, "stages": stages, "intervals": [],
-           "hrv": _f(data.get("avgOvernightHrv")), "rhr": _f(data.get("restingHeartRate"))}
+    asleep = _f(dto.get("sleepTimeSeconds"))
+    asleep = round(asleep / 60) if asleep else sum(stages.get(k, 0) for k in ("deep", "core", "rem")) or None
+    out = {"day": day, "start": start, "end": end, "asleep": asleep, "intervals": [], "tz": None,
+           "hr": [], "hrv": [], "resp": [], "resp_avg": _f(dto.get("averageRespirationValue")), "stages": stages}
     gmt_start = _f(dto.get("sleepStartTimestampGMT"))
     if gmt_start is not None:
         offset = timedelta(milliseconds=_f(dto.get("sleepStartTimestampLocal")) - gmt_start)
+        out["tz"] = round(offset.total_seconds() / 60)
         for lv in data.get("sleepLevels") or []:
             if not isinstance(lv, dict):
                 continue
@@ -563,109 +610,71 @@ def parse_sleep(data) -> dict | None:
             kind = _LEVELS.get(int(lv["activityLevel"])) if _f(lv.get("activityLevel")) is not None else None
             if a and b and kind and b > a:
                 out["intervals"].append((kind, a + offset, b + offset))
+        out["hr"] = _readings(data.get("sleepHeartRate"), ("value",), ("startGMT",), offset)
+        out["hrv"] = _readings(data.get("hrvData"), ("value",), ("startGMT",), offset)
+        out["resp"] = _readings(data.get("wellnessEpochRespirationDataDTOList"), ("respirationValue", "value"),
+                                ("startTimeGMT", "startGMT"), offset)
     return out
 
 
-def parse_hrv(data) -> tuple[dict[date, float], dict[date, dict]]:
-    """hrv-service range: each night's average (ms) and its balanced range."""
-    values, ranges = {}, {}
-    rows = data.get("hrvSummaries") if isinstance(data, dict) else None
-    for s in rows if isinstance(rows, list) else []:
-        day = _d(s.get("calendarDate")) if isinstance(s, dict) else None
-        if not day:
+def parse_naps(data) -> tuple[date, dict] | None:
+    """dailySleepData's naps (dailyNapDTOS, else the DTO's napTimeSeconds):
+    (day, {asleep, period (min), windows [(start, end)] local}), None without one."""
+    if not isinstance(data, dict):
+        return None
+    dto = data.get("dailySleepDTO") or {}
+    day = _d(dto.get("calendarDate"))
+    local, gmt = _f(dto.get("sleepStartTimestampLocal")), _f(dto.get("sleepStartTimestampGMT"))
+    offset = timedelta(milliseconds=local - gmt) if local is not None and gmt is not None else None
+    asleep, windows = 0.0, []
+    for n in data.get("dailyNapDTOS") or []:
+        if not isinstance(n, dict):
             continue
-        if _f(s.get("lastNightAvg")) is not None:
-            values[day] = _f(s["lastNightAvg"])
-        base = s.get("baseline") or {}
-        lo, hi = _f(base.get("balancedLow")), _f(base.get("balancedUpper"))
-        if lo is not None and hi is not None:
-            ranges[day] = {"lo": lo, "hi": hi, "base": _f(base.get("markerValue"))}
-    return values, ranges
+        day = day or _d(n.get("calendarDate"))
+        secs = _f(n.get("napTimeSec"))
+        a, b = _gmt(n.get("napStartTimestampGMT")), _gmt(n.get("napEndTimestampGMT"))
+        if secs is None and a and b:
+            secs = (b - a).total_seconds()
+        if not secs or secs <= 0:
+            continue
+        asleep += secs
+        if a and b and b > a and offset is not None:
+            windows.append((a + offset, b + offset))
+    if not asleep:
+        asleep = _f(dto.get("napTimeSeconds")) or 0
+    if not day or asleep < 60:
+        return None
+    period = sum((b - a).total_seconds() for a, b in windows) / 60 if windows else None
+    return day, {"asleep": round(asleep / 60), "period": round(period) if period else None, "windows": windows}
+
+
+ALTITUDE_PLAUSIBLE = (-500, 9000)  # m
 
 
 def parse_summary(data) -> dict | None:
-    """usersummary of one day: steps, kcal, intensity minutes, stress, resting
-    HR and body battery."""
+    """usersummary of one day: steps, kcal and intensity minutes (the « watch
+    worn » marker; stress, body battery and resting HR are not read), and the
+    day's average altitude where the watch was worn
+    (`averageMonitoringEnvironmentAltitude`, m, barometric models; key from
+    python-garminconnect and ha_garmin, no live account seen: without it, the
+    night's altitude comes from the activities, Santé v4.4)."""
     if not isinstance(data, dict) or not _d(data.get("calendarDate")):
         return None
     mod, vig = _f(data.get("moderateIntensityMinutes")), _f(data.get("vigorousIntensityMinutes"))
+    alt = _f(data.get("averageMonitoringEnvironmentAltitude"))
     return {
         "day": _d(data["calendarDate"]),
         "steps": _f(data.get("totalSteps")),
         "kcal": _f(data.get("totalKilocalories")),
         "exercise": round((mod or 0) + (vig or 0)) if mod is not None or vig is not None else None,
-        "stress": _f(data.get("averageStressLevel")),
-        "rhr": _f(data.get("restingHeartRate")),
-        "bb_high": _f(data.get("bodyBatteryHighestValue")),
-        "bb_low": _f(data.get("bodyBatteryLowestValue")),
-        "bb_wake": _f(data.get("bodyBatteryAtWakeTime")),
+        **({"alt": alt} if alt is not None and ALTITUDE_PLAUSIBLE[0] <= alt <= ALTITUDE_PLAUSIBLE[1] else {}),
     }
 
 
-def parse_vo2max(data) -> dict[date, float]:
-    """maxmet range: the running VO2 max of each day it was (re)estimated."""
-    out = {}
-    for row in data if isinstance(data, list) else []:
-        g = (row or {}).get("generic") or {}
-        day, v = _d(g.get("calendarDate")), _f(g.get("vo2MaxPreciseValue")) or _f(g.get("vo2MaxValue"))
-        if day and v is not None:
-            out[day] = v
-    return out
-
-
-# Garmin's readiness level → the wording health/sante understand
-_READINESS = {"PRIME": "Ready for high intensity", "HIGH": "High intensity possible",
-              "MODERATE": "Moderate", "LOW": "Light training", "POOR": "Rest"}
-
-
-def parse_readiness(data) -> dict | None:
-    """trainingreadiness of today: the latest score (0–100), its level and the
-    recovery time left (h)."""
-    rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
-    rows = [r for r in rows if isinstance(r, dict) and _f(r.get("score")) is not None]
-    if not rows:
-        return None
-    r = max(rows, key=lambda x: str(x.get("timestampLocal") or x.get("timestamp") or ""))
-    level = str(r.get("level") or "").upper()
-    rec = _f(r.get("recoveryTime"))
-    return {"day": _d(r.get("calendarDate")), "pct": _f(r["score"]),
-            "level": _READINESS.get(level, level.title() or None),
-            "full_h": round(rec / 60, 1) if rec is not None else None}
-
-
-def parse_training_status(data) -> dict | None:
-    """trainingstatus/aggregated: acute (7 days) and chronic (28 days) load of
-    the primary device, their ratio, and Garmin's verdict when it is "very high"."""
-    latest = (((data or {}).get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData") or {}) \
-        if isinstance(data, dict) else {}
-    entries = [e for e in latest.values() if isinstance(e, dict) and e.get("acuteTrainingLoadDTO")]
-    if not entries:
-        return None
-    e = next((x for x in entries if x.get("primaryTrainingDevice")), entries[0])
-    acute = e["acuteTrainingLoadDTO"]
-    short, long_ = _f(acute.get("dailyTrainingLoadAcute")), _f(acute.get("dailyTrainingLoadChronic"))
-    day = _d(e.get("calendarDate"))
-    if short is None or long_ is None or not day:
-        return None
-    ratio = _f(acute.get("dailyAcuteChronicWorkloadRatio"))
-    if ratio is None and long_ > 0:
-        ratio = round(short / long_, 2)
-    status = str(acute.get("acwrStatus") or "").upper()
-    return {"day": day, "short": short, "long": long_, "ratio": ratio,
-            "comment": "Excessive" if status == "VERY_HIGH" else None}
-
-
-def parse_predictions(data) -> dict:
-    """racepredictions/latest: {5k, 10k, half, marathon} in seconds."""
-    if not isinstance(data, dict):
-        return {}
-    out = {}
-    for key, field in (("5k", "time5K"), ("10k", "time10K"), ("half", "timeHalfMarathon"),
-                       ("marathon", "timeMarathon")):
-        v = _f(data.get(field))
-        if v:
-            out[key] = round(v)
-    return out
+def _filled(summary: dict) -> bool:
+    """A day the watch reported, not the dated skeleton Garmin answers for a
+    day with nothing uploaded yet."""
+    return _ok(summary.get("steps"), 1, 200_000) or _ok(summary.get("kcal"), 1, 20_000)
 
 
 # Garmin activity type → the sport types the app knows (Strava's)
@@ -685,9 +694,15 @@ SPORT_TYPES = {
 }
 
 
+INDOOR_TYPES = {"treadmill_running", "indoor_running", "virtual_run", "indoor_cycling", "virtual_ride",
+                "indoor_rowing"}
+
+
 def activity_fields(a: dict) -> dict | None:
     """The Activity columns of one Garmin session (activitylist), in Strava's
-    units (m, s, m/s, run cadence per leg)."""
+    units (m, s, m/s, run cadence per leg); an indoor one is marked
+    `trainer`, as Strava and COROS mark theirs (never « chaud », never a
+    place to sleep)."""
     try:
         gid = int(a["activityId"])
         start = datetime.strptime(str(a["startTimeGMT"])[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -700,7 +715,7 @@ def activity_fields(a: dict) -> dict | None:
     return {
         "garmin_activity_id": gid,
         "sport_type": SPORT_TYPES.get(type_key, "Workout"),
-        "name": (a.get("activityName") or "Séance Garmin")[:255],
+        "name": (a.get("activityName") or "Activité Garmin")[:255],
         "start_date": start,
         "distance": _f(a.get("distance")) or 0.0,
         "moving_time": round(moving),
@@ -715,58 +730,35 @@ def activity_fields(a: dict) -> dict | None:
         "max_watts": _f(a.get("maxPower")),
         "weighted_average_watts": _f(a.get("normPower")),
         "calories": _f(a.get("calories")),
-        "raw_data": {**a, "source": "garmin"},
+        "raw_data": {**a, "source": "garmin", **({"trainer": True} if type_key in INDOOR_TYPES else {})},
     }
 
 
 # ── samples and daily values ────────────────────────────────────────────────
 
-HRV_AT = time(5, 0)  # inside the 22:00 → 10:00 night window of health._hrv_day
-RHR_AT = time(23, 59)  # the last of the day
-VO2_AT = time(12, 0)
+MIN_READINGS = 12  # (H) raw readings inside the main window for a nightly value
 
 
-def _point(metric: str, day: date, at: time, value: float | None) -> Sample | None:
-    if value is None:
-        return None
-    lo, hi = _RANGES[metric]
-    if not lo <= value <= hi:
-        logger.info("Garmin %s %s out of range (%s): skipped", metric, day, value)
-        return None
-    t = datetime.combine(day, at)
-    return Sample(metric, "", t, t, round(value, 3), SOURCE)
+def _inside(readings, night) -> list[float]:
+    return [v for t, v in readings if night["start"] <= t <= night["end"]]
 
 
 def night_samples(night: dict) -> list[Sample]:
-    """The night's stage intervals as Garmin timed them (clipped to the main
-    sleep window), else stage blocks built from its minutes."""
+    """The night's stage intervals as Garmin timed them, clipped to the main
+    sleep window: the hypnogram's timeline. Without them, nothing (minutes
+    laid out as blocks would be an invented timeline)."""
     out = []
     for kind, a, b in sorted(night["intervals"], key=lambda x: x[1]):
         a, b = max(a, night["start"]), min(b, night["end"])
         if b > a:
             out.append(Sample("sleep", kind, a, b, round((b - a).total_seconds() / 60, 2), SOURCE))
-    if out:
-        return out
-    stages = night["stages"]
-    if sum(stages.get(k, 0) for k in ("deep", "core", "rem")) <= 0:
-        return []
-    return sleep_samples({"start": night["start"], "end": night["end"]}, stages, source=SOURCE)
+    return out
 
 
 def build_samples(data: dict, today: date) -> list[Sample]:
     out: list[Sample] = []
-    hrv = dict(data["hrv"])
     for night in data["nights"].values():
         out += night_samples(night)
-        if night["hrv"] is not None:
-            hrv.setdefault(night["day"], night["hrv"])
-    out += [s for d, v in hrv.items() if (s := _point("hrv", d, HRV_AT, v))]
-    rhr = {d: v["rhr"] for d, v in data["summaries"].items() if v.get("rhr")}
-    for night in data["nights"].values():
-        if night["rhr"]:
-            rhr.setdefault(night["day"], night["rhr"])
-    out += [s for d, v in rhr.items() if (s := _point("rhr", d, RHR_AT, v))]
-    out += [s for d, v in data["vo2max"].items() if d <= today and (s := _point("vo2max", d, VO2_AT, v))]
     return out
 
 
@@ -774,39 +766,71 @@ def _ok(value, lo: float, hi: float) -> bool:
     return isinstance(value, (int, float)) and lo <= value <= hi
 
 
+def night_stages(night: dict) -> dict | None:
+    """The main night's stage minutes {deep, light, rem, awake}: the DTO's
+    (deep/light/rem/awake seconds), else summed from its real sleepLevels
+    intervals inside the main window; None without any sleep stage."""
+    st = night.get("stages") or {}
+    parts = {"deep": st.get("deep"), "light": st.get("core"), "rem": st.get("rem"), "awake": st.get("awake") or 0}
+    if all(parts[k] is not None for k in ("deep", "light", "rem")) and parts["deep"] + parts["light"] + parts["rem"]:
+        return parts
+    summed = {"deep": 0.0, "light": 0.0, "rem": 0.0, "awake": 0.0}
+    for x in night_samples(night):
+        summed["light" if x.kind == "core" else x.kind] += x.value
+    out = {k: round(v) for k, v in summed.items()}
+    return out if out["deep"] + out["light"] + out["rem"] else None
+
+
+def night_dailies(night: dict, timeline: bool) -> list[Daily]:
+    """PaceForge's values of one night: main sleep (with its stage minutes,
+    night_stages), HRV (exp of the mean ln RMSSD), heart rate and respiration
+    (means), each from the readings inside the main window (12 at least, H)."""
+    d, out = night["day"], []
+    if _ok(night.get("asleep"), 1, 16 * 60):
+        det = {"main_start": iso_min(night["start"]), "main_end": iso_min(night["end"]),
+               "period": round((night["end"] - night["start"]).total_seconds() / 60),
+               "bedtime": night["start"].strftime("%H:%M"), "wake": night["end"].strftime("%H:%M"),
+               "timeline": timeline}
+        if night.get("tz") is not None:
+            det["tz"] = night["tz"]
+        stages = night_stages(night)
+        if stages:
+            det["stages"] = stages
+        det[STAGES_READ] = True
+        out.append(Daily("sleep", d, night["asleep"], det))
+    hrv = [v for v in _inside(night["hrv"], night) if 5 <= v <= 300]
+    if len(hrv) >= MIN_READINGS:
+        out.append(Daily("hrv", d, round(math.exp(statistics.fmean(math.log(v) for v in hrv)), 1),
+                         {"n": len(hrv), "tz": night.get("tz"), "method": HRV_METHOD}))
+    hr = [v for v in _inside(night["hr"], night) if 25 <= v <= 200]
+    if len(hr) >= MIN_READINGS and _ok(statistics.fmean(hr), 25, 120):
+        out.append(Daily("hr_night", d, round(statistics.fmean(hr), 1),
+                         {"min": min(hr), "max": max(hr), "n": len(hr), "method": "points", "nap_day": False}))
+    resp = [v for v in _inside(night["resp"], night) if 4 <= v <= 40]
+    if len(resp) >= MIN_READINGS:
+        out.append(Daily("resp_night", d, round(statistics.fmean(resp), 1), {"n": len(resp), "method": "points"}))
+    elif _ok(night.get("resp_avg"), 4, 40):
+        out.append(Daily("resp_night", d, night["resp_avg"], {"method": "garmin_summary"}))
+    return out
+
+
 def build_daily(data: dict, today: date) -> list[Daily]:
     """The per-day values, implausible ones left out."""
     out: list[Daily] = []
-    load = data.get("load")
-    if load and _ok(load["short"], 0, 5000) and _ok(load["long"], 0, 5000):
-        ratio = load["ratio"] if _ok(load.get("ratio"), 0, 20) else None
-        out.append(Daily("load", load["day"], load["short"],
-                         {"long": load["long"], "ratio": ratio, "comment": load["comment"]}))
-    rec = data.get("readiness")
-    if rec and _ok(rec["pct"], 0, 100):
-        full = rec["full_h"] if _ok(rec.get("full_h"), 0, 500) else None
-        out.append(Daily("recovery", rec["day"] or today, rec["pct"], {"level": rec["level"], "full_h": full}))
     for d, v in data["summaries"].items():
-        if _ok(v.get("stress"), 1, 100):
-            out.append(Daily("stress", d, v["stress"]))
         if _ok(v.get("steps"), 1, 200_000):  # 0 steps: the watch wasn't worn that day
-            out.append(Daily("steps", d, v["steps"], {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
-        bb = v.get("bb_wake") if _ok(v.get("bb_wake"), 0, 100) else v.get("bb_high")
-        if _ok(bb, 1, 100):
-            out.append(Daily("body_battery", d, bb, {"high": v.get("bb_high"), "low": v.get("bb_low")}))
-    for d, v in data["hrv_range"].items():
-        if _ok(v["lo"], 5, 300) and _ok(v["hi"], v["lo"], 300):
-            base = v["base"] if _ok(v.get("base"), 5, 300) else round((v["lo"] + v["hi"]) / 2, 1)
-            out.append(Daily("hrv_norm", d, base, {"lo": v["lo"], "hi": v["hi"]}))
-    fit: dict = {}
-    vo2 = data["vo2max"].get(max(data["vo2max"], default=None)) if data["vo2max"] else None
-    if _ok(vo2, 10, 95):
-        fit["vo2max"] = vo2
-    preds = {k: s for k, s in (data.get("predictions") or {}).items() if _ok(s, 600, 12 * 3600)}
-    if preds:
-        fit["pred"] = preds
-    if fit:
-        out.append(Daily("fitness", today, fit.get("vo2max") or 0, fit))
+            det = {"kcal": v.get("kcal"), "exercise": v.get("exercise")}
+            if v.get("alt") is not None:  # the night after it reads it (nights: « en altitude »)
+                det["alt"] = v["alt"]
+            out.append(Daily("steps", d, v["steps"], det))
+    for night in (data.get("nights") or {}).values():
+        out += night_dailies(night, bool(night_samples(night)))
+    nights = data.get("nights") or {}
+    for d, v in (data.get("naps") or {}).items():
+        n = nights.get(d)
+        row = nap_daily(d, v.get("asleep"), v.get("period"), v.get("windows"), (n["start"], n["end"]) if n else None)
+        if row:
+            out.append(row)
     return out
 
 
@@ -834,18 +858,27 @@ async def _display_name(db: AsyncSession, conn: GarminConnection, call: _Fetcher
 
 async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days: int, activity_days: int,
                  today: date) -> dict:
-    lo = today - timedelta(days=days - 1)
-    data: dict = {"nights": {}, "summaries": {}, "hrv": {}, "hrv_range": {}, "vo2max": {},
-                  "load": None, "readiness": None, "predictions": {}, "activities": []}
+    data: dict = {"nights": {}, "naps": {}, "summaries": {}, "activities": []}
     name = await _display_name(db, conn, call)
-    # what changes every day first (today's readiness and load), then the history
-    data["readiness"] = parse_readiness(await call(f"/metrics-service/metrics/trainingreadiness/{today}"))
-    data["load"] = parse_training_status(await call(f"/metrics-service/metrics/trainingstatus/aggregated/{today}"))
-    for a, b in _ranges(lo, today, HRV_CHUNK_DAYS):
-        values, ranges = parse_hrv(await call(f"/hrv-service/hrv/daily/{a}/{b}"))
-        data["hrv"].update(values)
-        data["hrv_range"].update(ranges)
-    data["vo2max"] = parse_vo2max(await call(f"/metrics-service/metrics/maxmet/daily/{lo}/{today}"))
+    q = quote(name, safe="") if name else None
+    # the nights first (last night is what the morning's decision reads), the sessions last
+    if q:
+        # Garmin dates days on the athlete's clock, which can be a day ahead of
+        # the server's (UTC): ask for that day too (a future day is just empty)
+        for i in range(-1, days - 1):  # same number of days, one later
+            d = today - timedelta(days=i)
+            raw = await call(f"/wellness-service/wellness/dailySleepData/{q}",
+                             {"date": d.isoformat(), "nonSleepBufferMinutes": 60})
+            night = parse_sleep(raw)
+            if night:
+                data["nights"][night["day"]] = night
+            nap = parse_naps(raw)
+            if nap:
+                data["naps"][nap[0]] = nap[1]
+            summary = parse_summary(await call(f"/usersummary-service/usersummary/daily/{q}",
+                                               {"calendarDate": d.isoformat()}))
+            if summary:
+                data["summaries"][summary["day"]] = summary
     page = 0
     since = today - timedelta(days=activity_days - 1)
     while page < 10:
@@ -857,71 +890,61 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
         if len(rows) < ACTIVITY_PAGE:
             break
         page += 1
-    if name:
-        q = quote(name, safe="")
-        data["predictions"] = parse_predictions(await call(f"/metrics-service/metrics/racepredictions/latest/{q}"))
-        for i in range(days):
-            d = today - timedelta(days=i)
-            night = parse_sleep(await call(f"/wellness-service/wellness/dailySleepData/{q}",
-                                           {"date": d.isoformat(), "nonSleepBufferMinutes": 60}))
-            if night:
-                data["nights"][night["day"]] = night
-            summary = parse_summary(await call(f"/usersummary-service/usersummary/daily/{q}",
-                                               {"calendarDate": d.isoformat()}))
-            if summary:
-                data["summaries"][summary["day"]] = summary
     return data
 
 
 async def import_activities(db: AsyncSession, user_id: int, rows: list[dict]) -> dict:
-    """Garmin sessions into Activity: the one already imported is updated; a
-    session Strava already brought (same start within 3 min, same sport family,
-    close distance) only gets its Garmin id; else a new row."""
+    """Garmin sessions into Activity, one row per outing (activity_sources): the
+    one already imported is updated; a session another service already brought
+    only gets its Garmin id; else a new row. Rows Strava saved apart are merged."""
     inserted = linked = updated = 0
+    starts = []
     for raw in rows:
         f = activity_fields(raw) if isinstance(raw, dict) else None
         if not f:
             continue
+        starts.append(f["start_date"])
         act = (await db.execute(select(Activity).where(
             Activity.garmin_activity_id == f["garmin_activity_id"]))).scalar_one_or_none()
         if act is not None and act.user_id != user_id:
             continue
         if act is None:
-            window = timedelta(seconds=_DUP_WINDOW_S)
-            candidates = (await db.execute(select(Activity).where(
-                Activity.user_id == user_id, Activity.garmin_activity_id.is_(None),
-                Activity.start_date >= f["start_date"] - window,
-                Activity.start_date <= f["start_date"] + window))).scalars().all()
-            for c in candidates:
-                big = max(c.distance or 0, f["distance"])
-                if _same_family(c.sport_type, f["sport_type"]) and (
-                        big <= 0 or abs((c.distance or 0) - f["distance"]) / big <= _DUP_DISTANCE_TOL):
-                    c.garmin_activity_id = f["garmin_activity_id"]
-                    linked += 1
-                    break
+            twin = await find_twin(db, user_id, f["sport_type"], f["start_date"], f["distance"], f["moving_time"],
+                                   Activity.garmin_activity_id.is_(None))
+            if twin is not None:
+                twin.garmin_activity_id = f["garmin_activity_id"]
+                linked += 1
             else:
                 db.add(Activity(user_id=user_id, **f))
                 inserted += 1
-        elif act.strava_activity_id is None:  # Garmin's own row: keep it current
+        elif act.strava_activity_id is None and act.coros_activity_id is None:  # Garmin's own row: keep it current
+            env = (act.raw_data or {}).get(activity_env.ENV_KEY)
             for k, v in f.items():
                 setattr(act, k, v)
+            if env is not None:  # what was looked up for it stays
+                act.raw_data = {**f["raw_data"], activity_env.ENV_KEY: env}
             updated += 1
     await db.flush()
-    return {"inserted": inserted, "linked": linked, "updated": updated}
+    merged = await merge_twins(db, user_id, min(starts)) if starts else 0
+    return {"inserted": inserted, "linked": linked, "updated": updated, "merged": merged}
 
 
 async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     """Fetch and store; returns store_samples' counts plus the sessions. Raises
     GarminAuthError when the athlete must reconnect, GarminError when Garmin
     can't be read."""
-    # the history comes once: on the first sync, or while no daily value arrived yet
+    # the history comes once: on the first sync, or while no daily value arrived yet,
+    # and once more when the nights are still in their pre-2026-10 format, or were
+    # written before their stage minutes were read (2026-10-08)
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
-            HealthMetric.metric.in_(("steps", "stress", "load")))
+            HealthMetric.metric.in_(("steps", "sleep")))
     )).scalar()
-    first = conn.last_sync_at is None
-    days = BACKFILL_DAYS if first or not have else RECENT_DAYS
+    first = conn.last_sync_at is None or conn.last_error == PARTIAL
+    upgraded = (await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
+                and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
+    days = BACKFILL_DAYS if first or not have or not upgraded else RECENT_DAYS
     activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
     async with http_client() as client:
@@ -930,11 +953,13 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     if call.calls and call.failed == call.calls:
         raise GarminError("Garmin n'a renvoyé aucune donnée lisible.")
 
-    # the athlete's today (a day ahead of the server's in Asia mornings)
-    latest = max([*data["nights"], *data["summaries"]], default=None)
+    # the athlete's today (a day ahead of the server's in Asia mornings); a day
+    # Garmin only answers with its dated empty summary doesn't count
+    latest = max([*data["nights"], *(d for d, v in data["summaries"].items() if _filled(v))], default=None)
     today = _today(latest)
     samples = build_samples(data, today)
-    await _drop_stale_intervals(db, conn.user_id, data["nights"], samples, source=SOURCE)
+    await drop_stale_intervals(db, conn.user_id, SOURCE, {d: (n["start"], n["end"]) for d, n in data["nights"].items()},
+                               samples)
     result = await store_samples(db, conn.user_id, samples) if samples else {
         "received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
     daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE)
@@ -943,8 +968,13 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     result["updated"] += daily["updated"] + acts["updated"] + acts["linked"]
     result["by_metric"] = {**result["by_metric"], **daily["by_metric"]}
     result["activities"] = acts
-    logger.info("Garmin sync user %d (%d days, %d calls, %d failed): %s, sessions %s",
-                conn.user_id, days, call.calls, call.failed, result["by_metric"], acts)
+    # each new outdoor session's altitude and weather (Open-Meteo), the backlog a few at a time; never fails a sync
+    result["env"] = await activity_env.enrich(db, conn.user_id)
+    # Garmin stopped answering halfway through the history: keep it, but ask for it all again next time
+    result["backfill_partial"] = call.stopped and (days == BACKFILL_DAYS or activity_days == ACTIVITY_BACKFILL_DAYS)
+    logger.info("Garmin sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
+                conn.user_id, days, call.calls, call.failed, ", stopped" if call.stopped else "",
+                result["by_metric"], acts)
     return result
 
 
@@ -961,7 +991,9 @@ async def claim(db: AsyncSession, conn: GarminConnection) -> bool:
     await db.commit()
     if res.rowcount != 1:
         return False
-    conn.sync_claimed_at = now  # so that releasing it later is seen as a change
+    # as if read back: releasing it is then a change, even when nothing was written in between
+    # (a plain assignment over a loaded None, set back to None, writes nothing)
+    set_committed_value(conn, "sync_claimed_at", now)
     return True
 
 
@@ -972,7 +1004,8 @@ async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
     try:
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
-        conn.last_error = None
+        # a history cut short is not done: said so, and the next sync asks for all of it again
+        conn.last_error = PARTIAL if result.get("backfill_partial") else None
         outcome = {"ok": True, "result": result}
     except GarminAuthError as e:
         outcome = {"ok": False, "error": str(e)}
@@ -980,9 +1013,27 @@ async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
         logger.warning("Garmin sync failed for user %d: %r", conn.user_id, e)
         conn.last_error = str(e) if isinstance(e, GarminError) else "Garmin ne répond pas pour l'instant."
         outcome = {"ok": False, "error": conn.last_error}
+    except asyncio.CancelledError:  # the worker stops (a deploy): never leave the link claimed
+        await _release(db, conn, conn.user_id)
+        raise
+    except Exception:  # a bug must not leave the link « en cours » for the claim's 15 min
+        logger.exception("Garmin sync crashed for user %d", conn.user_id)
+        await db.rollback()
+        conn.last_error = "La synchro a échoué : réessaie plus tard."
+        outcome = {"ok": False, "error": conn.last_error}
     conn.sync_claimed_at = None
     await db.commit()
     return outcome
+
+
+async def _release(db: AsyncSession, conn, user_id: int) -> None:
+    """Best effort, shielded from the cancellation that called it."""
+    try:
+        await db.rollback()
+        conn.sync_claimed_at = None
+        await asyncio.shield(db.commit())
+    except Exception:
+        logger.warning("Garmin: could not release the sync claim of user %d", user_id)
 
 
 async def _sync_in_background(user_id: int) -> None:
@@ -994,14 +1045,16 @@ async def _sync_in_background(user_id: int) -> None:
             await run_sync(db, conn)
 
 
-def schedule_sync(user_id: int) -> None:
-    """Start a sync in this process without waiting for it (after connecting)."""
+def schedule_sync(user_id: int) -> bool:
+    """Start a sync in this process without waiting for it (after connecting,
+    on opening Santé). False when syncs are off here."""
     if not settings.GARMIN_SYNC:
-        return
+        return False
     try:
         _keep(asyncio.get_running_loop().create_task(_sync_in_background(user_id)))
     except RuntimeError:
-        return
+        return False
+    return True
 
 
 async def disconnect(db: AsyncSession, conn: GarminConnection) -> None:
@@ -1015,20 +1068,11 @@ async def disconnect(db: AsyncSession, conn: GarminConnection) -> None:
 # ── settings status ─────────────────────────────────────────────────────────
 
 async def garmin_status(db: AsyncSession, user_id: int) -> dict:
+    from app.services.coros import synced_counts
+
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
-    rows = await db.execute(
-        select(HealthSample.metric, func.count(func.distinct(func.date(HealthSample.end_at))))
-        .where(HealthSample.user_id == user_id, HealthSample.source == SOURCE)
-        .group_by(HealthSample.metric))
-    days = dict(rows.all())
-    rows = await db.execute(
-        select(HealthMetric.metric, func.count(HealthMetric.id))
-        .where(HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
-               HealthMetric.metric.in_(DAILY_METRICS))
-        .group_by(HealthMetric.metric))
-    daily = dict(rows.all())
     sessions = (await db.execute(select(func.count(Activity.id)).where(
         Activity.user_id == user_id, Activity.garmin_activity_id.is_not(None)))).scalar() or 0
     claimed = _as_utc(conn.sync_claimed_at)
@@ -1040,6 +1084,5 @@ async def garmin_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
         "sessions": sessions,
-        "per_metric": [(METRIC_LABELS[m], days[m]) for m in METRICS if days.get(m)]
-                      + [(DAILY_LABELS[m], daily[m]) for m in DAILY_LABELS if daily.get(m)],
+        "per_metric": await synced_counts(db, user_id, SOURCE),
     }

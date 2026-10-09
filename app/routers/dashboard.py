@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,15 +13,21 @@ from app.models.activity import Activity
 from app.models.user import User
 from app.schemas.activity import ActivitySummary
 from app.services.activity_dedupe import SPORT_GROUPS, find_duplicate_ids, is_false_start
+from app.services.activity_sources import adopt_watch_twin
 from app.services.model_stats import load_model_stats
 from app.services.strava import StravaService
 from app.services.training_load import calculate_training_load
+from app.services.training_view import MEASURES, spike_ids, training_top
+from app.services.viz import d_short, hm
+from app.services.viz import dplus as dplus_fmt
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["dashboard"])
+
+HOME = "/sante"  # where a signed-in athlete lands: « Mets Santé en premier dans l'application »
 
 # The history is paginated by WEEKS (not by row count) so a week is never split
 # across two "load more" chunks and weekly totals stay honest.
@@ -37,8 +43,8 @@ async def landing(
     error: str | None = None,
     user: User | None = Depends(get_optional_user),
 ):
-    if user:
-        return RedirectResponse(url="/simulator", status_code=302)
+    if user:  # signed in: Santé is the home (owner, 2026-10-08)
+        return RedirectResponse(url=HOME, status_code=302)
     return templates.TemplateResponse(
         request, "login.html", context={"error": error, "stats": load_model_stats()}
     )
@@ -68,8 +74,8 @@ async def methode_page(request: Request, user: User | None = Depends(get_optiona
 
 @router.get("/dashboard")
 async def dashboard(user: User = Depends(get_current_user)):
-    """Legacy home: the weekly summary now lives on the activities page."""
-    return RedirectResponse(url="/activities", status_code=302)
+    """Legacy home (an installed app opened from an old manifest lands here): the home, Santé."""
+    return RedirectResponse(url=HOME, status_code=302)
 
 
 @router.get("/activities", response_class=HTMLResponse)
@@ -77,15 +83,28 @@ async def activities_page(
     request: Request,
     page: int = Query(default=1, ge=1),
     sport: str | None = None,
+    m: str | None = None,
+    depuis: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Training log: the 7 / 28-day volume at the top, then activities grouped by week."""
+    """Training log: the 7 / 28-day volume at the top, « Semaines » on page 1 (one measure, `m`: duree, distance
+    or dplus; the sport filter applies to it and to the list), then the activities grouped by week. `depuis` (a
+    day of the last month, Santé's Entraînement card's link): only the activities from that day, as the card
+    counts them."""
     sport = sport if sport in _FILTER_KEYS else None
+    m = m if m in {k for k, _, _ in MEASURES} else None
     now = datetime.now(timezone.utc)
-
-    weeks, has_more = await _week_groups(db, user.id, page, sport)
     training_load = await calculate_training_load(db, user.id, now)
+    recent = await _recent(db, user.id, depuis) if depuis else None
+    if recent is not None:
+        return templates.TemplateResponse(request, "activities.html", context={
+            "user": user, "recent": recent, "training_load": training_load, "weeks": [], "has_more": False,
+            "page": 1, "sport": None, "filters": FILTERS, "training": None, "spikes": set()})
+
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport)
+    # Semaines and FC en footing: on the first page, for the sport chosen
+    training = await training_top(db, user.id, now, sport, m) if page == 1 else None
 
     return templates.TemplateResponse(
         request, "activities.html",
@@ -97,6 +116,8 @@ async def activities_page(
             "sport": sport,
             "filters": FILTERS,
             "training_load": training_load,
+            "training": training,
+            "spikes": spikes,
         },
     )
 
@@ -110,10 +131,10 @@ async def activities_partial(
     db: AsyncSession = Depends(get_db),
 ):
     sport = sport if sport in _FILTER_KEYS else None
-    weeks, has_more = await _week_groups(db, user.id, page, sport)
+    weeks, has_more, spikes = await _week_groups(db, user.id, page, sport)
     return templates.TemplateResponse(
         request, "partials/activity_weeks.html",
-        context={"weeks": weeks, "has_more": has_more, "page": page, "sport": sport, "oob": True},
+        context={"weeks": weeks, "has_more": has_more, "page": page, "sport": sport, "oob": True, "spikes": spikes},
     )
 
 
@@ -124,20 +145,10 @@ async def manual_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a Strava activity sync."""
-    count_before_q = await db.execute(
-        select(func.count(Activity.id)).where(Activity.user_id == user.id)
-    )
-    count_before = count_before_q.scalar() or 0
-
+    new_count = 0  # sessions Strava brought, a watch's row taken over included
     if user.has_strava_linked and user.has_own_strava_app:
-        await _sync_recent_activities(user, db)
+        new_count = await _sync_recent_activities(user, db)
         request.session["last_strava_sync"] = datetime.now().timestamp()
-
-    count_after_q = await db.execute(
-        select(func.count(Activity.id)).where(Activity.user_id == user.id)
-    )
-    count_after = count_after_q.scalar() or 0
-    new_count = max(0, count_after - count_before)
 
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
@@ -146,15 +157,44 @@ async def manual_sync(
             "<script>setTimeout(function () { window.location.reload(); }, 700);</script>"
         )
     if not user.has_strava_linked:
-        msg = "Strava non connecté."
+        msg = "Strava non connecté : connecte-le dans les Réglages."
     elif not user.has_own_strava_app:
-        msg = "Configure ton app Strava dans les Réglages pour activer la sync."
+        msg = "Reconnecte Strava dans les Réglages pour activer la sync."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."
     return HTMLResponse(f"<span>{msg}</span>")
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
+RECENT_MAX_DAYS = 31  # how far back Santé's link may open the list (its 7 days, a cycle's 8 at most)
+
+
+async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
+    """What Santé's Entraînement card counts, for its link (owner, 2026-10-09: « Ça ne filtre pas sur la
+    semaine ? »): the sessions from `depuis` (the athlete's local day) to now, duplicates and false starts left out
+    exactly as Santé reads them, newest first, their moving time summed alike (the card's figure); None for a day
+    that is not a date of the last month (the whole list then)."""
+    from app.services import sante_training as st
+
+    try:
+        since = date.fromisoformat(depuis)
+    except ValueError:
+        return None
+    today = await st.athlete_today(db, user_id)
+    if not today - timedelta(days=RECENT_MAX_DAYS) <= since <= today:
+        return None
+    # every session that ended in those days, as Santé counts them (Session.end_day: an overnight race too)
+    sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.end_day >= since),
+                      key=lambda s: s.start, reverse=True)
+    ids = [s.id for s in sessions]
+    rows = {a.id: a for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars()} if ids else {}
+    dplus = sum(s.dplus for s in sessions)
+    return {"label": "7 derniers jours" if (today - since).days in (6, 7) else f"Depuis le {d_short(since)}",
+            "activities": [_activity_to_summary(rows[s.id]) for s in sessions if s.id in rows],
+            "hours": hm(sum(s.minutes for s in sessions)), "km": sum(s.km for s in sessions),
+            "dplus_formatted": dplus_fmt(dplus) if round(dplus) >= 1 else None}
+
 
 def _monday(dt: datetime) -> datetime:
     return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -170,8 +210,8 @@ def _sport_filter(query, sport: str | None):
 
 
 def _fmt_hours(seconds: float) -> str:
-    h, m = divmod(int(seconds) // 60, 60)
-    return f"{h}h{m:02d}" if h else f"{m} min"
+    """The house duration (viz.hm, rounded to the minute): Activités › Semaines prints the same week alike."""
+    return hm(seconds / 60)
 
 
 def _week_label(monday: datetime, this_monday: datetime) -> str:
@@ -206,8 +246,9 @@ def _activity_to_summary(activity: Activity, duplicate_ids: frozenset | set = fr
 
 async def _week_groups(
     db: AsyncSession, user_id: int, page: int, sport: str | None
-) -> tuple[list[dict], bool]:
-    """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first)."""
+) -> tuple[list[dict], bool, set[int]]:
+    """Activities of a WEEKS_PER_PAGE window, grouped by week (newest first), and the ids of the single-run
+    spikes among them (their rows say « plus longue que d'habitude », training_view.spike_ids)."""
     now = datetime.now(timezone.utc)
     this_monday = _monday(now)
     window_end = this_monday + timedelta(weeks=1) - timedelta(weeks=(page - 1) * WEEKS_PER_PAGE)
@@ -242,6 +283,7 @@ async def _week_groups(
     for key in sorted(groups, reverse=True):
         g = groups[key]
         g["hours_formatted"] = _fmt_hours(g["seconds"])
+        g["dplus_formatted"] = dplus_fmt(g["dplus"]) if round(g["dplus"]) >= 1 else None
         g["label"] = _week_label(g["monday"], this_monday)
         weeks.append(g)
 
@@ -252,11 +294,15 @@ async def _week_groups(
         sport,
     )
     has_more = ((await db.execute(older)).scalar() or 0) > 0
-    return weeks, has_more
+    shown = {a.id for a in activities}
+    spikes = (await spike_ids(db, user_id, window_start.date(), now)) & shown if shown else set()
+    return weeks, has_more, spikes
 
 
-async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
-    """Sync recent activities from Strava. Paginates until we find existing ones."""
+async def _sync_recent_activities(user: User, db: AsyncSession) -> int:
+    """Sync recent activities from Strava. Paginates until we find existing ones.
+    Returns how many Strava sessions were saved."""
+    total_synced = 0
     try:
         strava = StravaService.for_user(db, user)
         page = 1
@@ -309,7 +355,7 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
                     average_watts=data.get("average_watts"),
                     raw_data=data,
                 )
-                db.add(activity)
+                activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
                 total_synced += 1
 
             # If all activities on this page were already known, stop paginating
@@ -325,3 +371,4 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> None:
             )
     except Exception:
         logger.exception("Failed to sync activities from Strava")
+    return total_synced

@@ -1,0 +1,49 @@
+{# Strava: one link, like COROS and Garmin. The athlete's app keys are only typed in the setup wizard, when connecting needs them. #}
+<div id="strava" class="pf-section space-y-4 scroll-mt-20">
+    <div class="flex items-center justify-between gap-3">
+        <h2 class="pf-h2">Strava</h2>
+        {% if strava.connected and strava.needs_reauth %}
+        <span class="pf-pill pf-pill-bad"><span class="pf-dot"></span>À reconnecter</span>
+        {% elif strava.connected %}
+        <span class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</span>
+        {% else %}
+        <span class="pf-pill pf-pill-soft"><span class="pf-dot"></span>Non connecté</span>
+        {% endif %}
+    </div>
+    {% if strava_ok is defined and strava_ok %}
+    <div class="pf-note !text-ok">{{ strava_ok }}</div>
+    {% endif %}
+    {% if strava_error is defined and strava_error %}
+    <div class="pf-note !text-danger">{{ strava_error }}</div>
+    {% endif %}
+    {% if not strava.connected %}
+    {% if strava.bad_keys %}
+    <p class="text-sm text-gray-500">Strava refuse les clés de ton app : indique les nouvelles en te connectant.</p>
+    <a href="/setup?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
+    {% else %}
+    <p class="text-sm text-gray-500">Tes activités arrivent automatiquement depuis Strava.</p>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <a href="/auth/strava?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
+        {% if strava_error is defined and strava_error %}<a href="/setup?next=settings" class="text-[13px] text-gray-500 underline hover:text-gray-600">Changer les clés de ton app Strava</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    {% if strava.needs_reauth %}
+    <div class="space-y-2.5">
+        <p class="text-xs text-gray-600">Strava refuse l'accès de PaceForge : reconnecte-toi. Les activités déjà reçues restent.</p>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <a href="/auth/strava?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter</a>
+            <a href="/setup?next=settings" class="text-[13px] text-gray-500 underline hover:text-gray-600">Changer les clés de ton app Strava</a>
+        </div>
+    </div>
+    {% else %}
+    <p class="pf-label"><span class="inline-block w-1.5 h-1.5 rounded-full bg-ok mr-1 align-middle"></span>{% if strava.last_sync_at %}Dernière synchro <b class="text-gray-700">{{ strava.last_sync_ago }}</b>{% else %}Première synchro en cours…{% endif %}</p>
+    {% endif %}
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <form method="post" action="/settings/strava/disconnect"
+              onsubmit="event.preventDefault(); var f = this; var msg = 'Déconnecter Strava ? Les activités déjà reçues restent.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Déconnecter'); } else if (confirm(msg)) { f.submit(); }">
+            <button type="submit" class="pf-btn pf-btn-secondary pf-btn-sm hover:!text-danger">Déconnecter</button>
+        </form>
+    </div>
+    {% endif %}
+</div>
