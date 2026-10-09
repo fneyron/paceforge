@@ -1081,6 +1081,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-cmp-facts i { font-style: normal; }
 .pf-cmp-facts .is-none { display: none; }
 .pf-cmp-why { grid-area: why; margin-top: 2px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); text-wrap: pretty; }
+.pf-cmp-why.is-same { margin-top: 0; }  /* the leg before says it */
 
 @media (max-width: 639px) { .pf-db-pick .pf-btn { justify-self: stretch; } }
 
@@ -1141,21 +1142,30 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 
     /* Activités: the week on the left (its totals under it), its rows on the right; one line of values, units inline */
     #activity-list { margin-top: 28px; }
-    #activity-list > section, #load-more { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 32px; }  /* a label and its totals: ~140 px */
+    /* a label and its totals: a heavy week's « 359 km · +18 722 m · 49h47 » holds on one line (no « · » left at a line's end) */
+    #activity-list > section, #load-more { display: grid; grid-template-columns: 176px minmax(0, 1fr); column-gap: 32px; }
     #activity-list > section { grid-template-rows: repeat(98, auto) 1fr; border-top: 1px solid rgb(var(--pf-line)); }
     #activity-list > section > .pf-week-heading { grid-column: 1; grid-row: 1 / span 99; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 2px; padding: 15px 0 0; }
     #activity-list > section > .pf-activity-row, #load-more > * { grid-column: 2; }
     #activity-list > section > .pf-week-heading + .pf-activity-row { border-top-color: transparent; }
     /* the values: a compact block of fixed columns at the row's end; the name keeps the rest, on two lines at most */
     .pf-activity-row .pf-item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-wrap: pretty; }
-    .pf-act-stats .pf-label { display: none; }
+    .pf-act-stats .pf-label, .pf-act-stats .pf-act-none { display: none; }
     .pf-act-u, .pf-act-pu { display: inline; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-500)); }
-    .pf-act-stats > :is(:nth-child(-n+2), .pf-act-hr) { width: 64px; }
+    /* one line each, the unit never under its value: the widths hold an ultra's values (« 147.06 km », « +12000 m »,
+       « 20h58'00" », « 12:34/km », « 152 bpm ») */
+    .pf-act-stats b { white-space: nowrap; }
+    .pf-act-stats > :nth-child(1) { width: 80px; }
+    .pf-act-stats > .pf-act-dplus { width: 76px; }
     .pf-act-stats > :nth-child(3) { width: 80px; }
     .pf-act-stats > .pf-act-pace { width: 72px; }
-    /* a column that no loaded row fills (e.g. no speed in the imports) is not drawn: no hole in the rows */
-    #activity-list:not(:has(.pf-act-dplus > b)) .pf-act-dplus, #activity-list:not(:has(.pf-act-pace > b)) .pf-act-pace, #activity-list:not(:has(.pf-act-hr > b)) .pf-act-hr { display: none; }
+    .pf-act-stats > .pf-act-hr { width: 64px; }
+    /* a column that no row of the list fills (e.g. no speed in the imports) is not drawn: no hole in the rows; the weeks and
+       Santé's « depuis » view (#recent) alike */
+    :is(#activity-list, #recent):not(:has(.pf-act-dplus > b:not(.pf-act-none))) .pf-act-dplus,
+    :is(#activity-list, #recent):not(:has(.pf-act-pace > b:not(.pf-act-none))) .pf-act-pace,
+    :is(#activity-list, #recent):not(:has(.pf-act-hr > b)) .pf-act-hr { display: none; }
 }
 @media (min-width: 1280px) {
-    #activity-list > section, #load-more { grid-template-columns: 176px minmax(0, 1fr); column-gap: 40px; }
+    #activity-list > section, #load-more { column-gap: 40px; }
 }

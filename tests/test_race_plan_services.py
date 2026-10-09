@@ -284,6 +284,28 @@ def test_debrief_plans_the_plans_own_stops_and_never_calls_a_far_race_close():
     assert "du début à la fin" in d4b["summary"]["verdict"]
 
 
+def test_debrief_on_the_estimate_names_neither_a_plan_nor_an_objective():
+    # no objective: the débrief compares with the estimate (« Écart avec ton estimation »), its words too
+    legs4 = [{"start_km": 10.0 * i, "end_km": 10.0 * (i + 1), "start_name": f"P{i}", "end_name": f"P{i + 1}",
+              "predicted_time_s": 3600, "adjusted_time_s": None, "stop_s": 0, "distance_km": 10.0} for i in range(4)]
+    verdicts = {}
+    for name, pace in (("slow", lambda k: 420), ("fast", lambda k: 300), ("close", lambda k: 362),
+                       ("fade", lambda k: 300 if k < 10 else (420 if k >= 30 else 360))):
+        d = leg_debrief(_splits(40, pace), legs4, 40.0, use_target=False)
+        verdicts[name] = d["summary"]["verdict"]
+        assert "plan" not in d["summary"]["verdict"] and "objectif" not in d["summary"]["verdict"]
+        assert not any("plan" in l["reason"] for l in d["legs"])
+    assert verdicts["slow"] == "Plus lent que l'estimation du début à la fin : elle était trop optimiste."
+    assert verdicts["fast"] == "Plus rapide que l'estimation du début à la fin : tu peux viser plus haut."
+    assert verdicts["close"] == "Course proche de l'estimation."
+    assert verdicts["fade"].startswith("Le schéma classique : plus vite que l'estimation au début, plus lent à la fin")
+    # on plan's basis, the plan and its objective
+    d = leg_debrief(_splits(40, lambda k: 420), [dict(l, adjusted_time_s=3600) for l in legs4], 40.0, use_target=True)
+    assert d["summary"]["verdict"] == "Plus lent que le plan du début à la fin : l'objectif était trop ambitieux."
+    d = leg_debrief(_splits(40, lambda k: 362), legs4, 40.0, use_target=False)
+    assert {l["reason"] for l in d["legs"]} == {"comme estimé"}
+
+
 def test_debrief_reasons_are_short_and_the_fade_never_breaks_inside_the_hr():
     course, secs = _sections(target=5 * 3600, stop_min=2)
     per_km = {s.index: (5 * 3600) * (s.base_time_s / sum(x.base_time_s for x in course.segments)) for s in course.segments}

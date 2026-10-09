@@ -213,6 +213,13 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     assert '<p class="pf-db-num is-bad">+15<small' in t  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
     assert "(12 prévues)" in t  # the plan's stops: eau 2′ + ravito 5′ + ravito 5′
     assert "<span>ven. 2 oct. 2026</span>" in t  # the activity's day in words, as the app writes dates
+    # a reason shared by consecutive legs is written once (the next rows say it to screen readers only)
+    whys = re.findall(r'<span class="pf-cmp-why( is-same)?" role="cell">(.*?)</span>\s*</div>', t, re.S)
+    shown = [re.sub(r"<[^>]+>", "", w) for same, w in whys]
+    assert len(whys) == 4 and any(same for same, _ in whys)
+    for k, (same, w) in enumerate(whys):
+        assert bool(same) == (k > 0 and shown[k] == shown[k - 1])
+        assert (w.startswith('<span class="sr-only">') if same else "<" not in w)
     from sqlalchemy import select
 
     from app.models.route import Route, RouteCheckpoint
@@ -252,6 +259,35 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     assert f'<option value="{act.id}" selected>' in r.text and f'<option value="{other.id}">' in r.text
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": other.id})
     assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and 'name="activity_id"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_mes_courses_builds_the_athlete_profile_once(as_user: AsyncClient, db_session: AsyncSession, monkeypatch):
+    """Races run with a pinned point get their plan computed for « Mes courses »: on ONE athlete profile for the
+    page, not one per race."""
+    from sqlalchemy import select
+
+    from app.models.route import Route, RouteCheckpoint
+    from app.services import race_simulator
+
+    ids = [await _create_route(as_user) for _ in range(3)]
+    for rid in ids:
+        (await db_session.get(Route, rid)).result_json = {"activity_id": None, "activity_name": "x", "activity_date": "",
+                                                          "total_actual_s": 5 * 3600, "total_elapsed_s": 5 * 3600 + 600, "actual": []}
+        cp = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == rid).order_by(RouteCheckpoint.distance_km))).scalars().first()
+        cp.target_s = 3600
+    await db_session.flush()
+    calls = []
+    real = race_simulator.build_athlete_gradient_profile
+
+    async def counting(*a, **kw):
+        calls.append(1)
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(race_simulator, "build_athlete_gradient_profile", counting)
+    page = await as_user.get("/simulator")
+    assert page.status_code == 200 and page.text.count(" vs plan<") == 3
+    assert len(calls) == 1
 
 
 async def _create_bike_route(client: AsyncClient) -> int:

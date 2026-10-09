@@ -103,8 +103,13 @@ def _plan_finish_s(b: dict) -> int | None:
 async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User) -> dict[int, tuple[int | None, int | None]]:
     """{route id: (real time, plan's finish)} for the races run: what the débrief leads with, so
     « Mes courses » shows the same real time and the same gap. The plan's finish is the objective;
-    once points are pinned, where the pins lead (the plan is computed for those races only)."""
+    once points are pinned, where the pins lead (the plan is computed for those races only, on one
+    athlete profile built once for the page). No objective and no pin: no plan, the card shows the
+    real time alone (« temps réel »), while the débrief, opened on purpose, compares it with the
+    estimate and says so (« Écart avec ton estimation »): the estimate is not a plan the athlete set,
+    and computing it for every race run would cost the page a prediction per race."""
     from app.models.activity import Activity
+    from app.services.race_simulator import build_athlete_gradient_profile
 
     if not routes:
         return {}
@@ -116,10 +121,13 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User) -> d
         select(RouteCheckpoint.route_id).where(RouteCheckpoint.route_id.in_([rt.id for rt in routes]), RouteCheckpoint.target_s.is_not(None))
     )).scalars())
     out = {}
+    profile = None
     for rt in routes:
         plan = rt.target_time_s
         if rt.id in pinned and rt.course_json and rt.sport_type != "bike":
-            plan = _plan_finish_s(await _plan_bundle(rt, db, user))
+            if profile is None:
+                profile = await build_athlete_gradient_profile(db, user.id)
+            plan = _plan_finish_s(await _plan_bundle(rt, db, user, profile=profile))
         out[rt.id] = (_real_elapsed_s(rt.result_json, acts.get(rt.result_json.get("activity_id"))), plan)
     return out
 
@@ -2113,11 +2121,12 @@ def _aid_stops(cps: list[dict], refills=None, override_min: int | None = None) -
     return out
 
 
-async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
+async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None) -> dict:
     """Everything derived from a saved trail route, computed ONE way for every
     consumer (pacing guide, exports, debrief): the predicted course,
     the checkpoints with their metadata, the plan sections (target + stops +
-    weather), cutoffs, start offset."""
+    weather), cutoffs, start offset. ``profile``: the athlete's gradient profile when
+    the caller already built it (one per request for several routes)."""
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import annotate_cutoffs
     from app.services.race_simulator import (
@@ -2159,7 +2168,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     start_minute = route.start_minute or 0
     start_offset_s = start_hour * 3600 + start_minute * 60
     course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
+    if profile is None:
+        profile = await build_athlete_gradient_profile(db, user.id)
     course = predict_course(
         course, profile, start_hour=start_hour, start_minute=start_minute,
         plan_moving_s=objective_moving_s(

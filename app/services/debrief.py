@@ -95,6 +95,8 @@ def leg_debrief(
     total_d = pts[-1][0]
     if total_d <= 0 or not sections:
         return {"legs": [], "summary": None}
+    # the basis the débrief compares with, named as its headline names it: no objective, no plan
+    vs = "le plan" if use_target else "l'estimation"
     scale = total_d / (route_total_km * 1000) if route_total_km else 1.0
     n = len(sections)
     legs = []
@@ -122,7 +124,7 @@ def leg_debrief(
 
         # one probable reason, short: the signed gap beside it already says faster or slower
         if abs(delta_total) < SIGNIFICANT_S:
-            reason, tag = "dans le plan", "ok"
+            reason, tag = ("dans le plan" if use_target else "comme estimé"), "ok"
         elif delta_total > 0 and stops - planned_stop >= max(STOP_MIN_S, STOP_SHARE * delta_total):
             reason, tag = f"arrêts : {int(round((stops - planned_stop) / 60))} min de plus que prévu", "stops"
         elif delta_moving > 0 and hr_cap and hr is not None and hr <= hr_cap - HR_LOW_MARGIN:
@@ -168,7 +170,7 @@ def leg_debrief(
     pace_verdict = fade > 0.08 or fade < -0.05  # early vs late pace: the verdict says it (no « allure : début…, fin… » beside it)
     if fade > 0.08:
         # non-breaking spaces: « (FC 151 → 125 bpm) » never breaks inside
-        verdict.append("Le schéma classique : plus vite que le plan au début, plus lent à la fin"
+        verdict.append(f"Le schéma classique : plus vite que {vs} au début, plus lent à la fin"
                        + (f" (FC {int(sum(hr_early)/len(hr_early))} → {int(sum(hr_late)/len(hr_late))} bpm)" if hr_early and hr_late else "")
                        + ". Le début a coûté la fin.")
     elif fade < -0.05:
@@ -181,15 +183,19 @@ def leg_debrief(
         # no pattern: never call a race far from the plan « proche du plan »
         plan_total = legs[-1]["cum_plan_s"] if legs else 0
         if close_to_plan(total_delta, plan_total):
-            verdict.append("Course proche du plan.")
+            verdict.append("Course proche du plan." if use_target else "Course proche de l'estimation.")
         else:
             # « du début à la fin » only when it is: 2/3 of the legs off on the same side, none on the other
             # (a race lost on one leg gets no verdict: the table marks that leg)
             off = [l for l in legs if abs(l["delta_s"]) > SIGNIFICANT_S]
             same = [l for l in off if (l["delta_s"] > 0) == (total_delta > 0)]
             if len(legs) >= 3 and len(same) == len(off) and len(same) * 3 >= 2 * len(legs):
-                verdict.append("Plus lent que le plan du début à la fin : l'objectif était trop ambitieux." if total_delta > 0
-                               else "Plus rapide que le plan du début à la fin : tu peux viser plus haut.")
+                if total_delta > 0:
+                    # no objective set: the estimate was off, not an objective
+                    verdict.append(f"Plus lent que {vs} du début à la fin : "
+                                   + ("l'objectif était trop ambitieux." if use_target else "elle était trop optimiste."))
+                else:
+                    verdict.append(f"Plus rapide que {vs} du début à la fin : tu peux viser plus haut.")
     return {
         "legs": legs,
         "summary": {

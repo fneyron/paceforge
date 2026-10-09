@@ -51,6 +51,8 @@
             <div class="pf-cmp-head" role="row">
                 <span role="columnheader">Point</span><span role="columnheader" title="Arrêt prévu inclus">{{ word | capitalize }}</span><span role="columnheader">Réel</span><span role="columnheader" title="Temps écoulé − temps en mouvement">Arrêts</span><span role="columnheader" title="FC moyenne sur le tronçon">FC</span><span role="columnheader">Écart</span><span role="columnheader">Raison probable</span>
             </div>
+            {# a reason shared by consecutive legs is written once, on the first of them (screen readers hear it on each row) #}
+            {% set ns = namespace(why=none) %}
             {% for l in legs %}
             {% set pm = ((l.plan_s + l.planned_stop_s + 30) // 60) | int %}{% set rm = ((l.elapsed_s + 30) // 60) | int %}
             {% set top = 'lost' if (mark_lost and l in s.lost) else ('gained' if (mark_gained and l in s.gained) else '') %}
@@ -64,7 +66,8 @@
                     <span role="cell" class="{% if not l.hr %}is-none{% endif %}{% if l.hr_over %} is-bad{% endif %}"><i>FC</i> {{ l.hr if l.hr else '—' }}</span>
                 </span></span>
                 <span class="pf-cmp-gap{% if l.delta_s > 90 %} is-bad{% elif l.delta_s < -90 %} is-ok{% endif %}{% if top %} is-top{% endif %}" role="cell"{% if top %} title="Un des 3 tronçons où tu as le plus {{ 'perdu' if top == 'lost' else 'gagné' }}"{% endif %}>{% if top %}<span class="sr-only">Le plus {{ 'perdu' if top == 'lost' else 'gagné' }} : </span>{% endif %}{{ gap(rm - pm) }}</span>
-                <span class="pf-cmp-why" role="cell">{{ l.reason }}</span>
+                <span class="pf-cmp-why{% if l.reason == ns.why %} is-same{% endif %}" role="cell">{% if l.reason == ns.why %}<span class="sr-only">{{ l.reason }}</span>{% else %}{{ l.reason }}{% endif %}</span>
+                {% set ns.why = l.reason %}
             </div>
             {% endfor %}
         </div>
