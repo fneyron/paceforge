@@ -93,7 +93,8 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
     text = _visible(html)
     # hero: objective, arrival, verdict; the number is the button (pencil inside), no « Modifier » link
-    assert 'id="hero-time"' in html and 'id="hero-arrival"' in html and 'id="hero-verdict"' in html
+    assert 'id="hero-time"' in html and 'id="hero-arrival"' in html and 'id="hero-verdict"' in html  # the badge: « Barrière dépassée » only
+    assert "Réaliste" not in html and "Ambitieux" not in html and "Confortable" not in html
     assert 'class="pf-edit"' not in html and "hero-arrival-sub" not in html
     # ONE primary action on the surface, no print icon beside it; it leads to the four exports
     surface = _surface(html)
@@ -101,13 +102,10 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert "pf-btn-icon" not in surface
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
         assert call in html, call
-    # Optimiste / Cible / Sécurité: under the arrival, in view (owner, 2026-10-09), not inside the objective editor
-    seg = html.split('id="scn-seg"')[1].split("</div>")[0]
-    assert re.findall(r'data-scn-btn="(\w+)"', seg) == ["fast", "target", "safe"]
+    # Optimiste / Cible / Sécurité are columns of the list (owner, 2026-10-09): no plan selector, no chip
+    assert 'id="scn-seg"' not in html and 'id="scn-wrap"' not in html and 'id="scn-chip"' not in html and "setScn" not in html
     panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
-    assert 'id="scn-seg"' not in panel and "Ton estimation" in panel and "pf-objok" in panel
-    assert html.index('class="pf-arr"') < html.index('id="scn-wrap"') < html.index('id="heat-line"')
-    assert 'id="scn-chip"' in html  # « Plan Sécurité affiché · revenir à Cible », shown by the script when it applies
+    assert "Ton estimation" in panel and "pf-objok" in panel
     # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
@@ -153,7 +151,7 @@ async def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop(as_use
     root = (await as_user.get(f"/simulator/routes/{rid}")).text.split('id="simulator-root"')[1]
     assert re.match(r'[^>]*>\s*<div class="pf-plan-title">', root)
     assert re.search(r'</div>\s*<div id="reimport-error"></div>\s*<section class="pf-hero"', root)
-    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="scn-chip"', 'id="passage-times-result"', 'id="add-pt"', 'class="pf-prep"')
+    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="passage-times-result"', 'id="add-pt"', 'class="pf-prep"')
     at = [root.index(m) for m in marks]
     assert at == sorted(at)
 
@@ -322,15 +320,14 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
     for h in heads:
         assert h.count("<svg") == 1  # the chevron only: no poste glyph, no bag, no weather icon
         text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", h)).strip())
-        # the clock (plus the hidden Optimiste / Sécurité clocks the plan selector swaps in), the name, the km
-        assert re.fullmatch(r"(\d\d:\d\d ){1,3}\S.* km [\d,]+", text), text
+        # the Cible clock, the name, the km, then the Optimiste and Sécurité clocks in two small columns
+        assert re.fullmatch(r"\d\d:\d\d \S.* km [\d,]+ \d\d:\d\d \d\d:\d\d", text), text
         assert "FC" not in text and "+" not in text and "°" not in text and " min" not in text and "Base vie" not in text
     assert "pf-tag" not in t and "pf-kind" not in t and "pf-prow-col" not in t
-    # the day separator and the three plans' finish for « Plan affiché »
-    assert 'data-day="1"' in t
-    pill = re.search(r'data-scn-pill hidden data-end-fast="([^"]+)" data-end-target="([^"]+)" data-end-safe="([^"]+)"', t)
-    assert pill and all(pill.groups())
-    assert t.count("data-safe") >= len(CPS) + 1 and t.count("data-fast") >= len(CPS) + 1
+    # the day separator; the two small columns named once above the list, never per row
+    assert 'data-day="1"' in t and "data-scn-pill" not in t
+    assert t.count("data-safe") == len(CPS) + 1 and t.count("data-fast") == len(CPS) + 1
+    assert t.count("Optimiste") == 1 and t.count("Sécurité") == 1 and 'class="pf-pass-cols"' in t
 
 
 @pytest.mark.asyncio
@@ -346,7 +343,7 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     assert "roulant" not in text.lower() and "Ta nutrition" not in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated
     assert re.search(r"Ravito · assistance · barrière 10:30 · marge [+−]\d+h\d\d", text) and "arrêt" not in text, text
-    assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text
+    assert "Selon ta forme" not in text and "Raide km" not in text  # the three clocks are columns; no steep consigne (owner, 2026-10-09)
     assert "Drop bag ici" in det and "rien de prévu" not in t  # nothing planned in it: just « Drop bag ici. »
     actions = re.findall(r"<button[^>]*>([^<]+)</button>", det.split('class="pf-det-actions"')[1])
     assert actions == ["Modifier ce point", "Voir sur la carte"]

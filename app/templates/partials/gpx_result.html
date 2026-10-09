@@ -77,14 +77,6 @@
                 </div>
             </div>
             <p class="pf-arr"><span class="pf-arr-l">Arrivée</span><b id="hero-arrival" class="pf-arr-v">—</b>{% if not deb_primary %}<span id="hero-verdict" class="pf-arr-pill"></span>{% endif %}</p>
-            {# the three plans, in view under the arrival (owner, 2026-10-09: they were hidden in the objective editor) #}
-            <div id="scn-wrap" class="pf-scnwrap hidden">
-                <div id="scn-seg" class="pf-seg pf-scn" role="group" aria-label="Plan affiché">
-                    <button type="button" data-scn-btn="fast" aria-pressed="false" onclick="window._sim && window._sim.setScn('fast')">Optimiste<small data-scn-end="fast"></small></button>
-                    <button type="button" data-scn-btn="target" aria-pressed="true" onclick="window._sim && window._sim.setScn('target')">Cible<small data-scn-end="target"></small></button>
-                    <button type="button" data-scn-btn="safe" aria-pressed="false" onclick="window._sim && window._sim.setScn('safe')">Sécurité<small data-scn-end="safe"></small></button>
-                </div>
-            </div>
         </div>
         {# the forecast heat matters before the race, not once it is run #}
         {% if not deb_primary %}<p id="heat-line" class="pf-heat hidden"></p>{% endif %}
@@ -108,7 +100,6 @@
     {% endif %}
 
     {# ── passages ────────────────────────────────────────────────────────── #}
-    <div id="scn-chip" class="pf-scn-chip hidden"><span id="scn-chip-text">Plan Cible affiché</span> <span aria-hidden="true">·</span> <button type="button" onclick="window._sim && window._sim.setScn('target')">revenir à Cible</button></div>
     <h2 class="pf-h2 pf-pass-h">Passages</h2>
     <div id="passage-times-result">{{ initial_table_html | safe if initial_table_html else '' }}</div>
     <div id="page-error" class="hidden py-2 text-sm text-danger"></div>
@@ -242,11 +233,9 @@ window._sim = {};
     var planData = null;
     var gridC = isDark ? '#333' : '#f0f0f0', mutedC = isDark ? '#6b7280' : '#9ca3af';
     // phone state, re-applied after every table swap
-    var openCp = null, focusKm = null, scn = 'target';
+    var openCp = null, focusKm = null;
     // the race's name, date and start as last saved: the fields of « Nom, date et départ » only count once saved
     var raceName = (document.getElementById('save-name') || {}).value || '', raceDate = (document.getElementById('race-date') || {}).value || '', startVal = (document.getElementById('start-time') || {}).value || '06:00';
-    try { scn = localStorage.getItem('pf.scn') || 'target'; } catch (e) {}
-    if (['safe', 'target', 'fast'].indexOf(scn) < 0) scn = 'target';
     function isCompact() { return window.innerWidth < 1024; }
 
     function fmtHM(s) { var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); if (m === 60) { h += 1; m = 0; } return h + 'h' + (m < 10 ? '0' : '') + m; }
@@ -613,7 +602,7 @@ window._sim = {};
         legTimer = setTimeout(function () { legTimer = null; hideCross(); highlightSection(null, null); }, 3000);
     }
     // the plan shown: Cible, or Optimiste / Sécurité (same shape, the moving time scaled, the same stops)
-    function effScn() { return (planData && planData.scenarios) ? scn : 'target'; }
+    function effScn() { return 'target'; }  // the list shows the three plans side by side; the profile follows Cible
     function shownClock(p) {
         if (!p || p.clock_s === null || p.clock_s === undefined) return null;
         var sc = planData && planData.scenarios, eff = effScn();
@@ -1251,23 +1240,14 @@ window._sim = {};
                 arr.textContent = (n > 0 || raceDate ? dayLabel(n, false) + ' ' : '') + fmtClock(finAbs);
             } else { arr.textContent = '—'; }
         }
-        // verdict: only for an objective; a missed cutoff always shows
+        // the one warning worth a badge: a cutoff that falls before the planned passage (no word on the objective vs the estimate: owner, 2026-10-09)
         var v = document.getElementById('hero-verdict');
         if (v) {
             var late = planData && planData.points.some(function (p) { return p.cutoff_margin_s !== null && p.cutoff_margin_s !== undefined && p.cutoff_margin_s < 0; });
-            var r = predictedTotalS ? total / predictedTotalS : 1, cls = null, txt = '';
-            if (late) { cls = 'pf-pill-bad'; txt = 'Barrière dépassée'; }
-            else if (real) {
-                if (r < 0.94) { cls = 'pf-pill-warn'; txt = 'Ambitieux'; }
-                else if (r <= 1.06) { cls = 'pf-pill-ok'; txt = 'Réaliste'; }
-                else { cls = 'pf-pill-accent'; txt = 'Confortable'; }
-            }
-            v.innerHTML = cls ? '<span class="pf-pill ' + cls + '"><span class="pf-dot"></span>' + txt + '</span>' : '';
-            v.title = late ? 'Au moins une barrière horaire tombe avant ton passage prévu' : real ? 'Objectif ' + fmtHM(total) + ' pour une estimation de ' + fmtHM(predictedTotalS) : '';
+            v.innerHTML = late ? '<span class="pf-pill pf-pill-bad"><span class="pf-dot"></span>Barrière dépassée</span>' : '';
+            v.title = late ? 'Au moins une barrière horaire tombe avant ton passage prévu' : '';
         }
     }
-    // the plan shown: Optimiste / Cible / Sécurité (in the objective editor); the list, the finish row and the profile follow it
-    function setScn(v) { if (['safe', 'target', 'fast'].indexOf(v) < 0) return; scn = v; try { localStorage.setItem('pf.scn', v); } catch (e) {} applyPhoneState(); drawOverlays(); }
     function toggleDetail(ci) { openDetail(ci); }
     function openDetail(ci, keep) {
         openCp = (openCp === ci && !keep) ? null : ci;
@@ -1290,15 +1270,6 @@ window._sim = {};
     }
     function applyPhoneState() {
         var t = document.getElementById('plan-table'); if (!t) return;
-        var pill = document.querySelector('#passage-times-result [data-scn-pill]'), seg = document.getElementById('scn-seg'), eff = pill ? scn : 'target';
-        t.setAttribute('data-scn', eff);
-        // the three plans show under the arrival, only when they exist
-        var wrap = document.getElementById('scn-wrap'); if (wrap) wrap.classList.toggle('hidden', !pill);
-        if (seg) seg.querySelectorAll('[data-scn-btn]').forEach(function (b) { var k = b.getAttribute('data-scn-btn'); b.setAttribute('aria-pressed', k === eff ? 'true' : 'false'); var sm = b.querySelector('small'); if (sm && pill) sm.textContent = pill.getAttribute('data-end-' + k) || ''; });
-        // another plan than Cible: said above the list, with the way back
-        var chip = document.getElementById('scn-chip'), ct = document.getElementById('scn-chip-text');
-        if (chip) chip.classList.toggle('hidden', eff === 'target');
-        if (ct) ct.textContent = 'Plan ' + (eff === 'fast' ? 'Optimiste' : 'Sécurité') + ' affiché';
         // no point yet: the empty state carries the add button, the link under the list steps aside
         var add = document.getElementById('add-pt'); if (add) add.classList.toggle('hidden', !!document.querySelector('#passage-times-result [data-empty-state]'));
         applyDetail();
@@ -1398,7 +1369,7 @@ window._sim = {};
     ['save-name', 'race-date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); saveRaceSheet(); } }); });
     if (document.getElementById('plan-data')) { afterTable(); updateHero(); } else { recalc(); }
     maybeFetchWeather();
-    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, heroClose: heroClose, setScn: setScn, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, openDetail: openDetail, openExport: openExport, closeExport: closeExport, openRaceSheet: openRaceSheet, closeRaceSheet: closeRaceSheet, saveRaceSheet: saveRaceSheet, openSettings: openSettings, closeSettings: closeSettings, sharePlan: sharePlan, showMap: showMap, openTool: openTool, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
+    window._sim = { reopenMap: reopenMap, planVersionOf: function () { return planVersion; }, flyToCp: flyToCp, setTerrain3d: setTerrain3d, saveRoute: saveRoute, addCheckpoint: addCheckpoint, removeCheckpoint: removeCheckpoint, confirmRemove: confirmRemove, editCheckpointName: editCheckpointName, editCheckpointKm: editCheckpointKm, editCheckpointMeta: editCheckpointMeta, exportPace: exportPace, recalc: recalc, scheduleSave: scheduleSave, onNameChange: onNameChange, onConditionsChange: onConditionsChange, fetchWeather: fetchWeather, renderWeather: renderWeather, setTarget: setTarget, resetTarget: resetTarget, setStartTime: setStartTime, previewObjective: previewObjective, commitObjective: commitObjective, heroEdit: heroEdit, heroClose: heroClose, toggleDetail: toggleDetail, openSheet: openSheet, closeSheet: closeSheet, openAddSheet: openAddSheet, openDetail: openDetail, openExport: openExport, closeExport: closeExport, openRaceSheet: openRaceSheet, closeRaceSheet: closeRaceSheet, saveRaceSheet: saveRaceSheet, openSettings: openSettings, closeSettings: closeSettings, sharePlan: sharePlan, showMap: showMap, openTool: openTool, toggleMap: toggleMap, exportGpx: exportGpx, printPlan: printPlan, setPassage: setPassage, clearPassage: clearPassage, _cleanup: cleanup };
     setStatus('saved');
 })();
 </script>

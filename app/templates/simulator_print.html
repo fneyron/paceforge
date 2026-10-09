@@ -107,7 +107,7 @@
                 <tr class="{% if b and b.cls == 'stairs' %}bg-red-50{% elif b and b.cls == 'climb' %}bg-warn-soft{% elif b and b.cls == 'descent' %}bg-blue-50/60{% endif %}">
                     <td class="py-0.5 pr-2 text-gray-600">→ <b class="text-gray-900">{{ l.to_names | join(', ') }}</b></td>
                     <td class="py-0.5 pr-2 font-bold whitespace-nowrap">{% if b %}{% if b.hr_free %}FC libre{% elif l.hr_cap %}FC {% if b.cls == 'descent' %}≈{% else %}≤{% endif %} {{ l.hr_cap }}{% endif %}{% endif %}</td>
-                    <td class="py-0.5 text-gray-600">{% if l.effort %}{{ l.effort }}{% endif %}{% if l.steep and (not b or b.cls != 'stairs') %} <span class="text-red-700">Raide km {% for al in l.steep %}{{ al.start_km }}–{{ al.end_km }}{% if not loop.last %}, {% endif %}{% endfor %} : mains sur les cuisses.</span>{% endif %}</td>
+                    <td class="py-0.5 text-gray-600">{% if l.effort %}{{ l.effort }}{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
