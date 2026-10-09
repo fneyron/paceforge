@@ -1,11 +1,12 @@
 {% import "partials/_icons.html" as ic %}
-{% macro hm(seconds) %}{% if seconds is none %}—{% else %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{{ h }}h{{ '%02d'|format(m) }}{% endif %}{% endmacro %}
+{# times to the nearest minute, as the plan shows them; every gap is the difference of the times shown #}
+{% macro hmm(m) %}{{ m // 60 }}h{{ '%02d'|format(m % 60) }}{% endmacro %}
+{% macro hm(seconds) %}{% if seconds is none %}—{% else %}{{ hmm(((seconds + 30) // 60) | int) }}{% endif %}{% endmacro %}
 {# a signed gap in minutes, hours past 60: −12 min, +1h05 (positive = slower than the plan) #}
-{% macro gap(s, unit_cls='') %}{% if s is none %}—{% else %}{% set m = (s / 60) | round | int %}{% set a = m if m >= 0 else -m %}{{ '+' if m > 0 else ('−' if m < 0 else '') }}{% if a < 60 %}{{ a }}<small class="{{ unit_cls }}"> min</small>{% else %}{{ a // 60 }}h{{ '%02d'|format(a % 60) }}{% endif %}{% endif %}{% endmacro %}
+{% macro gap(m, unit_cls='') %}{% set a = m if m >= 0 else -m %}{{ '+' if m > 0 else ('−' if m < 0 else '') }}{% if a < 60 %}{{ a }}<small class="{{ unit_cls }}"> min</small>{% else %}{{ a // 60 }}h{{ '%02d'|format(a % 60) }}{% endif %}{% endmacro %}
 {% macro km(v) %}{{ ('%.1f'|format(v|float)) | replace('.', ',') }}{% endmacro %}
 {# a pace ratio against the plan: 0.9 → −10 %, 1.15 → +15 % #}
 {% macro pct(r) %}{% set p = ((r - 1) * 100) | round | int %}{{ '+' if p > 0 else ('−' if p < 0 else '') }}{{ p if p >= 0 else -p }} %{% endmacro %}
-{% macro pname(n) %}{{ 'Départ' if n == 'Depart' else n }}{% endmacro %}
 {% set word = 'plan' if basis == 'plan' else 'estimation' %}
 <div id="result-compare" class="pf-db">
     {% if error %}<p class="pf-tl-err" role="alert">{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}<span>{{ error }}</span></p>{% endif %}
@@ -15,19 +16,20 @@
     {% set legs = db.legs if db else [] %}
     <div class="pf-db-top">
         <section class="pf-db-hero" aria-labelledby="db-gap-l">
-            <p id="db-gap-l" class="pf-label">Écart sur ton {{ word }}</p>
-            <p class="pf-db-num{% if lead.tone %} is-{{ lead.tone }}{% endif %}">{{ gap(lead.delta_s, 'pf-db-unit') }}</p>
+            <p id="db-gap-l" class="pf-label">Écart avec ton {{ word }}</p>
+            <p class="pf-db-num{% if lead.tone %} is-{{ lead.tone }}{% endif %}">{% if lead.delta_min is none %}—{% else %}{{ gap(lead.delta_min, 'pf-db-unit') }}{% endif %}</p>
             <p class="pf-db-vs"><span>Réalisé <b>{{ hm(lead.actual_s) }}</b></span><span>{{ word | capitalize }} <b>{{ hm(lead.plan_s) }}</b></span></p>
             {% if db %}
             {% set s = db.summary %}
             <p class="pf-db-facts"><span class="pf-dots">
                 <span>{{ (s.total_stops_s / 60) | round | int }} min d'arrêts ({{ (s.planned_stops_s / 60) | round | int }} prévues)</span>
-                {%- if legs | length > 1 %}<span>allure : début {{ pct(s.early_ratio) }}, fin {{ pct(s.late_ratio) }}</span>
-                {%- elif legs and legs[0].hr %}<span{% if legs[0].hr_over %} class="is-bad"{% endif %}>FC {{ legs[0].hr }}</span>{% endif %}
+                {#- early vs late pace: unless the verdict already says it #}
+                {%- if legs | length > 1 %}{% if not s.pace_verdict %}<span>allure : début {{ pct(s.early_ratio) }}, fin {{ pct(s.late_ratio) }}</span>{% endif %}
+                {%- elif legs[0].hr %}<span{% if legs[0].hr_over %} class="is-bad"{% endif %}>FC {{ legs[0].hr }}</span>{% endif %}
             </span></p>
             {% endif %}
             <p class="pf-db-src"><span class="pf-dots">
-                <span>D'après {{ result.activity_name }}</span>{% if result.activity_date %}<span>{{ result.activity_date }}</span>{% endif %}
+                <span>D'après {{ result.activity_name }}</span>{% if lead.day %}<span>{{ lead.day }}</span>{% endif %}
                 <button type="button" class="pf-link" hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML">Changer / retirer</button>
             </span></p>
         </section>
@@ -40,38 +42,28 @@
     <p class="pf-tl-note">Ajoute tes points de passage au plan pour le détail par tronçon.</p>
     {% else %}
     {% set s = db.summary %}
-    {% if s.lost or s.gained %}
-    <section class="pf-panel pf-gaps" aria-label="Où tu as perdu et gagné du temps">
-        {% for title, items, tone in [('Où tu as perdu', s.lost, 'bad'), ('Où tu as gagné', s.gained, 'ok')] if items %}
-        <div>
-            <h2 class="pf-gaps-h">{{ title }}</h2>
-            <ul>
-                {% for l in items %}
-                <li><b class="is-{{ tone }}">{{ gap(l.delta_s) }}</b><span><span class="pf-gaps-leg">{{ pname(l.from_name) }} → {{ l.to_name }}</span><small>{{ l.reason }}</small></span></li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endfor %}
-    </section>
-    {% endif %}
-
+    {# où tu as perdu / gagné: the 3 biggest gaps each way are marked in the table, when there are more to tell them from #}
+    {% set mark_lost = legs | selectattr('delta_s', 'gt', 90) | list | length > 3 %}
+    {% set mark_gained = legs | selectattr('delta_s', 'lt', -90) | list | length > 3 %}
     <section class="pf-tl-sec" aria-labelledby="db-legs-t">
         <h2 id="db-legs-t" class="pf-h2">Tronçon par tronçon</h2>
         <div class="pf-cmp pf-cmp-db" role="table" aria-labelledby="db-legs-t">
             <div class="pf-cmp-head" role="row">
-                <span role="columnheader">Point</span><span role="columnheader">{{ word | capitalize }}</span><span role="columnheader">Réel</span><span role="columnheader" title="Temps écoulé − temps en mouvement">Arrêts</span><span role="columnheader" title="FC moyenne sur le tronçon">FC</span><span role="columnheader">Écart</span><span role="columnheader">Raison probable</span>
+                <span role="columnheader">Point</span><span role="columnheader" title="Arrêt prévu inclus">{{ word | capitalize }}</span><span role="columnheader">Réel</span><span role="columnheader" title="Temps écoulé − temps en mouvement">Arrêts</span><span role="columnheader" title="FC moyenne sur le tronçon">FC</span><span role="columnheader">Écart</span><span role="columnheader">Raison probable</span>
             </div>
             {% for l in legs %}
+            {% set pm = ((l.plan_s + l.planned_stop_s + 30) // 60) | int %}{% set rm = ((l.elapsed_s + 30) // 60) | int %}
+            {% set top = 'lost' if (mark_lost and l in s.lost) else ('gained' if (mark_gained and l in s.gained) else '') %}
             <div class="pf-cmp-row" role="row">
                 <span class="pf-cmp-name" role="rowheader"><b>{{ l.to_name }}</b> <small>km {{ km(l.end_km) }}</small></span>
                 {% set st = (l.stops_s / 60) | round | int %}
                 <span class="pf-cmp-facts"><span class="pf-dots">
-                    <span role="cell"><i>{{ word }}</i> {{ hm(l.plan_s + l.planned_stop_s) }}</span>
-                    <span role="cell"><i>réel</i> {{ hm(l.elapsed_s) }}</span>
+                    <span role="cell"><i>{{ word }}</i> {{ hmm(pm) }}</span>
+                    <span role="cell"><i>réel</i> {{ hmm(rm) }}</span>
                     <span role="cell" class="{% if st == 0 %}is-none{% endif %}{% if l.stops_s > l.planned_stop_s + 120 %} is-bad{% endif %}"><i>arrêts</i> {{ st ~ ' min' if st else '—' }}</span>
                     <span role="cell" class="{% if not l.hr %}is-none{% endif %}{% if l.hr_over %} is-bad{% endif %}"><i>FC</i> {{ l.hr if l.hr else '—' }}</span>
                 </span></span>
-                <span class="pf-cmp-gap{% if l.delta_s > 90 %} is-bad{% elif l.delta_s < -90 %} is-ok{% endif %}" role="cell">{{ gap(l.delta_s) }}</span>
+                <span class="pf-cmp-gap{% if l.delta_s > 90 %} is-bad{% elif l.delta_s < -90 %} is-ok{% endif %}{% if top %} is-top{% endif %}" role="cell"{% if top %} title="Un des 3 tronçons où tu as le plus {{ 'perdu' if top == 'lost' else 'gagné' }}"{% endif %}>{% if top %}<span class="sr-only">Le plus {{ 'perdu' if top == 'lost' else 'gagné' }} : </span>{% endif %}{{ gap(rm - pm) }}</span>
                 <span class="pf-cmp-why" role="cell">{{ l.reason }}</span>
             </div>
             {% endfor %}
@@ -95,7 +87,7 @@
         </select>
         <button type="submit" class="pf-btn pf-btn-primary">Comparer</button>
     </form>
-    <p class="pf-tl-fine">« total seul » : sans détail par tronçon. Ta course manque ? Re-synchronise Strava.</p>
+    <p class="pf-tl-fine">{% if candidates | rejectattr('has_splits') | list %}« total seul » : sans détail par tronçon. {% endif %}Ta course manque ? Re-synchronise Strava.</p>
     {% endif %}
     {% endif %}
 </div>

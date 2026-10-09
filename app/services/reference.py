@@ -123,30 +123,38 @@ def align_reference(points: list[dict], checkpoints: list[dict], route_total_km:
     return out
 
 
+def _to_min(s: float) -> int:
+    """Seconds → whole minutes in seconds, rounded as the times are shown (to the nearest minute, as the plan)."""
+    return int((float(s) + 30) // 60) * 60
+
+
 def compare_to_plan(aligned: list[dict], plan_sections: list[dict], use_target: bool, ref_total_s: int | None, plan_total_s: int | None) -> dict:
-    """Per-leg gaps (reference − my plan) and the 3 biggest gains/losses."""
+    """Per-leg gaps (reference − my plan) and the 3 biggest gains/losses.
+
+    The gaps are taken between times rounded to the minute, as they are shown: on every row the
+    reference minus the plan is the gap, and a leg's gap is the change of the gap since the
+    previous point both sides have a time at (a point without a reference time is skipped)."""
     plan_at = {}
     for s in plan_sections:
         cum = s["adjusted_cumulative_time_s"] if (use_target and s.get("adjusted_cumulative_time_s") is not None) else s["cumulative_time_s"]
         if s.get("end_checkpoint_index") is not None:
             plan_at[round(float(s["end_km"]), 1)] = float(cum)
-    rows, prev_ref, prev_plan, prev_name = [], 0.0, 0.0, "Départ"
+    rows, prev_ref, prev_plan, prev_name = [], 0, 0, "Départ"
     for a in aligned:
         p = plan_at.get(round(a["km"], 1))
         if a["time_s"] is None or p is None:
-            rows.append({**a, "plan_s": p, "delta_s": None, "leg_delta_s": None, "from_name": prev_name})
-            if p is not None:
-                prev_plan, prev_name = p, a["name"]
+            rows.append({**a, "plan_s": int(p) if p is not None else None, "delta_s": None, "leg_delta_s": None, "from_name": prev_name})
             continue
-        leg_ref = a["time_s"] - prev_ref
-        leg_plan = p - prev_plan
-        rows.append({**a, "plan_s": int(p), "delta_s": int(a["time_s"] - p), "leg_ref_s": int(leg_ref), "leg_plan_s": int(leg_plan),
-                     "leg_delta_s": int(leg_ref - leg_plan), "from_name": prev_name})
-        prev_ref, prev_plan, prev_name = a["time_s"], p, a["name"]
+        ref_m, plan_m = _to_min(a["time_s"]), _to_min(p)
+        leg_ref, leg_plan = ref_m - prev_ref, plan_m - prev_plan
+        rows.append({**a, "plan_s": int(p), "delta_s": ref_m - plan_m, "leg_ref_s": leg_ref, "leg_plan_s": leg_plan,
+                     "leg_delta_s": leg_ref - leg_plan, "from_name": prev_name})
+        prev_ref, prev_plan, prev_name = ref_m, plan_m, a["name"]
     if ref_total_s and plan_total_s:
+        ref_m, plan_m = _to_min(ref_total_s), _to_min(plan_total_s)
         rows.append({"name": "Arrivée", "km": None, "time_s": int(ref_total_s), "plan_s": int(plan_total_s),
-                     "delta_s": int(ref_total_s - plan_total_s), "leg_ref_s": int(ref_total_s - prev_ref),
-                     "leg_plan_s": int(plan_total_s - prev_plan), "leg_delta_s": int((ref_total_s - prev_ref) - (plan_total_s - prev_plan)),
+                     "delta_s": ref_m - plan_m, "leg_ref_s": ref_m - prev_ref,
+                     "leg_plan_s": plan_m - prev_plan, "leg_delta_s": (ref_m - prev_ref) - (plan_m - prev_plan),
                      "from_name": prev_name, "matched_by": "total"})
     legs = [r for r in rows if r.get("leg_delta_s") is not None]
     faster = sorted([r for r in legs if r["leg_delta_s"] < 0], key=lambda r: r["leg_delta_s"])[:3]

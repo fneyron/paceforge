@@ -132,19 +132,26 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert "rtab-plan" not in html and 'id="rtab-realise"' not in html
 
 
-def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop():
+@pytest.mark.asyncio
+async def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop(as_user: AsyncClient):
     css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
-    # phone and tablet: one centred column; the side pane melts into it and Préparer goes back under the passages
+    # phone and tablet: one centred column in reading order, nothing moved by CSS (focus and screen readers follow the screen)
     assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
-    assert ".pf-side { display: contents; }" in css and ".pf-prep { order: 1; }" in css
-    # desktop: the profile and Préparer in one sticky pane beside the passages, no tools column
-    assert re.search(r"#simulator-root > \.pf-side \{[^}]*position: sticky;", css)
+    assert not re.search(r"\.pf-side\b", css) and not re.search(r"\.pf-prep \{[^}]*\border:", css)
+    # desktop: the profile and Préparer sticky in column 2 from the hero's row (3) beside the passages, no tools column
+    assert re.search(r"#simulator-root > :is\(\.pf-profile, \.pf-prep\) \{[^}]*grid-row: 3 / span \d+;[^}]*position: sticky;", css)
     assert "pf-plan-tools" not in css and "pf-plan-grid" not in css
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
     assert 'id="rpanel-plan" class="pf-col"' in route
-    gpx = (ROOT / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
-    side = gpx.split('<div class="pf-side">')[1].split("{# ── passages")[0]
-    assert 'class="pf-profile"' in side and 'class="pf-prep"' in side and 'id="passage-times-result"' not in side
+    # the page in reading order: the title, the re-import error, the hero (grid row 3, where the side pane starts),
+    # then the profile, the passages, Préparer
+    rid = await _route(as_user)
+    root = (await as_user.get(f"/simulator/routes/{rid}")).text.split('id="simulator-root"')[1]
+    assert re.match(r'[^>]*>\s*<div class="pf-plan-title">', root)
+    assert re.search(r'</div>\s*<div id="reimport-error"></div>\s*<section class="pf-hero"', root)
+    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="scn-chip"', 'id="passage-times-result"', 'id="add-pt"', 'class="pf-prep"')
+    at = [root.index(m) for m in marks]
+    assert at == sorted(at)
 
 
 @pytest.mark.asyncio

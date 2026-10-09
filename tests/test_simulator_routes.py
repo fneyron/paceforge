@@ -154,6 +154,7 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
     assert "Tronçon par tronçon" in r.text and "Raison probable" in r.text
     assert "arrêts" in r.text  # the 15-min stop at the Col is called out
     assert "Simulé vs réalisé" not in r.text and "Prédit" not in r.text  # one comparison, against the plan
+    assert "Où tu as perdu" not in r.text  # the biggest gaps are marked in the table, not listed again above it
     # the personal fatigue tilt is stored with the curve it was measured against
     from app.models.route import Route
 
@@ -214,9 +215,38 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
     assert r.status_code == 200, r.text
     t = r.text
-    assert re.search(r"Réalisé <b>5h15</b>", t) and re.search(r"Plan <b>(5h00|4h59)</b>", t)
-    assert re.search(r'class="pf-db-num is-bad">\+1[56]<small', t)  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
+    assert "Réalisé <b>5h15</b>" in t and "Plan <b>5h00</b>" in t
+    assert '<p class="pf-db-num is-bad">+15<small' in t  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
     assert "(12 prévues)" in t  # the plan's stops: eau 2′ + ravito 5′ + ravito 5′
+    assert "<span>ven. 2 oct. 2026</span>" in t  # the activity's day in words, as the app writes dates
+    from sqlalchemy import select
+
+    from app.models.route import Route, RouteCheckpoint
+
+    assert (await db_session.get(Route, route_id)).result_json["total_elapsed_s"] == 18900
+
+    async def card_and_lead():
+        """(real, gap) on « Mes courses » and in the débrief's lead."""
+        page = (await as_user.get("/simulator")).text
+        card = re.split(rf'id="route-(?:card|next)-{route_id}"', page)[1].split("</a>")[0]
+        real, diff = re.search(r"<b>(\d+h\d\d)</b>.*?>([+−][^<]+) vs plan<", card, re.S).groups()
+        d = (await as_user.get(f"/api/simulator/routes/{route_id}/result")).text
+        hero = re.sub(r"<[^>]+>", "", re.search(r'class="pf-db-num[^"]*">(.*?)</p>', d).group(1))
+        return (real, re.sub(r"\s+", "", diff)), (re.search(r"Réalisé <b>(\d+h\d\d)</b>", d).group(1), re.sub(r"\s+", "", hero))
+
+    # « Mes courses » shows the débrief's numbers: the same real time, the same gap against the same plan…
+    card, lead = await card_and_lead()
+    assert card == lead == ("5h15", "+15min")
+    # …also with a pinned point and no objective (the plan's finish is then where the pins lead)
+    col = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == route_id, RouteCheckpoint.name == "Col"))).scalar_one()
+    col.target_s = 2 * 3600
+    (await db_session.get(Route, route_id)).target_time_s = None
+    await db_session.flush()
+    card, lead = await card_and_lead()
+    assert card == lead and card[1] != "+15min"
+    col.target_s = None
+    (await db_session.get(Route, route_id)).target_time_s = 5 * 3600
+    await db_session.flush()
 
     # a refused activity comes back inside the card, the picker still there
     other = Activity(strava_activity_id=802, user_id=test_user.id, sport_type="Run", name="Footing", distance=8000.0, moving_time=2400, elapsed_time=2400,
@@ -245,7 +275,8 @@ async def test_reference_compares_race_times_with_the_plans_passages(as_user: As
     })
     rows = re.findall(r'<b>([^<]+)</b>.*?<i>plan</i> (\d+h\d\d)<', r.text, re.S)
     plan_at = dict(rows)
-    assert plan_at["Village"] == f"{village_s // 3600}h{village_s % 3600 // 60:02d}" and plan_at["Arrivée"] == "5h00"
+    m = (village_s + 30) // 60  # to the nearest minute, as the plan shows it
+    assert plan_at["Village"] == f"{m // 60}h{m % 60:02d}" and plan_at["Arrivée"] == "5h00"
     # a pasted text with no time comes back as typed, with the reason
     r = await as_user.post(f"/api/simulator/routes/{route_id}/reference/clear")
     r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={"source": "Col sans temps", "label": "X"})

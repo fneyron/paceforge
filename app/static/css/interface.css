@@ -637,9 +637,11 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
        tests/test_redesign.py holds that order. Préparer sits 36 px under the profile (#elevChart is 180 px tall from lg) */
     #simulator-root > :is(.pf-profile, .pf-prep) { grid-column: 2; grid-row: 3 / span 10; position: sticky; top: 89px; margin-top: 28px; }
     #simulator-root > .pf-profile ~ .pf-prep { top: calc(89px + 180px + 36px); margin-top: calc(28px + 180px + 36px); }
-    /* the profile's margin box ends with Préparer (36 px + its 88 px): in a short window both leave together at the end of the list */
-    #simulator-root > .pf-profile:has(~ .pf-prep) { margin-bottom: calc(36px + 88px); }
+    /* the profile's margin box ends with Préparer (36 px + its 87.5 px): in a short window both leave together at the end of the list */
+    #simulator-root > .pf-profile:has(~ .pf-prep) { margin-bottom: calc(36px + 87.5px); }
     #add-pt { justify-self: start; }
+    /* a closed row's head bleeds 10 px each side, as the anchor row's does: its highlight (hover, profile hover) clears the text */
+    .pf-prow:not(.is-open) .pf-prow-head { margin: 0 -10px; padding-inline: 10px; }
 }
 @media (min-width: 1024px) and (pointer: fine) {
     /* a hovered row lights up like its leg on the profile (and like the row a profile hover marks) */
@@ -695,12 +697,17 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-cmp-name small { margin-left: 4px; font-size: 13px; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-cmp-gap { grid-area: gap; text-align: right; white-space: nowrap; font-family: var(--pf-font-display); font-size: 18px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
 .pf-cmp-gap small { font-size: 13px; font-weight: 600; letter-spacing: 0; }
+.pf-cmp-gap.is-none { font-family: var(--pf-font-text); font-weight: 400; color: rgb(var(--pf-gray-300)); }
+/* where you lost / gained the most: the gap in a soft pill (its figure stays on the column's right edge) */
+.pf-cmp-gap.is-top { justify-self: end; margin-right: -8px; padding: 0 8px; border-radius: 999px; }
+.pf-cmp-gap.is-top.is-bad { background: rgb(var(--pf-danger-soft)); }
+.pf-cmp-gap.is-top.is-ok { background: rgb(var(--pf-ok-soft)); }
 .pf-cmp-facts { grid-area: facts; margin-top: 2px; font-size: 13px; line-height: 1.45; color: rgb(var(--pf-gray-500)); font-variant-numeric: tabular-nums; }
 .pf-cmp-facts .pf-dots > * { white-space: nowrap; }
 .pf-cmp-facts i { font-style: normal; }
 .pf-cmp-facts small { font-size: inherit; }
 .pf-cmp-facts .is-none { display: none; }
-.pf-cmp-why { grid-area: why; margin-top: 2px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); }
+.pf-cmp-why { grid-area: why; margin-top: 2px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); text-wrap: pretty; }
 
 /* finisher de référence: who, then the form or the comparison */
 .pf-ref-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin-top: -10px; }
@@ -744,7 +751,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-cmp-gap { font-size: 17px; }
     .pf-cmp-why { margin: 0; }
     /* débrief: point · plan · réel · arrêts · FC · écart · raison */
-    .pf-cmp-db :is(.pf-cmp-head, .pf-cmp-row) { grid-template-columns: minmax(0, 5fr) 56px 56px 64px 40px 80px minmax(0, 7fr); column-gap: 16px; }
+    .pf-cmp-db :is(.pf-cmp-head, .pf-cmp-row) { grid-template-columns: minmax(0, 6fr) 56px 56px 64px 40px 80px minmax(0, 5fr); column-gap: 16px; }
     .pf-cmp-db .pf-cmp-head > :last-child { text-align: left; }
     .pf-cmp-db .pf-cmp-name { grid-column: 1; }
     .pf-cmp-db .pf-dots > :nth-child(1) { grid-column: 2; }
@@ -753,6 +760,7 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-cmp-db .pf-dots > :nth-child(4) { grid-column: 5; }
     .pf-cmp-db .pf-cmp-gap { grid-column: 6; }
     .pf-cmp-db .pf-cmp-why { grid-column: 7; }
+    .pf-cmp-db :is(.pf-cmp-why, .pf-cmp-head > :last-child) { padding-left: 8px; }  /* clear of a marked gap's pill */
     /* référence: point · réf. · ton plan · tronçon · écart (the DOM order, so the cells meet their headers) */
     .pf-cmp-ref :is(.pf-cmp-head, .pf-cmp-row) { grid-template-columns: minmax(0, 1fr) 76px 76px 84px 84px; column-gap: 16px; }
     .pf-cmp-ref .pf-cmp-name { grid-column: 1; }
@@ -777,8 +785,12 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
         grid-template-areas: "head head" "links links" "rec fit" "load load" "trends trends" "miss miss"; }
     .pf-health-full > .pf-head { grid-area: head; }
     .pf-health-full > .pf-health-links { grid-area: links; }
-    .pf-health-full > .pf-health-rec { grid-area: rec; margin-bottom: 0; text-wrap: pretty; }
-    .pf-health-full > .pf-health-fitness { grid-area: fit; align-self: center; margin-top: 12px; }
+    /* the verdict hangs 35 px down the 180 px ring (centred for its usual two lines); the level's title shares its first baseline */
+    .pf-health-full > .pf-health-rec { grid-area: rec; margin-bottom: 0; align-items: flex-start; }
+    .pf-health-full > .pf-health-rec > .pf-ring + div { margin-top: 35px; }
+    .pf-health-full > .pf-health-rec p { text-wrap: balance; }
+    .pf-health-full > .pf-health-fitness { grid-area: fit; align-self: start; margin-top: 19px; }
+    .pf-health-full:has(.pf-ring) > .pf-health-fitness { margin-top: 54px; }
     .pf-health-full > .pf-health-load { grid-area: load; }
     .pf-health-full > .pf-health-grid { grid-area: trends; }
     .pf-health-full > .pf-health-missing { grid-area: miss; }
@@ -797,27 +809,30 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-settings .pf-section > details { border-top: 0; padding-top: 0; }
     .pf-set-num { flex: none; width: 128px; }
     .pf-set-keys { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }  /* a short id, a 40-character secret */
+    .pf-settings .pf-section p { text-wrap: pretty; }  /* no lone word under a helper line */
+    .pf-coros-connect p a { white-space: nowrap; }  /* « serveur Europe » is never split */
     /* the account deletion stays folded: its summary on the left, the form beside it when open */
     .pf-set-danger > summary { width: fit-content; }
     .pf-set-danger > div { margin: -20px 0 0 calc((100% - 56px) / 3 + 56px); }
 
     /* Activités: the week on the left (its totals under it), its rows on the right; one line of values, units inline */
     #activity-list { margin-top: 28px; }
-    .pf-week, #load-more { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 4fr); column-gap: 40px; }
+    .pf-week, #load-more { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 32px; }  /* a label and its totals: ~140 px */
     .pf-week { grid-template-rows: repeat(98, auto) 1fr; border-top: 1px solid rgb(var(--pf-line)); }
     .pf-week > .pf-week-heading { grid-column: 1; grid-row: 1 / span 99; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 2px; padding: 15px 0 0; }
     .pf-week > .pf-activity-row, #load-more > * { grid-column: 2; }
     .pf-week > .pf-week-heading + .pf-activity-row { border-top-color: transparent; }
-    /* the values claim at least half the row and spread over it: close to the name even when a column is not drawn */
-    .pf-act-stats { gap: 16px; min-width: 54%; justify-content: space-between; }
+    /* the values: a compact block of fixed columns at the row's end; the name keeps the rest, on two lines at most */
+    .pf-activity-row .pf-item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-wrap: pretty; }
     .pf-act-stats .pf-label { display: none; }
     .pf-act-u, .pf-act-pu { display: inline; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-500)); }
     .pf-act-stats > :is(:nth-child(-n+2), .pf-act-hr) { width: 64px; }
-    .pf-act-stats > :is(:nth-child(3), .pf-act-pace) { width: 80px; }
+    .pf-act-stats > :nth-child(3) { width: 80px; }
+    .pf-act-stats > .pf-act-pace { width: 72px; }
     /* a column that no loaded row fills (e.g. no speed in the imports) is not drawn: no hole in the rows */
     #activity-list:not(:has(.pf-act-dplus > b)) .pf-act-dplus, #activity-list:not(:has(.pf-act-pace > b)) .pf-act-pace, #activity-list:not(:has(.pf-act-hr > b)) .pf-act-hr { display: none; }
 }
 @media (min-width: 1280px) {
     .pf-health-full { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); column-gap: 72px; }
-    .pf-week, #load-more { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); }
+    .pf-week, #load-more { grid-template-columns: 176px minmax(0, 1fr); column-gap: 40px; }
 }

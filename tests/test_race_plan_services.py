@@ -334,6 +334,27 @@ def test_debrief_plans_the_plans_own_stops_and_never_calls_a_far_race_close():
     one = compute_passage_times(course, [], 5 * 3600, 1.0, 6, 0, None)
     d1 = leg_debrief(_splits(30, lambda k: 300), one, 30.0, use_target=True)
     assert len(d1["legs"]) == 1 and d1["summary"]["verdict"] == ""
+    # four legs of 1 h, all lost on the 2nd (+40 min while moving, no stop): not « du début à la fin »
+    legs4 = [{"start_km": 10.0 * i, "end_km": 10.0 * (i + 1), "start_name": f"P{i}", "end_name": f"P{i + 1}",
+              "predicted_time_s": 3600, "adjusted_time_s": 3600, "stop_s": 0, "distance_km": 10.0} for i in range(4)]
+    d4 = leg_debrief(_splits(40, lambda k: 600 if 10 <= k < 20 else 360), legs4, 40.0, use_target=True)
+    assert [round(l["delta_s"] / 60) for l in d4["legs"]] == [0, 40, 0, 0]
+    assert d4["summary"]["verdict"] == "" and d4["summary"]["lost"][0]["to_name"] == "P2"
+    # the same 40 min spread over the four legs: it is from start to finish
+    d4b = leg_debrief(_splits(40, lambda k: 420), legs4, 40.0, use_target=True)
+    assert "du début à la fin" in d4b["summary"]["verdict"]
+
+
+def test_debrief_reasons_are_short_and_the_fade_never_breaks_inside_the_hr():
+    course, secs = _sections(target=5 * 3600, stop_min=2)
+    per_km = {s.index: (5 * 3600) * (s.base_time_s / sum(x.base_time_s for x in course.segments)) for s in course.segments}
+    splits = _splits(30, lambda k: per_km[k] * (0.85 if k < 10 else 1.20), hr=lambda k: 152 if k < 10 else 120)
+    d = leg_debrief(splits, secs, 30.0, use_target=True, stop_s_per_aid=120, hr_cap=140)
+    reasons = {l["tag"]: l["reason"] for l in d["legs"]}
+    # the signed gap beside the reason says faster or slower: the reason does not
+    assert reasons["over"] == "FC au-dessus du plafond (140)" and reasons["fuel"] == "FC basse : jambes ou carburant"
+    assert not any("que le plan" in r for r in reasons.values())
+    assert "(FC 152 → 120 bpm)" in d["summary"]["verdict"] and d["summary"]["pace_verdict"]
 
 
 # ── 2. reference finisher ──
@@ -362,6 +383,22 @@ def test_align_and_compare_reference():
     named = [{"name": "eau", "km": None, "time_s": 3000}, {"name": "col", "km": None, "time_s": 6000}, {"name": "xx", "km": None, "time_s": 9000}]
     al2 = align_reference(named, CPS, 30.0)
     assert al2[0]["matched_by"] == "nom" and al2[1]["matched_by"] == "nom" and al2[2]["matched_by"] == "ordre"
+
+
+def test_compare_reference_skips_points_without_a_reference_time_and_rounds_as_shown():
+    # the plan at Eau 1 1h00, Col 1h40, Village 3h20; a partial paste: no time at the Col
+    plan = [{"end_km": km, "end_checkpoint_index": i, "cumulative_time_s": cum, "adjusted_cumulative_time_s": cum}
+            for i, (km, cum) in enumerate([(6.0, 3600), (10.0, 6000), (20.0, 12000)])]
+    aligned = [{"name": "Eau 1", "km": 6.0, "time_s": 3330, "matched_by": "nom"},  # 55:30 → shown 0h56
+               {"name": "Col", "km": 10.0, "time_s": None, "matched_by": None},
+               {"name": "Village", "km": 20.0, "time_s": 11400, "matched_by": "nom"}]
+    rows = compare_to_plan(aligned, plan, True, None, None)["rows"]
+    assert rows[0]["delta_s"] == -4 * 60  # 0h56 − 1h00, the times shown
+    assert rows[1]["delta_s"] is None and rows[1]["leg_delta_s"] is None
+    # the Village leg runs from Eau 1, the last point both have: 2h14 against 2h20, not 2h14 against 1h40
+    v = rows[2]
+    assert v["from_name"] == "Eau 1" and (v["leg_ref_s"], v["leg_plan_s"], v["leg_delta_s"]) == (134 * 60, 140 * 60, -6 * 60)
+    assert v["delta_s"] == rows[0]["delta_s"] + v["leg_delta_s"]  # the legs add up to the gap
 
 
 def test_effort_km():

@@ -1,5 +1,6 @@
 {% import "partials/_icons.html" as ic %}
-{% macro hm(seconds) %}{% if seconds is none %}—{% else %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{{ h }}h{{ '%02d'|format(m) }}{% endif %}{% endmacro %}
+{# times to the nearest minute, as the plan shows them; the gaps come rounded the same way (compare_to_plan), so they add up #}
+{% macro hm(seconds) %}{% if seconds is none %}—{% else %}{% set t = ((seconds + 30) // 60) | int %}{{ t // 60 }}h{{ '%02d'|format(t % 60) }}{% endif %}{% endmacro %}
 {# a signed gap in minutes, hours past 60: −12 min, +1h05 (negative = the reference is ahead) #}
 {% macro dmin(d) %}{% if d is none %}—{% else %}{% set m = (d / 60) | round | int %}{% set a = m if m >= 0 else -m %}{{ '+' if m > 0 else ('−' if m < 0 else '') }}{% if a < 60 %}{{ a }}<small> min</small>{% else %}{{ a // 60 }}h{{ '%02d'|format(a % 60) }}{% endif %}{% endif %}{% endmacro %}
 {% macro km(v) %}{{ ('%.1f'|format(v|float)) | replace('.', ',') }}{% endmacro %}
@@ -48,7 +49,7 @@
                     <span role="cell" class="{% if r.plan_s is none %}is-none{% endif %}"><i>{{ mine }}</i> {{ hm(r.plan_s) }}</span>
                     <span role="cell" class="{% if r.leg_delta_s is none %}is-none{% endif %}"><i>tronçon</i> {{ dmin(r.leg_delta_s) }}</span>
                 </span></span>
-                <span class="pf-cmp-gap" role="cell">{{ dmin(r.delta_s) }}</span>
+                <span class="pf-cmp-gap{% if r.delta_s is none %} is-none{% endif %}" role="cell">{{ dmin(r.delta_s) }}</span>
             </div>
             {% endfor %}
         </div>
