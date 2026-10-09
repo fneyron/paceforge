@@ -136,7 +136,7 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
         "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00\nArrivée km 30 4:10:00", "total_time": "4:10:00",
     })
     assert r.status_code == 200, r.text
-    assert "Mamba" in r.text and ("Où ta référence va plus vite" in r.text or "Où ton plan va plus vite" in r.text)
+    assert "Mamba" in r.text and "Où ta référence va plus vite" not in r.text  # the key gaps are marked in the table, not repeated beside it
     assert r.text.count("4h10") == 1  # his finish, once (the Arrivée row), not again beside his name
 
     # debrief: a matched activity with per-km splits (moving + elapsed + HR)

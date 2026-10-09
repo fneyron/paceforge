@@ -678,16 +678,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-db-verdict { margin-top: 20px; font-size: 17px; line-height: 1.45; font-weight: 500; color: rgb(var(--pf-ink)); max-width: 34em; }
 .pf-db-pick { display: grid; gap: 12px; margin-top: 20px; max-width: 640px; }
 
-/* the key gaps: a big signed number, the leg, why (or the two leg times) */
-.pf-gaps { display: grid; gap: 20px; margin-top: 28px; }
-.pf-gaps-h { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); margin-bottom: 4px; }
-.pf-gaps li { display: grid; grid-template-columns: 86px minmax(0, 1fr); column-gap: 12px; align-items: baseline; padding: 7px 0; }
-.pf-gaps li > b { font-family: var(--pf-font-display); font-size: 20px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; white-space: nowrap; color: rgb(var(--pf-ink)); }
-.pf-gaps li > b small { font-size: 13px; font-weight: 600; letter-spacing: 0; }
-.pf-gaps-leg { display: block; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); }
-.pf-gaps li > span small { display: block; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; }
-.pf-gaps-note { font-size: 13px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
-
 /* point-by-point: rows like the plan's passages on the phone (name and gap, one line of facts, why), a table on a desktop */
 .pf-cmp { margin-top: 8px; }
 .pf-cmp-head { display: none; }
@@ -714,7 +704,9 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-ref-name { font-size: 17px; font-weight: 600; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
 .pf-ref-how { font-size: 14px; color: rgb(var(--pf-gray-500)); }
 .pf-ref-who .pf-link { min-height: 36px; font-size: 15px; }
-.pf-ref .pf-gaps { margin-top: 16px; }
+.pf-ref-note { margin-top: 4px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 40em; }
+/* the 3 biggest legs each way: the Tronçon figure in a soft pill */
+.pf-ref-top { margin: 0 -6px 0 -2px; padding: 0 6px; border-radius: 999px; background: rgb(var(--pf-accent-soft)); color: rgb(var(--pf-ink)); font-weight: 600; }
 .pf-ref-form { display: grid; gap: 18px; margin-top: 24px; max-width: 640px; }
 .pf-ref-form label { display: block; min-width: 0; }
 .pf-ref-form textarea.pf-input { display: block; min-height: 0; padding: 12px 16px; font-size: 15px; line-height: 1.5; resize: vertical; }
@@ -729,8 +721,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-db-vs b { font-size: 26px; }
     .pf-db-verdict { margin-top: 0; font-size: 19px; line-height: 1.45; }
     .pf-db-pick { grid-template-columns: minmax(0, 1fr) auto; }
-    .pf-gaps { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 56px; margin-top: 36px; }
-    .pf-gaps > div:only-of-type, .pf-gaps-note { grid-column: 1 / -1; }
     .pf-tl-sec { margin-top: 48px; }
     /* the table: one grid per row on the same columns; the facts' cells join the row */
     .pf-cmp { margin-top: 12px; }
@@ -767,14 +757,8 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
     .pf-cmp-ref .pf-dots > :nth-child(1) { grid-column: 2; color: rgb(var(--pf-ink)); }
     .pf-cmp-ref .pf-dots > :nth-child(2) { grid-column: 3; }
     .pf-cmp-ref .pf-dots > :nth-child(3) { grid-column: 4; }
+    .pf-ref-top { margin: 0 -6px 0 0; }
     .pf-cmp-ref .pf-cmp-gap { grid-column: 5; }
-}
-@media (min-width: 1280px) {
-    /* référence: the passages, the key gaps beside them, in view while the table scrolls */
-    .pf-ref-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; column-gap: 56px; align-items: start; margin-top: 32px; }
-    .pf-ref-body > .pf-tl-sec { grid-column: 1; grid-row: 1; margin-top: 0; }
-    .pf-ref-body > .pf-tl-sec:only-child { grid-column: 1 / -1; }
-    .pf-ref-body > .pf-gaps { grid-column: 2; grid-row: 1; grid-template-columns: minmax(0, 1fr); row-gap: 20px; margin-top: 0; padding: 24px; position: sticky; top: 89px; }
 }
 
 /* ── desktop: Santé, Réglages, Activités ──────────────────────────────── */

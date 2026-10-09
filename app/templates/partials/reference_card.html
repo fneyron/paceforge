@@ -18,25 +18,13 @@
         <button type="button" class="pf-link" hx-post="/api/simulator/routes/{{ route_id }}/reference/clear" hx-target="#reference-card" hx-swap="outerHTML">Changer / retirer</button>
     </p>
 
-    <div class="pf-ref-body">
-    {% if c.faster or c.slower %}
-    <section class="pf-panel pf-gaps" aria-label="Les écarts clés">
-        {% for title, items in [('Où ta référence va plus vite', c.faster), ('Où ton ' ~ mine ~ ' va plus vite', c.slower)] if items %}
-        <div>
-            <h2 class="pf-gaps-h">{{ title }}</h2>
-            <ul>
-                {% for r in items %}
-                <li><b>{{ dmin(r.leg_delta_s) }}</b><span><span class="pf-gaps-leg">{{ r.from_name }} → {{ r.name }}</span><small>{{ hm(r.leg_ref_s) }} contre {{ hm(r.leg_plan_s) }}</small></span></li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endfor %}
-        {% if c.faster %}<p class="pf-gaps-note">Là où elle va bien plus vite : trop prudent, ou un risque que tu refuses ? Décide-le maintenant, pas au km 90.</p>{% endif %}
-    </section>
-    {% endif %}
-
+    {# the key gaps: the 3 biggest legs each way are marked in the Tronçon column, when there are more to tell them from #}
+    {% set legs = c.rows | rejectattr('leg_delta_s', 'none') | list %}
+    {% set mark_fast = legs | selectattr('leg_delta_s', 'lt', 0) | list | length > 3 %}
+    {% set mark_slow = legs | selectattr('leg_delta_s', 'gt', 0) | list | length > 3 %}
     <section class="pf-tl-sec" aria-labelledby="ref-pass-t">
         <h2 id="ref-pass-t" class="pf-h2">Passages</h2>
+        {% if c.faster %}<p class="pf-ref-note">Là où elle va bien plus vite : trop prudent, ou un risque que tu refuses ? Décide-le maintenant, pas au km 90.</p>{% endif %}
         <div class="pf-cmp pf-cmp-ref" role="table" aria-labelledby="ref-pass-t">
             <div class="pf-cmp-head" role="row">
                 <span role="columnheader">Point</span><span role="columnheader">Référence</span><span role="columnheader">Ton {{ mine }}</span><span role="columnheader" title="Écart gagné ou perdu sur le tronçon seul">Tronçon</span><span role="columnheader" title="Négatif : la référence est devant toi">Écart</span>
@@ -47,14 +35,14 @@
                 <span class="pf-cmp-facts"><span class="pf-dots">
                     <span role="cell" class="{% if r.time_s is none %}is-none{% endif %}"><i>réf.</i> {{ hm(r.time_s) }}</span>
                     <span role="cell" class="{% if r.plan_s is none %}is-none{% endif %}"><i>{{ mine }}</i> {{ hm(r.plan_s) }}</span>
-                    <span role="cell" class="{% if r.leg_delta_s is none %}is-none{% endif %}"><i>tronçon</i> {{ dmin(r.leg_delta_s) }}</span>
+                    {% set top = 'ta référence' if (mark_fast and r in c.faster) else (('ton ' ~ mine) if (mark_slow and r in c.slower) else '') %}
+                    <span role="cell" class="{% if r.leg_delta_s is none %}is-none{% endif %}"{% if top %} title="Un des 3 tronçons où {{ top }} va le plus vite"{% endif %}><i>tronçon</i> {% if top %}<b class="pf-ref-top"><span class="sr-only">Où {{ top }} va le plus vite : </span>{{ dmin(r.leg_delta_s) }}</b>{% else %}{{ dmin(r.leg_delta_s) }}{% endif %}</span>
                 </span></span>
                 <span class="pf-cmp-gap{% if r.delta_s is none %} is-none{% endif %}" role="cell">{{ dmin(r.delta_s) }}</span>
             </div>
             {% endfor %}
         </div>
     </section>
-    </div>
 
     {% else %}
     {% if error %}<p class="pf-tl-err" role="alert">{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}<span>{{ error }}</span></p>{% endif %}
