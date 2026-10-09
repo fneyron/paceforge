@@ -578,12 +578,11 @@ def test_every_ring_and_card_anchor_lands_under_the_top_bar():
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-sante4 [id] { scroll-margin-top: 80px; }" in css
     # on the phone the page keeps the focus clear of the top bar and the tab bar (UX8): the anchors still land at
-    # 80 px (72 + 8), the race page's and Ravitaillement's where they were
+    # 80 px (72 + 8), the race page's where it was
     phone = css[css.index("@media (max-width: 899px) {\n    html { scroll-padding-top: 72px;"):]
     phone = phone[:phone.index("\n}")]
     for rule in ("html { scroll-padding-top: 72px; scroll-padding-bottom: 84px; }",
-                 ".pf-sante4 [id] { scroll-margin-top: 8px; }", ".pf-rp { scroll-margin-top: 0; }",
-                 ".pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }"):
+                 ".pf-sante4 [id] { scroll-margin-top: 8px; }", ".pf-rp { scroll-margin-top: 0; }"):
         assert rule in phone, rule
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
     for anchor in ("recuperation", "sommeil"):

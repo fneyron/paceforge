@@ -40,8 +40,7 @@
                 <input type="number" id="weight_kg" name="weight_kg" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} pf-set-num tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">kg</span>
             </div>
-            {#- one neutral helper (v4.3, owner: the caffeine cap « n'a rien à faire dans Réglages »: the race nutrition card says it, where caffeine is planned) -#}
-            <p class="text-[11px] text-gray-400 mt-1">Sert à ta nutrition de course.{% if cycling_enabled() %} Ton poids sert aussi à ta puissance à vélo.{% endif %}</p>
+            <p class="text-[11px] text-gray-400 mt-1">Sert à ta préparation de course.{% if cycling_enabled() %} Ton poids sert aussi à ta puissance à vélo.{% endif %}</p>
         </div>
         {% if cycling_enabled() %}
         <div class="max-w-xs">
@@ -73,7 +72,7 @@
             {% if delete_error is defined and delete_error %}
             <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ delete_error }}</div>
             {% endif %}
-            <p class="text-xs text-gray-500">Définitif : parcours, points de passage, plans nutrition et activités synchronisées seront effacés.</p>
+            <p class="text-xs text-gray-500">Définitif : parcours, points de passage et activités synchronisées seront effacés.</p>
             <form method="post" action="/settings/delete-account" id="pf-delete-account-form"
                   onsubmit="event.preventDefault(); var f = this; var msg = 'Supprimer ton compte ? Cette action est irréversible.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Supprimer le compte'); } else if (confirm(msg)) { f.submit(); }">
                 <div class="flex flex-wrap items-center gap-2">

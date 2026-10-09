@@ -49,7 +49,7 @@ def test_effort_and_steep_lines():
 
     assert effort_sentence("flat", 129) == "<b>Cardio sous 129</b>"  # running steady on the flat goes without saying
     assert effort_sentence("flat", None) is None
-    assert effort_sentence("descent", 111) == "<b>Cardio vers 111</b> · descente : relâché, sans freiner. Mange avant, en haut."
+    assert effort_sentence("descent", 111) == "<b>Cardio vers 111</b> · descente : relâché, sans freiner."
     assert effort_sentence("climb", 124, 18) == "<b>Cardio sous 124</b> · montée : marche dès que ça dépasse 18 %, cours le reste."
     assert effort_sentence("stairs", None) == "Très raide : marche, mains sur les cuisses."
     alerts = [{"start_km": 92.0, "end_km": 96.0, "max_grade": 21}, {"start_km": 98.0, "end_km": 101.0, "max_grade": 24}]

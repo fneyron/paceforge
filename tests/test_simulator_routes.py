@@ -1,6 +1,6 @@
 """End-to-end through the HTTP layer: save a route with typed checkpoints, then
-render every plan surface (passage times + scenarios, pacing guide, nutrition,
-exports, debrief)."""
+render every plan surface (passage times + scenarios, pacing guide, exports,
+debrief)."""
 
 import json
 import re
@@ -38,7 +38,7 @@ async def test_route_page_and_passage_times_with_metadata(as_user: AsyncClient):
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert "<span>Nutrition</span>" in html and "Pilotage" not in html and "exportPace(" in html
+    assert "Nutrition" not in html and "Pilotage" not in html and "exportPace(" in html
     assert '"kind": "full"' in html and '"drop_bag": true' in html  # checkpoint metadata round-trips to the page
 
     course = _course()
@@ -94,25 +94,6 @@ async def test_pacing_guide_and_params(as_user: AsyncClient, db_session: AsyncSe
     p = route.params_json
     assert p["hr_cap_climb"] == 150 and p["walk_grade"] == 20 and p["scenario_fast_pct"] == 4 and p["switch_km"] == 10.0
     assert "hr_cap_flat" not in p and "hr_release_descent" not in p
-
-
-@pytest.mark.asyncio
-async def test_nutrition_card_with_a_caffeinated_gel_of_his_own(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
-    route_id = await _create_route(as_user)
-    hx = {"HX-Request": "true"}
-    # « Un produit à toi »: into « Tes produits », the plan says when it is eaten
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel caf", "carbs_g": 25, "sodium_mg": 50, "caffeine_mg": 50}, headers=hx)
-    assert r.status_code == 200, r.text
-    assert "Gel caf" in r.text and "25 g de glucides · 50 mg de sodium · 50 mg de caféine" in r.text
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/starter", headers=hx)  # a caffeinated gel is not « a gel »
-    assert re.search(r'<option value="-1" selected>Gel</option>', r.text)
-    pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms", headers=hx)
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/rhythms/1", data={"product_id": pid, "every_min": 60, "from_min": 60}, headers=hx)
-    assert "caféine : 150 mg, limite 400 mg sur 24 h" in r.text  # 2, 3 and 4 h on a 5 h race
-    # an older client posting the previous form (use_ / qty_): nothing changes, the card comes back
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/plan", data={"carbs_g_per_h": 75, "use_-1": 1, "qty_-1": "2.5"}, headers=hx)
-    assert r.status_code == 200 and "caféine : 150 mg" in r.text
 
 
 @pytest.mark.asyncio
@@ -309,7 +290,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     page = await as_user.get(f"/simulator/routes/{route_id}")
     assert page.status_code == 200
     html = page.text
-    assert ("Plan de passage" in html or "Feuille de route" in html) and "Nutrition" in html and "Débrief" in html and "Exporter" in html
+    assert ("Plan de passage" in html or "Feuille de route" in html) and "Nutrition" not in html and "Débrief" in html and "Exporter" in html
     assert "Calculateur mono-segment" not in html
     # objective → required power in the hero
     r = await as_user.post(f"/api/simulator/routes/{route_id}/bike", data={
@@ -326,9 +307,7 @@ async def test_bike_plan_page_objective_checkpoints_and_exports(as_user: AsyncCl
     assert r.status_code == 200 and 'value="full" selected' in r.text and "barrière 12:00" in r.text
     r = await as_user.post(f"/api/simulator/routes/{route_id}/checkpoints/{cp_id}/delete")
     assert r.status_code == 200 and "barrière 12:00" not in r.text
-    # nutrition, exports and print work on the bike plan too
-    r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "Drop bag ici" not in r.text
+    # exports and print work on the bike plan too
     r = await as_user.get(f"/api/simulator/routes/{route_id}/pace-export?format=tcx")
     assert r.status_code == 200 and "<CoursePoint>" in r.text
     r = await as_user.get(f"/simulator/routes/{route_id}/print")

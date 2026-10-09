@@ -109,21 +109,20 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
-    # Préparer: one row, « Nutrition », no subtitle (Pilotage lives in the rows now)
-    prep = html.split('class="pf-prep"')[1].split("</section>")[0]
-    assert re.findall(r'class="pf-tool"[^>]*>.*?<span>(?:<svg.*?</svg>)<span>([^<]+)<', prep, flags=re.S) == ["Nutrition"]
-    assert "<small" not in prep and 'id="nutri-sub"' not in prep
+    # no « Préparer » section (its only row was Nutrition, removed on 2026-10-09)
+    assert 'class="pf-prep"' not in html and "Préparer" not in text
     # nothing explains the obvious, nothing duplicated
     for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
                  "Renommer", "Fixer l'heure", "Changer l'heure", "Glisse ou tape", "de jour", "de nuit", "Ton rythme", "Sacs et drop bags",
-                 "Pilotage", "Nutrition et sacs"):
+                 "Pilotage", "Nutrition et sacs", "Nutrition"):
         assert gone not in text, gone
     # the hooks the tools and scripts rely on are all still there
-    for hook in ('id="rtab-nutrition"', 'name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
+    for hook in ('name="hr_cap_climb"', 'id="advanced"', 'id="stop-min"', 'id="settings-sheet"',
                  'id="race-sheet"', 'id="save-name"', 'id="race-date"', 'id="start-time"', 'name="scenario_fast_pct"', "/reimport",
-                 'id="rpanel-nutrition"', 'class="pf-carte"', 'id="wx-block"'):
+                 'class="pf-carte"', 'id="wx-block"'):
         assert hook in html, hook
-    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"', 'id="rtab-reference"', 'id="rpanel-reference"'):
+    for gone in ('id="rtab-pacing"', 'id="rpanel-pacing"', 'id="rtab-bags"', 'id="rtab-reference"', 'id="rpanel-reference"',
+                 'id="rtab-nutrition"', 'id="rpanel-nutrition"'):
         assert gone not in html, gone
     # the map is an overlay, closed on load, never restored from a remembered state
     assert re.search(r'id="map-wrap" class="hidden pf-mapov"', html)
@@ -137,21 +136,21 @@ async def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop(as_use
     css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
     # phone and tablet: one centred column in reading order, nothing moved by CSS (focus and screen readers follow the screen)
     assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
-    assert not re.search(r"\.pf-side\b", css) and not re.search(r"\.pf-prep \{[^}]*\border:", css)
-    # desktop: the profile and Préparer sticky in column 2 from the hero's row (3) beside the passages, no tools column
-    assert re.search(r"#simulator-root > :is\(\.pf-profile, \.pf-prep\) \{[^}]*grid-row: 3 / span \d+;[^}]*position: sticky;", css)
+    assert not re.search(r"\.pf-side\b|pf-prep|pf-nu\b|pf-nu-", css)  # no Préparer, no Nutrition rules (.pf-num stays)
+    # desktop: the profile alone sticky in column 2 from the hero's row (3) beside the passages, no tools column
+    assert re.search(r"#simulator-root > \.pf-profile \{[^}]*grid-row: 3 / span \d+;[^}]*position: sticky;", css)
     assert "pf-plan-tools" not in css and "pf-plan-grid" not in css
     # Préparation (#prep, after the plan in #rpanel-plan) keeps the left pane's width under the passages
     assert re.search(r"#rpanel-plan > \.pf-rp \{ max-width: calc\(100% - 380px - 56px\); \}", css)
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
-    assert 'id="rpanel-plan" class="pf-col{% if nutrition_html %} hidden{% endif %}"' in route  # hidden: the page opened on Nutrition
+    assert 'id="rpanel-plan" class="pf-col"' in route and "nutrition" not in route.lower()
     # the page in reading order: the title, the re-import error, the hero (grid row 3, where the side pane starts),
-    # then the profile, the passages, Préparer
+    # then the profile, the passages
     rid = await _route(as_user)
     root = (await as_user.get(f"/simulator/routes/{rid}")).text.split('id="simulator-root"')[1]
     assert re.match(r'[^>]*>\s*<div class="pf-plan-title">', root)
     assert re.search(r'</div>\s*<div id="reimport-error"></div>\s*<section class="pf-hero"', root)
-    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="passage-times-result"', 'id="add-pt"', 'class="pf-prep"')
+    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="passage-times-result"', 'id="add-pt"')
     at = [root.index(m) for m in marks]
     assert at == sorted(at)
 
@@ -333,12 +332,11 @@ async def test_closed_rows_show_clock_name_and_km_only(as_user: AsyncClient):
 @pytest.mark.asyncio
 async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two_actions(as_user: AsyncClient):
     rid = await _route(as_user)
-    await as_user.post(f"/partials/simulator/nutrition/{rid}/starter", headers={"HX-Request": "true"})  # a nutrition plan: Plan type
     t = await _rows(as_user, rid, CPS)
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
     assert re.search(r"\d+ ?(h\d\d|min) · 4 km · \+[\d ]+ m −[\d ]+ m", text), text  # the previous row is right above: no « depuis »
-    # no cardio consigne and no food pointer in a row (owner, 2026-10-09): the ceiling lives on the watch export, the food in Nutrition
+    # no cardio consigne and no food line in a row (owner, 2026-10-09): the ceiling lives on the watch export
     assert "pf-tiles" not in t and not re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Descente|descente) :", text), text
     assert "roulant" not in text.lower() and "Ta nutrition" not in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated

@@ -106,16 +106,6 @@
     <div id="recalc-error" class="hidden py-2 text-sm text-danger">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
     <button type="button" id="add-pt" onclick="window._sim && window._sim.openAddSheet()" class="pf-addpt">{{ ic.icon('plus', 'w-4 h-4', '2.4') }}Ajouter un point</button>
 
-    {# ── Préparer: what to eat at each ravito (a link: the page opens on it without JS) ── #}
-    {% if saved_route_id %}
-    <section class="pf-prep" aria-labelledby="prep-title">
-        <h2 id="prep-title" class="pf-h2">Préparer</h2>
-        <div class="pf-tools">
-            <a class="pf-tool" id="rtab-nutrition" href="/simulator/routes/{{ saved_route_id }}?vue=nutrition#nutrition" onclick="if (window.switchRouteTab) { window.switchRouteTab('nutrition'); return false; }"><span>{{ ic.icon('utensils') }}<span>Nutrition</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</a>
-        </div>
-    </section>
-    {% endif %}
-
     {# ── overlays: map, point dialog, export, race, settings ─────────────── #}
     {% if course.route_coords %}
     <div id="map-wrap" class="hidden pf-mapov" role="dialog" aria-modal="true" aria-label="Carte">
@@ -1077,13 +1067,11 @@ window._sim = {};
             .then(function(d) {
                 if (!d.id) { saveFailed(); return; }
                 currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
-                // a new forecast just saved while Nutrition is open: its rows follow the new passage clocks
-                if (withWeather && wxAt !== savedWxAt) { savedWxAt = wxAt; var rp = document.getElementById('rpanel-nutrition'); if (rp && !rp.classList.contains('hidden')) refreshNutrition(); }
+                if (withWeather && wxAt !== savedWxAt) savedWxAt = wxAt;
             }).catch(function() { saveFailed(); });
     }
     var saveRetried = false, hourlySaved = false, savedWxAt = null;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=20', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }
@@ -1335,7 +1323,7 @@ window._sim = {};
     var ptr = document.getElementById('passage-times-result');
     ptr.addEventListener('keydown', function (ev) { if (ev.target.tagName === 'INPUT') { typingEl = ev.target; typingAt = Date.now(); } }, true);
     ptr.addEventListener('change', function (ev) { var el = ev.target; if (el.tagName === 'INPUT') { try { el.defaultValue = el.value; } catch (e) {} if (typingEl === el) typingEl = null; } }, true);
-    // a row opens in place (one at a time): the leg, FC max, carbs, water, the facts, and the point's two actions
+    // a row opens in place (one at a time): the leg, the facts, and the point's two actions
     function rowHeadToggle(head) { var row = head.closest('[data-row]'); if (!row) return; hideCross(); openDetail(parseInt(row.getAttribute('data-key'), 10)); }
     ptr.addEventListener('click', function (ev) {
         var head = ev.target.closest && ev.target.closest('.pf-prow-head'); if (!head) return;
