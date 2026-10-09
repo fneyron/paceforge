@@ -392,7 +392,7 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
 
 def food_plan(route, exp_s: int | None, weight_kg: float | None) -> dict | None:
     """Carbohydrate loading J-2 and J-1, breakfast and fluid, for races of 90
-    min and more (the in-race intake is the Nutrition card's)."""
+    min and more."""
     if exp_s is None:
         return None
     if exp_s < CARBS_S:

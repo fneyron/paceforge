@@ -90,8 +90,7 @@
     </section>
 
     {# ── profile: the Carte chip opens the map over the page ──────────────── #}
-    {# reading order = the phone's: profile, passages, Préparer; a desktop stacks the profile and Préparer
-       in a sticky pane beside the passages (interface.css « desktop: race plan ») without changing this order #}
+    {# reading order = the phone's: profile, passages; a desktop puts the profile in a sticky pane beside the passages (interface.css @desk-plan) #}
     {% if course.route_coords %}
     <div class="pf-profile">
         <div id="elevChart" class="h-[140px] lg:h-[180px]"></div>
@@ -105,16 +104,6 @@
     <div id="page-error" class="hidden py-2 text-sm text-danger"></div>
     <div id="recalc-error" class="hidden py-2 text-sm text-danger">Recalcul impossible · <button type="button" onclick="window._sim && window._sim.recalc()" class="underline">réessayer</button></div>
     <button type="button" id="add-pt" onclick="window._sim && window._sim.openAddSheet()" class="pf-addpt">{{ ic.icon('plus', 'w-4 h-4', '2.4') }}Ajouter un point</button>
-
-    {# ── Préparer: what to eat at each ravito (a link: the page opens on it without JS) ── #}
-    {% if saved_route_id %}
-    <section class="pf-prep" aria-labelledby="prep-title">
-        <h2 id="prep-title" class="pf-h2">Préparer</h2>
-        <div class="pf-tools">
-            <a class="pf-tool" id="rtab-nutrition" href="/simulator/routes/{{ saved_route_id }}?vue=nutrition#nutrition" onclick="if (window.switchRouteTab) { window.switchRouteTab('nutrition'); return false; }"><span>{{ ic.icon('utensils') }}<span>Nutrition</span></span>{{ ic.icon('chev-r', 'pf-chev') }}</a>
-        </div>
-    </section>
-    {% endif %}
 
     {# ── overlays: map, point dialog, export, race, settings ─────────────── #}
     {% if course.route_coords %}
@@ -1072,18 +1061,15 @@ window._sim = {};
         var rd = raceDate; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
-        var withWeather = !!currentWeather, wxAt = withWeather ? currentWeather.fetched_at : null; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
+        var withWeather = !!currentWeather; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); })
             .then(function(d) {
                 if (!d.id) { saveFailed(); return; }
                 currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
-                // a new forecast just saved while Nutrition is open: its rows follow the new passage clocks
-                if (withWeather && wxAt !== savedWxAt) { savedWxAt = wxAt; var rp = document.getElementById('rpanel-nutrition'); if (rp && !rp.classList.contains('hidden')) refreshNutrition(); }
             }).catch(function() { saveFailed(); });
     }
-    var saveRetried = false, hourlySaved = false, savedWxAt = null;
+    var saveRetried = false, hourlySaved = false;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function refreshNutrition() { var el = document.getElementById('nutrition-wrap'); if (el && window.htmx && currentRouteId) window.htmx.ajax('GET', '/partials/simulator/nutrition/' + currentRouteId + '?v=20', { target: '#nutrition-wrap', swap: 'innerHTML' }); }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }
@@ -1311,7 +1297,7 @@ window._sim = {};
     // ── INIT ──
     window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; var el = document.getElementById('page-error'); if (el) { el.textContent = 'Erreur dans la page : ' + ev.message + ' (ligne ' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
-    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) { renderWeather(sw); savedWxAt = sw.fetched_at; } } catch(e) {}
+    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     updateMeta();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     document.addEventListener('pointerdown', function (ev) {
@@ -1335,7 +1321,7 @@ window._sim = {};
     var ptr = document.getElementById('passage-times-result');
     ptr.addEventListener('keydown', function (ev) { if (ev.target.tagName === 'INPUT') { typingEl = ev.target; typingAt = Date.now(); } }, true);
     ptr.addEventListener('change', function (ev) { var el = ev.target; if (el.tagName === 'INPUT') { try { el.defaultValue = el.value; } catch (e) {} if (typingEl === el) typingEl = null; } }, true);
-    // a row opens in place (one at a time): the leg, FC max, carbs, water, the facts, and the point's two actions
+    // a row opens in place (one at a time): the leg, the facts, and the point's two actions
     function rowHeadToggle(head) { var row = head.closest('[data-row]'); if (!row) return; hideCross(); openDetail(parseInt(row.getAttribute('data-key'), 10)); }
     ptr.addEventListener('click', function (ev) {
         var head = ev.target.closest && ev.target.closest('.pf-prow-head'); if (!head) return;

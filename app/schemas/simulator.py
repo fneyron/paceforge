@@ -164,15 +164,6 @@ class CyclingProfile(BaseModel):
     tss: float | None = None
 
 
-class ClaudeRaceStrategyOutput(BaseModel):
-    race_summary: str
-    key_challenges: list[str]
-    pacing_strategy: list[str]
-    nutrition_plan: list[str]
-    mental_tips: list[str]
-    coach_note: str
-
-
 class CheckpointInput(BaseModel):
     name: str
     distance_km: float

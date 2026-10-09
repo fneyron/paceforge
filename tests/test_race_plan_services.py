@@ -1,5 +1,5 @@
 """Deterministic race-plan services: checkpoints, pacing guide, scenarios,
-race calibration, pace export, debrief (nutrition: test_nutrition.py)."""
+race calibration, pace export, debrief."""
 
 import math
 

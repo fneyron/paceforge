@@ -128,7 +128,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-input:focus { outline: none; border-color: rgb(var(--pf-accent)); box-shadow: 0 0 0 3px rgb(var(--pf-accent) / .18); }
 .pf-field-label { display: block; font-size: 14px; font-weight: 500; color: rgb(var(--pf-gray-700)); margin-bottom: 6px; }
 
-/* ── legacy partials (nutrition, pacing, debrief…) aligned on the A look ─ */
+/* ── legacy partials (pacing, debrief…) aligned on the A look ─ */
 /* cards become quiet: hairline, no shadow, roomier radius */
 .pf-app .shadow-sm, .pf-app .shadow { box-shadow: none !important; }
 .pf-app :is(.rounded-xl, .rounded-2xl).border { border-color: rgb(var(--pf-line)); border-radius: 16px; }
@@ -208,7 +208,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 
 /* ── race plan ────────────────────────────────────────────────────────── */
 /* phone and tablet: one centred 720 px column. From 1024 px the plan spans the top bar's width in two panes,
-   the hero and the passages on the left, the profile and Préparer in a sticky pane on the right (« desktop: race plan » below) */
+   the hero and the passages on the left, the profile in a sticky pane on the right (« desktop: race plan » below) */
 .pf-col { max-width: 720px; margin-inline: auto; }
 .pf-back { display: inline-flex; align-items: center; gap: 4px; color: rgb(var(--pf-gray-600)); font-size: 15px; font-weight: 500; margin: 0 0 8px -2px; min-height: 36px; }
 .pf-back:hover { color: rgb(var(--pf-ink)); }
@@ -351,12 +351,6 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-addtip { display: none; margin-top: 12px; font-size: 12px; color: rgb(var(--pf-gray-500)); }
 @media (pointer: fine) { .pf-addtip { display: block; } }
 
-/* Préparer: two rows, no subtitles */
-.pf-prep { margin-top: 40px; }
-.pf-prep .pf-h2 { font-size: 22px; margin-bottom: 4px; }
-.pf-prep .pf-tool { min-height: 56px; padding: 0; }
-.pf-prep .pf-tools > :last-child { border-bottom: 1px solid rgb(var(--pf-line)); }
-
 /* race page › Préparation (#prep): taper, nights J-14 → J-1, race week, recovery (race_prep.py, race_prep.html) */
 .pf-rp { margin-top: 40px; scroll-margin-top: 72px; }
 .pf-rp > .pf-h2 { font-size: 22px; }
@@ -364,9 +358,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-rp-line { margin-top: 8px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
 .pf-rp-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
 .pf-rp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
-.pf-rp-list a, .pf-rp-link { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
-.pf-rp-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; text-align: left; }
-.dark :is(.pf-rp-list a, .pf-rp-link) { color: rgb(var(--pf-accent)); }
+.pf-rp-list a { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-rp-list a { color: rgb(var(--pf-accent)); }
 
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }
@@ -411,132 +404,6 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .dark .pf-detnote svg { color: rgb(var(--pf-gray-500)) !important; }
 .pf-detnote.is-alert { color: rgb(var(--pf-danger)); }
 .pf-detnote.is-alert svg, .dark .pf-detnote.is-alert svg { color: rgb(var(--pf-danger)) !important; }
-
-/* ── Nutrition: tes produits une fois, un rythme par produit, le reste calculé ── */
-/* three blocks (Ton plan, À chaque ravito, Ta liste) and a fold (Tes produits); 44 px targets, native selects */
-.pf-nu-sec + .pf-nu-sec, .pf-nu-fold { margin-top: 32px; }
-.pf-nu-h { font-family: var(--pf-font-display); font-size: 18px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; color: rgb(var(--pf-ink)); margin-bottom: 8px; }
-.pf-nu-lead { font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-bottom: 12px; }
-.pf-nu-note { font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); background: rgb(var(--pf-soft)); border-radius: 12px; padding: 10px 14px; margin: 4px 0 12px; }
-.pf-nu-fine { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); margin-top: 8px; }
-.pf-nu .pf-btn-sm { min-height: 44px; }
-.pf-nu-hit { display: inline-flex; align-items: center; min-height: 44px; }  /* the passage rows' « Ta nutrition jusqu'à … » */
-
-/* a native select at 44 px with its own chevron (16 px text: no zoom on a phone) */
-.pf-nu-sel { position: relative; display: inline-flex; min-width: 0; }
-.pf-nu-sel select { -webkit-appearance: none; appearance: none; max-width: 100%; min-height: 44px; padding: 0 30px 0 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-family: inherit; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; cursor: pointer; }
-.pf-nu-sel select:hover { border-color: rgb(var(--pf-accent)); }
-.pf-nu-chev { position: absolute; right: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: rgb(var(--pf-gray-500)); pointer-events: none; }
-.pf-nu-sel-p { flex: 1 1 auto; }
-.pf-nu-sel-p select { width: 100%; }
-.pf-nu-x { flex: none; width: 44px; height: 44px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: rgb(var(--pf-gray-500)); }
-.pf-nu-x:hover { background: rgb(var(--pf-soft)); color: rgb(var(--pf-danger)); }
-
-/* Ton plan: one line per rhythm — the product, then « 1 toutes les [60] min · de [0 h] à [la fin] » */
-.pf-nu-lines { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-nu-lines > li { padding: 10px 0 12px; border-bottom: 1px solid rgb(var(--pf-line)); }
-.pf-nu-line { display: grid; gap: 8px; }
-.pf-nu-l1 { display: flex; align-items: center; gap: 4px; }
-.pf-nu-l2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 15px; color: rgb(var(--pf-ink)); }
-.pf-nu-grp { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.pf-nu-line noscript .pf-btn { justify-self: start; }
-.pf-nu-add { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 4px; font-size: 15px; font-weight: 600; color: rgb(var(--pf-accent)); }
-.pf-nu-add:hover { text-decoration: underline; }
-.pf-nu-sum { display: grid; gap: 4px; margin-top: 10px; font-size: 15px; line-height: 1.4; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
-.pf-nu-sum .is-ok { color: rgb(var(--pf-ok)); font-weight: 600; }
-.pf-nu-sum .is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
-/* the carbs per hour against the range of the race's duration, one sentence under them: green in it, orange
-   under it, plain over it (train the gut) */
-.pf-nu-sum .pf-nu-zone { font-size: 14px; line-height: 1.45; font-weight: 400; color: rgb(var(--pf-gray-600)); }
-.pf-nu-sum .pf-nu-zone.is-ok { color: rgb(var(--pf-ok)); font-weight: 500; }
-.pf-nu-sum .pf-nu-zone.is-warn { color: rgb(var(--pf-warn)); font-weight: 600; }
-.pf-nu-sum .pf-nu-na { margin-top: 6px; }  /* a hot race's sodium per hour and its sentence, under the carbs' */
-.pf-nu-whole { color: rgb(var(--pf-gray-500)); }   /* one product all race long: « toute la course », no « de … à … » */
-.pf-nu-caf { display: flex; align-items: flex-start; gap: 6px; color: rgb(var(--pf-gray-700)); }
-.pf-nu-caf svg { margin-top: 3px; }
-
-/* À chaque ravito: one line a point — its clock, its name, what to take (the name gives way first) */
-.pf-nu-rows { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-nu-rows > li { display: flex; align-items: baseline; gap: 10px; min-height: 44px; padding: 11px 0; border-bottom: 1px solid rgb(var(--pf-line)); scroll-margin-top: 80px; }
-.pf-nu-clk { flex: none; width: 3.2em; font-family: var(--pf-font-display); font-size: 14px; font-weight: 600; color: rgb(var(--pf-gray-600)); font-variant-numeric: tabular-nums; }
-.pf-nu-at { flex: 1 1 0; min-width: 4.5em; display: flex; align-items: baseline; gap: 6px; }
-.pf-nu-at b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; color: rgb(var(--pf-ink)); }
-.pf-nu-at small { flex: none; font-size: 12px; font-weight: 600; color: rgb(var(--pf-accent)); white-space: nowrap; }
-.pf-nu-take { flex: 0 1 auto; text-align: right; font-size: 15px; font-weight: 600; line-height: 1.35; color: rgb(var(--pf-ink)); font-variant-numeric: tabular-nums; }
-.pf-nu-take.is-none { font-weight: 400; color: rgb(var(--pf-gray-500)); }
-.pf-nu-water { color: rgb(var(--pf-gray-500)); white-space: nowrap; }  /* « · 1 L »: the water to the next ravito, after what to take */
-.pf-nu-left { font-weight: 400; color: rgb(var(--pf-gray-600)); }
-.pf-nu-left.is-wide { display: none; }  /* « (il t'en reste 1 prise) »: past one line on a phone, shown from 560 px */
-@media (min-width: 560px) { .pf-nu-left.is-wide { display: inline; } }
-/* « +1 de secours à chaque ravito »: a switch (aria-pressed), its edge ≥ 3:1 in both themes */
-.pf-nu-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 10px; font-size: 15px; font-weight: 500; color: rgb(var(--pf-ink)); text-align: left; }
-.pf-nu-switch { flex: none; position: relative; width: 40px; height: 24px; border-radius: 999px; background: rgb(var(--pf-gray-200)); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-400)); }
-.pf-nu-switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: rgb(var(--pf-gray-500)); }
-.pf-nu-toggle[aria-pressed="true"] .pf-nu-switch { background: rgb(var(--pf-accent)); box-shadow: none; }
-.pf-nu-toggle[aria-pressed="true"] .pf-nu-switch::after { background: rgb(var(--pf-accent-ink)); transform: translateX(16px); }
-@media (prefers-reduced-motion: no-preference) { .pf-nu-switch::after { transition: transform .15s ease-out; } }
-
-/* Ta liste: one line a product, its count large; « Copier » (without a clipboard, the text opens to copy by hand) */
-.pf-nu-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px; }
-.pf-nu-head .pf-nu-h { margin-bottom: 0; }
-.pf-nu-copy > summary { list-style: none; cursor: pointer; }
-.pf-nu-copy > summary::-webkit-details-marker { display: none; }
-.pf-nu-copy[open] { flex-basis: 100%; }
-.pf-nu-copy textarea { display: block; width: 100%; margin-top: 10px; padding: 12px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-soft)); color: rgb(var(--pf-ink)); font-size: 14px; line-height: 1.45; }
-.pf-nu-list { border-top: 1px solid rgb(var(--pf-line)); }
-.pf-nu-list > li { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
-.pf-nu-list b { flex: none; min-width: 2ch; text-align: right; font-family: var(--pf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
-.pf-nu-list span { min-width: 0; font-size: 15px; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
-
-/* Tes produits: a fold; each product opens on its form, × beside it */
-.pf-nu-fold { border-top: 1px solid rgb(var(--pf-line)); border-bottom: 1px solid rgb(var(--pf-line)); }
-.pf-nu-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 0; list-style: none; cursor: pointer; }
-.pf-nu-fold > summary::-webkit-details-marker { display: none; }
-.pf-nu-fold > summary b { display: block; font-size: 16px; font-weight: 650; color: rgb(var(--pf-ink)); }
-.pf-nu-fold > summary small { display: block; font-size: 13px; color: rgb(var(--pf-gray-500)); }
-.pf-nu-fold[open] > summary .pf-chev { transform: rotate(90deg); }
-.pf-nu-fold-in { padding: 0 0 20px; }
-.pf-nu-prods:focus { outline: none; }
-.pf-nu-prods > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 4px; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-nu-prods > li:first-child { border-top: 0; }
-.pf-nu-edit > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px 0; list-style: none; cursor: pointer; }
-.pf-nu-edit > summary::-webkit-details-marker { display: none; }
-.pf-nu-prod-main { min-width: 0; }
-.pf-nu-prod-main b { display: block; font-size: 15px; font-weight: 600; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; }
-.pf-nu-prod-main small { display: block; font-size: 13px; line-height: 1.35; color: rgb(var(--pf-gray-500)); }
-.pf-nu-act { flex: none; font-size: 14px; font-weight: 600; color: rgb(var(--pf-accent)); }
-.pf-nu-prods .pf-nu-x { margin-top: 4px; }
-.pf-nu-ask { grid-column: 1 / -1; margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: rgb(var(--pf-danger-soft)); font-size: 14px; line-height: 1.4; color: rgb(var(--pf-ink)); }
-.pf-nu-ask-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-.pf-nu-danger { background: rgb(var(--pf-danger)); color: rgb(var(--pf-bg)); }
-.pf-nu-cat { margin-top: 16px; }
-.pf-nu-cat > label { display: block; font-size: 13px; font-weight: 600; color: rgb(var(--pf-gray-600)); margin-bottom: 6px; }
-.pf-nu-cat > div { display: flex; align-items: center; gap: 8px; }
-.pf-nu-own { margin-top: 8px; }
-.pf-nu-own > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 15px; font-weight: 600; color: rgb(var(--pf-accent)); list-style: none; cursor: pointer; }
-.pf-nu-own > summary::-webkit-details-marker { display: none; }
-
-/* « Un produit à toi » and a product's edit: name, glucides, sodium, caféine, prises */
-.pf-nu-form { display: grid; gap: 12px; margin: 4px 0 16px; }
-.pf-nu-form label { display: grid; align-content: start; gap: 4px; min-width: 0; font-size: 13px; font-weight: 500; color: rgb(var(--pf-gray-600)); }
-.pf-nu-form small { font-size: 12px; font-weight: 400; color: rgb(var(--pf-gray-500)); }
-.pf-nu-form .pf-nu-err { color: rgb(var(--pf-danger)); font-weight: 500; }
-.pf-nu-form input { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1px solid rgb(var(--pf-gray-300)); background: rgb(var(--pf-surface)); color: rgb(var(--pf-ink)); font-size: 16px; }
-.pf-nu-form input:focus { border-color: rgb(var(--pf-accent)); }
-.pf-nu-form input[aria-invalid="true"] { border-color: rgb(var(--pf-danger)); }
-.pf-nu-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.pf-nu-unit { display: flex; align-items: center; gap: 4px; color: rgb(var(--pf-gray-500)); }
-.pf-nu-form-prises .pf-nu-unit { max-width: 6em; }
-.pf-nu-form .pf-btn { justify-self: start; }
-
-/* forced colours (Windows high contrast): the selects and the switch keep their edges, the switch its state */
-@media (forced-colors: active) {
-    .pf-nu-sel select { border-color: CanvasText; }
-    .pf-nu-switch { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
-    .pf-nu-switch::after { background: CanvasText; }
-    .pf-nu-toggle[aria-pressed="true"] .pf-nu-switch { background: Highlight; box-shadow: none; }
-    .pf-nu-toggle[aria-pressed="true"] .pf-nu-switch::after { background: HighlightText; }
-}
 
 /* ── Mes courses ──────────────────────────────────────────────────────── */
 .pf-route-row { display: flex; align-items: center; gap: 4px; }
@@ -828,7 +695,6 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     html { scroll-padding-top: 72px; scroll-padding-bottom: 84px; }
     .pf-sante4 [id] { scroll-margin-top: 8px; }
     .pf-rp { scroll-margin-top: 0; }
-    .pf-rv-row, .pf-rv-row > summary, .pf-rv-editor { scroll-margin-top: 0; scroll-margin-bottom: 0; }
 }
 
 /* ── Réglages ─────────────────────────────────────────────────────────── */
@@ -1017,14 +883,11 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
     #simulator-root { display: grid; grid-template-columns: minmax(0, 1fr) 380px; column-gap: 56px; align-items: start; }
     #simulator-root > * { grid-column: 1; }
     #simulator-root > :is(.pf-plan-title, #reimport-error) { grid-column: 1 / -1; }
-    /* the side pane, the reading order kept (profile, passages, Préparer): the profile and Préparer share column 2 from the hero's row
-       over every row of the left pane, each sticky under the top bar, so they stay in view while the passages scroll (a hovered row
-       shows its leg on the profile). Overlapping items need a definite row: 3 is the hero's (1: the title, 2: #reimport-error),
-       tests/test_redesign.py holds that order. Préparer sits 36 px under the profile (#elevChart is 180 px tall from lg) */
-    #simulator-root > :is(.pf-profile, .pf-prep) { grid-column: 2; grid-row: 3 / span 10; position: sticky; top: 89px; margin-top: 28px; }
-    #simulator-root > .pf-profile ~ .pf-prep { top: calc(89px + 180px + 36px); margin-top: calc(28px + 180px + 36px); }
-    /* the profile's margin box ends with Préparer (36 px + its 87.5 px): in a short window both leave together at the end of the list */
-    #simulator-root > .pf-profile:has(~ .pf-prep) { margin-bottom: calc(36px + 87.5px); }
+    /* the side pane, the reading order kept (profile, passages): the profile takes column 2 from the hero's row over every row of
+       the left pane, sticky under the top bar, so it stays in view while the passages scroll (a hovered row shows its leg on the
+       profile). Overlapping items need a definite row: 3 is the hero's (1: the title, 2: #reimport-error), tests/test_redesign.py
+       holds that order */
+    #simulator-root > .pf-profile { grid-column: 2; grid-row: 3 / span 10; position: sticky; top: 89px; margin-top: 28px; }
     #add-pt { justify-self: start; }
     /* Préparation (#prep, partials/race_prep.html, after the plan in #rpanel-plan): in the left pane's width, under the passages */
     #rpanel-plan > .pf-rp { max-width: calc(100% - 380px - 56px); }

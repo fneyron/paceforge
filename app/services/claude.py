@@ -5,14 +5,12 @@ import anthropic
 
 from app.config import settings
 from app.exceptions import ClaudeAPIError
-from app.prompts.coach_chat import COACH_CHAT_SYSTEM_PROMPT, build_coach_context
+from app.prompts.coach_chat import COACH_CHAT_SYSTEM_PROMPT
 from app.prompts.coaching import COACHING_SYSTEM_PROMPT, build_activity_prompt
-from app.prompts.race_strategy import RACE_STRATEGY_SYSTEM_PROMPT, build_race_strategy_prompt
 from app.prompts.training_plan import TRAINING_PLAN_SYSTEM_PROMPT, build_training_plan_prompt
 from app.prompts.weekly_digest import WEEKLY_DIGEST_SYSTEM_PROMPT, build_weekly_digest_prompt
 from app.prompts.workout import WORKOUT_SYSTEM_PROMPT, build_workout_prompt
 from app.schemas.analysis import ClaudeCoachingOutput
-from app.schemas.simulator import ClaudeRaceStrategyOutput
 from app.schemas.training_plan import ClaudeTrainingPlanOutput
 from app.schemas.weekly_digest import ClaudeWeeklyDigestOutput
 from app.schemas.workout import ClaudeWorkoutOutput
@@ -193,36 +191,6 @@ class ClaudeService:
 
         raise ClaudeAPIError(f"Claude API failed after {MAX_RETRIES} attempts: {last_error}")
 
-    async def generate_race_strategy(
-        self,
-        course_data: dict,
-        athlete_flat_pace: float,
-        data_points: int,
-        training_load: dict | None = None,
-        race_name: str | None = None,
-    ) -> ClaudeRaceStrategyOutput:
-        """Generate a race strategy using Claude."""
-        user_message = build_race_strategy_prompt(
-            course_data=course_data,
-            athlete_flat_pace=athlete_flat_pace,
-            data_points=data_points,
-            training_load=training_load,
-            race_name=race_name,
-        )
-
-        logger.info(
-            "Calling Claude (%s) for race strategy (%d chars prompt)",
-            self.model,
-            len(user_message),
-        )
-
-        raw_response = await self._call_claude(
-            user_message,
-            system_prompt=RACE_STRATEGY_SYSTEM_PROMPT,
-            max_tokens=8192,  # 2048 truncated the JSON mid-string → parse error
-        )
-        return self._parse_race_strategy_response(raw_response)
-
     async def _call_claude(self, user_message: str, system_prompt: str | None = None, max_tokens: int = 1024) -> str:
         last_error = None
 
@@ -317,20 +285,6 @@ class ClaudeService:
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines)
         return text
-
-    def _parse_race_strategy_response(self, raw_response: str) -> ClaudeRaceStrategyOutput:
-        """Parse Claude's JSON response into a race strategy output."""
-        text = self._strip_code_fences(raw_response)
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse race strategy response as JSON: %s", raw_response[:200])
-            raise ClaudeAPIError(f"Invalid JSON from Claude: {e}") from e
-        try:
-            return ClaudeRaceStrategyOutput(**data)
-        except Exception as e:
-            logger.error("Failed to validate race strategy response: %s", data)
-            raise ClaudeAPIError(f"Invalid race strategy output: {e}") from e
 
     def _parse_training_plan_response(self, raw_response: str) -> ClaudeTrainingPlanOutput:
         """Parse Claude's JSON response into a training plan output."""

@@ -227,10 +227,9 @@ def build_pacing_guide(
             instr = (f"Monte au cardio{f', sous {hr_cap} battements' if hr_cap else ''} : marche dès que ça dépasse {int(round(walk_grade))} %, cours le reste."
                      + (f" Ça fait environ {vam} m de montée par heure." if vam else ""))
         elif cls == "descent":
-            instr = (f"Descends relâché, sans freiner{f', et laisse le cardio redescendre vers {hr_cap}' if hr_cap else ''}."
-                     " Mange en haut, avant de descendre.")
+            instr = f"Descends relâché, sans freiner{f', et laisse le cardio redescendre vers {hr_cap}' if hr_cap else ''}."
         else:
-            instr = (f"Cours régulier, environ {pace_txt}" if pace_txt else "Cours régulier") + (f", cardio sous {hr_cap}." if hr_cap else ".") + " Profites-en pour manger et boire."
+            instr = (f"Cours régulier, environ {pace_txt}" if pace_txt else "Cours régulier") + (f", cardio sous {hr_cap}." if hr_cap else ".")
 
         blk = {
             "cls": cls,
@@ -379,7 +378,7 @@ def effort_sentence(cls: str | None, hr_cap: int | None, walk_grade: float = DEF
     text = {
         "climb": f"montée : marche dès que ça dépasse {walk} %, cours le reste.",
         "stairs": "très raide : marche, mains sur les cuisses.",
-        "descent": "descente : relâché, sans freiner. Mange avant, en haut.",
+        "descent": "descente : relâché, sans freiner.",
     }[cls]
     if not hr_cap:
         return text[0].upper() + text[1:]

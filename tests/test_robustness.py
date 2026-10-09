@@ -1,7 +1,6 @@
 """Real-data shapes that used to 500 or hang: odd race dates, string caps, race day without an objective,
-incomplete nutrition targets, catalogue on a course-less route, the privacy page."""
+the privacy page."""
 import json
-import re
 
 import pytest
 from httpx import AsyncClient
@@ -61,35 +60,6 @@ async def test_print_on_race_day_without_objective(as_user: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_nutrition_card_with_incomplete_saved_targets(as_user: AsyncClient, db_session):
-    from sqlalchemy import select
-
-    from app.models.route import Route
-
-    route_id = await _create_route(as_user)
-    route = (await db_session.execute(select(Route).where(Route.id == route_id))).scalar_one()
-    route.nutrition_json = {"targets": {"carbs_g_per_h": 60}, "items": []}
-    await db_session.flush()
-    r = await as_user.get(f"/partials/simulator/nutrition/{route_id}")
-    # nothing to map (no product): an empty plan, no « ne peut pas s'afficher »
-    assert r.status_code == 200 and ">Commencer avec un plan type<" in r.text and "ne peut pas s'afficher" not in r.text
-
-
-@pytest.mark.asyncio
-async def test_catalogue_on_a_route_without_course_is_404(as_user: AsyncClient, db_session):
-    from sqlalchemy import select
-
-    from app.models.route import Route
-
-    route_id = await _create_route(as_user)
-    route = (await db_session.execute(select(Route).where(Route.id == route_id))).scalar_one()
-    route.course_json = None
-    await db_session.flush()
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/catalog/maurten-gel-100")
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_privacy_page(as_user: AsyncClient):
     r = await as_user.get("/privacy")
     assert r.status_code == 200
@@ -111,7 +81,7 @@ async def test_debrief_refuses_an_activity_of_another_distance(as_user: AsyncCli
 
 
 @pytest.mark.asyncio
-async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab(as_user: AsyncClient):
+async def test_scenarios_saved_from_the_plan_page(as_user: AsyncClient):
     route_id = await _create_route(as_user)
     r = await as_user.post(f"/api/simulator/routes/{route_id}/scenarios", data={"scenario_fast_pct": "7", "scenario_safe_pct": "12", "switch_km": CPS[1]["distance_km"]})
     assert r.status_code == 204
@@ -122,17 +92,6 @@ async def test_scenarios_saved_from_the_plan_page_and_products_edited_in_the_tab
     assert r.status_code == 200 and "scenario_fast_pct" not in r.text
     r = await as_user.post("/partials/simulator/passage-times", data={"checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id})
     assert r.status_code == 200 and "+12 % de temps" in r.text
-    # products: add, edit, delete in the race's Nutrition card (« Tes produits », the same for every race)
-    hx = {"HX-Request": "true"}
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products", data={"name": "Gel maison", "kind": "gel", "carbs_g": "30", "sodium_mg": "", "caffeine_mg": ""}, headers=hx)
-    assert r.status_code == 200 and "<b>Gel maison</b>" in r.text
-    pid = int(re.search(r"/products/(\d+)/delete", r.text).group(1))
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}", data={"name": "Gel maison 40", "kind": "gel", "carbs_g": "40", "open": "adjust"}, headers=hx)
-    assert r.status_code == 200 and "Gel maison 40" in r.text and 'id="nu-produits" class="pf-nu-fold" open' in r.text
-    r = await as_user.post(f"/partials/simulator/nutrition/{route_id}/products/{pid}/delete", headers=hx)
-    assert r.status_code == 200 and "Gel maison" not in r.text
-    r = await as_user.get("/nutrition", follow_redirects=False)
-    assert r.status_code == 303
     r = await as_user.get("/simulator")
     assert r.status_code == 200 and "Nouvelle course" in r.text and "FTP" not in r.text
     r = await as_user.get("/settings")

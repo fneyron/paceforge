@@ -89,7 +89,7 @@
             <p class="pf-factline">{% set sep = joiner(' · ') %}{% if has_kind %}{{ sep() }}<span>{{ kind_word[k] }}</span>{% endif %}{% if s.crew %}{{ sep() }}<span>assistance</span>{% endif %}{% if stop_min > 0 and stops_vary %}{{ sep() }}<span class="tabular-nums">arrêt {{ stop_min }} min</span>{% endif %}{% if s.cutoff_clock %}{{ sep() }}<span class="tabular-nums" data-cutoff>barrière {{ s.cutoff_clock }}</span>{% if cm is not none %} · <span data-margin class="tabular-nums {{ margin_cls(cm) }}">marge {{ margin_txt(cm) }}</span>{% endif %}{% endif %}{% if has_wx %}{{ sep() }}{{ meteo(s) }}{% endif %}</p>
             {% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {# the drop bag; what to eat lives in Nutrition only #}
+            {# the drop bag (checkpoint metadata) #}
             {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">

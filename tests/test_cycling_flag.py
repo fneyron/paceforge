@@ -65,7 +65,6 @@ async def test_bike_and_tri_routes_and_endpoints_404(as_user: AsyncClient, db_se
         page = await as_user.get(f"/simulator/routes/{rid}")
         assert page.status_code == 404 and "Page non trouvée" in page.text  # the app's 404 page
         assert (await as_user.get(f"/simulator/routes/{rid}/print")).status_code == 404
-        assert (await as_user.get(f"/partials/simulator/nutrition/{rid}")).status_code == 404
         assert (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=gpx")).status_code == 404
         assert (await as_user.get(f"/api/simulator/routes/{rid}/gpx")).status_code == 404
         assert (await as_user.get(f"/api/simulator/routes/{rid}")).status_code == 404
@@ -109,7 +108,7 @@ async def test_settings_have_no_ftp_and_keep_the_saved_one(as_user: AsyncClient,
     page = await as_user.get("/settings")
     assert page.status_code == 200
     assert "FTP" not in page.text and "ftp_watts" not in page.text and "(vélo)" not in page.text
-    assert "Sert à ta nutrition de course." in page.text and "caféine" not in page.text and 'name="weight_kg"' in page.text
+    assert "Sert à ta" not in page.text and "caféine" not in page.text and 'name="weight_kg"' in page.text  # the weight, no helper
 
     r = await as_user.post("/settings", data={"weight_kg": "68"})
     assert r.status_code == 200
@@ -124,6 +123,6 @@ async def test_flag_on_brings_everything_back(as_user: AsyncClient, db_session, 
     assert "sport-bike" in page.text and "bike-gpx-upload" in page.text and "Gran fondo visible" in page.text
     assert (await as_user.get(f"/simulator/routes/{bike.id}")).status_code == 200
     settings_page = await as_user.get("/settings")
-    assert "FTP" in settings_page.text and "Ton poids sert aussi à ta puissance à vélo." in settings_page.text
+    assert "FTP" in settings_page.text and "Ton poids sert à ta puissance à vélo." in settings_page.text
     # the landing page no longer markets the bike planner, flag or not
     assert (await as_user.get("/landing")).status_code == 200

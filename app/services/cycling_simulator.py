@@ -556,7 +556,7 @@ def build_bike_passage_sections(
 ) -> list[dict]:
     """Checkpoint-to-checkpoint sections in the SAME shape as the trail plan's
     passage sections (services/race_simulator.compute_passage_times), so the
-    nutrition plan, exports, cutoffs, scenarios and debrief work unchanged.
+    exports, cutoffs, scenarios and debrief work unchanged.
 
     Prediction = the power model at the target power. With an objective, the
     plan scales every leg by the same factor (riding at another constant
