@@ -10,23 +10,32 @@ Rules, with where they come from (evidence_final.md; (H) = a PaceForge
 heuristic, never shown as a finding):
 - Naps count in the 24-h total only, never in timing, regularity, nightly
   HR/HRV or the hypnogram (Mollicone 2008; Romyn 2018). A nap is stored under
-  the day it ends, and counts once (day_naps, H; Craven 2022 counts sleep per
-  24 h): a morning counts the day before's naps that ended in the 24 h before
-  its wake (never that day's « rendormi » ones: part of its own night), its
-  own naps that ended before its wake, and its own « rendormi » ones; an
-  afternoon nap is the next morning's. Each day's bar, the Sommeil ring, the
-  score, the < 6 h rule, the bands and the sleep owed read that one figure
-  (day_tst24; owner's report 2026-10-09: an afternoon nap counted in two
-  mornings' 24 h). A day with naps but no main episode has no 24-h total
-  (« sieste seule, pas de nuit mesurée »): its bar shows its own naps, which
-  the next morning counts.
+  the day it ends, and each nap is counted by one morning only (day_naps, H;
+  Craven 2022 counts sleep per 24 h; owner's report 2026-10-09: an afternoon
+  nap counted in two mornings' 24 h): a morning counts its own naps that
+  ended before its wake, its « rendormi » ones (part of its night) and those
+  without times; a later nap of the day (an afternoon nap) is the next
+  morning's, its minutes inside the 24 h before that wake. What no next
+  morning counts (more than 24 h before its wake, or that morning has no
+  main night) stays its own day's, never lost (main counted it there); while
+  the next morning is not in the data yet (today's afternoon nap) no morning
+  counts it: the Sommeil card shows it « comptée dans ta prochaine nuit ».
+  Each day's bar, its readout and table row, the Sommeil ring, the score,
+  the < 6 h rule, the bands and the sleep owed read that one figure
+  (day_tst24). A day with naps but no main episode has no 24-h total
+  (« sieste seule, pas de nuit mesurée »): the next morning counts its naps
+  (on that morning's bar), the rest stays drawn on its own bar.
 - A « nap » that overlaps the main window or ends ≤ 30 min before it starts
   is the night's start (H, health.fold_naps; owner's report 2026-10-09:
   COROS's 23:03 → 00:09 « nap » of a 23:57 → 04:58 night showed as
-  « + sieste » over it): folded into the night, when stored (COROS) and when read
-  (build_nights: any watch's rows, the rows stored before): its start is the
-  bedtime, its minutes asleep outside the window are added, never over the
-  watch's own daily total. A nap starting after the wake stays a nap.
+  « + sieste » over it): folded into the night when read (build_nights),
+  whichever watch stored it (health.nap_guard keeps it for COROS and Garmin
+  alike; only COROS's sync deletes its stale rows, never Garmin's): its start
+  is the bedtime, its minutes asleep outside the window are added once,
+  never over the watch's own daily total (COROS's « Daily Sleep », plus a
+  nap folded from the day before: fold_naps). The rows keep the watch's own
+  night and nap, so a later sync that misses the nap's day never shortens
+  the night. A nap starting after the wake stays a nap.
 - Sleep stages (Night.stages, minutes of the main night: deep, light, rem,
   awake): the watch's estimate, shown, never judged (watches classify 50–70 %
   of the night correctly: de Zambotti 2024; deep or REM off by about an hour
@@ -790,40 +799,80 @@ def status(value: float | None, b: dict | None) -> str | None:
 
 # ── the 24 hours before the morning's wake ──────────────────────────────────
 
-def day_naps(nights: dict[date, Night], d: date) -> list[tuple[datetime | None, datetime | None, int]]:
-    """The naps the morning of `d` counts in its 24 h (day_tst24), each nap once
-    across the days (H; Craven 2022 counts sleep per 24 h; owner's report
-    2026-10-09: an afternoon nap was in two mornings' 24 h): those of the day
-    before that ended within the 24 h before the main wake, only their minutes
-    inside those 24 h, never its « rendormi » ones (≤ 3 h after its own wake:
-    part of its night, counted there); and those of `d` that ended before its
-    wake, its own « rendormi » ones, or carry no times. A later nap of `d` (an
-    afternoon nap) is the next morning's. [] without a main night."""
-    n = nights.get(d)
-    if n is None or n.asleep is None or n.end is None:
-        return []
-    out = [(a, b, m) for a, b, m in n.naps
-           if a is None or b is None or b <= n.end or n.end <= a <= n.end + timedelta(hours=RESETTLE_H)]
-    prev = nights.get(d - timedelta(days=1))
-    lo = n.end - timedelta(hours=24)
-    for a, b, m in (prev.naps if prev else []):
-        if a is None or b is None or b <= lo or (n.start is not None and b > n.start):
+def _main(n: Night | None) -> bool:
+    return n is not None and n.asleep is not None and n.end is not None
+
+
+def _split_naps(nights: dict[date, Night], x: date) -> dict[str, list]:
+    """Day `x`'s stored naps by the morning that counts each of them, once (H,
+    module docstring), [(start, end, minutes)] each:
+    - own: x's morning — ended before its wake, « rendormi » (≤ 3 h after
+      it: part of its night) or without times;
+    - ahead: the next morning's (x + 1, a main night) — a later nap that
+      ended in the 24 h before its wake, its minutes inside them;
+    - back: x's morning too — what no next morning counts (before those
+      24 h, or the next morning has no main night) once that morning is in
+      the data: never lost;
+    - pending: the same while the next morning is not in the data yet (the
+      latest day's afternoon nap): no morning counts it yet;
+    - alone: a day without a main night, what the next morning does not
+      count: drawn on its own bar (« sieste seule »), in no 24-h total."""
+    out: dict[str, list] = {"own": [], "ahead": [], "back": [], "pending": [], "alone": []}
+    n = nights.get(x)
+    if n is None:
+        return out
+    nxt = nights.get(x + timedelta(days=1))
+    main = _main(n)
+    for a, b, m in n.naps:
+        if main and (a is None or b is None or b <= n.end or n.end <= a <= n.end + timedelta(hours=RESETTLE_H)):
+            out["own"].append((a, b, m))
             continue
-        if prev.end is not None and prev.end <= a <= prev.end + timedelta(hours=RESETTLE_H):
-            continue  # « rendormi »: the night before's, already counted there
-        if a < lo:
-            m = round(m * (b - lo).total_seconds() / (b - a).total_seconds())
-        if m > 0:
-            out.append((a, b, m))
+        rest = m
+        if a is not None and b is not None and _main(nxt) and (nxt.start is None or b <= nxt.start):
+            lo = nxt.end - timedelta(hours=24)
+            inside = 0 if b <= lo else m if a >= lo else round(m * (b - lo).total_seconds() / (b - a).total_seconds())
+            if inside > 0:
+                out["ahead"].append((a, b, inside))
+            rest = m - inside
+        if rest <= 0:
+            continue
+        if not main:
+            out["alone"].append((a, b, rest))
+        elif x + timedelta(days=1) <= max(nights):
+            out["back"].append((a, b, rest))
+        else:
+            out["pending"].append((a, b, rest))
+    return out
+
+
+def day_naps(nights: dict[date, Night], d: date) -> list[tuple[datetime | None, datetime | None, int]]:
+    """The naps the morning of `d` counts in its 24 h (day_tst24), each nap by
+    one morning only (_split_naps, module docstring): its own naps that ended
+    before its wake, its « rendormi » ones and those without times; the day
+    before's later naps that ended in the 24 h before its wake (their minutes
+    inside them); and its own later naps no next morning counts once that
+    morning has passed (never lost). [] without a main night."""
+    if not _main(nights.get(d)):
+        return []
+    mine = _split_naps(nights, d)
+    out = mine["own"] + mine["back"] + _split_naps(nights, d - timedelta(days=1))["ahead"]
     return sorted(out, key=lambda x: x[0] or datetime.min)
+
+
+def pending_naps(nights: dict[date, Night], d: date) -> list[tuple[datetime | None, datetime | None, int]]:
+    """The later naps of `d` no morning counts yet: the next morning is not in
+    the data (today's afternoon nap; the Sommeil card: « comptée dans ta
+    prochaine nuit »)."""
+    return _split_naps(nights, d)["pending"]
 
 
 def day_tst24(nights: dict[date, Night], d: date) -> int | None:
     """Minutes asleep in the 24 h before the main wake of `d`: the main night
-    and the naps day_naps counts, each nap once across the days. None without
-    a main night that morning (a nap alone has no 24-h total). The figure of
-    the Sommeil ring, the score, each day's bar, the tst24 bands and the
-    sleep owed (slept_before_wake)."""
+    and the naps day_naps counts, each nap by one morning only (a later nap
+    of `d` no next morning counts too, once that morning has passed). None
+    without a main night that morning (a nap alone has no 24-h total). The
+    figure of the Sommeil ring, the score, each day's bar, the tst24 bands and
+    the sleep owed (slept_before_wake)."""
     n = nights.get(d)
     if n is None or n.asleep is None:
         return None
@@ -832,17 +881,20 @@ def day_tst24(nights: dict[date, Night], d: date) -> int | None:
 
 def bar_nap_min(nights: dict[date, Night], d: date) -> int:
     """The nap minutes day `d`'s bar stacks over its night (Santé's, the race page's): those its 24 h counts
-    (day_naps: each nap on one bar only); a day without a main night, its own naps (« sieste seule », no 24-h
-    total: the next morning counts them)."""
+    (day_naps: each nap on one bar only); a day without a main night, its naps the next morning does not count
+    (« sieste seule », no 24-h total)."""
     n = nights.get(d)
     if n is None:
         return 0
-    return n.nap_min if n.asleep is None else sum(m for _, _, m in day_naps(nights, d))
+    if n.asleep is None:
+        return sum(m for _, _, m in _split_naps(nights, d)["alone"])
+    return sum(m for _, _, m in day_naps(nights, d))
 
 
 def slept_before_wake(nights: dict[date, Night], d: date) -> int | None:
     """The sleep of the morning of `d` the sleep owed reads (sante_sleep.sleep_need): day_tst24's figure, each
-    nap counted once across the days, never repaid twice nor lost. None without a main night."""
+    nap counted by one morning only (day_naps), never repaid twice; a nap no morning counts is still its own
+    day's. None without a main night."""
     return day_tst24(nights, d)
 
 

@@ -56,6 +56,8 @@
         {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
         {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
+        {#- a nap taken after this wake: the next morning's 24 h counts it (each nap once), named here, out of the total -#}
+        {% if h.later %}<p class="pf-viz-cap">{{ h.later }}</p>{% endif %}
         {#- the need (2026-10-09: computed, never asked): its line when something adds to the 8 h -#}
         {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
         {% endif %}

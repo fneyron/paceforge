@@ -700,6 +700,92 @@ async def test_a_resync_deletes_the_stale_nap_row_only(db_session: AsyncSession,
     assert sleep.value == 588 and sleep.details["naps_folded"]  # the night itself untouched
 
 
+async def _values(db: AsyncSession, user: User) -> dict:
+    """{metric: {day: value}} of the user's COROS nightly rows."""
+    out: dict = {}
+    for m in (await db.execute(select(HealthMetric).where(
+            HealthMetric.user_id == user.id, HealthMetric.source == "COROS",
+            HealthMetric.metric.in_(("sleep", "nap", "hrv", "hr_night"))))).scalars():
+        out.setdefault(m.metric, {})[m.date] = m.value
+    return out
+
+
+async def test_a_resync_whose_answers_read_differently_deletes_nothing(db_session: AsyncSession, test_user: User,
+                                                                       fake, no_commit):
+    """Reviewers' probes (2026-10-09): a day counts as read only when its parser read it. An HRV series renamed,
+    an empty HRV answer, readings gone from the series, « Sleep summary » in lower case, the window's dates
+    written with slashes: the updates stop, as on main, and nothing is deleted — not even held back by the
+    safety net (nothing is judged stale)."""
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the 60 days
+    before = await _values(db_session, test_user)
+    assert set(before) == {"sleep", "nap", "hrv", "hr_night"}
+    texts = dict(fake.texts)
+    for tool, change in (
+            ("querySleepHrv", lambda t: t.replace("Sleep HRV Time Series", "Sleep HRV Readings")),
+            ("querySleepHrv", lambda t: "Sleep HRV\nNo readings for this period.\n"),
+            ("querySleepHrv", lambda t: re.sub(r"(?m)^\s*timestamp=.*\n", "", t)),
+            ("queryDailyHealthData", lambda t: t.replace("Sleep Summary", "Sleep summary")),
+            ("querySleepOverview", lambda t: re.sub(r"Window: (\d{4})-(\d{2})-(\d{2}) (\S+) - (\d{4})-(\d{2})-(\d{2})",
+                                                    r"Window: \1/\2/\3 \4 - \5/\6/\7", t))):
+        fake.texts = {**texts, tool: change(texts[tool])}
+        out = await coros.run_sync(db_session, conn)
+        assert out["ok"] and (out["result"]["deleted"], out["result"]["stale_kept"]) == (0, 0), tool
+        assert await _values(db_session, test_user) == before, tool
+
+
+async def test_a_night_keeps_its_nap_whatever_a_later_sync_reads(db_session: AsyncSession, test_user: User, fake,
+                                                                 no_commit, monkeypatch):
+    """Reviewers' findings 2 and 6 (2026-10-09): a nap ending before midnight is listed under the day before.
+    Folded when stored, a first sync deleted its row and a later one whose window starts on the night's day (the
+    7-day window slides) or whose parse_naps failed rewrote the night without it: its minutes lost. Stored as
+    COROS gives them and folded when read, the night keeps them."""
+    from app.services import nights as nt
+    today = datetime.now(timezone.utc).date()
+    y, yy = today - timedelta(days=1), today - timedelta(days=2)
+    both = f"""Sleep Overview
+========================
+
+{y}
+Sleep Score: 80
+Daily Sleep: 8h 10min (incl. naps)
+Main Sleep (asleep): 7h 50min
+Main Sleep Period (incl. awake): 8h 0min
+Main Sleep Window: {yy} 23:00 - {y} 07:00
+Naps Total (asleep): 20 min
+Naps Period (incl. awake): 25 min
+Nap Window: {y} 22:40 - {y} 23:05
+
+{today}
+Sleep Score: 80
+Daily Sleep: 7h 20min (incl. naps)
+Main Sleep (asleep): 7h 20min
+Main Sleep Period (incl. awake): 7h 30min
+Main Sleep Window: {y} 23:30 - {today} 07:00
+Naps Total: 0 min
+"""
+    alone = both[both.index(f"{today}\n"):]  # the window starts on the night's day: the day before not read
+
+    async def last_night():
+        rows = await nt.read_rows(db_session, test_user.id, today - timedelta(days=10), today, nt.SANTE_ROWS)
+        n = nt.build_nights(rows, today)[today]
+        return n.start, n.asleep, nt.day_tst24(nt.build_nights(rows, today), today)
+
+    fake.texts["querySleepOverview"] = both
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    folded = (datetime.combine(y, datetime.min.time()).replace(hour=22, minute=40), 460, 460)
+    assert await last_night() == folded and (await _values(db_session, test_user))["nap"] == {y: 20}
+    fake.texts["querySleepOverview"] = alone
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert await last_night() == folded and (await _values(db_session, test_user))["sleep"][today] == 440
+    fake.texts["querySleepOverview"] = both
+    monkeypatch.setattr(coros, "parse_naps", lambda text: 1 / 0)
+    out = await coros.run_sync(db_session, conn)
+    assert out["ok"] and out["result"]["deleted"] == 0
+    assert await last_night() == folded and (await _values(db_session, test_user))["nap"] == {y: 20}
+
+
 async def test_expired_mcp_token_is_refreshed_once(db_session: AsyncSession, test_user: User, fake, no_commit):
     conn = await _link(db_session, test_user, access="at-0")  # looks valid, but the server says no
     outcome = await coros.run_sync(db_session, conn)

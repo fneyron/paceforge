@@ -13,11 +13,12 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   one is then rejected), so the new pair is committed before anything else, and
   one refresh at a time per athlete (row lock + per-process lock).
 - Sync → PaceForge's own nightly values, one row per night (HealthMetric via
-  health.store_daily, source "COROS"): the main sleep (window, minutes
-  asleep; a « nap » overlapping it or ending ≤ 30 min before it is its start,
-  folded in: fold_overview, H), the day's other naps (local windows,
-  guarded), nightly HRV computed from
-  the raw readings inside the main window, the « Sleep HR » line of the main
+  health.store_daily, source "COROS"): the main sleep as COROS gives it
+  (window, minutes asleep), the day's naps (local windows, guarded; one over
+  the night or ending ≤ 30 min before it is kept: it is the night's start,
+  folded into it when the nights are read, nights.build_nights, H), nightly
+  HRV computed from the raw readings inside the main window (that start
+  included: fold_overview), the « Sleep HR » line of the main
   sleep's summary, plus the day's heart rate and steps as « watch worn »
   markers, and the main night's stage minutes from its « Sleep Summary »
   when that summary is the main sleep's (its total is the main period within
@@ -32,9 +33,9 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
   the 60 days once more when the stored nights predate a format change. The
-  nightly rows of the days a sync read that it no longer yields are deleted
-  (covered_days): a nap an early sync saw before COROS had the night never
-  stays shown over it.
+  nightly rows of the days a sync's parsers read that it no longer yields are
+  deleted (covered_days: what was read, never what was asked for; a few at
+  most, health.store_daily): a value COROS no longer gives never stays shown.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.
 """
@@ -47,6 +48,7 @@ import math
 import re
 import secrets
 import statistics
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode, urlsplit
@@ -647,13 +649,23 @@ def parse_naps(text: str) -> dict[date, dict]:
     return out
 
 
-def sleep_days(text: str) -> set[date]:
-    """querySleepOverview: the wake-up days whose sleep detail COROS gave (a
-    main window or a « Naps Total » line; never a « not available yet » day):
-    a nightly row of one of them that the answer no longer yields is stale
-    (covered_days)."""
-    return {day for day, block in _day_blocks(text, r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$")
-            if re.search(r"^\s*(?:Main Sleep Window|Naps Total)\b", block, re.M)}
+def overview_read(text: str, overview: dict[date, dict], naps: dict[date, dict]) -> dict[str, set[date]]:
+    """querySleepOverview: the wake-up days whose sleep and naps its parsers
+    actually read (`overview`: parse_sleep_overview, `naps`: parse_naps, of
+    that same text), what a stale row is judged against (covered_days):
+    - sleep: the days with a main window read, and the nap-only days (naps
+      read, no « Main Sleep » word in the block);
+    - nap: the days with naps read, and the days with a main window read and
+      « Naps Total: 0 min ».
+    Never a « not available yet » day, nor one whose wording was not
+    understood (a window the parser skipped is no day read)."""
+    out: dict[str, set[date]] = {"sleep": set(overview), "nap": set(naps)}
+    for day, block in _day_blocks(text, r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$"):
+        if day in naps and "Main Sleep" not in block:
+            out["sleep"].add(day)
+        if day in overview and _field_minutes(block, r"Naps Total(?: \(asleep\))?") == 0:
+            out["nap"].add(day)
+    return out
 
 
 def parse_daily_sleep(text: str) -> dict[date, dict]:
@@ -992,65 +1004,40 @@ def night_stages(row: dict | None, ov: dict) -> dict | None:
     return parts
 
 
-def fold_overview(overview: dict[date, dict], naps: dict[date, dict]) -> tuple[dict[date, dict], dict[date, dict]]:
-    """The main nights with the « naps » that are their start folded in
-    (health.fold_naps, H: one overlapping the main window or ending ≤ 30 min
-    before it, listed under that day or the day before; never over COROS's
-    « Daily Sleep », never under its main sleep), and the naps that stay, per
-    day: a day's minutes asleep and period cut in proportion to the windows it
-    keeps (as nap_daily does), a day left without any window gone. A folded
-    night gets `folded` (the windows) and its period grows by the minutes its
-    window grew; COROS's own main sleep stays in `overview` (its « Sleep
-    Summary » is checked against that one: night_stages, hr_night_dailies)."""
+def fold_overview(overview: dict[date, dict], naps: dict[date, dict]) -> dict[date, dict]:
+    """The main nights with the « naps » that are their start or end folded
+    into their window (health.fold_naps, H: one overlapping the main window or
+    ending ≤ 30 min before it, listed under that day or the day before), the
+    window the nightly HRV is read inside (hrv_dailies: the night's first hour
+    is the night's). Nothing else reads it: the sleep and nap rows are stored
+    as COROS gives them and folded when read (nights.build_nights), so a later
+    sync that reads a night without the day before its nap is listed under
+    never rewrites it shorter, nor loses the nap."""
     parts = {d: nap_shares(v.get("asleep") or 0, v.get("windows")) for d, v in naps.items()}
-    gone: dict[date, set] = defaultdict(set)
-    nights = {}
+    nights = dict(overview)
     for d in sorted(overview):
-        ov = nights[d] = overview[d]
-        period = _main_period(ov)
-        asleep = ov.get("asleep")
-        if asleep is None:  # older records: « Main Sleep » is the window, awake inside it
-            asleep = period - (ov.get("awake") or 0)
+        ov = overview[d]
         days = (d - timedelta(days=1), d)
         cands = [p for x in days for p in parts.get(x, [])]
-        if not cands or not _ok(asleep, 1, 16 * 60):
+        if not cands:
             continue
-        daily = ov["daily"] if _ok(ov.get("daily"), 1, 24 * 60) else None
-        start, end, total, joined, _ = fold_naps(ov["start"], ov["end"], asleep, cands, daily, parts.get(d, []))
-        if not joined:
-            continue
-        grown = round((ov["start"] - start + end - ov["end"]).total_seconds() / 60)
-        nights[d] = {**ov, "start": start, "end": end, "asleep": total, "period": period + grown,
-                     "folded": sorted((a, b) for a, b, _ in joined)}
-        for x in days:
-            gone[x] |= {(p[0], p[1]) for p in parts.get(x, []) if p in joined}
-            parts[x] = [p for p in parts.get(x, []) if p not in joined]
-    left = {}
-    for d, v in naps.items():
-        if not gone.get(d):
-            left[d] = v
-            continue
-        span = lambda ws: sum((b - a).total_seconds() for a, b in ws if b > a)  # noqa: E731
-        wins = [w for w in v.get("windows") or [] if w not in gone[d]]
-        if not span(wins):
-            continue
-        share = span(wins) / span(v["windows"])
-        left[d] = {**v, "asleep": round(v["asleep"] * share), "windows": wins,
-                   "period": round(v["period"] * share) if v.get("period") else None}
-    return nights, left
+        start, end, _, joined, _ = fold_naps(ov["start"], ov["end"], 0, cands)
+        if joined:
+            nights[d] = {**ov, "start": start, "end": end}
+            for x in days:
+                parts[x] = [p for p in parts.get(x, []) if p not in joined]
+    return nights
 
 
 def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None, daily: dict[date, dict] | None = None,
-                  read: tuple[date, date] | None = None, main: dict[date, dict] | None = None) -> list[Daily]:
-    """One `sleep` value per main night: minutes asleep in the main episode,
-    its window (local ISO), period and timezone, and its stage minutes
-    (night_stages) from `daily` (parse_daily_sleep). COROS gives no stage
-    timeline, so no stage intervals are written (timeline False). `read`: the
-    days queryDailyHealthData answered for: their nights are marked
-    STAGES_READ (their stages were looked for, found or not). `overview`: the
-    nights with their naps folded in (fold_overview: `folded` kept), `main`
-    COROS's own main sleeps, which the summary is checked against (`overview`
-    without it); every night is marked NAPS_FOLDED."""
+                  read: tuple[date, date] | None = None) -> list[Daily]:
+    """One `sleep` value per main night, as COROS gives it: minutes asleep in
+    the main episode, its window (local ISO), period and timezone, and its
+    stage minutes (night_stages) from `daily` (parse_daily_sleep). COROS gives
+    no stage timeline, so no stage intervals are written (timeline False).
+    `read`: the days queryDailyHealthData answered for: their nights are
+    marked STAGES_READ (their stages were looked for, found or not). Every
+    night is marked NAPS_FOLDED (its naps over it kept: folded when read)."""
     out = []
     for d, ov in overview.items():
         period = _main_period(ov)
@@ -1065,9 +1052,7 @@ def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None,
             det["tz"] = tz[d] * 15
         if _ok(ov.get("daily"), 1, 24 * 60):
             det["daily"] = ov["daily"]
-        if ov.get("folded"):
-            det["folded"] = [[iso_min(a), iso_min(b)] for a, b in ov["folded"]]
-        stages = night_stages((daily or {}).get(d), (main or overview).get(d, ov))
+        stages = night_stages((daily or {}).get(d), ov)
         if stages:
             det["stages"] = stages
         if read and read[0] <= d <= read[1]:
@@ -1080,8 +1065,10 @@ def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None,
 def hrv_dailies(points: list[tuple[int, int, float]], overview: dict[date, dict],
                 days: set[date] | None = None) -> list[Daily]:
     """PaceForge's nightly HRV for each main night whose two local days (the
-    evening's and the morning's) were both read: a night computed from half its
-    readings would overwrite a whole one."""
+    evening's and the morning's) were both read (`days`: querySleepHrv's, and
+    querySleepOverview's for the « nap » folded into the window,
+    fold_overview): a night computed from half its readings, or over half its
+    window, would overwrite a whole one."""
     out = []
     for d, ov in overview.items():
         if days is not None and not {d, d - timedelta(days=1)} <= days:
@@ -1112,8 +1099,8 @@ def hr_night_dailies(daily: dict[date, dict], overview: dict[date, dict], naps: 
 
 def nap_dailies(naps: dict[date, dict], overview: dict[date, dict] | None = None) -> list[Daily]:
     """One `nap` value per day with naps (Garmin's are built the same way), the
-    guards of health.nap_guard applied against that day's main window (the
-    naps and nights of fold_overview in build_daily)."""
+    guards of health.nap_guard applied (one over the main window kept: folded
+    into the night when read)."""
     out = []
     for d, v in naps.items():
         ov = (overview or {}).get(d)
@@ -1138,33 +1125,51 @@ def build_daily(data: dict, today: date) -> list[Daily]:
         if _ok(v.get("steps"), 1, 200_000) or _ok(v.get("kcal"), 1, 20_000):
             out.append(Daily("steps", d, v.get("steps") or 0,
                              {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
-    # the « naps » that are a night's start folded into it (H); the HRV is read inside the night's window, the
-    # « Sleep Summary » (stages, nightly HR) checked against COROS's own main sleep, its naps marking the day
-    nights, naps = fold_overview(overview, data.get("naps") or {})
-    points = data.get("hrv_points") or []
-    hrv = hrv_dailies(points, nights, data.get("hrv_days"))
+    # the nights and naps as COROS gives them (the « naps » that are a night's start folded into it when read, H);
+    # the HRV read inside the night's window with that start (fold_overview)
+    naps = data.get("naps") or {}
+    hrv = hrv_dailies(data.get("hrv_points") or [], fold_overview(overview, naps), hrv_read(data))
     tz = {r.day: r.details["tz"] // 15 for r in hrv}
-    out += sleep_dailies(nights, tz, data.get("daily") or {}, data.get("daily_read"), main=overview)
+    out += sleep_dailies(overview, tz, data.get("daily") or {}, data.get("daily_read"))
     out += hrv
-    out += hr_night_dailies(data.get("daily") or {}, overview, data.get("naps") or {})
-    out += nap_dailies(naps, nights)
+    out += hr_night_dailies(data.get("daily") or {}, overview, naps)
+    out += nap_dailies(naps, overview)
     return out
 
 
+def hrv_read(data: dict) -> set[date] | None:
+    """The days a nightly HRV may be computed for (hrv_dailies): querySleepHrv's
+    answered days, and querySleepOverview's read whole when known (the « nap »
+    of the day before that is a night's start: fold_overview). None: no gate."""
+    days, whole = data.get("hrv_days"), data.get("overview_days")
+    if whole is None:
+        return days
+    return set(whole) if days is None else set(days) & set(whole)
+
+
 def covered_days(data: dict) -> dict[str, set[date]]:
-    """The days this sync read for each nightly value (store_daily deletes the
-    COROS rows of them it no longer yields): sleep and naps, the days whose
-    sleep detail an answer of querySleepOverview read whole gave (sleep_days:
-    never a « not available yet » day nor a piece that failed); the nightly
-    HR, those of them queryDailyHealthData's answer covers too; the HRV, those
-    of them whose two local days querySleepHrv answered for (hrv_dailies)."""
-    seen = set(data.get("sleep_days") or ())
-    out = {"sleep": seen, "nap": seen}
-    read = data.get("daily_read")
-    if read and data.get("daily_ok", True):
-        out["hr_night"] = {d for d in seen if read[0] <= d <= read[1]}
-    hrv_days = data.get("hrv_days") or set()
-    out["hrv"] = {d for d in seen if {d, d - timedelta(days=1)} <= hrv_days}
+    """The days this sync's parsers read for each nightly value (store_daily
+    deletes the COROS rows of them it no longer yields), never the days it
+    asked for: an answer worded anew must delete nothing (owner's data is
+    history).
+    - sleep, nap: overview_read's days of the answers read whole (`read`);
+    - hr_night: those of them whose « Sleep Summary » was read (`daily`: a
+      rejected summary still deletes a stale nightly HR; a day without one,
+      or an answer not understood, deletes nothing);
+    - hrv: the main nights of them whose HRV hrv_dailies may compute
+      (hrv_read: both local days answered and parsed) and whose window holds
+      at least one parsed reading: under 12 there, the stale value goes; a
+      night without any reading (an answer worded anew, COROS's empty but
+      ordinary answers) deletes nothing."""
+    read = data.get("read") or {}
+    sleep, nap = set(read.get("sleep") or ()), set(read.get("nap") or ())
+    out = {"sleep": sleep, "nap": nap, "hr_night": {d for d in sleep if d in (data.get("daily") or {})}}
+    gate, points = hrv_read(data), data.get("hrv_points") or []
+    times = sorted(local_time(ts, tz) for ts, tz, _ in points)
+    windows = fold_overview(data.get("overview") or {}, data.get("naps") or {})
+    out["hrv"] = {d for d, ov in windows.items()
+                  if d in sleep and (gate is None or {d - timedelta(days=1), d} <= gate)
+                  and bisect_right(times, ov["end"]) > bisect_left(times, ov["start"])}
     return out
 
 
@@ -1261,31 +1266,35 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # ends a day later (an empty future day costs nothing) and keeps its size.
     hi = today + timedelta(days=1)
     lo = hi - timedelta(days=days - 1)
-    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {}, "sleep_days": set()}
+    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {},
+                  "read": {"sleep": set(), "nap": set()}, "overview_days": set()}
     # the nights first: last night is what the morning's decision reads
     for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
         overview, naps = _try_parse(parse_sleep_overview, text), _try_parse(parse_naps, text)
         data["overview"].update(overview or {})
         data["naps"].update(naps or {})
-        if overview is not None and naps is not None:  # read whole: its days' stale rows may go (covered_days)
-            data["sleep_days"] |= {d for d in _parsed(sleep_days, text) if a <= d <= b}
+        if text and overview is not None and naps is not None:  # read whole: its days' stale rows may go
+            data["overview_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
+            for key, days_read in overview_read(text, overview, naps).items():
+                data["read"][key] |= {d for d in days_read if a <= d <= b}
     points: dict[int, tuple] = {}
     for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
         if text is None:
             continue
-        points.update((p[0], p) for p in _parsed(parse_hrv_points, text) or [])
-        # every day of the answered range counts as read (COROS may leave an empty day out)
-        data["hrv_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
+        got = _try_parse(parse_hrv_points, text)
+        if got is not None:  # not understood: none of its days counts as read (no night computed from half of it)
+            points.update((p[0], p) for p in got)
+            # every day of the answered range counts as read (COROS may leave an empty day out)
+            data["hrv_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
         if data.get("utc_offset") is None:  # latest chunk first: the athlete's current offset
             tz = _parsed(parse_tz_offset, text)
             data["utc_offset"] = tz if isinstance(tz, float) else None
     data["hrv_points"] = [points[k] for k in sorted(points)]
     data["hr_day"] = _parsed(parse_avg_hr, await call.recent("queryAvgHeartRate", days))
     text = await call.recent("queryDailyHealthData", days)
-    daily = _try_parse(parse_daily_sleep, text)
-    data["daily"], data["daily_ok"] = daily or {}, daily is not None
+    data["daily"] = _parsed(parse_daily_sleep, text)
     data["activity"] = _parsed(parse_daily_activity, text)
     # the nights whose stages were looked for: the days that answer covers (a day ahead, as the nights)
     data["daily_read"] = (hi - timedelta(days=call.answered - 1), hi) if call.answered else None
@@ -1521,11 +1530,11 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     latest = max([*data["overview"], *data["activity"], *data["hr_day"], *data["naps"]], default=None)
     today = _today(latest)
     result = {"received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
-    # the nightly rows of the days read that this sync no longer yields go (a nap seen before COROS had its night)
+    # the nightly rows of the days its parsers read that this sync no longer yields go (a few at most)
     daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE, covered_days(data))
     result["inserted"] += daily["inserted"]
     result["updated"] += daily["updated"]
-    result["deleted"] = daily["deleted"]
+    result["deleted"], result["stale_kept"] = daily["deleted"], daily["stale_kept"]
     result["by_metric"] = daily["by_metric"]
     if data.get("details") or data.get("laps"):
         sessions["detailed"] = await apply_details(db, conn.user_id, data["details"], data.get("laps"))

@@ -355,8 +355,12 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
             continue
         if not night:
             ctx.append("pas de montre cette nuit")
-        r.append([viz.night_label(d), viz.sleep_readout(main, nap) if night else "—", " · ".join(ctx)])
-        spoken = f"{viz.night_label(d)}, {j_label(k)} : " + (viz.sleep_spoken(main, nap) if night else "pas de mesure")
+        read, said = (viz.sleep_readout(main, nap), viz.sleep_spoken(main, nap)) if night else ("—", "pas de mesure")
+        if night and main is None and not nap and night.nap_min:  # its nap is on the next morning's bar (each nap once)
+            read = f"Sieste {viz.hm(night.nap_min)} · comptée le lendemain"
+            said = f"sieste {hm_long(night.nap_min)}, comptée le lendemain"
+        r.append([viz.night_label(d), read, " · ".join(ctx)])
+        spoken = f"{viz.night_label(d)}, {j_label(k)} : " + said
         if banked:
             spoken += f", cible {hm_long(round(goal[0] / 5) * 5)} à {hm_long(round(goal[1] / 5) * 5)}"
         a.append(spoken)
