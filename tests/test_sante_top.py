@@ -301,8 +301,11 @@ def test_the_night_rows_in_percent_from_real_nights():
 
 
 def test_the_percentages_are_said_in_the_fold():
-    """« 65 % »: the same number on the dial, the 14-day card and the fold; the fold says what each percentage
-    compares (the 24 h to the need, the last 7 days to the usual week)."""
-    assert sc.pct(100) == "100 %" and "70 % et plus" in sc.flat(sc.typo(sc.METHOD)).replace(" ", " ")
-    assert ("Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine "
-            "habituelle. Chaque minute d'activité compte, et davantage quand ton pouls est haut.") in sc.METHOD
+    """« 65 % »: the same number on the dial and the 14-day card's taps; the fold says what each percentage
+    compares (the 24 h to the need, the last 7 days to the usual week); the 70 / 40 bands are the chart's lines and
+    the dial's word, no bullet any more (the audit, 2026-10-09: one fold, without what the page already says)."""
+    text = sc.flat(sc.typo(sc.METHOD)).replace("\u00a0", " ")
+    assert sc.pct(100) == "100\u00a0%" and "70 %" not in text
+    assert "Sommeil compare tes 24 h, siestes comprises, à ton besoin." in text
+    assert ("Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand "
+            "ton pouls est haut.") in sc.METHOD

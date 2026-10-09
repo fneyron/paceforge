@@ -101,13 +101,14 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert "pf-btn-icon" not in surface
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
         assert call in html, call
-    # Optimiste / Cible / Sécurité: « Plan affiché » inside the objective editor, not on the surface
+    # Optimiste / Cible / Sécurité: under the arrival, in view (owner, 2026-10-09), not inside the objective editor
     seg = html.split('id="scn-seg"')[1].split("</div>")[0]
     assert re.findall(r'data-scn-btn="(\w+)"', seg) == ["fast", "target", "safe"]
     panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
-    assert 'id="scn-seg"' in panel and "Plan affiché" in panel and "Ton estimation" in panel and "pf-objok" in panel
+    assert 'id="scn-seg"' not in panel and "Ton estimation" in panel and "pf-objok" in panel
+    assert html.index('class="pf-arr"') < html.index('id="scn-wrap"') < html.index('id="heat-line"')
     assert 'id="scn-chip"' in html  # « Plan Sécurité affiché · revenir à Cible », shown by the script when it applies
-    # no « Outils » column, no sticky side column, no legend, no weather chip in the meta line
+    # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
     # Préparer: one row, « Nutrition », no subtitle (Pilotage lives in the rows now)
@@ -133,12 +134,28 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert "rtab-plan" not in html and 'id="rtab-realise"' not in html
 
 
-def test_plan_column_css_is_single_and_centred():
+@pytest.mark.asyncio
+async def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop(as_user: AsyncClient):
     css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    # phone and tablet: one centred column in reading order, nothing moved by CSS (focus and screen readers follow the screen)
     assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
-    assert "pf-plan-tools" not in css and "pf-plan-grid" not in css and "position: sticky; top: 88px" not in css
+    assert not re.search(r"\.pf-side\b", css) and not re.search(r"\.pf-prep \{[^}]*\border:", css)
+    # desktop: the profile and Préparer sticky in column 2 from the hero's row (3) beside the passages, no tools column
+    assert re.search(r"#simulator-root > :is\(\.pf-profile, \.pf-prep\) \{[^}]*grid-row: 3 / span \d+;[^}]*position: sticky;", css)
+    assert "pf-plan-tools" not in css and "pf-plan-grid" not in css
+    # Préparation (#prep, after the plan in #rpanel-plan) keeps the left pane's width under the passages
+    assert re.search(r"#rpanel-plan > \.pf-rp \{ max-width: calc\(100% - 380px - 56px\); \}", css)
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
     assert 'id="rpanel-plan" class="pf-col{% if nutrition_html %} hidden{% endif %}"' in route  # hidden: the page opened on Nutrition
+    # the page in reading order: the title, the re-import error, the hero (grid row 3, where the side pane starts),
+    # then the profile, the passages, Préparer
+    rid = await _route(as_user)
+    root = (await as_user.get(f"/simulator/routes/{rid}")).text.split('id="simulator-root"')[1]
+    assert re.match(r'[^>]*>\s*<div class="pf-plan-title">', root)
+    assert re.search(r'</div>\s*<div id="reimport-error"></div>\s*<section class="pf-hero"', root)
+    marks = ('class="pf-hero"', 'class="pf-profile"', 'id="scn-chip"', 'id="passage-times-result"', 'id="add-pt"', 'class="pf-prep"')
+    at = [root.index(m) for m in marks]
+    assert at == sorted(at)
 
 
 @pytest.mark.asyncio
@@ -324,12 +341,9 @@ async def test_an_opened_row_has_the_leg_how_to_run_it_one_line_of_facts_and_two
     det = t.split('data-detail="1"')[1].split('data-row role="listitem"')[0]  # Col: ravito, crew, drop bag, cutoff
     text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", det)))
     assert re.search(r"\d+ ?(h\d\d|min) · 4 km · \+[\d ]+ m −[\d ]+ m", text), text  # the previous row is right above: no « depuis »
-    # how to run the leg (cardio + terrain) and what was eaten on it, in sentences: no tiles
-    # (flat legs: the ceiling only, running steady goes without saying)
-    assert "pf-tiles" not in t and re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Très raide|très raide|Descente|descente) :", text), text
-    assert "roulant" not in text.lower(), text
-    # the food: a pointer to that point's row in Nutrition once the race has a plan (Plan type, posted above), never its contents
-    assert "Ta nutrition jusqu'à Village" in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
+    # no cardio consigne and no food pointer in a row (owner, 2026-10-09): the ceiling lives on the watch export, the food in Nutrition
+    assert "pf-tiles" not in t and not re.search(r"Cardio (sous|vers) \d+|(Montée|montée|Descente|descente) :", text), text
+    assert "roulant" not in text.lower() and "Ta nutrition" not in text and "À prendre en route" not in text and "depuis" not in text.lower(), text
     # 3 min at every point is a setting (« Même durée partout »), not a fact of each row: not repeated
     assert re.search(r"Ravito · assistance · barrière 10:30 · marge [+−]\d+h\d\d", text) and "arrêt" not in text, text
     assert re.search(r"Selon ta forme : entre \d\d:\d\d et \d\d:\d\d", text), text

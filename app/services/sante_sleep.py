@@ -17,9 +17,9 @@
   collapse, no setting), never judged: one bar of the four phases (Éveil ·
   Léger · Profond · Paradoxal, calm colours that are no good/bad colours,
   the raw minutes: the night's shape), each named in a legend with its
-  minutes rounded to 10 min (H) (colour never alone); « Comment je lis tes
-  nuits » says the watch estimates them: the shape of the night, not its
-  quality. No %, no target, no norm, no comparison, the main window only
+  minutes rounded to 10 min (H) (colour never alone); « Comment je calcule »
+  (sante_score.METHOD) says the watch estimates them: the shape of the night,
+  not its quality. No %, no target, no norm, no comparison, the main window only
   (watches classify 50–70 % of the night correctly: de Zambotti 2024; no body
   sets an ideal amount: Ohayon 2017). A Garmin night with real intervals also
   gets its hypnogram above it (lanes, the same colours). A night without
@@ -43,9 +43,10 @@
   Every night counts (owner, 2026-10-08: none left out); a « rendormi » wake
   leaves the wake median (H).
 - The closed « Les chiffres de chaque nuit » table (30 nights, their stage
-  minutes too, to 10 min: the accessible alternative of the charts) and the
-  closed « Comment je lis tes nuits » fold (METHOD, 4 plain bullets; its
-  sources on /sante/sources).
+  minutes too, to 10 min: the accessible alternative of the charts); the
+  nights' method is a bullet of the page's one « Comment je calcule » fold
+  (sante_score.METHOD; the audit, 2026-10-09: one fold, not two), its sources
+  (REFS) on /sante/sources.
 The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
@@ -73,25 +74,11 @@ NEED_DEBT_MAX = 60  # (H) min a night at most: one night never repays a debt (Ba
 NEED_STEP = 10  # (H) min
 EFFORT_TAGS = ("long", "big", "ultra")
 
-# « Comment je lis tes nuits » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets pas les
-# citations »): a few one-line bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
-# code and the tests), no outing named (« Ne mentionne pas les sorties dans la partie Santé »); v4.4 (owner: « les
-# explications en français ne sont pas claires »): active sentences of 15 words at most; every night counts (owner,
-# 2026-10-08: no bullet about nights left out); the references (REFS) are on /sante/sources
-METHOD = [
-    "Je compte ton sommeil sur 24 h, siestes comprises.",
-    "Ton besoin part de 8 h. Il augmente un peu après un gros effort ou des nuits trop courtes. Une nuit sous 6 h "
-    "est courte.",
-    "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
-    "Ta montre détecte tes heures de coucher et de lever.",
-    "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas arrivée, tu vois la "
-    "précédente.",
-]
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
 WORDS = {**{t: "après un gros effort" for t in ("long", "big", "ultra")},
          "late": "effort intense le soir", "tz": "changement de fuseau", "late_nap": "après une sieste tardive"}
-# the sources « Comment je lis tes nuits » rests on (label, DOI or URL), listed on /sante/sources
+# the sources the nights' bullets of « Comment je calcule » rest on (label, DOI or URL), listed on /sante/sources
 REFS = [
     ("Recommandations officielles", [
         ("Watson 2015a", "10.5665/sleep.4716"), ("Watson 2015b", "10.5665/sleep.4886"),
@@ -364,17 +351,14 @@ def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict
                   need_of=None) -> dict:
     """Everything the Sommeil section draws. state: never (no night ever, one
     line) | old (nothing in 90 days) | ok."""
-    from app.services.sante_score import typo
-
-    base = {"method": typo(METHOD)}
     if not any(_measured(n) for d, n in nights.items() if d <= today):
-        return {**base, "state": "never"}
+        return {"state": "never"}
     h = hero(nights, today, samples, need_of)
     offered = offered_ranges(nights, today)
     if h is None and "90" not in offered and not any(
             today - timedelta(days=14) < d <= today and _measured(n) for d, n in nights.items()):
-        return {**base, "state": "old", "rows": rows(nights, today)}
+        return {"state": "old", "rows": rows(nights, today)}
     chosen = choose(nights, today, r)
-    return {**base, "state": "ok", "hero": h, "ranges": [(k, RANGES[k][1]) for k in offered], "r": chosen,
+    return {"state": "ok", "hero": h, "ranges": [(k, RANGES[k][1]) for k in offered], "r": chosen,
             "bars": {k: bars(nights, today, k) for k in offered}, "habits": habits(nights, today),
             "rows": rows(nights, today)}

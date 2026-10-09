@@ -257,6 +257,67 @@ def test_debrief_blames_stops_and_fast_start():
     assert d2["summary"]["lost"] and d2["summary"]["lost"][0]["delta_s"] > 0
 
 
+def test_debrief_plans_the_plans_own_stops_and_never_calls_a_far_race_close():
+    # stops by point kind (eau 2′, ravito 5′), as the plan makes them: the débrief's plan is the plan's finish
+    course = _course()
+    stops = {6.0: 120, 10.0: 300, 20.0: 300}
+    secs = compute_passage_times(course, CPS, 5 * 3600, 1.0, 6, 0, None, aid_stops=stops)
+    per_km = {s.index: 4 * 3600 * (s.base_time_s / sum(x.base_time_s for x in course.segments)) for s in course.segments}
+    d = leg_debrief(_splits(30, lambda k: per_km[k] * 1.4), secs, 30.0, use_target=True, stop_s_per_aid=0)
+    assert [l["planned_stop_s"] for l in d["legs"]] == [120, 300, 300, 0]
+    assert abs(d["legs"][-1]["cum_plan_s"] - 5 * 3600) <= 5  # = the objective, stops included
+    assert d["summary"]["total_delta_s"] == d["legs"][-1]["cum_real_s"] - d["legs"][-1]["cum_plan_s"]
+    # evenly slower than the plan, no pattern: not « proche du plan »
+    assert "proche du plan" not in d["summary"]["verdict"] and "trop ambitieux" in d["summary"]["verdict"]
+    # one leg only (no checkpoints), far off: no verdict rather than a wrong one
+    one = compute_passage_times(course, [], 5 * 3600, 1.0, 6, 0, None)
+    d1 = leg_debrief(_splits(30, lambda k: 300), one, 30.0, use_target=True)
+    assert len(d1["legs"]) == 1 and d1["summary"]["verdict"] == ""
+    # four legs of 1 h, all lost on the 2nd (+40 min while moving, no stop): not « du début à la fin »
+    legs4 = [{"start_km": 10.0 * i, "end_km": 10.0 * (i + 1), "start_name": f"P{i}", "end_name": f"P{i + 1}",
+              "predicted_time_s": 3600, "adjusted_time_s": 3600, "stop_s": 0, "distance_km": 10.0} for i in range(4)]
+    d4 = leg_debrief(_splits(40, lambda k: 600 if 10 <= k < 20 else 360), legs4, 40.0, use_target=True)
+    assert [round(l["delta_s"] / 60) for l in d4["legs"]] == [0, 40, 0, 0]
+    assert d4["summary"]["verdict"] == "" and d4["summary"]["lost"][0]["to_name"] == "P2"
+    # the same 40 min spread over the four legs: it is from start to finish
+    d4b = leg_debrief(_splits(40, lambda k: 420), legs4, 40.0, use_target=True)
+    assert "du début à la fin" in d4b["summary"]["verdict"]
+
+
+def test_debrief_on_the_estimate_names_neither_a_plan_nor_an_objective():
+    # no objective: the débrief compares with the estimate (« Écart avec ton estimation »), its words too
+    legs4 = [{"start_km": 10.0 * i, "end_km": 10.0 * (i + 1), "start_name": f"P{i}", "end_name": f"P{i + 1}",
+              "predicted_time_s": 3600, "adjusted_time_s": None, "stop_s": 0, "distance_km": 10.0} for i in range(4)]
+    verdicts = {}
+    for name, pace in (("slow", lambda k: 420), ("fast", lambda k: 300), ("close", lambda k: 362),
+                       ("fade", lambda k: 300 if k < 10 else (420 if k >= 30 else 360))):
+        d = leg_debrief(_splits(40, pace), legs4, 40.0, use_target=False)
+        verdicts[name] = d["summary"]["verdict"]
+        assert "plan" not in d["summary"]["verdict"] and "objectif" not in d["summary"]["verdict"]
+        assert not any("plan" in l["reason"] for l in d["legs"])
+    assert verdicts["slow"] == "Plus lent que l'estimation du début à la fin : elle était trop optimiste."
+    assert verdicts["fast"] == "Plus rapide que l'estimation du début à la fin : tu peux viser plus haut."
+    assert verdicts["close"] == "Course proche de l'estimation."
+    assert verdicts["fade"].startswith("Le schéma classique : plus vite que l'estimation au début, plus lent à la fin")
+    # on plan's basis, the plan and its objective
+    d = leg_debrief(_splits(40, lambda k: 420), [dict(l, adjusted_time_s=3600) for l in legs4], 40.0, use_target=True)
+    assert d["summary"]["verdict"] == "Plus lent que le plan du début à la fin : l'objectif était trop ambitieux."
+    d = leg_debrief(_splits(40, lambda k: 362), legs4, 40.0, use_target=False)
+    assert {l["reason"] for l in d["legs"]} == {"comme estimé"}
+
+
+def test_debrief_reasons_are_short_and_the_fade_never_breaks_inside_the_hr():
+    course, secs = _sections(target=5 * 3600, stop_min=2)
+    per_km = {s.index: (5 * 3600) * (s.base_time_s / sum(x.base_time_s for x in course.segments)) for s in course.segments}
+    splits = _splits(30, lambda k: per_km[k] * (0.85 if k < 10 else 1.20), hr=lambda k: 152 if k < 10 else 120)
+    d = leg_debrief(splits, secs, 30.0, use_target=True, stop_s_per_aid=120, hr_cap=140)
+    reasons = {l["tag"]: l["reason"] for l in d["legs"]}
+    # the signed gap beside the reason says faster or slower: the reason does not
+    assert reasons["over"] == "FC au-dessus du plafond (140)" and reasons["fuel"] == "FC basse : jambes ou carburant"
+    assert not any("que le plan" in r for r in reasons.values())
+    assert "(FC 152 → 120 bpm)" in d["summary"]["verdict"] and d["summary"]["pace_verdict"]
+
+
 def test_effort_km():
     assert math.isclose(effort_km(148, 5000), 198.0)
 

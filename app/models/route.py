@@ -39,7 +39,8 @@ class Route(Base):
     nutrition_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Actual race result matched to this route (Strava activity) for predicted-vs-
     # actual calibration: {"activity_id", "activity_name", "activity_date",
-    # "total_actual_s", "actual": [{"name", "km", "time_s"}]}.
+    # "total_actual_s" (moving), "total_elapsed_s" (stops included: the real time shown),
+    # "actual": [{"name", "km", "time_s"}]}.
     result_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result_json: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     # Reference finisher aligned on this route: {"label", "source", "total_s",

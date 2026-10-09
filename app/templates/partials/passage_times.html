@@ -2,7 +2,7 @@
 {% import "partials/_weather_icons.html" as wx %}
 {% macro fmt_time(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{% set s = (seconds % 60) | int %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }}'{{ '%02d'|format(s) }}"{% endif %}{% endmacro %}
 {% macro hhmm(seconds) %}{{ '%02d:%02d'|format(((seconds % 86400) // 3600) | int, ((seconds % 3600) // 60) | int) }}{% endmacro %}
-{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span data-wx class="inline-flex items-center gap-1 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "w-3.5 h-3.5") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
+{% macro meteo(s, cls="") %}{% if s.temperature_c is not none %}<span data-wx class="inline-flex items-center gap-1 tabular-nums whitespace-nowrap {{ cls }}" title="{{ wmo_label(s.weather_code) }} · {{ s.temperature_c|round|int }}°{% if s.wind_kmh is defined and s.wind_kmh is not none %} · vent {{ s.wind_kmh|round|int }} km/h{% endif %}{% if s.humidity_pct is defined and s.humidity_pct is not none %} · {{ s.humidity_pct|round|int }} % d'humidité{% endif %} · prévision à ce point, à l'heure de passage">{{ wx.wicon(wmo_category(s.weather_code), "", "1.35em") }}{{ s.temperature_c|round|int }}°</span>{% endif %}{% endmacro %}
 {% macro fmt_leg(seconds) %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) / 60) | round | int %}{% if m == 60 %}{% set h = h + 1 %}{% set m = 0 %}{% endif %}{% if h > 0 %}{{ h }}h{{ '%02d'|format(m) }}{% else %}{{ m }} min{% endif %}{% endmacro %}
 {% macro fmt_margin(sec) %}{% set a = (sec | abs) | int %}{{ '−' if sec < 0 else '+' }}{{ a // 3600 }}h{{ '%02d'|format((a % 3600) // 60) }}{% endmacro %}
 {# under an hour ahead reads in minutes; late or comfortable reads ±h:mm #}
@@ -83,8 +83,7 @@
         </div>
         <div data-detail="{{ key }}" id="cp-det-{{ key }}" class="pf-det hidden">
             <p class="pf-legline tabular-nums" data-leg-time="{{ fmt_leg(sec_time) }}{% if arr_stop > 0 %} + {{ stop_min }}'{% endif %}" title="{{ '%d:%02d'|format((pace // 60)|int, (pace % 60)|int) }}/km">{{ fmt_leg(sec_time) }} · {{ km1(dist) }} km · +{{ thousands(s.elevation_gain) }} m −{{ thousands(s.elevation_loss) }} m</p>
-            {# the leg that ends here: how to run it #}
-            {% if lg and lg.effort %}<p class="pf-detnote">{{ gl.glyph('heart', 'w-4 h-4') }}<span>{{ lg.effort }}</span></p>{% endif %}
+            {# the leg that ends here: only what cannot be guessed from the profile (a very steep stretch) #}
             {% if lg and lg.steep_text %}<p class="pf-detnote is-alert">{{ gl.glyph('alert', 'w-4 h-4') }}<span>{{ lg.steep_text }}</span></p>{% endif %}
             {% set has_kind = k in kind_word %}
             {% set has_wx = wx_on and s.temperature_c is not none %}
@@ -93,8 +92,7 @@
             {% endif %}
             {% if sc %}<p class="pf-rangeline tabular-nums">Selon ta forme : entre <span data-range-fast>{{ hhmm(row.fast_s) }}</span> et <span data-range-safe>{{ hhmm(row.safe_s) }}</span></p>{% endif %}
             {% if pin_on %}<p class="pf-pinline"><span class="text-accent">Heure fixée par toi</span>{% if s.pin_clamped %} · <span class="text-danger">impossible à tenir, recalée</span>{% endif %}</p>{% endif %}
-            {# what to do here for the next stretch: a pointer to what to take (its contents live in Nutrition only), the drop bag #}
-            {% if lg and lg.ravito %}<p class="pf-detnote">{{ gl.glyph('full', 'w-4 h-4') }}<span><button type="button" class="pf-link pf-nu-hit" onclick="window.switchRouteTab && window.switchRouteTab('nutrition', 's:{{ lg.ravito.key }}')">Ta nutrition jusqu'à {{ lg.ravito.to }}</button></span></p>{% endif %}
+            {# the drop bag; what to eat lives in Nutrition only #}
             {% if s.drop_bag and not is_finish %}<p class="pf-detnote">{{ gl.glyph('bag', 'w-4 h-4') }}<span><b>Drop bag ici</b>.</span></p>{% endif %}
             {% if editable %}
             <div class="pf-det-actions">

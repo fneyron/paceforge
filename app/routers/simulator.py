@@ -50,8 +50,9 @@ async def simulator_page(
         except ValueError:
             rt.days_to = None
     saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
+    run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user)
     for rt in saved_routes:
-        rt.card = _route_card(rt)
+        rt.card = _route_card(rt, *run.get(rt.id, (None, None)))
 
     return templates.TemplateResponse(
         request,
@@ -68,10 +69,75 @@ def _hm(s: int) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}"
 
 
-def _route_card(rt: Route) -> dict:
+def _min(s: float) -> int:
+    """Seconds → minutes to the nearest minute, as the plan shows times: every gap is taken between
+    rounded times, so the real time minus the plan's is the gap shown."""
+    return int((float(s) + 30) // 60)
+
+
+def _date_fr(d, with_year: bool = True) -> str:
+    """« sam. 3 oct. 2026 »: a date in words, as the app writes it."""
+    return f"{_DAYS_FR[d.weekday()]} {d.day} {_MONTHS_FR[d.month - 1]}" + (f" {d.year}" if with_year else "")
+
+
+def _real_elapsed_s(result: dict, act=None) -> int | None:
+    """A run race's real time, stops included, ONE way for « Mes courses » and the débrief: the total
+    stored when the activity was linked; older results: the linked activity's; else the stored total."""
+    from app.services.debrief import race_elapsed_s
+
+    t = result.get("total_elapsed_s")
+    if not t and act is not None:
+        t = race_elapsed_s(act.splits_metric, act.elapsed_time, act.moving_time)
+    t = t or result.get("total_actual_s")
+    return int(t) if t else None
+
+
+def _plan_finish_s(b: dict) -> int | None:
+    """The plan's finish, stops included (the objective, or where the pins lead), else the estimate's."""
+    if b.get("plan_total_s"):
+        return int(b["plan_total_s"])
+    end = b["sections"][-1] if b["sections"] else None
+    return int(end["clock_time_s"]) - int(b["start_offset_s"]) if end and end.get("clock_time_s") is not None else None
+
+
+async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User) -> dict[int, tuple[int | None, int | None]]:
+    """{route id: (real time, plan's finish)} for the races run: what the débrief leads with, so
+    « Mes courses » shows the same real time and the same gap. The plan's finish is the objective;
+    once points are pinned, where the pins lead (the plan is computed for those races only, on one
+    athlete profile built once for the page). No objective and no pin: no plan, the card shows the
+    real time alone (« temps réel »), while the débrief, opened on purpose, compares it with the
+    estimate and says so (« Écart avec ton estimation »): the estimate is not a plan the athlete set,
+    and computing it for every race run would cost the page a prediction per race."""
+    from app.models.activity import Activity
+    from app.services.race_simulator import build_athlete_gradient_profile
+
+    if not routes:
+        return {}
+    ids = [rt.result_json["activity_id"] for rt in routes if rt.result_json.get("activity_id") and not rt.result_json.get("total_elapsed_s")]
+    acts = {}
+    if ids:
+        acts = {a.id: a for a in (await db.execute(select(Activity).where(Activity.id.in_(ids), Activity.user_id == user.id))).scalars()}
+    pinned = set((await db.execute(
+        select(RouteCheckpoint.route_id).where(RouteCheckpoint.route_id.in_([rt.id for rt in routes]), RouteCheckpoint.target_s.is_not(None))
+    )).scalars())
+    out = {}
+    profile = None
+    for rt in routes:
+        plan = rt.target_time_s
+        if rt.id in pinned and rt.course_json and rt.sport_type != "bike":
+            if profile is None:
+                profile = await build_athlete_gradient_profile(db, user.id)
+            plan = _plan_finish_s(await _plan_bundle(rt, db, user, profile=profile))
+        out[rt.id] = (_real_elapsed_s(rt.result_json, acts.get(rt.result_json.get("activity_id"))), plan)
+    return out
+
+
+def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None) -> dict:
     """What « Mes courses » shows for a race: the date in words, the objective, the real
-    time against the plan once run, and a mini profile."""
+    time against the plan once run (the débrief's numbers: ``_races_vs_plan``), and a mini profile."""
     from datetime import date as _date
+
+    from app.services.debrief import close_to_plan
 
     out: dict = {"date": None, "when": None, "objective": None, "real": None, "diff": None, "good": None, "profile": None}
     d = None
@@ -79,23 +145,21 @@ def _route_card(rt: Route) -> dict:
         d = _date.fromisoformat(str(rt.race_date)[:10]) if rt.race_date else None
     except ValueError:
         d = None
-    year = f" {d.year}" if d and (d.year != _date.today().year or d < _date.today()) else ""  # past races carry their year
-    if d:
-        out["date"] = f"{_DAYS_FR[d.weekday()]} {d.day} {_MONTHS_FR[d.month - 1]}{year}"
+    if d:  # past races carry their year
+        out["date"] = _date_fr(d, d.year != _date.today().year or d < _date.today())
     days = getattr(rt, "days_to", None)
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
                        else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
     if rt.target_time_s:
         out["objective"] = _hm(rt.target_time_s)
-    res = rt.result_json or {}
-    if res.get("total_actual_s"):
-        real = int(res["total_actual_s"])
-        out["real"] = _hm(real)
-        if rt.target_time_s:
-            diff = round((real - rt.target_time_s) / 60)
+    if real_s:
+        out["real"] = _hm(_min(real_s) * 60)
+        if plan_s:
+            diff = _min(real_s) - _min(plan_s)
             out["diff"] = ("−" if diff < 0 else "+") + (f"{abs(diff)} min" if abs(diff) < 60 else _hm(abs(diff) * 60))
-            out["good"] = diff <= 0
+            # neutral when the débrief calls it « proche du plan » (its gap is neutral there too)
+            out["good"] = None if close_to_plan(diff * 60, plan_s) else diff < 0
     # mini profile: 80 points, 400 × 70 viewBox
     pts = (rt.course_json or {}).get("elevation_points") or []
     if len(pts) > 2:
@@ -1626,56 +1690,58 @@ _RUN_TYPES = ["Run", "TrailRun", "VirtualRun"]
 _BIKE_TYPES = ["Ride", "VirtualRide", "GravelRide", "EBikeRide", "MountainBikeRide"]
 
 
-def _km_key(km) -> float | None:
-    """A checkpoint's key when matching plan and result: its km (names repeat on loops)."""
-    return round(float(km), 1) if km is not None else None
-
-
 async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     from app.models.activity import Activity
 
     b = await _plan_bundle(route, db, user)
-    start_hour, start_minute = b["start_hour"], b["start_minute"]
-    cps, plan_sections = b["checkpoints"], b["sections"]
-    predicted = {_km_key(s["end_km"]): s["cumulative_time_s"] for s in plan_sections}
-    predicted_total = b["predicted_total_s"]
+    plan_sections = b["sections"]
     sport_types = _BIKE_TYPES if route.sport_type == "bike" else _RUN_TYPES
 
     # Leg-by-leg debrief against the PLAN the athlete actually ran with (target
     # + aid stops) — or the prediction when no target was set.
     debrief = None
+    lead = None
     result = route.result_json
-    if result and result.get("activity_id"):
-        from app.models.activity import Activity as _Act
+    if result:
         from app.services.debrief import leg_debrief
 
-        act = (await db.execute(select(_Act).where(_Act.id == result["activity_id"], _Act.user_id == user.id))).scalar_one_or_none()
+        act = None
+        if result.get("activity_id"):
+            act = (await db.execute(select(Activity).where(Activity.id == result["activity_id"], Activity.user_id == user.id))).scalar_one_or_none()
         if act and act.splits_metric:
-            stop_min = b["stop_min"]
             hr_cap = (route.params_json or {}).get("hr_cap_climb")
             debrief = leg_debrief(
                 act.splits_metric, plan_sections, route.total_distance_km,
-                use_target=b["use_target"], stop_s_per_aid=stop_min * 60,
+                use_target=b["use_target"], stop_s_per_aid=b["stop_min"] * 60,
                 hr_cap=int(hr_cap) if hr_cap else None,
             )
-            debrief["basis"] = "plan" if b["use_target"] else "prediction"
+            if not debrief.get("legs"):
+                debrief = None
+        # ONE gap, on one basis, the one « Mes courses » shows: the real time (stops included) vs the
+        # plan's finish (stops included), between times rounded to the minute as they are shown;
+        # neutral exactly when the verdict would call the race « proche du plan »
+        from app.services.debrief import close_to_plan
 
-    rows = []
-    if result and result.get("actual"):
-        actual = {_km_key(a.get("km")): a["time_s"] for a in result["actual"]}
-        for cp in cps:
-            k = _km_key(cp["distance_km"])
-            rows.append({
-                "name": cp["name"], "km": cp["distance_km"],
-                "predicted_s": predicted.get(k), "actual_s": actual.get(k),
-            })
-        rows.append({
-            "name": "Arrivée", "km": route.total_distance_km,
-            "predicted_s": predicted_total, "actual_s": result.get("total_actual_s"),
-        })
+        actual_s, plan_s = _real_elapsed_s(result, act), _plan_finish_s(b)
+        delta_min = _min(actual_s) - _min(plan_s) if (actual_s and plan_s) else None
+        lead = {
+            "actual_s": actual_s, "plan_s": plan_s, "delta_min": delta_min,
+            "tone": None if delta_min is None or close_to_plan(delta_min * 60, plan_s) else ("bad" if delta_min > 0 else "ok"),
+        }
+        # the activity's day in words, as the app writes dates
+        day = act.start_date.date() if act and act.start_date else None
+        if day is None and result.get("activity_date"):
+            from datetime import datetime as _dt
+
+            try:
+                day = _dt.strptime(result["activity_date"], "%d/%m/%Y").date()
+            except ValueError:
+                day = None
+        lead["day"] = _date_fr(day) if day else None
 
     candidates = []
     total_activities = 0
+    closest_id = None
     if not result:
         route_m = (route.total_distance_km or 0) * 1000
         # Broad net: a race may be recorded with odd GPS distance; don't hide it
@@ -1689,13 +1755,15 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         )
         acts = cand_q.scalars().all()
         total_activities = len(acts)
-        # rank by distance proximity to the route, keep the 40 closest
-        acts = sorted(acts, key=lambda a: abs((a.distance or 0) - route_m))[:40]
+        # rank by distance proximity to the route, keep the 40 closest; the closest is picked by
+        # default, the one with splits when two are as close (to 100 m)
+        acts = sorted(acts, key=lambda a: (round(abs((a.distance or 0) - route_m) / 100), not a.splits_metric))[:40]
+        closest_id = acts[0].id if acts else None
         acts = sorted(acts, key=lambda a: a.start_date or 0, reverse=True)
         for a in acts:
             candidates.append({
                 "id": a.id, "name": a.name,
-                "date": a.start_date.strftime("%d/%m/%Y") if a.start_date else "",
+                "date": _date_fr(a.start_date) if a.start_date else "",
                 "distance_km": round((a.distance or 0) / 1000, 1),
                 "dplus": round(a.total_elevation_gain or 0),
                 "has_splits": bool(a.splits_metric),
@@ -1704,10 +1772,11 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
     return {
         "request": request,
         "route_id": route.id,
-        "rows": rows,
-        "predicted_total_s": predicted_total,
         "result": result,
+        "lead": lead,
+        "basis": "plan" if b["use_target"] else "prediction",
         "candidates": candidates,
+        "closest_id": closest_id,
         "total_activities": total_activities,
         "debrief": debrief,
     }
@@ -1743,6 +1812,7 @@ async def save_route_result(
     """Match a Strava activity to this route and store the real per-checkpoint
     times for predicted-vs-actual comparison + the global calibration dataset."""
     from app.models.activity import Activity
+    from app.services.debrief import race_elapsed_s
     from app.services.race_simulator import actual_passage_times
 
     route = await _get_owned_route(route_id, user, db)
@@ -1753,17 +1823,18 @@ async def save_route_result(
         select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
     )
     activity = act_res.scalar_one_or_none()
-    if not activity:
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">Activité introuvable.</div>'
-        )
-
-    act_km = float(activity.distance or 0) / 1000
+    # a refusal comes back inside the card, the picker still there (the card is the swap target)
+    error = None
+    act_km = float(activity.distance or 0) / 1000 if activity else 0
     route_km = float(route.total_distance_km or 0)
-    if route_km and act_km and abs(act_km - route_km) / route_km > 0.15:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Cette activité fait {act_km:.0f} km, la course {route_km:.0f} km : ce n\'est pas le même parcours, elle n\'est pas associée.</div>'
-        )
+    if not activity:
+        error = "Activité introuvable."
+    elif route_km and act_km and abs(act_km - route_km) / route_km > 0.15:
+        error = f"Cette activité fait {act_km:.0f} km, la course {route_km:.0f} km : ce n'est pas le même parcours, elle n'est pas associée."
+    if error:
+        ctx = await _result_compare_context(request, route, db, user)
+        ctx.update(error=error, preselect=activity_id)
+        return templates.TemplateResponse(request, "partials/result_compare.html", context=ctx)
 
     cp_result = await db.execute(
         select(RouteCheckpoint)
@@ -1806,6 +1877,8 @@ async def save_route_result(
         "activity_name": activity.name,
         "activity_date": activity.start_date.strftime("%d/%m/%Y") if activity.start_date else "",
         "total_actual_s": total_actual_s,
+        # the real time, stops included: what « Mes courses » and the débrief compare with the plan's finish
+        "total_elapsed_s": race_elapsed_s(activity.splits_metric, activity.elapsed_time, activity.moving_time),
         "actual": actual,
         **({"fatigue_tilt": fatigue_tilt, "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": fatigue_tilt_n}
            if fatigue_tilt is not None else {}),
@@ -2048,11 +2121,12 @@ def _aid_stops(cps: list[dict], refills=None, override_min: int | None = None) -
     return out
 
 
-async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
+async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None) -> dict:
     """Everything derived from a saved trail route, computed ONE way for every
     consumer (pacing guide, exports, debrief): the predicted course,
     the checkpoints with their metadata, the plan sections (target + stops +
-    weather), cutoffs, start offset."""
+    weather), cutoffs, start offset. ``profile``: the athlete's gradient profile when
+    the caller already built it (one per request for several routes)."""
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import annotate_cutoffs
     from app.services.race_simulator import (
@@ -2094,7 +2168,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User) -> dict:
     start_minute = route.start_minute or 0
     start_offset_s = start_hour * 3600 + start_minute * 60
     course = CourseProfile(**route.course_json)
-    profile = await build_athlete_gradient_profile(db, user.id)
+    if profile is None:
+        profile = await build_athlete_gradient_profile(db, user.id)
     course = predict_course(
         course, profile, start_hour=start_hour, start_minute=start_minute,
         plan_moving_s=objective_moving_s(

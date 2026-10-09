@@ -69,15 +69,14 @@ def test_resolve_hr_caps_derives_and_honours_old_values():
 
 
 @pytest.mark.asyncio
-async def test_rows_and_watch_codes_carry_the_same_ceiling(as_user: AsyncClient):
+async def test_the_watch_codes_carry_the_ceiling_and_the_rows_say_nothing_of_it(as_user: AsyncClient):
     rid = await _route(as_user)
     r = await as_user.post(f"/api/simulator/routes/{rid}/params", data={"hr_cap_climb": 150})
     assert r.status_code == 204
     t = (await as_user.post("/partials/simulator/passage-times", data={
         "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid, "stop_minutes": 3,
     })).text
-    row_caps = [int(x) for x in re.findall(r"Cardio (?:sous|vers) (\d+)", t)]  # « vers » on a descent (a target, not a ceiling)
+    assert not re.search(r"Cardio (?:sous|vers) \d+", t)  # the rows carry no cardio consigne (owner, 2026-10-09)
     csv = (await as_user.get(f"/api/simulator/routes/{rid}/pace-export?format=csv")).text
     codes = [int(x) for x in re.findall(r"FC(\d+)", csv)]
-    assert row_caps and row_caps == codes[:len(row_caps)]
-    assert row_caps[0] <= 150 and len(set(row_caps)) > 1  # falls along the race, not one repeated number
+    assert codes and codes[0] <= 150 and len(set(codes)) > 1  # falls along the race, not one repeated number

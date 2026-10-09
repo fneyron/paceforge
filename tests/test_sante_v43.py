@@ -159,7 +159,7 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
     """Owner, 2026-10-08 evening: « Ne mentionne pas les sorties dans la partie Santé, ça complexifie : mets juste
     les scores. » His page on 08/10 (the Transjeju 6 days ago, Les Houches 3 weeks ago) names no activity and no
     outing — state line, Détail, history readouts, cards, the nights' table and its readouts — but for one plain
-    bullet of « Comment je calcule ta récupération »: the score capped after a big outing."""
+    bullet of « Comment je calcule »: Récupération limited after a big effort, up to 2 weeks after an ultra."""
     import html as H
 
     await seed_owner_v4(db_session, test_user)
@@ -168,7 +168,7 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
         assert name not in main, name
     folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', main, flags=re.S)
     calc = re.findall(r"<li>(.*?)</li>", folds[0])
-    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[4]]
+    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[1]]
     rest = H.unescape(main.replace(folds[0], ""))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
@@ -283,7 +283,7 @@ async def test_a_strava_only_user(as_user: AsyncClient, db_session: AsyncSession
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert page["state"] is None and page["line"] == td.NO_WATCH and page["rows"] == []
     main = _coherent((await as_user.get("/sante")).text)
-    assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Comment je lis tes nuits" not in main
+    assert td.NO_WATCH in main and 'href="/settings#coros"' in main and "Les chiffres de chaque nuit" not in main
     act = _coherent((await as_user.get("/activities")).text)
     assert re.findall(r'data-range="(\w+)"', act) == ["duree", "distance", "dplus"]
 

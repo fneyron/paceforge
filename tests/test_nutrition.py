@@ -720,10 +720,10 @@ async def test_the_other_surfaces_follow_the_card(as_user: AsyncClient, db_sessi
     rid = await _route(as_user)
     table = {"checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": rid, "stop_minutes": 3}
     t = (await as_user.post("/partials/simulator/passage-times", data=table)).text
-    assert "Ta nutrition jusqu'à" not in t  # no plan yet: nothing to point at
+    assert "Ta nutrition" not in t
     await as_user.post(f"{P}/{rid}/starter", headers=HX)
     t = _text((await as_user.post("/partials/simulator/passage-times", data=table)).text)
-    assert "Ta nutrition jusqu'à Village" in t and "Ta nutrition jusqu'à l'arrivée" in t and "Dès ici" not in t
+    assert "Ta nutrition" not in t and "Dès ici" not in t  # the rows never point at the food (owner, 2026-10-09): it lives in Nutrition
     page = (await as_user.get(f"/simulator/routes/{rid}/print")).text
     band = _text(page.split(">Nutrition</p>")[1])
     assert band.startswith("Gel · 1 toutes les 20 min 21:00 Départ 6 gels 23:05 Col 4 gels 00:25 Village 4 gels 02:00 Arrivée")
@@ -762,15 +762,11 @@ async def test_another_users_race_and_products_are_out_of_reach(as_user: AsyncCl
 
 
 @pytest.mark.asyncio
-async def test_back_from_nutrition_redoes_the_rows_and_its_links_land_on_the_card(as_user: AsyncClient, cycling_on):
+async def test_the_rows_no_longer_point_at_the_card(as_user: AsyncClient, cycling_on):
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
     script = html.split("function switchRouteTab")[1].split("</script>")[0]
-    # any successful POST to the card marks the rows stale (their « Ta nutrition jusqu'à » links); back to the plan redoes them once
-    assert "ravitoDirty = true" in script and "/partials\\/simulator\\/nutrition\\//" in script
-    plan_branch = script.split("} else {")[1].split("// a tool reloads")[0]
-    assert "ravitoDirty" in plan_branch and "recalc()" in plan_branch
-    # a passage row's link: the card opens on that point's row (s-<km>), after the reload when there is one
-    assert "'&open=' + encodeURIComponent(anchor)" in script and "htmx:afterSettle" in script and "var sid = 's-' +" in script
+    # the rows carry no food pointer, so the page keeps no stale-rows flag and no row anchor into the card
+    assert "ravitoDirty" not in script and "rowAnchor" not in script and "'&open='" not in script
     assert "anchor === 'bags' ? 'bags' : tab" in script and "#nutrition-wrap #nu-ravitos" in script  # old #bags links
     assert html.count('hx-on::validation:halted="this.reportValidity()"') == 2
     from tests.test_simulator_routes import _create_bike_route

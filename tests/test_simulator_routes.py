@@ -145,8 +145,10 @@ async def test_no_reference_finisher_and_the_debrief(as_user: AsyncClient, db_se
     await db_session.flush()
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
     assert r.status_code == 200, r.text
-    assert "Débrief tronçon par tronçon" in r.text and "Raison probable" in r.text
+    assert "Tronçon par tronçon" in r.text and "Raison probable" in r.text
     assert "arrêts" in r.text  # the 15-min stop at the Col is called out
+    assert "Simulé vs réalisé" not in r.text and "Prédit" not in r.text  # one comparison, against the plan
+    assert "Où tu as perdu" not in r.text  # the biggest gaps are marked in the table, not listed again above it
     # the personal fatigue tilt is stored with the curve it was measured against
     from app.models.route import Route
 
@@ -179,8 +181,113 @@ async def test_result_matches_checkpoints_by_km_not_name(as_user: AsyncClient, d
         tilts.append((await db_session.get(Route, route_id)).result_json["fatigue_tilt"])
         pages.append(r.text)
     assert tilts[0] == tilts[1] and 0.05 < tilts[0] < 0.40  # not the clamp a km 6 vs km 20 mix-up gave
-    actual_cells = re.findall(r'tabular-nums text-gray-900">(\d+h\d\d)<', pages[0])
-    assert actual_cells[0] == "0h54" and "3h20" in actual_cells  # each "Eau 1" row shows its own passage
+    # each "Eau 1" passage is stored at its own km…
+    actual = {a["km"]: a["time_s"] for a in (await db_session.get(Route, route_id)).result_json["actual"]}
+    assert actual[6.0] == 54 * 60 and actual[20.0] == 200 * 60
+    # …and each "Eau 1" row of the débrief shows its own leg (0→6 km: 0h54, 10→20 km: 1h50)
+    real = re.findall(r"<i>réel</i> (\d+h\d\d)<", pages[0])
+    assert real[0] == "0h54" and real[2] == "1h50"
+
+
+@pytest.mark.asyncio
+async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """One écart: real elapsed time (stops included) against the plan's finish (the objective,
+    stops by point kind included) — the sum of the legs' gaps, whatever the stored moving total."""
+    course = _course()
+    r = await as_user.post("/api/simulator/routes", data={  # no stop_minutes: stops by kind (2′ + 5′ + 5′)
+        "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Jeju sans arrêt réglé",
+        "target_time_s": 5 * 3600, "race_date": "2026-10-02", "start_hour": 21, "start_minute": 0, "sport_type": "trail",
+    })
+    route_id = r.json()["id"]
+    # 30 km at 10:00/km moving (5h00) + 15 min of stops = 5h15 elapsed
+    splits = [{"distance": 1000, "moving_time": 600, "elapsed_time": 600 + (900 if k == 14 else 0)} for k in range(30)]
+    act = Activity(strava_activity_id=801, user_id=test_user.id, sport_type="TrailRun", name="Jeju 2026",
+                   start_date=__import__("datetime").datetime(2026, 10, 2, 21, 0, tzinfo=__import__("datetime").timezone.utc),
+                   distance=30000.0, moving_time=18000, elapsed_time=18900, total_elevation_gain=800.0, raw_data={}, splits_metric=splits)
+    db_session.add(act)
+    await db_session.flush()
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
+    assert r.status_code == 200, r.text
+    t = r.text
+    assert "Réalisé <b>5h15</b>" in t and "Plan <b>5h00</b>" in t
+    assert '<p class="pf-db-num is-bad">+15<small' in t  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
+    assert "(12 prévues)" in t  # the plan's stops: eau 2′ + ravito 5′ + ravito 5′
+    assert "<span>ven. 2 oct. 2026</span>" in t  # the activity's day in words, as the app writes dates
+    # a reason shared by consecutive legs is written once (the next rows say it to screen readers only)
+    whys = re.findall(r'<span class="pf-cmp-why( is-same)?" role="cell">(.*?)</span>\s*</div>', t, re.S)
+    shown = [re.sub(r"<[^>]+>", "", w) for same, w in whys]
+    assert len(whys) == 4 and any(same for same, _ in whys)
+    for k, (same, w) in enumerate(whys):
+        assert bool(same) == (k > 0 and shown[k] == shown[k - 1])
+        assert (w.startswith('<span class="sr-only">') if same else "<" not in w)
+    from sqlalchemy import select
+
+    from app.models.route import Route, RouteCheckpoint
+
+    assert (await db_session.get(Route, route_id)).result_json["total_elapsed_s"] == 18900
+
+    async def card_and_lead():
+        """(real, gap) on « Mes courses » and in the débrief's lead."""
+        page = (await as_user.get("/simulator")).text
+        card = re.split(rf'id="route-(?:card|next)-{route_id}"', page)[1].split("</a>")[0]
+        real, diff = re.search(r"<b>(\d+h\d\d)</b>.*?>([+−][^<]+) vs plan<", card, re.S).groups()
+        d = (await as_user.get(f"/api/simulator/routes/{route_id}/result")).text
+        hero = re.sub(r"<[^>]+>", "", re.search(r'class="pf-db-num[^"]*">(.*?)</p>', d).group(1))
+        return (real, re.sub(r"\s+", "", diff)), (re.search(r"Réalisé <b>(\d+h\d\d)</b>", d).group(1), re.sub(r"\s+", "", hero))
+
+    # « Mes courses » shows the débrief's numbers: the same real time, the same gap against the same plan…
+    card, lead = await card_and_lead()
+    assert card == lead == ("5h15", "+15min")
+    # …also with a pinned point and no objective (the plan's finish is then where the pins lead)
+    col = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == route_id, RouteCheckpoint.name == "Col"))).scalar_one()
+    col.target_s = 2 * 3600
+    (await db_session.get(Route, route_id)).target_time_s = None
+    await db_session.flush()
+    card, lead = await card_and_lead()
+    assert card == lead and card[1] != "+15min"
+    col.target_s = None
+    (await db_session.get(Route, route_id)).target_time_s = 5 * 3600
+    await db_session.flush()
+
+    # a refused activity comes back inside the card, the picker still there
+    other = Activity(strava_activity_id=802, user_id=test_user.id, sport_type="Run", name="Footing", distance=8000.0, moving_time=2400, elapsed_time=2400,
+                     start_date=__import__("datetime").datetime(2026, 10, 5, tzinfo=__import__("datetime").timezone.utc), raw_data={})
+    db_session.add(other)
+    await as_user.post(f"/api/simulator/routes/{route_id}/result/clear")
+    await db_session.flush()
+    r = await as_user.get(f"/api/simulator/routes/{route_id}/result")  # the picker opens on the closest distance
+    assert f'<option value="{act.id}" selected>' in r.text and f'<option value="{other.id}">' in r.text
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": other.id})
+    assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and 'name="activity_id"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_mes_courses_builds_the_athlete_profile_once(as_user: AsyncClient, db_session: AsyncSession, monkeypatch):
+    """Races run with a pinned point get their plan computed for « Mes courses »: on ONE athlete profile for the
+    page, not one per race."""
+    from sqlalchemy import select
+
+    from app.models.route import Route, RouteCheckpoint
+    from app.services import race_simulator
+
+    ids = [await _create_route(as_user) for _ in range(3)]
+    for rid in ids:
+        (await db_session.get(Route, rid)).result_json = {"activity_id": None, "activity_name": "x", "activity_date": "",
+                                                          "total_actual_s": 5 * 3600, "total_elapsed_s": 5 * 3600 + 600, "actual": []}
+        cp = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == rid).order_by(RouteCheckpoint.distance_km))).scalars().first()
+        cp.target_s = 3600
+    await db_session.flush()
+    calls = []
+    real = race_simulator.build_athlete_gradient_profile
+
+    async def counting(*a, **kw):
+        calls.append(1)
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(race_simulator, "build_athlete_gradient_profile", counting)
+    page = await as_user.get("/simulator")
+    assert page.status_code == 200 and page.text.count(" vs plan<") == 3
+    assert len(calls) == 1
 
 
 async def _create_bike_route(client: AsyncClient) -> int:
