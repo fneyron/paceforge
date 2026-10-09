@@ -124,10 +124,11 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
     legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
     assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
         "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
-    # that they are the watch's estimate, the shape of the night and not its quality: « Comment je lis tes nuits »
-    # says it (the card shows the bar and its legend, like the mockup the owner approved, 2026-10-08)
-    fold = main.split("<summary>Comment je lis tes nuits</summary>")[1].split("</details>")[0]
-    assert ("Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité."
+    # that they are the watch's estimate, the shape of the night and not its quality: « Comment je calcule » says
+    # it (the card shows the bar and its legend, like the mockup the owner approved, 2026-10-08; one fold since the
+    # audit, 2026-10-09)
+    fold = main.split("<summary>Comment je calcule</summary>")[1].split("</details>")[0]
+    assert ("Ta montre estime tes phases : la forme de ta nuit, pas sa qualité."
             in H.unescape(fold).replace("\u00a0", " "))
     for word in ("bon", "mauvais", "objectif", "insuffisant", "%"):  # shown, never judged
         assert word not in re.sub(r"<[^>]+>", " ", hero), word
@@ -192,7 +193,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     await _seed_rows(db_session, test_user, rows)
     await _runs(db_session, test_user, today)
     main = _main(await _page(as_user, monkeypatch, today))
-    top = main.split('<div class="pf-dials">')[1].split('<section id="recuperation"')[0]
+    top = main.split('<div class="pf-dials">')[1].split('<section ')[0]  # the dials, before their cards
     assert "pf-ring-tick" not in main and "<line" not in top
 
     def words(body):
@@ -237,8 +238,9 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     """OWN-1: D+2 after the Transjeju (ended 03/10 13:53), no night measured since (his real COROS log): no score,
     an empty dial (owner, 2026-10-09, like WHOOP: « Mets un cadran vide, oui ») and the line that says why; the
     page names no activity (v4.3, owner: « mets juste les scores »). The Sommeil dial: no night this morning; the
-    Récupération card's rows: no usual values yet for VFC nor FC de nuit (when they will be ready), the effort's
-    window open to 16/10 at 35 (red): the fatigue is still said, on its row."""
+    Récupération card's rows: the effort's window open to 16/10 at 35 (red), first (the audit, 2026-10-09: the row
+    that decides the day): the fatigue is still said, on its row; no usual values yet for VFC nor FC de nuit (when
+    they will be ready)."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     page = await sante.health_page(db_session, test_user.id, today=D5)
@@ -249,9 +251,9 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
     assert recup["aria"] == "Récupération : pas de score ce matin."
     assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [
+        ("Effort récent", "11\u00a0jours", "avant d'être récupéré", None, "danger"),
         ("VFC", None, "en construction", "prête dans 4\u00a0nuits", "none"),
-        ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none"),
-        ("Effort récent", "11\u00a0jours", "avant d'être récupéré", None, "danger")]
+        ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none")]
     html = await _page(as_user, monkeypatch, D5)
     assert '<span class="pf-ring-sub" aria-hidden="true">pas de score</span>' in html and ">estimée<" not in html
     assert "Transjeju" not in _main(html) and "Pas de nuit mesurée ce matin." not in html

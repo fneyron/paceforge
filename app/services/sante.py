@@ -15,24 +15,28 @@ comme WHOOP, ça doit rester simple »). Top to bottom:
   one sentence under them (sante_today; v4.3, owner:
   « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
   activity named). No sub-score anywhere, no « Détail du score »;
-- three cards right under the dials, in their order (the approved mockup):
-  Récupération (rows: VFC and FC de nuit over 7 nights — the 7-night mean as
-  a signed percentage of the usual value and its word, « comme d'habitude » at
-  0 %, « en construction » and when the usual values will be ready — and
-  « Effort récent », the days left in a recovery window whenever one is
-  open), Sommeil (sante_sleep: last night, its stages), Entraînement (the
-  last 7 days' hours and the usual week's, « Intensité » in a word, a link to
-  Activités, where the weeks are);
-  each title a link to its details further down: « Récupération · 14 jours »,
-  « VFC · 30 nuits » and « FC de nuit · 30 nuits », each night card opening
-  on its status line in words, the last 7 nights against the usual values the
-  score reads (v4.3, owner: « est-ce que c'est bien ou pas bien ? »), then
-  the 24-h sleep chart and the habits; every measured night counts, last night included
+- three cards right under the dials, in the dials' order (the audit,
+  2026-10-09: « Les cartes ne sont pas dans l'ordre des cercles »): Sommeil
+  (sante_sleep: last night, its stages), Récupération (rows: « Effort
+  récent » first, the days left in a recovery window whenever one is open —
+  the row that decides the day —, then VFC and FC de nuit over 7 nights —
+  the 7-night mean as a signed percentage of the usual value and its word,
+  « comme d'habitude » at 0 %, « en construction » and when the usual values
+  will be ready), Entraînement (the last 7 days' hours and the usual week's,
+  « Intensité » in a word, a link to Activités, where the weeks are);
+  each title a link to its details further down, in the same order: the
+  24-h sleep chart and the habits, then « Récupération · 14 jours » (no
+  resting readout: its 14 days' mean decided nothing and looked like the
+  dial's percentage), « VFC · 30 nuits » and « FC de nuit · 30 nuits », each
+  night card opening on its status line in words, the last 7 nights against
+  the usual values the score reads (v4.3, owner: « est-ce que c'est bien ou
+  pas bien ? »); every measured night counts, last night included
   (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil
   pour la FC »), and a night or a day without a measure draws nothing (« s'il
   n'y a pas de mesure tu ne mets rien, pas de point »);
-- the closed folds (how the recovery is computed, how the nights are read,
-  each ending on a link to /sante/sources; the nights' table).
+- the closed folds: one « Comment je calcule » (a few bullets for the three
+  dials, ending on a link to /sante/sources; the audit, 2026-10-09: two folds,
+  13 bullets, were too long), the nights' table.
 From past activities and the nights only: no planned race, no check-in, no
 training prescription, no sync status (Réglages': the page syncs on its own
 when it opens and reloads quietly when something new arrived). Only
@@ -447,15 +451,15 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
     """The three dials, each a link to its card right under the dials, else to its details further down (a plain
     dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
     sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
-    (VFC, FC de nuit, Respiration when measured: `nights`, Effort récent) and the Entraînement card (`rest`,
+    (Effort récent, VFC, FC de nuit, Respiration when measured: `nights`) and the Entraînement card (`rest`,
     `peak`: today's heart-rate bounds)."""
     state, score = day["state"], day["score"]
     sleep = page.get("sleep") or {}
     sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
                   "#sommeil-detail" if sleep.get("state") == "ok" else None)
-    rows = [r for r in (night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
-                        resp_row(nights, day["day"], day) if nights is not None else None,
-                        effort_row(efforts, day)) if r]
+    # « Effort récent » first: the row that decides the day (the audit, 2026-10-09: it came last)
+    rows = [r for r in (effort_row(efforts, day), night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
+                        resp_row(nights, day["day"], day) if nights is not None else None) if r]
     recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
     train = training(sessions, day["day"], until, rest, peak)
     return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),

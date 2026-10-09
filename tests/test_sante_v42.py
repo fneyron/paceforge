@@ -560,9 +560,10 @@ def test_back_to_back_days_are_two_efforts_each_its_own_window():
 
 
 async def test_the_method_folds_and_their_sources(as_user, db_session, test_user, monkeypatch):
-    """Both folds, closed: a few plain bullets (6 and 5 at most), no citation, no « (H) », then one small
-    « Sources » link to /sante/sources, which lists both folds' references — « Récupération » and « Sommeil »,
-    each the official texts then the studies — as links (a DOI, else the text's own address), nothing else."""
+    """One fold, closed (the audit, 2026-10-09: « Il y a deux explications à déplier, dont 8 points pour la
+    première »): « Comment je calcule », 5 plain bullets, no citation, no « (H) », then one small « Sources » link
+    to /sante/sources, which lists its references — « Récupération » and « Sommeil », each the official texts then
+    the studies — as links (a DOI, else the text's own address), nothing else."""
     import re
 
     from app.services import sante
@@ -575,16 +576,12 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
     folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', html, re.S)
-    assert len(folds) == 2
-    recup, nuits = folds
-    assert "<summary>Comment je calcule ta récupération</summary>" in recup
-    assert "<summary>Comment je lis tes nuits</summary>" in nuits
-    # 2026-10-09: 5, the day turns at the wake, not at midnight
-    assert len(re.findall(r"<li>", recup)) == 8 and len(re.findall(r"<li>", nuits)) == 5
-    for fold, anchor in ((recup, "recuperation"), (nuits, "sommeil")):
-        assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
-        assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »
-        assert fold.rstrip().endswith(f'<a class="pf-method-src" href="/sante/sources#{anchor}">Sources</a>')
+    assert len(folds) == 1
+    fold = folds[0]
+    assert "<summary>Comment je calcule</summary>" in fold and len(re.findall(r"<li>", fold)) == len(sc.METHOD) == 5
+    assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
+    assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »
+    assert fold.rstrip().endswith('<a class="pf-method-src" href="/sante/sources">Sources</a>')
     r = await as_user.get("/sante/sources")
     assert r.status_code == 200
     page = r.text.split('id="main-content"', 1)[1]

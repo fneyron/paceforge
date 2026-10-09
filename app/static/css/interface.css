@@ -611,7 +611,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-state-links a { color: rgb(var(--pf-accent-strong)); font-weight: 600; white-space: nowrap; display: inline-block; padding: 11px 0; line-height: 22px; margin-right: 10px; }   /* 44 px */
 .dark .pf-state-links a { color: rgb(var(--pf-accent)); }
 @media (min-width: 900px) { .pf-dials { max-width: 560px; } .pf-ring-dial { width: min(100%, 124px); } .pf-ring-value { font-size: 26px; } .pf-ring-value.is-long { font-size: 21px; } }
-/* the cards under the dials, in their order (Récupération, Sommeil, Entraînement): a title, then rows, like Apple's
+/* the cards under the dials, in their order (Sommeil, Récupération, Entraînement): a title, then rows, like Apple's
    Vitals — a dot and the name on the left, the value over its word on the right (never colour alone) */
 .pf-sum { padding-bottom: 4px; }
 .pf-sum-h { font-family: var(--pf-font-display); font-size: 17px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; color: rgb(var(--pf-ink)); }
@@ -724,6 +724,13 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-lg.is-usual { width: 14px; height: 8px; background: rgb(var(--pf-accent-soft)); box-shadow: inset 0 1px 0 rgb(var(--pf-gray-400)), inset 0 -1px 0 rgb(var(--pf-gray-400)); }   /* the usual week (page background) */
 .pf-lg.is-hot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: rgb(var(--pf-bg)); box-shadow: inset 0 0 0 1.5px rgb(var(--pf-ink)); }   /* a hot run, hollow */
 .pf-lg.is-est { background: repeating-linear-gradient(45deg, rgb(var(--pf-gray-600)) 0 1.5px, transparent 1.5px 3.5px); box-shadow: inset 0 0 0 1px rgb(var(--pf-gray-600)); }   /* a score without a night measured, hatched */
+/* Récupération · 14 jours: no resting number (the audit, 2026-10-09: its mean decided nothing and looked like the
+   dial's); its title rests in the readout's place, in the card title's type, until a day is tapped (data-tone="":
+   nothing selected, or a day without a score, whose word is empty) */
+.pf-recup14 .pf-viz { margin-top: 0; }
+.pf-recup14 .pf-viz-read2 { margin-top: 0; }
+.pf-recup14 .pf-viz[data-tone=""] .pf-viz-w { font-size: 15px; font-weight: 650; letter-spacing: -.01em; color: rgb(var(--pf-ink)); }
+.pf-recup14 .pf-viz-l1 > b:empty { display: none; }   /* no number: no gap before the title */
 /* Sommeil: last night, its timeline, the habits */
 .pf-sec-h { font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: rgb(var(--pf-ink)); margin-top: 30px; }
 .pf-sec > .pf-sec-h + .pf-card { margin-top: 10px; }

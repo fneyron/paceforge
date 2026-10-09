@@ -105,31 +105,30 @@ HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and its alert's (the 60 before), with room
 
-# « Comment je calcule ta récupération » (v4.3, owner: « c'est trop d'explication, simplifie et synthétise, ne mets
-# pas les citations »): a few bullets in plain words, no citation, no « (H) » (the heuristics stay marked in the
-# code and the tests); one plain bullet on the cap after a big effort, the only effort Santé names (« Ne mentionne
-# pas les sorties dans la partie Santé »). v4.4 (owner: « les explications en français ne sont pas claires »):
-# sentences of 15 words at most, VFC and FC de nuit each said in one plain sentence, « tes valeurs habituelles »
-# instead of « ta normale »; the score and the facts' percentages (owner: « Mets des pourcentages plutôt que des
-# valeurs ») said in one sentence each. 2026-10-08 (« Fais comme WHOOP »): the score combines the body signals and
-# the sleep, a big effort caps it; the Entraînement dial's percentage said too. The references of both folds are on
-# /sante/sources (REFS, sante_sleep.REFS)
+# « Comment je calcule » (the audit, 2026-10-09: « Il y a deux explications à déplier, dont 8 points pour la
+# première »): the page's one method fold, a few bullets for the three dials in their order (Sommeil, Récupération,
+# Entraînement), the stages and the margin; the older « Comment je calcule ta récupération » (8 bullets) and
+# « Comment je lis tes nuits » (5, sante_sleep) merged, without what the page already says (the 70 / 40 bands are
+# the chart's lines and the dial's word, a short night is the Sommeil dial's word). v4.3 (owner: « c'est trop
+# d'explication, simplifie et synthétise, ne mets pas les citations »): plain words, no citation, no « (H) » (the
+# heuristics stay marked in the code and the tests), no outing named (« Ne mentionne pas les sorties dans la partie
+# Santé »); v4.4 (owner: « les explications en français ne sont pas claires »): sentences of 15 words at most, VFC
+# and FC de nuit each said in one plain sentence, « tes valeurs habituelles » instead of « ta normale ». The
+# references are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Ton score est un pourcentage. Il combine ton sommeil, ta VFC et ta FC de nuit.",
-    "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
-    "pouls moyen pendant ton sommeil.",
-    "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
-    "Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine habituelle. "
-    "Chaque minute d'activité compte, et davantage quand ton pouls est haut.",
-    "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
-    "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",
-    "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score. Une respiration plus rapide que "
-    "d'habitude 2 nuits de suite aussi.",
-    "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
-    "C'est une estimation : quelques points d'écart ne veulent rien dire.",
+    "Sommeil compare tes 24 h, siestes comprises, à ton besoin. Ce besoin part de 8 h et augmente après un "
+    "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
+    "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
+    "jusqu'à 2 semaines après un ultra.",
+    "La VFC mesure les variations entre deux battements de ton cœur. La FC de nuit est ton pouls moyen pendant "
+    "ton sommeil. Je compare chacune à tes valeurs habituelles des 60 derniers jours.",
+    "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
+    "pouls est haut.",
+    "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
+    "aussi : quelques points d'écart ne veulent rien dire.",
 ]
-# the references both folds rest on, listed on /sante/sources (label, DOI or URL): « Recommandations officielles »
-# (consensus, position stands, guidelines), then « Études scientifiques »
+# the references the fold rests on (with sante_sleep.REFS), listed on /sante/sources (label, DOI or URL):
+# « Recommandations officielles » (consensus, position stands, guidelines), then « Études scientifiques »
 REFS = [
     ("Recommandations officielles", [
         ("Kellmann 2018", "10.1123/ijspp.2017-0759"), ("Meeusen 2013", "10.1249/MSS.0b013e318279a10a"),
@@ -381,9 +380,12 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     de point »; a night not recorded has no score), whose readout says « pas de
     mesure ce jour-là »; tap a bar → « 64 % » « ◐ Récupération en cours » /
     « mer. 7 oct. »: the date, the score and the state only (v4.3, owner:
-    « mets juste les scores »). It rests on the mean of the days with a score
-    (nothing selected: today's score is the dial's). None under 2 days with a
-    score."""
+    « mets juste les scores »). Nothing selected, no number: today's score is
+    the dial's, and the 14 days' mean decided nothing and looked like it (the
+    audit, 2026-10-09: « 65 % en moyenne sur 14 jours » next to the dial's
+    64 %); the card's title (`title`) rests in the readout's place instead, so
+    no empty block is reserved and a tapped day's readout takes its place.
+    None under 2 days with a score."""
     days = [d for d, _, _ in history]
     with_score = [s["value"] for _, _, s in history if s.get("value") is not None]
     if len(with_score) < 2:
@@ -403,7 +405,7 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
-    mean = rounded(sum(with_score) / len(with_score))
-    return viz.rest(c, [pct(mean), "en moyenne", ""],
-                    f"Récupération des {len(days)} derniers jours : {pct(mean)} en moyenne. Choisis un jour pour voir "
-                    "son score et son état.", back=len(days) - 1)
+    title = f"Récupération · {len(days)} jours"
+    c = viz.rest(c, ["", title, ""], f"Récupération des {len(days)} derniers jours. Choisis un jour pour voir son "
+                 "score et son état.", back=len(days) - 1)
+    return {**c, "title": title}

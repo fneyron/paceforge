@@ -170,23 +170,20 @@ def test_the_nights_table_30_days_newest_first_tags_as_words_never_a_race():
     assert out[0]["tst"] == "7h20" and out[0]["hr"] == "45" and out[0]["hrv"] == "60"
 
 
-def test_the_method_fold_is_four_plain_bullets_and_names_no_race():
-    """« Comment je lis tes nuits » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets pas les
-    citations »): one-line bullets in plain words, no citation, no « (H) »; its references stay in the code
-    (REFS), listed on /sante/sources. v4.4: active sentences of 15 words at most. 2026-10-08: every night counts,
-    so no bullet about nights that do not."""
+def test_the_nights_method_is_in_the_one_fold_and_names_no_race():
+    """The nights' method (once « Comment je lis tes nuits », 5 bullets) is said in the page's one « Comment je
+    calcule » fold (sante_score.METHOD; the audit, 2026-10-09: one fold, not two): the 24 h with the naps, the need,
+    the day turning at the wake, the stages estimated by the watch; plain words, no citation, no « (H) », no race
+    (v4.3); its references stay in the code (REFS), listed on /sante/sources."""
     import re
 
     from app.services import sante_score as sc
 
-    assert sl.METHOD == ["Je compte ton sommeil sur 24 h, siestes comprises.",
-                         "Ton besoin part de 8 h. Il augmente un peu après un gros effort ou des nuits trop "
-                         "courtes. Une nuit sous 6 h est courte.",
-                         "Ta montre estime les phases : elles montrent la forme de ta nuit, pas sa qualité.",
-                         "Ta montre détecte tes heures de coucher et de lever.",
-                         "Ta journée commence à ton réveil, pas à minuit. Avant midi, tant que ta nuit n'est pas "
-                         "arrivée, tu vois la précédente."]
-    text = sc.flat(sl.METHOD)
+    assert not hasattr(sl, "METHOD")
+    text = sc.flat(sc.METHOD)
+    for said in ("siestes comprises", "Ce besoin part de 8 h", "Ta journée commence à ton réveil",
+                 "Ta montre estime tes phases"):
+        assert said in text, said
     assert "ne compte" not in text
     assert "course" not in text and "séance" not in text and "J-" not in text and "8 à 10" not in text
     assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text)

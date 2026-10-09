@@ -432,10 +432,11 @@ def test_history_computes_its_bands_and_alerts_once(monkeypatch):
     assert len(calls) == len(set(calls))  # each band of each nights dict once
 
 
-def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
-    """It rests on the mean of the days with a score (nothing selected: today's score is the ring's); a tap says
-    the score, the state's glyph and word (its tone on the figure, never colour alone) and the day, nothing else
-    (v4.3); faint 40 and 70 lines labelled on the right; today on a disc."""
+def test_the_history_card_rests_on_its_title_and_shows_the_bands():
+    """Nothing selected, no number (the audit, 2026-10-09: the 14 days' mean decided nothing and looked like the
+    dial's, today's score is the ring's): its title rests in the readout's place; a tap says the score, the
+    state's glyph and word (its tone on the figure, never colour alone) and the day, nothing else (v4.3); faint 40
+    and 70 lines labelled on the right; today on a disc."""
     rows = _rich()
     nights = _nights(rows, _runs())
     with nt.memo(), _rested():
@@ -444,7 +445,8 @@ def test_the_history_card_rests_on_its_mean_and_shows_the_bands():
         hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
-    assert c["read"] == ["100\u00a0%", "en moyenne", ""] and d["sel"] == 14 and d["back"] == 13  # v4.4: in percent
+    assert c["read"] == d["rest"] == ["", "Récupération · 14 jours", ""] and d["sel"] == 14 and d["back"] == 13
+    assert c["title"] == "Récupération · 14 jours" and "moyenne" not in c["data"]
     assert d["r"][-1] == ["100\u00a0%", "● Bonne récupération", "jeu. 8 oct."] and d["t"][-1] == "ok"
     assert d["a"][-1] == "jeudi 8 octobre : 100\u00a0%, bonne récupération."
     assert all(b["cls"] == "ok" and not b["est"] for b in c["bars"]) and c["bars"][-1]["today"]
@@ -707,26 +709,27 @@ def test_provisional_bands_say_so_on_the_cards():
     assert (card["status"]["value"], card["status"]["word"]) == (None, "comme d'habitude")  # every night the same
 
 
-def test_the_method_fold_is_six_plain_bullets():
-    """« Comment je calcule ta récupération » (v4.3, owner: « trop d'explication, simplifie et synthétise, ne mets
-    pas les citations pour gagner de la place »): a few bullets in plain words, no citation, no « (H) »; the
-    references stay in the code, listed on /sante/sources, each a link (a DOI, else the text's own address). v4.4
-    (owner: « les explications en français ne sont pas claires »): sentences of 15 words at most, VFC and FC de
-    nuit each said once in one plain sentence, « tes valeurs habituelles », never « ta normale »."""
+def test_the_method_fold_is_five_plain_bullets():
+    """« Comment je calcule », the page's one method fold (the audit, 2026-10-09: « Il y a deux explications à
+    déplier, dont 8 points pour la première »): 5 bullets for the three dials in their order, the stages and the
+    margin, without what the page already says (the 70 / 40 bands: the chart's lines, the dial's word). v4.3
+    (owner: « trop d'explication, simplifie et synthétise, ne mets pas les citations pour gagner de la place »):
+    plain words, no citation, no « (H) »; the references stay in the code, listed on /sante/sources, each a link
+    (a DOI, else the text's own address). v4.4 (owner: « les explications en français ne sont pas claires »):
+    sentences of 15 words at most, VFC and FC de nuit each said once in one plain sentence, « tes valeurs
+    habituelles », never « ta normale »."""
     assert sc.METHOD == [
-        "Ton score est un pourcentage. Il combine ton sommeil, ta VFC et ta FC de nuit.",
-        "La VFC mesure les petites variations du temps entre deux battements de ton cœur. La FC de nuit, c'est ton "
-        "pouls moyen pendant ton sommeil.",
-        "Je compare chaque signal à tes valeurs habituelles des 60 derniers jours. Il faut au moins 7 nuits.",
-        "Sommeil compare tes 24 h à ton besoin. Entraînement compare tes 7 derniers jours à ta semaine "
-        "habituelle. Chaque minute d'activité compte, et davantage quand ton pouls est haut.",  # 2026-10-09: the
-        # need is the athlete's own, the week's load reads the heart rate (Banister)
-        "Un gros effort (3 h, 6 h, 10 h et plus) limite ton score pendant quelques jours. Plus longtemps après une "
-        "course ou une sortie très intense. Jusqu'à 2 semaines après un ultra.",  # v4.4 (R3): no number
-        "Une nuit sous 6 h ou une FC de nuit très haute baissent ton score. Une respiration plus rapide que "
-        "d'habitude 2 nuits de suite aussi.",
-        "70 % et plus : bonne récupération ; 40 à 69 % : en cours ; moins de 40 % : faible.",
-        "C'est une estimation : quelques points d'écart ne veulent rien dire."]
+        "Sommeil compare tes 24 h, siestes comprises, à ton besoin. Ce besoin part de 8 h et augmente après un "
+        "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
+        "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
+        "jusqu'à 2 semaines après un ultra.",
+        "La VFC mesure les variations entre deux battements de ton cœur. La FC de nuit est ton pouls moyen pendant "
+        "ton sommeil. Je compare chacune à tes valeurs habituelles des 60 derniers jours.",
+        "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
+        "pouls est haut.",
+        "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
+        "aussi : quelques points d'écart ne veulent rien dire."]
+    assert sum(len(b.split()) for b in sc.METHOD) <= 140  # the two folds held 13 bullets, 263 words
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
         assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence
     assert "normale" not in sc.flat(sc.METHOD)

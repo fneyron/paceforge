@@ -148,13 +148,12 @@ def test_each_heuristic_constant_is_marked_h(path, name, value):
 
 
 def test_the_folds_print_no_h_and_no_citation():
-    """v4.3: the two folds are a few plain bullets (« Comment je calcule ta récupération » 8 at most since v4.4
-    explains VFC, FC de nuit and the percentages, « Comment je lis tes nuits » 5 at most) with no « (H) » and no
-    citation (their
-    sources are on /sante/sources); the (H) marks stay on the constants' lines (above) and in these tests."""
-    assert len(sc.METHOD) <= 8 and len(sl.METHOD) <= 5
-    for text in (sc.flat(sc.METHOD), sc.flat(sl.METHOD)):
-        assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
+    """v4.3: the method fold is a few plain bullets (one « Comment je calcule » since the audit, 2026-10-09, 5 at
+    most, for the three dials, the stages and the margin) with no « (H) » and no citation (its sources are on
+    /sante/sources); the (H) marks stay on the constants' lines (above) and in these tests."""
+    assert len(sc.METHOD) <= 5 and not hasattr(sl, "METHOD")
+    text = sc.flat(sc.METHOD)
+    assert "(H)" not in text and not re.search(r"[A-Z][a-z]+ (19|20)\d\d", text), text
     assert "quelques points d'écart ne veulent rien dire" in sc.flat(sc.METHOD)
     assert not hasattr(st, "CLIMB_RATIO") and not hasattr(st, "back_to_back") and not hasattr(td, "HR_UP_BPM")
     # every measured night counts (owner, 2026-10-08): no ≥ 20-h tail out of the band any more; no Charge récente

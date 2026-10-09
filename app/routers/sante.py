@@ -79,8 +79,8 @@ async def sante_page(
 
 @router.get("/sante/sources", response_class=HTMLResponse)
 async def sante_sources(request: Request, user: User = Depends(get_current_user)):
-    """The references of Santé's two folds (v4.3: the folds keep a few plain bullets, their sources are here):
-    « Récupération » then « Sommeil », each the official texts first, then the studies, as links."""
+    """The references of Santé's « Comment je calcule » fold (v4.3: the fold keeps a few plain bullets, their
+    sources are here): « Récupération » then « Sommeil », each the official texts first, then the studies, as links."""
     from app.services import sante_score, sante_sleep
 
     sections = [("Récupération", "recuperation", sante_score.linked(sante_score.REFS)),
