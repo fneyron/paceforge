@@ -76,12 +76,12 @@
 
     {% elif state == 'nodate' %}
     {# the race's activity is found from the race sheet: no date, nothing to look for #}
-    <p class="pf-tl-lead">Donne la date de ta course pour retrouver ton activité Strava.</p>
+    <p class="pf-tl-lead">Donne la date de ta course pour retrouver ton activité.</p>
     {# the sheet lives in the plan panel (hidden while a tool is open): back to the plan, then open it #}
     <button type="button" class="pf-btn pf-btn-secondary mt-5" onclick="if (window.switchRouteTab) window.switchRouteTab('plan'); if (window._sim && window._sim.openRaceSheet) window._sim.openRaceSheet();">Date et départ</button>
     {% elif state == 'future' %}
     <p class="pf-tl-lead">Le débrief arrive après la course.</p>
-    {% else %}
-    <p class="pf-tl-lead">Aucune activité Strava trouvée le {{ day }} autour de {{ race_km }} km{% if excluded %} ({{ excluded }} activité{{ 's' if excluded > 1 }} écartée{{ 's' if excluded > 1 }}){% endif %}. Strava se synchronise tout seul : réessaie après la synchro.</p>
-    {% endif %}
+    {% elif state == 'none' %}
+    <p class="pf-tl-lead">Aucune activité trouvée le {{ day }} autour de {{ race_km }} km{% if excluded %} ({{ excluded }} activité{{ 's' if excluded > 1 }} écartée{{ 's' if excluded > 1 }}){% endif %}. La synchro est automatique : réessaie un peu plus tard.</p>
+    {% endif %}{# no state: the request refused an activity chosen on purpose, the error above says it all #}
 </div>

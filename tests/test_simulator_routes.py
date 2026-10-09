@@ -255,7 +255,7 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     db_session.add(other)
     await db_session.flush()
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result/clear")
-    assert "Aucune activité Strava trouvée le ven. 2 oct. 2026 autour de 30 km (1 activité écartée)." in r.text
+    assert "Aucune activité trouvée le ven. 2 oct. 2026 autour de 30 km (1 activité écartée)." in r.text
     assert (await db_session.get(Route, route_id)).result_json is None and (await db_session.get(Route, route_id)).params_json["result_excluded"] == [act.id]
     r = await as_user.get(f"/api/simulator/routes/{route_id}/result")
     assert "1 activité écartée" in r.text and "db-activity" not in r.text and "<select" not in r.text

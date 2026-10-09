@@ -248,11 +248,13 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
             .limit(30)
         )
         measured = []
+        seen: set = set()  # a race saved twice links the same activity: it counts once
         for route_id, rj in result.all():
             rj = rj or {}
             tilt = rj.get("fatigue_tilt")
-            if tilt is None or rj.get("fatigue_model") != FATIGUE_MODEL:
+            if tilt is None or rj.get("fatigue_model") != FATIGUE_MODEL or rj.get("activity_id") in seen:
                 continue
+            seen.add(rj.get("activity_id"))
             try:
                 day = datetime.strptime(rj.get("activity_date") or "", "%d/%m/%Y")
             except ValueError:

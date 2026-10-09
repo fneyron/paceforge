@@ -51,12 +51,29 @@ async def simulator_page(
             rt.days_to = None
     saved_routes.sort(key=lambda rt: (0, rt.days_to) if rt.days_to is not None and rt.days_to >= 0 else (1, -rt.days_to) if rt.days_to is not None else (2, 0))
     # races run without their activity yet: found by itself (race day, course distance), the newest
-    # first, at most 10 a page load — one small indexed query each, nothing predicted
-    from app.services.race_match import auto_link
+    # first, at most 10 a page load — one small indexed query each, nothing predicted; the athlete's
+    # profile (the tilt a linked race measures) built once for the page, and one odd activity never
+    # takes the page down
+    from datetime import datetime as _dt, timezone as _tz
 
-    for rt in [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.course_json][:10]:
-        await auto_link(db, user.id, rt)
-    run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user)
+    from app.services.race_match import athlete_offset, find_race_activity, link_result
+    from app.services.race_simulator import build_athlete_gradient_profile
+
+    profile = None
+    todo = [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.course_json][:10]
+    if todo:
+        now, offset = _dt.now(_tz.utc), await athlete_offset(db, user.id, todo[0])
+        for rt in todo:
+            try:
+                act = await find_race_activity(db, user.id, rt, now=now, offset=offset)
+                if act is None:
+                    continue
+                if profile is None and act.splits_metric:
+                    profile = await build_athlete_gradient_profile(db, user.id)
+                await link_result(db, rt, act, user.id, profile=profile)
+            except Exception:
+                logger.exception("automatic race link failed for route %s", rt.id)
+    run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
         rt.card = _route_card(rt, *run.get(rt.id, (None, None)))
 
@@ -106,11 +123,12 @@ def _plan_finish_s(b: dict) -> int | None:
     return int(end["clock_time_s"]) - int(b["start_offset_s"]) if end and end.get("clock_time_s") is not None else None
 
 
-async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User) -> dict[int, tuple[int | None, int | None]]:
+async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, profile=None) -> dict[int, tuple[int | None, int | None]]:
     """{route id: (real time, plan's finish)} for the races run: what the débrief leads with, so
     « Mes courses » shows the same real time and the same gap. The plan's finish is the objective;
     once points are pinned, where the pins lead (the plan is computed for those races only, on one
-    athlete profile built once for the page). No objective and no pin: no plan, the card shows the
+    athlete profile built once for the page — ``profile`` when the page already has it). No objective
+    and no pin: no plan, the card shows the
     real time alone (« temps réel »), while the débrief, opened on purpose, compares it with the
     estimate and says so (« Écart avec ton estimation »): the estimate is not a plan the athlete set,
     and computing it for every race run would cost the page a prediction per race."""
@@ -127,7 +145,6 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User) -> d
         select(RouteCheckpoint.route_id).where(RouteCheckpoint.route_id.in_([rt.id for rt in routes]), RouteCheckpoint.target_s.is_not(None))
     )).scalars())
     out = {}
-    profile = None
     for rt in routes:
         plan = rt.target_time_s
         if rt.id in pinned and rt.course_json and rt.sport_type != "bike":
@@ -1237,7 +1254,8 @@ async def save_bike_plan(
     except ValueError:
         pass
 
-    route.params_json = {
+    route.params_json = {  # over the dict: the activities set aside by the débrief live there too
+        **(route.params_json or {}),
         "target_power_watts": max(30.0, target_power_watts), "rider_weight_kg": rider_weight_kg,
         "bike_weight_kg": bike_weight_kg, "cda": cda, "crr": crr,
         "wind_mode": wind_mode if wind_mode in ("auto", "manual", "none") else "auto",
@@ -1690,24 +1708,27 @@ async def get_weather(
 
 # ── Débrief: the race's activity over the plan ──
 
-async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
-    """The débrief card. Nothing linked yet: the race's activity is found by itself once race day has
-    come (app.services.race_match) and linked with the request; else the card says why not — no
-    date, a race ahead, nothing on race day."""
-    from datetime import date as _date
+async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User, auto: bool = True) -> dict:
+    """The débrief card. Nothing linked yet: the race's activity is found by itself once the start
+    has come (app.services.race_match) and linked with the request; else the card says why not — no
+    date, a race ahead, nothing on race day. ``auto`` False: this request refused an activity chosen
+    on purpose, the card carries that alone (no other one linked unasked under it)."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
     from app.models.activity import Activity
-    from app.services.race_match import auto_link, excluded_ids, race_day
+    from app.services.race_match import athlete_offset, auto_link, excluded_ids, local_start, not_run_yet, race_day
 
     ctx = {"request": request, "route_id": route.id, "result": None, "lead": None, "debrief": None, "basis": "plan", "state": None}
     if not route.result_json:
         day = race_day(route)
         if day is None:
             ctx["state"] = "nodate"
-        elif day > _date.today():
-            ctx["state"] = "future"
-        elif await auto_link(db, user.id, route) is None:
-            ctx.update(state="none", day=_date_fr(day), race_km=int(round(route.total_distance_km or 0)), excluded=len(excluded_ids(route)))
+        else:
+            now, offset = _dt.now(_tz.utc), await athlete_offset(db, user.id, route)
+            if not_run_yet(route, now, offset):
+                ctx["state"] = "future"
+            elif auto and await auto_link(db, user.id, route, now=now, offset=offset) is None:
+                ctx.update(state="none", day=_date_fr(day), race_km=int(round(route.total_distance_km or 0)), excluded=len(excluded_ids(route)))
     result = route.result_json
     if not result:
         return ctx
@@ -1739,8 +1760,8 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         "actual_s": actual_s, "plan_s": plan_s, "delta_min": delta_min,
         "tone": None if delta_min is None or close_to_plan(delta_min * 60, plan_s) else ("bad" if delta_min > 0 else "ok"),
     }
-    # the activity's day in words, as the app writes dates
-    day = act.start_date.date() if act and act.start_date else None
+    # the activity's day in words, as the app writes dates (on its own clock when its source kept it)
+    day = local_start(act, _td(0)).date() if act and act.start_date else None
     if day is None and result.get("activity_date"):
         from datetime import datetime as _dt
 
@@ -1784,7 +1805,7 @@ async def result_compare_card(
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     error = await _link_chosen(route, preselect, db, user) if preselect else None
-    ctx = await _result_compare_context(request, route, db, user)
+    ctx = await _result_compare_context(request, route, db, user, auto=error is None)
     ctx["error"] = error
     return templates.TemplateResponse(
         request, "partials/result_compare.html", context=ctx,
@@ -1805,7 +1826,7 @@ async def save_route_result(
     if not route or not route.course_json:
         return HTMLResponse("", status_code=404)
     error = await _link_chosen(route, activity_id, db, user)
-    ctx = await _result_compare_context(request, route, db, user)
+    ctx = await _result_compare_context(request, route, db, user, auto=error is None)
     ctx["error"] = error
     return templates.TemplateResponse(request, "partials/result_compare.html", context=ctx)
 
