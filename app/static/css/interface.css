@@ -255,8 +255,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-objlink:hover { text-decoration: underline; }
 .pf-objok { min-height: 36px; padding: 0 12px; margin-right: -12px; font-size: 14px; font-weight: 700; color: rgb(var(--pf-accent)); border-radius: 999px; flex: none; }
 .pf-objok:hover { background: rgb(var(--pf-accent-soft)); }
-.pf-scnwrap { margin-top: 14px; }
-.pf-scnwrap .pf-label { margin-bottom: 6px; }
+.pf-scnwrap { margin-top: 14px; max-width: 440px; }
 .pf-arr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; margin-top: 10px; }
 .pf-arr-l { font-size: 15px; color: rgb(var(--pf-gray-500)); }
 .pf-arr-v { font-family: var(--pf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }

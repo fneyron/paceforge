@@ -75,16 +75,16 @@
                     <span id="obj-est-line">Ton estimation : <b class="tabular-nums">{{ est_hm }}</b><span id="obj-reset"{% if not has_obj %} class="hidden"{% endif %}> · <button type="button" onclick="window._sim && window._sim.resetTarget()" class="pf-objlink">Revenir à l'estimation</button></span></span>
                     <button type="button" class="pf-objok" onclick="window._sim && window._sim.heroClose(true, true)">OK</button>
                 </div>
-                <div id="scn-wrap" class="pf-scnwrap hidden">
-                    <div class="pf-label">Plan affiché</div>
-                    <div id="scn-seg" class="pf-seg pf-scn" role="group" aria-label="Plan affiché">
-                        <button type="button" data-scn-btn="fast" aria-pressed="false" onclick="window._sim && window._sim.setScn('fast')">Optimiste<small data-scn-end="fast"></small></button>
-                        <button type="button" data-scn-btn="target" aria-pressed="true" onclick="window._sim && window._sim.setScn('target')">Cible<small data-scn-end="target"></small></button>
-                        <button type="button" data-scn-btn="safe" aria-pressed="false" onclick="window._sim && window._sim.setScn('safe')">Sécurité<small data-scn-end="safe"></small></button>
-                    </div>
-                </div>
             </div>
             <p class="pf-arr"><span class="pf-arr-l">Arrivée</span><b id="hero-arrival" class="pf-arr-v">—</b>{% if not deb_primary %}<span id="hero-verdict" class="pf-arr-pill"></span>{% endif %}</p>
+            {# the three plans, in view under the arrival (owner, 2026-10-09: they were hidden in the objective editor) #}
+            <div id="scn-wrap" class="pf-scnwrap hidden">
+                <div id="scn-seg" class="pf-seg pf-scn" role="group" aria-label="Plan affiché">
+                    <button type="button" data-scn-btn="fast" aria-pressed="false" onclick="window._sim && window._sim.setScn('fast')">Optimiste<small data-scn-end="fast"></small></button>
+                    <button type="button" data-scn-btn="target" aria-pressed="true" onclick="window._sim && window._sim.setScn('target')">Cible<small data-scn-end="target"></small></button>
+                    <button type="button" data-scn-btn="safe" aria-pressed="false" onclick="window._sim && window._sim.setScn('safe')">Sécurité<small data-scn-end="safe"></small></button>
+                </div>
+            </div>
         </div>
         {# the forecast heat matters before the race, not once it is run #}
         {% if not deb_primary %}<p id="heat-line" class="pf-heat hidden"></p>{% endif %}
@@ -1292,7 +1292,7 @@ window._sim = {};
         var t = document.getElementById('plan-table'); if (!t) return;
         var pill = document.querySelector('#passage-times-result [data-scn-pill]'), seg = document.getElementById('scn-seg'), eff = pill ? scn : 'target';
         t.setAttribute('data-scn', eff);
-        // « Plan affiché » lives in the objective editor, only when the plans exist
+        // the three plans show under the arrival, only when they exist
         var wrap = document.getElementById('scn-wrap'); if (wrap) wrap.classList.toggle('hidden', !pill);
         if (seg) seg.querySelectorAll('[data-scn-btn]').forEach(function (b) { var k = b.getAttribute('data-scn-btn'); b.setAttribute('aria-pressed', k === eff ? 'true' : 'false'); var sm = b.querySelector('small'); if (sm && pill) sm.textContent = pill.getAttribute('data-end-' + k) || ''; });
         // another plan than Cible: said above the list, with the way back
