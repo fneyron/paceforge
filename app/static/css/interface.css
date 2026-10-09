@@ -208,7 +208,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 
 /* ── race plan ────────────────────────────────────────────────────────── */
 /* phone and tablet: one centred 720 px column. From 1024 px the plan spans the top bar's width in two panes,
-   the hero and the passages on the left, the profile and Préparer in a sticky pane on the right (« desktop: race plan » below) */
+   the hero and the passages on the left, the profile in a sticky pane on the right (« desktop: race plan » below) */
 .pf-col { max-width: 720px; margin-inline: auto; }
 .pf-back { display: inline-flex; align-items: center; gap: 4px; color: rgb(var(--pf-gray-600)); font-size: 15px; font-weight: 500; margin: 0 0 8px -2px; min-height: 36px; }
 .pf-back:hover { color: rgb(var(--pf-ink)); }
@@ -358,9 +358,8 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-rp-line { margin-top: 8px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
 .pf-rp-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); }
 .pf-rp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 15px; line-height: 1.45; color: rgb(var(--pf-ink)); }
-.pf-rp-list a, .pf-rp-link { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
-.pf-rp-link { display: inline-block; min-height: 44px; padding: 12px 0; font-size: 14px; text-align: left; }
-.dark :is(.pf-rp-list a, .pf-rp-link) { color: rgb(var(--pf-accent)); }
+.pf-rp-list a { font-weight: 600; color: rgb(var(--pf-accent-strong)); }
+.dark .pf-rp-list a { color: rgb(var(--pf-accent)); }
 
 /* sheets: bottom sheets on the phone, centred 460 px modals on desktop */
 .pf-sheet { box-shadow: 0 -8px 40px rgb(0 0 0 / .18); }

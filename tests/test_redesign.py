@@ -1,6 +1,6 @@
 """The A redesign: identity tokens in one place, the app shell, and the race plan
 simplified: one number, one arrival line, one button, the passages (clock, name, km),
-two « Préparer » rows; everything else one tap away (the … menu, the sheets, an opened row)."""
+nothing else on the page; everything else one tap away (the … menu, the sheets, an opened row)."""
 
 import json
 import re
@@ -106,7 +106,7 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert 'id="scn-seg"' not in html and 'id="scn-wrap"' not in html and 'id="scn-chip"' not in html and "setScn" not in html
     panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
     assert "Ton estimation" in panel and "pf-objok" in panel
-    # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
+    # no « Outils » column (the desktop side pane holds only the profile), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
     # no « Préparer » section (its only row was Nutrition, removed on 2026-10-09)

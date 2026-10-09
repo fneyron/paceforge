@@ -20,6 +20,10 @@ from tests.test_race_plan_services import CPS, _course
 ROOT = Path(__file__).resolve().parent.parent
 # the tool's words: its name, its old name, what it counted (gels, caffeine), its blocks and buttons
 GONE = re.compile(r"nutri|ravitaillement|\bgels?\b|caf[ée]ine|à chaque ravito|de secours|tes produits|plan type|prends \d", re.I)
+# the privacy page's one line about the tool: its stored data (nutrition_products, routes.nutrition_json) stays until the
+# new model replaces it, so the page declares it (RGPD) and says it is read by nothing
+DISCLOSURE = ("Ce que tu avais saisi dans l'ancien outil nutrition (produits, plan) reste enregistré sans être utilisé, "
+              "jusqu'à sa refonte.")
 
 
 @pytest.fixture
@@ -90,10 +94,14 @@ async def test_the_tool_s_routes_pacing_words_and_settings_are_gone(as_user: Asy
     # Réglages: the weight stays, without the nutrition helper or the caffeine cap
     settings = (await as_user.get("/settings")).text
     assert 'name="weight_kg"' in settings and not GONE.search(settings), GONE.search(settings)
-    # the public pages
+    # the public pages: nothing of the tool, except the privacy page's disclosure of its stored data
     for path in ("/landing", "/methode", "/privacy", "/auth/login"):
         r = await as_user.get(path)
-        assert r.status_code == 200 and not GONE.search(r.text), (path, GONE.search(r.text))
+        text = r.text
+        if path == "/privacy":
+            assert DISCLOSURE in text
+            text = text.replace(DISCLOSURE, "")
+        assert r.status_code == 200 and not GONE.search(text), (path, GONE.search(text))
 
 
 def test_nothing_of_the_tool_is_left_in_the_code():
@@ -107,3 +115,11 @@ def test_nothing_of_the_tool_is_left_in_the_code():
         assert "nutrition" not in text.lower() and "/partials/simulator/nutrition" not in text, tpl
     router = (ROOT / "app/routers/simulator.py").read_text(encoding="utf-8")
     assert "nutrition" not in router.lower() and "NutritionProduct" not in router
+    # the exports carry no per-point note (they were the plan's « Prends 2 gels »), the dead race-strategy prompt that asked
+    # for a « plan nutrition » went with it, and an old deep link (#nutrition, #bags…) opens the plan and drops its hash
+    assert not (ROOT / "app/prompts/race_strategy.py").exists()
+    for py in ("app/services/pace_export.py", "app/services/claude.py", "app/schemas/simulator.py"):
+        text = (ROOT / py).read_text(encoding="utf-8")
+        assert "nutrition" not in text.lower() and "notes_by_km" not in text and "race_strategy" not in text, py
+    route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
+    assert "function switchRouteTab(tab) {" in route and "else if (h && !document.getElementById(h)) switchRouteTab('plan');" in route

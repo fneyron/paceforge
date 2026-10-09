@@ -40,7 +40,7 @@
                 <input type="number" id="weight_kg" name="weight_kg" value="{{ user.weight_kg or '' }}" placeholder="72" step="0.1" min="30" max="200" class="{{ input_cls }} pf-set-num tabular-nums">
                 <span class="text-sm text-gray-400 shrink-0">kg</span>
             </div>
-            <p class="text-[11px] text-gray-400 mt-1">Sert à ta préparation de course.{% if cycling_enabled() %} Ton poids sert aussi à ta puissance à vélo.{% endif %}</p>
+            {% if cycling_enabled() %}<p class="text-[11px] text-gray-400 mt-1">Ton poids sert à ta puissance à vélo.</p>{% endif %}
         </div>
         {% if cycling_enabled() %}
         <div class="max-w-xs">

@@ -62,7 +62,7 @@ summary::-webkit-details-marker { display: none; }
 <script>
 var TOOL_TITLES = { realise: 'Débrief' };
 var planScrollY = 0;
-function switchRouteTab(tab, anchor) {
+function switchRouteTab(tab) {
     var tools = ['realise'];
     if (tab !== 'plan' && tools.indexOf(tab) < 0) tab = 'plan';
     if (tab !== 'plan' && !document.getElementById('rpanel-' + tab)) tab = 'plan';
@@ -94,11 +94,12 @@ document.body.addEventListener('htmx:afterSwap', function (ev) {
     var pv = (window._sim && window._sim.planVersionOf) ? window._sim.planVersionOf() : 0;
     if (ev.target && ev.target.parentElement && ev.target.parentElement.id === 'rpanel-realise') tabLoadedAt.realise = pv;
 });
-// old links: #pacing (now in the passage rows) opens the plan; #realise the débrief
+// old links: #realise opens the débrief; a hash that names nothing on the page any more (#pacing, the removed tools)
+// opens the plan and leaves the address bar; #prep and the rows' own anchors scroll as usual
 document.addEventListener('DOMContentLoaded', function () {
     var h = (location.hash || '').slice(1);
-    if (h === 'pacing') switchRouteTab('plan');
-    else if (h === 'realise') switchRouteTab(h);
+    if (h === 'realise') switchRouteTab(h);
+    else if (h && !document.getElementById(h)) switchRouteTab('plan');
 });
 {% if compare_activity_id %}
 // Arrived from an activity ("Comparer à un parcours"): open the debrief.

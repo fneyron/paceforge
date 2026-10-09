@@ -90,8 +90,7 @@
     </section>
 
     {# ── profile: the Carte chip opens the map over the page ──────────────── #}
-    {# reading order = the phone's: profile, passages, Préparer; a desktop stacks the profile and Préparer
-       in a sticky pane beside the passages (interface.css « desktop: race plan ») without changing this order #}
+    {# reading order = the phone's: profile, passages; a desktop puts the profile in a sticky pane beside the passages (interface.css @desk-plan) #}
     {% if course.route_coords %}
     <div class="pf-profile">
         <div id="elevChart" class="h-[140px] lg:h-[180px]"></div>
@@ -1062,15 +1061,14 @@ window._sim = {};
         var rd = raceDate; if (rd) b.append('race_date', rd);
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
-        var withWeather = !!currentWeather, wxAt = withWeather ? currentWeather.fetched_at : null; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
+        var withWeather = !!currentWeather; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
         return fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); })
             .then(function(d) {
                 if (!d.id) { saveFailed(); return; }
                 currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
-                if (withWeather && wxAt !== savedWxAt) savedWxAt = wxAt;
             }).catch(function() { saveFailed(); });
     }
-    var saveRetried = false, hourlySaved = false, savedWxAt = null;
+    var saveRetried = false, hourlySaved = false;
     function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
     function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
     function onNameChange() { scheduleSave(); }
@@ -1299,7 +1297,7 @@ window._sim = {};
     // ── INIT ──
     window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; var el = document.getElementById('page-error'); if (el) { el.textContent = 'Erreur dans la page : ' + ev.message + ' (ligne ' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });
     try { var wpts = {{ gpx_waypoints | default("[]") | safe }}; if (wpts && wpts.length) checkpoints = wpts; } catch(e) {}
-    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) { renderWeather(sw); savedWxAt = sw.fetched_at; } } catch(e) {}
+    try { var sw = {{ saved_weather_json | safe if saved_weather_json else 'null' }}; if (sw) renderWeather(sw); } catch(e) {}
     updateMeta();
     try { initChart(); } catch (e) { console.error('profile init failed', e); }
     document.addEventListener('pointerdown', function (ev) {
