@@ -23,8 +23,10 @@
   stage minutes: its plain bar on a clock axis (bed → wake, the naps on their
   own lane: never in the night's timing, HR or HRV).
 - 14 nuits / 3 mois: one bar per day of 24-h sleep (the main night solid, the
-  naps lighter on top), the 7 h line (Watson 2015a: about habitual sleep), a
-  tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
+  naps its 24 h counts lighter on top: nights.day_naps, each nap on one bar
+  only, the ring's and the score's figure; a day without a main night: its
+  own naps, « sieste seule »), the 7 h line (Watson 2015a: about habitual
+  sleep), a tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
   days old (else it would draw the 14 nights again), its 90 bars (each day's
   24 h in one) faint under the 7-night mean (Oura's long ranges). Tap a bar →
   « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; it rests on the
@@ -122,22 +124,24 @@ def choose(nights: dict, today: date, r: str | None) -> str:
     return "14" if recent or len(offered) == 1 else "90"
 
 
-def _readout(n, d: date) -> tuple[list[str], str]:
+def _readout(nights: dict, d: date) -> tuple[list[str], str]:
     """[value, word, the night · its times] and the spoken sentence: « 8h36 » ·
-    « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap « 8h10 » « nuit
-    5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone « 1h22 »
-    « sieste seule » · « … · nuit non enregistrée » (said plainly: no « ? »)."""
+    « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; with a nap its 24 h counts
+    « 8h10 » « nuit 5h50 + sieste 2h20 » · « … · 23:35 → 05:40 »; a nap alone
+    « 1h22 » « sieste seule » · « … · nuit non enregistrée » (said plainly: no « ? »)."""
+    n = nights.get(d)
     label = viz.night_label(d)
     if n is None or not _measured(n):
         return ["—", "", f"{label} · pas de mesure"], f"{label} : pas de mesure"
     if n.asleep is None:
         return ([viz.hm(n.nap_min), "sieste seule", f"{label} · nuit non enregistrée"],
                 f"{label} : sieste de {viz.hm_long(n.nap_min)} seule, nuit non enregistrée")
+    nap = nt.bar_nap_min(nights, d)
     times = f"{viz.clock(n.start)} → {viz.clock(n.end)}"
-    said = (f"{label} : {viz.sleep_spoken(n.asleep, n.nap_min)}, couché vers {viz.clock(n.start)}, "
+    said = (f"{label} : {viz.sleep_spoken(n.asleep, nap)}, couché vers {viz.clock(n.start)}, "
             f"levé vers {viz.clock(n.end)}")
-    if n.nap_min:
-        return [viz.hm(n.tst24), f"nuit {viz.hm(n.asleep)} + sieste {viz.hm(n.nap_min)}", f"{label} · {times}"], said
+    if nap:
+        return [viz.hm(n.asleep + nap), f"nuit {viz.hm(n.asleep)} + sieste {viz.hm(nap)}", f"{label} · {times}"], said
     return [viz.hm(n.asleep), "", f"{label} · {times}"], said
 
 
@@ -145,20 +149,20 @@ def bars(nights: dict, today: date, key: str) -> dict:
     """The 14-night or 3-month bars (see the module docstring)."""
     n_days = RANGES[key][0]
     days = [today - timedelta(days=n_days - 1 - i) for i in range(n_days)]
+    tst = [nt.day_tst24(nights, d) for d in days]  # the 24 h before each wake, each nap once (day_naps)
     values = [nights[d].asleep if d in nights else None for d in days]
-    stack = [(nights[d].nap_min or None) if d in nights else None for d in days]
+    stack = [nt.bar_nap_min(nights, d) or None for d in days]
     if n_days > 14:  # 90 slivers: each day's 24 h in one faint bar, the 7-night mean is the mark
-        values = [nights[d].tst24 if d in nights else None for d in days]
+        values = tst
         stack = None
     r, a = [], []
     for d in days:
-        read, said = _readout(nights.get(d), d)
+        read, said = _readout(nights, d)
         r.append(read)
         a.append(said)
-    totals = [nights[d].tst24 for d in days if d in nights and nights[d].tst24 is not None]
+    totals = [v for v in tst if v is not None]
     trend = None
     if n_days > 14:  # the long range: the 7-night mean over faint bars
-        tst = [nights[d].tst24 if d in nights else None for d in days]
         trend = [viz.rolling(tst, i) for i in range(n_days)]
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
                      reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
@@ -325,10 +329,11 @@ def rows(nights: dict, today: date) -> list[dict]:
         if not n or not (_measured(n) or n.hr is not None or n.hrv is not None):
             continue
         marks = [f"{viz.GLYPH['tag']} {w}" for w in nt.tag_words(n.tags, words=WORDS)]
+        tst, nap = nt.day_tst24(nights, d), nt.bar_nap_min(nights, d)
         out.append({"date": viz.d_short(d), "iso": d.isoformat(),
-                    "tst": viz.hm(n.tst24) if n.tst24 is not None else "—",
+                    "tst": viz.hm(tst) if tst is not None else "—",
                     "night": viz.hm(n.asleep) if n.asleep is not None else "—",
-                    "nap": viz.hm(n.nap_min) if n.nap_min else "—",
+                    "nap": viz.hm(nap) if nap else "—",
                     "times": f"{viz.clock(n.start)} → {viz.clock(n.end)}" if n.start else "—",
                     "hr": viz.num(n.hr) if n.hr is not None else "—",
                     "hrv": viz.num(n.hrv) if n.hrv is not None else "—",

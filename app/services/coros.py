@@ -14,7 +14,9 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   one refresh at a time per athlete (row lock + per-process lock).
 - Sync → PaceForge's own nightly values, one row per night (HealthMetric via
   health.store_daily, source "COROS"): the main sleep (window, minutes
-  asleep), the day's naps (local windows, guarded), nightly HRV computed from
+  asleep; a « nap » overlapping it or ending ≤ 30 min before it is its start,
+  folded in: fold_overview, H), the day's other naps (local windows,
+  guarded), nightly HRV computed from
   the raw readings inside the main window, the « Sleep HR » line of the main
   sleep's summary, plus the day's heart rate and steps as « watch worn »
   markers, and the main night's stage minutes from its « Sleep Summary »
@@ -29,7 +31,10 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   (Santé's Entraînement dial weighs them).
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
   beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
-  the 60 days once more when the stored nights predate a format change.
+  the 60 days once more when the stored nights predate a format change. The
+  nightly rows of the days a sync read that it no longer yields are deleted
+  (covered_days): a nap an early sync saw before COROS had the night never
+  stays shown over it.
 
 Times are the athlete's local wall clock (naive), as COROS writes them.
 """
@@ -63,12 +68,15 @@ from app.services.health import (
     DAILY_LABELS,
     DAILY_METRICS,
     HRV_METHOD,
+    NAPS_FOLDED,
     STAGES_READ,
     Daily,
     _ago,
     _today,
+    fold_naps,
     iso_min,
     nap_daily,
+    nap_shares,
     nights_upgraded,
     store_daily,
 )
@@ -639,6 +647,15 @@ def parse_naps(text: str) -> dict[date, dict]:
     return out
 
 
+def sleep_days(text: str) -> set[date]:
+    """querySleepOverview: the wake-up days whose sleep detail COROS gave (a
+    main window or a « Naps Total » line; never a « not available yet » day):
+    a nightly row of one of them that the answer no longer yields is stale
+    (covered_days)."""
+    return {day for day, block in _day_blocks(text, r"^\s*(\d{4})-(\d{2})-(\d{2})\s*$")
+            if re.search(r"^\s*(?:Main Sleep Window|Naps Total)\b", block, re.M)}
+
+
 def parse_daily_sleep(text: str) -> dict[date, dict]:
     """queryDailyHealthData: each wake-up day's « Sleep Summary » {total,
     deep, core, rem, awake (min), hr: {avg, min, max} | None}. The block
@@ -975,14 +992,65 @@ def night_stages(row: dict | None, ov: dict) -> dict | None:
     return parts
 
 
+def fold_overview(overview: dict[date, dict], naps: dict[date, dict]) -> tuple[dict[date, dict], dict[date, dict]]:
+    """The main nights with the « naps » that are their start folded in
+    (health.fold_naps, H: one overlapping the main window or ending ≤ 30 min
+    before it, listed under that day or the day before; never over COROS's
+    « Daily Sleep », never under its main sleep), and the naps that stay, per
+    day: a day's minutes asleep and period cut in proportion to the windows it
+    keeps (as nap_daily does), a day left without any window gone. A folded
+    night gets `folded` (the windows) and its period grows by the minutes its
+    window grew; COROS's own main sleep stays in `overview` (its « Sleep
+    Summary » is checked against that one: night_stages, hr_night_dailies)."""
+    parts = {d: nap_shares(v.get("asleep") or 0, v.get("windows")) for d, v in naps.items()}
+    gone: dict[date, set] = defaultdict(set)
+    nights = {}
+    for d in sorted(overview):
+        ov = nights[d] = overview[d]
+        period = _main_period(ov)
+        asleep = ov.get("asleep")
+        if asleep is None:  # older records: « Main Sleep » is the window, awake inside it
+            asleep = period - (ov.get("awake") or 0)
+        days = (d - timedelta(days=1), d)
+        cands = [p for x in days for p in parts.get(x, [])]
+        if not cands or not _ok(asleep, 1, 16 * 60):
+            continue
+        daily = ov["daily"] if _ok(ov.get("daily"), 1, 24 * 60) else None
+        start, end, total, joined, _ = fold_naps(ov["start"], ov["end"], asleep, cands, daily, parts.get(d, []))
+        if not joined:
+            continue
+        grown = round((ov["start"] - start + end - ov["end"]).total_seconds() / 60)
+        nights[d] = {**ov, "start": start, "end": end, "asleep": total, "period": period + grown,
+                     "folded": sorted((a, b) for a, b, _ in joined)}
+        for x in days:
+            gone[x] |= {(p[0], p[1]) for p in parts.get(x, []) if p in joined}
+            parts[x] = [p for p in parts.get(x, []) if p not in joined]
+    left = {}
+    for d, v in naps.items():
+        if not gone.get(d):
+            left[d] = v
+            continue
+        span = lambda ws: sum((b - a).total_seconds() for a, b in ws if b > a)  # noqa: E731
+        wins = [w for w in v.get("windows") or [] if w not in gone[d]]
+        if not span(wins):
+            continue
+        share = span(wins) / span(v["windows"])
+        left[d] = {**v, "asleep": round(v["asleep"] * share), "windows": wins,
+                   "period": round(v["period"] * share) if v.get("period") else None}
+    return nights, left
+
+
 def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None, daily: dict[date, dict] | None = None,
-                  read: tuple[date, date] | None = None) -> list[Daily]:
+                  read: tuple[date, date] | None = None, main: dict[date, dict] | None = None) -> list[Daily]:
     """One `sleep` value per main night: minutes asleep in the main episode,
     its window (local ISO), period and timezone, and its stage minutes
     (night_stages) from `daily` (parse_daily_sleep). COROS gives no stage
     timeline, so no stage intervals are written (timeline False). `read`: the
     days queryDailyHealthData answered for: their nights are marked
-    STAGES_READ (their stages were looked for, found or not)."""
+    STAGES_READ (their stages were looked for, found or not). `overview`: the
+    nights with their naps folded in (fold_overview: `folded` kept), `main`
+    COROS's own main sleeps, which the summary is checked against (`overview`
+    without it); every night is marked NAPS_FOLDED."""
     out = []
     for d, ov in overview.items():
         period = _main_period(ov)
@@ -997,11 +1065,14 @@ def sleep_dailies(overview: dict[date, dict], tz: dict[date, int] | None = None,
             det["tz"] = tz[d] * 15
         if _ok(ov.get("daily"), 1, 24 * 60):
             det["daily"] = ov["daily"]
-        stages = night_stages((daily or {}).get(d), ov)
+        if ov.get("folded"):
+            det["folded"] = [[iso_min(a), iso_min(b)] for a, b in ov["folded"]]
+        stages = night_stages((daily or {}).get(d), (main or overview).get(d, ov))
         if stages:
             det["stages"] = stages
         if read and read[0] <= d <= read[1]:
             det[STAGES_READ] = True
+        det[NAPS_FOLDED] = True
         out.append(Daily("sleep", d, asleep, det))
     return out
 
@@ -1041,7 +1112,8 @@ def hr_night_dailies(daily: dict[date, dict], overview: dict[date, dict], naps: 
 
 def nap_dailies(naps: dict[date, dict], overview: dict[date, dict] | None = None) -> list[Daily]:
     """One `nap` value per day with naps (Garmin's are built the same way), the
-    guards of health.nap_guard applied against that day's main window."""
+    guards of health.nap_guard applied against that day's main window (the
+    naps and nights of fold_overview in build_daily)."""
     out = []
     for d, v in naps.items():
         ov = (overview or {}).get(d)
@@ -1066,13 +1138,33 @@ def build_daily(data: dict, today: date) -> list[Daily]:
         if _ok(v.get("steps"), 1, 200_000) or _ok(v.get("kcal"), 1, 20_000):
             out.append(Daily("steps", d, v.get("steps") or 0,
                              {"kcal": v.get("kcal"), "exercise": v.get("exercise")}))
+    # the « naps » that are a night's start folded into it (H); the HRV is read inside the night's window, the
+    # « Sleep Summary » (stages, nightly HR) checked against COROS's own main sleep, its naps marking the day
+    nights, naps = fold_overview(overview, data.get("naps") or {})
     points = data.get("hrv_points") or []
-    hrv = hrv_dailies(points, overview, data.get("hrv_days"))
+    hrv = hrv_dailies(points, nights, data.get("hrv_days"))
     tz = {r.day: r.details["tz"] // 15 for r in hrv}
-    out += sleep_dailies(overview, tz, data.get("daily") or {}, data.get("daily_read"))
+    out += sleep_dailies(nights, tz, data.get("daily") or {}, data.get("daily_read"), main=overview)
     out += hrv
     out += hr_night_dailies(data.get("daily") or {}, overview, data.get("naps") or {})
-    out += nap_dailies(data.get("naps") or {}, overview)
+    out += nap_dailies(naps, nights)
+    return out
+
+
+def covered_days(data: dict) -> dict[str, set[date]]:
+    """The days this sync read for each nightly value (store_daily deletes the
+    COROS rows of them it no longer yields): sleep and naps, the days whose
+    sleep detail an answer of querySleepOverview read whole gave (sleep_days:
+    never a « not available yet » day nor a piece that failed); the nightly
+    HR, those of them queryDailyHealthData's answer covers too; the HRV, those
+    of them whose two local days querySleepHrv answered for (hrv_dailies)."""
+    seen = set(data.get("sleep_days") or ())
+    out = {"sleep": seen, "nap": seen}
+    read = data.get("daily_read")
+    if read and data.get("daily_ok", True):
+        out["hr_night"] = {d for d in seen if read[0] <= d <= read[1]}
+    hrv_days = data.get("hrv_days") or set()
+    out["hrv"] = {d for d in seen if {d, d - timedelta(days=1)} <= hrv_days}
     return out
 
 
@@ -1142,12 +1234,19 @@ class _Fetcher:
         return text
 
 
-def _parsed(parser, text):
+def _try_parse(parser, text):
+    """parser(text) ({} without a text), None when it raised: an unexpected
+    wording must never break the sync, nor count as an answer read whole."""
     try:
         return parser(text) if text else {}
-    except Exception:  # an unexpected wording must never break the sync
+    except Exception:
         logger.exception("COROS text not understood by %s", parser.__name__)
-        return {}
+        return None
+
+
+def _parsed(parser, text):
+    out = _try_parse(parser, text)
+    return {} if out is None else out
 
 
 async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0,
@@ -1162,12 +1261,15 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # ends a day later (an empty future day costs nothing) and keeps its size.
     hi = today + timedelta(days=1)
     lo = hi - timedelta(days=days - 1)
-    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {}}
+    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {}, "sleep_days": set()}
     # the nights first: last night is what the morning's decision reads
     for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
-        data["overview"].update(_parsed(parse_sleep_overview, text))
-        data["naps"].update(_parsed(parse_naps, text))
+        overview, naps = _try_parse(parse_sleep_overview, text), _try_parse(parse_naps, text)
+        data["overview"].update(overview or {})
+        data["naps"].update(naps or {})
+        if overview is not None and naps is not None:  # read whole: its days' stale rows may go (covered_days)
+            data["sleep_days"] |= {d for d in _parsed(sleep_days, text) if a <= d <= b}
     points: dict[int, tuple] = {}
     for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
@@ -1182,7 +1284,8 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     data["hrv_points"] = [points[k] for k in sorted(points)]
     data["hr_day"] = _parsed(parse_avg_hr, await call.recent("queryAvgHeartRate", days))
     text = await call.recent("queryDailyHealthData", days)
-    data["daily"] = _parsed(parse_daily_sleep, text)
+    daily = _try_parse(parse_daily_sleep, text)
+    data["daily"], data["daily_ok"] = daily or {}, daily is not None
     data["activity"] = _parsed(parse_daily_activity, text)
     # the nights whose stages were looked for: the days that answer covers (a day ahead, as the nights)
     data["daily_read"] = (hi - timedelta(days=call.answered - 1), hi) if call.answered else None
@@ -1374,7 +1477,8 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     # arrived yet (a first sync that read nothing must not lose the 60 days;
     # a link made before the daily values were read gets them too), and once
     # more when the nights are still in their pre-2026-10 format, or were
-    # written before their stage minutes were read (2026-10-08)
+    # written before their stage minutes were read (2026-10-08), or before the
+    # naps that are a night's start were folded into it (2026-10-09)
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
@@ -1382,7 +1486,8 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     )).scalar()
     owed = (conn.last_sync_at is None or not have or conn.last_error == PARTIAL
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
-            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
+            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
+            or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
     days = BACKFILL_DAYS if owed else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read, and once more when it was read
     # before their start coordinates were (Santé v4.4)
@@ -1416,9 +1521,11 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     latest = max([*data["overview"], *data["activity"], *data["hr_day"], *data["naps"]], default=None)
     today = _today(latest)
     result = {"received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
-    daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE)
+    # the nightly rows of the days read that this sync no longer yields go (a nap seen before COROS had its night)
+    daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE, covered_days(data))
     result["inserted"] += daily["inserted"]
     result["updated"] += daily["updated"]
+    result["deleted"] = daily["deleted"]
     result["by_metric"] = daily["by_metric"]
     if data.get("details") or data.get("laps"):
         sessions["detailed"] = await apply_details(db, conn.user_id, data["details"], data.get("laps"))

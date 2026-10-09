@@ -263,14 +263,15 @@ async def test_owner_nights_tags_and_no_band_yet(db_session: AsyncSession, test_
     owned = {d: sorted(n.tags) for d, n in nights.items() if n.asleep is not None}
     assert owned == {date(2026, 9, 29): ["jetlag"], date(2026, 9, 30): ["jetlag"], date(2026, 10, 1): ["jetlag"],
                      date(2026, 10, 6): ["ultra"], date(2026, 10, 7): ["ultra"], D8: []}
-    assert (nights[D8].asleep, nights[D8].tst24, nights[D8].hrv, nights[D8].hr) == (516, 516, 99.7, 35.0)
+    assert (nights[D8].asleep, nt.day_tst24(nights, D8), nights[D8].hrv, nights[D8].hr) == (516, 516, 99.7, 35.0)
     # his real nights before the race: PaceForge's own VFC from COROS's raw series (COROS says 90, 83, 80)
     assert [(nights[date(2026, 9, d)].hrv, nights[date(2026, 9, d)].hr) for d in (29, 30)] == [(86.8, 35.0),
                                                                                                (80.8, 35.0)]
     assert (nights[date(2026, 10, 1)].hrv, nights[date(2026, 10, 1)].hr) == (76.8, 36.0)
     for metric in ("hr", "hrv", "tst24"):
         assert nt.band(nights, metric, D8) is None and nt.normal(nights, metric, D8) is None
-    assert [sum(1 for n in nights.values() if n.value(m) is not None) for m in ("hrv", "hr", "tst24")] == [5, 6, 6]
+    assert [sum(1 for d in nights if nt.night_value(nights, d, m) is not None)
+            for m in ("hrv", "hr", "tst24")] == [5, 6, 6]
     assert nt.illness_alert(nights, D8) is None
 
 

@@ -320,15 +320,16 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
     xs = viz.slot_x(n)
     slot = X1 / n
     bw = round(min(14, slot * 0.62), 1)
-    seen = [nights[d] for d in days if d in nights and d <= today]
-    vals = [x.tst24 or x.nap_min for x in seen] + [goal[1] if goal else 0, 8 * 60]
+    seen = [d for d in days if d in nights and d <= today]
+    nap_of = {d: nt.bar_nap_min(nights, d) for d in seen}  # the naps of the 24 h before each wake, as Santé's bars
+    vals = [nt.day_tst24(nights, d) or nap_of[d] for d in seen] + [goal[1] if goal else 0, 8 * 60]
     y = viz.scale(0, max(vals) * 1.05, AMOUNT[0], AMOUNT[1])
     cols, r, a = [], [], []
     for i, d in enumerate(days):
         k = (d - rd).days
         night = nights.get(d) if d <= today else None
         col = {"i": i, "x": round(xs[i] - bw / 2, 1), "w": bw, "cx": xs[i]}
-        main, nap = (night.asleep, night.nap_min) if night else (None, None)
+        main, nap = (night.asleep, nap_of[d]) if night else (None, None)
         if d > today:
             col["future"] = True
         elif main is not None:

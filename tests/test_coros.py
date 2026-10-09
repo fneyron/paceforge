@@ -627,7 +627,7 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     assert by["sleep"].value == 588 and by["sleep"].details == {
         "main_start": f"{y}T23:52", "main_end": f"{today}T09:54", "period": 602, "bedtime": "23:52",
         "wake": "09:54", "timeline": False, "tz": 540, "daily": 588,
-        "stages": {"deep": 76, "light": 343, "rem": 169, "awake": 14}, "stages_read": True}
+        "stages": {"deep": 76, "light": 343, "rem": 169, "awake": 14}, "stages_read": True, "naps_folded": True}
     hrv = by["hrv"]  # PaceForge's: the readings inside the window, the afternoon ones out
     assert 70 <= hrv.value <= 88 and hrv.details == {"n": 60, "tz": 540, "method": "ln_mean_main"}
     assert by["hr_night"].value == 35 and by["hr_night"].details == {
@@ -660,6 +660,44 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     sleep = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.date == today, HealthMetric.metric == "sleep"))).scalar_one()
     assert sleep.details["main_end"] == f"{today}T09:40" and sleep.details["wake"] == "09:40"
+
+
+async def test_a_resync_deletes_the_stale_nap_row_only(db_session: AsyncSession, test_user: User, fake, no_commit,
+                                                       monkeypatch):
+    """Owner's report 2026-10-09: a nap an earlier sync stored (before COROS had the night) stayed shown over the
+    night, store_daily never deleting a row a later sync no longer yields. A re-sync deletes it; another watch's
+    rows, a day COROS called « not available yet » and the days this sync did not read stay; a sync whose
+    overview answer it could not read deletes nothing."""
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the 60 days
+    today = datetime.now(timezone.utc).date()
+    y = today - timedelta(days=1)
+
+    async def seed():
+        for day, value, source in ((today, 57, "COROS"), (y, 40, "Garmin"), (today - timedelta(days=2), 30, "COROS"),
+                                   (today - timedelta(days=20), 20, "COROS")):
+            db_session.add(HealthMetric(user_id=test_user.id, date=day, metric="nap", value=value, source=source,
+                                        n_samples=1, details={"windows": [[f"{y}T23:00", f"{today}T00:10"]]}))
+        await db_session.flush()
+
+    async def naps():
+        return {(m.date, m.source) for m in (await db_session.execute(select(HealthMetric).where(
+            HealthMetric.user_id == test_user.id, HealthMetric.metric == "nap"))).scalars()}
+
+    await seed()
+    d27 = today - timedelta(days=3)  # COROS's own nap-only day
+    # the overview answer not understood: nothing counts as read, nothing is deleted
+    parse_naps = coros.parse_naps
+    monkeypatch.setattr(coros, "parse_naps", lambda text: 1 / 0)
+    assert (await coros.run_sync(db_session, conn))["result"]["deleted"] == 0
+    monkeypatch.setattr(coros, "parse_naps", parse_naps)
+    outcome = await coros.run_sync(db_session, conn)  # the last 7 days
+    assert outcome["ok"] and outcome["result"]["deleted"] == 1
+    assert await naps() == {(y, "Garmin"), (today - timedelta(days=2), "COROS"), (today - timedelta(days=20), "COROS"),
+                            (d27, "COROS")}
+    sleep = (await db_session.execute(select(HealthMetric).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.date == today, HealthMetric.metric == "sleep"))).scalar_one()
+    assert sleep.value == 588 and sleep.details["naps_folded"]  # the night itself untouched
 
 
 async def test_expired_mcp_token_is_refreshed_once(db_session: AsyncSession, test_user: User, fake, no_commit):

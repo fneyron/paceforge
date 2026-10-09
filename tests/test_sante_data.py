@@ -101,7 +101,7 @@ def test_owner_nights_and_the_24h_total():
     nap = {r.day: r for r in coros.nap_dailies(naps, ov)}
     assert sleep[D].value == 350 and sleep[D].details == {
         "main_start": "2026-10-06T23:35", "main_end": "2026-10-07T05:38", "period": 363, "bedtime": "23:35",
-        "wake": "05:38", "timeline": False, "tz": 540, "daily": 490}
+        "wake": "05:38", "timeline": False, "tz": 540, "daily": 490, "naps_folded": True}
     assert nap[D].value == 140 and nap[D].details == {"period": 145,
                                                        "windows": [["2026-10-07T06:42", "2026-10-07T09:07"]]}
     assert sleep[D].value + nap[D].value == 490 == sleep[D].details["daily"]  # 5h50 + 2h20 = 8h10, COROS agrees

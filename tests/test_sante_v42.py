@@ -269,7 +269,7 @@ def test_the_nights_after_an_effort_by_its_class():
     # a night after an effort keeps its sleep in the 24-h totals
     nights = nt.build_nights(night_rows(range(0, 20), today=D), D)
     nt.tag_efforts(nights, st.efforts([_session(D - timedelta(days=12), 660, hour=5)]))
-    assert nights[D - timedelta(days=11)].tst24 == 440 and nt.day_tst24(nights, D - timedelta(days=11)) == 440
+    assert nt.day_tst24(nights, D - timedelta(days=11)) == 440
 
 
 def test_the_illness_alert_is_muted_then_rearms_against_the_band_before():
