@@ -36,7 +36,7 @@
 {% endmacro %}
 
 {% block content %}
-<div class="pf-health">
+<div class="pf-health{% if page and page.has_data %} pf-health-full{% endif %}">
     <div class="pf-head flex-col !items-start !gap-1">
         <h1 class="pf-h1">Santé</h1>
         {% if coros.connected and not coros.needs_reauth %}{% include "partials/coros_status.html" %}{% endif %}
@@ -45,6 +45,7 @@
 
     {# ── watch link ── #}
     {% set watches = [] %}{% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and not link.needs_reauth %}{% set _ = watches.append(name) %}{% endfor %}
+    <div class="pf-health-links">
     {% if not coros.connected and not garmin.connected %}
     <section class="pf-health-connect pf-panel space-y-3">
         <h2 class="pf-h2">Ta montre</h2>
@@ -61,6 +62,7 @@
         <a href="/settings#{{ anchor }}" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter {{ name }} dans les réglages</a>
     </section>
     {% endfor %}
+    </div>
 
     {% if page is none %}
     <section class="pf-note mt-4"><p>Impossible d'afficher tes données pour l'instant. Réessaie dans quelques minutes.</p></section>
@@ -87,10 +89,10 @@
                 <h2 id="h-today" class="pf-health-verdict">{% if f.status != 'unknown' %}{{ f.label }}{% elif r %}{{ r.level or 'Récupération' }}{% else %}Aujourd'hui{% endif %}</h2>
                 <p class="text-[15px] text-gray-600 mt-1.5">
                     {% if f.status == 'fatigue' %}Ton corps récupère moins bien que d'habitude ({{ f.reasons|join(', ') }}). Privilégie des séances faciles ou un jour de repos.
-                    {% elif f.status == 'watch' %}Un signal à surveiller : {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
-                    {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale : tu récupères bien.
+                    {% elif f.status == 'watch' %}Un signal à surveiller&nbsp;: {{ f.reasons|join(', ') }}. Rien d'inquiétant seul, mais évite d'enchaîner les séances dures.
+                    {% elif f.status == 'fresh' %}Ta VFC est au-dessus de ta normale&nbsp;: tu récupères bien.
                     {% elif f.status == 'ok' %}Tes indicateurs sont dans ta zone habituelle.
-                    {% else %}Pas encore assez de nuits pour juger ta forme : porte ta montre la nuit.
+                    {% else %}Pas encore assez de nuits pour juger ta forme&nbsp;: porte ta montre la nuit.
                     {% endif %}
                     {% if r and r.level and f.status != 'unknown' %} {{ r.level }}.{% endif %}
                 </p>

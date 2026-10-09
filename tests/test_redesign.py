@@ -106,7 +106,7 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     panel = html.split('id="obj-panel"')[1].split('class="pf-arr"')[0]
     assert 'id="scn-seg"' in panel and "Plan affiché" in panel and "Ton estimation" in panel and "pf-objok" in panel
     assert 'id="scn-chip"' in html  # « Plan Sécurité affiché · revenir à Cible », shown by the script when it applies
-    # no « Outils » column, no sticky side column, no legend, no weather chip in the meta line
+    # no « Outils » column (the desktop side pane holds only the profile and Préparer), no legend, no weather chip in the meta line
     assert 'aria-label="Outils"' not in html and "pf-plan-tools" not in html and " Outils " not in text
     assert "pf-legend" not in html and 'id="weather-result"' not in html and 'id="pass-count"' not in html
     # Préparer: one row, « Ravitaillement », no subtitle (Pilotage lives in the rows now)
@@ -132,12 +132,19 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert "rtab-plan" not in html and 'id="rtab-realise"' not in html
 
 
-def test_plan_column_css_is_single_and_centred():
+def test_plan_is_one_column_on_the_phone_and_two_panes_on_a_desktop():
     css = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
+    # phone and tablet: one centred column; the side pane melts into it and Préparer goes back under the passages
     assert re.search(r"\.pf-col \{ max-width: 720px; margin-inline: auto; \}", css)
-    assert "pf-plan-tools" not in css and "pf-plan-grid" not in css and "position: sticky; top: 88px" not in css
+    assert ".pf-side { display: contents; }" in css and ".pf-prep { order: 1; }" in css
+    # desktop: the profile and Préparer in one sticky pane beside the passages, no tools column
+    assert re.search(r"#simulator-root > \.pf-side \{[^}]*position: sticky;", css)
+    assert "pf-plan-tools" not in css and "pf-plan-grid" not in css
     route = (ROOT / "app/templates/simulator_route.html").read_text(encoding="utf-8")
     assert 'id="rpanel-plan" class="pf-col"' in route
+    gpx = (ROOT / "app/templates/partials/gpx_result.html").read_text(encoding="utf-8")
+    side = gpx.split('<div class="pf-side">')[1].split("{# ── passages")[0]
+    assert 'class="pf-profile"' in side and 'class="pf-prep"' in side and 'id="passage-times-result"' not in side
 
 
 @pytest.mark.asyncio

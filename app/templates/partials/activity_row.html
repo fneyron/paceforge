@@ -31,11 +31,14 @@
         <span class="pf-item-sub block">{{ days[activity.start_date.weekday()] }} {{ activity.start_date.strftime('%d/%m') }}<span class="sm:hidden"> · {{ activity.duration_formatted }}{% if activity.elevation_m %} · +{{ activity.elevation_m }} m{% endif %}</span></span>
     </span>
     <span class="sm:hidden pf-item-end"><b>{{ activity.distance_km }}<small class="text-[13px] font-medium text-gray-500"> km</small></b></span>
-    <span class="hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">
-        <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km }}</b><span class="pf-label">km</span></span>
-        <span class="w-14"><b class="block text-[16px] font-semibold {% if activity.elevation_m %}text-ink{% else %}text-gray-300{% endif %}">{% if activity.elevation_m %}+{{ activity.elevation_m }}{% else %}—{% endif %}</b><span class="pf-label">D+</span></span>
+    {# a missing value leaves its cell empty (no dash): the columns stay aligned; on a desktop a column no loaded row fills is not drawn.
+       Tablet: value over its label; desktop: one line, the unit inline #}
+    <span class="pf-act-stats hidden sm:flex items-center gap-6 shrink-0 text-right tabular-nums">
+        <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.distance_km }}<small class="pf-act-u"> km</small></b><span class="pf-label">km</span></span>
+        <span class="pf-act-dplus w-14">{% if activity.elevation_m %}<b class="block text-[16px] font-semibold text-ink">+{{ activity.elevation_m }}<small class="pf-act-u"> m</small></b><span class="pf-label">D+</span>{% endif %}</span>
         <span class="w-16"><b class="block text-[16px] font-semibold text-ink">{{ activity.duration_formatted }}</b><span class="pf-label">durée</span></span>
-        <span class="hidden md:block w-20"><b class="block text-[16px] font-semibold text-ink">{{ activity.pace_formatted or '—' }}</b><span class="pf-label">{% if activity.sport_group == 'bike' %}vitesse{% else %}allure{% endif %}</span></span>
-        <span class="hidden lg:block w-12"><b class="block text-[16px] font-semibold text-ink">{% if activity.average_heartrate %}{{ activity.average_heartrate|int }}{% else %}—{% endif %}</b><span class="pf-label">bpm</span></span>
+        {% set pace = activity.pace_formatted %}{% if pace %}{% set pv, pu = pace.rsplit(' ', 1) if ' ' in pace else pace.split('/', 1) %}{% set pu = (' ' if ' ' in pace else '/') ~ pu %}{% endif %}
+        <span class="pf-act-pace hidden md:block w-20">{% if pace %}<b class="block text-[16px] font-semibold text-ink">{{ pv }}<span class="pf-act-pu">{{ pu }}</span></b><span class="pf-label">{% if activity.sport_group == 'bike' %}vitesse{% else %}allure{% endif %}</span>{% endif %}</span>
+        <span class="pf-act-hr hidden lg:block w-12">{% if activity.average_heartrate %}<b class="block text-[16px] font-semibold text-ink">{{ activity.average_heartrate|int }}<small class="pf-act-u"> bpm</small></b><span class="pf-label">bpm</span>{% endif %}</span>
     </span>
 </a>

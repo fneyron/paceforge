@@ -99,6 +99,8 @@
     </section>
 
     {# ── profile: the Carte chip opens the map over the page ──────────────── #}
+    {# reading order = the phone's: profile, passages, Préparer; a desktop stacks the profile and Préparer
+       in a sticky pane beside the passages (interface.css « desktop: race plan ») without changing this order #}
     {% if course.route_coords %}
     <div class="pf-profile">
         <div id="elevChart" class="h-[140px] lg:h-[180px]"></div>

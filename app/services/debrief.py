@@ -90,7 +90,12 @@ def leg_debrief(
         moving = _interp(pts, d1, 1) - _interp(pts, d0, 1)
         elapsed = _interp(pts, d1, 2) - _interp(pts, d0, 2)
         stops = max(0.0, elapsed - moving)
-        planned_stop = stop_s_per_aid if (i < n - 1 and s.get("end_checkpoint_index") is not None and s.get("kind") in ("water", "full", "base")) else 0
+        # the plan's own stop at the end of the leg (by point kind, or set on the point), so the
+        # plan total here is the plan's finish; sections without it: one stop per aid station
+        if s.get("stop_s") is not None:
+            planned_stop = int(s["stop_s"]) if i < n - 1 else 0
+        else:
+            planned_stop = stop_s_per_aid if (i < n - 1 and s.get("end_checkpoint_index") is not None and s.get("kind") in ("water", "full", "base")) else 0
         delta_moving = moving - plan
         delta_total = elapsed - (plan + planned_stop)
         hr = _mean_hr(pts, d0, d1)
@@ -109,7 +114,8 @@ def leg_debrief(
         elif delta_moving > 0:
             reason, tag = "allure plus lente que le plan", "slow"
         elif delta_moving < 0 and hr_cap and hr is not None and hr >= hr_cap + HR_OVER_MARGIN:
-            reason, tag = f"plus vite que le plan, FC au-dessus du plafond ({hr} > {hr_cap})", "over"
+            # the leg's HR is shown beside it: name the ceiling, not the HR again
+            reason, tag = f"plus vite que le plan, FC au-dessus du plafond de {hr_cap}", "over"
         elif delta_moving < 0:
             reason, tag = ("parti plus vite que le plan" if progress < 0.35 else "plus vite que le plan"), "fast"
         else:
@@ -154,7 +160,13 @@ def leg_debrief(
     if hr_cap and any(l["hr_over"] for l in early):
         verdict.append("FC au-dessus du plafond sur les premiers tronçons.")
     if not verdict:
-        verdict.append("Course proche du plan.")
+        # no pattern: never call a race far from the plan « proche du plan »
+        plan_total = legs[-1]["cum_plan_s"] if legs else 0
+        if abs(total_delta) <= max(600, 0.03 * plan_total):
+            verdict.append("Course proche du plan.")
+        elif len(legs) >= 3:
+            verdict.append("Plus lent que le plan du début à la fin : l'objectif était trop ambitieux." if total_delta > 0
+                           else "Plus rapide que le plan du début à la fin : tu peux viser plus haut.")
     return {
         "legs": legs,
         "summary": {

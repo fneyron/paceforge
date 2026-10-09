@@ -1,6 +1,6 @@
 {# Activities grouped by week, each with its totals when it has more than one (duplicates excluded from totals). #}
 {% for wk in weeks %}
-<section id="week-{{ wk.key }}">
+<section id="week-{{ wk.key }}" class="pf-week">
     <div class="pf-week-heading">
         <h2 class="pf-h3">{{ wk.label }}</h2>
         {# one counted activity: its row already says it all #}

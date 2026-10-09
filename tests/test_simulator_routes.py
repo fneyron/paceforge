@@ -130,13 +130,14 @@ async def test_pace_exports(as_user: AsyncClient):
 async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     route_id = await _create_route(as_user)
     r = await as_user.get(f"/api/simulator/routes/{route_id}/reference")
-    assert r.status_code == 200 and "Finisher de référence" in r.text
+    # the panel's title is the page's: the card does not repeat it
+    assert r.status_code == 200 and 'name="source"' in r.text and "Finisher de référence" not in r.text
     r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={
         "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00\nArrivée km 30 4:10:00", "total_time": "4:10:00",
     })
     assert r.status_code == 200, r.text
-    assert "Mamba" in r.text and "Où il gagne du temps" in r.text or "Où ton plan est plus rapide" in r.text
-    assert "4h10" in r.text
+    assert "Mamba" in r.text and ("Où ta référence va plus vite" in r.text or "Où ton plan va plus vite" in r.text)
+    assert r.text.count("4h10") == 1  # his finish, once (the Arrivée row), not again beside his name
 
     # debrief: a matched activity with per-km splits (moving + elapsed + HR)
     splits = [{"distance": 1000, "moving_time": 600, "elapsed_time": 600 + (900 if k == 9 else 0), "average_heartrate": 150 if k < 8 else 130} for k in range(30)]
@@ -150,8 +151,9 @@ async def test_reference_paste_and_debrief(as_user: AsyncClient, db_session: Asy
     await db_session.flush()
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
     assert r.status_code == 200, r.text
-    assert "Débrief tronçon par tronçon" in r.text and "Raison probable" in r.text
+    assert "Tronçon par tronçon" in r.text and "Raison probable" in r.text
     assert "arrêts" in r.text  # the 15-min stop at the Col is called out
+    assert "Simulé vs réalisé" not in r.text and "Prédit" not in r.text  # one comparison, against the plan
     # the personal fatigue tilt is stored with the curve it was measured against
     from app.models.route import Route
 
@@ -184,8 +186,70 @@ async def test_result_matches_checkpoints_by_km_not_name(as_user: AsyncClient, d
         tilts.append((await db_session.get(Route, route_id)).result_json["fatigue_tilt"])
         pages.append(r.text)
     assert tilts[0] == tilts[1] and 0.05 < tilts[0] < 0.40  # not the clamp a km 6 vs km 20 mix-up gave
-    actual_cells = re.findall(r'tabular-nums text-gray-900">(\d+h\d\d)<', pages[0])
-    assert actual_cells[0] == "0h54" and "3h20" in actual_cells  # each "Eau 1" row shows its own passage
+    # each "Eau 1" passage is stored at its own km…
+    actual = {a["km"]: a["time_s"] for a in (await db_session.get(Route, route_id)).result_json["actual"]}
+    assert actual[6.0] == 54 * 60 and actual[20.0] == 200 * 60
+    # …and each "Eau 1" row of the débrief shows its own leg (0→6 km: 0h54, 10→20 km: 1h50)
+    real = re.findall(r"<i>réel</i> (\d+h\d\d)<", pages[0])
+    assert real[0] == "0h54" and real[2] == "1h50"
+
+
+@pytest.mark.asyncio
+async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    """One écart: real elapsed time (stops included) against the plan's finish (the objective,
+    stops by point kind included) — the sum of the legs' gaps, whatever the stored moving total."""
+    course = _course()
+    r = await as_user.post("/api/simulator/routes", data={  # no stop_minutes: stops by kind (2′ + 5′ + 5′)
+        "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Jeju sans arrêt réglé",
+        "target_time_s": 5 * 3600, "race_date": "2026-10-02", "start_hour": 21, "start_minute": 0, "sport_type": "trail",
+    })
+    route_id = r.json()["id"]
+    # 30 km at 10:00/km moving (5h00) + 15 min of stops = 5h15 elapsed
+    splits = [{"distance": 1000, "moving_time": 600, "elapsed_time": 600 + (900 if k == 14 else 0)} for k in range(30)]
+    act = Activity(strava_activity_id=801, user_id=test_user.id, sport_type="TrailRun", name="Jeju 2026",
+                   start_date=__import__("datetime").datetime(2026, 10, 2, 21, 0, tzinfo=__import__("datetime").timezone.utc),
+                   distance=30000.0, moving_time=18000, elapsed_time=18900, total_elevation_gain=800.0, raw_data={}, splits_metric=splits)
+    db_session.add(act)
+    await db_session.flush()
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": act.id})
+    assert r.status_code == 200, r.text
+    t = r.text
+    assert re.search(r"Réalisé <b>5h15</b>", t) and re.search(r"Plan <b>(5h00|4h59)</b>", t)
+    assert re.search(r'class="pf-db-num is-bad">\+1[56]<small', t)  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
+    assert "(12 prévues)" in t  # the plan's stops: eau 2′ + ravito 5′ + ravito 5′
+
+    # a refused activity comes back inside the card, the picker still there
+    other = Activity(strava_activity_id=802, user_id=test_user.id, sport_type="Run", name="Footing", distance=8000.0, moving_time=2400, elapsed_time=2400,
+                     start_date=__import__("datetime").datetime(2026, 10, 5, tzinfo=__import__("datetime").timezone.utc), raw_data={})
+    db_session.add(other)
+    await as_user.post(f"/api/simulator/routes/{route_id}/result/clear")
+    await db_session.flush()
+    r = await as_user.get(f"/api/simulator/routes/{route_id}/result")  # the picker opens on the closest distance
+    assert f'<option value="{act.id}" selected>' in r.text and f'<option value="{other.id}">' in r.text
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": other.id})
+    assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and 'name="activity_id"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_reference_compares_race_times_with_the_plans_passages(as_user: AsyncClient):
+    """The reference's times are race times (stops included): the plan in front of them is the plan's
+    passage at each point (stops made before it), so the last leg does not swallow every stop."""
+    route_id = await _create_route(as_user)  # 3 min at each of the 3 aid stations
+    r = await as_user.post("/partials/simulator/passage-times", data={
+        "checkpoints_json": json.dumps(CPS), "target_time_s": 5 * 3600, "start_hour": 21, "start_minute": 0, "route_id": route_id, "stop_minutes": 3,
+    })
+    plan = json.loads(r.text.split('id="plan-data">')[1].split("</script>")[0])
+    village_s = next(p for p in plan["points"] if p["name"] == "Village")["clock_s"] - 21 * 3600
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={
+        "label": "Mamba", "source": "Eau 1 km 6 0:40:00\nCol km 10 1:30:00\nVillage km 20 2:50:00", "total_time": "4:10:00",
+    })
+    rows = re.findall(r'<b>([^<]+)</b>.*?<i>plan</i> (\d+h\d\d)<', r.text, re.S)
+    plan_at = dict(rows)
+    assert plan_at["Village"] == f"{village_s // 3600}h{village_s % 3600 // 60:02d}" and plan_at["Arrivée"] == "5h00"
+    # a pasted text with no time comes back as typed, with the reason
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference/clear")
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/reference", data={"source": "Col sans temps", "label": "X"})
+    assert "Aucune ligne avec un temps" in r.text and ">Col sans temps</textarea>" in r.text and 'value="X"' in r.text
 
 
 async def _create_bike_route(client: AsyncClient) -> int:

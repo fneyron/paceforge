@@ -1,130 +1,101 @@
+{% import "partials/_icons.html" as ic %}
 {% macro hm(seconds) %}{% if seconds is none %}—{% else %}{% set h = (seconds // 3600) | int %}{% set m = ((seconds % 3600) // 60) | int %}{{ h }}h{{ '%02d'|format(m) }}{% endif %}{% endmacro %}
-{% macro diffmin(a, p) %}{% if a is none or p is none %}{% else %}{% set d = ((a - p) / 60) | round | int %}{% if d > 0 %}+{{ d }}{% elif d < 0 %}{{ d }}{% else %}0{% endif %} min{% endif %}{% endmacro %}
-<div id="result-compare" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-    <div class="flex items-center justify-between gap-2">
-        <h3 class="text-sm font-semibold tracking-tight">Simulé vs réalisé</h3>
-        {% if result %}
-        <button hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML"
-                class="text-[11px] text-gray-400 hover:text-gray-700">Changer / retirer</button>
-        {% endif %}
-    </div>
+{# a signed gap in minutes, hours past 60: −12 min, +1h05 (positive = slower than the plan) #}
+{% macro gap(s, unit_cls='') %}{% if s is none %}—{% else %}{% set m = (s / 60) | round | int %}{% set a = m if m >= 0 else -m %}{{ '+' if m > 0 else ('−' if m < 0 else '') }}{% if a < 60 %}{{ a }}<small class="{{ unit_cls }}"> min</small>{% else %}{{ a // 60 }}h{{ '%02d'|format(a % 60) }}{% endif %}{% endif %}{% endmacro %}
+{% macro km(v) %}{{ ('%.1f'|format(v|float)) | replace('.', ',') }}{% endmacro %}
+{# a pace ratio against the plan: 0.9 → −10 %, 1.15 → +15 % #}
+{% macro pct(r) %}{% set p = ((r - 1) * 100) | round | int %}{{ '+' if p > 0 else ('−' if p < 0 else '') }}{{ p if p >= 0 else -p }} %{% endmacro %}
+{% macro pname(n) %}{{ 'Départ' if n == 'Depart' else n }}{% endmacro %}
+{% set word = 'plan' if basis == 'plan' else 'estimation' %}
+<div id="result-compare" class="pf-db">
+    {% if error %}<p class="pf-tl-err" role="alert">{{ ic.icon('alert', 'w-4 h-4 mt-0.5') }}<span>{{ error }}</span></p>{% endif %}
 
     {% if result %}
-    {% set total_a = result.total_actual_s %}
-    {% set total_p = predicted_total_s %}
-    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
-        <span class="text-gray-500">Réalisé <b class="text-gray-900 tabular-nums">{{ hm(total_a) }}</b></span>
-        <span class="text-gray-400">·</span>
-        <span class="text-gray-500">Prédit <b class="text-gray-700 tabular-nums">{{ hm(total_p) }}</b></span>
-        {% if total_a is not none and total_p is not none %}
-        {% set dt = ((total_a - total_p) / 60) | round | int %}
-        <span class="text-[11px] font-medium {% if dt > 12 %}text-red-600{% elif dt < -12 %}text-emerald-600{% else %}text-gray-500{% endif %}">
-            écart {{ '+' if dt > 0 else '' }}{{ dt }} min ({% if total_p %}{{ ((total_a - total_p) / total_p * 100) | round(1) }}{% else %}0{% endif %} %)
-        </span>
-        {% endif %}
-    </div>
-    <p class="text-[11px] text-gray-400 -mt-2">d'après {{ result.activity_name }}{% if result.activity_date %} · {{ result.activity_date }}{% endif %} (temps en mouvement, hors arrêts ravitos)</p>
-
-    {% if not rows %}
-    <p class="text-[11px] text-amber-700">Cette activité n'a pas de splits détaillés → seul le temps <b>total</b> est comparé. Re-synchronise-la sur Strava pour la comparaison par checkpoint.</p>
-    {% else %}
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm min-w-[420px]">
-            <thead>
-                <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
-                    <th class="text-left py-2 pr-2 font-medium">Point</th>
-                    <th class="text-right py-2 px-2 font-medium">Prédit</th>
-                    <th class="text-right py-2 px-2 font-medium">Réel</th>
-                    <th class="text-right py-2 px-2 font-medium">Écart</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-                {% for r in rows %}
-                {% set d = (r.actual_s - r.predicted_s) if (r.actual_s is not none and r.predicted_s is not none) else none %}
-                <tr class="{% if loop.last %}bg-gray-50/60 font-medium{% endif %}">
-                    <td class="py-2 pr-2 text-gray-700">{{ r.name }} <span class="text-[10px] text-gray-400 tabular-nums">km {{ r.km }}</span></td>
-                    <td class="text-right py-2 px-2 tabular-nums text-gray-500">{{ hm(r.predicted_s) }}</td>
-                    <td class="text-right py-2 px-2 tabular-nums text-gray-900">{{ hm(r.actual_s) }}</td>
-                    <td class="text-right py-2 px-2 tabular-nums {% if d is not none and d > 60 %}text-red-600{% elif d is not none and d < -60 %}text-emerald-600{% else %}text-gray-400{% endif %}">{{ diffmin(r.actual_s, r.predicted_s) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <p class="text-[11px] text-gray-400">Écart positif = tu étais plus lent que prédit (souvent en fin de course = fatigue/coup de moins bien). Ces données nourrissent l'amélioration du modèle.</p>
-    {% endif %}
-
-    {% if debrief and debrief.legs %}
     {% set db = debrief %}
-    <div class="pt-3 border-t border-gray-100 space-y-3">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Débrief tronçon par tronçon</h4>
-            <p class="text-[11px] text-gray-400">réel (arrêts inclus) vs {% if db.basis == 'plan' %}ton plan + arrêts prévus{% else %}l'estimation{% endif %}</p>
-        </div>
-        <div class="rounded-lg border px-3 py-2.5 text-xs {% if db.summary.fade > 0.08 %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-gray-200 bg-gray-50 text-gray-800{% endif %}">
-            <b>{{ db.summary.verdict }}</b>
-            <span class="block mt-0.5 text-[11px] opacity-80">Total {{ '+' if db.summary.total_delta_s > 0 }}{{ (db.summary.total_delta_s / 60)|round|int }} min · arrêts {{ (db.summary.total_stops_s / 60)|round|int }} min ({{ (db.summary.planned_stops_s / 60)|round|int }} prévus) · début {{ ((db.summary.early_ratio - 1) * 100)|round|int }} % vs plan, fin {{ ((db.summary.late_ratio - 1) * 100)|round|int }} %.</span>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm min-w-[560px]">
-                <thead>
-                    <tr class="text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-100">
-                        <th class="text-left py-2 pr-2 font-medium">Tronçon</th>
-                        <th class="text-right py-2 px-2 font-medium">Plan</th>
-                        <th class="text-right py-2 px-2 font-medium">Réel</th>
-                        <th class="text-right py-2 px-2 font-medium" title="dont arrêts (temps écoulé − temps en mouvement)">Arrêts</th>
-                        <th class="text-right py-2 px-2 font-medium">Écart</th>
-                        <th class="text-right py-2 px-2 font-medium">FC</th>
-                        <th class="text-left py-2 pl-3 font-medium">Raison probable</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">
-                    {% for l in db.legs %}
-                    <tr class="{% if l.tag in ('stops', 'slow', 'fuel') %}bg-red-50/40{% elif l.tag in ('over', 'fast') %}bg-amber-50/40{% endif %}">
-                        <td class="py-2 pr-2 text-xs text-gray-700"><span class="text-gray-400">{{ l.from_name }}</span> → <b>{{ l.to_name }}</b></td>
-                        <td class="text-right py-2 px-2 tabular-nums text-xs text-gray-500">{{ hm(l.plan_s + l.planned_stop_s) }}</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-xs text-gray-900">{{ hm(l.elapsed_s) }}</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-xs {% if l.stops_s > l.planned_stop_s + 120 %}text-red-500{% else %}text-gray-400{% endif %}">{{ (l.stops_s / 60)|round|int }} min</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-xs font-medium {% if l.delta_s > 90 %}text-red-600{% elif l.delta_s < -90 %}text-emerald-600{% else %}text-gray-400{% endif %}">{{ diffmin(l.delta_s, 0) }}</td>
-                        <td class="text-right py-2 px-2 tabular-nums text-xs {% if l.hr_over %}text-red-600 font-semibold{% else %}text-gray-500{% endif %}">{{ l.hr if l.hr else '—' }}</td>
-                        <td class="py-2 pl-3 text-xs text-gray-600">{{ l.reason }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if db.summary.lost or db.summary.gained %}
-        <div class="grid sm:grid-cols-2 gap-3 text-xs">
-            {% if db.summary.lost %}<div class="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2 text-red-900"><p class="font-semibold mb-1">Où le temps est parti</p><ul class="space-y-0.5">{% for l in db.summary.lost %}<li><b>{{ l.from_name }} → {{ l.to_name }}</b> : +{{ (l.delta_s / 60)|round|int }} min — {{ l.reason }}</li>{% endfor %}</ul></div>{% endif %}
-            {% if db.summary.gained %}<div class="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-emerald-900"><p class="font-semibold mb-1">Où tu as gagné</p><ul class="space-y-0.5">{% for l in db.summary.gained %}<li><b>{{ l.from_name }} → {{ l.to_name }}</b> : {{ (l.delta_s / 60)|round|int }} min — {{ l.reason }}</li>{% endfor %}</ul></div>{% endif %}
-        </div>
-        {% endif %}
-        <p class="text-[11px] text-gray-400">La FC est la moyenne des splits Strava sur le tronçon ; « plafond » = ta FC plafond montée (Réglages du plan). Les arrêts = temps écoulé − temps en mouvement, tels que Strava les mesure.</p>
+    {% set legs = db.legs if db else [] %}
+    <div class="pf-db-top">
+        <section class="pf-db-hero" aria-labelledby="db-gap-l">
+            <p id="db-gap-l" class="pf-label">Écart sur ton {{ word }}</p>
+            <p class="pf-db-num{% if lead.tone %} is-{{ lead.tone }}{% endif %}">{{ gap(lead.delta_s, 'pf-db-unit') }}</p>
+            <p class="pf-db-vs"><span>Réalisé <b>{{ hm(lead.actual_s) }}</b></span><span>{{ word | capitalize }} <b>{{ hm(lead.plan_s) }}</b></span></p>
+            {% if db %}
+            {% set s = db.summary %}
+            <p class="pf-db-facts"><span class="pf-dots">
+                <span>{{ (s.total_stops_s / 60) | round | int }} min d'arrêts ({{ (s.planned_stops_s / 60) | round | int }} prévues)</span>
+                {%- if legs | length > 1 %}<span>allure : début {{ pct(s.early_ratio) }}, fin {{ pct(s.late_ratio) }}</span>
+                {%- elif legs and legs[0].hr %}<span{% if legs[0].hr_over %} class="is-bad"{% endif %}>FC {{ legs[0].hr }}</span>{% endif %}
+            </span></p>
+            {% endif %}
+            <p class="pf-db-src"><span class="pf-dots">
+                <span>D'après {{ result.activity_name }}</span>{% if result.activity_date %}<span>{{ result.activity_date }}</span>{% endif %}
+                <button type="button" class="pf-link" hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML">Changer / retirer</button>
+            </span></p>
+        </section>
+        {% if db and legs | length > 1 and db.summary.verdict %}<p class="pf-db-verdict">{{ db.summary.verdict }}</p>{% endif %}
     </div>
+
+    {% if not db %}
+    <p class="pf-tl-note">Pas de détail par tronçon : cette activité n'a pas de splits. Re-synchronise-la sur Strava.</p>
+    {% elif legs | length == 1 %}
+    <p class="pf-tl-note">Ajoute tes points de passage au plan pour le détail par tronçon.</p>
+    {% else %}
+    {% set s = db.summary %}
+    {% if s.lost or s.gained %}
+    <section class="pf-panel pf-gaps" aria-label="Où tu as perdu et gagné du temps">
+        {% for title, items, tone in [('Où tu as perdu', s.lost, 'bad'), ('Où tu as gagné', s.gained, 'ok')] if items %}
+        <div>
+            <h2 class="pf-gaps-h">{{ title }}</h2>
+            <ul>
+                {% for l in items %}
+                <li><b class="is-{{ tone }}">{{ gap(l.delta_s) }}</b><span><span class="pf-gaps-leg">{{ pname(l.from_name) }} → {{ l.to_name }}</span><small>{{ l.reason }}</small></span></li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="pf-tl-sec" aria-labelledby="db-legs-t">
+        <h2 id="db-legs-t" class="pf-h2">Tronçon par tronçon</h2>
+        <div class="pf-cmp pf-cmp-db" role="table" aria-labelledby="db-legs-t">
+            <div class="pf-cmp-head" role="row">
+                <span role="columnheader">Point</span><span role="columnheader">{{ word | capitalize }}</span><span role="columnheader">Réel</span><span role="columnheader" title="Temps écoulé − temps en mouvement">Arrêts</span><span role="columnheader" title="FC moyenne sur le tronçon">FC</span><span role="columnheader">Écart</span><span role="columnheader">Raison probable</span>
+            </div>
+            {% for l in legs %}
+            <div class="pf-cmp-row" role="row">
+                <span class="pf-cmp-name" role="rowheader"><b>{{ l.to_name }}</b> <small>km {{ km(l.end_km) }}</small></span>
+                {% set st = (l.stops_s / 60) | round | int %}
+                <span class="pf-cmp-facts"><span class="pf-dots">
+                    <span role="cell"><i>{{ word }}</i> {{ hm(l.plan_s + l.planned_stop_s) }}</span>
+                    <span role="cell"><i>réel</i> {{ hm(l.elapsed_s) }}</span>
+                    <span role="cell" class="{% if st == 0 %}is-none{% endif %}{% if l.stops_s > l.planned_stop_s + 120 %} is-bad{% endif %}"><i>arrêts</i> {{ st ~ ' min' if st else '—' }}</span>
+                    <span role="cell" class="{% if not l.hr %}is-none{% endif %}{% if l.hr_over %} is-bad{% endif %}"><i>FC</i> {{ l.hr if l.hr else '—' }}</span>
+                </span></span>
+                <span class="pf-cmp-gap{% if l.delta_s > 90 %} is-bad{% elif l.delta_s < -90 %} is-ok{% endif %}" role="cell">{{ gap(l.delta_s) }}</span>
+                <span class="pf-cmp-why" role="cell">{{ l.reason }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
     {% endif %}
 
     {% else %}
-    <!-- No result yet: optional, collapsed — the race may simply not have happened. -->
-    <details{% if preselect %} open{% endif %}>
-        <summary class="cursor-pointer select-none text-sm text-gray-500 hover:text-gray-700">
-            Course déjà courue ? <span class="underline decoration-gray-300 underline-offset-2">Associer l'activité Strava</span> pour comparer réel vs prédit <span class="text-gray-400">(optionnel)</span>
-        </summary>
-        <div class="mt-3 space-y-2">
-            {% if not candidates %}
-            <p class="text-[12px] text-gray-500">Aucune activité course à pied synchronisée pour l'instant. Les activités Strava se synchronisent automatiquement — réessaie dans quelques minutes.</p>
-            {% else %}
-            <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML"
-                  class="flex flex-wrap items-center gap-2">
-                <select name="activity_id" class="h-9 px-2 rounded-lg border border-gray-200 text-sm max-w-full">
-                    {% for c in candidates %}
-                    <option value="{{ c.id }}"{% if preselect == c.id %} selected{% endif %}>{{ c.name }} — {{ c.distance_km }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" class="h-9 px-4 rounded-lg bg-accent text-accent-ink text-sm font-medium hover:bg-accent-strong">Comparer</button>
-            </form>
-            <p class="text-[10px] text-gray-400">Les plus proches en distance. Sans splits détaillés → temps total seul. Ta course manque ? Re-synchronise Strava.</p>
-            {% endif %}
-        </div>
-    </details>
+    {# nothing linked yet: pick the race's activity #}
+    {% if not candidates %}
+    <p class="pf-tl-lead">Pas encore d'activité de course à pied synchronisée. Strava se synchronise tout seul : réessaie dans quelques minutes.</p>
+    {% else %}
+    <p class="pf-tl-lead">Choisis l'activité de ta course pour la comparer à ton {{ word }}.</p>
+    <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML" class="pf-db-pick">
+        <label class="sr-only" for="db-activity">Activité</label>
+        <select id="db-activity" name="activity_id" class="pf-input">
+            {% set sel = preselect or closest_id %}
+            {% for c in candidates %}
+            <option value="{{ c.id }}"{% if sel == c.id %} selected{% endif %}>{{ c.name }} — {{ km(c.distance_km) }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="pf-btn pf-btn-primary">Comparer</button>
+    </form>
+    <p class="pf-tl-fine">« total seul » : sans détail par tronçon. Ta course manque ? Re-synchronise Strava.</p>
+    {% endif %}
     {% endif %}
 </div>

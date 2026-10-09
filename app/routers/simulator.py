@@ -1685,56 +1685,55 @@ _RUN_TYPES = ["Run", "TrailRun", "VirtualRun"]
 _BIKE_TYPES = ["Ride", "VirtualRide", "GravelRide", "EBikeRide", "MountainBikeRide"]
 
 
-def _km_key(km) -> float | None:
-    """A checkpoint's key when matching plan and result: its km (names repeat on loops)."""
-    return round(float(km), 1) if km is not None else None
-
-
 async def _result_compare_context(request: Request, route: Route, db: AsyncSession, user: User) -> dict:
     from app.models.activity import Activity
 
     b = await _plan_bundle(route, db, user)
-    start_hour, start_minute = b["start_hour"], b["start_minute"]
-    cps, plan_sections = b["checkpoints"], b["sections"]
-    predicted = {_km_key(s["end_km"]): s["cumulative_time_s"] for s in plan_sections}
-    predicted_total = b["predicted_total_s"]
+    plan_sections = b["sections"]
     sport_types = _BIKE_TYPES if route.sport_type == "bike" else _RUN_TYPES
 
     # Leg-by-leg debrief against the PLAN the athlete actually ran with (target
     # + aid stops) — or the prediction when no target was set.
     debrief = None
+    lead = None
     result = route.result_json
-    if result and result.get("activity_id"):
-        from app.models.activity import Activity as _Act
+    if result:
         from app.services.debrief import leg_debrief
 
-        act = (await db.execute(select(_Act).where(_Act.id == result["activity_id"], _Act.user_id == user.id))).scalar_one_or_none()
+        act = None
+        if result.get("activity_id"):
+            act = (await db.execute(select(Activity).where(Activity.id == result["activity_id"], Activity.user_id == user.id))).scalar_one_or_none()
         if act and act.splits_metric:
-            stop_min = b["stop_min"]
             hr_cap = (route.params_json or {}).get("hr_cap_climb")
             debrief = leg_debrief(
                 act.splits_metric, plan_sections, route.total_distance_km,
-                use_target=b["use_target"], stop_s_per_aid=stop_min * 60,
+                use_target=b["use_target"], stop_s_per_aid=b["stop_min"] * 60,
                 hr_cap=int(hr_cap) if hr_cap else None,
             )
-            debrief["basis"] = "plan" if b["use_target"] else "prediction"
-
-    rows = []
-    if result and result.get("actual"):
-        actual = {_km_key(a.get("km")): a["time_s"] for a in result["actual"]}
-        for cp in cps:
-            k = _km_key(cp["distance_km"])
-            rows.append({
-                "name": cp["name"], "km": cp["distance_km"],
-                "predicted_s": predicted.get(k), "actual_s": actual.get(k),
-            })
-        rows.append({
-            "name": "Arrivée", "km": route.total_distance_km,
-            "predicted_s": predicted_total, "actual_s": result.get("total_actual_s"),
-        })
+            if not debrief.get("legs"):
+                debrief = None
+        # ONE gap, on one basis: real elapsed time (stops included) vs the plan's
+        # finish (stops included) — the sum of the legs' gaps when there are legs.
+        if debrief:
+            last = debrief["legs"][-1]
+            actual_s, plan_s = last["cum_real_s"], last["cum_plan_s"]
+        else:  # no splits: the activity's total against the plan's finish
+            actual_s = (act.elapsed_time or act.moving_time) if act else result.get("total_actual_s")
+            plan_s = None
+            if plan_sections:
+                end = plan_sections[-1]
+                clock = end.get("adjusted_clock_time_s") if (b["use_target"] and end.get("adjusted_clock_time_s") is not None) else end.get("clock_time_s")
+                plan_s = int(clock) - int(b["start_offset_s"]) if clock is not None else None
+        delta = int(actual_s) - int(plan_s) if (actual_s and plan_s) else None
+        threshold = max(120, 0.01 * plan_s) if plan_s else 120
+        lead = {
+            "actual_s": int(actual_s) if actual_s else None, "plan_s": plan_s, "delta_s": delta,
+            "tone": None if delta is None or abs(delta) < threshold else ("bad" if delta > 0 else "ok"),
+        }
 
     candidates = []
     total_activities = 0
+    closest_id = None
     if not result:
         route_m = (route.total_distance_km or 0) * 1000
         # Broad net: a race may be recorded with odd GPS distance; don't hide it
@@ -1748,8 +1747,9 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         )
         acts = cand_q.scalars().all()
         total_activities = len(acts)
-        # rank by distance proximity to the route, keep the 40 closest
+        # rank by distance proximity to the route, keep the 40 closest (the closest is picked by default)
         acts = sorted(acts, key=lambda a: abs((a.distance or 0) - route_m))[:40]
+        closest_id = acts[0].id if acts else None
         acts = sorted(acts, key=lambda a: a.start_date or 0, reverse=True)
         for a in acts:
             candidates.append({
@@ -1763,10 +1763,11 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
     return {
         "request": request,
         "route_id": route.id,
-        "rows": rows,
-        "predicted_total_s": predicted_total,
         "result": result,
+        "lead": lead,
+        "basis": "plan" if b["use_target"] else "prediction",
         "candidates": candidates,
+        "closest_id": closest_id,
         "total_activities": total_activities,
         "debrief": debrief,
     }
@@ -1812,17 +1813,18 @@ async def save_route_result(
         select(Activity).where(Activity.id == activity_id, Activity.user_id == user.id)
     )
     activity = act_res.scalar_one_or_none()
-    if not activity:
-        return HTMLResponse(
-            '<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">Activité introuvable.</div>'
-        )
-
-    act_km = float(activity.distance or 0) / 1000
+    # a refusal comes back inside the card, the picker still there (the card is the swap target)
+    error = None
+    act_km = float(activity.distance or 0) / 1000 if activity else 0
     route_km = float(route.total_distance_km or 0)
-    if route_km and act_km and abs(act_km - route_km) / route_km > 0.15:
-        return HTMLResponse(
-            f'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Cette activité fait {act_km:.0f} km, la course {route_km:.0f} km : ce n\'est pas le même parcours, elle n\'est pas associée.</div>'
-        )
+    if not activity:
+        error = "Activité introuvable."
+    elif route_km and act_km and abs(act_km - route_km) / route_km > 0.15:
+        error = f"Cette activité fait {act_km:.0f} km, la course {route_km:.0f} km : ce n'est pas le même parcours, elle n'est pas associée."
+    if error:
+        ctx = await _result_compare_context(request, route, db, user)
+        ctx.update(error=error, preselect=activity_id)
+        return templates.TemplateResponse(request, "partials/result_compare.html", context=ctx)
 
     cp_result = await db.execute(
         select(RouteCheckpoint)
@@ -2352,7 +2354,7 @@ async def export_pace_strategy(
 
 # ── Reference finisher ──
 
-async def _reference_context(request: Request, route: Route, db: AsyncSession, user: User, error: str | None = None) -> dict:
+async def _reference_context(request: Request, route: Route, db: AsyncSession, user: User, error: str | None = None, form: dict | None = None) -> dict:
     from app.services.reference import align_reference, compare_to_plan
 
     b = await _plan_bundle(route, db, user)
@@ -2360,17 +2362,22 @@ async def _reference_context(request: Request, route: Route, db: AsyncSession, u
     comparison = None
     if ref and ref.get("points"):
         aligned = align_reference(ref["points"], b["checkpoints"], route.total_distance_km, ref.get("total_km"))
+        # the reference's times are race times (stops included): so is the plan here, at every
+        # point (clock − start, the stops made before it) as at the finish
+        off = int(b["start_offset_s"])
+        race = [{
+            **s,
+            "cumulative_time_s": int(s["clock_time_s"]) - off if s.get("clock_time_s") is not None else s["cumulative_time_s"],
+            "adjusted_cumulative_time_s": int(s["adjusted_clock_time_s"]) - off if s.get("adjusted_clock_time_s") is not None else s.get("adjusted_cumulative_time_s"),
+        } for s in b["sections"]]
         plan_total = None
-        if b["sections"]:
-            last = b["sections"][-1]
+        if race:
+            last = race[-1]
             plan_total = last["adjusted_cumulative_time_s"] if (b["use_target"] and last.get("adjusted_cumulative_time_s") is not None) else last["cumulative_time_s"]
-            # the plan total including planned stops = clock − start
-            clock = last["adjusted_clock_time_s"] if (b["use_target"] and last.get("adjusted_clock_time_s") is not None) else last["clock_time_s"]
-            plan_total = int(clock) - b["start_offset_s"] if clock is not None else plan_total
-        comparison = compare_to_plan(aligned, b["sections"], b["use_target"], ref.get("total_s"), int(plan_total) if plan_total else None)
+        comparison = compare_to_plan(aligned, race, b["use_target"], ref.get("total_s"), int(plan_total) if plan_total else None)
     return {
         "request": request, "route_id": route.id, "reference": ref, "comparison": comparison,
-        "error": error, "basis": "plan" if b["use_target"] else "prediction", "has_checkpoints": bool(b["checkpoints"]),
+        "error": error, "form": form or {}, "basis": "plan" if b["use_target"] else "prediction", "has_checkpoints": bool(b["checkpoints"]),
     }
 
 
@@ -2447,7 +2454,9 @@ async def save_reference(
             "points": points[:400], "total_km": total_km, "total_s": total_s,
         }
         await db.flush()
-    ctx = await _reference_context(request, route, db, user, error=error)
+    # a refused paste comes back in the form, as typed
+    form = {"source": source, "label": label, "total_time": total_time} if error else None
+    ctx = await _reference_context(request, route, db, user, error=error, form=form)
     return templates.TemplateResponse(request, "partials/reference_card.html", context=ctx)
 
 

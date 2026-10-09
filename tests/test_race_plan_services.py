@@ -318,6 +318,24 @@ def test_debrief_blames_stops_and_fast_start():
     assert d2["summary"]["lost"] and d2["summary"]["lost"][0]["delta_s"] > 0
 
 
+def test_debrief_plans_the_plans_own_stops_and_never_calls_a_far_race_close():
+    # stops by point kind (eau 2′, ravito 5′), as the plan makes them: the débrief's plan is the plan's finish
+    course = _course()
+    stops = {6.0: 120, 10.0: 300, 20.0: 300}
+    secs = compute_passage_times(course, CPS, 5 * 3600, 1.0, 6, 0, None, aid_stops=stops)
+    per_km = {s.index: 4 * 3600 * (s.base_time_s / sum(x.base_time_s for x in course.segments)) for s in course.segments}
+    d = leg_debrief(_splits(30, lambda k: per_km[k] * 1.4), secs, 30.0, use_target=True, stop_s_per_aid=0)
+    assert [l["planned_stop_s"] for l in d["legs"]] == [120, 300, 300, 0]
+    assert abs(d["legs"][-1]["cum_plan_s"] - 5 * 3600) <= 5  # = the objective, stops included
+    assert d["summary"]["total_delta_s"] == d["legs"][-1]["cum_real_s"] - d["legs"][-1]["cum_plan_s"]
+    # evenly slower than the plan, no pattern: not « proche du plan »
+    assert "proche du plan" not in d["summary"]["verdict"] and "trop ambitieux" in d["summary"]["verdict"]
+    # one leg only (no checkpoints), far off: no verdict rather than a wrong one
+    one = compute_passage_times(course, [], 5 * 3600, 1.0, 6, 0, None)
+    d1 = leg_debrief(_splits(30, lambda k: 300), one, 30.0, use_target=True)
+    assert len(d1["legs"]) == 1 and d1["summary"]["verdict"] == ""
+
+
 # ── 2. reference finisher ──
 
 def test_parse_pasted_splits_and_strava_url():
