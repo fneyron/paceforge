@@ -249,16 +249,19 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     (await db_session.get(Route, route_id)).target_time_s = 5 * 3600
     await db_session.flush()
 
-    # a refused activity comes back inside the card, the picker still there
+    # « Ce n'est pas la bonne activité »: set aside for good, nothing else fits race day — and no picker
     other = Activity(strava_activity_id=802, user_id=test_user.id, sport_type="Run", name="Footing", distance=8000.0, moving_time=2400, elapsed_time=2400,
-                     start_date=__import__("datetime").datetime(2026, 10, 5, tzinfo=__import__("datetime").timezone.utc), raw_data={})
+                     start_date=__import__("datetime").datetime(2026, 10, 2, 20, tzinfo=__import__("datetime").timezone.utc), raw_data={})
     db_session.add(other)
-    await as_user.post(f"/api/simulator/routes/{route_id}/result/clear")
     await db_session.flush()
-    r = await as_user.get(f"/api/simulator/routes/{route_id}/result")  # the picker opens on the closest distance
-    assert f'<option value="{act.id}" selected>' in r.text and f'<option value="{other.id}">' in r.text
+    r = await as_user.post(f"/api/simulator/routes/{route_id}/result/clear")
+    assert "Aucune activité trouvée le ven. 2 oct. 2026 autour de 30 km (1 activité écartée)." in r.text
+    assert (await db_session.get(Route, route_id)).result_json is None and (await db_session.get(Route, route_id)).params_json["result_excluded"] == [act.id]
+    r = await as_user.get(f"/api/simulator/routes/{route_id}/result")
+    assert "1 activité écartée" in r.text and "db-activity" not in r.text and "<select" not in r.text
+    # a refused activity comes back inside the card, still unlinked
     r = await as_user.post(f"/api/simulator/routes/{route_id}/result", data={"activity_id": other.id})
-    assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and 'name="activity_id"' in r.text
+    assert 'id="result-compare"' in r.text and "pas le même parcours" in r.text and "D'après" not in r.text and "db-activity" not in r.text
 
 
 @pytest.mark.asyncio
