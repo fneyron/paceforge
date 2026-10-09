@@ -4,7 +4,7 @@
 {% set has_dataset = stats is defined and stats and stats.has_dataset %}
 {% set has_validation = stats is defined and stats and stats.has_validation %}
 
-{% block title %}PaceForge · Temps de passage pour le trail et l'ultra{% endblock title %}
+{% block title %}PaceForge · Récupération et plans de course pour le trail et l'ultra{% endblock title %}
 
 {% block content_public %}
 <div class="pf-landing overflow-x-hidden">
@@ -13,14 +13,14 @@
         <section class="pf-lhero">
             <div>
                 <p class="pf-eyebrow">Trail et ultra</p>
-                <h1 class="pf-lh1">Tes temps de passage, calés sur <em>tes vraies courses.</em></h1>
-                <p class="pf-llead">Importe le GPX de ta course. PaceForge répartit ton temps selon la pente, le terrain, la nuit et la fatigue, puis l'ajuste à ton niveau réel.</p>
+                <h1 class="pf-lh1">Ta forme et tes courses, calées sur <em>tes vraies données.</em></h1>
+                <p class="pf-llead">Relie ta montre COROS ou Garmin, ou Strava. Chaque matin&nbsp;: ta récupération, ton sommeil et ton entraînement. Avant une course&nbsp;: tes temps de passage selon la pente, la nuit et la fatigue, et ce que tu prends à chaque ravito.</p>
                 <div class="pf-lctas">
-                    <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon plan
+                    <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon compte
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
                     <a href="/methode" class="pf-btn pf-btn-secondary">Voir la méthode</a>
                 </div>
-                <p class="pf-fine"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Gratuit · Sans Strava, tu as déjà une estimation de départ</p>
+                <p class="pf-fine"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Gratuit · COROS, Garmin ou Strava</p>
                 {% if error %}
                 <div class="pf-note !text-danger mt-4" role="alert">La connexion a échoué. Réessaie.</div>
                 {% endif %}
@@ -57,9 +57,9 @@
         {% endif %}
 
         <section class="pf-lsteps" aria-label="En 3 étapes">
-            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie Strava</h2><p>On lit tes courses pour connaître ton niveau sur l'effort long.</p></div>
-            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Importe le GPX</h2><p>Les points nommés deviennent tes postes. Ajoute eau, ravitos, bases vie, assistance et drop bags.</p></div>
-            <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Emporte ton plan</h2><p>Sur ta montre (GPX horodaté, TCX), en bande imprimée derrière le dossard, ou sur ton téléphone le jour J.</p></div>
+            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie ta montre</h2><p>COROS, Garmin ou Strava&nbsp;: tes nuits et tes sorties arrivent toutes seules.</p></div>
+            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Suis ta forme</h2><p>Chaque matin, ta récupération, ton sommeil et ta semaine d'entraînement, comparés à tes habitudes.</p></div>
+            <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Prépare ta course</h2><p>Importe le GPX&nbsp;: tes temps de passage calés sur tes courses et tes longues sorties, et ce que tu prends à chaque ravito. Sur ta montre, imprimé ou sur ton téléphone.</p></div>
         </section>
 
     </main>
