@@ -1064,7 +1064,6 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-db-src { margin-top: 4px; font-size: 14px; line-height: 1.5; color: rgb(var(--pf-gray-500)); }
 .pf-db-src .pf-link { min-height: 32px; }
 .pf-db-verdict { margin-top: 20px; font-size: 17px; line-height: 1.45; font-weight: 500; color: rgb(var(--pf-ink)); max-width: 34em; }
-.pf-db-pick { display: grid; gap: 12px; margin-top: 20px; max-width: 640px; }
 
 /* point-by-point: rows like the plan's passages on the phone (name and gap, one line of facts, why), a table on a desktop */
 .pf-cmp { margin-top: 8px; }
@@ -1086,14 +1085,12 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-cmp-why { grid-area: why; margin-top: 2px; font-size: 14px; line-height: 1.4; color: rgb(var(--pf-gray-700)); text-wrap: pretty; }
 .pf-cmp-why.is-same { margin-top: 0; }  /* the leg before says it */
 
-@media (max-width: 639px) { .pf-db-pick .pf-btn { justify-self: stretch; } }
 
 @media (min-width: 1024px) {
     .pf-db-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 72px; align-items: center; }
     .pf-db-num { font-size: 96px; }
     .pf-db-vs b { font-size: 26px; }
     .pf-db-verdict { margin-top: 0; font-size: 19px; line-height: 1.45; }
-    .pf-db-pick { grid-template-columns: minmax(0, 1fr) auto; }
     .pf-tl-sec { margin-top: 48px; }
     /* the table: one grid per row on the same columns; the facts' cells join the row */
     .pf-cmp { margin-top: 12px; }

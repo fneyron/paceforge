@@ -101,7 +101,8 @@ function switchRouteTab(tab, anchor) {
         window.htmx.ajax('GET', urls[tab][0], { target: urls[tab][1], swap: 'innerHTML' });
         tabLoadedAt[tab] = pv;
     }
-    try { history.replaceState(null, '', tab === 'plan' ? location.pathname : '#' + (anchor === 'bags' ? 'bags' : tab)); } catch (e) {}
+    // the path alone, never the query: ?compare= from an activity page is one-shot, a reload must not link it again
+    try { history.replaceState(null, '', location.pathname + (tab === 'plan' ? '' : '#' + (anchor === 'bags' ? 'bags' : tab))); } catch (e) {}
 }
 var tabLoadedAt = {% if nutrition_html %}{ nutrition: 0 }{% else %}{}{% endif %};
 document.body.addEventListener('htmx:afterSwap', function (ev) {

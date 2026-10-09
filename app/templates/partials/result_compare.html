@@ -30,7 +30,7 @@
             {% endif %}
             <p class="pf-db-src"><span class="pf-dots">
                 <span>D'après {{ result.activity_name }}</span>{% if lead.day %}<span>{{ lead.day }}</span>{% endif %}
-                <button type="button" class="pf-link" hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML">Changer / retirer</button>
+                <button type="button" class="pf-link" hx-post="/api/simulator/routes/{{ route_id }}/result/clear" hx-target="#result-compare" hx-swap="outerHTML">Ce n'est pas la bonne activité</button>
             </span></p>
         </section>
         {% if db and legs | length > 1 and db.summary.verdict %}<p class="pf-db-verdict">{{ db.summary.verdict }}</p>{% endif %}
@@ -74,23 +74,14 @@
     </section>
     {% endif %}
 
-    {% else %}
-    {# nothing linked yet: pick the race's activity #}
-    {% if not candidates %}
-    <p class="pf-tl-lead">Pas encore d'activité de course à pied synchronisée. Strava se synchronise tout seul : réessaie dans quelques minutes.</p>
-    {% else %}
-    <p class="pf-tl-lead">Choisis l'activité de ta course pour la comparer à ton {{ word }}.</p>
-    <form hx-post="/api/simulator/routes/{{ route_id }}/result" hx-target="#result-compare" hx-swap="outerHTML" class="pf-db-pick">
-        <label class="sr-only" for="db-activity">Activité</label>
-        <select id="db-activity" name="activity_id" class="pf-input">
-            {% set sel = preselect or closest_id %}
-            {% for c in candidates %}
-            <option value="{{ c.id }}"{% if sel == c.id %} selected{% endif %}>{{ c.name }} — {{ km(c.distance_km) }} km · D+{{ c.dplus }} · {{ c.date }}{% if not c.has_splits %} · total seul{% endif %}</option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="pf-btn pf-btn-primary">Comparer</button>
-    </form>
-    <p class="pf-tl-fine">{% if candidates | rejectattr('has_splits') | list %}« total seul » : sans détail par tronçon. {% endif %}Ta course manque ? Re-synchronise Strava.</p>
-    {% endif %}
-    {% endif %}
+    {% elif state == 'nodate' %}
+    {# the race's activity is found from the race sheet: no date, nothing to look for #}
+    <p class="pf-tl-lead">Donne la date de ta course pour retrouver ton activité.</p>
+    {# the sheet lives in the plan panel (hidden while a tool is open): back to the plan, then open it #}
+    <button type="button" class="pf-btn pf-btn-secondary mt-5" onclick="if (window.switchRouteTab) window.switchRouteTab('plan'); if (window._sim && window._sim.openRaceSheet) window._sim.openRaceSheet();">Date et départ</button>
+    {% elif state == 'future' %}
+    <p class="pf-tl-lead">Le débrief arrive après la course.</p>
+    {% elif state == 'none' %}
+    <p class="pf-tl-lead">Aucune activité trouvée le {{ day }} autour de {{ race_km }} km{% if excluded %} ({{ excluded }} activité{{ 's' if excluded > 1 }} écartée{{ 's' if excluded > 1 }}){% endif %}. La synchro est automatique : réessaie un peu plus tard.</p>
+    {% endif %}{# no state: the request refused an activity chosen on purpose, the error above says it all #}
 </div>
