@@ -833,3 +833,18 @@ async def test_garmin_nights_written_before_the_stages_are_read_again_once(db_se
     fake.calls.clear()
     assert (await garmin.run_sync(db_session, conn))["ok"]
     assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7  # then a week
+
+
+async def test_every_password_form_in_reglages_posts(as_user: AsyncClient):
+    """Without JS (htmx blocked or not loaded), a form without a method is a GET putting the password in the URL, and
+    in the server's logs: Garmin's login and code forms post."""
+    import re
+
+    page = (await as_user.get("/settings")).text
+    forms = [f for f in re.findall(r"<form\b[^>]*>.*?</form>", page, re.S) if 'type="password"' in f]
+    assert forms  # Garmin's
+    for form in forms:
+        head = form.split(">", 1)[0]
+        assert 'method="post"' in head and 'action="/garmin/connect"' in head, head
+    mfa = (ROOT / "app/templates/partials/garmin_login.html").read_text()
+    assert '<form method="post" action="/garmin/mfa"' in mfa

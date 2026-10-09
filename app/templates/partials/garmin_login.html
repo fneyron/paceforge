@@ -8,7 +8,7 @@
     {% if state == 'running' %}
     <p class="pf-label inline-flex items-center gap-2"><svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Connexion à Garmin… (jusqu'à une minute)</p>
     {% elif state == 'mfa' %}
-    <form hx-post="/garmin/mfa" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2">
+    <form method="post" action="/garmin/mfa" hx-post="/garmin/mfa" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2">
         <label for="garmin-code" class="text-[13px] text-gray-600 block">Garmin t'a envoyé un code (email ou SMS) : saisis-le.</label>
         <div class="flex gap-2">
             <input type="text" id="garmin-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus
@@ -17,7 +17,8 @@
         </div>
     </form>
     {% else %}
-    <form hx-post="/garmin/connect" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2.5">
+    {#- method and action: without JS (htmx blocked or not loaded) the form posts, never a GET putting the password in the URL -#}
+    <form method="post" action="/garmin/connect" hx-post="/garmin/connect" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2.5">
         <div class="grid sm:grid-cols-2 gap-2.5">
             <input type="email" name="email" autocomplete="username" required placeholder="Email Garmin Connect"
                    class="pf-input placeholder:text-gray-400">
