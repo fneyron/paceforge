@@ -619,3 +619,12 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-health-load, .pf-health-fitness { margin-top: 48px; }
 .pf-courses-cols > div > .pf-sechead:first-child { margin-top: 28px; }
 @media (max-width: 899px) { .pf-ring { width: 108px; height: 108px; } .pf-ring-v b { font-size: 34px; } .pf-health-rec { gap: 18px; align-items: flex-start; } }
+
+/* ── desktop: race plan (two panes) ───────────────────────────────────── */
+/* @desk-plan */
+
+/* ── débrief & finisher de référence ──────────────────────────────────── */
+/* @desk-tools */
+
+/* ── desktop: Santé, Réglages, Activités ──────────────────────────────── */
+/* @desk-pages */
