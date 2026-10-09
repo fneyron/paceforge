@@ -81,6 +81,23 @@ def test_the_provisional_band_meets_the_full_one():
     assert (min(dashed), max(dashed)) == (xs[5], xs[15]) and (min(solid), max(solid)) == (xs[15], xs[29])
 
 
+def test_a_band_known_on_one_night_only_still_shows():
+    """The 7th measured night after a gap (the owner's 14 nights: 29, 30, 1, then 6 to 9): the first « provisoire »
+    band exists on that night alone; it spans the night's slot, edges included, instead of vanishing."""
+    days = [D - timedelta(days=13 - i) for i in range(14)]
+    values = [None, None, None, 88.0, 82.0, 79.0, None, None, None, None, 83.0, 95.0, 100.0, 92.0]
+    band = [None] * 13 + [(83.0, 92.0)]
+    prov = [False] * 13 + [True]
+    c = viz.night_card("vfc", days, values, band=band, prov=prov, mean=[None] * 14, unit="ms",
+                       unit_long="millisecondes", name="VFC", min_span=20)
+    half = viz.X1 / 14 / 2
+    x = viz.slot_x(14)[13]
+    assert len(c["band_prov"]) == 1 and not c["band"]
+    xs = sorted({float(pt.split(",")[0]) for pt in c["band_prov"][0].split()})
+    assert xs == [round(x - half, 1), round(x + half, 1)]
+    assert c["edge_prov_lo"].startswith(f"M{x - half:.1f} ") and f"L{x + half:.1f} " in c["edge_prov_lo"]
+
+
 def test_every_measured_night_is_a_filled_dot():
     """Every measured night counts toward the usual values (owner, 2026-10-08: « Tous les relevés VFC doivent
     compter en fait »): the night after a 3h20 outing (« après une sortie longue ») is a filled dot like the

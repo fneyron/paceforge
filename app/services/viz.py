@@ -177,11 +177,12 @@ def rolling(values: list, i: int, k: int = 7, need: int = 3, log: bool = False) 
     return math.exp(statistics.fmean(math.log(v) for v in w)) if log else statistics.fmean(w)
 
 
-def paths(xs, ys, lone: bool = True) -> str:
+def paths(xs, ys, lone: bool = True, half: float = 0) -> str:
     """Polyline broken wherever a value is missing (never drawn across a gap).
     `lone=False` leaves out a point with no neighbour: a move alone draws
     nothing, so the path is empty when no segment is drawn (and its legend
-    item can go with it)."""
+    item can go with it). `half` > 0: a point with no neighbour becomes a
+    level stroke across its slot (a band's edge on its one night)."""
     runs, run = [], []
     for x, y in zip(xs, ys):
         if y is None:
@@ -189,14 +190,23 @@ def paths(xs, ys, lone: bool = True) -> str:
                 runs.append(run)
             run = []
             continue
-        run.append(f"{'L' if run else 'M'}{x:.1f} {y:.1f}")
+        run.append((x, y))
     if run:
         runs.append(run)
-    return " ".join(" ".join(r) for r in runs if lone or len(r) > 1)
+    out = []
+    for r in runs:
+        if len(r) == 1 and half:
+            (x, y), = r
+            out.append(f"M{x - half:.1f} {y:.1f} L{x + half:.1f} {y:.1f}")
+        elif lone or len(r) > 1:
+            out.append(" ".join(f"{'L' if k else 'M'}{x:.1f} {y:.1f}" for k, (x, y) in enumerate(r)))
+    return " ".join(out)
 
 
-def band_polys(xs, lo, hi) -> list[str]:
-    """The band as polygons, one per unbroken run (y already scaled)."""
+def band_polys(xs, lo, hi, half: float = 0) -> list[str]:
+    """The band as polygons, one per unbroken run (y already scaled). `half` > 0:
+    a run of one day spans its slot (x ± half), so a band known on a single
+    night (the first « provisoire » one, after a gap) still shows."""
     polys, run = [], []
     for x, a, b in list(zip(xs, lo, hi)) + [(None, None, None)]:
         if a is None or b is None:
@@ -204,6 +214,9 @@ def band_polys(xs, lo, hi) -> list[str]:
                 top = " ".join(f"{x:.1f},{b:.1f}" for x, _, b in run)
                 bot = " ".join(f"{x:.1f},{a:.1f}" for x, a, _ in reversed(run))
                 polys.append(f"{top} {bot}")
+            elif run and half:
+                (x0, a0, b0), = run
+                polys.append(f"{x0 - half:.1f},{b0:.1f} {x0 + half:.1f},{b0:.1f} {x0 + half:.1f},{a0:.1f} {x0 - half:.1f},{a0:.1f}")
             run = []
         else:
             run.append((x, a, b))
@@ -321,8 +334,9 @@ def band_chart(key: str, days: list[date], panels: list[dict], *, races=(), long
             dots.append({"x": xs[i], "y": yv[i], "out": out, "i": i, "tag": bool((tags or {}).get(days[i]))})
         out_panels.append({
             "name": p["name"], "top": top, "bottom": top + h,
-            "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b]),
-            "edge_lo": paths(xs, [y(v) for v in lo_b]), "edge_hi": paths(xs, [y(v) for v in hi_b]),
+            "band": band_polys(xs, [y(v) for v in lo_b], [y(v) for v in hi_b], half=X1 / max(n, 1) / 2),
+            "edge_lo": paths(xs, [y(v) for v in lo_b], half=X1 / max(n, 1) / 2),
+            "edge_hi": paths(xs, [y(v) for v in hi_b], half=X1 / max(n, 1) / 2),
             "mean": paths(xs, [y(v) for v in p.get("mean", [None] * n)]), "dots": dots,
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)],
             "label_y": top + 11,
@@ -636,13 +650,14 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
     full, temp = _band_runs(band, prov)
+    hs = X1 / max(n, 1) / 2  # a band known on one night only spans that night's slot
     ys = {k: ([y(b[0]) if b else None for b in runs], [y(b[1]) if b else None for b in runs])
           for k, runs in (("full", full), ("prov", temp))}
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": top, "bottom": bottom,
             "slot": round(X1 / max(n, 1), 2),
-            "band": band_polys(xs, *ys["full"]), "band_prov": band_polys(xs, *ys["prov"]),
-            "edge_lo": paths(xs, ys["full"][0]), "edge_hi": paths(xs, ys["full"][1]),
-            "edge_prov_lo": paths(xs, ys["prov"][0]), "edge_prov_hi": paths(xs, ys["prov"][1]),
+            "band": band_polys(xs, *ys["full"], half=hs), "band_prov": band_polys(xs, *ys["prov"], half=hs),
+            "edge_lo": paths(xs, ys["full"][0], half=hs), "edge_hi": paths(xs, ys["full"][1], half=hs),
+            "edge_prov_lo": paths(xs, ys["prov"][0], half=hs), "edge_prov_hi": paths(xs, ys["prov"][1], half=hs),
             "mean": paths(xs, [y(v) for v in mean], lone=False),
             "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
             # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)

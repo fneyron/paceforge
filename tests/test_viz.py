@@ -61,6 +61,9 @@ def test_numbers_dates_clocks():
 def test_helpers():
     assert viz.paths([0, 10, 20, 30], [5, None, 7, 8]) == "M0.0 5.0 M20.0 7.0 L30.0 8.0"  # broken at the gap
     assert viz.band_polys([0, 10, 20], [9, 9, None], [1, 1, None]) == ["0.0,1.0 10.0,1.0 10.0,9.0 0.0,9.0"]
+    assert viz.band_polys([0, 10, 20], [None, 9, None], [None, 1, None]) == []  # one day, no slot given: nothing
+    assert viz.band_polys([0, 10, 20], [None, 9, None], [None, 1, None], half=5) == ["5.0,1.0 15.0,1.0 15.0,9.0 5.0,9.0"]
+    assert viz.paths([0, 10, 20], [None, 4, None], half=5) == "M5.0 4.0 L15.0 4.0"
     lo, hi = viz.span_of([50, 51], 8)
     assert hi - lo >= 8  # 1 bpm must not look like a cliff
     assert viz.nice_ticks(41.2, 55.3) == [45, 50, 55] and viz.slot_x(4) == [36.0, 108.0, 180.0, 252.0]
