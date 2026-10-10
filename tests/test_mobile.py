@@ -19,6 +19,8 @@ from app.services.sante_daily import daily_card, daily_context
 
 
 def login(client, user):
+    # Production sessions are Secure; exercise the browser handshake over HTTPS.
+    client.base_url = "https://test"
     value = base64.b64encode(json.dumps({"user_id": user.id}).encode())
     client.cookies.set("paceforge_session", TimestampSigner(settings.SECRET_KEY).sign(value).decode())
 
