@@ -82,5 +82,9 @@ la vérification statique. Ils ne remplacent pas les essais sur appareils réels
 6. Coupure réseau, révocation depuis le site, retour au premier plan, reprise.
 7. Écran de confidentialité ouvert depuis les permissions Health Connect.
 
-Aucun APK/IPA signé ni validation réelle HealthKit/Health Connect n'est produit
-par l'environnement Linux de développement actuel (pas de SDK Android/Xcode).
+Le workflow mobile peut être lancé manuellement pour compiler un APK Android
+avec SDK/NDK sur GitHub Actions. L'artefact `paceforge-android-preview` est signé
+avec la clé de test du projet généré, pour installation de test uniquement ;
+il ne remplace pas une signature Play Store. Il n'inclut pas de serveur Metro.
+La compilation iOS et les essais réels HealthKit/Health Connect restent à faire
+avec les appareils et comptes développeur du propriétaire.
