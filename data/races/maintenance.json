@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "entries": {
+    "catalog/tar_2026": {
+      "attempted_at": "2026-10-10T11:03:48.494710+00:00",
+      "checked_at": "2026-10-10T11:03:52.785190+00:00",
+      "status": "ok"
+    },
+    "utmb/tar_2026/tar": {
+      "checked_at": "2026-10-10T11:04:04.640287+00:00",
+      "attempted_at": "2026-10-10T11:04:04.640295+00:00",
+      "status": "ok"
+    },
+    "livetrail/matxicots_2024/trail": {
+      "checked_at": "2026-10-10T11:06:11.696619+00:00",
+      "attempted_at": "2026-10-10T11:06:11.696635+00:00",
+      "status": "ok"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-10-10T11:03:48.454341+00:00",
+  "scope": [
+    "utmb/tar_2026/tar",
+    "livetrail/matxicots_2024/trail"
+  ],
+  "updated": [
+    "utmb/tar_2026/tar",
+    "livetrail/matxicots_2024/trail"
+  ],
+  "unchanged": [],
+  "excluded": [],
+  "errors": [],
+  "catalog_deferred": 0,
+  "races_deferred": 0,
+  "finished_at": "2026-10-10T11:06:11.697387+00:00",
+  "requests": 98,
+  "corpus_sha256": "ca6432f28dc9225e1b3c4d52a317025ec9c32f14fde4173e32cdb12d02ce4abf",
+  "archives": 1006,
+  "status": "complete"
+}
