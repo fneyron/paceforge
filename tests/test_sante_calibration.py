@@ -38,7 +38,7 @@ def test_sleep_base_waits_for_enough_comparable_nights_and_calendar_span():
 def test_sleep_base_cannot_learn_chronic_short_sleep_or_disrupted_nights():
     short = sl.sleep_baseline(history(60, 360), D)
     assert (short["value"], short["n"], short["adapted"]) == (480, 0, False)
-    for tag in (*nt.CONTEXT, "ill", "alert"):
+    for tag in (*nt.CONTEXT, "ill"):
         nights = {d: replace(n, tags={tag}) for d, n in history().items()}
         assert sl.sleep_baseline(nights, D)["n"] == 0, tag
     nights = history()
@@ -59,6 +59,15 @@ def test_baseline_is_source_specific_and_never_reads_the_current_or_future_durat
     nights[D] = replace(today, source="COROS")
     b = sl.sleep_baseline(nights, D)
     assert (b["value"], b["n"], b["source"], b["adapted"]) == (480, 0, "COROS", False)
+
+
+def test_retrospective_alert_annotations_do_not_rewrite_the_sleep_reference():
+    nights = history()
+    before = sl.sleep_baseline(nights, D)
+    # The episode annotation is recomputed for the page, while score history
+    # rebuilds its own tags. It cannot decide baseline membership; raw signals do.
+    annotated = {d: replace(n, tags={"alert"}) for d, n in nights.items()}
+    assert sl.sleep_baseline(annotated, D) == before
 
 
 @pytest.mark.parametrize("metric,value", [("hr", 65), ("hrv", 20), ("resp", 24)])

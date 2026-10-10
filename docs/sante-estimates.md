@@ -16,6 +16,8 @@ Les nuits de moins de 7 h ou de plus de 10 h sur 24 h, les contextes perturbés 
 (effort important, décalage horaire, maladie signalée, etc.) et les nuits dont les signaux
 cardiaques ou respiratoires sont anormaux selon une référence antérieure établie sont exclus
 de cet apprentissage. Elles restent visibles dans les graphiques et comptent dans le suivi.
+L'annotation rétrospective d'un épisode d'alerte n'intervient pas dans cette sélection :
+les mesures et références connues ce jour-là décident, pour conserver un historique cohérent.
 Les siestes utilisent l'attribution existante au réveil : elles ne sont comptées qu'une fois.
 
 La cible est le troisième quartile des durées retenues, borné à 7–9 h, puis rapproché de

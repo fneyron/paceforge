@@ -255,7 +255,10 @@ def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
     for x, n in nights.items():
         if not (d - timedelta(days=BASE_DAYS) <= x < d) or n.source != source:
             continue
-        if n.asleep is None or x in raced or not n.tags.isdisjoint((*nt.CONTEXT, "ill", "alert")):
+        # "alert" is a retrospective presentation tag: an episode can annotate
+        # prior nights later. Eligibility must use x's own measurements and
+        # prior bands below, so day/history calculations agree.
+        if n.asleep is None or x in raced or not n.tags.isdisjoint((*nt.CONTEXT, "ill")):
             continue
         total = nt.slept_before_wake(nights, x)
         if total is None or not BASE_MIN <= total <= BASE_SAMPLE_MAX:
