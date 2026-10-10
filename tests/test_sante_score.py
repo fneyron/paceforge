@@ -689,7 +689,7 @@ def test_a_row_wears_the_colour_its_card_wears():
              for t in (600, 420, 419, 360, 359)}
     assert words == {600: ("suffisant", "sleep"), 420: ("suffisant", "sleep"), 419: ("un peu court", "sleep"),
                      360: ("un peu court", "sleep"), 359: ("court", "warn")}
-    assert sante.sleep_dial(None, 480, "#sommeil")["sub"] == "pas enregistré"
+    assert sante.sleep_dial(None, 480, "#sommeil")["sub"] == "pas de données"
     assert sante.sleep_dial(400, 480, None)["href"] is None
     day = _day(_rich(hrv_last=35.0, asleep=390), _runs())  # VFC far under its band, FC in it, 6h30 every night
     assert day["need"]["total"] == 510  # 7h30 + 1 h owed (a quarter of the 7 h short over 7 days, at most 1 h)

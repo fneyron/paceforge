@@ -49,7 +49,7 @@ async def test_from_noon_a_night_that_never_came_reads_not_recorded(db_session: 
     _at(monkeypatch, datetime(2026, 10, 9, 12, 0))
     page = await sante.health_page(db_session, test_user.id)
     assert page["today"] == D9 and page["dials"][0]["value"] == "—"
-    assert page["dials"][0]["sub"] == "pas enregistré"
+    assert page["dials"][0]["sub"] == "pas de données"
 
 
 async def test_this_mornings_night_turns_the_day(db_session: AsyncSession, test_user: User, monkeypatch):

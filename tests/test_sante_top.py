@@ -36,7 +36,7 @@ def _fill(dial: dict) -> float:
 def test_the_sommeil_dial():
     """This morning's 24 h as a percentage of the day's need (8 h here), at most 100 % (H): its arc in the sleep
     colour, the warning colour under 6 h; its word from the hours (7 h « suffisant », 6 h « un peu court », under 6 h
-    « court »); « — » and « pas enregistré » without a night; a link to the Sommeil card when there is one."""
+    « court »); « — » and « pas de données » without a night; a link to the Sommeil card when there is one."""
     dials = {t: sante.sleep_dial(t, 480, "#sommeil") for t in (600, 480, 420, 419, 360, 359, 300)}
     assert {t: (d["value"], d["unit"], d["label"], d["sub"], d["tone"], _fill(d)) for t, d in dials.items()} == {
         600: ("100", "%", "Sommeil", "suffisant", "sleep", 1.0),
@@ -48,8 +48,8 @@ def test_the_sommeil_dial():
     assert dials[420]["href"] == "#sommeil"
     assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % de ton besoin de 8 heures, suffisant."
     none = sante.sleep_dial(None, 480, "#sommeil")
-    assert (none["value"], none["sub"], none["tone"], none["dash"]) == ("—", "pas enregistré", "none", 0)
-    assert none["aria"] == "Sommeil : pas de nuit enregistrée ce matin."
+    assert (none["value"], none["sub"], none["tone"], none["dash"]) == ("—", "pas de données", "none", 0)
+    assert none["aria"] == "Sommeil : aucune donnée de nuit reçue pour ce matin."
     assert sante.sleep_dial(420, 480, None)["href"] is None  # no Sommeil card: a plain dial
 
 

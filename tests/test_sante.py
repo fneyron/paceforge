@@ -709,7 +709,7 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     # no card for them: the empty Sommeil and Récupération dials are plain (never a link to nothing), each with its
     # word; Entraînement links to its card: the runs' time, « pas encore d'habitude » (under 4 complete weeks)
     sleep, recup, train = page["dials"]
-    assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas enregistré", None)
+    assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas de données", None)
     assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", None)
     assert (train["sub"], train["href"], train["unit"]) == ("pas encore d'habitude", "#entrainement", None)
     html = (await as_user.get("/sante")).text
@@ -727,10 +727,10 @@ async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_s
                                                        hr_method="coros_sleep_summary"))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["state"] is None and page["line"] == sante.td.NO_NIGHT and not page["connect"]
-    assert sante.td.NO_NIGHT == "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
+    assert sante.td.NO_NIGHT == "Pas de score ce matin : il manque des données de nuit."
     h = page["sleep"]["hero"]  # an older night: its card, its hours; the dial is this morning's: empty
     assert (h["label"], h["total"]) == ("nuit du lun. 5 au mar. 6", "7h20")
-    assert (page["dials"][0]["value"], page["dials"][0]["sub"]) == ("—", "pas enregistré")
+    assert (page["dials"][0]["value"], page["dials"][0]["sub"]) == ("—", "pas de données")
 
 
 async def test_nothing_at_all_is_the_connect_panel(as_user: AsyncClient):

@@ -155,7 +155,7 @@ def cycle_day(nights, today: date, clock: datetime | None) -> date:
     midnight (WHOOP's engineering blog; owner, 2026-10-09, awake at 1 a.m. on a plane: « J'ai sommeil vide »):
     before noon (H), while this morning's night has not reached the page and last night's has, it is still
     yesterday — its night, its score, its 7 days (and the activities since midnight); from noon, or as soon as the
-    night is in, today (a night without the watch then reads « pas enregistré »). `clock` None (no offset known,
+    night is in, today (a night not received then reads « pas de données »). `clock` None (no offset known,
     or a day given): `today`."""
     if clock is None or clock.date() != today or clock.hour >= CYCLE_NOON:
         return today
@@ -260,7 +260,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
 # the Sommeil dial's word from this morning's 24 h against the day's need: « suffisant » from the larger of 7 h
 # (Watson 2015a) and 7/8 of the need (H: an 8-h need gives the 7 h), « court » under 6 h (Craven 2022)
 SUFFICIENT_SHARE = 7 / 8  # (H)
-NO_NIGHT_WORD = "pas enregistré"
+NO_NIGHT_WORD = "pas de données"
 USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the 11 weeks just before the 7 days (77
 # days, never the 7 days themselves: a period is not compared to a mean that holds it, the « uncoupled » ratio:
 # Lolli 2019; Windt & Gabbett 2019; owner, 2026-10-09: his Transjeju counted in both), 4 with an activity at least
@@ -291,11 +291,11 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
     percentage of the day's need (sante_sleep.sleep_need: 8 h, a little more after a big effort or when sleep is
     owed), at most 100 % (the hours are the Sommeil card's, printed once), its
     arc in the sleep colour (one stable hue), in the warning colour under 6 h; its word (sleep_word); « — » and
-    « pas enregistré » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a
+    « pas de données » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a
     plain dial)."""
     if tst24 is None:
         return viz.ring("sommeil", None, "—", "Sommeil", NO_NIGHT_WORD, tone="none", href=href,
-                        aria="Sommeil : pas de nuit enregistrée ce matin.")
+                        aria="Sommeil : aucune donnée de nuit reçue pour ce matin.")
     word = sleep_word(tst24, need)
     p = min(100, sc.rounded(100 * tst24 / need))
     return viz.ring("sommeil", tst24 / need, str(p), "Sommeil", word, unit="%", href=href,

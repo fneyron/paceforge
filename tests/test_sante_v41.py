@@ -247,7 +247,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     st_, score = page["state"], page["score"]
     assert st_ is None and (score["value"], score["measured"]) == (None, False) and page["line"] == td.NO_NIGHT
     sleep, recup = page["dials"][:2]
-    assert (sleep["value"], sleep["sub"]) == ("—", "pas enregistré") and "ring" not in page
+    assert (sleep["value"], sleep["sub"]) == ("—", "pas de données") and "ring" not in page
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
     assert recup["aria"] == "Récupération : pas de score ce matin."
     assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [

@@ -20,7 +20,7 @@ reason (sante_score.reason: the alert, the cap that binds, the joint VFC/FC
 pattern, the lowest component) stays as data (`key`), never printed.
 No score (no nightly signal measured, like WHOOP: owner, 2026-10-09) → no
 state: one line, « Connecte ta montre pour voir ta récupération. » (a watch already
-sending: « Pas de score ce matin : ta montre n'a pas enregistré ta nuit. »).
+sending: « Pas de score ce matin : il manque des données de nuit. »).
 A quiet chart is not a clean bill of health (Quer 2021).
 """
 WORDS = {"danger": "Récupération faible", "warn": "Récupération en cours", "ok": "Bonne récupération"}
@@ -33,7 +33,8 @@ ILL = ("Ta FC de nuit est nettement plus haute que d'habitude. Ça arrive avant 
 # the alert's sentence when the breathing rate is over its usual line too (nights.illness_alert's resp_up)
 ILL_RESP = "Ta respiration aussi est plus rapide que d'habitude."
 NO_WATCH = "Connecte ta montre pour voir ta récupération."
-NO_NIGHT = "Pas de score ce matin : ta montre n'a pas enregistré ta nuit."
+# Missing data cannot tell us whether the watch recorded a night or has yet to send it.
+NO_NIGHT = "Pas de score ce matin : il manque des données de nuit."
 
 
 def state(score: dict, day: dict | None = None) -> dict | None:
