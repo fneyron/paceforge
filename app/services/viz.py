@@ -627,7 +627,8 @@ def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
                sources=None, mean_counts=None, mean_sources=None, notes=None, daytime: bool = False,
-               zero_base: bool = False, label_nights: bool = False, reference=None) -> dict:
+               zero_base: bool = False, label_nights: bool = False, reference=None,
+               compact: bool = False) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -645,7 +646,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     (« … (provisoire) » from 7 to 13 nights); the latest measured night is
     selected: its value is the card's. `min_span`: the y axis never narrower
     (noise must not look like a cliff). Context wraps on small screens so the
-    band and its provisional status remain readable."""
+    band and its provisional status remain readable. With `compact`, the
+    third readout slot is only the date/source; the fourth keeps the full
+    context in a disclosure. Spoken readouts remain complete."""
     n = len(days)
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
@@ -690,12 +693,27 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         selected_label = ("dernière nuit mesurée" if i == last else "nuit sélectionnée") if label_nights else ""
         r.append([f"{num(v, digits)}{NBSP}{unit}", selected_label, line])
         a.append(spoken)
+    if compact:
+        # Keep the measurement context available in Details and in the spoken
+        # readout. The visible date/source line stays short while scrubbing.
+        for i, d in enumerate(days):
+            before = d - timedelta(days=1)
+            start = str(before.day) + (f" {MOIS[before.month - 1]}" if before.month != d.month else "")
+            stamp = d_short(d) if daytime else f"{start} → {d.day} {MOIS[d.month - 1]}"
+            if sources and sources[i] and values[i] is not None:
+                stamp += f" · {sources[i]}"
+            if notes and notes[i] == "journée en cours":
+                stamp += " · en cours"
+            word = "Dernière nuit" if i == last else "Nuit sélectionnée"
+            word = (word if label_nights else "") if values[i] is not None else "Pas de mesure"
+            r[i] = [r[i][0], word, stamp, r[i][2]]
     measured = sum(1 for v in values if v is not None)
     full, temp = _band_runs(band, prov, sources)
     hs = X1 / max(n, 1) / 2  # a band known on one night only spans that night's slot
     ys = {k: ([y(b[0]) if b else None for b in runs], [y(b[1]) if b else None for b in runs])
           for k, runs in (("full", full), ("prov", temp))}
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": top, "bottom": bottom,
+            "compact": compact,
             "slot": round(X1 / max(n, 1), 2),
             "band": band_polys(xs, *ys["full"], half=hs, groups=sources),
             "band_prov": band_polys(xs, *ys["prov"], half=hs, groups=sources),

@@ -369,9 +369,9 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     vfc, fc = page["vfc"], page["fc"]
     # a no-break space: the display font has no narrow one (« 100ms » glued, UX11)
     assert (vfc["title"], vfc["n"], vfc["read"]) == ("VFC · 14 nuits", 14,
-                                                     ["100\u00a0ms", "dernière nuit mesurée", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
+                                                     ["100\u00a0ms", "Dernière nuit", "7 → 8 oct. · COROS", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
     assert (fc["title"], fc["n"], fc["read"]) == ("FC de nuit · 14 nuits", 14,
-                                                  ["35\u00a0bpm", "dernière nuit mesurée", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable · moyenne 7 jours : 36 bpm (3 nuits)"])
+                                                  ["35\u00a0bpm", "Dernière nuit", "7 → 8 oct. · COROS", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable · moyenne 7 jours : 36 bpm (3 nuits)"])
     assert fc['trend']['value'] == '36\u202fbpm' and fc['trend']['n'] == 3
     assert [t["label"] for t in vfc["xt"]] == ["25", "26", "27", "28", "29", "30", "1", "2", "3", "4", "5", "6", "7",
                                                "8"]
@@ -601,7 +601,7 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
                                      "meaning": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie."}
     assert page["fc"]["status"] == {"key": "in", "value": None, "word": "comme d'habitude", "text": "comme d'habitude",
                                     "tone": "ok", "meaning": None}
-    assert page["vfc"]["read"][2].startswith(
+    assert page["vfc"]["read"][3].startswith(
         "nuit du mer. 7 au jeu. 8 · Garmin · éveils possibles : ancien calcul · moyenne 7 jours : 60 ms (7 nuits) · d'habitude ")
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
 

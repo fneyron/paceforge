@@ -13,7 +13,6 @@
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
 {% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
-<p class="pf-health-hint">Touche un indicateur pour comprendre son calcul.</p>
 
 <div class="pf-health-panels">
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
@@ -28,9 +27,12 @@
         {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
         {% if h.later %}<p class="pf-viz-cap">{{ h.later }}</p>{% endif %}
-        {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
-        {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
-        <p class="pf-card-meaning">Les nuits de moins de 7 h et les périodes perturbées ne fixent pas la base. Le besoin du jour ajoute l’effort et le manque de sommeil estimé. Les phases restent des estimations de la montre.</p>
+        <details class="pf-chart-details">
+            <summary>Besoin de sommeil</summary>
+            {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
+            {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
+            <p class="pf-card-meaning">La base s’adapte aux nuits comparables d’au moins 7 h. L’effort et le manque de sommeil estimé s’y ajoutent. Les phases sont estimées par la montre.</p>
+        </details>
     {% endif %}
 {% if has_sleep_detail %}
 <section id="sommeil-detail" class="pf-sec" aria-labelledby="h-sommeil-detail">
@@ -60,14 +62,17 @@
 </details>
 {% endif %}
 <details id="recuperation" class="pf-health-panel">
-    <summary><span>Récupération<small>Calcul et historique</small></span><span class="pf-panel-value">Comprendre</span></summary>
+    <summary><span>Récupération<small>Historique et détails</small></span></summary>
     <div class="pf-panel-body">
-        {% for note in p.score_notes %}<p class="pf-card-meaning">{{ note }}</p>{% endfor %}
         {% if p.rows %}{{ rows(p.rows, "Récupération") }}{% endif %}
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
             <h3 class="sr-only">{{ p.recup.title }}</h3>
             {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
         </div>{% endif %}
+        <details class="pf-chart-details">
+            <summary>Calcul de l’indice</summary>
+            {% for note in p.score_notes %}<p class="pf-card-meaning">{{ note }}</p>{% endfor %}
+        </details>
     </div>
 </details>
 {% set t = p.training %}
@@ -76,7 +81,7 @@
     <div class="pf-panel-body">
         <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b><span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
         {% if t.intensity %}<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span class="pf-row-val"><span>{{ t.intensity }}</span></span></div>{% endif %}
-        {% if t.week %}<p class="pf-card-meaning">100 % correspond à ta semaine habituelle, pas à un objectif à atteindre. Le repère en bas de l’anneau marque 100 % ; un tour complet représente 200 %. Le calcul tient compte de la durée et du pouls mesuré.</p>
+        {% if t.week %}<p class="pf-card-meaning">100 % = ta semaine habituelle. Un tour = 200 %. Ce repère n’est pas un objectif. Calculé à partir de la durée et du pouls.</p>
         {% else %}<p class="pf-card-meaning">La comparaison apparaît après au moins quatre semaines avec des activités.</p>{% endif %}
         <a class="pf-link pf-health-activity-link" href="/activities?depuis={{ t.since.isoformat() }}">Voir les activités de ces 7 jours ›</a>
     </div>
@@ -84,20 +89,20 @@
 </div>
 {% if p.vfc or p.fc %}
 <section class="pf-sec" aria-labelledby="h-nuits">
-    <h2 id="h-nuits" class="pf-h2">Tes tendances nocturnes</h2>
+    <h2 id="h-nuits" class="pf-h2">La nuit</h2>
     <div class="pf-health-nights">
     {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
     <div id="{{ key }}" class="pf-card">
         <h3 class="pf-card-h">{{ c.title }}</h3>
         <div class="pf-night-trend">
-            <p class="pf-card-meaning">{{ c.trend.label }}{% if c.trend.n %} · {{ c.trend.n }} nuits mesurées{% endif %}</p>
-            {% if c.status %}{% set cs = c.status %}<p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}<span>{% if c.trend.value %}<b>{{ c.trend.value }}</b> · {% endif %}{% if cs.value %}{{ cs.word }}{% else %}{{ cs.text }}{% endif %}</span></p>
-            {% if cs.meaning %}<p class="pf-card-meaning">{{ cs.meaning }}</p>{% endif %}{% endif %}
-            {% if c.trend.reference %}<p class="pf-card-meaning">{{ c.trend.reference }}</p>{% endif %}
+            {% set cs = c.status %}
+            <p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}"><span class="pf-trend-label">{{ c.trend.short_label }}</span>{% if c.trend.value %}<b>{{ c.trend.value|replace(' ', ' ') }}</b>{% endif %}<span class="pf-trend-state">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status_short }}</span></p>
         </div>
-        {{ viz.viz_night_card(c, c.title) }}
-        {{ viz.viz_legend(c.legend) }}
-        <p class="pf-card-meaning">Un point par nuit mesurée. La moyenne reste visible avec au moins 3 nuits sur 7 ; une nuit manquante reste sans point.</p>
+        {{ viz.viz_night_card(c, c.title, legend=c.legend, explanations=[
+            c.trend.label ~ ' · ' ~ c.trend.n ~ ' nuits mesurées. ' ~ cs.text,
+            c.trend.reference, cs.meaning,
+            'Moyenne sur 7 jours, dernière nuit comprise : au moins 3 mesures d’une même source. Une nuit manquante reste sans point.'
+        ]) }}
     </div>
     {% endfor %}
     </div>
@@ -111,6 +116,7 @@
     <details class="pf-fold pf-method">
         <summary>Comment je calcule</summary>
         <ul>{% for l in p.method %}<li>{{ l }}</li>{% endfor %}</ul>
+        <p class="pf-card-meaning">Les pas et la FC sur 24 h donnent du contexte, sans modifier l’indice de récupération.</p>
         <p class="pf-card-meaning">{{ p.source_note }}</p>
         <p class="pf-card-meaning">Priorité : {{ p.preferred_source }}. <a class="pf-link" href="/settings#health-source">Modifier ›</a></p>
         <a class="pf-method-src" href="/sante/sources">Sources</a>

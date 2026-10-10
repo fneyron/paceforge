@@ -710,7 +710,7 @@ def test_provisional_bands_say_so_on_the_cards():
     with nt.memo():
         nt.freeze(nights)
         card = sante._night_card(nights, "hrv", D, day)
-    assert card["read"][2].endswith(" (provisoire)")
+        assert card["read"][3].endswith(" (provisoire)")
     assert (card["status"]["value"], card["status"]["word"]) == (None, "comme d'habitude")  # every night the same
 
 

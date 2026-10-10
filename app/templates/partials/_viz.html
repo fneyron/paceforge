@@ -9,7 +9,7 @@
     Glyphs (race page, Activités): ⚑ race, ◆ long outing, ◇ tagged night. -#}
 
 {% macro figure(c, title, key, group=None, unit_word="nuit", prev="Nuit précédente", next="Nuit suivante", cls="",
-                card=False) %}
+                card=False, legend=None, explanations=()) %}
 {#- a step at either end is aria-disabled, never disabled: it keeps its focus (a disabled button drops it to <body>);
     the link row is reserved whenever a slot has a link (visibility, never display: the plot never moves) -#}
 {% set top = (c.n or 0) - 1 + (1 if c.rest else 0) %}{% set ln = c.link_now %}
@@ -33,6 +33,14 @@
         <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
         {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
     </div>
+    {% if legend %}{{ viz_legend(legend) }}{% endif %}
+    {% if c.compact %}
+    <details class="pf-chart-details">
+        <summary>Détails<span class="sr-only"> · {{ title }}</span></summary>
+        <p class="pf-card-meaning" data-r>{{ c.read[3] }}</p>
+        {% for explanation in explanations if explanation %}<p class="pf-card-meaning">{{ explanation }}</p>{% endfor %}
+    </details>
+    {% endif %}
     <p class="sr-only" aria-live="polite" data-live></p>
     <script type="application/json" class="pf-viz-data">{{ c.data|safe }}</script>
 </figure>
@@ -164,14 +172,13 @@
 {% endcall %}
 {% endmacro %}
 
-{# V3 night card: a filled dot per measured night (every one counts toward the usual values; nothing for a night
-   without a measure), the 7-night line over the measured nights only (broken on a night without one), the usual values
+{# V3 night card: a filled dot per measured night, the 7-day line wherever enough measurements exist, the usual values
    as a band, its edges dashed and its fill lighter while provisional (no out-of-band word on one night). The selection
    is a ring around its dot (the dot in ink), no column that would read as a bar; a selected night without a measure
    (‹ › or the keyboard) shows a thin dashed hairline at its place instead (pf-viz.js sets .is-none on the group when
    the day has no value) #}
-{% macro viz_night_card(c, title, daytime=false) %}
-{% call figure(c, title, c.key, None, "journée" if daytime else "nuit", "Jour précédent" if daytime else "Nuit précédente", "Jour suivant" if daytime else "Nuit suivante", cls="pf-viz-card", card=True) %}
+{% macro viz_night_card(c, title, daytime=false, legend=None, explanations=()) %}
+{% call figure(c, title, c.key, None, "journée" if daytime else "nuit", "Jour précédent" if daytime else "Nuit précédente", "Jour suivant" if daytime else "Nuit suivante", cls="pf-viz-card", card=True, legend=legend, explanations=explanations) %}
 <g class="pf-viz-cross"{% if c.at %} transform="translate({{ c.at.x }} 0)"{% endif %}><line x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.bottom }}" class="pf-viz-at"/><circle cx="0" cy="{{ c.at.y if c.at else 0 }}" r="5.5" class="pf-viz-ring"/></g>
 {% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
 {% for poly in c.band_prov %}<polygon points="{{ poly }}" class="pf-viz-band is-prov"/>{% endfor %}

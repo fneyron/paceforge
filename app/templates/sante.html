@@ -12,7 +12,7 @@
         <h1 class="pf-sante-h1"><span class="sr-only">Santé · </span>{{ 'Dernier bilan' if page and page.cycle_pending else "Aujourd'hui" }}</h1>
         {% if page and page.day_label %}<p class="pf-sante-lines"><span>{{ page.day_label }}</span></p>{% endif %}
         {% if watches and auto_sync %}{% include "partials/sante_sync.html" %}{% endif %}
-        {% if page and page.cycle_pending %}<p class="pf-card-meaning">Bilan de la nuit précédente, en attendant celle de ce matin.</p>{% endif %}
+        {% if page and page.cycle_pending %}<p class="pf-card-meaning">En attente de la prochaine nuit.</p>{% endif %}
     </div>
 
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}

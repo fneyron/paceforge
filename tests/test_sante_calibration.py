@@ -131,8 +131,8 @@ def test_valid_mean_survives_missing_raw_night_but_does_not_create_a_score():
     assert day["score"]["value"] is None
     chart = sante._night_card(nights, "hr", D, day)
     data = json.loads(chart["data"])
-    assert data["r"][-1][0] == "—" and "moyenne 7 jours" in data["r"][-1][2]
-    assert "6 nuits" in data["r"][-1][2] and "Garmin" in data["r"][-1][2]
+    assert data["r"][-1][0] == "—" and "moyenne 7 jours" in data["r"][-1][3]
+    assert "6 nuits" in data["r"][-1][3] and "Garmin" in data["r"][-1][3]
     assert chart["dots"][-1]["i"] == chart["n"]-2
     assert str(data["x"][-1]) in chart["mean"]
 

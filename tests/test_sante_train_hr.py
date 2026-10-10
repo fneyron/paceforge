@@ -268,7 +268,7 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
             'class="pf-row-val"><span>plus élevée que d&#39;habitude</span></span></div>') in train
     words = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train.split(">", 1)[1])).strip())
     assert "ta semaine habituelle : 5h00 Intensité plus élevée que d'habitude" in words
-    assert "pas à un objectif à atteindre" in words and "représente 200 %" in words
+    assert "n’est pas un objectif" in words and "Un tour = 200 %" in words
     assert "pf-dot" not in train and not re.search(r"(?i)trimp|charge|points?\b", words)
     seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
     assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 1

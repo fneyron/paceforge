@@ -71,13 +71,13 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
     reference = None
     if not stale and len(current) >= 4:
         median = statistics.median(current)
-        reference = (median, f"médiane 7 jours : {viz.num(median, digits, unit)} · {_source(last)}")
+        reference = (median, f"médiane 7 j · {viz.num(median, digits, unit)}")
         out["trend"] = (f"Repère calculé sur les 7 derniers jours écoulés ({len(current)} jours avec des relevés). "
-                        "Le temps de port peut varier.")
+                        f"Source : {_source(last)}. Le temps de port peut varier.")
     out["chart"] = viz.night_card(
         "daily-" + metric, days, values, band=[None]*30, prov=[False]*30, mean=[None]*30,
         unit=unit, unit_long=unit, name=name, digits=digits, min_span=min_span, sources=sources,
-        notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps", reference=reference,
+        notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps", reference=reference, compact=True,
     )
     return out
 

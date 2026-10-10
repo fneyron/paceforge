@@ -36,9 +36,9 @@ def test_weekly_trend_and_selected_night_are_distinct_with_sparse_provisional_da
     assert '7 nuits' in card['trend']['reference']
     assert sante.night_row(card, 'hr')['detail'] == 'comparaison provisoire'
     reads = json.loads(card['data'])['r']
-    assert reads[-1][:2] == ['42\u00a0bpm', 'dernière nuit mesurée']
-    assert reads[-2][0] == '—' and 'pas de mesure' in reads[-2][2]
-    assert reads[-3][1] == 'nuit sélectionnée'
+    assert reads[-1][:2] == ['42\u00a0bpm', 'Dernière nuit']
+    assert reads[-2][:2] == ['—', 'Pas de mesure'] and 'pas de mesure' in reads[-2][3]
+    assert reads[-3][1] == 'Nuit sélectionnée'
 
 
 def test_alert_summary_uses_the_same_two_nights_as_its_status():
@@ -76,7 +76,7 @@ def test_a_provisional_band_is_dashed_and_a_full_one_solid():
     prov = _card(night_rows(range(0, 12)))  # 12 nights: provisional from the 7th (its first days: none)
     assert prov["band_prov"] and not prov["band"] and prov["edge_prov_lo"] and not prov["edge_lo"]
     assert sante.LEGEND_PROV in prov["legend"] and sante.LEGEND_BAND not in prov["legend"]
-    assert prov["read"][2].endswith(" (provisoire)")
+    assert prov["read"][3].endswith(" (provisoire)")
     html = render("{{ v.viz_night_card(c, 'VFC · 30 nuits') }}", c=prov)
     assert html.count('class="pf-viz-band is-prov"') == 1 and html.count('class="pf-viz-edge is-prov"') == 2
     assert 'class="pf-viz-band"' not in html and 'class="pf-viz-edge"' not in html

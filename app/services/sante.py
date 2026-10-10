@@ -500,9 +500,9 @@ BUILDS = "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
 LEGEND_DOT = ("is-dot", "nuit")
-LEGEND_MEAN = ("is-mean", "moyenne sur 7 jours")
-LEGEND_BAND = ("is-band", "tes valeurs habituelles")
-LEGEND_PROV = ("is-band-prov", "valeurs habituelles (provisoires)")
+LEGEND_MEAN = ("is-mean", "moyenne 7 j")
+LEGEND_BAND = ("is-band", "repère habituel")
+LEGEND_PROV = ("is-band-prov", "repère provisoire")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
@@ -593,7 +593,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
                        name=name, min_span=_span(metric, values, bands), sources=sources,
                        mean_sources=[nt.mean_source(nights, metric, d) for d in days],
-                       mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True)
+                       mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True, compact=True)
     c["status"] = card_status(nights, metric, day)
     alert = day["alert"] if metric == "hr" else None
     c["period"] = "2 nuits" if alert else "7 derniers jours"
@@ -601,9 +601,13 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     reference = day["stats"][metric]["normal"]
     provisional = bool(reference and reference["provisional"])
     c["trend"] = {"label": "Tendance sur 2 nuits" if alert else "Tendance sur 7 jours",
+                  "short_label": "Moy. 2 nuits" if alert else "Moy. 7 j",
                   "value": viz.num(average["value"], unit=unit) if average.get("value") is not None else None,
                   "n": average.get("n", 0), "provisional": provisional,
                   "reference": f"Référence provisoire : {reference['n']} nuits mesurées." if provisional else None}
+    c["status_short"] = ("Élevée sur 2 nuits" if alert else
+                         {"in": "Habituelle", "above": "Au-dessus", "below": "En dessous",
+                          "none": "Repères en cours", "few": "Peu de données"}[c["status"]["key"]])
     c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
                    + ([LEGEND_PROV] if c["band_prov"] else []))
     return c

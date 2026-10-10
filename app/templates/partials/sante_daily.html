@@ -1,24 +1,22 @@
 {% import "partials/_viz.html" as viz %}
 <details id="au-quotidien" class="pf-health-panel pf-health-context" open>
-    <summary><span>Au quotidien<small>Pas, cœur, poids et autres mesures disponibles</small></span></summary>
+    <summary><span>Au quotidien</span></summary>
     <div class="pf-panel-body">
-    <p class="pf-card-meaning">Ces mesures donnent du contexte. Les pas et la FC sur 24 h ne modifient pas le score de récupération.</p>
     <div class="pf-daily-grid">
         {% for c in page.daily if not c.archived %}
         <article class="pf-card" aria-labelledby="daily-{{ c.key }}-title">
             <h3 class="pf-card-h" id="daily-{{ c.key }}-title">{{ c.title }}</h3>
-            {% if c.stale %}<p class="pf-card-status is-plain">Pas de relevé récent · dernier le {{ c.latest }}</p>{% endif %}
+            {% if c.stale %}<p class="pf-card-status is-plain">Donnée ancienne · {{ c.latest }}</p>{% endif %}
             {% if c.chart %}
-            {{ viz.viz_night_card(c.chart, c.chart.title, daytime=c.key != 'resp_night') }}
-            {% if c.chart.ref %}{{ viz.viz_legend([("is-ref", c.chart.ref.label)]) }}{% endif %}
-            <p class="pf-viz-cap">Un point par {{ 'nuit' if c.key == 'resp_night' else 'jour' }} mesuré. Sélectionne un point pour lire sa date et sa source.</p>
+            {{ viz.viz_night_card(c.chart, c.chart.title, daytime=c.key != 'resp_night',
+                legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [],
+                explanations=[c.meaning, c.trend]) }}
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>
-            <p class="pf-card-meaning">{{ c.source }}{% if c.latest %} · {{ c.latest }}{% endif %}</p>
+            <p class="pf-card-meaning">{{ c.source }} · {{ c.latest or 'sans date de pesée' }}</p>
+            <details class="pf-chart-details"><summary>Détails<span class="sr-only"> · {{ c.title }}</span></summary><p class="pf-card-meaning">{{ c.meaning }}</p></details>
             {% endif %}
-            <p class="pf-card-meaning">{{ c.meaning }}</p>
-            {% if c.trend %}<p class="pf-card-meaning">{{ c.trend }}</p>{% endif %}
-            {% if c.key == 'weight' %}<a href="/settings" class="pf-link text-xs">Poids du profil et réglages ›</a>{% endif %}
+            {% if c.key == 'weight' %}<a href="/settings" class="pf-link text-xs">Réglages ›</a>{% endif %}
         </article>
         {% endfor %}
     </div>

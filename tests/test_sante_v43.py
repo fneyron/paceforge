@@ -269,7 +269,7 @@ async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession
     page = await sante.health_page(db_session, test_user.id, today=D)
     assert {p["key"] for p in page["score"]["parts"]} == {"hrv", "hr", "sleep"}
     assert all(p["prov"] for p in page["score"]["parts"] if p["key"] in ("hrv", "hr"))
-    assert page["vfc"]["read"][2].endswith("(provisoire)") and page["state"]["word"] in td.WORDS.values()
+    assert page["vfc"]["read"][3].endswith("(provisoire)") and page["state"]["word"] in td.WORDS.values()
     main = _coherent((await as_user.get("/sante")).text)
     assert "Récupération" in main and (await as_user.get("/activities")).status_code == 200
 
