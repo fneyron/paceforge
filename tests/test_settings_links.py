@@ -45,6 +45,14 @@ async def _logged_in(client: AsyncClient, db: AsyncSession, **fields):
         yield c, user
 
 
+async def _callback(client, **params):
+    # Simulate the provider returning the nonce from the authorization redirect.
+    import base64
+    import json
+    session = json.loads(base64.b64decode(client.cookies.get("paceforge_session").split(".")[0]))
+    return await client.get("/auth/strava/callback", params={"state": session["strava_state"], **params})
+
+
 # ── Strava row ──────────────────────────────────────────────────────────────
 
 def _row(page: str) -> str:
@@ -95,7 +103,7 @@ async def test_connect_without_app_keys_goes_to_the_setup_wizard(client: AsyncCl
         assert r.status_code == 302 and r.headers["location"] == "/setup?next=settings"
         assert "Client ID" in (await c.get(r.headers["location"])).text  # the only place the keys are typed
         await c.post("/setup/credentials", data={"client_id": "7777", "client_secret": "s"})
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.headers["location"] == "/settings#strava"  # the wizard keeps the way back
         assert user.strava_client_id == "7777" and user.strava_access_token == "at" and started == [user.id]
 
@@ -115,7 +123,7 @@ async def test_connect_from_settings_comes_back_to_settings(client: AsyncClient,
         assert r.status_code == 302
         q = parse_qs(urlsplit(r.headers["location"]).query)
         assert q["client_id"] == ["4242"]
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.status_code == 302 and r.headers["location"] == "/settings#strava"
         assert user.strava_credentials_valid and user.strava_access_token == "at"
         client._transport.app.dependency_overrides[get_current_user] = lambda: user  # type: ignore[attr-defined]
@@ -246,11 +254,11 @@ async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: As
                           strava_client_secret_encrypted=encrypt_secret("s3cret")) as (c, user):
         client._transport.app.dependency_overrides[get_current_user] = lambda: user  # type: ignore[attr-defined]
         await c.get("/auth/strava?next=settings")
-        r = await c.get("/auth/strava/callback?error=access_denied")
+        r = await _callback(c, error="access_denied")
         assert r.headers["location"] == "/settings#strava"
         assert "Connexion à Strava annulée." in (await c.get("/settings")).text
         await c.get("/auth/strava?next=settings")
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.headers["location"] == "/settings#strava"
         page = (await c.get("/settings")).text
         assert "Strava refuse les clés de ton app : change-les." in page
@@ -262,16 +270,16 @@ async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: As
         # a reused code (a reload of the callback) or a Strava hiccup is not a refusal
         refuse.side_effect = StravaAPIError("Token exchange failed: 400", status_code=400)
         await c.get("/auth/strava?next=settings")
-        await c.get("/auth/strava/callback?code=abc")
+        await _callback(c, code="abc")
         assert user.strava_credentials_valid is True
         refuse.side_effect = StravaAPIError("Token exchange failed: 503", status_code=503)
         await c.get("/auth/strava?next=settings")
-        await c.get("/auth/strava/callback?code=abc")
+        await _callback(c, code="abc")
         assert user.strava_credentials_valid is True
         assert "La connexion à Strava a échoué. Réessaie." in (await c.get("/settings")).text
         # without the way back (onboarding), the wizard as before, and no stale way back
         await c.get("/auth/strava")
-        r = await c.get("/auth/strava/callback?error=access_denied")
+        r = await _callback(c, error="access_denied")
         assert r.headers["location"] == "/setup?error=auth_failed"
 
 
@@ -289,7 +297,7 @@ async def test_new_app_keys_from_settings_replace_the_old_app(client: AsyncClien
         assert "Client ID" in (await c.get("/setup?next=settings")).text
         r = await c.post("/setup/credentials", data={"client_id": "5555", "client_secret": "new"})
         assert parse_qs(urlsplit(r.headers["location"]).query)["client_id"] == ["5555"]
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.headers["location"] == "/settings#strava"
         assert unsubscribe.await_args.args[-1] == 55  # the old app's subscription, with the old keys
         assert user.strava_client_id == "5555" and user.strava_webhook_subscription_id == 99

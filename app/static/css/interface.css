@@ -216,6 +216,7 @@ hr.pf-hr, .pf-hr { border: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-h1-plan { font-family: var(--pf-font-display); font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.035em; color: rgb(var(--pf-ink)); overflow-wrap: anywhere; padding-top: 6px; }
 .pf-more { width: 44px; height: 44px; margin-right: -10px; }
 .pf-save-err { margin-top: 4px; font-size: 13px; color: rgb(var(--pf-danger)); }
+.pf-save-err[data-state="saving"], .pf-save-err[data-state="saved"] { color: rgb(var(--pf-gray-500)); }
 .pf-save-err button { font-weight: 600; }
 .pf-save-err button:hover { text-decoration: underline; }
 /* date · start · km · D+: each item brings its « · »; the inner line is shifted left by one dot and clipped,
@@ -527,7 +528,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-viz[data-tone="warn"] .pf-viz-w { color: rgb(var(--pf-warn)); }
 .pf-viz[data-tone="danger"] .pf-viz-w { color: rgb(var(--pf-danger)); }
 .pf-viz-l2 { display: flex; align-items: baseline; column-gap: 10px; min-height: 20px; font-size: 13px; line-height: 20px; color: rgb(var(--pf-gray-600)); }
-.pf-viz-l2 > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-viz-l2 > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .pf-viz-l2 > .pf-viz-link { flex: none; min-height: 0; padding: 12px 8px; margin: -12px -8px -12px 0; font-size: 13px; line-height: 20px; }   /* a 44 px target in a 20 px row */
 .pf-viz-l2 > .pf-viz-link.is-off { display: none; }   /* inline: nothing to reserve */
 /* the selection: a soft column behind the bar (an outline on it); on a night card no column (it would read as a
@@ -763,6 +764,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-errpage { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; }
 .pf-errcode { font-size: 96px; color: rgb(var(--pf-accent)); }
 .pf-legal { max-width: 42rem; margin: 0 auto; padding: 24px 20px 56px; }
+.pf-legal p a, .pf-legal li a { text-decoration: underline; text-underline-offset: 3px; }
 .pf-legal h1 { font-family: var(--pf-font-display); font-size: 34px; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; }
 .pf-legal h2 { font-family: var(--pf-font-display); font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
 /* component classes set a display: keep Tailwind's .hidden (toggled by scripts) winning over them */

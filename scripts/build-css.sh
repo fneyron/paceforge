@@ -5,5 +5,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 printf '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n' > /tmp/pf-tw-input.css
-npx -y tailwindcss@3 -c tailwind.config.js -i /tmp/pf-tw-input.css -o app/static/css/tailwind.css --minify
+npx -y tailwindcss@3.4.19 -c tailwind.config.js -i /tmp/pf-tw-input.css -o app/static/css/tailwind.css --minify
 echo "Rebuilt app/static/css/tailwind.css"

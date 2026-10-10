@@ -4,7 +4,7 @@
     sideways drag scrubs), a visually hidden native range input (keyboard, VoiceOver/TalkBack), a
     polite live region and the JSON that app/static/js/pf-viz.js reads. The race page's and Activités'
     figures add 44×44 ‹ › step buttons; Santé's cards (card=True, WHOOP/Oura-like) have none: a
-    compact readout of two one-line rows across the card (the value and its word; the day and its
+    compact readout across the card (the value and its word; the day and its wrapping
     context, a link at its end). No colour here: interface.css styles the classes on --pf-* tokens.
     Glyphs (race page, Activités): ⚑ race, ◆ long outing, ◇ tagged night. -#}
 
@@ -31,7 +31,7 @@
     {% endif %}
     <div class="pf-viz-plot">
         <svg class="pf-viz-svg" viewBox="0 0 {{ c.W }} {{ c.H }}" aria-hidden="true" focusable="false">{{ caller() }}</svg>
-        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ c.n - 1 }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
+        {% if c.n %}<input type="range" class="pf-viz-range sr-only" aria-label="{{ title }} : choisis une {{ unit_word }}" min="0" max="{{ top }}" step="1" value="{{ c.sel }}" aria-valuetext="{{ c.aria_now }}">{% endif %}
     </div>
     <p class="sr-only" aria-live="polite" data-live></p>
     <script type="application/json" class="pf-viz-data">{{ c.data|safe }}</script>
@@ -158,6 +158,7 @@
 {% endfor %}
 {% if c.ref %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/><text x="{{ c.W }}" y="{{ c.ref.y + 4 }}" text-anchor="end" class="pf-viz-strong">{{ c.ref.label }}</text>{% endif %}
 {% if c.trend %}<path d="{{ c.trend }}" class="pf-viz-line" pathLength="1"/>{% endif %}
+{% if c.targets %}<path d="{{ c.targets }}" class="pf-viz-ref" fill="none"/>{% endif %}
 {% for t in c.xt %}{% if t.today %}<circle cx="{{ t.x }}" cy="{{ c.H - 9 }}" r="8.5" class="pf-viz-todisc"/>{% endif %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle"{% if t.today %} class="pf-viz-today"{% endif %}>{{ t.label }}</text>{% endfor %}
 {% endcall %}
 {% endmacro %}

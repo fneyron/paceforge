@@ -132,7 +132,7 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
     # the FC de nuit row of the Récupération card, red: its 2 nights in percent (v4.4)
     assert re.search(r'<li class="pf-row is-danger"><span class="pf-row-name"><i class="pf-dot" aria-hidden="true">'
-                     r'</i><span>FC de nuit <small>7 nuits</small></span></span><span class="pf-row-val"><b>\+\d+'
+                     r'</i><span>FC de nuit <small>2 nuits</small></span></span><span class="pf-row-val"><b>\+\d+'
                      r'\u00a0%</b> <span>nettement plus haute depuis 2 nuits</span>', r.text)
 
 

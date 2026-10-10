@@ -1,4 +1,5 @@
 import logging
+import math
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -71,7 +72,11 @@ async def save_settings(
     weight_kg: str = Form(default=""),
     ftp_watts: str = Form(default=""),
 ):
-    user.weight_kg = _to_float(weight_kg)
+    weight = _to_float(weight_kg)
+    if weight_kg.strip() and (weight is None or not math.isfinite(weight) or not 30 <= weight <= 200):
+        ctx = await _settings_context(request, user, db, weight_bad=True)
+        return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
+    user.weight_kg = weight
     ftp_bad = False
     # Without the FTP field (cycling off) the form doesn't send it: keep the saved value.
     if cycling_enabled():
@@ -168,6 +173,8 @@ async def delete_account(
     from app.models.garmin import GarminConnection
     from app.models.generated_plan import GeneratedPlan
     from app.models.health import HealthMetric, HealthSample
+    from app.models.nutrition import NutritionProduct
+    from app.models.oauth_attempt import OAuthAttempt
     from app.models.route import Route
     from app.models.weekly_digest import WeeklyDigest
 
@@ -186,6 +193,8 @@ async def delete_account(
     await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user_id))
     await db.execute(delete(CorosConnection).where(CorosConnection.user_id == user_id))
     await db.execute(delete(GarminConnection).where(GarminConnection.user_id == user_id))
+    await db.execute(delete(NutritionProduct).where(NutritionProduct.user_id == user_id))
+    await db.execute(delete(OAuthAttempt).where(OAuthAttempt.user_id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

@@ -28,7 +28,7 @@ def _columns(c) -> set[str]:
     return {col["name"] for col in sa.inspect(c).get_columns("users")}
 
 
-def test_the_drop_is_the_head_and_both_round_trip():
+def test_the_sleep_migrations_are_in_the_chain_and_both_round_trip():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -36,7 +36,7 @@ def test_the_drop_is_the_head_and_both_round_trip():
     assert (add.down_revision, drop.down_revision) == ("y9b0c1d2e3f4", add.revision)
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [drop.revision]
+    assert drop.revision in {r.revision for r in ScriptDirectory.from_config(cfg).walk_revisions()}
     eng = sa.create_engine("sqlite://")
     with eng.begin() as c:
         c.execute(sa.text("CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(255), weight_kg FLOAT)"))

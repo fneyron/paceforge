@@ -884,7 +884,7 @@ async def test_routes_require_login(client: AsyncClient):
     for method, path in (("GET", "/coros/connect"), ("GET", "/coros/callback?code=x&state=y"),
                          ("POST", "/sante/sync"), ("POST", "/settings/coros/disconnect")):
         r = await client.request(method, path)
-        assert r.status_code == 307 and r.headers["location"] == "/", path
+        assert r.status_code == 303 and r.headers["location"] == "/auth/login", path
 
 
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,

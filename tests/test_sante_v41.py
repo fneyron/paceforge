@@ -207,8 +207,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     card = main.split('<section id="recuperation"')[1].split("</ul>")[0]
     rows = [words(body) for body in re.findall(r'<li class="pf-row is-\w+">(.*?)</li>', card)]
     assert len(rows) == 2  # each dot with its name and its words; no recovery window open: no Effort récent
-    assert re.fullmatch(r"VFC 7 nuits \u2212\d+ % plus basse que d'habitude", rows[0]), rows[0]
-    assert re.fullmatch(r"FC de nuit 7 nuits (comme d'habitude|[+\u2212]\d+ % dans tes valeurs habituelles)",
+    assert re.fullmatch(r"VFC 7 derniers jours \u2212\d+ % plus basse que d'habitude", rows[0]), rows[0]
+    assert re.fullmatch(r"FC de nuit 7 derniers jours (comme d'habitude|[+\u2212]\d+ % dans tes valeurs habituelles)",
                         rows[1]), rows[1]
     assert card.count('<i class="pf-dot" aria-hidden="true"></i>') == 2
     for key in ("vfc", "fc"):
@@ -219,7 +219,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
                          r'(dans tes valeurs habituelles|plus basse que d&#39;habitude|comme d&#39;habitude)</p>',
                          card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
-        assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 nuits" in legend
+        assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 jours" in legend
                 and '<i class="pf-lg is-band"></i>tes valeurs habituelles' in legend), key
         assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
     sleep = main.split('data-viz-key="sommeil-14"')[1].split("</div>\n        </div>")[0]
@@ -431,9 +431,9 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
                 assert len(idx) > 1 and idx == list(range(idx[0], idx[-1] + 1)), key  # adjacent nights only
                 assert set(idx) <= dots, key  # a dot under every point of it
                 drawn[key].append([days[i] for i in idx])
-            assert "moyenne sur 7 nuits" in legend, key
+            assert "moyenne sur 7 jours" in legend, key
         else:
-            assert "moyenne sur 7 nuits" not in legend, key
+            assert "moyenne sur 7 jours" not in legend, key
         assert not any(date(2026, 10, 2) <= d <= D5 for seg in drawn[key] for d in seg), key
         assert "<rect" not in svg, key  # no grey column behind the selected night
         assert 'class="pf-viz-ring"/>' in svg and 'class="pf-viz-at"/>' in svg, key

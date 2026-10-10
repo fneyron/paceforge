@@ -21,7 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
-async def as_user(client: AsyncClient, test_user: User):
+async def as_user(client: AsyncClient, test_user: User, db_session, monkeypatch):
+    # Endpoint commits are replaced with flushes to keep each test rollback-isolated.
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     return client
 
@@ -98,7 +100,7 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     assert 'class="pf-edit"' not in html and "hero-arrival-sub" not in html
     # ONE primary action on the surface, no print icon beside it; it leads to the four exports
     surface = _surface(html)
-    assert surface.count("pf-btn-primary") == 1 and html.count("data-primary-export") == 1 and "Envoyer à la montre" in html
+    assert surface.count("pf-btn-primary") == 1 and html.count("data-primary-export") == 1 and "Exporter pour ma montre" in html
     assert "pf-btn-icon" not in surface
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
         assert call in html, call
@@ -112,7 +114,8 @@ async def test_race_plan_is_one_column_with_one_primary_action_and_no_tools_colu
     # no « Préparer » section (its only row was Nutrition, removed on 2026-10-09)
     assert 'class="pf-prep"' not in html and "Préparer" not in text
     # nothing explains the obvious, nothing duplicated
-    for gone in ("Exporter", "Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
+    assert surface.count("Exporter pour ma montre") == 1
+    for gone in ("Carte du parcours", "Masquer la carte", "Agrandir la carte", "Verdict", "postes", "Double-clic sur le profil",
                  "Renommer", "Fixer l'heure", "Changer l'heure", "Glisse ou tape", "de jour", "de nuit", "Ton rythme", "Sacs et drop bags",
                  "Pilotage", "Nutrition et sacs", "Nutrition"):
         assert gone not in text, gone
@@ -268,18 +271,18 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     # a future dated race: no debrief anywhere
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user)}")).text
     assert "Débrief" not in _visible(html) and "débrief" not in _visible(html) and "data-primary-debrief" not in html
-    # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Envoyer à la montre »
+    # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Exporter pour ma montre »
     for rd in ("", date.today().isoformat()):
         html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
         assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Débrief",
                                      "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
         assert html.count("data-primary-export") == 1 and 'id="rpanel-realise"' in html and "/result?" in html
-    # after race day: « Voir le débrief » is the main button, « Envoyer à la montre » heads the menu (the 4 formats stay)
+    # after race day: « Voir le débrief » is the main button, « Exporter pour ma montre » heads the menu (the 4 formats stay)
     html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date='2020-10-02')}")).text
     assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
     assert _surface(html).count("pf-btn-primary") == 1
     assert 'id="heat-line"' not in html  # the forecast heat is for before the race
-    assert _menu_items(html) == ["Envoyer à la montre", "Partager le plan", "Bande imprimable",
+    assert _menu_items(html) == ["Exporter pour ma montre", "Partager le plan", "Bande imprimable",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):
@@ -290,7 +293,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     route.result_json = {"total_actual_s": 5 * 3600, "actual": []}
     await db_session.flush()
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert "data-primary-debrief" in html and _menu_items(html)[0] == "Envoyer à la montre"
+    assert "data-primary-debrief" in html and _menu_items(html)[0] == "Exporter pour ma montre"
 
 
 async def _rows(client: AsyncClient, rid: int, cps: list[dict]) -> str:

@@ -12,7 +12,8 @@
                 <img src="/static/img/logo.svg" alt="PaceForge" class="w-12 h-12 mx-auto mb-4">
             </a>
             <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Configure ta connexion Strava</h1>
-            <p class="mt-2 text-sm text-gray-500">2 minutes pour tout mettre en place</p>
+            <p class="mt-2 text-sm text-gray-500">Connexion facultative pour importer tes activités. Ton compte PaceForge fonctionne sans Strava.</p>
+            <p class="mt-3"><a href="/sante" class="pf-link text-sm">Continuer sans Strava →</a></p>
         </div>
 
         <!-- Progress bar -->
@@ -36,7 +37,9 @@
             {% elif error == "missing_credentials" %}
                 Client ID et Client Secret sont requis.
             {% elif error == "auth_failed" %}
-                La connexion à Strava a échoué. Vérifie que ton Authorization Callback Domain est bien <strong>paceforge.fr</strong>.
+                Le lien a expiré ou la connexion a été annulée. Relance la connexion depuis Réglages.
+            {% elif error == "already_linked" %}
+                Ce compte Strava est déjà lié à un autre compte PaceForge. Aucune donnée n’a été déplacée. Connecte-toi au compte PaceForge déjà lié.
             {% else %}
                 Une erreur est survenue : {{ error }}
             {% endif %}
@@ -61,7 +64,7 @@
                                     <p class="text-sm font-medium text-gray-700">Application Name</p>
                                     <div class="mt-1 flex items-center gap-2">
                                         <code class="px-2 py-1 rounded bg-white border border-gray-200 text-sm font-mono text-gray-900">PaceForge</code>
-                                        <span class="text-xs text-gray-400">(ou le nom que tu veux)</span>
+                                <span class="text-xs text-gray-500">(ou le nom que tu veux)</span>
                                     </div>
                                 </div>
                             </div>
@@ -84,7 +87,7 @@
                                 <div>
                                     <p class="text-sm font-medium text-gray-700">Authorization Callback Domain</p>
                                     <code class="mt-1 inline-block px-2 py-1 rounded bg-white border border-gray-200 text-sm font-mono text-gray-900 font-bold">paceforge.fr</code>
-                                    <p class="text-xs text-red-500 mt-1">Important : exactement "paceforge.fr", sans https:// ni slash</p>
+                            <p class="text-xs text-red-700 mt-1">Important : exactement "paceforge.fr", sans https:// ni slash</p>
                                 </div>
                             </div>
                         </div>
@@ -95,7 +98,7 @@
                     <a href="https://www.strava.com/settings/api"
                        target="_blank"
                        rel="noopener"
-                       class="h-11 px-6 rounded-xl inline-flex items-center justify-center bg-strava hover:bg-strava-hover text-white font-semibold text-sm transition-colors">
+                       class="pf-btn pf-btn-primary">
                         <svg class="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                         </svg>

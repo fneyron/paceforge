@@ -29,12 +29,12 @@
   naps its 24 h counts lighter on top: nights.day_naps, each nap on one bar
   only, the ring's and the score's figure; a day without a main night: its
   naps the next morning does not count, « sieste seule », the others on that
-  morning's bar, its readout says so), the 7 h line (Watson 2015a: about habitual
-  sleep), a tiny legend (nuit · sieste · 7 h); « 3 mois » only with a night 14 to 90
+  morning's bar, its readout says so), the estimated need for each day (the same
+  need as the dial), a legend (nuit · sieste · besoin estimé); « 3 mois » only with a night 14 to 90
   days old (else it would draw the 14 nights again), its 90 bars (each day's
-  24 h in one) faint under the 7-night mean (Oura's long ranges). Tap a bar →
-  « 8h36 » / « nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 »; it rests on the
-  range's mean (printed nowhere else: the latest night is the Sommeil row's). No
+  24 h in one) faint under the mean over the last seven calendar days, including
+  days before the visible range. Tap a bar for its duration, date and need;
+  at rest show the mean and the number of measured nights in that range. No
   ceiling, never a long night flagged (Watson 2015a).
 - Habitudes: the median bedtime and wake of 28 days (5 nights at least, H),
   rounded to 5 min, and once 8 nights are there (H; ANSI/CTA/NSF-2052.1-A's
@@ -59,7 +59,7 @@ from app.services import viz
 RANGES = {"14": (14, "14 nuits"), "90": (90, "3 mois")}
 USUAL_NIGHTS = 5  # (H) nights of 28 days before a median bedtime and wake are shown
 TABLE_DAYS = 30
-REF_MIN = 7 * 60  # the 7 h line: habitual sleep (Watson 2015a; Hirshkowitz 2015)
+REF_MIN = 7 * 60  # lower threshold for sufficient sleep (Watson 2015a; Hirshkowitz 2015)
 # the need, computed and never asked (owner, 2026-10-09: « Ne demande pas, ce doit être auto comme WHOOP »), built
 # as WHOOP's and Garmin's are: a base, more after a big effort (WHOOP's strain, Garmin's activity; the direction only:
 # Roberts 2019, no source gives a dose) and the sleep owed (both); naps count in the 24 h (both take them off the
@@ -141,7 +141,7 @@ def _readout(nights: dict, d: date) -> tuple[list[str], str]:
     return [viz.hm(n.asleep), "", f"{label} · {times}"], said
 
 
-def bars(nights: dict, today: date, key: str) -> dict:
+def bars(nights: dict, today: date, key: str, need_of=None) -> dict:
     """The 14-night or 3-month bars (see the module docstring)."""
     n_days = RANGES[key][0]
     days = [today - timedelta(days=n_days - 1 - i) for i in range(n_days)]
@@ -152,21 +152,29 @@ def bars(nights: dict, today: date, key: str) -> dict:
         values = tst
         stack = None
     r, a = [], []
-    for d in days:
+    needs = [need_of(d) if need_of else sleep_need(nights, d)["total"] for d in days]
+    for i, d in enumerate(days):
         read, said = _readout(nights, d)
+        if tst[i] is not None:
+            read[2] += f" · besoin estimé {viz.hm(needs[i])}"
+            said += f", besoin estimé {viz.hm_long(needs[i])}"
         r.append(read)
         a.append(said)
     totals = [v for v in tst if v is not None]
     trend = None
     if n_days > 14:  # the long range: the 7-night mean over faint bars
-        trend = [viz.rolling(tst, i) for i in range(n_days)]
+        # Include the preceding six days: changing the visible range must
+        # not change the rolling value for a given date.
+        history = [nt.day_tst24(nights, days[0] - timedelta(days=6 - i)) for i in range(6)] + tst
+        trend = [viz.rolling(history, i + 6) for i in range(n_days)]
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
-                     reference=(REF_MIN, f"7{viz.NNBSP}h"), min_top=9 * 60, today=len(days) - 1,
+                     targets=needs, lines=((0, "0 h"), (240, "4 h"), (480, "8 h")),
+                     min_top=9 * 60, today=len(days) - 1,
                      summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
                              f"enregistrée{'s' if len(totals) > 1 else ''}")
     if totals:
         mean = round(sum(totals) / len(totals) / 5) * 5  # a mean of approximate times: to 5 min
-        return viz.rest(c, [viz.hm(mean), "en moyenne", ""],
+        return viz.rest(c, [viz.hm(mean), "en moyenne", f"Sur {len(totals)} nuits mesurées · {RANGES[key][1]}"],
                         f"Sommeil sur 24 heures, {RANGES[key][1]} : {viz.hm_long(mean)} en moyenne, siestes "
                         "comprises. Choisis une nuit pour voir la sienne.")
     return viz.rest(c, ["—", "", ""], f"Sommeil, {RANGES[key][1]} : aucune nuit enregistrée")
@@ -360,5 +368,5 @@ def sleep_section(nights: dict, today: date, r: str | None = None, samples: dict
         return {"state": "old", "rows": rows(nights, today)}
     chosen = choose(nights, today, r)
     return {"state": "ok", "hero": h, "ranges": [(k, RANGES[k][1]) for k in offered], "r": chosen,
-            "bars": {k: bars(nights, today, k) for k in offered}, "habits": habits(nights, today),
+            "bars": {k: bars(nights, today, k, need_of) for k in offered}, "habits": habits(nights, today),
             "rows": rows(nights, today)}

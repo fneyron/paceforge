@@ -214,7 +214,9 @@ def test_normalize_checkpoint_target_s():
 # ── HTTP: saved, reloaded, shown in the table, the print and the exports ──
 
 @pytest.fixture
-async def as_user(client: AsyncClient, test_user: User):
+async def as_user(client: AsyncClient, test_user: User, db_session, monkeypatch):
+    # Endpoint commits are replaced with flushes to keep each test rollback-isolated.
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     return client
 

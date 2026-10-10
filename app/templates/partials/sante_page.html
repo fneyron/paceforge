@@ -96,9 +96,9 @@
         {% for key, label in s.ranges %}{% set b = s.bars[key] %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
             {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
-            {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 nuits"), ("is-ref", "7 h")]) }}
-            {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "7 h")]) }}
-            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "7 h")]) }}{% endif %}
+            {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 jours"), ("is-ref", "besoin estimé")]) }}
+            {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "besoin estimé")]) }}
+            {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "besoin estimé")]) }}{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -122,6 +122,7 @@
     {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
     <div id="{{ key }}" class="pf-card">
         <h3 class="pf-card-h">{{ c.title }}</h3>
+        <p class="pf-card-meaning">Bilan sur {{ c.period }}. Sélectionne un point pour lire une nuit.</p>
         {% if c.status %}{% set cs = c.status %}<p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{% if cs.value %}{{ cs.word }}{% else %}{{ cs.text }}{% endif %}</p>
         {% if cs.meaning %}<p class="pf-card-meaning">{{ cs.meaning }}</p>{% endif %}{% endif %}
         {{ viz.viz_night_card(c, c.title) }}

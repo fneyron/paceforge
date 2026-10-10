@@ -10,12 +10,15 @@
             {% if training_load and not recent %}<p class="pf-label tabular-nums mt-1">7 j : {{ '%.0f'|format(training_load.volume_7d_km) }} km · 28 j : {{ '%.0f'|format(training_load.volume_28d_km) }} km</p>{% endif %}
             <div id="sync-msg" role="status" aria-live="polite" class="pf-label"></div>
         </div>
+        {% if user.has_strava_linked and user.has_own_strava_app and user.strava_credentials_valid %}
         <button hx-post="/api/sync" hx-target="#sync-msg" hx-swap="innerHTML" hx-indicator="#sync-spinner" hx-disabled-elt="this"
+                aria-label="Synchroniser les activités Strava" title="Synchroniser les activités Strava"
                 class="pf-btn pf-btn-secondary pf-btn-sm shrink-0">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
             Synchroniser
             <span id="sync-spinner" class="htmx-indicator"><svg class="animate-spin h-3 w-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></span>
         </button>
+        {% endif %}
     </div>
 
     {#- Santé's Entraînement card's link (?depuis=): the activities it counts, its total, the way back to all -#}
@@ -58,8 +61,9 @@
         <p class="text-sm text-gray-500 mt-1">Tes autres activités restent accessibles dans l’historique.</p>
         <a href="/activities" class="pf-secondary-button">Voir toutes les activités</a>
         {% else %}
-        <p class="text-sm text-gray-500 mt-1">Vérifie ta connexion Strava dans les réglages pour retrouver tes premières activités.</p>
-        <a href="/settings" class="pf-secondary-button">Vérifier ma connexion Strava</a>
+        <p class="text-sm text-gray-500 mt-1">Connecte COROS, Garmin ou Strava dans les réglages pour importer tes activités. Tu peux déjà préparer une course avec un GPX.</p>
+        <a href="/settings" class="pf-secondary-button">Choisir une connexion</a>
+        <a href="/simulator" class="pf-secondary-button">Préparer une course</a>
         {% endif %}
     </div>
     {% endif %}

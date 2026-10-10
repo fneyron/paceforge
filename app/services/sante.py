@@ -394,7 +394,8 @@ def night_row(card: dict | None, metric: str) -> dict | None:
         return None
     key, name = NIGHT_ROWS[metric]
     s = card["status"]
-    return _row(key, name, s["value"], s["word"], s["tone"] or "none", qual="7 nuits", detail=s.get("detail"))
+    return _row(key, name, s["value"], s["word"], s["tone"] or "none",
+                qual=card["period"], detail=s.get("detail"))
 
 
 RESP_WORDS = {"in": "dans tes valeurs habituelles", "up": "plus rapide que d'habitude",
@@ -504,7 +505,7 @@ BUILDS = "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
 LEGEND_DOT = ("is-dot", "nuit")
-LEGEND_MEAN = ("is-mean", "moyenne sur 7 nuits")
+LEGEND_MEAN = ("is-mean", "moyenne sur 7 jours")
 LEGEND_BAND = ("is-band", "tes valeurs habituelles")
 LEGEND_PROV = ("is-band-prov", "valeurs habituelles (provisoires)")
 
@@ -589,11 +590,15 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
         b = nt.normal(nights, metric, d)
         bands.append((b["lo"], b["hi"]) if b else None)
         prov.append(bool(b and b["provisional"]))
-    means = [(nt.mean7(nights, metric, d) or {}).get("value") for d in days]
+    averages = [nt.mean7(nights, metric, d) or {} for d in days]
+    means = [m.get("value") for m in averages]
+    sources = [nights[d].source_of(metric) if d in nights else None for d in days]
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
-                       name=name, min_span=_span(metric, values, bands))
+                       name=name, min_span=_span(metric, values, bands), sources=sources,
+                       mean_counts=[m.get("n", 0) for m in averages])
     c["status"] = card_status(nights, metric, day)
+    c["period"] = "2 nuits" if metric == "hr" and day["alert"] else "7 derniers jours"
     c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
                    + ([LEGEND_PROV] if c["band_prov"] else []))
     return c

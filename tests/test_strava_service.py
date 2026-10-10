@@ -17,10 +17,13 @@ def strava_service(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_get_authorize_url(strava_service: StravaService):
-    url = strava_service.get_authorize_url()
+    url = strava_service.get_authorize_url("test-state")
     assert "strava.com/oauth/authorize" in url
-    assert "activity:read_all" in url
-    assert "activity:write" in url
+    from urllib.parse import parse_qs, urlsplit
+    params = parse_qs(urlsplit(url).query)
+    assert "activity:read_all" in params["scope"][0]
+    assert "activity:write" in params["scope"][0]
+    assert params["state"] == ["test-state"]
 
 
 @pytest.mark.asyncio

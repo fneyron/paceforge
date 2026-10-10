@@ -1,6 +1,6 @@
 import json
-import re
 import logging
+import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -52,7 +52,8 @@ async def simulator_page(
     # first, at most 10 a page load — one small indexed query each, nothing predicted; the athlete's
     # profile (the tilt a linked race measures) built once for the page, and one odd activity never
     # takes the page down
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
 
     from app.services.race_match import athlete_offset, find_race_activity, link_result
     from app.services.race_simulator import build_athlete_gradient_profile
@@ -288,7 +289,12 @@ def _leg_details(guide: dict, sections: list[dict]) -> list[dict]:
     try:
         from markupsafe import Markup
 
-        from app.services.pacing_guide import effort_sentence, leg_instructions, steep_on_leg, steep_sentence
+        from app.services.pacing_guide import (
+            effort_sentence,
+            leg_instructions,
+            steep_on_leg,
+            steep_sentence,
+        )
 
         li = leg_instructions(guide, sections)
         walk = float((guide.get("caps") or {}).get("walk_grade") or 18)
@@ -495,7 +501,7 @@ async def bike_gpx_upload(
         # Default target power: 75% of FTP (endurance) if known, else 200W
         default_target = round(ftp.estimated_ftp * 0.75) if ftp else 200
 
-        cycling = predict_cycling_course(
+        predict_cycling_course(
             course,
             target_power_watts=default_target,
             rider_weight_kg=rider_weight,
@@ -558,77 +564,108 @@ async def save_route(
 ):
     if sport_hidden(sport_type):
         sport_type = "trail"  # no new bike / triathlon routes while cycling is off
-    try:
-        course_data = json.loads(course_json) if course_json else None
-        cps = json.loads(checkpoints_json)
-        weather_data = json.loads(weather_json) if weather_json else None
+    from app.services.route_validation import checkpoints_data, read_json
+    from app.services.route_validation import course_data as validate_course
 
+    form = await request.form()
+    try:
+        course_data = validate_course(course_json) if course_json else None
+        cps = checkpoints_data(checkpoints_json)
+        weather_data = read_json(weather_json) if weather_json else None
+        if weather_data is not None and not isinstance(weather_data, dict):
+            raise ValueError("Météo invalide")
+        if len(name) > 200 or sport_type not in {"trail", "running", "bike", "triathlon"}:
+            raise ValueError("Nom ou sport invalide")
+        if target_time_s is not None and not 0 < target_time_s <= 7 * 86400:
+            raise ValueError("Objectif invalide")
+        if start_hour is not None and not 0 <= start_hour <= 23:
+            raise ValueError("Heure de départ invalide")
+        if start_minute is not None and not 0 <= start_minute <= 59:
+            raise ValueError("Minute de départ invalide")
+        if stop_minutes is not None and not 0 <= stop_minutes <= 1440:
+            raise ValueError("Durée d’arrêt invalide")
+        if race_date and _iso_date(race_date) != race_date.strip():
+            raise ValueError("Date invalide")
+    except (ValueError, TypeError, OverflowError, RecursionError):
+        return JSONResponse({"error": "Données invalides : vérifie le parcours, les passages et la date."}, status_code=422)
+
+    try:
         # Update existing route or create new one
         route = None
-        if route_id:
+        if route_id is not None:
             result = await db.execute(
                 select(Route).where(Route.id == route_id, Route.user_id == user.id)
             )
             route = _visible(result.scalar_one_or_none())
+            if route is None:
+                return JSONResponse({"error": "Parcours introuvable"}, status_code=404)
+        total = course_data["total_distance_km"] if course_data else (route.total_distance_km if route else 0)
+        if any(cp["distance_km"] > total + 0.1 for cp in cps):
+            return JSONResponse({"error": "Un passage dépasse la distance du parcours"}, status_code=422)
+        async with db.begin_nested():
+            if route:
+                # Update existing (the course itself is re-sent only for a fresh import)
+                route.name = name or route.name
+                if course_data:
+                    route.course_json = course_data
+                    route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
+                    route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
+                    route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
+                route.target_time_s = target_time_s
+                if "race_date" in form: route.race_date = _iso_date(race_date)
+                if start_hour is not None: route.start_hour = start_hour
+                if start_minute is not None: route.start_minute = start_minute
+                if sport_type: route.sport_type = sport_type
+                if "weather_json" in form: route.weather_json = weather_data
+                if stop_minutes is not None: route.stop_minutes = stop_minutes
 
-        if route:
-            # Update existing (the course itself is re-sent only for a fresh import)
-            route.name = name or route.name
-            if course_data:
-                route.course_json = course_data
-                route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
-                route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
-                route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
-            route.target_time_s = target_time_s
-            if race_date: route.race_date = _iso_date(race_date)
-            if start_hour is not None: route.start_hour = start_hour
-            if start_minute is not None: route.start_minute = start_minute
-            if sport_type: route.sport_type = sport_type
-            if weather_data is not None: route.weather_json = weather_data
-            if stop_minutes is not None: route.stop_minutes = stop_minutes
+                # Delete old checkpoints and replace
+                from sqlalchemy import delete
+                await db.execute(
+                    delete(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id)
+                )
+            else:
+                # Create new
+                if not course_data:
+                    return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+                route = Route(
+                    user_id=user.id,
+                    name=name or course_data.get("name", "Parcours"),
+                    total_distance_km=course_data.get("total_distance_km", 0),
+                    total_elevation_gain=course_data.get("total_elevation_gain", 0),
+                    total_elevation_loss=course_data.get("total_elevation_loss", 0),
+                    course_json=course_data,
+                    target_time_s=target_time_s,
+                    race_date=_iso_date(race_date),
+                    start_hour=start_hour,
+                    start_minute=start_minute,
+                    sport_type=sport_type or "trail",
+                    weather_json=weather_data,
+                    stop_minutes=stop_minutes,
+                )
+                db.add(route)
 
-            # Delete old checkpoints and replace
-            from sqlalchemy import delete
-            await db.execute(
-                delete(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id)
-            )
-        else:
-            # Create new
-            if not course_data:
-                return JSONResponse({"error": "Parcours manquant"}, status_code=400)
-            route = Route(
-                user_id=user.id,
-                name=name or course_data.get("name", "Parcours"),
-                total_distance_km=course_data.get("total_distance_km", 0),
-                total_elevation_gain=course_data.get("total_elevation_gain", 0),
-                total_elevation_loss=course_data.get("total_elevation_loss", 0),
-                course_json=course_data,
-                target_time_s=target_time_s,
-                race_date=_iso_date(race_date),
-                start_hour=start_hour,
-                start_minute=start_minute,
-                sport_type=sport_type or "trail",
-                weather_json=weather_data,
-                stop_minutes=stop_minutes,
-            )
-            db.add(route)
+            await db.flush()
 
-        await db.flush()
+            for cp in cps:
+                db.add(RouteCheckpoint(
+                    route_id=route.id,
+                    name=cp["name"],
+                    distance_km=cp["distance_km"],
+                    elevation=cp["elevation"],
+                    kind=cp["kind"], crew=cp["crew"], drop_bag=cp["drop_bag"],
+                    cutoff_clock=cp["cutoff_clock"], stop_s=cp.get("stop_s"), target_s=cp.get("target_s"),
+                ))
+            await db.flush()
 
-        from app.services.checkpoints import normalize_checkpoint
-
-        for raw_cp in cps:
-            cp = normalize_checkpoint(raw_cp)
-            db.add(RouteCheckpoint(
-                route_id=route.id,
-                name=cp["name"],
-                distance_km=cp["distance_km"],
-                elevation=cp["elevation"],
-                kind=cp["kind"], crew=cp["crew"], drop_bag=cp["drop_bag"],
-                cutoff_clock=cp["cutoff_clock"], stop_s=cp.get("stop_s"), target_s=cp.get("target_s"),
-            ))
-        await db.flush()
-
+        # A successful response must mean the plan is visible to the next
+        # request (in particular an immediate export). Yield dependencies may
+        # otherwise commit only after sending that response.
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         logger.info("Route %d saved for user %d: %s", route.id, user.id, route.name)
         return JSONResponse({"id": route.id, "name": route.name})
     except Exception:
@@ -1510,7 +1547,8 @@ async def delete_route(
 
 def _day_labels(race_date: str | None, n: int = 5) -> list[str]:
     """Weekday names for day 0..n-1 of the race (« ven. », « sam. »…), or « jour 2 »… without a date."""
-    from datetime import date as _d, timedelta
+    from datetime import date as _d
+    from datetime import timedelta
 
     names = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
     try:
@@ -1595,10 +1633,19 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
     has come (app.services.race_match) and linked with the request; else the card says why not — no
     date, a race ahead, nothing on race day. ``auto`` False: this request refused an activity chosen
     on purpose, the card carries that alone (no other one linked unasked under it)."""
-    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
 
     from app.models.activity import Activity
-    from app.services.race_match import athlete_offset, auto_link, excluded_ids, local_start, not_run_yet, race_day
+    from app.services.race_match import (
+        athlete_offset,
+        auto_link,
+        excluded_ids,
+        local_start,
+        not_run_yet,
+        race_day,
+    )
 
     ctx = {"request": request, "route_id": route.id, "result": None, "lead": None, "debrief": None, "basis": "plan", "state": None}
     if not route.result_json:

@@ -180,7 +180,9 @@ async def test_excluded_ids_sport_family_future_race_and_no_date(db_session: Asy
 # ── the card and « Mes courses » ──
 
 @pytest.fixture
-async def as_user(client: AsyncClient, test_user: User):
+async def as_user(client: AsyncClient, test_user: User, db_session, monkeypatch):
+    # Endpoint commits are replaced with flushes to keep each test rollback-isolated.
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     return client
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class GpxPoint(BaseModel):
@@ -11,6 +11,7 @@ class GpxPoint(BaseModel):
 
 
 class CourseSegment(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     index: int
     start_km: float
     end_km: float
@@ -31,6 +32,7 @@ class CourseSegment(BaseModel):
 
 
 class CourseProfile(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     name: str = "Course"
     total_distance_km: float
     total_elevation_gain: float

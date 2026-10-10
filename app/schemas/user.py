@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class UserResponse(BaseModel):
     id: int
-    strava_athlete_id: int
+    strava_athlete_id: int | None = None
     firstname: str | None = None
     lastname: str | None = None
     profile_picture_url: str | None = None

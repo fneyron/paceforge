@@ -299,7 +299,7 @@
     // whole before the script: it stays as it is (never collapsed and drawn again)
     var r0 = fig.getBoundingClientRect(), seen = r0.height > 0 && r0.bottom > 0 && r0.top < window.innerHeight;
     fig.classList.add("pf-viz-on");
-    if (motion && !seen && "IntersectionObserver" in window) {
+    if (motion && !seen && !fig.classList.contains("pf-viz-card") && "IntersectionObserver" in window) {
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (en) { if (en.isIntersecting) { fig.classList.add("pf-viz-in"); io.disconnect(); } });
       }, { threshold: 0 });

@@ -60,7 +60,7 @@
                 {% if ft.train_races and ft.train_finisher_results %}
                 <p>La courbe est réglée sur <b class="font-semibold text-gray-900 tabular-nums">{{ ft.train_races }}</b> courses UTMB Live qui ont une trace GPS, soit <b class="font-semibold text-gray-900 tabular-nums">{{ ft.train_finisher_results }}</b> finishers. Les courses LiveTrail n'ont pas de trace détaillée : elles ne servent pas à ce réglage.</p>
                 {% endif %}
-                {% if stats and stats.updated %}<p class="text-xs text-gray-400">Chiffres mis à jour le {{ stats.updated }}.</p>{% endif %}
+                {% if stats and stats.updated %}<p class="text-xs text-gray-500">Chiffres mis à jour le {{ stats.updated }}.</p>{% endif %}
             </div>
         </div>
     </section>
@@ -80,7 +80,7 @@
                 </div>
                 <div class="rounded-2xl bg-white p-5">
                     <h3 class="font-semibold text-gray-900">La nuit{{ tag() }}</h3>
-                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">On avance moins vite de nuit, et le crépuscule et l'aube comptent un peu aussi.</p>
+                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">On avance moins vite de nuit. Le modèle utilise une plage fixe de 21 h à 6 h, avec une transition au crépuscule et à l’aube. C’est une approximation : elle ne suit pas les heures de lever et de coucher du soleil selon le lieu et la saison.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
                     <h3 class="font-semibold text-gray-900">Le terrain</h3>

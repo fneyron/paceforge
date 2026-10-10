@@ -247,7 +247,7 @@ def test_a_night_row_repeats_its_cards_status_never_its_explanation():
     colour; « comme d'habitude » at 0 %; grey and no percentage without a comparison (« en construction » over
     when its usual values will be ready, « trop peu de nuits pour comparer »); no row without a card."""
     def card(key, value, word, tone, detail=None):
-        return {"status": {"key": key, "value": value, "word": word, "detail": detail, "text": "x", "tone": tone,
+        return {"period": "7 derniers jours", "status": {"key": key, "value": value, "word": word, "detail": detail, "text": "x", "tone": tone,
                            "meaning": "x"}}
     rows = [sante.night_row(card("in", "+2 %", sante.STATUS["in"], "ok"), "hrv"),
             sante.night_row(card("in", None, sante.SAME, "ok"), "hrv"),
@@ -256,12 +256,12 @@ def test_a_night_row_repeats_its_cards_status_never_its_explanation():
             sante.night_row(card("none", None, sante.BUILDING, None, "prête dans 2 nuits"), "hr"),
             sante.night_row(card("few", None, sante.FEW, None), "hr")]
     assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in rows] == [
-        ("VFC", "7 nuits", "+2 %", "dans tes valeurs habituelles", None, "ok"),
-        ("VFC", "7 nuits", None, "comme d'habitude", None, "ok"),
-        ("VFC", "7 nuits", "−12 %", "plus basse que d'habitude", None, "danger"),
-        ("VFC", "7 nuits", "+9 %", "plus haute que d'habitude", None, "accent"),
-        ("FC de nuit", "7 nuits", None, "en construction", "prête dans 2 nuits", "none"),
-        ("FC de nuit", "7 nuits", None, "trop peu de nuits pour comparer", None, "none")]
+        ("VFC", "7 derniers jours", "+2 %", "dans tes valeurs habituelles", None, "ok"),
+        ("VFC", "7 derniers jours", None, "comme d'habitude", None, "ok"),
+        ("VFC", "7 derniers jours", "−12 %", "plus basse que d'habitude", None, "danger"),
+        ("VFC", "7 derniers jours", "+9 %", "plus haute que d'habitude", None, "accent"),
+        ("FC de nuit", "7 derniers jours", None, "en construction", "prête dans 2 nuits", "none"),
+        ("FC de nuit", "7 derniers jours", None, "trop peu de nuits pour comparer", None, "none")]
     assert sante.night_row(None, "hrv") is None
 
 

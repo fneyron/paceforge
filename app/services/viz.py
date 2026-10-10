@@ -177,14 +177,18 @@ def rolling(values: list, i: int, k: int = 7, need: int = 3, log: bool = False) 
     return math.exp(statistics.fmean(math.log(v) for v in w)) if log else statistics.fmean(w)
 
 
-def paths(xs, ys, lone: bool = True, half: float = 0) -> str:
+def paths(xs, ys, lone: bool = True, half: float = 0, groups=None) -> str:
     """Polyline broken wherever a value is missing (never drawn across a gap).
     `lone=False` leaves out a point with no neighbour: a move alone draws
     nothing, so the path is empty when no segment is drawn (and its legend
     item can go with it). `half` > 0: a point with no neighbour becomes a
     level stroke across its slot (a band's edge on its one night)."""
     runs, run = [], []
-    for x, y in zip(xs, ys):
+    for i, (x, y) in enumerate(zip(xs, ys)):
+        if groups is not None and i and groups[i] != groups[i - 1]:
+            if run:
+                runs.append(run)
+            run = []
         if y is None:
             if run:
                 runs.append(run)
@@ -203,12 +207,17 @@ def paths(xs, ys, lone: bool = True, half: float = 0) -> str:
     return " ".join(out)
 
 
-def band_polys(xs, lo, hi, half: float = 0) -> list[str]:
+def band_polys(xs, lo, hi, half: float = 0, groups=None) -> list[str]:
     """The band as polygons, one per unbroken run (y already scaled). `half` > 0:
     a run of one day spans its slot (x ± half), so a band known on a single
     night (the first « provisoire » one, after a gap) still shows."""
     polys, run = [], []
-    for x, a, b in list(zip(xs, lo, hi)) + [(None, None, None)]:
+    rows = []
+    for i, row in enumerate(zip(xs, lo, hi)):
+        if groups is not None and i and groups[i] != groups[i - 1]:
+            rows.append((None, None, None))
+        rows.append(row)
+    for x, a, b in rows + [(None, None, None)]:
         if a is None or b is None:
             if len(run) > 1:
                 top = " ".join(f"{x:.1f},{b:.1f}" for x, _, b in run)
@@ -521,7 +530,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
              y_max: float | None = None, reference: tuple[float, str] | None = None, lines=(),
              clip: float | None = None, tones: list | None = None, trend: list | None = None,
              today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0,
-             hatched: list | None = None) -> dict:
+             hatched: list | None = None, targets: list | None = None) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
     slot, `miss`, where nothing is drawn — no mark for a missing measure,
     owner 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de
@@ -550,7 +559,8 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     elif y_max is not None:
         top = y_max
     else:
-        top = max(tops + [min_top, reference[0] if reference else 0, 1]) * 1.12
+        top = max(tops + [v for v in (targets or []) if v is not None]
+                  + [min_top, reference[0] if reference else 0, 1]) * 1.12
     base, y0 = H - 22, 8
     y = scale(0, top, y0, base)
     out = []
@@ -580,6 +590,8 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
             # over measured days only, broken on any day without one: never a line with no bar under it
             "trend": paths(xs, [y(min(v, top)) if v is not None and values[i] is not None else None
                                 for i, v in enumerate(trend)], lone=False) if trend else None,
+            "targets": paths(xs, [y(v) if values[i] is not None else None
+                                   for i, v in enumerate(targets)]) if targets else None,
             "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones)}
 
 
@@ -592,7 +604,7 @@ def day_ticks(days: list[date], xs: list[float]) -> list[dict]:
 
 # ── V3 night card: one nightly signal, a dot per night, the 7-night line, the normal ──
 
-def _band_runs(band: list, prov: list) -> tuple[list, list]:
+def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
     """The band split into its full and its provisional days ([(lo, hi) | None] each), every run of one kind
     carried one day into the next run of the other kind, so the two drawings meet with no gap."""
     full, temp = [None] * len(band), [None] * len(band)
@@ -600,29 +612,33 @@ def _band_runs(band: list, prov: list) -> tuple[list, list]:
         if not b:
             continue
         (temp if prov[i] else full)[i] = b
-        if i and band[i - 1] and bool(prov[i - 1]) != bool(prov[i]):
+        if (i and band[i - 1] and bool(prov[i - 1]) != bool(prov[i])
+                and (groups is None or groups[i] == groups[i - 1])):
             (temp if prov[i - 1] else full)[i] = b  # the earlier run reaches this day
     return full, temp
 
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
-               unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132) -> dict:
+               unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
+               sources=None, mean_counts=None) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
     en fait »), a night without a measure draws nothing — never judged one by
-    one (Buchheit 2014: ≈ 12 % night to night), the 7-night mean as a line
-    (drawn, never printed) over the measured nights only, broken on any night
+    one (Buchheit 2014: ≈ 12 % night to night), the 7-day mean as a line
+    over the measured nights only, broken on any night
     without one (never a line with no dot under it; "" when no segment is
     left: no legend item), the athlete's usual values as a band (each night's:
     the 60 days up to and including it, on that night's watch): solid edges
     from 14 nights, dashed edges and a lighter fill while provisional (7 to
-    13 nights, H; `band_prov`, `edge_prov_lo/hi`). Readout, two compact
-    lines: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · d'habitude 85–110 »]
+    13 nights, H; `band_prov`, `edge_prov_lo/hi`). With `sources`, break both
+    curves and bands at watch changes. With `mean_counts`, the readout adds
+    the 7-day mean and its measured-night count, distinct from the nightly value.
+    Readout: [« 100 ms », "", « nuit du mer. 7 au jeu. 8 · d'habitude 85–110 »]
     (« … (provisoire) » from 7 to 13 nights); the latest measured night is
     selected: its value is the card's. `min_span`: the y axis never narrower
-    (noise must not look like a cliff). « (provisoire) » comes after the
-    band's numbers: at 358 px the ellipsis only ever cuts it."""
+    (noise must not look like a cliff). Context wraps on small screens so the
+    band and its provisional status remain readable."""
     n = len(days)
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
@@ -640,6 +656,12 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             a.append(f"{night_label(d)} : pas de mesure")  # the readout's night, as for a measured one
             continue
         line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
+        if sources and sources[i]:
+            line += f" · {sources[i]}"
+        if mean[i] is not None and mean_counts is not None:
+            detail = f"moyenne 7 jours : {num(mean[i], digits)} {unit} ({mean_counts[i]} nuits)"
+            line += f" · {detail}"
+            spoken += f", {detail}"
         if b:
             pv = bool(prov[i])
             line += f" · d'habitude {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
@@ -649,16 +671,19 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         a.append(spoken)
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
-    full, temp = _band_runs(band, prov)
+    full, temp = _band_runs(band, prov, sources)
     hs = X1 / max(n, 1) / 2  # a band known on one night only spans that night's slot
     ys = {k: ([y(b[0]) if b else None for b in runs], [y(b[1]) if b else None for b in runs])
           for k, runs in (("full", full), ("prov", temp))}
     return {"key": key, "n": n, "W": W, "H": H, "X1": X1, "top": top, "bottom": bottom,
             "slot": round(X1 / max(n, 1), 2),
-            "band": band_polys(xs, *ys["full"], half=hs), "band_prov": band_polys(xs, *ys["prov"], half=hs),
-            "edge_lo": paths(xs, ys["full"][0], half=hs), "edge_hi": paths(xs, ys["full"][1], half=hs),
-            "edge_prov_lo": paths(xs, ys["prov"][0], half=hs), "edge_prov_hi": paths(xs, ys["prov"][1], half=hs),
-            "mean": paths(xs, [y(v) for v in mean], lone=False),
+            "band": band_polys(xs, *ys["full"], half=hs, groups=sources),
+            "band_prov": band_polys(xs, *ys["prov"], half=hs, groups=sources),
+            "edge_lo": paths(xs, ys["full"][0], half=hs, groups=sources),
+            "edge_hi": paths(xs, ys["full"][1], half=hs, groups=sources),
+            "edge_prov_lo": paths(xs, ys["prov"][0], half=hs, groups=sources),
+            "edge_prov_hi": paths(xs, ys["prov"][1], half=hs, groups=sources),
+            "mean": paths(xs, [y(v) for v in mean], lone=False, groups=sources),
             "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
             # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,

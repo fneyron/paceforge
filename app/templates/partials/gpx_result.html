@@ -38,7 +38,7 @@
         <details class="relative shrink-0" id="plan-more">
             <summary class="pf-ibtn pf-more list-none cursor-pointer" aria-label="Plus d'actions" title="Plus d'actions">{{ ic.icon('more', 'w-6 h-6') }}</summary>
             <div class="pf-menu" role="menu">
-                {% if deb_primary %}<button type="button" role="menuitem" onclick="window._sim && window._sim.openExport()">{{ ic.icon('watch') }}Envoyer à la montre</button>{% endif %}
+                {% if deb_primary %}<button type="button" role="menuitem" onclick="window._sim && window._sim.openExport()">{{ ic.icon('watch') }}Exporter pour ma montre</button>{% endif %}
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.sharePlan()">{{ ic.icon('share') }}Partager le plan</button>
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.printPlan()">{{ ic.icon('printer') }}Bande imprimable</button>
                 {% if saved_route_id %}
@@ -84,7 +84,7 @@
             {% if deb_primary %}
             <button type="button" id="rtab-realise" data-primary-debrief onclick="window.switchRouteTab && window.switchRouteTab('realise')" class="pf-btn pf-btn-primary">{{ ic.icon('chart') }}Voir le débrief</button>
             {% else %}
-            <button type="button" data-primary-export onclick="window._sim && window._sim.openExport()" class="pf-btn pf-btn-primary">{{ ic.icon('watch') }}Envoyer à la montre</button>
+            <button type="button" data-primary-export onclick="window._sim && window._sim.openExport()" class="pf-btn pf-btn-primary">{{ ic.icon('watch') }}Exporter pour ma montre</button>
             {% endif %}
         </div>
     </section>
@@ -122,7 +122,7 @@
     <div id="export-sheet" class="hidden fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-labelledby="export-title">
         <div class="absolute inset-0 bg-black/30" onclick="window._sim && window._sim.closeExport()"></div>
         <div class="pf-sheet absolute left-0 right-0 bottom-0 rounded-t-3xl bg-surface px-5 pt-4 lg:left-1/2 lg:right-auto lg:bottom-auto lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[460px] lg:rounded-3xl lg:px-6 lg:pt-5 lg:pb-6" style="padding-bottom:max(20px, env(safe-area-inset-bottom))">
-            <div class="flex items-center justify-between mb-1"><h2 id="export-title" class="pf-h2">Envoyer à la montre</h2><button type="button" onclick="window._sim && window._sim.closeExport()" class="pf-ibtn -mr-2 text-2xl leading-none" aria-label="Fermer">×</button></div>
+            <div class="flex items-center justify-between mb-1"><h2 id="export-title" class="pf-h2">Exporter pour ma montre</h2><button type="button" onclick="window._sim && window._sim.closeExport()" class="pf-ibtn -mr-2 text-2xl leading-none" aria-label="Fermer">×</button></div>
             <p class="pf-label mb-3">Le fichier se télécharge : importe-le dans l'app de ta montre comme parcours.</p>
             <div class="pf-tools">
                 <button type="button" class="pf-tool" onclick="window._sim.exportPace('gpx')"><span>{{ ic.icon('watch') }}<span>GPX horodaté <span class="pf-pill pf-pill-accent ml-1 align-middle">conseillé</span><small>COROS · Garmin : heure cible et consigne à chaque point</small></span></span>{{ ic.icon('download', 'w-5 h-5 text-gray-400') }}</button>
@@ -850,11 +850,11 @@ window._sim = {};
             var c = predictClockAt(parseFloat(this.value)), e = p.querySelector('[data-add-eta]');
             e.textContent = c === null ? '' : 'Passage prévu vers ' + fmtClock(c) + (hasRealTarget() ? ' avec ton objectif' : ' d\'après la prédiction') + '.';
         });
-        sh.classList.remove('hidden');
+        showSheet(sh);
         setTimeout(function () { try { p.querySelector('[data-add-name]').focus(); } catch (e) {} }, 50);
     }
-    function openSheet(i, mode) { var sh = document.getElementById('cp-sheet'); if (!sh || !checkpoints[i]) return; if (sheetCp === i && sheetOpen() && !mode) { closeSheet(); return; } sheetCp = i; renderSheet(); sh.classList.remove('hidden'); if (mode === 'pin') setTimeout(function () { var pin = sh.querySelector('[data-pin-in]'); if (pin) { try { pin.focus(); } catch (e) {} } }, 40); }
-    function closeSheet() { var sh = document.getElementById('cp-sheet'); if (sh) sh.classList.add('hidden'); sheetCp = null; }
+    function openSheet(i, mode) { var sh = document.getElementById('cp-sheet'); if (!sh || !checkpoints[i]) return; if (sheetCp === i && sheetOpen() && !mode) { closeSheet(); return; } sheetCp = i; renderSheet(); showSheet(sh); if (mode === 'pin') setTimeout(function () { var pin = sh.querySelector('[data-pin-in]'); if (pin) { try { pin.focus(); } catch (e) {} } }, 40); }
+    function closeSheet() { var sh = document.getElementById('cp-sheet'); if (sh) hideSheet(sh); sheetCp = null; }
     function refreshSheet() { if (sheetCp === null || !sheetOpen()) return; var ae = document.activeElement; if (ae && ae.closest && ae.closest('#cp-sheet') && (ae.type === 'text' || ae.type === 'number')) return; renderSheet(); }
     var KIND_LABEL = { water: 'eau', full: 'ravito complet', base: 'base vie' };
     function cpPopupHtml(cp, i, pt) {
@@ -1043,37 +1043,65 @@ window._sim = {};
     }
 
     // ── SAVE ──
-    var saveTimer = null;
-    // nothing shows while saving or once saved: only a failed save says so, with a retry
+    var saveTimer = null, saveTail = Promise.resolve(), editVersion = 0, hourlySaved = false;
     function setStatus(state) {
         var el = document.getElementById('save-status'); if (!el) return;
-        el.innerHTML = state === 'error' ? '<button type="button" onclick="window._sim && window._sim.saveRoute()">Non enregistré · réessayer</button>' : '';
-        el.classList.toggle('hidden', state !== 'error');
+        el.innerHTML = state === 'error'
+            ? '<button type="button" onclick="window._sim && window._sim.saveRoute().catch(function () {})">Non enregistré · réessayer</button>'
+            : (state === 'saving' ? 'Enregistrement…' : 'Enregistré');
+        el.classList.remove('hidden');
+        el.setAttribute('role', 'status');
         el.setAttribute('data-state', state);
     }
     function saveRoute() {
+        clearTimeout(saveTimer); saveTimer = null;
         setStatus('saving');
-        var b = new URLSearchParams();
-        if (!currentRouteId) b.append('course_json', document.getElementById('courseJsonData').value);
+        var version = editVersion, b = new URLSearchParams();
+        var course = document.getElementById('courseJsonData').value;
         b.append('checkpoints_json', JSON.stringify(checkpoints));
-        b.append('name', (raceName || '').trim() || 'Parcours'); if (currentRouteId) b.append('route_id', currentRouteId);
-        var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0; if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
-        var rd = raceDate; if (rd) b.append('race_date', rd);
+        b.append('name', (raceName || '').trim() || 'Parcours');
+        var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0;
+        if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
+        b.append('race_date', raceDate || '');
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
-        var withWeather = !!currentWeather; if (withWeather) b.append('weather_json', JSON.stringify(currentWeather));
-        return fetch('/api/simulator/routes', { method: 'POST', body: b }).then(function(r) { return r.json(); })
-            .then(function(d) {
-                if (!d.id) { saveFailed(); return; }
-                currentRouteId = d.id; setStatus('saved'); saveRetried = false; if (withWeather) hourlySaved = true; planVersion++;
-            }).catch(function() { saveFailed(); });
+        var withWeather = !!currentWeather;
+        b.append('weather_json', withWeather ? JSON.stringify(currentWeather) : '');
+        // Serialize writes, including the initial creation, so an older request
+        // cannot overwrite a newer plan or create a second route.
+        var pending = saveTail.then(function () {
+            if (currentRouteId) b.append('route_id', currentRouteId); else b.append('course_json', course);
+            return fetch('/api/simulator/routes', { method: 'POST', body: b });
+        }).then(function (r) {
+            if (!r.ok) throw new Error('Sauvegarde refusée');
+            return r.json();
+        }).then(function (d) {
+            if (!d.id) throw new Error('Sauvegarde incomplète');
+            currentRouteId = d.id;
+            if (version === editVersion) setStatus('saved');
+            if (withWeather) hourlySaved = true;
+            planVersion++;
+            return d.id;
+        }).catch(function (error) { setStatus('error'); throw error; });
+        saveTail = pending.catch(function () {});
+        return pending;
     }
-    var saveRetried = false, hourlySaved = false;
-    function saveFailed() { setStatus('error'); if (!saveRetried) { saveRetried = true; setTimeout(function () { if (document.getElementById('save-status').getAttribute('data-state') === 'error') saveRoute(); }, 3000); } }
-    function scheduleSave() { setStatus('saving'); if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveRoute, 800); }
+    function scheduleSave() {
+        editVersion++; setStatus('saving'); clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () { saveRoute().catch(function () {}); }, 800);
+    }
     function onNameChange() { scheduleSave(); }
-    function _saveThenOpen(urlFn) { var w = window.open('', '_blank'); saveRoute().then(function() { if (currentRouteId && w) { w.location = urlFn(currentRouteId); } else if (w) { w.close(); } }).catch(function() { if (w) w.close(); }); }
-    function _saveThenDownload(urlFn) { closeMenus(); saveRoute().then(function () { if (currentRouteId) { var a = document.createElement('a'); a.href = urlFn(currentRouteId); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); } }); }
+    function _saveThenOpen(urlFn) {
+        var w = window.open('', '_blank'); if (w) w.opener = null;
+        saveRoute().then(function (id) { if (w) w.location = urlFn(id); }).catch(function () { if (w) w.close(); });
+    }
+    function _saveThenDownload(urlFn) {
+        closeMenus();
+        saveRoute().then(function (id) {
+            var a = document.createElement('a'); a.href = urlFn(id); a.download = '';
+            document.body.appendChild(a); a.click(); a.remove();
+        }).catch(function () {}); // saveRoute leaves the visible retry action
+    }
     function exportGpx() { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/gpx'; }); }
     function exportPace(fmt) { _saveThenDownload(function(id) { return '/api/simulator/routes/' + id + '/pace-export?format=' + encodeURIComponent(fmt || 'gpx'); }); }
     function closeMenus() { document.querySelectorAll('#simulator-root details.relative[open]').forEach(function (d) { d.removeAttribute('open'); }); }
@@ -1180,12 +1208,12 @@ window._sim = {};
         if (f.d) f.d.value = raceDate;
         if (f.t) f.t.value = startVal;
         if (f.err) f.err.classList.add('hidden');
-        sh.classList.remove('hidden');
+        showSheet(sh);
         if (!isCompact()) setTimeout(function () { var el = raceDate ? f.n : f.d; if (el) { try { el.focus(); } catch (e) {} } }, 40);
     }
     function closeRaceSheet() {
         var sh = document.getElementById('race-sheet'), f = raceFields(); if (!sh || sh.classList.contains('hidden')) return;
-        sh.classList.add('hidden');
+        hideSheet(sh);
         // not saved: the fields go back to what is
         if (f.n) f.n.value = raceName;
         if (f.d) f.d.value = raceDate;
@@ -1199,7 +1227,7 @@ window._sim = {};
         raceName = nm; raceDate = dt; startVal = st;
         if (f.n) f.n.value = nm;
         if (f.t) f.t.value = st;
-        document.getElementById('race-sheet').classList.add('hidden');
+        hideSheet(document.getElementById('race-sheet'));
         updateMeta();
         if (dateChanged) onConditionsChange();  // labels, weather, recalculation, save
         else if (startChanged) { recalc(); scheduleSave(); }
@@ -1261,10 +1289,36 @@ window._sim = {};
         applyDetail();
     }
     // ── SHEETS, SHARE, TOOLS ──
-    function openExport() { closeMenus(); var sh = document.getElementById('export-sheet'); if (!sh) return; sh.classList.remove('hidden'); setTimeout(function () { var b = sh.querySelector('.pf-tool'); if (b) b.focus(); }, 30); }
-    function closeExport() { var sh = document.getElementById('export-sheet'); if (sh) sh.classList.add('hidden'); }
-    function openSettings() { closeMenus(); var sh = document.getElementById('settings-sheet'); if (!sh) return; sh.classList.remove('hidden'); }
-    function closeSettings() { var sh = document.getElementById('settings-sheet'); if (sh) sh.classList.add('hidden'); }
+    var sheetOpeners = new WeakMap();
+    function sheetFocusables(sh) {
+        return Array.from(sh.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+            .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+    }
+    function showSheet(sh) {
+        if (sh.classList.contains('hidden')) sheetOpeners.set(sh, document.activeElement);
+        sh.classList.remove('hidden');
+        var first = sheetFocusables(sh)[0]; if (first) first.focus({ preventScroll: true });
+    }
+    function hideSheet(sh) {
+        if (sh.classList.contains('hidden')) return;
+        var opener = sheetOpeners.get(sh), restore = sh.contains(document.activeElement);
+        sh.classList.add('hidden');
+        if (restore && opener && document.body.contains(opener)) opener.focus({ preventScroll: true });
+    }
+    function trapSheetTab(ev) {
+        var sh = ['cp-sheet', 'export-sheet', 'race-sheet', 'settings-sheet'].map(function (id) { return document.getElementById(id); })
+            .find(function (el) { return el && !el.classList.contains('hidden'); });
+        if (!sh) return false;
+        var f = sheetFocusables(sh), first = f[0], last = f[f.length - 1], ae = document.activeElement;
+        if (!first) { ev.preventDefault(); return true; }
+        if (!sh.contains(ae) || (!ev.shiftKey && ae === last)) { ev.preventDefault(); first.focus(); }
+        else if (ev.shiftKey && ae === first) { ev.preventDefault(); last.focus(); }
+        return true;
+    }
+    function openExport() { closeMenus(); var sh = document.getElementById('export-sheet'); if (!sh) return; showSheet(sh); setTimeout(function () { var b = sh.querySelector('.pf-tool'); if (b) b.focus(); }, 30); }
+    function closeExport() { var sh = document.getElementById('export-sheet'); if (sh) hideSheet(sh); }
+    function openSettings() { closeMenus(); var sh = document.getElementById('settings-sheet'); if (!sh) return; showSheet(sh); }
+    function closeSettings() { var sh = document.getElementById('settings-sheet'); if (sh) hideSheet(sh); }
     var toastT = null;
     function toast(msg) { var el = document.getElementById('pf-toast'); if (!el) return; el.textContent = msg; el.classList.remove('hidden'); if (toastT) clearTimeout(toastT); toastT = setTimeout(function () { el.classList.add('hidden'); }, 2600); }
     // the passage times as plain text, for the crew (share sheet on the phone, clipboard elsewhere)
@@ -1309,6 +1363,7 @@ window._sim = {};
     var menu = document.querySelector('#plan-more .pf-menu');
     if (menu) menu.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('button, label')) setTimeout(closeMenus, 0); });
     document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Tab' && trapSheetTab(ev)) return;
         if (ev.key === 'Tab' && mapOpen()) { trapMapTab(ev); return; }
         if (ev.key !== 'Escape') return;
         // the objective editor closes from any of its controls (inputs, slider, estimate line, « Plan affiché »)

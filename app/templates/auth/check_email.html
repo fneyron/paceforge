@@ -13,7 +13,12 @@
         <p class="text-sm text-gray-500 leading-relaxed">
             Clique sur le lien reçu pour activer ton compte.
         </p>
-        <p class="mt-6 text-xs text-gray-400">Pense à vérifier les spams.</p>
+        <p class="mt-6 text-xs text-gray-500">Le lien est valable 24 h. Pense à vérifier les spams.</p>
+        {% if failed %}<p role="alert" class="mt-4 text-sm text-danger">L’email n’a pas pu être envoyé. Réessaie dans une minute.</p>{% endif %}
+        {% if can_resend %}<form method="post" action="/auth/resend-verification" class="mt-4">
+            <button type="submit" class="pf-btn">Renvoyer le lien</button>
+            <p class="mt-2 text-xs text-gray-500">Un nouvel envoi est possible chaque minute.</p>
+        </form>{% else %}<a href="/auth/login" class="pf-btn mt-4">Me connecter pour renvoyer le lien</a>{% endif %}
     </div>
 </div>
 {% endblock %}

@@ -14,7 +14,7 @@
             <div>
                 <p class="pf-eyebrow">Trail et ultra</p>
                 <h1 class="pf-lh1">Ta forme et tes courses, calées sur <em>tes vraies données.</em></h1>
-                <p class="pf-llead">Relie ta montre COROS ou Garmin, ou Strava. Chaque matin&nbsp;: ta récupération, ton sommeil et ton entraînement. Avant une course&nbsp;: tes temps de passage selon la pente, la nuit et la fatigue.</p>
+                <p class="pf-llead">Prépare tes courses avec un GPX. Relie ta montre COROS ou Garmin pour suivre ton sommeil et ta récupération, ou importe tes activités depuis Strava. Chaque connexion est facultative.</p>
                 <div class="pf-lctas">
                     <a href="/auth/register" class="pf-btn pf-btn-primary">Créer mon compte
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
@@ -50,15 +50,16 @@
             <dl class="pf-lnums" data-stats>
                 <div><dt>courses analysées</dt><dd class="tabular-nums">{{ ds.races }}</dd></div>
                 <div><dt>finishers</dt><dd class="tabular-nums">{{ ds.finisher_results }}</dd></div>
-                {% if has_validation %}<div><dt>d'écart moyen sur {{ va.held_out_races }} courses jamais vues</dt><dd class="tabular-nums">{{ va.gap_after }}&nbsp;min</dd></div>{% endif %}
+                {% if has_validation %}<div><dt>d’écart moyen aux passages, sur {{ va.held_out_races }} courses de test</dt><dd class="tabular-nums">{{ va.gap_after }}&nbsp;min</dd></div>{% endif %}
             </dl>
             <p class="pf-lsrc">Résultats publics UTMB Live et LiveTrail, sans aucun nom.</p>
+            {% if has_validation %}<p class="pf-lsrc">Temps d’arrivée connu : ce chiffre mesure la répartition du temps entre les passages, pas la précision d’un temps d’arrivée prédit.</p>{% endif %}
         </section>
         {% endif %}
 
         <section class="pf-lsteps" aria-label="En 3 étapes">
-            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Relie ta montre</h2><p>COROS, Garmin ou Strava&nbsp;: tes nuits et tes sorties arrivent toutes seules.</p></div>
-            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Suis ta forme</h2><p>Chaque matin, ta récupération, ton sommeil et ta semaine d'entraînement, comparés à tes habitudes.</p></div>
+            <div><p class="pf-lstep-i">01</p><h2 class="pf-h2">Crée ton compte</h2><p>Inscris-toi avec ton email. Tu peux utiliser PaceForge sans Strava et sans montre connectée.</p></div>
+            <div><p class="pf-lstep-i">02</p><h2 class="pf-h2">Suis ta forme</h2><p>Si tu relies ta montre COROS ou Garmin, retrouve ton sommeil et ta récupération. Strava peut aussi importer tes sorties.</p></div>
             <div><p class="pf-lstep-i">03</p><h2 class="pf-h2">Prépare ta course</h2><p>Importe le GPX&nbsp;: tes temps de passage calés sur tes courses et tes longues sorties. Sur ta montre, imprimé ou sur ton téléphone.</p></div>
         </section>
 

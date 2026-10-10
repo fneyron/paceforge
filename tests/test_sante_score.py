@@ -580,7 +580,7 @@ def test_the_illness_alert_makes_the_nightly_hr_row_red():
                               "meaning": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
     row = sante.night_row(card, "hr")
     assert (row["name"], row["qual"], row["value"], row["word"], row["tone"]) == (
-        "FC de nuit", "7 nuits", "+18\u00a0%", "nettement plus haute depuis 2 nuits", "danger")
+        "FC de nuit", "2 nuits", "+18\u00a0%", "nettement plus haute depuis 2 nuits", "danger")
 
 
 def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():

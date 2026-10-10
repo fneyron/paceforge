@@ -21,7 +21,7 @@
     <p class="text-sm text-gray-500">Strava refuse les clés de ton app : indique les nouvelles en te connectant.</p>
     <a href="/setup?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
     {% else %}
-    <p class="text-sm text-gray-500">Tes activités arrivent automatiquement depuis Strava.</p>
+    <p class="text-sm text-gray-500">Si tu utilises Strava, connecte-le pour importer tes activités automatiquement. Tu peux utiliser PaceForge sans Strava.</p>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
         <a href="/auth/strava?next=settings" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Strava</a>
         {% if strava_error is defined and strava_error %}<a href="/setup?next=settings" class="text-[13px] text-gray-500 underline hover:text-gray-600">Changer les clés de ton app Strava</a>{% endif %}

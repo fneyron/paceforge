@@ -12,7 +12,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Email/password auth
+    # PaceForge identity: authentication never depends on a provider link.
     email: Mapped[str | None] = mapped_column(
         String(255), unique=True, index=True, nullable=True
     )
@@ -26,7 +26,7 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # Strava account link
+    # Optional Strava account link (activities only)
     strava_athlete_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )

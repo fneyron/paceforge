@@ -1,8 +1,8 @@
 """Santé v4 › the Sommeil section (app/services/sante_sleep.py, SANTE_V4_SPEC.md
 §4): last night's hero (the times and the nap, the total only when the ring
 does not print it), its timeline (one bar, or the hypnogram from real
-intervals; naps on their own lane), the 14 nuits / 3 mois bars with the 7 h
-line, the habits (medians to 5 min, regularity from 8 nights), the nights'
+intervals; naps on their own lane), the 14 nuits / 3 mois bars with the estimated
+need, the habits (medians to 5 min, regularity from 8 nights), the nights'
 table, the method fold; no race, no « Cœur la nuit », no clock-window chart."""
 import json
 from datetime import date, datetime, timedelta
@@ -24,6 +24,39 @@ def _nights(rows, today=D):
     nights = nt.build_nights(rows, today)
     nt.tag_activities(nights)
     return nights
+
+
+def test_sleep_reference_is_the_same_personal_need_as_the_hero(monkeypatch):
+    nights = _nights(night_rows(range(20)))
+    captured = []
+    original = viz.day_bars
+
+    def capture(*args, **kwargs):
+        captured.append(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(viz, "day_bars", capture)
+    section = sl.sleep_section(nights, D, need_of=lambda d: 550 if d == D else 480)
+    assert section["hero"]["need"] == "sur 9h10 de besoin"
+    assert captured[0]["targets"][-2:] == [480, 550]
+    assert section["bars"]["14"]["ref"] is None
+    assert "besoin estimé 9h10" in json.loads(section["bars"]["14"]["data"])["r"][-1][2]
+
+
+def test_long_range_rolling_mean_includes_nights_before_the_visible_window(monkeypatch):
+    rows = night_rows(range(96), asleep=420)
+    rows["sleep"].update(night_rows([89], asleep=560)["sleep"])
+    captured = []
+    original = viz.day_bars
+
+    def capture(*args, **kwargs):
+        captured.append(kwargs["trend"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(viz, "day_bars", capture)
+    sl.bars(_nights(rows), D, "90")
+    # The first plotted date has six earlier measured nights: (6×420+560)/7.
+    assert captured[0][0] == 440
 
 
 def test_no_night_ever_is_nothing_and_an_old_series_one_line():
@@ -100,9 +133,9 @@ def test_the_bars_rest_on_the_mean_and_print_a_night_on_a_tap():
     d = json.loads(c["data"])
     mean = round((13 * 440 + 516) / 14 / 5) * 5
     # one line at rest, never the toggle's « 14 nuits » nor the title's « sur 24 h » again
-    assert c["read"] == [viz.hm(mean), "en moyenne", ""]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30"]
-    assert c["ref"]["label"] == "7\u202fh" and c["bars"][13]["today"] and c["trend"] is None
+    assert c["read"] == [viz.hm(mean), "en moyenne", "Sur 14 nuits mesurées · 14 nuits"]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 9h00"]
+    assert c["ref"] is None and c["targets"] and c["bars"][13]["today"] and c["trend"] is None
     assert all(not b.get("miss") for b in c["bars"])
     gap = sl.bars(_nights(night_rows([0, 2])), D, "14")
     assert gap["bars"][12]["miss"] and json.loads(gap["data"])["r"][12] == ["—", "", "nuit du mar. 6 au mer. 7 · "
@@ -114,7 +147,7 @@ def test_a_short_main_night_is_said_plainly():
     a nap without a night says so plainly."""
     rows = night_rows([0], asleep=150, start=(4, 0), end=(6, 40))
     d = json.loads(sl.bars(_nights(rows), D, "14")["data"])
-    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40"]
+    assert d["r"][13] == ["2h30", "", "nuit du mer. 7 au jeu. 8 · 04:00 → 06:40 · besoin estimé 8h00"]
     nap = {"nap": {D: (82, {"windows": [[f"{D}T01:23", f"{D}T02:52"]]}, "COROS")}}
     d = json.loads(sl.bars(_nights(nap), D, "14")["data"])
     assert d["r"][13] == ["1h22", "sieste seule", "nuit du mer. 7 au jeu. 8 · nuit non enregistrée"]

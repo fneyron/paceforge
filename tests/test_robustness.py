@@ -10,7 +10,9 @@ from tests.test_simulator_routes import CPS, _create_route
 
 
 @pytest.fixture
-async def as_user(client: AsyncClient, test_user: User):
+async def as_user(client: AsyncClient, test_user: User, db_session, monkeypatch):
+    # Endpoint commits are replaced with flushes to keep each test rollback-isolated.
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     from app.dependencies import get_current_user
 
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
@@ -18,11 +20,11 @@ async def as_user(client: AsyncClient, test_user: User):
 
 
 @pytest.mark.asyncio
-async def test_odd_race_date_is_dropped_and_the_list_still_renders(as_user: AsyncClient):
+async def test_odd_race_date_is_rejected_and_empty_date_clears_it(as_user: AsyncClient):
     route_id = await _create_route(as_user)
     for bad in ("2026-10", "02/10/2026", "2026-13-45", ""):
         r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(CPS), "race_date": bad, "name": "Odd"})
-        assert r.status_code == 200, r.text
+        assert r.status_code == (422 if bad else 200), r.text
         r = await as_user.get("/simulator")
         assert r.status_code == 200
     r = await as_user.post("/api/simulator/routes", data={"route_id": route_id, "checkpoints_json": json.dumps(CPS), "race_date": "2026-10-02", "name": "Odd"})

@@ -29,7 +29,7 @@ async def test_login_page(client: AsyncClient):
 async def test_strava_link_requires_login(client: AsyncClient):
     """Without session, /auth/strava redirects to login."""
     response = await client.get("/auth/strava", follow_redirects=False)
-    assert response.status_code == 302
+    assert response.status_code == 303
     assert "/auth/login" in response.headers["location"]
 
 
@@ -50,4 +50,4 @@ async def test_logout(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_dashboard_requires_auth(client: AsyncClient):
     response = await client.get("/dashboard", follow_redirects=False)
-    assert response.status_code == 307
+    assert response.status_code == 303

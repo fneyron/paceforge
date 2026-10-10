@@ -49,7 +49,8 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
     assert sante["recuperation"] == ("", "Récupération · 14 jours", "")
-    assert sante["sommeil-14"] == ("7h20", "en moyenne", "") and sante["sommeil-90"] == ("7h20", "en moyenne", "")
+    assert sante["sommeil-14"] == ("7h20", "en moyenne", "Sur 14 nuits mesurées · 14 nuits")
+    assert sante["sommeil-90"] == ("7h20", "en moyenne", "Sur 30 nuits mesurées · 3 mois")
     # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
     assert sante["fc"][0] == "45\u00a0bpm" and " · d'habitude " in sante["fc"][2]
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race

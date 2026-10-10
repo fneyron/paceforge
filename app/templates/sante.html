@@ -29,12 +29,13 @@
     {% else %}
     <section class="pf-health-connect pf-panel space-y-3 mt-4">
         <h2 class="pf-h2">Ta montre et tes activités</h2>
-        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin, puis Strava. Ta récupération et tes nuits s'afficheront ici.</p>
+        <p class="text-[15px] text-gray-600">Connecte ta montre COROS ou Garmin pour afficher tes nuits et ta récupération. Ces connexions fonctionnent sans Strava. Tu peux aussi choisir Strava pour importer tes activités.</p>
         <div class="flex flex-wrap gap-2">
             <a href="/settings#coros" class="pf-btn pf-btn-primary pf-btn-sm">Connecter COROS</a>
             <a href="/settings#garmin" class="pf-btn pf-btn-primary pf-btn-sm">Connecter Garmin</a>
             <a href="/settings#strava" class="pf-btn pf-btn-secondary pf-btn-sm">Connecter Strava</a>
         </div>
+        <p><a href="/simulator" class="pf-link text-sm">Préparer une course : importer un GPX →</a></p>
     </section>
     {% endif %}
     {% else %}

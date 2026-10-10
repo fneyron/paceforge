@@ -605,7 +605,7 @@ async def test_routes_require_login(client: AsyncClient):
     for method, path in (("POST", "/garmin/connect"), ("GET", "/garmin/login"), ("POST", "/garmin/mfa"),
                          ("POST", "/sante/sync"), ("POST", "/settings/garmin/disconnect")):
         r = await client.request(method, path)
-        assert r.status_code == 307 and r.headers["location"] == "/", path
+        assert r.status_code == 303 and r.headers["location"] == "/auth/login", path
 
 
 async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: AsyncSession, test_user: User, login):

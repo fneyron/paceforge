@@ -39,15 +39,17 @@ class StravaService:
         # Fallback to global credentials (dev/testing only)
         return cls(db)
 
-    def get_authorize_url(self) -> str:
+    def get_authorize_url(self, state: str) -> str:
         params = {
             "client_id": self.client_id,
             "redirect_uri": f"{settings.BASE_URL}/auth/strava/callback",
             "response_type": "code",
             "scope": "read,activity:read_all,activity:write",
             "approval_prompt": "auto",
+            "state": state,
         }
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        from urllib.parse import urlencode
+        query = urlencode(params)
         return f"{STRAVA_OAUTH_URL}/authorize?{query}"
 
     async def exchange_token(self, code: str) -> dict:

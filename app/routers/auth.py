@@ -9,10 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import encrypt_secret
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services.auth import generate_token, hash_password, verify_password
+from app.services.auth import (
+    PASSWORD_PREFIX,
+    generate_token,
+    hash_password,
+    valid_email,
+    valid_verification_token,
+    verification_token,
+    verify_password,
+)
 from app.services.email import send_password_reset_email, send_verification_email
+from app.services.oauth_attempts import begin_strava, consume_strava
 from app.services.strava import StravaService
 
 logger = logging.getLogger(__name__)
@@ -44,16 +53,16 @@ async def register(
     firstname = firstname.strip()
     lastname = lastname.strip()
 
-    if not email or not password:
+    if not valid_email(email) or not password or len(firstname) > 100 or len(lastname) > 100:
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Email et mot de passe requis.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Vérifie ton adresse email et tes informations.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
-    if len(password) < 8:
+    if not 8 <= len(password) <= 1024:
         return templates.TemplateResponse(
             request, "auth/register.html",
-            context={"error": "Le mot de passe doit faire au moins 8 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
+            context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
     # Check if email already exists
@@ -64,7 +73,7 @@ async def register(
             context={"error": "Un compte existe déjà avec cet email.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
-    verify_token = generate_token()
+    verify_token = verification_token()
     user = User(
         email=email,
         password_hash=hash_password(password),
@@ -77,9 +86,10 @@ async def register(
     await db.refresh(user)
 
     # Send verification email
-    send_verification_email(email, verify_token)
-
-    request.session["user_id"] = user.id
+    sent = send_verification_email(email, verify_token)
+    request.session.clear()
+    request.session["pending_user_id"] = user.id
+    request.session["verification_failed"] = not sent
     logger.info("User %d registered: %s", user.id, email)
 
     return RedirectResponse(url="/auth/check-email", status_code=302)
@@ -87,7 +97,23 @@ async def register(
 
 @router.get("/auth/check-email", response_class=HTMLResponse)
 async def check_email_page(request: Request):
-    return templates.TemplateResponse(request, "auth/check_email.html", context={})
+    return templates.TemplateResponse(request, "auth/check_email.html", context={
+        "can_resend": bool(request.session.get("pending_user_id")),
+        "failed": request.session.pop("verification_failed", False),
+    })
+
+
+@router.post("/auth/resend-verification")
+async def resend_verification(request: Request, db: AsyncSession = Depends(get_db)):
+    user_id = request.session.get("pending_user_id")
+    user = await db.get(User, user_id) if user_id else None
+    recent = user and user.email_verify_token and valid_verification_token(user.email_verify_token, max_age=60)
+    if user and user.email and not user.email_verified and not recent:
+        user.email_verify_token = verification_token()
+        await db.flush()
+        sent = send_verification_email(user.email, user.email_verify_token)
+        request.session["verification_failed"] = not sent
+    return RedirectResponse("/auth/check-email", status_code=303)
 
 
 @router.get("/auth/verify-email")
@@ -101,7 +127,7 @@ async def verify_email(
     )
     user = result.scalar_one_or_none()
 
-    if not user:
+    if not user or not valid_verification_token(token):
         return templates.TemplateResponse(
             request, "auth/verify_result.html",
             context={"success": False, "error": "Lien invalide ou expiré."},
@@ -111,6 +137,7 @@ async def verify_email(
     user.email_verify_token = None
     await db.flush()
 
+    request.session.clear()
     request.session["user_id"] = user.id
     logger.info("Email verified for user %d", user.id)
 
@@ -144,6 +171,13 @@ async def login(
             context={"error": "Email ou mot de passe incorrect.", "email": email},
         )
 
+    if not user.password_hash.startswith(PASSWORD_PREFIX):
+        user.password_hash = hash_password(password)
+        await db.flush()
+    request.session.clear()
+    if not user.email_verified:
+        request.session["pending_user_id"] = user.id
+        return RedirectResponse("/auth/check-email", status_code=302)
     request.session["user_id"] = user.id
     logger.info("User %d logged in: %s", user.id, email)
 
@@ -205,10 +239,10 @@ async def reset_password(
     token: str = Form(...),
     password: str = Form(...),
 ):
-    if len(password) < 8:
+    if not 8 <= len(password) <= 1024:
         return templates.TemplateResponse(
             request, "auth/reset_password.html",
-            context={"token": token, "error": "Le mot de passe doit faire au moins 8 caractères."},
+            context={"token": token, "error": "Le mot de passe doit contenir entre 8 et 1 024 caractères."},
         )
 
     result = await db.execute(
@@ -216,7 +250,8 @@ async def reset_password(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_reset_expires_at or user.password_reset_expires_at < datetime.now(timezone.utc):
+    if (not user or not user.password_reset_expires_at
+            or user.password_reset_expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):
         return templates.TemplateResponse(
             request, "auth/reset_password.html",
             context={"token": token, "error": "Lien expiré. Redemande un nouveau lien."},
@@ -227,6 +262,10 @@ async def reset_password(
     user.password_reset_expires_at = None
     await db.flush()
 
+    request.session.clear()
+    if not user.email_verified:
+        request.session["pending_user_id"] = user.id
+        return RedirectResponse("/auth/check-email", status_code=302)
     request.session["user_id"] = user.id
     logger.info("Password reset for user %d", user.id)
 
@@ -254,39 +293,15 @@ def _back_to_settings(request: Request, error: str) -> RedirectResponse | None:
 
 
 @router.get("/auth/strava")
-async def strava_link(request: Request, next: str | None = None, db: AsyncSession = Depends(get_db)):
-    """Redirect to Strava OAuth to link account. User must be logged in.
-    Without the athlete's own Strava app keys yet, the setup wizard asks for
-    them first (that is the only place they are typed)."""
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return RedirectResponse(url="/auth/login", status_code=302)
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        return RedirectResponse(url="/auth/login", status_code=302)
-
-    # Check for pending credentials from setup wizard
-    pending_id = request.session.get("pending_client_id")
-    pending_secret = request.session.get("pending_client_secret")
-
+async def strava_link(request: Request, next: str | None = None,
+                      db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     _remember_next(request, next)
-    if next == "settings":
-        # from Réglages the keys were not just typed: keys left in the session
-        # by an abandoned wizard must not win over the stored ones
-        request.session.pop("pending_client_id", None)
-        request.session.pop("pending_client_secret", None)
-        pending_id = pending_secret = None
-    setup = "/setup?next=settings" if next == "settings" else "/setup"
-    if pending_id and pending_secret:
-        strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
-    elif user.has_own_strava_app and user.strava_credentials_valid:
-        strava = StravaService.for_user(db, user)
-    else:  # no keys yet, or keys Strava refused: the wizard asks for them
-        return RedirectResponse(url=setup, status_code=302)
-
-    return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
+    request.session.pop("pending_client_id", None)
+    request.session.pop("pending_client_secret", None)
+    if not user.has_own_strava_app or not user.strava_credentials_valid:
+        return RedirectResponse("/setup?next=settings" if next == "settings" else "/setup", status_code=302)
+    state = await begin_strava(request, db, user.id)
+    return RedirectResponse(StravaService.for_user(db, user).get_authorize_url(state), status_code=302)
 
 
 @router.get("/auth/strava/callback")
@@ -294,29 +309,20 @@ async def strava_callback(
     request: Request,
     code: str | None = None,
     error: str | None = None,
+    state: str | None = None,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    pending = await consume_strava(request, db, user.id, state)
+    if pending is None:
+        back = _back_to_settings(request, "La connexion a expiré ou le lien est invalide. Recommence depuis Réglages.")
+        return back or RedirectResponse("/setup?error=auth_failed", status_code=302)
     if error or not code:
-        logger.error("Strava OAuth error: %s", error)
-        request.session.pop("pending_client_id", None)
-        request.session.pop("pending_client_secret", None)
         back = _back_to_settings(request, "Connexion à Strava annulée." if error == "access_denied"
                                  else "La connexion à Strava a échoué. Réessaie.")
-        return back or RedirectResponse(url="/setup?error=auth_failed", status_code=302)
+        return back or RedirectResponse("/setup?error=auth_failed", status_code=302)
 
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return RedirectResponse(url="/auth/login", status_code=302)
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        return RedirectResponse(url="/auth/login", status_code=302)
-
-    # Determine credentials for token exchange
-    pending_id = request.session.get("pending_client_id")
-    pending_secret = request.session.get("pending_client_secret")
-
+    pending_id, pending_secret = pending.get("client_id"), pending.get("client_secret")
     if pending_id and pending_secret:
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
     elif user.has_own_strava_app:
@@ -329,7 +335,7 @@ async def strava_callback(
         token_data = await strava.exchange_token(code)
     except Exception as exc:
         logger.exception("Strava token exchange failed")
-        typed = request.session.pop("pending_client_id", None)
+        typed = pending_id
         request.session.pop("pending_client_secret", None)
         # keys just typed in the wizard: type them again there (and still come
         # back to Réglages after); stored keys refused: say so in Réglages,
@@ -360,31 +366,8 @@ async def strava_callback(
     )
     old_user = existing.scalar_one_or_none()
     if old_user:
-        # Migrate activities from old account to current user
-        from app.models.activity import Activity
-
-        await db.execute(
-            Activity.__table__.update()
-            .where(Activity.__table__.c.user_id == old_user.id)
-            .values(user_id=user.id)
-        )
-        # Carry over settings that the new user doesn't have yet
-        user.initial_sync_done = old_user.initial_sync_done
-        if old_user.preferred_sports and not user.preferred_sports:
-            user.preferred_sports = old_user.preferred_sports
-        if old_user.weekly_volume_target_km and not user.weekly_volume_target_km:
-            user.weekly_volume_target_km = old_user.weekly_volume_target_km
-        if old_user.weight_kg and not user.weight_kg:
-            user.weight_kg = old_user.weight_kg
-        if old_user.race_name and not user.race_name:
-            user.race_name = old_user.race_name
-            user.race_date = old_user.race_date
-            user.race_distance_km = old_user.race_distance_km
-
-        # Remove old user (strava_athlete_id unique constraint)
-        await db.delete(old_user)
-        await db.flush()
-        logger.info("Merged old user %d into user %d (athlete %d)", old_user.id, user.id, strava_athlete_id)
+        back = _back_to_settings(request, "Ce compte Strava est déjà lié à un autre compte PaceForge. Aucune donnée n’a été déplacée.")
+        return back or RedirectResponse("/setup?error=already_linked", status_code=302)
 
     # Link Strava to existing user
     user.strava_athlete_id = strava_athlete_id
@@ -422,15 +405,18 @@ async def strava_callback(
         except Exception:
             logger.exception("Failed to create webhook for user %d", user.id)
 
-    # Trigger initial sync
+    # Workers must see the committed link; broker failure must not undo it.
+    await db.commit()
     if not user.initial_sync_done:
         from app.tasks.initial_sync import initial_sync
-        initial_sync.delay(user.id)
-        logger.info("Triggered initial sync for user %d", user.id)
+        try:
+            initial_sync.delay(user.id)
+        except Exception:
+            logger.exception("Initial sync could not be queued for user %d", user.id)
+            request.session["strava_error"] = "Strava connecté. La synchronisation n’a pas démarré ; réessaie depuis Réglages."
 
-    await db.commit()
     next_url = request.session.pop("strava_next", None)
-    if next_url:
+    if next_url and not request.session.get("strava_error"):
         request.session["strava_ok"] = "Strava connecté. Tes activités arrivent."
     return RedirectResponse(url=next_url or HOME, status_code=302)  # an explicit « next » first
 
@@ -457,18 +443,15 @@ async def setup_credentials(
     request: Request,
     client_id: str = Form(...),
     client_secret: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    client_id = client_id.strip()
-    client_secret = client_secret.strip()
-
-    if not client_id or not client_secret:
+    client_id, client_secret = client_id.strip(), client_secret.strip()
+    if not client_id.isascii() or not client_id.isdecimal() or len(client_id) > 20 or not 1 <= len(client_secret) <= 512:
         return RedirectResponse(url="/setup?error=missing_credentials", status_code=302)
-
-    request.session["pending_client_id"] = client_id
-    request.session["pending_client_secret"] = client_secret
-
-    strava = StravaService(None, client_id=client_id, client_secret=client_secret)
-    return RedirectResponse(url=strava.get_authorize_url(), status_code=302)
+    state = await begin_strava(request, db, user.id, {"client_id": client_id, "client_secret": client_secret})
+    strava = StravaService(db, client_id=client_id, client_secret=client_secret)
+    return RedirectResponse(strava.get_authorize_url(state), status_code=302)
 
 
 # ---------------------------------------------------------------------------

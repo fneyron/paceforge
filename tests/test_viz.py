@@ -6,6 +6,24 @@ CSS/JS rules (contrast of marks and selected states in both themes, motion
 formatting in JS)."""
 import html as html_mod
 import json
+
+
+def test_night_curves_do_not_join_different_watches():
+    from datetime import date, timedelta
+
+    from app.services import viz
+
+    days = [date(2026, 10, 1) + timedelta(days=i) for i in range(4)]
+    card = viz.night_card("test", days, [45, 46, 65, 66],
+                          band=[(40, 50), (40, 50), (60, 70), (60, 70)],
+                          prov=[False] * 4, mean=[44, 45, 64, 65], unit="ms", unit_long="millisecondes",
+                          name="VFC", sources=["Garmin", "Garmin", "COROS", "COROS"], mean_counts=[7] * 4)
+    assert card["mean"].count("M") == 2
+    assert len(card["band"]) == 2
+    assert len(card["dots"]) == 4
+    read = json.loads(card["data"])["r"][-1]
+    assert read[0] == "66\u00a0ms"
+    assert "COROS" in read[2] and "moyenne 7 jours : 65 ms (7 nuits)" in read[2]
 import math
 import pathlib
 import re
@@ -477,7 +495,7 @@ def test_the_readout_reserves_its_height():
     assert ".pf-viz-read.pf-viz-read2 { display: block; min-height: 0;" in css
     assert (".pf-viz-l1 { display: flex; align-items: baseline; column-gap: 8px; min-height: 30px; "
             "white-space: nowrap;") in css
-    assert "text-overflow: ellipsis; white-space: nowrap; }" in css.split(".pf-viz-l2 > span {")[1].split("\n")[0]
+    assert "overflow-wrap: anywhere" in css.split(".pf-viz-l2 > span {")[1].split("\n")[0]
     assert ".pf-tl { display: block; width: 100%; max-width: 560px; height: auto;" in css
 
 

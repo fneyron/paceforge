@@ -106,7 +106,7 @@ async def test_landing_renders_real_numbers(client: AsyncClient):
     assert r.status_code == 200
     html = r.text
     assert "Ta forme et tes courses" in html  # 2026-10-09: the whole product, every watch
-    assert "Relie ta montre" in html and "Relie Strava" not in html
+    assert "Crée ton compte" in html and "sans Strava et sans montre connectée" in html
     assert fmt_int(raw["dataset"]["races"]) in html
     assert fmt_int(raw["dataset"]["finisher_results"]) in html
     assert fmt_dec(raw["validation"]["mean_abs_gap_min_after"]) + "&nbsp;min" in html
@@ -122,7 +122,7 @@ async def test_landing_numbers_come_from_the_json(client: AsyncClient, stats_fil
         f"1{NNBSP}234",               # dataset.races
         f"98{NNBSP}765",              # dataset.finisher_results
         "17,4&nbsp;min",              # validation.mean_abs_gap_min_after
-        "sur 47 courses jamais vues",  # validation.held_out_races
+        "sur 47 courses de test",  # validation.held_out_races
     ):
         assert expected in html, expected
     # each number once: the passages count, the training base and the date live on /methode only

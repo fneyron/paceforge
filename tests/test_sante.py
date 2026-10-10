@@ -80,9 +80,9 @@ def on_owner_day(monkeypatch):
 
 async def test_sante_requires_login(client: AsyncClient):
     r = await client.get("/sante")
-    assert r.status_code == 307 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/auth/login"
     r = await client.get("/sante/sommeil?r=90")
-    assert r.status_code == 307
+    assert r.status_code == 303
 
 
 async def test_not_connected(as_user: AsyncClient):
@@ -162,10 +162,10 @@ async def test_sante_is_first_in_both_navs(as_user: AsyncClient):
 
 
 async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: AsyncSession, no_commit):
-    from app.services.auth import hash_password
+    from app.services.auth import hash_password, verification_token
 
     user = User(email="me@x.fr", password_hash=hash_password("pw-12345678"), email_verified=True,
-                email_verify_token="tok-1")
+                email_verify_token=verification_token())
     db_session.add(user)
     await db_session.flush()
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
@@ -174,7 +174,7 @@ async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: Asyn
         assert r.status_code == 302 and r.headers["location"] == "/sante"
         r = await c.get("/")
         assert r.status_code == 302 and r.headers["location"] == "/sante"
-        r = await c.get("/auth/verify-email?token=tok-1")
+        r = await c.get("/auth/verify-email", params={"token": user.email_verify_token})
         assert r.status_code == 302 and r.headers["location"] == "/sante"
         user.password_reset_token = "reset-1"
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -188,8 +188,9 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
     from unittest.mock import AsyncMock
 
     from app.crypto import encrypt_secret
-    from app.services.auth import hash_password
+    from app.services.auth import hash_password, verification_token
     from app.services.strava import StravaService
+    from tests.test_settings_links import _callback
 
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
         "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
@@ -203,10 +204,10 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         await c.post("/auth/login", data={"email": "me@x.fr", "password": "pw-12345678"})
         await c.get("/auth/strava")
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.status_code == 302 and r.headers["location"] == "/sante"
         await c.get("/auth/strava?next=settings")
-        r = await c.get("/auth/strava/callback?code=abc")
+        r = await _callback(c, code="abc")
         assert r.headers["location"] == "/settings#strava"  # an explicit « next » is kept
 
 
@@ -297,8 +298,8 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
         ("Effort récent", None, "8\u00a0jours", "avant d'être récupéré", None, "warn"),
-        ("VFC", "7 nuits", None, "en construction", "prête dans 2\u00a0nuits", "none"),
-        ("FC de nuit", "7 nuits", None, "en construction", "prête après ta prochaine nuit", "none")]
+        ("VFC", "7 derniers jours", None, "en construction", "prête dans 2\u00a0nuits", "none"),
+        ("FC de nuit", "7 derniers jours", None, "en construction", "prête après ta prochaine nuit", "none")]
     assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
                                 "word": "pas encore de semaine habituelle", "intensity": None,
                                 "since": date(2026, 10, 2)}
@@ -322,9 +323,9 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     d = json.loads(bars["data"])
     # it rests on the mean (the latest night is the Sommeil row's); a tap: the 24 h, its parts, the night and its
     # times
-    assert bars["read"] == ["8h20", "en moyenne", ""]
-    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30"]
-    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40"]
+    assert bars["read"] == ["8h20", "en moyenne", "Sur 6 nuits mesurées · 14 nuits"]
+    assert d["r"][13] == ["8h36", "", "nuit du mer. 7 au jeu. 8 · 22:40 → 07:30 · besoin estimé 9h00"]
+    assert d["r"][12] == ["8h10", "nuit 5h50 + sieste 2h20", "nuit du mar. 6 au mer. 7 · 23:35 → 05:40 · besoin estimé 9h30"]
     assert d["r"][0] == ["1h22", "sieste seule", "nuit du jeu. 24 au ven. 25 · nuit non enregistrée"]  # no « ? »
     assert "?" not in json.dumps(d["r"], ensure_ascii=False)
     # every night counts in the medians (owner, 2026-10-08), the jet-lagged and the post-ultra ones too: 6 nights in
@@ -342,9 +343,9 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     vfc, fc = page["vfc"], page["fc"]
     # a no-break space: the display font has no narrow one (« 100ms » glued, UX11)
     assert (vfc["title"], vfc["n"], vfc["read"]) == ("VFC · 14 nuits", 14,
-                                                     ["100\u00a0ms", "", "nuit du mer. 7 au jeu. 8"])
+                                                     ["100\u00a0ms", "", "nuit du mer. 7 au jeu. 8 · COROS"])
     assert (fc["title"], fc["n"], fc["read"]) == ("FC de nuit · 14 nuits", 14,
-                                                  ["35\u00a0bpm", "", "nuit du mer. 7 au jeu. 8"])
+                                                  ["35\u00a0bpm", "", "nuit du mer. 7 au jeu. 8 · COROS · moyenne 7 jours : 36 bpm (3 nuits)"])
     assert [t["label"] for t in vfc["xt"]] == ["25", "26", "27", "28", "29", "30", "1", "2", "3", "4", "5", "6", "7",
                                                "8"]
     assert len(vfc["dots"]) == 5 and len(fc["dots"]) == 6
@@ -475,8 +476,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     rows = [(tone, unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()))
             for tone, body in re.findall(r'<li class="pf-row is-(\w+)">(.*?)</li>', recup, re.S)]
     assert rows == [("warn", "Effort récent 8 jours avant d'être récupéré"),
-                    ("none", "VFC 7 nuits en construction prête dans 2 nuits"),
-                    ("none", "FC de nuit 7 nuits en construction prête après ta prochaine nuit")]
+                    ("none", "VFC 7 derniers jours en construction prête dans 2 nuits"),
+                    ("none", "FC de nuit 7 derniers jours en construction prête après ta prochaine nuit")]
     assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
     # the details: the VFC and FC de nuit charts in words (the rows print the numbers)
     recup_detail = main.split('<section id="recuperation-detail"')[1].split("</section>")[0]
@@ -645,7 +646,7 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
                                      "meaning": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie."}
     assert page["fc"]["status"] == {"key": "in", "value": None, "word": "comme d'habitude", "text": "comme d'habitude",
                                     "tone": "ok", "meaning": None}
-    assert page["vfc"]["read"][2].startswith("nuit du mer. 7 au jeu. 8 · d'habitude ")
+    assert page["vfc"]["read"][2].startswith("nuit du mer. 7 au jeu. 8 · Garmin · moyenne 7 jours : ")
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
 
 
