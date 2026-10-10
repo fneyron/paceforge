@@ -1,0 +1,134 @@
+name: Refresh race results and evaluate model
+
+on:
+  schedule:
+    - cron: '23 3 * * 1' # Monday, 03:23 UTC
+  workflow_dispatch:
+    inputs:
+      reevaluate:
+        description: Refit and evaluate the model after collection
+        type: boolean
+        default: false
+      max_races:
+        description: Maximum races checked (1–60)
+        type: number
+        default: 24
+      max_editions:
+        description: Maximum event editions rediscovered (1–300)
+        type: number
+        default: 120
+      max_runners:
+        description: Finisher sample for new races (existing larger samples are preserved)
+        type: number
+        default: 200
+      only:
+        description: Optional space-separated source/edition/race identifiers for a targeted run
+        type: string
+        default: ''
+
+permissions:
+  contents: write # the race-data branch only; this workflow never edits main
+
+concurrency:
+  group: race-data-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      SURFACE_FETCH: 'false'
+      ACTIVITY_ENV_FETCH: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install collection dependencies
+        run: pip install .
+      - name: Restore the persistent corpus
+        run: |
+          python -m scripts.race_data.state_store restore
+          rm -f reports/race-data/collection.json
+      - name: Select monthly evaluation
+        id: mode
+        env:
+          REQUESTED: ${{ inputs.reevaluate || false }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "PACEFORGE_FIT_DIR=$RUNNER_TEMP/paceforge-fit" >> "$GITHUB_ENV"
+          python - <<'PY'
+          import datetime, os
+          monthly = os.environ['EVENT'] == 'schedule' and datetime.datetime.now(datetime.timezone.utc).day <= 7
+          enabled = monthly or os.environ['REQUESTED'] == 'true'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'evaluate={str(enabled).lower()}\n')
+          PY
+      - name: Refresh public results
+        id: collect
+        continue-on-error: true
+        timeout-minutes: 180
+        env:
+          MAX_RACES: ${{ inputs.max_races || 24 }}
+          MAX_EDITIONS: ${{ inputs.max_editions || 120 }}
+          MAX_RUNNERS: ${{ inputs.max_runners || 200 }}
+          ONLY: ${{ inputs.only || '' }}
+        run: |
+          read -r -a races <<< "$ONLY"
+          python -m scripts.race_data.refresh --max-races "$MAX_RACES" --max-editions "$MAX_EDITIONS" \
+            --max-runners "$MAX_RUNNERS" --only "${races[@]}"
+      - name: Persist complete archives and collection status
+        if: always() && (steps.collect.outcome == 'success' || steps.collect.outcome == 'failure')
+        run: python -m scripts.race_data.state_store save
+      - name: Install scientific dependencies
+        if: steps.mode.outputs.evaluate == 'true' && steps.collect.outcome == 'success'
+        run: pip install '.[research]'
+      - name: Rebuild model inputs from the refreshed corpus
+        if: steps.mode.outputs.evaluate == 'true' && steps.collect.outcome == 'success'
+        run: |
+          python scripts/race_data/fit_data.py --out "$PACEFORGE_FIT_DIR/fitdata.pkl"
+          python scripts/race_data/fit_data.py --livetrail --out "$PACEFORGE_FIT_DIR/livetrail.pkl"
+      - name: Fit and validate a candidate
+        id: evaluate
+        if: steps.mode.outputs.evaluate == 'true' && steps.collect.outcome == 'success'
+        timeout-minutes: 100
+        run: |
+          python -m scripts.race_data.reevaluate --data "$PACEFORGE_FIT_DIR/fitdata.pkl" \
+            --livetrail "$PACEFORGE_FIT_DIR/livetrail.pkl"
+      - name: Persist the candidate and validation report
+        if: steps.evaluate.outcome == 'success'
+        run: python -m scripts.race_data.state_store save
+      - name: Attach reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: race-data-reports-${{ github.run_id }}
+          path: reports/race-data/
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Summarise collection and validation
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          path = pathlib.Path('reports/race-data/collection.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Résultats publics\n\n')
+              if path.exists():
+                  data = json.loads(path.read_text())
+                  out.write(f"Statut : {data['status']}. Archives : {data['archives']}.\n\n")
+                  for key in ('updated', 'unchanged', 'excluded', 'errors'):
+                      out.write(f"- {key} : {len(data[key])}\n")
+                  out.write(f"\nCourses en attente : {data.get('races_deferred', 0)}.\n")
+              out.write('\nLe modèle en production reste inchangé.\n')
+              if '${{ steps.evaluate.outcome }}' == 'success':
+                  out.write(pathlib.Path('reports/race-data/model/summary.md').read_text())
+          PY
+      - name: Report incomplete collection as a failed run
+        if: always() && steps.collect.outcome == 'failure'
+        run: exit 1

@@ -44,3 +44,6 @@ node_modules/
 Thumbs.db
 # in-progress downloads of the race dataset collectors
 data/races/**/*.partial.json
+# Runtime state is committed only to the dedicated race-data branch.
+data/races/maintenance.json
+reports/race-data/
