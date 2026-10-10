@@ -3,7 +3,9 @@
 Compagnon iOS / Android avec trois onglets : Synchronisation native, Santé et
 Activités (écrans web du compte PaceForge dans une WebView HTTPS). Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
-serveur accessibles dans Réglages.
+serveur accessibles dans Réglages. Pour COROS et Strava, la connexion est
+commencée et terminée dans le navigateur externe afin de conserver la même
+session OAuth ; vérifier le compte PaceForge affiché avant de la valider.
 
 ## Synchronisation livrée
 

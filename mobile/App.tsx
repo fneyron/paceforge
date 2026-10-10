@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
@@ -150,15 +150,30 @@ function Companion() {
         onMessage={message} onError={() => fail(new Error('Impossible de charger PaceForge. Vérifie ta connexion.'))}
         onHttpError={event => { if (event.nativeEvent.url === url) fail(new Error(`PaceForge ne répond pas correctement (${event.nativeEvent.statusCode}).`)); }}
         onShouldStartLoadWithRequest={request => {
-          if (trusted(request.url)) return true;
+          if (trusted(request.url)) {
+            const path = new URL(request.url).pathname;
+            if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
+              // Start AND finish OAuth in the same browser; carrying only the
+              // provider redirect outside the WebView would lose its session.
+              Alert.alert('Connecter une montre ou Strava',
+                'Termine la connexion dans les réglages du navigateur, en vérifiant le compte PaceForge utilisé. Reviens ensuite dans l’application.',
+                [{ text: 'Annuler', style: 'cancel' }, { text: 'Ouvrir les réglages', onPress: () => { Linking.openURL(ORIGIN + '/settings').catch(fail); } }]);
+              return false;
+            }
+            return true;
+          }
           if (request.url.startsWith('https://')) Linking.openURL(request.url).catch(() => setError('Impossible d’ouvrir ce lien.'));
           return false;
         }}
         onNavigationStateChange={nav => {
           if (!trusted(nav.url)) return;
           const path = new URL(nav.url).pathname;
-          if (pending.current && (path.startsWith('/auth/') || path === '/')) setShowWeb(true);
-          if (!nav.loading && pending.current && (path === '/sante' || path === '/activities')) setUrl(pending.current.url + "#resume-" + Date.now());
+          if (pending.current && (path.startsWith('/auth/') || path === '/')) {
+            setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
+          }
+          if (!nav.loading && pending.current && (path === '/sante' || path === '/activities')) {
+            setUrl(pending.current.url + "#resume-" + Date.now()); guard();
+          }
         }}
       />
     </View>
