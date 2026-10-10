@@ -62,6 +62,7 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services import viz
 from app.services.health import WATCH_SOURCES, fmt_minutes
+from app.services.sante_daily import daily_context
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,10 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
+    daily = await daily_context(db, user_id, until)
     out = {
-        "has_data": bool(sources) or bool(sessions),  # older rows may come from another source (Apple Health)
+        "has_data": bool(sources) or bool(sessions) or bool(daily),
+        "daily": daily,
         "has_watch_data": bool(sources),
         "today": today,
         "night_state": night_state,

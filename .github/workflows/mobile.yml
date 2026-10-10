@@ -1,0 +1,25 @@
+name: Mobile companion checks
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/mobile.yml']
+  pull_request:
+    paths: ['mobile/**', '.github/workflows/mobile.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run lint && npm run typecheck && npm test
+        working-directory: mobile
+      - run: npx expo prebuild --no-install
+        working-directory: mobile
+      - run: npx expo export --platform ios --platform android
+        working-directory: mobile

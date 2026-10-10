@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PaceForge · Téléphone</title><link rel="stylesheet" href="/static/css/interface.css">
+<style>body{font:16px/1.6 system-ui;color:#172d35;background:#f5f7f6;margin:0;padding:24px}main{max-width:580px;margin:30px auto}h1{font-size:26px}button{font:inherit;background:#173e38;color:white;border:0;border-radius:12px;padding:12px 20px;cursor:pointer}a{color:#226653}article{background:white;padding:20px;border-radius:16px;margin:16px 0}</style></head><body><main>
+<a href="/settings">PaceForge · Réglages</a>
+{% if mode == 'connect' %}
+<h1>Associer ce téléphone</h1><p>Compte : <strong>{{ user.firstname }} {{ user.lastname }}</strong>{% if user.email %} · {{ user.email }}{% endif %}</p>
+<p>Ce téléphone pourra envoyer les mesures que tu autorises dans Apple Santé ou Health Connect. Tu pourras révoquer cet accès à tout moment.</p>
+<form method="post"><input type="hidden" name="challenge" value="{{ challenge }}"><input type="hidden" name="platform" value="{{ platform }}"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Associer à ce compte</button></form>
+<p><a href="/auth/logout">Changer de compte</a> · <a href="/mobile/privacy">Utilisation des données</a></p>
+{% elif mode == 'devices' %}
+<h1>Téléphones associés</h1>
+{% for phone in phones %}<article><strong>{{ 'iPhone' if phone.platform == 'ios' else 'Android' }}</strong><p>Dernier envoi : {{ phone.last_sync_at.strftime('%d/%m/%Y à %H:%M UTC') if phone.last_sync_at else 'aucun' }}</p><form method="post" action="/mobile/devices/revoke"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="device_id" value="{{ phone.id }}"><button>Révoquer l’accès</button></form></article>{% else %}<p>Aucun téléphone associé.</p>{% endfor %}
+<p>Révoquer un téléphone conserve l’historique reçu. Pour supprimer les imports du téléphone et révoquer tous les accès mobiles :</p>
+<form method="post" action="/mobile/data/delete" onsubmit="return confirm('Supprimer toutes les mesures importées des téléphones et leurs accès ?')"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Supprimer les imports mobiles</button></form>
+{% elif mode == 'privacy' %}
+<h1>Tes données de santé</h1><p>PaceForge lit uniquement les catégories que tu autorises : poids, masse grasse, pas, fréquence cardiaque et respiration. Les résumés quotidiens, dates et applications sources sont envoyés par HTTPS à ton compte PaceForge pour les afficher dans Santé.</p><p>Ces données ne servent ni à la publicité ni à la revente. L’application ne modifie pas les données dans Apple Santé ou Health Connect. Garmin, COROS et Strava restent des connexions distinctes.</p><p>Les imports mobiles restent conservés sur ton compte jusqu’à leur suppression. Tu peux retirer les autorisations dans les réglages de santé du téléphone, arrêter les envois dans l’application, ou <a href="/mobile/devices">supprimer l’historique et révoquer les téléphones</a>.</p><p>La FC et la respiration de la journée ne remplacent pas les mesures prises pendant le sommeil. Les données manquantes ne deviennent pas des zéros. PaceForge accompagne le suivi sportif ; il ne pose pas de diagnostic médical.</p>
+{% else %}<h1>{{ 'Téléphone associé' if mode == 'paired' else 'Compte vérifié' }}</h1><p>Retour à la synchronisation…</p>{% endif %}
+{% if message %}<script>if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({{ message|tojson }}));</script>{% endif %}
+</main></body></html>

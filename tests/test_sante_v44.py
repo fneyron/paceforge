@@ -394,7 +394,8 @@ def test_garmin_day_altitude_and_indoor_sessions():
     assert "alt" not in garmin.parse_summary(summary(d))
     assert "alt" not in garmin.parse_summary({**summary(d), "averageMonitoringEnvironmentAltitude": 99999})
     rows = garmin.build_daily({"summaries": {d: s}, "nights": {}, "naps": {}}, d)
-    assert rows[0].metric == "steps" and rows[0].details == {"kcal": 2650.0, "exercise": 55, "alt": 1712.4}
+    steps = next(r for r in rows if r.metric == "steps")
+    assert steps.details == {"kcal": 2650.0, "exercise": 55, "alt": 1712.4}
     start = datetime(2026, 10, 5, 6, tzinfo=timezone.utc)
     assert garmin.activity_fields(activity(1, start, "treadmill_running"))["raw_data"]["trainer"] is True
     assert "trainer" not in garmin.activity_fields(activity(2, start, "trail_running"))["raw_data"]

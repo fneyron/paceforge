@@ -308,7 +308,7 @@ def test_build_daily_keeps_plausible_values_only():
             "nights": {}, "naps": {}}
     rows = {(r.metric, r.day): r for r in garmin.build_daily(data, t)}
     assert set(rows) == {("steps", t - timedelta(days=1))}  # 0 steps: not worn
-    assert garmin.parse_summary(summary(t)) == {"day": t, "steps": 12000, "kcal": 2650.0, "exercise": 55}
+    assert garmin.parse_summary(summary(t)) == {"day": t, "steps": 12000, "kcal": 2650.0, "exercise": 55, "stress": 28.0}
 
 
 # ── tokens ──────────────────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     by = {}
     for r in rows:
         by.setdefault(r.metric, {})[r.date] = r
-    assert set(by) == {"sleep", "hrv", "hr_night", "resp_night", "steps"}
+    assert set(by) == {"sleep", "hrv", "hr_night", "resp_night", "steps", "stress"}
     assert by["sleep"][t].value == 420 and by["sleep"][t].source == "Garmin"  # 7 h asleep, the awake half hour out
     assert by["sleep"][t].details["main_start"] == f"{t - timedelta(days=1)}T23:00"
     assert by["sleep"][t].details["wake"] == "06:30" and by["sleep"][t].details["timeline"] is True
@@ -453,7 +453,7 @@ async def test_empty_success_is_distinct_from_failure_and_does_not_repeat_histor
     assert "Sans données de nuit" in page and "terminée" in page
     fake.calls.clear()
     await garmin.run_sync(db_session, conn)
-    assert len(fake.paths("/wellness-service/")) == 7
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
 
 
 @pytest.mark.parametrize("interruption", ["cap", "rate_limit"])
@@ -482,7 +482,7 @@ async def test_sync_recovers_a_gap_longer_than_last_week(db_session, test_user, 
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=25)
     fake.calls.clear()
     await garmin.run_sync(db_session, conn)
-    assert len(fake.paths("/wellness-service/")) == 27
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 27
     assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(fake.today - timedelta(days=26))
 
 
@@ -500,7 +500,7 @@ async def test_queue_failure_releases_reservation_and_keeps_history_due(
     assert "pas pu démarrer" in page and "every 3s" not in page
     assert conn.sync_claimed_at is None and conn.sync_summary["retry_history"]
     await garmin.run_sync(db_session, conn)
-    assert len(fake.paths("/wellness-service/")) == 60
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60
 
 
 async def test_expired_reservation_stops_polling_and_old_job_cannot_take_new_one(
@@ -857,7 +857,8 @@ def test_migration_is_the_head_and_round_trips():
             "mig_garmin_summary", ROOT / "alembic/versions/c3f4a5b6c7d8_garmin_sync_summary.py")
         summary_mig = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(summary_mig)
-        assert script.get_current_head() == summary_mig.revision
+        assert summary_mig.revision in {r.revision for r in script.walk_revisions()}
+        assert len(script.get_heads()) == 1
         with Operations.context(MigrationContext.configure(c)):
             summary_mig.upgrade()
         assert c.execute(sa.text("SELECT user_id, sync_summary FROM garmin_connections")).one() == (1, None)
@@ -1021,3 +1022,15 @@ async def test_every_password_form_in_reglages_posts(as_user: AsyncClient):
         assert 'method="post"' in head and 'action="/garmin/connect"' in head, head
     mfa = (ROOT / "app/templates/partials/garmin_login.html").read_text()
     assert '<form method="post" action="/garmin/mfa"' in mfa
+
+
+def test_day_hr_uses_local_date_excludes_bad_points_and_deduplicates():
+    start = datetime(2026, 10, 9, 22, tzinfo=timezone.utc)
+    readings = [[int((start+timedelta(minutes=5*i)).timestamp()*1000), 60+i] for i in range(12)]
+    data = {'calendarDate': '2026-10-10', 'startTimestampLocal': '2026-10-10T00:00:00.0',
+            'startTimestampGMT': '2026-10-09T22:00:00.0', 'heartRateValues': readings + readings[:1] + [[0, 65], [readings[0][0], None], [readings[0][0], 250]]}
+    result = garmin.parse_day_hr(data)
+    assert result['n'] == 12 and result['avg'] == 65.5
+    assert result['readings'][0][0].startswith('2026-10-10T00:00')
+    assert garmin.parse_day_hr({**data, 'startTimestampGMT': None}) is None
+    assert garmin.parse_day_hr({**data, 'heartRateValues': readings[:3]}) is None

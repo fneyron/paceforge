@@ -620,7 +620,7 @@ def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
-               sources=None, mean_counts=None, notes=None) -> dict:
+               sources=None, mean_counts=None, notes=None, daytime: bool = False) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -649,13 +649,14 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     y = scale(lo, hi, top, bottom)
     yv = [y(v) for v in values]
     r, a = [], []
+    label = d_long if daytime else night_label
     for i, d in enumerate(days):
         v, b = values[i], band[i]
         if v is None:
-            r.append(["—", "", f"{night_label(d)} · pas de mesure"])
-            a.append(f"{night_label(d)} : pas de mesure")  # the readout's night, as for a measured one
+            r.append(["—", "", f"{label(d)} · pas de mesure"])
+            a.append(f"{label(d)} : pas de mesure")
             continue
-        line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
+        line, spoken = label(d), f"{label(d)} : {name} {num(v, digits)} {unit_long}"
         if sources and sources[i]:
             line += f" · {sources[i]}"
             spoken += f", {sources[i]}"
@@ -693,8 +694,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,
             "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
-            "summary": f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
-            "title": f"{name} · {n} nuits", **_data(xs, [yv], days, r, a, sel=last)}
+            "summary": f"{name}, {n} jours : {measured} mesures" if daytime else f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
+            "title": f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last)}
 
 
 # ── V4 timeline: last night on a clock axis (a bar, or the hypnogram) ───────

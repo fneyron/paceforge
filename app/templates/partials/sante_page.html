@@ -132,6 +132,8 @@
 </section>
 {% endif %}
 
+{% if p.daily %}{% include "partials/sante_daily.html" %}{% endif %}
+
 <div class="pf-folds">
     {#- one method fold (the audit, 2026-10-09: « deux explications à déplier, dont 8 points pour la première »): a
         few plain bullets for the three dials (sante_score.METHOD, no citation), ending on one small link to the

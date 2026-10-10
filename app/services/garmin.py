@@ -21,8 +21,9 @@ Garmin Connect the way its mobile app does, with no AI involved:
   readings inside the main window, the main night's stage minutes (the DTO's,
   else its sleepLevels summed), plus steps as a « watch worn » marker. The
   real stage intervals (sleepLevels) are kept as HealthSample rows, the
-  hypnogram's timeline. No brand value is read (Training Readiness, Body
-  Battery, stress, sleep score, HRV status and averages, load, VO2 max, race
+  hypnogram's timeline. Daytime HR and Garmin stress are supplementary context,
+  never recovery inputs. Other brand scores are not read (Training Readiness, Body
+  Battery, sleep score, HRV status and averages, load, VO2 max, race
   predictions, the daytime resting HR). Sessions go to Activity (a session
   Strava already has only gets its Garmin id). The key names of the raw
   readings (sleepHeartRate, hrvData, wellnessEpochRespirationDataDTOList) come
@@ -664,7 +665,7 @@ ALTITUDE_PLAUSIBLE = (-500, 9000)  # m
 
 def parse_summary(data) -> dict | None:
     """usersummary of one day: steps, kcal and intensity minutes (the « watch
-    worn » marker; stress, body battery and resting HR are not read), and the
+    worn » marker; stress is context only, body battery and resting HR are not read), and the
     day's average altitude where the watch was worn
     (`averageMonitoringEnvironmentAltitude`, m, barometric models; key from
     python-garminconnect and ha_garmin, no live account seen: without it, the
@@ -676,6 +677,7 @@ def parse_summary(data) -> dict | None:
     return {
         "day": _d(data["calendarDate"]),
         "steps": _f(data.get("totalSteps")),
+        "stress": _f(data.get("averageStressLevel")),
         "kcal": _f(data.get("totalKilocalories")),
         "exercise": round((mod or 0) + (vig or 0)) if mod is not None or vig is not None else None,
         **({"alt": alt} if alt is not None and ALTITUDE_PLAUSIBLE[0] <= alt <= ALTITUDE_PLAUSIBLE[1] else {}),
@@ -686,6 +688,34 @@ def _filled(summary: dict) -> bool:
     """A day the watch reported, not the dated skeleton Garmin answers for a
     day with nothing uploaded yet."""
     return _ok(summary.get("steps"), 1, 200_000) or _ok(summary.get("kcal"), 1, 20_000)
+
+
+def parse_day_hr(data) -> dict | None:
+    """Daily HR readings on Garmin's local clock; gaps and invalid beats stay gaps."""
+    if not isinstance(data, dict) or not (day := _d(data.get("calendarDate"))):
+        return None
+    try:
+        local = datetime.fromisoformat(data["startTimestampLocal"].replace("Z", "+00:00")).replace(tzinfo=None)
+        utc = datetime.fromisoformat(data["startTimestampGMT"].replace("Z", "+00:00")).replace(tzinfo=None)
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return None
+    offset = local - utc
+    if abs(offset.total_seconds()) > 14 * 3600:
+        return None
+    readings = {}
+    for item in (data.get("heartRateValues") or [])[:5000]:
+        if not isinstance(item, list) or len(item) != 2:
+            continue
+        at, value = _local_ms(item[0]), _f(item[1])
+        if at is not None and _ok(value, 25, 230):
+            at += offset
+            if at.date() == day:
+                readings[at] = value
+    if len(readings) < MIN_READINGS:
+        return None
+    values = list(readings.values())
+    return {"day": day, "avg": round(statistics.fmean(values), 1), "min": min(values), "max": max(values),
+            "n": len(values), "readings": [[t.isoformat(), v] for t, v in sorted(readings.items())]}
 
 
 # Garmin activity type → the sport types the app knows (Strava's)
@@ -835,11 +865,16 @@ def build_daily(data: dict, today: date) -> list[Daily]:
     """The per-day values, implausible ones left out."""
     out: list[Daily] = []
     for d, v in data["summaries"].items():
+        if _ok(v.get("stress"), 0, 100):
+            out.append(Daily("stress", d, v["stress"], {"method": "garmin_daily"}))
         if _ok(v.get("steps"), 1, 200_000):  # 0 steps: the watch wasn't worn that day
             det = {"kcal": v.get("kcal"), "exercise": v.get("exercise")}
             if v.get("alt") is not None:  # the night after it reads it (nights: « en altitude »)
                 det["alt"] = v["alt"]
             out.append(Daily("steps", d, v["steps"], det))
+    for d, v in data.get("heart_days", {}).items():
+        out.append(Daily("hr_day", d, v["avg"], {"min": v["min"], "max": v["max"],
+                         "n": v["n"], "method": "garmin_24h", "readings": v["readings"]}))
     for night in (data.get("nights") or {}).values():
         out += night_dailies(night, bool(night_samples(night)))
     nights = data.get("nights") or {}
@@ -875,7 +910,7 @@ async def _display_name(db: AsyncSession, conn: GarminConnection, call: _Fetcher
 
 async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days: int, activity_days: int,
                  today: date) -> dict:
-    data: dict = {"nights": {}, "naps": {}, "summaries": {}, "activities": []}
+    data: dict = {"nights": {}, "naps": {}, "summaries": {}, "heart_days": {}, "activities": []}
     name = await _display_name(db, conn, call)
     if not name:
         raise GarminError("Garmin n'a renvoyé aucune donnée lisible.")
@@ -898,6 +933,13 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
                                                {"calendarDate": d.isoformat()}))
             if summary:
                 data["summaries"][summary["day"]] = summary
+            # Fine-grained daytime HR is refreshed for the last week only;
+            # even a 60-day initial import stays under the provider call budget.
+            if today - timedelta(days=RECENT_DAYS-1) <= d <= today:
+                hr = parse_day_hr(await call(f"/wellness-service/wellness/dailyHeartRate/{q}",
+                                            {"date": d.isoformat()}))
+                if hr:
+                    data["heart_days"][hr["day"]] = hr
     page = 0
     since = today - timedelta(days=activity_days - 1)
     while page < 10:
@@ -1183,7 +1225,8 @@ async def garmin_status(db: AsyncSession, user_id: int) -> dict:
     health = {metric: {"count": count, "latest": latest} for metric, count, latest in (await db.execute(
         select(HealthMetric.metric, func.count(HealthMetric.id), func.max(HealthMetric.date)).where(
             HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
-            HealthMetric.metric.in_(("sleep", "hrv", "hr_night", "steps"))).group_by(HealthMetric.metric))).all()}
+            HealthMetric.metric.in_(("sleep", "hrv", "hr_night", "resp_night", "hr_day", "stress", "steps")))
+        .group_by(HealthMetric.metric))).all()}
     claimed = _as_utc(conn.sync_claimed_at)
     syncing = bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL)
     return {

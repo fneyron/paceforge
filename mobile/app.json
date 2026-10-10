@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "PaceForge",
+    "slug": "paceforge",
+    "version": "1.0.0",
+    "scheme": "paceforge",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fr.paceforge.mobile"
+    },
+    "android": {
+      "package": "fr.paceforge.mobile",
+      "permissions": [
+        "android.permission.health.READ_WEIGHT",
+        "android.permission.health.READ_BODY_FAT",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_RESPIRATORY_RATE"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          },
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "PaceForge lit les mesures que tu autorises pour afficher ton poids, tes pas et tes tendances de santé dans ton compte.",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
+        }
+      ],
+      "react-native-health-connect",
+      "./plugins/with-health-connect"
+    ]
+  }
+}

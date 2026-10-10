@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Routers
-    from app.routers import activity, auth, coros, dashboard, garmin, sante, simulator, webhook
+    from app.routers import activity, auth, coros, dashboard, garmin, mobile, sante, simulator, webhook
     from app.routers import settings as settings_router
 
     app.include_router(auth.router)
@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(coros.router)      # COROS link (OAuth) and sync
     app.include_router(garmin.router)     # Garmin link (login, MFA) and sync
+    app.include_router(mobile.router)
     app.include_router(sante.router)      # Santé: recovery, load, trends from the watch
     app.include_router(webhook.router)
 

@@ -1,0 +1,23 @@
+{% import "partials/_viz.html" as viz %}
+<section id="au-quotidien" class="pf-sec" aria-labelledby="h-quotidien">
+    <h2 id="h-quotidien" class="pf-h2">Au quotidien</h2>
+    <p class="pf-card-meaning">Des repères pour comprendre tes journées. Les dates et les sources indiquent ce qui a réellement été mesuré.</p>
+    <div class="pf-daily-grid">
+        {% for c in page.daily %}
+        <article class="pf-card" aria-labelledby="daily-{{ c.key }}-title">
+            <h3 class="pf-card-h" id="daily-{{ c.key }}-title">{{ c.title }}</h3>
+            {% if c.stale %}<p class="pf-card-status is-plain">Pas de relevé récent · dernier le {{ c.latest }}</p>{% endif %}
+            {% if c.chart %}
+            {{ viz.viz_night_card(c.chart, c.chart.title, daytime=c.key != 'resp_night') }}
+            <p class="pf-viz-cap">Un point par {{ 'nuit' if c.key == 'resp_night' else 'jour' }} mesuré. Sélectionne un point pour lire sa date et sa source.</p>
+            {% else %}
+            <p class="pf-daily-value">{{ c.value }}</p>
+            <p class="pf-card-meaning">{{ c.source }}{% if c.latest %} · {{ c.latest }}{% endif %}</p>
+            {% endif %}
+            <p class="pf-card-meaning">{{ c.meaning }}</p>
+            {% if c.trend %}<p class="pf-card-meaning">{{ c.trend }}</p>{% endif %}
+            {% if c.key == 'weight' %}<a href="/settings" class="pf-link text-xs">Poids du profil et réglages ›</a>{% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
