@@ -84,8 +84,9 @@ HRV_CHUNK_DAYS = 28  # hrv-service range: 28 days at most
 ACTIVITY_PAGE = 100
 SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
-# read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
-PARTIAL = "Garmin a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+# Keep recognizing incomplete imports recorded before the structured summary existed.
+_LEGACY_PARTIAL = "Garmin a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+PARTIAL = "Une partie des données n'a pas pu être récupérée. Les données reçues sont conservées ; l'import sera repris à la prochaine synchro."
 REFRESH_MARGIN = timedelta(minutes=15)  # DI access tokens last about a day
 CALL_DELAY_S = 0.3
 MAX_CALLS = 160  # a 60-day backfill takes ~135
@@ -185,6 +186,7 @@ async def save_connection(db: AsyncSession, user_id: int, domain: str, tokens: d
     conn.display_name = None  # read again on the first sync
     conn.connected_at = datetime.now(timezone.utc)
     conn.last_sync_at = None  # (re)connected: backfill again, the upserts are idempotent
+    conn.sync_summary = None
     conn.sync_claimed_at = None
     conn.last_error = None
     conn.needs_reauth = False
@@ -489,20 +491,28 @@ class _Fetcher:
 
     def __init__(self, api: GarminApi):
         self.api, self.calls, self.failed, self.down, self.stopped = api, 0, 0, 0, False
+        self.deadline = asyncio.get_running_loop().time() + 10 * 60
 
     async def __call__(self, path: str, params: dict | None = None):
         if self.stopped:
             return None
-        if self.calls >= MAX_CALLS:
-            logger.info("Garmin call cap reached, %s skipped", path)
+        if self.calls >= MAX_CALLS or asyncio.get_running_loop().time() >= self.deadline:
+            logger.info("Garmin sync budget reached, %s skipped", path)
+            self.stopped = True
             return None
         if self.calls:
             await asyncio.sleep(CALL_DELAY_S)
         self.calls += 1
         try:
             out = await self.api.get(path, params)
-        except (GarminAuthError, GarminRateLimited):
+        except GarminAuthError:
             raise
+        except GarminRateLimited:
+            if self.calls == 1:
+                raise
+            self.failed += 1
+            self.stopped = True
+            return None
         except httpx.TransportError as e:
             # one slow call is skipped; after 3 in a row Garmin is down: fail at once when nothing
             # came back, else stop calling and keep what arrived
@@ -867,6 +877,8 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
                  today: date) -> dict:
     data: dict = {"nights": {}, "naps": {}, "summaries": {}, "activities": []}
     name = await _display_name(db, conn, call)
+    if not name:
+        raise GarminError("Garmin n'a renvoyé aucune donnée lisible.")
     q = quote(name, safe="") if name else None
     # the nights first (last night is what the morning's decision reads), the sessions last
     if q:
@@ -897,6 +909,8 @@ async def _fetch(db: AsyncSession, conn: GarminConnection, call: _Fetcher, days:
         if len(rows) < ACTIVITY_PAGE:
             break
         page += 1
+    if page == 10:
+        call.stopped = True
     return data
 
 
@@ -968,13 +982,18 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("steps", "sleep")))
     )).scalar()
-    first = conn.last_sync_at is None or conn.last_error == PARTIAL
+    first = (conn.last_sync_at is None or conn.last_error in (PARTIAL, _LEGACY_PARTIAL)
+             or (conn.sync_summary or {}).get("retry_history"))
     upgraded = (await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
                 and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
                 and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=FILTER_READ))
-    days = BACKFILL_DAYS if first or not have or not upgraded else RECENT_DAYS
-    activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
+    gap = ((today - _as_utc(conn.last_sync_at).date()).days + 2) if conn.last_sync_at else 0
+    history_complete = (conn.sync_summary or {}).get("history_complete", False)
+    days = (BACKFILL_DAYS if first or (not have and not history_complete) or not upgraded
+            else min(BACKFILL_DAYS, max(RECENT_DAYS, gap)))
+    activity_days = ACTIVITY_BACKFILL_DAYS if first else min(ACTIVITY_BACKFILL_DAYS, max(RECENT_DAYS, gap))
+    queried_today = today
     async with http_client() as client:
         call = _Fetcher(GarminApi(db, conn, client))
         data = await _fetch(db, conn, call, days, activity_days, today)
@@ -1001,7 +1020,19 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     # each new outdoor session's altitude and weather (Open-Meteo), the backlog a few at a time; never fails a sync
     result["env"] = await activity_env.enrich(db, conn.user_id)
     # Garmin stopped answering halfway through the history: keep it, but ask for it all again next time
-    result["backfill_partial"] = call.stopped and (days == BACKFILL_DAYS or activity_days == ACTIVITY_BACKFILL_DAYS)
+    # A single failed day, as well as the call cap, must never look complete.
+    result["backfill_partial"] = bool(call.failed or call.stopped)
+    result["summary"] = {
+        "status": "partial" if result["backfill_partial"] else "complete",
+        "retry_history": result["backfill_partial"],
+        "health_from": (queried_today - timedelta(days=days - 2)).isoformat(),
+        "health_to": (queried_today + timedelta(days=1)).isoformat(),
+        "activities_from": (queried_today - timedelta(days=activity_days - 1)).isoformat(),
+        "calls": call.calls, "failed_calls": call.failed,
+        "new_activities": acts["inserted"] + acts["linked"],
+        "new_health_values": daily["inserted"],
+        "history_complete": history_complete or (days == BACKFILL_DAYS and not result["backfill_partial"]),
+    }
     logger.info("Garmin sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, call.calls, call.failed, ", stopped" if call.stopped else "",
                 result["by_metric"], acts)
@@ -1027,21 +1058,43 @@ async def claim(db: AsyncSession, conn: GarminConnection) -> bool:
     return True
 
 
-async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
+async def run_sync(db: AsyncSession, conn: GarminConnection, *, claimed_at: str | None = None) -> dict | None:
     """Claim, sync, record how it went. None when a sync is already running."""
-    if conn.needs_reauth or not await claim(db, conn):
+    if conn.needs_reauth:
         return None
+    if claimed_at is None:
+        if not await claim(db, conn):
+            return None
+    else:
+        # Atomically take the queued reservation: duplicate/redelivered jobs and
+        # an old job that arrives after a new reservation must do nothing.
+        now = datetime.now(timezone.utc)
+        running = {**(conn.sync_summary or {}), "status": "running"}
+        taken = await db.execute(update(GarminConnection).where(
+            GarminConnection.id == conn.id,
+            GarminConnection.sync_claimed_at == datetime.fromisoformat(claimed_at),
+            GarminConnection.sync_summary["status"].as_string() == "queued",
+        ).values(sync_claimed_at=now, sync_summary=running).execution_options(synchronize_session=False))
+        await db.commit()
+        if taken.rowcount != 1:
+            return None
+        set_committed_value(conn, "sync_claimed_at", now)
+    conn.sync_summary = {**(conn.sync_summary or {}), "status": "running"}
+    await db.commit()
     try:
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
+        conn.sync_summary = {**result["summary"], "checked_at": conn.last_sync_at.isoformat()}
         # a history cut short is not done: said so, and the next sync asks for all of it again
         conn.last_error = PARTIAL if result.get("backfill_partial") else None
         outcome = {"ok": True, "result": result}
     except GarminAuthError as e:
+        conn.sync_summary = {**(conn.sync_summary or {}), "status": "failed"}
         outcome = {"ok": False, "error": str(e)}
     except (GarminError, httpx.HTTPError) as e:
         logger.warning("Garmin sync failed for user %d: %r", conn.user_id, e)
         conn.last_error = str(e) if isinstance(e, GarminError) else "Garmin ne répond pas pour l'instant."
+        conn.sync_summary = {**(conn.sync_summary or {}), "status": "failed"}
         outcome = {"ok": False, "error": conn.last_error}
     except asyncio.CancelledError:  # the worker stops (a deploy): never leave the link claimed
         await _release(db, conn, conn.user_id)
@@ -1049,7 +1102,9 @@ async def run_sync(db: AsyncSession, conn: GarminConnection) -> dict | None:
     except Exception:  # a bug must not leave the link « en cours » for the claim's 15 min
         logger.exception("Garmin sync crashed for user %d", conn.user_id)
         await db.rollback()
+        await db.refresh(conn)
         conn.last_error = "La synchro a échoué : réessaie plus tard."
+        conn.sync_summary = {**(conn.sync_summary or {}), "status": "failed"}
         outcome = {"ok": False, "error": conn.last_error}
     conn.sync_claimed_at = None
     await db.commit()
@@ -1072,12 +1127,32 @@ async def _sync_in_background(user_id: int) -> None:
     async with async_session_factory() as db:
         conn = await connection_for(db, user_id)
         if conn:
-            await run_sync(db, conn)
+            await queue_sync(db, conn)
+
+
+async def queue_sync(db: AsyncSession, conn: GarminConnection) -> bool:
+    """Reserve once, then let the durable worker run independently of the browser."""
+    from app.tasks.garmin_sync import sync_garmin_user
+
+    if conn.needs_reauth or not await claim(db, conn):
+        return False
+    stamp = _as_utc(conn.sync_claimed_at).isoformat()
+    conn.sync_summary = {**(conn.sync_summary or {}), "status": "queued"}
+    await db.commit()
+    try:
+        await asyncio.to_thread(sync_garmin_user.apply_async, args=[conn.id, stamp], retry=False)
+    except Exception:
+        logger.exception("Garmin sync could not be queued for user %d", conn.user_id)
+        conn.sync_claimed_at = None
+        conn.last_error = "La synchro n'a pas pu démarrer. Réessaie dans un instant."
+        conn.sync_summary = {**(conn.sync_summary or {}), "status": "failed"}
+        await db.commit()
+        return False
+    return True
 
 
 def schedule_sync(user_id: int) -> bool:
-    """Start a sync in this process without waiting for it (after connecting,
-    on opening Santé). False when syncs are off here."""
+    """Queue a sync without waiting for it (after connecting, on opening Santé)."""
     if not settings.GARMIN_SYNC:
         return False
     try:
@@ -1103,16 +1178,26 @@ async def garmin_status(db: AsyncSession, user_id: int) -> dict:
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
-    sessions = (await db.execute(select(func.count(Activity.id)).where(
-        Activity.user_id == user_id, Activity.garmin_activity_id.is_not(None)))).scalar() or 0
+    sessions, latest_activity = (await db.execute(select(func.count(Activity.id), func.max(Activity.start_date)).where(
+        Activity.user_id == user_id, Activity.garmin_activity_id.is_not(None)))).one()
+    health = {metric: {"count": count, "latest": latest} for metric, count, latest in (await db.execute(
+        select(HealthMetric.metric, func.count(HealthMetric.id), func.max(HealthMetric.date)).where(
+            HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
+            HealthMetric.metric.in_(("sleep", "hrv", "hr_night", "steps"))).group_by(HealthMetric.metric))).all()}
     claimed = _as_utc(conn.sync_claimed_at)
+    syncing = bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL)
     return {
         "connected": True,
         "needs_reauth": conn.needs_reauth,
         "last_sync_at": conn.last_sync_at,
         "last_sync_ago": _ago(conn.last_sync_at),
-        "syncing": bool(claimed and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
+        "syncing": syncing,
+        "interrupted": bool((claimed and not syncing) or
+                            (not syncing and (conn.sync_summary or {}).get("status") in ("queued", "running"))),
         "last_error": conn.last_error,
         "sessions": sessions,
+        "latest_activity": latest_activity,
+        "health": health,
+        "summary": conn.sync_summary or {},
         "per_metric": await synced_counts(db, user_id, SOURCE),
     }

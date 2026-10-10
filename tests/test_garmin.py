@@ -213,6 +213,15 @@ async def as_user(client: AsyncClient, test_user: User, no_commit):
         yield c
 
 
+@pytest.fixture
+def queued(monkeypatch):
+    from app.tasks.garmin_sync import sync_garmin_user
+
+    jobs = []
+    monkeypatch.setattr(sync_garmin_user, "apply_async", lambda *, args, retry: jobs.append(args))
+    return jobs
+
+
 async def _link(db: AsyncSession, user: User, access: str | None = None, refresh="rt-1",
                 ttl=timedelta(hours=20), **extra) -> GarminConnection:
     access = access or jwt(tag="at-0", ttl=ttl)
@@ -422,6 +431,107 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     by = {(m.metric, m.date): m.value for m in rows}
     assert by[("sleep", t)] == 420 and by[("hr_night", t)] == 49.0
     assert not any(m == "steps" for m, _ in by)
+    assert conn.sync_summary["status"] == "partial" and conn.last_error == garmin.PARTIAL
+    assert conn.sync_summary["failed_calls"] == 60
+    # Even isolated failures must retry the older days, not just the last week.
+    fake.statuses, fake.calls = {}, []
+    await garmin.run_sync(db_session, conn)
+    assert len(fake.paths("/usersummary-service/")) == 60
+    assert conn.sync_summary["status"] == "complete" and conn.last_error is None
+
+
+async def test_empty_success_is_distinct_from_failure_and_does_not_repeat_history(
+    as_user, db_session, test_user, fake,
+):
+    conn = await _link(db_session, test_user)
+    fake.activities = []
+    fake.statuses = {"/wellness-service/": 204, "/usersummary-service/": 204}
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert conn.sync_summary["status"] == "complete" and conn.sync_summary["history_complete"]
+    page = (await as_user.get("/settings/garmin/sync")).text
+    assert "Aucune nouvelle donnée à ajouter" in page and "Aucune donnée importée" in page
+    assert "Sans données de nuit" in page and "terminée" in page
+    fake.calls.clear()
+    await garmin.run_sync(db_session, conn)
+    assert len(fake.paths("/wellness-service/")) == 7
+
+
+@pytest.mark.parametrize("interruption", ["cap", "rate_limit"])
+async def test_a_budget_or_late_rate_limit_keeps_data_and_retries_history(
+    db_session, test_user, fake, no_commit, monkeypatch, interruption,
+):
+    conn = await _link(db_session, test_user)
+    original = fake.handler
+    if interruption == "cap":
+        monkeypatch.setattr(garmin, "MAX_CALLS", 12)
+    else:
+        def limited(request):
+            if len(fake.calls) >= 12:
+                return httpx.Response(429, json={})
+            return original(request)
+        monkeypatch.setattr(garmin, "_transport", httpx.MockTransport(limited))
+    result = await garmin.run_sync(db_session, conn)
+    assert result["ok"] and result["result"]["inserted"] > 0
+    assert conn.sync_summary["status"] == "partial" and conn.sync_summary["retry_history"]
+    assert conn.last_error == garmin.PARTIAL and conn.sync_claimed_at is None
+
+
+async def test_sync_recovers_a_gap_longer_than_last_week(db_session, test_user, fake, no_commit):
+    conn = await _link(db_session, test_user)
+    await garmin.run_sync(db_session, conn)
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=25)
+    fake.calls.clear()
+    await garmin.run_sync(db_session, conn)
+    assert len(fake.paths("/wellness-service/")) == 27
+    assert fake.paths("/activitylist-service/")[0][1]["startDate"] == str(fake.today - timedelta(days=26))
+
+
+async def test_queue_failure_releases_reservation_and_keeps_history_due(
+    as_user, db_session, test_user, fake, monkeypatch,
+):
+    from app.tasks.garmin_sync import sync_garmin_user
+
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc),
+                       last_error=garmin.PARTIAL, sync_summary={"retry_history": True})
+    def unavailable(**kwargs):
+        raise ConnectionError("broker unavailable")
+    monkeypatch.setattr(sync_garmin_user, "apply_async", unavailable)
+    page = (await as_user.post("/settings/garmin/sync")).text
+    assert "pas pu démarrer" in page and "every 3s" not in page
+    assert conn.sync_claimed_at is None and conn.sync_summary["retry_history"]
+    await garmin.run_sync(db_session, conn)
+    assert len(fake.paths("/wellness-service/")) == 60
+
+
+async def test_expired_reservation_stops_polling_and_old_job_cannot_take_new_one(
+    as_user, db_session, test_user, fake, queued,
+):
+    conn = await _link(db_session, test_user)
+    await garmin.queue_sync(db_session, conn)
+    old_stamp = queued[0][1]
+    conn.sync_claimed_at -= timedelta(minutes=16)
+    await db_session.flush()
+    page = (await as_user.get("/settings/garmin/sync")).text
+    assert "n’a pas abouti" in page and "every 3s" not in page
+    await garmin.queue_sync(db_session, conn)
+    assert len(queued) == 2
+    assert await garmin.run_sync(db_session, conn, claimed_at=old_stamp) is None
+    assert not fake.calls
+    assert (await garmin.run_sync(db_session, conn, claimed_at=queued[1][1]))["ok"]
+
+
+async def test_queued_worker_uses_its_own_task_session(db_session, test_user, fake, no_commit, queued, monkeypatch):
+    import app.database
+    from app.tasks.garmin_sync import _run_one
+
+    @asynccontextmanager
+    async def session():
+        yield db_session
+    monkeypatch.setattr(app.database, "get_task_session", session)
+    conn = await _link(db_session, test_user)
+    await garmin.queue_sync(db_session, conn)
+    assert (await _run_one(*queued[0]))["ok"]
+    assert conn.sync_summary["status"] == "complete"
 
 
 async def test_a_first_sync_cut_short_is_redone_in_full(db_session: AsyncSession, test_user: User,
@@ -606,6 +716,7 @@ async def test_login_errors_in_plain_french(test_user: User, login):
 
 async def test_routes_require_login(client: AsyncClient):
     for method, path in (("POST", "/garmin/connect"), ("GET", "/garmin/login"), ("POST", "/garmin/mfa"),
+                         ("GET", "/settings/garmin/sync"), ("POST", "/settings/garmin/sync"),
                          ("POST", "/sante/sync"), ("POST", "/settings/garmin/disconnect")):
         r = await client.request(method, path)
         assert r.status_code == 303 and r.headers["location"] == "/auth/login", path
@@ -637,25 +748,34 @@ async def test_connect_page_flow_with_mfa(as_user: AsyncClient, db_session: Asyn
     r = await as_user.get("/garmin/login")
     assert r.status_code == 204 and r.headers["HX-Redirect"] == "/settings#garmin"
     page = (await as_user.get("/settings")).text
-    assert "Garmin connecté. Tes 60 derniers jours" in page and "Première synchro en cours" in page
+    assert "Garmin connecté. Tes 60 derniers jours" in page and "Première synchronisation à lancer" in page
     r = await as_user.get("/garmin/login")  # the ticket is gone once used
     assert "La connexion à Garmin a expiré. Recommence." in r.text
 
 
 async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
-                                                      test_user: User, fake):
-    await _link(db_session, test_user)
+                                                      test_user: User, fake, queued):
+    conn = await _link(db_session, test_user)
     sante = (await as_user.get("/sante")).text
     assert "Pas encore de données de Garmin" in sante and "Connecter COROS" not in sante
     # Santé: no sync button, no link status (Réglages': owner, 2026-10-08)
     assert "/sante/sync\"" not in sante and "synchro" not in sante.lower()
     settings_page = (await as_user.get("/settings")).text
     block = settings_page.split('id="garmin"')[1]
-    assert "Première synchro en cours" in block and "Synchroniser maintenant" in block
+    assert "Première synchronisation à lancer" in block and "Synchroniser maintenant" in block
     assert 'hx-post="/settings/garmin/sync" hx-target="#garmin-sync-state"' in block
 
     r = await as_user.post("/settings/garmin/sync")
-    assert r.status_code == 200 and "Synchro faite : tes nouvelles données sont dans Santé." in r.text
+    assert r.status_code == 200 and "Synchronisation en attente" in r.text
+    assert 'hx-get="/settings/garmin/sync"' in r.text and not fake.calls
+    assert len(queued) == 1
+    assert "Synchronisation en attente" in (await as_user.post("/settings/garmin/sync")).text
+    assert len(queued) == 1  # repeat clicks cannot enqueue a second import
+    assert (await garmin.run_sync(db_session, conn, claimed_at=queued[0][1]))["ok"]
+    r = await as_user.get("/settings/garmin/sync")
+    assert "terminée" in r.text and "2 activités ajoutées" in r.text
+    assert "every 3s" not in r.text  # polling stops after completion
+    assert await garmin.run_sync(db_session, conn, claimed_at=queued[0][1]) is None
     sante = (await as_user.get("/sante")).text
     assert 'id="sommeil"' in sante and 'data-viz-key="sommeil-14"' in sante  # Sommeil: the nights' bars
     for brand in ("Charge <small>", "Training Readiness", "Body Battery", "forte hausse"):
@@ -673,17 +793,19 @@ async def test_settings_and_sante_sync_and_disconnect(as_user: AsyncClient, db_s
 
 
 async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession,
-                                                  test_user: User, fake):
+                                                  test_user: User, fake, queued):
     conn = await _link(db_session, test_user)
     fake.api_status = 503
     r = await as_user.post("/settings/garmin/sync")
     assert "HX-Refresh" not in r.headers
+    await garmin.run_sync(db_session, conn, claimed_at=queued[0][1])
+    r = await as_user.get("/settings/garmin/sync")
     assert "Dernière synchro échouée : Garmin n&#39;a renvoyé aucune donnée lisible." in r.text
     fake.api_status = None
     conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
     await db_session.flush()
     r = await as_user.post("/settings/garmin/sync")
-    assert "Une synchro est déjà en cours" in r.text
+    assert "Synchronisation en cours" in r.text
     # a Santé page left open since v4: its old button reloads it, harmlessly
     r = await as_user.post("/sante/sync")
     assert r.headers.get("HX-Refresh") == "true"
@@ -731,6 +853,17 @@ def test_migration_is_the_head_and_round_trips():
         c.execute(sa.text(row))
         with pytest.raises(sa.exc.IntegrityError):
             c.execute(sa.text(row))  # one link per athlete
+        spec = importlib.util.spec_from_file_location(
+            "mig_garmin_summary", ROOT / "alembic/versions/c3f4a5b6c7d8_garmin_sync_summary.py")
+        summary_mig = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(summary_mig)
+        assert script.get_current_head() == summary_mig.revision
+        with Operations.context(MigrationContext.configure(c)):
+            summary_mig.upgrade()
+        assert c.execute(sa.text("SELECT user_id, sync_summary FROM garmin_connections")).one() == (1, None)
+        with Operations.context(MigrationContext.configure(c)):
+            summary_mig.downgrade()
+        assert c.execute(sa.text("SELECT count(*) FROM garmin_connections")).scalar() == 1
         with Operations.context(MigrationContext.configure(c)):
             mig.downgrade()
         insp = sa.inspect(c)

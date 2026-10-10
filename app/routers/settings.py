@@ -111,6 +111,10 @@ async def watch_sync(
     conn = await service.connection_for(db, user.id)
     if conn is None or conn.needs_reauth:
         return HTMLResponse("", headers={"HX-Refresh": "true"})
+    if watch == "garmin":
+        await garmin_service.queue_sync(db, conn)
+        return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
+            "request": request, "w": await garmin_status(db, user.id), "key": watch})
     outcome = await service.run_sync(db, conn)
     if conn.needs_reauth:  # refused while syncing: reconnect
         return HTMLResponse("", headers={"HX-Refresh": "true"})
@@ -124,6 +128,16 @@ async def watch_sync(
         msg = None  # « Dernière synchro échouée : … » says it
     return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
         "request": request, "w": await status_of(db, user.id), "key": watch, "msg": msg})
+
+
+@router.get("/settings/garmin/sync", response_class=HTMLResponse)
+async def garmin_sync_state(request: Request, user: User = Depends(get_current_user),
+                            db: AsyncSession = Depends(get_db)):
+    status = await garmin_status(db, user.id)
+    if not status["connected"] or status["needs_reauth"]:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
+        "request": request, "w": status, "key": "garmin"})
 
 
 def _to_float(raw: str) -> float | None:

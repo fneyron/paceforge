@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -42,6 +43,7 @@ class GarminConnection(Base):
     # set by the worker that takes a sync, so parallel workers don't all run it
     sync_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)  # plain French, shown as is
+    sync_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     needs_reauth: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )

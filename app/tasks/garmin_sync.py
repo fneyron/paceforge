@@ -10,6 +10,21 @@ from app.models.garmin import GarminConnection
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name="paceforge.sync_garmin_user")
+def sync_garmin_user(conn_id: int, claimed_at: str) -> dict | None:
+    return asyncio.run(_run_one(conn_id, claimed_at))
+
+
+async def _run_one(conn_id: int, claimed_at: str) -> dict | None:
+    from app.database import get_task_session
+    from app.services.garmin import run_sync
+
+    async with get_task_session() as db:
+        conn = await db.get(GarminConnection, conn_id)
+        if conn is not None:
+            return await run_sync(db, conn, claimed_at=claimed_at)
+
+
 @celery_app.task(name="paceforge.sync_garmin")
 def sync_garmin() -> dict:
     """Hourly (beat): sync every Garmin link not synced for 2 hours, so the

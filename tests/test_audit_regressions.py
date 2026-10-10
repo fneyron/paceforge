@@ -248,7 +248,9 @@ def test_oauth_migration_round_trip_and_foreign_key():
     migration = _load("b2e3f4a5b6c7_oauth_attempts")
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == [migration.revision]
+    assert migration.revision in {
+        revision.revision for revision in ScriptDirectory.from_config(cfg).walk_revisions()
+    }
     engine = sa.create_engine("sqlite://")
     with engine.begin() as connection:
         connection.execute(sa.text("PRAGMA foreign_keys=ON"))
