@@ -360,7 +360,7 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     assert s["raw0"] == pytest.approx((25 * subs["hrv"] + 25 * 100 + 30 * 100) / 80)
     assert s["value"] == 65 and s["caps"] == ["effort"]
     effort = {r["key"]: r for r in page["rows"]}["effort"]  # 65 until D+5: the 4th day of 5, one day left
-    assert (effort["value"], effort["word"], effort["tone"]) == ("1\u00a0jour", "avant d'être récupéré", "warn")
+    assert (effort["value"], effort["word"], effort["tone"]) == ("1\u00a0jour", "de récupération estimée", "warn")
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
         "◇ après un gros effort"  # v4.3: Santé names no outing (its plain words)
     act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not marked as a race on Strava

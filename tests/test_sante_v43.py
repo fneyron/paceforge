@@ -148,7 +148,7 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
     assert (page["score"]["value"], page["state"], page["line"]) == (None, None, td.NO_NIGHT)
     assert (page["dials"][1]["value"], page["dials"][1]["sub"]) == ("—", "pas de score")
     effort = {r["key"]: r for r in page["rows"]}["effort"]
-    assert (effort["value"], effort["word"], effort["tone"]) == ("dernier jour", "avant d'être récupéré", "warn")
+    assert (effort["value"], effort["word"], effort["tone"]) == ("dernier jour estimé", "de récupération estimée", "warn")
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))
     assert free["score"]["value"] is None and free["state"] is None and free["line"] == td.NO_NIGHT
     assert "effort" not in {r["key"] for r in free["rows"]}

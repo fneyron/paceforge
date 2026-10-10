@@ -297,7 +297,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
-        ("Effort récent", None, "8\u00a0jours", "avant d'être récupéré", None, "warn"),
+        ("Effort récent", None, "8\u00a0jours", "de récupération estimée", "Durée indicative, selon ton ressenti.", "warn"),
         ("VFC", "7 derniers jours", None, "en construction", "prête dans 2\u00a0nuits", "none"),
         ("FC de nuit", "7 derniers jours", None, "en construction", "prête après ta prochaine nuit", "none")]
     assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
@@ -343,9 +343,10 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
     vfc, fc = page["vfc"], page["fc"]
     # a no-break space: the display font has no narrow one (« 100ms » glued, UX11)
     assert (vfc["title"], vfc["n"], vfc["read"]) == ("VFC · 14 nuits", 14,
-                                                     ["100\u00a0ms", "", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
+                                                     ["100\u00a0ms", "dernière nuit mesurée", "nuit du mer. 7 au jeu. 8 · COROS · éveils intermédiaires possibles"])
     assert (fc["title"], fc["n"], fc["read"]) == ("FC de nuit · 14 nuits", 14,
-                                                  ["35\u00a0bpm", "", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable · moyenne 7 jours : 36 bpm (3 nuits)"])
+                                                  ["35\u00a0bpm", "dernière nuit mesurée", "nuit du mer. 7 au jeu. 8 · COROS · moyenne COROS : exclusion des éveils non vérifiable"])
+    assert fc['trend']['value'] == '36\u202fbpm' and fc['trend']['n'] == 3
     assert [t["label"] for t in vfc["xt"]] == ["25", "26", "27", "28", "29", "30", "1", "2", "3", "4", "5", "6", "7",
                                                "8"]
     assert len(vfc["dots"]) == 5 and len(fc["dots"]) == 6
@@ -475,7 +476,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     recup = main.split('<section id="recuperation"')[1].split("</section>")[0]
     rows = [(tone, unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()))
             for tone, body in re.findall(r'<li class="pf-row is-(\w+)">(.*?)</li>', recup, re.S)]
-    assert rows == [("warn", "Effort récent 8 jours avant d'être récupéré"),
+    assert rows == [("warn", "Effort récent 8 jours de récupération estimée Durée indicative, selon ton ressenti."),
                     ("none", "VFC 7 derniers jours en construction prête dans 2 nuits"),
                     ("none", "FC de nuit 7 derniers jours en construction prête après ta prochaine nuit")]
     assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
@@ -483,8 +484,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     recup_detail = main.split('<section id="recuperation-detail"')[1].split("</section>")[0]
     # the usual values to come, said where they will be drawn (owner, 2026-10-09: « Tu ne mets pas les fourchettes
     # pour VFC et FC repos dans les graphiques ? »)
-    assert recup_detail.count('<p class="pf-card-status is-plain">Tes valeurs habituelles s&#39;afficheront ici dès 7 '
-                              "nuits mesurées.</p>") == 2
+    assert recup_detail.count("Tes valeurs habituelles s&#39;afficheront ici dès 7 nuits mesurées.") == 2
+    assert recup_detail.count('class="pf-night-trend"') == 2
     # Sommeil: « Cette nuit », its times, its hours over its 9-h need; the stages; then, in the details, the 24-h
     # chart and the habits
     sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
@@ -647,7 +648,7 @@ async def test_rich_wearer_a_lowish_hrv_is_green_and_lower(db_session: AsyncSess
     assert page["fc"]["status"] == {"key": "in", "value": None, "word": "comme d'habitude", "text": "comme d'habitude",
                                     "tone": "ok", "meaning": None}
     assert page["vfc"]["read"][2].startswith(
-        "nuit du mer. 7 au jeu. 8 · Garmin · éveils possibles : ancien calcul · moyenne 7 jours : ")
+        "nuit du mer. 7 au jeu. 8 · Garmin · éveils possibles : ancien calcul · d'habitude ")
     assert "provisoire" not in page["vfc"]["read"][2] and page["vfc"]["title"] == "VFC · 30 nuits"
 
 

@@ -88,6 +88,14 @@ def test_helpers():
     assert viz.rolling([60, None, 64, 66], 3) == (60 + 64 + 66) / 3 and viz.rolling([60, None, 64], 2) is None
 
 
+def test_axis_tick_count_stays_bounded_for_ultra_distance_step_totals():
+    for hi in (2000, 18000, 131000, 200000, 1000000):
+        ticks = viz.nice_ticks(0, hi, 2)
+        assert 2 <= len(ticks) <= 4
+        assert ticks == sorted(set(ticks))
+        assert ticks[0] == 0 and ticks[-1] <= hi
+
+
 # ── builders ────────────────────────────────────────────────────────────────
 
 

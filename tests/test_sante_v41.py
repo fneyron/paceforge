@@ -215,8 +215,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
         card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
         # its status line: a dot and its words, no percentage (the row prints it: once; the 2 missing nights leave
         # the VFC week a little under its normal)
-        assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i>'
-                         r'(dans tes valeurs habituelles|plus basse que d&#39;habitude|comme d&#39;habitude)</p>',
+        assert re.search(r'<p class="pf-card-status is-(ok|warn)"><i class="pf-dot" aria-hidden="true"></i><span><b>[^<]+</b> · '
+                         r'(dans tes valeurs habituelles|plus basse que d&#39;habitude|comme d&#39;habitude)</span></p>',
                          card), key
         legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne sur 7 jours" in legend
@@ -251,7 +251,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
     assert recup["aria"] == "Récupération : pas de score ce matin."
     assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [
-        ("Effort récent", "11\u00a0jours", "avant d'être récupéré", None, "danger"),
+        ("Effort récent", "11\u00a0jours", "de récupération estimée", "Durée indicative, selon ton ressenti.", "danger"),
         ("VFC", None, "en construction", "prête dans 4\u00a0nuits", "none"),
         ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none")]
     html = await _page(as_user, monkeypatch, D5)

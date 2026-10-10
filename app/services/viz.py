@@ -143,9 +143,14 @@ def slot_x(n: int) -> list[float]:
 
 
 def nice_ticks(lo: float, hi: float, n: int = 3) -> list[float]:
-    """2–4 round values inside [lo, hi]."""
+    """A bounded set of round values inside [lo, hi], at any magnitude."""
     span = hi - lo
-    step = next((s for s in (1, 2, 5, 10, 20, 25, 30, 50, 60, 100, 120, 200, 500) if span / s <= n + 1), 1000)
+    step = next((s for s in (1, 2, 5, 10, 20, 25, 30, 50, 60, 100, 120, 200, 500)
+                 if span / s <= n + 1), None)
+    if step is None:
+        target = span / (n + 1)
+        magnitude = 10 ** math.floor(math.log10(target))
+        step = next(s * magnitude for s in (1, 2, 5, 10) if s * magnitude >= target)
     a = math.ceil(lo / step) * step
     return [a + i * step for i in range(int((hi - a) / step) + 1) if a + i * step <= hi]
 
@@ -620,7 +625,8 @@ def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
-               sources=None, mean_counts=None, notes=None, daytime: bool = False) -> dict:
+               sources=None, mean_counts=None, notes=None, daytime: bool = False,
+               zero_base: bool = False, label_nights: bool = False) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -645,11 +651,14 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     hi_b = [b[1] if b else None for b in band]
     mean = [m if v is not None else None for v, m in zip(values, mean, strict=True)]
     lo, hi = span_of(values + lo_b + hi_b + mean, min_span)
+    if zero_base:
+        lo = 0.0
     top, bottom = 10, H - 22
     y = scale(lo, hi, top, bottom)
     yv = [y(v) for v in values]
     r, a = [], []
     label = d_long if daytime else night_label
+    last = max((i for i, v in enumerate(values) if v is not None), default=None)
     for i, d in enumerate(days):
         v, b = values[i], band[i]
         if v is None:
@@ -672,9 +681,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             line += f" · d'habitude {num(b[0], digits)}–{num(b[1], digits)}{' (provisoire)' if pv else ''}"
             spoken += (f", d'habitude entre {num(b[0], digits)} et {num(b[1], digits)}"
                        + (", valeurs provisoires" if pv else ""))
-        r.append([f"{num(v, digits)}{NBSP}{unit}", "", line])
+        selected_label = ("dernière nuit mesurée" if i == last else "nuit sélectionnée") if label_nights else ""
+        r.append([f"{num(v, digits)}{NBSP}{unit}", selected_label, line])
         a.append(spoken)
-    last = max((i for i, v in enumerate(values) if v is not None), default=None)
     measured = sum(1 for v in values if v is not None)
     full, temp = _band_runs(band, prov, sources)
     hs = X1 / max(n, 1) / 2  # a band known on one night only spans that night's slot
@@ -693,7 +702,8 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,
             "dot_r": 2.6 if n <= 31 else 1.6,
-            "ticks": [{"y": y(t), "label": num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
+            "ticks": [{"y": y(t), "label": (num(t / 1000, 1 if t % 1000 else 0) + NNBSP + "k")
+                       if abs(t) >= 1000 else num(t)} for t in nice_ticks(lo, hi, 2)], "xt": day_ticks(days, xs),
             "summary": f"{name}, {n} jours : {measured} mesures" if daytime else f"{name}, {n} nuits : {measured} enregistrée{'s' if measured > 1 else ''}",
             "title": f"{name} · {n} {'jours' if daytime else 'nuits'}", **_data(xs, [yv], days, r, a, sel=last)}
 

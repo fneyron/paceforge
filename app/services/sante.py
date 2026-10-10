@@ -398,7 +398,8 @@ def night_row(card: dict | None, metric: str) -> dict | None:
     key, name = NIGHT_ROWS[metric]
     s = card["status"]
     return _row(key, name, s["value"], s["word"], s["tone"] or "none",
-                qual=card["period"], detail=s.get("detail"))
+                qual=card["period"], detail=s.get("detail") or
+                ("comparaison provisoire" if card.get("trend", {}).get("provisional") else None))
 
 
 RESP_WORDS = {"in": "dans tes valeurs habituelles", "up": "plus rapide que d'habitude",
@@ -434,9 +435,9 @@ def resp_row(nights, d: date, day: dict) -> dict | None:
 
 def effort_row(efforts, day: dict) -> dict | None:
     """« Effort récent », whenever a recovery window is open (owner, 2026-10-08: « Un effort récent, il faut le
-    prendre en compte et afficher la fatigue quand même »), whether its cap binds the score or not: « 8 jours »
-    over « avant d'être récupéré », the days from today to the last day of the windows open (« dernier jour » on
-    it); never the activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the
+    prendre en compte et afficher la fatigue quand même »), whether its cap binds the score or not: the days
+    from today to the last day of the windows open, explicitly an indicative estimate, never a promised
+    recovery date; never the activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the
     window is a step, not a curve). A red dot while the window caps the score at 35 or 45 (its first days),
     orange at 65."""
     w = day["window"]
@@ -445,9 +446,10 @@ def effort_row(efforts, day: dict) -> dict | None:
     d = day["day"]
     last = max(x["until"] for e in efforts if (x := st.effort_window([e], d)))
     n = (last - d).days
-    value = "dernier jour" if n <= 0 else f"{n}{viz.NBSP}jour{'s' if n > 1 else ''}"
-    return _row("effort", "Effort récent", value, "avant d'être récupéré",
-                "warn" if w["cap"] >= EFFORT_ORANGE else "danger")
+    value = "dernier jour estimé" if n <= 0 else f"{n}{viz.NBSP}jour{'s' if n > 1 else ''}"
+    return _row("effort", "Effort récent", value, "de récupération estimée",
+                "warn" if w["cap"] >= EFFORT_ORANGE else "danger",
+                detail="Durée indicative, selon ton ressenti.")
 
 
 def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None,
@@ -600,9 +602,17 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
                        name=name, min_span=_span(metric, values, bands), sources=sources,
-                       mean_counts=[m.get("n", 0) for m in averages], notes=notes)
+                       notes=notes, label_nights=True)
     c["status"] = card_status(nights, metric, day)
-    c["period"] = "2 nuits" if metric == "hr" and day["alert"] else "7 derniers jours"
+    alert = day["alert"] if metric == "hr" else None
+    c["period"] = "2 nuits" if alert else "7 derniers jours"
+    average = {"value": statistics.fmean(alert["values"]), "n": 2} if alert else averages[-1]
+    reference = day["stats"][metric]["normal"]
+    provisional = bool(reference and reference["provisional"])
+    c["trend"] = {"label": "Tendance sur 2 nuits" if alert else "Tendance sur 7 jours",
+                  "value": viz.num(average["value"], unit=unit) if average.get("value") is not None else None,
+                  "n": average.get("n", 0), "provisional": provisional,
+                  "reference": f"Référence provisoire : {reference['n']} nuits mesurées." if provisional else None}
     c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])
                    + ([LEGEND_PROV] if c["band_prov"] else []))
     return c

@@ -197,18 +197,18 @@ def test_the_dials_arcs_reach_3_to_1_in_both_themes():
 # ── the Récupération card's rows ────────────────────────────────────────────
 
 def test_effort_recent_counts_the_days_left_and_wears_the_cap():
-    """« 8 jours » over « avant d'être récupéré », the days from today to the window's last day (« dernier jour »
+    """« 8 jours » over « de récupération estimée », the days from today to the window's last day (« dernier jour »
     on it), never the activity, its date or its hours; red while the window caps the score at 35 or 45, orange
     at 65."""
     ultra = _effort(D - timedelta(days=2), ((3, 35), (10, 65)))  # D+2: capped at 35, its window to D+10 (16/10)
     f = sante.effort_row([ultra], _day([ultra]))
     assert (f["name"], f["value"], f["word"], f["detail"], f["tone"]) == ("Effort récent", "8 jours",
-                                                                         "avant d'être récupéré", None, "danger")
+                                                                         "de récupération estimée", "Durée indicative, selon ton ressenti.", "danger")
     later = _day([ultra], D + timedelta(days=2))  # D+4: 65
     assert (sante.effort_row([ultra], later)["value"], sante.effort_row([ultra], later)["tone"]) == (
         "6 jours", "warn")
     assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 15)))["value"] == "1 jour"
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 16)))["value"] == "dernier jour"
+    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 16)))["value"] == "dernier jour estimé"
     assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 17))) is None  # the window is over: no row
     very_long = _effort(D - timedelta(days=1), ((2, 45), (5, 65)), kind="very_long")
     assert sante.effort_row([very_long], _day([very_long]))["tone"] == "danger"  # 45: red

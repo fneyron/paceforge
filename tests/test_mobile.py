@@ -120,6 +120,20 @@ def test_old_steps_have_a_date_no_fake_current_chart_and_no_trend():
     assert c['stale'] and c['latest'] == '17/08/2026' and c['chart'] is None and c['trend'] is None
 
 
+def test_steps_axis_starts_at_zero_and_preserves_large_and_small_measurements():
+    today = date(2026, 10, 10)
+    for values in ([54, 121478, 2909], [0, 0, 0]):
+        rows = [HealthMetric(date=today-timedelta(days=2-i), metric='steps', value=v, source='COROS')
+                for i, v in enumerate(values)]
+        chart = daily_card('steps', rows, today)['chart']
+        assert 2 <= len(chart['ticks']) <= 4
+        assert chart['ticks'][0] == {'y': chart['bottom'], 'label': '0'}
+        assert len(chart['dots']) == len(values)
+        assert all(chart['top'] <= p['y'] <= chart['bottom'] for p in chart['dots'])
+        reads = json.loads(chart['data'])['r']
+        assert [r[0] for r in reads[-3:]] == [str(v)+'\u00a0pas' for v in values]
+
+
 def test_daily_gaps_and_no_trend_across_a_watch_change():
     today = date(2026, 10, 10)
     rows = [HealthMetric(date=today-timedelta(days=i), metric='hr_day', value=65, source='Garmin' if i<5 else 'COROS') for i in range(1, 15)]

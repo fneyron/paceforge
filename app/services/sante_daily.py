@@ -67,7 +67,7 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
     out["chart"] = viz.night_card(
         "daily-" + metric, days, values, band=[None]*30, prov=[False]*30, mean=[None]*30,
         unit=unit, unit_long=unit, name=name, digits=digits, min_span=min_span, sources=sources,
-        notes=notes, daytime=metric != "resp_night",
+        notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps",
     )
     # Compare complete days only, using the latest compatible source.
     same = [r for r in valid if _source(r) == _source(last)]

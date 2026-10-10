@@ -553,6 +553,7 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-card-status.is-warn .pf-dot { background: rgb(var(--pf-warn-mark)); }
 .pf-card-status.is-danger .pf-dot { background: rgb(var(--pf-danger)); }
 .pf-card-meaning { font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-600)); margin-top: 1px; }
+.pf-night-trend { margin: 8px 0 12px; padding-bottom: 12px; border-bottom: 1px solid rgb(var(--pf-line)); }
 /* v4.4 (owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »): the provisional
    band has dashed edges and a lighter fill; every measured night is a filled dot (each one counts, owner
    2026-10-08) */

@@ -5,6 +5,7 @@ doivent compter en fait, pareil pour la FC »: a filled dot for every measured n
 athlete's usual values, last night included), nothing for a night without one; while there are no usual values,
 how many nights until they come; a provisional band (7 to 13 nights, H) dashed and lighter, a full one solid; the
 legend names only what is drawn."""
+import json
 import re
 from datetime import timedelta
 from pathlib import Path
@@ -23,6 +24,28 @@ def _card(rows, sessions=(), metric="hrv"):
     with nt.memo():
         nt.freeze(nights)
         return sante._night_card(nights, metric, D, day)
+
+
+def test_weekly_trend_and_selected_night_are_distinct_with_sparse_provisional_data():
+    rows = night_rows(range(8), hr=lambda k: 42 if k == 0 else 35)
+    rows['hr_night'].pop(D - timedelta(days=1))
+    card = _card(rows, metric='hr')
+    assert card['status']['key'] == 'in'  # the week is within the band, the latest night is not
+    assert card['trend']['value'] == '36\u202fbpm'
+    assert card['trend']['n'] == 6 and card['trend']['provisional']
+    assert '7 nuits' in card['trend']['reference']
+    assert sante.night_row(card, 'hr')['detail'] == 'comparaison provisoire'
+    reads = json.loads(card['data'])['r']
+    assert reads[-1][:2] == ['42\u00a0bpm', 'dernière nuit mesurée']
+    assert reads[-2][0] == '—' and 'pas de mesure' in reads[-2][2]
+    assert reads[-3][1] == 'nuit sélectionnée'
+
+
+def test_alert_summary_uses_the_same_two_nights_as_its_status():
+    card = _card(night_rows(range(40), hr=lambda k: 55 if k < 2 else 45), metric='hr')
+    assert card['trend']['label'] == 'Tendance sur 2 nuits'
+    assert card['trend']['value'] == '55\u202fbpm' and card['trend']['n'] == 2
+    assert card['status']['tone'] == 'danger'
 
 
 def test_without_usual_values_the_card_says_when_they_come():
