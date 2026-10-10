@@ -173,6 +173,10 @@ async def ingest(body: Import, phone: MobileDevice = Depends(device), db: AsyncS
         result = await db.scalars(stmt.on_conflict_do_update(
             index_elements=["user_id", "platform", "date", "metric"],
             set_={key: getattr(stmt.excluded, key) for key in ("value", "sources", "measured_at", "updated_at")},
+            # An older phone snapshot must not replace a later weigh-in from
+            # another device on the same platform. Same-time corrections work.
+            where=((MobileDaily.measured_at.is_(None) | (stmt.excluded.measured_at >= MobileDaily.measured_at))
+                   if day.metric in ("weight", "body_fat") else None),
         ).returning(MobileDaily), execution_options={"populate_existing": True})
         result.all()
     phone.last_sync_at = now

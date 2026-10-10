@@ -68,6 +68,8 @@ async def test_pair_ingest_idempotent_and_watch_is_preserved(client, db_session,
     assert len(rows) == 2
     payload['days'][0]['value'] = 63.9
     await client.post('/api/mobile/daily', json=payload, headers=headers)
+    older = {"days": [day(value=61, measured_at=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat())]}
+    assert (await client.post('/api/mobile/daily', json=older, headers=headers)).status_code == 200
     cards = {c['key']: c for c in await daily_context(db_session, test_user.id, date.today())}
     assert cards['hr_day']['source'] == 'Garmin' and cards['hr_day']['value'].startswith('66')
     assert 'Senssun Health' in cards['weight']['source'] and '63,9' in cards['weight']['value']
