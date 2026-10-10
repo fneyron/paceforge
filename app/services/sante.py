@@ -101,6 +101,8 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
             return sl.sleep_need(nights, x, raced)["total"]
         out["sleep"] = sl.sleep_section(nights, today, r, samples, need_of)
         if out["sleep"].get("hero"):  # the need of the night shown: its line when something adds to the 8 h
+            if out["cycle_pending"]:
+                out["sleep"]["hero"]["label"] = viz.night_label(out["sleep"]["hero"]["day"]).capitalize()
             out["sleep"]["need"] = sl.need_line(sl.sleep_need(nights, out["sleep"]["hero"]["day"], raced))
             out["sleep"]["baseline"] = sl.baseline_note(sl.sleep_baseline(nights, out["sleep"]["hero"]["day"], raced))
         out["vfc"] = _night_card(nights, "hrv", today, day)

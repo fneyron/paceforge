@@ -36,7 +36,7 @@ async def test_awake_after_midnight_the_page_is_still_last_nights(db_session: As
     page = await sante.health_page(db_session, test_user.id)
     assert page["today"] == D8 and page["day_label"] == "jeu. 8 oct."
     assert [(d["value"], d["sub"]) for d in page["dials"][:2]] == [("96", "suffisant"), ("69", "en cours")]
-    assert page["sleep"]["hero"]["label"] == "Cette nuit"
+    assert page["sleep"]["hero"]["label"] == "Nuit du mer. 7 au jeu. 8"
     # the night awaited is still the 9th's: the page keeps syncing sooner for it
     assert all(s["state"] != "received" for s in page["night_state"].values())
 

@@ -288,7 +288,8 @@ def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
 def baseline_note(baseline: dict) -> dict:
     label = "Base personnelle estimée" if baseline["adapted"] else "Base de départ · apprentissage en cours"
     source = f" · {baseline['source']}" if baseline["source"] else ""
-    detail = f"{baseline['n']} nuits comparables sur les {BASE_DAYS} derniers jours{source}. "
+    noun = "nuit comparable" if baseline["n"] == 1 else "nuits comparables"
+    detail = f"{baseline['n']} {noun} sur les {BASE_DAYS} derniers jours{source}. "
     if baseline["adapted"]:
         detail += "Estimation progressive à partir de tes nuits, pas une mesure de ton besoin biologique."
     else:
