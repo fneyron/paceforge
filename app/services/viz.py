@@ -620,7 +620,7 @@ def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
-               sources=None, mean_counts=None) -> dict:
+               sources=None, mean_counts=None, notes=None) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
@@ -658,6 +658,10 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         line, spoken = night_label(d), f"{night_label(d)} : {name} {num(v, digits)} {unit_long}"
         if sources and sources[i]:
             line += f" · {sources[i]}"
+            spoken += f", {sources[i]}"
+        if notes and notes[i]:
+            line += f" · {notes[i]}"
+            spoken += f", {notes[i]}"
         if mean[i] is not None and mean_counts is not None:
             detail = f"moyenne 7 jours : {num(mean[i], digits)} {unit} ({mean_counts[i]} nuits)"
             line += f" · {detail}"

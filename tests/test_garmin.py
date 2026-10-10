@@ -249,11 +249,14 @@ def test_nightly_values_come_from_the_readings_inside_the_main_window():
     assert rows["sleep"].value == 420 and rows["sleep"].details == {
         "main_start": "2026-10-04T23:00", "main_end": "2026-10-05T06:30", "period": 450, "bedtime": "23:00",
         "wake": "06:30", "timeline": True, "tz": 120, "stages": {"deep": 90, "light": 230, "rem": 100, "awake": 30},
-        "stages_read": True}
-    # 91 readings from 23:00 to 06:30, 46 at 48 bpm / 60 ms and 45 at 50 bpm / 64 ms
+        "stages_read": True, "night_filter_v1": True}
+    # 84 readings during sleep: 04:00–04:30 awake and the 06:30 wake boundary excluded.
     assert rows["hr_night"].value == 49.0 and rows["hr_night"].details == {
-        "min": 48.0, "max": 50.0, "n": 91, "method": "points", "nap_day": False}
-    assert rows["hrv"].value == 61.9 and rows["hrv"].details == {"n": 91, "tz": 120, "method": "ln_mean_main"}
+        "min": 48.0, "max": 50.0, "n": 84, "method": "points", "nap_day": False,
+        "scope": "sleep_stages_v1", "excluded_awake": 6, "excluded_unknown": 0}
+    assert rows["hrv"].value == 62.0 and rows["hrv"].details == {
+        "n": 84, "tz": 120, "method": "ln_mean_main", "scope": "sleep_stages_v1",
+        "excluded_awake": 6, "excluded_unknown": 0}
     assert rows["resp_night"].value == 14.0 and rows["resp_night"].details["method"] == "points"
     # without readings: no HR, no HRV, Garmin's sleep respiration average as context; never avgOvernightHrv
     bare = {r.metric: r for r in garmin.night_dailies(garmin.parse_sleep(night(d, readings=False)), False)}
@@ -365,7 +368,7 @@ async def test_first_sync_backfills_health_and_sessions_then_last_week(db_sessio
     assert by["sleep"][t].details["main_start"] == f"{t - timedelta(days=1)}T23:00"
     assert by["sleep"][t].details["wake"] == "06:30" and by["sleep"][t].details["timeline"] is True
     assert len(by["sleep"]) == 54  # one night in ten had no data
-    assert by["hrv"][t].value == 61.9 and by["hrv"][t].details["method"] == "ln_mean_main"
+    assert by["hrv"][t].value == 62.0 and by["hrv"][t].details["method"] == "ln_mean_main"
     assert by["hr_night"][t].value == 49.0 and by["resp_night"][t].value == 14.0
     assert by["steps"][t].details == {"kcal": 2650.0, "exercise": 55}
     timeline = (await db_session.execute(select(func.count(HealthSample.id)).where(
@@ -480,7 +483,7 @@ async def test_garmin_hrv_is_on_the_watch_scale(db_session: AsyncSession, test_u
     hrv = (await db_session.execute(select(HealthMetric).where(
         HealthMetric.user_id == test_user.id, HealthMetric.metric == "hrv",
         HealthMetric.date == fake.today))).scalar_one()
-    assert hrv.value == 61.9 and hrv.source == "Garmin"  # not mixed with Apple's SDNN, nor Garmin's own average
+    assert hrv.value == 62.0 and hrv.source == "Garmin"  # not mixed with Apple's SDNN, nor Garmin's own average
 
 
 # ── login ───────────────────────────────────────────────────────────────────
@@ -812,6 +815,43 @@ def test_stage_minutes_from_the_levels_when_the_dto_has_none():
     bare = garmin.parse_sleep({**raw, "sleepLevels": []})
     [sleep] = [r for r in garmin.night_dailies(bare, False) if r.metric == "sleep"]
     assert "stages" not in sleep.details and sleep.details["stages_read"]
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+async def test_awake_filter_recomputes_history_and_retries_an_interrupted_backfill(
+    db_session, test_user, fake, no_commit, interrupted,
+):
+    from app.services.night_measurements import ASLEEP, FILTER_READ
+
+    t = fake.today
+    conn = await _link(db_session, test_user,
+                       last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    old_day = t - timedelta(days=25)
+    sleep = HealthMetric(user_id=test_user.id, date=old_day, metric="sleep", value=450, source="Garmin",
+                         details={"main_start": f"{old_day - timedelta(days=1)}T23:00", "stages_read": True})
+    old_hrv = HealthMetric(user_id=test_user.id, date=old_day, metric="hrv", value=90, source="Garmin",
+                           details={"method": "ln_mean_main"})
+    db_session.add_all([sleep, old_hrv])
+    await db_session.flush()
+    if interrupted:
+        fake.days_before = t - timedelta(days=10)
+    result = await garmin.run_sync(db_session, conn)
+    assert result["ok"]
+    if interrupted:
+        assert conn.last_error == garmin.PARTIAL
+        assert old_hrv.value == 90  # unread old nights stay until they can be recomputed
+        fake.days_before, fake.calls = None, []
+        result = await garmin.run_sync(db_session, conn)
+        assert result["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 60
+    await db_session.refresh(sleep)
+    await db_session.refresh(old_hrv)
+    assert sleep.details[FILTER_READ] is True
+    assert old_hrv.value == 62.0 and old_hrv.details["scope"] == ASLEEP
+    assert conn.last_error is None
+    fake.calls.clear()
+    assert (await garmin.run_sync(db_session, conn))["ok"]
+    assert len(fake.paths("/wellness-service/wellness/dailySleepData/")) == 7
 
 
 async def test_garmin_nights_written_before_the_stages_are_read_again_once(db_session: AsyncSession,

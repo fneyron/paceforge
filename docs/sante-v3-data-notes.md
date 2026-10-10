@@ -70,7 +70,7 @@ What the code does:
 - While `nights.COROS_SLEEP_HR_NAP_VERIFIED` is False, those nights never fire the illness alert. Since 2026-10-08 they count in the HR band and the 7-night mean like every measured night (owner: « Tous les relevés VFC doivent compter en fait, pareil pour la FC »).
 
 Garmin:
-- Nightly HR is the mean of the `sleepHeartRate` readings inside the main window, so naps are left out by construction.
+- Since 10 Oct 2026, nightly HR is the mean of `sleepHeartRate` readings in timed asleep stages, within the main window. Without timed stages it is a labelled window estimate (section 7).
 - The key names come from python-garminconnect, not from a real account.
 
 ## 4. Format facts the parsers rely on
@@ -100,6 +100,16 @@ Garmin:
 - COROS Sleep HR on nap days (section 3).
 - Garmin raw-reading key names.
 - A spring clock change.
+
+## 7. Awake-period filtering (10 Oct 2026)
+
+- Garmin: HRV, heart rate and respiration use readings in `core`, `deep` or `rem` intervals. Explicit `awake` overrides any overlap. Gaps in the timeline do not count as sleep. Intervals are half-open: the wake-up timestamp is excluded. Duplicate timestamps count once. At least 12 retained readings are required; awake readings never fill the minimum.
+- Without timed stages, Garmin retains a main-window estimate and the chart explicitly warns that awake periods may be included. Garmin's respiration summary remains a separately identified fallback.
+- COROS has no timed sleep-stage intervals in the available responses. Its HRV remains the geometric mean of main-window readings (including the folded start of a night); intermediate awake readings may remain. `Sleep HR` remains the provider's summary: exclusion of awake periods cannot be verified. Both limitations appear in the selected night's chart readout, including the accessible description.
+- Garmin metrics record `scope: sleep_stages_v1` or `main_window_v1`, alongside the existing averaging `method`. Filtered records also keep counts `excluded_awake` and `excluded_unknown`. Sleep rows receive `night_filter_v1: true` after this processing.
+- The next Garmin sync requests the recent 60-day history once for accounts with only the older calculation. An interrupted backfill is retried. Older or unread nights retain their original labelled calculation; absent provider readings never trigger a deletion. A newly received raw series rejected by the filter/minimum invalidates that day's old aggregate, restricted to the same user and provider.
+- Rolling means, reference bands, resting HR and alerts separate filtered, window-only and legacy Garmin calculations. Curves break at these changes. No historical value is relabelled as filtered without recalculating it from the provider's readings.
+- Validation uses synthetic Garmin payloads and the existing COROS fixtures. No live Garmin account was used to validate this change.
 - Every (H) threshold is a choice.
 - The 400-day COROS history backfill is not built: the first sync still reads 60 days.
 

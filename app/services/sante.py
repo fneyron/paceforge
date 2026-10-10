@@ -593,10 +593,11 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     averages = [nt.mean7(nights, metric, d) or {} for d in days]
     means = [m.get("value") for m in averages]
     sources = [nights[d].source_of(metric) if d in nights else None for d in days]
+    notes = [nights[d].measurement_notes.get(metric) if d in nights else None for d in days]
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
                        name=name, min_span=_span(metric, values, bands), sources=sources,
-                       mean_counts=[m.get("n", 0) for m in averages])
+                       mean_counts=[m.get("n", 0) for m in averages], notes=notes)
     c["status"] = card_status(nights, metric, day)
     c["period"] = "2 nuits" if metric == "hr" and day["alert"] else "7 derniers jours"
     c["legend"] = ([LEGEND_DOT] + ([LEGEND_MEAN] if c["mean"] else []) + ([LEGEND_BAND] if c["band"] else [])

@@ -28,11 +28,13 @@ longer yields for the days its parsers read, never a Garmin one):
                written before 2026-10 keep « HH:MM » windows: read them with
                nap_windows().
 - hrv        : PaceForge's nightly HRV, exp(mean ln RMSSD) of the raw readings
-               inside the main window; {n, tz, method: "ln_mean_main"}. Rows
+               inside the main window; {n, tz, method: "ln_mean_main"}. Garmin
+               additionally records scope: sleep_stages_v1 (detected wake and
+               unknown gaps out) or main_window_v1 (no timed stages). Rows
                without that method are the watch's own average (written before
                2026-10): never read as PaceForge's.
 - hr_night   : nightly heart rate; {min, max, method, nap_day}. Garmin: mean of
-               the sleepHeartRate readings inside the main window ("points");
+               the sleepHeartRate readings selected like HRV ("points", scope);
                COROS: its « Sleep HR » line, which sits in the summary of the
                main sleep ("coros_sleep_summary", see docs/sante-v3-data-notes.md).
 - resp_night : overnight respiration (Garmin only); {method}.
@@ -65,6 +67,7 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric, HealthSample
+from app.services.night_measurements import ASLEEP, WINDOW, series_source
 
 logger = logging.getLogger(__name__)
 
@@ -783,17 +786,27 @@ async def _daily_series(db: AsyncSession, user_id: int, lo: date, hi: date,
     )
     series: dict[str, dict[date, float]] = defaultdict(dict)
     hrv_sources: dict[date, str | None] = {}
+    groups: dict[str, dict[date, str | None]] = defaultdict(dict)
+    scoped = set()
     sources: set[str] = set()
     for metric, d, v, source, det in rows.all():
         if metric == "hrv" and source in WATCH_SOURCES and (det or {}).get("method") != HRV_METHOD:
             continue  # the watch's own average (older rows): never read as PaceForge's
         key = "rhr" if metric == "hr_night" else metric
         series[key][d] = v
+        if metric in ("hrv", "hr_night"):
+            groups[key][d] = series_source(source, det, "hrv" if metric == "hrv" else "hr")
+            if source == "Garmin" and (det or {}).get("scope") in (ASLEEP, WINDOW):
+                scoped.add(key)
         if metric == "hrv":
             hrv_sources[d] = source
         sources.add(source if source in RMSSD_SOURCES else "Apple Santé")
     if "hrv" in series:
         series["hrv"] = hrv_same_scale(series["hrv"], hrv_sources)
+    for key in scoped:
+        if series[key]:
+            latest = groups[key][max(series[key])]
+            series[key] = {d: v for d, v in series[key].items() if groups[key][d] == latest}
     return series, sources
 
 

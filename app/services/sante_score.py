@@ -120,8 +120,8 @@ METHOD = [
     "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
     "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
     "jusqu'à 2 semaines après un ultra.",
-    "La VFC mesure les variations entre deux battements de ton cœur. La FC de nuit est ton pouls moyen pendant "
-    "ton sommeil. Je compare chacune à tes valeurs habituelles des 60 derniers jours.",
+    "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
+    "Les graphiques précisent si les éveils sont exclus. Je compare ces mesures à tes 60 derniers jours.",
     "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
     "pouls est haut.",
     "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "

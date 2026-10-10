@@ -117,6 +117,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
 from app.services.health import HRV_METHOD, fold_naps, main_window, nap_windows
+from app.services.night_measurements import measurement_note, series_source
 
 BAND_DAYS = 60  # (H)
 MIN_BAND_NIGHTS = 14  # (H) a full normal
@@ -219,6 +220,7 @@ class Night:
     hrv_source: str | None = None
     resp: float | None = None
     resp_source: str | None = None
+    measurement_notes: dict[str, str] = field(default_factory=dict)
     tz: int | None = None  # minutes east of UTC
     timeline: bool = False  # real stage intervals stored (Garmin)
     stages: dict | None = None  # minutes of the main night per stage {deep, light, rem, awake}, the watch's estimate
@@ -305,20 +307,21 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
     for d, (v, det, src) in rows.get("hrv", {}).items():
         if d <= today and (det or {}).get("method") == HRV_METHOD:
             n = night(d)
-            n.hrv, n.hrv_n, n.hrv_source = v, (det or {}).get("n"), src
+            n.hrv, n.hrv_n, n.hrv_source = v, (det or {}).get("n"), series_source(src, det, "hrv")
+            n.measurement_notes["hrv"] = measurement_note(src, det, "hrv")
             if n.tz is None and (det or {}).get("tz") is not None:
                 n.tz = det["tz"]
     for d, (v, det, src) in rows.get("hr_night", {}).items():
         if d <= today:
             n = night(d)
-            n.hr, n.hr_min, n.hr_source = v, (det or {}).get("min"), src
+            n.hr, n.hr_min, n.hr_source = v, (det or {}).get("min"), series_source(src, det, "hr")
+            n.measurement_notes["hr"] = measurement_note(src, det, "hr")
             n.hr_method, n.hr_nap_day = (det or {}).get("method"), bool((det or {}).get("nap_day"))
     for d, (v, det, src) in rows.get("resp_night", {}).items():
         if d <= today:
             n = night(d)
             # Garmin's own night average (no readings of ours) makes its own band, never mixed with ours (H)
-            summary = (det or {}).get("method") == "garmin_summary"
-            n.resp, n.resp_source = v, f"{src} (résumé)" if summary else src
+            n.resp, n.resp_source = v, series_source(src, det, "resp")
     # the « naps » that are a night's start (H, health.fold_naps), whichever watch stored them: folded into it
     for d in sorted(out):
         n = out[d]
@@ -993,7 +996,9 @@ def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | N
     vals = [nights[d1].hr, nights[d2].hr]
     if not all(v >= b["alert"] for v in vals):
         return None
-    rb = band(nights, "resp", d1, full=True)
+    resp_source = nights[d2].resp_source
+    rb = (band(nights, "resp", d1, source=resp_source, full=True)
+          if resp_source and nights[d1].resp_source == resp_source else None)
     resp = [nights[d].resp for d in (d1, d2)]
     resp_up = (all(r is not None and r >= rb["up"] for r in resp)) if rb else None
     return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "resp_up": resp_up, "source": src}
@@ -1042,9 +1047,11 @@ async def read_rows(db: AsyncSession, user_id: int, lo: date, hi: date,
 
 def rest_hr(nights: dict[date, Night], today: date) -> float:
     """The athlete's resting HR for the « vigorous » test: the median nightly
-    HR of the last 60 days (3 nights at least), else 50."""
+    HR of the last 60 days on the latest watch and calculation (3 nights at
+    least), else 50. Never mix filtered and unfiltered measurements."""
+    source = _latest_source(nights, "hr", today)
     vals = [n.hr for d, n in nights.items() if today - timedelta(days=BAND_DAYS) < d <= today and n.hr
-            and 25 <= n.hr <= 100]
+            and 25 <= n.hr <= 100 and n.hr_source == source]
     return statistics.median(vals) if len(vals) >= 3 else 50.0
 
 

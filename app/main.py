@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.build import BUILD_ID
 from app.config import settings
 from app.exceptions import register_exception_handlers
 
@@ -35,6 +37,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    app.state.build_id = BUILD_ID
 
     # Middleware
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -78,15 +81,10 @@ def create_app() -> FastAPI:
     # Health check
     @app.get("/health")
     async def health_check():
-        return {"status": "ok", "app": settings.APP_NAME}
+        return JSONResponse({"status": "ok", "app": settings.APP_NAME, "build": BUILD_ID},
+                            headers={"Cache-Control": "no-store"})
 
     return app
 
 
 app = create_app()
-try:  # cache-buster for the prebuilt stylesheet: browsers must not keep an older build after a deploy
-    import os as _os
-
-    app.state.build_id = str(int(_os.path.getmtime("app/static/css/tailwind.css")))
-except OSError:
-    app.state.build_id = "0"

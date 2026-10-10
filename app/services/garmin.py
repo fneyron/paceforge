@@ -46,7 +46,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -71,6 +71,7 @@ from app.services.health import (
     store_daily,
     store_samples,
 )
+from app.services.night_measurements import FILTER_READ, select_readings
 
 logger = logging.getLogger(__name__)
 
@@ -607,7 +608,7 @@ def parse_sleep(data) -> dict | None:
             if not isinstance(lv, dict):
                 continue
             a, b = _gmt(lv.get("startGMT")), _gmt(lv.get("endGMT"))
-            kind = _LEVELS.get(int(lv["activityLevel"])) if _f(lv.get("activityLevel")) is not None else None
+            kind = _LEVELS.get(_f(lv.get("activityLevel")))
             if a and b and kind and b > a:
                 out["intervals"].append((kind, a + offset, b + offset))
         out["hr"] = _readings(data.get("sleepHeartRate"), ("value",), ("startGMT",), offset)
@@ -736,11 +737,12 @@ def activity_fields(a: dict) -> dict | None:
 
 # ── samples and daily values ────────────────────────────────────────────────
 
-MIN_READINGS = 12  # (H) raw readings inside the main window for a nightly value
+MIN_READINGS = 12  # (H) distinct readings retained after sleep filtering
 
 
-def _inside(readings, night) -> list[float]:
-    return [v for t, v in readings if night["start"] <= t <= night["end"]]
+def _asleep_readings(readings, night, lo, hi) -> tuple[list[float], dict]:
+    return select_readings([(t, v) for t, v in readings if lo <= v <= hi],
+                           night["start"], night["end"], night["intervals"])
 
 
 def night_samples(night: dict) -> list[Sample]:
@@ -784,7 +786,9 @@ def night_stages(night: dict) -> dict | None:
 def night_dailies(night: dict, timeline: bool) -> list[Daily]:
     """PaceForge's values of one night: main sleep (with its stage minutes,
     night_stages), HRV (exp of the mean ln RMSSD), heart rate and respiration
-    (means), each from the readings inside the main window (12 at least, H)."""
+    (means), from asleep stages when timed (wake and unknown gaps excluded).
+    Without timed stages, a labelled main-window estimate. 12 readings after
+    filtering are required (H), never rescued with awake readings."""
     d, out = night["day"], []
     if _ok(night.get("asleep"), 1, 16 * 60):
         det = {"main_start": iso_min(night["start"]), "main_end": iso_min(night["end"]),
@@ -797,18 +801,21 @@ def night_dailies(night: dict, timeline: bool) -> list[Daily]:
         if stages:
             det["stages"] = stages
         det[STAGES_READ] = True
+        det[FILTER_READ] = True
         out.append(Daily("sleep", d, night["asleep"], det))
-    hrv = [v for v in _inside(night["hrv"], night) if 5 <= v <= 300]
+    hrv, hrv_scope = _asleep_readings(night["hrv"], night, 5, 300)
     if len(hrv) >= MIN_READINGS:
         out.append(Daily("hrv", d, round(math.exp(statistics.fmean(math.log(v) for v in hrv)), 1),
-                         {"n": len(hrv), "tz": night.get("tz"), "method": HRV_METHOD}))
-    hr = [v for v in _inside(night["hr"], night) if 25 <= v <= 200]
+                         {"n": len(hrv), "tz": night.get("tz"), "method": HRV_METHOD, **hrv_scope}))
+    hr, hr_scope = _asleep_readings(night["hr"], night, 25, 200)
     if len(hr) >= MIN_READINGS and _ok(statistics.fmean(hr), 25, 120):
         out.append(Daily("hr_night", d, round(statistics.fmean(hr), 1),
-                         {"min": min(hr), "max": max(hr), "n": len(hr), "method": "points", "nap_day": False}))
-    resp = [v for v in _inside(night["resp"], night) if 4 <= v <= 40]
+                         {"min": min(hr), "max": max(hr), "n": len(hr), "method": "points", "nap_day": False,
+                          **hr_scope}))
+    resp, resp_scope = _asleep_readings(night["resp"], night, 4, 40)
     if len(resp) >= MIN_READINGS:
-        out.append(Daily("resp_night", d, round(statistics.fmean(resp), 1), {"n": len(resp), "method": "points"}))
+        out.append(Daily("resp_night", d, round(statistics.fmean(resp), 1),
+                         {"n": len(resp), "method": "points", **resp_scope}))
     elif _ok(night.get("resp_avg"), 4, 40):
         out.append(Daily("resp_night", d, night["resp_avg"], {"method": "garmin_summary"}))
     return out
@@ -929,13 +936,33 @@ async def import_activities(db: AsyncSession, user_id: int, rows: list[dict]) ->
     return {"inserted": inserted, "linked": linked, "updated": updated, "merged": merged}
 
 
+async def drop_rejected_values(db: AsyncSession, user_id: int, nights: dict, rows: list[Daily]) -> int:
+    """Remove a former mean only when newly received readings cannot support it.
+
+    Missing/failed provider responses never erase history. A parsed raw series
+    rejected by the sleep filter or minimum count must not leave yesterday's
+    calculation behind, even if many nights fail the stricter filter at once.
+    Other providers, users and days are untouched.
+    """
+    produced = {(r.metric, r.day) for r in rows}
+    deleted = 0
+    for metric, key in (("hrv", "hrv"), ("hr_night", "hr"), ("resp_night", "resp")):
+        rejected = [d for d, night in nights.items() if night[key] and (metric, d) not in produced]
+        if rejected:
+            result = await db.execute(delete(HealthMetric).where(
+                HealthMetric.user_id == user_id, HealthMetric.source == SOURCE,
+                HealthMetric.metric == metric, HealthMetric.date.in_(rejected)))
+            deleted += result.rowcount or 0
+    return deleted
+
+
 async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     """Fetch and store; returns store_samples' counts plus the sessions. Raises
     GarminAuthError when the athlete must reconnect, GarminError when Garmin
     can't be read."""
     # the history comes once: on the first sync, or while no daily value arrived yet,
     # and once more when the nights are still in their pre-2026-10 format, or were
-    # written before their stage minutes were read (2026-10-08)
+    # written before their stage minutes (2026-10-08) or awake filtering (2026-10-10)
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
@@ -943,7 +970,8 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
     )).scalar()
     first = conn.last_sync_at is None or conn.last_error == PARTIAL
     upgraded = (await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
-                and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ))
+                and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
+                and await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=FILTER_READ))
     days = BACKFILL_DAYS if first or not have or not upgraded else RECENT_DAYS
     activity_days = ACTIVITY_BACKFILL_DAYS if first else RECENT_DAYS
     today = datetime.now(timezone.utc).date()
@@ -962,7 +990,9 @@ async def sync_connection(db: AsyncSession, conn: GarminConnection) -> dict:
                                samples)
     result = await store_samples(db, conn.user_id, samples) if samples else {
         "received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
-    daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE)
+    daily_rows = build_daily(data, today)
+    result["deleted"] = await drop_rejected_values(db, conn.user_id, data["nights"], daily_rows)
+    daily = await store_daily(db, conn.user_id, daily_rows, SOURCE)
     acts = await import_activities(db, conn.user_id, data["activities"])
     result["inserted"] += daily["inserted"] + acts["inserted"]
     result["updated"] += daily["updated"] + acts["updated"] + acts["linked"]
