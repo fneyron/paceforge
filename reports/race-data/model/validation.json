@@ -1,0 +1,351 @@
+{
+  "status": "rejected",
+  "published": false,
+  "production_path_verified": false,
+  "failed_checks": [
+    "overall_improvement",
+    "by_group:30-99h",
+    "by_band:140-180 km",
+    "races_improved",
+    "race:utmb/chiangmai_2024/100M",
+    "race:utmb/chiangmai_2025/CHD160",
+    "race:utmb/utmb_2022/utmb",
+    "race:utmb/utmb_2023/utmb",
+    "race:utmb/utmb_2024/ccc",
+    "race:utmb/utmb_2024/utmb",
+    "race:utmb/utmb_2025/utmb"
+  ],
+  "checks": [
+    {
+      "name": "separate_events",
+      "passed": true,
+      "detail": "At least 8 training events and 4 separate validation events"
+    },
+    {
+      "name": "validation_size",
+      "passed": true,
+      "detail": "At least 20 held-out races and 1,000 finishers"
+    },
+    {
+      "name": "overall_improvement",
+      "passed": false,
+      "detail": "Mean checkpoint error must improve by at least 2% and 0.25 minutes"
+    },
+    {
+      "name": "by_group_coverage",
+      "passed": true,
+      "detail": "All four distance bands / at least four finish-time groups"
+    },
+    {
+      "name": "by_group:0-12h",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_group:12-18h",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_group:18-24h",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_group:24-30h",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_group:30-99h",
+      "passed": false,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_band_coverage",
+      "passed": true,
+      "detail": "All four distance bands / at least four finish-time groups"
+    },
+    {
+      "name": "by_band:60-100 km",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_band:140-180 km",
+      "passed": false,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_band:40-60 km",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "by_band:100-140 km",
+      "passed": true,
+      "detail": "No material regression in this group"
+    },
+    {
+      "name": "race_coverage",
+      "passed": true,
+      "detail": "Every held-out race must have a comparison"
+    },
+    {
+      "name": "races_improved",
+      "passed": false,
+      "detail": "At least 60% of held-out races improve"
+    },
+    {
+      "name": "race:utmb/chiangmai_2024/100K",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2024/100M",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2024/50K",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2025/CHD160",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2025/ELP100",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2025/HMN50D",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/chiangmai_2025/HMN50N",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2022/100M",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2022/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2022/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2023/100M",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2023/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2023/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2024/100M",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2024/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2024/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2025/100M",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2025/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/kullamannen_2025/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/puertovallarta_2024/100K",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/puertovallarta_2024/100M",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/puertovallarta_2024/50K",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2024/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2024/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2025/100k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2025/100m",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2025/70k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/transjeju_2026/100m",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2022/ccc",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2022/mcc",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2022/occ",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2022/tds",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2022/utmb",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2023/ccc",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2023/occ",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2023/tds",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2023/utmb",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2024/ccc",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2024/occ",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2024/tds",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2024/utmb",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2025/ccc",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2025/occ",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2025/tds",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/utmb_2025/utmb",
+      "passed": false,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/whistler_2024/50k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "race:utmb/whistler_2024/70k",
+      "passed": true,
+      "detail": "No race may regress by more than 1 minute or 5%"
+    },
+    {
+      "name": "guard:utmb/transjeju_2025/100m",
+      "passed": true,
+      "detail": "Transjeju guard must be present and not regress (0.1 minute rounding tolerance)"
+    },
+    {
+      "name": "guard:utmb/transjeju_2026/100m",
+      "passed": true,
+      "detail": "Transjeju guard must be present and not regress (0.1 minute rounding tolerance)"
+    },
+    {
+      "name": "livetrail",
+      "passed": true,
+      "detail": "At least 20 LiveTrail courses, no material regression"
+    }
+  ],
+  "next_step": "An eligible candidate still requires validate_app.py on the production implementation and a reviewed deployment."
+}
