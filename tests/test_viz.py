@@ -295,40 +295,24 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     assert 'cross.classList.toggle("is-none", none);' in js
 
 
-def test_the_night_cards_mean_is_drawn_over_measured_nights_only():
-    """« La barre à côté des points » (owner): the 7-night mean, sampled on the measured nights only and broken on
-    any night without one, is never a line with no dot under it; a measured night alone draws no segment, and with
-    no segment left the path is empty (no legend item, no empty path)."""
-    days = [D - timedelta(days=13 - i) for i in range(14)]
-    vals = [None] * 14
-    for i in (2, 3, 4, 10, 11, 12, 13):
-        vals[i] = 60.0 + i
-    mean = [61.0] * 14  # a mean that a 7-day window still finds on the empty days
-    c = viz.night_card("vfc", days, vals, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
-                       unit_long="millisecondes", name="VFC")
-    xs = viz.slot_x(14)
-    segs = [[float(p.split()[0][1:]) for p in re.findall(r"[ML][\d.]+ [\d.]+", seg)]
-            for seg in re.split(r" (?=M)", c["mean"])]
-    idx = [[min(range(14), key=lambda i: abs(xs[i] - x)) for x in seg] for seg in segs]
-    assert idx == [[2, 3, 4], [10, 11, 12, 13]]  # nothing over 5 → 9, each segment over dots
-    lone = list(vals)
-    lone[3] = lone[11] = None  # 2, 4, 10, 12, 13: only 12 → 13 is a segment
-    c2 = viz.night_card("vfc", days, lone, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
-                        unit_long="millisecondes", name="VFC")
-    assert c2["mean"].count("M") == 1 and c2["mean"].count("L") == 1
-    sparse = [60.0 if i % 2 else None for i in range(14)]  # never two measured nights in a row
-    c3 = viz.night_card("vfc", days, sparse, band=[None] * 14, prov=[False] * 14, mean=mean, unit="ms",
-                        unit_long="millisecondes", name="VFC")
-    assert c3["mean"] == ""
-    html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c3)
-    assert 'class="pf-viz-line"' not in html and 'd=""' not in html.replace('d="" class="pf-viz-edge"', "")
-    # the sleep card's long-range mean follows the same rule: no line over a day without a bar
-    bars = viz.day_bars("sommeil-90", days, vals, readouts=[["", "", ""]] * 14, arias=["a"] * 14,
-                        trend=[400.0] * 14)
-    assert [len(s.split(" L")) for s in re.split(r" (?=M)", bars["trend"])] == [3, 4]
-    assert viz.day_bars("sommeil-90", days, sparse, readouts=[["", "", ""]] * 14, arias=["a"] * 14,
-                        trend=[400.0] * 14)["trend"] == ""
-    assert viz.paths([0, 1, 2], [1.0, None, 2.0]) == "M0.0 1.0 M2.0 2.0"  # the other charts' paths as before
+def test_night_means_cross_raw_gaps_but_break_on_missing_windows_and_source_changes():
+    days = [D - timedelta(days=6 - i) for i in range(7)]
+    values = [60, None, 62, None, None, 65, None]
+    means = [60, 61, 62, None, 64, 65, 65]
+    c = viz.night_card("vfc", days, values, band=[None]*7, prov=[False]*7, mean=means,
+                       mean_counts=[3, 3, 3, 0, 3, 3, 3], mean_sources=["Garmin"]*5+["COROS"]*2,
+                       unit="ms", unit_long="millisecondes", name="VFC")
+    assert {dot["i"] for dot in c["dots"]} == {0, 2, 5}
+    assert c["mean"].count("M") == 3  # gap at 3, source change at 5, isolated mean at 4
+    data = json.loads(c["data"])
+    assert data["r"][1][0] == "—" and "pas de mesure" in data["r"][1][2]
+    assert "61 ms (3 nuits)" in data["r"][1][2]
+    assert "moyenne" not in data["r"][3][2]
+    html = render("{{ v.viz_night_card(c, 'VFC · 7 nuits') }}", c=c)
+    assert 'class="pf-viz-line"' in html
+    bars = viz.day_bars("sommeil-90", days, values, readouts=[["", "", ""]]*7, arias=["a"]*7,
+                        trend=means, trend_sources=["Garmin"]*5+["COROS"]*2)
+    assert bars["bars"][1]["miss"] and bars["trend"].count("M") == 3
 
 
 def test_json_cannot_close_the_script_tag():

@@ -196,19 +196,17 @@ def test_the_dials_arcs_reach_3_to_1_in_both_themes():
 
 # ── the Récupération card's rows ────────────────────────────────────────────
 
-def test_effort_recent_counts_the_days_left_and_wears_the_cap():
-    """« 8 jours » over « de récupération estimée », the days from today to the window's last day (« dernier jour »
-    on it), never the activity, its date or its hours; red while the window caps the score at 35 or 45, orange
-    at 65."""
+def test_effort_recent_explains_progressive_prudence_without_a_recovery_deadline():
+    """The effort stays visible, without promising recovery on a specific day."""
     ultra = _effort(D - timedelta(days=2), ((3, 35), (10, 65)))  # D+2: capped at 35, its window to D+10 (16/10)
     f = sante.effort_row([ultra], _day([ultra]))
-    assert (f["name"], f["value"], f["word"], f["detail"], f["tone"]) == ("Effort récent", "8 jours",
-                                                                         "de récupération estimée", "Durée indicative, selon ton ressenti.", "danger")
+    assert (f["name"], f["value"], f["word"], f["tone"]) == ("Effort récent", None, "prudence après l’effort", "danger")
+    assert "diminue progressivement" in f["detail"] and "récupération musculaire" in f["detail"]
     later = _day([ultra], D + timedelta(days=2))  # D+4: 65
     assert (sante.effort_row([ultra], later)["value"], sante.effort_row([ultra], later)["tone"]) == (
-        "6 jours", "warn")
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 15)))["value"] == "1 jour"
-    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 16)))["value"] == "dernier jour estimé"
+        None, "warn")
+    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 15)))["value"] is None
+    assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 16)))["value"] is None
     assert sante.effort_row([ultra], _day([ultra], date(2026, 10, 17))) is None  # the window is over: no row
     very_long = _effort(D - timedelta(days=1), ((2, 45), (5, 65)), kind="very_long")
     assert sante.effort_row([very_long], _day([very_long]))["tone"] == "danger"  # 45: red
@@ -216,15 +214,14 @@ def test_effort_recent_counts_the_days_left_and_wears_the_cap():
 
 
 def test_two_windows_the_row_lasts_until_the_last_one_ends():
-    """Two windows open: the row says how long until the last one ends (it counts down to the day it goes), in
-    the colour of the cap that binds today (effort_window: the lowest)."""
+    """Two windows open: the row follows today's lowest cap without a countdown."""
     old = _effort(D - timedelta(days=9), ((3, 35), (13, 65)), sid=1)  # 65 until D+4
     new = _effort(D - timedelta(days=1), ((2, 45), (5, 65)), kind="very_long", sid=2)  # 45 today, to D+4
     longer = _effort(D - timedelta(days=1), ((3, 35), (10, 65)), sid=3)  # 35 today, to D+9
     f = sante.effort_row([old, new], _day([old, new]))
-    assert (f["value"], f["tone"]) == ("4 jours", "danger")
+    assert (f["value"], f["tone"]) == (None, "danger")
     f = sante.effort_row([old, longer], _day([old, longer]))
-    assert (f["value"], f["tone"]) == ("9 jours", "danger")
+    assert (f["value"], f["tone"]) == (None, "danger")
 
 
 def test_the_effort_row_shows_whenever_a_window_is_open():
@@ -237,9 +234,9 @@ def test_the_effort_row_shows_whenever_a_window_is_open():
     rows = night_rows(range(0, 40), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)  # the alert
     ultra = _session(D - timedelta(days=7), 610, sid=9)  # D+7 of an ultra: 65
     day = day_of(rows, _runs() + [ultra])
-    assert day["state"]["key"] == "ill" and day["score"]["caps"][0] == "ill" and day["window"]["cap"] == 65
+    assert day["state"]["key"] == "ill" and day["score"]["caps"][0] == "ill" and day["window"]["cap"] == 80
     f = sante.effort_row(st.efforts(_runs() + [ultra]), day)
-    assert (f["value"], f["tone"]) == ("3 jours", "warn")
+    assert (f["value"], f["tone"]) == (None, "warn")
 
 
 def test_a_night_row_repeats_its_cards_status_never_its_explanation():

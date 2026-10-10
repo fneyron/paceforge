@@ -202,7 +202,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 
     dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
     # 7h20 every night: 8 h + 1 h owed, 81 % « un peu court » (2026-10-09)
-    assert dials[0] == "81 % Sommeil un peu court" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
+    assert dials[0] == "94 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
     card = main.split('<details id="recuperation"')[1].split("</ul>")[0]
@@ -252,7 +252,7 @@ async def test_owner_5_october_names_the_transjeju_without_a_night(as_user: Asyn
     assert (recup["value"], recup["unit"], recup["sub"], recup["tone"]) == ("—", None, "pas de score", "none")
     assert recup["aria"] == "Récupération : pas de score ce matin."
     assert [(f["name"], f["value"], f["word"], f["detail"], f["tone"]) for f in page["rows"]] == [
-        ("Effort récent", "11\u00a0jours", "de récupération estimée", "Durée indicative, selon ton ressenti.", "danger"),
+        ("Effort récent", None, "prudence après l’effort", "Son influence diminue progressivement. La montre ne mesure pas la récupération musculaire.", "danger"),
         ("VFC", None, "en construction", "prête dans 4\u00a0nuits", "none"),
         ("FC de nuit", None, "en construction", "prête dans 4\u00a0nuits", "none")]
     html = await _page(as_user, monkeypatch, D5)
@@ -405,10 +405,8 @@ def test_the_sommeil_hero_is_not_the_race_pages_grid():
 async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient, db_session: AsyncSession,
                                                             test_user: User, monkeypatch):
     """The owner's nights: 29/09 → 01/10, none 02/10 → 05/10 (the Transjeju and the days after), 06/10 → 08/10.
-    The 7-night mean used to run flat over 01/10 → 05/10 with no dot under it, and the selection was a grey
-    full-height column: both read as « la barre à côté des points ». Now the mean is drawn over the measured nights
-    only (broken on any night without one), the legend names it only when a segment of it is drawn, and the
-    selection is a ring around the night's dot."""
+    A valid 7-day mean remains drawn over missing raw nights. No raw point is fabricated,
+    its readout names the mean, and the selection stays a ring around the real night's dot."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     main = _main(await _page(as_user, monkeypatch, D8))
@@ -430,17 +428,16 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
                 pts = [float(p[1:].split()[0]) for p in re.findall(r"[ML][\d.]+ [\d.]+", seg)]
                 idx = [min(range(len(xs)), key=lambda i, px=px: abs(xs[i] - px)) for px in pts]
                 assert len(idx) > 1 and idx == list(range(idx[0], idx[-1] + 1)), key  # adjacent nights only
-                assert set(idx) <= dots, key  # a dot under every point of it
+                assert all("moyenne 7 jours" in data["r"][i][2] for i in idx), key
                 drawn[key].append([days[i] for i in idx])
             assert "moyenne sur 7 jours" in legend, key
         else:
             assert "moyenne sur 7 jours" not in legend, key
-        assert not any(date(2026, 10, 2) <= d <= D5 for seg in drawn[key] for d in seg), key
+        assert any(date(2026, 10, 2) <= d <= D5 for seg in drawn[key] for d in seg), key
         assert "<rect" not in svg, key  # no grey column behind the selected night
         assert 'class="pf-viz-ring"/>' in svg and 'class="pf-viz-at"/>' in svg, key
         assert f'class="pf-viz-dot is-sel" data-i="{days.index(D8)}"' in svg, key  # the latest night, in ink
-    # every measured night counts (owner, 2026-10-08): FC de nuit's 7-night windows of 06/10 → 08/10 hold 3 nights
-    # each (01/10 or 30/09 with 06/10, 07/10, 08/10): one segment over their 3 dots; VFC has no 06/10, so no window
-    # holds 3 nights next to another such night (01/10 alone: no segment, no legend item). It used to run flat from
-    # 01/10 to 05/10, the window still finding 29/09 → 01/10
-    assert drawn == {"vfc": [], "fc": [[date(2026, 10, 6), date(2026, 10, 7), D8]]}, drawn
+    # Both windows retain the first three nights until 05/10. Later FC windows
+    # still have enough measures; VFC's do not, so that curve stops there.
+    assert drawn == {"vfc": [[date(2026, 10, k) for k in range(1, 6)]],
+                     "fc": [[date(2026, 10, k) for k in range(1, 9)]]}, drawn

@@ -139,7 +139,7 @@ def test_a_longue_at_80_percent_of_the_reserve_keeps_the_race_window():
     assert _caps(run(d, 400, hr=170)) == _caps(run(d, 400, hr=120)) == ("very_long", ((2, 45), (5, 65)))
     assert _caps(run(d, 700, hr=170)) == _caps(run(d, 700, hr=120)) == ("ultra", ((3, 35), (10, 65)))
     e = st.efforts([run(d, 200, hr=165)], _rest)[0]
-    assert st.effort_window([e], d + timedelta(days=5))["cap"] == 65
+    assert st.effort_window([e], d + timedelta(days=5))["cap"] == 93
     assert st.effort_window([e], d + timedelta(days=6)) is None
     assert st.INTENSE_RPE == 8 and nt.VIGOROUS_HRR == 0.8  # (H)
 
@@ -204,7 +204,7 @@ def test_the_history_reads_each_longue_as_its_own_day_saw_it():
         then = page(past, [s for s in sessions if st.local_end(s) <= midnight], d)[0]
         assert score["value"] == then["score"]["value"], d
         seen[(d - (D - timedelta(days=6))).days] = (then["window"] or {}).get("cap")
-    assert seen[0] == seen[4] == seen[5] == 65 and seen[-1] is None  # D+0 → D+5: the race window
+    assert (seen[0], seen[4], seen[5]) == (65, 86, 93) and seen[-1] is None  # D+0 → D+5: the race window
 
 
 # ── Open-Meteo: each outdoor activity's altitude and its start's weather, in the syncs only ──

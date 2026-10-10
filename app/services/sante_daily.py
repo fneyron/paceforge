@@ -65,18 +65,20 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
     sources = [_source(by_day[d]) if d in by_day else None for d in days]
     notes = [("journée en cours" if d == today and metric in ("steps", "hr_day", "stress", "resp_day") else "")
              for d in days]
+    # A visible recent reference, without treating a race day as a usual day.
+    same = [r for r in valid if _source(r) == _source(last)]
+    current = [r.value for r in same if today-timedelta(days=7) <= r.date < today]
+    reference = None
+    if not stale and len(current) >= 4:
+        median = statistics.median(current)
+        reference = (median, f"médiane 7 jours : {viz.num(median, digits, unit)} · {_source(last)}")
+        out["trend"] = (f"Repère calculé sur les 7 derniers jours écoulés ({len(current)} jours avec des relevés). "
+                        "Le temps de port peut varier.")
     out["chart"] = viz.night_card(
         "daily-" + metric, days, values, band=[None]*30, prov=[False]*30, mean=[None]*30,
         unit=unit, unit_long=unit, name=name, digits=digits, min_span=min_span, sources=sources,
-        notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps",
+        notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps", reference=reference,
     )
-    # Calendar days can still have incomplete wear. A neutral median is less
-    # dominated by an ultra than a weekly delta and implies no health grade.
-    same = [r for r in valid if _source(r) == _source(last)]
-    current = [r.value for r in same if today-timedelta(days=7) <= r.date < today]
-    if not stale and len(current) >= 4:
-        out["trend"] = (f"Médiane sur les 7 derniers jours écoulés : {viz.num(statistics.median(current), digits, unit)} "
-                        f"({len(current)} jours avec des relevés). Le temps de port peut varier.")
     return out
 
 

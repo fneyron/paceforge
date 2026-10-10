@@ -221,7 +221,7 @@ def test_the_nights_method_is_in_the_one_fold_and_names_no_race():
 
     assert not hasattr(sl, "METHOD")
     text = sc.flat(sc.METHOD)
-    for said in ("siestes comprises", "Ce besoin part de 8 h", "Ta journée commence à ton réveil",
+    for said in ("siestes comprises", "La base part de 8 h", "Ta journée commence au réveil",
                  "Ta montre estime tes phases"):
         assert said in text, said
     assert "ne compte" not in text

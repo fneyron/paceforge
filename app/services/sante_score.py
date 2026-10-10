@@ -40,12 +40,14 @@ component usable on that day (VFC, FC de nuit or Sommeil) no score at all, like 
 2026-10-09: « Mets un cadran vide, oui »): the dial is empty, the 14-day card
 draws nothing that day, never a score estimated from the activities alone.
 Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
-nights.illness_alert) → 39; a recovery window (sante_training.EFFORT_RULES:
-35, 45 or 65 by class and day); a 24-h total under 6 h → 65 (6 h: Craven
-2022; 65: PaceForge's); VFC under its band (z < −0.5) AND FC de nuit ≥ its
+nights.illness_alert) → 39; an effort precaution interpolated through the
+anchors in sante_training.EFFORT_RULES and gradually released to 100; a
+continuous sleep precaution relative to the estimated base (sleep_limit),
+replacing the old fixed 65 below 6 h and sleep's duplicate red cap;
+VFC under its band (z < −0.5) AND FC de nuit ≥ its
 median + 3 bpm → 69 (Buchheit 2014, Table 2: rMSSD down with HR up,
-« accumulated fatigue »); a red component (sub-score < 40) → 69, where FC de
-nuit and Sommeil always count but VFC only when FC de nuit is measured and
+« accumulated fatigue »); a red cardiac component (sub-score < 40) → 69, where FC de
+nuit always counts but VFC only when FC de nuit is measured and
 its mean is > median + 2 bpm (rMSSD down with HR down is the
 « saturation » of a well-trained athlete, « coping well with training »:
 Buchheit 2014, Table 2; resting HRV « largely unaffected by overreaching »:
@@ -94,7 +96,7 @@ SLEEP_SHARES = ((0.5, 0), (0.75, 60), (0.875, 100))  # (H)
 CAP_ILL = 39  # (H) the nightly-HR illness alert: « Récupération faible »
 CAP_RED, RED_SUB = 69, 40  # (H) a component under 40: never a green dial over a red contributor
 CAP_JOINT, JOINT_HR_BPM = 69, 3  # (H) VFC under its band and FC de nuit ≥ median + 3 bpm (Buchheit 2014, Table 2)
-CAP_SHORT = 65  # (H) a 24-h total under 6 h (the 6 h: Craven 2022; the 65: PaceForge's)
+CAP_SHORT = 65  # (H) the continuous sleep guard's anchor at 3/4 of the estimated base
 CAP_NO_HEART = 80  # (H) neither VFC nor FC de nuit in the score: sleep alone never makes a 100
 CAP_RESP = 69  # (H) the breathing rate over its usual line 2 nights in a row (nights.resp_up_nights): never green
 CAPS = ("ill", "effort", "short", "joint", "resp", "red", "no_heart")  # equal caps: the first names the reason
@@ -113,10 +115,10 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and
 # and FC de nuit each said in one plain sentence, « tes valeurs habituelles » instead of « ta normale ». The
 # references are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. Ce besoin part de 8 h et augmente après un "
-    "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
-    "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
-    "jusqu'à 2 semaines après un ultra.",
+    "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. La base part de 8 h et s’adapte avec "
+    "assez de nuits comparables. L’effort et le manque de sommeil estimé s’y ajoutent. Ta journée commence au réveil.",
+    "Récupération combine ton sommeil, ta VFC et ta FC de nuit. L’effet d’un sommeil court varie avec sa durée. "
+    "La prudence après effort diminue chaque jour. Elle ne prédit pas ta date de récupération.",
     "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
     "Les graphiques précisent si les éveils sont exclus. Je compare ces mesures à tes 60 derniers jours.",
     "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
@@ -132,15 +134,17 @@ def explanation(day: dict) -> list[str]:
     if score["value"] is None:
         return ["Aucune nouvelle nuit exploitable pour ce bilan. Les anciennes tendances ne créent pas un nouveau score."]
     notes = ["Cet indice estime ta récupération ; il ne mesure pas un pourcentage de réparation du corps."]
-    labels = {"effort": "l’effort récent", "short": "le sommeil inférieur à 6 h", "ill": "la FC nocturne élevée",
+    labels = {"effort": "la prudence après l’effort récent", "short": "le sommeil court par rapport à ta base estimée", "ill": "la FC nocturne élevée",
               "joint": "la tendance combinée de la VFC et de la FC", "resp": "la respiration nocturne élevée",
               "red": "un signal de récupération bas", "no_heart": "l’absence de tendance cardiaque exploitable"}
     limiting = [labels[k] for cap, k in caps(day, score["parts"]) if cap == score["raw"] and cap < score["raw0"]]
     if limiting:
         verb = "limitent" if len(limiting) > 1 else "limite"
-        notes.append(f"Aujourd’hui, {' et '.join(limiting)} {verb} l’indice à {pct(score['value'])}.")
+        notes.append(f"Pour ce bilan, {' et '.join(limiting)} {verb} l’indice à {pct(score['value'])}.")
     if "effort" in score["caps"]:
-        notes.append("La règle liée à l’effort évolue par paliers : le score peut rester stable plusieurs jours.")
+        notes.append("La prudence liée à l’effort diminue progressivement avec les jours. Elle ne fixe pas une date de récupération complète.")
+    if "short" in score["caps"]:
+        notes.append("L’effet du sommeil évolue progressivement avec sa durée, sans changement brutal à 6 h.")
     if any(p["prov"] for p in score["parts"]):
         notes.append("Comparaison provisoire : tes références cardiaques reposent encore sur peu de nuits.")
     missing = [{"hrv": "VFC", "hr": "FC de nuit", "sleep": "sommeil"}[k] for k in score["absent"]]
@@ -258,6 +262,26 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     return parts, absent
 
 
+def sleep_limit(slept: float | None, base: float) -> float | None:
+    """Continuous precaution (H), relative to the estimated base, not debt.
+
+    0 at no sleep, 40 at half the base, 65 at three quarters, 100 at
+    seven eighths (at least 7 h). These are product anchors, not validated
+    physiological percentages. Sleep already contributes to the weighted
+    index; this single guard replaces both the 6-h step and sleep's red cap.
+    """
+    if slept is None:
+        return None
+    enough = max(7 * 60, base * 7 / 8)
+    if slept >= enough:
+        return None
+    anchors = ((0, 0), (base / 2, 40), (base * 3 / 4, CAP_SHORT), (enough, 100))
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        if slept <= x1:
+            return _lin(slept, x0, y0, x1, y1)
+    return None
+
+
 def caps(day: dict, parts: list[dict]) -> list[tuple[float, str]]:
     """[(cap on raw, key)] of the rules that hold on this day (`parts`: its
     components): ill, effort, short, joint, red, no_heart (see the module
@@ -267,13 +291,13 @@ def caps(day: dict, parts: list[dict]) -> list[tuple[float, str]]:
         out.append((CAP_ILL, "ill"))
     if day["window"]:
         out.append((day["window"]["cap"], "effort"))
-    if day["tst24"] is not None and day["tst24"] < SHORT_DAY_MIN:
-        out.append((CAP_SHORT, "short"))
+    if (limit := sleep_limit(day["tst24"], day["need"]["base"])) is not None:
+        out.append((limit, "short"))
     if any(p["joint"] for p in parts):
         out.append((CAP_JOINT, "joint"))
     if day.get("resp"):
         out.append((CAP_RESP, "resp"))
-    if any(p["red"] for p in parts):
+    if any(p["red"] for p in parts if p["key"] != "sleep"):
         out.append((CAP_RED, "red"))
     if not any(p["key"] in HEART for p in parts):
         out.append((CAP_NO_HEART, "no_heart"))

@@ -10,6 +10,7 @@
             {% if c.stale %}<p class="pf-card-status is-plain">Pas de relevé récent · dernier le {{ c.latest }}</p>{% endif %}
             {% if c.chart %}
             {{ viz.viz_night_card(c.chart, c.chart.title, daytime=c.key != 'resp_night') }}
+            {% if c.chart.ref %}{{ viz.viz_legend([("is-ref", c.chart.ref.label)]) }}{% endif %}
             <p class="pf-viz-cap">Un point par {{ 'nuit' if c.key == 'resp_night' else 'jour' }} mesuré. Sélectionne un point pour lire sa date et sa source.</p>
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>

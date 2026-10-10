@@ -143,12 +143,12 @@ async def test_owner_les_houches_two_efforts_from_his_activities(db_session: Asy
         ("very_long", date(2026, 9, 18), 544, ((2, 45), (5, 65))),
         ("very_long", date(2026, 9, 19), 424, ((2, 45), (5, 65)))]
     caps = {k: (st.effort_window(houches, date(2026, 9, k)) or {}).get("cap") for k in range(18, 26)}
-    assert caps == {18: 45, 19: 45, 20: 45, 21: 45, 22: 65, 23: 65, 24: 65, 25: None}
+    assert caps == pytest.approx({18: 45, 19: 45, 20: 45, 21: 55, 22: 65, 23: 230/3, 24: 265/3, 25: None})
     page = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 24))
     assert (page["score"]["value"], page["state"], page["line"]) == (None, None, td.NO_NIGHT)
     assert (page["dials"][1]["value"], page["dials"][1]["sub"]) == ("—", "pas de score")
     effort = {r["key"]: r for r in page["rows"]}["effort"]
-    assert (effort["value"], effort["word"], effort["tone"]) == ("dernier jour estimé", "de récupération estimée", "warn")
+    assert (effort["value"], effort["word"], effort["tone"]) == (None, "prudence après l’effort", "warn")
     free = await sante.health_page(db_session, test_user.id, today=date(2026, 9, 25))
     assert free["score"]["value"] is None and free["state"] is None and free["line"] == td.NO_NIGHT
     assert "effort" not in {r["key"] for r in free["rows"]}
@@ -168,7 +168,7 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
         assert name not in main, name
     folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', main, flags=re.S)
     calc = re.findall(r"<li>(.*?)</li>", folds[0])
-    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == [sc.typo(sc.METHOD)[1]]
+    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == []
     rest = H.unescape(main.replace(folds[0], ""))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
@@ -251,7 +251,7 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     # its 7-night means at their usual values to the percent: « comme d'habitude » (« 0 % » said in words)
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
-        ("sommeil", "94", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
+        ("sommeil", "100", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
         ("entrainement", "0 min", None, "pas encore d'habitude", "accent")]
     assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
         ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]

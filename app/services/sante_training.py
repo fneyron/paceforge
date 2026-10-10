@@ -500,22 +500,24 @@ EFFORT_DPLUS = 1500  # (H) m on foot: « long » whatever its time (1 264 m of d
 STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
 CHAIN_GAP = timedelta(minutes=30)  # (H) an activity starting this soon after the last one ended: the same effort
 DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that morning is the first one after it
-# class → ((last day from D+1, cap on the score's raw value), …) (H): a window caps the score, it is no component
+# class → ((last day of an interval, its starting cap), …) (H). Interpolate from
+# each interval's starting day to the next starting cap, then to 100 just outside
+# the window. These are precaution anchors, not measured recovery percentages.
+# A window caps the score, it is no component
 # of its mean (2026-10-08, owner: « Fais comme WHOOP »; « Un effort récent, il faut le prendre en compte et afficher
 # la fatigue quand même »: the cap stays). The day it ends (D+0, once it is uploaded) already reads D+1's cap: a big
-# outing done today is never « pas de grosse sortie ». v4.3: the 3 days after an ultra are the efforts report's
-# « repos ou très facile » days, in the low band (35, H); a day without a night measured has no score at all (v4.4,
-# like WHOOP), and a short night can read under the cap
+# outing done today is never « pas de grosse sortie ». A day without a new usable
+# nightly measurement has no score; a short night can read under the effort cap.
 EFFORT_RULES = {"ultra": ((3, 35), (10, 65)),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
                 "very_long": ((2, 45), (5, 65)),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
                 "long": ((3, 65),)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
 KINDS = ("ultra", "very_long", "long")  # the bigger effort first: two windows with one cap, the bigger one names it
-LONG_RACE_LAST = 5  # (H) a Longue run like a race: 65 until D+5 (CK back after 144 h: Bernat-Adell 2021)
+LONG_RACE_LAST = 5  # (H) a Longue run like a race: precaution through D+5 (Bernat-Adell 2021)
 # v4.4 (R3): run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
 # Foster 2001; Haddad 2017), or its average HR ≥ 80 % of the heart-rate reserve as of its day (nights.VIGOROUS_HRR,
 # the « vigorous » test: harder efforts bring more damage, Martínez-Navarro 2021b; Bernat-Adell 2021)
 INTENSE_RPE = 8  # (H)
-ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) an ultra ≥ 24 h, or run through a night: 65 until D+13
+ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) ultra ≥ 24 h or through the night: precaution through D+13
 NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
 RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
 # v4.3 (owner: « je ne comprends pas »): no unusual-climb modifier (M1) and no back-to-back days (M3) any more. Each
@@ -546,7 +548,7 @@ class Effort:
     name: str = ""
     start_day: date | None = None  # the local day it started (its day on Activités)
     nights: str | None = None  # the class its nights follow: by its duration whatever the sport (M4)
-    caps: tuple = ()  # ((last day from D+1, cap), …) of its window, the modifiers applied (H)
+    caps: tuple = ()  # ((interval's last day, starting cap), …); interpolated, with modifiers applied (H)
     ids: frozenset = frozenset()  # the activities it is made of (a past day knew the chain whole, or a part of it)
 
     @property
@@ -760,9 +762,18 @@ def effort_window(efs: list[Effort], d: date) -> dict | None:
         k = (d - e.day).days
         if k < 0 or e.kind is None:
             continue
-        cap = next((c for last, c in e.caps if max(k, 1) <= last), None)
-        if cap is None:
+        if not e.caps or k > e.caps[-1][0]:
             continue
+        # Product heuristic: retain each effort's initial precaution and
+        # observation window, but release it continuously to 100 on the first
+        # day outside that window. No multi-day plateau or recovery deadline.
+        anchors = [(1, e.caps[0][1])]
+        anchors += [(e.caps[i - 1][0] + 1, cap) for i, (_, cap) in enumerate(e.caps) if i]
+        anchors.append((e.caps[-1][0] + 1, 100))
+        for (a, start), (b, end) in zip(anchors, anchors[1:]):
+            if max(k, 1) <= b:
+                cap = start + (end - start) * (max(k, 1) - a) / (b - a)
+                break
         key = (cap, KINDS.index(e.kind), k)
         if best is None or key < best[0]:
             best = (key, {"effort": e, "days": k, "ago": (d - (e.start_day or e.day)).days, "cap": cap,

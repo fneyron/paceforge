@@ -104,7 +104,7 @@ def test_the_example_days_of_the_research_report():
     assert (_rows(plus6)["hr"]["sub"], _rows(plus6)["hr"]["tone"]) == (27, "danger")
     # 6. a short night (5h30), the rest normal: 65 both times
     short = _example(z=0, hr=0, tst=330)
-    assert (short["score"]["value"], short["score"]["caps"], short["state"]["key"]) == (65, ["short"], "short")
+    assert (short["score"]["value"], short["score"]["caps"], short["state"]["key"]) == (59, ["short"], "short")
     # 7. the day after a 4-h trail (a Longue: cap 65): 65 both times; no Charge in the mean any more (2026-10-08,
     # like WHOOP: strain stays out of recovery), the window's cap alone holds the score down
     trail = _example(z=0, hr=0, tst=450, window={"cap": 65, "ago": 1, "effort": _Ef()})
@@ -150,7 +150,7 @@ def test_a_low_vfc_counts_as_red_only_with_the_nightly_hr_over_2_bpm():
     assert alone["score"]["caps"] == []
     # a sleep sub-score under 40 (5 h → 30) always counts: (25·100 + 25·100 + 30·30) / 80 = 73,75, capped at 65
     sleepy = _example(z=0, hr=0, tst=300)
-    assert sleepy["score"]["raw0"] == 73.75 and sleepy["score"]["caps"] == ["short", "red"]
+    assert sleepy["score"]["raw0"] == 73.75 and sleepy["score"]["caps"] == ["short"]
     assert next(p for p in sleepy["score"]["parts"] if p["key"] == "sleep")["red"]
 
 
@@ -230,7 +230,7 @@ def test_the_classes_and_their_windows():
     assert not st.through_night(datetime(2026, 10, 8, 2), datetime(2026, 10, 8, 12))  # started after 01:00
     assert not st.through_night(datetime(2026, 10, 7, 22), datetime(2026, 10, 8, 4, 59))  # ended before 05:00
     e = st.effort_of(_session(D, 200, workout_type=1))
-    assert [(st.effort_window([e], D + timedelta(days=k)) or {}).get("cap") for k in (0, 3, 5, 6)] == [65, 65, 65, None]
+    assert [(st.effort_window([e], D + timedelta(days=k)) or {}).get("cap") for k in (0, 3, 5, 6)] == [65, 79, 93, None]
 
 
 def test_the_owner_transjeju_window_and_nights():
@@ -242,7 +242,7 @@ def test_the_owner_transjeju_window_and_nights():
     assert (e.kind, e.nights, e.day, e.end) == ("ultra", "ultra", date(2026, 10, 3), datetime(2026, 10, 3, 13, 53))
     assert e.caps == ((3, 35), (13, 65)) and not hasattr(e, "load")
     caps = {k: (st.effort_window([e], date(2026, 10, k)) or {}).get("cap") for k in (3, 6, 7, 16, 17)}
-    assert caps == {3: 35, 6: 35, 7: 65, 16: 65, 17: None}
+    assert caps == {3: 35, 6: 55, 7: 65, 16: 96.5, 17: None}
     assert st.effort_window([e], date(2026, 10, 8))["until"] == date(2026, 10, 16)
     rows = night_rows(range(0, 12), today=D)
     nights = nt.build_nights(rows, D)
@@ -356,13 +356,13 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     st_, s = page["state"], page["score"]
-    assert (st_["key"], st_["word"], st_["text"]) == ("effort", "Récupération en cours", None)
+    assert (st_["key"], st_["word"], st_["text"]) == ("ok", "Bonne récupération", None)
     subs = {q["key"]: q["sub"] for q in s["parts"]}
     assert set(subs) == {"hrv", "hr", "sleep"} and subs["sleep"] == 100 and subs["hr"] == 100 and subs["hrv"] > 95
     assert s["raw0"] == pytest.approx((25 * subs["hrv"] + 25 * 100 + 30 * 100) / 80)
-    assert s["value"] == 65 and s["caps"] == ["effort"]
+    assert s["value"] == 86 and s["caps"] == ["effort"]
     effort = {r["key"]: r for r in page["rows"]}["effort"]  # 65 until D+5: the 4th day of 5, one day left
-    assert (effort["value"], effort["word"], effort["tone"]) == ("1\u00a0jour", "de récupération estimée", "warn")
+    assert (effort["value"], effort["word"], effort["tone"]) == (None, "prudence après l’effort", "warn")
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
         "◇ après un gros effort"  # v4.3: Santé names no outing (its plain words)
     act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not marked as a race on Strava
@@ -370,7 +370,7 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     # v4.4 (R3): 162 bpm for 3h30 is ≥ 80 % of the heart-rate reserve (rest ≈ 45, peak 190: 161, H): run like a race
-    assert page["state"]["key"] == "effort" and page["score"]["value"] == 65
+    assert page["state"]["key"] == "ok" and page["score"]["value"] == 86
     act.average_heartrate = 140  # an easy long run: its window ended on D+3
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
@@ -553,12 +553,12 @@ def test_back_to_back_days_are_two_efforts_each_its_own_window():
     assert (a.kind, a.day, a.caps, b.kind, b.day, b.caps) == ("very_long", date(2026, 9, 18), ((2, 45), (5, 65)),
                                                              "very_long", date(2026, 9, 19), ((2, 45), (5, 65)))
     caps = {k: (st.effort_window([a, b], date(2026, 9, k)) or {}).get("cap") for k in range(18, 27)}
-    assert caps == {18: 45, 19: 45, 20: 45, 21: 45, 22: 65, 23: 65, 24: 65, 25: None, 26: None}
+    assert caps == pytest.approx({18: 45, 19: 45, 20: 45, 21: 55, 22: 65, 23: 230/3, 24: 265/3, 25: None, 26: None})
     assert st.effort_window([a, b], date(2026, 9, 24))["effort"].session_id == 2
     # each past day of the 14-day history saw what it knew: the 18th alone on the 18th, both from the 19th
     rows, sessions = _rich(today=date(2026, 9, 26)), _runs(today=date(2026, 9, 26), start=5) + [d18, d19]
     hist = {d: score["value"] for d, _, score in _history(rows, sessions, today=date(2026, 9, 26))}
-    assert [hist[date(2026, 9, k)] for k in (17, 18, 21, 22, 24, 25)] == [100, 45, 45, 65, 65, 100]
+    assert [hist[date(2026, 9, k)] for k in (17, 18, 21, 22, 24, 25)] == [100, 45, 55, 65, 88, 100]
 
 
 async def test_the_method_folds_and_their_sources(as_user, db_session, test_user, monkeypatch):

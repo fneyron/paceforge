@@ -10,7 +10,8 @@
   each nap in one 24 h) (2026-10-08: the Sommeil dial at the top
   says it as a percentage of that need, so its hours are printed here, once).
 - The need is computed, never asked (2026-10-09, owner: « Ne demande pas, ce
-  doit être auto comme WHOOP »): 8 h, a little more after a big effort and when
+  doit être auto comme WHOOP »): an initial 8 h, cautiously adapted from comparable
+  prior nights (sleep_baseline), a little more after a big effort and when
   sleep is owed (sleep_need), naps in the 24 h.
 - Its stages, like WHOOP and Oura (the owner's request, a deliberate
   departure from research_sleep.md §b: shown for COROS and Garmin, no
@@ -51,6 +52,7 @@ The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
 import math
+import statistics
 from datetime import date, timedelta
 
 from app.services import nights as nt
@@ -64,8 +66,9 @@ REF_MIN = 7 * 60  # lower threshold for sufficient sleep (Watson 2015a; Hirshkow
 # as WHOOP's and Garmin's are: a base, more after a big effort (WHOOP's strain, Garmin's activity; the direction only:
 # Roberts 2019, no source gives a dose) and the sleep owed (both); naps count in the 24 h (both take them off the
 # need: the same). WHOOP learns its base from the member's physiology by a method it does not publish, Garmin takes
-# 8 h under 35 years old: one base for everyone here, never learned from the nights (the habit is often a deficit:
-# Klerman & Dijk 2005; Sargent 2021: athletes slept 6.7 h against the 8.3 h they said they needed)
+# 8 h under 35 years old. Habitual sleep can be insufficient (Sargent 2021), so
+# sleep_baseline uses a bounded estimate from longer, comparable nights, with
+# minimum history and source separation. Its coefficients are product heuristics.
 NEED_DEFAULT = 8 * 60  # (H) min: Garmin's base under 35 (Sargent 2021: 8.3 h; Van Dongen 2003: 8.16 h)
 NEED_EFFORT = 30  # (H) min on a night after a big effort (nights tagged long, big, ultra: sante_training.NIGHT_TAGS)
 NEED_DEBT_DAYS = 7  # (H) the days whose shortfall is owed
@@ -73,6 +76,13 @@ NEED_DEBT_SHARE = 0.25  # a quarter of it each night: 1 h of debt takes about 4 
 NEED_DEBT_MAX = 60  # (H) min a night at most: one night never repays a debt (Banks 2010; Belenky 2003)
 NEED_STEP = 10  # (H) min
 EFFORT_TAGS = ("long", "big", "ultra")
+# Product heuristics, not a measurement of physiological sleep need. Short
+# nights cannot train a lower target; each watch has its own reference.
+BASE_DAYS = 60
+BASE_MIN_NIGHTS = 14
+BASE_MIN_SPAN = 21
+BASE_PRIOR_NIGHTS = 14
+BASE_MIN, BASE_MAX, BASE_SAMPLE_MAX = 7 * 60, 9 * 60, 10 * 60
 
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
@@ -161,13 +171,18 @@ def bars(nights: dict, today: date, key: str, need_of=None) -> dict:
         r.append(read)
         a.append(said)
     totals = [v for v in tst if v is not None]
-    trend = None
+    trend, trend_sources = None, None
     if n_days > 14:  # the long range: the 7-night mean over faint bars
-        # Include the preceding six days: changing the visible range must
-        # not change the rolling value for a given date.
-        history = [nt.day_tst24(nights, days[0] - timedelta(days=6 - i)) for i in range(6)] + tst
-        trend = [viz.rolling(history, i + 6) for i in range(n_days)]
+        averages = [nt.mean7(nights, "tst24", d) for d in days]
+        trend = [m["value"] if m else None for m in averages]
+        trend_sources = [nt.mean_source(nights, "tst24", d) for d in days]
+        for i, m in enumerate(averages):
+            if m:
+                detail = f"moyenne 7 jours : {viz.hm(m['value'])} ({m['n']} nuits) · {trend_sources[i]}"
+                r[i][2] += f" · {detail}"
+                a[i] += f", {detail}"
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
+                     trend_sources=trend_sources,
                      targets=needs, lines=((0, "0 h"), (240, "4 h"), (480, "8 h")),
                      min_top=9 * 60, today=len(days) - 1,
                      summary=f"Sommeil sur 24 h, {RANGES[key][1]} : {len(totals)} nuit{'s' if len(totals) > 1 else ''} "
@@ -224,15 +239,69 @@ def phases(stages: dict | None) -> dict | None:
     return {"parts": parts, "aria": f"Phases estimées par ta montre : {said}."}
 
 
+def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
+    """A conservative, source-specific estimate from nights strictly before d.
+
+    At least 14 comparable nights over 21 calendar days in the past 60 days.
+    Use their upper quartile, shrunk towards the initial 8 h (14 prior nights),
+    bounded to 7–9 h. Exclude nights <7 h or >10 h, known disruptions, races,
+    and abnormal heart signals against an established *prior* reference.
+    The current night never lowers its own target. These selection rules and
+    bounds are heuristics; sufficient observation is not clinical validation.
+    """
+    prior = [(x, n) for x, n in nights.items() if x <= d and n.asleep is not None]
+    source = max(prior, key=lambda item: item[0])[1].source if prior else None
+    samples = []
+    for x, n in nights.items():
+        if not (d - timedelta(days=BASE_DAYS) <= x < d) or n.source != source:
+            continue
+        if n.asleep is None or x in raced or not n.tags.isdisjoint((*nt.CONTEXT, "ill", "alert")):
+            continue
+        total = nt.slept_before_wake(nights, x)
+        if total is None or not BASE_MIN <= total <= BASE_SAMPLE_MAX:
+            continue
+        atypical = False
+        for metric in ("hr", "hrv", "resp"):
+            value = n.value(metric)
+            band = nt.band(nights, metric, x, source=n.source_of(metric), full=True) if value is not None else None
+            if band and ((metric == "hr" and value > band["hi"])
+                         or (metric == "hrv" and value < band["lo"])
+                         or (metric == "resp" and value > band["up"])):
+                atypical = True
+        if not atypical:
+            samples.append((x, total))
+    count = len(samples)
+    span = (max(x for x, _ in samples) - min(x for x, _ in samples)).days + 1 if samples else 0
+    adapted = count >= BASE_MIN_NIGHTS and span >= BASE_MIN_SPAN
+    value = NEED_DEFAULT
+    if adapted:
+        upper = statistics.quantiles([v for _, v in samples], n=4, method="inclusive")[2]
+        target = max(BASE_MIN, min(BASE_MAX, upper))
+        weight = count / (count + BASE_PRIOR_NIGHTS)
+        value = NEED_STEP * math.floor((NEED_DEFAULT * (1 - weight) + target * weight) / NEED_STEP + 0.5)
+    return {"value": value, "adapted": adapted, "n": count, "span": span, "source": source}
+
+
+def baseline_note(baseline: dict) -> dict:
+    label = "Base personnelle estimée" if baseline["adapted"] else "Base de départ · apprentissage en cours"
+    source = f" · {baseline['source']}" if baseline["source"] else ""
+    detail = f"{baseline['n']} nuits comparables sur les {BASE_DAYS} derniers jours{source}. "
+    if baseline["adapted"]:
+        detail += "Estimation progressive à partir de tes nuits, pas une mesure de ton besoin biologique."
+    else:
+        detail += f"L’adaptation commence après {BASE_MIN_NIGHTS} nuits comparables réparties sur au moins 3 semaines."
+    return {"label": f"{label} : {viz.hm(baseline['value'])}", "detail": detail}
+
+
 def sleep_need(nights: dict, d: date, raced=frozenset()) -> dict:
     """The sleep the morning of `d` asks for, in minutes: {total, base, effort, debt} (the parts add up to the
-    total, rounded to 10 min): the base (8 h), + 30 min when last night came after a big effort (its tags), + a
+    total, rounded to 10 min): the estimated personal base (initially 8 h), + 30 min when last night came after a big effort (its tags), + a
     quarter of the shortfall of the 7 days before against the same need (the base + their own effort addition,
     never the inflated one: it never compounds), at most 1 h; a day without a 24-h total is skipped, never counted
     as 0 h, but a night spent running (`raced`: the wake days whose 01:00–05:00 an effort covered,
     sante_training.raced_nights) counts as its naps only (Kishi 2024); surplus days repay the debt. Naps stay in the
     24 h, never taken off the need."""
-    base = NEED_DEFAULT
+    base = sleep_baseline(nights, d, raced)["value"]
 
     def effort(x: date) -> int:
         n = nights.get(x)
@@ -246,7 +315,7 @@ def sleep_need(nights: dict, d: date, raced=frozenset()) -> dict:
             if x not in raced:
                 continue
             slept = sum(m for _, _, m in nt.day_naps(nights, x))
-        owed += base + effort(x) - slept
+        owed += sleep_baseline(nights, x, raced)["value"] + effort(x) - slept
     e = effort(d)
     total = NEED_STEP * math.floor((base + e + min(NEED_DEBT_MAX, max(0.0, owed) * NEED_DEBT_SHARE)) / NEED_STEP
                                    + 0.5)  # half up: 7h45 is 7h50

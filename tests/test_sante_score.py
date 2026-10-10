@@ -61,9 +61,9 @@ def _nights(rows, sessions=(), today=D):
     return nights
 
 
-# the athletes of these tests sleep 7h20 and need 7h30 (the app counts 8 h for everyone since 2026-10-09: 7h20 nights
-# would then owe sleep): each night owes 10 min, their need is 7h50 and a 7h20 night is « suffisant », so the rules
-# tested here are read alone; the 8-h need has its own tests (test_sante_need)
+# These fixtures start with a 7h30 prior. The baseline may now adapt when their
+# history is sufficient. The production 8h prior and learning guards are covered
+# separately in test_sante_need and test_sante_calibration.
 RESTED = 450
 
 
@@ -119,9 +119,9 @@ def test_an_effort_ends_on_its_own_local_day():
 
 
 @pytest.mark.parametrize("kind,elapsed,windows", [
-    ("ultra", 600, {1: 35, 3: 35, 4: 65, 10: 65, 11: None}),  # v4.3: 35 the first 3 days (H)
-    ("very_long", 360, {1: 45, 2: 45, 3: 65, 5: 65, 6: None}),
-    ("long", 180, {1: 65, 2: 65, 3: 65, 4: None}),  # v4.2: 65 until D+3 (was D+2)
+    ("ultra", 600, {1: 35, 3: 55, 4: 65, 10: 95, 11: None}),  # v4.3: 35 the first 3 days (H)
+    ("very_long", 360, {1: 45, 2: 55, 3: 65, 5: 265/3, 6: None}),
+    ("long", 180, {1: 65, 2: 230/3, 3: 265/3, 4: None}),  # v4.2: 65 until D+3 (was D+2)
 ])
 def test_each_class_opens_its_window(kind, elapsed, windows):
     """D+0, the day it ends (once it is uploaded), already reads D+1's cap: a big outing done today is never
@@ -132,7 +132,7 @@ def test_each_class_opens_its_window(kind, elapsed, windows):
     assert st.effort_window([e], D - timedelta(days=1)) is None  # the day before it: nothing
     for k, cap in windows.items():
         w = st.effort_window([e], D + timedelta(days=k))
-        assert (w["cap"] if w else None) == cap, (kind, k)
+        assert (w["cap"] if w else None) == (pytest.approx(cap) if cap is not None else None), (kind, k)
     w = st.effort_window([e], D + timedelta(days=1))
     assert w["days"] == 1 and "load" not in w  # 2026-10-08: no Charge récente any more
 
@@ -141,7 +141,7 @@ def test_overlapping_windows_keep_the_lowest_cap_then_the_bigger_effort():
     ultra = st.effort_of(_session(D - timedelta(days=8), 700, sid=1))  # D+8: cap 65
     long = st.effort_of(_session(D - timedelta(days=1), 200, sid=2))  # D+1: cap 65
     w = st.effort_window([ultra, long], D)
-    assert w["effort"].session_id == 1 and w["cap"] == 65  # one cap: the bigger effort (its class) names it
+    assert w["effort"].session_id == 2 and w["cap"] == 65  # one cap: the bigger effort (its class) names it
     fresh = st.effort_of(_session(D - timedelta(days=2), 400, sid=3))  # very long D+2: cap 45
     assert st.effort_window([ultra, long, fresh], D)["effort"].session_id == 3
 
@@ -283,7 +283,7 @@ def test_rung_5_well_recovered_needs_a_nightly_signal():
     # cadran vide, oui »): the window is still there (the « Effort récent » row says it), never a score from it
     ultra = _day({}, _runs() + [_session(D - timedelta(days=3), 700, sid=9, name="Ultra des Crêtes")])
     w, s = ultra["window"], ultra["score"]
-    assert (w["days"], w["cap"]) == (3, 35) and (s["value"], s["measured"], ultra["state"]) == (None, False, None)
+    assert (w["days"], w["cap"]) == (3, 55) and (s["value"], s["measured"], ultra["state"]) == (None, False, None)
     assert s["absent"] == ["hrv", "hr", "sleep"] and s["building"] == []  # nothing ever measured: not « built »
     assert "estimated" not in s and not hasattr(sc, "ESTIMATED") and not hasattr(sc, "EST_READ")
 
@@ -349,8 +349,8 @@ def test_the_effort_caps_bind_and_the_ultra_window_ends_after_10_days():
     assert early["state"]["word"] == "Récupération faible" and early["score"]["measured"]  # nights measured
     nine, ten = timedelta(days=9), timedelta(days=10)
     later = _day(_rich(), _runs() + [replace(big, start=big.start - nine, day=big.day - nine)])
-    assert later["window"]["days"] == 10 and later["window"]["cap"] == 65
-    assert later["score"]["value"] == 65
+    assert later["window"]["days"] == 10 and later["window"]["cap"] == 95
+    assert later["score"]["value"] == 95
     done = _day(_rich(), _runs() + [replace(big, start=big.start - ten, day=big.day - ten)])
     assert done["window"] is None and done["state"]["key"] == "ok"
 
@@ -361,8 +361,8 @@ def test_owner_like_day_the_exact_score():
     rows = night_rows([0], asleep=516, start=(22, 42), end=(7, 30), source="COROS",
                       hr_method="coros_sleep_summary")
     day = _day(rows, [_session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=8)])
-    assert day["window"]["days"] == 5 and day["score"]["raw0"] == 100 and day["score"]["raw"] == 65
-    assert day["score"]["value"] == 65 and day["score"]["caps"] == ["effort", "no_heart"]  # the window's cap binds
+    assert day["window"]["days"] == 5 and day["score"]["raw0"] == 100 and day["score"]["raw"] == 68.5
+    assert day["score"]["value"] == 69 and day["score"]["caps"] == ["effort", "no_heart"]  # the window's cap binds
     assert (day["state"]["key"], day["state"]["tone"]) == ("effort", "warn")  # the cap that binds: the window
 
 
@@ -486,7 +486,7 @@ def test_dawn_finish_the_first_morning_after_is_in_its_window():
     assert day["state"]["key"] == "effort" and day["state"]["text"] is None
     nights = _nights(rows, _runs() + [race])
     assert "ultra" in nights[D].tags and "ultra" not in nights[D - timedelta(days=1)].tags  # 22 h: an ultra
-    assert {p["key"] for p in day["score"]["parts"]} == {"hrv", "hr", "sleep"} and day["score"]["caps"] == ["effort"]
+    assert {p["key"] for p in day["score"]["parts"]} == {"hrv", "hr", "sleep"} and day["score"]["caps"] == ["effort", "short"]
     for start in (datetime(2026, 10, 7, 4, 59), datetime(2026, 10, 7, 5, 1)):  # 19 h: 23:59 or 00:01
         run = _session(D - timedelta(days=1), 1140, hour=start.hour, sid=51)
         run = replace(run, start=start.replace(tzinfo=timezone.utc))
@@ -514,8 +514,8 @@ def test_two_windows_open_the_lowest_cap_holds():
     ultra = st.effort_of(_session(D - timedelta(days=5), 700, sid=1, name="Ultra"))
     hike = st.effort_of(_session(D - timedelta(days=2), 420, sid=2, name="Rando"))
     w = st.effort_window([ultra, hike], D)
-    assert (w["effort"].session_id, w["cap"]) == (2, 45)
-    assert st.effort_window([ultra], D)["cap"] == 65 and st.effort_window([hike], D)["cap"] == 45
+    assert (w["effort"].session_id, w["cap"]) == (2, 55)
+    assert st.effort_window([ultra], D)["cap"] == 70 and st.effort_window([hike], D)["cap"] == 55
 
 
 def test_an_ultra_saved_as_two_activities_is_one_effort():
@@ -529,7 +529,7 @@ def test_an_ultra_saved_as_two_activities_is_one_effort():
     [e] = st.efforts([a, b])
     assert (e.kind, e.session_id, e.name, e.minutes) == ("ultra", 81, "Transjeju 100M", 1013)
     assert (e.end, e.day, e.start_day) == (datetime(2026, 10, 3, 13, 53), date(2026, 10, 3), date(2026, 10, 2))
-    assert [st.effort_window([e], date(2026, 10, k))["cap"] for k in (6, 9, 13, 16)] == [35, 65, 65, 65]
+    assert [st.effort_window([e], date(2026, 10, k))["cap"] for k in (6, 9, 13, 16)] == [55, 72, 86, 96.5]
     assert st.effort_window([e], date(2026, 10, 17)) is None
     far = replace(b, start=b.start + timedelta(minutes=40))
     assert [(x.kind, x.minutes, x.session_id) for x in st.efforts([a, far])] == [("very_long", 540, 81),
@@ -584,21 +584,21 @@ def test_the_illness_alert_makes_the_nightly_hr_row_red():
 
 
 def test_a_nap_yesterday_afternoon_counts_in_the_24_hours_before_the_wake():
-    """SHORT-CAP: a 1h40 nap yesterday 16:00 → 17:45, then 5h00 (01:20 → 06:40): 6h40 asleep in the 24 h before
-    the wake, so no « Nuit courte », no 65 cap; the Sommeil row and the score read that one figure. A
+    """A 1h40 nap yesterday 16:00 → 17:45, then 5h00 (01:20 → 06:40): 6h40 asleep in the 24 h before
+    the wake, a less restrictive continuous cap; the Sommeil row and score read that one figure. A
     « rendormi » nap of the day before (≤ 3 h after its wake) is the night before's: never counted twice."""
     rows = _rich()
     rows["sleep"][D] = (300, {"main_start": f"{D}T01:20", "main_end": f"{D}T06:40", "timeline": True}, "Garmin")
     y = D - timedelta(days=1)
     rows["nap"][y] = (100, {"windows": [[f"{y}T16:00", f"{y}T17:45"]]}, "Garmin")
     day = _day(rows, _runs())
-    assert day["tst24"] == 400 and "short" not in day["score"]["caps"]
-    # its need: 7h30 + 20 min owed (a quarter of the 80 min under 7h30 the night before, its nap read once) = 7h50
-    assert day["need"] == {"total": 470, "base": 450, "effort": 0, "debt": 20}
-    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 97)  # (25·100 + 25·100 + 30·92,3) / 80 = 97
-    assert round(next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]) == 92
+    assert day["tst24"] == 400 and "short" in day["score"]["caps"]
+    # Its sufficient stable history adapts the base to 7h20; no debt remains.
+    assert day["need"] == {"total": 440, "base": 440, "effort": 0, "debt": 0}
+    assert (day["state"]["key"], day["score"]["value"]) == ("ok", 92)  # continuous sleep precaution
+    assert round(next(p for p in day["score"]["parts"] if p["key"] == "sleep")["sub"]) == 100
     dial = sante.sleep_dial(day["tst24"], day["need"]["total"], "#sommeil")
-    assert (dial["value"], dial["sub"], dial["tone"]) == ("85", "un peu court", "sleep")  # 6h40 of 7h50: its own hue
+    assert (dial["value"], dial["sub"], dial["tone"]) == ("91", "un peu court", "sleep")  # 6h40 of 7h50: its own hue
     nights = nt.build_nights(rows, D)
     # each day's bar reads that figure: the nap on D's, never on y's too (owner's report 2026-10-09)
     assert nt.day_tst24(nights, D) == 400 and nt.day_tst24(nights, y) == 440 and nt.bar_nap_min(nights, y) == 0
@@ -650,8 +650,8 @@ def test_rung_2_an_effort_window_is_the_reason_never_printed():
     big = _session(D - timedelta(days=5), 935, elapsed=1013, sid=42, name="Trail des Glaciers")
     day = _day(_rich(), _runs() + [big])
     st_ = day["state"]
-    assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("effort", "warn", "Récupération en cours", None)
-    assert "href" not in st_ and st_["aria"] == "Récupération en cours."
+    assert (st_["key"], st_["tone"], st_["word"], st_["text"]) == ("ok", "ok", "Bonne récupération", None)
+    assert "href" not in st_ and st_["aria"] == "Bonne récupération."
     night = _session(D - timedelta(days=6), 935, elapsed=1013, hour=21, offset=32400, sid=44, name="Transjeju 100M")
     w = _day(_rich(), _runs() + [night])["window"]
     assert (w["days"], w["ago"]) == (5, 6)
@@ -723,18 +723,10 @@ def test_the_method_fold_is_five_plain_bullets():
     (a DOI, else the text's own address). v4.4 (owner: « les explications en français ne sont pas claires »):
     sentences of 15 words at most, VFC and FC de nuit each said once in one plain sentence, « tes valeurs
     habituelles », never « ta normale »."""
-    assert sc.METHOD == [
-        "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. Ce besoin part de 8 h et augmente après un "
-        "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
-        "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
-        "jusqu'à 2 semaines après un ultra.",
-        "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
-        "Les graphiques précisent si les éveils sont exclus. Je compare ces mesures à tes 60 derniers jours.",
-        "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
-        "pouls est haut.",
-        "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
-        "aussi : quelques points d'écart ne veulent rien dire."]
-    assert sum(len(b.split()) for b in sc.METHOD) <= 145  # one concise explanation, explicitly estimated
+    assert len(sc.METHOD) == 5
+    assert "base part de 8 h" in sc.METHOD[0] and "nuits comparables" in sc.METHOD[0]
+    assert "diminue chaque jour" in sc.METHOD[1] and "ne prédit pas" in sc.METHOD[1]
+    assert sum(len(b.split()) for b in sc.METHOD) <= 155  # one concise explanation, explicitly estimated
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
         assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence
     assert "normale" not in sc.flat(sc.METHOD)

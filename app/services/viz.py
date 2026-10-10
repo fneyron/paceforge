@@ -535,7 +535,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
              y_max: float | None = None, reference: tuple[float, str] | None = None, lines=(),
              clip: float | None = None, tones: list | None = None, trend: list | None = None,
              today: int | None = None, sel=None, H: int = 128, summary: str = "", min_top: float = 0,
-             hatched: list | None = None, targets: list | None = None) -> dict:
+             hatched: list | None = None, targets: list | None = None, trend_sources: list | None = None) -> dict:
     """Vertical bars, one per day (Santé's cards): `values` (None: an empty
     slot, `miss`, where nothing is drawn — no mark for a missing measure,
     owner 2026-10-08: « s'il n'y a pas de mesure tu ne mets rien, pas de
@@ -564,7 +564,7 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
     elif y_max is not None:
         top = y_max
     else:
-        top = max(tops + [v for v in (targets or []) if v is not None]
+        top = max(tops + [v for v in (targets or []) + (trend or []) if v is not None]
                   + [min_top, reference[0] if reference else 0, 1]) * 1.12
     base, y0 = H - 22, 8
     y = scale(0, top, y0, base)
@@ -592,9 +592,10 @@ def day_bars(key: str, days: list[date], values: list, *, readouts: list[list[st
             "hatched": sorted({b["cls"] for b in out if b["est"]}),
             "slot": round(slot, 2), "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
             "lines": [{"y": y(v), "label": lab} for v, lab in lines], "rx": round(min(3.0, bw / 2), 1),
-            # over measured days only, broken on any day without one: never a line with no bar under it
-            "trend": paths(xs, [y(min(v, top)) if v is not None and values[i] is not None else None
-                                for i, v in enumerate(trend)], lone=False) if trend else None,
+            # A valid rolling value survives a missing raw day; missing windows
+            # and source changes still break the curve. Never synthesize a bar.
+            "trend": paths(xs, [y(min(v, top)) if v is not None else None for v in trend],
+                           half=min(slot / 4, 3), groups=trend_sources) if trend else None,
             "targets": paths(xs, [y(v) if values[i] is not None else None
                                    for i, v in enumerate(targets)]) if targets else None,
             "summary": summary, **_data(xs, [], days, readouts, arias, h=links, sel=sel, t=tones)}
@@ -625,16 +626,16 @@ def _band_runs(band: list, prov: list, groups=None) -> tuple[list, list]:
 
 def night_card(key: str, days: list[date], values: list, *, band: list, prov: list, mean: list, unit: str,
                unit_long: str, name: str, digits: int = 0, min_span: float = 8, H: int = 132,
-               sources=None, mean_counts=None, notes=None, daytime: bool = False,
-               zero_base: bool = False, label_nights: bool = False) -> dict:
+               sources=None, mean_counts=None, mean_sources=None, notes=None, daytime: bool = False,
+               zero_base: bool = False, label_nights: bool = False, reference=None) -> dict:
     """One nightly signal over the days (Santé's VFC and FC de nuit cards): a
     filled dot per measured night — every one counts toward the athlete's
     usual values (owner, 2026-10-08: « Tous les relevés VFC doivent compter
     en fait »), a night without a measure draws nothing — never judged one by
     one (Buchheit 2014: ≈ 12 % night to night), the 7-day mean as a line
-    over the measured nights only, broken on any night
-    without one (never a line with no dot under it; "" when no segment is
-    left: no legend item), the athlete's usual values as a band (each night's:
+    wherever its rolling window is usable, including a day with no raw point.
+    Missing means and source changes break the curve; an isolated mean has a
+    short horizontal stroke. The athlete's usual values appear as a band (each night's:
     the 60 days up to and including it, on that night's watch): solid edges
     from 14 nights, dashed edges and a lighter fill while provisional (7 to
     13 nights, H; `band_prov`, `edge_prov_lo/hi`). With `sources`, break both
@@ -649,8 +650,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     xs = slot_x(n)
     lo_b = [b[0] if b else None for b in band]
     hi_b = [b[1] if b else None for b in band]
-    mean = [m if v is not None else None for v, m in zip(values, mean, strict=True)]
-    lo, hi = span_of(values + lo_b + hi_b + mean, min_span)
+    lo, hi = span_of(values + lo_b + hi_b + mean + ([reference[0]] if reference else []), min_span)
     if zero_base:
         lo = 0.0
     top, bottom = 10, H - 22
@@ -661,9 +661,16 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     last = max((i for i, v in enumerate(values) if v is not None), default=None)
     for i, d in enumerate(days):
         v, b = values[i], band[i]
+        detail = (f"moyenne 7 jours : {num(mean[i], digits)} {unit} ({mean_counts[i]} nuits)"
+                  if mean[i] is not None and mean_counts is not None else None)
         if v is None:
-            r.append(["—", "", f"{label(d)} · pas de mesure"])
-            a.append(f"{label(d)} : pas de mesure")
+            context = f"{label(d)} · pas de mesure"
+            if detail:
+                context += f" · {detail}"
+                if mean_sources and mean_sources[i]:
+                    context += f" · {mean_sources[i]}"
+            r.append(["—", "", context])
+            a.append(context.replace(" · pas de mesure", " : pas de mesure", 1))
             continue
         line, spoken = label(d), f"{label(d)} : {name} {num(v, digits)} {unit_long}"
         if sources and sources[i]:
@@ -672,8 +679,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
         if notes and notes[i]:
             line += f" · {notes[i]}"
             spoken += f", {notes[i]}"
-        if mean[i] is not None and mean_counts is not None:
-            detail = f"moyenne 7 jours : {num(mean[i], digits)} {unit} ({mean_counts[i]} nuits)"
+        if detail:
             line += f" · {detail}"
             spoken += f", {detail}"
         if b:
@@ -697,7 +703,9 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             "edge_hi": paths(xs, ys["full"][1], half=hs, groups=sources),
             "edge_prov_lo": paths(xs, ys["prov"][0], half=hs, groups=sources),
             "edge_prov_hi": paths(xs, ys["prov"][1], half=hs, groups=sources),
-            "mean": paths(xs, [y(v) for v in mean], lone=False, groups=sources),
+            "mean": paths(xs, [y(v) for v in mean], half=min(hs * 0.5, 3),
+                          groups=mean_sources if mean_sources is not None else sources),
+            "ref": {"y": y(reference[0]), "label": reference[1]} if reference else None,
             "dots": [{"i": i, "x": xs[i], "y": yv[i]} for i, v in enumerate(values) if v is not None],
             # the selected night's place, drawn by the server too (no ring in a corner before pf-viz.js moves it)
             "at": {"x": xs[last], "y": yv[last]} if last is not None else None,

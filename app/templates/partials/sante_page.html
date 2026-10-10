@@ -29,7 +29,8 @@
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
         {% if h.later %}<p class="pf-viz-cap">{{ h.later }}</p>{% endif %}
         {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
-        <p class="pf-card-meaning">Le besoin part d’une base de 8 h, ajustée aux efforts et aux nuits courtes. Les phases sont des estimations de la montre.</p>
+        {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
+        <p class="pf-card-meaning">Les nuits de moins de 7 h et les périodes perturbées ne fixent pas la base. Le besoin du jour ajoute l’effort et le manque de sommeil estimé. Les phases restent des estimations de la montre.</p>
     {% endif %}
 {% if has_sleep_detail %}
 <section id="sommeil-detail" class="pf-sec" aria-labelledby="h-sommeil-detail">
@@ -96,7 +97,7 @@
         </div>
         {{ viz.viz_night_card(c, c.title) }}
         {{ viz.viz_legend(c.legend) }}
-        <p class="pf-card-meaning">Sélectionne un point pour lire une nuit.</p>
+        <p class="pf-card-meaning">Un point par nuit mesurée. La moyenne reste visible avec au moins 3 nuits sur 7 ; une nuit manquante reste sans point.</p>
     </div>
     {% endfor %}
     </div>

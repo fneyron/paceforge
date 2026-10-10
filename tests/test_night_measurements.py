@@ -163,7 +163,8 @@ def test_selected_night_explains_its_own_method_including_for_screen_readers():
     data = json.loads(card["data"])
     for i, note in enumerate(notes):
         assert note in data["r"][i][2] and note in data["a"][i]
-    assert card["mean"] == ""  # no line crossing calculation changes
+    # Each calculation's isolated mean stays visible, without joining methods.
+    assert card["mean"].count("M") == card["mean"].count("L") == 3
     assert "non vérifiable" in measurement_note("COROS", {"method": "coros_sleep_summary"}, "hr")
 
 

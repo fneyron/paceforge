@@ -178,6 +178,7 @@
 {% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
 {% if c.edge_prov_lo %}<path d="{{ c.edge_prov_lo }}" class="pf-viz-edge is-prov"/><path d="{{ c.edge_prov_hi }}" class="pf-viz-edge is-prov"/>{% endif %}
 {% if c.edge_lo %}<path d="{{ c.edge_lo }}" class="pf-viz-edge"/><path d="{{ c.edge_hi }}" class="pf-viz-edge"/>{% endif %}
+{% if c.ref %}<line x1="0" x2="{{ c.X1 }}" y1="{{ c.ref.y }}" y2="{{ c.ref.y }}" class="pf-viz-ref"/>{% endif %}
 {% if c.mean %}<path d="{{ c.mean }}" class="pf-viz-line" pathLength="1"/>{% endif %}
 {% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ c.dot_r }}" class="pf-viz-dot{% if d.i == c.sel %} is-sel{% endif %}" data-i="{{ d.i }}"/>{% endfor %}
 {% for t in c.xt %}<text x="{{ t.x }}" y="{{ c.H - 5 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}

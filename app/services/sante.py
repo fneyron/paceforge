@@ -10,7 +10,7 @@ reference, not a target, and the full arc is 200 %.
 The rings open native disclosures with sleep details, recovery factors and
 history, or training context. The nightly VFC/FC charts remain visible:
 rolling trends, measured points and provisional references are labelled
-separately. Extra daytime measurements are in a closed context panel.
+separately. Extra daytime measurements stay visible with recent median references.
 Measurement dates and successful syncs are distinct in the source details.
 
 No check-in, planned race or brand recovery score enters the calculation.
@@ -102,6 +102,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["sleep"] = sl.sleep_section(nights, today, r, samples, need_of)
         if out["sleep"].get("hero"):  # the need of the night shown: its line when something adds to the 8 h
             out["sleep"]["need"] = sl.need_line(sl.sleep_need(nights, out["sleep"]["hero"]["day"], raced))
+            out["sleep"]["baseline"] = sl.baseline_note(sl.sleep_baseline(nights, out["sleep"]["hero"]["day"], raced))
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
         # the Entraînement dial reads every week with today's bounds (H): the night tags' resting HR and peak
@@ -424,21 +425,15 @@ def resp_row(nights, d: date, day: dict) -> dict | None:
 
 def effort_row(efforts, day: dict) -> dict | None:
     """« Effort récent », whenever a recovery window is open (owner, 2026-10-08: « Un effort récent, il faut le
-    prendre en compte et afficher la fatigue quand même »), whether its cap binds the score or not: the days
-    from today to the last day of the windows open, explicitly an indicative estimate, never a promised
-    recovery date; never the activity, its date or its hours (v4.3: no activity named on Santé), never a percentage (the
-    window is a step, not a curve). A red dot while the window caps the score at 35 or 45 (its first days),
-    orange at 65."""
+    prendre en compte et afficher la fatigue quand même »), whether its cap binds or not.
+    Its influence decreases progressively; no countdown implies a recovery deadline.
+    No activity name, date or duration on Santé. The tone follows the cap."""
     w = day["window"]
     if not w:
         return None
-    d = day["day"]
-    last = max(x["until"] for e in efforts if (x := st.effort_window([e], d)))
-    n = (last - d).days
-    value = "dernier jour estimé" if n <= 0 else f"{n}{viz.NBSP}jour{'s' if n > 1 else ''}"
-    return _row("effort", "Effort récent", value, "de récupération estimée",
+    return _row("effort", "Effort récent", None, "prudence après l’effort",
                 "warn" if w["cap"] >= EFFORT_ORANGE else "danger",
-                detail="Durée indicative, selon ton ressenti.")
+                detail="Son influence diminue progressivement. La montre ne mesure pas la récupération musculaire.")
 
 
 def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None,
@@ -595,7 +590,8 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     key, name, unit, unit_long = CARDS[metric]
     c = viz.night_card(key, days, values, band=bands, prov=prov, mean=means, unit=unit, unit_long=unit_long,
                        name=name, min_span=_span(metric, values, bands), sources=sources,
-                       notes=notes, label_nights=True)
+                       mean_sources=[nt.mean_source(nights, metric, d) for d in days],
+                       mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True)
     c["status"] = card_status(nights, metric, day)
     alert = day["alert"] if metric == "hr" else None
     c["period"] = "2 nuits" if alert else "7 derniers jours"

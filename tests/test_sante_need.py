@@ -129,8 +129,9 @@ async def test_the_card_never_asks_the_need(as_user: AsyncClient, db_session: As
     for path in ("/sante", "/sante?besoin=1"):
         card = (await as_user.get(path)).text.split('<details id="sommeil"')[1].split("</details>")[0]
         assert 'name="need"' not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
-        assert card.count(f"Besoin estimé{NB}: 8{NB}h, + 1{NB}h de sommeil en retard.") == 1
-        assert "besoin estimé 9h00" in card
+        assert card.count(f"Besoin estimé{NB}: 7{NB}h{NB}30, + 20{NB}min de sommeil en retard.") == 1
+        assert "Base personnelle estimée" in card
+        assert "besoin estimé 7h50" in card
     assert (await as_user.post("/sante/besoin", data={"need": "450"})).status_code in (404, 405)
     assert not hasattr(User, "sleep_need_min")
 
