@@ -271,7 +271,7 @@ def need_line(need: dict) -> str | None:
         adds.append(f"+ {hm_words(need['debt'])} de sommeil en retard")
     if not adds:
         return None
-    return f"Ton besoin aujourd'hui{viz.NBSP}: {hm_words(need['base'])}, " + ", ".join(adds) + "."
+    return f"Besoin estimé{viz.NBSP}: {hm_words(need['base'])}, " + ", ".join(adds) + "."
 
 
 def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -> dict | None:
@@ -310,7 +310,7 @@ def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -
         aria += f", {later.replace(' · ', ', ')}"
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
             "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
-            "need": f"sur {viz.hm(need_of(last) if need_of else NEED_DEFAULT)} de besoin",
+            "need": f"besoin estimé {viz.hm(need_of(last) if need_of else NEED_DEFAULT)}",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 
 

@@ -138,7 +138,8 @@ def test_daily_gaps_and_no_trend_across_a_watch_change():
     today = date(2026, 10, 10)
     rows = [HealthMetric(date=today-timedelta(days=i), metric='hr_day', value=65, source='Garmin' if i<5 else 'COROS') for i in range(1, 15)]
     c = daily_card('hr_day', rows, today)
-    assert c['trend'] is None and c['chart']['n'] == 30
+    assert '4 jours avec des relevés' in c['trend'] and c['chart']['n'] == 30
+    assert 'par rapport' not in c['trend']
     assert len(c['chart']['dots']) == 14
     assert 'jours' in c['chart']['title']
 
@@ -151,7 +152,7 @@ def test_mobile_migration_roundtrip():
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location('mobile_migration', root/'alembic/versions/d4a5b6c7d8e9_mobile_daily.py')
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-    assert ScriptDirectory.from_config(Config(str(root/'alembic.ini'))).get_current_head() == mod.revision
+    assert mod.revision in {r.revision for r in ScriptDirectory.from_config(Config(str(root/'alembic.ini'))).walk_revisions()}
     engine = create_engine('sqlite://')
     with engine.begin() as conn:
         conn.execute(text('CREATE TABLE users (id INTEGER PRIMARY KEY)'))

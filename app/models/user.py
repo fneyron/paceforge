@@ -67,6 +67,7 @@ class User(Base):
 
     # Physical
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    health_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # FTP typed by the athlete (W); overrides the Strava-based estimate when set
     ftp_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
 

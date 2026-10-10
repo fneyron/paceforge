@@ -10,6 +10,7 @@ from app.models.health import HealthMetric
 from app.models.mobile import MobileDaily
 from app.models.user import User
 from app.services import viz
+from app.services.health_sources import preference, select_metrics
 from app.services.night_measurements import series_source
 
 SIGNALS = {
@@ -69,14 +70,13 @@ def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | Non
         unit=unit, unit_long=unit, name=name, digits=digits, min_span=min_span, sources=sources,
         notes=notes, daytime=metric != "resp_night", zero_base=metric == "steps",
     )
-    # Compare complete days only, using the latest compatible source.
+    # Calendar days can still have incomplete wear. A neutral median is less
+    # dominated by an ultra than a weekly delta and implies no health grade.
     same = [r for r in valid if _source(r) == _source(last)]
     current = [r.value for r in same if today-timedelta(days=7) <= r.date < today]
-    previous = [r.value for r in same if today-timedelta(days=14) <= r.date < today-timedelta(days=7)]
-    if not stale and len(current) >= 4 and len(previous) >= 4:
-        delta = statistics.mean(current) - statistics.mean(previous)
-        out["trend"] = (f"Moyenne des 7 derniers jours complets : {viz.signed(delta, digits, unit)} "
-                        f"par rapport aux 7 précédents ({len(current)} et {len(previous)} jours mesurés).")
+    if not stale and len(current) >= 4:
+        out["trend"] = (f"Médiane sur les 7 derniers jours écoulés : {viz.num(statistics.median(current), digits, unit)} "
+                        f"({len(current)} jours avec des relevés). Le temps de port peut varier.")
     return out
 
 
@@ -87,7 +87,8 @@ async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dic
     # Select exactly one value per day. Prefer a direct watch to its phone copy.
     # Between phone platforms, choose the most recent measured weigh-in, otherwise
     # the most recently refreshed daily aggregate; never sum the two totals.
-    by_day = {(r.date, r.metric): r for r in rows}
+    by_day = select_metrics([r for r in rows if _valid(r) and not (r.metric == "stress" and r.source == "COROS")],
+                            await preference(db, user_id))
     phone_rows = (await db.scalars(select(MobileDaily).where(
         MobileDaily.user_id == user_id, MobileDaily.date <= today,
     ).order_by(MobileDaily.measured_at.asc().nullsfirst(), MobileDaily.updated_at, MobileDaily.id))).all()
@@ -101,6 +102,15 @@ async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dic
                                        details={"origins": sorted(r.sources)})
     rows = list(by_day.values())
     cards = [c for metric in SIGNALS if (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
+    archives = (await db.scalars(select(HealthMetric).where(
+        HealthMetric.user_id == user_id, HealthMetric.metric == "stress", HealthMetric.source == "COROS",
+        HealthMetric.date <= today))).all()
+    if archive := daily_card("stress", archives, today):
+        archive.update(key="stress_archive", title="Stress COROS · archive", archived=True, trend=None,
+                       meaning="Anciennes données conservées. La connexion COROS actuelle ne transmet pas le stress.")
+        if archive["chart"]:
+            archive["chart"]["key"] = "daily-stress-archive"
+        cards.append(archive)
     if not any(c["key"] == "weight" for c in cards):
         user = await db.get(User, user_id)
         if user and user.weight_kg is not None:

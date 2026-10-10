@@ -111,10 +111,10 @@ def test_a_rendormi_nap_counts_once_with_its_own_night():
 def test_the_need_line_says_what_adds_to_the_8_h():
     def need(effort=0, debt=0):
         return {"total": 480 + effort + debt, "base": 480, "effort": effort, "debt": debt}
-    assert sl.need_line(need(debt=60)) == f"Ton besoin aujourd'hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard."
+    assert sl.need_line(need(debt=60)) == f"Besoin estimé{NB}: 8{NB}h, + 1{NB}h de sommeil en retard."
     assert sl.need_line(need(30, 20)) == (
-        f"Ton besoin aujourd'hui{NB}: 8{NB}h, + 30{NB}min après un gros effort, + 20{NB}min de sommeil en retard.")
-    assert sl.need_line(need()) is None  # a plain 8-h day: the night's row says « sur 8h00 de besoin »
+        f"Besoin estimé{NB}: 8{NB}h, + 30{NB}min après un gros effort, + 20{NB}min de sommeil en retard.")
+    assert sl.need_line(need()) is None  # a plain 8-h day: the night's row says « besoin estimé 8h00 »
     assert (sl.hm_words(30), sl.hm_words(60), sl.hm_words(545)) == (f"30{NB}min", f"1{NB}h", f"9{NB}h{NB}05")
 
 
@@ -127,10 +127,10 @@ async def test_the_card_never_asks_the_need(as_user: AsyncClient, db_session: As
     monkeypatch.setattr(sante, "athlete_today", today)
     await _seed_rows(db_session, test_user, _garmin_rows(D))
     for path in ("/sante", "/sante?besoin=1"):
-        card = (await as_user.get(path)).text.split('<section id="sommeil"')[1].split("</section>")[0]
-        assert "<form" not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
-        assert card.count(f"Ton besoin aujourd&#39;hui{NB}: 8{NB}h, + 1{NB}h de sommeil en retard.") == 1
-        assert "sur 9h00 de besoin" in card
+        card = (await as_user.get(path)).text.split('<details id="sommeil"')[1].split("</details>")[0]
+        assert 'name="need"' not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
+        assert card.count(f"Besoin estimé{NB}: 8{NB}h, + 1{NB}h de sommeil en retard.") == 1
+        assert "besoin estimé 9h00" in card
     assert (await as_user.post("/sante/besoin", data={"need": "450"})).status_code in (404, 405)
     assert not hasattr(User, "sleep_need_min")
 

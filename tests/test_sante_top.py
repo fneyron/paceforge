@@ -46,7 +46,7 @@ def test_the_sommeil_dial():
         360: ("75", "%", "Sommeil", "un peu court", "sleep", 0.75), 359: ("75", "%", "Sommeil", "court", "warn", 0.748),
         300: ("63", "%", "Sommeil", "court", "warn", 0.625)}
     assert dials[420]["href"] == "#sommeil"
-    assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % de ton besoin de 8 heures, suffisant."
+    assert sante.sleep_dial(516, 480, "#sommeil")["aria"] == "Sommeil 100 % de ton besoin estimé de 8 heures, suffisant."
     none = sante.sleep_dial(None, 480, "#sommeil")
     assert (none["value"], none["sub"], none["tone"], none["dash"]) == ("—", "pas de données", "none", 0)
     assert none["aria"] == "Sommeil : aucune donnée de nuit reçue pour ce matin."
@@ -59,7 +59,7 @@ def test_the_sommeil_dial_reads_a_larger_need():
     smaller need (7 h: 6h30 is « un peu court »); 6 h and « court » never move."""
     d = sante.sleep_dial(516, 540, "#sommeil")
     assert (d["value"], d["sub"], d["tone"]) == ("96", "suffisant", "sleep")
-    assert d["aria"] == "Sommeil 96 % de ton besoin de 9 heures, suffisant."
+    assert d["aria"] == "Sommeil 96 % de ton besoin estimé de 9 heures, suffisant."
     short = sante.sleep_dial(470, 540, None)
     assert (short["value"], short["sub"], short["tone"]) == ("87", "un peu court", "sleep")
     assert sante.sleep_word(390, 420) == "un peu court" and sante.sleep_word(420, 420) == "suffisant"
@@ -306,6 +306,6 @@ def test_the_percentages_are_said_in_the_fold():
     the dial's word, no bullet any more (the audit, 2026-10-09: one fold, without what the page already says)."""
     text = sc.flat(sc.typo(sc.METHOD)).replace("\u00a0", " ")
     assert sc.pct(100) == "100\u00a0%" and "70 %" not in text
-    assert "Sommeil compare tes 24 h, siestes comprises, à ton besoin." in text
+    assert "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé." in text
     assert ("Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand "
             "ton pouls est haut.") in sc.METHOD

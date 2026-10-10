@@ -23,23 +23,20 @@ only when its own data rule holds:
    During the illness alert it reads the alert's own 2 nights, at most 39
    (its row red, « nettement plus haute »): never green under the alert.
 3. Sommeil · 24 h (a main night this morning; the naps of the 24 h before
-   its wake count, nights.day_tst24): ≥ 7 h → 100 (AASM/SRS: Watson 2015a;
-   NSF: Hirshkowitz 2015), 6 h → 60 (Craven 2022: sleep loss is ≤ 6 h per
-   24 h), ≤ 4 h → 0, linear between (H); never less for a long night (no
-   ceiling: Watson 2015a); with a 7-day mean (≥ 3 measured days) and a usual
-   (the median of the 24-h band of the 60 days before that week) at most
-   100 − 2/3 point per minute of that mean under the usual (90 min under →
-   40, H).
+   its wake count, nights.day_tst24): read against the day's estimated need
+   (sante_sleep.sleep_need). At least 7/8 of it → 100, 3/4 → 60, 1/2 or
+   less → 0, linear between (H). For an 8-h need these are 7 h, 6 h, 4 h;
+   they move with the estimated need. No separate sleep-debt penalty in
+   this component: the need already includes it.
 Weights (H): VFC 25, FC de nuit 25, Sommeil 30, renormalised over the
-components present (the two heart signals together at most half: one domain
-never counted twice, OECD/JRC 2008; sleep the largest single weight, the
-recovery behaviour every consensus text names). The recent efforts are no
+components present (when all three exist: 31.25 %, 31.25 %, 37.5 %;
+the heart signals together account for 62.5 %). The recent efforts are no
 component of the mean (2026-10-08, owner: « Fais comme WHOOP »: its recovery
 is body signals and sleep, the strain kept out; « Charge récente » is gone):
 their recovery windows cap the score (below), the owner's « Un effort récent,
 il faut le prendre en compte et afficher la fatigue quand même »; the
 « Effort récent » row says it on every day of a window). Without a nightly
-component (VFC, FC de nuit or Sommeil) no score at all, like WHOOP (owner,
+component usable on that day (VFC, FC de nuit or Sommeil) no score at all, like WHOOP (owner,
 2026-10-09: « Mets un cadran vide, oui »): the dial is empty, the 14-day card
 draws nothing that day, never a score estimated from the activities alone.
 Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
@@ -116,7 +113,7 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and
 # and FC de nuit each said in one plain sentence, « tes valeurs habituelles » instead of « ta normale ». The
 # references are on /sante/sources (REFS, sante_sleep.REFS)
 METHOD = [
-    "Sommeil compare tes 24 h, siestes comprises, à ton besoin. Ce besoin part de 8 h et augmente après un "
+    "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. Ce besoin part de 8 h et augmente après un "
     "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
     "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
     "jusqu'à 2 semaines après un ultra.",
@@ -127,6 +124,29 @@ METHOD = [
     "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
     "aussi : quelques points d'écart ne veulent rien dire.",
 ]
+
+
+def explanation(day: dict) -> list[str]:
+    """Explain the effective limits, without suggesting a measured recovery percentage."""
+    score = day["score"]
+    if score["value"] is None:
+        return ["Aucune nouvelle nuit exploitable pour ce bilan. Les anciennes tendances ne créent pas un nouveau score."]
+    notes = ["Cet indice estime ta récupération ; il ne mesure pas un pourcentage de réparation du corps."]
+    labels = {"effort": "l’effort récent", "short": "le sommeil inférieur à 6 h", "ill": "la FC nocturne élevée",
+              "joint": "la tendance combinée de la VFC et de la FC", "resp": "la respiration nocturne élevée",
+              "red": "un signal de récupération bas", "no_heart": "l’absence de tendance cardiaque exploitable"}
+    limiting = [labels[k] for cap, k in caps(day, score["parts"]) if cap == score["raw"] and cap < score["raw0"]]
+    if limiting:
+        verb = "limitent" if len(limiting) > 1 else "limite"
+        notes.append(f"Aujourd’hui, {' et '.join(limiting)} {verb} l’indice à {pct(score['value'])}.")
+    if "effort" in score["caps"]:
+        notes.append("La règle liée à l’effort évolue par paliers : le score peut rester stable plusieurs jours.")
+    if any(p["prov"] for p in score["parts"]):
+        notes.append("Comparaison provisoire : tes références cardiaques reposent encore sur peu de nuits.")
+    missing = [{"hrv": "VFC", "hr": "FC de nuit", "sleep": "sommeil"}[k] for k in score["absent"]]
+    if missing:
+        notes.append("Calcul sans " + " ni ".join(missing) + " exploitable pour cet indice.")
+    return notes
 # the references the fold rests on (with sante_sleep.REFS), listed on /sante/sources (label, DOI or URL):
 # « Recommandations officielles » (consensus, position stands, guidelines), then « Études scientifiques »
 REFS = [
@@ -304,7 +324,8 @@ def score_of(day: dict) -> dict:
     without a nightly component (then no state either), recovery window or
     not (owner, 2026-10-09: « Mets un cadran vide, oui », like WHOOP)."""
     parts, absent = components(day)
-    measured = any(p["key"] in NIGHTLY for p in parts)
+    # A rolling mean is historical context, not evidence of a new night.
+    measured = any(p["key"] in day["measured_components"] for p in parts)
     if not measured:
         return {"value": None, "tone": None, "parts": parts, "absent": absent, "building": building(day, absent),
                 "caps": [], "reason": None, "measured": False}

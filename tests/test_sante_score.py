@@ -724,7 +724,7 @@ def test_the_method_fold_is_five_plain_bullets():
     sentences of 15 words at most, VFC and FC de nuit each said once in one plain sentence, « tes valeurs
     habituelles », never « ta normale »."""
     assert sc.METHOD == [
-        "Sommeil compare tes 24 h, siestes comprises, à ton besoin. Ce besoin part de 8 h et augmente après un "
+        "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. Ce besoin part de 8 h et augmente après un "
         "gros effort ou des nuits courtes. Ta journée commence à ton réveil, pas à minuit.",
         "Récupération combine ton sommeil, ta VFC et ta FC de nuit. Un gros effort la limite quelques jours, "
         "jusqu'à 2 semaines après un ultra.",
@@ -734,7 +734,7 @@ def test_the_method_fold_is_five_plain_bullets():
         "pouls est haut.",
         "Ta montre estime tes phases : la forme de ta nuit, pas sa qualité. Mes pourcentages sont des estimations "
         "aussi : quelques points d'écart ne veulent rien dire."]
-    assert sum(len(b.split()) for b in sc.METHOD) <= 140  # the two folds held 13 bullets, 263 words
+    assert sum(len(b.split()) for b in sc.METHOD) <= 145  # one concise explanation, explicitly estimated
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
         assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence
     assert "normale" not in sc.flat(sc.METHOD)

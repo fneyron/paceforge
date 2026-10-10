@@ -45,6 +45,16 @@
             </div>
             {% if cycling_enabled() %}<p class="text-[11px] text-gray-400 mt-1">Ton poids sert à ta puissance à vélo.</p>{% endif %}
         </div>
+        <div id="health-source" class="max-w-md">
+            <label for="health_source" class="pf-field-label">Montre prioritaire pour la santé</label>
+            {% if health_source_bad %}<p role="alert" class="text-sm text-danger">Choisis COROS, Garmin ou Automatique.</p>{% endif %}
+            <select id="health_source" name="health_source" class="{{ input_cls }}">
+                {% for value, label in (('auto', 'Automatique · COROS puis Garmin'), ('COROS', 'COROS'), ('Garmin', 'Garmin')) %}
+                <option value="{{ value }}"{% if (user.health_source or 'auto') == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <p class="text-xs text-gray-500 mt-2">Une seule valeur par jour. Si elle manque, l’autre montre peut compléter. Les mesures de chaque source sont conservées séparément.</p>
+        </div>
         {% if cycling_enabled() %}
         <div class="max-w-xs">
             <label for="ftp_watts" class="pf-field-label">FTP</label>

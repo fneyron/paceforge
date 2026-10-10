@@ -341,6 +341,26 @@
   }
 
   window.PFViz = { scan: scan };
+  // A ring or a bookmarked chart opens every containing disclosure before
+  // scrolling. Native summaries stay operable with keyboard and without JS.
+  function revealHealth(hash) {
+    if (!hash || hash.charAt(0) !== '#') return;
+    var target = document.getElementById(hash.slice(1));
+    if (!target || !target.closest('.pf-sante4')) return;
+    for (var node = target; node; node = node.parentElement) {
+      if (node.tagName === 'DETAILS') node.open = true;
+    }
+    scan(target);
+    requestAnimationFrame(function () { target.scrollIntoView({ block: 'start' }); });
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a[href^="#"]');
+    if (a && a.closest('.pf-sante4')) revealHealth(a.getAttribute('href'));
+  });
+  window.addEventListener('hashchange', function () { revealHealth(location.hash); });
+  document.addEventListener('htmx:afterSettle', function () { revealHealth(location.hash); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { revealHealth(location.hash); });
+  else revealHealth(location.hash);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { scan(); });
   else scan();
   document.addEventListener("htmx:afterSettle", function (e) { scan(e.target); });

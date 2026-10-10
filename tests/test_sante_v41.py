@@ -66,8 +66,9 @@ async def test_sante_shows_no_sync_information(as_user: AsyncClient, db_session:
     html = await _page(as_user, monkeypatch, D8)
     head = html.split('class="pf-sante-head">')[1].split("</div>", 1)[0]
     assert "COROS" not in head and "synchro" not in head.lower() and "pf-sync" not in html
-    assert re.sub(r"<[^>]+>", " ", head).split() == ["Santé", "·", "Aujourd'hui", "jeu.", "8", "oct."]
-    assert "Synchroniser" not in html and "il y a 25 min" not in html and "pas encore reçue" not in html
+    assert H.unescape(re.sub(r"<[^>]+>", " ", head)).split() == ["Santé", "·", "Aujourd'hui", "jeu.", "8", "oct."]
+    assert "Mesures reçues et synchronisation" in html and "il y a 25 min" in html
+    assert "pas encore reçue" not in html
     assert started == []  # synced 25 min ago: no background sync, no poller
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=2)
     await db_session.flush()
@@ -117,7 +118,7 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
                                                                 test_user: User, monkeypatch):
     await seed_owner_v4(db_session, test_user)
     main = _main(await _page(as_user, monkeypatch, D8))
-    hero = main.split('<section id="sommeil"')[1].split("</section>")[0]  # the Sommeil card under the dials
+    hero = main.split('<details id="sommeil"')[1].split("</details>")[0]  # the Sommeil card under the dials
     bar = re.search(r'<div class="pf-phases-bar" aria-hidden="true">(.*?)</div>', hero).group(1)
     assert re.findall(r'class="pf-ph is-(\w+)" style="flex-grow: (\d+)"', bar) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
@@ -193,7 +194,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     await _seed_rows(db_session, test_user, rows)
     await _runs(db_session, test_user, today)
     main = _main(await _page(as_user, monkeypatch, today))
-    top = main.split('<div class="pf-dials">')[1].split('<section ')[0]  # the dials, before their cards
+    top = main.split('<div class="pf-dials">')[1].split('</div>')[0]  # the dials, before their cards
     assert "pf-ring-tick" not in main and "<line" not in top
 
     def words(body):
@@ -203,8 +204,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # 7h20 every night: 8 h + 1 h owed, 81 % « un peu court » (2026-10-09)
     assert dials[0] == "81 % Sommeil un peu court" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
-    assert dials[2] == "100 % Entraînement comme d'habitude"
-    card = main.split('<section id="recuperation"')[1].split("</ul>")[0]
+    assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
+    card = main.split('<details id="recuperation"')[1].split("</ul>")[0]
     rows = [words(body) for body in re.findall(r'<li class="pf-row is-\w+">(.*?)</li>', card)]
     assert len(rows) == 2  # each dot with its name and its words; no recovery window open: no Effort récent
     assert re.fullmatch(r"VFC 7 derniers jours \u2212\d+ % plus basse que d'habitude", rows[0]), rows[0]
@@ -393,7 +394,7 @@ def test_the_a11y_fixes_in_css_and_js():
 def test_the_sommeil_hero_is_not_the_race_pages_grid():
     """UX3: the Sommeil card stays a block at 1 024 px and more (.pf-hero is the race page's grid)."""
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    assert 'class="pf-card pf-sum"' in page and "pf-hero" not in page
+    assert '<details id="sommeil" class="pf-health-panel">' in page and "pf-hero" not in page
     css = (ROOT / "app/static/css/interface.css").read_text()
     rules = re.findall(r"\.pf-sum[^{]*\{[^}]*\}", css)
     assert rules and not any("grid" in r for r in rules)  # a plain block

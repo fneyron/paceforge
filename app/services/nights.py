@@ -210,6 +210,7 @@ class Night:
     end: datetime | None = None
     asleep: int | None = None  # minutes asleep in the main episode
     naps: list = field(default_factory=list)  # [(start, end, minutes asleep)] ending on this day
+    nap_source: str | None = None
     hr: float | None = None
     hr_min: float | None = None
     hr_method: str | None = None
@@ -304,6 +305,7 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
     for d, (v, det, src) in rows.get("nap", {}).items():
         if d <= today and v:
             night(d).naps = [p for p in _nap_parts(d, v, det)]
+            night(d).nap_source = src
     for d, (v, det, src) in rows.get("hrv", {}).items():
         if d <= today and (det or {}).get("method") == HRV_METHOD:
             n = night(d)
@@ -326,7 +328,7 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
     for d in sorted(out):
         n = out[d]
         days = [x for x in (d - timedelta(days=1), d) if x in out]
-        cands = [p for x in days for p in out[x].naps]
+        cands = [p for x in days if not out[x].nap_source or out[x].nap_source == n.source for p in out[x].naps]
         if n.start is None or n.asleep is None or not cands:
             continue
         daily = (rows.get("sleep", {}).get(d, (None, None, None))[1] or {}).get("daily")
@@ -831,7 +833,8 @@ def _split_naps(nights: dict[date, Night], x: date) -> dict[str, list]:
             out["own"].append((a, b, m))
             continue
         rest = m
-        if a is not None and b is not None and _main(nxt) and (nxt.start is None or b <= nxt.start):
+        if (a is not None and b is not None and _main(nxt) and
+                (not n.nap_source or n.nap_source == nxt.source) and (nxt.start is None or b <= nxt.start)):
             lo = nxt.end - timedelta(hours=24)
             inside = 0 if b <= lo else m if a >= lo else round(m * (b - lo).total_seconds() / (b - a).total_seconds())
             if inside > 0:
@@ -1034,14 +1037,20 @@ async def read_rows(db: AsyncSession, user_id: int, lo: date, hi: date,
                     metrics: tuple[str, ...] = NIGHT_ROWS) -> dict[str, dict[date, tuple]]:
     """{metric: {day: (value, details, source)}} of the nightly rows (and the
     check-ins, unless `metrics` leaves them out: Santé v4 never reads them)."""
-    rows = await db.execute(
-        select(HealthMetric.metric, HealthMetric.date, HealthMetric.value, HealthMetric.details,
-               HealthMetric.source)
+    from app.services.health_sources import preference, select_metrics
+
+    rows = (await db.scalars(
+        select(HealthMetric)
         .where(HealthMetric.user_id == user_id, HealthMetric.metric.in_(metrics),
-               HealthMetric.date >= lo, HealthMetric.date <= hi))
+               HealthMetric.date >= lo, HealthMetric.date <= hi))).all()
+    # A legacy/unsupported row must not hide the other watch's usable night.
+    usable = [r for r in rows if
+              (r.metric != "sleep" or main_window(r.date, r.details) is not None)
+              and (r.metric != "hrv" or (r.details or {}).get("method") == HRV_METHOD)]
+    chosen = select_metrics(usable, await preference(db, user_id))
     out: dict[str, dict[date, tuple]] = defaultdict(dict)
-    for metric, d, v, det, src in rows.all():
-        out[metric][d] = (v, det or {}, src)
+    for (d, metric), row in chosen.items():
+        out[metric][d] = (row.value, row.details or {}, row.source)
     return out
 
 

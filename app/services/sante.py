@@ -1,49 +1,23 @@
-"""Santé v4: one page (owner, 2026-10-08: « mets tout dans un seul », « plus
-de graphiques »), like WHOOP (2026-10-08, the approved mockup, owner: « Fais
-comme WHOOP, ça doit rester simple »). Top to bottom:
-- three equal dials in a row, in WHOOP's order, each a percentage over its
-  name and a plain word (never colour alone) and a link to its card below:
-  Sommeil (the last 24 h, naps in, nights.day_tst24, as a percentage of an
-  8-h need, at most 100 % (H); « suffisant » from 7 h (Watson 2015a's
-  habitual amount read on one day, H), « un peu court » from 6 h (H),
-  « court » under 6 h (Craven 2022), its arc then in the warning colour),
-  Récupération (the 0–100 score as a percentage in its state's colour,
-  « bonne », « en cours », « faible »; empty, « pas de score », when no night
-  was measured, like WHOOP: sante_score.dial), Entraînement (the last 7 days'
-  heart-rate load against the usual week's, as a percentage, owner 2026-10-09:
-  « Oui vas-y »; « comme d'habitude » within ± 20 %, H); the illness alert's
-  one sentence under them (sante_today; v4.3, owner:
-  « Ne mentionne pas les sorties dans la partie Santé, ça complexifie »: no
-  activity named). No sub-score anywhere, no « Détail du score »;
-- three cards right under the dials, in the dials' order (the audit,
-  2026-10-09: « Les cartes ne sont pas dans l'ordre des cercles »): Sommeil
-  (sante_sleep: last night, its stages), Récupération (rows: « Effort
-  récent » first, the days left in a recovery window whenever one is open —
-  the row that decides the day —, then VFC and FC de nuit over 7 nights —
-  the 7-night mean as a signed percentage of the usual value and its word,
-  « comme d'habitude » at 0 %, « en construction » and when the usual values
-  will be ready), Entraînement (the last 7 days' hours and the usual week's,
-  « Intensité » in a word, a link to Activités, where the weeks are);
-  each title a link to its details further down, in the same order: the
-  24-h sleep chart and the habits, then « Récupération · 14 jours » (no
-  resting readout: its 14 days' mean decided nothing and looked like the
-  dial's percentage), « VFC · 30 nuits » and « FC de nuit · 30 nuits », each
-  night card opening on its status line in words, the last 7 nights against
-  the usual values the score reads (v4.3, owner: « est-ce que c'est bien ou
-  pas bien ? »); every measured night counts, last night included
-  (owner, 2026-10-08: « Tous les relevés VFC doivent compter en fait, pareil
-  pour la FC »), and a night or a day without a measure draws nothing (« s'il
-  n'y a pas de mesure tu ne mets rien, pas de point »);
-- the closed folds: one « Comment je calcule » (a few bullets for the three
-  dials, ending on a link to /sante/sources; the audit, 2026-10-09: two folds,
-  13 bullets, were too long), the nights' table.
-From past activities and the nights only: no planned race, no check-in, no
-training prescription, no sync status (Réglages': the page syncs on its own
-when it opens and reloads quietly when something new arrived). Only
-PaceForge's own nightly values (nights.py), read against the athlete's own
-band; no brand value is read. A night without the watch is a gap, never a
-zero. Each number is printed once on the page: a dial's percentage on the
-dial, the hours and the values on the cards.
+"""Santé: three visual rings, with explanations available on demand.
+
+Sommeil compares the measured 24 h (naps included) to an estimated need.
+Récupération combines nightly signals and the existing effort limits; at
+least one usable component must actually be measured on the selected day.
+Before noon a pending night may retain yesterday's explicitly dated cycle.
+Entraînement compares the last seven days to the usual week: 100 % is a
+reference, not a target, and the full arc is 200 %.
+
+The rings open native disclosures with sleep details, recovery factors and
+history, or training context. The nightly VFC/FC charts remain visible:
+rolling trends, measured points and provisional references are labelled
+separately. Extra daytime measurements are in a closed context panel.
+Measurement dates and successful syncs are distinct in the source details.
+
+No check-in, planned race or brand recovery score enters the calculation.
+Each source is preserved separately; nights.read_rows applies the user's
+watch preference and baselines remain specific to a source and method.
+Missing measurements remain gaps, never zeroes.
+Heuristic choices are marked (H); these indices are not validated clinical measures.
 """
 import logging
 import statistics
@@ -62,6 +36,7 @@ from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services import viz
 from app.services.health import WATCH_SOURCES, fmt_minutes
+from app.services.health_sources import SOURCE_NOTE, preference
 from app.services.sante_daily import daily_context
 
 logger = logging.getLogger(__name__)
@@ -106,6 +81,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         "daily": daily,
         "has_watch_data": bool(sources),
         "today": today,
+        "cycle_pending": today != until,
         "night_state": night_state,
     }
     if not out["has_data"]:
@@ -132,6 +108,13 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out.update(_top(day, efforts, sessions, bool(sources), out, until, nights, nt.rest_hr(nights, until), peak))
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
+    out["source_note"] = SOURCE_NOTE
+    out["preferred_source"] = await preference(db, user_id) or "Automatique · COROS puis Garmin"
+    measured = (await db.execute(select(HealthMetric.source, func.max(HealthMetric.date)).where(
+        HealthMetric.user_id == user_id, HealthMetric.date <= until,
+        HealthMetric.metric.in_(("sleep", "hrv", "hr_night")), HealthMetric.source.in_(WATCH_SOURCES)
+    ).group_by(HealthMetric.source))).all()
+    out["measured_sources"] = {source: d.strftime("%d/%m/%Y") for source, d in measured}
     return out
 
 
@@ -197,7 +180,13 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     alert = nt.illness_alert(nights, d)
     stats = {k: _night_stat(nights, k, d) for k in ("hr", "hrv")}
     tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
-    day = {"day": d, "stats": stats, "tst24": tst, "need": sl.sleep_need(nights, d, st.raced_nights(efforts)),
+    night = nights.get(d)
+    fresh = [k for k in ("hr", "hrv") if night and night.value(k) is not None]
+    if tst is not None:
+        fresh.append("sleep")
+    day = {"day": d, "night_measured": _slept(nights, d), "stats": stats, "tst24": tst,
+           "measured_components": fresh,
+           "need": sl.sleep_need(nights, d, st.raced_nights(efforts)),
            "window": st.effort_window(efforts, d), "alert": alert, "resp": nt.resp_up_nights(nights, d)}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
@@ -303,7 +292,7 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
     p = min(100, sc.rounded(100 * tst24 / need))
     return viz.ring("sommeil", tst24 / need, str(p), "Sommeil", word, unit="%", href=href,
                     tone="warn" if tst24 < nt.SHORT_DAY_MIN else "sleep",
-                    aria=f"Sommeil {sc.pct(p)} de ton besoin de {viz.hm_long(need)}, {word}.")
+                    aria=f"Sommeil {sc.pct(p)} de ton besoin estimé de {viz.hm_long(need)}, {word}.")
 
 
 def usual_week(sessions, since: date, value=None) -> float | None:
@@ -466,13 +455,17 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
     # « Effort récent » first: the row that decides the day (the audit, 2026-10-09: it came last)
     rows = [r for r in (effort_row(efforts, day), night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
                         resp_row(nights, day["day"], day) if nights is not None else None) if r]
-    recup_href = "#recuperation" if rows else "#recuperation-detail" if page.get("recup") else None
+    recup_href = "#recuperation"
     train = training(sessions, day["day"], until, rest, peak)
+    train["dial"]["note"] = "7 jours"
+    train["dial"]["usual_marker"] = train["week"] is not None
+    if train["week"] is not None:
+        train["dial"]["aria"] += " 100 % représente ta semaine habituelle ; un tour complet représente 200 %."
     return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),
                       train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
-            "rows": rows, "training": train, "score": score}
+            "rows": rows, "training": train, "score": score, "score_notes": sc.explanation(day)}
 
 
 # ── the cards ───────────────────────────────────────────────────────────────

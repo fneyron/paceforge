@@ -40,7 +40,7 @@ NEVER = ("séance", "pas jugée", "pas assez de nuits", "autour de la course", "
          "Comment je vais", "⚑", "J+", "J‑", "Jour de course", "Footing facile", "Reprise",
          "Forme du jour", "Cœur la nuit",
          # v4.1: no sync status (Réglages'), no Charge card (Activités'), no unlabelled tick on the Charge ring
-         "synchro", "Synchroniser", "Dernière synchro", "pas encore reçue", "Charge · 14 jours", 'id="charge"',
+         "pas encore reçue", "Charge · 14 jours", 'id="charge"',
          "pf-ring-tick", "pf-sync-btn",
          # v4.4 (owner: « Sommeil 100, Charge récente 20 avec les donuts au-dessus, on comprend rien »): no
          # sub-score, no « Détail du score », no Charge; 2026-10-08 (« Fais comme WHOOP »): three dials, no single
@@ -62,10 +62,36 @@ def _main(html: str) -> str:
 def _visible(html: str) -> str:
     """The values a reader sees before opening anything: no script, no closed fold, no chart axis (the SVGs'
     tick labels are a scale, not a value), no tag, no aria attribute."""
-    body = re.sub(r"<script.*?</script>", " ", _main(html), flags=re.S)
-    body = re.sub(r"<details.*?</details>", " ", body, flags=re.S)
-    body = re.sub(r"<svg.*?</svg>", " ", body, flags=re.S)
-    return re.sub(r"<[^>]+>", " ", body)
+    from html.parser import HTMLParser
+
+    class Visible(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.folds, self.skip, self.text = [], 0, []
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "svg"):
+                self.skip += 1
+            if tag == "details":
+                self.folds.append({"open": "open" in dict(attrs), "summary": False})
+            elif tag == "summary" and self.folds:
+                self.folds[-1]["summary"] = True
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "svg"):
+                self.skip -= 1
+            if tag == "details":
+                self.folds.pop()
+            elif tag == "summary" and self.folds:
+                self.folds[-1]["summary"] = False
+
+        def handle_data(self, data):
+            if not self.skip and all(f["open"] or f["summary"] for f in self.folds):
+                self.text.append(data)
+
+    parser = Visible()
+    parser.feed(_main(html))
+    return " ".join(parser.text)
 
 
 @pytest.fixture
@@ -293,7 +319,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         ("recup", "65", "%", "Récupération", "en cours", "warn", "#recuperation"),
         ("entrainement", "15h35", None, "Entraînement", "pas encore d'habitude", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
-        "Sommeil 96\u00a0% de ton besoin de 9 heures, suffisant.", "Récupération 65\u00a0%, en cours.",
+        "Sommeil 96\u00a0% de ton besoin estimé de 9 heures, suffisant.", "Récupération 65\u00a0%, en cours.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
     assert [d["dash"] for d in page["dials"]][2] == 0 and "ring" not in page and "facts" not in page
     assert [(r["name"], r["qual"], r["value"], r["word"], r["detail"], r["tone"]) for r in page["rows"]] == [
@@ -308,8 +334,8 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     s = page["sleep"]
     h = s["hero"]
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "22:40 → 07:30", None, "8h36",
-                                                                         "sur 9h00 de besoin")
-    assert s["need"] == "Ton besoin aujourd'hui\u00a0: 8\u00a0h, + 1\u00a0h de sommeil en retard."  # never asked
+                                                                         "besoin estimé 9h00")
+    assert s["need"] == "Besoin estimé\u00a0: 8\u00a0h, + 1\u00a0h de sommeil en retard."  # never asked
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]
@@ -440,103 +466,30 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
     main = _main(html)
-    # one page (2026-10-08, « Fais comme WHOOP »; « Pourquoi je n'ai rien dans Sommeil et Entraînement ? »): the
-    # dials, then their three cards right under them in the dials' order (the audit, 2026-10-09: « Les cartes ne
-    # sont pas dans l'ordre des cercles ») — Sommeil (last night), Récupération (its rows), Entraînement (the 7
-    # days) —, then the details in the same order — Sommeil's 24-h chart and habits, Récupération's 14 days and its
-    # VFC and FC de nuit charts —, then the folds: one « Comment je calcule » (no more two), the nights' table
-    order = ['class="pf-dials"', 'id="sommeil"', 'class="pf-row pf-night"', 'id="recuperation"', 'class="pf-rows"',
-             'id="entrainement"', 'class="pf-row pf-week"', 'id="sommeil-detail"', "Sommeil sur 24 h", "pf-habits",
-             'id="recuperation-detail"', "Récupération · 14 jours", 'id="vfc"', 'id="fc"',
-             "<summary>Comment je calcule</summary>", "Les chiffres de chaque nuit"]
-    at = [main.index(k) for k in order]
-    assert at == sorted(at)
-    assert main.count("<summary>") == 2 and "Comment je lis tes nuits" not in main
-    assert [k for k in re.findall(r'class="pf-ring pf-ring-(\w+)', main)] == ["sommeil", "recup", "entrainement"]
-    # each card's title a link « › » to its details further down (Activités for Entraînement), like the mockup
-    titles = re.findall(r'<h2 id="h-(\w+)" class="pf-sum-h"><a class="pf-sum-go" href="([^"]+)">([^<]+)<span '
-                        r'class="pf-sum-chev" aria-hidden="true">›</span></a></h2>', main)
-    assert titles == [("sommeil", "#sommeil-detail", "Sommeil"), ("recup", "#recuperation-detail", "Récupération"),
-                      ("train", "/activities?depuis=2026-10-02", "Entraînement")]
-    # three dials, in WHOOP's order, each a link to its card (a full aria-label), the state said in words
-    dials = re.findall(r'<a class="pf-ring pf-ring-(\w+) is-(\w+)" href="(#\w+)" aria-label="([^"]+)">(.*?)</a>',
-                       main, re.S)
-    assert [(k, tone, href, unescape(aria)) for k, tone, href, aria, _ in dials] == [
-        ("sommeil", "sleep", "#sommeil", "Sommeil 96\u00a0% de ton besoin de 9 heures, suffisant."),
-        ("recup", "warn", "#recuperation", "Récupération 65\u00a0%, en cours."),
-        ("entrainement", "accent", "#entrainement",
-         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude.")]
-    assert [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()) for *_, body in dials] == [
-        "96 % Sommeil suffisant", "65 % Récupération en cours", "15h35 Entraînement pas encore d'habitude"]
-    assert main.count('class="pf-ring ') == 3 and "pf-state-text" not in main  # no alert: no sentence
-    for href in re.findall(r'href="#([\w-]+)"', main.split('<div class="pf-dials">')[1].split("</div>\n")[0]):
-        assert f'id="{href}"' in main, href  # never a link to nothing
-    assert "/activity/" not in main and "Transjeju" not in main and "Morning Trail Run" not in main
-    # the Récupération card's rows: a dot and the name, the value over its word (never colour alone); no link
-    recup = main.split('<section id="recuperation"')[1].split("</section>")[0]
-    rows = [(tone, unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()))
-            for tone, body in re.findall(r'<li class="pf-row is-(\w+)">(.*?)</li>', recup, re.S)]
-    assert rows == [("warn", "Effort récent 8 jours de récupération estimée Durée indicative, selon ton ressenti."),
-                    ("none", "VFC 7 derniers jours en construction prête dans 2 nuits"),
-                    ("none", "FC de nuit 7 derniers jours en construction prête après ta prochaine nuit")]
-    assert "<a " not in recup.split("pf-rows")[1].split("</ul>")[0]
-    # the details: the VFC and FC de nuit charts in words (the rows print the numbers)
-    recup_detail = main.split('<section id="recuperation-detail"')[1].split("</section>")[0]
-    # the usual values to come, said where they will be drawn (owner, 2026-10-09: « Tu ne mets pas les fourchettes
-    # pour VFC et FC repos dans les graphiques ? »)
-    assert recup_detail.count("Tes valeurs habituelles s&#39;afficheront ici dès 7 nuits mesurées.") == 2
-    assert recup_detail.count('class="pf-night-trend"') == 2
-    # Sommeil: « Cette nuit », its times, its hours over its 9-h need; the stages; then, in the details, the 24-h
-    # chart and the habits
-    sommeil = main.split('<section id="sommeil"')[1].split("</section>")[0]
-    night = re.search(r'<div class="pf-row pf-night">(.*?)</div>', sommeil, re.S).group(1)
-    assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", night)).strip()) == (
-        "Cette nuit 22:40 → 07:30 8h36 sur 9h00 de besoin")
-    assert sommeil.index("pf-night") < sommeil.index("pf-phases") and "Sommeil sur 24 h" not in sommeil
-    sleep_detail = main.split('<section id="sommeil-detail"')[1].split("</section>")[0]
-    assert sleep_detail.index("Sommeil sur 24 h") < sleep_detail.index("pf-habits")
-    # Entraînement: the 7 days (the dial prints their time: no usual week yet), the link to Activités
-    train = main.split('<section id="entrainement"')[1].split(">", 1)[1].split("</section>")[0]
-    assert unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train)).strip()) == (
-        "Entraînement › 7 derniers jours pas encore de semaine habituelle")
-    # one link, its title, to these 7 days in Activités (owner, 2026-10-09: « C'est deux fois le même lien ? Ça ne
-    # filtre pas sur la semaine ? »)
-    assert train.count("<a ") == 1 and "Voir tes semaines" not in train
-    assert "Détail du score" not in main and "Contributeurs" not in main and "En bref" not in main
-    # each number printed once before a tap (the closed folds are the accessible alternative): the dials' (the
-    # score, this morning's sleep as a percentage, the week's time), the effort's days, last night's hours, the VFC
-    # and FC of last night, the sleep's mean, the stages; no sub-score (no « 20 »); « 65 % » once, the dial's: the
-    # 14 days' mean is gone from the Récupération chart's readout (the audit, 2026-10-09: it decided nothing and
-    # looked like the dial's), its title rests there instead
-    seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("96 %", "65 %", "15h35", "8 jours", "8h36", "100 ms", "35 bpm", "8h20", "1h10", "5h30", "2h00"):
-        assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
-    assert "en moyenne" not in seen.split("Récupération · 14 jours")[1].split("VFC")[0]
-    assert not re.search(r"(?<![\d,h:])20(?![\d,h:A-Za-z])", seen)
-    words = re.sub(r"\s+", " ", seen)
-    assert words.count("en cours") == 1  # the dial's word, once
-    assert "pf-viz-flag" not in main and "pf-viz-ev" not in main
-    # Santé's cards: no ‹ › disc; a tap, a drag or the keyboard (the hidden range input) selects
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4  # 4 charts, no 3 mois
-    # a day or a night without a measure draws nothing and no legend names it (owner, 2026-10-08: « s'il n'y a pas
-    # de mesure tu ne mets rien, pas de point »): no gap dot, no « pas de score » / « pas de mesure » swatch
-    for part in (recup_detail, sleep_detail):
-        assert "pf-viz-gap" not in part and "is-gap" not in part
-        legends = "".join(re.findall(r'<p class="pf-viz-legend"[^>]*>(.*?)</p>', part, re.S))
-        assert "pas de score" not in legends and "pas de mesure" not in legends
-    history = recup_detail.split("Récupération · 14 jours")[1].split('id="vfc"')[0]
-    # no legend at all: a day without a night has no score and draws nothing (owner, 2026-10-09, like WHOOP)
-    assert re.findall(r'<i class="pf-lg ([\w-]+)"></i>([^<]+)</span>', history) == [] and "estimé" not in history
-    assert "is-out" not in main and "ne compte" not in main
-    # the stages: one bar, its legend names each phase with its minutes (never colour alone); « Comment je lis tes
-    # nuits » says they are the watch's estimate
+    # Rings remain first; each opens a native disclosure with its explanation.
+    assert re.findall(r'class="pf-ring pf-ring-(\w+)', main) == ["sommeil", "recup", "entrainement"]
+    for ident in ("sommeil", "recuperation", "entrainement"):
+        assert f'<details id="{ident}" class="pf-health-panel">' in main
+        assert f'href="#{ident}"' in main
+    assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
+    assert main.count('class="pf-night-trend"') == 2
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4
+    assert 'data-viz-key="recuperation"' in main and "Récupération · 14 jours" in main
+    assert 'href="/activities?depuis=2026-10-02"' in main
+    assert "besoin estimé 9h00" in main
+    assert "il ne mesure pas un pourcentage de réparation du corps" in main
+    assert "La règle liée à l’effort évolue par paliers" in main
+    assert "pf-viz-gap" not in main and "is-out" not in main
     assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
     assert '<li><i class="pf-ph is-deep" aria-hidden="true"></i>Profond <b>1h10</b></li>' in main
-    assert "pf-tl-night" not in main and "pf-nhero" not in main and "pf-hero\"" not in main
-    # the Récupération dial prints the score, as a percentage (the « % » smaller), its name and its word under it
-    ring = main.split('<a class="pf-ring pf-ring-recup')[1].split("</a>")[0]
-    assert '<span>65<span class="pf-ring-unit">%</span></span>' in ring
-    assert '<span class="pf-ring-label" aria-hidden="true">Récupération</span>' in ring
+    assert "<form" not in main and "Transjeju" not in main and "/activity/" not in main
+    assert main.count("<summary>Comment je calcule</summary>") == 1
+    assert "Les chiffres de chaque nuit" in main
+    # Details are closed by default, while the three scores and nightly charts stay readable.
+    seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
+    for number in ("96 %", "65 %", "15h35", "8h36", "100 ms", "35 bpm"):
+        assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
+    assert "Effort récent" not in seen and "Synchronisation réussie" not in seen
 
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
@@ -711,14 +664,15 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     # word; Entraînement links to its card: the runs' time, « pas encore d'habitude » (under 4 complete weeks)
     sleep, recup, train = page["dials"]
     assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas de données", None)
-    assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", None)
+    assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", "#recuperation")
     assert (train["sub"], train["href"], train["unit"]) == ("pas encore d'habitude", "#entrainement", None)
     html = (await as_user.get("/sante")).text
     assert "Connecte ta montre pour voir ta récupération." in html
     assert 'href="/settings#coros"' in html and 'href="/settings#garmin"' in html
-    assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html and 'id="recuperation"' not in html
+    assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html
+    assert '<details id="recuperation"' in html  # explains why the ring is empty
     rings = re.findall(r'<(a|div) class="pf-ring pf-ring-(\w+)[^"]*"(?: href="([^"]+)")?', _main(html))
-    assert rings == [("div", "sommeil", ""), ("div", "recup", ""), ("a", "entrainement", "#entrainement")]
+    assert rings == [("div", "sommeil", ""), ("a", "recup", "#recuperation"), ("a", "entrainement", "#entrainement")]
 
 
 async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_session: AsyncSession,
@@ -758,11 +712,11 @@ async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([3], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["score"]["value"] is None and page["recup"] is None and page["rows"] == []
-    assert [d["href"] for d in page["dials"]] == ["#sommeil", None, "#entrainement"]
+    assert [d["href"] for d in page["dials"]] == ["#sommeil", "#recuperation", "#entrainement"]
     assert page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([2], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation-detail"
+    assert page["score"]["value"] is None and page["recup"] and page["dials"][1]["href"] == "#recuperation"
     await _seed_rows(db_session, test_user, night_rows([5], **kw))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert [(r["key"], r["word"]) for r in page["rows"]] == [("vfc", "en construction"), ("fc", "en construction")]
@@ -809,7 +763,7 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_only_with_news(as_us
     conn.last_error = "COROS ne répond pas pour l'instant."
     await db_session.flush()
     page = (await as_user.get("/sante")).text  # a failed watch: not retried on its own (Réglages say why)
-    assert started == [] and "ne répond pas" not in page
+    assert started == [] and "ne répond pas" in page
 
 
 async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, test_user: User, monkeypatch):

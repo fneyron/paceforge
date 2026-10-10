@@ -261,16 +261,17 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
     p = sc.rounded(100 * st.minute_load(150, 50, 180) / st.minute_load(130, 50, 180))  # no night: 50; max 180
     assert p == 168
     assert ('<a class="pf-ring pf-ring-entrainement is-accent" href="#entrainement" aria-label="Entraînement '
-            '168 % de ta semaine habituelle, plus que d&#39;habitude.">') in main
-    train = main.split('<section id="entrainement"')[1].split("</section>")[0]
+            '168 % de ta semaine habituelle, plus que d&#39;habitude. 100 % représente ta semaine habituelle ; '
+            'un tour complet représente 200 %.">') in main
+    train = main.split('<details id="entrainement"')[1].split("</details>")[0]
     assert ('<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span '
             'class="pf-row-val"><span>plus élevée que d&#39;habitude</span></span></div>') in train
     words = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train.split(">", 1)[1])).strip())
-    assert words == ("Entraînement › 7 derniers jours 5h00 ta semaine habituelle : 5h00 Intensité plus élevée "
-                     "que d'habitude")
+    assert "ta semaine habituelle : 5h00 Intensité plus élevée que d'habitude" in words
+    assert "pas à un objectif à atteindre" in words and "représente 200 %" in words
     assert "pf-dot" not in train and not re.search(r"(?i)trimp|charge|points?\b", words)
     seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
-    assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 2
+    assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 1
     rules = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
     assert ".pf-row.pf-intensity { border-top: 1px solid rgb(var(--pf-line)); }" in rules
     assert ".pf-intensity .pf-row-val > span { font-size: 15px; color: rgb(var(--pf-ink)); }" in rules

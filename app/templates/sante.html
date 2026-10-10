@@ -9,9 +9,10 @@
         syncs on demand): opening the page syncs a stale watch in the background and reloads quietly when something
         new arrived (partials/sante_sync.html, invisible) -#}
     <div class="pf-sante-head">
-        <h1 class="pf-sante-h1"><span class="sr-only">Santé · </span>Aujourd'hui</h1>
+        <h1 class="pf-sante-h1"><span class="sr-only">Santé · </span>{{ 'Dernier bilan' if page and page.cycle_pending else "Aujourd'hui" }}</h1>
         {% if page and page.day_label %}<p class="pf-sante-lines"><span>{{ page.day_label }}</span></p>{% endif %}
         {% if watches and auto_sync %}{% include "partials/sante_sync.html" %}{% endif %}
+        {% if page and page.cycle_pending %}<p class="pf-card-meaning">Bilan de la nuit précédente, en attendant celle de ce matin.</p>{% endif %}
     </div>
 
     {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}
@@ -19,6 +20,10 @@
         <p class="text-[15px] text-gray-700">{{ link.last_error or "La connexion à " ~ name ~ " a expiré : reconnecte-toi." }} Tes données déjà reçues sont gardées.</p>
         <a href="/settings#{{ anchor }}" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter {{ name }} dans les réglages</a>
     </section>
+    {% endfor %}
+
+    {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.last_error and not link.needs_reauth %}
+    <p class="pf-sante-note" role="status">{{ name }} : {{ link.last_error }} <a class="pf-link" href="/settings#{{ anchor }}">Vérifier la synchronisation ›</a></p>
     {% endfor %}
 
     {% if page is none %}

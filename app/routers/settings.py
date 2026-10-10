@@ -71,12 +71,18 @@ async def save_settings(
     db: AsyncSession = Depends(get_db),
     weight_kg: str = Form(default=""),
     ftp_watts: str = Form(default=""),
+    health_source: str | None = Form(default=None),
 ):
+    if health_source is not None and health_source not in ("auto", "COROS", "Garmin"):
+        ctx = await _settings_context(request, user, db, health_source_bad=True)
+        return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
     weight = _to_float(weight_kg)
     if weight_kg.strip() and (weight is None or not math.isfinite(weight) or not 30 <= weight <= 200):
         ctx = await _settings_context(request, user, db, weight_bad=True)
         return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
     user.weight_kg = weight
+    if health_source is not None:
+        user.health_source = None if health_source == "auto" else health_source
     ftp_bad = False
     # Without the FTP field (cycling off) the form doesn't send it: keep the saved value.
     if cycling_enabled():

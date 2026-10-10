@@ -50,7 +50,9 @@ def _example(z=None, hr=None, tst=None, window=None) -> dict:
     if hr is not None:
         v = 45.0 + hr
         stats["hr"] = {"value": v, "normal": HR_BAND, "status": nt.status(v, HR_BAND)}
-    day = {"day": D, "stats": stats, "tst24": tst, "need": {"total": 480, "base": 480, "effort": 0, "debt": 0},
+    day = {"day": D, "night_measured": any(v is not None for v in (z, hr, tst)),
+           "measured_components": [k for k, v in (("hrv", z), ("hr", hr), ("sleep", tst)) if v is not None],
+           "stats": stats, "tst24": tst, "need": {"total": 480, "base": 480, "effort": 0, "debt": 0},
            "window": window, "alert": None}  # an 8-h need, nothing owed: the example days read the sleep as before
     score = sc.score_of(day)
     return {"score": score, "state": td.state(score, day), "day": day}
@@ -396,7 +398,7 @@ async def test_the_sommeil_dial_marks_a_short_day_only(db_session, test_user):
         dial = page["dials"][0]
         assert (dial["key"], dial["value"], dial["unit"], dial["sub"], dial["tone"], dial["href"]) == (
             "sommeil", value, "%", word, tone, "#sommeil"), asleep
-        assert page["sleep"]["hero"]["need"] == f"sur {sante.viz.hm(need)} de besoin", asleep
+        assert page["sleep"]["hero"]["need"] == f"besoin estimé {sante.viz.hm(need)}", asleep
         # the arc: the hours of the need, at most full
         assert dial["dash"] == pytest.approx(min(1, asleep / need) * dial["c"], abs=0.01)
         sub = next(p for p in page["score"]["parts"] if p["key"] == "sleep")["sub"]

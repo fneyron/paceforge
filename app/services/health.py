@@ -377,8 +377,8 @@ STALE_MAX = 3  # (H) stale rows of one metric a sync may delete: more is an answ
 
 async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source: str,
                       covered: dict[str, set[date]] | None = None) -> dict:
-    """Idempotent upsert of values that are already one per day (key: metric,
-    day). `covered`: {metric: the days this sync's parsers read for it}: a row
+    """Idempotent upsert of values that are already one per day and source.
+    `covered`: {metric: the days this sync's parsers read for it}: a row
     of this `source` on one of those days that `rows` no longer holds is
     deleted (a value the watch no longer gives, a night value its guards now
     reject: else the stale row stays shown for good). Other sources' rows,
@@ -412,6 +412,7 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
         by_metric[metric] = len(items)
         existing = {m.date: m for m in (await db.execute(select(HealthMetric).where(
             HealthMetric.user_id == user_id, HealthMetric.metric == metric,
+            HealthMetric.source == source,
             HealthMetric.date >= min(r.day for r in items),
             HealthMetric.date <= max(r.day for r in items)))).scalars()}
         for r in items:
@@ -420,8 +421,8 @@ async def store_daily(db: AsyncSession, user_id: int, rows: list[Daily], source:
                 db.add(HealthMetric(user_id=user_id, date=r.day, metric=metric, value=r.value,
                                     source=source, details=r.details, n_samples=1))
                 inserted += 1
-            elif abs(row.value - r.value) > 1e-6 or row.details != r.details or row.source != source:
-                row.value, row.details, row.source = r.value, r.details, source
+            elif abs(row.value - r.value) > 1e-6 or row.details != r.details:
+                row.value, row.details = r.value, r.details
                 updated += 1
     await db.flush()
     return {"inserted": inserted, "updated": updated, "deleted": deleted, "stale_kept": kept,
@@ -470,15 +471,22 @@ async def reaggregate(db: AsyncSession, user_id: int, affected: dict[str, set[da
                 HealthSample.user_id == user_id, HealthSample.metric == metric,
                 HealthSample.start_at >= lo, HealthSample.start_at < hi)
         )).scalars().all()
-        daily = aggregate_days(metric, rows, dates)
-        dates_list = sorted(dates)
-        for i in range(0, len(dates_list), 500):
-            await db.execute(delete(HealthMetric).where(
-                HealthMetric.user_id == user_id, HealthMetric.metric == metric,
-                HealthMetric.date.in_(dates_list[i:i + 500])))
-        new_rows = [{"user_id": user_id, "date": d, "metric": metric, "value": v["value"],
-                     "source": v.get("source"), "details": v.get("details"), "n_samples": v["n"]}
-                    for d, v in sorted(daily.items())]
+        # Keep raw-sample sources separate too. Reaggregating an Apple export
+        # must never erase a direct watch's daily summary or merge SDNN/RMSSD.
+        sources = {r.source or "" for r in rows}
+        if metric in ("sleep", "hrv"):
+            sources -= set(WATCH_SOURCES)
+        new_rows = []
+        for source in sorted(sources):
+            daily = aggregate_days(metric, [r for r in rows if (r.source or "") == source], dates)
+            dates_list = sorted(dates)
+            for i in range(0, len(dates_list), 500):
+                await db.execute(delete(HealthMetric).where(
+                    HealthMetric.user_id == user_id, HealthMetric.metric == metric,
+                    HealthMetric.source == source, HealthMetric.date.in_(dates_list[i:i + 500])))
+            new_rows.extend({"user_id": user_id, "date": d, "metric": metric, "value": v["value"],
+                             "source": source, "details": v.get("details"), "n_samples": v["n"]}
+                            for d, v in sorted(daily.items()))
         for i in range(0, len(new_rows), _INSERT_CHUNK):
             await db.execute(insert(HealthMetric), new_rows[i:i + _INSERT_CHUNK])
         written[metric] = len(new_rows)
