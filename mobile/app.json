@@ -9,7 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "fr.paceforge.mobile"
+      "bundleIdentifier": "fr.paceforge.mobile",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "fr.paceforge.mobile",
@@ -53,6 +56,12 @@
       ],
       "react-native-health-connect",
       "./plugins/with-health-connect"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4e22becd-175c-45e0-bf2d-3e40607a6305"
+      }
+    },
+    "owner": "fneyron"
   }
 }

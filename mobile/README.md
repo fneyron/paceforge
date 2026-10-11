@@ -78,13 +78,37 @@ La destination du profil `submit.production.ios` est la fiche App Store Connect
 
 Le profil de compilation `production` produit une version iPhone destinée au
 store (`distribution: store`, `simulator: false`) et incrémente son numéro.
-Avant le premier envoi, associer ce projet au compte Expo du propriétaire avec
-`eas init`, puis configurer ses certificats, son profil de provisionnement et
-l'accès App Store Connect avec `eas credentials --platform ios` (profil
-`production`). Vérifier que la fiche Apple utilise bien le bundle ci-dessus.
-Une connexion Apple dans le navigateur ne configure pas ces accès pour EAS.
+Le projet est associé au compte Expo **`fneyron`**, sous l'identifiant EAS
+**`4e22becd-175c-45e0-bf2d-3e40607a6305`** :
+<https://expo.dev/accounts/fneyron/projects/paceforge>.
+`app.json` conserve cette association ; il n'est pas nécessaire de recréer le
+projet avec `eas init`.
 
-Après cette configuration, depuis `mobile/` :
+Avant le premier envoi, le propriétaire doit connecter son compte Apple dans
+EAS CLI pour configurer les certificats, le profil de provisionnement et l'accès
+App Store Connect. Une connexion Apple dans le navigateur ne configure pas ces
+accès pour EAS. Depuis un ordinateur personnel, dans `mobile/` :
+
+```sh
+npm ci
+npx eas-cli@24.12.1 login
+npx eas-cli@24.12.1 build --platform ios --profile production --auto-submit-with-profile production
+```
+
+Utiliser le compte Expo `fneyron`, puis le compte Apple propriétaire de la fiche
+**6821579538**. Les invites de la compilation permettent de créer les accès
+manquants ; saisir le mot de passe Apple et le code de validation uniquement dans
+ce terminal personnel. Conserver le bundle **`fr.paceforge.mobile`**. La gestion
+séparée des accès reste possible avec `eas credentials --platform ios`, profil
+`production`.
+
+L'application utilise HTTPS, le trousseau système via SecureStore et SHA-256
+pour l'association, sans chiffrement personnalisé. La configuration
+`ios.config.usesNonExemptEncryption: false` évite la question de déclaration de
+chiffrement à chaque envoi. Réévaluer cette valeur si les usages cryptographiques
+changent.
+
+Après cette configuration, pour les envois suivants depuis `mobile/` :
 
 ```sh
 npx eas-cli@latest build --platform ios --profile production --auto-submit-with-profile production
