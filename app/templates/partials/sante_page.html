@@ -17,22 +17,16 @@
 <div class="pf-health-panels">
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
 {% if s and s.state != "never" %}
-<details id="sommeil" class="pf-health-panel">
+<details id="sommeil" class="pf-health-panel" open>
     <summary><span>Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</span><span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span></summary>
     <div class="pf-panel-body">
     {% if s.state == "old" %}<p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
     {% elif s.hero %}{% set h = s.hero %}
-        <div class="pf-row pf-night"><span class="pf-row-name"><span>{{ h.label }} <small>{{ h.times }}</small>{% if h.nap %}<small>{{ h.nap }}</small>{% endif %}</span></span><span class="pf-row-val"><b>{{ h.total }}</b><span>{{ h.need }}</span></span></div>
+        <div class="pf-row pf-night"><span class="pf-row-name"><span>{{ h.times }}{% if h.nap %}<small>{{ h.nap }}</small>{% endif %}</span></span><span class="pf-row-val"><span>{{ h.need }}</span></span></div>
         {% if h.timeline %}{{ viz.viz_timeline(h.timeline, h.aria) }}{% endif %}
         {% if h.phases %}{{ viz.viz_phases(h.phases) }}{% endif %}
         {% if h.out_naps %}<p class="pf-viz-cap">{{ h.out_naps|join(' · ') }}</p>{% endif %}
         {% if h.later %}<p class="pf-viz-cap">{{ h.later }}</p>{% endif %}
-        <details class="pf-chart-details">
-            <summary>Besoin de sommeil</summary>
-            {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
-            {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
-            <p class="pf-card-meaning">La base s’adapte aux nuits comparables d’au moins 7 h. L’effort et le manque de sommeil estimé s’y ajoutent. Les phases sont estimées par la montre.</p>
-        </details>
     {% endif %}
 {% if has_sleep_detail %}
 <section id="sommeil-detail" class="pf-sec" aria-labelledby="h-sommeil-detail">
@@ -52,25 +46,33 @@
         {% endfor %}
     </div>
     {% if s.habits %}
-    <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
-    {% if s.habits.regular %}<p class="pf-habits-reg">{{ s.habits.regular }}</p>{% endif %}
+    <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }} habituel</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
     {% endif %}
 </section>
 {% endif %}
 
+    {% if s.hero %}
+    <details class="pf-chart-details">
+        <summary>Comprendre le sommeil</summary>
+        {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
+        {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
+        {% if s.habits and s.habits.regular %}<p class="pf-card-meaning">{{ s.habits.regular }}</p>{% endif %}
+        <p class="pf-card-meaning">La base s’adapte aux nuits comparables d’au moins 7 h. L’effort et le manque de sommeil estimé s’y ajoutent. Les phases sont estimées par la montre.</p>
+    </details>
+    {% endif %}
     </div>
 </details>
 {% endif %}
-<details id="recuperation" class="pf-health-panel">
-    <summary><span>Récupération<small>Historique et détails</small></span></summary>
+<details id="recuperation" class="pf-health-panel" open>
+    <summary><span>Récupération</span></summary>
     <div class="pf-panel-body">
-        {% if p.rows %}{{ rows(p.rows, "Récupération") }}{% endif %}
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
             <h3 class="sr-only">{{ p.recup.title }}</h3>
             {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
         </div>{% endif %}
-        <details class="pf-chart-details">
-            <summary>Calcul de l’indice</summary>
+        <details class="pf-chart-details"{% if not p.recup %} open{% endif %}>
+            <summary>Comprendre la récupération</summary>
+            {% if p.rows %}{{ rows(p.rows, "Récupération") }}{% endif %}
             {% for note in p.score_notes %}<p class="pf-card-meaning">{{ note }}</p>{% endfor %}
         </details>
     </div>

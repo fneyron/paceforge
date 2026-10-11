@@ -516,14 +516,14 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 @media (min-width: 760px) { .pf-daily-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Santé: the rings and charts stay visible; explanations open on demand. */
-.pf-health-panels { margin-top: 20px; border: 1px solid rgb(var(--pf-line)); border-radius: 18px; overflow: clip; }
+.pf-health-panels { display: grid; gap: 16px; align-items: start; margin-top: 20px; }
+.pf-health-panels > .pf-health-panel { border: 1px solid rgb(var(--pf-line)); border-radius: 18px; overflow: clip; min-width: 0; }
 .pf-health-panel > summary { display: flex; align-items: center; gap: 16px; min-height: 68px; padding: 14px 18px; cursor: pointer; list-style: none; color: rgb(var(--pf-ink)); font-weight: 600; }
 .pf-health-panel > summary::-webkit-details-marker { display: none; }
 .pf-health-panel > summary::after { content: '+'; font-size: 20px; font-weight: 400; margin-left: auto; color: rgb(var(--pf-gray-500)); }
 .pf-health-panel[open] > summary::after { content: '−'; }
 .pf-health-panel > summary small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; font-weight: 400; color: rgb(var(--pf-gray-500)); }
 .pf-health-panel > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: -3px; border-radius: 10px; }
-.pf-health-panels > .pf-health-panel + .pf-health-panel { border-top: 1px solid rgb(var(--pf-line)); }
 .pf-panel-value { margin-left: auto; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
 .pf-health-panel > summary:has(.pf-panel-value)::after { margin-left: 0; }
 .pf-panel-body { padding: 0 18px 18px; }
@@ -540,6 +540,10 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-sante4 .pf-dials { margin-left: auto; margin-right: auto; max-width: 630px; }
 .pf-sante4 > .pf-sec { margin-top: 28px; }
 @media (min-width: 760px) {
+  .pf-health-panels:has(> #sommeil) { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'sleep recovery' 'sleep training'; grid-template-rows: auto 1fr; }
+  .pf-health-panels:has(> #sommeil) > #sommeil { grid-area: sleep; }
+  .pf-health-panels:has(> #sommeil) > #recuperation { grid-area: recovery; }
+  .pf-health-panels:has(> #sommeil) > #entrainement { grid-area: training; }
   .pf-health-nights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pf-sante4 .pf-ring-dial { width: min(100%, 140px); }
   .pf-sante4 .pf-ring-value { font-size: 30px; }

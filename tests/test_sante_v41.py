@@ -394,7 +394,7 @@ def test_the_a11y_fixes_in_css_and_js():
 def test_the_sommeil_hero_is_not_the_race_pages_grid():
     """UX3: the Sommeil card stays a block at 1 024 px and more (.pf-hero is the race page's grid)."""
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    assert '<details id="sommeil" class="pf-health-panel">' in page and "pf-hero" not in page
+    assert '<details id="sommeil" class="pf-health-panel" open>' in page and "pf-hero" not in page
     css = (ROOT / "app/static/css/interface.css").read_text()
     rules = re.findall(r"\.pf-sum[^{]*\{[^}]*\}", css)
     assert rules and not any("grid" in r for r in rules)  # a plain block

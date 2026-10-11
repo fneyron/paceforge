@@ -470,7 +470,8 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     # Rings remain first; each opens a native disclosure with its explanation.
     assert re.findall(r'class="pf-ring pf-ring-(\w+)', main) == ["sommeil", "recup", "entrainement"]
     for ident in ("sommeil", "recuperation", "entrainement"):
-        assert f'<details id="{ident}" class="pf-health-panel">' in main
+        opened = " open" if ident != "entrainement" else ""
+        assert f'<details id="{ident}" class="pf-health-panel"{opened}>' in main
         assert f'href="#{ident}"' in main
     assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
     assert main.count('class="pf-night-trend"') == 2
