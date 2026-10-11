@@ -28,6 +28,9 @@ jobs:
         working-directory: mobile
       - run: npx expo prebuild --no-install
         working-directory: mobile
+      - name: Check iOS HealthKit purpose strings
+        run: python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist
+        working-directory: mobile
       - run: npx expo export --platform ios --platform android
         working-directory: mobile
 
@@ -109,6 +112,7 @@ jobs:
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
             build > ios-build.log 2>&1 || { tail -n 100 ios-build.log; exit 1; }
           test -s build/ios/Build/Products/Release-iphonesimulator/PaceForge.app/main.jsbundle
+          python3 scripts/check-ios-health-privacy.py build/ios/Build/Products/Release-iphonesimulator/PaceForge.app/Info.plist
           ditto -c -k --sequesterRsrc --keepParent \
             build/ios/Build/Products/Release-iphonesimulator/PaceForge.app \
             PaceForge-ios-simulator.zip

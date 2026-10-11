@@ -128,6 +128,21 @@ de l'environnement de compilation ; ils ne font pas partie du dépôt.
 
 ## Validation avant diffusion
 
+### Textes de confidentialité iOS
+
+Le SDK HealthKit embarque des API de lecture et d'écriture. Apple exige donc
+`NSHealthShareUsageDescription` et `NSHealthUpdateUsageDescription` dans le
+`Info.plist`, même si PaceForge ne demande que des permissions de lecture.
+Conserver les deux textes du plugin dans `app.json` ; ils ne donnent aucune
+permission d'écriture. Après `expo prebuild`, vérifier le fichier généré :
+
+```sh
+python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist
+```
+
+La CI applique aussi ce contrôle au `Info.plist` de l'application compilée pour
+le simulateur. Le script accepte également le fichier extrait d'un `.ipa` signé.
+
 ### Icônes
 
 `assets/icon.png` est l'icône carrée opaque de 1024 × 1024 pixels utilisée
