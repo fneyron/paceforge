@@ -3,6 +3,15 @@
   "build": {
     "development": { "developmentClient": true, "distribution": "internal" },
     "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
-    "production": { "autoIncrement": true }
+    "production": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "ios": { "simulator": false }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": { "ascAppId": "6821579538" }
+    }
   }
 }

@@ -69,6 +69,37 @@ permissions Android sont exclusivement en lecture ; le plugin local ajoute le
 contrat d'autorisation et route les intentions de confidentialité vers cette
 page. Les déclarations santé des stores doivent correspondre à ces cinq usages.
 
+## Envoi iPhone sur TestFlight
+
+La destination du profil `submit.production.ios` est la fiche App Store Connect
+**6821579538**, fournie par le propriétaire, avec le bundle
+**`fr.paceforge.mobile`**. La fiche est accessible à l'équipe Apple autorisée :
+<https://appstoreconnect.apple.com/apps/6821579538/testflight/ios>.
+
+Le profil de compilation `production` produit une version iPhone destinée au
+store (`distribution: store`, `simulator: false`) et incrémente son numéro.
+Avant le premier envoi, associer ce projet au compte Expo du propriétaire avec
+`eas init`, puis configurer ses certificats, son profil de provisionnement et
+l'accès App Store Connect avec `eas credentials --platform ios` (profil
+`production`). Vérifier que la fiche Apple utilise bien le bundle ci-dessus.
+Une connexion Apple dans le navigateur ne configure pas ces accès pour EAS.
+
+Après cette configuration, depuis `mobile/` :
+
+```sh
+npx eas-cli@latest build --platform ios --profile production --auto-submit-with-profile production
+```
+
+Cette commande compile une nouvelle version signée avec l'icône du projet et
+l'envoie sur TestFlight. Après le traitement Apple, ajouter le propriétaire à
+un groupe de test interne pour l'installer. La publication publique sur
+l'App Store reste une étape distincte dans App Store Connect.
+
+Pour exécuter la commande sans interaction, le compte Expo doit être accessible
+via `EXPO_TOKEN` et les accès Apple doivent avoir été configurés au préalable.
+Conserver les jetons et fichiers de signature dans le gestionnaire de secrets
+de l'environnement de compilation ; ils ne font pas partie du dépôt.
+
 ## Validation avant diffusion
 
 ### Icônes
