@@ -125,11 +125,11 @@ jobs:
           simulator_id="$PF_SIMULATOR_ID"
           xcrun simctl bootstatus "$simulator_id" -b
           xcrun simctl install "$simulator_id" build/ios/Build/Products/Release-iphonesimulator/PaceForge.app
-          xcrun simctl launch "$simulator_id" fr.paceforge.mobile -AppleLanguages '(fr)' -AppleLocale fr_FR
+          xcrun simctl launch "$simulator_id" Fr.paceforge.mobile -AppleLanguages '(fr)' -AppleLocale fr_FR
           sleep 15
           xcrun simctl spawn "$simulator_id" launchctl list | python3 -c '
           import sys
-          rows = [line.split() for line in sys.stdin if "fr.paceforge.mobile" in line]
+          rows = [line.split() for line in sys.stdin if "Fr.paceforge.mobile" in line]
           assert any(row[0].isdigit() and int(row[0]) > 0 for row in rows), "PaceForge exited after launch"'
           xcrun simctl io "$simulator_id" screenshot ios-simulator.png
       - uses: actions/upload-artifact@v4

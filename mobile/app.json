@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "fr.paceforge.mobile",
+      "bundleIdentifier": "Fr.paceforge.mobile",
       "config": {
         "usesNonExemptEncryption": false
       }

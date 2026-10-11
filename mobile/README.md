@@ -73,7 +73,7 @@ page. Les déclarations santé des stores doivent correspondre à ces cinq usage
 
 La destination du profil `submit.production.ios` est la fiche App Store Connect
 **6821579538**, fournie par le propriétaire, avec le bundle
-**`fr.paceforge.mobile`**. La fiche est accessible à l'équipe Apple autorisée :
+**`Fr.paceforge.mobile`**. La fiche est accessible à l'équipe Apple autorisée :
 <https://appstoreconnect.apple.com/apps/6821579538/testflight/ios>.
 
 Le profil de compilation `production` produit une version iPhone destinée au
@@ -98,7 +98,9 @@ npx eas-cli@24.12.1 build --platform ios --profile production --auto-submit-with
 Utiliser le compte Expo `fneyron`, puis le compte Apple propriétaire de la fiche
 **6821579538**. Les invites de la compilation permettent de créer les accès
 manquants ; saisir le mot de passe Apple et le code de validation uniquement dans
-ce terminal personnel. Conserver le bundle **`fr.paceforge.mobile`**. La gestion
+ce terminal personnel. Conserver le bundle **`Fr.paceforge.mobile`**, avec le
+**F majuscule**, tel qu'enregistré dans Apple Developer : la recherche de
+l'identifiant existant par EAS CLI 24.12.1 compare exactement la casse. La gestion
 séparée des accès reste possible avec `eas credentials --platform ios`, profil
 `production`.
 
@@ -170,7 +172,7 @@ L'artefact `paceforge-ios-simulator-screenshot` contient la capture si le
 lancement a réussi. Après extraction de l'application sur un Mac Apple Silicon,
 installer `PaceForge.app` dans un simulateur démarré avec
 `xcrun simctl install booted /chemin/PaceForge.app`, puis
-`xcrun simctl launch booted fr.paceforge.mobile`.
+`xcrun simctl launch booted Fr.paceforge.mobile`.
 
 Cette compilation sans signature ne peut pas être installée sur un iPhone
 physique ni envoyée sur TestFlight. La distribution iOS signée nécessite le
