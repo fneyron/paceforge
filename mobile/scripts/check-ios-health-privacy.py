@@ -1,4 +1,4 @@
-"""Check the actual iOS plist for descriptions required by the linked HealthKit SDK."""
+"""Check the actual iOS plist for HealthKit and Bluetooth purpose descriptions."""
 
 import argparse
 import plistlib
@@ -11,12 +11,12 @@ args = parser.parse_args()
 with args.plist.open("rb") as source:
     info = plistlib.load(source)
 
-required = ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription")
+required = ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription", "NSBluetoothAlwaysUsageDescription")
 missing = [
     key for key in required
     if not isinstance(info.get(key), str) or not info[key].strip()
 ]
 if missing:
-    raise SystemExit(f"{args.plist}: missing HealthKit purpose string(s): {', '.join(missing)}")
+    raise SystemExit(f"{args.plist}: missing purpose string(s): {', '.join(missing)}")
 
-print(f"{args.plist}: both HealthKit purpose strings are present.")
+print(f"{args.plist}: HealthKit and Bluetooth purpose strings are present.")

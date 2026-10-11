@@ -55,6 +55,14 @@
         }
       ],
       "react-native-health-connect",
+      [
+        "react-native-ble-manager",
+        {
+          "bluetoothAlwaysPermission": "PaceForge se connecte au capteur cardiaque que tu choisis pour afficher ton pouls en direct.",
+          "neverForLocation": true,
+          "isBleRequired": false
+        }
+      ],
       "./plugins/with-health-connect"
     ],
     "extra": {
