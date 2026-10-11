@@ -90,9 +90,15 @@ Release pour le simulateur Apple Silicon sur macOS avec Xcode 26.6.
 L'artefact `paceforge-android-preview` est signé
 avec la clé de test du projet généré, pour installation de test uniquement ;
 il ne remplace pas une signature Play Store. Il n'inclut pas de serveur Metro.
-L'artefact `paceforge-ios-simulator` contient l'application compressée et une
-capture après lancement dans un simulateur iPhone. Il inclut son bundle
-JavaScript et ne nécessite pas Metro. Après extraction sur un Mac Apple Silicon,
+L'artefact `paceforge-ios-simulator` contient l'application compressée, conservée
+dès que la compilation a réussi. Elle inclut son bundle JavaScript et ne
+nécessite pas Metro. Un simulateur iPhone avec la version d'iOS correspondant
+au SDK Xcode démarre pendant la compilation. Un contrôle distinct vérifie
+ensuite que l'application reste en cours d'exécution après lancement.
+Ce contrôle est limité à douze minutes ;
+en cas d'échec, son journal est conservé et la compilation reste téléchargeable.
+L'artefact `paceforge-ios-simulator-screenshot` contient la capture si le
+lancement a réussi. Après extraction de l'application sur un Mac Apple Silicon,
 installer `PaceForge.app` dans un simulateur démarré avec
 `xcrun simctl install booted /chemin/PaceForge.app`, puis
 `xcrun simctl launch booted fr.paceforge.mobile`.

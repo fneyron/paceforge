@@ -84,6 +84,19 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
       - run: npx expo prebuild --platform ios --no-install
+      - name: Prepare iPhone Simulator while native code builds
+        timeout-minutes: 4
+        run: |
+          runtime_id=$(xcrun simctl list runtimes --json | python3 -c '
+          import json, subprocess, sys
+          runtimes = json.load(sys.stdin)["runtimes"]
+          sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"], text=True).strip()
+          print(next(r["identifier"] for r in runtimes if r["isAvailable"]
+                     and ".iOS-" in r["identifier"] and r["version"].split(".")[:2] == sdk.split(".")[:2]))')
+          simulator_id=$(xcrun simctl create PaceForgeCI com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          echo "PF_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id"
+          open -a Simulator --args -CurrentDeviceUDID "$simulator_id"
       - name: Install native iOS dependencies
         run: pod install --project-directory=ios
       - name: Compile native iOS release for Apple Silicon Simulator
@@ -99,14 +112,17 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             build/ios/Build/Products/Release-iphonesimulator/PaceForge.app \
             PaceForge-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paceforge-ios-simulator
+          path: mobile/PaceForge-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Launch app in iPhone Simulator
+        timeout-minutes: 12
         run: |
-          simulator_id=$(xcrun simctl list devices available --json | python3 -c '
-          import json, sys
-          devices = json.load(sys.stdin)["devices"]
-          print(next(d["udid"] for runtime, group in devices.items() if ".iOS-" in runtime
-                     for d in group if d["name"].startswith("iPhone") and d["isAvailable"]))')
-          xcrun simctl boot "$simulator_id"
+          exec > >(tee ios-smoke.log) 2>&1
+          simulator_id="$PF_SIMULATOR_ID"
           xcrun simctl bootstatus "$simulator_id" -b
           xcrun simctl install "$simulator_id" build/ios/Build/Products/Release-iphonesimulator/PaceForge.app
           xcrun simctl launch "$simulator_id" fr.paceforge.mobile -AppleLanguages '(fr)' -AppleLocale fr_FR
@@ -122,13 +138,12 @@ jobs:
           name: paceforge-ios-build-diagnostics
           path: |
             mobile/ios-build.log
+            mobile/ios-smoke.log
             mobile/build/ios-result.xcresult
           retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
-          name: paceforge-ios-simulator
-          path: |
-            mobile/PaceForge-ios-simulator.zip
-            mobile/ios-simulator.png
+          name: paceforge-ios-simulator-screenshot
+          path: mobile/ios-simulator.png
           if-no-files-found: error
           retention-days: 14
