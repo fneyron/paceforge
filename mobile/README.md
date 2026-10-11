@@ -48,7 +48,7 @@ npm run typecheck
 npm test
 npx expo prebuild --no-install
 npm run android # Android Studio, SDK et appareil/émulateur nécessaires
-npm run ios     # macOS, Xcode et signature Apple nécessaires
+npm run ios     # macOS et Xcode ; signature Apple pour un iPhone physique
 ```
 
 Expo Go ne contient pas HealthKit/Health Connect : utiliser une compilation
@@ -84,9 +84,21 @@ la vérification statique. Ils ne remplacent pas les essais sur appareils réels
 6. Coupure réseau, révocation depuis le site, retour au premier plan, reprise.
 7. Écran de confidentialité ouvert depuis les permissions Health Connect.
 
-Le workflow mobile peut être lancé manuellement pour compiler un APK Android
-avec SDK/NDK sur GitHub Actions. L'artefact `paceforge-android-preview` est signé
+Le workflow mobile peut être lancé manuellement avec `platform=all`, `android`
+ou `ios`. Il compile un APK Android avec SDK/NDK et/ou une application iOS native
+Release pour le simulateur Apple Silicon sur macOS avec Xcode 26.6.
+L'artefact `paceforge-android-preview` est signé
 avec la clé de test du projet généré, pour installation de test uniquement ;
 il ne remplace pas une signature Play Store. Il n'inclut pas de serveur Metro.
-La compilation iOS et les essais réels HealthKit/Health Connect restent à faire
-avec les appareils et comptes développeur du propriétaire.
+L'artefact `paceforge-ios-simulator` contient l'application compressée et une
+capture après lancement dans un simulateur iPhone. Il inclut son bundle
+JavaScript et ne nécessite pas Metro. Après extraction sur un Mac Apple Silicon,
+installer `PaceForge.app` dans un simulateur démarré avec
+`xcrun simctl install booted /chemin/PaceForge.app`, puis
+`xcrun simctl launch booted fr.paceforge.mobile`.
+
+Cette compilation sans signature ne peut pas être installée sur un iPhone
+physique ni envoyée sur TestFlight. La distribution iOS signée nécessite le
+compte Apple Developer du propriétaire. Les essais réels Senssun → Apple Santé
+→ PaceForge et Health Connect restent à faire sur les appareils concernés ; un
+lancement réussi dans le simulateur ne valide pas ces synchronisations.

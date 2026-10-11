@@ -1,6 +1,12 @@
 name: Mobile companion checks
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Native previews to build
+        type: choice
+        options: [all, android, ios]
+        default: all
   push:
     branches: [main]
     paths: ['mobile/**', '.github/workflows/mobile.yml']
@@ -26,7 +32,7 @@ jobs:
         working-directory: mobile
 
   android-preview:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.platform != 'ios'
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -57,4 +63,72 @@ jobs:
         with:
           name: paceforge-android-preview
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+  ios-simulator:
+    if: github.event_name == 'workflow_dispatch' && inputs.platform != 'android'
+    needs: check
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npx expo prebuild --platform ios --no-install
+      - name: Install native iOS dependencies
+        run: pod install --project-directory=ios
+      - name: Compile native iOS release for Apple Silicon Simulator
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/PaceForge.xcworkspace -scheme PaceForge \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios -resultBundlePath build/ios-result \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            build > ios-build.log 2>&1 || { tail -n 100 ios-build.log; exit 1; }
+          test -s build/ios/Build/Products/Release-iphonesimulator/PaceForge.app/main.jsbundle
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/ios/Build/Products/Release-iphonesimulator/PaceForge.app \
+            PaceForge-ios-simulator.zip
+      - name: Launch app in iPhone Simulator
+        run: |
+          simulator_id=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime, group in devices.items() if ".iOS-" in runtime
+                     for d in group if d["name"].startswith("iPhone") and d["isAvailable"]))')
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          xcrun simctl install "$simulator_id" build/ios/Build/Products/Release-iphonesimulator/PaceForge.app
+          xcrun simctl launch "$simulator_id" fr.paceforge.mobile -AppleLanguages '(fr)' -AppleLocale fr_FR
+          sleep 15
+          xcrun simctl spawn "$simulator_id" launchctl list | python3 -c '
+          import sys
+          rows = [line.split() for line in sys.stdin if "fr.paceforge.mobile" in line]
+          assert any(row[0].isdigit() and int(row[0]) > 0 for row in rows), "PaceForge exited after launch"'
+          xcrun simctl io "$simulator_id" screenshot ios-simulator.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paceforge-ios-build-diagnostics
+          path: |
+            mobile/ios-build.log
+            mobile/build/ios-result.xcresult
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paceforge-ios-simulator
+          path: |
+            mobile/PaceForge-ios-simulator.zip
+            mobile/ios-simulator.png
+          if-no-files-found: error
           retention-days: 14
