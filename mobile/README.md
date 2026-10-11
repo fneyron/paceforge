@@ -71,6 +71,20 @@ page. Les déclarations santé des stores doivent correspondre à ces cinq usage
 
 ## Validation avant diffusion
 
+### Icônes
+
+`assets/icon.png` est l'icône carrée opaque de 1024 × 1024 pixels utilisée
+pour iOS et les icônes Android classiques. Les coins sont découpés par le
+système. `assets/adaptive-icon.png` conserve une marge supplémentaire pour
+que le tracé reste visible dans les différents masques Android ; son fond
+est assorti au `backgroundColor` de la configuration Expo.
+
+`expo prebuild` génère les tailles natives à partir de ces fichiers. L'icône
+App Store Connect / TestFlight sera transmise avec la prochaine compilation
+iPhone signée : modifier les images ne met pas à jour une version déjà diffusée.
+
+### Synchronisation
+
 Les tests serveur couvrent association, rejeu, révocation, isolation des comptes,
 unités, dates, import idempotent et priorité des sources. TypeScript, tests de
 calendrier/changement d'heure/pont et export des bundles iOS/Android complètent

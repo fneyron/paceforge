@@ -21,8 +21,8 @@
         "android.permission.health.READ_RESPIRATORY_RATE"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B5F6E"
       },
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
