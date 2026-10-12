@@ -23,7 +23,7 @@ SIGNALS = {
                  "Moyenne des relevés du téléphone, éveil et sommeil compris. À distinguer de la respiration nocturne."),
     "body_fat": ("Masse grasse", "%", 1, 4,
                  "Estimation de la balance, sensible notamment à l’hydratation. Compare des pesées dans les mêmes conditions."),
-    "stress": ("Stress Garmin", "/100", 0, 30,
+    "stress": ("Stress", "/100", 0, 30,
                "Estimation Garmin pendant les périodes mesurées. Elle ne mesure pas uniquement le stress mental."),
     "weight": ("Poids", "kg", 1, 3, "Observe la tendance sur plusieurs semaines, dans des conditions comparables."),
 }

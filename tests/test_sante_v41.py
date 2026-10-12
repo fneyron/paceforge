@@ -67,7 +67,7 @@ async def test_sante_shows_no_sync_information(as_user: AsyncClient, db_session:
     head = html.split('class="pf-sante-head">')[1].split("</div>", 1)[0]
     assert "COROS" not in head and "synchro" not in head.lower() and "pf-sync" not in html
     assert H.unescape(re.sub(r"<[^>]+>", " ", head)).split() == ["Santé", "·", "Aujourd'hui", "jeu.", "8", "oct."]
-    assert "Mesures reçues et synchronisation" in html and "il y a 25 min" in html
+    assert "Mesures reçues et synchronisation" not in html and "il y a 25 min" not in html
     assert "pas encore reçue" not in html
     assert started == []  # synced 25 min ago: no background sync, no poller
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=2)
@@ -125,10 +125,9 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
     legend = re.search(r'<ul class="pf-phases-legend" aria-label="Phases de la nuit">(.*?)</ul>', hero).group(1)
     assert [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", legend)] == [
         "Éveil 10 min", "Léger 5h30", "Profond 1h10", "Paradoxal 2h00"]
-    # that they are the watch's estimate, the shape of the night and not its quality: « Comment je calcule » says
-    # it (the card shows the bar and its legend, like the mockup the owner approved, 2026-10-08; one fold since the
-    # audit, 2026-10-09)
-    fold = main.split("<summary>Comment je calcule</summary>")[1].split("</details>")[0]
+    # Interpretation is available in the shared help, without repeating it below the chart.
+    help_page = (await as_user.get("/sante/aide")).text
+    fold = help_page.split("<summary>Calcul détaillé</summary>")[1].split("</details>")[0]
     assert ("Ta montre estime tes phases : la forme de ta nuit, pas sa qualité."
             in H.unescape(fold).replace("\u00a0", " "))
     for word in ("bon", "mauvais", "objectif", "insuffisant", "%"):  # shown, never judged
@@ -166,7 +165,7 @@ async def test_recovery_lives_on_sante_only(as_user: AsyncClient, client: AsyncC
     await seed_owner_v4(db_session, test_user)
     html = await _page(as_user, monkeypatch, D8)
     assert "Transjeju" not in _main(html) and "/activity/" not in _main(html)
-    assert "pf-ring-charge" not in html and "Effort récent" in html
+    assert "pf-ring-charge" not in html and "Récupération en cours" in html
     assert "Charge · 14 jours" not in html and 'data-viz-key="charge"' not in html
 
     async def today(*a, **k):
@@ -205,13 +204,9 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     assert dials[0] == "94 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
-    card = main.split('<details id="recuperation"')[1].split("</ul>")[0]
-    rows = [words(body) for body in re.findall(r'<li class="pf-row is-\w+">(.*?)</li>', card)]
-    assert len(rows) == 2  # each dot with its name and its words; no recovery window open: no Effort récent
-    assert re.fullmatch(r"VFC 7 derniers jours \u2212\d+ % plus basse que d'habitude", rows[0]), rows[0]
-    assert re.fullmatch(r"FC de nuit 7 derniers jours (comme d'habitude|[+\u2212]\d+ % dans tes valeurs habituelles)",
-                        rows[1]), rows[1]
-    assert card.count('<i class="pf-dot" aria-hidden="true"></i>') == 2
+    # The recovery panel keeps its graph; nightly status is stated once on each metric card.
+    card = main.split('<details id="recuperation"')[1].split('</details>')[0]
+    assert 'data-viz-key="recuperation"' in card and 'class="pf-row' not in card
     for key in ("vfc", "fc"):
         card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
         # its status line: a dot and its words, no percentage (the row prints it: once; the 2 missing nights leave
@@ -277,7 +272,7 @@ async def test_a_strava_only_athlete_after_an_ultra_gets_a_state(as_user: AsyncC
     assert page["state"] is None and page["score"]["value"] is None and page["connect"]
     assert page["line"] == td.NO_WATCH and "effort" in {r["key"] for r in page["rows"]}
     html = await _page(as_user, monkeypatch, today)
-    assert "Effort récent" in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
+    assert "Effort récent" not in html and 'href="/settings#coros"' in html and "Grand Raid" not in _main(html)
     assert "Connecte ta montre pour ta récupération." not in html
 
 

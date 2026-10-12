@@ -15,12 +15,12 @@ export function tabForUrl(url: string): Tab | null {
 }
 
 // The same website retains its complete navigation in Safari. Inside the app,
-// native tabs own navigation; the web toolbar keeps profile/theme controls.
+// native navigation owns the header and tabs; account/theme controls live in Settings.
 export const appShellScript = `
   if (location.origin === ${JSON.stringify(ORIGIN)} && !document.getElementById('paceforge-native-shell')) {
     const style = document.createElement('style');
     style.id = 'paceforge-native-shell';
-    style.textContent = '.pf-tabbar,.pf-nav,.pf-top .pf-logo{display:none!important}.pf-top-in{justify-content:flex-end;height:42px}';
+    style.textContent = '.pf-tabbar,.pf-top{display:none!important}';
     (document.head || document.documentElement).appendChild(style);
   }
   true;

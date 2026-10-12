@@ -244,7 +244,9 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
     selection (the readout's word wears it: CSS, never JS colour)."""
     sel = (len(xs) - 1 if sel is None else sel) if xs else None
     h = h or [None] * len(xs)
-    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "r": r, "a": a, "h": h, "sel": sel}
+    dates = [d_short(d) for d in days]
+    out = {"x": xs, "y": ys, "d": [d.isoformat() for d in days], "dateLabels": dates,
+           "r": r, "a": a, "h": h, "sel": sel}
     if link:
         out["link"] = link
     if t:
@@ -252,6 +254,7 @@ def _data(xs, ys, days, r, a, h=None, sel=None, link=None, t=None) -> dict:
     data = json.dumps(out, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     # `links`: a slot has a link, so the figure reserves its row; `link_now`: the default slot's (printed by the server)
     return {"data": data, "read": r[sel] if xs else ["", "—", ""], "aria_now": a[sel] if xs else "", "sel": sel,
+            "date_now": dates[sel] if xs else "",
             "n": len(xs), "links": any(h), "link_now": h[sel] if xs else None,
             "tone_now": (t[sel] if t and xs and sel is not None and sel < len(t) else "") or ""}
 
@@ -268,7 +271,7 @@ def rest(c: dict, read: list[str], aria: str, back: int | None = None) -> dict:
     if back is not None:
         data["back"] = back
     c["data"] = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    c.update(read=read, aria_now=aria, sel=len(data["x"]), rest=True, link_now=None, tone_now="")
+    c.update(read=read, date_now="", aria_now=aria, sel=len(data["x"]), rest=True, link_now=None, tone_now="")
     return c
 
 
@@ -647,7 +650,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
     selected: its value is the card's. `min_span`: the y axis never narrower
     (noise must not look like a cliff). Context wraps on small screens so the
     band and its provisional status remain readable. With `compact`, the
-    third readout slot is only the date/source; the fourth keeps the full
+    third readout slot is the date and source; the fourth keeps the full
     context in a disclosure. Spoken readouts remain complete."""
     n = len(days)
     xs = slot_x(n)

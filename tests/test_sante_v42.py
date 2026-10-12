@@ -562,10 +562,8 @@ def test_back_to_back_days_are_two_efforts_each_its_own_window():
 
 
 async def test_the_method_folds_and_their_sources(as_user, db_session, test_user, monkeypatch):
-    """One fold, closed (the audit, 2026-10-09: « Il y a deux explications à déplier, dont 8 points pour la
-    première »): « Comment je calcule », 5 plain bullets, no citation, no « (H) », then one small « Sources » link
-    to /sante/sources, which lists its references — « Récupération » and « Sommeil », each the official texts then
-    the studies — as links (a DOI, else the text's own address), nothing else."""
+    """The reading help lives on a separate authenticated page, with optional detailed calculations
+    and links to the scientific references; the dashboard stays focused on measurements."""
     import re
 
     from app.services import sante
@@ -577,13 +575,16 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     monkeypatch.setattr(sante, "athlete_today", today)
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
-    folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', html, re.S)
+    assert 'href="/sante/aide"' in html and "Comment je calcule" not in html
+    help_page = await as_user.get("/sante/aide")
+    assert help_page.status_code == 200
+    folds = re.findall(r'<details class="pf-fold">(.*?)</details>', help_page.text, re.S)
     assert len(folds) == 1
     fold = folds[0]
-    assert "<summary>Comment je calcule</summary>" in fold and len(re.findall(r"<li>", fold)) == len(sc.METHOD) == 5
+    assert "<summary>Calcul détaillé</summary>" in fold and len(re.findall(r"<li>", fold)) == len(sc.METHOD) == 5
     assert "(H)" not in fold and "pf-method-h" not in fold and "doi.org" not in fold
     assert not re.search(r"\(\w[\w ]* (19|20)\d\d", fold)  # no « (Kellmann 2018) »
-    assert fold.rstrip().endswith('<a class="pf-method-src" href="/sante/sources">Sources</a>')
+    assert 'href="/sante/sources">Références scientifiques ›</a>' in fold
     r = await as_user.get("/sante/sources")
     assert r.status_code == 200
     page = r.text.split('id="main-content"', 1)[1]

@@ -1,10 +1,10 @@
 /* The home summarizes the existing health and activity screens. */
-.pf-home { max-width: 920px; margin: 0 auto; display: grid; gap: 30px; }
+.pf-home { max-width: 920px; margin: 0 auto; display: grid; gap: 24px; }
 .pf-home-heading .pf-h1 { margin-top: 7px; }
 .pf-home-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .pf-home-section-head .pf-link { font-size: 13px; flex-shrink: 0; }
 .pf-home-balance, .pf-home-measures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.pf-home-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; padding: 22px; border: 1px solid rgb(var(--pf-line)); border-radius: 20px; background: rgb(var(--pf-surface)); }
+.pf-home-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 18px; border: 1px solid rgb(var(--pf-line)); border-radius: 20px; background: rgb(var(--pf-surface)); }
 .pf-home-card:hover { border-color: rgb(var(--pf-accent)); }
 .pf-home-card h3, .pf-home-activities h3 { font-weight: 600; font-size: 15px; }
 .pf-home-recovery { background: rgb(var(--pf-accent-soft)); }
@@ -16,7 +16,6 @@
 .pf-home-state.is-danger { color: rgb(var(--pf-danger)); }
 .pf-home-meta, .pf-home-source { font-size: 13px; line-height: 1.5; color: rgb(var(--pf-gray-600)); overflow-wrap: anywhere; }
 .pf-home-source { font-size: 12px; }
-.pf-home-more { margin-top: auto; padding-top: 6px; font-size: 13px; font-weight: 600; color: rgb(var(--pf-accent)); }
 .pf-home-missing { font-size: 20px; font-weight: 650; }
 .pf-home-measure { font-size: 26px; font-weight: 650; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 .pf-home-week { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 22px 0; border-top: 1px solid rgb(var(--pf-line)); border-bottom: 1px solid rgb(var(--pf-line)); margin-bottom: 8px; }
@@ -29,11 +28,6 @@
 .pf-home-activity-stats { flex-shrink: 0; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
 .pf-home-activity-stats b, .pf-home-activity-stats span { display: block; }
 .pf-home-activity-stats span { color: rgb(var(--pf-gray-600)); }
-.pf-home-sources { padding-top: 22px; border-top: 1px solid rgb(var(--pf-line)); }
-.pf-home-sources li { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; margin-bottom: 14px; }
-.pf-home-sources li > strong { min-width: 85px; }
-.pf-home-sources li > span { text-align: right; }
-.pf-home-sources small { display: block; color: rgb(var(--pf-gray-600)); font-size: 12px; }
 .pf-home-notice { padding: 14px 16px; border-radius: 14px; background: rgb(var(--pf-warn-soft)); color: rgb(var(--pf-warn)); font-size: 14px; }
 .pf-home-start { display: grid; justify-items: start; gap: 14px; }
 @media (min-width: 700px) { .pf-home-measures { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

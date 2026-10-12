@@ -147,12 +147,18 @@ async def test_reaggregating_raw_samples_preserves_direct_watch(db_session, test
 
 
 @pytest.mark.asyncio
-async def test_coros_stress_is_an_archive_even_when_recent(db_session, test_user):
+async def test_coros_stress_is_an_archive_even_when_recent(db_session, test_user, as_user, monkeypatch):
     await store_daily(db_session, test_user.id, [Daily("stress", D, 13)], "COROS")
     await store_daily(db_session, test_user.id, [Daily("stress", D, 25)], "Garmin")
     cards = {c["key"]: c for c in await daily_context(db_session, test_user.id, D)}
     assert cards["stress"]["source"] == "Garmin"
     assert cards["stress_archive"]["archived"] and cards["stress_archive"]["trend"] is None
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(sante, "athlete_today", AsyncMock(return_value=D))
+    html = (await as_user.get("/sante")).text
+    assert 'id="daily-stress-title">Stress</h3>' in html
+    assert "Stress COROS" not in html and 'id="daily-stress_archive-title"' not in html
+
 
 
 def test_migration_preserves_unknown_source_and_refuses_lossy_downgrade():

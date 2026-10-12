@@ -6,26 +6,17 @@
         {% for c in page.daily if not c.archived %}
         <article class="pf-card" aria-labelledby="daily-{{ c.key }}-title">
             <h3 class="pf-card-h" id="daily-{{ c.key }}-title">{{ c.title }}</h3>
-            {% if c.stale %}<p class="pf-card-status is-plain">Donnée ancienne · {{ c.latest }}</p>{% endif %}
+            {% if c.stale %}<p class="pf-card-status is-plain">Donnée ancienne</p>{% endif %}
             {% if c.chart %}
-            {{ viz.viz_night_card(c.chart, c.chart.title, daytime=c.key != 'resp_night',
+            {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'resp_night',
                 legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [],
-                explanations=[c.meaning, c.trend]) }}
+                quiet=True) }}
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>
-            <p class="pf-card-meaning">{{ c.source }} · {{ c.latest or 'sans date de pesée' }}</p>
-            <details class="pf-chart-details"><summary>Détails<span class="sr-only"> · {{ c.title }}</span></summary><p class="pf-card-meaning">{{ c.meaning }}</p></details>
+            {% if not c.latest %}<p class="pf-card-meaning">Valeur du profil</p>{% endif %}
             {% endif %}
-            {% if c.key == 'weight' %}<a href="/settings" class="pf-link text-xs">Réglages ›</a>{% endif %}
         </article>
         {% endfor %}
     </div>
-    {% for c in page.daily if c.archived %}
-    <details class="pf-fold pf-health-archive">
-        <summary>{{ c.title }}</summary>
-        <p class="pf-card-meaning">{{ c.meaning }} Dernier relevé : {{ c.latest }}.</p>
-        {% if c.chart %}{{ viz.viz_night_card(c.chart, c.title, daytime=True) }}{% else %}<p class="pf-daily-value">{{ c.value }}</p>{% endif %}
-    </details>
-    {% endfor %}
     </div>
 </details>

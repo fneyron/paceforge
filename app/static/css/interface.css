@@ -1085,3 +1085,20 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 @media (min-width: 1280px) {
     #activity-list > section, #load-more { column-gap: 40px; }
 }
+
+/* Health: one visual level, dates on chart interaction, one shared help page. */
+.pf-native .pf-top, .pf-native .pf-tabbar { display: none !important; }
+.pf-sante4 .pf-panel-body > .pf-card, .pf-sante4 #sommeil-detail > .pf-card { background: transparent; padding: 0; border-radius: 0; }
+.pf-sante4 .pf-health-context { background: transparent; }
+.pf-sante4 .pf-daily-grid { gap: 12px; margin-top: 0; }
+.pf-sante4 .pf-daily-grid > .pf-card, .pf-sante4 .pf-health-nights > .pf-card { background: transparent; border: 1px solid rgb(var(--pf-line)); border-radius: 18px; padding: 18px; }
+.pf-sante4 .pf-habits { gap: 10px; }
+.pf-sante4 .pf-habits > div { padding: 12px 14px; }
+.pf-viz-quiet .pf-viz-read { position: relative; padding-bottom: 0; }
+.pf-viz-quiet .pf-viz-l2 { position: absolute; z-index: 2; top: 100%; right: 0; max-width: 100%; min-height: 0; padding: 3px 7px; border-radius: 6px; background: rgb(var(--pf-surface) / .96); box-shadow: 0 0 0 1px rgb(var(--pf-line)); opacity: 0; pointer-events: none; font-size: 12px; }
+.pf-viz-quiet.is-inspecting .pf-viz-l2 { opacity: 1; }
+.pf-health-help { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; }
+.pf-health-guide { max-width: 680px; }
+.pf-health-guide section { margin: 26px 0; }
+.pf-health-guide section p { margin-top: 8px; line-height: 1.55; color: rgb(var(--pf-gray-600)); }
+.pf-set-appearance { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

@@ -104,6 +104,14 @@ async def sante_sources(request: Request, user: User = Depends(get_current_user)
     return templates.TemplateResponse(request, "sante_sources.html", context={"user": user, "sections": sections})
 
 
+@router.get("/sante/aide", response_class=HTMLResponse)
+async def sante_help(request: Request, user: User = Depends(get_current_user)):
+    from app.services import sante_score
+
+    return templates.TemplateResponse(request, "sante_help.html",
+                                      context={"user": user, "method": sante_score.typo(sante_score.METHOD)})
+
+
 @router.get("/sante/sommeil")
 async def sante_sleep_range(request: Request, r: str | None = None, user: User = Depends(get_current_user)):
     """The old Sommeil range swap: the one page, its Sommeil section, the range kept."""

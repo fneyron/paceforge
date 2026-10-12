@@ -58,8 +58,8 @@ async def test_home_measures_keep_date_source_and_watch_priority(as_user, db_ses
     assert weight["source"] == "Apple Santé · Balance"
     assert page["score"]["value"] is None  # day data alone cannot produce a recovery score
     html = (await as_user.get("/accueil")).text
-    assert "Donnée ancienne" in html and "11/09/2026" in html and "Journée en cours" in html
-    assert "téléphone à reconnecter" in html  # retained data is not an active health connection
+    assert "Donnée ancienne" in html and "11/09/2026" not in html and "Journée en cours" in html
+    assert "Apple Santé · Balance" not in html and "Sources et mises à jour" not in html
 
 
 async def test_home_counts_one_session_and_isolates_accounts(db_session, test_user):
@@ -87,8 +87,8 @@ async def test_home_preserves_pending_cycle_date(as_user, db_session, test_user,
     await db_session.flush()
     monkeypatch.setattr(sante, "local_clock", AsyncMock(return_value=datetime(2026, 10, 12, 6)))
     html = (await as_user.get("/accueil")).text
-    assert "Bilan du 11/10/2026" in html and "En attente de la prochaine nuit" in html
-    assert "Relevé du 11/10/2026" in html
+    assert html.count("En attente de la prochaine nuit") == 1
+    assert "Dernier bilan" in html and "Relevé du" not in html
 
 
 async def test_health_failure_keeps_activities_visible(as_user, db_session, test_user, monkeypatch):
@@ -96,7 +96,7 @@ async def test_health_failure_keeps_activities_visible(as_user, db_session, test
     await db_session.flush()
     monkeypatch.setattr(routes, "health_page", AsyncMock(side_effect=RuntimeError("unavailable")))
     html = (await as_user.get("/accueil")).text
-    assert "Ma séance" in html and "bilan de santé est indisponible" in html
+    assert "Ma séance" in html and "Bilan de santé indisponible" in html
     assert "Aucune mesure quotidienne reçue" not in html
 
 

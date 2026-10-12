@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Comprendre mes indicateurs — PaceForge{% endblock %}
+{% block content %}
+<div class="pf-health pf-sante4 pf-health-guide">
+    <a class="pf-back" href="/sante">‹ Santé</a>
+    <h1 class="pf-sante-h1">Comprendre mes indicateurs</h1>
+    <section><h2 class="pf-h2">Sommeil</h2><p>Le total inclut la nuit et les siestes associées. Le besoin estimé tient compte de tes habitudes, des efforts récents et du manque de sommeil.</p></section>
+    <section><h2 class="pf-h2">Récupération</h2><p>Le score compare tes mesures nocturnes à tes habitudes et tient compte des efforts récents. Il ne mesure pas un pourcentage de réparation du corps. Sans données de nuit suffisantes, aucun score n’est affiché.</p></section>
+    <section><h2 class="pf-h2">Entraînement</h2><p>100 % correspond à ta semaine habituelle, pas à un objectif. La comparaison utilise la durée et l’intensité des activités reçues.</p></section>
+    <section><h2 class="pf-h2">Lire les graphiques</h2><p>Touche un point pour voir sa date et sa valeur. La ligne montre la tendance ; la zone ombrée, tes valeurs habituelles. Une zone en pointillés est encore provisoire.</p><p>Un jour sans mesure reste vide. « Donnée ancienne » signale un relevé qui n’est plus récent.</p></section>
+    <section><h2 class="pf-h2">Mesures quotidiennes</h2><p>Le pouls sur 24 h inclut les périodes d’activité et de repos. Le stress et la masse grasse sont des estimations. Ces mesures ne modifient pas le score de récupération.</p></section>
+    <details class="pf-fold"><summary>Calcul détaillé</summary><ul>{% for line in method %}<li>{{ line }}</li>{% endfor %}</ul><a class="pf-link" href="/sante/sources">Références scientifiques ›</a></details>
+</div>
+{% endblock %}

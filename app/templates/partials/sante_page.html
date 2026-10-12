@@ -1,12 +1,5 @@
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
-{% macro rows(items, label) %}
-<ul class="pf-rows" aria-label="{{ label }}">
-    {% for f in items %}
-    <li class="pf-row is-{{ f.tone }}"><span class="pf-row-name"><i class="pf-dot" aria-hidden="true"></i><span>{{ f.name }}{% if f.qual %} <small>{{ f.qual }}</small>{% endif %}</span></span><span class="pf-row-val">{% if f.value %}<b>{{ f.value }}</b> {% endif %}<span>{{ f.word }}</span>{% if f.detail %} <span>{{ f.detail }}</span>{% endif %}</span></li>
-    {% endfor %}
-</ul>
-{% endmacro %}
 <div class="pf-dials">
     {% for d in p.dials %}{{ viz.viz_ring(d) }}{% endfor %}
 </div>
@@ -18,7 +11,7 @@
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
 {% if s and s.state != "never" %}
 <details id="sommeil" class="pf-health-panel" open>
-    <summary><span>Sommeil{% if s.hero %}<small>{{ s.hero.label }}</small>{% endif %}</span><span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span></summary>
+    <summary><span>Sommeil</span><span class="pf-panel-value">{{ s.hero.total if s.hero else 'Pas de nuit récente' }}</span></summary>
     <div class="pf-panel-body">
     {% if s.state == "old" %}<p class="pf-sante-note">Ta montre n'a enregistré aucune nuit ces 3 derniers mois.</p>
     {% elif s.hero %}{% set h = s.hero %}
@@ -38,7 +31,7 @@
         </div>
         {% for key, label in s.ranges %}{% set b = s.bars[key] %}
         <div data-range-panel="{{ key }}"{% if key != s.r %} hidden{% endif %}>
-            {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante") }}
+            {{ viz.viz_day_bars(b, "Sommeil sur 24 heures, " ~ label, "nuit", "Nuit précédente", "Nuit suivante", quiet=True) }}
             {% if b.trend %}{{ viz.viz_legend([("is-day", "24 h"), ("is-mean", "moyenne sur 7 jours"), ("is-ref", "besoin estimé")]) }}
             {% elif b.trend is not none %}{{ viz.viz_legend([("is-night", "24 h"), ("is-ref", "besoin estimé")]) }}
             {% else %}{{ viz.viz_legend([("is-night", "nuit"), ("is-nap", "sieste"), ("is-ref", "besoin estimé")]) }}{% endif %}
@@ -51,15 +44,6 @@
 </section>
 {% endif %}
 
-    {% if s.hero %}
-    <details class="pf-chart-details">
-        <summary>Comprendre le sommeil</summary>
-        {% if s.need %}<p class="pf-need-line">{{ s.need }}</p>{% endif %}
-        {% if s.baseline %}<p class="pf-card-meaning"><b>{{ s.baseline.label }}</b><br>{{ s.baseline.detail }}</p>{% endif %}
-        {% if s.habits and s.habits.regular %}<p class="pf-card-meaning">{{ s.habits.regular }}</p>{% endif %}
-        <p class="pf-card-meaning">La base s’adapte aux nuits comparables d’au moins 7 h. L’effort et le manque de sommeil estimé s’y ajoutent. Les phases sont estimées par la montre.</p>
-    </details>
-    {% endif %}
     </div>
 </details>
 {% endif %}
@@ -68,13 +52,8 @@
     <div class="pf-panel-body">
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
             <h3 class="sr-only">{{ p.recup.title }}</h3>
-            {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours") }}
+            {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours", quiet=True) }}
         </div>{% endif %}
-        <details class="pf-chart-details"{% if not p.recup %} open{% endif %}>
-            <summary>Comprendre la récupération</summary>
-            {% if p.rows %}{{ rows(p.rows, "Récupération") }}{% endif %}
-            {% for note in p.score_notes %}<p class="pf-card-meaning">{{ note }}</p>{% endfor %}
-        </details>
     </div>
 </details>
 {% set t = p.training %}
@@ -83,8 +62,6 @@
     <div class="pf-panel-body">
         <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b><span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
         {% if t.intensity %}<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span class="pf-row-val"><span>{{ t.intensity }}</span></span></div>{% endif %}
-        {% if t.week %}<p class="pf-card-meaning">100 % = ta semaine habituelle. Un tour = 200 %. Ce repère n’est pas un objectif. Calculé à partir de la durée et du pouls.</p>
-        {% else %}<p class="pf-card-meaning">La comparaison apparaît après au moins quatre semaines avec des activités.</p>{% endif %}
         <a class="pf-link pf-health-activity-link" href="/activities?depuis={{ t.since.isoformat() }}">Voir les activités de ces 7 jours ›</a>
     </div>
 </details>
@@ -98,40 +75,17 @@
         <h3 class="pf-card-h">{{ c.title }}</h3>
         <div class="pf-night-trend">
             {% set cs = c.status %}
-            <p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}"><span class="pf-trend-label">{{ c.trend.short_label }}</span>{% if c.trend.value %}<b>{{ c.trend.value|replace(' ', ' ') }}</b>{% endif %}<span class="pf-trend-state">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status_short }}</span></p>
+            <p class="pf-card-status {{ "is-" ~ cs.tone if cs.tone else "is-plain" }}">{% if c.trend.value %}<span class="pf-trend-label">{{ c.trend.short_label }}</span><b>{{ c.trend.value|replace(' ', ' ') }}</b>{% endif %}<span class="pf-trend-state">{% if cs.tone %}<i class="pf-dot" aria-hidden="true"></i>{% endif %}{{ c.status_short }}</span></p>
         </div>
-        {{ viz.viz_night_card(c, c.title, legend=c.legend, explanations=[
-            c.trend.label ~ ' · ' ~ c.trend.n ~ ' nuits mesurées. ' ~ cs.text,
-            c.trend.reference, cs.meaning,
-            'Moyenne sur 7 jours, dernière nuit comprise : au moins 3 mesures d’une même source. Une nuit manquante reste sans point.'
-        ]) }}
+        {{ viz.viz_night_card(c, c.title, legend=c.legend, quiet=True) }}
     </div>
     {% endfor %}
     </div>
 </section>
 {% endif %}
-{% if p.daily %}{% include "partials/sante_daily.html" %}{% endif %}
+{% if p.daily|rejectattr("archived")|list %}{% include "partials/sante_daily.html" %}{% endif %}
 <div class="pf-folds">
-    {#- one method fold (the audit, 2026-10-09: « deux explications à déplier, dont 8 points pour la première »): a
-        few plain bullets for the three dials (sante_score.METHOD, no citation), ending on one small link to the
-        sources page (/sante/sources: the references, as links) -#}
-    <details class="pf-fold pf-method">
-        <summary>Comment je calcule</summary>
-        <ul>{% for l in p.method %}<li>{{ l }}</li>{% endfor %}</ul>
-        <p class="pf-card-meaning">Les pas et la FC sur 24 h donnent du contexte, sans modifier l’indice de récupération.</p>
-        <p class="pf-card-meaning">{{ p.source_note }}</p>
-        <p class="pf-card-meaning">Priorité : {{ p.preferred_source }}. <a class="pf-link" href="/settings#health-source">Modifier ›</a></p>
-        <a class="pf-method-src" href="/sante/sources">Sources</a>
-    </details>
-    <details class="pf-fold">
-        <summary>Mesures reçues et synchronisation</summary>
-        {% for name, link in (('COROS', coros), ('Garmin', garmin)) if link and link.connected %}
-        <p class="pf-card-meaning"><b>{{ name }}</b> · {{ 'À reconnecter' if link.needs_reauth else 'Connecté' }}<br>
-            Dernière synchronisation réussie : {{ link.last_sync_ago or 'pas encore' }}.<br>
-            Dernière nuit reçue : {{ p.measured_sources.get(name) or 'aucune' }}.</p>
-        {% endfor %}
-        <a href="/settings" class="pf-link pf-health-activity-link">Vérifier les connexions et synchroniser ›</a>
-    </details>
+    <a class="pf-link pf-health-help" href="/sante/aide">Comprendre mes indicateurs ›</a>
     {% if s and s.rows %}
     <details class="pf-fold pf-ntable-fold">
         <summary>Les chiffres de chaque nuit</summary>

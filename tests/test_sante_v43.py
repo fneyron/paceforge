@@ -166,10 +166,8 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
     main = _main((await as_user.get("/sante")).text)
     for name in ("Transjeju", "Morning Trail Run", "Les Houches", "100M"):
         assert name not in main, name
-    folds = re.findall(r'<details class="pf-fold pf-method">(.*?)</details>', main, flags=re.S)
-    calc = re.findall(r"<li>(.*?)</li>", folds[0])
-    assert [H.unescape(b) for b in calc if "sortie" in b or "ultra" in b] == []
-    rest = H.unescape(main.replace(folds[0], ""))
+    assert 'href="/sante/aide"' in main and "Comment je calcule" not in main
+    rest = H.unescape(main)
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
     assert "◇ après un gros effort" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today
@@ -256,7 +254,7 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
         ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-row is-ok"' in main
+    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-row is-ok"' not in main
     act = _coherent((await as_user.get("/activities")).text)
     assert 'id="semaines"' not in act and "Aucune activité pour l" in act
 

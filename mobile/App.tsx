@@ -174,7 +174,7 @@ function Companion() {
   const webVisible = tab !== 'devices' || showWeb;
   return <SafeAreaView style={styles.root}>
     <StatusBar style="dark" />
-    <View style={styles.header}><View style={styles.heading}><Text style={styles.brand}>PaceForge</Text><Text style={styles.sub}>Ton tableau de bord quotidien</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={styles.settingsText}>Réglages</Text></Pressable></View>
+    <View style={styles.header}><View style={styles.heading}><Text style={styles.brand}>PaceForge</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={styles.settingsText}>Réglages</Text></Pressable></View>
     {webVisible && error ? <Text accessibilityRole="alert" style={[styles.error, styles.banner]}>{error}</Text> : null}
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error} connections={connections} needsReconnect={needsReconnect}
@@ -230,9 +230,9 @@ function Companion() {
 }
 export default function App() { return <SafeAreaProvider><Companion /></SafeAreaProvider>; }
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 18, paddingVertical: 6, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },
   heading: { flex: 1 }, settings: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }, settingsText: { color: '#173e38', fontSize: 13, fontWeight: '600' },
-  brand: { color: '#163d35', fontSize: 23, fontWeight: '700' }, sub: { color: '#62736d', fontSize: 13, marginTop: 2 },
+  brand: { color: '#163d35', fontSize: 23, fontWeight: '700' },
   error: { color: '#a33129', fontSize: 15, lineHeight: 23, marginVertical: 8 },
   banner: { paddingHorizontal: 20 },
   web: { flex: 1 }, hidden: { width: 1, height: 1, opacity: 0, position: 'absolute', overflow: 'hidden' },

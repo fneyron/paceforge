@@ -2,7 +2,7 @@
 
 Application iOS / Android avec **Accueil comme tableau de bord**, puis Santé, Activités et Courses.
 Les connexions restent accessibles par le bouton « Réglages ». Les écrans du compte partagent une seule WebView HTTPS ; sa barre
-de navigation web est masquée dans l’application. Le compte
+de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
 serveur accessibles depuis Connexions. COROS et Strava ouvrent directement leur
 page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
@@ -11,8 +11,10 @@ connexion au compte dans le navigateur, la destination choisie est conservée.
 Garmin se connecte dans l’application. Les réglages complets restent disponibles
 dans « Mon compte et confidentialité ».
 
-L’accueil `/accueil` réunit le dernier bilan, les mesures quotidiennes datées et
-leurs sources, les sept derniers jours d’activité et les dernières séances.
+L’accueil `/accueil` réunit le dernier bilan, les dernières mesures, les sept
+derniers jours d’activité et les dernières séances. Les sources sont dans les
+réglages ; les dates se lisent en touchant les points des graphiques. Les valeurs
+anciennes restent signalées. Le thème et le compte sont accessibles dans Réglages.
 Il reprend les calculs de Santé et le dédoublonnage des activités. Les données
 absentes restent absentes ; une synchronisation récente n’est pas présentée
 comme la preuve d’un relevé récent. Santé conserve les analyses détaillées.

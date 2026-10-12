@@ -4,24 +4,24 @@
 {% block content %}
 <div class="pf-home">
     <header class="pf-home-heading">
-        <p class="pf-eyebrow">{{ home.date }}{% if user.firstname %} · Bonjour {{ user.firstname }}{% endif %}</p>
-        <h1 class="pf-h1">Ton tableau de bord</h1>
-        <p class="pf-lead">Ta santé et tes activités, au même endroit.</p>
+        <p class="pf-eyebrow">{{ home.date }}</p>
+        <h1 class="pf-h1">Bonjour{% if user.firstname %} {{ user.firstname }}{% endif %}</h1>
     </header>
     {% if auto_sync %}{% include "partials/sante_sync.html" %}{% endif %}
-    {% if home.attention %}<a class="pf-home-notice" href="/settings#connections">Une connexion demande ton attention. Vérifier ›</a>{% endif %}
+    {% if home.attention %}<a class="pf-home-notice" href="/settings#connections">Connexion à vérifier ›</a>{% endif %}
     {% if not home.sources and page is not none and not page.has_data %}
     <section class="pf-panel pf-home-start">
-        <h2 class="pf-h2">Ton quotidien commence ici</h2>
-        <p>Connecte les services que tu utilises pour retrouver tes activités et les mesures qu’ils partagent. Tu choisis ce que tu veux suivre.</p>
+        <h2 class="pf-h2">Tes données, ici</h2>
+        <p>Connecte un service pour retrouver ta santé et tes activités.</p>
         <a class="pf-btn pf-btn-primary" href="/settings#connections">Connecter un service</a>
     </section>
     {% endif %}
 
     <section aria-labelledby="home-health">
-        <div class="pf-home-section-head"><h2 id="home-health" class="pf-h2">Ton dernier bilan</h2><a href="/sante" class="pf-link">Voir ma santé ›</a></div>
+        <div class="pf-home-section-head"><h2 id="home-health" class="pf-h2">Mon bilan</h2><a href="/sante" class="pf-link">Détails ›</a></div>
+        {% if page and page.cycle_pending %}<p class="pf-home-meta">Dernier bilan · En attente de la prochaine nuit</p>{% endif %}
         {% if page is none %}
-        <p class="pf-note" role="status">Le bilan de santé est indisponible pour le moment. Tes activités restent accessibles ci-dessous.</p>
+        <p class="pf-note" role="status">Bilan de santé indisponible pour le moment.</p>
         {% else %}
         <div class="pf-home-balance">
             <a class="pf-home-card pf-home-recovery" href="/sante#recuperation">
@@ -29,26 +29,18 @@
                 {% if page.score and page.score.value is not none %}
                 <p class="pf-home-number">{{ page.score.value }}<small>/100</small></p>
                 <p class="pf-home-state is-{{ page.state.tone }}">{{ page.state.glyph }} {{ page.state.word }}</p>
-                <p class="pf-home-meta">Bilan du {{ page.today.strftime('%d/%m/%Y') }}{% if page.cycle_pending %} · En attente de la prochaine nuit{% endif %}</p>
                 {% else %}
                 <p class="pf-home-missing">Pas encore de score</p>
-                <p class="pf-home-meta">{% if page.has_watch_data %}Les données de nuit nécessaires ne sont pas disponibles pour ce bilan.{% else %}Les nuits partagées par COROS ou Garmin permettent de calculer ta récupération.{% endif %}</p>
                 {% endif %}
-                <p class="pf-home-source">Indice PaceForge</p>
-                <span class="pf-home-more">Comprendre mon bilan ›</span>
             </a>
             <a class="pf-home-card" href="/sante#sommeil">
                 <h3>Sommeil sur 24 h</h3>
                 {% if page.sleep and page.sleep.hero %}{% set h = page.sleep.hero %}
                 <p class="pf-home-number">{{ h.total }}</p>
                 <p>{{ h.need }}</p>
-                <p class="pf-home-meta">Relevé du {{ h.day.strftime('%d/%m/%Y') }}</p>
-                {% if h.source %}<p class="pf-home-source">{{ h.source }}</p>{% endif %}
                 {% else %}
                 <p class="pf-home-missing">Aucune nuit récente</p>
-                <p class="pf-home-meta">Tes nuits s’afficheront dès qu’un service connecté les aura transmises.</p>
                 {% endif %}
-                <span class="pf-home-more">Voir mes nuits ›</span>
             </a>
         </div>
         {% if page.state and page.state.text %}<p class="pf-note">{{ page.state.text }}</p>{% endif %}
@@ -56,29 +48,27 @@
     </section>
 
     <section aria-labelledby="home-measures">
-        <div class="pf-home-section-head"><h2 id="home-measures" class="pf-h2">Mesures de santé</h2><a class="pf-link" href="/sante#au-quotidien">Tendances ›</a></div>
+        <div class="pf-home-section-head"><h2 id="home-measures" class="pf-h2">Dernières mesures</h2><a class="pf-link" href="/sante#au-quotidien">Tendances ›</a></div>
         {% if home.daily %}
         <div class="pf-home-measures">
             {% for c in home.daily %}
             <a class="pf-home-card" href="/sante#daily-{{ c.key }}-title">
-                <h3>{{ c.title }}</h3><p class="pf-home-measure">{{ c.value }}</p>
-                <p class="pf-home-meta">{{ c.latest or 'Sans date de pesée' }}{% if c.stale %} · Donnée ancienne{% endif %}</p>
-                <p class="pf-home-source">{{ c.source }}</p>
+                <h3>{{ c.title }}</h3><p class="pf-home-measure">{{ c.value|replace(' ', ' ') }}</p>
+                {% if c.stale %}<p class="pf-home-meta">Donnée ancienne</p>{% elif not c.latest %}<p class="pf-home-meta">Valeur du profil</p>{% endif %}
                 {% if c.latest == home.date and c.key in ('steps', 'hr_day', 'stress', 'resp_day') %}<p class="pf-home-source">Journée en cours</p>{% endif %}
             </a>
             {% endfor %}
         </div>
         {% elif page is not none %}
-        <p class="pf-note">Aucune mesure quotidienne reçue. Tu peux partager le poids, les pas et les autres mesures disponibles via Apple Santé ou Health Connect.</p>
-        <a class="pf-link" href="/settings#connections">Choisir mes sources ›</a>
+        <p class="pf-note">Aucune mesure reçue.</p>
+        <a class="pf-link" href="/settings#connections">Connecter un service ›</a>
         {% else %}<p class="pf-note">Les mesures de santé sont temporairement indisponibles.</p>{% endif %}
     </section>
 
     <section aria-labelledby="home-week">
         <div class="pf-home-section-head"><h2 id="home-week" class="pf-h2">7 derniers jours</h2><a class="pf-link" href="/activities?depuis={{ home.since }}">Voir les séances ›</a></div>
         {% if home.week.count %}
-        <dl class="pf-home-week"><div><dt>Séances</dt><dd>{{ home.week.count }}</dd></div><div><dt>Durée</dt><dd>{{ home.week.duration }}</dd></div><div><dt>Distance</dt><dd>{{ home.week.distance }}</dd></div></dl>
-        <p class="pf-home-meta">D’après les activités reçues, tous sports confondus.</p>
+        <dl class="pf-home-week"><div><dt>Séances</dt><dd>{{ home.week.count }}</dd></div><div><dt>Durée</dt><dd>{{ home.week.duration }}</dd></div><div><dt>Distance</dt><dd>{{ home.week.distance|replace(' ', ' ') }}</dd></div></dl>
         {% else %}<p class="pf-note">Aucune activité reçue sur ces 7 jours.</p>{% endif %}
     </section>
 
@@ -87,18 +77,13 @@
         {% if home.activities %}
         <ul class="pf-home-activities">
             {% for a in home.activities %}<li><a href="/activity/{{ a.id }}">
-                <div><p class="pf-home-meta">{{ a.sport }} · {{ a.date }}</p><h3>{{ a.name }}</h3><p class="pf-home-source">{{ a.source }}</p></div>
-                <div class="pf-home-activity-stats"><b>{{ a.duration }}</b><span>{{ a.distance }}</span></div>
+                <div><p class="pf-home-meta">{{ a.sport }} · {{ a.date }}</p><h3>{{ a.name }}</h3></div>
+                <div class="pf-home-activity-stats"><b>{{ a.duration }}</b><span>{{ a.distance|replace(' ', ' ') }}</span></div>
             </a></li>{% endfor %}
         </ul>
         {% else %}<p class="pf-note">Tes séances apparaîtront ici après leur première synchronisation.</p>{% endif %}
     </section>
 
-    <section class="pf-home-sources" aria-labelledby="home-sources">
-        <div class="pf-home-section-head"><h2 id="home-sources" class="pf-h2">Sources et mises à jour</h2><a class="pf-link" href="/settings#connections">Gérer ›</a></div>
-        {% if home.sources %}<ul>{% for source in home.sources %}<li><strong>{{ source.name }}</strong><span>{{ source.state }}{% if source.last %}<small>Dernière synchronisation réussie : {{ source.last }}</small>{% endif %}</span></li>{% endfor %}</ul>
-        {% else %}<p class="pf-home-meta">Aucun service connecté. Les données déjà importées restent dans ton compte.</p>{% endif %}
-        <p class="pf-home-meta">Les mesures affichent leur date de relevé. Une synchronisation récente ne signifie pas que toutes les données sont présentes.</p>
-    </section>
+
 </div>
 {% endblock %}

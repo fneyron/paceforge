@@ -451,6 +451,6 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
                      lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
                      summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
     title = f"Récupération · {len(days)} jours"
-    c = viz.rest(c, ["", title, ""], f"Récupération des {len(days)} derniers jours. Choisis un jour pour voir son "
+    c = viz.rest(c, ["", f"{len(days)} jours", ""], f"Récupération des {len(days)} derniers jours. Choisis un jour pour voir son "
                  "score et son état.", back=len(days) - 1)
     return {**c, "title": title}

@@ -130,10 +130,10 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert "Récupération faible" in r.text and "À ménager" not in r.text
     assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
     assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
-    # the FC de nuit row of the Récupération card, red: its 2 nights in percent (v4.4)
-    assert re.search(r'<li class="pf-row is-danger"><span class="pf-row-name"><i class="pf-dot" aria-hidden="true">'
-                     r'</i><span>FC de nuit <small>2 nuits</small></span></span><span class="pf-row-val"><b>\+\d+'
-                     r'\u00a0%</b> <span>nettement plus haute depuis 2 nuits</span>', r.text)
+    # The alert remains visible once on the nightly chart, alongside the main recovery warning.
+    fc = r.text.split('<div id="fc" class="pf-card">')[1].split('</figure>')[0]
+    assert "Élevée sur 2 nuits" in fc and 'pf-card-status is-danger' in fc
+
 
 
 # ── migration ───────────────────────────────────────────────────────────────

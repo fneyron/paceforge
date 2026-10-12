@@ -425,7 +425,7 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
         assert word not in rec["data"], word
     # nothing selected, no number (the audit, 2026-10-09: « 65 % en moyenne sur 14 jours » decided nothing and
     # looked like the dial's): the card's title rests in the readout's place
-    assert rec["read"] == ["", "Récupération · 14 jours", ""] and rec["title"] == "Récupération · 14 jours"
+    assert rec["read"] == ["", "14 jours", ""] and rec["title"] == "Récupération · 14 jours"
     classes, est = [b["cls"] for b in rec["bars"]], [b["est"] for b in rec["bars"]]
     assert classes[4] == "ok" and classes[8:11] == [""] * 3 and classes[11] == "danger" and classes[12] == "warn"
     assert rec["bars"][-1]["today"] and not any(est) and rec["hatched"] == []  # no score estimated any more
@@ -479,13 +479,13 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert 'data-viz-key="recuperation"' in main and "Récupération · 14 jours" in main
     assert 'href="/activities?depuis=2026-10-02"' in main
     assert "besoin estimé 9h00" in main
-    assert "il ne mesure pas un pourcentage de réparation du corps" in main
-    assert "La prudence liée à l’effort diminue progressivement" in main
+    assert 'href="/sante/aide"' in main
+    assert "Comprendre la récupération" not in main
     assert "pf-viz-gap" not in main and "is-out" not in main
     assert main.count('class="pf-phases-bar" aria-hidden="true"') == 1
     assert '<li><i class="pf-ph is-deep" aria-hidden="true"></i>Profond <b>1h10</b></li>' in main
     assert "<form" not in main and "Transjeju" not in main and "/activity/" not in main
-    assert main.count("<summary>Comment je calcule</summary>") == 1
+    assert main.count("<summary>Comment je calcule</summary>") == 0
     assert "Les chiffres de chaque nuit" in main
     # Details are closed by default, while the three scores and nightly charts stay readable.
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))

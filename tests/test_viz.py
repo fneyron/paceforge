@@ -230,6 +230,21 @@ def test_bars_lines_dots():
 # ── macros ──────────────────────────────────────────────────────────────────
 
 
+def test_quiet_health_cards_keep_dates_for_selection_without_source_labels():
+    days = [D - timedelta(days=1), D]
+    card = viz.night_card("vfc", days, [60.0, None], band=[None] * 2, prov=[False] * 2,
+                          mean=[None] * 2, unit="ms", unit_long="millisecondes", name="VFC",
+                          sources=["COROS", None], compact=True)
+    html = render("{{ v.viz_night_card(c, 'VFC', quiet=True) }}", c=card)
+    date_row = html.split('data-selection-date>')[1].split('</p>')[0]
+    assert viz.d_short(days[0]) in date_row and "COROS" not in date_row
+    assert "pf-chart-details" not in html and "pf-viz-quiet" in html
+    payload = data_of(html)
+    assert payload["dateLabels"] == [viz.d_short(d) for d in days]
+    assert payload["r"][1][0] == "—" and payload["y"][0][1] is None
+    assert "COROS" in payload["a"][0]  # measurement provenance stays available to assistive reading
+
+
 def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     days = [D - timedelta(days=13 - i) for i in range(14)]
     sleep = viz.day_bars("sommeil-14", days, [None] + [440.0] * 13, readouts=[["n", "Nuit 7h20", "c"]] * 14,

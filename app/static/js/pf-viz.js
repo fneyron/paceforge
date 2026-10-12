@@ -140,7 +140,9 @@
     // opts.silent: following another figure of the group (no event, no speech)
     function select(i, opts) {
       opts = opts || {};
+      var quiet = fig.classList.contains("pf-viz-quiet");
       i = Math.max(0, Math.min(top, i | 0));
+      if (quiet) fig.classList.toggle("is-inspecting", !opts.silent && i !== END);
       if (i === cur) return;
       if (rest && i === END) { resting(); return; }
       mark(cur, false);
@@ -159,7 +161,9 @@
         cross.classList.toggle("is-none", none);
       }
       var r = (D.r && D.r[i]) || [];
-      for (var k = 0; k < slots.length; k++) slots[k].textContent = r[k] || "";
+      for (var k = 0; k < slots.length; k++) {
+        slots[k].textContent = quiet && k === 2 ? (D.dateLabels || [])[i] || "" : r[k] || "";
+      }
       tone(i);
       if (input) { input.value = i; input.setAttribute("aria-valuetext", D.a ? D.a[i] : r.join(" ")); }
       link(D.h && D.h[i]);
@@ -175,6 +179,7 @@
       cur = END; pending = null;
       if (cross) cross.style.visibility = "hidden";
       for (var k = 0; k < slots.length; k++) slots[k].textContent = rest[k] || "";
+      if (fig.classList.contains("pf-viz-quiet") && slots[2]) slots[2].textContent = "";
       tone(-1);
       if (input) { input.value = END; input.setAttribute("aria-valuetext", D.restA || rest.join(" ")); }
       link(null);
@@ -269,12 +274,15 @@
 
     if (input) {
       input.min = 0; input.max = top; input.step = 1;
+      input.addEventListener("focus", function () {
+        if (fig.classList.contains("pf-viz-quiet") && cur >= 0) select(cur);
+      });
       input.addEventListener("input", function () {
         var v = +input.value;
         select(rest && cur === END && v === END - 1 ? back : v);
       });
       input.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { e.preventDefault(); select(dflt); }
+        if (e.key === "Escape") { e.preventDefault(); select(dflt, { silent: fig.classList.contains("pf-viz-quiet") }); }
         else if (e.key === "PageUp" || e.key === "PageDown") {   // a week at a time
           e.preventDefault(); select(Math.max(0, cur) + (e.key === "PageUp" ? 7 : -7));
         }
