@@ -30,6 +30,8 @@ async function check(engine,name,width){
  // Never replace the page while the finger is down.
  await page.evaluate(()=>{window.dispatchEvent(new Event('touchstart'));window.refreshPromise=window.paceforgeRefresh.refresh(false);});
  await page.waitForTimeout(500);assert.equal(await page.evaluate(()=>refreshCount),0);
+  await page.evaluate(()=>{const event=new Event('touchend');Object.defineProperty(event,'touches',{value:[{}]});window.dispatchEvent(event);});
+  await page.waitForTimeout(250);assert.equal(await page.evaluate(()=>refreshCount),0,'second finger still touching');
  await page.evaluate(()=>window.dispatchEvent(new Event('touchend')));
  await page.evaluate(()=>window.refreshPromise);
  assert.equal(await page.evaluate(()=>refreshCount),1);

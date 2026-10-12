@@ -5,9 +5,11 @@
   if (!['/sante', '/activities'].includes(location.pathname)) return;
   var running = null, touched = false, movedAt = 0, toast, hideTimer;
   window.addEventListener('touchstart', function () { touched = true; }, { passive: true });
-  function released() { touched = false; movedAt = Date.now(); }
+  function released(event) { touched = !!event?.touches?.length; movedAt = Date.now(); }
   window.addEventListener('touchend', released, { passive: true });
   window.addEventListener('touchcancel', released, { passive: true });
+  window.addEventListener('blur', released);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) released(); });
   window.addEventListener('scroll', function () { movedAt = Date.now(); }, { passive: true });
   function pause(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
   function nativeState(active) {
