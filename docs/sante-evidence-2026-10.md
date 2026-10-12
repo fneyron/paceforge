@@ -6,6 +6,22 @@ leurs produits ; elles ne valident pas scientifiquement leurs scores, ni le nôt
 
 ## Mise en œuvre après cette revue
 
+Complément du 12 octobre : [utilité des mesures, matériel et validation](mesures-athlete-fiabilite.md).
+La fiabilité des imports et la validité scientifique d’un indice sont vérifiées
+séparément. Les correctifs logiciels ci-dessous ne valident pas les pondérations
+ni les seuils physiologiques propres à PaceForge.
+
+- Pesées : priorité à l’instant mesuré, reçu serveur exact, comparaison de la
+  pesée lue et confirmée dans Réglages. Les données mobiles déclenchent aussi
+  l’actualisation du tableau de bord ; leur jour local n’est plus oublié.
+- Synchronisation : quotidien envoyé avant sommeil, reprise après erreur,
+  actualisation automatique optionnelle aussi au démarrage, recouvrement court
+  et relecture périodique complète. Voir `mobile/README.md` pour les limites.
+- Bilan : une tendance cardiaque ancienne n’entre plus dans le score quand sa
+  mesure manque pour la nuit du bilan. La dernière valeur et la moyenne sur sept
+  jours sont distinctes. « Bilan partiel »/« Repères provisoires » décrivent les
+  données utilisables ; aucun pourcentage de confiance n’est inventé.
+
 Priorités implémentées dans cet ordre :
 
 1. **Nuits Apple Santé.** Sommeil, siestes, FC et respiration pendant le sommeil,

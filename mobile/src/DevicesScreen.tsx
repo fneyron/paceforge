@@ -2,12 +2,13 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { connectionLabel, Connections, Provider } from './connections';
 import { Pair } from './types';
+import { reportText, SyncReport, WeightReceipt } from './sync';
 import { Button, ui } from './device-ui';
 
 export type DeviceDetail = 'health' | 'other' | 'help' | null;
 type Props = {
   detail: DeviceDetail; select: (detail: DeviceDetail) => void;
-  pair: Pair | null; last: string; automatic: boolean; busy: boolean; ready: boolean;
+  pair: Pair | null; last: string; report: SyncReport | null; automatic: boolean; busy: boolean; ready: boolean;
   status: string; error: string; connections: Connections | null; needsReconnect: boolean;
   connectHealth: () => void; sync: () => void; disconnect: () => void;
   auto: (value: boolean) => void; provider: (provider: Provider) => void;
@@ -18,7 +19,7 @@ const healthName = Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect';
 export function DevicesScreen(p: Props) {
   const { detail, pair, busy, last } = p;
   const mismatch = p.needsReconnect || (!!pair && !!p.connections && pair.user_id !== p.connections.user_id);
-  const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : last ? 'Données synchronisées' : 'À terminer';
+  const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : p.report && !p.report.complete ? 'À actualiser' : 'Connecté';
   return <ScrollView contentContainerStyle={ui.content}>
     {detail && <Link text="‹ Toutes les connexions" onPress={() => p.select(null)} disabled={busy} />}
     <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'other' ? 'Autres marques' : detail === 'help' ? 'Comment ça fonctionne ?' : 'Connexions'}</Text>
@@ -35,8 +36,8 @@ export function DevicesScreen(p: Props) {
             disabled={busy} onPress={() => p.provider(key)} />;
         })}
         <Row name={healthName} icon="♥" description={Platform.OS === 'ios' ? 'Sommeil, cœur et mesures quotidiennes' : 'Poids, pas et mesures du téléphone'} state={healthState}
-          action={pair && last && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready} last
-          onPress={() => { p.select('health'); if (!pair || !last || mismatch) p.connectHealth(); }} />
+          action={pair && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready} last
+          onPress={() => { p.select('health'); if (!pair || mismatch) p.connectHealth(); }} />
       </View>
       {p.connections && <Text style={ui.small}>Compte de {p.connections.name}</Text>}
       <View style={styles.footer}>
@@ -52,11 +53,17 @@ export function DevicesScreen(p: Props) {
         <Text style={ui.cardTitle}>{healthState}</Text>
         <Text style={ui.body}>{Platform.OS === 'ios' ? 'Sommeil, VFC, fréquence cardiaque, respiration, poids, masse grasse et pas.' : 'Poids, masse grasse, pas, fréquence cardiaque et respiration.'}</Text>
         {pair && <Text style={ui.small}>Compte de {pair.name}{last ? ` · Dernier envoi : ${new Date(last).toLocaleString('fr-FR')}` : ''}</Text>}
-        <Button text={pair && last && !mismatch ? 'Synchroniser' : `Connecter ${healthName}`} onPress={pair && last && !mismatch ? p.sync : p.connectHealth} disabled={busy || !p.ready} />
+        <Button text={pair && !mismatch ? 'Synchroniser' : `Connecter ${healthName}`} onPress={pair && !mismatch ? p.sync : p.connectHealth} disabled={busy || !p.ready} />
         {last && !mismatch && <Link text="Voir mes mesures" onPress={p.health} disabled={busy} />}
       </View>
+      {p.report && !mismatch && <View style={ui.card}>
+        <Text style={ui.cardTitle}>Dernière pesée</Text>
+        <Text style={ui.small}>Lue sur le téléphone</Text><Text style={ui.body}>{weightText(p.report.weightRead) || 'Aucune pesée lisible dans la période vérifiée.'}</Text>
+        <Text style={ui.small}>Confirmée par PaceForge</Text><Text style={ui.body}>{weightText(p.report.weightReceived) || 'Aucune pesée confirmée.'}</Text>
+        {!p.report.weightRead && <Text style={ui.small}>Vérifie le partage de ta balance vers {healthName}, puis l’accès de PaceForge au poids.</Text>}
+      </View>}
       {pair && <>
-        <View style={ui.toggle}><View style={{ flex: 1 }}><Text style={ui.body}>Actualisation automatique</Text><Text style={ui.small}>Au retour dans PaceForge, au plus toutes les 6 h.</Text></View>
+        <View style={ui.toggle}><View style={{ flex: 1 }}><Text style={ui.body}>Actualisation automatique</Text><Text style={ui.small}>À l’ouverture ou au retour, toutes les 15 min au plus. L’application doit être ouverte.</Text></View>
           <Switch accessibilityLabel="Actualisation automatique" value={p.automatic} disabled={busy || mismatch} onValueChange={p.auto} />
         </View>
         <Link text="Revoir les autorisations" onPress={p.connectHealth} disabled={busy} />
@@ -92,9 +99,13 @@ export function DevicesScreen(p: Props) {
         <Button text="Ouvrir la connexion Strava" onPress={() => p.provider('strava')} disabled={busy} />
       </View>
     </>}
-    {!busy && detail === 'health' && p.status ? <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status}</Text> : null}
+    {!busy && detail === 'health' && (p.status || p.report) ? <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || (p.report && reportText(p.report))}</Text> : null}
     {p.error ? <Text accessibilityRole="alert" style={ui.error}>{p.error}</Text> : null}
   </ScrollView>;
+}
+
+function weightText(w: WeightReceipt | null): string | null {
+  return w ? `${w.value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kg · ${new Date(w.measured_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : null;
 }
 
 function Row(p: { name: string; icon: string; description: string; state: string; action: string; onPress: () => void; disabled: boolean; last?: boolean }) {

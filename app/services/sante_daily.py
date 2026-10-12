@@ -1,7 +1,7 @@
 """Additional context, with explicit dates and sources; never recovery inputs."""
 import math
 import statistics
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,19 @@ def _source(row: HealthMetric) -> str:
         return series_source(source, row.details or {}, "resp")
     origins = (row.details or {}).get("origins")
     return source + (" · " + ", ".join(origins) if origins else "")
+
+
+def _measured_at(row: HealthMetric) -> datetime | None:
+    """Only an explicit instant can beat a timestamped phone weigh-in.
+
+    updated_at is an import date, not a measurement date. Old daily exports
+    without a timezone/instant remain fallbacks, regardless of brand priority.
+    """
+    try:
+        stamp = datetime.fromisoformat((row.details or {}).get("measured_at", ""))
+        return stamp.astimezone(timezone.utc) if stamp.tzinfo else None
+    except (ValueError, TypeError):
+        return None
 
 
 def daily_card(metric: str, rows: list[HealthMetric], today: date) -> dict | None:
@@ -86,7 +99,8 @@ async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dic
     rows = (await db.execute(select(HealthMetric).where(
         HealthMetric.user_id == user_id, HealthMetric.metric.in_(SIGNALS), HealthMetric.date <= today,
     ).order_by(HealthMetric.date))).scalars().all()
-    # Select exactly one value per day. Prefer a direct watch to its phone copy.
+    # Select exactly one value per day. Prefer a direct watch to its phone copy
+    # for aggregates; a weigh-in instead follows its actual measurement time.
     # Between phone platforms, choose the most recent measured weigh-in, otherwise
     # the most recently refreshed daily aggregate; never sum the two totals.
     by_day = select_metrics([r for r in rows if _valid(r) and not (r.metric == "stress" and r.source == "COROS")],
@@ -98,10 +112,23 @@ async def daily_context(db: AsyncSession, user_id: int, today: date) -> list[dic
     for r in phone_rows:
         chosen[(r.date, r.metric)] = r
     for key, r in chosen.items():
-        if key not in by_day:
+        previous = by_day.get(key)
+        newer_weigh_in = False
+        if r.metric in ("weight", "body_fat") and r.measured_at:
+            instant = r.measured_at.replace(tzinfo=timezone.utc) if r.measured_at.tzinfo is None else r.measured_at
+            # Brand selection is inappropriate for discrete measurements: check
+            # every dated candidate, including one hidden by the preferred watch.
+            candidates = [v for v in rows if (v.date, v.metric) == key and _valid(v) and _measured_at(v)]
+            dated = max(candidates, key=_measured_at, default=None)
+            if dated and _measured_at(dated) > instant:
+                by_day[key] = dated
+            else:
+                newer_weigh_in = True
+        if previous is None or newer_weigh_in:
             source = "Apple Santé" if r.platform == "ios" else "Health Connect"
             by_day[key] = HealthMetric(date=r.date, metric=r.metric, value=r.value, source=source,
-                                       details={"origins": sorted(r.sources)})
+                                       details={"origins": sorted(r.sources),
+                                                "measured_at": r.measured_at.isoformat() if r.measured_at else None})
     rows = list(by_day.values())
     cards = [c for metric in SIGNALS if (c := daily_card(metric, [r for r in rows if r.metric == metric], today))]
     archives = (await db.scalars(select(HealthMetric).where(

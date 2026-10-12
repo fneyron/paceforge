@@ -45,19 +45,40 @@ n’est plus proposé. Les enregistrements des fournisseurs restent conservés.
 « Connecter Apple Santé / Health Connect » enchaîne confirmation du compte
 (PKCE), demande des permissions puis première lecture et envoi. Une association
 existante vérifie d’abord le compte web. Une permission demandée ne signifie pas
-permission accordée : « Données synchronisées » nécessite un envoi réel, avec
-sa date dans le détail. « Revoir les autorisations » relance aussi la lecture.
+permission accordée : « Connecté » décrit l’association, pas la fraîcheur des
+mesures. Le dernier envoi réel est daté dans le détail. « Revoir les autorisations » relance aussi la lecture.
 L’aide explique le partage des balances et applications sportives vers un
 service compatible, sans associer la connexion à un modèle précis.
 
-La vérification du compte s’effectue dans la WebView conservée à sa taille
-normale, masquée derrière la progression native. La page renvoie sa réponse
+À l’ouverture, au retour et lors d’une actualisation de Santé/Activités, la
+vérification du compte utilise un `fetch` authentifié dans la WebView existante,
+sans quitter la page. Origine, chemin, nonce et compte associé sont contrôlés
+avant toute lecture santé. Une modification de période dans l’URL est permise.
+L’association et les opérations de Réglages utilisent la même WebView, masquée
+derrière la progression native pendant leur pont. La page renvoie sa réponse
 jusqu’à l’accusé de réception (30 s maximum). Le natif vérifie origine, route
 et nonce/challenge, puis consomme la demande avant tout travail asynchrone.
 Une réponse répétée ne relance ni l’association ni la synchronisation. La fin,
 l’échec ou l’expiration ramènent à un écran utilisable ; les pages techniques
 ne deviennent jamais une destination de retour. Une session expirée affiche
 toujours le formulaire de connexion avant de reprendre la vérification.
+
+## Défilement et actualisation
+
+Sur iPhone, tirer depuis le haut de **Santé ou Activités** utilise le contrôle
+de rafraîchissement iOS. Le bouton accessible « Actualiser les données » fournit
+le même parcours, y compris sur Android. Ni les formulaires ni une course en
+préparation ne sont rechargés par ce geste.
+
+L’action vérifie le compte, relit les mesures autorisées du téléphone associé,
+relance COROS/Garmin et Strava connectés, puis remplace le contenu sans navigation.
+Une icône de progression accompagne l’opération ; échec/expiration restent
+explicites. Aucun message de succès ne prouve une mesure récente. Les sections
+ouvertes, le point sélectionné et la position sont conservés. Le remplacement
+attend la fin du geste et du défilement ; les anciennes semaines d’activités
+déjà ouvertes restent consultables. Les mises à jour automatiques utilisent le
+même remplacement discret. Les requêtes sont bornées et une double demande
+rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidite.md).
 
 ## Synchronisation livrée
 
@@ -74,13 +95,27 @@ toujours le formulaire de connexion avant de reprendre la vérification.
   leur date, séparément des données nocturnes utilisées pour la récupération.
   Un envoi répété remplace le résumé du jour. Un total direct Garmin/COROS a
   priorité sur sa copie mobile ; les pas de plusieurs plateformes ne sont pas
-  additionnés. Le poids du profil sportif reste une saisie manuelle distincte.
+  additionnés. Pour le poids et la masse grasse, la pesée horodatée la plus
+  récente prime sur un ancien résumé journalier sans instant de mesure.
+  Le poids du profil sportif reste une saisie manuelle distincte.
 - Une lecture vide n'efface pas l'historique : sur iOS, refus d'accès et absence
   de données ne peuvent pas être distingués. Une suppression dans Apple Santé
   ne supprime donc pas automatiquement un ancien résumé PaceForge. L'écran
   « Téléphones associés » permet de supprimer tous les imports et accès mobiles.
-- Synchronisation manuelle, et option au retour au premier plan au plus toutes
-  les 6 h. **Pas de tâche lorsque l'application est fermée** dans cette version.
+- Synchronisation manuelle complète ; option à l’ouverture et au retour au
+  premier plan, au plus toutes les 15 min. Lecture des 7 derniers jours avec
+  recouvrement ; historique complet toutes les 6 h. Une tentative partielle
+  redevient éligible après 5 min, au prochain retour/ouverture. Un historique
+  incomplet est relu entièrement à la reprise. **Pas de tâche lorsque
+  l’application est fermée**, ni de minuteur de synchronisation en arrière-plan.
+- Mesures quotidiennes envoyées avant la lecture du sommeil. Les lectures
+  natives ont un délai maximal ; un échec n’efface pas les imports confirmés.
+  Une nuit rejetée n’empêche pas l’envoi des suivantes ; les erreurs réseau ou
+  de compte interrompent l’envoi et la reprise est idempotente.
+- Réglages conserve un reçu dans SecureStore, lié au compte : tentative complète
+  ou partielle, dernier envoi confirmé, dernière pesée lue et dernière pesée
+  retenue par le serveur. Un ancien relevé ignoré n’est pas compté comme reçu.
+  Ni une réponse HTTP réussie ni une lecture vide ne prouvent une mesure récente.
 - Senssun Health iOS doit écrire ses pesées dans Apple Santé. Aucun accès direct
   à EXZACT/Senssun n'est supposé. Senssun → Health Connect sur Android reste à
   vérifier sur le téléphone concerné.
@@ -275,5 +310,5 @@ La suppression des imports mobiles supprime aussi ces nuits. Révoquer un
 accès conserve les données. Réglages permet de préférer Apple Santé ; en
 automatique, les connexions directes précèdent leurs copies Apple.
 
-Lactate : écran web partagé `/sante/lactate`, saisie de tests sanguins et
-comparaisons explicites, aucune permission ni promesse Bluetooth ajoutée.
+Lactate : mis de côté à la demande du propriétaire. Aucun accès dans Santé ou
+l’aide ; routes privées et anciens relevés conservés, aucune permission ajoutée.

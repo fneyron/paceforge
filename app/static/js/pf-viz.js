@@ -114,6 +114,9 @@
     // (a dozen at most), with the resting one and « — »; again when the figure's width changes
     var lastW = -1;
     function reserve() {
+      // These cards already have a fixed one-line readout and an overlay date.
+      // Measuring every candidate here forces repeated synchronous layouts.
+      if (fig.classList.contains("pf-viz-quiet")) return;
       if (!readBox || !slots.length) return;
       var w = readBox.clientWidth;
       if (!w || w === lastW) return;
@@ -224,43 +227,60 @@
     // A touch selects nothing until it is a tap (lifted within 8 px) or a scrub (8 px sideways first):
     // a swipe that scrolls the page never changes the selection. Mouse and pen select at once.
     var SLOP = 8;
+    var point = null, frame = null;
+    function flushPoint() {
+      frame = null;
+      if (point && fig.isConnected) select(indexAt(point));
+      point = null;
+    }
+    function queuePoint(e) {
+      point = { clientX: e.clientX, clientY: e.clientY };
+      if (frame === null) frame = requestAnimationFrame(flushPoint);
+    }
+    function cancelPoint() {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null; point = null;
+    }
     svg.addEventListener("pointerdown", function (e) {
       if (e.button > 0) return;
-      if (e.pointerType === "touch") { touch = { x: e.clientX, y: e.clientY, scrub: false }; return; }
+      if (e.pointerType === "touch") { touch = { x: e.clientX, y: e.clientY, scrub: false, vertical: false }; return; }
       drag = true;
       try { svg.setPointerCapture(e.pointerId); } catch (_) {}
       select(indexAt(e));
-    });
+    }, { passive: true });
     svg.addEventListener("pointermove", function (e) {
       if (touch) {
+        if (touch.vertical) return;
         if (!touch.scrub) {
           var dx = Math.abs(e.clientX - touch.x), dy = Math.abs(e.clientY - touch.y);
+          if (dy > SLOP && dy >= dx) { touch.vertical = true; return; }
           if (dx <= SLOP || dx <= dy) return;
           touch.scrub = true;
           try { svg.setPointerCapture(e.pointerId); } catch (_) {}
         }
-        select(indexAt(e));
+        queuePoint(e);
         return;
       }
-      if (drag || e.pointerType === "mouse") select(indexAt(e));   // a mouse reads by hovering
-    });
+      if (drag || e.pointerType === "mouse") queuePoint(e);   // at most one DOM update per frame
+    }, { passive: true });
     svg.addEventListener("pointerup", function (e) {
+      if (frame !== null) { cancelAnimationFrame(frame); flushPoint(); }
       if (touch) {
         var t = touch;
         touch = null;
-        if (!t.scrub && Math.abs(e.clientX - t.x) <= SLOP && Math.abs(e.clientY - t.y) <= SLOP) {
+        if (!t.vertical && !t.scrub && Math.abs(e.clientX - t.x) <= SLOP && Math.abs(e.clientY - t.y) <= SLOP) {
           var i = indexAt(e);
           select(i === cur && cur !== dflt ? dflt : i);   // the selected day again: back to the rest
         }
-        announce();
+        if (!t.vertical) announce();
         return;
       }
       if (drag) { drag = false; announce(); }
-    });
-    svg.addEventListener("pointercancel", function () { touch = null; drag = false; });
+    }, { passive: true });
+    svg.addEventListener("pointercancel", function () { cancelPoint(); touch = null; drag = false; });
     // a mouse that leaves the figure (not just the plot: its readout's link stays reachable) puts it back to rest
     fig.addEventListener("pointerleave", function (e) {
-      if (e.pointerType === "mouse" && !drag) select(dflt, { silent: true });
+      if (e.pointerType === "mouse" && !drag) { cancelPoint(); select(dflt, { silent: true }); }
     });
 
     for (var s = 0; s < steps.length; s++) {
@@ -289,30 +309,42 @@
       });
     }
 
+    var follow;
     if (group) {
-      document.addEventListener("pfviz:sel", function (e) {
+      follow = function (e) {
         var g = e.detail || {};
         if (g.src === fig || g.group !== group || !document.body.contains(fig)) return;
         var i = D.d ? D.d.indexOf(g.date) : -1;
         if (i >= 0) select(i, { silent: true }); else blank(g.date);
-      });
+      };
+      document.addEventListener("pfviz:sel", follow);
     }
 
     select(dflt, { silent: true });
     reserve();
-    if ("ResizeObserver" in window) {   // shown later, or a new width (next frame: never inside the observer's loop)
-      new ResizeObserver(function () { requestAnimationFrame(reserve); }).observe(fig);
-    } else window.addEventListener("resize", reserve);
+    var ro;
+    if (!fig.classList.contains("pf-viz-quiet")) {
+      if ("ResizeObserver" in window) {   // shown later, or a new width
+        ro = new ResizeObserver(function () { if (fig.isConnected) reserve(); }); ro.observe(fig);
+      } else window.addEventListener("resize", reserve);
+    }
     // the marks draw once, when they scroll into view; a figure already on screen when this runs was painted
     // whole before the script: it stays as it is (never collapsed and drawn again)
     var r0 = fig.getBoundingClientRect(), seen = r0.height > 0 && r0.bottom > 0 && r0.top < window.innerHeight;
     fig.classList.add("pf-viz-on");
+    var io;
     if (motion && !seen && !fig.classList.contains("pf-viz-card") && "IntersectionObserver" in window) {
-      var io = new IntersectionObserver(function (es) {
+      io = new IntersectionObserver(function (es) {
         es.forEach(function (en) { if (en.isIntersecting) { fig.classList.add("pf-viz-in"); io.disconnect(); } });
       }, { threshold: 0 });
       io.observe(fig);
     } else fig.classList.add("pf-viz-in", "pf-viz-still");
+    fig.__pfvizDestroy = function () {
+      cancelPoint(); clearTimeout(liveT);
+      if (follow) document.removeEventListener("pfviz:sel", follow);
+      if (ro) ro.disconnect(); if (io) io.disconnect();
+      window.removeEventListener("resize", reserve);
+    };
   }
 
   function ranges(box) {
@@ -348,7 +380,9 @@
     root.querySelectorAll("figure[data-viz]").forEach(setup);
   }
 
-  window.PFViz = { scan: scan };
+  window.PFViz = { scan: scan, dispose: function (root) {
+    root.querySelectorAll('figure[data-viz]').forEach(function (fig) { fig.__pfvizDestroy?.(); });
+  } };
   // A ring or a bookmarked chart opens every containing disclosure before
   // scrolling. Native summaries stay operable with keyboard and without JS.
   function revealHealth(hash) {

@@ -254,14 +254,16 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
     server's clock moved by their UTC offset (latest session), else the
     watch's latest day; the watch's day when it is already on tomorrow."""
     from app.models.health import HealthMetric
-    from app.services.health import _today as watch_today
+    from app.models.mobile import MobileDaily
 
     now = now or datetime.now(timezone.utc)
     if latest is None:
         latest = (await db.execute(
             select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    mobile_day = await db.scalar(select(func.max(MobileDaily.date)).where(MobileDaily.user_id == user_id))
+    latest = max((d for d in (latest, mobile_day) if d is not None), default=None)
     offset = await utc_offset(db, user_id, now)
-    today = (now + timedelta(seconds=offset)).date() if offset is not None else watch_today(latest)
+    today = (now + timedelta(seconds=offset)).date() if offset is not None else now.date()
     if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
         today = latest
     return today

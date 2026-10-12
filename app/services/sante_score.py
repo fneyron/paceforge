@@ -240,7 +240,8 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     parts, absent = [], []
     for key, fn in (("hrv", hrv_sub), ("hr", hr_sub)):
         s = day["stats"][key]
-        if s["value"] is not None and s["normal"] and s.get("score_eligible", True):
+        if (key in day["measured_components"] and s["value"] is not None and s["normal"]
+                and s.get("score_eligible", True)):
             sub, alert = fn(s["value"], s["normal"]), key == "hr" and bool(day["alert"])
             if alert:  # the alert's own 2 nights, red at most: never « dans ta normale » under the alert
                 sub = min(sub, fn(statistics.fmean(day["alert"]["values"]), s["normal"]), RED_SUB - 1)
@@ -265,6 +266,27 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     for p in parts:
         p["weight"] = WEIGHTS[p["key"]] / total if total else 0
     return parts, absent
+
+
+def quality(day: dict) -> dict:
+    """Availability, not a statistical confidence percentage or validation seal."""
+    parts = {p["key"]: p for p in day["score"]["parts"]}
+    rows = []
+    for key, label in (("sleep", "Sommeil"), ("hr", "FC de nuit"), ("hrv", "VFC")):
+        part = parts.get(key)
+        if part:
+            state = "Repère provisoire" if part["prov"] else "Utilisé"
+        elif key not in day["measured_components"]:
+            state = "Absent pour cette nuit"
+        elif key in HEART and not day["stats"][key].get("score_eligible", True):
+            state = "Mesurée, hors indice (SDNN)"
+        else:
+            state = "Historique insuffisant"
+        rows.append({"name": label, "state": state})
+    partial = len(parts) < len(ORDER)
+    provisional = any(p["prov"] for p in parts.values())
+    label = "Bilan partiel" if partial else "Repères provisoires" if provisional else "Données du bilan"
+    return {"label": label, "partial": partial, "provisional": provisional, "rows": rows}
 
 
 def sleep_limit(slept: float | None, base: float) -> float | None:

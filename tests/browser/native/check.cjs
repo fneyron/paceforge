@@ -1,0 +1,51 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-native-preview.js','utf8');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  async function page(unpaired=false){const p=await browser.newPage({viewport:{width:393,height:852}});await p.route('http://native.test/**',r=>r.fulfill({contentType:'text/html',body:'<html><body style="margin:0"><div id="app" style="height:100dvh;display:flex"></div><script src="/bundle.js"></script></body></html>'}));await p.route('**/bundle.js',r=>r.fulfill({contentType:'text/javascript',body:bundle}));await p.goto('http://native.test/'+(unpaired?'?unpaired=1':''));await p.waitForFunction(()=>window.actual);return p;}
+  const p=await page();await p.waitForFunction(()=>window.nonce);
+  assert.equal(await p.evaluate(()=>collects),0,'health read before identity verified');
+  assert.equal(await p.locator('[data-testid="mock-webview"]').count(),1);
+  assert.equal(await p.evaluate(()=>actual),'https://paceforge.fr/sante');
+  await p.evaluate(()=>reply());await p.waitForFunction(()=>collects===1&&refreshes.length===1);
+  assert.deepEqual(await p.evaluate(()=>navigations),['https://paceforge.fr/sante'],'cold sync navigated to bridge');
+  assert.equal(await p.evaluate(()=>actual),'https://paceforge.fr/sante');
+  await p.evaluate(()=>foreground());assert.equal(await p.evaluate(()=>collects),1,'immediate foreground repeated full sync');
+  const nonce=await p.evaluate(()=>window.nonce);
+  assert.equal(await p.evaluate(()=>pull()),false,'native reload should become data refresh');
+  await p.waitForFunction(n=>window.nonce!==n,nonce);await p.evaluate(()=>reply());
+  await p.waitForFunction(()=>collects===2&&refreshes.length===2);
+  assert.deepEqual(await p.evaluate(()=>refreshes),[false,true]);
+  await p.getByRole('button',{name:'Actualiser les données',exact:true}).click();await p.evaluate(()=>reply());
+  await p.waitForFunction(()=>collects===3&&refreshes.length===3);
+  await p.evaluate(()=>terminate());assert.equal(await p.evaluate(()=>reloads),1);
+  assert.equal(await p.evaluate(()=>pull()),true,'content process recovery must be allowed to reload');
+  await p.close();
+  const reading=await page();await reading.waitForFunction(()=>window.nonce);
+  await reading.evaluate(()=>{window.holdHealth=true;void reply();});await reading.waitForFunction(()=>window.releaseHealth);
+  await reading.getByRole('tab',{name:'Activités',exact:true}).click();await reading.waitForFunction(()=>actual.includes('/activities'));
+  await reading.evaluate(()=>releaseHealth());await reading.waitForFunction(()=>refreshes.length===1);
+  assert.ok(await reading.evaluate(()=>actual.includes('/activities')),'sync completion restored an obsolete tab');await reading.close();
+  const course=await page();await course.waitForFunction(()=>window.nonce);
+  await course.evaluate(()=>{window.holdHealth=true;void reply();});await course.waitForFunction(()=>window.releaseHealth);
+  await course.getByRole('tab',{name:'Courses',exact:true}).click();await course.waitForFunction(()=>actual.includes('/simulator'));
+  await course.evaluate(()=>releaseHealth());await course.waitForTimeout(100);
+  assert.deepEqual(await course.evaluate(()=>refreshes),[],'unsaved course was refreshed');await course.close();
+  const wrong=await page();await wrong.waitForFunction(()=>window.nonce);await wrong.evaluate(()=>reply({user_id:99}));
+  assert.equal(await wrong.evaluate(()=>collects),0);assert.match(await wrong.locator('body').innerText(),/compte affiché a changé/);
+  assert.equal(await wrong.evaluate(()=>actual),'https://paceforge.fr/sante');await wrong.close();
+  const login=await page();await login.waitForFunction(()=>window.nonce);await login.evaluate(()=>reply({type:'session-login'}));
+  await login.waitForFunction(()=>actual.includes('/mobile/session'));
+  await login.evaluate(()=>navigate('https://paceforge.fr/auth/login'));
+  assert.ok(await login.getByText('Connexion au compte',{exact:true}).isVisible());
+  await login.evaluate(()=>navigate(source));await login.evaluate(()=>reply());await login.waitForFunction(()=>collects===1&&actual==='https://paceforge.fr/sante');await login.close();
+  const offline=await page();await offline.waitForFunction(()=>window.nonce);await offline.evaluate(()=>reply({type:'session-unavailable'}));
+  assert.equal(await offline.evaluate(()=>collects),0);assert.match(await offline.locator('body').innerText(),/Impossible de vérifier/);
+  assert.equal(await offline.evaluate(()=>actual),'https://paceforge.fr/sante');await offline.close();
+  const empty=await page(true);await empty.waitForTimeout(100);assert.equal(await empty.evaluate(()=>pull()),false);
+  assert.equal(await empty.evaluate(()=>collects),0);assert.deepEqual(await empty.evaluate(()=>refreshes),[true]);
+  await empty.close();console.log('Actual App component: cold start, pull, accessible button, cadence, single WebView, account mismatch, login, offline and process recovery passed (native APIs mocked).');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});

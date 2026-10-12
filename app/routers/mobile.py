@@ -63,7 +63,11 @@ async def privacy(request: Request):
 async def session(request: Request, nonce: str, user: User = Depends(get_current_user)):
     if not re.fullmatch(r"[a-f0-9]{64}", nonce):
         raise HTTPException(400)
-    return page(request, mode="session", message={"type": "session", "nonce": nonce, "user_id": user.id})
+    message = {"type": "session", "nonce": nonce, "user_id": user.id}
+    if request.headers.get("accept") == "application/json":
+        from fastapi.responses import JSONResponse
+        return JSONResponse(message, headers=HEADERS)
+    return page(request, mode="session", message=message)
 
 
 @router.get("/mobile/connections")
@@ -190,6 +194,7 @@ async def ingest(body: Import, phone: MobileDevice = Depends(device), db: AsyncS
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
     insert = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
     now = datetime.now(timezone.utc)
+    received = 0
     for day in body.days:
         values = day.model_dump(exclude={"unit"})
         values.update(user_id=phone.user_id, platform=phone.platform, updated_at=now)
@@ -202,10 +207,23 @@ async def ingest(body: Import, phone: MobileDevice = Depends(device), db: AsyncS
             where=((MobileDaily.measured_at.is_(None) | (stmt.excluded.measured_at >= MobileDaily.measured_at))
                    if day.metric in ("weight", "body_fat") else None),
         ).returning(MobileDaily), execution_options={"populate_existing": True})
-        result.all()
-    phone.last_sync_at = now
+        received += len(result.all())
+    if received:
+        phone.last_sync_at = now
     await db.flush()
-    return {"received": len(body.days), "checked_at": now.isoformat()}
+    # A receipt describes what the server retained, including a later weigh-in
+    # already sent by another phone. An ignored old snapshot is not an update.
+    latest = {}
+    rows = await db.scalars(select(MobileDaily).where(
+        MobileDaily.user_id == phone.user_id, MobileDaily.platform == phone.platform,
+    ).order_by(MobileDaily.date.desc(), MobileDaily.measured_at.desc()))
+    for row in rows:
+        if row.metric not in latest:
+            latest[row.metric] = {"date": row.date.isoformat(), "value": row.value,
+                "measured_at": utc(row.measured_at).isoformat() if row.measured_at else None}
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"received": received, "skipped": len(body.days) - received,
+                         "checked_at": now.isoformat(), "latest": latest}, headers=HEADERS)
 
 
 @router.post("/api/mobile/nights")

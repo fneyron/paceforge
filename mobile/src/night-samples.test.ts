@@ -8,6 +8,11 @@ function sample(start: string, end: string, value=3, device='watch1'): SleepSamp
     device:{ localIdentifier:device },metadata:{HKTimeZone:'Europe/Paris'} };
 }
 const main = sample('2026-10-24T21:00:00Z','2026-10-25T06:00:00Z');
+test('short overlapping sync includes late nights but not the full history', () => {
+  const old = sample('2026-10-10T21:00:00Z', '2026-10-11T06:00:00Z');
+  assert.equal(episodes([main, old], 'UTC', now, 7).length, 1);
+  assert.equal(episodes([main, old], 'UTC', now, 60).length, 2);
+});
 test('DST, overlapping stages and naps do not become multiple nights or double duration', () => {
   const e=episodes([main,{...main,value:1},sample('2026-10-25T01:00:00Z','2026-10-25T01:15:00Z',2),
     sample('2026-10-25T13:00:00Z','2026-10-25T13:30:00Z'), {...main,value:0}], 'UTC',now);

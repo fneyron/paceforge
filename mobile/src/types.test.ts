@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { localDay, windows, valid } from './types';
+import { localDay, windows, valid, latestWeighIn } from './types';
 import { trusted } from './api';
 
 test('days follow the local clock and daylight saving, not 24h subtraction', () => {
@@ -10,6 +10,14 @@ test('days follow the local clock and daylight saving, not 24h subtraction', () 
   const change = result.find(w => w.date === '2026-10-25')!;
   assert.equal((+change.end - +change.start) / 3600000, 25);
   assert.equal(localDay(new Date('2026-10-09T23:30:00Z')), '2026-10-10');
+});
+test('latest valid weighing survives an invalid newer sample and timestamps determine order', () => {
+  const now = new Date('2026-10-12T12:00:00Z');
+  const sample = (value: number, at: string) => ({ value, at: `2026-10-12T${at}:00Z`, source: 'Scale' });
+  const result = latestWeighIn('weight', '2026-10-12', [sample(69, '07:00'), sample(0, '11:00'), sample(70, '08:00'), sample(80, '14:00')], now);
+  assert.equal(result?.value, 70); assert.equal(result?.measured_at, '2026-10-12T08:00:00Z');
+  assert.equal(latestWeighIn('weight', '2026-10-12', [], now), undefined);
+  assert.equal(windows(now, 7).length, 7);
 });
 test('missing measurements never become zeros; valid zero steps remains measurable', () => {
   const base = { date: '2026-10-10', metric: 'steps' as const, unit: 'count', sources: ['watch'] };

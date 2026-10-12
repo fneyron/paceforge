@@ -367,7 +367,7 @@ def test_the_a11y_fixes_in_css_and_js():
     7 h label, the 40/70 lines, the legend, the stages. UX10: the folds' chevrons are decoration."""
     js = (ROOT / "app/static/js/pf-viz.js").read_text()
     assert 'fig.addEventListener("pointerleave", function (e) {' in js
-    assert 'if (e.pointerType === "mouse" && !drag) select(dflt, { silent: true });' in js
+    assert 'if (e.pointerType === "mouse" && !drag) { cancelPoint(); select(dflt, { silent: true }); }' in js
     assert "select(i === cur && cur !== dflt ? dflt : i);" in js
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert "touch-action: pan-y pinch-zoom;" in css and "touch-action: pan-y;" not in css

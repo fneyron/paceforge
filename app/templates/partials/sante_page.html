@@ -3,6 +3,13 @@
 <div class="pf-dials">
     {% for d in p.dials %}{{ viz.viz_ring(d) }}{% endfor %}
 </div>
+{% if p.score.value is not none and p.quality %}
+<details class="pf-bilan-quality">
+    <summary>{{ p.quality.label }}</summary>
+    <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
+    <p>Disponibilité des mesures, pas une garantie de précision du score.</p>
+</details>
+{% endif %}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
 {% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}

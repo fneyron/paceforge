@@ -13,8 +13,8 @@ from a page left open since an older version gets a full navigation
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
@@ -120,7 +120,11 @@ async def data_version(db: AsyncSession, user_id: int, home: bool = False) -> st
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
         HealthMetric.user_id == user_id))).one()
-    version = f"{n}-{last.timestamp() if last else 0:.0f}"
+    version = f"{n}-{last.isoformat() if last else ''}"
+    from app.models.mobile import MobileDaily
+    count, updated = (await db.execute(select(func.count(MobileDaily.id), func.max(MobileDaily.updated_at)).where(
+        MobileDaily.user_id == user_id))).one()
+    version += f"-{count}-{updated.isoformat() if updated else ''}"
     from app.models.activity import Activity
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
@@ -203,6 +207,14 @@ MAX_POLLS = 40  # 3 s apart: the page stops waiting after 2 min
 JUST_SYNCED = timedelta(minutes=3)
 
 
+def _utc(at: datetime) -> datetime:
+    return at.replace(tzinfo=timezone.utc) if at.tzinfo is None else at.astimezone(timezone.utc)
+
+
+def _claimed(conn, service) -> bool:
+    return bool(conn.sync_claimed_at and datetime.now(timezone.utc) - _utc(conn.sync_claimed_at) < service.CLAIM_TTL)
+
+
 def _fresh_at(link: dict, within: timedelta) -> bool:
     at = link.get("last_sync_at")
     if at is None:
@@ -232,11 +244,30 @@ async def sante_sync_status(
     v: str = "",
     n: int = 0,
     home: bool = False,
+    since: datetime | None = None,
+    watches: str = "",
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Polled, quietly, while the opening sync runs: the page reloads only when
     the sync brought something new; it stops waiting after 2 min."""
+    if request.headers.get("accept") == "application/json":
+        pending, errors = [], []
+        for name, service in _WATCHES:
+            if name not in watches.split(','):
+                continue
+            conn = await service.connection_for(db, user.id)
+            if conn is None:
+                continue
+            if conn.needs_reauth:
+                errors.append(f"Reconnecte {name} dans Réglages.")
+            elif _claimed(conn, service):
+                pending.append(name)
+            elif conn.last_error:
+                errors.append(f"{name} : synchronisation incomplète. Vérifie Réglages.")
+            elif since and (conn.last_sync_at is None or _utc(conn.last_sync_at) < _utc(since)):
+                pending.append(name)  # queued but not yet claimed/completed
+        return JSONResponse({"pending": pending, "errors": errors}, headers={"Cache-Control": "no-store"})
     try:
         links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
         if any(link.get("syncing") for link in links) and n < MAX_POLLS:
@@ -251,12 +282,29 @@ async def sante_sync_status(
 
 @router.post("/sante/sync", response_class=HTMLResponse)
 async def sante_sync(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """The sync button of a Santé page left open since v4 (Santé has none any
     more: « Synchroniser maintenant » is in Réglages, per watch): every linked
     watch synced, then the page reloads (the new page, without the button)."""
+    if request.headers.get("accept") == "application/json":
+        if request.headers.get("x-paceforge-refresh") != "1":
+            raise HTTPException(403)
+        started, errors = [], []
+        since = datetime.now(timezone.utc).isoformat()
+        for name, service in _WATCHES:
+            conn = await service.connection_for(db, user.id)
+            if conn is None:
+                continue
+            if conn.needs_reauth:
+                errors.append(f"Reconnecte {name} dans Réglages.")
+            elif _claimed(conn, service) or service.schedule_sync(user.id):
+                started.append(name)
+            else:
+                errors.append(f"{name} : synchronisation indisponible. Réessaie depuis Réglages.")
+        return JSONResponse({"watches": started, "since": since, "errors": errors}, headers={"Cache-Control": "no-store"})
     for _, service in _WATCHES:
         conn = await service.connection_for(db, user.id)
         if conn and not conn.needs_reauth:

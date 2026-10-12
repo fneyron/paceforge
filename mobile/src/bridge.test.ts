@@ -3,7 +3,42 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { ORIGIN } from './api';
-import { acknowledge, Pending, takeReply } from './bridge';
+import { acknowledge, inlineSessionScript, Pending, takeReply } from './bridge';
+
+test('inline identity uses the same account check without navigating; query-only chart changes are allowed', () => {
+  const task: Pending = { kind: 'check', nonce: 'a'.repeat(64), url: ORIGIN + '/mobile/session', pageUrl: ORIGIN + '/sante?r=14', consent: false };
+  const pending = { current: task as Pending | null };
+  const data = { type: 'session', nonce: task.nonce, user_id: 1, transport: 'inline' };
+  for (const url of ['https://example.org/sante', ORIGIN + '/settings', ORIGIN + '/mobile/session']) {
+    assert.equal(takeReply(pending, JSON.stringify(data), url), null);
+  }
+  for (const bad of [{ ...data, transport: undefined }, { ...data, nonce: 'old' }, { ...data, user_id: null }]) {
+    assert.equal(takeReply(pending, JSON.stringify(bad), task.pageUrl!), null);
+  }
+  assert.equal(takeReply(pending, JSON.stringify(data), ORIGIN + '/sante?r=90#sommeil')?.kind, 'check');
+  assert.equal(pending.current, null);
+});
+
+test('inline session script reports expired login, transport failures and malformed replies without trusting them', async () => {
+  const task: Extract<Pending, { kind: 'check' }> = { kind: 'check', nonce: 'n'.repeat(64), url: ORIGIN + '/mobile/session', consent: false, pageUrl: ORIGIN + '/sante' };
+  for (const scenario of ['ok', 'redirect', 'offline', 'bad-nonce', 'forbidden']) {
+    const sent: any[] = [];
+    const context = { location: { origin: ORIGIN }, AbortController, setTimeout, clearTimeout,
+      window: { ReactNativeWebView: { postMessage: (raw: string) => sent.push(JSON.parse(raw)) } },
+      fetch: async (_url: string, opts: any) => {
+        assert.equal(opts.credentials, 'same-origin'); assert.equal(opts.cache, 'no-store');
+        if (scenario === 'offline') throw new TypeError('offline');
+        return { ok: scenario !== 'forbidden', redirected: scenario === 'redirect', status: scenario === 'forbidden' ? 403 : 200,
+          json: async () => ({ type: 'session', nonce: scenario === 'bad-nonce' ? 'old' : task.nonce, user_id: 9 }) };
+      } };
+    runInNewContext(inlineSessionScript(task), context);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(sent.length, 1);
+    const reply = takeReply({ current: task }, JSON.stringify(sent[0]), task.pageUrl!);
+    assert.equal(reply?.kind, scenario === 'ok' ? 'check' : ['redirect', 'forbidden'].includes(scenario) ? 'login' : 'unavailable');
+    if (reply?.kind === 'check') assert.equal(reply.userId, 9); // App still compares the paired account before health reads.
+  }
+});
 
 test('session replies must match the origin, route and active request, then are consumed exactly once', () => {
   const task: Pending = { kind: 'check', nonce: 'a'.repeat(64), url: ORIGIN + '/mobile/session', consent: false };

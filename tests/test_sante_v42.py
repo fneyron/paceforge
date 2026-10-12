@@ -579,7 +579,8 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     help_page = await as_user.get("/sante/aide")
     assert help_page.status_code == 200
     folds = re.findall(r'<details class="pf-fold">(.*?)</details>', help_page.text, re.S)
-    assert len(folds) == 1
+    assert len(folds) == 2
+    assert any("Quelles mesures améliorer ?" in fold for fold in folds)
     folds = [fold for fold in folds if "<summary>Calcul détaillé</summary>" in fold]
     assert len(folds) == 1
     fold = folds[0]

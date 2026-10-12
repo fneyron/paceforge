@@ -33,7 +33,7 @@ function asleepDuration(parts: Interval[]): number {
     return total + (active.some(s => s.stage !== 'awake') && !active.some(s => s.stage === 'awake') ? b-a : 0);
   }, 0);
 }
-export function episodes(samples: readonly SleepSample[], fallback: string, now = new Date()): Episode[] {
+export function episodes(samples: readonly SleepSample[], fallback: string, now = new Date(), daysBack = 60): Episode[] {
   const groups = new Map<string, { key: string; source_name: string; timezone: string; parts: Interval[] }>();
   for (const s of samples) {
     const stage = stages[s.value], a = s.startDate.getTime(), b = s.endDate.getTime();
@@ -64,7 +64,7 @@ export function episodes(samples: readonly SleepSample[], fallback: string, now 
       if (!days.has(date)) days.set(date, []);
       days.get(date)!.push(cluster);
     }
-    const cutoff = new Date(dayIn(now.getTime(), group.timezone)+'T00:00:00Z'); cutoff.setUTCDate(cutoff.getUTCDate()-59);
+    const cutoff = new Date(dayIn(now.getTime(), group.timezone)+'T00:00:00Z'); cutoff.setUTCDate(cutoff.getUTCDate()-daysBack+1);
     for (const [date, parts] of days) {
       if (date < cutoff.toISOString().slice(0,10)) continue;
       parts.sort((a,b) => asleepDuration(b)-asleepDuration(a));

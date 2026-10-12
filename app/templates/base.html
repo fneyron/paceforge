@@ -66,7 +66,7 @@
         </div>
     </header>
 
-    <main id="main-content" tabindex="-1" class="pf-main">
+    <main id="main-content" tabindex="-1" class="pf-main" data-account="{{ user.id }}">
         <div class="pf-wrap pf-page">
             {% block content %}{% endblock %}
         </div>
@@ -112,6 +112,7 @@
     }
     </script>
     <script src="/static/js/app.js"></script>
+    {% if user is defined and user %}<script src="/static/js/refresh.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

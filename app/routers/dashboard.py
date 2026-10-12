@@ -1,8 +1,8 @@
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
@@ -145,6 +145,21 @@ async def manual_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a Strava activity sync."""
+    if request.headers.get("accept") == "application/json":
+        if request.headers.get("x-paceforge-refresh") != "1":
+            raise HTTPException(403)
+        received, errors = 0, []
+        if user.has_strava_linked:
+            if not user.has_own_strava_app or not user.strava_credentials_valid:
+                errors.append("Reconnecte Strava dans Réglages.")
+            else:
+                try:
+                    received = await _sync_recent_activities(user, db, strict=True)
+                    request.session["last_strava_sync"] = datetime.now().timestamp()
+                except Exception:
+                    await db.rollback()
+                    errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
+        return JSONResponse({"received": received, "errors": errors}, headers={"Cache-Control": "no-store"})
     new_count = 0  # sessions Strava brought, a watch's row taken over included
     if user.has_strava_linked and user.has_own_strava_app:
         new_count = await _sync_recent_activities(user, db)
@@ -299,7 +314,7 @@ async def _week_groups(
     return weeks, has_more, spikes
 
 
-async def _sync_recent_activities(user: User, db: AsyncSession) -> int:
+async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool = False) -> int:
     """Sync recent activities from Strava. Paginates until we find existing ones.
     Returns how many Strava sessions were saved."""
     total_synced = 0
@@ -371,4 +386,6 @@ async def _sync_recent_activities(user: User, db: AsyncSession) -> int:
             )
     except Exception:
         logger.exception("Failed to sync activities from Strava")
+        if strict:
+            raise
     return total_synced

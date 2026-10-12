@@ -475,7 +475,8 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
                       train["dial"]],
             "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
-            "rows": rows, "training": train, "score": score, "score_notes": sc.explanation(day)}
+            "rows": rows, "training": train, "score": score, "score_notes": sc.explanation(day),
+            "quality": sc.quality(day)}
 
 
 # ── the cards ───────────────────────────────────────────────────────────────
@@ -558,9 +559,11 @@ def card_status(nights, metric: str, day: dict) -> dict:
         return {"key": "none", "value": None, "word": BUILDING, "detail": f"prête {when}", "tone": None,
                 "meaning": None, "text": BUILDS}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
-    if s["value"] is None or part is None:
+    if s["value"] is None:
         return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
-    tone = sc.row_tone(part)
+    # A historical trend (or SDNN) remains readable even when it cannot enter
+    # today's index. Absence this night is stated on its own readout/quality row.
+    tone = sc.row_tone(part) if part else None
     status = BAD[metric] if tone in ("warn", "danger") else s["status"]
     centre = s["normal"]["center"]
     if metric == "hr" and day["alert"]:  # the alert's own 2 nights, as the score reads them
@@ -608,6 +611,11 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
                        mean_sources=[nt.mean_source(nights, metric, d) for d in days],
                        mean_counts=[m.get("n", 0) for m in averages], notes=notes, label_nights=True, compact=True)
     c["status"] = card_status(nights, metric, day)
+    current = nights.get(today)
+    value = current.value(metric) if current else None
+    c["latest"] = viz.num(value, unit=unit) if value is not None else None
+    if value is None:
+        viz.rest(c, ["—", "Nuit non mesurée", ""], f"{name} : pas de mesure pour la nuit du bilan.")
     alert = day["alert"] if metric == "hr" else None
     c["period"] = "2 nuits" if alert else "7 derniers jours"
     average = {"value": statistics.fmean(alert["values"]), "n": 2} if alert else averages[-1]

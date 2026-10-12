@@ -9,6 +9,12 @@ export function isBridgeUrl(url: string): boolean {
 export function screenUrl(url: string): string {
   return trusted(url) && !isBridgeUrl(url) ? url : ORIGIN + '/sante';
 }
+export function refreshable(url: string): boolean {
+  if (!trusted(url)) return false;
+  const path = new URL(url).pathname;
+  // No refresh gesture on account forms or unsaved course planning.
+  return path === '/sante' || path === '/activities';
+}
 export function tabForUrl(url: string): Tab | null {
   if (!trusted(url)) return null;
   const path = new URL(url).pathname;
