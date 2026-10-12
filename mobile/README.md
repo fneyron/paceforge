@@ -1,15 +1,16 @@
 # PaceForge mobile
 
 Application iOS / Android avec **Santé comme tableau de bord**, puis Activités et Courses.
-Les connexions restent accessibles par le bouton « Réglages ». Les écrans du compte partagent une seule WebView HTTPS ; sa barre
+Les connexions restent accessibles par le bouton « Réglages », avec Apple Santé / Health Connect en premier. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
 serveur accessibles depuis Connexions. COROS et Strava ouvrent directement leur
 page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
 même session. Le compte PaceForge est affiché avant validation ; après une
 connexion au compte dans le navigateur, la destination choisie est conservée.
-Garmin se connecte dans l’application. Les réglages complets restent disponibles
-dans « Mon compte et confidentialité ».
+Garmin se connecte dans l’application. Le profil, l’apparence et les données personnelles restent disponibles
+dans « Compte, apparence et confidentialité ». Les connexions web ne sont pas
+dupliquées dans cette page lorsqu’elle est ouverte dans l’application.
 
 Santé `/sante` est l’écran principal. L’ancien lien `/accueil` y redirige,
 y compris pour les anciennes versions installées. Les sources restent dans les
@@ -108,9 +109,9 @@ même remplacement discret. Les requêtes sont bornées et une double demande
 rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidite.md).
 
 Santé conserve trois cadrans de même importance : Sommeil, Récupération et
-Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques restent
+Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques
 de la dernière nuit et de récupération restent visibles ; l’historique détaillé
-du sommeil et la méthode se déplient au toucher. Les bilans partiels et références
+du sommeil, les mesures nocturnes, les mesures quotidiennes et la méthode se déplient au toucher. Les bilans partiels et références
 provisoires restent signalés, avec les mesures utilisées dans le détail de
 récupération. Ce changement d’interface ne modifie ni les mesures reçues ni les
 coefficients des calculs.

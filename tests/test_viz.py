@@ -653,11 +653,11 @@ def test_the_small_targets_reach_44_px():
     css = (ROOT / "app/static/css/interface.css").read_text()
     assert ".pf-sync-now { min-height: 44px; }" in css
     link = re.search(r"\.pf-state-links a \{[^}]*\}", css).group(0)
-    assert "padding: 11px 0; line-height: 22px;" in link
+    assert "padding: 11px 0; line-height: 1.375rem;" in link
     row = re.search(r"\.pf-row \{[^}]*\}", css).group(0)  # a card's row under the dials: 48 px high
     assert "min-height: 48px" in row
     link = re.search(r"\.pf-sum-link \{[^}]*\}", css).group(0)  # « Voir tes semaines dans Activités › »: 44 px
-    assert "padding: 11px 0 12px;" in link and "line-height: 21px;" in link
+    assert "padding: 11px 0 12px;" in link and "line-height: 1.3125rem;" in link
     assert ".pf-health-connect .pf-btn { min-height: 44px; }" in css
     assert (".pf-health-connect .pf-btn-secondary { background: rgb(var(--pf-surface)); box-shadow: inset 0 0 0 1px "
             "rgb(var(--pf-gray-400)); }") in css

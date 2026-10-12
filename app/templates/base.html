@@ -32,7 +32,8 @@
         if (window.ReactNativeWebView) document.documentElement.classList.add('pf-native');
         // Apply dark mode before render to avoid flash
         try {
-            if (localStorage.getItem('darkMode') === 'true') document.documentElement.classList.add('dark');
+            const theme = localStorage.getItem('darkMode');
+            if (theme === 'true' || (theme === null && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
         } catch (_) { /* Storage may be unavailable in private browsers. */ }
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
@@ -105,6 +106,12 @@
     document.addEventListener('DOMContentLoaded', function() {
         updateDarkModeUI(document.documentElement.classList.contains('dark'));
     });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(event) {
+        try { if (localStorage.getItem('darkMode') !== null) return; } catch (_) {}
+        document.documentElement.classList.toggle('dark', event.matches);
+        updateDarkModeUI(event.matches);
+        document.dispatchEvent(new CustomEvent('pf:theme', { detail: { dark: event.matches } }));
+    });
     </script>
     <script>
     if ('serviceWorker' in navigator) {
@@ -112,6 +119,7 @@
     }
     </script>
     <script src="/static/js/app.js"></script>
+    {% if user is defined and user %}<script src="/static/js/page-state.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% if user is defined and user %}<script src="/static/js/refresh.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% block scripts %}{% endblock %}
 </body>

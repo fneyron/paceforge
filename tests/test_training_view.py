@@ -269,11 +269,11 @@ async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: A
                  "volume bas", "c'est voulu", "semaine type"):
         assert gone not in html, gone
     assert html.count("7 j :") == 1 and "28 j :" in html  # the header stays, once
-    semaines = html.split('id="semaines"')[1].split("</section>")[0]
-    # the title, the filter right under it, the measure toggle (a GET form: it works without JS), then the chart
-    top, below = semaines.split('<nav aria-label="Filtrer les activités par sport"', 1)
-    assert '<h2 id="semaines-h" class="pf-h2">Semaines</h2>' in top and "pf-viz-ranges" not in top
-    toggle = below.split('data-viz-key="semaines-duree"')[0]
+    semaines = html.split('id="semaines"')[1].split("</details>")[0]
+    # The sport filter remains visible above the folded trends; measures still work without JS.
+    assert html.index('aria-label="Filtrer les activités par sport"') < html.index('id="semaines"')
+    assert '<summary id="semaines-h">Tendances sur 12 semaines</summary>' in semaines
+    toggle = semaines.split('data-viz-key="semaines-duree"')[0]
     assert re.search(r'<form class="pf-seg pf-seg-sm pf-viz-ranges" data-viz-ranges data-viz-param="m" role="group" '
                      r'aria-label="Mesure" method="get" action="/activities#semaines">', toggle)
     assert re.findall(r'name="m" value="(\w+)" data-range="\w+" aria-pressed="(\w+)">([^<]+)<', toggle) == [
@@ -323,7 +323,7 @@ async def test_the_filter_applies_to_the_chart_and_the_list(client: AsyncClient,
     assert "Footing" not in bike.split('id="activity-list"')[1] and "Vélo 2" in bike  # the list: rides only
     assert 'id="fc-facile"' not in bike  # FC en footing: runs only
     # each filter keeps the measure shown; « Tout » too
-    assert re.findall(r'<a href="(/activities[^"]*)" data-viz-carry="m"', semaines) == [
+    assert re.findall(r'<a href="(/activities[^"]*)" data-viz-carry="m"', bike) == [
         "/activities?m=distance", "/activities?sport=run&amp;m=distance", "/activities?sport=trail&amp;m=distance",
         "/activities?sport=bike&amp;m=distance", "/activities?sport=other&amp;m=distance"]
     run = (await client.get("/activities?sport=run")).text

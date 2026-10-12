@@ -8,7 +8,7 @@
 {% endif %}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
-{% if p.connect %}<p class="pf-state-links"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></p>{% endif %}
+{% if p.connect %}<p class="pf-state-links"><a class="pf-native-only" data-phone-connect href="paceforge://devices">Connecter <span data-phone-health>Apple Santé</span> ›</a><span class="pf-browser-only"><a href="/settings#coros">Connecter COROS ›</a> <a href="/settings#garmin">Connecter Garmin ›</a></span></p>{% endif %}
 
 <div class="pf-health-panels">
 {% set has_sleep_detail = s and s.state not in ("never", "old") %}
@@ -104,8 +104,9 @@
 </details>
 </div>
 {% if p.vfc or p.fc %}
-<section class="pf-sec" aria-labelledby="h-nuits">
-    <h2 id="h-nuits" class="pf-h2">La nuit</h2>
+<details id="mesures-nocturnes" class="pf-health-panel pf-health-context">
+    <summary><span>Mesures nocturnes<small>Fréquence cardiaque et VFC</small></span></summary>
+    <div class="pf-panel-body">
     <div class="pf-health-nights">
     {% for key, c in (("vfc", p.vfc), ("fc", p.fc)) if c %}
     <div id="{{ key }}" class="pf-card">
@@ -118,7 +119,8 @@
     </div>
     {% endfor %}
     </div>
-</section>
+    </div>
+</details>
 {% endif %}
 {% if p.daily|rejectattr("archived")|list %}{% include "partials/sante_daily.html" %}{% endif %}
 <div class="pf-folds">

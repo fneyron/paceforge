@@ -1,5 +1,49 @@
 # Défilement et actualisation — audit du 12 octobre 2026
 
+## Suite de l’audit UX iPhone
+
+Les trois cadrans Santé gardent la même importance. La dernière nuit et la
+récupération restent visibles ; les mesures nocturnes et quotidiennes se
+déplient. Dans Activités, le filtre reste visible et les tendances sur douze
+semaines se déplient, pour accéder directement aux dernières sorties. L’état
+vide Santé mène à Apple Santé ; les anciens compagnons utilisent le lien
+Connexions qu’ils connaissent déjà. Android nomme Health Connect.
+
+Les onglets conservent leur dernière destination, y compris une course ou une
+activité en détail. Une session web mémorise le défilement, les sections ouvertes
+et les dates sélectionnées, par compte et par URL, sans copier les mesures.
+Un lien explicite vers une section reste prioritaire sur cette restauration.
+
+Quitter un plan par un lien ou un onglet attend la sauvegarde, y compris les
+modifications faites pendant une requête précédente. Un échec conserve le plan
+éditable et propose de réessayer. Le retour natif est lié à un nonce et à la
+page de départ ; une réponse tardive ne déclenche pas une ancienne navigation.
+Le passage en arrière-plan déclenche aussi la sauvegarde restante, sans garantir
+un envoi après une fermeture forcée de l’application ou une coupure réseau.
+
+Les réglages natifs suivent le thème du site. Sans choix enregistré, le thème
+suit le système. La taille de texte système est transmise à la WebView ; les
+tailles de texte de l’interface utilisent des unités relatives et une disposition
+adaptée aux grands caractères. Les graduations internes des SVG conservent leurs
+coordonnées ; leurs valeurs restent accessibles par les contrôles et libellés.
+Les boutons et liens principaux ont une cible d’au moins 44 points CSS.
+
+L’export affiche d’abord le GPX conseillé, puis les autres formats sur demande.
+Une page impossible à charger propose une nouvelle tentative sur place. Cela
+ne constitue pas un mode hors connexion : les plans ne sont pas mis en cache
+localement, et les exports nécessitent encore une connexion pour être produits.
+Le passage de Strava aux autorisations d’une application commune reste également
+un chantier séparé : il dépend de la configuration et de l’accès accordé par
+Strava ; les identifiants personnels existants ne sont pas remplacés ici.
+
+Validation locale : `tests/browser/iphone-ux.cjs` vérifie sauvegarde immédiate,
+ordre des écritures, échec/réessai, retour à la position et aux sections, export
+et largeur de 320/393 pixels à 100/200 % de texte. La suite du compagnon vérifie
+les onglets, les réponses de sauvegarde, le thème et la reprise après erreur de
+chargement avec les API natives simulées. Ces essais ne remplacent pas VoiceOver,
+Dynamic Type et HealthKit sur un iPhone physique. Les changements web et natifs
+nécessitent respectivement un déploiement serveur et une nouvelle build mobile.
+
 ## Niveau attendu
 
 Les recommandations [Apple sur le chargement](https://developer.apple.com/design/human-interface-guidelines/loading)

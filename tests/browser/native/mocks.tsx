@@ -22,6 +22,11 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  const [actual,setActual]=useState(props.source.uri);
  useImperativeHandle(ref,()=>({injectJavaScript:(s:string)=>{
   w.scripts.push(s);
+  if(s.includes("type:'navigation-ready'")) {
+   const nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
+   w.finishLeave=()=>w.webMessage({type:'navigation-ready',nonce,ok:!w.failLeave});
+   if(!w.holdLeave)queueMicrotask(()=>w.finishLeave());
+  }
   if(s.includes('session-unavailable')) w.nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
   if(s.includes('window.paceforgeRefresh')){
    w.refreshes.push(s.includes('refresh(true)'));
@@ -44,5 +49,6 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  w.navigate=(url:string)=>commit(url);
  w.pull=()=>current.current.onShouldStartLoadWithRequest({url:actual,navigationType:'reload',isTopFrame:true});
  w.terminate=()=>current.current.onContentProcessDidTerminate();
+ w.pageFail=()=>{current.current.onError();current.current.onLoadEnd({nativeEvent:{url:actual}});};
  return <View testID="mock-webview" style={[props.style,{backgroundColor:'#fff'}]}><span id="document-text">{actual.includes('/mobile/session')?'Compte vérifié':actual.includes('/auth')?'Connexion au compte':'Tableau de bord Santé'}</span></View>;
 });

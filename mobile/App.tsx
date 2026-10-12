@@ -1,5 +1,5 @@
 import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Crypto from 'expo-crypto';
@@ -9,16 +9,22 @@ import { api, ApiError, ORIGIN, trusted } from './src/api';
 import { authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth } from './src/sync';
-import { appShellScript, destinations, isBridgeUrl, refreshable, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
+import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
 import { acknowledge, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
-import { Button } from './src/device-ui';
+import { Button, DeviceTheme } from './src/device-ui';
 
 const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
 function Companion() {
+  const systemDark = useColorScheme() === 'dark';
+  const { fontScale } = useWindowDimensions();
+  const [leaving, setLeaving] = useState(false);
+  const nextNavigation = useRef<{ nonce: string; from: string; go: () => void; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const retryNavigation = useRef<(() => void) | null>(null);
+  const tabLocations = useRef<Record<string, string>>({});
   const [tab, setTab] = useState<Tab>('health');
   const [url, setUrl] = useState(ORIGIN + '/sante');
   const [pair, setPair] = useState<Pair | null>(null);
@@ -28,11 +34,12 @@ function Companion() {
   const [userRefreshing, setUserRefreshing] = useState(false);
   const [refreshIssue, setRefreshIssue] = useState('');
   const [healthIssue, setHealthIssue] = useState('');
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(systemDark);
   const [showWeb, setShowWeb] = useState(false);
   const [bridgeDocument, setBridgeDocument] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [last, setLast] = useState('');
   const [report, setReport] = useState<SyncReport | null>(null);
   const [automatic, setAutomatic] = useState(false);
@@ -46,6 +53,7 @@ function Companion() {
   const lastAttempt = useRef(0);
   const syncFull = useRef(true);
   const documentReady = useRef(false);
+  const pageLoadFailed = useRef(false);
   const inlineSync = useRef(false);
   const refreshSources = useRef(false);
   const recoveringProcess = useRef(false);
@@ -69,12 +77,17 @@ function Companion() {
       .catch(() => setError('Impossible de lire l’association. Reconnecte le téléphone.')).finally(() => setReady(true));
     Linking.getInitialURL().then(u => { if (u) onAppLink(u); });
     const subscription = Linking.addEventListener('url', e => onAppLink(e.url));
-    return () => { subscription.remove(); if (watchdog.current) clearTimeout(watchdog.current); };
+    return () => { subscription.remove(); if (watchdog.current) clearTimeout(watchdog.current); if (nextNavigation.current) clearTimeout(nextNavigation.current.timer); };
   }, []);
+
+  useEffect(() => {
+    web.current?.injectJavaScript(presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
+  }, [fontScale]);
 
   const onAppLink = useEffectEvent((link: string) => {
     if (link === 'paceforge://privacy') openSettings('/mobile/privacy');
     if (link === 'paceforge://devices') { externalReturn.current = false; openTab('devices'); }
+    if (link === 'paceforge://health') openHealth();
   });
 
   function finish() { lock.current = false; pending.current = null; setBusy(false); if (watchdog.current) clearTimeout(watchdog.current); }
@@ -84,6 +97,7 @@ function Companion() {
     const target = new URL(screenUrl(destination));
     target.searchParams.set('app_nav', `${Date.now()}-${++navigationId.current}`);
     documentReady.current = false;
+    setLoadError('');
     setUrl(target.href);
   }
   function refreshPage(sources = false) {
@@ -190,6 +204,14 @@ function Companion() {
     if (trusted(event.nativeEvent.url)) {
       try {
         const data = JSON.parse(event.nativeEvent.data);
+        const navigation = nextNavigation.current;
+        if (data?.type === 'navigation-ready') {
+          if (!navigation || data.nonce !== navigation.nonce || event.nativeEvent.url !== navigation.from) return;
+          clearTimeout(navigation.timer); nextNavigation.current = null; setLeaving(false);
+          if (data.ok === true) navigation.go();
+          else { retryNavigation.current = navigation.go; setError('Ton plan n’a pas été enregistré. Réessaie avant de quitter cet écran.'); }
+          return;
+        }
         if (data?.type === 'appearance' && typeof data.dark === 'boolean') { setDark(data.dark); return; }
       } catch { /* Other messages are validated by the account bridge below. */ }
     }
@@ -282,9 +304,29 @@ function Companion() {
 
   function openTab(next: Tab) {
     if (lock.current && (!inlineSync.current || pending.current || next === 'devices')) return;
-    setTab(next); setShowWeb(false); setDetail(null); setError(''); setStatus('');
-    if (next !== 'devices') loadScreen(ORIGIN + destinations[next]);
-    else refreshConnections();
+    if (next === tab && next !== 'devices' && !isBridgeUrl(documentUrl.current)) return;
+    afterSave(() => {
+      setTab(next); setShowWeb(false); setDetail(null); setError(''); setStatus('');
+      if (next !== 'devices') loadScreen(tabLocations.current[next] || ORIGIN + destinations[next]);
+      else refreshConnections();
+    });
+  }
+  function afterSave(go: () => void) {
+    if (nextNavigation.current) return;
+    retryNavigation.current = null; setError('');
+    if (!webVisible || !documentReady.current || isBridgeUrl(documentUrl.current)) { go(); return; }
+    const nonce = random();
+    const timer = setTimeout(() => {
+      nextNavigation.current = null; setLeaving(false);
+      retryNavigation.current = go;
+      setError('La sauvegarde prend trop de temps. Vérifie ta connexion, puis réessaie.');
+    }, 20000);
+    nextNavigation.current = { nonce, from: documentUrl.current, go, timer }; setLeaving(true);
+    web.current?.injectJavaScript(prepareNavigationScript(nonce));
+  }
+  function openHealth() {
+    if (lock.current) return;
+    afterSave(() => { setTab('devices'); setShowWeb(false); setDetail('health'); setError(''); setStatus(''); });
   }
   function openSettings(path = '/settings') { setTab('devices'); setUrl(ORIGIN + path); setShowWeb(true); }
   function openSyncDetails() {
@@ -294,46 +336,63 @@ function Companion() {
       setTab('devices'); setShowWeb(false); setDetail('health'); setStatus(''); setError('');
     } else openTab('devices');
   }
+  function pageFailed(message: string) {
+    pageLoadFailed.current = true;
+    documentReady.current = false;
+    if (pending.current) fail(new Error(message));
+    else setLoadError(message);
+  }
   const webVisible = tab !== 'devices' || showWeb;
   const concealBridge = bridgeDocument && pending.current?.kind !== 'pair';
-  const navigationLocked = busy && (!inlineSync.current || pending.current !== null);
-  const visibleIssue = [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
-  const night = dark && webVisible;
-  return <SafeAreaView style={[styles.root, night && styles.darkSurface]}>
+  const navigationLocked = leaving || (busy && (!inlineSync.current || pending.current !== null));
+  const visibleIssue = retryNavigation.current ? error : [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
+  const night = dark;
+  const textScaleScript = presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect');
+  return <DeviceTheme.Provider value={dark}><SafeAreaView style={[styles.root, night && styles.darkSurface]}>
     <StatusBar style={night ? 'light' : 'dark'} />
     <View style={[styles.header, night && styles.darkSurface]}><View style={styles.heading}><Text style={[styles.brand, night && styles.darkInk]}
       accessibilityActions={webVisible && refreshable(webLocation.current) ? [{ name: 'refresh', label: 'Actualiser les données' }] : []}
       onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'refresh') refresh(); }}>PaceForge</Text></View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy || leaving }} disabled={busy || leaving} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
     {webVisible && refreshable(webLocation.current) && userRefreshing && (busy || pageRefreshing) ? <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       <ActivityIndicator size="small" color={night ? '#a6a6ad' : '#62736d'} /><Text style={[styles.syncText, night && styles.darkMuted]}>Actualisation…</Text>
     </View> : null}
-    {webVisible && visibleIssue && !busy && !pageRefreshing ? <Pressable style={[styles.syncNotice, night && styles.darkSurface]} accessibilityRole="button"
-      accessibilityLabel={`${visibleIssue} Ouvrir les connexions.`}
-      onPress={openSyncDetails}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>Détails ›</Text></Pressable> : null}
+    {webVisible && visibleIssue && !busy && !leaving && !pageRefreshing ? <Pressable style={[styles.syncNotice, night && styles.darkSurface]} accessibilityRole="button"
+      accessibilityLabel={`${visibleIssue} ${retryNavigation.current ? 'Réessayer la sauvegarde.' : 'Ouvrir les connexions.'}`}
+      onPress={() => retryNavigation.current ? afterSave(retryNavigation.current) : openSyncDetails()}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>{retryNavigation.current ? 'Réessayer' : 'Détails ›'}</Text></Pressable> : null}
     <View style={styles.content}>
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
-    {webVisible && concealBridge && <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View>}
-    <View style={[styles.web, (!webVisible || concealBridge) && styles.hidden]} pointerEvents={webVisible && !concealBridge ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge} importantForAccessibility={webVisible && !concealBridge ? 'auto' : 'no-hide-descendants'}>
+    {webVisible && loadError ? <View style={styles.unavailable}>
+      <Text accessibilityRole="header" style={[styles.brand, night && styles.darkInk]}>Écran indisponible</Text>
+      <Text style={[styles.syncText, night && styles.darkMuted]}>{loadError}</Text>
+      <Button text="Réessayer" onPress={() => { setLoadError(''); recoveringProcess.current = true; web.current?.reload(); }} />
+    </View> : webVisible && concealBridge ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
+    <View style={[styles.web, (!webVisible || concealBridge || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || !!loadError} importantForAccessibility={webVisible && !concealBridge && !loadError ? 'auto' : 'no-hide-descendants'}>
       {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { web.current?.stopLoading(); restoreSync(); finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
       <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled={Platform.OS === 'ios' && webVisible && !concealBridge && refreshable(documentUrl.current) && !busy && !pageRefreshing}
         bounces decelerationRate="normal" automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
-        injectedJavaScriptBeforeContentLoaded={appShellScript} injectedJavaScript={appShellScript}
+        injectedJavaScriptBeforeContentLoaded={appShellScript + textScaleScript} injectedJavaScript={appShellScript + textScaleScript}
         originWhitelist={['https://*', 'paceforge://*']} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
-        onMessage={message} onError={() => fail(new Error('Impossible de charger PaceForge. Vérifie ta connexion.'))}
-        onLoadStart={() => { documentReady.current = false; }}
+        onMessage={message} onError={() => pageFailed('Cet écran nécessite une connexion. Tes données déjà enregistrées restent conservées. Réessaie lorsque le réseau revient.')}
+        onLoadStart={() => {
+          documentReady.current = false; pageLoadFailed.current = false; setLoadError('');
+          if (nextNavigation.current) { clearTimeout(nextNavigation.current.timer); nextNavigation.current = null; setLeaving(false); }
+          if (retryNavigation.current) { retryNavigation.current = null; setError(''); }
+        }}
         onLoadEnd={event => {
+          if (pageLoadFailed.current) return;
           if (isBridgeUrl(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; documentReady.current = false; setBridgeDocument(true);
             if (pending.current) web.current?.injectJavaScript(retryBridgeScript);
             else recoverBridge();
             return;
           }
+          documentReady.current = true;
           if (refreshable(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; setBridgeDocument(false); recoveringBridge.current = false;
             documentReady.current = true;
@@ -346,7 +405,7 @@ function Companion() {
           if (pending.current) fail(new Error('La vérification a été interrompue. Réessaie la synchronisation.'));
           else { recoveringProcess.current = true; web.current?.reload(); }
         }}
-        onHttpError={event => { if (event.nativeEvent.url === url) fail(new Error(`PaceForge ne répond pas correctement (${event.nativeEvent.statusCode}).`)); }}
+        onHttpError={event => { if ([url, documentUrl.current].includes(event.nativeEvent.url)) pageFailed(`PaceForge ne répond pas pour le moment (${event.nativeEvent.statusCode}). Réessaie dans quelques instants.`); }}
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
             if (isBridgeUrl(request.url) && (!pending.current || (pending.current.kind === 'check' && pending.current.pageUrl))) return false;
@@ -355,7 +414,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
-            if (path === '/settings' && new URL(request.url).hash === '#connections') { openTab('devices'); return false; }
+            if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
               openProvider(path === '/coros/connect' ? 'coros' : 'strava');
@@ -364,6 +423,7 @@ function Companion() {
             return true;
           }
           if (request.url === 'paceforge://devices') { openTab('devices'); return false; }
+          if (request.url === 'paceforge://health') { openHealth(); return false; }
           if (request.url.startsWith('https://')) Linking.openURL(request.url).catch(() => setError('Impossible d’ouvrir ce lien.'));
           return false;
         }}
@@ -393,7 +453,10 @@ function Companion() {
           if (!nav.loading && !pending.current && (!lock.current || inlineSync.current) && webVisible) {
             webLocation.current = nav.url;
             const next = tabForUrl(nav.url);
-            if (next) { setTab(next); setShowWeb(next === 'devices'); }
+            if (next) {
+              if (next !== 'devices') tabLocations.current[next] = nav.url;
+              setTab(next); setShowWeb(next === 'devices');
+            } else if (path.startsWith('/auth/')) tabLocations.current = {};
           }
         }}
       />
@@ -402,7 +465,7 @@ function Companion() {
     <View style={[styles.tabs, night && styles.darkSurface]}>
       {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: navigationLocked }} disabled={navigationLocked} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active, night && tab === key && styles.darkActive]}><Text style={[styles.tabText, night && styles.darkMuted, tab === key && styles.activeText, night && tab === key && styles.darkAccent]}>{label}</Text></Pressable>)}
     </View>
-  </SafeAreaView>;
+  </SafeAreaView></DeviceTheme.Provider>;
 }
 export default function App() { return <SafeAreaProvider><Companion /></SafeAreaProvider>; }
 const styles = StyleSheet.create({
@@ -414,6 +477,7 @@ const styles = StyleSheet.create({
   syncNotice: { minHeight: 44, paddingHorizontal: 20, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: '#f4f6f8' },
   noticeLink: { color: '#0b5f6e', fontSize: 12, fontWeight: '600' },
   content: { flex: 1 }, web: { flex: 1 }, returning: { flex: 1, alignItems: 'center', justifyContent: 'center' }, hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
+  unavailable: { flex: 1, padding: 24, justifyContent: 'center', gap: 16 },
   tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e4ebed' },
   tab: { flex: 1, paddingVertical: 18, borderTopWidth: 2, borderTopColor: 'transparent' }, active: { borderTopColor: '#0b5f6e' },
   tabText: { fontSize: 12, textAlign: 'center', color: '#63636a', fontWeight: '500' }, activeText: { color: '#0b5f6e', fontWeight: '700' },

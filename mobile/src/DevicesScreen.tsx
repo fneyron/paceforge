@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { connectionLabel, Connections, Provider } from './connections';
 import { Pair } from './types';
 import { reportText, SyncReport, WeightReceipt } from './sync';
-import { Button, ui } from './device-ui';
+import { Button, darkStyles, DeviceTheme, useDeviceUI } from './device-ui';
 
 export type DeviceDetail = 'health' | 'other' | 'help' | null;
 type Props = {
@@ -17,27 +17,28 @@ type Props = {
 const healthName = Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect';
 
 export function DevicesScreen(p: Props) {
+  const ui = useDeviceUI(), styles = useDeviceStyles();
   const { detail, pair, busy, last } = p;
   const mismatch = p.needsReconnect || (!!pair && !!p.connections && pair.user_id !== p.connections.user_id);
   const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : p.report && !p.report.complete ? 'À actualiser' : 'Connecté';
   return <ScrollView contentContainerStyle={ui.content}>
     {detail && <Link text="‹ Toutes les connexions" onPress={() => p.select(null)} disabled={busy} />}
-    <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'other' ? 'Autres marques' : detail === 'help' ? 'Comment ça fonctionne ?' : 'Connexions'}</Text>
+    <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'other' ? 'Autres marques' : detail === 'help' ? 'Comment ça fonctionne ?' : 'Réglages'}</Text>
     {busy && <View style={styles.progress}><ActivityIndicator color="#225649" /><Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || 'Chargement…'}</Text></View>}
     {!detail && <>
       <Text style={ui.body}>Choisis les services que tu utilises.</Text>
       <View style={styles.list}>
+        <Row name={healthName} icon="♥" description={Platform.OS === 'ios' ? 'Sommeil, cœur et mesures quotidiennes' : 'Poids, pas et mesures du téléphone'} state={healthState}
+          action={pair && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready}
+          onPress={() => { p.select('health'); if (!pair || mismatch) p.connectHealth(); }} />
         {(['coros', 'garmin', 'strava'] as const).map(key => {
           const state = p.connections?.providers[key];
           return <Row key={key} name={{ coros: 'COROS', garmin: 'Garmin', strava: 'Strava' }[key]}
             icon={{ coros: 'C', garmin: 'G', strava: 'S' }[key]}
             description={{ coros: 'Activités et données de santé', garmin: 'Activités et données de santé', strava: 'Activités sportives' }[key]}
             state={connectionLabel(state)} action={state === 'reconnect' ? 'Reconnecter' : state && state !== 'disconnected' ? 'Gérer' : 'Connecter'}
-            disabled={busy} onPress={() => p.provider(key)} />;
+            disabled={busy} last={key === 'strava'} onPress={() => p.provider(key)} />;
         })}
-        <Row name={healthName} icon="♥" description={Platform.OS === 'ios' ? 'Sommeil, cœur et mesures quotidiennes' : 'Poids, pas et mesures du téléphone'} state={healthState}
-          action={pair && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready} last
-          onPress={() => { p.select('health'); if (!pair || mismatch) p.connectHealth(); }} />
       </View>
       {p.connections && <Text style={ui.small}>Compte de {p.connections.name}</Text>}
       <View style={styles.footer}>
@@ -45,7 +46,7 @@ export function DevicesScreen(p: Props) {
         <Link text="Actualiser" onPress={p.refresh} disabled={busy} />
       </View>
       <Link text="Comment ça fonctionne ?" onPress={() => p.select('help')} disabled={busy} />
-      <Link text="Mon compte et confidentialité" onPress={() => p.settings()} disabled={busy} />
+      <Link text="Compte, apparence et confidentialité" onPress={() => p.settings()} disabled={busy} />
     </>}
     {detail === 'health' && <>
       <Text style={ui.body}>Retrouve tes mesures du téléphone dans PaceForge.</Text>
@@ -109,6 +110,7 @@ function weightText(w: WeightReceipt | null): string | null {
 }
 
 function Row(p: { name: string; icon: string; description: string; state: string; action: string; onPress: () => void; disabled: boolean; last?: boolean }) {
+  const ui = useDeviceUI(), styles = useDeviceStyles();
   return <Pressable accessibilityRole="button" accessibilityLabel={`${p.name}. ${p.description}. ${p.state}. ${p.action}`} accessibilityState={{ disabled: p.disabled }}
     disabled={p.disabled} onPress={p.onPress} style={[styles.row, !p.last && styles.divider, p.disabled && ui.disabled]}>
     <View style={styles.icon}><Text style={styles.iconText}>{p.icon}</Text></View>
@@ -117,6 +119,7 @@ function Row(p: { name: string; icon: string; description: string; state: string
   </Pressable>;
 }
 function Link({ text, onPress, disabled = false }: { text: string; onPress: () => void; disabled?: boolean }) {
+  const ui = useDeviceUI();
   return <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={[ui.link, disabled && ui.disabled]}><Text style={ui.linkText}>{text}</Text></Pressable>;
 }
 const styles = StyleSheet.create({
@@ -128,3 +131,5 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }, progress: { paddingTop: 18, gap: 8 },
   unavailable: { paddingVertical: 8 },
 });
+const nightStyles = darkStyles(styles);
+function useDeviceStyles() { return useContext(DeviceTheme) ? nightStyles : styles; }

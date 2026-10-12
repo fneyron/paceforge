@@ -276,7 +276,7 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
     assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 1
     rules = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
     assert ".pf-row.pf-intensity { border-top: 1px solid rgb(var(--pf-line)); }" in rules
-    assert ".pf-intensity .pf-row-val > span { font-size: 15px; color: rgb(var(--pf-ink)); }" in rules
+    assert ".pf-intensity .pf-row-val > span { font-size: 0.9375rem; color: rgb(var(--pf-ink)); }" in rules
 
 
 # ── the laps: read once, COROS's kept, Strava's webhook kept ──────────────────
