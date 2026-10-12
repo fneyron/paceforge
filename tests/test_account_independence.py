@@ -38,7 +38,7 @@ async def test_register_plan_export_and_login_without_any_provider(client, db_se
         response = await c.post("/auth/register", data=credentials)
         assert response.headers["location"] == "/auth/check-email"
         response = await c.get("/auth/verify-email", params={"token": sent[0][1]})
-        assert response.headers["location"] == "/sante"
+        assert response.headers["location"] == "/accueil"
         user = (
             await db_session.execute(select(User).where(User.email == credentials["email"]))
         ).scalar_one()
@@ -76,7 +76,7 @@ async def test_register_plan_export_and_login_without_any_provider(client, db_se
         assert response.status_code == 200
         await c.get("/auth/logout")
         response = await c.post("/auth/login", data=credentials)
-        assert response.headers["location"] == "/sante"
+        assert response.headers["location"] == "/accueil"
         assert (await c.get(page_url)).status_code == 200
         response = await c.get(f"/api/simulator/routes/{route_id}/pace-export?format=csv")
         assert response.status_code == 200 and "09:00" in response.text
@@ -151,7 +151,7 @@ async def test_watch_data_and_account_survive_strava_disconnect(
         response = await c.post(
             "/auth/login", data={"email": user.email, "password": "pw-12345678"}
         )
-        assert response.headers["location"] == "/sante"
+        assert response.headers["location"] == "/accueil"
         assert (await c.get(f"/simulator/routes/{route_id}")).status_code == 200
         assert "Sortie de ma montre" in (await c.get("/activities")).text
         assert 'data-viz-key="sommeil-14"' in (await c.get("/sante")).text

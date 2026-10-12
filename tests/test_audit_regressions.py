@@ -77,7 +77,7 @@ async def test_unverified_registration_and_login_cannot_access_private_pages(cli
         await c.post("/auth/resend-verification")
         assert len(sent) == 1
         response = await c.get("/auth/verify-email", params={"token": sent[0][1]})
-        assert response.headers["location"] == "/sante"
+        assert response.headers["location"] == "/accueil"
         assert (await c.get("/settings")).status_code == 200
         assert "Lien invalide" in (await c.get("/auth/verify-email", params={"token": sent[0][1]})).text
 
@@ -95,7 +95,7 @@ async def test_expired_verification_can_be_resent_after_login(client, db_session
         await c.post("/auth/login", data={"email": user.email, "password": "password-123"})
         await c.post("/auth/resend-verification")
         assert len(sent) == 1 and sent[0][1] != expired
-        assert (await c.get("/auth/verify-email", params={"token": sent[0][1]})).headers["location"] == "/sante"
+        assert (await c.get("/auth/verify-email", params={"token": sent[0][1]})).headers["location"] == "/accueil"
 
 
 def _session(client):

@@ -18,8 +18,8 @@ const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
 function Companion() {
-  const [tab, setTab] = useState<Tab>('health');
-  const [url, setUrl] = useState(ORIGIN + '/sante');
+  const [tab, setTab] = useState<Tab>('home');
+  const [url, setUrl] = useState(ORIGIN + '/accueil');
   const [pair, setPair] = useState<Pair | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +37,7 @@ function Companion() {
   const lock = useRef(false);
   const lastAttempt = useRef(0);
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const webLocation = useRef(ORIGIN + '/sante');
+  const webLocation = useRef(ORIGIN + '/accueil');
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
 
   useEffect(() => {
@@ -174,7 +174,7 @@ function Companion() {
   const webVisible = tab !== 'devices' || showWeb;
   return <SafeAreaView style={styles.root}>
     <StatusBar style="dark" />
-    <View style={styles.header}><Text style={styles.brand}>PaceForge</Text><Text style={styles.sub}>Tes données de santé, réunies</Text></View>
+    <View style={styles.header}><View style={styles.heading}><Text style={styles.brand}>PaceForge</Text><Text style={styles.sub}>Ton tableau de bord quotidien</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={styles.settingsText}>Réglages</Text></Pressable></View>
     {webVisible && error ? <Text accessibilityRole="alert" style={[styles.error, styles.banner]}>{error}</Text> : null}
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error} connections={connections} needsReconnect={needsReconnect}
@@ -191,6 +191,7 @@ function Companion() {
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
             const path = new URL(request.url).pathname;
+            if (path === '/settings' && new URL(request.url).hash === '#connections') { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
               openProvider(path === '/coros/connect' ? 'coros' : 'strava');
@@ -208,7 +209,7 @@ function Companion() {
           if (pending.current && (path.startsWith('/auth/') || path === '/')) {
             setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
           }
-          if (!nav.loading && pending.current && (path === '/sante' || path === '/activities')) {
+          if (!nav.loading && pending.current && (path === '/accueil' || path === '/sante' || path === '/activities')) {
             setUrl(pending.current.url + "#resume-" + Date.now()); guard();
           }
           // Bridge completion can arrive before the final navigation event.
@@ -229,7 +230,8 @@ function Companion() {
 }
 export default function App() { return <SafeAreaProvider><Companion /></SafeAreaProvider>; }
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 22, paddingVertical: 12, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heading: { flex: 1 }, settings: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }, settingsText: { color: '#173e38', fontSize: 13, fontWeight: '600' },
   brand: { color: '#163d35', fontSize: 23, fontWeight: '700' }, sub: { color: '#62736d', fontSize: 13, marginTop: 2 },
   error: { color: '#a33129', fontSize: 15, lineHeight: 23, marginVertical: 8 },
   banner: { paddingHorizontal: 20 },

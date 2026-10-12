@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { tabForUrl } from './navigation';
 
 test('internal detail pages keep the right native tab; external URLs cannot change it', () => {
+  assert.equal(tabForUrl('https://paceforge.fr/accueil'), 'home');
   assert.equal(tabForUrl('https://paceforge.fr/activity/42'), 'activities');
   assert.equal(tabForUrl('https://paceforge.fr/simulator/route/42'), 'courses');
   assert.equal(tabForUrl('https://paceforge.fr/sante?s=7j'), 'health');

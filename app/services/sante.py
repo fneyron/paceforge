@@ -81,6 +81,7 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         "daily": daily,
         "has_watch_data": bool(sources),
         "today": today,
+        "calendar_day": until,
         "cycle_pending": today != until,
         "night_state": night_state,
     }

@@ -151,7 +151,7 @@ async def test_device_connection_is_focused_and_login_preserves_destination(clie
         assert 'name="weight_kg"' not in response.text
         assert 'next=devices' in response.text or 'name="next" value="devices"' in response.text
         response = await c.post('/auth/login', data={'email': user.email, 'password': 'pw-12345678', 'next': 'https://evil.example'})
-        assert response.headers['location'] == '/sante'
+        assert response.headers['location'] == '/accueil'
 
 
 async def test_strava_mobile_setup_and_cancel_return_to_selected_connection(client, db_session, no_commit):

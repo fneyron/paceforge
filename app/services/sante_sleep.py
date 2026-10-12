@@ -382,7 +382,7 @@ def hero(nights: dict, today: date, samples: dict | None = None, need_of=None) -
                  + f" · compté{'es' if s else 'e'} dans ta prochaine nuit")
         aria += f", {later.replace(' · ', ', ')}"
     return {"day": last, "today": last == today, "label": "Cette nuit" if last == today else viz.night_label(last),
-            "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
+            "source": n.source, "times": times, "nap": nap, "total": viz.hm(n.asleep + nap_min), "later": later,
             "need": f"besoin estimé {viz.hm(need_of(last) if need_of else NEED_DEFAULT)}",
             "timeline": t, "out_naps": out_naps, "stages": bool(intervals), "phases": ph, "aria": aria}
 

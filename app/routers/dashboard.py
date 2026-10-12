@@ -27,7 +27,7 @@ templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["dashboard"])
 
-HOME = "/sante"  # where a signed-in athlete lands: « Mets Santé en premier dans l'application »
+HOME = "/accueil"  # the daily dashboard; Santé remains the detailed health page
 
 # The history is paginated by WEEKS (not by row count) so a week is never split
 # across two "load more" chunks and weekly totals stay honest.
@@ -43,7 +43,7 @@ async def landing(
     error: str | None = None,
     user: User | None = Depends(get_optional_user),
 ):
-    if user:  # signed in: Santé is the home (owner, 2026-10-08)
+    if user:  # signed in: the daily dashboard
         return RedirectResponse(url=HOME, status_code=302)
     return templates.TemplateResponse(
         request, "login.html", context={"error": error, "stats": load_model_stats()}
@@ -74,7 +74,7 @@ async def methode_page(request: Request, user: User | None = Depends(get_optiona
 
 @router.get("/dashboard")
 async def dashboard(user: User = Depends(get_current_user)):
-    """Legacy home (an installed app opened from an old manifest lands here): the home, Santé."""
+    """Legacy home (an installed app opened from an old manifest lands here): the daily dashboard."""
     return RedirectResponse(url=HOME, status_code=302)
 
 

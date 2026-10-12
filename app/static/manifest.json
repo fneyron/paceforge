@@ -1,8 +1,8 @@
 {
   "name": "PaceForge",
   "short_name": "PaceForge",
-  "description": "Ton plan de course trail et ultra",
-  "start_url": "/sante",
+  "description": "Ta santé, tes activités et tes courses réunies",
+  "start_url": "/accueil",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0B5F6E",

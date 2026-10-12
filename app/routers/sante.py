@@ -57,6 +57,11 @@ async def sante_page(
 ):
     if vue is not None:  # an old view's link: the one page, at its section
         return RedirectResponse(_landing(vue, r), status_code=302)
+    context = await _health_context(db, user, r)
+    return templates.TemplateResponse(request, "sante.html", context=context)
+
+
+async def _health_context(db: AsyncSession, user: User, r: str | None = None) -> dict:
     status = await coros.coros_status(db, user.id)
     garmin_link = await garmin.garmin_status(db, user.id)
     try:
@@ -70,11 +75,22 @@ async def sante_page(
                         for name, link in (("COROS", status), ("Garmin", garmin_link)))
     auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)),
                             STALE_NIGHT if night_missing else STALE_AFTER)
-    return templates.TemplateResponse(
-        request, "sante.html",
-        context={"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
-                 "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0},
-    )
+    return {"user": user, "coros": status, "garmin": garmin_link, "page": page, "auto_sync": auto_sync,
+            "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
+
+
+@router.get("/accueil", response_class=HTMLResponse)
+async def home_page(request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.services.home import overview
+
+    version = await data_version(db, user.id, home=True)
+    context = await _health_context(db, user)
+    context["home"] = await overview(db, user, context["page"], context["coros"], context["garmin"])
+    context["sync_home"] = True
+    if context["auto_sync"]:
+        context["sync_v"] = version
+    return templates.TemplateResponse(request, "home.html", context=context,
+                                      headers={"Cache-Control": "no-store"})
 
 
 @router.get("/sante/sources", response_class=HTMLResponse)
@@ -94,7 +110,7 @@ async def sante_sleep_range(request: Request, r: str | None = None, user: User =
     return _away(request, _landing("sommeil", r))
 
 
-async def data_version(db: AsyncSession, user_id: int) -> str:
+async def data_version(db: AsyncSession, user_id: int, home: bool = False) -> str:
     """What the page was drawn from: a new or rewritten day changes it."""
     from sqlalchemy import func
 
@@ -102,7 +118,24 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
         HealthMetric.user_id == user_id))).one()
-    return f"{n}-{last.timestamp() if last else 0:.0f}"
+    version = f"{n}-{last.timestamp() if last else 0:.0f}"
+    if home:
+        from hashlib import sha256
+
+        from app.models.activity import Activity
+        from app.models.coros import CorosConnection
+        from app.models.garmin import GarminConnection
+        # Activity-only watch syncs must also refresh the home; totals catch rewrites.
+        counts = (await db.execute(select(func.count(Activity.id), func.max(Activity.id),
+                    func.sum(Activity.moving_time), func.sum(Activity.distance)).where(Activity.user_id == user_id))).one()
+        version += "-" + "-".join(str(v or 0) for v in counts)
+        # A successful sync with no new measurements still updates the source status.
+        for model in (CorosConnection, GarminConnection):
+            status = (await db.execute(select(model.last_sync_at, model.needs_reauth, model.last_error,
+                                               model.sync_claimed_at).where(model.user_id == user_id))).one_or_none()
+            version += str(status)
+        return sha256(version.encode()).hexdigest()
+    return version
 
 
 @router.post("/sante/feel")
@@ -197,6 +230,7 @@ async def sante_sync_status(
     request: Request,
     v: str = "",
     n: int = 0,
+    home: bool = False,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -206,8 +240,8 @@ async def sante_sync_status(
         links = [await coros.coros_status(db, user.id), await garmin.garmin_status(db, user.id)]
         if any(link.get("syncing") for link in links) and n < MAX_POLLS:
             return templates.TemplateResponse(request, "partials/sante_sync.html", context={
-                "request": request, "auto_sync": True, "sync_v": v, "sync_n": n + 1})
-        if v and await data_version(db, user.id) != v:
+                "request": request, "auto_sync": True, "sync_v": v, "sync_n": n + 1, "sync_home": home})
+        if v and await data_version(db, user.id, home=home) != v:
             return HTMLResponse("", headers={"HX-Refresh": "true"})
     except Exception:  # never leave the page waiting on an error
         logger.exception("Santé sync status failed for user %d", user.id)

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
-HOME = "/sante"  # where a sign-in, a verified email, a new password or a Strava link land (Santé first)
+HOME = "/accueil"  # the daily dashboard; Santé remains the detailed health page
 
 
 # ---------------------------------------------------------------------------

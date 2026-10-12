@@ -1,8 +1,8 @@
 """Santé v4 (SANTE_V4_SPEC.md): one page, WHOOP/Oura-like, from past
 activities and the nights only. The routes (login, not connected, no data
 yet, a failure, the old views' links, the old range swap, the check-in POST
-kept harmlessly, the opening sync), Santé first in both navs and as the
-signed-in home, the owner's 8 Oct 2026 as a fixture (his real COROS nights,
+kept harmlessly, the opening sync), Santé kept in both navs alongside the
+daily dashboard, the owner's 8 Oct 2026 as a fixture (his real COROS nights,
 the Transjeju 100M as a plain activity: 02/10 21:00 in Korea, 16h53), a rich
 Garmin wearer, an empty user, and what must never come back: tabs, the
 check-in, a race chip or flag, « séance », the filler sentences."""
@@ -172,22 +172,22 @@ async def test_the_check_in_post_is_kept_harmlessly(as_user: AsyncClient, db_ses
     assert "/sante/feel" not in html and "Ce matin" not in html and "Malade" not in html
 
 
-# ── Santé first ─────────────────────────────────────────────────────────────
+# ── Daily dashboard first ─────────────────────────────────────────────────────────────
 
-async def test_sante_is_first_in_both_navs(as_user: AsyncClient):
-    """Santé · Activités · Courses · Réglages, in both navs (owner, 2026-10-09: « Mets Activités avant Courses »)."""
+async def test_sante_remains_in_both_navs(as_user: AsyncClient):
+    """Accueil · Santé · Activités · Courses, in both navs (owner, 2026-10-09: « Mets Activités avant Courses »)."""
     page = (await as_user.get("/activities")).text
     top = page.split('class="pf-nav"')[1].split("</nav>")[0]
     tabbar = page.split('class="pf-tabbar"')[1].split("</nav>")[0]
     for nav in (top, tabbar):
-        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/sante", "/activities", "/simulator", "/settings"]
-        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Santé", "Activités", "Courses", "Réglages"]
-    assert '<a href="/sante" class="pf-logo"' in page  # the logo goes home
+        assert re.findall(r'href="(/[a-z]+)"', nav) == ["/accueil", "/sante", "/activities", "/simulator"]
+        assert [m for m in re.findall(r"<span>([^<]+)</span>", nav)] == ["Accueil", "Santé", "Activités", "Courses"]
+    assert '<a href="/accueil" class="pf-logo"' in page  # the logo goes home
     page = (await as_user.get("/sante")).text
     assert page.count('href="/sante" aria-current="page"') == 2
 
 
-async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: AsyncSession, no_commit):
+async def test_the_signed_in_home_is_accueil(client: AsyncClient, db_session: AsyncSession, no_commit):
     from app.services.auth import hash_password, verification_token
 
     user = User(email="me@x.fr", password_hash=hash_password("pw-12345678"), email_verified=True,
@@ -197,19 +197,19 @@ async def test_the_signed_in_home_is_sante(client: AsyncClient, db_session: Asyn
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         assert (await c.get("/")).status_code == 200  # signed out: the public home, unchanged
         r = await c.post("/auth/login", data={"email": "me@x.fr", "password": "pw-12345678"})
-        assert r.status_code == 302 and r.headers["location"] == "/sante"
+        assert r.status_code == 302 and r.headers["location"] == "/accueil"
         r = await c.get("/")
-        assert r.status_code == 302 and r.headers["location"] == "/sante"
+        assert r.status_code == 302 and r.headers["location"] == "/accueil"
         r = await c.get("/auth/verify-email", params={"token": user.email_verify_token})
-        assert r.status_code == 302 and r.headers["location"] == "/sante"
+        assert r.status_code == 302 and r.headers["location"] == "/accueil"
         user.password_reset_token = "reset-1"
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db_session.flush()
         r = await c.post("/auth/reset-password", data={"token": "reset-1", "password": "pw-87654321"})
-        assert r.status_code == 302 and r.headers["location"] == "/sante"
+        assert r.status_code == 302 and r.headers["location"] == "/accueil"
 
 
-async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncClient, db_session: AsyncSession,
+async def test_a_strava_link_lands_on_accueil_unless_it_said_where(client: AsyncClient, db_session: AsyncSession,
                                                                  no_commit, monkeypatch):
     from unittest.mock import AsyncMock
 
@@ -231,22 +231,22 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
         await c.post("/auth/login", data={"email": "me@x.fr", "password": "pw-12345678"})
         await c.get("/auth/strava")
         r = await _callback(c, code="abc")
-        assert r.status_code == 302 and r.headers["location"] == "/sante"
+        assert r.status_code == 302 and r.headers["location"] == "/accueil"
         await c.get("/auth/strava?next=settings")
         r = await _callback(c, code="abc")
         assert r.headers["location"] == "/settings#strava"  # an explicit « next » is kept
 
 
-async def test_the_installed_app_opens_on_sante(as_user: AsyncClient, client: AsyncClient):
-    """The phone app (the PWA manifest) starts on /sante; an app installed with the old start_url (/dashboard)
+async def test_the_installed_app_opens_on_accueil(as_user: AsyncClient, client: AsyncClient):
+    """The phone app (the PWA manifest) starts on /accueil; an app installed with the old start_url (/dashboard)
     lands there too; the error pages' button goes home, not to the races."""
     manifest = json.loads((ROOT / "app/static/manifest.json").read_text(encoding="utf-8"))
-    assert manifest["start_url"] == "/sante"
+    assert manifest["start_url"] == "/accueil"
     r = await as_user.get("/dashboard")
-    assert r.status_code == 302 and r.headers["location"] == "/sante"
+    assert r.status_code == 302 and r.headers["location"] == "/accueil"
     for f in ("404.html", "500.html"):
         html = (ROOT / "app/templates" / f).read_text(encoding="utf-8")
-        assert "Retour à mes courses" not in html and '<a href="/sante" class="pf-btn' in html, f
+        assert "Retour à mes courses" not in html and '<a href="/accueil" class="pf-btn' in html, f
     r = await as_user.get("/nulle-part")
     assert r.status_code == 404 and "Retour à l'accueil" in r.text
 
