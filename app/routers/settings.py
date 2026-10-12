@@ -91,7 +91,7 @@ async def save_settings(
     ftp_watts: str = Form(default=""),
     health_source: str | None = Form(default=None),
 ):
-    if health_source is not None and health_source not in ("auto", "COROS", "Garmin"):
+    if health_source is not None and health_source not in ("auto", "COROS", "Garmin", "Apple Santé"):
         ctx = await _settings_context(request, user, db, health_source_bad=True)
         return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
     weight = _to_float(weight_kg)

@@ -4,6 +4,81 @@ Revue ciblée au **12 octobre 2026**, confrontée au code PaceForge. Ce document
 n’est pas une revue systématique. Les descriptions des fabricants expliquent
 leurs produits ; elles ne valident pas scientifiquement leurs scores, ni le nôtre.
 
+## Mise en œuvre après cette revue
+
+Priorités implémentées dans cet ordre :
+
+1. **Nuits Apple Santé.** Sommeil, siestes, FC et respiration pendant le sommeil,
+   SDNN affiché avec sa propre série. Auteur/appareil, méthode, fuseau et fenêtre
+   sont conservés ; aucune addition avec une copie de montre. Les moyennes sur
+   la journée restent exclues. Refus et données absentes ne deviennent pas zéro.
+2. **Charge accumulée.** Courbe dans Entraînement, fondée sur toutes les activités
+   reçues, déjà dédoublonnées. Les contributions des jours précédents diminuent
+   progressivement. Elle décrit le travail enregistré ; ce n’est ni un
+   pourcentage de fatigue musculaire, ni une prédiction de blessure.
+3. **Forme sur plusieurs semaines.** Le repère de FC à allure comparable est
+   accessible directement dans Santé › Forme, avec les mêmes conditions de
+   sélection que dans Activités. Pas de score de forme inventé si les données
+   comparables manquent, ni de « forme » déduite de la seule charge chronique.
+4. **Tests lactate.** Saisie des mesures sanguines du Lactate Pro, paliers, allure
+   ou vitesse/puissance, FC et durée facultatives, protocole et contexte.
+   Courbes et historique, modification/suppression limitées au propriétaire.
+   Comparaison explicite entre tests du même lecteur, sport, protocole et mêmes
+   durées renseignées. Les conditions restent à vérifier par l’utilisateur.
+
+Ces fonctions prolongent la revue ; les tableaux « code actuel » ci-dessous
+restent le constat **avant cette mise en œuvre**. L’Accueil était déjà fusionné
+avec Santé. Les détails se déplient ; provenance et dates ne sont pas répétées
+sous chaque valeur.
+
+### Méthodes et limites de cette mise en œuvre
+
+- Apple Santé iOS : 60 jours de nuits, contre 30 jours pour les mesures de jour.
+  La nuit principale est le plus long épisode d’au moins 3 h de sommeil du
+  même auteur/appareil sur un jour de réveil. Regroupement à moins de 90 min
+  d’écart : choix heuristiques, qui peuvent manquer un sommeil très court ou
+  mal classer certains horaires fractionnés. Un épisode court ne crée pas de
+  faux résumé cardiaque nocturne. Les éveils explicites et périodes inconnues
+  sont exclus ; « au lit » et saisies manuelles ne deviennent pas du sommeil.
+- Durées calculées en temps écoulé UTC, jour et horaires dans le fuseau du
+  relevé, sinon celui du téléphone. Sans fuseau historique, les voyages peuvent
+  décaler un jour. Lors d’un changement d’heure dans la nuit, les totaux restent
+  exacts mais l’hypnogramme local est masqué pour éviter une fausse chronologie.
+- Minimum de 12 points FC, 3 SDNN ou respiratoires, répartis sur au moins 2 h :
+  filtres de couverture heuristiques. Les moyennes portent sur les points
+  disponibles, pas sur un signal continu. Les points bruts cardiaques envoyés
+  ne sont pas conservés après agrégation. Voir aussi `mobile/README.md`.
+- SDNN : moyenne géométrique nocturne, référence personnelle après 14 nuits du
+  même appareil/méthode, sans prior de variance RMSSD. Il reste descriptif :
+  **aucun sous-score prévu pour le RMSSD ne lui est appliqué**, et il ne
+  sélectionne pas les nuits de calibration du besoin de sommeil. Sommeil et
+  FC Apple peuvent alimenter le bilan existant. Cela ne valide pas les autres
+  pondérations du score, qui restent des heuristiques.
+- Charge : moyennes exponentielles quotidiennes de constantes 7 et 42 jours,
+  unités arbitraires de durée pondérée par la FC, ou estimation par la durée
+  si FC absente/non pertinente pour le sport. Historique limité à 400 jours,
+  affichage des 90 derniers ; comparaison habituelle après 42 jours et quatre
+  semaines actives. Bornes cardiaques et taux calculés avec les données connues
+  au jour considéré, sans activité future. Un jour sans activité reçue réduit
+  la charge **enregistrée**, sans prouver un repos. Ces constantes ne sont pas
+  une durée individuelle de récupération. Aucune pénalité cumulative nouvelle
+  ne s’ajoute au score nocturne sans validation.
+- Lactate : courbe des observations, sans lissage ni seuil automatique à 2/4
+  mmol/L. Axe d’intensité linéaire en km/h pour la course, même si les paliers
+  sont saisis en min/km ; watts pour le vélo. Les conditions, durées et moment
+  de prélèvement modifient les résultats [12]. Aucun effet automatique sur
+  la récupération, aucun programme de test ni prescription d’intensité.
+- Lactate Pro 2 LT-1730 [18] : sang capillaire, 0,5–25,0 mmol/L. Les valeurs
+  LO/HI ne sont pas remplacées par un nombre. Le modèle exact du lecteur du
+  propriétaire reste à confirmer ; « Lactate Pro » est le libellé générique
+  proposé. La saisie manuelle fonctionne ; **aucun appairage Bluetooth ni
+  export automatique du lecteur n’est revendiqué**.
+
+À poursuivre : signaux complémentaires réellement accessibles (température,
+SpO₂, performances comparables à vélo), validation prospective distincte du
+calcul lui-même, et import du lecteur seulement lorsqu’un protocole d’échange
+ou un format d’export a été vérifié. Poids et masse grasse restent du contexte.
+
 ## Décision produit
 
 **Santé devient l’écran principal**, avec trois onglets : Santé, Activités,
@@ -159,10 +234,10 @@ futures. Sommeil et gros efforts peuvent influencer plusieurs jours.
   semaines précédentes, avec au moins quatre semaines actives. Elle ne mesure
   pas la récupération musculaire ni une probabilité de blessure.
 
-**Cette version** fusionne la navigation dans Santé, nomme le bilan du jour,
-actualise l’aide et les références. Elle ne remplace pas les poids par une autre
-formule arbitraire, n’ajoute aucune permission de santé et ne prétend pas importer
-les indicateurs marqués absents.
+**La version de départ examinée** fusionnait la navigation dans Santé, nomme le bilan du jour,
+actualisait l’aide et les références. Elle ne remplaçait pas les poids par une autre
+formule arbitraire, n’ajoutait aucune permission de santé et ne prétendait pas importer
+les indicateurs marqués absents. Les ajouts ultérieurs sont décrits au début du document.
 
 **Ordre de développement recommandé :** d’abord des imports nocturnes Apple
 avec provenance, fenêtre de sommeil et méthode conservées ; ensuite des signaux
@@ -192,3 +267,5 @@ un score en le comparant uniquement à ses propres entrées ou au score d’une 
 15. [Android — Health Connect data types](https://developer.android.com/health-and-fitness/health-connect/data-types), catalogue officiel.
 16. [Grosicki et al., 2025/2026 — Wearable-Derived Sleep and Physiological Metrics Are Associated With Performance in Professional Golfers](https://pubmed.ncbi.nlm.nih.gov/41265431/), étude observationnelle, DOI 10.1123/ijspp.2025-0226.
 17. [Erratum de l’étude chez les golfeurs](https://pubmed.ncbi.nlm.nih.gov/41417742/), DOI 10.1123/ijspp.2025-0657. Les tailles d’effet ne sont pas reprises ici.
+
+18. [ARKRAY — Lactate Pro 2 LT-1730](https://www.arkray.eu/english/products/lt-1730.html), fiche officielle consultée le 12/10/2026 : type d’échantillon et plage de mesure.

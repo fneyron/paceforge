@@ -110,6 +110,17 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         out["fc"] = _night_card(nights, "hr", today, day)
         # the Entraînement dial reads every week with today's bounds (H): the night tags' resting HR and peak
         out.update(_top(day, efforts, sessions, bool(sources), out, until, nights, nt.rest_hr(nights, until), peak))
+    from app.services import sante_load, training_view
+    out["load"] = sante_load.card(sessions, until, rest_of)
+    out["fitness"] = training_view.footing([s for s in sessions if s.end_day <= until], until, peak)
+    if out["fitness"]:
+        import json
+        c = out["fitness"]
+        data = json.loads(c["data"])
+        data["r"] = [[r[1], "FC ajustée", r[0] + (" · " + r[2] if r[2] else "")] for r in data["r"]]
+        c["data"] = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+        # The measured values are available on touch, without repeating Activités' latest readout.
+        viz.rest(c, ["", "Tes sorties comparables", ""], c["summary"])
     out["day_label"] = viz.d_short(today)
     out["method"] = sc.typo(sc.METHOD)
     out["source_note"] = SOURCE_NOTE
@@ -130,7 +141,7 @@ CYCLE_NOON = 12  # (H) from noon, a day whose night never came is that day anywa
 async def local_clock(db: AsyncSession, user_id: int, now: datetime) -> datetime | None:
     """The athlete's wall-clock time (naive) from their UTC offset (their latest sessions, as athlete_today); None
     without one (a seam the tests move)."""
-    offset = await st.utc_offset(db, user_id)
+    offset = await st.utc_offset(db, user_id, now)
     return None if offset is None else (now + timedelta(seconds=offset)).replace(tzinfo=None)
 
 
@@ -169,7 +180,8 @@ def _night_stat(nights, metric: str, d: date) -> dict:
     v = m["value"] if m else None
     lo = d - timedelta(days=nt.BAND_DAYS - 1)
     seen = src is not None and any(lo <= x <= d and n.value(metric) is not None for x, n in nights.items())
-    return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen}
+    return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen,
+            "score_eligible": not (metric == "hrv" and src and "(SDNN sommeil)" in src)}
 
 
 def _assess(nights, sessions, efforts, d: date) -> dict:
@@ -624,6 +636,12 @@ async def _timeline(db: AsyncSession, user_id: int, nights, d: date) -> dict:
     n = nights.get(d)
     if not n or not n.timeline or not n.start:
         return {}
+    if n.source and n.source.startswith("Apple Santé:"):
+        row = await db.scalar(select(HealthMetric).where(HealthMetric.user_id == user_id,
+                    HealthMetric.date == d, HealthMetric.metric == "sleep", HealthMetric.source == n.source))
+        segs = [(k, datetime.fromisoformat(a), datetime.fromisoformat(b))
+                for k, a, b in (row.details or {}).get("segments", [])] if row else []
+        return {d: segs} if segs else {}
     rows = (await db.execute(select(HealthSample.kind, HealthSample.start_at, HealthSample.end_at).where(
         HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == "Garmin",
         HealthSample.start_at >= n.start - timedelta(hours=1), HealthSample.start_at < n.end)

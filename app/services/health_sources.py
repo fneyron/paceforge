@@ -7,11 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.models.user import User
 
-WATCH_PRIORITY = ("COROS", "Garmin")
+WATCH_PRIORITY = ("COROS", "Garmin", "Apple Santé")
 SOURCE_NOTE = (
-    "Une seule mesure par jour : ta montre prioritaire, puis l’autre si la donnée manque. "
-    "En automatique, COROS précède Garmin. Les données originales sont conservées séparément."
+    "Une seule mesure par jour : ta source prioritaire, puis les autres si la donnée manque. "
+    "En automatique, COROS précède Garmin, puis Apple Santé. Les données originales sont conservées séparément."
 )
+
+
+def family(source):
+    return "Apple Santé" if source and source.startswith("Apple Santé:") else source
 
 
 async def preference(db: AsyncSession, user_id: int) -> str | None:
@@ -35,7 +39,7 @@ def select_metrics(rows, preferred: str | None = None) -> dict[tuple, HealthMetr
         src = row.source or ""
         return (
             0 if anchor is not None and src == anchor else 1,
-            order.index(src) if src in order else len(order),
+            order.index(family(src)) if family(src) in order else len(order),
             src,
         )
 

@@ -104,8 +104,8 @@
 {% endmacro %}
 
 {# K8 dots: one per run (hot runs hollow), the rolling band #}
-{% macro viz_dots(c, title, key, group=None) %}
-{% call figure(c, title, key, group, "sortie", "Sortie précédente", "Sortie suivante") %}
+{% macro viz_dots(c, title, key, group=None, quiet=False) %}
+{% call figure(c, title, key, group, "sortie", "Sortie précédente", "Sortie suivante", card=quiet, quiet=quiet) %}
 {% for t in c.ticks %}<line x1="0" x2="{{ c.X1 }}" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="{{ c.W }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
 {% for poly in c.band %}<polygon points="{{ poly }}" class="pf-viz-band"/>{% endfor %}
 {% for d in c.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" class="pf-viz-dot{% if d.hot %} is-hot{% endif %}" data-i="{{ d.i }}"/>{% endfor %}

@@ -32,7 +32,7 @@ Suunto et Amazfit (Zepp) sont signalés dans « Autres marques » comme restant 
 intégrer, sans faux bouton de connexion. Si leur application partage des données
 avec Strava ou le référentiel santé du téléphone, l’utilisateur peut connecter
 ce service intermédiaire. Cela ne suppose pas que toutes les données sont
-partagées ou importées ; les cinq catégories mobiles restent celles décrites
+partagées ou importées ; les catégories mobiles restent celles décrites
 ci-dessous.
 
 Les appareils et capteurs se synchronisent avec l’application du fabricant ou
@@ -55,8 +55,12 @@ service compatible, sans associer la connexion à un modèle précis.
 - Lecture volontaire des **30 derniers jours** : poids, masse grasse, pas, FC et
   respiration sur la journée. Dernière pesée du jour ; totaux de pas calculés
   par HealthKit / Health Connect ; moyennes quotidiennes pour FC / respiration.
-- Aucune écriture dans le référentiel santé du téléphone. Pas de demande de
-  permission sommeil/VFC tant que leur filtrage nocturne mobile n'est pas livré.
+- Sur **iPhone**, lecture du sommeil sur **60 jours**, avec SDNN, FC et respiration
+  à l'intérieur des périodes de sommeil mesurées, du même auteur/appareil.
+  Les intervalles sont envoyés à `/api/mobile/nights` puis réduits sur le serveur.
+  Les moyennes quotidiennes restent exclues. SDNN ne devient jamais RMSSD.
+  Aucune écriture dans le référentiel santé du téléphone. Android garde ses
+  cinq catégories quotidiennes ; les nouvelles nuits sont propres à iOS.
 - Les imports vont dans `mobile_daily`, avec leur plateforme, leurs sources et
   leur date, séparément des données nocturnes utilisées pour la récupération.
   Un envoi répété remplace le résumé du jour. Un total direct Garmin/COROS a
@@ -110,7 +114,7 @@ npx eas-cli build --platform ios --profile preview
 La page de confidentialité est `https://paceforge.fr/mobile/privacy`. Les
 permissions santé Android sont exclusivement en lecture ; le plugin local ajoute le
 contrat d'autorisation et route les intentions de confidentialité vers cette
-page. Les déclarations santé des stores doivent correspondre à ces cinq usages.
+page. Les déclarations santé des stores doivent correspondre aux catégories réellement lues sur chaque plateforme.
 
 ## Envoi iPhone sur TestFlight
 
@@ -237,3 +241,30 @@ physique ni envoyée sur TestFlight. La distribution iOS signée nécessite le
 compte Apple Developer du propriétaire. Les essais réels Senssun → Apple Santé
 → PaceForge et Health Connect restent à faire sur les appareils concernés ; un
 lancement réussi dans le simulateur ne valide pas ces synchronisations.
+
+## Nuits iOS et tests lactate — octobre 2026
+
+Références de méthode et limites : `../docs/sante-evidence-2026-10.md`.
+`night-samples.ts` regroupe les intervalles par auteur/appareil et fuseau de
+l’échantillon (sinon fuseau actuel du téléphone). Le jour est celui du réveil.
+« Au lit » et saisies manuelles sont exclus. Les éveils explicites prévalent
+sur les chevauchements ; les trous ne deviennent pas du sommeil. Les durées
+sont calculées en temps écoulé, y compris pendant les changements d’heure.
+
+Le serveur exige 3 h de sommeil pour le principal, 12 relevés de FC ou
+3 relevés de SDNN/respiration espacés sur au moins 2 h (heuristiques, non
+critères cliniques). VFC : moyenne géométrique du SDNN reçu, sans conversion.
+Les sources `Apple Santé:<empreinte>` sont distinctes des imports directs.
+Les identifiants matériels sont hachés sur l’iPhone. Si HealthKit ne fournit
+pas d’identifiant local, l’identité utilise le modèle matériel fourni : deux
+exemplaires du même modèle peuvent alors être indiscernables. Les changements
+de dispositif/méthode recommencent une référence lorsque l’identité change.
+
+Les reprises sont idempotentes. Refus/lectures vides ne suppriment pas un
+historique ; une modification de fenêtre invalide les anciens résumés cardiaques.
+La suppression des imports mobiles supprime aussi ces nuits. Révoquer un
+accès conserve les données. Réglages permet de préférer Apple Santé ; en
+automatique, les connexions directes précèdent leurs copies Apple.
+
+Lactate : écran web partagé `/sante/lactate`, saisie de tests sanguins et
+comparaisons explicites, aucune permission ni promesse Bluetooth ajoutée.

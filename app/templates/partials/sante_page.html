@@ -62,7 +62,29 @@
     <div class="pf-panel-body">
         <div class="pf-row pf-week"><span class="pf-row-name"><span>7 derniers jours</span></span><span class="pf-row-val">{% if t.week %}<b>{{ t.week }}</b><span>{{ t.usual }}</span>{% else %}<span>{{ t.word }}</span>{% endif %}</span></div>
         {% if t.intensity %}<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span class="pf-row-val"><span>{{ t.intensity }}</span></span></div>{% endif %}
+        {% if p.load %}{% set c = p.load %}
+        <div class="pf-card"><h3 class="pf-card-h">Charge accumulée</h3>
+        {% call viz.figure(c, "Charge accumulée", "charge-accumulee", unit_word="jour", card=True, quiet=True) %}
+            {% for line in c.series %}<path d="{{ line.path }}" class="pf-viz-line {{ line.cls }}{% if loop.index == 2 %} pf-load-usual{% endif %}"/>{% endfor %}
+            {% for tick in c.xt %}<text x="{{ tick.x }}" y="136" text-anchor="middle">{{ tick.label }}</text>{% endfor %}
+            <g class="pf-viz-cross"><line x1="0" x2="0" y1="10" y2="120"/>{% for line in c.series %}<circle cx="0" cy="0" r="3.5"/>{% endfor %}</g>
+        {% endcall %}
+        {{ viz.viz_legend([("is-mean", "récente")] + ([("is-ref", "habituelle")] if c.ready else [])) }}
+        <p class="pf-viz-cap">{{ 'Toutes les activités reçues.' if c.ready else 'Repère habituel en cours de constitution.' }}</p>
+        </div>{% endif %}
         <a class="pf-link pf-health-activity-link" href="/activities?depuis={{ t.since.isoformat() }}">Voir les activités de ces 7 jours ›</a>
+    </div>
+</details>
+<details id="forme" class="pf-health-panel">
+    <summary><span>Forme<small>Sur plusieurs semaines</small></span></summary>
+    <div class="pf-panel-body">
+        {% if p.fitness %}{% set e = p.fitness %}
+            <h3 class="pf-card-h">FC à allure comparable</h3>
+            {{ viz.viz_dots(e, "FC à allure comparable", "forme-footing", quiet=True) }}
+            {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
+            <p class="pf-viz-cap">Sorties faciles et plates, ramenées à {{ e.pace }}.</p>
+        {% else %}<p class="pf-sante-note">Le repère de course apparaîtra après six sorties faciles comparables sur six semaines.</p>{% endif %}
+        <a class="pf-link pf-health-activity-link" href="/sante/lactate">Mes tests lactate ›</a>
     </div>
 </details>
 </div>

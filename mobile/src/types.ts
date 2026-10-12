@@ -1,7 +1,7 @@
 export type Metric = 'weight' | 'body_fat' | 'steps' | 'hr_day' | 'resp_day';
 export type Daily = { date: string; metric: Metric; value: number; unit: string; sources: string[]; measured_at?: string };
 export type Pair = { token: string; user_id: number; name: string };
-export type HealthResult = { days: Daily[]; notices: string[] };
+export type HealthResult = { days: Daily[]; nights?: import('./night-samples').AppleNight[]; notices: string[] };
 export const labels: Record<Metric, string> = { weight: 'Poids', body_fat: 'Masse grasse', steps: 'Pas', hr_day: 'FC sur 24 h', resp_day: 'Respiration sur 24 h' };
 export function localDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

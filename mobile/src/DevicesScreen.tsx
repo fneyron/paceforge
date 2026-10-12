@@ -33,7 +33,7 @@ export function DevicesScreen(p: Props) {
             state={connectionLabel(state)} action={state === 'reconnect' ? 'Reconnecter' : state && state !== 'disconnected' ? 'Gérer' : 'Connecter'}
             disabled={busy} onPress={() => p.provider(key)} />;
         })}
-        <Row name={healthName} icon="♥" description="Poids, pas et mesures du téléphone" state={healthState}
+        <Row name={healthName} icon="♥" description={Platform.OS === 'ios' ? 'Sommeil, cœur et mesures quotidiennes' : 'Poids, pas et mesures du téléphone'} state={healthState}
           action={pair && last && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready} last
           onPress={() => { p.select('health'); if (!pair || !last || mismatch) p.connectHealth(); }} />
       </View>
@@ -49,7 +49,7 @@ export function DevicesScreen(p: Props) {
       <Text style={ui.body}>Retrouve tes mesures du téléphone dans PaceForge.</Text>
       <View style={ui.card}>
         <Text style={ui.cardTitle}>{healthState}</Text>
-        <Text style={ui.body}>Poids, masse grasse, pas, fréquence cardiaque et respiration.</Text>
+        <Text style={ui.body}>{Platform.OS === 'ios' ? 'Sommeil, VFC, fréquence cardiaque, respiration, poids, masse grasse et pas.' : 'Poids, masse grasse, pas, fréquence cardiaque et respiration.'}</Text>
         {pair && <Text style={ui.small}>Compte de {pair.name}{last ? ` · Dernier envoi : ${new Date(last).toLocaleString('fr-FR')}` : ''}</Text>}
         <Button text={pair && last && !mismatch ? 'Synchroniser' : `Connecter ${healthName}`} onPress={pair && last && !mismatch ? p.sync : p.connectHealth} disabled={busy || !p.ready} />
         {last && !mismatch && <Link text="Voir mes mesures" onPress={p.health} disabled={busy} />}
@@ -60,7 +60,7 @@ export function DevicesScreen(p: Props) {
         </View>
         <Link text="Revoir les autorisations" onPress={p.connectHealth} disabled={busy} />
       </>}
-      <Text style={ui.small}>Lecture des 30 derniers jours, selon tes autorisations. Sommeil et VFC : utilise la connexion de ta montre.</Text>
+      <Text style={ui.small}>{Platform.OS === 'ios' ? 'Selon tes autorisations : nuits sur 60 jours et mesures quotidiennes sur 30 jours.' : 'Lecture des 30 derniers jours, selon tes autorisations. Sommeil et VFC : utilise la connexion de ta montre.'}</Text>
       <Link text="Ajouter les mesures de ma balance" onPress={() => p.select('help')} disabled={busy} />
       {pair && <Link text={`Déconnecter ${healthName}`} onPress={p.disconnect} disabled={busy} />}
     </>}

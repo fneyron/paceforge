@@ -115,6 +115,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.apple_nights import supported_hrv, usable as apple_usable
 from app.models.health import HealthMetric
 from app.services.health import HRV_METHOD, fold_naps, main_window, nap_windows
 from app.services.night_measurements import measurement_note, series_source
@@ -278,6 +279,11 @@ def stages_of(value) -> dict | None:
 
 def _nap_parts(day: date, value: float, details: dict | None) -> list[tuple[datetime, datetime, int]]:
     """Each window with its share of the minutes asleep (in proportion to its length)."""
+    if details and details.get("asleep_windows"):
+        # iOS measures each nap separately, including its awake intervals.
+        # Preserve those minutes rather than distributing a daily sum by span.
+        return [(datetime.fromisoformat(a), datetime.fromisoformat(b), round(m))
+                for a, b, m in details["asleep_windows"]]
     wins = nap_windows(day, details)
     total = sum((b - a).total_seconds() for a, b in wins)
     if not wins or total <= 0:
@@ -307,7 +313,7 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
             night(d).naps = [p for p in _nap_parts(d, v, det)]
             night(d).nap_source = src
     for d, (v, det, src) in rows.get("hrv", {}).items():
-        if d <= today and (det or {}).get("method") == HRV_METHOD:
+        if d <= today and supported_hrv(src, det):
             n = night(d)
             n.hrv, n.hrv_n, n.hrv_source = v, (det or {}).get("n"), series_source(src, det, "hrv")
             n.measurement_notes["hrv"] = measurement_note(src, det, "hrv")
@@ -735,11 +741,14 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
             if lo <= d < until and (v := night_value(nights, d, metric)) is not None and n.source_of(metric) == source]
     out = {"metric": metric, "n": len(vals), "source": source, "until": until,
            "provisional": len(vals) < MIN_BAND_NIGHTS}
-    if len(vals) < (MIN_BAND_NIGHTS if full else MIN_PROVISIONAL_NIGHTS):
+    sdnn = metric == "hrv" and bool(source and "(SDNN sommeil)" in source)
+    if len(vals) < (MIN_BAND_NIGHTS if full or sdnn else MIN_PROVISIONAL_NIGHTS):
         return None
     if metric == "hrv":
         logs = [math.log(v) for v in vals if v > 0]
-        mean, sd = statistics.fmean(logs), shrunk_sd(statistics.stdev(logs), len(logs), HRV_SD_PRIOR)
+        mean = statistics.fmean(logs)
+        # The RMSSD variability prior is not evidence for Apple SDNN.
+        sd = statistics.stdev(logs) if sdnn else shrunk_sd(statistics.stdev(logs), len(logs), HRV_SD_PRIOR)
         out.update(center=math.exp(mean), lo=math.exp(mean - HRV_BAND_SD * sd), hi=math.exp(mean + HRV_BAND_SD * sd),
                    sd=sd)
         return out
@@ -1044,9 +1053,10 @@ async def read_rows(db: AsyncSession, user_id: int, lo: date, hi: date,
         .where(HealthMetric.user_id == user_id, HealthMetric.metric.in_(metrics),
                HealthMetric.date >= lo, HealthMetric.date <= hi))).all()
     # A legacy/unsupported row must not hide the other watch's usable night.
-    usable = [r for r in rows if
+    sleep_rows = {(r.date, r.source): r for r in rows if r.metric == "sleep"}
+    usable = [r for r in rows if apple_usable(r, sleep_rows) and
               (r.metric != "sleep" or main_window(r.date, r.details) is not None)
-              and (r.metric != "hrv" or (r.details or {}).get("method") == HRV_METHOD)]
+              and (r.metric != "hrv" or supported_hrv(r.source, r.details))]
     chosen = select_metrics(usable, await preference(db, user_id))
     out: dict[str, dict[date, tuple]] = defaultdict(dict)
     for (d, metric), row in chosen.items():

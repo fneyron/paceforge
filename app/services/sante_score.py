@@ -240,7 +240,7 @@ def components(day: dict) -> tuple[list[dict], list[str]]:
     parts, absent = [], []
     for key, fn in (("hrv", hrv_sub), ("hr", hr_sub)):
         s = day["stats"][key]
-        if s["value"] is not None and s["normal"]:
+        if s["value"] is not None and s["normal"] and s.get("score_eligible", True):
             sub, alert = fn(s["value"], s["normal"]), key == "hr" and bool(day["alert"])
             if alert:  # the alert's own 2 nights, red at most: never « dans ta normale » under the alert
                 sub = min(sub, fn(statistics.fmean(day["alert"]["values"]), s["normal"]), RED_SUB - 1)
@@ -344,7 +344,7 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
 def building(day: dict, absent: list[str]) -> list[str]:
     """The heart signals missing from the score because their normal is still being built: measured in the 60 days
     of a band but no band yet (fewer than 7 measured nights, H)."""
-    return [k for k in HEART if k in absent and day["stats"][k].get("seen") and not day["stats"][k]["normal"]]
+    return [k for k in HEART if k in absent and day["stats"][k].get("score_eligible", True) and day["stats"][k].get("seen") and not day["stats"][k]["normal"]]
 
 
 def score_of(day: dict) -> dict:

@@ -271,7 +271,7 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
     assert "Un tour = 200 %" not in words
     help_page = (await as_user.get("/sante/aide")).text
     assert "100 % correspond à ta semaine habituelle, pas à un objectif." in help_page
-    assert "pf-dot" not in train and not re.search(r"(?i)trimp|charge|points?\b", words)
+    assert "pf-dot" not in train and not re.search(r"(?i)trimp|points?\b", words)
     seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
     assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 1
     rules = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")

@@ -225,13 +225,27 @@ async def load_hr_segments(db: AsyncSession, user_id: int, sessions: list[Sessio
         _SEGS[user_id] = (key, {**memo, **{s.id: s.segs for s in want}})
 
 
-async def utc_offset(db: AsyncSession, user_id: int) -> float | None:
-    """The athlete's UTC offset (s) from their latest sessions (Strava or Garmin), if any."""
+async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None) -> float | None:
+    """Latest known location: an activity offset or a more recent HealthKit night zone."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from app.models.health import HealthMetric
+
     rows = (await db.execute(
         select(Activity.raw_data["utc_offset"].as_string(), Activity.raw_data["startTimeLocal"].as_string(),
-               Activity.raw_data["startTimeGMT"].as_string()).where(Activity.user_id == user_id)
+               Activity.raw_data["startTimeGMT"].as_string(), Activity.start_date).where(Activity.user_id == user_id)
         .order_by(Activity.start_date.desc()).limit(10))).all()
-    return next((o for o in (_offset(_float(a), b, c) for a, b, c in rows) if o is not None), None)
+    known = next(((o, _utc(at)) for a,b,c,at in rows if (o := _offset(_float(a),b,c)) is not None), None)
+    night = await db.scalar(select(HealthMetric).where(HealthMetric.user_id == user_id,
+        HealthMetric.metric == "sleep", HealthMetric.source.startswith("Apple Santé:"))
+        .order_by(HealthMetric.date.desc(), HealthMetric.updated_at.desc()).limit(1))
+    if night:
+        try:
+            end = _utc(datetime.fromisoformat(night.details["utc_end"]))
+            if not known or end > known[1]:
+                return (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(night.details["timezone"])).utcoffset().total_seconds()
+        except (KeyError, ValueError, TypeError, ZoneInfoNotFoundError):
+            pass
+    return known[0] if known else None
 
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
@@ -246,7 +260,7 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
     if latest is None:
         latest = (await db.execute(
             select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    offset = await utc_offset(db, user_id)
+    offset = await utc_offset(db, user_id, now)
     today = (now + timedelta(seconds=offset)).date() if offset is not None else watch_today(latest)
     if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
         today = latest

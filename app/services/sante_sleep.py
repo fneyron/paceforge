@@ -178,7 +178,7 @@ def bars(nights: dict, today: date, key: str, need_of=None) -> dict:
         trend_sources = [nt.mean_source(nights, "tst24", d) for d in days]
         for i, m in enumerate(averages):
             if m:
-                detail = f"moyenne 7 jours : {viz.hm(m['value'])} ({m['n']} nuits) · {trend_sources[i]}"
+                detail = f"moyenne 7 jours : {viz.hm(m['value'])} ({m['n']} nuits) · {viz.source_label(trend_sources[i])}"
                 r[i][2] += f" · {detail}"
                 a[i] += f", {detail}"
     c = viz.day_bars(f"sommeil-{key}", days, values, stack=stack, readouts=r, arias=a, trend=trend,
@@ -265,6 +265,8 @@ def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
             continue
         atypical = False
         for metric in ("hr", "hrv", "resp"):
+            if metric == "hrv" and "(SDNN sommeil)" in (n.hrv_source or ""):
+                continue  # descriptive SDNN, not an RMSSD-derived sleep-need modifier
             value = n.value(metric)
             band = nt.band(nights, metric, x, source=n.source_of(metric), full=True) if value is not None else None
             if band and ((metric == "hr" and value > band["hi"])
@@ -287,7 +289,7 @@ def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
 
 def baseline_note(baseline: dict) -> dict:
     label = "Base personnelle estimée" if baseline["adapted"] else "Base de départ · apprentissage en cours"
-    source = f" · {baseline['source']}" if baseline["source"] else ""
+    source = f" · {viz.source_label(baseline['source'])}" if baseline["source"] else ""
     noun = "nuit comparable" if baseline["n"] == 1 else "nuits comparables"
     detail = f"{baseline['n']} {noun} sur les {BASE_DAYS} derniers jours{source}. "
     if baseline["adapted"]:

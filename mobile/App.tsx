@@ -88,13 +88,28 @@ function Companion() {
     try {
       if (consent) { setStatus('Choisis les données à partager…'); await authorize(); }
       const result = await collect(() => setStatus('Synchronisation de tes mesures…'));
-      if (!result.days.length) { setStatus('Aucune mesure reçue. Vérifie que des données sont présentes et que PaceForge peut les lire dans les réglages de santé du téléphone.'); return; }
-      setStatus(`Envoi de ${result.days.length} mesures quotidiennes…`);
-      const response = await api('/api/mobile/daily', 'POST', { days: result.days }, account.token);
+      const nights = result.nights || [];
+      if (!result.days.length && !nights.length) { setStatus('Aucune mesure reçue. Vérifie les données et les autorisations de santé du téléphone.' + (result.notices.length ? '\n' + result.notices.join('\n') : '')); return; }
+      let received = 0, time = '', sentNights = 0;
+      const notices = [...result.notices];
+      if (result.days.length) {
+        const response = await api('/api/mobile/daily', 'POST', { days: result.days }, account.token);
+        received += response.received as number; time = response.checked_at as string;
+      }
+      for (const night of nights) {
+        setStatus(`Envoi des nuits · ${sentNights + 1}/${nights.length}…`);
+        try {
+          const response = await api('/api/mobile/nights', 'POST', night, account.token);
+          received += response.received as number; time = response.checked_at as string; sentNights++;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 401) throw e;
+          notices.push('Certaines nuits n’ont pas été envoyées. Réessaie la synchronisation.'); break;
+        }
+      }
       const counts = Object.entries(labels).flatMap(([m, label]) => { const n = result.days.filter(d => d.metric === m as Metric).length; return n ? [`${label} : ${n} jour${n > 1 ? 's' : ''}`] : []; });
-      const time = response.checked_at as string;
-      await SecureStore.setItemAsync(KEY + '.last', time); setLast(time);
-      setStatus(`${response.received} mesures reçues par PaceForge.\n${counts.join(' · ')}${result.notices.length ? '\n' + result.notices.join('\n') : ''}`);
+      if (sentNights) counts.push(`Sommeil : ${sentNights} jour${sentNights > 1 ? 's' : ''}`);
+      if (time && received) { await SecureStore.setItemAsync(KEY + '.last', time); setLast(time); }
+      setStatus(`${received} mesures reçues par PaceForge.\n${counts.join(' · ')}${notices.length ? '\n' + notices.join('\n') : ''}`);
     } catch (e) { fail(e); } finally {
       if (returnTo) { setTab(returnTo.tab); setShowWeb(returnTo.showWeb); setUrl(returnTo.url); }
       syncReturn.current = null; finish();

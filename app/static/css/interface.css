@@ -1102,3 +1102,27 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-health-guide section { margin: 26px 0; }
 .pf-health-guide section p { margin-top: 8px; line-height: 1.55; color: rgb(var(--pf-gray-600)); }
 .pf-set-appearance { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+/* Health test entry: thumb-friendly fields, a curve and exact observations. */
+.pf-lactate-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.pf-lactate-result { padding: 22px; margin-block: 20px; }
+.pf-lactate-plot { margin: 16px 0 8px; }
+.pf-lactate-plot svg { display: block; width: 100%; max-height: 360px; }
+.pf-lactate-plot text { fill: rgb(var(--pf-gray-600)); font-size: 11px; }
+.pf-lactate-previous { stroke-dasharray: 5 4; }
+.pf-lactate-form { display: grid; gap: 20px; }
+.pf-lactate-fields, .pf-lactate-stage { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.pf-lactate label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.pf-lactate .pf-input { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; padding: 10px; border: 1px solid rgb(var(--pf-line)); border-radius: 10px; background: rgb(var(--pf-bg)); color: rgb(var(--pf-ink)); }
+.pf-lactate-stage { padding: 16px; margin-bottom: 16px; border: 1px solid rgb(var(--pf-line)); border-radius: 14px; }
+.pf-lactate-stage legend { padding-inline: 6px; font-weight: 650; }
+.pf-lactate-actions, .pf-lactate-compare { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pf-lactate-compare { margin: 16px 0; }
+.pf-lactate-compare select { flex: 1; width: auto !important; }
+.pf-lactate-history { list-style: none; margin: 0; padding: 0; }
+.pf-lactate-history a { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid rgb(var(--pf-line)); }
+.pf-lactate-history span { color: rgb(var(--pf-gray-600)); font-size: 13px; }
+.pf-lactate-error { padding: 12px; border: 1px solid currentColor; border-radius: 10px; }
+.pf-lactate .pf-fold p { margin-block: 12px; }
+.pf-load-usual { stroke-dasharray: 5 4; }
+@media (max-width: 360px) { .pf-lactate-result { padding: 14px; } .pf-lactate-stage { padding: 12px; gap: 12px; } }

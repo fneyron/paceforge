@@ -44,8 +44,10 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     before = readouts((await client.get(f"/simulator/routes/{soon}")).text)
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
-    # no VFC in the seed: no card; no Charge card (v4.1: the activities are Activités')
-    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc"}
+    # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
+    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "charge-accumulee", "forme-footing"}
+    assert sante["charge-accumulee"] == ("", "Récente et habituelle", "")
+    assert sante["forme-footing"] == ("", "Tes sorties comparables", "")
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
     # number (the audit, 2026-10-09: its mean decided nothing and looked like the dial's), the sleep's on its means…
     assert sante["recuperation"] == ("", "Historique · 14 jours", "")

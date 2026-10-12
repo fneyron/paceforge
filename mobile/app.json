@@ -49,8 +49,8 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "PaceForge lit les mesures que tu autorises pour afficher ton poids, tes pas et tes tendances de santé dans ton compte.",
-          "NSHealthUpdateUsageDescription": "PaceForge utilise Apple Santé pour ton suivi du poids, des pas et des tendances de santé. Cette version consulte tes mesures sans en ajouter ni les modifier.",
+          "NSHealthShareUsageDescription": "PaceForge lit les données que tu autorises : sommeil, variabilité et fréquence cardiaques, respiration, poids, masse grasse et pas, pour afficher tes tendances de santé et estimer ta récupération dans ton compte.",
+          "NSHealthUpdateUsageDescription": "PaceForge utilise Apple Santé pour ton suivi du sommeil, de la récupération et des mesures quotidiennes. Cette version consulte tes données sans en ajouter ni les modifier.",
           "background": false
         }
       ],

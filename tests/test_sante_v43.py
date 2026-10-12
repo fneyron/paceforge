@@ -167,7 +167,8 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
     for name in ("Transjeju", "Morning Trail Run", "Les Houches", "100M"):
         assert name not in main, name
     assert 'href="/sante/aide"' in main and "Comment je calcule" not in main
-    rest = H.unescape(main)
+    # The new Forme disclosure describes comparable runs; recovery still names no outing.
+    rest = H.unescape(re.sub(r'<details id="forme".*?</details>', "", main, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
     assert "◇ après un gros effort" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today

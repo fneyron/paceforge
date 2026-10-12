@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Tests lactate — PaceForge{% endblock %}
+{% block content %}
+<div class="pf-health pf-sante4 pf-lactate">
+    <a class="pf-back" href="/sante#forme">‹ Santé</a>
+    <div class="pf-lactate-head"><h1 class="pf-sante-h1">Tests lactate</h1>{% if current and not edit %}<a href="#nouveau-test" class="pf-btn pf-btn-primary pf-btn-sm" data-open-test>Nouveau test</a>{% endif %}</div>
+    <p class="pf-sante-note">Tes mesures sanguines, palier par palier.</p>
+    {% if current and not edit %}
+    <section class="pf-health-panel pf-lactate-result" aria-labelledby="test-title">
+        <div class="pf-lactate-head"><h2 id="test-title" class="pf-h2">{{ current.tested_on.strftime('%d/%m/%Y') }} · {{ 'Vélo' if current.mode == 'power' else 'Course' }}</h2><a class="pf-link" href="/sante/lactate/{{ current.id }}/modifier">Modifier</a></div>
+        <p class="pf-sante-note">{{ current.protocol }}</p>
+        <figure class="pf-lactate-plot">
+            <figcaption class="sr-only">Lactate sanguin en mmol/L selon l’intensité en {{ chart.unit }}. Toutes les valeurs figurent dans le tableau des paliers.</figcaption>
+            <svg viewBox="0 0 332 205" role="img" aria-label="Courbe de lactate du test. Tableau des valeurs ci-dessous.">
+                <text x="34" y="12">mmol/L</text>
+                {% for t in chart.yt %}<line x1="34" x2="304" y1="{{ t.y }}" y2="{{ t.y }}" class="pf-viz-grid"/><text x="28" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+                {% for t in chart.xt %}<text x="{{ t.x }}" y="177" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+                <text x="304" y="199" text-anchor="end">{{ chart.unit }}</text>
+                {% for curve in chart.curves %}
+                <path d="{{ curve.path }}" class="pf-viz-line{% if curve.previous %} is-soft pf-lactate-previous{% endif %}"/>
+                {% for point in curve.points %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="4" class="pf-viz-dot{% if curve.previous %} is-hot{% endif %}"><title>{{ curve.date }} · palier {{ loop.index }} · {{ point.label }} {{ chart.unit }} · {{ number_label(point.lactate) }} mmol/L</title></circle>{% endfor %}
+                {% endfor %}
+            </svg>
+        </figure>
+        {% if previous %}<p class="pf-viz-cap">Trait plein : {{ current.tested_on.strftime('%d/%m/%Y') }} · pointillés : {{ previous.tested_on.strftime('%d/%m/%Y') }}</p>{% endif %}
+        {% if candidates %}
+        <form action="/sante/lactate/{{ current.id }}" method="get" class="pf-lactate-compare">
+            <label for="compare">Comparer</label><select name="compare" id="compare" class="pf-input"><option value="">Ce test seul</option>{% for test in candidates %}<option value="{{ test.id }}"{% if previous and previous.id == test.id %} selected{% endif %}>{{ test.tested_on.strftime('%d/%m/%Y') }}</option>{% endfor %}</select><button class="pf-btn pf-btn-secondary pf-btn-sm">Afficher</button>
+        </form>{% endif %}
+        <div class="pf-ntable-wrap" tabindex="0" role="region" aria-label="Paliers du test">
+            <table class="pf-ntable"><caption class="sr-only">Paliers mesurés du {{ current.tested_on.strftime('%d/%m/%Y') }}</caption><thead><tr><th scope="col">Palier</th><th scope="col">{{ chart.input_unit }}</th><th scope="col">mmol/L</th><th scope="col">bpm</th><th scope="col">min</th></tr></thead>
+            <tbody>{% for p in current.stages %}<tr><th scope="row">{{ loop.index }}</th><td>{{ effort_label(p.intensity, current.mode) }}</td><td>{{ number_label(p.lactate) }}</td><td>{{ p.hr|int if p.hr is not none else '—' }}</td><td>{{ number_label(p.minutes) if p.minutes is not none else '—' }}</td></tr>{% endfor %}</tbody></table>
+        </div>
+        <details class="pf-fold"><summary>Contexte du test</summary><p>{{ current.device }} · {{ current.protocol }}</p><p>{{ current.notes or 'Aucun contexte ajouté.' }}</p>{% if previous %}<p>Comparaison du {{ previous.tested_on.strftime('%d/%m/%Y') }} : {{ previous.notes or 'aucun contexte ajouté' }}.</p><p>Même lecteur, protocole et durées renseignées. Vérifie aussi les conditions et le moment du prélèvement.</p>{% endif %}</details>
+    </section>
+    {% endif %}
+    <details id="nouveau-test" class="pf-health-panel"{% if not current or edit or error %} open{% endif %}>
+        <summary><span>{{ 'Modifier le test' if edit else 'Saisir un test' }}</span></summary>
+        <div class="pf-panel-body">
+            {% if error %}<p class="pf-lactate-error" role="alert">{{ error }}</p>{% endif %}
+            <form action="/sante/lactate" method="post" class="pf-lactate-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf }}">{% if edit %}<input type="hidden" name="test_id" value="{{ edit.id }}">{% endif %}
+                <div class="pf-lactate-fields">
+                    <label>Date<input class="pf-input" type="date" name="tested_on" required value="{{ values.tested_on }}"></label>
+                    <label>Intensité<select class="pf-input" name="mode" id="lactate-mode">{% for key,label in (('pace','Course · min/km'), ('speed','Course · km/h'), ('power','Vélo · watts')) %}<option value="{{ key }}"{% if values.mode == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                    <label>Lecteur<input class="pf-input" name="device" list="lactate-readers" required maxlength="80" value="{{ values.device }}"><datalist id="lactate-readers"><option value="Lactate Pro"><option value="Lactate Pro 2"></datalist></label>
+                    <label>Protocole<input class="pf-input" name="protocol" required maxlength="160" placeholder="Ex. tapis, paliers de 4 min" value="{{ values.protocol }}"></label>
+                </div>
+                <p class="pf-viz-cap">Recopie la valeur en mmol/L. Pour une mesure au repos, saisis « repos » dans l’intensité.</p>
+                <div id="lactate-stages">
+                    {% for p in values.stages %}
+                    <fieldset class="pf-lactate-stage"><legend>Palier {{ loop.index }}</legend>
+                        <label><span data-intensity-label>{{ {'pace': 'Allure (min:sec/km)', 'speed': 'Vitesse (km/h)', 'power': 'Puissance (W)'}.get(values.mode,'Intensité') }}</span><input class="pf-input" name="intensity" value="{{ p.intensity }}" maxlength="12" placeholder="{{ '5:00' if values.mode == 'pace' else '200' if values.mode == 'power' else '12' }}"></label>
+                        <label>Lactate (mmol/L)<input class="pf-input" name="lactate" inputmode="decimal" maxlength="8" value="{{ p.lactate }}"></label>
+                        <label>FC (bpm) · facultatif<input class="pf-input" name="hr" inputmode="numeric" maxlength="5" value="{{ p.hr }}"></label>
+                        <label>Durée (min) · facultatif<input class="pf-input" name="minutes" inputmode="decimal" maxlength="6" value="{{ p.minutes }}"></label>
+                    </fieldset>
+                    {% endfor %}
+                </div>
+                <button type="button" class="pf-btn pf-btn-secondary pf-btn-sm" id="add-lactate-stage" hidden>Ajouter un palier</button>
+                <label>Contexte · facultatif<textarea class="pf-input" name="notes" rows="3" maxlength="1000" placeholder="Moment du prélèvement, récupération entre paliers, repas, température…">{{ values.notes }}</textarea></label>
+                <div class="pf-lactate-actions"><button class="pf-btn pf-btn-primary">Enregistrer le test</button>{% if edit %}<a class="pf-link" href="/sante/lactate/{{ edit.id }}">Annuler</a>{% endif %}</div>
+            </form>
+        </div>
+    </details>
+    {% if tests %}<details class="pf-health-panel"><summary>Historique</summary><div class="pf-panel-body"><ul class="pf-lactate-history">{% for test in tests %}<li><a href="/sante/lactate/{{ test.id }}">{{ test.tested_on.strftime('%d/%m/%Y') }} · {{ 'Vélo' if test.mode == 'power' else 'Course' }}<span>{{ test.protocol }}</span></a></li>{% endfor %}</ul></div></details>{% endif %}
+    <details class="pf-fold"><summary>Lire mes tests</summary><p>Compare des paliers, durées et conditions proches, avec le même lecteur et le même moment de prélèvement. Une baisse de lactate ne suffit pas à prouver une meilleure forme.</p><p>PaceForge conserve les observations sans déduire automatiquement un seuil à 2 ou 4 mmol/L. Le lactate ne modifie pas ton score de récupération.</p><p>La saisie fonctionne avec ton lecteur. Aucune liaison Bluetooth ni import automatique du Lactate Pro n’est configuré. Les affichages LO et HI restent des valeurs hors plage, pas des nombres à inventer.</p></details>
+    {% if edit %}<details class="pf-fold"><summary>Supprimer ce test</summary><p>Cette suppression est définitive.</p><form action="/sante/lactate/{{ edit.id }}/supprimer" method="post"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="pf-btn pf-btn-secondary">Supprimer définitivement</button></form></details>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script defer src="/static/js/lactate.js?v={{ request.app.state.build_id }}"></script>{% endblock %}

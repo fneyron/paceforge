@@ -19,6 +19,9 @@ from starlette.templating import Jinja2Templates
 from app.dependencies import get_current_user, get_db
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.user import User
+from app.models.health import HealthMetric
+from app.services import apple_nights
+from app.services.apple_nights import AppleNight
 
 router = APIRouter(tags=["mobile"])
 templates = Jinja2Templates(directory="app/templates")
@@ -205,6 +208,20 @@ async def ingest(body: Import, phone: MobileDevice = Depends(device), db: AsyncS
     return {"received": len(body.days), "checked_at": now.isoformat()}
 
 
+@router.post("/api/mobile/nights")
+async def ingest_night(body: AppleNight, phone: MobileDevice = Depends(device), db: AsyncSession = Depends(get_db)):
+    if phone.platform != "ios":
+        raise HTTPException(422, "Les nuits Apple Santé nécessitent un iPhone.")
+    try:
+        received = await apple_nights.ingest(db, phone.user_id, body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    if received:
+        phone.last_sync_at = datetime.now(timezone.utc)
+    await db.flush()
+    return {"received": received, "checked_at": datetime.now(timezone.utc).isoformat()}
+
+
 @router.delete("/api/mobile/device")
 async def disconnect(phone: MobileDevice = Depends(device), db: AsyncSession = Depends(get_db)):
     await db.delete(phone)
@@ -231,5 +248,7 @@ async def erase(request: Request, csrf_token: str = Form(), user: User = Depends
                 db: AsyncSession = Depends(get_db)):
     check_csrf(request, csrf_token)
     await db.execute(delete(MobileDaily).where(MobileDaily.user_id == user.id))
+    await db.execute(delete(HealthMetric).where(HealthMetric.user_id == user.id,
+                     HealthMetric.source.startswith(apple_nights.PREFIX)))
     await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user.id))
     return RedirectResponse("/mobile/devices", status_code=303)

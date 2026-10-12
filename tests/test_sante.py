@@ -45,7 +45,7 @@ NEVER = ("séance", "pas jugée", "pas assez de nuits", "autour de la course", "
          # v4.4 (owner: « Sommeil 100, Charge récente 20 avec les donuts au-dessus, on comprend rien »): no
          # sub-score, no « Détail du score », no Charge; 2026-10-08 (« Fais comme WHOOP »): three dials, no single
          # ring with its state's word next to it, no « En bref » rows
-         "Détail du score", "Pas encore dans le score", "Charge récente", "pf-contrib", "pf-ring-charge",
+         "Détail du score", "Pas encore dans le score", "pf-contrib", "pf-ring-charge",
          'class="pf-rings"', "En bref", "pf-fact", "pf-sante-top", "pf-state-word", "pf-nhero")
 
 
@@ -474,8 +474,11 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
         assert f'<details id="{ident}" class="pf-health-panel"{opened}>' in main
         assert f'href="#{ident}"' in main
     assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
+    assert 'data-viz-key="charge-accumulee"' in main
+    assert '<details id="forme" class="pf-health-panel">' in main
+    assert 'href="/sante/lactate"' in main
     assert main.count('class="pf-night-trend"') == 2
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 4
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5
     assert 'data-viz-key="recuperation"' in main and "Récupération · 14 jours" in main
     assert 'href="/activities?depuis=2026-10-02"' in main
     assert "besoin estimé 9h00" in main

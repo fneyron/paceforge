@@ -37,6 +37,8 @@ def select_readings(readings, start: datetime, end: datetime, intervals) -> tupl
 def series_source(source: str | None, details: dict | None, metric: str) -> str | None:
     """A readable series identity, used by means, reference bands and alerts."""
     details = details or {}
+    if source and source.startswith("Apple Santé:"):
+        return source + (" (SDNN sommeil)" if metric == "hrv" else " (sommeil)")
     if source == "Garmin":
         if metric == "resp" and details.get("method") == "garmin_summary":
             return "Garmin (résumé)"
@@ -49,6 +51,8 @@ def series_source(source: str | None, details: dict | None, metric: str) -> str 
 
 def measurement_note(source: str | None, details: dict | None, metric: str) -> str:
     details = details or {}
+    if source and source.startswith("Apple Santé:"):
+        return "SDNN · sommeil mesuré" if metric == "hrv" else "éveils détectés et périodes sans phase exclus"
     if source == "Garmin":
         if details.get("scope") == ASLEEP:
             return "éveils détectés et périodes sans phase exclus"

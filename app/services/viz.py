@@ -51,6 +51,11 @@ W, X1 = 320, 288
 GLYPH = {"race": "⚑", "long": "◆", "tag": "◇", "up": "▲", "down": "▼", "in": "●"}
 
 
+def source_label(source):
+    # Keep the full identity for curve breaks and baselines; never print device hashes.
+    return "Apple Santé · SDNN" if source and source.startswith("Apple Santé:") and "SDNN" in source else "Apple Santé" if source and source.startswith("Apple Santé:") else source
+
+
 # ── formats ─────────────────────────────────────────────────────────────────
 
 def num(v: float, digits: int = 0, unit: str = "") -> str:
@@ -674,14 +679,14 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             if detail:
                 context += f" · {detail}"
                 if mean_sources and mean_sources[i]:
-                    context += f" · {mean_sources[i]}"
+                    context += f" · {source_label(mean_sources[i])}"
             r.append(["—", "", context])
             a.append(context.replace(" · pas de mesure", " : pas de mesure", 1))
             continue
         line, spoken = label(d), f"{label(d)} : {name} {num(v, digits)} {unit_long}"
         if sources and sources[i]:
-            line += f" · {sources[i]}"
-            spoken += f", {sources[i]}"
+            line += f" · {source_label(sources[i])}"
+            spoken += f", {source_label(sources[i])}"
         if notes and notes[i]:
             line += f" · {notes[i]}"
             spoken += f", {notes[i]}"
@@ -704,7 +709,7 @@ def night_card(key: str, days: list[date], values: list, *, band: list, prov: li
             start = str(before.day) + (f" {MOIS[before.month - 1]}" if before.month != d.month else "")
             stamp = d_short(d) if daytime else f"{start} → {d.day} {MOIS[d.month - 1]}"
             if sources and sources[i] and values[i] is not None:
-                stamp += f" · {sources[i]}"
+                stamp += f" · {source_label(sources[i])}"
             if notes and notes[i] == "journée en cours":
                 stamp += " · en cours"
             word = "Dernière nuit" if i == last else "Nuit sélectionnée"
