@@ -94,11 +94,11 @@ function Companion() {
     syncReturn.current = null;
     if (inlineSync.current) {
       inlineSync.current = false;
-      if (refresh && refreshable(webLocation.current)) {
-        if (isBridgeUrl(documentUrl.current)) {
-          deferredRefresh.current = refreshSources.current;
-          loadScreen(webLocation.current);
-        } else if (documentReady.current) refreshPage(refreshSources.current);
+      if (isBridgeUrl(documentUrl.current)) {
+        if (refresh && refreshable(webLocation.current)) deferredRefresh.current = refreshSources.current;
+        loadScreen(webLocation.current);
+      } else if (refresh && refreshable(webLocation.current)) {
+        if (documentReady.current) refreshPage(refreshSources.current);
         else deferredRefresh.current = refreshSources.current;
       }
       return;

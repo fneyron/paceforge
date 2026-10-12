@@ -11,9 +11,9 @@ export const getRandomBytes=(n:number)=>crypto.getRandomValues(new Uint8Array(n)
 export const CryptoDigestAlgorithm={SHA256:'SHA256'};
 export const digestStringAsync=async()=> 'a'.repeat(64);
 export const authorize=async()=>{};
-export const collect=async()=>{w.collects++;if(w.holdHealth)await new Promise(resolve=>{w.releaseHealth=resolve});return{days:[{date:'2026-10-12',metric:'weight',value:64,unit:'kg',sources:['Fixture'],measured_at:'2026-10-12T08:00:00Z'}],complete:true,notices:[]}};
+export const collect=async()=>{w.collects++;if(w.holdHealth)await new Promise(resolve=>{w.releaseHealth=resolve});return{days:w.emptyHealth?[]:[{date:'2026-10-12',metric:'weight',value:64,unit:'kg',sources:['Fixture'],measured_at:'2026-10-12T08:00:00Z'}],complete:true,notices:[]}};
 export const collectSleep=async()=>({nights:[],notices:w.partialHealth?['Lecture du sommeil interrompue.']:[],complete:!w.partialHealth});
-w.fetch=async(url:string)=>{w.writes.push(url);if(w.failUpload)throw Error('Envoi de test interrompu');return{ok:true,json:async()=>url.endsWith('/exchange')?{token:'fixture',user_id:1,name:'Athlete'}:{received:1,checked_at:new Date().toISOString(),latest:{weight:{value:64,measured_at:'2026-10-12T08:00:00Z'}}}}};
+w.fetch=async(url:string)=>{w.writes.push(url);if(w.failUpload)throw Error('Envoi de test interrompu');return{ok:true,json:async()=>url.endsWith('/exchange')?{token:'fixture',user_id:1,name:'Athlete'}:{received:w.emptyHealth?0:1,checked_at:new Date().toISOString(),latest:{weight:{value:64,measured_at:'2026-10-12T08:00:00Z'}}}}};
 export const SafeAreaProvider=({children}:any)=><View style={{flex:1}}>{children}</View>;
 export const SafeAreaView=({children,style}:any)=><View style={[style,{flex:1}]}>{children}</View>;
 export const StatusBar=()=>null;

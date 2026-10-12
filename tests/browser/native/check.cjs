@@ -114,6 +114,15 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   await pairing.getByRole('tab',{name:'Santé',exact:true}).click();
   await pairing.waitForFunction(()=>new URL(actual).pathname==='/sante');
   await pairing.close();
+  const noData=await page();await noData.waitForFunction(()=>window.nonce);
+  await noData.evaluate(()=>{window.emptyHealth=true;window.partialHealth=true;window.holdHealth=true;void reply();});
+  await noData.waitForFunction(()=>window.releaseHealth);
+  await noData.evaluate(()=>navigate('https://paceforge.fr/mobile/session?nonce='+'c'.repeat(64)));
+  await noData.evaluate(()=>releaseHealth());
+  await noData.waitForFunction(()=>new URL(actual).pathname==='/sante',null,{timeout:1500});
+  assert.equal(await noData.evaluate(()=>collects),1);
+  assert.ok(await noData.getByRole('button',{name:/Apple Santé.*Lecture du sommeil/}).isVisible(),'empty interrupted reads must retain their warning after returning');
+  await noData.close();
   console.log('Actual App: cold start, pull-only UI, error details, account safety, login, offline, process recovery, late bridge recovery and delayed dashboard loading passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
