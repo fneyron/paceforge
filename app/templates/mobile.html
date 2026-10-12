@@ -4,9 +4,9 @@
 <style>body{font:16px/1.6 system-ui;color:#172d35;background:#f5f7f6;margin:0;padding:24px}main{max-width:580px;margin:30px auto}h1{font-size:26px}button{font:inherit;background:#173e38;color:white;border:0;border-radius:12px;padding:12px 20px;cursor:pointer}a{color:#226653}article{background:white;padding:20px;border-radius:16px;margin:16px 0}</style></head><body><main>
 <a href="/settings">PaceForge · Réglages</a>
 {% if mode == 'connect' %}
-<h1>Associer ce téléphone</h1><p>Compte : <strong>{{ user.firstname }} {{ user.lastname }}</strong>{% if user.email %} · {{ user.email }}{% endif %}</p>
-<p>Ce téléphone pourra envoyer les mesures que tu autorises dans Apple Santé ou Health Connect. Tu pourras révoquer cet accès à tout moment.</p>
-<form method="post"><input type="hidden" name="challenge" value="{{ challenge }}"><input type="hidden" name="platform" value="{{ platform }}"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Associer à ce compte</button></form>
+<h1>Connecter {{ 'Apple Santé' if platform == 'ios' else 'Health Connect' }}</h1><p>Tes mesures seront ajoutées au compte de <strong>{{ user.firstname }} {{ user.lastname }}</strong>{% if user.email %} · {{ user.email }}{% endif %}.</p>
+<p>Choisis ensuite les données que PaceForge peut lire. La première synchronisation démarre juste après.</p>
+<form method="post"><input type="hidden" name="challenge" value="{{ challenge }}"><input type="hidden" name="platform" value="{{ platform }}"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Continuer avec ce compte</button></form>
 <p><a href="/auth/logout">Changer de compte</a> · <a href="/mobile/privacy">Utilisation des données</a></p>
 {% elif mode == 'devices' %}
 <h1>Téléphones associés</h1>

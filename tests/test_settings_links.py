@@ -131,6 +131,55 @@ async def test_connect_from_settings_comes_back_to_settings(client: AsyncClient,
         assert "Strava connecté. Tes activités arrivent." in page
 
 
+@pytest.mark.parametrize('provider', ['coros', 'garmin', 'strava'])
+async def test_device_connection_is_focused_and_login_preserves_destination(client, db_session, no_commit, provider):
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        response = await c.get(f'/connections/{provider}')
+        assert response.headers['location'] == f'/auth/login?next={provider}'
+        page = await c.get(response.headers['location'])
+        assert f'name="next" value="{provider}"' in page.text
+        user = User(email=f'{provider}@test.fr', password_hash=hash_password('pw-12345678'), email_verified=True)
+        db_session.add(user); await db_session.flush()
+        response = await c.post('/auth/login', data={'email': user.email, 'password': 'wrong', 'next': provider})
+        assert f'name="next" value="{provider}"' in response.text
+        response = await c.post('/auth/login', data={'email': user.email, 'password': 'pw-12345678', 'next': provider})
+        assert response.headers['location'] == f'/connections/{provider}'
+        response = await c.get(response.headers['location'])
+        assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
+        assert 'paceforge://devices' in response.text
+        assert '/settings/delete-account' not in response.text
+        assert 'name="weight_kg"' not in response.text
+        assert 'next=devices' in response.text or 'name="next" value="devices"' in response.text
+        response = await c.post('/auth/login', data={'email': user.email, 'password': 'pw-12345678', 'next': 'https://evil.example'})
+        assert response.headers['location'] == '/sante'
+
+
+async def test_strava_mobile_setup_and_cancel_return_to_selected_connection(client, db_session, no_commit):
+    async with _logged_in(client, db_session) as (c, user):
+        response = await c.get('/auth/strava?next=devices')
+        assert response.headers['location'] == '/setup?next=devices'
+        await c.get(response.headers['location'])
+        await c.post('/setup/credentials', data={'client_id': '7777', 'client_secret': 's'})
+        response = await _callback(c, error='access_denied')
+        assert response.headers['location'] == '/connections/strava'
+        page = await c.get(response.headers['location'])
+        assert 'Connexion à Strava annulée.' in page.text
+
+
+async def test_coros_and_garmin_device_return_survives_provider_steps(as_user, monkeypatch):
+    from app.services import coros, garmin
+    # Failed discovery still returns to the connection the athlete selected.
+    monkeypatch.setattr(coros, 'discover', AsyncMock(side_effect=coros.CorosError('offline')))
+    response = await as_user.get('/coros/connect?next=devices')
+    assert response.headers['location'] == '/connections/coros'
+    monkeypatch.setattr(garmin, 'start_login', AsyncMock(return_value='ticket'))
+    monkeypatch.setattr(garmin, 'login_state', AsyncMock(return_value={'state': 'done'}))
+    response = await as_user.post('/garmin/connect', data={'email': 'a@b.fr', 'password': 'pw', 'next': 'devices'})
+    assert response.status_code == 200
+    response = await as_user.get('/garmin/login')
+    assert response.headers['hx-redirect'] == '/connections/garmin'
+
+
 async def test_disconnect_revokes_and_forgets_the_tokens(as_user: AsyncClient, db_session: AsyncSession,
                                                          test_user: User, monkeypatch):
     await _own_app(db_session, test_user, sub=55)

@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_optional_user, get_db
 from app.features import cycling_enabled
 from app.models.activity import Activity
 from app.models.user import User
@@ -23,6 +23,24 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["settings"])
+
+
+@router.get("/connections/{provider}", response_class=HTMLResponse)
+async def connection_page(provider: str, request: Request, user: User | None = Depends(get_optional_user),
+                          db: AsyncSession = Depends(get_db)):
+    names = {"coros": "COROS", "garmin": "Garmin", "strava": "Strava"}
+    if provider not in names:
+        return HTMLResponse("", status_code=404)
+    if user is None:
+        return RedirectResponse(f"/auth/login?next={provider}", status_code=303)
+    state = (strava_status(user) if provider == "strava" else
+             await (coros_status if provider == "coros" else garmin_status)(db, user.id))
+    return templates.TemplateResponse(request, "connection.html", context={
+        "user": user, "provider": provider, "name": names[provider], "w": state,
+        "ok": request.session.pop(f"{provider}_ok", None),
+        "error": request.session.pop(f"{provider}_error", None),
+        "connection_next": "devices",
+    }, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 async def _settings_context(request: Request, user: User, db: AsyncSession, **flags) -> dict:
@@ -160,13 +178,14 @@ def _to_float(raw: str) -> float | None:
 @router.post("/settings/strava/disconnect")
 async def strava_disconnect(
     request: Request,
+    next: str = Form(""),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     if user.has_strava_linked:
         await strava_disconnect_link(db, user)
     request.session["strava_ok"] = "Strava déconnecté. Les activités déjà reçues restent."
-    return RedirectResponse(url="/settings#strava", status_code=303)
+    return RedirectResponse(url="/connections/strava" if next == "devices" else "/settings#strava", status_code=303)
 
 
 @router.post("/settings/delete-account")

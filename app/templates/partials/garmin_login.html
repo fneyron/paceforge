@@ -19,6 +19,7 @@
     {% else %}
     {#- method and action: without JS (htmx blocked or not loaded) the form posts, never a GET putting the password in the URL -#}
     <form method="post" action="/garmin/connect" hx-post="/garmin/connect" hx-target="#garmin-login" hx-swap="outerHTML" class="space-y-2.5">
+        {% if connection_next %}<input type="hidden" name="next" value="{{ connection_next }}">{% endif %}
         <div class="grid sm:grid-cols-2 gap-2.5">
             <input type="email" name="email" autocomplete="username" required placeholder="Email Garmin Connect"
                    class="pf-input placeholder:text-gray-400">

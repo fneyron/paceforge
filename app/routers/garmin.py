@@ -28,14 +28,15 @@ _TICKET = "garmin_login"
 
 def _login_partial(request: Request, state: dict | None) -> HTMLResponse:
     return templates.TemplateResponse(request, "partials/garmin_login.html",
-                                      context={"request": request, "login": state})
+                                      context={"request": request, "login": state,
+                                               "connection_next": "devices" if request.session.get("garmin_next") else ""})
 
 
 def _done(request: Request) -> Response:
     """The link is stored: back to Réglages, where the first sync shows."""
     request.session.pop(_TICKET, None)
     request.session["garmin_ok"] = "Garmin connecté. Tes 60 derniers jours et tes activités arrivent : compte quelques minutes."
-    return Response(status_code=204, headers={"HX-Redirect": _SETTINGS})
+    return Response(status_code=204, headers={"HX-Redirect": request.session.pop("garmin_next", _SETTINGS)})
 
 
 @router.post("/garmin/connect", response_class=HTMLResponse)
@@ -43,8 +44,13 @@ async def garmin_connect(
     request: Request,
     email: str = Form(""),
     password: str = Form(""),
+    next: str = Form(""),
     user: User = Depends(get_current_user),
 ):
+    if next == "devices":
+        request.session["garmin_next"] = "/connections/garmin"
+    else:
+        request.session.pop("garmin_next", None)
     if not email.strip() or not password:
         return _login_partial(request, {"state": "error", "message": "Indique ton email et ton mot de passe Garmin."})
     try:
@@ -83,6 +89,7 @@ async def garmin_mfa(request: Request, code: str = Form(""), user: User = Depend
 @router.post("/settings/garmin/disconnect")
 async def garmin_disconnect(
     request: Request,
+    next: str = Form(""),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -90,4 +97,4 @@ async def garmin_disconnect(
     if conn:
         await garmin.disconnect(db, conn)
     request.session["garmin_ok"] = "Garmin déconnecté. Les données déjà reçues restent."
-    return RedirectResponse(url=_SETTINGS, status_code=303)
+    return RedirectResponse(url="/connections/garmin" if next == "devices" else _SETTINGS, status_code=303)

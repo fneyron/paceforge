@@ -63,6 +63,27 @@ async def session(request: Request, nonce: str, user: User = Depends(get_current
     return page(request, mode="session", message={"type": "session", "nonce": nonce, "user_id": user.id})
 
 
+@router.get("/mobile/connections")
+async def connections(request: Request, nonce: str, user: User = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)):
+    """Read-only, session-bound status for the native list; never provider tokens."""
+    if not re.fullmatch(r"[a-f0-9]{64}", nonce):
+        raise HTTPException(400)
+    from app.services.coros import coros_status
+    from app.services.garmin import garmin_status
+    from app.services.strava import strava_status
+    states = {"coros": await coros_status(db, user.id), "garmin": await garmin_status(db, user.id),
+              "strava": strava_status(user)}
+    providers = {}
+    for key, state in states.items():
+        providers[key] = ("reconnect" if state.get("needs_reauth") else
+                          "disconnected" if not state["connected"] else
+                          "syncing" if state.get("syncing") else
+                          "attention" if state.get("last_error") or state.get("interrupted") else "connected")
+    return page(request, mode="connections", message={"type": "connections", "nonce": nonce,
+                "user_id": user.id, "name": user.firstname or "Athlète", "providers": providers})
+
+
 @router.get("/mobile/connect")
 async def connect(request: Request, challenge: str, platform: Platform, user: User = Depends(get_current_user)):
     if not re.fullmatch(r"[a-f0-9]{64}", challenge):

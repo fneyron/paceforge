@@ -4,14 +4,30 @@ Application iOS / Android avec **Santé comme accueil**, puis Activités, Course
 et Appareils. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web est masquée dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
-serveur accessibles dans Réglages. Pour COROS et Strava, la connexion est
-commencée et terminée dans le navigateur externe afin de conserver la même
-session OAuth ; vérifier le compte PaceForge affiché avant de la valider.
+serveur accessibles depuis Appareils. COROS et Strava ouvrent directement leur
+page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
+même session. Le compte PaceForge est affiché avant validation ; après une
+connexion au compte dans le navigateur, la destination choisie est conservée.
+Garmin se connecte dans l’application. Les réglages complets restent disponibles
+dans « Mon compte et confidentialité ».
 
 ## Appareils et Bluetooth direct
 
-L’onglet Appareils distingue la lecture Bluetooth directe, les comptes de montres,
-les séances Zwift et les mesures du téléphone. La lecture cardiaque utilise
+L’onglet Appareils présente cinq lignes : Apple Santé / Health Connect, COROS,
+Garmin, Strava et capteur Bluetooth. Chaque ligne a un état et une seule action.
+Les états des comptes viennent de `/mobile/connections`, via la session de la
+WebView avec vérification d’origine, de route et de nonce, sans jeton fournisseur.
+Ils sont actualisés à l’ouverture de l’onglet et au retour du navigateur. Une
+lecture impossible reste « État à vérifier », jamais un faux « Non connecté ».
+Les options, l’aide balance et Zwift sont dans des écrans de détail.
+
+« Connecter Apple Santé / Health Connect » enchaîne confirmation du compte
+(PKCE), demande des permissions puis première lecture et envoi. Une association
+existante vérifie d’abord le compte web. Une permission demandée ne signifie pas
+permission accordée : « Données synchronisées » nécessite un envoi réel, avec
+sa date dans le détail. « Revoir les autorisations » relance aussi la lecture.
+
+La lecture cardiaque utilise
 `react-native-ble-manager` 12.5.3 (architecture native React Native), le service
 Bluetooth standard Heart Rate `180D` et la caractéristique `2A37`.
 

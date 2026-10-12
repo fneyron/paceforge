@@ -9,7 +9,7 @@ export function tabForUrl(url: string): Tab | null {
   if (path === '/sante' || path.startsWith('/sante/')) return 'health';
   if (path === '/activities' || path.startsWith('/activity/')) return 'activities';
   if (path === '/simulator' || path.startsWith('/simulator/')) return 'courses';
-  if (path === '/settings' || path.startsWith('/mobile/')) return 'devices';
+  if (path === '/settings' || path.startsWith('/connections/') || path.startsWith('/mobile/')) return 'devices';
   return null;
 }
 

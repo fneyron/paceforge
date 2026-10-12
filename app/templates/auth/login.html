@@ -13,6 +13,7 @@
         {% endif %}
 
         <form method="POST" action="/auth/login" class="space-y-4">
+            {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
             <div>
                 <label for="email" class="pf-field-label">Email</label>
                 <input type="email" name="email" id="email" required value="{{ email or '' }}" autofocus autocomplete="email"

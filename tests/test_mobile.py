@@ -89,6 +89,26 @@ async def test_pair_requires_login_csrf_and_valid_challenge(client, db_session, 
     assert (await db_session.scalar(select(func.count(MobileDevice.id)))) == 0
 
 
+async def test_connections_bridge_requires_session_and_nonce_and_never_returns_tokens(client, db_session, test_user):
+    url = '/mobile/connections?nonce=' + 'a' * 64
+    assert (await client.get(url)).status_code == 303
+    login(client, test_user)
+    assert (await client.get('/mobile/connections?nonce=bad')).status_code == 400
+    response = await client.get(url)
+    assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
+    payload = json.loads(re.search(r'postMessage\(JSON.stringify\((.*?)\)\)', response.text)[1])
+    assert payload['nonce'] == 'a' * 64 and payload['user_id'] == test_user.id
+    assert payload['providers'] == {'coros': 'disconnected', 'garmin': 'disconnected', 'strava': 'reconnect'}
+    assert set(payload) == {'type', 'nonce', 'user_id', 'name', 'providers'}
+    assert 'access_token' not in response.text and 'refresh_token' not in response.text
+    other = User(firstname='Other')
+    db_session.add(other); await db_session.flush()
+    client.cookies.clear(); login(client, other)
+    response = await client.get(url)
+    payload = json.loads(re.search(r'postMessage\(JSON.stringify\((.*?)\)\)', response.text)[1])
+    assert payload['user_id'] == other.id and payload['providers']['strava'] == 'disconnected'
+
+
 @pytest.mark.parametrize('change', [
     {'value': 0}, {'unit': 'lb'}, {'value': 500}, {'measured_at': None},
     {'measured_at': '2020-01-01T00:00:00Z'}, {'sources': []}, {'metric': 'hrv'},

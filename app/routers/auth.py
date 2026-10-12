@@ -149,8 +149,8 @@ async def verify_email(
 # ---------------------------------------------------------------------------
 
 @router.get("/auth/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse(request, "auth/login.html", context={})
+async def login_page(request: Request, next: str = ""):
+    return templates.TemplateResponse(request, "auth/login.html", context={"next": next if next in ("coros", "garmin", "strava") else ""})
 
 
 @router.post("/auth/login")
@@ -159,8 +159,10 @@ async def login(
     db: AsyncSession = Depends(get_db),
     email: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
 ):
     email = email.strip().lower()
+    next = next if next in ("coros", "garmin", "strava") else ""
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -168,7 +170,7 @@ async def login(
     if not user or not user.password_hash or not verify_password(password, user.password_hash):
         return templates.TemplateResponse(
             request, "auth/login.html",
-            context={"error": "Email ou mot de passe incorrect.", "email": email},
+            context={"error": "Email ou mot de passe incorrect.", "email": email, "next": next},
         )
 
     if not user.password_hash.startswith(PASSWORD_PREFIX):
@@ -181,7 +183,7 @@ async def login(
     request.session["user_id"] = user.id
     logger.info("User %d logged in: %s", user.id, email)
 
-    return RedirectResponse(url=HOME, status_code=302)
+    return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
 
 @router.get("/auth/logout")
@@ -280,6 +282,8 @@ def _remember_next(request: Request, next: str | None) -> None:
     """A connect started from Réglages comes back there, whatever happens."""
     if next == "settings":
         request.session["strava_next"] = "/settings#strava"
+    elif next == "devices":
+        request.session["strava_next"] = "/connections/strava"
     else:
         request.session.pop("strava_next", None)
 
@@ -299,7 +303,7 @@ async def strava_link(request: Request, next: str | None = None,
     request.session.pop("pending_client_id", None)
     request.session.pop("pending_client_secret", None)
     if not user.has_own_strava_app or not user.strava_credentials_valid:
-        return RedirectResponse("/setup?next=settings" if next == "settings" else "/setup", status_code=302)
+        return RedirectResponse(f"/setup?next={next}" if next in ("settings", "devices") else "/setup", status_code=302)
     state = await begin_strava(request, db, user.id)
     return RedirectResponse(StravaService.for_user(db, user).get_authorize_url(state), status_code=302)
 

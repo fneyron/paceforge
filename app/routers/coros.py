@@ -8,7 +8,7 @@ import logging
 import secrets
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,19 +29,24 @@ def _back(request: Request, error: str | None = None, ok: str | None = None) -> 
         request.session["coros_error"] = error
     if ok:
         request.session["coros_ok"] = ok
-    return RedirectResponse(url=_SETTINGS, status_code=303)
+    return RedirectResponse(url=request.session.pop("coros_next", _SETTINGS), status_code=303)
 
 
 @router.get("/coros/connect")
 async def coros_connect(
     request: Request,
     region: str | None = None,
+    next: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Discover COROS's OAuth setup, make sure PaceForge is registered there,
     then send the athlete to the COROS login."""
     retried = bool(request.session.pop("coros_retry", False))
+    if next == "devices":
+        request.session["coros_next"] = "/connections/coros"
+    elif not retried:
+        request.session.pop("coros_next", None)
     region = region if region in coros.REGIONS else request.session.get("coros_region", coros.DEFAULT_REGION)
     request.session["coros_region"] = region
     redirect = coros.redirect_uri()
@@ -119,9 +124,11 @@ async def coros_callback(
 @router.post("/settings/coros/disconnect")
 async def coros_disconnect(
     request: Request,
+    next: str = Form(""),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    request.session["coros_next"] = "/connections/coros" if next == "devices" else _SETTINGS
     conn = await coros.connection_for(db, user.id)
     if conn:
         await coros.disconnect(db, conn)

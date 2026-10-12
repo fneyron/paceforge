@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · PaceForge{% endblock %}
+{% block head %}<style>.pf-nav,.pf-tabbar{display:none!important}.pf-connection{max-width:540px;margin:0 auto}.pf-connection details{margin-top:20px}.pf-connection summary{cursor:pointer;font-weight:600}.pf-connection .pf-btn{min-height:44px}</style>{% endblock %}
+{% block content %}
+<div class="pf-connection space-y-5">
+    <div><h1 class="pf-h1">{{ name }}</h1>
+        <p class="pf-sub">{% if provider == 'coros' %}Ta montre et ton compteur COROS, réunis dans PaceForge.{% elif provider == 'garmin' %}Retrouve les mesures et activités de Garmin Connect.{% else %}Retrouve tes activités Strava, dont tes séances Zwift partagées.{% endif %}</p>
+    </div>
+    <div class="pf-section space-y-4">
+        {% if ok %}<p class="pf-note !text-ok" role="status">{{ ok }}</p>{% endif %}
+        {% if error %}<p class="pf-note !text-danger" role="alert">{{ error }}</p>{% endif %}
+        <p class="text-sm text-gray-500">Compte PaceForge : <strong>{{ user.firstname or 'Athlète' }}</strong>{% if user.email %} · {{ user.email }}{% endif %}</p>
+        {% if not w.connected or w.needs_reauth %}
+            {% if w.needs_reauth %}<p class="pf-note">Reconnecte {{ name }} pour reprendre les imports. Ton historique est conservé.</p>{% endif %}
+            {% if provider == 'garmin' %}
+                {% include "partials/garmin_login.html" %}
+            {% else %}
+                <p class="text-sm text-gray-500">Autorise PaceForge sur la page {{ name }} qui s’ouvre ensuite.</p>
+                <a class="pf-btn pf-btn-primary pf-btn-block" href="{{ '/coros/connect?next=devices' if provider == 'coros' else '/auth/strava?next=devices' }}">{{ 'Reconnecter' if w.needs_reauth else 'Continuer avec' }} {{ name }}</a>
+            {% endif %}
+        {% else %}
+            <p class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</p>
+            <p class="text-sm text-gray-500">{% if w.last_sync_at %}Dernière synchronisation : {{ w.last_sync_ago }}.{% else %}Les données apparaîtront après la première synchronisation.{% endif %}</p>
+            {% if w.last_error or w.interrupted %}<p class="pf-note">La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer.</p>{% endif %}
+            <a href="paceforge://devices" class="pf-btn pf-btn-primary pf-btn-block">Revenir dans PaceForge</a>
+        {% endif %}
+        <details>
+            <summary>Options et aide</summary>
+            <div class="space-y-4 mt-4">
+                {% if provider == 'coros' %}
+                <p class="text-sm text-gray-500">Synchronise d’abord ta montre APEX ou ton compteur DURA dans l’application COROS.</p>
+                {% if not w.connected or w.needs_reauth %}<p class="text-sm text-gray-500">Si COROS ne reconnaît pas ton compte, essaie un autre serveur : <a class="pf-link" href="/coros/connect?next=devices&amp;region=europe">Europe</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=monde">Monde</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=chine">Chine</a>.</p>{% endif %}
+                {% endif %}
+                {% if provider == 'strava' and (w.needs_reauth or w.bad_keys) %}<a class="pf-link" href="/setup?next=devices">Réparer la configuration Strava</a>{% endif %}
+                {% if w.connected and not w.needs_reauth and provider != 'strava' %}
+                    {% set key = provider %}{% include "partials/watch_sync.html" %}
+                {% endif %}
+                {% if w.connected %}
+                <form method="post" action="/settings/{{ provider }}/disconnect" onsubmit="return confirm('Déconnecter {{ name }} ? Tes données déjà importées seront conservées.')">
+                    <input type="hidden" name="next" value="devices"><button class="pf-btn pf-btn-secondary" type="submit">Déconnecter {{ name }}</button>
+                </form>
+                {% endif %}
+                <a class="pf-link" href="/auth/login?next={{ provider }}">Utiliser un autre compte PaceForge</a>
+            </div>
+        </details>
+    </div>
+    {% if not w.connected or w.needs_reauth %}<a class="pf-link" href="paceforge://devices">Retour aux appareils</a>{% endif %}
+</div>
+{% endblock %}
