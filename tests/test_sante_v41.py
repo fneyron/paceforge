@@ -201,7 +201,7 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
 
     dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
     # 7h20 every night: 8 h + 1 h owed, 81 % « un peu court » (2026-10-09)
-    assert dials[0] == "94 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
+    assert dials[0] == "94 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne bilan du jour", dials[1]), dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
     # The recovery panel keeps its graph; nightly status is stated once on each metric card.

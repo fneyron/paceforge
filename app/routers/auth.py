@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
-HOME = "/accueil"  # the daily dashboard; Santé remains the detailed health page
+HOME = "/sante"  # Santé is the main dashboard
 
 
 # ---------------------------------------------------------------------------

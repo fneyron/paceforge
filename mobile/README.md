@@ -1,6 +1,6 @@
 # PaceForge mobile
 
-Application iOS / Android avec **Accueil comme tableau de bord**, puis Santé, Activités et Courses.
+Application iOS / Android avec **Santé comme tableau de bord**, puis Activités et Courses.
 Les connexions restent accessibles par le bouton « Réglages ». Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
@@ -11,13 +11,12 @@ connexion au compte dans le navigateur, la destination choisie est conservée.
 Garmin se connecte dans l’application. Les réglages complets restent disponibles
 dans « Mon compte et confidentialité ».
 
-L’accueil `/accueil` réunit le dernier bilan, les dernières mesures, les sept
-derniers jours d’activité et les dernières séances. Les sources sont dans les
+Santé `/sante` est l’écran principal. L’ancien lien `/accueil` y redirige,
+y compris pour les anciennes versions installées. Les sources restent dans les
 réglages ; les dates se lisent en touchant les points des graphiques. Les valeurs
 anciennes restent signalées. Le thème et le compte sont accessibles dans Réglages.
-Il reprend les calculs de Santé et le dédoublonnage des activités. Les données
-absentes restent absentes ; une synchronisation récente n’est pas présentée
-comme la preuve d’un relevé récent. Santé conserve les analyses détaillées.
+Les données absentes restent absentes ; une synchronisation récente n’est pas
+présentée comme la preuve d’un relevé récent.
 
 ## Connexions par service
 

@@ -579,6 +579,8 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     help_page = await as_user.get("/sante/aide")
     assert help_page.status_code == 200
     folds = re.findall(r'<details class="pf-fold">(.*?)</details>', help_page.text, re.S)
+    assert len(folds) == 2
+    folds = [fold for fold in folds if "<summary>Calcul détaillé</summary>" in fold]
     assert len(folds) == 1
     fold = folds[0]
     assert "<summary>Calcul détaillé</summary>" in fold and len(re.findall(r"<li>", fold)) == len(sc.METHOD) == 5
@@ -590,7 +592,7 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     page = r.text.split('id="main-content"', 1)[1]
     assert '<a href="/sante" class="pf-back">‹ Santé</a>' in page and '<h1 class="pf-sante-h1">Sources</h1>' in page
     assert re.findall(r'<h2 id="h-(\w+)" class="pf-sec-h">([^<]+)</h2>', page) == [("recuperation", "Récupération"),
-                                                                                   ("sommeil", "Sommeil")]
+                                                                                   ("sommeil", "Sommeil"), ("lactate", "Lactate et seuil estimé")]
     assert re.findall(r'<h3 class="pf-method-h">([^<]+)</h3>', page) == ["Recommandations officielles", "Études scientifiques"] * 2
     for refs in (sc.REFS, sl.REFS):
         for _, items in sc.linked(refs):
@@ -599,6 +601,6 @@ async def test_the_method_folds_and_their_sources(as_user, db_session, test_user
     assert '<a href="https://doi.org/10.1123/ijspp.2017-0759" rel="noopener" target="_blank">Kellmann 2018</a>' in page
     assert 'href="https://westminsterresearch.westminster.ac.uk/item/wxx7y/' in page
     assert 'href="https://www.thensf.org/wp-content/uploads/2022/10/ANSI-CTA-NSF-2052.1-A-FINAL.pdf"' in page
-    assert len(re.findall(r"<li>", page.split("</main>")[0])) == sum(len(i) for refs in (sc.REFS, sl.REFS)
-                                                                     for _, i in refs)  # nothing else
+    assert len(re.findall(r"<li>", page.split("</main>")[0])) == 3 + sum(len(i) for refs in (sc.REFS, sl.REFS)
+                                                                     for _, i in refs)  # plus three lactate references
     assert (await as_user.get("/sante/sources", follow_redirects=False)).status_code == 200

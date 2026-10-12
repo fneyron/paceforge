@@ -163,6 +163,11 @@ REFS = [
         ("Sammito 2024", "10.1186/s12995-024-00414-9"), ("Quigley 2024", "10.1111/psyp.14604"),
     ]),
     ("Études scientifiques", [
+        ("Rebelo 2026 · charge, état et réponse à l’entraînement", "10.1007/s40279-026-02417-4"),
+        ("Doherty 2025 · limites des scores composites", "10.1515/teb-2025-0001"),
+        ("Dial 2025 · validation des mesures nocturnes", "10.14814/phy2.70527"),
+        ("Xu 2026 · VFC optique et ECG", "10.3390/s26165192"),
+        ("Ressenti et VFC 2026", "10.3390/s26041325"),
         ("Buchheit 2014", "10.3389/fphys.2014.00073"), ("Plews 2013", "10.1123/ijspp.8.6.688"),
         ("Plews 2014", "10.1123/ijspp.2013-0455"), ("Alavi 2022", "10.1038/s41591-021-01593-2"),
         ("Bosquet 2008", "10.1136/bjsm.2007.042200"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
@@ -388,7 +393,7 @@ def dial(score: dict, state: dict | None, href: str | None = None) -> dict:
         return viz.ring("recup", None, "—", "Récupération", NO_SCORE, tone="none", href=href,
                         aria="Récupération : pas de score ce matin.")
     word = DIAL_WORDS[state["tone"]]
-    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="%", href=href,
+    return viz.ring("recup", v / 100, str(v), "Récupération", word, tone=state["tone"], unit="%", href=href, note="bilan du jour",
                     aria=f"Récupération {pct(v)}, {word}.")
 
 

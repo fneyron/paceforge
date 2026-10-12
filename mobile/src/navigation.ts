@@ -1,12 +1,12 @@
 import { ORIGIN, trusted } from './api';
 
-export type Tab = 'home' | 'health' | 'activities' | 'courses' | 'devices';
-export const tabs = [['home', 'Accueil'], ['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
-export const destinations: Record<Exclude<Tab, 'devices'>, string> = { home: '/accueil', health: '/sante', activities: '/activities', courses: '/simulator' };
+export type Tab = 'health' | 'activities' | 'courses' | 'devices';
+export const tabs = [['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
+export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
 export function tabForUrl(url: string): Tab | null {
   if (!trusted(url)) return null;
   const path = new URL(url).pathname;
-  if (path === '/accueil') return 'home';
+  if (path === '/accueil') return 'health';
   if (path === '/sante' || path.startsWith('/sante/')) return 'health';
   if (path === '/activities' || path.startsWith('/activity/')) return 'activities';
   if (path === '/simulator' || path.startsWith('/simulator/')) return 'courses';

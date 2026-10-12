@@ -18,8 +18,8 @@ const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
 function Companion() {
-  const [tab, setTab] = useState<Tab>('home');
-  const [url, setUrl] = useState(ORIGIN + '/accueil');
+  const [tab, setTab] = useState<Tab>('health');
+  const [url, setUrl] = useState(ORIGIN + '/sante');
   const [pair, setPair] = useState<Pair | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +37,7 @@ function Companion() {
   const lock = useRef(false);
   const lastAttempt = useRef(0);
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const webLocation = useRef(ORIGIN + '/accueil');
+  const webLocation = useRef(ORIGIN + '/sante');
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
 
   useEffect(() => {

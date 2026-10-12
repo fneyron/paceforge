@@ -27,7 +27,7 @@ templates.env.globals["cycling_enabled"] = cycling_enabled
 
 router = APIRouter(tags=["dashboard"])
 
-HOME = "/accueil"  # the daily dashboard; Santé remains the detailed health page
+HOME = "/sante"  # Santé is the main dashboard
 
 # The history is paginated by WEEKS (not by row count) so a week is never split
 # across two "load more" chunks and weekly totals stay honest.
@@ -74,7 +74,7 @@ async def methode_page(request: Request, user: User | None = Depends(get_optiona
 
 @router.get("/dashboard")
 async def dashboard(user: User = Depends(get_current_user)):
-    """Legacy home (an installed app opened from an old manifest lands here): the daily dashboard."""
+    """Legacy home (an installed app opened from an old manifest lands here): Santé."""
     return RedirectResponse(url=HOME, status_code=302)
 
 
