@@ -9,7 +9,6 @@ import { api, ApiError, ORIGIN, trusted } from './src/api';
 import { authorize, collect } from './src/health';
 import { labels, Metric, Pair } from './src/types';
 import { appShellScript, destinations, Tab, tabForUrl, tabs } from './src/navigation';
-import { useHeartRate } from './src/use-heart-rate';
 import { Connections, Provider, readConnections } from './src/connections';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button } from './src/device-ui';
@@ -38,7 +37,6 @@ function Companion() {
   const lock = useRef(false);
   const lastAttempt = useRef(0);
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heart = useHeartRate();
   const webLocation = useRef(ORIGIN + '/sante');
   const syncReturn = useRef<{ tab: Tab; url: string; showWeb: boolean } | null>(null);
 
@@ -177,19 +175,14 @@ function Companion() {
   return <SafeAreaView style={styles.root}>
     <StatusBar style="dark" />
     <View style={styles.header}><Text style={styles.brand}>PaceForge</Text><Text style={styles.sub}>Tes données de santé, réunies</Text></View>
-    {tab === 'health' && heart.state.phase === 'connected' && <View style={styles.liveBar}>
-      <View style={{ flex: 1 }}><Text style={styles.cardTitle}>Pouls en direct · {heart.reading ? `${heart.reading.bpm} bpm` : '—'}</Text>
-        <Text style={styles.small}>{heart.state.sensor?.name} · {heart.reading ? 'Bluetooth' : 'En attente de mesures'}</Text></View>
-      <Button text="Capteur" onPress={() => openTab('devices')} disabled={busy} secondary />
-    </View>}
     {webVisible && error ? <Text accessibilityRole="alert" style={[styles.error, styles.banner]}>{error}</Text> : null}
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} automatic={automatic}
-      busy={busy} ready={ready} status={status} error={error} connections={connections} needsReconnect={needsReconnect} heart={heart}
+      busy={busy} ready={ready} status={status} error={error} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
     <View style={webVisible ? styles.web : styles.hidden}>
-      {showWeb && <Button text="Retour aux appareils" disabled={busy && !pending.current} onPress={() => { if (pending.current) { finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
+      {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
       <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         injectedJavaScriptBeforeContentLoaded={appShellScript} injectedJavaScript={appShellScript}
         originWhitelist={['https://*', 'paceforge://*']} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
@@ -238,9 +231,8 @@ export default function App() { return <SafeAreaProvider><Companion /></SafeArea
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 22, paddingVertical: 12, backgroundColor: '#fff' },
   brand: { color: '#163d35', fontSize: 23, fontWeight: '700' }, sub: { color: '#62736d', fontSize: 13, marginTop: 2 },
-  small: { color: '#62736d', fontSize: 13, marginVertical: 8 }, cardTitle: { fontSize: 19, fontWeight: '600', color: '#173e38', marginBottom: 5 },
   error: { color: '#a33129', fontSize: 15, lineHeight: 23, marginVertical: 8 },
-  liveBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, backgroundColor: '#e7f0ea', gap: 8 }, banner: { paddingHorizontal: 20 },
+  banner: { paddingHorizontal: 20 },
   web: { flex: 1 }, hidden: { width: 1, height: 1, opacity: 0, position: 'absolute', overflow: 'hidden' },
   tabs: { flexDirection: 'row', padding: 8, gap: 3, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e4ebe6' },
   tab: { flex: 1, paddingVertical: 14, borderRadius: 10 }, active: { backgroundColor: '#e7f0ea' },

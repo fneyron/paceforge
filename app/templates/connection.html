@@ -4,7 +4,7 @@
 {% block content %}
 <div class="pf-connection space-y-5">
     <div><h1 class="pf-h1">{{ name }}</h1>
-        <p class="pf-sub">{% if provider == 'coros' %}Ta montre et ton compteur COROS, réunis dans PaceForge.{% elif provider == 'garmin' %}Retrouve les mesures et activités de Garmin Connect.{% else %}Retrouve tes activités Strava, dont tes séances Zwift partagées.{% endif %}</p>
+        <p class="pf-sub">{% if provider == 'coros' %}Retrouve les activités et données de santé de ton compte COROS.{% elif provider == 'garmin' %}Retrouve les mesures et activités de Garmin Connect.{% else %}Retrouve les activités partagées sur ton compte Strava.{% endif %}</p>
     </div>
     <div class="pf-section space-y-4">
         {% if ok %}<p class="pf-note !text-ok" role="status">{{ ok }}</p>{% endif %}
@@ -28,7 +28,7 @@
             <summary>Options et aide</summary>
             <div class="space-y-4 mt-4">
                 {% if provider == 'coros' %}
-                <p class="text-sm text-gray-500">Synchronise d’abord ta montre APEX ou ton compteur DURA dans l’application COROS.</p>
+                <p class="text-sm text-gray-500">Synchronise d’abord tes appareils dans l’application COROS.</p>
                 {% if not w.connected or w.needs_reauth %}<p class="text-sm text-gray-500">Si COROS ne reconnaît pas ton compte, essaie un autre serveur : <a class="pf-link" href="/coros/connect?next=devices&amp;region=europe">Europe</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=monde">Monde</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=chine">Chine</a>.</p>{% endif %}
                 {% endif %}
                 {% if provider == 'strava' and (w.needs_reauth or w.bad_keys) %}<a class="pf-link" href="/setup?next=devices">Réparer la configuration Strava</a>{% endif %}
@@ -44,6 +44,6 @@
             </div>
         </details>
     </div>
-    {% if not w.connected or w.needs_reauth %}<a class="pf-link" href="paceforge://devices">Retour aux appareils</a>{% endif %}
+    {% if not w.connected or w.needs_reauth %}<a class="pf-link" href="paceforge://devices">Retour aux connexions</a>{% endif %}
 </div>
 {% endblock %}

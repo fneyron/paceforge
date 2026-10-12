@@ -1,60 +1,47 @@
 # PaceForge mobile
 
 Application iOS / Android avec **Santé comme accueil**, puis Activités, Courses
-et Appareils. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
+et Connexions. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web est masquée dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
-serveur accessibles depuis Appareils. COROS et Strava ouvrent directement leur
+serveur accessibles depuis Connexions. COROS et Strava ouvrent directement leur
 page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
 même session. Le compte PaceForge est affiché avant validation ; après une
 connexion au compte dans le navigateur, la destination choisie est conservée.
 Garmin se connecte dans l’application. Les réglages complets restent disponibles
 dans « Mon compte et confidentialité ».
 
-## Appareils et Bluetooth direct
+## Connexions par service
 
-L’onglet Appareils présente cinq lignes : Apple Santé / Health Connect, COROS,
-Garmin, Strava et capteur Bluetooth. Chaque ligne a un état et une seule action.
+L’onglet Connexions regroupe les comptes COROS, Garmin et Strava, ainsi que
+Apple Santé / Health Connect. Chaque connexion a un état et une seule action.
+L’utilisateur choisit ses services ; aucun modèle de montre n’est requis.
 Les états des comptes viennent de `/mobile/connections`, via la session de la
 WebView avec vérification d’origine, de route et de nonce, sans jeton fournisseur.
 Ils sont actualisés à l’ouverture de l’onglet et au retour du navigateur. Une
 lecture impossible reste « État à vérifier », jamais un faux « Non connecté ».
-Les options, l’aide balance et Zwift sont dans des écrans de détail.
+
+Suunto et Amazfit (Zepp) sont signalés dans « Autres marques » comme restant à
+intégrer, sans faux bouton de connexion. Si leur application partage des données
+avec Strava ou le référentiel santé du téléphone, l’utilisateur peut connecter
+ce service intermédiaire. Cela ne suppose pas que toutes les données sont
+partagées ou importées ; les cinq catégories mobiles restent celles décrites
+ci-dessous.
+
+Les appareils et capteurs se synchronisent avec l’application du fabricant ou
+celle qui enregistre la séance. Les données disponibles dans les activités
+partagées passent par ce compte. L’application ne recherche ni n’appaire de
+brassard ou de ceinture séparément. La lecture Bluetooth directe des versions
+1.0.0 (3) et (4), son SDK et ses permissions ont été retirés. Le pouls en direct
+n’est plus proposé. Les enregistrements des fournisseurs restent conservés.
 
 « Connecter Apple Santé / Health Connect » enchaîne confirmation du compte
 (PKCE), demande des permissions puis première lecture et envoi. Une association
 existante vérifie d’abord le compte web. Une permission demandée ne signifie pas
 permission accordée : « Données synchronisées » nécessite un envoi réel, avec
 sa date dans le détail. « Revoir les autorisations » relance aussi la lecture.
-
-La lecture cardiaque utilise
-`react-native-ble-manager` 12.5.3 (architecture native React Native), le service
-Bluetooth standard Heart Rate `180D` et la caractéristique `2A37`.
-
-- Le bouton de recherche demande la permission Bluetooth, recherche pendant
-  15 secondes puis laisse l’utilisateur choisir son capteur. Aucun appairage
-  automatique, écriture de données utilisateur ou modification de firmware.
-- Brassard COROS Heart Rate Monitor et APEX 4 en mode diffusion cardiaque :
-  le fabricant documente la transmission vers des applications compatibles.
-  Aucune connexion au matériel physique n’a été vérifiée dans l’environnement
-  de développement. Le brassard accepte au plus trois connexions simultanées.
-- Le pouls apparaît dans Appareils et en haut de Santé. C’est une **lecture en
-  direct, sans enregistrement ni envoi au serveur** ; elle n’alimente ni la
-  moyenne sur 24 h, ni le calcul de récupération, ni un enregistrement de séance.
-- Une valeur sans contact, malformée, ou vieille de 15 secondes n’est jamais
-  affichée comme actuelle. Arrêt à la mise en arrière-plan, déconnexion, retrait
-  du Bluetooth, et délai maximal de connexion de 20 secondes. Reconnexion à
-  l’initiative de l’utilisateur. Pas de lecture quand l’application est fermée.
-- DURA et l’historique APEX passent par le compte COROS. Les séances Zwift peuvent
-  être envoyées à COROS ou Strava, puis importées depuis le compte connecté ;
-  vérifier une séance réelle. Pas de pilotage Bluetooth du home trainer.
-- EXZACT : le protocole direct dépend du modèle exact, non identifié à ce jour.
-  Le parcours iPhone disponible reste SenssunHealth → Apple Santé → PaceForge.
-
-Références constructeur :
-[brassard COROS](https://support.coros.com/hc/en-us/articles/17458038294292-COROS-Heart-Rate-Monitor-FAQs),
-[APEX 4](https://support.coros.com/hc/en-us/articles/42070715941268-Set-Up-Your-COROS-APEX-4),
-[Zwift vers COROS](https://support.coros.com/hc/fr/articles/47288305838996-Connexion-de-Zwift-avec-COROS).
+L’aide explique le partage des balances et applications sportives vers un
+service compatible, sans associer la connexion à un modèle précis.
 
 ## Synchronisation livrée
 
@@ -183,9 +170,7 @@ Le SDK HealthKit embarque des API de lecture et d'écriture. Apple exige donc
 `NSHealthShareUsageDescription` et `NSHealthUpdateUsageDescription` dans le
 `Info.plist`, même si PaceForge ne demande que des permissions de lecture.
 Conserver les deux textes du plugin dans `app.json` ; ils ne donnent aucune
-permission d’écriture. Le plugin Bluetooth ajoute aussi
-`NSBluetoothAlwaysUsageDescription`, contrôlé par le même script. Après
-`expo prebuild`, vérifier le fichier généré :
+permission d’écriture. Après `expo prebuild`, vérifier le fichier généré :
 
 ```sh
 python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist

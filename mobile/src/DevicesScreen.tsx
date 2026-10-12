@@ -2,15 +2,13 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { connectionLabel, Connections, Provider } from './connections';
 import { Pair } from './types';
-import { useHeartRate } from './use-heart-rate';
 import { Button, ui } from './device-ui';
 
-export type DeviceDetail = 'health' | 'bluetooth' | 'help' | null;
+export type DeviceDetail = 'health' | 'other' | 'help' | null;
 type Props = {
   detail: DeviceDetail; select: (detail: DeviceDetail) => void;
   pair: Pair | null; last: string; automatic: boolean; busy: boolean; ready: boolean;
   status: string; error: string; connections: Connections | null; needsReconnect: boolean;
-  heart: ReturnType<typeof useHeartRate>;
   connectHealth: () => void; sync: () => void; disconnect: () => void;
   auto: (value: boolean) => void; provider: (provider: Provider) => void;
   refresh: () => void; settings: (path?: string) => void; health: () => void;
@@ -18,35 +16,33 @@ type Props = {
 const healthName = Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect';
 
 export function DevicesScreen(p: Props) {
-  const { detail, pair, heart, busy, last } = p;
+  const { detail, pair, busy, last } = p;
   const mismatch = p.needsReconnect || (!!pair && !!p.connections && pair.user_id !== p.connections.user_id);
   const healthState = mismatch ? 'Compte à confirmer' : !pair ? 'Non connecté' : last ? 'Données synchronisées' : 'À terminer';
   return <ScrollView contentContainerStyle={ui.content}>
-    {detail && <Link text="‹ Tous les appareils" onPress={() => p.select(null)} disabled={busy} />}
-    <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'bluetooth' ? 'Capteur cardiaque' : detail === 'help' ? 'Balance et Zwift' : 'Appareils'}</Text>
+    {detail && <Link text="‹ Toutes les connexions" onPress={() => p.select(null)} disabled={busy} />}
+    <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'other' ? 'Autres marques' : detail === 'help' ? 'Comment ça fonctionne ?' : 'Connexions'}</Text>
     {!detail && <>
-      <Text style={ui.body}>Choisis ce que tu veux connecter.</Text>
+      <Text style={ui.body}>Choisis les services que tu utilises.</Text>
       <View style={styles.list}>
-        <Row name={healthName} icon="♥" description="Poids, pas et mesures du téléphone" state={healthState}
-          action={pair && last && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready}
-          onPress={() => { p.select('health'); if (!pair || !last || mismatch) p.connectHealth(); }} />
         {(['coros', 'garmin', 'strava'] as const).map(key => {
           const state = p.connections?.providers[key];
           return <Row key={key} name={{ coros: 'COROS', garmin: 'Garmin', strava: 'Strava' }[key]}
             icon={{ coros: 'C', garmin: 'G', strava: 'S' }[key]}
-            description={{ coros: 'Montre APEX et compteur DURA', garmin: 'Montres et compteurs Garmin', strava: 'Activités et séances Zwift' }[key]}
+            description={{ coros: 'Activités et données de santé', garmin: 'Activités et données de santé', strava: 'Activités sportives' }[key]}
             state={connectionLabel(state)} action={state === 'reconnect' ? 'Reconnecter' : state && state !== 'disconnected' ? 'Gérer' : 'Connecter'}
             disabled={busy} onPress={() => p.provider(key)} />;
         })}
-        <Row name="Capteur Bluetooth" icon="♡" description="Brassard · pouls en direct" state={heart.state.phase === 'connected' ? 'Connecté' : 'Non connecté'}
-          action={heart.state.phase === 'connected' ? 'Voir' : 'Connecter'} disabled={busy} last
-          onPress={() => { p.select('bluetooth'); if (heart.state.phase === 'idle') void heart.controller.current?.scan(); }} />
+        <Row name={healthName} icon="♥" description="Poids, pas et mesures du téléphone" state={healthState}
+          action={pair && last && !mismatch ? 'Gérer' : 'Connecter'} disabled={busy || !p.ready} last
+          onPress={() => { p.select('health'); if (!pair || !last || mismatch) p.connectHealth(); }} />
       </View>
       {p.connections && <Text style={ui.small}>Compte de {p.connections.name}</Text>}
       <View style={styles.footer}>
-        <Link text="Balance ou Zwift ?" onPress={() => p.select('help')} disabled={busy} />
+        <Link text="Autres marques" onPress={() => p.select('other')} disabled={busy} />
         <Link text="Actualiser" onPress={p.refresh} disabled={busy} />
       </View>
+      <Link text="Comment ça fonctionne ?" onPress={() => p.select('help')} disabled={busy} />
       <Link text="Mon compte et confidentialité" onPress={() => p.settings()} disabled={busy} />
     </>}
     {detail === 'health' && <>
@@ -68,40 +64,31 @@ export function DevicesScreen(p: Props) {
       <Link text="Ajouter les mesures de ma balance" onPress={() => p.select('help')} disabled={busy} />
       {pair && <Link text={`Déconnecter ${healthName}`} onPress={p.disconnect} disabled={busy} />}
     </>}
-    {detail === 'bluetooth' && <>
-      <Text style={ui.body}>Porte ton brassard et garde-le près du téléphone.</Text>
+    {detail === 'other' && <>
+      <Text style={ui.body}>Les connexions directes à ces services ne sont pas encore disponibles dans PaceForge.</Text>
       <View style={ui.card}>
-        {heart.state.phase === 'connected' && <>
-          <Text style={ui.cardTitle}>{heart.state.sensor?.name}</Text>
-          <Text style={styles.pulse}>{heart.reading ? heart.reading.bpm : '—'}<Text style={styles.unit}> bpm</Text></Text>
-          <Button text="Voir dans Santé" onPress={p.health} disabled={busy} secondary />
-        </>}
-        {['preparing', 'scanning', 'connecting'].includes(heart.state.phase) && <ActivityIndicator color="#225649" />}
-        <Text accessibilityLiveRegion="polite" style={ui.body}>{heart.state.phase === 'connected' && !heart.reading ? 'En attente d’une mesure récente…' : heart.state.message}</Text>
-        {heart.state.error ? <Text accessibilityRole="alert" style={ui.error}>{heart.state.error}</Text> : null}
-        {['idle', 'scanning'].includes(heart.state.phase) && heart.state.sensors.map((sensor, index) =>
-          <Button key={sensor.id} text={`${sensor.name}${heart.state.sensors.filter(s => s.name === sensor.name).length > 1 ? ` · ${index + 1}` : ''} · Connecter`}
-            onPress={() => { void heart.controller.current?.connect(sensor); }} secondary />)}
-        <Button text={heart.state.phase === 'idle' ? 'Rechercher un capteur' : heart.state.phase === 'connected' ? 'Déconnecter' : 'Arrêter la recherche'}
-          onPress={() => { if (heart.state.phase === 'idle') void heart.controller.current?.scan(); else heart.controller.current?.stop(); }} secondary={heart.state.phase !== 'idle'} />
+        {['Suunto', 'Amazfit (Zepp)'].map(name => <View key={name} style={styles.unavailable}>
+          <Text style={ui.cardTitle}>{name}</Text><Text style={ui.small}>À intégrer</Text>
+        </View>)}
       </View>
-      <Text style={ui.small}>Pouls en direct uniquement, sans enregistrement. La lecture s’arrête quand tu quittes PaceForge.</Text>
-      <Disclosure title="Mon capteur n’apparaît pas">
-        <Text style={ui.body}>Vérifie que le Bluetooth est activé et que le brassard est porté. Le brassard COROS accepte trois connexions : si ta montre, DURA et Zwift les utilisent déjà, libère une place.</Text>
-        <Text style={ui.body}>Pour une montre APEX 4, active la diffusion de la fréquence cardiaque sur la montre.</Text>
-      </Disclosure>
+      <Text style={ui.body}>Si ton application fabricant partage tes activités avec Strava, connecte Strava pour les retrouver ici.</Text>
+      <Button text="Ouvrir la connexion Strava" onPress={() => p.provider('strava')} disabled={busy} />
+      <Text style={ui.body}>Pour les mesures de santé, utilise {healthName} si ton application fabricant y écrit les données. Seules les catégories prises en charge par PaceForge seront importées.</Text>
+      <Button text={`Ouvrir ${healthName}`} onPress={() => p.select('health')} disabled={busy} secondary />
     </>}
     {detail === 'help' && <>
-      <View style={ui.card}><Text style={ui.cardTitle}>Balance EXZACT</Text>
-        <Text style={ui.body}>{Platform.OS === 'ios' ? 'Dans SenssunHealth, active le partage vers Apple Santé. Dès qu’une pesée apparaît dans Apple Santé, PaceForge peut l’importer.' : 'Active le partage vers Health Connect si l’application de ta balance le propose.'}</Text>
-        <Button text={`Ouvrir ${healthName} dans PaceForge`} onPress={() => p.select('health')} />
-        <Text style={ui.small}>La connexion Bluetooth directe de cette balance n’est pas encore disponible.</Text>
+      <View style={ui.card}><Text style={ui.cardTitle}>Montres et capteurs</Text>
+        <Text style={ui.body}>Synchronise tes appareils dans l’application du fabricant, puis connecte ce compte à PaceForge.</Text>
+        <Text style={ui.body}>Ton brassard, ta ceinture cardiaque ou tes autres capteurs restent reliés à la montre, au compteur ou à l’application qui enregistre ta séance. Les mesures incluses dans l’activité partagée arrivent par ce compte.</Text>
+        <Text style={ui.small}>Aucun appairage séparé du capteur dans PaceForge.</Text>
       </View>
-      <View style={ui.card}><Text style={ui.cardTitle}>Zwift</Text>
-        <Text style={ui.body}>Partage tes séances Zwift avec COROS ou Strava, puis connecte ce compte à PaceForge.</Text>
-        <Button text="Connecter COROS" onPress={() => p.provider('coros')} />
-        <Button text="Connecter Strava" onPress={() => p.provider('strava')} secondary />
-        <Disclosure title="Où activer le partage COROS ?"><Text style={ui.body}>Application COROS → Profil → Applications tierces → Synchronisation des données → Zwift.</Text></Disclosure>
+      <View style={ui.card}><Text style={ui.cardTitle}>Mesures de santé et balance</Text>
+        <Text style={ui.body}>Dans l’application de ta balance ou de ton appareil, active le partage vers {healthName} si cette option est proposée. Connecte ensuite {healthName} à PaceForge.</Text>
+        <Button text={`Ouvrir ${healthName}`} onPress={() => p.select('health')} disabled={busy} />
+      </View>
+      <View style={ui.card}><Text style={ui.cardTitle}>Applications sportives</Text>
+        <Text style={ui.body}>Une application comme Zwift peut partager tes séances avec un service compatible, comme Strava. Connecte ce service à PaceForge pour les retrouver dans Activités.</Text>
+        <Button text="Ouvrir la connexion Strava" onPress={() => p.provider('strava')} disabled={busy} />
       </View>
     </>}
     {busy && <View style={styles.progress}><ActivityIndicator color="#225649" /><Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || 'Chargement…'}</Text></View>}
@@ -121,10 +108,6 @@ function Row(p: { name: string; icon: string; description: string; state: string
 function Link({ text, onPress, disabled = false }: { text: string; onPress: () => void; disabled?: boolean }) {
   return <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={[ui.link, disabled && ui.disabled]}><Text style={ui.linkText}>{text}</Text></Pressable>;
 }
-function Disclosure({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false);
-  return <View><Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={ui.link}><Text style={ui.linkText}>{title} {open ? '−' : '+'}</Text></Pressable>{open && children}</View>;
-}
 const styles = StyleSheet.create({
   list: { backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 14, borderWidth: 1, borderColor: '#e4ebe6', marginTop: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16, minHeight: 92 }, divider: { borderBottomWidth: 1, borderColor: '#edf1ee' },
@@ -132,5 +115,5 @@ const styles = StyleSheet.create({
   name: { color: '#173e38', fontSize: 17, fontWeight: '600' }, description: { color: '#62736d', fontSize: 12, lineHeight: 18, marginTop: 3 },
   state: { color: '#41554e', fontSize: 12, lineHeight: 18 }, action: { color: '#245e4e', fontSize: 12, fontWeight: '600', maxWidth: 86 },
   footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }, progress: { paddingTop: 18, gap: 8 },
-  pulse: { color: '#173e38', fontSize: 54, fontWeight: '700', fontVariant: ['tabular-nums'] }, unit: { fontSize: 19, fontWeight: '400' },
+  unavailable: { paddingVertical: 8 },
 });
