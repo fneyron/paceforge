@@ -425,7 +425,7 @@ async def test_owner_cards(db_session: AsyncSession, test_user: User):
         assert word not in rec["data"], word
     # nothing selected, no number (the audit, 2026-10-09: « 65 % en moyenne sur 14 jours » decided nothing and
     # looked like the dial's): the card's title rests in the readout's place
-    assert rec["read"] == ["", "14 jours", ""] and rec["title"] == "Récupération · 14 jours"
+    assert rec["read"] == ["", "Historique · 14 jours", ""] and rec["title"] == "Récupération · 14 jours"
     classes, est = [b["cls"] for b in rec["bars"]], [b["est"] for b in rec["bars"]]
     assert classes[4] == "ok" and classes[8:11] == [""] * 3 and classes[11] == "danger" and classes[12] == "warn"
     assert rec["bars"][-1]["today"] and not any(est) and rec["hatched"] == []  # no score estimated any more

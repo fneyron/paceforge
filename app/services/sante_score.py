@@ -449,8 +449,8 @@ def history_card(history: list[tuple[date, dict | None, dict]], today: date) -> 
         a.append(f"{viz.d_long(d)} : {pct(v)}, {st['word'].lower()}.")
     c = viz.day_bars("recuperation", days, values, readouts=r, arias=a, classes=classes, tones=tones, y_max=100,
                      lines=((70, pct(70)), (40, pct(40))), today=len(days) - 1 if days and days[-1] == today else None,
-                     summary=f"Récupération sur {len(days)} jours : {len(with_score)} jours avec un score")
+                     summary=f"Historique de récupération : {len(with_score)} scores quotidiens sur {len(days)} jours")
     title = f"Récupération · {len(days)} jours"
-    c = viz.rest(c, ["", f"{len(days)} jours", ""], f"Récupération des {len(days)} derniers jours. Choisis un jour pour voir son "
+    c = viz.rest(c, ["", f"Historique · {len(days)} jours", ""], f"Historique des scores quotidiens sur {len(days)} jours. Choisis un jour pour voir son "
                  "score et son état.", back=len(days) - 1)
     return {**c, "title": title}

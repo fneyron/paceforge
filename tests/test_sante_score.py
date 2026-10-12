@@ -449,7 +449,7 @@ def test_the_history_card_rests_on_its_title_and_shows_the_bands():
         hist = sante._history(nights, _runs(), [], D) + [(D, day["state"], day["score"])]
     c = sc.history_card(hist, D)
     d = json.loads(c["data"])
-    assert c["read"] == d["rest"] == ["", "14 jours", ""] and d["sel"] == 14 and d["back"] == 13
+    assert c["read"] == d["rest"] == ["", "Historique · 14 jours", ""] and d["sel"] == 14 and d["back"] == 13
     assert c["title"] == "Récupération · 14 jours" and "moyenne" not in c["data"]
     assert d["r"][-1] == ["100\u00a0%", "● Bonne récupération", "jeu. 8 oct."] and d["t"][-1] == "ok"
     assert d["a"][-1] == "jeudi 8 octobre : 100\u00a0%, bonne récupération."
