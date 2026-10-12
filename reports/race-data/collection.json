@@ -1,21 +1,42 @@
 {
-  "started_at": "2026-10-10T11:03:48.454341+00:00",
-  "scope": [
-    "utmb/tar_2026/tar",
-    "livetrail/matxicots_2024/trail"
-  ],
+  "started_at": "2026-10-12T11:05:36.834124+00:00",
+  "scope": "scheduled queue",
   "updated": [
-    "utmb/tar_2026/tar",
-    "livetrail/matxicots_2024/trail"
+    "utmb/kentdowns50_2026/50KM",
+    "utmb/100miles_2026/100mile",
+    "utmb/100miles_2026/grande",
+    "utmb/100miles_2026/travers",
+    "utmb/chihuahuabyutmb_2026/118",
+    "utmb/chihuahuabyutmb_2026/58",
+    "utmb/chihuahuabyutmb_2026/93",
+    "utmb/transjeju_2026/100k",
+    "utmb/transjeju_2026/60k",
+    "utmb/ultrapirineu_2026/mp",
+    "utmb/ultrapirineu_2026/sup",
+    "utmb/utmj_2026/cmm",
+    "utmb/utmj_2026/franco",
+    "utmb/chiangmai_2025/HMN50D"
   ],
-  "unchanged": [],
-  "excluded": [],
+  "unchanged": [
+    "utmb/chiangmai_2025/HMN50N"
+  ],
+  "excluded": [
+    "utmb/kentdowns50_2026/10KM",
+    "utmb/kentdowns50_2026/25KM",
+    "utmb/100miles_2026/foulees",
+    "utmb/chihuahuabyutmb_2026/21",
+    "utmb/chihuahuabyutmb_2026/39",
+    "utmb/chihuahuabyutmb_2026/9",
+    "utmb/transjeju_2026/20k",
+    "utmb/utmj_2026/lacham",
+    "utmb/utmj_2026/lalynx"
+  ],
   "errors": [],
-  "catalog_deferred": 0,
-  "races_deferred": 0,
-  "finished_at": "2026-10-10T11:06:11.697387+00:00",
-  "requests": 98,
-  "corpus_sha256": "ca6432f28dc9225e1b3c4d52a317025ec9c32f14fde4173e32cdb12d02ce4abf",
-  "archives": 1006,
+  "catalog_deferred": 875,
+  "races_deferred": 2354,
+  "finished_at": "2026-10-12T11:37:46.381403+00:00",
+  "requests": 3170,
+  "corpus_sha256": "ac0e9e086fe100f6c4bd5c1d3222327714f2d2f4ab31257609897af548aff1b6",
+  "archives": 1019,
   "status": "complete"
 }

@@ -26079,5 +26079,4007 @@
       ]
     ],
     "date": "2026-09-27"
+  },
+  "kentdowns50_2026": {
+    "event": "Kent Downs 50 Ultra Challenge®",
+    "races": [
+      [
+        "50KM",
+        "50 KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25 KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10 KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "50 KM Ultra March",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-10"
+  },
+  "mdsmorocco_2026": {
+    "event": "MDS 120 MOROCCO 2026",
+    "races": [
+      [
+        "120",
+        "MDS 120",
+        "FINISHED"
+      ],
+      [
+        "100",
+        "MDS 100",
+        "FINISHED"
+      ],
+      [
+        "70",
+        "MDS 70",
+        "FINISHED"
+      ],
+      [
+        "handy",
+        "MDS HANDI",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-08"
+  },
+  "100miles_2026": {
+    "event": "100Miles Pyrénées Méditerranée",
+    "races": [
+      [
+        "100mile",
+        "100Miles Pyrénées Méditerranée",
+        "FINISHED"
+      ],
+      [
+        "grande",
+        "Grande Traversée",
+        "FINISHED"
+      ],
+      [
+        "travers",
+        "Traversée",
+        "FINISHED"
+      ],
+      [
+        "foulees",
+        "Foulées des Albères",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-04"
+  },
+  "chihuahuabyutmb_2026": {
+    "event": "CHIHUAHUA by UTMB 2026",
+    "races": [
+      [
+        "118",
+        "Rarámuri 118K",
+        "FINISHED"
+      ],
+      [
+        "39",
+        "Komakali 39K",
+        "FINISHED"
+      ],
+      [
+        "21",
+        "Napurega 21K",
+        "FINISHED"
+      ],
+      [
+        "9",
+        "Norawa 9K",
+        "FINISHED"
+      ],
+      [
+        "93",
+        "Weriga 93K",
+        "FINISHED"
+      ],
+      [
+        "58",
+        "Akáa 58K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-04"
+  },
+  "transjeju_2026": {
+    "event": "TransJeju BY UTMB",
+    "races": [
+      [
+        "100m",
+        "Jeju100M",
+        "FINISHED"
+      ],
+      [
+        "100k",
+        "Jeju100K",
+        "FINISHED"
+      ],
+      [
+        "60k",
+        "Jeju60K",
+        "FINISHED"
+      ],
+      [
+        "20k",
+        "Jeju20K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-04"
+  },
+  "ultrapirineu_2026": {
+    "event": "SALOMON ULTRA PIRINEU 2026",
+    "races": [
+      [
+        "sup",
+        "SALOMON ULTRA PIRINEU 100K",
+        "FINISHED"
+      ],
+      [
+        "mp",
+        "SALOMON MARATÓ PIRINEU 42K",
+        "FINISHED"
+      ],
+      [
+        "mitjap",
+        "SALOMON MITJA PIRINEU 21K",
+        "CANCELLED"
+      ],
+      [
+        "nit",
+        "LA MOLINA NIT PIRINEU KV",
+        "CANCELLED"
+      ]
+    ],
+    "date": "2026-10-04"
+  },
+  "utmj_2026": {
+    "event": "Ultra Trail Montagnes du Jura",
+    "races": [
+      [
+        "utmj",
+        "UTMJ",
+        "FINISHED"
+      ],
+      [
+        "utmjre",
+        "UTMJ RELAIS",
+        "FINISHED"
+      ],
+      [
+        "franco",
+        "LA FRANCO SUISSE",
+        "FINISHED"
+      ],
+      [
+        "renarde",
+        "LA RENARDE",
+        "FINISHED"
+      ],
+      [
+        "cmm",
+        "LA CMM",
+        "FINISHED"
+      ],
+      [
+        "lalynx",
+        "LA LYNX",
+        "FINISHED"
+      ],
+      [
+        "lacham",
+        "LA CHAMOIS",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-04"
+  },
+  "munstertrail_2026": {
+    "event": "MUNSTER TRAIL",
+    "races": [
+      [
+        "mt69",
+        "MT69",
+        "FINISHED"
+      ],
+      [
+        "relais",
+        "Relais Bret&Zel",
+        "FINISHED"
+      ],
+      [
+        "mt32",
+        "MT32",
+        "FINISHED"
+      ],
+      [
+        "mt21",
+        "MT21",
+        "FINISHED"
+      ],
+      [
+        "mt10",
+        "MT10",
+        "FINISHED"
+      ],
+      [
+        "mt4",
+        "MT4",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-03"
+  },
+  "omumarathon_2026": {
+    "event": "OMU Marathon",
+    "races": [
+      [
+        "omumar",
+        "OMU Marathon",
+        "FINISHED"
+      ],
+      [
+        "scaras",
+        "SCARA Skyrace",
+        "FINISHED"
+      ],
+      [
+        "poarta",
+        "POARTA Cross",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-10-03"
+  },
+  "nicebyutmb_2026": {
+    "event": "Nice Côte d'Azur by UTMB ",
+    "races": [
+      [
+        "100M",
+        "Ultra Trail Métropole Nice Côte d'Azur",
+        "FINISHED"
+      ],
+      [
+        "100k",
+        "Roubion - Nice ",
+        "FINISHED"
+      ],
+      [
+        "20k",
+        "Saint-Jean-Cap-Ferrat- Nice ",
+        "FINISHED"
+      ],
+      [
+        "50k",
+        "Eze - Nice ",
+        "FINISHED"
+      ],
+      [
+        "50kleve",
+        "Levens - Nice - 50K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-28"
+  },
+  "gongga_2026": {
+    "event": "凯乐石贡嘎100冰川极境赛",
+    "races": [
+      [
+        "100km",
+        "100km",
+        "FINISHED"
+      ],
+      [
+        "60km",
+        "60km",
+        "FINISHED"
+      ],
+      [
+        "40km",
+        "40km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-27"
+  },
+  "chiltern50_2026": {
+    "event": "Chiltern 50 Ultra Challenge",
+    "races": [
+      [
+        "50KM",
+        "50KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10km Loop",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-26"
+  },
+  "swisshighlandtrail_2026": {
+    "event": "Swiss Highlands Trail",
+    "races": [
+      [
+        "high60",
+        "Highlander 60",
+        "FINISHED"
+      ],
+      [
+        "high42",
+        "Highlander 42",
+        "FINISHED"
+      ],
+      [
+        "high25",
+        "Highlander  25",
+        "FINISHED"
+      ],
+      [
+        "high15",
+        "Highlander 15",
+        "FINISHED"
+      ],
+      [
+        "highfam",
+        "Highlander Family",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-26"
+  },
+  "grindstone_2026": {
+    "event": "Grindstone Trail Running Festival by UTMB",
+    "races": [
+      [
+        "100M",
+        "100M",
+        "FINISHED"
+      ],
+      [
+        "100K",
+        "100K",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "50K",
+        "FINISHED"
+      ],
+      [
+        "21K",
+        "21K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "jangsutrailrace_2026": {
+    "event": "Jangsu Trail Race Fall",
+    "races": [
+      [
+        "jtrmil",
+        "JTR Miler",
+        "FINISHED"
+      ],
+      [
+        "jtr100",
+        "JTR 100",
+        "FINISHED"
+      ],
+      [
+        "jtr40j",
+        "JTR 40J",
+        "FINISHED"
+      ],
+      [
+        "jtr38",
+        "JTR 38",
+        "FINISHED"
+      ],
+      [
+        "jtr20",
+        "JTR 20",
+        "FINISHED"
+      ],
+      [
+        "jtr5",
+        "JTR 5",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "julianalps_2026": {
+    "event": "Julian Alps Trail Run by UTMB",
+    "races": [
+      [
+        "JAT120K",
+        "I FEEL SLOVENIA 120K",
+        "FINISHED"
+      ],
+      [
+        "JAT80K",
+        "LAKE BLED 80K",
+        "FINISHED"
+      ],
+      [
+        "JAT50K",
+        "SKY TRAIL 50K",
+        "FINISHED"
+      ],
+      [
+        "JAT25K",
+        "KRANJSKA GORA 25K",
+        "FINISHED"
+      ],
+      [
+        "JAT15K",
+        "INTERSPORT SPEED 15K",
+        "FINISHED"
+      ],
+      [
+        "JAT10K",
+        "FUNNY 10K",
+        "FINISHED"
+      ],
+      [
+        "nextgen",
+        "Next Gen 10K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "olladenuria_2026": {
+    "event": "OLLA DE NÚRIA 2026",
+    "races": [
+      [
+        "valls",
+        "Valls de l'Olla",
+        "FINISHED"
+      ],
+      [
+        "mitja",
+        "Mitja Olla",
+        "FINISHED"
+      ],
+      [
+        "junior",
+        "Olla Júnior",
+        "FINISHED"
+      ],
+      [
+        "cadet",
+        "Olleta Cadet",
+        "FINISHED"
+      ],
+      [
+        "inf",
+        "Olleta Infantil",
+        "FINISHED"
+      ],
+      [
+        "alevi",
+        "Olleta Aleví",
+        "FINISHED"
+      ],
+      [
+        "benjami",
+        "Olleta Benjamí",
+        "FINISHED"
+      ],
+      [
+        "preben",
+        "Olleta Prebenjamí",
+        "FINISHED"
+      ],
+      [
+        "vertic",
+        "Olla Vertical",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "paraty_2026": {
+    "event": "Paraty Brazil by UTMB®",
+    "races": [
+      [
+        "ptr7",
+        "PTR 7",
+        "FINISHED"
+      ],
+      [
+        "ptr108",
+        "PTR 108",
+        "FINISHED"
+      ],
+      [
+        "ptr58",
+        "PTR 58",
+        "FINISHED"
+      ],
+      [
+        "ptr34",
+        "PTR 34",
+        "FINISHED"
+      ],
+      [
+        "ptr25",
+        "PTR 25",
+        "FINISHED"
+      ],
+      [
+        "ptr17",
+        "PTR 17",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "seoul100k_2026": {
+    "event": "SEOUL100K",
+    "races": [
+      [
+        "100k",
+        "100K",
+        "FINISHED"
+      ],
+      [
+        "50k",
+        "50K",
+        "FINISHED"
+      ],
+      [
+        "20k",
+        "20K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-20"
+  },
+  "matxicots_2026": {
+    "event": "RIALP MATXICOTS 2026",
+    "races": [
+      [
+        "trail",
+        "Trail",
+        "FINISHED"
+      ],
+      [
+        "mitja",
+        "Mitja",
+        "FINISHED"
+      ],
+      [
+        "popular",
+        "Popular",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-19"
+  },
+  "tdddm_2026": {
+    "event": "Trail des Dents-du-Midi",
+    "races": [
+      [
+        "solo",
+        "DDM Trail Individuel",
+        "STARTED"
+      ],
+      [
+        "relais",
+        "DDM Trail Relais",
+        "STARTED"
+      ],
+      [
+        "32k",
+        "DDM Trail 32K",
+        "STARTED"
+      ],
+      [
+        "13K",
+        "DDM Trail 13K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-19"
+  },
+  "bj100_2026": {
+    "event": "2026澜跑北京越野跑挑战赛（海淀）",
+    "races": [
+      [
+        "100km",
+        "100km",
+        "FINISHED"
+      ],
+      [
+        "60km",
+        "60km",
+        "FINISHED"
+      ],
+      [
+        "25km",
+        "25km",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "10km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "dajingmen_2026": {
+    "event": "大境门古长城越野赛by UTMB®",
+    "races": [
+      [
+        "DGW100",
+        "DGW100",
+        "FINISHED"
+      ],
+      [
+        "CGW70",
+        "CGW70",
+        "FINISHED"
+      ],
+      [
+        "MGW50",
+        "MGW50",
+        "FINISHED"
+      ],
+      [
+        "NGW30",
+        "NGW30",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "malaysia_2026": {
+    "event": "Malaysia Ultra-Trail by UTMB",
+    "races": [
+      [
+        "MY100",
+        "MALAYSIA 100",
+        "FINISHED"
+      ],
+      [
+        "MY50",
+        "MALAYSIA 50",
+        "FINISHED"
+      ],
+      [
+        "MY25",
+        "MALAYSIA 25",
+        "FINISHED"
+      ],
+      [
+        "MY13",
+        "MALAYSIA 13",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "serreche_2026": {
+    "event": "Serre Che Trail",
+    "races": [
+      [
+        "26km",
+        "Petit Tour des Cerces",
+        "FINISHED"
+      ],
+      [
+        "45km",
+        "Marathon des Cerces",
+        "FINISHED"
+      ],
+      [
+        "60km",
+        "Grand Tour des Cerces",
+        "FINISHED"
+      ],
+      [
+        "coursol",
+        "Serrech'ensemble",
+        "FINISHED"
+      ],
+      [
+        "12km",
+        "Tour des Chapelles",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "testdaj_2026": {
+    "event": "Test Daj",
+    "races": [
+      [
+        "dgw100",
+        "DGW100",
+        "FINISHED"
+      ],
+      [
+        "cgw70",
+        "CGW70",
+        "FINISHED"
+      ],
+      [
+        "mgw50",
+        "MGW50",
+        "STARTED"
+      ],
+      [
+        "ngw30",
+        "NGW30",
+        "STARTED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "thamespathchallenge_2026": {
+    "event": "Thames Path Challenge",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100k 2 days Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "100 km Ultra March",
+        "FINISHED"
+      ],
+      [
+        "3RDQTR",
+        "3rd Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "75KM",
+        "72KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "50 km Ultra March",
+        "FINISHED"
+      ],
+      [
+        "1STQTR",
+        "1st Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "2NDQTR",
+        "2nd Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "4THQTR",
+        "4th  Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "Henley 10k",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "wildstrubel_2026": {
+    "event": "Wildstrubel by UTMB",
+    "races": [
+      [
+        "110k",
+        "Wild 110 Crans-Montana",
+        "FINISHED"
+      ],
+      [
+        "50k",
+        "Wild 55 Adelboden",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "Wild 10 Crans-Montana",
+        "FINISHED"
+      ],
+      [
+        "wildng",
+        "Wild NextGen Crans-Montana",
+        "FINISHED"
+      ],
+      [
+        "20k",
+        "Wild 25 Leukerbad",
+        "FINISHED"
+      ],
+      [
+        "70k",
+        "Wild 70 Kandersteg",
+        "FINISHED"
+      ],
+      [
+        "wildmar",
+        "Wild Glacier Marathon Lenk",
+        "FINISHED"
+      ],
+      [
+        "handi",
+        "WILD Adaptive Run",
+        "FINISHED"
+      ],
+      [
+        "2km",
+        "Wild Kids Grenon 2km",
+        "FINISHED"
+      ],
+      [
+        "1km",
+        "Wild Kids Ycoor 1km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-13"
+  },
+  "kackar_2026": {
+    "event": "Kaçkar by UTMB",
+    "races": [
+      [
+        "100K",
+        "KAÇKAR 100K",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "KAÇKAR 50K",
+        "FINISHED"
+      ],
+      [
+        "20K",
+        "KAÇKAR 20K",
+        "FINISHED"
+      ],
+      [
+        "4k",
+        "AYDER 4K",
+        "FINISHED"
+      ],
+      [
+        "100sh",
+        "100K Shortened Race",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-12"
+  },
+  "snowbasin_2026": {
+    "event": "Snowbasin by UTMB",
+    "races": [
+      [
+        "58k",
+        "58K",
+        "FINISHED"
+      ],
+      [
+        "28k",
+        "28K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-12"
+  },
+  "thamesbridgesmoonlight_2026": {
+    "event": "Thames Bridges Trek & Moonlight 10",
+    "races": [
+      [
+        "TM10KM",
+        "Thames Moonlight 10 KM",
+        "FINISHED"
+      ],
+      [
+        "T10MILE",
+        "Thames Moonlight 10 Mile",
+        "FINISHED"
+      ],
+      [
+        "TB25KM",
+        "Thames Bridges Trek 25 KM",
+        "FINISHED"
+      ],
+      [
+        "TB10KM",
+        "Thames Bridges Trek 10 KM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-12"
+  },
+  "southcoast_2026": {
+    "event": "South Coast Challenge",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "1STQTR",
+        "1st Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100km",
+        "FINISHED"
+      ],
+      [
+        "1halfum",
+        "1st Half Ultra March Challenge",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-09-06"
+  },
+  "thk_2026": {
+    "event": "Trail du Haut-Koenigsbourg",
+    "races": [
+      [
+        "103Km",
+        "ULTRA Trail du Haut-Koenigsbourg",
+        "FINISHED"
+      ],
+      [
+        "56Km",
+        "Intersport Selestat Grand Trail du HK",
+        "FINISHED"
+      ],
+      [
+        "25Km",
+        "Le Trail du Haut-Koenigsbourg",
+        "FINISHED"
+      ],
+      [
+        "14Km",
+        "Mini Trail du Hahnenberg",
+        "FINISHED"
+      ],
+      [
+        "marche",
+        "Marche Nordique",
+        "CANCELLED"
+      ]
+    ],
+    "date": "2026-09-06"
+  },
+  "utmb_2026": {
+    "event": "Hoka UTMB® Mont-Blanc",
+    "races": [
+      [
+        "utmb",
+        "UTMB®",
+        "FINISHED"
+      ],
+      [
+        "ccc",
+        "CCC®",
+        "FINISHED"
+      ],
+      [
+        "ptl",
+        "PTL®",
+        "FINISHED"
+      ],
+      [
+        "occ",
+        "OCC",
+        "FINISHED"
+      ],
+      [
+        "tds",
+        "TDS®",
+        "FINISHED"
+      ],
+      [
+        "ycc2JE",
+        "YCC Junior - The Revenge",
+        "FINISHED"
+      ],
+      [
+        "ycc2M",
+        "YCC Minime - The Revenge",
+        "FINISHED"
+      ],
+      [
+        "ycc2C",
+        "YCC Cadet - The Revenge",
+        "FINISHED"
+      ],
+      [
+        "mcc",
+        "MCC",
+        "FINISHED"
+      ],
+      [
+        "etc",
+        "ETC",
+        "FINISHED"
+      ],
+      [
+        "ycc1JE",
+        "YCC Junior",
+        "FINISHED"
+      ],
+      [
+        "ycc1C",
+        "YCC Cadet",
+        "FINISHED"
+      ],
+      [
+        "ycc1M",
+        "YCC Minime",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-30"
+  },
+  "echappeebelle_2026": {
+    "event": "L'Echappée Belle",
+    "races": [
+      [
+        "150km",
+        "Intégrale",
+        "FINISHED"
+      ],
+      [
+        "96km",
+        "Traversée Nord",
+        "FINISHED"
+      ],
+      [
+        "63Km",
+        "Parcours des crêtes",
+        "FINISHED"
+      ],
+      [
+        "Maratra",
+        "Maratrail",
+        "FINISHED"
+      ],
+      [
+        "Skyrace",
+        "Skyrace du Rocher Blanc",
+        "FINISHED"
+      ],
+      [
+        "pacer",
+        "Pacer ",
+        "FINISHED"
+      ],
+      [
+        "150Shun",
+        "Intégrale -  Shunt ",
+        "FINISHED"
+      ],
+      [
+        "96Shunt",
+        "Traversée Nord - Shunt",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-23"
+  },
+  "grp_2026": {
+    "event": "Grand Raid des Pyrénées",
+    "races": [
+      [
+        "TDL",
+        "Tour des Lacs",
+        "FINISHED"
+      ],
+      [
+        "UT160",
+        "Ultra Tour 160",
+        "FINISHED"
+      ],
+      [
+        "UT160EQ",
+        "Ultra Tour 160 Relais",
+        "FINISHED"
+      ],
+      [
+        "TDC",
+        "Tour des Cirques",
+        "FINISHED"
+      ],
+      [
+        "TDN",
+        "Tour du Néouvielle",
+        "FINISHED"
+      ],
+      [
+        "TDM",
+        "Tour du Moudang",
+        "FINISHED"
+      ],
+      [
+        "TDB",
+        "Tour du Bastan",
+        "FINISHED"
+      ],
+      [
+        "TDG",
+        "Tour de la Gela",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-23"
+  },
+  "mdsclvaldisere_2026": {
+    "event": "MDS CRAZY LOOPS",
+    "races": [
+      [
+        "3h",
+        "LOOPS 3H",
+        "FINISHED"
+      ],
+      [
+        "6h",
+        "LOOPS 6H",
+        "FINISHED"
+      ],
+      [
+        "9h",
+        "LOOPS 9H",
+        "FINISHED"
+      ],
+      [
+        "12h",
+        "LOOPS 12H",
+        "FINISHED"
+      ],
+      [
+        "24h",
+        "LOOPS 24H",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-23"
+  },
+  "whistler_2026": {
+    "event": "Ultra Trail Whistler by UTMB",
+    "races": [
+      [
+        "25k",
+        "25k",
+        "FINISHED"
+      ],
+      [
+        "50k",
+        "50k",
+        "FINISHED"
+      ],
+      [
+        "100k",
+        "100k",
+        "FINISHED"
+      ],
+      [
+        "10k",
+        "10k",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-23"
+  },
+  "summer_2026": {
+    "event": "London Summer Walk ",
+    "races": [
+      [
+        "42KM",
+        "42KM",
+        "FINISHED"
+      ],
+      [
+        "UM42KM",
+        "UM 42KM",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25KM",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10kM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-22"
+  },
+  "tequila_2026": {
+    "event": "UTMS Tequila by The North Face",
+    "races": [
+      [
+        "60k",
+        "60K VOLCAN",
+        "FINISHED"
+      ],
+      [
+        "42k",
+        "42K AGAVE",
+        "FINISHED"
+      ],
+      [
+        "27k",
+        "27K VALLE",
+        "FINISHED"
+      ],
+      [
+        "16k",
+        "16K BARRICA",
+        "FINISHED"
+      ],
+      [
+        "9K",
+        "9K PINA",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-22"
+  },
+  "viatransilvanica_2026": {
+    "event": "Maraton Via Transilvanica",
+    "races": [
+      [
+        "maraton",
+        "Maraton",
+        "FINISHED"
+      ],
+      [
+        "mountai",
+        "Mountain Bike",
+        "FINISHED"
+      ],
+      [
+        "semimar",
+        "Semi-Maraton",
+        "FINISHED"
+      ],
+      [
+        "cros",
+        "Cros",
+        "FINISHED"
+      ],
+      [
+        "ebike",
+        "E-Bike",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-22"
+  },
+  "borealys_2026": {
+    "event": "Boréalys Mont-Tremblant by UTMB",
+    "races": [
+      [
+        "t50k",
+        "Tremblante 50K",
+        "FINISHED"
+      ],
+      [
+        "cc20k",
+        "Chutes-croches 20K",
+        "FINISHED"
+      ],
+      [
+        "o100k",
+        "Odyssée 100K",
+        "FINISHED"
+      ],
+      [
+        "rel80k",
+        "Relais 80K",
+        "FINISHED"
+      ],
+      [
+        "d20k",
+        "Diable 20K",
+        "FINISHED"
+      ],
+      [
+        "5k",
+        "P'tite 5K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-16"
+  },
+  "montcalm_2026": {
+    "event": "Challenge du Montcalm",
+    "races": [
+      [
+        "bynight",
+        "By Night",
+        "FINISHED"
+      ],
+      [
+        "picapic",
+        "PICaPICA Officiel",
+        "FINISHED"
+      ],
+      [
+        "pica4",
+        "PICaPICA2",
+        "FINISHED"
+      ],
+      [
+        "pica2",
+        "PICaPICA3",
+        "FINISHED"
+      ],
+      [
+        "pica3",
+        "PICaPICA4",
+        "FINISHED"
+      ],
+      [
+        "jove",
+        "La Jove",
+        "FINISHED"
+      ],
+      [
+        "picari",
+        "PicAriège",
+        "FINISHED"
+      ],
+      [
+        "kv",
+        "KV",
+        "FINISHED"
+      ],
+      [
+        "marath",
+        "Marathon Officiel",
+        "FINISHED"
+      ],
+      [
+        "marath2",
+        "Marathon2",
+        "FINISHED"
+      ],
+      [
+        "marath3",
+        "Marathon3",
+        "FINISHED"
+      ],
+      [
+        "marath4",
+        "Marathon4",
+        "FINISHED"
+      ],
+      [
+        "novis",
+        "Novis",
+        "FINISHED"
+      ],
+      [
+        "mineurs",
+        "Mineurs",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-16"
+  },
+  "barla_2026": {
+    "event": "SuperTrail du Barlatay",
+    "races": [
+      [
+        "75K",
+        "75K",
+        "FINISHED"
+      ],
+      [
+        "75KPA",
+        "75K Patrouille",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "50K",
+        "FINISHED"
+      ],
+      [
+        "50KPA",
+        "50K Patrouille",
+        "FINISHED"
+      ],
+      [
+        "25K",
+        "25K",
+        "FINISHED"
+      ],
+      [
+        "25KPA",
+        "25K Patrouille",
+        "FINISHED"
+      ],
+      [
+        "15K",
+        "15K",
+        "FINISHED"
+      ],
+      [
+        "15KPA",
+        "15K Patrouille",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-15"
+  },
+  "clubcmbmposettes_2026": {
+    "event": "Grimpette des Posettes",
+    "races": [
+      [
+        "lagriz",
+        "La Grizzly 6H",
+        "FINISHED"
+      ],
+      [
+        "lours",
+        "L'Ours Brun 4H",
+        "FINISHED"
+      ],
+      [
+        "lepeti",
+        "Le Petit Ours 3H",
+        "FINISHED"
+      ],
+      [
+        "lamont",
+        "La Montée à Dédé",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-15"
+  },
+  "trailducanigou_2026": {
+    "event": "Trail du Canigou",
+    "races": [
+      [
+        "marat",
+        "MARATRAIL DU CANIGOU",
+        "FINISHED"
+      ],
+      [
+        "barbetc",
+        "Trail du Barbet avec Charge",
+        "FINISHED"
+      ],
+      [
+        "barbet",
+        "Trail du Barbet",
+        "FINISHED"
+      ],
+      [
+        "mattesr",
+        "Trail des mattes rouges",
+        "FINISHED"
+      ],
+      [
+        "goa",
+        "Tour de Goa",
+        "FINISHED"
+      ],
+      [
+        "nocturn",
+        "Nocturne de la Pena",
+        "FINISHED"
+      ],
+      [
+        "kv",
+        "KV DE BON AIGUE",
+        "FINISHED"
+      ],
+      [
+        "doublkv",
+        "Double KV",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-09"
+  },
+  "kat100_2026": {
+    "event": "KAT100 by UTMB",
+    "races": [
+      [
+        "100",
+        "100 Miles",
+        "FINISHED"
+      ],
+      [
+        "75",
+        "Endurance Trail",
+        "FINISHED"
+      ],
+      [
+        "51",
+        "Marathon Trail",
+        "FINISHED"
+      ],
+      [
+        "24",
+        "Speed Trail",
+        "FINISHED"
+      ],
+      [
+        "8",
+        "Easy Trail",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-08"
+  },
+  "gauja_2026": {
+    "event": "Gauja Trail by UTMB",
+    "races": [
+      [
+        "gt100k",
+        "Gauja Trail 100K",
+        "FINISHED"
+      ],
+      [
+        "gt50k",
+        "Gauja Trail 50K",
+        "FINISHED"
+      ],
+      [
+        "gt20k",
+        "Gauja Trail 20K",
+        "FINISHED"
+      ],
+      [
+        "gt10k",
+        "Gauja Trail 10K",
+        "FINISHED"
+      ],
+      [
+        "gty6k",
+        "Gauja Trail Youth 6K",
+        "FINISHED"
+      ],
+      [
+        "nw20k",
+        "Gauja Trail 20K Nordic Walking",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-02"
+  },
+  "grk3vm_2026": {
+    "event": "GRAND RAID KIPRUN 3 VALLÉES MOUTIERS ",
+    "races": [
+      [
+        "170",
+        "L'ULTRA DES 3 VALLÉES ",
+        "FINISHED"
+      ],
+      [
+        "RELAIS",
+        "L'ULTRA DES 3 VALLÉES RELAIS ",
+        "FINISHED"
+      ],
+      [
+        "110",
+        "L'ODYSSÉE DE CARON",
+        "FINISHED"
+      ],
+      [
+        "70",
+        "LE DÉFI DE LA MASSE",
+        "FINISHED"
+      ],
+      [
+        "50",
+        "MARATHON DES 3 VALLÉES ",
+        "FINISHED"
+      ],
+      [
+        "25",
+        "LES BALCONS DE SAINT JEAN",
+        "FINISHED"
+      ],
+      [
+        "10",
+        "L'ÉTOILÉE DES THERMES ",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-02"
+  },
+  "mdsclcourchevel_2026": {
+    "event": "MDS CRAZY LOOPS COURCHEVEL 2026",
+    "races": [
+      [
+        "loops3h",
+        "Loops 3h",
+        "FINISHED"
+      ],
+      [
+        "loops6h",
+        "Loops 6h",
+        "FINISHED"
+      ],
+      [
+        "loops9h",
+        "Loops 9h",
+        "FINISHED"
+      ],
+      [
+        "loops12",
+        "Loops 12h",
+        "FINISHED"
+      ],
+      [
+        "loops24",
+        "Loops 24h",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-02"
+  },
+  "quitobyutmb_2026": {
+    "event": "QUITO TRAIL by UTMB 2026",
+    "races": [
+      [
+        "20kqui",
+        "20K QUINDE",
+        "FINISHED"
+      ],
+      [
+        "12khumb",
+        "12K HUMBOLDT",
+        "FINISHED"
+      ],
+      [
+        "6krana",
+        "6K RANA",
+        "FINISHED"
+      ],
+      [
+        "80koso",
+        "80K OSO",
+        "FINISHED"
+      ],
+      [
+        "50knut",
+        "50K NUTRIA",
+        "FINISHED"
+      ],
+      [
+        "30ktuc",
+        "30K TUCÁN",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-02"
+  },
+  "la6000d_2026": {
+    "event": "La 6000D",
+    "races": [
+      [
+        "la6000d",
+        "La 6000D",
+        "FINISHED"
+      ],
+      [
+        "relais",
+        "La 6000D Relais à 3",
+        "FINISHED"
+      ],
+      [
+        "la6dm",
+        "La 6D Marathon",
+        "FINISHED"
+      ],
+      [
+        "6dlacs",
+        "La 6D Lacs",
+        "FINISHED"
+      ],
+      [
+        "la6def",
+        "La 6D Foulée",
+        "FINISHED"
+      ],
+      [
+        "la6dc",
+        "La 6D Crêtes",
+        "FINISHED"
+      ],
+      [
+        "6decou",
+        "La 6 Découverte",
+        "FINISHED"
+      ],
+      [
+        "6dbob",
+        "La 6D Bob",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-01"
+  },
+  "northdown50_2026": {
+    "event": "North Downs 50 ",
+    "races": [
+      [
+        "50KM",
+        "50 KM ",
+        "FINISHED"
+      ],
+      [
+        "25LOOP",
+        "25 KM Loop",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10 KM ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50 KM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-08-01"
+  },
+  "bucovinabyutmb_2026": {
+    "event": "Bucovina Ultra Rocks by UTMB",
+    "races": [
+      [
+        "ur100m",
+        "ULTRA ROCKS",
+        "FINISHED"
+      ],
+      [
+        "fs100k",
+        "FOUR SUMMITS",
+        "FINISHED"
+      ],
+      [
+        "lr50m",
+        "LADY'S ROCKS",
+        "FINISHED"
+      ],
+      [
+        "rk50m",
+        "ROCKY",
+        "FINISHED"
+      ],
+      [
+        "rr20m",
+        "RUMBLE ROCK",
+        "FINISHED"
+      ],
+      [
+        "rd20m",
+        "RADICAL",
+        "FINISHED"
+      ],
+      [
+        "rc5k",
+        "RUNC CHALLENGE",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-26"
+  },
+  "mdsclmorzineavoriaz_2026": {
+    "event": "MDS CRAZY LOOPS MORZINE-AVORIAZ 2026",
+    "races": [
+      [
+        "loops24",
+        "Loops 24h",
+        "FINISHED"
+      ],
+      [
+        "loops12",
+        "Loops 12h",
+        "FINISHED"
+      ],
+      [
+        "loops9",
+        "Loops 9h",
+        "FINISHED"
+      ],
+      [
+        "loops6",
+        "Loops 6h",
+        "FINISHED"
+      ],
+      [
+        "loops3",
+        "Loops 3h",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-26"
+  },
+  "xtrailcourchevel_2026": {
+    "event": "MILLET XTRAIL COURCHEVEL",
+    "races": [
+      [
+        "11k",
+        "XT 66km",
+        "FINISHED"
+      ],
+      [
+        "55k",
+        "XT 55km",
+        "FINISHED"
+      ],
+      [
+        "44k",
+        "XT 44km",
+        "FINISHED"
+      ],
+      [
+        "33k",
+        "XT 33km",
+        "FINISHED"
+      ],
+      [
+        "22k",
+        "XT 22km",
+        "FINISHED"
+      ],
+      [
+        "11kbis",
+        "XT 11km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-26"
+  },
+  "guanajuato_2026": {
+    "event": "UTMS Guanajuato by the North Face 2026",
+    "races": [
+      [
+        "46k",
+        "Pipila 46K",
+        "FINISHED"
+      ],
+      [
+        "33k",
+        "Mina 33K",
+        "FINISHED"
+      ],
+      [
+        "24k",
+        "Tunal 24K",
+        "FINISHED"
+      ],
+      [
+        "11k",
+        "Hacienda 11K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-25"
+  },
+  "southw_2026": {
+    "event": "South West Coast 50 ",
+    "races": [
+      [
+        "50KM",
+        "50KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10km Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half  Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50KM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-25"
+  },
+  "tatraskymarathon_2026": {
+    "event": "Tatra SkyMarathon",
+    "races": [
+      [
+        "O120",
+        "ORAVA 120",
+        "FINISHED"
+      ],
+      [
+        "O80",
+        "ORAVA 80",
+        "FINISHED"
+      ],
+      [
+        "TSM",
+        "TATRA SKYMARATHON",
+        "FINISHED"
+      ],
+      [
+        "OM",
+        "ORAVA MARATON",
+        "FINISHED"
+      ],
+      [
+        "TH",
+        "TATRA HALF",
+        "FINISHED"
+      ],
+      [
+        "TT",
+        "TATRA TRAIL",
+        "FINISHED"
+      ],
+      [
+        "Mini",
+        "MINI TATRA SKY",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-25"
+  },
+  "speedgoatmountainraces_2026": {
+    "event": "Speedgoat Mountain Races by UTMB",
+    "races": [
+      [
+        "10K",
+        "10K",
+        "FINISHED"
+      ],
+      [
+        "28K",
+        "30K",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "50K",
+        "FINISHED"
+      ],
+      [
+        "Summit",
+        "Summit",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-24"
+  },
+  "eigerultratrail_2026": {
+    "event": "Eiger Ultra Trail",
+    "races": [
+      [
+        "E250",
+        "E250",
+        "FINISHED"
+      ],
+      [
+        "E101",
+        "E101",
+        "FINISHED"
+      ],
+      [
+        "E51",
+        "E51",
+        "FINISHED"
+      ],
+      [
+        "E35",
+        "E35",
+        "FINISHED"
+      ],
+      [
+        "E16",
+        "E16",
+        "FINISHED"
+      ],
+      [
+        "TS",
+        "Trail Surprise",
+        "FINISHED"
+      ],
+      [
+        "e101sho",
+        "E101Short",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "gower_2026": {
+    "event": "Gower Peninsula ",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100KM 2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100KM",
+        "FINISHED"
+      ],
+      [
+        "75KM",
+        "75KM",
+        "FINISHED"
+      ],
+      [
+        "2DAY75",
+        "75KM 2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50KM",
+        "FINISHED"
+      ],
+      [
+        "MARA",
+        "Marathon",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25KM Loop",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "10KM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "mdscllarosiere_2026": {
+    "event": "MDS CRAZY LOOPS LA ROSIERE 2026",
+    "races": [
+      [
+        "24h",
+        "Loops 24h",
+        "FINISHED"
+      ],
+      [
+        "12h",
+        "Loops 12h",
+        "FINISHED"
+      ],
+      [
+        "9h",
+        "Loops 9h",
+        "FINISHED"
+      ],
+      [
+        "6h",
+        "Loops 6h",
+        "FINISHED"
+      ],
+      [
+        "3h",
+        "Loops 3h",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "mrwwbyutmb_2026": {
+    "event": "Monterosa Walserwaeg by UTMB",
+    "races": [
+      [
+        "SDV120",
+        "Les sentiers des Valdôtains",
+        "FINISHED"
+      ],
+      [
+        "MRT90",
+        "Monte Rosa Trail",
+        "FINISHED"
+      ],
+      [
+        "WWT45",
+        "Walserwaeg Trail",
+        "FINISHED"
+      ],
+      [
+        "RMT15",
+        "Regina Margherita Trail",
+        "FINISHED"
+      ],
+      [
+        "jwt9",
+        "Junior Walser Trail",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "ut4m_2026": {
+    "event": "Ut4M",
+    "races": [
+      [
+        "180X",
+        "Ut4M 180 Xtrem",
+        "FINISHED"
+      ],
+      [
+        "100M",
+        "Ut4M 100 Master",
+        "FINISHED"
+      ],
+      [
+        "180C",
+        "Ut4M 180 Challenge",
+        "FINISHED"
+      ],
+      [
+        "40C",
+        "Ut4M 40 Chartreuse",
+        "FINISHED"
+      ],
+      [
+        "40V",
+        "Ut4M 40 Vercors",
+        "FINISHED"
+      ],
+      [
+        "50T",
+        "Ut4M 50 Taillefer",
+        "FINISHED"
+      ],
+      [
+        "50B",
+        "Ut4M 50 Belledonne",
+        "FINISHED"
+      ],
+      [
+        "80C",
+        "Ut4M 80 Challenge",
+        "FINISHED"
+      ],
+      [
+        "20V",
+        "Ut4M 20 Vercors",
+        "FINISHED"
+      ],
+      [
+        "20T",
+        "Ut4M 20 Taillefer",
+        "FINISHED"
+      ],
+      [
+        "20B",
+        "Ut4M 20 Belledonne",
+        "FINISHED"
+      ],
+      [
+        "20C",
+        "Ut4M 20 Chartreuse",
+        "FINISHED"
+      ],
+      [
+        "EN10K",
+        "EN 10K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "vaurtr_2026": {
+    "event": "VAUBAN MOUNTAIN TRAIL",
+    "races": [
+      [
+        "kv",
+        "Montée verticale WMRA",
+        "FINISHED"
+      ],
+      [
+        "vmt7",
+        "Petit Parcours",
+        "FINISHED"
+      ],
+      [
+        "vmt14",
+        "Grand Parcours WMRA",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-19"
+  },
+  "gtc_2026": {
+    "event": "Gruyère Trail Charmey",
+    "races": [
+      [
+        "54km",
+        "54KM",
+        "FINISHED"
+      ],
+      [
+        "36km",
+        "36KM",
+        "FINISHED"
+      ],
+      [
+        "24km",
+        "24KM",
+        "FINISHED"
+      ],
+      [
+        "11km",
+        "11KM",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-18"
+  },
+  "gtvo_2026": {
+    "event": "Grand Trail de la Vallée d'Ossau",
+    "races": [
+      [
+        "solo",
+        "GTVO SOLO",
+        "FINISHED"
+      ],
+      [
+        "Relais",
+        "GTVO RELAIS",
+        "FINISHED"
+      ],
+      [
+        "tvo",
+        "TVO",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-18"
+  },
+  "oisanstrailtour_2026": {
+    "event": "Oisans Trail Tour",
+    "races": [
+      [
+        "89Km",
+        "ULTRA TOUR",
+        "FINISHED"
+      ],
+      [
+        "39Km",
+        "TRAIL TOUR",
+        "FINISHED"
+      ],
+      [
+        "28Km",
+        "TRAIL COURT",
+        "FINISHED"
+      ],
+      [
+        "10Km",
+        "TRAIL DÉCOUVERTE",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-18"
+  },
+  "ultrasudcanigou_2026": {
+    "event": "Ultra Sud Canigou",
+    "races": [
+      [
+        "uscsolo",
+        "Ultra Sud Canigou",
+        "FINISHED"
+      ],
+      [
+        "uscr2",
+        "Ultra Sud Relais à 2",
+        "FINISHED"
+      ],
+      [
+        "usmr4",
+        "Ultra Sud Relais à 4",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-18"
+  },
+  "htv_2026": {
+    "event": "Odlo High Trail Vanoise 2026",
+    "races": [
+      [
+        "htv",
+        "HTV",
+        "FINISHED"
+      ],
+      [
+        "t5c",
+        "T5C",
+        "FINISHED"
+      ],
+      [
+        "balcons",
+        "Balcons",
+        "FINISHED"
+      ],
+      [
+        "CCNOEL",
+        "Course caritative",
+        "FINISHED"
+      ],
+      [
+        "cenfant",
+        "Enfants",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-12"
+  },
+  "tvsb_2026": {
+    "event": "Trail Verbier St-Bernard by UTMB",
+    "races": [
+      [
+        "XP",
+        "Verbier X-Plore",
+        "FINISHED"
+      ],
+      [
+        "XA",
+        "X-Alpine",
+        "FINISHED"
+      ],
+      [
+        "XT",
+        "X-Traversée",
+        "FINISHED"
+      ],
+      [
+        "VM",
+        "Verbier Marathon",
+        "FINISHED"
+      ],
+      [
+        "TDA",
+        "TDécouverte1.2",
+        "FINISHED"
+      ],
+      [
+        "TDB",
+        "TDécouverte3.5",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-12"
+  },
+  "ultra_2026": {
+    "event": "TIGER BALM ULTRA 01 2026",
+    "races": [
+      [
+        "170",
+        "Tiger Balm Ultra 01 170 K",
+        "FINISHED"
+      ],
+      [
+        "Relais",
+        "Tiger Balm Ultra 01 170 K Relais ",
+        "FINISHED"
+      ],
+      [
+        "100",
+        "Tiger Balm Ultra  01 100 K",
+        "FINISHED"
+      ],
+      [
+        "65",
+        "Tiger Balm Ultra 65 K by Pays de Gex Agglomération ",
+        "FINISHED"
+      ],
+      [
+        "45",
+        "Tiger Balm Ultra 01 45 K",
+        "FINISHED"
+      ],
+      [
+        "25",
+        "Tiger Balm Ultra 01 25 K",
+        "FINISHED"
+      ],
+      [
+        "13",
+        "Tiger Balm Ultra 01 13 K ",
+        "FINISHED"
+      ],
+      [
+        "minben",
+        "Course Minimes / Benjamins ",
+        "FINISHED"
+      ],
+      [
+        "poussin",
+        "Course Poussins",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-12"
+  },
+  "restonica_2026": {
+    "event": "Restonica Trail by UTMB",
+    "races": [
+      [
+        "UTC",
+        "Ultra-Trail® di Corsica",
+        "FINISHED"
+      ],
+      [
+        "RT",
+        "Restonica Trail",
+        "FINISHED"
+      ],
+      [
+        "TT",
+        "Tavignanu Trail",
+        "FINISHED"
+      ],
+      [
+        "GT",
+        "Giru di Tumbone",
+        "FINISHED"
+      ],
+      [
+        "UTC4",
+        "Relais Ultra-Trail® di Corsica x4",
+        "FINISHED"
+      ],
+      [
+        "UTC2",
+        "Relais Ultra-Trail® di Corsica x2",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-11"
+  },
+  "trailmolieres_2026": {
+    "event": "TRAIL VIELHA MOLIÈRES 3010",
+    "races": [
+      [
+        "marato",
+        "Maratón Molières 3010",
+        "FINISHED"
+      ],
+      [
+        "montpiu",
+        "Mont Pius Skyrace",
+        "FINISHED"
+      ],
+      [
+        "tucatr",
+        "Tuca Trail",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-11"
+  },
+  "zalauultratrail_2026": {
+    "event": "Zalau Ultra Trail",
+    "races": [
+      [
+        "ultra",
+        "ULTRA ",
+        "FINISHED"
+      ],
+      [
+        "maraton",
+        "MARATON",
+        "FINISHED"
+      ],
+      [
+        "semi",
+        "SEMI Road to Osoiu",
+        "FINISHED"
+      ],
+      [
+        "cros",
+        "CROS",
+        "FINISHED"
+      ],
+      [
+        "kids",
+        "KIDS",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-11"
+  },
+  "aranbyutmb_2026": {
+    "event": "HOKA VAL D'ARAN by UTMB 2026",
+    "races": [
+      [
+        "vda",
+        "VDA",
+        "FINISHED"
+      ],
+      [
+        "cdh",
+        "CDH",
+        "FINISHED"
+      ],
+      [
+        "tdl",
+        "TDL",
+        "FINISHED"
+      ],
+      [
+        "pda",
+        "PDA",
+        "FINISHED"
+      ],
+      [
+        "exp",
+        "EXP",
+        "FINISHED"
+      ],
+      [
+        "skypro",
+        "SKY PROM",
+        "FINISHED"
+      ],
+      [
+        "skymas",
+        "SKY MASTER",
+        "FINISHED"
+      ],
+      [
+        "vielha",
+        "VIELHA 10K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-05"
+  },
+  "lat_2026": {
+    "event": "Luchon Aneto Trail",
+    "races": [
+      [
+        "Ultra",
+        "l'Ultra LAT",
+        "FINISHED"
+      ],
+      [
+        "R3404",
+        "La Route 3404",
+        "FINISHED"
+      ],
+      [
+        "40oo",
+        "40 OÔ- Pyrénées",
+        "FINISHED"
+      ],
+      [
+        "Venasq",
+        "La Venasque",
+        "FINISHED"
+      ],
+      [
+        "kbour",
+        "La K-Bour",
+        "FINISHED"
+      ],
+      [
+        "Dika",
+        "La Dika",
+        "FINISHED"
+      ],
+      [
+        "challen",
+        "CHALLENGE 2 x 40k",
+        "FINISHED"
+      ],
+      [
+        "laduon",
+        "La Duonasque",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-05"
+  },
+  "mbrace_2026": {
+    "event": "MB RACE",
+    "races": [
+      [
+        "MB70",
+        "MB ULTRA SOMFY 70",
+        "FINISHED"
+      ],
+      [
+        "MB100",
+        "MB ULTRA SOMFY 100",
+        "FINISHED"
+      ],
+      [
+        "MB140",
+        "MB ULTRA SOMFY 140",
+        "FINISHED"
+      ],
+      [
+        "MB20",
+        "MB EXPLORE 20",
+        "FINISHED"
+      ],
+      [
+        "MB35",
+        "MB EXPLORE 35",
+        "FINISHED"
+      ],
+      [
+        "MB55",
+        "MB EXPLORE 55",
+        "FINISHED"
+      ],
+      [
+        "minime",
+        "MB MINIME",
+        "FINISHED"
+      ],
+      [
+        "MBer35",
+        "MB eRANDO 35",
+        "FINISHED"
+      ],
+      [
+        "MBber55",
+        "MB eRANDO 55",
+        "FINISHED"
+      ],
+      [
+        "mbegou",
+        "MB eGOURMANDE",
+        "FINISHED"
+      ],
+      [
+        "MBBENJ",
+        "MB KIDS BENJAMIN",
+        "FINISHED"
+      ],
+      [
+        "MBPUPIL",
+        "MB KIDS PUPILLES",
+        "FINISHED"
+      ],
+      [
+        "MBPOUSS",
+        "MB KIDS POUSSINS",
+        "FINISHED"
+      ],
+      [
+        "MINIPOU",
+        "MB KIDS  MINI POUSSINS",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-05"
+  },
+  "montagnhard_2026": {
+    "event": "La Montagn'hard",
+    "races": [
+      [
+        "mont100",
+        "LA MONTAGN'HARD 100",
+        "FINISHED"
+      ],
+      [
+        "mont70",
+        "LA MOINS'HARD 70",
+        "FINISHED"
+      ],
+      [
+        "mont50",
+        "LA MI' HARD 50",
+        "FINISHED"
+      ],
+      [
+        "mont20",
+        "LA MINI'HARD 20",
+        "FINISHED"
+      ],
+      [
+        "bi10070",
+        "Bifurcation 100-70",
+        "FINISHED"
+      ],
+      [
+        "bi10050",
+        "Bifurcation 100-50",
+        "FINISHED"
+      ],
+      [
+        "bi7050",
+        "Bifurcation 70-50",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-05"
+  },
+  "peakdistrict_2026": {
+    "event": "Peak District  Challenge ",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100KM 2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "25LOOP",
+        "25km  Loop ",
+        "FINISHED"
+      ],
+      [
+        "10MILE",
+        "10 Mile",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100km",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50km",
+        "FINISHED"
+      ],
+      [
+        "75KM",
+        "73KM ",
+        "FINISHED"
+      ],
+      [
+        "2DAY75",
+        "73KM 2 day Challenge ",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-07-05"
+  },
+  "lavaredo_2026": {
+    "event": "La Sportiva Lavaredo Ultra Trail by UTMB®",
+    "races": [
+      [
+        "120K",
+        "LAVAREDO 120K",
+        "FINISHED"
+      ],
+      [
+        "80K",
+        "LAVAREDO 80K",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "LAVAREDO 50K",
+        "FINISHED"
+      ],
+      [
+        "20K",
+        "LAVAREDO 20K",
+        "FINISHED"
+      ],
+      [
+        "10K",
+        "LAVAREDO 10K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-28"
+  },
+  "mbm_2026": {
+    "event": "Marathon du Mont-Blanc",
+    "races": [
+      [
+        "90km",
+        "90km du Mont-Blanc",
+        "FINISHED"
+      ],
+      [
+        "42km",
+        "42km du Mont-Blanc",
+        "FINISHED"
+      ],
+      [
+        "KmV",
+        "Kilomètre Vertical",
+        "FINISHED"
+      ],
+      [
+        "23km",
+        "23km du Mont-Blanc",
+        "FINISHED"
+      ],
+      [
+        "U20YR",
+        "The Young Race U20",
+        "FINISHED"
+      ],
+      [
+        "U18YR",
+        "The Young Race U18",
+        "FINISHED"
+      ],
+      [
+        "Duo",
+        "Duo étoilé",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "10Km du Mont-Blanc",
+        "FINISHED"
+      ],
+      [
+        "EA",
+        "Mini cross 800m",
+        "FINISHED"
+      ],
+      [
+        "Poussin",
+        "Minis Cross 2 km",
+        "FINISHED"
+      ],
+      [
+        "benj",
+        "Mini Cross 3km Benjamins",
+        "FINISHED"
+      ],
+      [
+        "minime",
+        "Mini cross 3km Minimes",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-28"
+  },
+  "torrencialbyutmb_2026": {
+    "event": "TORRENCIAL CHILE by UTMB 2026",
+    "races": [
+      [
+        "100k",
+        "100K",
+        "FINISHED"
+      ],
+      [
+        "65k",
+        "65K",
+        "FINISHED"
+      ],
+      [
+        "44k",
+        "44K",
+        "FINISHED"
+      ],
+      [
+        "21k",
+        "21K",
+        "FINISHED"
+      ],
+      [
+        "12k",
+        "12K",
+        "FINISHED"
+      ],
+      [
+        "6k",
+        "6K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-28"
+  },
+  "balconcauteret_2026": {
+    "event": "Balcons de Cauterets",
+    "races": [
+      [
+        "80km",
+        "80km",
+        "FINISHED"
+      ],
+      [
+        "47km",
+        "47km",
+        "FINISHED"
+      ],
+      [
+        "20km",
+        "20km",
+        "FINISHED"
+      ],
+      [
+        "11km",
+        "11km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-27"
+  },
+  "trailvalleedeslacs_2026": {
+    "event": "TRAIL DE LA VALLEE DES LACS",
+    "races": [
+      [
+        "82km",
+        "LE GRAND TRAIL",
+        "CANCELLED"
+      ],
+      [
+        "82kmRel",
+        "LE TRAIL RELAIS",
+        "CANCELLED"
+      ],
+      [
+        "43km",
+        "LE TRAIL LONG",
+        "CANCELLED"
+      ],
+      [
+        "24km",
+        "LE TRAIL COURT",
+        "CANCELLED"
+      ],
+      [
+        "12km",
+        "LA NATURELLE DE MARIE",
+        "CANCELLED"
+      ],
+      [
+        "2km",
+        "LE MINI TRAIL",
+        "CANCELLED"
+      ],
+      [
+        "1km",
+        "LE TRAILLOUNET",
+        "CANCELLED"
+      ]
+    ],
+    "date": "2026-06-27"
+  },
+  "cavallsdelvent_2026": {
+    "event": "CAVALLS DEL VENT 2026",
+    "races": [
+      [
+        "open",
+        "Open CDV",
+        "FINISHED"
+      ],
+      [
+        "half",
+        "Half CDV",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "kagaspatrail_2026": {
+    "event": "Kagaspa Trail Endurance 100 Japan",
+    "races": [
+      [
+        "kaga100",
+        "KagaSpa100",
+        "FINISHED"
+      ],
+      [
+        "kaga50",
+        "Kaga Spa Trail Endurance 50",
+        "FINISHED"
+      ],
+      [
+        "kaga20",
+        "Kaga Spa Trail Endurance 20",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "mdsclcourmayeur_2026": {
+    "event": "MDS CRAZY LOOPS COURMAYEUR 2026",
+    "races": [
+      [
+        "loops24",
+        "Loops 24H",
+        "FINISHED"
+      ],
+      [
+        "loops12",
+        "Loops 12H",
+        "FINISHED"
+      ],
+      [
+        "loops9",
+        "Loops 9H",
+        "FINISHED"
+      ],
+      [
+        "loops6",
+        "Loops 6H",
+        "FINISHED"
+      ],
+      [
+        "loops3",
+        "Loops 3H",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "northyorks_2026": {
+    "event": "North Yorks Challenge ",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1002Day",
+        "100KM Challenge  2 days ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "25LOOP",
+        "25KM Loop",
+        "FINISHED"
+      ],
+      [
+        "10MILE",
+        "10 Mile ",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "patoutrail_2026": {
+    "event": "Patou Trail",
+    "races": [
+      [
+        "kv",
+        "KV",
+        "FINISHED"
+      ],
+      [
+        "maratho",
+        "Marathon",
+        "FINISHED"
+      ],
+      [
+        "mararel",
+        "Marathon Relais",
+        "FINISHED"
+      ],
+      [
+        "skyrace",
+        "Skyrace",
+        "FINISHED"
+      ],
+      [
+        "tdv20",
+        "TDV 20",
+        "FINISHED"
+      ],
+      [
+        "tdv11",
+        "TDV 11",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "seminev_2026": {
+    "event": "Semi de Nevache",
+    "races": [
+      [
+        "semi",
+        "Semi Marathon",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "10 km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "ultratrailduhautgiffre_2026": {
+    "event": "Ultra-Trail® du Haut-Giffre",
+    "races": [
+      [
+        "SDT",
+        "Aux Sources du Trail",
+        "FINISHED"
+      ],
+      [
+        "UTHG",
+        "Ultra-Trail® du haut-Giffre",
+        "FINISHED"
+      ],
+      [
+        "TMBD",
+        "Trail du Mont-Blanc des Dames",
+        "FINISHED"
+      ],
+      [
+        "TDF",
+        "Trail des Frahans",
+        "FINISHED"
+      ],
+      [
+        "TDB",
+        "Tour de Bostan",
+        "FINISHED"
+      ],
+      [
+        "TDG",
+        "Tour du Giffre - DUO",
+        "FINISHED"
+      ],
+      [
+        "MDG",
+        "La Montée de Gers",
+        "FINISHED"
+      ],
+      [
+        "FDG",
+        "Au Fil du Giffre",
+        "FINISHED"
+      ],
+      [
+        "TDBS",
+        "Tour de Bostan - Shunt",
+        "FINISHED"
+      ],
+      [
+        "tdfs",
+        "Trail des Frahans - Shunt",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-21"
+  },
+  "landelowtrail_2026": {
+    "event": "LANDELOW TRAIL",
+    "races": [
+      [
+        "le50km",
+        "LE 50KM",
+        "CANCELLED"
+      ],
+      [
+        "le25km",
+        "LE 25KM",
+        "CANCELLED"
+      ],
+      [
+        "le15km",
+        "LE 15KM",
+        "CANCELLED"
+      ]
+    ],
+    "date": "2026-06-20"
+  },
+  "zugspitz_2026": {
+    "event": "Zugspitz UltraTrail by UTMB",
+    "races": [
+      [
+        "zut100",
+        "ZUT100",
+        "FINISHED"
+      ],
+      [
+        "zutv1",
+        "ZUT100 Variant 1",
+        "FINISHED"
+      ],
+      [
+        "zutv2",
+        "ZUT100 Variant 2",
+        "FINISHED"
+      ],
+      [
+        "ultra",
+        "Ultratrail",
+        "FINISHED"
+      ],
+      [
+        "ehrwald",
+        "Ehrwald Trail",
+        "FINISHED"
+      ],
+      [
+        "leuta",
+        "Leutasch Trail",
+        "FINISHED"
+      ],
+      [
+        "leutv1",
+        "Leutasch Trail Variant 1",
+        "FINISHED"
+      ],
+      [
+        "miwa",
+        "Mittenwald Trail",
+        "FINISHED"
+      ],
+      [
+        "gapa",
+        "Garmisch-Partenkirchen Trail",
+        "FINISHED"
+      ],
+      [
+        "grainau",
+        "Grainau Trail",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-20"
+  },
+  "mdscappadocia_2026": {
+    "event": "MDS 120 CAPPADOCIA 2026",
+    "races": [
+      [
+        "mds120",
+        "MDS120",
+        "FINISHED"
+      ],
+      [
+        "mds100",
+        "MDS100",
+        "FINISHED"
+      ],
+      [
+        "mds70",
+        "MDS70",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-18"
+  },
+  "andorrabyutmb_2026": {
+    "event": "Trail 100 Andorra BY UTMB",
+    "races": [
+      [
+        "105K",
+        "Ultra 105K",
+        "FINISHED"
+      ],
+      [
+        "50K",
+        "Trail 50K",
+        "FINISHED"
+      ],
+      [
+        "80k",
+        "Trail 80k",
+        "FINISHED"
+      ],
+      [
+        "21K",
+        "Trail 21K",
+        "FINISHED"
+      ],
+      [
+        "10K",
+        "Trail 10K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "comblorane_2026": {
+    "event": "La Comblorane",
+    "races": [
+      [
+        "xl",
+        "XL - 42 km",
+        "FINISHED"
+      ],
+      [
+        "l",
+        "L - 25 km",
+        "FINISHED"
+      ],
+      [
+        "m",
+        "M - 15 km",
+        "FINISHED"
+      ],
+      [
+        "s",
+        "S - 7 km",
+        "FINISHED"
+      ],
+      [
+        "xs14",
+        " XS 14/15 ans",
+        "FINISHED"
+      ],
+      [
+        "xs12",
+        "XS 12/13 ans",
+        "FINISHED"
+      ],
+      [
+        "xs10",
+        " XS 10/11 ans",
+        "FINISHED"
+      ],
+      [
+        "xs7",
+        " XS 7/9 ans",
+        "FINISHED"
+      ],
+      [
+        "xs4",
+        " XS 4/6 ans",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "cotswoldway_2026": {
+    "event": "Cotswold Way Challenge",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100KM 2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1ST Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2ND Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "1STQTR",
+        " 1st Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "2NDQTR",
+        "2nd Quarter Challenge ",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "Cirencester 10km",
+        "FINISHED"
+      ],
+      [
+        "75KM",
+        "76KM Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100km",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50km",
+        "FINISHED"
+      ],
+      [
+        "2DAY75",
+        "75KM 2 Day Challenge ",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "laketoba_2026": {
+    "event": "Trail of The Kings by UTMB",
+    "races": [
+      [
+        "100K",
+        "Caldera Crown 100K",
+        "FINISHED"
+      ],
+      [
+        "60K",
+        "Ultimate Expedition 60K",
+        "FINISHED"
+      ],
+      [
+        "28K",
+        "King's Ascent 28K",
+        "FINISHED"
+      ],
+      [
+        "10K",
+        "Legacy Dash 10K",
+        "FINISHED"
+      ],
+      [
+        "5K",
+        "Legend Leap 5K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "tsj_2026": {
+    "event": "Trail du Saint-Jacques by UTMB",
+    "races": [
+      [
+        "Moni",
+        "MONISTRAIL",
+        "FINISHED"
+      ],
+      [
+        "Chibot",
+        "LES CHIBOTTES",
+        "FINISHED"
+      ],
+      [
+        "le12d",
+        "LE 12 DU DOLAIZON",
+        "FINISHED"
+      ],
+      [
+        "GTSJ",
+        "Grand Trail du Saint-Jacques",
+        "FINISHED"
+      ],
+      [
+        "Ultra",
+        "ULTRA",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "utpma_2026": {
+    "event": "UTPMA",
+    "races": [
+      [
+        "UTPMA",
+        "L’ULTRA TRAIL DU PUY MARY AURILLAC « U.T.P.M.A. »",
+        "FINISHED"
+      ],
+      [
+        "UTPMADU",
+        "L’ULTRA TRAIL DU PUY MARY AURILLAC « U.T.P.M.A. » DUO",
+        "FINISHED"
+      ],
+      [
+        "LIORAN",
+        "Grand Trail du Lioran",
+        "FINISHED"
+      ],
+      [
+        "JORDANN",
+        "Trail de la Jordanne",
+        "FINISHED"
+      ],
+      [
+        "JORDREL",
+        "Trail de la Jordanne Relais",
+        "FINISHED"
+      ],
+      [
+        "insom",
+        "L’INSOMN’ILLAC",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-14"
+  },
+  "mtarcau_2026": {
+    "event": "Maraton Tarcau",
+    "races": [
+      [
+        "maraton",
+        "Maraton ",
+        "FINISHED"
+      ],
+      [
+        "semimar",
+        "Semimaraton",
+        "FINISHED"
+      ],
+      [
+        "cros",
+        "Cros",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-13"
+  },
+  "apetralbinca_2026": {
+    "event": "A PETRALBINCA",
+    "races": [
+      [
+        "altu",
+        "L'ALTURAGHJA",
+        "FINISHED"
+      ],
+      [
+        "apetra",
+        "A PETRALBINCA",
+        "FINISHED"
+      ],
+      [
+        "acasta",
+        "A CASTAGNA",
+        "FINISHED"
+      ],
+      [
+        "relais",
+        "L'ALTURAGHJA RELAIS",
+        "FINISHED"
+      ],
+      [
+        "ecasen",
+        "E Casenove",
+        "CANCELLED"
+      ]
+    ],
+    "date": "2026-06-07"
+  },
+  "lakes_2026": {
+    "event": "Lake District Ultra Challenge ",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100KM 2 Day Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM100KM",
+        "Ultra March 100km",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "UM50KM",
+        "Ultra March 50km",
+        "FINISHED"
+      ],
+      [
+        "2NDHALF",
+        "2nd Half Challenge ",
+        "FINISHED"
+      ],
+      [
+        "MARA",
+        "Marathon",
+        "FINISHED"
+      ],
+      [
+        "1STQTR",
+        "First Quarter Challenge ",
+        "FINISHED"
+      ],
+      [
+        "10KM",
+        "Ambleside 10km",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-07"
+  },
+  "millefonts_2026": {
+    "event": "Trails des Millefonts Mercantour",
+    "races": [
+      [
+        "GTM",
+        "Grand trail des Millefonts",
+        "FINISHED"
+      ],
+      [
+        "TLM",
+        "Trail des Lacs",
+        "FINISHED"
+      ],
+      [
+        "PTM",
+        "P'tit Trail",
+        "FINISHED"
+      ],
+      [
+        "CEX",
+        "Caire Express",
+        "FINISHED"
+      ],
+      [
+        "kv",
+        "KV du Pétoumier",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-07"
+  },
+  "transjutrail_2026": {
+    "event": "La Transju'Trail",
+    "races": [
+      [
+        "tran110",
+        "LA TRANSJU’TRAIL 110 KM",
+        "FINISHED"
+      ],
+      [
+        "trans82",
+        "LA TRANSJU’TRAIL 82 KM",
+        "FINISHED"
+      ],
+      [
+        "tran82r",
+        "LA TRANSJU’TRAIL 82 KM RELAIS",
+        "FINISHED"
+      ],
+      [
+        "trans65",
+        "LA TRANSJU’TRAIL 65 KM",
+        "FINISHED"
+      ],
+      [
+        "trans42",
+        "LA TRANSJU’TRAIL 42 KM",
+        "FINISHED"
+      ],
+      [
+        "tran25",
+        "LA TRANSJU’TRAIL 25 K",
+        "FINISHED"
+      ],
+      [
+        "tran15",
+        "LA TRANSJU’TRAIL 15 K",
+        "FINISHED"
+      ],
+      [
+        "tran10",
+        "LA TRANSJU’TRAIL 10 K",
+        "FINISHED"
+      ],
+      [
+        "tran5",
+        "LA TRANSJU’TRAIL 5 K",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-07"
+  },
+  "lachausseedesgeants_2026": {
+    "event": "La Chaussée des Géants",
+    "races": [
+      [
+        "51km",
+        "51 km Les 3 Vallées",
+        "FINISHED"
+      ],
+      [
+        "20km",
+        "20 km Le Ranc Qualiou",
+        "FINISHED"
+      ],
+      [
+        "10km",
+        "10 km La Gravenne",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-06"
+  },
+  "montanaspe_2026": {
+    "event": "Montan'Aspe",
+    "races": [
+      [
+        "le100k",
+        "Le 100K'Aspe",
+        "FINISHED"
+      ],
+      [
+        "60k",
+        "LE RAID ASPOIS",
+        "FINISHED"
+      ],
+      [
+        "35k",
+        "LE DEFI DE L'OURDINSE",
+        "FINISHED"
+      ],
+      [
+        "16k",
+        "LA RONDE DE BERGOUT",
+        "FINISHED"
+      ],
+      [
+        "Verte",
+        "LA COURSE DE SOUDIOUS",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-06-06"
+  },
+  "mountainultratrail_2026": {
+    "event": "Mountain Ultra Trail by UTMB",
+    "races": [
+      [
+        "miler",
+        "MUT Miler",
+        "FINISHED"
+      ],
+      [
+        "100k",
+        "MUT 100",
+        "FINISHED"
+      ],
+      [
+        "60k",
+        "MUT 60",
+        "FINISHED"
+      ],
+      [
+        "marat",
+        "MUT Marathon",
+        "FINISHED"
+      ],
+      [
+        "chall",
+        "MUT Challenge",
+        "FINISHED"
+      ],
+      [
+        "lite",
+        "MUT Lite",
+        "FINISHED"
+      ],
+      [
+        "kids",
+        "Kids",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-05-31"
+  },
+  "valleedaure_2026": {
+    "event": "TRAIL EN VALLEE D’AURE",
+    "races": [
+      [
+        "montagn",
+        "Montagn’Hard",
+        "FINISHED"
+      ],
+      [
+        "isards",
+        "Ronde des Isards",
+        "FINISHED"
+      ],
+      [
+        "balcon",
+        "Les Balcons d’Aure",
+        "FINISHED"
+      ],
+      [
+        "pompier",
+        "Départemental de trail sapeurs-pompiers",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-05-30"
+  },
+  "london2brighton_2026": {
+    "event": "London 2 Brighton Ultra Challenge®",
+    "races": [
+      [
+        "100KM",
+        "100KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "2DAY100",
+        "100KM 2 Day Challenge",
+        "FINISHED"
+      ],
+      [
+        "UM100",
+        "Ultra March 100km",
+        "FINISHED"
+      ],
+      [
+        "1STHALF",
+        "1st Half Challenge",
+        "FINISHED"
+      ],
+      [
+        "75KM",
+        "75KM Challenge",
+        "FINISHED"
+      ],
+      [
+        "MARA",
+        "2nd Half Challenge (Sussex Marathon)",
+        "FINISHED"
+      ],
+      [
+        "1STQTR",
+        "1st Quarter Challenge",
+        "FINISHED"
+      ],
+      [
+        "2NDQTR",
+        "2nd Quarter Challenge ",
+        "FINISHED"
+      ],
+      [
+        "25KM",
+        "25km Brighton Loop",
+        "FINISHED"
+      ],
+      [
+        "75km2Da",
+        "75KM in 2 Days",
+        "FINISHED"
+      ]
+    ],
+    "date": "2026-05-24"
   }
 }
