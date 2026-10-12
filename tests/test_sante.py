@@ -768,7 +768,7 @@ async def test_opening_sante_syncs_a_stale_link_and_reloads_only_with_news(as_us
     conn.last_error = "COROS ne répond pas pour l'instant."
     await db_session.flush()
     page = (await as_user.get("/sante")).text  # a failed watch: not retried on its own (Réglages say why)
-    assert started == [] and "ne répond pas" in page
+    assert started == [] and 'data-sync-issue="COROS n’a pas pu être actualisé."' in page
 
 
 async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, test_user: User, monkeypatch):

@@ -17,17 +17,23 @@
   }
   function status(message, retry, loading) {
     clearTimeout(hideTimer);
+    document.querySelectorAll('[data-sync-issue]').forEach(function (el) { el.hidden = true; });
+    // Recent native builds own the single progress/error surface. Older builds
+    // and browsers retain this inline fallback, never a floating overlay.
+    if (window.paceforgeNativeRefresh === 2 && window.ReactNativeWebView) {
+      if (retry) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'refresh-notice', message: message }));
+      return;
+    }
     if (!toast) {
       toast = document.createElement('div'); toast.className = 'pf-refresh-status';
       toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
-      document.body.appendChild(toast);
+      document.getElementById('main-content').before(toast);
     }
     toast.replaceChildren(); toast.hidden = false;
     toast.classList.toggle('is-loading', !!loading);
     var text = document.createElement('span'); text.textContent = message; toast.appendChild(text);
     if (retry) {
-      var button = document.createElement('button'); button.type = 'button'; button.textContent = 'Réessayer';
-      button.onclick = function () { refresh(true); }; toast.appendChild(button);
+      var link = document.createElement('a'); link.href = '/settings#connections'; link.textContent = 'Connexions'; toast.appendChild(link);
       var close = document.createElement('button'); close.type = 'button'; close.textContent = '×';
       close.setAttribute('aria-label', 'Fermer le message'); close.onclick = function () { toast.hidden = true; };
       toast.appendChild(close);
@@ -145,12 +151,16 @@
       }
       try { await replacePage(); }
       catch (error) { errors.push(error.message); }
+      var issue = document.querySelector('[data-sync-issue]');
+      if (issue) errors.push(issue.dataset.syncIssue);
       if (errors.length) status(errors[0], true, false);
-      else if (sources) status('Actualisation terminée.', false, false);
+      else if (toast) toast.hidden = true;
     })().finally(function () { running = null; nativeState(false); });
     return running;
   }
   window.paceforgeRefresh = { refresh: refresh };
+  var existingIssue = document.querySelector('[data-sync-issue]');
+  if (existingIssue && window.paceforgeNativeRefresh === 2) status(existingIssue.dataset.syncIssue, true, false);
   document.addEventListener('htmx:beforeOnLoad', function (event) {
     var detail = event.detail;
     if (detail?.elt?.id === 'sante-sync' && detail.xhr.getResponseHeader('HX-Refresh') === 'true') {

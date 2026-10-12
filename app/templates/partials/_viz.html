@@ -130,7 +130,7 @@
 {# V1 ring: the arc from the top, clockwise, in the tone's colour; the value in the middle, the label and a word under
    it, then a note that says what the arc compares (the Charge ring: « plus que d'habitude »): no mark without words.
    The whole ring is one link to what it sums up; a plain image when there is nothing #}
-{% macro viz_ring(r) %}
+{% macro viz_ring(r, show_note=True) %}
 {% set tag = "a" if r.href else "div" %}
 <{{ tag }} class="pf-ring pf-ring-{{ r.key }} is-{{ r.tone }}"{% if r.href %} href="{{ r.href }}"{% else %} role="img"{% endif %} aria-label="{{ r.aria }}">
     <span class="pf-ring-dial">
@@ -140,7 +140,7 @@
     </span>
     {% if r.label %}<span class="pf-ring-label" aria-hidden="true">{{ r.label }}</span>{% endif %}
     {% if r.sub %}<span class="pf-ring-sub" aria-hidden="true">{{ r.sub }}</span>{% endif %}
-    {% if r.note %}<span class="pf-ring-note" aria-hidden="true">{{ r.note }}</span>{% endif %}
+    {% if r.note and show_note %}<span class="pf-ring-note" aria-hidden="true">{{ r.note }}</span>{% endif %}
 </{{ tag }}>
 {% endmacro %}
 

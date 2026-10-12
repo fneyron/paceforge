@@ -15,7 +15,7 @@ DOM, ses graphiques et ses recalculs peuvent aussi bloquer le rendu.
 Pour PaceForge, cela se traduit par :
 
 - défilement vertical confié au système, sans gestionnaire JavaScript qui le bloque ;
-- geste natif depuis le haut, et bouton accessible de même effet ;
+- geste natif depuis le haut, avec action d’accessibilité sans bouton supplémentaire ;
 - actualisation des services connectés et des lectures autorisées du téléphone ;
 - contenu conservé pendant l’attente, erreurs réessayables, aucune fausse mesure récente ;
 - conservation de la position, des sections et de la date sélectionnée ;
@@ -32,7 +32,8 @@ ni une affirmation que PaceForge égale la fluidité d’une autre application.
 [WebView 13.16.1](https://github.com/react-native-webview/react-native-webview/blob/v13.16.1/docs/Reference.md).
 Dans cette version, le SDK déclenche un rechargement puis termine immédiatement
 l’animation de son contrôle. PaceForge intercepte ce rechargement et lance la
-synchronisation ; l’icône de l’en-tête reste en progression jusqu’à sa fin. Ce
+synchronisation ; un seul indicateur discret reste visible pendant l’action
+manuelle. Le bouton de l’en-tête et le message flottant ont été retirés. Ce
 n’est pas une imitation du geste par `touchmove`. Le redémarrage d’un processus
 WebView interrompu reste autorisé à recharger réellement le document.
 
@@ -65,7 +66,8 @@ deux doigts, le toucher simple et le clavier restent disponibles.
 - Tests mobiles : étapes quotidiennes avant sommeil, panne et reprise, délais,
   nonce, compte différent, cadence et réponse d’authentification.
 - Tests du **vrai composant App** avec interfaces natives simulées : ouverture,
-  geste/bouton, changement d’onglet pendant collecte, course non rechargée,
+  geste, absence de bouton supplémentaire, progression partagée, échec partiel
+  et détail conservé dans Connexions, changement d’onglet pendant collecte, course non rechargée,
   session expirée, interruption réseau, une seule WebView et reprise du processus.
 - Chromium mobile 320 et 393 px, et moteur WebKit Linux à 393 px, clair/sombre : balayage vertical, toucher,
   position et point conservés, remplacement différé pendant le geste, anciennes
@@ -89,6 +91,25 @@ appareil doit couvrir une version TestFlight, une page riche, plusieurs gestes,
 le mode économie d’énergie, le retour au premier plan et un réseau intermittent.
 Si des saccades persistent : capturer une trace Instruments/Safari, puis traiter
 le coût observé. Une réécriture native complète ne se justifie pas sans ce profil.
+
+## Simplification de Santé
+
+La revue du 12 octobre s’appuie également sur [Oura — Today et Vitals](https://support.ouraring.com/hc/en-us/articles/360058599753-How-to-Use-the-Oura-App)
+et [WHOOP — organisation de l’écran principal](https://www.whoop.com/us/en/thelocker/the-all-new-whoop-home-screen/) :
+trois indicateurs immédiatement lisibles, puis détails accessibles au toucher.
+PaceForge conserve trois cadrans de même taille et de même importance, dans
+l’ordre Sommeil, Récupération, Entraînement. Les trois pourcentages conservent
+leur sens distinct : part du besoin de sommeil estimé, indice de récupération,
+charge relative à l’habitude. La date est regroupée dans l’en-tête ; les cartes
+gardent le même ordre. Les valeurs absentes, bilans partiels et références
+provisoires restent indiqués. Les mesures utilisées se déplient dans la carte
+Récupération. Aucun calcul n’a changé.
+
+Les messages de synchronisation web sont transmis au composant natif qui possède
+la seule surface de progression/erreur ; les versions anciennes gardent un repli
+dans la page, sans superposition. Un lien ouvre Connexions en cas d’échec. Les
+rafraîchissements réussis se terminent sans message de confirmation. Le geste
+natif et l’action VoiceOver restent à vérifier sur iPhone physique.
 
 ## Reproduire les tests visuels
 

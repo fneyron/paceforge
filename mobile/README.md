@@ -66,19 +66,31 @@ toujours le formulaire de connexion avant de reprendre la vérification.
 ## Défilement et actualisation
 
 Sur iPhone, tirer depuis le haut de **Santé ou Activités** utilise le contrôle
-de rafraîchissement iOS. Le bouton accessible « Actualiser les données » fournit
-le même parcours, y compris sur Android. Ni les formulaires ni une course en
-préparation ne sont rechargés par ce geste.
+de rafraîchissement iOS. C’est le seul déclencheur visible sur ces écrans : aucun
+bouton supplémentaire dans l’en-tête. L’action d’accessibilité « Actualiser les
+données » du titre PaceForge propose le même parcours à VoiceOver/TalkBack.
+Les opérations explicites restent disponibles dans les connexions, notamment
+sur Android où ce geste WebView n’est pas proposé. Ni les formulaires ni une
+course en préparation ne sont rechargés par ce geste.
 
 L’action vérifie le compte, relit les mesures autorisées du téléphone associé,
 relance COROS/Garmin et Strava connectés, puis remplace le contenu sans navigation.
-Une icône de progression accompagne l’opération ; échec/expiration restent
-explicites. Aucun message de succès ne prouve une mesure récente. Les sections
+Un seul indicateur discret accompagne l’action manuelle, sans bouton ni message
+flottant. Les reprises automatiques restent silencieuses. Un échec affiche une
+ligne « Actualisation incomplète » ouvrant les connexions ; les causes et le reçu
+restent accessibles. Aucun message de succès n’est ajouté. Les sections
 ouvertes, le point sélectionné et la position sont conservés. Le remplacement
 attend la fin du geste et du défilement ; les anciennes semaines d’activités
 déjà ouvertes restent consultables. Les mises à jour automatiques utilisent le
 même remplacement discret. Les requêtes sont bornées et une double demande
 rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidite.md).
+
+Santé conserve trois cadrans de même importance : Sommeil, Récupération et
+Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques restent
+visibles ; la méthode se déplie au toucher. Les bilans partiels et références
+provisoires restent signalés, avec les mesures utilisées dans le détail de
+récupération. Ce changement d’interface ne modifie ni les mesures reçues ni les
+coefficients des calculs.
 
 ## Synchronisation livrée
 

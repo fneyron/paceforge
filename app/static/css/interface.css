@@ -444,14 +444,16 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-sante-lines { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 0; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines > span + span::before { content: "·"; margin-right: 6px; }
 .pf-sante-head + * { margin-top: 14px; }
-.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 30px; letter-spacing: -.035em; }   /* « Aujourd'hui », as large as the dials */
+.pf-sante4 .pf-sante-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
+.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 24px; letter-spacing: -.035em; }
 .pf-sante4 .pf-sante-head .pf-sante-lines { font-size: 14px; }
+.pf-sante4 .pf-sante-head .pf-card-meaning { flex-basis: 100%; }
 @media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
 .pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
 /* the top (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »): three equal dials in a row, Sommeil ·
    Récupération · Entraînement, each a percentage over its name and a plain word (never colour alone), a link to its
    card below; the alert's sentence (or the line that says why there is no score) and the connect links under them */
-.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 6px; margin-top: 22px; }
+.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 8px; margin-top: 18px; }
 .pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 2px 0 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
@@ -515,13 +517,16 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-daily-value { font-size: 24px; font-weight: 650; margin: 12px 0 4px; }
 @media (min-width: 760px) { .pf-daily-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-/* Santé: the rings and charts stay visible; explanations open on demand. */
-.pf-health-panels { display: grid; gap: 16px; align-items: start; margin-top: 20px; }
+/* Three equal dials remain the overview; quality details open in Recovery. */
+.pf-health-quality-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: rgb(var(--pf-gray-600)); font-size: 12px; }
+.pf-health-quality-link:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 4px; }
+/* Charts stay visible; explanations open on demand. */
+.pf-health-panels { display: grid; gap: 12px; align-items: start; margin-top: 20px; }
 .pf-health-panels > .pf-health-panel { border: 1px solid rgb(var(--pf-line)); border-radius: 18px; overflow: clip; min-width: 0; }
-.pf-health-panel > summary { display: flex; align-items: center; gap: 16px; min-height: 68px; padding: 14px 18px; cursor: pointer; list-style: none; color: rgb(var(--pf-ink)); font-weight: 600; }
+.pf-health-panel > summary { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 14px 18px; cursor: pointer; list-style: none; color: rgb(var(--pf-ink)); font-weight: 600; font-size: 15px; }
 .pf-health-panel > summary::-webkit-details-marker { display: none; }
-.pf-health-panel > summary::after { content: '+'; font-size: 20px; font-weight: 400; margin-left: auto; color: rgb(var(--pf-gray-500)); }
-.pf-health-panel[open] > summary::after { content: '−'; }
+.pf-health-panel > summary::after { content: ''; flex: none; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin-left: auto; color: rgb(var(--pf-gray-500)); }
+.pf-health-panel[open] > summary::after { transform: rotate(225deg); }
 .pf-health-panel > summary small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; font-weight: 400; color: rgb(var(--pf-gray-500)); }
 .pf-health-panel > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: -3px; border-radius: 10px; }
 .pf-panel-value { margin-left: auto; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -831,10 +836,13 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .dark .pf-seg > [aria-pressed="true"], .dark .pf-seg > [aria-current] { background: rgb(var(--pf-gray-200)); }
 .pf-courses-cols > div > .pf-sechead:first-child { margin-top: 28px; }
 
-/* A transient refresh message floats above the page without shifting content. */
-.pf-refresh-status { position: fixed; z-index: 100; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 24px); padding: 4px 12px; min-height: 44px; border: 1px solid rgb(var(--pf-line)); border-radius: 12px; background: rgb(var(--pf-surface)); box-shadow: 0 3px 16px rgb(0 0 0 / .12); color: rgb(var(--pf-ink)); font-size: 13px; }
+/* A single inline status; native builds provide their own shared surface. */
+.pf-refresh-status { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 20px; min-height: 36px; background: rgb(var(--pf-soft)); color: rgb(var(--pf-gray-600)); font-size: 12px; line-height: 1.4; }
 .pf-refresh-status[hidden] { display: none; }
-.pf-refresh-status button { flex: none; min-height: 44px; min-width: 44px; font-weight: 600; }
+.pf-health-sync-issue { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 12px; color: rgb(var(--pf-gray-600)); }
+.pf-health-sync-issue a { display: inline-flex; align-items: center; min-height: 44px; color: rgb(var(--pf-accent-strong)); font-weight: 600; }
+.pf-health-sync-issue[hidden], .pf-native-refresh .pf-health-sync-issue { display: none; }
+.pf-refresh-status button, .pf-refresh-status a { flex: none; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; }
 .pf-refresh-status.is-loading::before { content: ''; flex: none; width: 14px; height: 14px; border: 2px solid rgb(var(--pf-line)); border-top-color: rgb(var(--pf-accent)); border-radius: 50%; animation: pf-refresh-spin .8s linear infinite; }
 @keyframes pf-refresh-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pf-refresh-status.is-loading::before { animation: none; } }

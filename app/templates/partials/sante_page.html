@@ -1,14 +1,10 @@
 {% import "partials/_viz.html" as viz %}
 {% set p = page %}{% set s = p.sleep %}
 <div class="pf-dials">
-    {% for d in p.dials %}{{ viz.viz_ring(d) }}{% endfor %}
+    {% for d in p.dials %}{{ viz.viz_ring(d, show_note=d.key != "recup") }}{% endfor %}
 </div>
-{% if p.score.value is not none and p.quality %}
-<details class="pf-bilan-quality">
-    <summary>{{ p.quality.label }}</summary>
-    <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
-    <p>Disponibilité des mesures, pas une garantie de précision du score.</p>
-</details>
+{% if p.score.value is not none and p.quality and (p.quality.partial or p.quality.provisional) %}
+<a class="pf-health-quality-link" href="#qualite-bilan">{{ p.quality.label }} <span aria-hidden="true">›</span></a>
 {% endif %}
 {% if p.state and p.state.text %}<p class="pf-state-text">{{ p.state.text }}</p>{% endif %}
 {% if not p.state %}<p class="pf-state-line">{{ p.line }}</p>{% endif %}
@@ -61,6 +57,14 @@
             <h3 class="sr-only">{{ p.recup.title }}</h3>
             {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours", quiet=True) }}
         </div>{% endif %}
+{% if p.score.value is not none and p.quality %}
+<details id="qualite-bilan" class="pf-bilan-quality">
+    <summary>Mesures utilisées</summary>
+    <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
+    <p>Disponibilité des mesures, pas une garantie de précision du score.</p>
+</details>
+{% endif %}
+
     </div>
 </details>
 {% set t = p.training %}

@@ -15,16 +15,13 @@
         {% if page and page.cycle_pending %}<p class="pf-card-meaning">En attente de la prochaine nuit.</p>{% endif %}
     </div>
 
-    {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.needs_reauth %}
-    <section class="pf-health-connect pf-panel space-y-3">
-        <p class="text-[15px] text-gray-700">{{ link.last_error or "La connexion à " ~ name ~ " a expiré : reconnecte-toi." }} Tes données déjà reçues sont gardées.</p>
-        <a href="/settings#{{ anchor }}" class="pf-btn pf-btn-primary pf-btn-sm">Reconnecter {{ name }} dans les réglages</a>
-    </section>
+    {% set sync_issues = [] %}
+    {% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and (link.needs_reauth or link.last_error) %}
+        {% set _ = sync_issues.append('Reconnecte ' ~ name ~ ' dans Réglages.' if link.needs_reauth else name ~ ' n’a pas pu être actualisé.') %}
     {% endfor %}
-
-    {% for name, link, anchor in (('COROS', coros, 'coros'), ('Garmin', garmin, 'garmin')) if link.connected and link.last_error and not link.needs_reauth %}
-    <p class="pf-sante-note" role="status">{{ name }} : {{ link.last_error }} <a class="pf-link" href="/settings#{{ anchor }}">Vérifier la synchronisation ›</a></p>
-    {% endfor %}
+    {% if sync_issues %}
+    <p class="pf-health-sync-issue" data-sync-issue="{{ sync_issues|join(' ') }}" role="status"><span>Actualisation incomplète</span><a href="/settings#connections">Connexions ›</a></p>
+    {% endif %}
 
     {% if page is none %}
     <section class="pf-note mt-4"><p>Impossible d'afficher tes données pour l'instant. Réessaie dans quelques minutes.</p></section>

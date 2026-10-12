@@ -47,12 +47,12 @@ async function check(engine,name,width){
  for(let i=0;i<3;i++)await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
  assert.equal(await page.locator('#main-content').count(),1);
  assert.equal(await page.locator(selector+' input').inputValue(),selected);
- // Offline leaves the rendered data intact and offers a retry.
+ // Offline leaves the rendered data intact, with a single connection link.
  await page.route('**/sante',route=>route.abort('internetdisconnected'));
  const unchanged=await page.locator('#main-content').innerHTML();
  await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
  assert.equal(await page.locator('#main-content').innerHTML(),unchanged);
- assert.ok(await page.getByRole('button',{name:'Réessayer',exact:true}).isVisible());
+ assert.ok(await page.locator('.pf-refresh-status').getByRole('link',{name:'Connexions',exact:true}).isVisible());
  await page.unroute('**/sante');
  // A different account must never inherit cached activities/disclosures.
  await page.route('**/sante',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace(/data-account="\d+"/,'data-account="999"')});});
@@ -66,6 +66,15 @@ async function check(engine,name,width){
  await page.route('**/api/sync',route=>{posts.push('strava');return route.fulfill({json:{received:0,errors:[]}})});
  await page.evaluate(()=>Promise.all([window.paceforgeRefresh.refresh(true),window.paceforgeRefresh.refresh(true)]));
  assert.deepEqual(posts.sort(),['strava','watch']);
+ assert.equal(await page.locator('.pf-refresh-status').isVisible(),false,'no success overlay');
+ // Native v2 has one status surface in App, including failures. No web overlay.
+ await page.evaluate(()=>{window.paceforgeNativeRefresh=2;window.nativeMessages=[];window.ReactNativeWebView={postMessage:s=>nativeMessages.push(JSON.parse(s))};});
+ await page.route('**/sante',route=>route.abort('internetdisconnected'));
+ await page.evaluate(()=>window.paceforgeRefresh.refresh(true));
+ assert.equal(await page.locator('.pf-refresh-status').isVisible(),false);
+ assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.type==='refresh-notice').length),1);
+ assert.deepEqual(await page.evaluate(()=>nativeMessages.filter(m=>m.type==='refresh-state').map(m=>m.active)),[true,false]);
+ await page.unroute('**/sante');
  await page.evaluate(()=>document.documentElement.classList.add('dark'));
  await page.screenshot({path:output+`/sante-${name}-${width}.png`});
  await page.goto(base+'/activities',{waitUntil:'networkidle'});
