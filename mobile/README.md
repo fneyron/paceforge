@@ -50,6 +50,18 @@ mesures. Le dernier envoi réel est daté dans le détail. « Revoir les autoris
 L’aide explique le partage des balances et applications sportives vers un
 service compatible, sans associer la connexion à un modèle précis.
 
+Sur iPhone, chaque catégorie vérifie d’abord si sa demande d’autorisation a
+déjà été présentée, notamment après une mise à jour ajoutant le sommeil ou la
+VFC. Une catégorie encore à demander n’est pas interrogée : le reçu indique
+« Réglages → Apple Santé → Revoir les autorisations ». Les autres catégories
+restent lisibles. Ce contrôle ne révèle pas l’accord ou le refus de lecture ;
+une lecture vide après la demande reste une absence de mesure, jamais un zéro.
+La synchronisation automatique n’ouvre aucune demande de permission.
+Le conseil de déverrouiller l’iPhone est réservé aux données protégées
+indisponibles ; les délais, erreurs de lecture et erreurs de traitement des
+nuits ont des messages distincts. Un contrôle d’autorisation expiré ne lance
+pas de lecture native tardive.
+
 À l’ouverture, au retour et lors d’une actualisation de Santé/Activités, la
 vérification du compte utilise un `fetch` authentifié dans la WebView existante,
 sans quitter la page. Origine, chemin, nonce et compte associé sont contrôlés

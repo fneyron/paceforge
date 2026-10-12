@@ -1,4 +1,4 @@
-import type { QuantityTypeIdentifier } from '@kingstinct/react-native-healthkit';
+import type { CategoryTypeIdentifier, QuantityTypeIdentifier } from '@kingstinct/react-native-healthkit';
 import { AppleNight, episodes, nightReadings } from './night-samples';
 import { Daily, HealthResult, SleepResult, Metric, labels, latestWeighIn, valid, windows } from './types';
 import { healthReader, readIssue } from './health-read';
@@ -6,7 +6,20 @@ import { healthReader, readIssue } from './health-read';
 export type HealthQueries = Pick<typeof import('@kingstinct/react-native-healthkit'),
   'queryQuantitySamples' | 'queryCategorySamples' | 'queryStatisticsForQuantity'> & {
   digest: (key: string) => Promise<string>; now?: () => Date; reader?: ReturnType<typeof healthReader>;
+  prepareRead?: (identifier: QuantityTypeIdentifier | CategoryTypeIdentifier) => Promise<void>;
 };
+
+function collectionReader(d: HealthQueries, budget: number) {
+  const read = d.reader || healthReader(budget);
+  const prepared = new Set<string>();
+  return async <T>(identifier: QuantityTypeIdentifier | CategoryTypeIdentifier, query: () => Promise<T>) => {
+    if (!prepared.has(identifier)) {
+      if (d.prepareRead) await read(() => d.prepareRead!(identifier));
+      prepared.add(identifier);
+    }
+    return read(query);
+  };
+}
 
 export const identifiers: Record<Metric, QuantityTypeIdentifier> = {
   weight: 'HKQuantityTypeIdentifierBodyMass', body_fat: 'HKQuantityTypeIdentifierBodyFatPercentage',
@@ -15,7 +28,7 @@ export const identifiers: Record<Metric, QuantityTypeIdentifier> = {
 const units = { weight: 'kg', body_fat: '%', steps: 'count', hr_day: 'count/min', resp_day: 'count/min' };
 export async function collectDaily(d: HealthQueries, progress: (s: string) => void, daysBack = 30): Promise<HealthResult> {
   const days: Daily[] = [], errors = new Map<string, string>();
-  const read = d.reader || healthReader(60000);
+  const read = collectionReader(d, 60000);
   const { queryQuantitySamples, queryStatisticsForQuantity } = d;
   for (const w of windows(d.now?.() || new Date(), daysBack)) {
     progress(`Lecture d’Apple Santé · ${w.date}`);
@@ -27,7 +40,7 @@ export async function collectDaily(d: HealthQueries, progress: (s: string) => vo
         const options = { unit: units[metric], filter: { date: { startDate: w.start, endDate: w.end, strictStartDate: true, strictEndDate: true } } };
         let value: number | undefined, measured_at: string | undefined, sources: string[] = [];
         if (metric === 'weight' || metric === 'body_fat') {
-          const samples = await read(() => queryQuantitySamples(identifiers[metric], { ...options, limit: 100, ascending: false }));
+          const samples = await read(identifiers[metric], () => queryQuantitySamples(identifiers[metric], { ...options, limit: 100, ascending: false }));
           const day = latestWeighIn(metric, w.date, samples.map(s => ({
             value: s.quantity * (metric === 'body_fat' ? 100 : 1), at: s.startDate.toISOString(), source: s.sourceRevision.source.name,
           })));
@@ -36,7 +49,7 @@ export async function collectDaily(d: HealthQueries, progress: (s: string) => vo
           return;
         } else {
           // HealthKit handles overlapping step sources; never sum raw phone/watch steps.
-          const stats = await read(() => queryStatisticsForQuantity(identifiers[metric], [metric === 'steps' ? 'cumulativeSum' : 'discreteAverage'], options));
+          const stats = await read(identifiers[metric], () => queryStatisticsForQuantity(identifiers[metric], [metric === 'steps' ? 'cumulativeSum' : 'discreteAverage'], options));
           value = metric === 'steps' ? stats.sumQuantity?.quantity : stats.averageQuantity?.quantity;
           // HealthKit quantities are doubles, including prorated step totals.
           // The import contract expects a count; a fraction must not reject the
@@ -58,13 +71,15 @@ export async function collectNights(d: HealthQueries, progress: (s: string) => v
   const notices: string[] = [];
   const now = d.now?.() || new Date(), start = new Date(now); start.setDate(start.getDate()-daysBack-1); start.setHours(0,0,0,0);
   const nights: AppleNight[] = [], errors = new Map<string, string>();
-  const read = d.reader || healthReader(90000);
+  const read = collectionReader(d, 90000);
   const { queryCategorySamples, queryQuantitySamples } = d;
+  let processing = false;
   try {
-    const samples = await read(() => queryCategorySamples('HKCategoryTypeIdentifierSleepAnalysis', {
+    const samples = await read('HKCategoryTypeIdentifierSleepAnalysis', () => queryCategorySamples('HKCategoryTypeIdentifierSleepAnalysis', {
       limit: 50000, ascending: false, filter: { date: { startDate: start, endDate: now } },
     }));
-    if (samples.length >= 50000) throw new Error('Fenêtre tronquée');
+    if (samples.length >= 50000) return { nights, complete: false, notices: ['Sommeil : historique trop volumineux pour cette lecture. Aucune nuit n’a été remplacée.'] };
+    processing = true;
     for (const e of episodes(samples, Intl.DateTimeFormat().resolvedOptions().timeZone, now, daysBack)) {
       progress('Lecture des nuits d’Apple Santé…');
       const packet: AppleNight = { date: e.date, source_id: await d.digest(e.key),
@@ -81,7 +96,7 @@ export async function collectNights(d: HealthQueries, progress: (s: string) => v
           const label = key === 'hrv_sdnn' ? 'VFC nocturne' : key === 'hr' ? 'FC nocturne' : 'respiration nocturne';
           if (errors.has(label)) return;
           try {
-            const readings = await read(() => queryQuantitySamples(identifier, { unit, limit, ascending: true,
+            const readings = await read(identifier, () => queryQuantitySamples(identifier, { unit, limit, ascending: true,
               filter: { date: { startDate, endDate, strictStartDate: true, strictEndDate: true } } }));
             if (readings.length >= limit) throw new Error('Fenêtre tronquée');
             packet[key] = nightReadings(readings, e, lo, hi);
@@ -90,7 +105,11 @@ export async function collectNights(d: HealthQueries, progress: (s: string) => v
       }
       nights.push(packet);
     }
-  } catch (error) { errors.set('Sommeil', readIssue('Sommeil', error)); }
+  } catch (error) {
+    errors.set('Sommeil', processing
+      ? 'Sommeil : les relevés ont été lus, mais leur traitement a échoué. Vérifie que PaceForge est à jour.'
+      : readIssue('Sommeil', error));
+  }
   notices.push(...errors.values());
   return { nights, notices, complete: errors.size === 0 };
 }
