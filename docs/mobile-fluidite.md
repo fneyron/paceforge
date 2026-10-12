@@ -67,7 +67,7 @@ deux doigts, le toucher simple et le clavier restent disponibles.
 - Tests du **vrai composant App** avec interfaces natives simulées : ouverture,
   geste/bouton, changement d’onglet pendant collecte, course non rechargée,
   session expirée, interruption réseau, une seule WebView et reprise du processus.
-- Chromium mobile 320 et 393 px, clair/sombre : balayage vertical, toucher,
+- Chromium mobile 320 et 393 px, et moteur WebKit Linux à 393 px, clair/sombre : balayage vertical, toucher,
   position et point conservés, remplacement différé pendant le geste, anciennes
   semaines conservées, compte changé, panne réseau, double demande.
 - Précompilation Expo, export des deux plateformes et chaînes d’explication des
@@ -82,8 +82,9 @@ les saccades. Les durées varient sur cette machine partagée et ne servent pas 
 annoncer un gain de vitesse chiffré.
 
 Le contrôle natif, les lectures HealthKit réelles, VoiceOver et les images perdues
-sur iPhone n’ont pas été mesurés dans cet environnement Linux. WebKit de test
-nécessite des bibliothèques système absentes ici. La validation finale sur
+sur iPhone n’ont pas été mesurés dans cet environnement Linux. Le test WebKit
+a utilisé les bibliothèques manquantes dans un répertoire de test isolé ; il
+ne remplace pas Safari ni WKWebView sur iOS. La validation finale sur
 appareil doit couvrir une version TestFlight, une page riche, plusieurs gestes,
 le mode économie d’énergie, le retour au premier plan et un réseau intermittent.
 Si des saccades persistent : capturer une trace Instruments/Safari, puis traiter
@@ -101,7 +102,7 @@ Le serveur utilise uniquement des données synthétiques et doit rester lié à
 localhost. Dans un autre terminal :
 
 ```sh
-npm install --prefix /tmp/pf-browser playwright esbuild react react-dom react-native-web
+npm install --prefix /tmp/pf-browser playwright@1.64.0 esbuild@0.28.2 react@19.2.3 react-dom@19.2.3 react-native-web@0.21.4
 export NODE_PATH=/tmp/pf-browser/node_modules
 node /tmp/pf-browser/node_modules/playwright/cli.js install chromium
 node tests/browser/refresh.cjs
@@ -111,4 +112,6 @@ node tests/browser/native/check.cjs
 
 `PF_PREVIEW_URL`, `PF_PREVIEW_OUTPUT`, `NATIVE_PREVIEW_BUNDLE` permettent de changer
 les destinations. `PF_WEBKIT=1` ajoute WebKit si le navigateur et ses dépendances
-sont installés. Les scénarios ne se connectent jamais au compte réel de l’athlète.
+sont installés ; `PF_WEBKIT=only` exécute uniquement ce moteur, et
+`PF_WEBKIT_EXECUTABLE` permet de fournir son lanceur. Les scénarios ne se
+connectent jamais au compte réel de l’athlète.

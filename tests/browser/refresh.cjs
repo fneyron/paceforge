@@ -6,7 +6,7 @@ const {chromium,webkit}=require('playwright');
 const base=process.env.PF_PREVIEW_URL||'http://127.0.0.1:8852';
 const output=process.env.PF_PREVIEW_OUTPUT||'/tmp';
 async function check(engine,name,width){
- const browser=await engine.launch({headless:true});
+ const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.PF_WEBKIT_EXECUTABLE?{executablePath:process.env.PF_WEBKIT_EXECUTABLE}:{})});
  try{
  const page=await browser.newPage({viewport:{width,height:852},isMobile:true,hasTouch:true});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -79,4 +79,4 @@ async function check(engine,name,width){
  assert.deepEqual(errors,[]);console.log(`${name} ${width}px: refresh, gestures, scroll, offline, account and pagination passed`);
  }finally{await browser.close();}
 }
-(async()=>{for(const width of [320,393])await check(chromium,'chromium',width);if(process.env.PF_WEBKIT==='1')await check(webkit,'webkit',393);})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{if(process.env.PF_WEBKIT!=='only')for(const width of [320,393])await check(chromium,'chromium',width);if(['1','only'].includes(process.env.PF_WEBKIT))await check(webkit,'webkit',393);})().catch(e=>{console.error(e);process.exitCode=1});
