@@ -300,10 +300,16 @@ async def sante_sync(
                 continue
             if conn.needs_reauth:
                 errors.append(f"Reconnecte {name} dans Réglages.")
-            elif _claimed(conn, service) or service.schedule_sync(user.id):
+            elif _claimed(conn, service):
                 started.append(name)
             else:
-                errors.append(f"{name} : synchronisation indisponible. Réessaie depuis Réglages.")
+                queued = await service.queue_sync(db, conn)
+                if not queued:
+                    await db.refresh(conn)  # another request may have reserved it meanwhile
+                if queued or _claimed(conn, service):
+                    started.append(name)
+                else:
+                    errors.append(f"{name} : synchronisation indisponible. Réessaie depuis Réglages.")
         return JSONResponse({"watches": started, "since": since, "errors": errors}, headers={"Cache-Control": "no-store"})
     for _, service in _WATCHES:
         conn = await service.connection_for(db, user.id)

@@ -75,6 +75,9 @@ async function check(engine,name,width){
  assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.type==='refresh-notice').length),1);
  assert.deepEqual(await page.evaluate(()=>nativeMessages.filter(m=>m.type==='refresh-state').map(m=>m.active)),[true,false]);
  await page.unroute('**/sante');
+ // A successful replacement must explicitly clear the previous native warning.
+ await page.evaluate(()=>{window.nativeMessages=[];return window.paceforgeRefresh.refresh(true)});
+ assert.deepEqual(await page.evaluate(()=>nativeMessages.filter(m=>m.type==='refresh-notice').map(m=>m.message)),['']);
  await page.evaluate(()=>document.documentElement.classList.add('dark'));
  await page.screenshot({path:output+`/sante-${name}-${width}.png`});
  await page.goto(base+'/activities',{waitUntil:'networkidle'});

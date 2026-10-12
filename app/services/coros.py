@@ -1572,10 +1572,24 @@ async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
     return True
 
 
-async def run_sync(db: AsyncSession, conn: CorosConnection) -> dict | None:
+async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str | None = None) -> dict | None:
     """Claim, sync, record how it went. None when a sync is already running."""
-    if conn.needs_reauth or not await claim(db, conn):
+    if conn.needs_reauth:
         return None
+    if claimed_at is None:
+        if not await claim(db, conn):
+            return None
+    else:
+        # Consume the reservation exactly once, before doing any upstream work.
+        now = datetime.now(timezone.utc)
+        taken = await db.execute(update(CorosConnection).where(
+            CorosConnection.id == conn.id,
+            CorosConnection.sync_claimed_at == datetime.fromisoformat(claimed_at),
+        ).values(sync_claimed_at=now).execution_options(synchronize_session=False))
+        await db.commit()
+        if taken.rowcount != 1:
+            return None
+        set_committed_value(conn, "sync_claimed_at", now)
     try:
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
@@ -1614,13 +1628,28 @@ async def _release(db: AsyncSession, conn, user_id: int) -> None:
 _pending: set[asyncio.Task] = set()
 
 
-async def _sync_in_background(user_id: int) -> None:
+async def _sync_in_background(user_id: int, claimed_at: str | None = None) -> None:
     from app.database import async_session_factory
 
     async with async_session_factory() as db:
         conn = await connection_for(db, user_id)
         if conn:
-            await run_sync(db, conn)
+            await run_sync(db, conn, **({"claimed_at": claimed_at} if claimed_at else {}))
+
+
+async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
+    """Reserve before acknowledging a manual refresh, so polling sees this attempt."""
+    if conn.needs_reauth or not await claim(db, conn):
+        return False
+    stamp = conn.sync_claimed_at.isoformat()
+    try:
+        task = asyncio.get_running_loop().create_task(_sync_in_background(conn.user_id, stamp))
+        _pending.add(task)
+        task.add_done_callback(_pending.discard)
+    except RuntimeError:
+        await _release(db, conn, conn.user_id)
+        return False
+    return True
 
 
 def schedule_sync(user_id: int) -> bool:

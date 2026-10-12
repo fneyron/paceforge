@@ -16,11 +16,11 @@
     </div>
 
     {% set sync_issues = [] %}
-    {% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and (link.needs_reauth or link.last_error) %}
+    {% for name, link in (('COROS', coros), ('Garmin', garmin)) if link.connected and (link.needs_reauth or (link.last_error and not link.syncing)) %}
         {% set _ = sync_issues.append('Reconnecte ' ~ name ~ ' dans Réglages.' if link.needs_reauth else name ~ ' n’a pas pu être actualisé.') %}
     {% endfor %}
     {% if sync_issues %}
-    <p class="pf-health-sync-issue" data-sync-issue="{{ sync_issues|join(' ') }}" role="status"><span>Actualisation incomplète</span><a href="/settings#connections">Connexions ›</a></p>
+    <p class="pf-health-sync-issue" data-sync-issue="{{ sync_issues|join(' ') }}" role="status"><span>{{ sync_issues|join(' ') }}</span><a href="/settings#connections">Détails ›</a></p>
     {% endif %}
 
     {% if page is none %}

@@ -28,6 +28,28 @@ ni une affirmation que PaceForge égale la fluidité d’une autre application.
 
 ## Changements livrés
 
+**Correction des alertes persistantes.** La réussite web envoie désormais un
+résultat vide explicite au natif, au lieu de ne rien envoyer après un ancien
+échec. L’état Apple Santé reste indépendant : une réussite COROS ne peut pas
+effacer une lecture santé partielle. Les erreurs mentionnent le service concerné
+et ouvrent son détail. La demande manuelle réserve la synchronisation de la
+montre avant de répondre ; le suivi ne peut plus confondre l’ancienne erreur
+avec le résultat de la nouvelle tentative encore en file. Une tâche encore en
+cours à la fin de l’attente n’est plus transformée en échec.
+
+**Lecture iOS.** Cinq catégories indépendantes d’une journée, puis trois d’une
+nuit, sont lues en parallèle, en conservant les budgets et le parcours du récent
+vers l’ancien. Les réponses vides et les erreurs restent distinctes. Le détail
+indique un dépassement de délai plutôt que d’accuser systématiquement les
+autorisations. Le chemin de collecte est testé avec des réponses HealthKit
+simulées ; le gain de temps sur l’iPhone du propriétaire reste à mesurer.
+
+**Finition de Santé.** Les trois cadrans restent égaux. Fond léger, cartes sans
+cadres imbriqués, chiffres plus lisibles et typographie système rapprochent
+l’écran web de son en-tête natif. L’historique de sommeil se déplie au toucher,
+ce qui laisse la récupération plus près de la dernière nuit. Les éléments
+natifs suivent maintenant le thème clair ou sombre choisi dans Réglages.
+
 **iPhone.** `pullToRefreshEnabled` utilise le contrôle natif de la
 [WebView 13.16.1](https://github.com/react-native-webview/react-native-webview/blob/v13.16.1/docs/Reference.md).
 Dans cette version, le SDK déclenche un rechargement puis termine immédiatement

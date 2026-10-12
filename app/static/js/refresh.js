@@ -15,12 +15,17 @@
   function nativeState(active) {
     window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'refresh-state', active: active }));
   }
+  function clearStatus() {
+    if (toast) toast.hidden = true;
+    // Clear only the web/provider result; native health has its own receipt.
+    if (window.paceforgeNativeRefresh >= 2) window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'refresh-notice', message: '' }));
+  }
   function status(message, retry, loading) {
     clearTimeout(hideTimer);
     document.querySelectorAll('[data-sync-issue]').forEach(function (el) { el.hidden = true; });
     // Recent native builds own the single progress/error surface. Older builds
     // and browsers retain this inline fallback, never a floating overlay.
-    if (window.paceforgeNativeRefresh === 2 && window.ReactNativeWebView) {
+    if (window.paceforgeNativeRefresh >= 2 && window.ReactNativeWebView) {
       if (retry) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'refresh-notice', message: message }));
       return;
     }
@@ -62,7 +67,8 @@
       var state = await json('/sante/sync-status?' + new URLSearchParams({ since: result.since, watches: pending.join(',') }));
       pending = state.pending; errors = errors.concat(state.errors || []);
     }
-    if (pending.length) errors.push('La synchronisation continue. Réessaie dans un instant.');
+    // Still running is not a failed import. The server poller keeps watching.
+    if (pending.length) status(pending.join(' et ') + ' : synchronisation en cours.', false, false);
     return errors;
   }
   // Keep explicitly opened disclosures and the selected DATE, not an index
@@ -154,13 +160,14 @@
       var issue = document.querySelector('[data-sync-issue]');
       if (issue) errors.push(issue.dataset.syncIssue);
       if (errors.length) status(errors[0], true, false);
-      else if (toast) toast.hidden = true;
+      else clearStatus();
     })().finally(function () { running = null; nativeState(false); });
     return running;
   }
   window.paceforgeRefresh = { refresh: refresh };
   var existingIssue = document.querySelector('[data-sync-issue]');
-  if (existingIssue && window.paceforgeNativeRefresh === 2) status(existingIssue.dataset.syncIssue, true, false);
+  if (existingIssue && window.paceforgeNativeRefresh >= 2) status(existingIssue.dataset.syncIssue, true, false);
+  else if (window.paceforgeNativeRefresh >= 2) clearStatus();
   document.addEventListener('htmx:beforeOnLoad', function (event) {
     var detail = event.detail;
     if (detail?.elt?.id === 'sante-sync' && detail.xhr.getResponseHeader('HX-Refresh') === 'true') {

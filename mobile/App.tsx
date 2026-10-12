@@ -27,6 +27,8 @@ function Companion() {
   const [pageRefreshing, setPageRefreshing] = useState(false);
   const [userRefreshing, setUserRefreshing] = useState(false);
   const [refreshIssue, setRefreshIssue] = useState('');
+  const [healthIssue, setHealthIssue] = useState('');
+  const [dark, setDark] = useState(false);
   const [showWeb, setShowWeb] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -96,7 +98,7 @@ function Companion() {
     if (pending.current) { web.current?.stopLoading(); setShowWeb(false); }
     restoreSync();
     const message = e instanceof Error ? e.message : 'La synchronisation a échoué. Réessaie.';
-    setError(message); setRefreshIssue(message); setUserRefreshing(false); finish();
+    setError(message); setHealthIssue(message); setUserRefreshing(false); finish();
   }
   function start() { if (lock.current || cloudRefresh.current || !ready) return false; lock.current = true; setBusy(true); setError(''); return true; }
   function guard() {
@@ -115,14 +117,14 @@ function Companion() {
   }
   function sync(quiet = false, consent = false, forceSources = false) {
     if (!pair || !start()) return;
-    setRefreshIssue('');
+    setHealthIssue('');
     syncReturn.current = quiet ? { tab, url: screenUrl(webLocation.current), showWeb } : null;
     const nonce = random(), target = `${ORIGIN}/mobile/session?nonce=${nonce}`;
     inlineSync.current = quiet && documentReady.current && refreshable(webLocation.current);
     refreshSources.current = forceSources;
     pending.current = { kind: 'check', nonce, url: target, consent,
       ...(inlineSync.current ? { pageUrl: webLocation.current } : {}) };
-    syncFull.current = !quiet || fullDue(report);
+    syncFull.current = !quiet || forceSources || fullDue(report);
     lastAttempt.current = Date.now(); setStatus('Vérification du compte…');
     if (inlineSync.current) web.current?.injectJavaScript(inlineSessionScript(pending.current));
     else { setTab('devices'); setDetail('health'); setShowWeb(false); setUrl(target); }
@@ -130,10 +132,10 @@ function Companion() {
   }
   function refresh() {
     if (lock.current || cloudRefresh.current || !documentReady.current) return;
-    setUserRefreshing(true); setRefreshIssue(''); setError('');
+    setUserRefreshing(true); setRefreshIssue(''); setHealthIssue(''); setError('');
     if (pair && !needsReconnect) sync(true, false, true);
     else {
-      if (pair && needsReconnect) setRefreshIssue('Reconnecte le téléphone dans Réglages.');
+      if (pair && needsReconnect) setHealthIssue('Reconnecte le téléphone dans Réglages.');
       refreshPage(true);
     }
   }
@@ -159,15 +161,21 @@ function Companion() {
       setNeedsReconnect(result.reconnect); setStatus(reportText(result));
       refresh = result.received > 0 || refreshSources.current;
       if (!result.complete) {
-        const issue = result.reconnect ? 'Reconnecte le téléphone dans Réglages.' : 'Certaines mesures n’ont pas pu être reçues. Consulte le détail de la synchronisation dans les connexions.';
-        setError(issue); setRefreshIssue(issue);
-      }
+        const issue = result.reconnect ? 'Reconnecte le téléphone dans Réglages.' : `${Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'} : certaines mesures restent à synchroniser.`;
+        setHealthIssue(issue);
+      } else setHealthIssue('');
     } catch (e) { fail(e); } finally {
       if (!refresh || !refreshable(webLocation.current)) setUserRefreshing(false);
       restoreSync(refresh); finish();
     }
   }
   async function message(event: WebViewMessageEvent) {
+    if (trusted(event.nativeEvent.url)) {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data?.type === 'appearance' && typeof data.dark === 'boolean') { setDark(data.dark); return; }
+      } catch { /* Other messages are validated by the account bridge below. */ }
+    }
     if (refreshable(event.nativeEvent.url)) {
       try {
         const data = JSON.parse(event.nativeEvent.data);
@@ -237,7 +245,8 @@ function Companion() {
     try {
       await api('/api/mobile/device', 'DELETE', undefined, pair.token);
       await SecureStore.deleteItemAsync(KEY); await SecureStore.deleteItemAsync(KEY + '.auto'); await SecureStore.deleteItemAsync(KEY + '.last'); await SecureStore.deleteItemAsync(KEY + '.sync');
-      setPair(null); setAutomatic(false); setLast(''); setReport(null); setStatus('Téléphone dissocié. L’historique reçu reste dans ton compte.');
+      setPair(null); setAutomatic(false); setLast(''); setReport(null); setHealthIssue(''); setNeedsReconnect(false);
+      setStatus('Téléphone dissocié. L’historique reçu reste dans ton compte.');
     } catch (e) { fail(e); } finally { finish(); }
   }
   const onForeground = useEffectEvent(() => {
@@ -263,22 +272,23 @@ function Companion() {
   function openSettings(path = '/settings') { setTab('devices'); setUrl(ORIGIN + path); setShowWeb(true); }
   const webVisible = tab !== 'devices' || showWeb;
   const navigationLocked = busy && (!inlineSync.current || pending.current !== null);
-  const visibleIssue = refreshIssue || error;
-  return <SafeAreaView style={styles.root}>
-    <StatusBar style="dark" />
-    <View style={styles.header}><View style={styles.heading}><Text style={styles.brand}
+  const visibleIssue = [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
+  const night = dark && webVisible;
+  return <SafeAreaView style={[styles.root, night && styles.darkSurface]}>
+    <StatusBar style={night ? 'light' : 'dark'} />
+    <View style={[styles.header, night && styles.darkSurface]}><View style={styles.heading}><Text style={[styles.brand, night && styles.darkInk]}
       accessibilityActions={webVisible && refreshable(webLocation.current) ? [{ name: 'refresh', label: 'Actualiser les données' }] : []}
       onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'refresh') refresh(); }}>PaceForge</Text></View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={styles.settingsText}>Réglages</Text></Pressable></View>
-    {webVisible && refreshable(webLocation.current) && userRefreshing && (busy || pageRefreshing) ? <View style={styles.syncStatus} accessibilityLiveRegion="polite">
-      <ActivityIndicator size="small" color="#62736d" /><Text style={styles.syncText}>Actualisation…</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
+    {webVisible && refreshable(webLocation.current) && userRefreshing && (busy || pageRefreshing) ? <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
+      <ActivityIndicator size="small" color={night ? '#a6a6ad' : '#62736d'} /><Text style={[styles.syncText, night && styles.darkMuted]}>Actualisation…</Text>
     </View> : null}
-    {webVisible && visibleIssue && !busy && !pageRefreshing ? <Pressable style={styles.syncNotice} accessibilityRole="button"
-      accessibilityLabel={`Actualisation incomplète. ${visibleIssue} Ouvrir les connexions.`}
-      onPress={() => openTab('devices')}><Text style={styles.syncText}>Actualisation incomplète</Text><Text style={styles.noticeLink}>Détails ›</Text></Pressable> : null}
+    {webVisible && visibleIssue && !busy && !pageRefreshing ? <Pressable style={[styles.syncNotice, night && styles.darkSurface]} accessibilityRole="button"
+      accessibilityLabel={`${visibleIssue} Ouvrir les connexions.`}
+      onPress={() => { openTab('devices'); if (healthIssue && !refreshIssue && pair && !needsReconnect) setDetail('health'); }}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>Détails ›</Text></Pressable> : null}
     <View style={styles.content}>
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
-      busy={busy} ready={ready} status={status} error={error || refreshIssue} connections={connections} needsReconnect={needsReconnect}
+      busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
@@ -351,22 +361,24 @@ function Companion() {
       />
     </View>
     </View>
-    <View style={styles.tabs}>
-      {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: navigationLocked }} disabled={navigationLocked} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active]}><Text style={[styles.tabText, tab === key && styles.activeText]}>{label}</Text></Pressable>)}
+    <View style={[styles.tabs, night && styles.darkSurface]}>
+      {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: navigationLocked }} disabled={navigationLocked} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active, night && tab === key && styles.darkActive]}><Text style={[styles.tabText, night && styles.darkMuted, tab === key && styles.activeText, night && tab === key && styles.darkAccent]}>{label}</Text></Pressable>)}
     </View>
   </SafeAreaView>;
 }
 export default function App() { return <SafeAreaProvider><Companion /></SafeAreaProvider>; }
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f5f7f6' }, header: { paddingHorizontal: 18, paddingVertical: 6, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },
-  heading: { flex: 1 }, settings: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }, settingsText: { color: '#173e38', fontSize: 13, fontWeight: '600' },
-  brand: { color: '#163d35', fontSize: 23, fontWeight: '700' },
+  root: { flex: 1, backgroundColor: '#fff' }, header: { paddingHorizontal: 20, paddingVertical: 4, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heading: { flex: 1 }, settings: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 }, settingsText: { color: '#0b5f6e', fontSize: 13, fontWeight: '600' },
+  brand: { color: '#0b1a1f', fontSize: 21, fontWeight: '700', letterSpacing: -0.65 },
   syncStatus: { minHeight: 32, paddingHorizontal: 20, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff' },
   syncText: { color: '#62736d', fontSize: 12, lineHeight: 18, flexShrink: 1 },
-  syncNotice: { minHeight: 44, paddingHorizontal: 20, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: '#f5f7f6' },
-  noticeLink: { color: '#173e38', fontSize: 12, fontWeight: '600' },
+  syncNotice: { minHeight: 44, paddingHorizontal: 20, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: '#f4f6f8' },
+  noticeLink: { color: '#0b5f6e', fontSize: 12, fontWeight: '600' },
   content: { flex: 1 }, web: { flex: 1 }, hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
-  tabs: { flexDirection: 'row', padding: 8, gap: 3, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e4ebe6' },
-  tab: { flex: 1, paddingVertical: 14, borderRadius: 10 }, active: { backgroundColor: '#e7f0ea' },
-  tabText: { fontSize: 12, textAlign: 'center', color: '#62736d', fontWeight: '600' }, activeText: { color: '#173e38' },
+  tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e4ebed' },
+  tab: { flex: 1, paddingVertical: 18, borderTopWidth: 2, borderTopColor: 'transparent' }, active: { borderTopColor: '#0b5f6e' },
+  tabText: { fontSize: 12, textAlign: 'center', color: '#63636a', fontWeight: '500' }, activeText: { color: '#0b5f6e', fontWeight: '700' },
+  darkSurface: { backgroundColor: '#18181b', borderColor: '#2c2c31' }, darkInk: { color: '#f4f4f6' },
+  darkMuted: { color: '#a6a6ad' }, darkAccent: { color: '#5cc3d1' }, darkActive: { borderTopColor: '#5cc3d1' },
 });

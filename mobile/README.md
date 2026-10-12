@@ -77,8 +77,10 @@ L’action vérifie le compte, relit les mesures autorisées du téléphone asso
 relance COROS/Garmin et Strava connectés, puis remplace le contenu sans navigation.
 Un seul indicateur discret accompagne l’action manuelle, sans bouton ni message
 flottant. Les reprises automatiques restent silencieuses. Un échec affiche une
-ligne « Actualisation incomplète » ouvrant les connexions ; les causes et le reçu
-restent accessibles. Aucun message de succès n’est ajouté. Les sections
+ligne qui nomme le service concerné et ouvre son détail ; les causes et le reçu
+restent accessibles. Les erreurs du téléphone et des services sont indépendantes :
+la réussite de l’un n’efface pas l’échec de l’autre. Une réussite serveur efface
+explicitement son ancienne alerte. Aucun message de succès n’est ajouté. Les sections
 ouvertes, le point sélectionné et la position sont conservés. Le remplacement
 attend la fin du geste et du défilement ; les anciennes semaines d’activités
 déjà ouvertes restent consultables. Les mises à jour automatiques utilisent le
@@ -87,10 +89,16 @@ rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidit
 
 Santé conserve trois cadrans de même importance : Sommeil, Récupération et
 Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques restent
-visibles ; la méthode se déplie au toucher. Les bilans partiels et références
+de la dernière nuit et de récupération restent visibles ; l’historique détaillé
+du sommeil et la méthode se déplient au toucher. Les bilans partiels et références
 provisoires restent signalés, avec les mesures utilisées dans le détail de
 récupération. Ce changement d’interface ne modifie ni les mesures reçues ni les
 coefficients des calculs.
+
+Les cartes partagent une même surface, une typographie système et des espacements
+réguliers. Le thème du site est transmis à l’en-tête et à la navigation natifs,
+y compris après une modification dans Réglages. Les trois cadrans restent de
+même taille, sans mettre la récupération au-dessus des deux autres.
 
 ## Synchronisation livrée
 
@@ -122,6 +130,10 @@ coefficients des calculs.
   l’application est fermée**, ni de minuteur de synchronisation en arrière-plan.
 - Mesures quotidiennes envoyées avant la lecture du sommeil. Les lectures
   natives ont un délai maximal ; un échec n’efface pas les imports confirmés.
+  Sur iOS, les cinq catégories d’un jour sont lues en parallèle, puis le jour
+  précédent ; les trois catégories cardiaques d’une nuit suivent le même principe.
+  L’application distingue délai dépassé et lecture indisponible, sans en déduire
+  un refus d’autorisation. Une réponse vide reste une lecture vide, jamais un zéro.
   Une nuit rejetée n’empêche pas l’envoi des suivantes ; les erreurs réseau ou
   de compte interrompent l’envoi et la reprise est idempotente.
 - Réglages conserve un reçu dans SecureStore, lié au compte : tentative complète

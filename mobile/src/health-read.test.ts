@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { healthReader } from './health-read';
+import { healthReader, HealthReadTimeout, readIssue } from './health-read';
 
 test('a stalled native read times out; expiry does not start another query', async () => {
   const read = healthReader(10, 10);
@@ -16,4 +16,10 @@ test('fast reads and native errors retain their result without leaving a timeout
   const read = healthReader(1000);
   assert.equal(await read(async () => 70), 70);
   await assert.rejects(read(async () => { throw Error('permission'); }), /permission/);
+});
+
+test('timeouts and native failures give distinct advice, without claiming permissions were denied', () => {
+  assert.match(readIssue('Poids', new HealthReadTimeout()), /Poids.*délai maximal/);
+  assert.match(readIssue('Sommeil', Error('locked')), /Sommeil.*déverrouillé/);
+  assert.doesNotMatch(readIssue('Poids', Error('unknown')), /autorisations|refusé/);
 });

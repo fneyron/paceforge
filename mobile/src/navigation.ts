@@ -32,6 +32,12 @@ export const appShellScript = `
   if (location.origin === ${JSON.stringify(ORIGIN)}) {
     window.paceforgeNativeRefresh = 2;
     document.documentElement.classList.add('pf-native-refresh');
+    if (!window.paceforgeAppearanceObserver) {
+      const reportAppearance = () => window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'appearance', dark: document.documentElement.classList.contains('dark') }));
+      window.paceforgeAppearanceObserver = new MutationObserver(reportAppearance);
+      window.paceforgeAppearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      reportAppearance();
+    }
   }
   if (location.origin === ${JSON.stringify(ORIGIN)} && !document.getElementById('paceforge-native-shell')) {
     const style = document.createElement('style');

@@ -25,7 +25,8 @@
         {% if h.later %}<p class="pf-viz-cap">{{ h.later }}</p>{% endif %}
     {% endif %}
 {% if has_sleep_detail %}
-<section id="sommeil-detail" class="pf-sec" aria-labelledby="h-sommeil-detail">
+<details id="sommeil-detail" class="pf-sec pf-health-history">
+    <summary>Historique du sommeil <span aria-hidden="true">›</span></summary>
     <h2 id="h-sommeil-detail" class="sr-only">Sommeil en détail</h2>
     <div class="pf-card" data-viz-scope>
         <div class="pf-card-top">
@@ -44,7 +45,7 @@
     {% if s.habits %}
     <dl class="pf-habits">{% for k, v in s.habits.stats %}<div><dt>{{ k }} habituel</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
     {% endif %}
-</section>
+</details>
 {% endif %}
 
     </div>

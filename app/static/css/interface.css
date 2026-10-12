@@ -444,33 +444,33 @@ body.pf-app > .pf-main { flex: 1 0 auto; }
 .pf-sante-lines { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 0; font-size: 13px; line-height: 1.4; color: rgb(var(--pf-gray-500)); }
 .pf-sante-lines > span + span::before { content: "·"; margin-right: 6px; }
 .pf-sante-head + * { margin-top: 14px; }
-.pf-sante4 .pf-sante-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
-.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 24px; letter-spacing: -.035em; }
-.pf-sante4 .pf-sante-head .pf-sante-lines { font-size: 14px; }
+.pf-sante4 .pf-sante-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.pf-sante4 .pf-sante-head .pf-sante-h1 { font-size: 28px; letter-spacing: -.035em; }
+.pf-sante4 .pf-sante-head .pf-sante-lines { font-size: 13px; }
 .pf-sante4 .pf-sante-head .pf-card-meaning { flex-basis: 100%; }
 @media (min-width: 900px) { .pf-sante-h1 { font-size: 32px; } }
 .pf-sante-note { font-size: 14px; line-height: 1.45; color: rgb(var(--pf-gray-600)); margin-top: 10px; }
 /* the top (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »): three equal dials in a row, Sommeil ·
    Récupération · Entraînement, each a percentage over its name and a plain word (never colour alone), a link to its
    card below; the alert's sentence (or the line that says why there is no score) and the connect links under them */
-.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 8px; margin-top: 18px; }
+.pf-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 8px; margin-top: 22px; padding: 20px 8px 16px; background: rgb(var(--pf-surface)); border-radius: 22px; box-shadow: 0 2px 12px rgb(var(--pf-ink) / .025); }
 .pf-ring { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 44px; padding: 2px 0 6px; border-radius: 20px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-ring:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; }
-.pf-ring-dial { position: relative; display: block; width: min(100%, 100px); aspect-ratio: 1 / 1; }
+.pf-ring-dial { position: relative; display: block; width: min(100%, 108px); aspect-ratio: 1 / 1; }
 .pf-ring-dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 9; }
-.pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 9; stroke-linecap: round; }
+.pf-ring-track { fill: none; stroke: rgb(var(--pf-line)); stroke-width: 7; }
+.pf-ring-arc { fill: none; stroke: rgb(var(--pf-accent)); stroke-width: 7; stroke-linecap: round; }
 .pf-ring.is-ok .pf-ring-arc { stroke: rgb(var(--pf-ok)); }
 .pf-ring.is-warn .pf-ring-arc { stroke: rgb(var(--pf-warn-mark)); }
 .pf-ring.is-danger .pf-ring-arc { stroke: rgb(var(--pf-danger)); }
 .pf-ring.is-sleep .pf-ring-arc { stroke: rgb(var(--pf-sleep)); }   /* Sommeil: one stable hue (the warning one under 6 h) */
-.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 21px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
+.pf-ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--pf-font-display); font-size: 27px; font-weight: 700; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: rgb(var(--pf-ink)); }
 .pf-ring-value.is-long { font-size: 17px; }   /* « 16h53 »: the week's time while there is no usual week */
 .pf-ring.is-none .pf-ring-value { color: rgb(var(--pf-gray-400)); }
 .pf-ring-unit { margin-left: .06em; font-size: .52em; letter-spacing: 0; }   /* « 65 % »: the « % » smaller, on the number's baseline */
-.pf-ring-label { margin-top: 8px; font-family: var(--pf-font-display); font-size: 14px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; color: rgb(var(--pf-ink)); }
-.pf-ring-sub { margin-top: 2px; font-size: 12.5px; line-height: 1.25; color: rgb(var(--pf-gray-500)); text-wrap: balance; }   /* its word: « en cours », « estimée » */
+.pf-ring-label { margin-top: 10px; font-family: var(--pf-font-display); font-size: 13px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; color: rgb(var(--pf-ink)); }
+.pf-ring-sub { margin-top: 4px; font-size: 12px; line-height: 1.35; color: rgb(var(--pf-gray-500)); text-wrap: balance; }   /* its word: « en cours », « estimée » */
 .pf-dials + .pf-state-text, .pf-dials + .pf-state-line { margin-top: 10px; }
 .pf-state-text, .pf-state-line { font-size: 15px; line-height: 1.45; color: rgb(var(--pf-gray-600)); max-width: 34em; }
 .pf-state-links { margin-top: 4px; font-size: 15px; line-height: 1.45; }
@@ -521,17 +521,17 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 .pf-health-quality-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: rgb(var(--pf-gray-600)); font-size: 12px; }
 .pf-health-quality-link:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 3px; border-radius: 4px; }
 /* Charts stay visible; explanations open on demand. */
-.pf-health-panels { display: grid; gap: 12px; align-items: start; margin-top: 20px; }
-.pf-health-panels > .pf-health-panel { border: 1px solid rgb(var(--pf-line)); border-radius: 18px; overflow: clip; min-width: 0; }
-.pf-health-panel > summary { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 14px 18px; cursor: pointer; list-style: none; color: rgb(var(--pf-ink)); font-weight: 600; font-size: 15px; }
+.pf-health-panels { display: grid; gap: 14px; align-items: start; margin-top: 22px; }
+.pf-health-panels > .pf-health-panel { background: rgb(var(--pf-surface)); border: 1px solid rgb(var(--pf-line) / .5); border-radius: 22px; box-shadow: 0 2px 12px rgb(var(--pf-ink) / .025); overflow: clip; min-width: 0; }
+.pf-health-panel > summary { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 18px 20px; cursor: pointer; list-style: none; color: rgb(var(--pf-ink)); font-weight: 650; font-size: 17px; letter-spacing: -.015em; }
 .pf-health-panel > summary::-webkit-details-marker { display: none; }
 .pf-health-panel > summary::after { content: ''; flex: none; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin-left: auto; color: rgb(var(--pf-gray-500)); }
 .pf-health-panel[open] > summary::after { transform: rotate(225deg); }
 .pf-health-panel > summary small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; font-weight: 400; color: rgb(var(--pf-gray-500)); }
 .pf-health-panel > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: -3px; border-radius: 10px; }
-.pf-panel-value { margin-left: auto; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
+.pf-panel-value { margin-left: auto; text-align: right; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.035em; }
 .pf-health-panel > summary:has(.pf-panel-value)::after { margin-left: 0; }
-.pf-panel-body { padding: 0 18px 18px; }
+.pf-panel-body { padding: 0 20px 20px; }
 .pf-panel-body > .pf-card-meaning { margin: 10px 0; max-width: 68ch; }
 .pf-panel-body .pf-sec { margin-top: 20px; }
 .pf-health-context { margin-top: 24px; background: rgb(var(--pf-soft)); border-radius: 18px; }
@@ -1109,13 +1109,36 @@ a.pf-ring:active { background: rgb(var(--pf-soft)); }
 }
 
 /* Health: one visual level, dates on chart interaction, one shared help page. */
+body:has(.pf-sante4) { background: #f4f6f8; }
+.dark body:has(.pf-sante4) { background: rgb(var(--pf-bg)); }
+.pf-sante4 { --pf-font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --pf-font-text: var(--pf-font-display); font-family: var(--pf-font-text); }
+.pf-sante4 .pf-seg { border-radius: 10px; padding: 3px; gap: 2px; }
+.pf-sante4 .pf-seg button { border-radius: 8px; }
+.pf-sante4 .pf-seg button[aria-pressed="true"] { box-shadow: 0 1px 4px rgb(var(--pf-ink) / .10); outline: 0; }
+.pf-sante4 .pf-seg button:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: -2px; }
+.pf-sante4 .pf-card-h { font-size: 14px; }
+.pf-sante4 .pf-night { padding-top: 2px; }
+.pf-sante4 .pf-panel-body .pf-sec { padding-top: 16px; border-top: 1px solid rgb(var(--pf-line)); }
+.pf-health-history > summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; list-style: none; cursor: pointer; font-size: 13px; font-weight: 600; color: rgb(var(--pf-gray-600)); }
+.pf-health-history > summary::-webkit-details-marker { display: none; }
+.pf-health-history > summary span { font-size: 20px; line-height: 1; }
+.pf-health-history[open] > summary span { transform: rotate(90deg); }
+.pf-health-history > summary:focus-visible { outline: 2px solid rgb(var(--pf-accent)); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 374px) {
+  .pf-dials { column-gap: 4px; padding-inline: 4px; }
+  .pf-ring-label { font-size: 11.5px; }
+  .pf-ring-value { font-size: 23px; }
+  .pf-ring-sub { font-size: 11px; }
+  .pf-health-panel > summary { padding-inline: 16px; }
+  .pf-panel-body { padding-inline: 16px; }
+}
 .pf-native .pf-top, .pf-native .pf-tabbar { display: none !important; }
 .pf-sante4 .pf-panel-body > .pf-card, .pf-sante4 #sommeil-detail > .pf-card { background: transparent; padding: 0; border-radius: 0; }
 .pf-sante4 .pf-health-context { background: transparent; }
 .pf-sante4 .pf-daily-grid { gap: 12px; margin-top: 0; }
-.pf-sante4 .pf-daily-grid > .pf-card, .pf-sante4 .pf-health-nights > .pf-card { background: transparent; border: 1px solid rgb(var(--pf-line)); border-radius: 18px; padding: 18px; }
+.pf-sante4 .pf-daily-grid > .pf-card, .pf-sante4 .pf-health-nights > .pf-card { background: rgb(var(--pf-surface)); border: 1px solid rgb(var(--pf-line) / .5); border-radius: 22px; padding: 20px; box-shadow: 0 2px 12px rgb(var(--pf-ink) / .025); }
 .pf-sante4 .pf-habits { gap: 10px; }
-.pf-sante4 .pf-habits > div { padding: 12px 14px; }
+.pf-sante4 .pf-habits > div { padding: 12px 0 0; background: transparent; border-radius: 0; border-top: 1px solid rgb(var(--pf-line)); }
 .pf-viz-quiet .pf-viz-read { position: relative; padding-bottom: 0; }
 .pf-viz-quiet .pf-viz-l2 { position: absolute; z-index: 2; top: 100%; right: 0; max-width: 100%; min-height: 0; padding: 3px 7px; border-radius: 6px; background: rgb(var(--pf-surface) / .96); box-shadow: 0 0 0 1px rgb(var(--pf-line)); opacity: 0; pointer-events: none; font-size: 12px; }
 .pf-viz-quiet.is-inspecting .pf-viz-l2 { opacity: 1; }
