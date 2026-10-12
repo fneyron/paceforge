@@ -14,6 +14,8 @@ import { Connections, Provider } from './src/connections';
 import { acknowledge, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button, DeviceTheme } from './src/device-ui';
+import { useOfflinePlans } from './src/useOfflinePlans';
+import { OfflinePlansScreen } from './src/OfflinePlansScreen';
 
 const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
@@ -48,6 +50,7 @@ function Companion() {
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const externalReturn = useRef(false);
   const web = useRef<WebView>(null);
+  const offline = useOfflinePlans(script => web.current?.injectJavaScript(script), random);
   const pending = useRef<Pending | null>(null);
   const lock = useRef(false);
   const lastAttempt = useRef(0);
@@ -201,6 +204,7 @@ function Companion() {
     }
   }
   async function message(event: WebViewMessageEvent) {
+    if (offline.receive(event.nativeEvent.data, event.nativeEvent.url)) return;
     if (trusted(event.nativeEvent.url)) {
       try {
         const data = JSON.parse(event.nativeEvent.data);
@@ -289,7 +293,7 @@ function Companion() {
     } catch (e) { fail(e); } finally { finish(); }
   }
   const onForeground = useEffectEvent(() => {
-    if (lock.current || !ready) return;
+    if (lock.current || !ready || offline.view !== null) return;
     if (externalReturn.current) {
       externalReturn.current = false; setTab('devices'); setShowWeb(false); setDetail(null); refreshConnections();
     } else if (tab !== 'devices' && automatic && pair && !needsReconnect && documentReady.current && refreshable(documentUrl.current) && due(report, lastAttempt.current)) sync(true);
@@ -304,8 +308,10 @@ function Companion() {
 
   function openTab(next: Tab) {
     if (lock.current && (!inlineSync.current || pending.current || next === 'devices')) return;
-    if (next === tab && next !== 'devices' && !isBridgeUrl(documentUrl.current)) return;
+    if (offline.busy) return;
+    if (next === tab && next !== 'devices' && !isBridgeUrl(documentUrl.current) && offline.view === null) return;
     afterSave(() => {
+      offline.setView(null);
       setTab(next); setShowWeb(false); setDetail(null); setError(''); setStatus('');
       if (next !== 'devices') loadScreen(tabLocations.current[next] || ORIGIN + destinations[next]);
       else refreshConnections();
@@ -342,9 +348,9 @@ function Companion() {
     if (pending.current) fail(new Error(message));
     else setLoadError(message);
   }
-  const webVisible = tab !== 'devices' || showWeb;
+  const webVisible = (tab !== 'devices' || showWeb) && offline.view === null;
   const concealBridge = bridgeDocument && pending.current?.kind !== 'pair';
-  const navigationLocked = leaving || (busy && (!inlineSync.current || pending.current !== null));
+  const navigationLocked = leaving || offline.busy || (busy && (!inlineSync.current || pending.current !== null));
   const visibleIssue = retryNavigation.current ? error : [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
   const night = dark;
   const textScaleScript = presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect');
@@ -353,7 +359,7 @@ function Companion() {
     <View style={[styles.header, night && styles.darkSurface]}><View style={styles.heading}><Text style={[styles.brand, night && styles.darkInk]}
       accessibilityActions={webVisible && refreshable(webLocation.current) ? [{ name: 'refresh', label: 'Actualiser les données' }] : []}
       onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'refresh') refresh(); }}>PaceForge</Text></View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy || leaving }} disabled={busy || leaving} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy || leaving || offline.busy }} disabled={busy || leaving || offline.busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={[styles.settingsText, night && styles.darkAccent]}>Réglages</Text></Pressable></View>
     {webVisible && refreshable(webLocation.current) && userRefreshing && (busy || pageRefreshing) ? <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
       <ActivityIndicator size="small" color={night ? '#a6a6ad' : '#62736d'} /><Text style={[styles.syncText, night && styles.darkMuted]}>Actualisation…</Text>
     </View> : null}
@@ -361,14 +367,20 @@ function Companion() {
       accessibilityLabel={`${visibleIssue} ${retryNavigation.current ? 'Réessayer la sauvegarde.' : 'Ouvrir les connexions.'}`}
       onPress={() => retryNavigation.current ? afterSave(retryNavigation.current) : openSyncDetails()}><Text style={[styles.syncText, night && styles.darkMuted]}>{visibleIssue}</Text><Text style={[styles.noticeLink, night && styles.darkAccent]}>{retryNavigation.current ? 'Réessayer' : 'Détails ›'}</Text></Pressable> : null}
     <View style={styles.content}>
-    {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
+    {offline.view !== null && <OfflinePlansScreen plans={offline.library.plans} selected={offline.view} select={offline.setView}
+      notice={offline.notice} remove={offline.remove} close={() => { offline.setView(null); setTab('courses'); loadScreen(tabLocations.current.courses || ORIGIN + '/simulator'); }} />}
+    {tab === 'devices' && !showWeb && offline.view === null && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} report={report} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error || (detail === 'health' ? '' : visibleIssue)} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
+    {webVisible && tab === 'courses' && (offline.busy || offline.notice) && <View style={[styles.syncStatus, night && styles.darkSurface]} accessibilityLiveRegion="polite">
+      {offline.busy && <ActivityIndicator size="small" />}<Text style={[styles.syncText, night && styles.darkMuted]}>{offline.busy ? 'Enregistrement du plan sur le téléphone…' : offline.notice}</Text>
+    </View>}
     {webVisible && loadError ? <View style={styles.unavailable}>
       <Text accessibilityRole="header" style={[styles.brand, night && styles.darkInk]}>Écran indisponible</Text>
       <Text style={[styles.syncText, night && styles.darkMuted]}>{loadError}</Text>
+      <Button text="Plans hors connexion" secondary onPress={() => { setTab('courses'); offline.setView('list'); }} />
       <Button text="Réessayer" onPress={() => { setLoadError(''); recoveringProcess.current = true; web.current?.reload(); }} />
     </View> : webVisible && concealBridge ? <View style={styles.returning} accessibilityLabel="Chargement de PaceForge"><ActivityIndicator color="#0b5f6e" /></View> : null}
     <View style={[styles.web, (!webVisible || concealBridge || !!loadError) && styles.hidden]} pointerEvents={webVisible && !concealBridge && !loadError ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible || concealBridge || !!loadError} importantForAccessibility={webVisible && !concealBridge && !loadError ? 'auto' : 'no-hide-descendants'}>
@@ -386,6 +398,7 @@ function Companion() {
         }}
         onLoadEnd={event => {
           if (pageLoadFailed.current) return;
+          if (!isBridgeUrl(event.nativeEvent.url)) offline.loaded(event.nativeEvent.url);
           if (isBridgeUrl(event.nativeEvent.url)) {
             documentUrl.current = event.nativeEvent.url; documentReady.current = false; setBridgeDocument(true);
             if (pending.current) web.current?.injectJavaScript(retryBridgeScript);
@@ -414,6 +427,7 @@ function Companion() {
               else { refresh(); return false; }
             }
             const path = new URL(request.url).pathname;
+            if (path === '/auth/logout') offline.forget();
             if (path === '/settings' && ['#connections', '#coros', '#garmin', '#strava'].includes(new URL(request.url).hash)) { openTab('devices'); return false; }
             if (['/auth/strava', '/coros/connect', '/setup'].includes(path)) {
               // Start AND finish OAuth in the same browser session.
@@ -422,6 +436,9 @@ function Companion() {
             }
             return true;
           }
+          const saveOffline = /^paceforge:\/\/offline\/save\/(\d+)$/.exec(request.url);
+          if (saveOffline) { afterSave(() => offline.save(Number(saveOffline[1]), documentUrl.current)); return false; }
+          if (request.url === 'paceforge://offline') { afterSave(() => { setTab('courses'); offline.setView('list'); }); return false; }
           if (request.url === 'paceforge://devices') { openTab('devices'); return false; }
           if (request.url === 'paceforge://health') { openHealth(); return false; }
           if (request.url.startsWith('https://')) Linking.openURL(request.url).catch(() => setError('Impossible d’ouvrir ce lien.'));

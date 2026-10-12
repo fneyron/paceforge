@@ -113,6 +113,14 @@ class User(Base):
         return bool(self.strava_client_id and self.strava_client_secret_encrypted)
 
     @property
+    def has_strava_app(self) -> bool:
+        from app.config import settings
+        # Old unbound tokens must be reauthorized; never refresh with another app.
+        return self.has_own_strava_app or bool(
+            settings.strava_shared_ready and self.strava_client_id == settings.STRAVA_CLIENT_ID
+        )
+
+    @property
     def has_strava_linked(self) -> bool:
         return bool(self.strava_athlete_id and self.strava_access_token)
 

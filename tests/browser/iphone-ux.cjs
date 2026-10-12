@@ -11,7 +11,7 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
   try {
     const page = await browser.newPage({ viewport: { width: 393, height: 680 }, isMobile: true, hasTouch: true });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2; });
+    await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; window.paceforgeNativeRefresh = 2; document.addEventListener('DOMContentLoaded', () => document.documentElement.classList.add('pf-offline'));  });
     await page.goto(base + '/simulator/routes/1', { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window._sim?.setTarget);
     // Leaving immediately must wait for persistence, including a second edit during an in-flight save.
@@ -44,6 +44,9 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     await page.unroute('**/api/simulator/routes');
     await page.getByRole('button', { name: 'Non enregistré · réessayer' }).click();
     await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
+    await page.locator('#plan-more > summary').click();
+    assert.equal(await page.getByRole('menuitem', { name: 'Garder hors connexion' }).isVisible(), true);
+    await page.locator('#plan-more > summary').click();
     await page.getByRole('button', { name: 'Exporter pour ma montre', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: /TCX course/ }).isVisible(), false);
     await page.getByText('Autres formats', { exact: true }).click();
@@ -61,7 +64,7 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     // No horizontal page overflow at narrow widths or with 200% system text.
     for (const width of [320, 393]) for (const scale of [1, 2]) {
       await page.setViewportSize({ width, height: 680 });
-      for (const path of ['/sante', '/activities', '/simulator/routes/1', '/settings']) {
+      for (const path of ['/sante', '/activities', '/simulator', '/simulator/routes/1', '/settings']) {
         await page.goto(base + path, { waitUntil: 'networkidle' });
         await page.evaluate(scale => {
           document.documentElement.style.fontSize = 16 * scale + 'px';

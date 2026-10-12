@@ -48,7 +48,7 @@ async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
             )
         )
         user = result.scalar_one_or_none()
-        if not user:
+        if not user or not user.has_strava_app:
             logger.warning(
                 "Webhook: no user found for athlete %d", owner_id
             )

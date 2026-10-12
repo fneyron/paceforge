@@ -1,5 +1,6 @@
 """Synthetic dashboard for browser regressions; bind to localhost only."""
 import os
+from tempfile import TemporaryDirectory
 os.environ.update(DEBUG='false',COROS_SYNC='false',GARMIN_SYNC='false',ACTIVITY_ENV_FETCH='false')
 from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
@@ -15,7 +16,9 @@ from app.models.route import Route, RouteCheckpoint
 from app.services.health import HRV_METHOD
 from tests.test_race_plan_services import CPS, _course
 
-engine=create_async_engine('sqlite+aiosqlite:///:memory:')
+# Independent connections prevent overlapping requests from releasing each other's savepoints.
+preview_db = TemporaryDirectory(prefix='paceforge-preview-')
+engine=create_async_engine(f'sqlite+aiosqlite:///{preview_db.name}/preview.sqlite')
 factory=async_sessionmaker(engine,expire_on_commit=False)
 @asynccontextmanager
 async def lifespan(app):
@@ -45,6 +48,7 @@ async def lifespan(app):
         await db.commit()
     yield
     await engine.dispose()
+    preview_db.cleanup()
 app=create_app();app.router.lifespan_context=lifespan
 async def session():
     async with factory() as db:

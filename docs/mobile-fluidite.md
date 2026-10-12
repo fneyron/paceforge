@@ -29,12 +29,26 @@ coordonnées ; leurs valeurs restent accessibles par les contrôles et libellés
 Les boutons et liens principaux ont une cible d’au moins 44 points CSS.
 
 L’export affiche d’abord le GPX conseillé, puis les autres formats sur demande.
-Une page impossible à charger propose une nouvelle tentative sur place. Cela
-ne constitue pas un mode hors connexion : les plans ne sont pas mis en cache
-localement, et les exports nécessitent encore une connexion pour être produits.
-Le passage de Strava aux autorisations d’une application commune reste également
-un chantier séparé : il dépend de la configuration et de l’accès accordé par
-Strava ; les identifiants personnels existants ne sont pas remplacés ici.
+Une page impossible à charger propose une nouvelle tentative sur place et l’accès
+aux plans enregistrés hors connexion. Dans le menu d’une course, « Garder hors
+connexion » attend la sauvegarde des modifications puis conserve une copie
+native datée des passages, ravitaillements et barrières horaires. La copie reste
+lisible après fermeture et redémarrage sans réseau. Elle ne se met pas à jour
+automatiquement : l’utilisateur répète l’action après ses modifications. Carte,
+édition et génération des exports demandent toujours une connexion.
+
+Les copies sont liées au compte web, retirées à la déconnexion explicite ou à un
+changement de compte constaté. Un pointeur dans SecureStore valide un fichier
+complètement écrit, afin de conserver l’ancienne copie si une écriture échoue.
+La bibliothèque est bornée à vingt plans et 1 million de caractères ; chaque
+plan accepte au plus mille passages et 256 ko. Aucune donnée Santé ni aucun
+jeton fournisseur n’y est copié. Le compagnon garde sa seule WebView montée.
+
+La connexion Strava sans clés personnelles est disponible dans le code derrière
+`STRAVA_SHARED_APP_ENABLED`. Son activation exige les accès serveur de l’app
+Strava PaceForge et une capacité d’athlètes autorisée par Strava. Le parcours
+conserve les apps personnelles existantes ; une ancienne autorisation sans
+identité d’app doit être renouvelée. Voir [configuration Strava](strava-connexion.md).
 
 Validation locale : `tests/browser/iphone-ux.cjs` vérifie sauvegarde immédiate,
 ordre des écritures, échec/réessai, retour à la position et aux sections, export
@@ -195,6 +209,7 @@ node /tmp/pf-browser/node_modules/playwright/cli.js install chromium
 node tests/browser/refresh.cjs
 node tests/browser/native/build.cjs
 node tests/browser/native/check.cjs
+node tests/browser/native/offline.cjs
 ```
 
 `PF_PREVIEW_URL`, `PF_PREVIEW_OUTPUT`, `NATIVE_PREVIEW_BUNDLE` permettent de changer

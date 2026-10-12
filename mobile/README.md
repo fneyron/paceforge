@@ -121,6 +121,32 @@ réguliers. Le thème du site est transmis à l’en-tête et à la navigation n
 y compris après une modification dans Réglages. Les trois cadrans restent de
 même taille, sans mettre la récupération au-dessus des deux autres.
 
+## Plans hors connexion
+
+Dans une course enregistrée, le menu ⋯ propose « Garder hors connexion ».
+Les modifications sont d’abord sauvegardées sur le compte ; le serveur produit
+une copie des horaires, points de passage, ravitaillements et barrières horaires.
+La copie native est ensuite consultable depuis « Plans hors connexion » dans
+Courses, ou depuis l’écran d’erreur réseau, même après redémarrage de l’app.
+La date de copie est affichée. Répéter l’action remplace la copie ; il n’y a pas
+de mise à jour automatique. Carte, édition et export restent en ligne.
+
+La bibliothèque locale utilise `expo-file-system` 57.0.7 dans le répertoire des
+documents de l’application, avec deux fichiers alternés et un index de compte
+commis dans SecureStore seulement après écriture. La déconnexion explicite et
+le changement de compte invalident l’index avant de remplacer les fichiers.
+Les réponses sont liées à l’origine HTTPS, à la page courante, au nonce et à la
+course demandée. Les champs sont sélectionnés et validés avant stockage ;
+aucun HTML authentifié, jeton ou relevé Santé n’est enregistré dans ces copies.
+Les limites sont vingt plans, mille points par plan, 256 ko par réponse et un
+million de caractères pour la bibliothèque. Les anciennes versions du compagnon
+ne montrent pas ces actions.
+
+`tests/browser/native/offline.cjs` couvre fermeture/réouverture sans page web,
+passage après minuit, réponses répétées, échecs d’écriture disque et SecureStore,
+changement de compte et déconnexion. Les API natives y sont simulées : vérifier
+également le mode avion et la persistance sur un iPhone avec la nouvelle build.
+
 ## Synchronisation livrée
 
 - Lecture volontaire des **30 derniers jours** : poids, masse grasse, pas, FC et
