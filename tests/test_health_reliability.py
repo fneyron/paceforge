@@ -91,7 +91,8 @@ def test_old_heart_trends_do_not_become_fresh_because_sleep_arrived():
     assert day['score']['value'] <= sc.CAP_NO_HEART
     quality = sc.quality(day)
     assert quality['partial'] and quality['label'] == 'Bilan partiel'
-    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Absent pour cette nuit', 'Absent pour cette nuit']
+    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Absent pour cette nuit', 'Absent pour cette nuit',
+                                                 'Aucune activité reçue']
     card = sante._night_card(_nights(rows), 'hr', D, day)
     assert card['latest'] is None and card['trend']['value']
 

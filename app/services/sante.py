@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.health import HealthMetric
 from app.services import nights as nt
 from app.services import sante_score as sc
+from app.services import sante_recovery as sr
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
@@ -203,6 +204,7 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     day = {"day": d, "night_measured": _slept(nights, d), "stats": stats, "tst24": tst,
            "measured_components": fresh,
            "need": sl.sleep_need(nights, d, st.raced_nights(efforts)),
+           "recovery_load": sr.assessment(sessions, nights, d),
            "window": st.effort_window(efforts, d), "alert": alert, "resp": nt.resp_up_nights(nights, d)}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
@@ -476,6 +478,7 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
             "state": state, "line": None if state else td.no_state_line(has_watch),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
             "rows": rows, "training": train, "score": score, "score_notes": sc.explanation(day),
+            "training_effect": day.get("recovery_load"),
             "quality": sc.quality(day)}
 
 

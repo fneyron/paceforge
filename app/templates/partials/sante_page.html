@@ -53,6 +53,9 @@
 <details id="recuperation" class="pf-health-panel" open>
     <summary><span>Récupération</span></summary>
     <div class="pf-panel-body">
+        {% if p.training_effect and p.training_effect.recorded %}
+        <div class="pf-row"><span class="pf-row-name">Effort accumulé</span><span class="pf-row-val">{{ p.training_effect.word }}</span></div>
+        {% endif %}
         {% if p.recup %}<div id="recuperation-detail" class="pf-card pf-recup14">
             <h3 class="sr-only">{{ p.recup.title }}</h3>
             {{ viz.viz_day_bars(p.recup, "Récupération sur 14 jours", quiet=True) }}
@@ -61,6 +64,7 @@
 <details id="qualite-bilan" class="pf-bilan-quality">
     <summary>Mesures utilisées</summary>
     <dl>{% for row in p.quality.rows %}<div><dt>{{ row.name }}</dt><dd>{{ row.state }}</dd></div>{% endfor %}</dl>
+    {% if 'load' in p.score.caps %}<p>L’effort accumulé pèse encore dans ce bilan. Son influence diminue progressivement.</p>{% endif %}
     <p>Disponibilité des mesures, pas une garantie de précision du score.</p>
 </details>
 {% endif %}

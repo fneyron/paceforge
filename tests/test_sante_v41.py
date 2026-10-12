@@ -206,7 +206,8 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
     # The recovery panel keeps its graph; nightly status is stated once on each metric card.
     card = main.split('<details id="recuperation"')[1].split('</details>')[0]
-    assert 'data-viz-key="recuperation"' in card and 'class="pf-row' not in card
+    assert 'data-viz-key="recuperation"' in card
+    assert card.count('class="pf-row"') == 1 and 'Effort accumulé' in card
     for key in ("vfc", "fc"):
         card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
         # its status line: a dot and its words, no percentage (the row prints it: once; the 2 missing nights leave

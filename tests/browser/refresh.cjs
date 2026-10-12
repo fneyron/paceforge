@@ -80,7 +80,9 @@ async function check(engine,name,width){
  await page.goto(base+'/activities',{waitUntil:'networkidle'});
  const more=page.getByRole('button',{name:/Semaines précédentes/});
  if(await more.count()){
-  await more.click();await page.waitForTimeout(400);
+  const initialRows=await page.locator('[id^="activity-row-"]').count();
+  await more.click();
+  await page.waitForFunction(n=>document.querySelectorAll('[id^="activity-row-"]').length>n,initialRows);
   const rows=await page.locator('[id^="activity-row-"]').count();
   await page.evaluate(()=>window.paceforgeRefresh.refresh(false));
   assert.equal(await page.locator('[id^="activity-row-"]').count(),rows,'older activity pages disappeared');

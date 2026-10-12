@@ -1,79 +1,27 @@
-"""Santé v4: « Récupération », PaceForge's own 0–100 score (owner decisions
-2026-10-07, « un score juste comme WHOOP, plus simple », and 2026-10-08:
-past activities only, no check-in, no race; after the visual judges: the
-state comes from the score, like WHOOP; v4.2, « une approche scientifique »:
-every rule checked against the official texts, research_recovery.md §2–§3).
-No brand metric enters it. No official body gives weights, a formula or
-thresholds for such a score (Kellmann 2018: « multivariate approaches … on a
-formal or informal level »; BASES 2023: these scores « require validation »):
-every number below is (H) unless cited.
+"""PaceForge's estimated recovery index, 0–100, not a measured recovery %.
 
-raw (0–100) is the weighted mean of the components present, each scored 0–100
-only when its own data rule holds:
-1. VFC · 7 nuits (≥ 3 measured nights in the last 7 and a band, full or
-   « provisoire »: every measured night counts in both, last night included,
-   nights.normal): z = (ln of the 7-night mean − ln of the band's centre) /
-   the band's SD of ln RMSSD; 100 from z ≥ −0.5 (the trials' convention:
-   mean ± 0.5 SD), linear to 0 at z = −2.5 (H). Above the band = 100: never
-   above, never praised (Plews 2013; Bellenger 2016).
-2. FC de nuit · 7 nuits (the same rule): 100 while the mean is ≤ the band's
-   median + 2 bpm, 40 at + 5, 0 at + 8, linear between (H; anchors: + 4 bpm
-   on 2 nights, Alavi 2022's alert; ≈ + 4,5 bpm in a short overload, Bosquet
-   2008; ≈ + 6 % when sick, Altini & Plews 2021).
-   During the illness alert it reads the alert's own 2 nights, at most 39
-   (its row red, « nettement plus haute »): never green under the alert.
-3. Sommeil · 24 h (a main night this morning; the naps of the 24 h before
-   its wake count, nights.day_tst24): read against the day's estimated need
-   (sante_sleep.sleep_need). At least 7/8 of it → 100, 3/4 → 60, 1/2 or
-   less → 0, linear between (H). For an 8-h need these are 7 h, 6 h, 4 h;
-   they move with the estimated need. No separate sleep-debt penalty in
-   this component: the need already includes it.
-Weights (H): VFC 25, FC de nuit 25, Sommeil 30, renormalised over the
-components present (when all three exist: 31.25 %, 31.25 %, 37.5 %;
-the heart signals together account for 62.5 %). The recent efforts are no
-component of the mean (2026-10-08, owner: « Fais comme WHOOP »: its recovery
-is body signals and sleep, the strain kept out; « Charge récente » is gone):
-their recovery windows cap the score (below), the owner's « Un effort récent,
-il faut le prendre en compte et afficher la fatigue quand même »; the
-« Effort récent » row says it on every day of a window). Without a nightly
-component usable on that day (VFC, FC de nuit or Sommeil) no score at all, like WHOOP (owner,
-2026-10-09: « Mets un cadran vide, oui »): the dial is empty, the 14-day card
-draws nothing that day, never a score estimated from the activities alone.
-Caps on raw (H), the lowest binds: the nightly-HR illness alert (2 nights,
-nights.illness_alert) → 39; an effort precaution interpolated through the
-anchors in sante_training.EFFORT_RULES and gradually released to 100; a
-continuous sleep precaution relative to the estimated base (sleep_limit),
-replacing the old fixed 65 below 6 h and sleep's duplicate red cap;
-VFC under its band (z < −0.5) AND FC de nuit ≥ its
-median + 3 bpm → 69 (Buchheit 2014, Table 2: rMSSD down with HR up,
-« accumulated fatigue »); a red cardiac component (sub-score < 40) → 69, where FC de
-nuit always counts but VFC only when FC de nuit is measured and
-its mean is > median + 2 bpm (rMSSD down with HR down is the
-« saturation » of a well-trained athlete, « coping well with training »:
-Buchheit 2014, Table 2; resting HRV « largely unaffected by overreaching »:
-Bellenger 2016; Meeusen 2013); neither VFC nor FC de nuit in the score → 80
-(sleep alone never says « fully recovered »).
-score = the capped raw, rounded half up on the exact value (snapped to 1e-9:
-64,5 is 65, never 64,4999…). The state is its band (sante_today.state):
-≥ 70 « Bonne récupération », 40–69 « Récupération en cours », < 40
-« Récupération faible » (H): the number and the state never disagree. The
-main reason (`reason`: the alert, else the cap that binds, else the joint
-VFC/FC pattern, else the lowest component) is data: the page prints the
-alert's sentence only (v4.3, owner: « mets juste les scores »). A difference
-of a few points means nothing (BASES 2023: unvalidated; the HRV moves ≈ 12 %
-night to night, Buchheit 2014): the method fold says so.
-No sub-score is shown (v4.4, owner: « Sommeil 100, Charge récente 20 …
-on comprend rien »: « Détail du score » is gone): the page shows the score on
-its dial with its state's word (dial) and plain rows (sante.night_row). A
-heart signal's colour is its place against the normal, the same on its row
-and on its card's status line (row_tone): green in it, orange out of it on
-the side that matters (VFC under, FC de nuit over), red when its note is
-under 40 and counts for the 69 cap (never a red VFC that caps nothing), at
-least orange under the joint cap, red under the alert, neutral on the other
-side (never praised).
-History: the 13 days before today are recomputed from what is stored, each
-from what was known that day, with the same rule (sante._history); nothing is
-persisted.
+Nightly components: 7-night RMSSD/HR trends against the personal 60-day
+reference, plus 24-hour sleep against the estimated need. A heart component
+requires its own fresh measurement on the assessed night. Weights are
+25/25/30, renormalised over available components. No usable new night means
+no score, regardless of activity history.
+
+Precautions limit the weighted result: unusual nightly HR, prolonged effort,
+cumulative training exposure (sante_recovery), short sleep, combined HR/HRV
+patterns, breathing and missing cardiac signals. The lowest limit applies;
+correlated load/sleep/heart precautions are not added together. Cumulative
+exposure uses ordinary sessions and sport-specific volume, previous personal
+references and decaying contributions. It cannot measure muscle repair.
+
+All weights, conversions, smoothing constants and limits are product
+heuristics (H). Scientific references support the monitored domains and caution
+in interpretation; they do not validate the PaceForge coefficients. Details:
+docs/recovery-cumulative.md and docs/sante-estimates.md.
+
+Scores are rounded half up. Their states are >=70 good, 40–69 recovering,
+<40 low (also heuristics). Daily history is recomputed from the stored events
+up to each assessed day; late imports can change past results. No percentage
+of statistical confidence or physiological recovery deadline is invented.
 """
 import math
 import re
@@ -84,7 +32,7 @@ from app.services import viz
 from app.services.nights import SHORT_DAY_MIN
 
 BANDS = {"ok": (70, 100), "warn": (40, 69), "danger": (0, 39)}  # (H) the state is the band of the score
-WEIGHTS = {"hrv": 25, "hr": 25, "sleep": 30}  # (H) research_recovery.md §3.2; no Charge (WHOOP: strain kept out)
+WEIGHTS = {"hrv": 25, "hr": 25, "sleep": 30}  # (H) nightly weights; training exposure applies a separate precaution
 ORDER = ("hrv", "hr", "sleep")
 NIGHTLY = ("hrv", "hr", "sleep")  # no score without one of them (like WHOOP: no night, no score)
 HRV_FULL_Z, HRV_ZERO_Z = -0.5, -2.5  # z of ln RMSSD: 100 from the band's floor (the trials' ± 0.5 SD), 0 at −2.5 (H)
@@ -99,7 +47,7 @@ CAP_JOINT, JOINT_HR_BPM = 69, 3  # (H) VFC under its band and FC de nuit ≥ med
 CAP_SHORT = 65  # (H) the continuous sleep guard's anchor at 3/4 of the estimated base
 CAP_NO_HEART = 80  # (H) neither VFC nor FC de nuit in the score: sleep alone never makes a 100
 CAP_RESP = 69  # (H) the breathing rate over its usual line 2 nights in a row (nights.resp_up_nights): never green
-CAPS = ("ill", "effort", "short", "joint", "resp", "red", "no_heart")  # equal caps: the first names the reason
+CAPS = ("ill", "effort", "load", "short", "joint", "resp", "red", "no_heart")  # equal caps: the first names the reason
 HEART = ("hrv", "hr")
 HISTORY_DAYS = 14  # the Récupération card
 HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and its alert's (the 60 before), with room
@@ -117,8 +65,9 @@ HISTORY_NIGHTS = 160  # days of nights a past day reads: its bands (60 days) and
 METHOD = [
     "Sommeil compare tes 24 h, siestes comprises, à un besoin estimé. La base part de 8 h et s’adapte avec "
     "assez de nuits comparables. L’effort et le manque de sommeil estimé s’y ajoutent. Ta journée commence au réveil.",
-    "Récupération combine ton sommeil, ta VFC et ta FC de nuit. L’effet d’un sommeil court varie avec sa durée. "
-    "La prudence après effort diminue chaque jour. Elle ne prédit pas ta date de récupération.",
+    "Récupération combine sommeil, VFC, FC de nuit et efforts accumulés. L’influence des efforts diminue progressivement. "
+    "La comparaison utilise ton historique. "
+    "Ce modèle ne prédit pas ta date de récupération.",
     "La VFC mesure les variations entre battements cardiaques. La FC de nuit est ton pouls moyen nocturne. "
     "Les graphiques précisent si les éveils sont exclus. Je compare ces mesures à tes 60 derniers jours.",
     "Entraînement compare tes 7 derniers jours à ta semaine habituelle. Une minute compte davantage quand ton "
@@ -134,7 +83,7 @@ def explanation(day: dict) -> list[str]:
     if score["value"] is None:
         return ["Aucune nouvelle nuit exploitable pour ce bilan. Les anciennes tendances ne créent pas un nouveau score."]
     notes = ["Cet indice estime ta récupération ; il ne mesure pas un pourcentage de réparation du corps."]
-    labels = {"effort": "la prudence après l’effort récent", "short": "le sommeil court par rapport à ta base estimée", "ill": "la FC nocturne élevée",
+    labels = {"effort": "la prudence après l’effort récent", "load": "le cumul des entraînements récents", "short": "le sommeil court par rapport à ta base estimée", "ill": "la FC nocturne élevée",
               "joint": "la tendance combinée de la VFC et de la FC", "resp": "la respiration nocturne élevée",
               "red": "un signal de récupération bas", "no_heart": "l’absence de tendance cardiaque exploitable"}
     limiting = [labels[k] for cap, k in caps(day, score["parts"]) if cap == score["raw"] and cap < score["raw0"]]
@@ -143,6 +92,8 @@ def explanation(day: dict) -> list[str]:
         notes.append(f"Pour ce bilan, {' et '.join(limiting)} {verb} l’indice à {pct(score['value'])}.")
     if "effort" in score["caps"]:
         notes.append("La prudence liée à l’effort diminue progressivement avec les jours. Elle ne fixe pas une date de récupération complète.")
+    if "load" in score["caps"]:
+        notes.append("L’effet des entraînements diminue progressivement. Une bonne nuit n’efface pas leur cumul ; les précautions ne s’additionnent pas.")
     if "short" in score["caps"]:
         notes.append("L’effet du sommeil évolue progressivement avec sa durée, sans changement brutal à 6 h.")
     if any(p["prov"] for p in score["parts"]):
@@ -168,6 +119,9 @@ REFS = [
         ("Dial 2025 · validation des mesures nocturnes", "10.14814/phy2.70527"),
         ("Xu 2026 · VFC optique et ECG", "10.3390/s26165192"),
         ("Ressenti et VFC 2026", "10.3390/s26041325"),
+        ("Modèles forme-fatigue · revue 2022", "10.1186/s40798-022-00426-x"),
+        ("Récupération cardiaque et neuromusculaire · étude 2019", "10.3390/sports7100225"),
+        ("Trail 2026 · contraintes musculaires et récupération", "10.3390/muscles5010009"),
         ("Buchheit 2014", "10.3389/fphys.2014.00073"), ("Plews 2013", "10.1123/ijspp.8.6.688"),
         ("Plews 2014", "10.1123/ijspp.2013-0455"), ("Alavi 2022", "10.1038/s41591-021-01593-2"),
         ("Bosquet 2008", "10.1136/bjsm.2007.042200"), ("Saw 2016", "10.1136/bjsports-2015-094758"),
@@ -285,6 +239,13 @@ def quality(day: dict) -> dict:
         rows.append({"name": label, "state": state})
     partial = len(parts) < len(ORDER)
     provisional = any(p["prov"] for p in parts.values())
+    load = day.get("recovery_load")
+    if load is not None:
+        provisional = provisional or load["provisional"]
+        rows.append({"name": "Entraînement", "state": "Repères en cours" if load["provisional"]
+                     else ("Intensité partielle" if load["intensity_partial"] and load["intensity_used"]
+                           else "Durée et intensité" if load["intensity_used"] else "Durée uniquement")
+                     if load["recorded"] else "Aucune activité reçue"})
     label = "Bilan partiel" if partial else "Repères provisoires" if provisional else "Données du bilan"
     return {"label": label, "partial": partial, "provisional": provisional, "rows": rows}
 
@@ -318,6 +279,9 @@ def caps(day: dict, parts: list[dict]) -> list[tuple[float, str]]:
         out.append((CAP_ILL, "ill"))
     if day["window"]:
         out.append((day["window"]["cap"], "effort"))
+    load = day.get("recovery_load")
+    if load and load["cap"] is not None:
+        out.append((load["cap"], "load"))
     if (limit := sleep_limit(day["tst24"], day["need"]["base"])) is not None:
         out.append((limit, "short"))
     if any(p["joint"] for p in parts):
@@ -351,7 +315,7 @@ def reason(tone: str, binding: list[str], parts: list[dict], day: dict) -> str |
         return None
     if day["alert"]:
         return "ill"
-    if binding and binding[0] in ("effort", "short"):
+    if binding and binding[0] in ("effort", "load", "short"):
         return binding[0]
     if any(p.get("joint") for p in parts):
         return "joint"

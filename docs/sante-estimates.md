@@ -1,5 +1,9 @@
 # Estimations Santé — 10 octobre 2026
 
+Complément du 12 octobre : [récupération et entraînements cumulés](recovery-cumulative.md).
+Il ajoute une précaution personnelle pour l'enchaînement des activités ordinaires,
+en conservant les composantes nocturnes et les limites décrites ici.
+
 Les trois anneaux restent des repères de suivi, avec leurs définitions accessibles au clic.
 Cette révision conserve la séparation des sources, les graphiques quotidiens visibles et
 l'absence de nouveau score sans une composante nocturne exploitable réellement mesurée ce jour-là.

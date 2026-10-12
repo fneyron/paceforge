@@ -6,6 +6,11 @@ leurs produits ; elles ne valident pas scientifiquement leurs scores, ni le nôt
 
 ## Mise en œuvre après cette revue
 
+Complément récupération : [effet cumulé des entraînements](recovery-cumulative.md).
+Les séances ordinaires influencent désormais une précaution du score, avec
+références personnelles et décroissance progressive. Les passages ci-dessous
+sur l'absence de cette contribution décrivent le constat antérieur à ce complément.
+
 Complément du 12 octobre : [utilité des mesures, matériel et validation](mesures-athlete-fiabilite.md).
 La fiabilité des imports et la validité scientifique d’un indice sont vérifiées
 séparément. Les correctifs logiciels ci-dessous ne valident pas les pondérations
@@ -82,8 +87,9 @@ sous chaque valeur.
   semaines actives. Bornes cardiaques et taux calculés avec les données connues
   au jour considéré, sans activité future. Un jour sans activité reçue réduit
   la charge **enregistrée**, sans prouver un repos. Ces constantes ne sont pas
-  une durée individuelle de récupération. Aucune pénalité cumulative nouvelle
-  ne s’ajoute au score nocturne sans validation.
+  une durée individuelle de récupération. Le complément `cumulative-1` utilise
+  un calcul distinct et explicite pour le bilan ; sa validation physiologique
+  reste à réaliser, comme celle des limites du modèle nocturne initial.
 - Lactate : courbe des observations, sans lissage ni seuil automatique à 2/4
   mmol/L. Axe d’intensité linéaire en km/h pour la course, même si les paliers
   sont saisis en min/km ; watts pour le vélo. Les conditions, durées et moment
@@ -247,9 +253,9 @@ futures. Sommeil et gros efforts peuvent influencer plusieurs jours.
 - Les limites après longues sorties sont des précautions décroissantes. Plusieurs
   efforts conservent la limite la plus prudente ; ce n’est pas une addition
   physiologique de fatigue.
-- Les séances ordinaires comptent dans la charge de sept jours. Elles n’ajoutent
-  pas de pénalité cumulative propre à la récupération ; leurs effets peuvent
-  seulement se refléter dans le sommeil et les signaux nocturnes.
+- Avant le complément `cumulative-1`, les séances ordinaires comptaient dans la
+  charge de sept jours sans précaution cumulative dans la récupération. Cette
+  limite est corrigée ; les coefficients restent des hypothèses de produit.
 - La charge hebdomadaire est une comparaison à la semaine habituelle des onze
   semaines précédentes, avec au moins quatre semaines actives. Elle ne mesure
   pas la récupération musculaire ni une probabilité de blessure.

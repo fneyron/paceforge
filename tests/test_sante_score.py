@@ -725,7 +725,7 @@ def test_the_method_fold_is_five_plain_bullets():
     habituelles », never « ta normale »."""
     assert len(sc.METHOD) == 5
     assert "base part de 8 h" in sc.METHOD[0] and "nuits comparables" in sc.METHOD[0]
-    assert "diminue chaque jour" in sc.METHOD[1] and "ne prédit pas" in sc.METHOD[1]
+    assert "efforts accumulés" in sc.METHOD[1] and "diminue progressivement" in sc.METHOD[1] and "ne prédit pas" in sc.METHOD[1]
     assert sum(len(b.split()) for b in sc.METHOD) <= 155  # one concise explanation, explicitly estimated
     for sentence in re.split(r"(?<=[.!?])\s+", sc.flat(sc.METHOD)):  # « 3 h » is one word, « : » none
         assert len([w for w in re.sub(r"\d+ h\b", "N", sentence).split() if re.search(r"\w", w)]) <= 15, sentence

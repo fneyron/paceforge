@@ -300,7 +300,9 @@ async def test_a_cyclist(as_user: AsyncClient, db_session: AsyncSession, test_us
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     w = page["score"]["parts"]
-    assert {p["key"] for p in w} == {"hrv", "hr", "sleep"} and page["score"]["value"] == 65
+    assert {p["key"] for p in w} == {"hrv", "hr", "sleep"}
+    # Cumulative exposure may strengthen, never lift, the long-ride precaution.
+    assert 60 <= page["score"]["value"] <= 65 and "effort" in page["score"]["caps"]
     assert page["state"]["word"] == "Récupération en cours" and page["state"]["text"] is None
     marks = {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}
     assert marks[D.isoformat()] == "◇ après un gros effort"  # 7 h: its nights follow its time (M4), no outing named
