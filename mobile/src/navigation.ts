@@ -3,6 +3,12 @@ import { ORIGIN, trusted } from './api';
 export type Tab = 'health' | 'activities' | 'courses' | 'devices';
 export const tabs = [['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
 export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
+export function isBridgeUrl(url: string): boolean {
+  return trusted(url) && ['/mobile/session', '/mobile/connections', '/mobile/connect'].includes(new URL(url).pathname);
+}
+export function screenUrl(url: string): string {
+  return trusted(url) && !isBridgeUrl(url) ? url : ORIGIN + '/sante';
+}
 export function tabForUrl(url: string): Tab | null {
   if (!trusted(url)) return null;
   const path = new URL(url).pathname;

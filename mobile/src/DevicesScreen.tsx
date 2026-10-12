@@ -22,6 +22,7 @@ export function DevicesScreen(p: Props) {
   return <ScrollView contentContainerStyle={ui.content}>
     {detail && <Link text="‹ Toutes les connexions" onPress={() => p.select(null)} disabled={busy} />}
     <Text accessibilityRole="header" style={ui.title}>{detail === 'health' ? healthName : detail === 'other' ? 'Autres marques' : detail === 'help' ? 'Comment ça fonctionne ?' : 'Connexions'}</Text>
+    {busy && <View style={styles.progress}><ActivityIndicator color="#225649" /><Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || 'Chargement…'}</Text></View>}
     {!detail && <>
       <Text style={ui.body}>Choisis les services que tu utilises.</Text>
       <View style={styles.list}>
@@ -91,7 +92,6 @@ export function DevicesScreen(p: Props) {
         <Button text="Ouvrir la connexion Strava" onPress={() => p.provider('strava')} disabled={busy} />
       </View>
     </>}
-    {busy && <View style={styles.progress}><ActivityIndicator color="#225649" /><Text accessibilityLiveRegion="polite" style={ui.body}>{p.status || 'Chargement…'}</Text></View>}
     {!busy && detail === 'health' && p.status ? <Text accessibilityLiveRegion="polite" style={ui.body}>{p.status}</Text> : null}
     {p.error ? <Text accessibilityRole="alert" style={ui.error}>{p.error}</Text> : null}
   </ScrollView>;

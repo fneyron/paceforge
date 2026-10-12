@@ -50,6 +50,15 @@ sa date dans le détail. « Revoir les autorisations » relance aussi la lecture
 L’aide explique le partage des balances et applications sportives vers un
 service compatible, sans associer la connexion à un modèle précis.
 
+La vérification du compte s’effectue dans la WebView conservée à sa taille
+normale, masquée derrière la progression native. La page renvoie sa réponse
+jusqu’à l’accusé de réception (30 s maximum). Le natif vérifie origine, route
+et nonce/challenge, puis consomme la demande avant tout travail asynchrone.
+Une réponse répétée ne relance ni l’association ni la synchronisation. La fin,
+l’échec ou l’expiration ramènent à un écran utilisable ; les pages techniques
+ne deviennent jamais une destination de retour. Une session expirée affiche
+toujours le formulaire de connexion avant de reprendre la vérification.
+
 ## Synchronisation livrée
 
 - Lecture volontaire des **30 derniers jours** : poids, masse grasse, pas, FC et

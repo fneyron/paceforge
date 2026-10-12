@@ -8,12 +8,12 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { api, ApiError, ORIGIN, trusted } from './src/api';
 import { authorize, collect } from './src/health';
 import { labels, Metric, Pair } from './src/types';
-import { appShellScript, destinations, Tab, tabForUrl, tabs } from './src/navigation';
-import { Connections, Provider, readConnections } from './src/connections';
+import { appShellScript, destinations, isBridgeUrl, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
+import { Connections, Provider } from './src/connections';
+import { acknowledge, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button } from './src/device-ui';
 
-type Pending = { kind: 'pair'; verifier: string; challenge: string; url: string } | { kind: 'check'; nonce: string; url: string; consent: boolean } | { kind: 'connections'; nonce: string; url: string };
 const KEY = 'paceforge.phone.v1';
 const random = () => Array.from(Crypto.getRandomBytes(32), b => b.toString(16).padStart(2, '0')).join('');
 
@@ -55,8 +55,17 @@ function Companion() {
   });
 
   function finish() { lock.current = false; pending.current = null; setBusy(false); if (watchdog.current) clearTimeout(watchdog.current); }
+  function restoreSync() {
+    const back = syncReturn.current;
+    syncReturn.current = null;
+    setUrl(screenUrl(back?.url || webLocation.current));
+    if (back) { setTab(back.tab); setShowWeb(back.showWeb); }
+  }
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) setNeedsReconnect(true);
+    // A timeout must leave an actionable screen, never the hidden bridge document.
+    if (pending.current) { web.current?.stopLoading(); setShowWeb(false); }
+    restoreSync();
     setError(e instanceof Error ? e.message : 'La synchronisation a échoué. Réessaie.'); finish();
   }
   function start() { if (lock.current || !ready) return false; lock.current = true; setBusy(true); setError(''); return true; }
@@ -76,14 +85,14 @@ function Companion() {
   }
   function sync(quiet = false, consent = false) {
     if (!pair || !start()) return;
-    syncReturn.current = quiet ? { tab, url: webLocation.current, showWeb } : null;
+    syncReturn.current = quiet ? { tab, url: screenUrl(webLocation.current), showWeb } : null;
     const nonce = random(), target = `${ORIGIN}/mobile/session?nonce=${nonce}`;
     pending.current = { kind: 'check', nonce, url: target, consent };
-    lastAttempt.current = Date.now(); setStatus('Vérification du compte…'); setUrl(target); guard();
+    lastAttempt.current = Date.now(); setStatus('Vérification du compte…');
+    setTab('devices'); setDetail('health'); setShowWeb(false); setUrl(target); guard();
   }
   async function upload(account: Pair, consent = false) {
     pending.current = null; if (watchdog.current) clearTimeout(watchdog.current);
-    const returnTo = syncReturn.current;
     setShowWeb(false); setTab('devices'); setDetail('health');
     try {
       if (consent) { setStatus('Choisis les données à partager…'); await authorize(); }
@@ -111,33 +120,32 @@ function Companion() {
       if (time && received) { await SecureStore.setItemAsync(KEY + '.last', time); setLast(time); }
       setStatus(`${received} mesures reçues par PaceForge.\n${counts.join(' · ')}${notices.length ? '\n' + notices.join('\n') : ''}`);
     } catch (e) { fail(e); } finally {
-      if (returnTo) { setTab(returnTo.tab); setShowWeb(returnTo.showWeb); setUrl(returnTo.url); }
-      syncReturn.current = null; finish();
+      restoreSync(); finish();
     }
   }
   async function message(event: WebViewMessageEvent) {
-    const task = pending.current;
-    if (!task) return;
+    const reply = takeReply(pending, event.nativeEvent.data, event.nativeEvent.url);
+    if (!reply) return;
+    if (watchdog.current) clearTimeout(watchdog.current);
+    web.current?.injectJavaScript(acknowledge(reply.task));
+    setShowWeb(false);
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (task.kind === 'connections') {
-        const snapshot = readConnections(data, event.nativeEvent.url, task.nonce);
-        if (snapshot) { setConnections(snapshot); setShowWeb(false); setStatus(''); finish(); }
+      if (reply.kind === 'connections') {
+        setConnections(reply.snapshot); setShowWeb(false); setStatus(''); finish();
         return;
       }
-      if (task.kind === 'pair' && data.type === 'pair' && data.challenge === task.challenge && trusted(event.nativeEvent.url, '/mobile/connect')) {
-        pending.current = null; if (watchdog.current) clearTimeout(watchdog.current);
-        const account: Pair = await api('/api/mobile/exchange', 'POST', { code: data.code, verifier: task.verifier });
+      if (reply.kind === 'pair') {
+        const account: Pair = await api('/api/mobile/exchange', 'POST', { code: reply.code, verifier: reply.task.verifier });
         await SecureStore.setItemAsync(KEY, JSON.stringify(account)); setPair(account); setShowWeb(false); setTab('devices');
         await SecureStore.deleteItemAsync(KEY + '.last'); setLast('');
         setNeedsReconnect(false);
         await upload(account, true);
-      } else if (task.kind === 'check' && data.type === 'session' && data.nonce === task.nonce && trusted(event.nativeEvent.url, '/mobile/session')) {
-        if (!pair || data.user_id !== pair.user_id) {
+      } else if (reply.kind === 'check') {
+        if (!pair || reply.userId !== pair.user_id) {
           setNeedsReconnect(true);
           throw new Error('Le compte affiché a changé. Utilise « Connecter » pour confirmer le compte qui recevra tes mesures.');
         }
-        await upload(pair, task.consent);
+        await upload(pair, reply.task.consent);
       }
     } catch (e) { fail(e); }
   }
@@ -191,17 +199,25 @@ function Companion() {
     <StatusBar style="dark" />
     <View style={styles.header}><View style={styles.heading}><Text style={styles.brand}>PaceForge</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Réglages et connexions" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => openTab('devices')} style={styles.settings}><Text style={styles.settingsText}>Réglages</Text></Pressable></View>
     {webVisible && error ? <Text accessibilityRole="alert" style={[styles.error, styles.banner]}>{error}</Text> : null}
+    <View style={styles.content}>
     {!webVisible && <DevicesScreen detail={detail} select={setDetail} pair={pair} last={last} automatic={automatic}
       busy={busy} ready={ready} status={status} error={error} connections={connections} needsReconnect={needsReconnect}
       connectHealth={connectHealth} sync={() => sync()} disconnect={disconnect}
       auto={v => { setAutomatic(v); SecureStore.setItemAsync(KEY + '.auto', String(v)).catch(fail); }}
       provider={openProvider} refresh={refreshConnections} settings={openSettings} health={() => openTab('health')} />}
-    <View style={webVisible ? styles.web : styles.hidden}>
-      {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
+    <View style={[styles.web, !webVisible && styles.hidden]} pointerEvents={webVisible ? 'auto' : 'none'} accessibilityElementsHidden={!webVisible} importantForAccessibility={webVisible ? 'auto' : 'no-hide-descendants'}>
+      {showWeb && <Button text="Retour aux connexions" disabled={busy && !pending.current} onPress={() => { if (pending.current) { web.current?.stopLoading(); restoreSync(); finish(); setShowWeb(false); setTab('devices'); setDetail(null); setStatus(''); } else openTab('devices'); }} secondary />}
       <WebView ref={web} source={{ uri: url }} style={styles.web} sharedCookiesEnabled thirdPartyCookiesEnabled={false}
         injectedJavaScriptBeforeContentLoaded={appShellScript} injectedJavaScript={appShellScript}
         originWhitelist={['https://*', 'paceforge://*']} mixedContentMode="never" allowFileAccess={false} setSupportMultipleWindows
         onMessage={message} onError={() => fail(new Error('Impossible de charger PaceForge. Vérifie ta connexion.'))}
+        onLoadEnd={event => {
+          if (pending.current && isBridgeUrl(event.nativeEvent.url)) web.current?.injectJavaScript(retryBridgeScript);
+        }}
+        onContentProcessDidTerminate={() => {
+          if (pending.current) fail(new Error('La vérification a été interrompue. Réessaie la synchronisation.'));
+          else web.current?.reload();
+        }}
         onHttpError={event => { if (event.nativeEvent.url === url) fail(new Error(`PaceForge ne répond pas correctement (${event.nativeEvent.statusCode}).`)); }}
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
@@ -229,7 +245,11 @@ function Companion() {
           }
           // Bridge completion can arrive before the final navigation event.
           // Those hidden pages must never turn into a visible device detail.
-          if (['/mobile/session', '/mobile/connections', '/mobile/connect'].includes(path)) return;
+          if (isBridgeUrl(nav.url)) {
+            if (pending.current) guard();
+            if (pending.current?.kind === 'check') setShowWeb(false);
+            return;
+          }
           if (!nav.loading && !pending.current && !lock.current && webVisible) {
             webLocation.current = nav.url;
             const next = tabForUrl(nav.url);
@@ -237,6 +257,7 @@ function Companion() {
           }
         }}
       />
+    </View>
     </View>
     <View style={styles.tabs}>
       {tabs.map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key, disabled: busy }} disabled={busy} onPress={() => openTab(key)} style={[styles.tab, tab === key && styles.active]}><Text style={[styles.tabText, tab === key && styles.activeText]}>{label}</Text></Pressable>)}
@@ -250,7 +271,7 @@ const styles = StyleSheet.create({
   brand: { color: '#163d35', fontSize: 23, fontWeight: '700' },
   error: { color: '#a33129', fontSize: 15, lineHeight: 23, marginVertical: 8 },
   banner: { paddingHorizontal: 20 },
-  web: { flex: 1 }, hidden: { width: 1, height: 1, opacity: 0, position: 'absolute', overflow: 'hidden' },
+  content: { flex: 1 }, web: { flex: 1 }, hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
   tabs: { flexDirection: 'row', padding: 8, gap: 3, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e4ebe6' },
   tab: { flex: 1, paddingVertical: 14, borderRadius: 10 }, active: { backgroundColor: '#e7f0ea' },
   tabText: { fontSize: 12, textAlign: 'center', color: '#62736d', fontWeight: '600' }, activeText: { color: '#173e38' },

@@ -25,6 +25,10 @@ def login(client, user):
     client.cookies.set("paceforge_session", TimestampSigner(settings.SECRET_KEY).sign(value).decode())
 
 
+def bridge_payload(html):
+    return json.loads(re.search(r'<script id="paceforge-bridge-message" type="application/json">(.*?)</script>', html, re.S)[1])
+
+
 async def paired(client, user):
     login(client, user)
     verifier = "v" * 64
@@ -35,7 +39,7 @@ async def paired(client, user):
     csrf = re.search(r'name="csrf_token" value="([^"]+)"', response.text)[1]
     response = await client.post('/mobile/connect', data={"challenge": challenge, "platform": "ios", "csrf_token": csrf})
     assert response.status_code == 200
-    code = re.search(r'"code": "([^"]+)"', response.text)[1]
+    code = bridge_payload(response.text)['code']
     bad = await client.post('/api/mobile/exchange', json={"code": code, "verifier": "wrong" * 12})
     assert bad.status_code == 401
     response = await client.post('/api/mobile/exchange', json={"code": code, "verifier": verifier})
@@ -89,6 +93,21 @@ async def test_pair_requires_login_csrf_and_valid_challenge(client, db_session, 
     assert (await db_session.scalar(select(func.count(MobileDevice.id)))) == 0
 
 
+async def test_session_bridge_is_private_retryable_and_scoped_to_logged_in_account(client, test_user):
+    url = '/mobile/session?nonce=' + 'b' * 64
+    assert (await client.get(url)).status_code == 303
+    login(client, test_user)
+    assert (await client.get('/mobile/session?nonce=bad')).status_code == 400
+    response = await client.get(url)
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.headers['referrer-policy'] == 'no-referrer'
+    assert bridge_payload(response.text) == {'type': 'session', 'nonce': 'b' * 64, 'user_id': test_user.id}
+    assert '/static/js/mobile-bridge.js' in response.text
+    assert 'paceforge://devices' in response.text
+    assert 'Compte vérifié' not in response.text
+
+
 async def test_connections_bridge_requires_session_and_nonce_and_never_returns_tokens(client, db_session, test_user):
     url = '/mobile/connections?nonce=' + 'a' * 64
     assert (await client.get(url)).status_code == 303
@@ -96,7 +115,7 @@ async def test_connections_bridge_requires_session_and_nonce_and_never_returns_t
     assert (await client.get('/mobile/connections?nonce=bad')).status_code == 400
     response = await client.get(url)
     assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
-    payload = json.loads(re.search(r'postMessage\(JSON.stringify\((.*?)\)\)', response.text)[1])
+    payload = bridge_payload(response.text)
     assert payload['nonce'] == 'a' * 64 and payload['user_id'] == test_user.id
     assert payload['providers'] == {'coros': 'disconnected', 'garmin': 'disconnected', 'strava': 'reconnect'}
     assert set(payload) == {'type', 'nonce', 'user_id', 'name', 'providers'}
@@ -105,7 +124,7 @@ async def test_connections_bridge_requires_session_and_nonce_and_never_returns_t
     db_session.add(other); await db_session.flush()
     client.cookies.clear(); login(client, other)
     response = await client.get(url)
-    payload = json.loads(re.search(r'postMessage\(JSON.stringify\((.*?)\)\)', response.text)[1])
+    payload = bridge_payload(response.text)
     assert payload['user_id'] == other.id and payload['providers']['strava'] == 'disconnected'
 
 
