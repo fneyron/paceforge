@@ -476,7 +476,7 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
     assert 'data-viz-key="charge-accumulee"' in main
     assert '<details id="forme" class="pf-health-panel">' in main
-    assert 'href="/sante/lactate"' in main
+    assert 'href="/sante/lactate"' not in main
     assert main.count('class="pf-night-trend"') == 2
     assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5
     assert 'data-viz-key="recuperation"' in main and "Récupération · 14 jours" in main

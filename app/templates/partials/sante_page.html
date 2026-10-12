@@ -84,7 +84,6 @@
             {{ viz.viz_legend([("is-dot", "sortie facile")] + ([("is-hot", "journée chaude")] if e.dots|selectattr("hot")|list else []) + ([("is-usual", "tes valeurs habituelles")] if e.band else [])) }}
             <p class="pf-viz-cap">Sorties faciles et plates, ramenées à {{ e.pace }}.</p>
         {% else %}<p class="pf-sante-note">Le repère de course apparaîtra après six sorties faciles comparables sur six semaines.</p>{% endif %}
-        <a class="pf-link pf-health-activity-link" href="/sante/lactate">Mes tests lactate ›</a>
     </div>
 </details>
 </div>

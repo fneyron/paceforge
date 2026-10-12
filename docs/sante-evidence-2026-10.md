@@ -20,7 +20,12 @@ Priorités implémentées dans cet ordre :
    accessible directement dans Santé › Forme, avec les mêmes conditions de
    sélection que dans Activités. Pas de score de forme inventé si les données
    comparables manquent, ni de « forme » déduite de la seule charge chronique.
-4. **Tests lactate.** Saisie des mesures sanguines du Lactate Pro, paliers, allure
+4. **Tests lactate — mis de côté le 12 octobre 2026, à la demande du propriétaire.**
+   Les accès et mentions sont retirés de Santé, de l’aide et des références
+   affichées. Le code, les routes privées et les relevés existants sont conservés
+   pour une reprise ultérieure ; aucun développement ni import du lecteur n’est
+   prévu tant que cette priorité n’est pas réactivée. Fonctionnement conservé :
+   saisie des mesures sanguines du Lactate Pro, paliers, allure
    ou vitesse/puissance, FC et durée facultatives, protocole et contexte.
    Courbes et historique, modification/suppression limitées au propriétaire.
    Comparaison explicite entre tests du même lecteur, sport, protocole et mêmes
@@ -75,9 +80,8 @@ sous chaque valeur.
   export automatique du lecteur n’est revendiqué**.
 
 À poursuivre : signaux complémentaires réellement accessibles (température,
-SpO₂, performances comparables à vélo), validation prospective distincte du
-calcul lui-même, et import du lecteur seulement lorsqu’un protocole d’échange
-ou un format d’export a été vérifié. Poids et masse grasse restent du contexte.
+SpO₂, performances comparables à vélo) et validation prospective distincte du
+calcul lui-même. Le lactate reste en pause. Poids et masse grasse restent du contexte.
 
 ## Décision produit
 
