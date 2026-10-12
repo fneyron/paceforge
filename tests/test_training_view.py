@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -239,16 +240,23 @@ async def _week_page(client, db_session, user, url="/activities"):
     return (await client.get(url)).text
 
 
+@pytest.mark.parametrize("current_week_activity", [False, True])
 async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: AsyncClient, db_session: AsyncSession,
-                                                                       test_user: User):
+                                                                       test_user: User, current_week_activity):
     """Semaines (the sport filter right under its title, its measure toggle, one measure's 12 bars and nothing else:
     no band, no ◆, no ▲, no D+ marks; the current week « en cours » in the legend; a dashed « moy. » line) and FC
     en footing, training only: no recovery line, no taper line for a planned race, no « Fond et fatigue »."""
     today = datetime.now(timezone.utc).date()
-    await _add_runs(db_session, test_user, today)
+    monday = today - timedelta(days=today.weekday())
+    await _add_runs(db_session, test_user, monday)  # complete weeks, independent of the day this test runs
+    if current_week_activity:
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=880_000, sport_type="Run",
+                                name="Footing du jour", start_date=datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+                                distance=10_000, moving_time=3600, elapsed_time=3700, total_elevation_gain=40,
+                                raw_data={"utc_offset": 0}))
     db_session.add(Route(user_id=test_user.id, name="Trail des Crêtes", total_distance_km=42, total_elevation_gain=2000,
                          race_date=(today + timedelta(days=3)).isoformat(), start_hour=7, sport_type="trail"))
-    d = today - timedelta(days=4)
+    d = monday - timedelta(days=4)
     db_session.add(Activity(user_id=test_user.id, coros_activity_id=4242, sport_type="TrailRun", name="Ultra du Mont",
                             start_date=datetime(d.year, d.month, d.day, 4, tzinfo=timezone.utc), distance=150_000,
                             moving_time=56100, elapsed_time=60807, total_elevation_gain=6000,
@@ -278,8 +286,11 @@ async def test_activities_page_semaines_then_fc_en_footing_on_page_one(client: A
         assert gone not in svg, gone
     assert re.search(r'class="pf-viz-avg"/><text x="320" y="[\d.]+" text-anchor="end" class="pf-viz-strong">moy\.</text>',
                      svg)
-    legend = semaines.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
-    assert legend == '<span><i class="pf-lg is-cur"></i>semaine en cours</span>'
+    if current_week_activity:
+        legend = semaines.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+        assert legend == '<span><i class="pf-lg is-cur"></i>semaine en cours</span>'
+    else:
+        assert '<p class="pf-viz-legend"' not in semaines
     # page 2: the filter alone; a filter on page 1: Semaines for that sport
     assert 'id="semaines"' not in (await client.get("/activities?page=2")).text
     run = (await client.get("/activities?sport=run")).text
