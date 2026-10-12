@@ -40,7 +40,7 @@ export function takeReply(pending: { current: Pending | null }, raw: string, url
 
 export function acknowledge(task: Pending): string {
   const key = task.kind === 'pair' ? task.challenge : task.nonce;
-  return `window.paceforgeBridge?.ack(${JSON.stringify(key)}); true;`;
+  return `window.paceforgeBridge?.ack(${JSON.stringify(key)}, true); true;`;
 }
 export const retryBridgeScript = 'window.paceforgeBridge?.send(); true;';
 

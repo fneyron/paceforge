@@ -74,11 +74,13 @@ function delivery() {
   const nodes = { 'paceforge-bridge-message': { textContent: JSON.stringify(payload) },
     'bridge-status': { textContent: '' }, 'bridge-retry': { hidden: true } };
   let timer: (() => void) | undefined, leave = () => {};
-  const window: Record<string, any> = { addEventListener: (_: string, callback: () => void) => { leave = callback; } };
+  const navigations: string[] = [];
+  const window: Record<string, any> = { location: { replace: (url: string) => navigations.push(url) },
+    addEventListener: (_: string, callback: () => void) => { leave = callback; } };
   const context = { window, document: { getElementById: (id: keyof typeof nodes) => nodes[id] },
     setInterval: (callback: () => void) => { timer = callback; return 1; }, clearInterval: () => { timer = undefined; } };
   runInNewContext(readFileSync(new URL('../../app/static/js/mobile-bridge.js', import.meta.url), 'utf8'), context);
-  return { payload, window, context, nodes, tick: () => timer?.(), active: () => !!timer, leave: () => leave() };
+  return { payload, window, context, nodes, navigations, tick: () => timer?.(), active: () => !!timer, leave: () => leave() };
 }
 
 test('the server retries when the bridge appears late or loses a message and stops only on matching acknowledgement', () => {
@@ -93,7 +95,21 @@ test('the server retries when the bridge appears late or loses a message and sto
   d.window.paceforgeBridge.ack('old-request'); assert.equal(d.active(), true);
   runInNewContext(acknowledge({ kind: 'check', nonce: d.payload.nonce, url: ORIGIN + '/mobile/session', consent: false }), d.context);
   assert.equal(d.active(), false);
+  assert.deepEqual(d.navigations, [], 'the updated native app owns its return destination');
   d.window.paceforgeBridge.send(); assert.equal(sent.length, 2);
+});
+
+test('an acknowledged bridge in an older installed app returns to Santé exactly once', () => {
+  const d = delivery();
+  d.window.paceforgeBridge.ack('wrong');
+  assert.equal(d.navigations.length, 0);
+  d.window.paceforgeBridge.ack(d.payload.nonce);
+  assert.equal(d.navigations.length, 1);
+  assert.match(d.navigations[0], /^\/sante\?app_nav=\d+$/);
+  assert.equal(d.active(), false);
+  d.window.paceforgeBridge.ack(d.payload.nonce);
+  d.window.paceforgeBridge.retry();
+  assert.equal(d.navigations.length, 1);
 });
 
 test('old app builds without acknowledgement have bounded retries and an explicit way out', () => {

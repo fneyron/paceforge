@@ -23,10 +23,14 @@
     }
     window.paceforgeBridge = {
         send,
-        ack: function (received) {
-            if (received !== key) return;
+        ack: function (received, nativeReturn) {
+            if (received !== key || acknowledged) return;
             acknowledged = true;
             stop();
+            // Older apps can finish the import while still displaying this
+            // document. Their acknowledged bridge must have a real destination.
+            // New builds explicitly take ownership of the return navigation.
+            if (nativeReturn !== true) window.location.replace('/sante?app_nav=' + Date.now());
         },
         retry: function () {
             if (acknowledged) return;

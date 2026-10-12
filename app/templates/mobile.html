@@ -18,6 +18,7 @@
 <h2>Anciennes versions avec Bluetooth</h2><p>Les versions 1.0.0 (3) et (4) proposaient une lecture directe du pouls, retirée à partir de la version (5). Si tu utilises encore cette fonction dans une ancienne version, PaceForge utilise le Bluetooth pour afficher ton pouls en direct. La recherche et la connexion démarrent à ta demande. Cette lecture s’arrête lorsque l’application passe en arrière-plan. Les mesures Bluetooth ne sont pas enregistrées ni envoyées à ton compte, et ne participent pas au calcul de récupération.</p>
 {% else %}<h1>Retour dans PaceForge…</h1><p id="bridge-status" role="status">La connexion se termine.</p>
 <div id="bridge-retry" hidden><button type="button" onclick="window.paceforgeBridge.retry()">Réessayer</button><p><a href="paceforge://devices">Retour aux connexions</a></p></div>{% endif %}
+{% if message %}<p><a href="/sante">Ouvrir Santé</a></p>{% endif %}
 {% if message %}
 <script id="paceforge-bridge-message" type="application/json">{{ message|tojson }}</script>
 <script src="/static/js/mobile-bridge.js?v={{ request.app.state.build_id if request is defined and request else 0 }}" defer></script>

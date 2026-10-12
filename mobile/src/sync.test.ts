@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ApiError } from './api';
-import { due, fullDue, syncHealth, SyncReport } from './sync';
-import type { Daily } from './types';
+import { ApiError, rejectedField } from './api';
+import { due, fullDue, syncIssue, syncHealth, SyncReport } from './sync';
+import type { Daily, HealthResult, SleepResult } from './types';
 import type { AppleNight } from './night-samples';
 
 const at = '2026-10-12T10:00:00Z';
@@ -13,8 +13,8 @@ function fixture() {
   const events: string[] = [], saved: SyncReport[] = [];
   return { events, saved, deps: {
     userId: 1, full: true, previous: null as SyncReport | null, now: () => at,
-    daily: async () => { events.push('read daily'); return { days: [weighing], notices: [], complete: true }; },
-    sleep: async () => { events.push('read sleep'); return { nights: [night], notices: [], complete: true }; },
+    daily: async (): Promise<HealthResult> => { events.push('read daily'); return { days: [weighing], notices: [], complete: true }; },
+    sleep: async (): Promise<SleepResult> => { events.push('read sleep'); return { nights: [night], notices: [], complete: true }; },
     send: async (path: string, _body: unknown): Promise<unknown> => {
       events.push(path); return { received: 1, checked_at: at, latest: { weight: weighing } };
     },
@@ -102,4 +102,23 @@ test('receipt state never crosses accounts and malformed acknowledgements are re
   const report = await syncHealth(deps);
   assert.equal(report.complete, false); assert.equal(report.lastReceivedAt, '');
   assert.equal(report.weightReceived, null); assert.equal(report.fullAt, '');
+});
+
+test('sync warnings name the failed step, ahead of optional empty-data notices', async () => {
+  const { deps } = fixture();
+  deps.daily = async () => ({ days: [], complete: true, notices: ['Aucune mesure quotidienne lisible.'] });
+  deps.sleep = async () => ({ nights: [], complete: false, notices: ['Sommeil : lecture interrompue par le délai maximal.'] });
+  const report = await syncHealth(deps);
+  assert.equal(syncIssue(report, 'Apple Santé'), 'Apple Santé · Sommeil : lecture interrompue par le délai maximal.');
+  assert.equal(syncIssue({ ...report, complete: true }, 'Apple Santé'), '');
+  assert.equal(syncIssue({ ...report, reconnect: true }, 'Apple Santé'), 'Reconnecte le téléphone dans Réglages.');
+});
+
+test('server rejection details expose only known field labels, never measurement payloads', () => {
+  const field = rejectedField({ detail: [{ loc: ['body', 'days', 0, 'value'], msg: 'private message', input: 72.3 }] });
+  assert.equal(field, 'valeur');
+  assert.equal(new ApiError(422, field).message, 'Mesures refusées par PaceForge (422 · valeur).');
+  for (const raw of [null, 'html', { detail: 'private value' }, { detail: [{ loc: ['body', 'secret'], input: 'secret' }] }]) {
+    assert.equal(rejectedField(raw), '');
+  }
 });

@@ -62,6 +62,11 @@ Une réponse répétée ne relance ni l’association ni la synchronisation. La 
 l’échec ou l’expiration ramènent à un écran utilisable ; les pages techniques
 ne deviennent jamais une destination de retour. Une session expirée affiche
 toujours le formulaire de connexion avant de reprendre la vérification.
+Le document réellement chargé est suivi séparément de la destination demandée.
+Une réponse de navigation tardive vers un pont terminé force le retour à un
+écran, même si React demandait déjà cette adresse. Le pont reste masqué pendant
+ce chargement. Après accusé de réception, les anciennes versions reçoivent aussi
+une redirection de la page vers Santé ; un lien « Ouvrir Santé » reste disponible.
 
 ## Défilement et actualisation
 
@@ -78,7 +83,10 @@ relance COROS/Garmin et Strava connectés, puis remplace le contenu sans navigat
 Un seul indicateur discret accompagne l’action manuelle, sans bouton ni message
 flottant. Les reprises automatiques restent silencieuses. Un échec affiche une
 ligne qui nomme le service concerné et ouvre son détail ; les causes et le reçu
-restent accessibles. Les erreurs du téléphone et des services sont indépendantes :
+restent accessibles. Le détail Apple Santé ouvre directement le reçu local, même sans réseau ;
+l’alerte indique la catégorie ou l’étape en échec. Un refus serveur mentionne son
+code et, si disponible, le champ concerné sans recopier les données de santé
+de sa réponse. Les erreurs du téléphone et des services sont indépendantes :
 la réussite de l’un n’efface pas l’échec de l’autre. Une réussite serveur efface
 explicitement son ancienne alerte. Aucun message de succès n’est ajouté. Les sections
 ouvertes, le point sélectionné et la position sont conservés. Le remplacement
@@ -105,6 +113,8 @@ même taille, sans mettre la récupération au-dessus des deux autres.
 - Lecture volontaire des **30 derniers jours** : poids, masse grasse, pas, FC et
   respiration sur la journée. Dernière pesée du jour ; totaux de pas calculés
   par HealthKit / Health Connect ; moyennes quotidiennes pour FC / respiration.
+  Les totaux de pas HealthKit, fournis en nombres réels, sont arrondis au pas
+  entier avant envoi pour respecter le contrat serveur.
 - Sur **iPhone**, lecture du sommeil sur **60 jours**, avec SDNN, FC et respiration
   à l'intérieur des périodes de sommeil mesurées, du même auteur/appareil.
   Les intervalles sont envoyés à `/api/mobile/nights` puis réduits sur le serveur.

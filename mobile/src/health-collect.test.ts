@@ -59,3 +59,14 @@ test('an exhausted budget reports an interruption without launching more HealthK
   assert.equal(calls, 0); assert.equal(result.complete, false); assert.equal(result.days.length, 0);
   assert.match(result.notices[0], /délai maximal/);
 });
+
+test('HealthKit fractional step totals become whole counts without changing heart-rate averages', async () => {
+  const d = queries({ queryStatisticsForQuantity: async id => ({ sources: [{ name: 'iPhone', bundleIdentifier: 'com.apple.health' }],
+    ...(id.endsWith('StepCount') ? { sumQuantity: { quantity: 1245.75, unit: 'count' } } :
+      { averageQuantity: { quantity: id.endsWith('HeartRate') ? 64.25 : 15.5, unit: 'count/min' } }),
+  }) });
+  const result = await collectDaily(d, quiet, 1);
+  assert.equal(result.complete, true);
+  assert.equal(result.days.find(d => d.metric === 'steps')?.value, 1246);
+  assert.equal(result.days.find(d => d.metric === 'hr_day')?.value, 64.25);
+});

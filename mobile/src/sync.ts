@@ -48,10 +48,10 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
     weightRead: null, weightReceived: previous?.weightReceived || null };
   let complete = true;
   const save = async () => { report.checkedAt = now(); await d.save({ ...report, notices: [...report.notices] }); };
-  const failed = (e: unknown) => {
+  const failed = (e: unknown, stage: string) => {
     complete = false;
     report.reconnect = e instanceof ApiError && e.status === 401;
-    report.notices.push(e instanceof Error ? e.message : 'Synchronisation incomplète. Réessaie.');
+    report.notices.unshift(`${stage} : ${e instanceof Error ? e.message : 'Synchronisation interrompue. Réessaie.'}`);
   };
   const confirm = (r: Receipt) => {
     report.received += r.received;
@@ -59,13 +59,16 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   };
   // Persist "incomplete" first, including if iOS suspends/kills us during a read.
   await save();
+  let dailyStage = 'Lecture des mesures quotidiennes';
   try {
     const result = await d.daily();
     complete &&= result.complete;
-    report.notices.push(...result.notices);
+    if (result.complete) report.notices.push(...result.notices);
+    else report.notices.unshift(...result.notices);
     const latest = result.days.filter(x => x.metric === 'weight' && x.measured_at)
       .sort((a, b) => Date.parse(b.measured_at!) - Date.parse(a.measured_at!))[0];
     report.weightRead = weight(latest as WeightReceipt | undefined);
+    dailyStage = 'Envoi des mesures quotidiennes';
     d.progress('Envoi des mesures quotidiennes…');
     const r = receipt(await d.send('/api/mobile/daily', { days: result.days }));
     confirm(r);
@@ -74,7 +77,7 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
     if (r.latest) report.weightReceived = weight(r.latest.weight);
     await save();
   } catch (e) {
-    failed(e); await save();
+    failed(e, dailyStage); await save();
     // Authentication/transport failures cannot be repaired by reading 60 nights.
     report.notices.push('Les nuits restent à synchroniser.');
     await save(); return report;
@@ -82,19 +85,20 @@ export async function syncHealth(d: Dependencies): Promise<SyncReport> {
   try {
     const result = await d.sleep();
     complete &&= result.complete;
-    report.notices.push(...result.notices);
+    if (result.complete) report.notices.push(...result.notices);
+    else report.notices.unshift(...result.notices);
     for (const [i, night] of result.nights.entries()) {
       d.progress(`Envoi des nuits · ${i + 1}/${result.nights.length}…`);
       try {
         confirm(receipt(await d.send('/api/mobile/nights', night)));
       } catch (e) {
-        failed(e);
+        failed(e, 'Envoi du sommeil');
         // One malformed night must not block other dates. A network/account
         // failure stops the queue; the next overlapping read safely retries it.
         if (!(e instanceof ApiError) || e.status !== 422) break;
       }
     }
-  } catch (e) { failed(e); }
+  } catch (e) { failed(e, 'Lecture du sommeil'); }
   report.complete = complete;
   if (complete && d.full) { report.fullAt = now(); report.retryFull = false; }
   report.notices = [...new Set(report.notices)];
@@ -106,4 +110,10 @@ export function reportText(r: SyncReport): string {
   const title = !r.complete ? 'Synchronisation incomplète. Les mesures déjà reçues sont conservées.' :
     r.received ? 'Synchronisation terminée.' : 'Aucune nouvelle mesure reçue.';
   return [title, ...r.notices].join('\n');
+}
+
+export function syncIssue(r: SyncReport, service: string): string {
+  if (r.complete) return '';
+  if (r.reconnect) return 'Reconnecte le téléphone dans Réglages.';
+  return `${service} · ${r.notices[0] || 'Synchronisation interrompue. Réessaie.'}`;
 }

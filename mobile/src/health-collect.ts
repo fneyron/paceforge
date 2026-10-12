@@ -38,6 +38,10 @@ export async function collectDaily(d: HealthQueries, progress: (s: string) => vo
           // HealthKit handles overlapping step sources; never sum raw phone/watch steps.
           const stats = await read(() => queryStatisticsForQuantity(identifiers[metric], [metric === 'steps' ? 'cumulativeSum' : 'discreteAverage'], options));
           value = metric === 'steps' ? stats.sumQuantity?.quantity : stats.averageQuantity?.quantity;
+          // HealthKit quantities are doubles, including prorated step totals.
+          // The import contract expects a count; a fraction must not reject the
+          // entire daily batch (including otherwise valid weight measurements).
+          if (metric === 'steps' && value !== undefined && Number.isFinite(value)) value = Math.round(value);
           sources = stats.sources.map(s => s.name);
         }
         const day: Daily = { date: w.date, metric, value: value as number, unit: metric === 'hr_day' ? 'bpm' : metric === 'resp_day' ? 'rpm' : units[metric], sources: [...new Set(sources)].slice(0, 20), measured_at };
