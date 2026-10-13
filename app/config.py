@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Strava
+    # Enable only after Strava grants this app the required athlete capacity.
+    STRAVA_SHARED_APP_ENABLED: bool = False
     STRAVA_CLIENT_ID: str = ""
     STRAVA_CLIENT_SECRET: str = ""
     STRAVA_WEBHOOK_VERIFY_TOKEN: str = "paceforge-verify"
@@ -40,6 +42,10 @@ class Settings(BaseSettings):
     ACTIVITY_ENV_FETCH: bool = True
     # Bike and triathlon planning: hidden for now (code kept, routes and data untouched)
     CYCLING_ENABLED: bool = False
+
+    @property
+    def strava_shared_ready(self) -> bool:
+        return bool(self.STRAVA_SHARED_APP_ENABLED and self.STRAVA_CLIENT_ID and self.STRAVA_CLIENT_SECRET)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

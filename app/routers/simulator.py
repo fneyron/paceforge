@@ -1447,20 +1447,52 @@ async def save_tri_plan(
 
 @router.get("/simulator/routes/{route_id}/print", response_class=HTMLResponse)
 async def print_route_plan(
-    route_id: int,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    route_id: int, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    """Printable race plan (passage timeline, consignes) for a saved route."""
-    from app.services.race_simulator import build_scenarios, replan_from_passage
-
-    result = await db.execute(
-        select(Route).where(Route.id == route_id, Route.user_id == user.id)
-    )
-    route = _visible(result.scalar_one_or_none())
+    route = await _get_owned_route(route_id, user, db)
     if not route or not route.course_json:
         raise HTTPException(status_code=404)
+    return templates.TemplateResponse(request, "simulator_print.html", context=await _print_plan_context(route, db, user))
+
+
+@router.get("/api/simulator/routes/{route_id}/offline")
+async def offline_route_plan(
+    route_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    """A bounded, read-only snapshot. No HTML, map tiles, health readings or credentials."""
+    from datetime import datetime, timezone
+
+    route = await _get_owned_route(route_id, user, db)
+    if not route or not route.course_json or route.sport_type == "triathlon":
+        raise HTTPException(status_code=404)
+    ctx = await _print_plan_context(route, db, user)
+    points = []
+    for section in ctx["sections"]:
+        clock = section.get("adjusted_clock_time_s") if ctx["has_target"] else None
+        if clock is None:
+            clock = section.get("clock_time_s")
+        points.append({
+            "name": section["end_name"], "km": section["end_km"],
+            "clock_s": int(clock) if clock is not None else None,
+            "kind": section.get("kind") or "none", "crew": bool(section.get("crew")),
+            "drop_bag": bool(section.get("drop_bag")), "cutoff_clock": section.get("cutoff_clock"),
+            "cutoff_margin_s": section.get("cutoff_margin_s"),
+            "pinned": bool(section.get("pinned")), "passed": bool(section.get("passed")),
+        })
+    payload = {
+        "version": 1, "user_id": user.id, "route_id": route.id, "name": route.name,
+        "saved_at": datetime.now(timezone.utc).isoformat(), "race_date": route.race_date,
+        "distance_km": route.total_distance_km, "elevation_m": route.total_elevation_gain,
+        "start_s": ctx["start_offset_s"], "planned": ctx["has_target"], "points": points,
+    }
+    if len(points) > 1000 or len(json.dumps(payload).encode()) > 256000:
+        raise HTTPException(status_code=413, detail="Ce plan est trop volumineux pour une copie hors connexion.")
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+
+async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dict:
+    """One saved plan calculation for print and the phone's offline copy."""
+    from app.services.race_simulator import build_scenarios, replan_from_passage
 
     b = await _plan_bundle(route, db, user)
     course, sections, cps = b["course"], b["sections"], b["checkpoints"]
@@ -1510,23 +1542,19 @@ async def print_route_plan(
         else:
             legs_rows.append({"key": key, "to_names": [lg["to_name"]], "block": lg.get("block"), "steep": lg.get("steep"), "hr_cap": lg.get("hr_cap"),
                               "effort": effort_sentence(bl.get("cls"), None, walk_grade) if bl else None})
-    return templates.TemplateResponse(
-        request,
-        "simulator_print.html",
-        context={
-            "day_labels": _day_labels(route.race_date),
-            "legs_rows": legs_rows,
-            "route": route,
-            "course": course,
-            "predicted_total_formatted": total_fmt,
-            "sections": sections,
-            "has_target": route.target_time_s is not None or live_applied or b["pinned"],
-            "pinned": b["pinned"],
-            "plan_total_s": b["plan_total_s"],
-            "start_offset_s": start_offset_s,
-            "scenarios": scenarios,
-        },
-    )
+    return {
+        "day_labels": _day_labels(route.race_date),
+        "legs_rows": legs_rows,
+        "route": route,
+        "course": course,
+        "predicted_total_formatted": total_fmt,
+        "sections": sections,
+        "has_target": route.target_time_s is not None or live_applied or b["pinned"],
+        "pinned": b["pinned"],
+        "plan_total_s": b["plan_total_s"],
+        "start_offset_s": start_offset_s,
+        "scenarios": scenarios,
+    }
 
 
 @router.delete("/api/simulator/routes/{route_id}")

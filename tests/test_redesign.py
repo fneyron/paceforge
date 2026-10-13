@@ -80,7 +80,7 @@ def _visible(html: str) -> str:
 
 def _menu_items(html: str) -> list[str]:
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
-    items = re.findall(r'role="menuitem"[^>]*>(.*?)</(?:button|label)>', menu, flags=re.S)
+    items = re.findall(r'role="menuitem"[^>]*>(.*?)</(?:button|label|a)>', menu, flags=re.S)
     return [unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", i)).strip()) for i in items]
 
 
@@ -242,7 +242,7 @@ async def test_menu_lists_share_print_then_race_settings_and_gpx(as_user: AsyncC
     courses »)."""
     rid = await _route(as_user)
     html = (await as_user.get(f"/simulator/routes/{rid}")).text
-    assert _menu_items(html) == ["Partager le plan", "Bande imprimable",
+    assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Garder hors connexion",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert "Finisher de référence" not in html and "/reference" not in html
     menu = html.split('id="plan-more"')[1].split("</details>")[0]
@@ -274,7 +274,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     # no date, or race day: in the menu, after « Bande imprimable »; the main button stays « Exporter pour ma montre »
     for rd in ("", date.today().isoformat()):
         html = (await as_user.get(f"/simulator/routes/{await _route(as_user, race_date=rd)}")).text
-        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Débrief",
+        assert _menu_items(html) == ["Partager le plan", "Bande imprimable", "Garder hors connexion", "Débrief",
                                      "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"], rd
         assert html.count("data-primary-export") == 1 and 'id="rpanel-realise"' in html and "/result?" in html
     # after race day: « Voir le débrief » is the main button, « Exporter pour ma montre » heads the menu (the 4 formats stay)
@@ -282,7 +282,7 @@ async def test_debrief_appears_only_when_it_applies(as_user: AsyncClient, db_ses
     assert "data-primary-export" not in html and html.count("data-primary-debrief") == 1 and "Voir le débrief" in html
     assert _surface(html).count("pf-btn-primary") == 1
     assert 'id="heat-line"' not in html  # the forecast heat is for before the race
-    assert _menu_items(html) == ["Exporter pour ma montre", "Partager le plan", "Bande imprimable",
+    assert _menu_items(html) == ["Exporter pour ma montre", "Partager le plan", "Bande imprimable", "Garder hors connexion",
                                  "Nom, date et départ", "Réglages du plan", "Remplacer la trace GPX"]
     assert 'id="rtab-realise"' in html and "/result?" in html
     for call in ("exportPace('gpx')", "exportPace('tcx')", "exportPace('csv')", "exportGpx()"):

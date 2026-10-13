@@ -15,8 +15,8 @@
             {% if provider == 'garmin' %}
                 {% include "partials/garmin_login.html" %}
             {% else %}
-                <p class="text-sm text-gray-500">Autorise PaceForge sur la page {{ name }} qui s’ouvre ensuite.</p>
-                <a class="pf-btn pf-btn-primary pf-btn-block" href="{{ '/coros/connect?next=devices' if provider == 'coros' else '/auth/strava?next=devices' }}">{{ 'Reconnecter' if w.needs_reauth else 'Continuer avec' }} {{ name }}</a>
+                <p class="text-sm text-gray-500">{% if provider == 'strava' and not w.shared_ready and not w.own_app %}La connexion directe sera disponible prochainement. La configuration personnelle reste accessible ci-dessous.{% else %}Autorise PaceForge sur la page {{ name }} qui s’ouvre ensuite.{% endif %}</p>
+                <a class="pf-btn pf-btn-primary pf-btn-block" href="{{ '/coros/connect?next=devices' if provider == 'coros' else '/auth/strava?next=devices' }}">{% if provider == 'strava' and not w.shared_ready and not w.own_app %}Configurer Strava{% else %}{{ 'Reconnecter' if w.needs_reauth else 'Continuer avec' }} {{ name }}{% endif %}</a>
             {% endif %}
         {% else %}
             <p class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</p>
@@ -31,7 +31,7 @@
                 <p class="text-sm text-gray-500">Synchronise d’abord tes appareils dans l’application COROS.</p>
                 {% if not w.connected or w.needs_reauth %}<p class="text-sm text-gray-500">Si COROS ne reconnaît pas ton compte, essaie un autre serveur : <a class="pf-link" href="/coros/connect?next=devices&amp;region=europe">Europe</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=monde">Monde</a> · <a class="pf-link" href="/coros/connect?next=devices&amp;region=chine">Chine</a>.</p>{% endif %}
                 {% endif %}
-                {% if provider == 'strava' and (w.needs_reauth or w.bad_keys) %}<a class="pf-link" href="/setup?next=devices">Réparer la configuration Strava</a>{% endif %}
+                {% if provider == 'strava' and w.own_app and (w.needs_reauth or w.bad_keys) %}<a class="pf-link" href="/setup?next=devices">Réparer la configuration Strava</a>{% endif %}
                 {% if w.connected and not w.needs_reauth and provider != 'strava' %}
                     {% set key = provider %}{% include "partials/watch_sync.html" %}
                 {% endif %}

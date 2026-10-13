@@ -129,6 +129,7 @@
     if (window.htmx) window.htmx.remove(old); else old.remove();
     var nav = document.querySelector('.pf-tabbar');
     document.body.insertBefore(next, nav || null);
+    window.paceforgeConfigurePage?.();
     window.htmx?.process(next); window.PFViz?.scan(next); window.lucide?.createIcons();
     next.querySelectorAll('figure[data-viz]').forEach(function (fig, i) {
       var date = saved.charts[chartKey(fig, i)];

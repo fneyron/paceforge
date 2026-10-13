@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { healthReader, HealthReadTimeout, readIssue } from './health-read';
+import { healthReader, HealthReadTimeout, HealthAuthorizationRequired, HealthDataLocked, readIssue } from './health-read';
 
 test('a stalled native read times out; expiry does not start another query', async () => {
   const read = healthReader(10, 10);
@@ -20,6 +20,20 @@ test('fast reads and native errors retain their result without leaving a timeout
 
 test('timeouts and native failures give distinct advice, without claiming permissions were denied', () => {
   assert.match(readIssue('Poids', new HealthReadTimeout()), /Poids.*délai maximal/);
-  assert.match(readIssue('Sommeil', Error('locked')), /Sommeil.*déverrouillé/);
-  assert.doesNotMatch(readIssue('Poids', Error('unknown')), /autorisations|refusé/);
+  assert.match(readIssue('Sommeil', new HealthDataLocked()), /Sommeil.*Déverrouille/);
+  assert.doesNotMatch(readIssue('Poids', Error('unknown')), /autorisations|refusé|[Dd]éverrouill/);
+  assert.doesNotMatch(readIssue('Sommeil', new TypeError('bad sample')), /[Dd]éverrouill/);
+});
+
+test('new HealthKit permissions and native NSError codes give the correct next action', () => {
+  for (const error of [new HealthAuthorizationRequired(), { domain: 'HKErrorDomain', code: 5 },
+    Error('Error Domain=HKErrorDomain Code=5 "Authorization not determined"'), Error('Authorization not determined')]) {
+    assert.match(readIssue('Sommeil', error), /Revoir les autorisations/);
+    assert.doesNotMatch(readIssue('Sommeil', error), /[Dd]éverrouill|refusé/);
+  }
+  for (const error of [{ domain: 'HKErrorDomain', code: 6 },
+    Error('Error Domain=HKErrorDomain Code=6 "Protected health data is inaccessible"'), Error('Protected health data is inaccessible')]) {
+    assert.match(readIssue('Sommeil', error), /Déverrouille/);
+  }
+  assert.doesNotMatch(readIssue('Sommeil', { domain: 'OtherDomain', code: 6 }), /Déverrouille/);
 });

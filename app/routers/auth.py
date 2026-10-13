@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.crypto import encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
@@ -302,10 +303,20 @@ async def strava_link(request: Request, next: str | None = None,
     _remember_next(request, next)
     request.session.pop("pending_client_id", None)
     request.session.pop("pending_client_secret", None)
-    if not user.has_own_strava_app or not user.strava_credentials_valid:
+    if user.has_own_strava_app and user.strava_credentials_valid:
+        service = StravaService.for_user(db, user)
+        mode = "stored"
+    elif settings.strava_shared_ready:
+        service = StravaService(db)
+        mode = "shared"
+        request.session.setdefault("strava_next", "/connections/strava")
+    else:
         return RedirectResponse(f"/setup?next={next}" if next in ("settings", "devices") else "/setup", status_code=302)
-    state = await begin_strava(request, db, user.id)
-    return RedirectResponse(StravaService.for_user(db, user).get_authorize_url(state), status_code=302)
+    # Bind the attempt to its selected app, even if configuration changes meanwhile.
+    state = await begin_strava(request, db, user.id, {
+        "client_id": service.client_id, "client_secret": service.client_secret, "mode": mode,
+    })
+    return RedirectResponse(service.get_authorize_url(state), status_code=302)
 
 
 @router.get("/auth/strava/callback")
@@ -327,6 +338,10 @@ async def strava_callback(
         return back or RedirectResponse("/setup?error=auth_failed", status_code=302)
 
     pending_id, pending_secret = pending.get("client_id"), pending.get("client_secret")
+    shared = pending.get("mode") == "shared"
+    if shared and (not settings.strava_shared_ready or pending_id != settings.STRAVA_CLIENT_ID
+                   or pending_secret != settings.STRAVA_CLIENT_SECRET):
+        return _back_to_settings(request, "La connexion Strava a changé. Recommence depuis Réglages.") or RedirectResponse("/connections/strava", status_code=302)
     if pending_id and pending_secret:
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
     elif user.has_own_strava_app:
@@ -339,7 +354,7 @@ async def strava_callback(
         token_data = await strava.exchange_token(code)
     except Exception as exc:
         logger.exception("Strava token exchange failed")
-        typed = pending_id
+        typed = pending_id and not pending.get("mode")
         request.session.pop("pending_client_secret", None)
         # keys just typed in the wizard: type them again there (and still come
         # back to Réglages after); stored keys refused: say so in Réglages,
@@ -347,11 +362,12 @@ async def strava_callback(
         # only a 401 says the keys are wrong (a 400 is the code: reused by a
         # reload, or expired); never flag a link that is in place meanwhile
         refused = getattr(exc, "status_code", None) == 401
-        if not typed and refused and user.has_own_strava_app and not user.strava_access_token:
+        if not typed and not shared and refused and user.has_own_strava_app and not user.strava_access_token:
             user.strava_credentials_valid = False
             await db.commit()
         back = None if typed else _back_to_settings(
-            request, "Strava refuse les clés de ton app : change-les." if refused
+            request, "La connexion Strava de PaceForge est temporairement indisponible. Réessaie plus tard." if shared and refused
+            else "Strava refuse les clés de ton app : change-les." if refused
             else "La connexion à Strava a échoué. Réessaie.")
         return back or RedirectResponse(url="/setup?error=invalid_credentials", status_code=302)
 
@@ -359,6 +375,9 @@ async def strava_callback(
     strava_athlete_id = athlete.get("id")
 
     if not strava_athlete_id:
+        back = _back_to_settings(request, "La connexion à Strava a échoué. Réessaie.")
+        if back:
+            return back
         return RedirectResponse(url="/setup?error=auth_failed", status_code=302)
 
     # Check if another user already has this Strava athlete ID
@@ -383,14 +402,17 @@ async def strava_callback(
     user.lastname = user.lastname or athlete.get("lastname")
     user.profile_picture_url = athlete.get("profile")
 
-    # Persist Strava app credentials from setup wizard
+    # Persist the selected app identity. Shared secrets stay in server configuration.
     if pending_id and pending_secret:
         if user.strava_webhook_subscription_id and user.has_own_strava_app and user.strava_client_id != pending_id:
             # another app: its subscription goes (with its own keys), the new app gets one below
-            await StravaService.for_user(db, user).delete_webhook_subscription(user.strava_webhook_subscription_id)
+            if not (settings.strava_shared_ready and user.strava_client_id == settings.STRAVA_CLIENT_ID):
+                await StravaService.for_user(db, user).delete_webhook_subscription(user.strava_webhook_subscription_id)
+            user.strava_webhook_subscription_id = None
+        if shared:
             user.strava_webhook_subscription_id = None
         user.strava_client_id = pending_id
-        user.strava_client_secret_encrypted = encrypt_secret(pending_secret)
+        user.strava_client_secret_encrypted = None if shared else encrypt_secret(pending_secret)
         user.strava_credentials_valid = True
         request.session.pop("pending_client_id", None)
         request.session.pop("pending_client_secret", None)
@@ -399,7 +421,8 @@ async def strava_callback(
     logger.info("Strava linked for user %d (athlete %d)", user.id, strava_athlete_id)
 
     # Create webhook subscription
-    if user.has_own_strava_app and not user.strava_webhook_subscription_id:
+    if (user.has_own_strava_app and not user.strava_webhook_subscription_id
+            and not (settings.strava_shared_ready and user.strava_client_id == settings.STRAVA_CLIENT_ID)):
         try:
             user_strava = StravaService.for_user(db, user)
             sub_id = await user_strava.create_webhook_subscription(user)

@@ -1,15 +1,16 @@
 # PaceForge mobile
 
 Application iOS / Android avec **Santé comme tableau de bord**, puis Activités et Courses.
-Les connexions restent accessibles par le bouton « Réglages ». Les écrans du compte partagent une seule WebView HTTPS ; sa barre
+Les connexions restent accessibles par le bouton « Réglages », avec Apple Santé / Health Connect en premier. Les écrans du compte partagent une seule WebView HTTPS ; sa barre
 de navigation web et son bandeau sont masqués dans l’application. Le compte
 PaceForge fonctionne sans Strava. Garmin, COROS et Strava restent des connexions
 serveur accessibles depuis Connexions. COROS et Strava ouvrent directement leur
 page dédiée dans le navigateur externe, où tout le parcours OAuth conserve la
 même session. Le compte PaceForge est affiché avant validation ; après une
 connexion au compte dans le navigateur, la destination choisie est conservée.
-Garmin se connecte dans l’application. Les réglages complets restent disponibles
-dans « Mon compte et confidentialité ».
+Garmin se connecte dans l’application. Le profil, l’apparence et les données personnelles restent disponibles
+dans « Compte, apparence et confidentialité ». Les connexions web ne sont pas
+dupliquées dans cette page lorsqu’elle est ouverte dans l’application.
 
 Santé `/sante` est l’écran principal. L’ancien lien `/accueil` y redirige,
 y compris pour les anciennes versions installées. Les sources restent dans les
@@ -49,6 +50,18 @@ permission accordée : « Connecté » décrit l’association, pas la fraîcheu
 mesures. Le dernier envoi réel est daté dans le détail. « Revoir les autorisations » relance aussi la lecture.
 L’aide explique le partage des balances et applications sportives vers un
 service compatible, sans associer la connexion à un modèle précis.
+
+Sur iPhone, chaque catégorie vérifie d’abord si sa demande d’autorisation a
+déjà été présentée, notamment après une mise à jour ajoutant le sommeil ou la
+VFC. Une catégorie encore à demander n’est pas interrogée : le reçu indique
+« Réglages → Apple Santé → Revoir les autorisations ». Les autres catégories
+restent lisibles. Ce contrôle ne révèle pas l’accord ou le refus de lecture ;
+une lecture vide après la demande reste une absence de mesure, jamais un zéro.
+La synchronisation automatique n’ouvre aucune demande de permission.
+Le conseil de déverrouiller l’iPhone est réservé aux données protégées
+indisponibles ; les délais, erreurs de lecture et erreurs de traitement des
+nuits ont des messages distincts. Un contrôle d’autorisation expiré ne lance
+pas de lecture native tardive.
 
 À l’ouverture, au retour et lors d’une actualisation de Santé/Activités, la
 vérification du compte utilise un `fetch` authentifié dans la WebView existante,
@@ -96,9 +109,9 @@ même remplacement discret. Les requêtes sont bornées et une double demande
 rejoint celle en cours. Voir [audit et limites des tests](../docs/mobile-fluidite.md).
 
 Santé conserve trois cadrans de même importance : Sommeil, Récupération et
-Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques restent
+Entraînement. Chacun ouvre son détail, dans le même ordre. Les graphiques
 de la dernière nuit et de récupération restent visibles ; l’historique détaillé
-du sommeil et la méthode se déplient au toucher. Les bilans partiels et références
+du sommeil, les mesures nocturnes, les mesures quotidiennes et la méthode se déplient au toucher. Les bilans partiels et références
 provisoires restent signalés, avec les mesures utilisées dans le détail de
 récupération. Ce changement d’interface ne modifie ni les mesures reçues ni les
 coefficients des calculs.
@@ -107,6 +120,32 @@ Les cartes partagent une même surface, une typographie système et des espaceme
 réguliers. Le thème du site est transmis à l’en-tête et à la navigation natifs,
 y compris après une modification dans Réglages. Les trois cadrans restent de
 même taille, sans mettre la récupération au-dessus des deux autres.
+
+## Plans hors connexion
+
+Dans une course enregistrée, le menu ⋯ propose « Garder hors connexion ».
+Les modifications sont d’abord sauvegardées sur le compte ; le serveur produit
+une copie des horaires, points de passage, ravitaillements et barrières horaires.
+La copie native est ensuite consultable depuis « Plans hors connexion » dans
+Courses, ou depuis l’écran d’erreur réseau, même après redémarrage de l’app.
+La date de copie est affichée. Répéter l’action remplace la copie ; il n’y a pas
+de mise à jour automatique. Carte, édition et export restent en ligne.
+
+La bibliothèque locale utilise `expo-file-system` 57.0.7 dans le répertoire des
+documents de l’application, avec deux fichiers alternés et un index de compte
+commis dans SecureStore seulement après écriture. La déconnexion explicite et
+le changement de compte invalident l’index avant de remplacer les fichiers.
+Les réponses sont liées à l’origine HTTPS, à la page courante, au nonce et à la
+course demandée. Les champs sont sélectionnés et validés avant stockage ;
+aucun HTML authentifié, jeton ou relevé Santé n’est enregistré dans ces copies.
+Les limites sont vingt plans, mille points par plan, 256 ko par réponse et un
+million de caractères pour la bibliothèque. Les anciennes versions du compagnon
+ne montrent pas ces actions.
+
+`tests/browser/native/offline.cjs` couvre fermeture/réouverture sans page web,
+passage après minuit, réponses répétées, échecs d’écriture disque et SecureStore,
+changement de compte et déconnexion. Les API natives y sont simulées : vérifier
+également le mode avion et la persistance sur un iPhone avec la nouvelle build.
 
 ## Synchronisation livrée
 

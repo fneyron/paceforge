@@ -29,15 +29,16 @@ class StravaService:
 
     @classmethod
     def for_user(cls, db: AsyncSession, user: User) -> "StravaService":
-        """Create a StravaService using the user's own Strava app credentials."""
+        """Use only the app to which this account explicitly authorized its tokens."""
         if user.has_own_strava_app:
             return cls(
                 db,
                 client_id=user.strava_client_id,
                 client_secret=user.strava_client_secret,
             )
-        # Fallback to global credentials (dev/testing only)
-        return cls(db)
+        if user.has_strava_app:
+            return cls(db)
+        raise StravaTokenError()
 
     def get_authorize_url(self, state: str) -> str:
         params = {
@@ -347,17 +348,17 @@ def _forget_link(user: User) -> None:
 
 
 def strava_status(user: User) -> dict:
-    """The Strava link as Réglages show it, like coros_status / garmin_status.
-    A link made without the athlete's own app keys (the old shared app) is
-    never synced: it needs reconnecting through the setup wizard."""
+    """The link state, including shared app availability without exposing keys."""
     from app.services.health import _ago
 
     if not user.has_strava_linked:
         # stored keys Strava refused: say so and offer the wizard
-        return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid}
+        return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid,
+                "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready}
     return {
         "connected": True,
-        "needs_reauth": not (user.strava_credentials_valid and user.has_own_strava_app),
+        "needs_reauth": not (user.strava_credentials_valid and user.has_strava_app),
+        "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready,
         "last_sync_at": user.last_activity_poll_at,
         "last_sync_ago": _ago(user.last_activity_poll_at),
     }
@@ -367,9 +368,11 @@ async def disconnect(db: AsyncSession, user: User) -> None:
     """Revoke PaceForge on Strava (best effort), stop the athlete's own app
     pushing to us, and forget the tokens. Activities already received stay;
     the athlete and their app keys are kept, so reconnecting is one click."""
-    strava = StravaService.for_user(db, user)
-    await strava.deauthorize(user)
-    if user.has_own_strava_app and user.strava_webhook_subscription_id:
+    if user.has_strava_app:
+        strava = StravaService.for_user(db, user)
+        await strava.deauthorize(user)
+    if (user.has_own_strava_app and user.strava_webhook_subscription_id
+            and not (settings.strava_shared_ready and user.strava_client_id == settings.STRAVA_CLIENT_ID)):
         if await strava.delete_webhook_subscription(user.strava_webhook_subscription_id):
             user.strava_webhook_subscription_id = None  # else kept, to retry on the next disconnect
     _forget_link(user)  # the import skips what is already there

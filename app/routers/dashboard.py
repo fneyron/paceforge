@@ -150,7 +150,7 @@ async def manual_sync(
             raise HTTPException(403)
         received, errors = 0, []
         if user.has_strava_linked:
-            if not user.has_own_strava_app or not user.strava_credentials_valid:
+            if not user.has_strava_app or not user.strava_credentials_valid:
                 errors.append("Reconnecte Strava dans Réglages.")
             else:
                 try:
@@ -161,7 +161,7 @@ async def manual_sync(
                     errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
         return JSONResponse({"received": received, "errors": errors}, headers={"Cache-Control": "no-store"})
     new_count = 0  # sessions Strava brought, a watch's row taken over included
-    if user.has_strava_linked and user.has_own_strava_app:
+    if user.has_strava_linked and user.has_strava_app and user.strava_credentials_valid:
         new_count = await _sync_recent_activities(user, db)
         request.session["last_strava_sync"] = datetime.now().timestamp()
 
@@ -173,7 +173,7 @@ async def manual_sync(
         )
     if not user.has_strava_linked:
         msg = "Strava non connecté : connecte-le dans les Réglages."
-    elif not user.has_own_strava_app:
+    elif not user.has_strava_app or not user.strava_credentials_valid:
         msg = "Reconnecte Strava dans les Réglages pour activer la sync."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."

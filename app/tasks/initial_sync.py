@@ -95,6 +95,8 @@ async def _run_initial_sync(user_id: int) -> dict:
             if not user:
                 return {"error": "user_not_found", "synced": 0}
 
+            if not user.has_strava_linked or not user.has_strava_app or not user.strava_credentials_valid:
+                return {"error": "strava_reconnect_required", "synced": 0}
             strava = StravaService.for_user(db, user)
 
             # 6 months ago

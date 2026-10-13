@@ -3,10 +3,20 @@ import React,{forwardRef,useEffect,useImperativeHandle,useRef,useState} from 're
 import {View} from './native-web';
 const w=window as any;
 w.writes=[];w.scripts=[];w.collects=0;w.navigations=[];w.refreshes=[];
-const data:Record<string,string>=location.search.includes('unpaired')?{}:{'paceforge.phone.v1':JSON.stringify({token:'fixture',user_id:1,name:'Athlete'}),'paceforge.phone.v1.auto':'true'};
+const data:Record<string,string>=sessionStorage.getItem('secure')?JSON.parse(sessionStorage.getItem('secure')!):location.search.includes('unpaired')?{}:{'paceforge.phone.v1':JSON.stringify({token:'fixture',user_id:1,name:'Athlete'}),'paceforge.phone.v1.auto':'true'};
 export const getItemAsync=async(k:string)=>data[k]||null;
-export const setItemAsync=async(k:string,v:string)=>{data[k]=v};
-export const deleteItemAsync=async(k:string)=>{delete data[k]};
+export const setItemAsync=async(k:string,v:string)=>{if(w.failSecure)throw Error('secure failure');data[k]=v;sessionStorage.setItem('secure',JSON.stringify(data))};
+export const deleteItemAsync=async(k:string)=>{delete data[k];sessionStorage.setItem('secure',JSON.stringify(data))};
+export const Paths={document:'file:///documents'};
+export class File {
+ uri:string;
+ constructor(...parts:any[]){this.uri=parts.map(p=>typeof p==='string'?p:p.uri).join('/');}
+ get exists(){return sessionStorage.getItem(this.uri)!==null;}
+ get size(){return (sessionStorage.getItem(this.uri)||'').length;}
+ async text(){return sessionStorage.getItem(this.uri)||'';}
+ write(value:string){if(w.failDisk)throw Error('disk full');sessionStorage.setItem(this.uri,value);}
+ delete(){sessionStorage.removeItem(this.uri);}
+}
 export const getRandomBytes=(n:number)=>crypto.getRandomValues(new Uint8Array(n));
 export const CryptoDigestAlgorithm={SHA256:'SHA256'};
 export const digestStringAsync=async()=> 'a'.repeat(64);
@@ -22,6 +32,21 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  const [actual,setActual]=useState(props.source.uri);
  useImperativeHandle(ref,()=>({injectJavaScript:(s:string)=>{
   w.scripts.push(s);
+  if(s.includes("type:'offline-account'")) {
+   const nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
+   queueMicrotask(()=>w.webMessage({type:'offline-account',nonce,user_id:w.actual.includes('/auth/')?null:(w.accountId||1)}));
+  }
+  if(s.includes("type:'offline-plan'")) {
+   const nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
+   const routeId=Number(s.match(/routes\/(\d+)\/offline/)[1]);
+   w.offlineReply=()=>w.webMessage({type:'offline-plan',nonce,plan:w.failOffline?null:{version:1,user_id:w.accountId||1,route_id:routeId,name:'Course de montagne',saved_at:'2026-10-12T20:00:00Z',race_date:'2026-10-20',start_s:75600,planned:true,distance_km:30,elevation_m:1100,points:[{name:'Col',km:10,clock_s:86460,kind:'full',crew:true,drop_bag:true,cutoff_clock:'02:00',cutoff_margin_s:7140,pinned:false,passed:false}]}});
+   if(!w.holdOffline)queueMicrotask(()=>w.offlineReply());
+  }
+  if(s.includes("type:'navigation-ready'")) {
+   const nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
+   w.finishLeave=()=>w.webMessage({type:'navigation-ready',nonce,ok:!w.failLeave});
+   if(!w.holdLeave)queueMicrotask(()=>w.finishLeave());
+  }
   if(s.includes('session-unavailable')) w.nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
   if(s.includes('window.paceforgeRefresh')){
    w.refreshes.push(s.includes('refresh(true)'));
@@ -42,7 +67,9 @@ export const WebView=forwardRef((props:any,ref:any)=>{
  w.webMessage=(data:any)=>current.current.onMessage({nativeEvent:{url:w.actual,data:JSON.stringify(data)}});
  w.reply=(overrides:any={})=>{const url=new URL(actual),inline=!url.pathname.startsWith('/mobile/');return current.current.onMessage({nativeEvent:{url:actual,data:JSON.stringify({type:'session',nonce:inline?w.nonce:url.searchParams.get('nonce'),transport:inline?'inline':undefined,user_id:1,...overrides})}})};
  w.navigate=(url:string)=>commit(url);
+ w.followLink=(url:string)=>current.current.onShouldStartLoadWithRequest({url,navigationType:'click',isTopFrame:true});
  w.pull=()=>current.current.onShouldStartLoadWithRequest({url:actual,navigationType:'reload',isTopFrame:true});
  w.terminate=()=>current.current.onContentProcessDidTerminate();
+ w.pageFail=()=>{current.current.onError();current.current.onLoadEnd({nativeEvent:{url:actual}});};
  return <View testID="mock-webview" style={[props.style,{backgroundColor:'#fff'}]}><span id="document-text">{actual.includes('/mobile/session')?'Compte vérifié':actual.includes('/auth')?'Connexion au compte':'Tableau de bord Santé'}</span></View>;
 });

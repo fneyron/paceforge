@@ -490,10 +490,13 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "<form" not in main and "Transjeju" not in main and "/activity/" not in main
     assert main.count("<summary>Comment je calcule</summary>") == 0
     assert "Les chiffres de chaque nuit" in main
-    # Details are closed by default, while the three scores and nightly charts stay readable.
+    # The three scores and last night stay visible; cardiac charts are available in their disclosure.
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("96 %", "69 %", "15h35", "8h36", "100 ms", "35 bpm"):
+    for number in ("96 %", "69 %", "15h35", "8h36"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
+    assert '<details id="mesures-nocturnes" class="pf-health-panel pf-health-context">' in main
+    assert "100 ms" not in seen and "35 bpm" not in seen
+    assert "100" in main and "35" in main
     assert "Effort récent" not in seen and "Synchronisation réussie" not in seen
 
 
@@ -695,7 +698,7 @@ async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_s
 
 async def test_nothing_at_all_is_the_connect_panel(as_user: AsyncClient):
     page = (await as_user.get("/sante")).text
-    assert "Ta montre et tes activités" in page and "pf-rings" not in page
+    assert "Tes premiers repères" in page and "pf-rings" not in page
     for anchor in ("coros", "garmin", "strava"):  # Strava too: the panel names it, a button connects it
         assert f'href="/settings#{anchor}"' in page, anchor
     assert "Connecter Strava" in page

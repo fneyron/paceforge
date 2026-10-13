@@ -3,8 +3,6 @@
 {% block title %}Réglages — PaceForge{% endblock title %}
 
 {% block content %}
-<p class="pf-wrap"><a class="pf-link" href="/mobile/devices">Téléphones associés et imports de santé ›</a></p>
-
 {% set input_cls = "pf-input placeholder:text-gray-400" %}
 <div class="pf-settings">
     <div class="pf-head">
@@ -77,6 +75,8 @@
         </div>
     </form>
 
+    <div class="pf-section pf-native-only"><a class="pf-link" href="paceforge://devices">Gérer mes connexions ›</a></div>
+    <div class="pf-browser-only pf-settings-connections">
     <div class="pf-section space-y-2" id="connections">
         <h2 class="pf-h2">Connexions facultatives</h2>
         <p class="text-sm text-gray-500">Ton compte PaceForge fonctionne avec ton email et ton mot de passe. Connecte les services de ton choix pour importer tes données. Les déconnecter conserve ton compte et tes parcours.</p>
@@ -87,6 +87,13 @@
     {% include "partials/coros_settings.html" %}
 
     {% include "partials/garmin_settings.html" %}
+    </div>
+
+    <div class="pf-section space-y-3">
+        <h2 class="pf-h2">Données et confidentialité</h2>
+        <p><a class="pf-link" href="/mobile/devices">Téléphones associés et imports de santé ›</a></p>
+        <p><a class="pf-link" href="/mobile/privacy">Confidentialité ›</a></p>
+    </div>
 
     <!-- Danger: collapsed, out of the way -->
     <details class="pf-section pf-set-danger">
@@ -99,7 +106,7 @@
             <form method="post" action="/settings/delete-account" id="pf-delete-account-form"
                   onsubmit="event.preventDefault(); var f = this; var msg = 'Supprimer ton compte ? Cette action est irréversible.'; if (window.pfConfirm) { pfConfirm(msg, function () { f.submit(); }, 'Supprimer le compte'); } else if (confirm(msg)) { f.submit(); }">
                 <div class="flex flex-wrap items-center gap-2">
-                    <input type="text" name="confirmation" placeholder="Tape SUPPRIMER" autocomplete="off" class="pf-input !w-44 !min-h-10">
+                    <input type="text" name="confirmation" aria-label="Confirmation de suppression : tape SUPPRIMER" placeholder="Tape SUPPRIMER" autocomplete="off" class="pf-input !w-44">
                     <button type="submit" class="pf-btn pf-btn-sm bg-danger text-white">Supprimer définitivement</button>
                 </div>
             </form>

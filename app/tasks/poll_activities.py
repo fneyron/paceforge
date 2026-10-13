@@ -51,6 +51,8 @@ async def _run_poll() -> dict:
         users = result.scalars().all()
 
         for user in users:
+            if not user.has_strava_app:
+                continue
             try:
                 strava = StravaService.for_user(db, user)
 

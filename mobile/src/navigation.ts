@@ -3,6 +3,20 @@ import { ORIGIN, trusted } from './api';
 export type Tab = 'health' | 'activities' | 'courses' | 'devices';
 export const tabs = [['health', 'Santé'], ['activities', 'Activités'], ['courses', 'Courses']] as const;
 export const destinations: Record<Exclude<Tab, 'devices'>, string> = { health: '/sante', activities: '/activities', courses: '/simulator' };
+export function prepareNavigationScript(nonce: string): string {
+  return `Promise.resolve().then(() => window.paceforgeBeforeLeave?.()).then(() => {
+    window.paceforgeRememberPage?.();
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},ok:true}));
+  }).catch(() => window.ReactNativeWebView.postMessage(JSON.stringify({type:'navigation-ready',nonce:${JSON.stringify(nonce)},ok:false}))); true;`;
+}
+export function presentationScript(fontScale: number, healthName: string): string {
+  return `window.paceforgeConfigurePage = () => {
+    document.documentElement.style.fontSize = ${JSON.stringify(16 * fontScale + 'px')};
+    document.documentElement.classList.toggle('pf-large-text', ${fontScale >= 1.4});
+    document.querySelectorAll('[data-phone-connect]').forEach(el => el.href = 'paceforge://health');
+    document.querySelectorAll('[data-phone-health]').forEach(el => el.textContent = ${JSON.stringify(healthName)});
+  }; window.paceforgeConfigurePage(); true;`;
+}
 export function isBridgeUrl(url: string): boolean {
   return trusted(url) && ['/mobile/session', '/mobile/connections', '/mobile/connect'].includes(new URL(url).pathname);
 }

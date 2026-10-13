@@ -5,6 +5,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD}@db:5432/paceforge
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - STRAVA_SHARED_APP_ENABLED=${STRAVA_SHARED_APP_ENABLED:-false}
       - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
       - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
       - STRAVA_WEBHOOK_VERIFY_TOKEN=${STRAVA_WEBHOOK_VERIFY_TOKEN:-paceforge-verify}
@@ -37,6 +38,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://paceforge:${POSTGRES_PASSWORD}@db:5432/paceforge
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - STRAVA_SHARED_APP_ENABLED=${STRAVA_SHARED_APP_ENABLED:-false}
       - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
       - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
       - STRAVA_WEBHOOK_VERIFY_TOKEN=${STRAVA_WEBHOOK_VERIFY_TOKEN:-paceforge-verify}

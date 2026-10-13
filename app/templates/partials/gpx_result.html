@@ -42,6 +42,7 @@
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.sharePlan()">{{ ic.icon('share') }}Partager le plan</button>
                 <button type="button" role="menuitem" onclick="window._sim && window._sim.printPlan()">{{ ic.icon('printer') }}Bande imprimable</button>
                 {% if saved_route_id %}
+                <a class="pf-offline-action" role="menuitem" href="paceforge://offline/save/{{ saved_route_id }}">{{ ic.icon('download') }}Garder hors connexion</a>
                 {% if dmode == 'menu' %}<button type="button" role="menuitem" id="rtab-realise" onclick="window.switchRouteTab && window.switchRouteTab('realise')">{{ ic.icon('chart') }}Débrief</button>{% endif %}
                 {% endif %}
                 <hr class="pf-menu-sep">
@@ -126,9 +127,11 @@
             <p class="pf-label mb-3">Le fichier se télécharge : importe-le dans l'app de ta montre comme parcours.</p>
             <div class="pf-tools">
                 <button type="button" class="pf-tool" onclick="window._sim.exportPace('gpx')"><span>{{ ic.icon('watch') }}<span>GPX horodaté <span class="pf-pill pf-pill-accent ml-1 align-middle">conseillé</span><small>COROS · Garmin : heure cible et consigne à chaque point</small></span></span>{{ ic.icon('download', 'w-5 h-5 text-gray-400') }}</button>
+                <details class="pf-export-more"><summary>Autres formats</summary>
                 <button type="button" class="pf-tool" onclick="window._sim.exportPace('tcx')"><span>{{ ic.icon('watch') }}<span>TCX course<small>Garmin Virtual Partner</small></span></span>{{ ic.icon('download', 'w-5 h-5 text-gray-400') }}</button>
                 <button type="button" class="pf-tool" onclick="window._sim.exportPace('csv')"><span>{{ ic.icon('chart') }}<span>CSV<small>pour un tableur</small></span></span>{{ ic.icon('download', 'w-5 h-5 text-gray-400') }}</button>
                 <button type="button" class="pf-tool" onclick="window._sim.exportGpx()"><span>{{ ic.icon('map') }}<span>GPX trace<small>le parcours seul, sans temps</small></span></span>{{ ic.icon('download', 'w-5 h-5 text-gray-400') }}</button>
+                </details>
             </div>
         </div>
     </div>
@@ -1043,7 +1046,7 @@ window._sim = {};
     }
 
     // ── SAVE ──
-    var saveTimer = null, saveTail = Promise.resolve(), editVersion = 0, hourlySaved = false;
+    var saveTimer = null, saveTail = Promise.resolve(), editVersion = 0, savedVersion = 0, hourlySaved = false;
     function setStatus(state) {
         var el = document.getElementById('save-status'); if (!el) return;
         el.innerHTML = state === 'error'
@@ -1071,13 +1074,16 @@ window._sim = {};
         // cannot overwrite a newer plan or create a second route.
         var pending = saveTail.then(function () {
             if (currentRouteId) b.append('route_id', currentRouteId); else b.append('course_json', course);
-            return fetch('/api/simulator/routes', { method: 'POST', body: b });
+            // Browsers reject keepalive bodies above 64 KiB; large weather/point
+            // payloads still use the awaited navigation guard.
+            return fetch('/api/simulator/routes', { method: 'POST', body: b, keepalive: !!currentRouteId && new Blob([b.toString()]).size < 60000, signal: AbortSignal.timeout(15000) });
         }).then(function (r) {
             if (!r.ok) throw new Error('Sauvegarde refusée');
             return r.json();
         }).then(function (d) {
             if (!d.id) throw new Error('Sauvegarde incomplète');
             currentRouteId = d.id;
+            savedVersion = version;
             if (version === editVersion) setStatus('saved');
             if (withWeather) hourlySaved = true;
             planVersion++;
@@ -1090,6 +1096,17 @@ window._sim = {};
         editVersion++; setStatus('saving'); clearTimeout(saveTimer);
         saveTimer = setTimeout(function () { saveRoute().catch(function () {}); }, 800);
     }
+    async function flushSave() {
+        heroClose(true);
+        clearTimeout(saveTimer); saveTimer = null;
+        await saveTail;
+        while (savedVersion !== editVersion) await saveRoute();
+    }
+    window.paceforgeBeforeLeave = flushSave;
+    function backgroundSave() { if (document.visibilityState === 'hidden') flushSave().catch(function () {}); }
+    document.addEventListener('visibilitychange', backgroundSave);
+    window.addEventListener('pagehide', flushOnHide);
+    function flushOnHide() { flushSave().catch(function () {}); }
     function onNameChange() { scheduleSave(); }
     function _saveThenOpen(urlFn) {
         var w = window.open('', '_blank'); if (w) w.opener = null;
@@ -1346,7 +1363,7 @@ window._sim = {};
     function fallbackCopy(text) { try { var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); var ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } }
     function showMap() { toggleMap(true); }
     function openTool(id) { closeMenus(); if (id === 'advanced') { openSettings(); return; } var el = document.getElementById(id); if (!el) return; setTimeout(function () { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 30); }
-    function cleanup() { if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
+    function cleanup() { document.removeEventListener('visibilitychange', backgroundSave); window.removeEventListener('pagehide', flushOnHide); if (window.paceforgeBeforeLeave === flushSave) delete window.paceforgeBeforeLeave; if (map) { try { map.remove(); } catch(e) {} map = null; } if (prof.ro) { try { prof.ro.disconnect(); } catch(e) {} prof.ro = null; } prof.svg = null; hoverMarker = null; cpMarkerEls = []; }
 
     // ── INIT ──
     window.addEventListener('error', function (ev) { try { if (!ev.filename || ev.filename.indexOf(location.origin) !== 0 || /Script error|ResizeObserver/.test(ev.message || '')) return; var el = document.getElementById('page-error'); if (el) { el.textContent = 'Erreur dans la page : ' + ev.message + ' (ligne ' + ev.lineno + ')'; el.classList.remove('hidden'); } } catch (e) {} });

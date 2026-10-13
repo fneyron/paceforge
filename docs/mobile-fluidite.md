@@ -1,5 +1,63 @@
 # Défilement et actualisation — audit du 12 octobre 2026
 
+## Suite de l’audit UX iPhone
+
+Les trois cadrans Santé gardent la même importance. La dernière nuit et la
+récupération restent visibles ; les mesures nocturnes et quotidiennes se
+déplient. Dans Activités, le filtre reste visible et les tendances sur douze
+semaines se déplient, pour accéder directement aux dernières sorties. L’état
+vide Santé mène à Apple Santé ; les anciens compagnons utilisent le lien
+Connexions qu’ils connaissent déjà. Android nomme Health Connect.
+
+Les onglets conservent leur dernière destination, y compris une course ou une
+activité en détail. Une session web mémorise le défilement, les sections ouvertes
+et les dates sélectionnées, par compte et par URL, sans copier les mesures.
+Un lien explicite vers une section reste prioritaire sur cette restauration.
+
+Quitter un plan par un lien ou un onglet attend la sauvegarde, y compris les
+modifications faites pendant une requête précédente. Un échec conserve le plan
+éditable et propose de réessayer. Le retour natif est lié à un nonce et à la
+page de départ ; une réponse tardive ne déclenche pas une ancienne navigation.
+Le passage en arrière-plan déclenche aussi la sauvegarde restante, sans garantir
+un envoi après une fermeture forcée de l’application ou une coupure réseau.
+
+Les réglages natifs suivent le thème du site. Sans choix enregistré, le thème
+suit le système. La taille de texte système est transmise à la WebView ; les
+tailles de texte de l’interface utilisent des unités relatives et une disposition
+adaptée aux grands caractères. Les graduations internes des SVG conservent leurs
+coordonnées ; leurs valeurs restent accessibles par les contrôles et libellés.
+Les boutons et liens principaux ont une cible d’au moins 44 points CSS.
+
+L’export affiche d’abord le GPX conseillé, puis les autres formats sur demande.
+Une page impossible à charger propose une nouvelle tentative sur place et l’accès
+aux plans enregistrés hors connexion. Dans le menu d’une course, « Garder hors
+connexion » attend la sauvegarde des modifications puis conserve une copie
+native datée des passages, ravitaillements et barrières horaires. La copie reste
+lisible après fermeture et redémarrage sans réseau. Elle ne se met pas à jour
+automatiquement : l’utilisateur répète l’action après ses modifications. Carte,
+édition et génération des exports demandent toujours une connexion.
+
+Les copies sont liées au compte web, retirées à la déconnexion explicite ou à un
+changement de compte constaté. Un pointeur dans SecureStore valide un fichier
+complètement écrit, afin de conserver l’ancienne copie si une écriture échoue.
+La bibliothèque est bornée à vingt plans et 1 million de caractères ; chaque
+plan accepte au plus mille passages et 256 ko. Aucune donnée Santé ni aucun
+jeton fournisseur n’y est copié. Le compagnon garde sa seule WebView montée.
+
+La connexion Strava sans clés personnelles est disponible dans le code derrière
+`STRAVA_SHARED_APP_ENABLED`. Son activation exige les accès serveur de l’app
+Strava PaceForge et une capacité d’athlètes autorisée par Strava. Le parcours
+conserve les apps personnelles existantes ; une ancienne autorisation sans
+identité d’app doit être renouvelée. Voir [configuration Strava](strava-connexion.md).
+
+Validation locale : `tests/browser/iphone-ux.cjs` vérifie sauvegarde immédiate,
+ordre des écritures, échec/réessai, retour à la position et aux sections, export
+et largeur de 320/393 pixels à 100/200 % de texte. La suite du compagnon vérifie
+les onglets, les réponses de sauvegarde, le thème et la reprise après erreur de
+chargement avec les API natives simulées. Ces essais ne remplacent pas VoiceOver,
+Dynamic Type et HealthKit sur un iPhone physique. Les changements web et natifs
+nécessitent respectivement un déploiement serveur et une nouvelle build mobile.
+
 ## Niveau attendu
 
 Les recommandations [Apple sur le chargement](https://developer.apple.com/design/human-interface-guidelines/loading)
@@ -151,6 +209,7 @@ node /tmp/pf-browser/node_modules/playwright/cli.js install chromium
 node tests/browser/refresh.cjs
 node tests/browser/native/build.cjs
 node tests/browser/native/check.cjs
+node tests/browser/native/offline.cjs
 ```
 
 `PF_PREVIEW_URL`, `PF_PREVIEW_OUTPUT`, `NATIVE_PREVIEW_BUNDLE` permettent de changer

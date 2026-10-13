@@ -342,7 +342,7 @@ async def test_a_brand_new_user(as_user: AsyncClient, db_session: AsyncSession, 
     """Nothing yet: Santé's connect panel, Activités' empty state (no « Semaines » title, the filter), the
     sources page; every filter and measure link works."""
     html = (await as_user.get("/sante")).text
-    assert "Ta montre et tes activités" in html and "pf-rings" not in html
+    assert "Tes premiers repères" in html and "pf-rings" not in html
     act = (await as_user.get("/activities")).text
     assert 'id="semaines"' not in act and 'aria-label="Filtrer les activités par sport"' in act
     assert "Aucune activité pour l" in act
