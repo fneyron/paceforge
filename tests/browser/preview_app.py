@@ -39,9 +39,13 @@ async def lifespan(app):
             db.add(RouteCheckpoint(route_id=route.id, **cp))
         for i in range(150):
             day=now.date()-timedelta(days=i)
-            for metric,value,det in [('sleep',460,dict(main_start=str(day-timedelta(days=1))+'T23:00',main_end=str(day)+'T07:00')),
+            for metric,value,det in [('sleep',460,dict(main_start=str(day-timedelta(days=1))+'T23:00',main_end=str(day)+'T07:00',
+                timeline=False,stages=dict(awake=20,light=280,deep=90,rem=90))),
                 ('hr_night',50+i%5,{}),('hrv',62+i%7,dict(method=HRV_METHOD,n=20))]:
                 db.add(HealthMetric(user_id=user.id,date=day,metric=metric,value=value,source='COROS',details=det))
+            if i < 30:
+                for metric,value in [('weight',64.2+(i%7)/10),('body_fat',17.4+(i%4)/10),('steps',8240+i%8*350)]:
+                    db.add(HealthMetric(user_id=user.id,date=day,metric=metric,value=value,source='COROS',details={}))
             if i%3==1:
                 minutes=50+i%4*4
                 db.add(Activity(user_id=user.id,strava_activity_id=i+1,name='Course facile',sport_type='Run',start_date=now-timedelta(days=i),distance=10000,moving_time=minutes*60,elapsed_time=minutes*60,average_heartrate=130+i%4,average_speed=10000/(minutes*60),max_heartrate=180,total_elevation_gain=20,raw_data={'utc_offset':0}))

@@ -45,7 +45,12 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     after = readouts((await client.get(f"/simulator/routes/{done}")).text)
 
     # No VFC in the seed. New accumulated load and fitness stay distinct from recovery.
-    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "charge-accumulee", "forme-footing"}
+    assert set(sante) == {"recuperation", "sommeil-14", "sommeil-90", "fc", "entrainement",
+                         "charge-accumulee", "forme-footing"}
+    # The new seven-day chart owns its duration; its section header does not repeat it.
+    assert sante["entrainement"][1:] == ("7 derniers jours", "")
+    training_heading = page.split('id="h-entrainement"')[1].split('</header>')[0]
+    assert sante["entrainement"][0] not in training_heading
     assert sante["charge-accumulee"] == ("", "Récente et habituelle", "")
     assert sante["forme-footing"] == ("", "Tes sorties comparables", "")
     # the ring prints today's score, the Sommeil row last night's total: the Récupération card rests on its title, no
@@ -54,7 +59,8 @@ async def test_no_default_readout_repeats_a_number_of_another_page(client: Async
     assert sante["sommeil-14"] == ("7h20", "en moyenne", "")
     assert sante["sommeil-90"] == ("7h20", "en moyenne", "")
     # …the nightly HR card prints last night's value (its row a word, no other block prints it)…
-    assert sante["fc"][0] == "45\u00a0bpm" and "Garmin" not in sante["fc"][2]
+    assert sante["fc"][0] == "45\u00a0bpm" and "Garmin" in sante["fc"][2]
+    assert sante["fc"][1] == "Dernière nuit"  # real dated measurement, not the rolling average
     assert " · d'habitude " not in sante["fc"][2]  # the reference is in Details
     assert before["nuits-course"][0] == "J‑14 → J‑1" and "Nuit " not in before["nuits-course"][1]  # not the race
     assert "recup" not in after  # v4.3: no recovery part on the race page after the race

@@ -131,7 +131,9 @@ async def test_current_form_and_sante_verdict(as_user: AsyncClient, db_session: 
     assert "Ta FC de nuit est nettement plus haute que d&#39;habitude." in r.text
     assert r.text.index('class="pf-dials"') < r.text.index('id="fc"') and "Ce matin ?" not in r.text
     # The alert remains visible once on the nightly chart, alongside the main recovery warning.
-    fc = r.text.split('<div id="fc" class="pf-card">')[1].split('</figure>')[0]
+    fc = re.search(r'<article id="fc"[^>]*>(.*?)</article>', r.text, re.S).group(1)
+    # An alert must remain above the optional reference explanation.
+    fc = fc.split('<details', 1)[0]
     assert "Élevée sur 2 nuits" in fc and 'pf-card-status is-danger' in fc
 
 

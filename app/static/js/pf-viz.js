@@ -145,7 +145,9 @@
       opts = opts || {};
       var quiet = fig.classList.contains("pf-viz-quiet");
       i = Math.max(0, Math.min(top, i | 0));
-      if (quiet) fig.classList.toggle("is-inspecting", !opts.silent && i !== END);
+      // The visible dated readout and an explicit historical selection are
+      // distinct: page-state must never pin an untouched default to yesterday.
+      fig.classList.toggle("is-inspecting", !opts.silent && i !== END);
       if (i === cur) return;
       if (rest && i === END) { resting(); return; }
       mark(cur, false);
@@ -302,7 +304,7 @@
         select(rest && cur === END && v === END - 1 ? back : v);
       });
       input.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { e.preventDefault(); select(dflt, { silent: fig.classList.contains("pf-viz-quiet") }); }
+        if (e.key === "Escape") { e.preventDefault(); select(dflt, { silent: fig.classList.contains("pf-viz-quiet") }); fig.classList.remove("is-inspecting"); }
         else if (e.key === "PageUp" || e.key === "PageDown") {   // a week at a time
           e.preventDefault(); select(Math.max(0, cur) + (e.key === "PageUp" ? 7 : -7));
         }

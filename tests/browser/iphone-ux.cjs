@@ -53,14 +53,40 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     assert.equal(await page.getByRole('button', { name: /TCX course/ }).isVisible(), true);
     await page.evaluate(() => window._sim.closeExport());
     await page.goto(base + '/sante', { waitUntil: 'networkidle' });
-    await page.locator('#mesures-nocturnes > summary').click();
+    await page.locator('#charge-detail > summary').click();
+    const selected = await page.locator('#vfc figure').evaluate(fig => {
+      const data = JSON.parse(fig.querySelector('.pf-viz-data').textContent), input = fig.querySelector('.pf-viz-range');
+      input.value = Math.max(0, data.d.length - 3); input.dispatchEvent(new Event('input'));
+      return { key: fig.dataset.vizKey, date: data.d[Number(input.value)], aria: input.getAttribute('aria-valuetext') };
+    });
     await page.evaluate(() => scrollTo({ top: 720, behavior: 'instant' }));
     await page.goto(base + '/activities', { waitUntil: 'networkidle' });
     const first = await page.locator('[id^="activity-row-"]').first().boundingBox();
     assert.ok(first.y < 500, 'first activity is visible before scrolling');
+    // Simulate a session saved by the previous, collapsible Health dashboard.
+    await page.evaluate(selected => {
+      const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
+      const saved = JSON.parse(sessionStorage.getItem(key));
+      if (saved.charts[selected.key] !== selected.date) throw new Error('The dated chart selection was not remembered');
+      for (const id of ['sommeil', 'sommeil-detail', 'recuperation', 'entrainement', 'forme', 'mesures-nocturnes', 'au-quotidien']) saved.folds[id] = false;
+      saved.folds['qualite-bilan'] = true;
+      sessionStorage.setItem(key, JSON.stringify(saved));
+    }, selected);
     await page.goto(base + '/sante?app_nav=return', { waitUntil: 'networkidle' });
-    assert.equal(await page.locator('#mesures-nocturnes').evaluate(el => el.open), true);
+    assert.equal(await page.locator('#charge-detail').evaluate(el => el.open), true, 'optional history still restores its state');
+    assert.equal(await page.locator('#qualite-bilan').evaluate(el => el.open), false, 'method information must not reopen from an obsolete saved state');
+    assert.equal(await page.locator('#vfc .pf-viz-range').getAttribute('aria-valuetext'), selected.aria, 'tab return restores the dated selection');
+    for (const selector of ['#sommeil-detail [data-range-panel]:not([hidden]) figure', '#recuperation-detail figure', '#vfc figure', '#fc figure', '#entrainement-semaine figure', '#au-quotidien figure']) {
+      assert.ok(await page.locator(selector).first().isVisible(), `old fold state hid ${selector}`);
+    }
     assert.ok(Math.abs(await page.evaluate(() => scrollY) - 720) < 20, 'tab return restores scroll');
+    await page.goto(base + '/sante#qualite-bilan', { waitUntil: 'networkidle' });
+    assert.equal(await page.locator('#qualite-bilan').evaluate(el => el.open), true, 'an explicit help link still opens the requested information');
+    await page.evaluate(() => window.paceforgeRememberPage());
+    assert.equal(await page.evaluate(() => {
+      const key = 'pf-view:' + document.querySelector('#main-content').dataset.account + ':/sante';
+      return 'qualite-bilan' in JSON.parse(sessionStorage.getItem(key)).folds;
+    }), false, 'transient information is not persisted');
     // No horizontal page overflow at narrow widths or with 200% system text.
     for (const width of [320, 393]) for (const scale of [1, 2]) {
       await page.setViewportSize({ width, height: 680 });
@@ -81,6 +107,6 @@ const out = process.env.PF_UX_SCREENSHOTS || '/tmp/paceforge-ux';
     assert.equal(await page.getByRole('link', { name: 'Gérer mes connexions ›' }).isVisible(), true);
     assert.deepEqual(errors, []);
     await page.close();
-    console.log('iPhone UX: immediate leave, save ordering/failure/retry, restored folds/scroll, simplified exports and 320/393px at 100/200% text passed.');
+    console.log('iPhone UX: save ordering/failure/retry, old fold migration, restored chart dates/history/scroll, explicit help links, exports and 320/393px at 100/200% text passed.');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

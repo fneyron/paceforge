@@ -118,7 +118,8 @@ async def test_the_stages_bar_and_its_legend_on_the_owners_page(as_user: AsyncCl
                                                                 test_user: User, monkeypatch):
     await seed_owner_v4(db_session, test_user)
     main = _main(await _page(as_user, monkeypatch, D8))
-    hero = main.split('<details id="sommeil"')[1].split("</details>")[0]  # the Sommeil card under the dials
+    hero = main.split('<section id="sommeil"')[1].split("</section>")[0]  # the visible Sommeil panel
+    assert "Répartition des phases" in hero
     bar = re.search(r'<div class="pf-phases-bar" aria-hidden="true">(.*?)</div>', hero).group(1)
     assert re.findall(r'class="pf-ph is-(\w+)" style="flex-grow: (\d+)"', bar) == [
         ("awake", "12"), ("light", "326"), ("deep", "71"), ("rem", "119")]
@@ -204,18 +205,20 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     assert dials[0] == "94 % Sommeil suffisant" and re.fullmatch(r"\d+ % Récupération bonne", dials[1]), dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
-    # The recovery panel keeps its graph; nightly status is stated once on each metric card.
-    card = main.split('<details id="recuperation"')[1].split('</details>')[0]
+    # Recovery and nightly graphs stay visible; secondary explanations stay in their own disclosures.
+    card = main.split('<section id="recuperation"')[1].split('</section>')[0]
     assert 'data-viz-key="recuperation"' in card
-    assert card.count('class="pf-row"') == 1 and 'Effort accumulé' in card
+    quality = card.split('<details id="qualite-bilan"')[1].split('</details>')[0]
+    assert 'Effort accumulé' in quality
+    assert 'Effort accumulé' not in card.split('<details id="qualite-bilan"')[0]
     for key in ("vfc", "fc"):
-        card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
-        # its status line: a dot and its words, no percentage (the row prints it: once; the 2 missing nights leave
-        # the VFC week a little under its normal)
-        assert re.search(r'<p class="pf-card-status is-(ok|warn)"><span class="pf-trend-label">Moy. 7 j</span><b>[^<]+</b>'
-                         r'<span class="pf-trend-state"><i class="pf-dot" aria-hidden="true"></i>(Habituelle|En dessous)</span></p>',
-                         card), key
-        legend = card.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
+        card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
+        primary, reference = card.split('<details', 1)
+        # Raw measurement and source are visible. The rolling comparison lives with its legend.
+        assert re.search(r'<b data-r>\d+\u00a0(ms|bpm)</b>', primary), key
+        assert "Dernière nuit" in primary and "Garmin" in primary and "Moy. 7 j" not in primary
+        assert 'data-transient' in reference and '<summary>Référence · ' in reference
+        legend = reference.split('<p class="pf-viz-legend" aria-hidden="true">')[1].split("</p>")[0]
         assert ('<i class="pf-lg is-dot"></i>nuit' in legend and "moyenne 7 j" in legend
                 and '<i class="pf-lg is-band"></i>repère habituel' in legend), key
         assert "is-out" not in legend and "is-band-prov" not in legend  # every night counts, a full band
@@ -390,7 +393,8 @@ def test_the_a11y_fixes_in_css_and_js():
 def test_the_sommeil_hero_is_not_the_race_pages_grid():
     """UX3: the Sommeil card stays a block at 1 024 px and more (.pf-hero is the race page's grid)."""
     page = (ROOT / "app/templates/partials/sante_page.html").read_text()
-    assert '<details id="sommeil" class="pf-health-panel" open>' in page and "pf-hero" not in page
+    assert '<section id="sommeil" class="pf-health-panel"' in page and "pf-hero" not in page
+    assert '<details id="sommeil"' not in page  # an old saved fold cannot hide the main graph
     css = (ROOT / "app/static/css/interface.css").read_text()
     rules = re.findall(r"\.pf-sum[^{]*\{[^}]*\}", css)
     assert rules and not any("grid" in r for r in rules)  # a plain block
@@ -408,7 +412,7 @@ async def test_the_night_cards_draw_no_mark_without_a_night(as_user: AsyncClient
     main = _main(await _page(as_user, monkeypatch, D8))
     drawn = {}
     for key in ("vfc", "fc"):
-        card = re.split(r'<div id="fc"|</section>', main.split(f'<div id="{key}" class="pf-card">')[1])[0]
+        card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
         svg = card.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
         data = json.loads(re.search(r'class="pf-viz-data">(.*?)</script>', card, re.S).group(1))
         days, xs = [date.fromisoformat(d) for d in data["d"]], data["x"]

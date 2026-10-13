@@ -114,6 +114,9 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
     from app.services import sante_load, training_view
     out["load"] = sante_load.card(sessions, until, rest_of)
     out["fitness"] = training_view.footing([s for s in sessions if s.end_day <= until], until, peak)
+    out["fitness_progress"] = st.fitness_progress(
+        [s for s in sessions if s.end_day <= until], until, peak
+    )
     if out["fitness"]:
         import json
         c = out["fitness"]
@@ -341,27 +344,30 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     reserve, Banister 1991; a minute without a readable HR, or of strength, at the athlete's usual minute) against
     the usual week's (the 11 weeks before the 7 days: usual_week), as a percentage, 100 % as usual, the arc full at
     twice it, in the accent colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que
-    d'habitude » or « moins que d'habitude »; without a usual week, the 7 days' time itself and « pas encore
-    d'habitude ». The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
+    d'habitude » or « moins que d'habitude »; without a usual week, the measured duration and « 7 derniers jours ».
+    The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
     hours), each once, and « Intensité »: the minutes' weight against the usual week's (the load's ratio over the
     hours', so the dial is the hours' ratio times it: no number contradicts another), « plus élevée que
     d'habitude » / « comme d'habitude » / « plus basse que d'habitude » within ± 10 % (H), a word, never a number;
     left out when under half of the minutes, of the 7 days or of the usual weeks, were read from their HR (H): the
-    dial is then nearly the hours' ratio. Without a usual week the dial prints the time, the card only its words.
+    dial is then nearly the hours' ratio. Without a usual week both the dial and chart retain the measured time;
+    the missing reference is explained in the training details.
     `rest`, `peak`: today's heart-rate bounds, for every week compared (H). `until`: the calendar day when the page
-    still reads yesterday's cycle (cycle_day): the activities since midnight count in it. Each activity counts on
+    still reads yesterday's cycle (cycle_day): the window is always the seven calendar days ending at until.
+    Each activity counts on
     the day it ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (owner,
     2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word, intensity, since}."""
-    until, since = until or today, today - timedelta(days=6)
+    until = until or today
+    since = until - timedelta(days=6)
     days7 = [s for s in sessions if since <= s.end_day <= until]
     week = sum(s.minutes for s in days7)  # moving time, as Activités
     usual = usual_week(sessions, since)
     href = "#entrainement"
     if usual is None:
-        return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", NO_HABIT, tone="accent",
+        return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", "7 derniers jours", tone="accent",
                                  href=href, aria=f"Entraînement : {viz.hm_long(week)} d'activité ces 7 derniers "
                                                  f"jours, {NO_HABIT}."),
-                "week": None, "usual": None, "word": NO_USUAL, "intensity": None, "since": since}
+                "week": viz.hm(week), "usual": None, "word": NO_USUAL, "intensity": None, "since": since}
     load = st.loads(sessions, until, rest, peak)
     usual_load = usual_week(sessions, since, lambda s: load[s.id][0])
     # snapped to 1e-9 (as sante_score.rounded): minutes that all weigh the same (no HR at all) give exactly the
@@ -467,11 +473,14 @@ def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date 
     # « Effort récent » first: the row that decides the day (the audit, 2026-10-09: it came last)
     rows = [r for r in (effort_row(efforts, day), night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
                         resp_row(nights, day["day"], day) if nights is not None else None) if r]
-    recup_href = "#recuperation"
+    recup_href = "#recuperation" if (
+        page.get("recup") or page.get("vfc") or page.get("fc") or score["value"] is not None
+    ) else None
     train = training(sessions, day["day"], until, rest, peak)
-    train["dial"]["note"] = "7 jours"
-    train["dial"]["usual_marker"] = train["week"] is not None
-    if train["week"] is not None:
+    train["chart"] = st.training_days(sessions, day["day"], until)
+    train["dial"]["note"] = "7 jours" if train["usual"] is not None else None
+    train["dial"]["usual_marker"] = train["usual"] is not None
+    if train["usual"] is not None:
         train["dial"]["aria"] += " 100 % représente ta semaine habituelle ; un tour complet représente 200 %."
     return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),
                       train["dial"]],
@@ -512,7 +521,7 @@ FEW = "trop peu de nuits pour comparer"  # its row's word
 BUILDING = "en construction"  # a signal without usual values yet: its row's word, its card's first words
 # while they build, the chart card says it in words (the row prints when they will be ready: printed once; owner,
 # 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
-BUILDS = "Tes valeurs habituelles s'afficheront ici dès 7 nuits mesurées."
+BUILDS = "Tes valeurs habituelles s'afficheront ici dès {n} nuits mesurées."
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
@@ -525,15 +534,16 @@ LEGEND_PROV = ("is-band-prov", "repère provisoire")
 def nights_to_normal(nights, metric: str, d: date) -> int:
     """How many nights until the usual values the score reads on `metric` exist, every coming night being
     measured: the first j ≥ 1 for which the band of day d + j (nights.normal: every measured night of the 60 days
-    up to and including d + j, on the latest watch: 7 at least, H) holds 7 nights — those already slept and the
-    j coming ones."""
+    up to and including d + j, on the latest watch) reaches its required count: 7 nights for RMSSD/HR,
+    14 for SDNN — those already slept and the j coming ones."""
     src = nt.mean_source(nights, metric, d)
+    required = nt.reference_min_nights(metric, src)
     known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
-    for j in range(1, nt.MIN_PROVISIONAL_NIGHTS):
+    for j in range(1, required):
         lo = d + timedelta(days=j - nt.BAND_DAYS + 1)  # the first day of the band of day d + j
-        if sum(1 for x in known if x >= lo) + j >= nt.MIN_PROVISIONAL_NIGHTS:
+        if sum(1 for x in known if x >= lo) + j >= required:
             return j
-    return nt.MIN_PROVISIONAL_NIGHTS
+    return required
 
 
 def signed_pct(value: float, centre: float) -> int:
@@ -560,7 +570,8 @@ def card_status(nights, metric: str, day: dict) -> dict:
         n = nights_to_normal(nights, metric, day["day"])
         when = f"dans {n}{viz.NBSP}nuits" if n > 1 else "après ta prochaine nuit"
         return {"key": "none", "value": None, "word": BUILDING, "detail": f"prête {when}", "tone": None,
-                "meaning": None, "text": BUILDS}
+                "meaning": None, "text": BUILDS.format(n=nt.reference_min_nights(
+                    metric, nt.mean_source(nights, metric, day["day"])))}
     part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
     if s["value"] is None:
         return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
@@ -616,19 +627,33 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     c["status"] = card_status(nights, metric, day)
     current = nights.get(today)
     value = current.value(metric) if current else None
+    # Keep today's value distinct from the most recent observation. The chart
+    # already selects that real dated point and leaves today's missing slot empty.
     c["latest"] = viz.num(value, unit=unit) if value is not None else None
-    if value is None:
-        viz.rest(c, ["—", "Nuit non mesurée", ""], f"{name} : pas de mesure pour la nuit du bilan.")
+    last = max(i for i, v in enumerate(values) if v is not None)
+    c["measurement"] = {"value": viz.num(values[last], unit=unit), "date": days[last].isoformat(),
+                        "date_label": viz.d_short(days[last]), "source": viz.source_label(sources[last]),
+                        "is_current": days[last] == today,
+                        "missing_label": None if days[last] == today else "Pas de mesure cette nuit"}
     alert = day["alert"] if metric == "hr" else None
     c["period"] = "2 nuits" if alert else "7 derniers jours"
     average = {"value": statistics.fmean(alert["values"]), "n": 2} if alert else averages[-1]
     reference = day["stats"][metric]["normal"]
     provisional = bool(reference and reference["provisional"])
+    source = nt.mean_source(nights, metric, today)
+    required = nt.reference_min_nights(metric, source)
+    count = sum(1 for d, n in nights.items() if today - timedelta(days=nt.BAND_DAYS - 1) <= d <= today
+                and n.value(metric) is not None and n.source_of(metric) == source)
+    label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
+    reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
+    c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),
+                      "label": label, "detail": reference_detail, "source": viz.source_label(source),
+                      "remaining": 0 if reference else nights_to_normal(nights, metric, today)}
     c["trend"] = {"label": "Tendance sur 2 nuits" if alert else "Tendance sur 7 jours",
                   "short_label": "Moy. 2 nuits" if alert else "Moy. 7 j",
                   "value": viz.num(average["value"], unit=unit) if average.get("value") is not None else None,
                   "n": average.get("n", 0), "provisional": provisional,
-                  "reference": f"Référence provisoire : {reference['n']} nuits mesurées." if provisional else None}
+                  "reference": reference_detail}
     c["status_short"] = ("Élevée sur 2 nuits" if alert else
                          {"in": "Habituelle", "above": "Au-dessus", "below": "En dessous",
                           "none": "Repères en cours", "few": "Peu de données"}[c["status"]["key"]])

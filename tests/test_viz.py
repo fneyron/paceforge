@@ -284,7 +284,8 @@ def test_every_scrubbable_figure_has_steps_range_live_and_readout():
     assert "<circle" not in col and "<rect" not in col and "<path" not in col
     assert html.count('<rect x=') == 1 + 13 + 1  # the selection's column, the 13 bars, the one nap on top
     assert 'class="pf-viz-col is-today"' in html and ">7 h</text>" in html
-    assert 'class="pf-viz-todisc"' in html and 'class="pf-viz-today">' in html  # today's day on a disc
+    assert 'class="pf-viz-todisc"' in html  # today's day on a disc, even when responsive tick classes are added
+    assert re.search(r'<text\b[^>]*class="[^"]*\bpf-viz-today\b[^"]*">', html)
     # the selection: a soft column behind the bars (first in the SVG), never a full-height rule
     cross = html.split('<svg class="pf-viz-svg"')[1].split("</svg>")[0]
     assert cross.index('class="pf-viz-cross"') < cross.index('class="pf-viz-col')
