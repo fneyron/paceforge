@@ -23,6 +23,14 @@ export function isBridgeUrl(url: string): boolean {
 export function screenUrl(url: string): string {
   return trusted(url) && !isBridgeUrl(url) ? url : ORIGIN + '/sante';
 }
+export function sameScreen(left: string, right: string): boolean {
+  if (!trusted(left) || !trusted(right) || isBridgeUrl(left) || isBridgeUrl(right)) return false;
+  const a = new URL(left), b = new URL(right);
+  // Native navigation markers do not change the screen. Real filters and hash
+  // destinations do: returning to a saved tab must not discard either of them.
+  a.searchParams.delete('app_nav'); b.searchParams.delete('app_nav');
+  return a.href === b.href;
+}
 export function refreshable(url: string): boolean {
   if (!trusted(url)) return false;
   const path = new URL(url).pathname;

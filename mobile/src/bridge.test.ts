@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { ORIGIN } from './api';
-import { acknowledge, inlineSessionScript, Pending, takeReply } from './bridge';
+import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, takeReply } from './bridge';
 
 test('inline identity uses the same account check without navigating; query-only chart changes are allowed', () => {
   const task: Pending = { kind: 'check', nonce: 'a'.repeat(64), url: ORIGIN + '/mobile/session', pageUrl: ORIGIN + '/sante?r=14', consent: false };
@@ -59,6 +59,37 @@ test('session replies must match the origin, route and active request, then are 
   pending.current = { ...task, nonce: 'b'.repeat(64) };
   assert.equal(takeReply(pending, JSON.stringify(data), task.url), null);
   assert.ok(pending.current);
+});
+
+test('inline connections keep the current document and require its path, transport and one-use nonce', async () => {
+  const task: Extract<Pending, { kind: 'connections' }> = { kind: 'connections', nonce: 'd'.repeat(64), url: ORIGIN + '/mobile/connections', pageUrl: ORIGIN + '/activity/42' };
+  const data = { type: 'connections', nonce: task.nonce, user_id: 1, name: 'Athlete',
+    providers: { coros: 'connected', garmin: 'disconnected', strava: 'attention' }, transport: 'inline' };
+  const pending = { current: task as Pending | null };
+  for (const url of ['https://other.test/activity/42', ORIGIN + '/activity/43', ORIGIN + '/mobile/connections']) {
+    assert.equal(takeReply(pending, JSON.stringify(data), url), null);
+  }
+  for (const bad of [{ ...data, transport: undefined }, { ...data, nonce: 'old' }, { ...data, providers: {} }]) {
+    assert.equal(takeReply(pending, JSON.stringify(bad), task.pageUrl!), null);
+  }
+  assert.equal(takeReply(pending, JSON.stringify(data), task.pageUrl!)?.kind, 'connections');
+  assert.equal(takeReply(pending, JSON.stringify(data), task.pageUrl!), null);
+  for (const scenario of ['ok', 'redirect', 'offline', 'bad-nonce', 'forbidden']) {
+    const sent: any[] = [];
+    runInNewContext(inlineConnectionsScript(task), { location: { origin: ORIGIN }, AbortController, setTimeout, clearTimeout,
+      window: { ReactNativeWebView: { postMessage: (raw: string) => sent.push(JSON.parse(raw)) } },
+      fetch: async (_url: string, opts: any) => {
+        assert.equal(opts.credentials, 'same-origin'); assert.equal(opts.cache, 'no-store');
+        assert.equal(opts.headers.Accept, 'application/json');
+        if (scenario === 'offline') throw new TypeError('offline');
+        return { ok: scenario !== 'forbidden', redirected: scenario === 'redirect', status: scenario === 'forbidden' ? 403 : 200,
+          json: async () => ({ ...data, nonce: scenario === 'bad-nonce' ? 'old' : task.nonce }) };
+      } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(sent.length, 1);
+    assert.equal(takeReply({ current: task }, JSON.stringify(sent[0]), task.pageUrl!)?.kind,
+      scenario === 'ok' ? 'connections' : ['redirect', 'forbidden'].includes(scenario) ? 'login' : 'unavailable');
+  }
 });
 
 test('a repeated pairing message cannot exchange its one-use code twice', () => {

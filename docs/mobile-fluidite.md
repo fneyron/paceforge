@@ -1,5 +1,46 @@
 # Défilement et actualisation — audit du 12 octobre 2026
 
+## Lenteurs signalées le 13 octobre 2026
+
+PaceForge reste un compagnon hybride : les trois onglets principaux utilisent
+des documents web dans une seule WebView. Les changements entre onglets distincts
+dépendent encore du réseau. La fluidité d'une application entièrement native
+n'est pas acquise et n'a pas été mesurée sur l'iPhone du propriétaire.
+
+Les corrections visent quatre coûts observés :
+
+- Réglages lit désormais l'état des connexions avec les cookies de la page
+  affichée, sans deux navigations aller-retour. Revenir à cette même page ou
+  fermer un plan hors connexion la conserve. Les réponses tardives, sessions
+  expirées et changements de compte sont contrôlés ; une vérification lente
+  n'empêche pas de quitter Réglages.
+- Santé réutilise ses références de sommeil dans le seul calcul en cours,
+  après fixation des nuits. Sur 150 nuits synthétiques, les recalculs de la
+  référence passent de 961 à 117 par requête. Les résultats restent identiques ;
+  aucun résultat n'est conservé entre deux comptes, requêtes ou imports.
+- Activités et le profil de pente lisent les colonnes nécessaires, sans
+  charger les séries GPS, gros objets fournisseur et analyses inutilisées.
+  Les règles de doublons et les totaux sont conservés.
+- HTMX et les icônes sont servis localement, sans script CDN bloquant. Le JS
+  commun passe de 453 781 à 56 656 octets avant compression. Alpine ne se charge
+  que sur les deux écrans qui l'utilisent. Les URL du build courant sont mises
+  en cache navigateur privé ; les autres sont revalidées. Les cartes conservent
+  leurs fournisseurs externes, à leur ouverture.
+
+Sur le même profil local instrumenté (SQLite temporaire, 150 nuits, 50 activités
+avec 200 ko de données brutes et 40 000 points chacune), les trois requêtes
+chaudes Santé passent de 1 085–1 159 ms à 367–397 ms ; Activités de 110–121 ms
+à 58–63 ms ; le détail d'une course de 223–247 ms à 67–77 ms. Ces durées incluent
+le profileur Python et ne prédisent ni la latence réseau ni les FPS de l'iPhone.
+Le scénario se reproduit avec `python -m tests.browser.profile_pages`.
+
+Les régressions navigateur vérifient sauvegarde avant départ, défilement,
+pagination, mode sombre, texte à 200 %, comptes et déconnexion. Sur le preview,
+les neuf fichiers CSS/JS communs de Santé à Activités transfèrent zéro octet
+lors du second écran. Le test du composant natif simulé vérifie l'absence de
+navigation en revenant de Réglages ; une nouvelle build est nécessaire pour ce
+comportement. Aucun essai simulé ne remplace une mesure sur appareil réel.
+
 ## Suite de l’audit UX iPhone
 
 Les trois cadrans Santé gardent la même importance. La dernière nuit et la

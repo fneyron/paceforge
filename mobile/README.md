@@ -28,6 +28,14 @@ Les états des comptes viennent de `/mobile/connections`, via la session de la
 WebView avec vérification d’origine, de route et de nonce, sans jeton fournisseur.
 Ils sont actualisés à l’ouverture de cet écran et au retour du navigateur. Une
 lecture impossible reste « État à vérifier », jamais un faux « Non connecté ».
+Cette vérification utilise un `fetch` JSON dans le document déjà chargé, avec
+les mêmes cookies et un nonce à usage unique. Elle ne remplace plus la page par
+un pont, puis par un second chargement au retour. Revenir à l’onglet précédent
+réaffiche son document, sa position et ses graphiques immédiatement. Une lecture
+lente peut être quittée par un onglet ; sa réponse tardive est ignorée. Si la
+session a expiré, le formulaire de connexion reprend le parcours. Si le compte
+a changé, les destinations et copies de l’ancien compte sont invalidées et une
+nouvelle page est chargée. Les anciens compagnons gardent leur pont HTML.
 
 Suunto et Amazfit (Zepp) sont signalés dans « Autres marques » comme restant à
 intégrer, sans faux bouton de connexion. Si leur application partage des données
@@ -67,8 +75,8 @@ pas de lecture native tardive.
 vérification du compte utilise un `fetch` authentifié dans la WebView existante,
 sans quitter la page. Origine, chemin, nonce et compte associé sont contrôlés
 avant toute lecture santé. Une modification de période dans l’URL est permise.
-L’association et les opérations de Réglages utilisent la même WebView, masquée
-derrière la progression native pendant leur pont. La page renvoie sa réponse
+L’association et la synchronisation explicite depuis Réglages utilisent la même
+WebView, masquée derrière la progression native pendant leur pont. La page renvoie sa réponse
 jusqu’à l’accusé de réception (30 s maximum). Le natif vérifie origine, route
 et nonce/challenge, puis consomme la demande avant tout travail asynchrone.
 Une réponse répétée ne relance ni l’association ni la synchronisation. La fin,
@@ -130,6 +138,8 @@ La copie native est ensuite consultable depuis « Plans hors connexion » dans
 Courses, ou depuis l’écran d’erreur réseau, même après redémarrage de l’app.
 La date de copie est affichée. Répéter l’action remplace la copie ; il n’y a pas
 de mise à jour automatique. Carte, édition et export restent en ligne.
+Fermer une copie réaffiche la course encore chargée sans nouvelle requête.
+Un écran ayant échoué ou une page différente reste rechargé normalement.
 
 La bibliothèque locale utilise `expo-file-system` 57.0.7 dans le répertoire des
 documents de l’application, avec deux fichiers alternés et un index de compte

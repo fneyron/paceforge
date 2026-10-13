@@ -48,6 +48,7 @@ export const WebView=forwardRef((props:any,ref:any)=>{
    if(!w.holdLeave)queueMicrotask(()=>w.finishLeave());
   }
   if(s.includes('session-unavailable')) w.nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]);
+  if(s.includes('connections-unavailable')) { w.nonce=JSON.parse(s.match(/nonce:("[^"]+")/)[1]); w.connectionNonce=w.nonce; }
   if(s.includes('window.paceforgeRefresh')){
    w.refreshes.push(s.includes('refresh(true)'));
    w.webMessage({type:'refresh-state',active:true});

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
 
 from app.build import BUILD_ID
 from app.config import settings
@@ -20,6 +21,21 @@ logger = logging.getLogger(__name__)
 # httpx logs every request URL at INFO, query string included (Strava's
 # deauthorize and webhook calls carry a token or the app secret there)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+class VersionedStaticFiles(StaticFiles):
+    """Reuse build-tagged assets without a request on every page navigation."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code in {200, 304}:
+            # Do not freeze an old URL if its request reaches a newer deployment.
+            # Private is intentional: SessionMiddleware may refresh its cookie.
+            current = Request(scope).query_params.get("v") == BUILD_ID
+            response.headers["Cache-Control"] = (
+                "private, max-age=31536000, immutable" if current else "no-cache"
+            )
+        return response
 
 
 @asynccontextmanager
@@ -52,7 +68,7 @@ def create_app() -> FastAPI:
 
     # Static files
     static_dir = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/static", VersionedStaticFiles(directory=str(static_dir)), name="static")
 
     # Exception handlers
     register_exception_handlers(app)

@@ -87,8 +87,12 @@ async def connections(request: Request, nonce: str, user: User = Depends(get_cur
                           "disconnected" if not state["connected"] else
                           "syncing" if state.get("syncing") else
                           "attention" if state.get("last_error") or state.get("interrupted") else "connected")
-    return page(request, mode="connections", message={"type": "connections", "nonce": nonce,
-                "user_id": user.id, "name": user.firstname or "Athlète", "providers": providers})
+    message = {"type": "connections", "nonce": nonce, "user_id": user.id,
+               "name": user.firstname or "Athlète", "providers": providers}
+    if request.headers.get("accept") == "application/json":
+        from fastapi.responses import JSONResponse
+        return JSONResponse(message, headers=HEADERS)
+    return page(request, mode="connections", message=message)
 
 
 @router.get("/mobile/connect")

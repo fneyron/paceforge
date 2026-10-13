@@ -9,9 +9,9 @@ import { api, ApiError, ORIGIN, trusted } from './src/api';
 import { authorize, collect, collectSleep } from './src/health';
 import { Pair } from './src/types';
 import { due, fullDue, reportText, syncIssue, SyncReport, syncHealth } from './src/sync';
-import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
+import { appShellScript, destinations, isBridgeUrl, prepareNavigationScript, presentationScript, refreshable, sameScreen, screenUrl, Tab, tabForUrl, tabs } from './src/navigation';
 import { Connections, Provider } from './src/connections';
-import { acknowledge, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
+import { acknowledge, inlineConnectionsScript, inlineSessionScript, Pending, retryBridgeScript, takeReply } from './src/bridge';
 import { DeviceDetail, DevicesScreen } from './src/DevicesScreen';
 import { Button, DeviceTheme } from './src/device-ui';
 import { useOfflinePlans } from './src/useOfflinePlans';
@@ -95,6 +95,7 @@ function Companion() {
 
   function finish() { lock.current = false; pending.current = null; setBusy(false); if (watchdog.current) clearTimeout(watchdog.current); }
   function loadScreen(destination: string) {
+    if (documentReady.current && sameScreen(destination, documentUrl.current)) return;
     // WKWebView's actual document may differ from its last React source prop.
     // A fresh URL guarantees a real navigation, even when returning to that prop.
     const target = new URL(screenUrl(destination));
@@ -130,12 +131,13 @@ function Companion() {
     loadScreen(webLocation.current);
   }
   function fail(e: unknown) {
+    const connectionCheck = pending.current?.kind === 'connections';
     if (e instanceof ApiError && e.status === 401) setNeedsReconnect(true);
     // A timeout must leave an actionable screen, never the hidden bridge document.
     if (pending.current) { web.current?.stopLoading(); setShowWeb(false); }
     restoreSync();
     const message = e instanceof Error ? e.message : 'La synchronisation a échoué. Réessaie.';
-    setError(message); setHealthIssue(message); setUserRefreshing(false); finish();
+    setError(message); if (!connectionCheck) setHealthIssue(message); setUserRefreshing(false); finish();
   }
   function start() { if (lock.current || cloudRefresh.current || !ready) return false; lock.current = true; setBusy(true); setError(''); return true; }
   function guard() {
@@ -241,10 +243,22 @@ function Companion() {
         pending.current = { ...reply.task, pageUrl: undefined }; inlineSync.current = false;
         setTab('devices'); setShowWeb(true); setUrl(reply.task.url); guard(); return;
       }
-      if (reply.kind === 'unavailable') throw new Error('Impossible de vérifier le compte. Vérifie le réseau puis réessaie.');
+      if (reply.kind === 'unavailable') {
+        if (reply.task.kind === 'connections') {
+          setError('Impossible de vérifier les connexions. Vérifie le réseau puis réessaie.'); finish(); return;
+        }
+        throw new Error('Impossible de vérifier le compte. Vérifie le réseau puis réessaie.');
+      }
       if (!inlineSync.current) setShowWeb(false);
       if (reply.kind === 'connections') {
-        setConnections(reply.snapshot); setShowWeb(false); setStatus(''); restoreSync(); finish();
+        setConnections(reply.snapshot); setShowWeb(false); setStatus('');
+        if (reply.task.pageUrl && offline.library.userId !== reply.snapshot.user_id) {
+          // A session may have changed while Settings covered the document.
+          // Clear the old account's copies and replace its still-mounted page.
+          offline.forget(); tabLocations.current = {}; webLocation.current = ORIGIN + '/sante';
+          documentReady.current = false; loadScreen(webLocation.current);
+        }
+        restoreSync(); finish();
         return;
       }
       if (reply.kind === 'pair') {
@@ -273,8 +287,11 @@ function Companion() {
     if (!start()) return;
     const nonce = random(), target = `${ORIGIN}/mobile/connections?nonce=${nonce}`;
     setConnections(null); setStatus('Vérification des connexions…');
-    pending.current = { kind: 'connections', nonce, url: target };
-    setUrl(target); guard();
+    const inline = documentReady.current && trusted(documentUrl.current) && !isBridgeUrl(documentUrl.current);
+    pending.current = { kind: 'connections', nonce, url: target, ...(inline ? { pageUrl: documentUrl.current } : {}) };
+    if (inline) web.current?.injectJavaScript(inlineConnectionsScript(pending.current));
+    else setUrl(target);
+    guard();
   }
   function openProvider(provider: Provider) {
     if (lock.current) return;
@@ -304,9 +321,14 @@ function Companion() {
   }, []);
   useEffect(() => {
     if (ready) onForeground();
-  }, [ready]);
+  }, [ready, tab]);
 
   function openTab(next: Tab) {
+    if (pending.current?.kind === 'connections' && pending.current.pageUrl) {
+      // This read has no side effects. A slow connection must not trap the user
+      // in Settings, and a late reply must not navigate them back to it.
+      finish();
+    }
     if (lock.current && (!inlineSync.current || pending.current || next === 'devices')) return;
     if (offline.busy) return;
     if (next === tab && next !== 'devices' && !isBridgeUrl(documentUrl.current) && offline.view === null) return;
@@ -350,7 +372,8 @@ function Companion() {
   }
   const webVisible = (tab !== 'devices' || showWeb) && offline.view === null;
   const concealBridge = bridgeDocument && pending.current?.kind !== 'pair';
-  const navigationLocked = leaving || offline.busy || (busy && (!inlineSync.current || pending.current !== null));
+  const checkingConnectionsInline = pending.current?.kind === 'connections' && !!pending.current.pageUrl;
+  const navigationLocked = leaving || offline.busy || (busy && !checkingConnectionsInline && (!inlineSync.current || pending.current !== null));
   const visibleIssue = retryNavigation.current ? error : [healthIssue, refreshIssue].filter(Boolean).join('\n') || error;
   const night = dark;
   const textScaleScript = presentationScript(fontScale, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect');
@@ -421,7 +444,7 @@ function Companion() {
         onHttpError={event => { if ([url, documentUrl.current].includes(event.nativeEvent.url)) pageFailed(`PaceForge ne répond pas pour le moment (${event.nativeEvent.statusCode}). Réessaie dans quelques instants.`); }}
         onShouldStartLoadWithRequest={request => {
           if (trusted(request.url)) {
-            if (isBridgeUrl(request.url) && (!pending.current || (pending.current.kind === 'check' && pending.current.pageUrl))) return false;
+            if (isBridgeUrl(request.url) && (!pending.current || (pending.current.kind !== 'pair' && pending.current.pageUrl))) return false;
             if (request.navigationType === 'reload' && request.isTopFrame !== false && refreshable(request.url)) {
               if (recoveringProcess.current) recoveringProcess.current = false;
               else { refresh(); return false; }
@@ -454,7 +477,7 @@ function Companion() {
           if (pending.current && (path.startsWith('/auth/') || path === '/')) {
             setShowWeb(true); if (watchdog.current) clearTimeout(watchdog.current);
           }
-          if (!nav.loading && pending.current && !(pending.current.kind === 'check' && pending.current.pageUrl) && (path === '/accueil' || path === '/sante' || path === '/activities')) {
+          if (!nav.loading && pending.current && !(pending.current.kind !== 'pair' && pending.current.pageUrl) && (path === '/accueil' || path === '/sante' || path === '/activities')) {
             setUrl(pending.current.url + "#resume-" + Date.now()); guard();
           }
           // Bridge completion can arrive before the final navigation event.

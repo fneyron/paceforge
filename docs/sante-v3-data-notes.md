@@ -92,6 +92,11 @@ Garmin:
 
 - Rows written before keep their old shape, and the readers (`health.main_window`, `health.nap_windows`, `health.feel_of`) still accept them.
 - An `hrv` row without the method is the watch's own average, and it is never read as PaceForge's.
+- COROS sync distinguishes an empty raw series or an assessment without readings from an unreadable response.
+  Only understood ranges count as read. A failed latest night gets one retry covering its evening and morning;
+  existing nightly values survive an unreadable response. Partial syncs are labelled in Réglages, alongside the
+  latest accepted VFC date (separate from the sync time). A missing VFC after sleep arrived allows another
+  background attempt after 30 minutes; format errors do not cause repeated page-triggered retries.
 - A watch whose nights exist only in the old format reads its 60 days again once (`health.nights_upgraded`).
 - Brand rows are no longer written or read, and stored ones are kept: load, recovery, stress, fitness, hrv_norm, body_battery, sleep_score, vo2max and the daytime `rhr`.
 

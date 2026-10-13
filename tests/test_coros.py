@@ -253,6 +253,20 @@ def test_parsers_survive_garbled_text():
     assert coros.parse_duration("—") is None
 
 
+def test_hrv_answer_requires_readable_raw_lines_not_only_a_successful_response():
+    header = "Sleep HRV Time Series\n"
+    assert coros.hrv_answer_read(header + "2026-10-13:\n  timestamp=1791878400, timezone=8, hrv=72 ms\n")
+    assert coros.hrv_answer_read(header + "No readings for this period.\n")
+    assert coros.hrv_answer_read(header + "2026-10-13: No data available\n")
+    assert not coros.hrv_answer_read(header + "2026-10-13:\n  timestamp=1791878400, offset=8, hrv=72 ms\n")
+    assert not coros.hrv_answer_read(header + "2026-10-13:\n  hrv=72 ms, timestamp=1791878400, timezone=8\n")
+    assert not coros.hrv_answer_read(header + "2026-10-13:\n  time=1791878400, timezone=8, hrv=72 ms\n")
+    assert not coros.hrv_answer_read(header + "2026-10-13:\n  timestamp=1791878400, timezone=8, hrv=72 ms\n"
+                                   "  time=1791878700, timezone=8, hrv=95 ms\n")
+    assert not coros.hrv_answer_read("Unexpected response")
+    assert not coros.hrv_answer_read("")
+
+
 def test_tool_text_decodes_the_json_quoted_text_coros_sends():
     # what COROS really sends: the text is itself a JSON string literal
     quoted = {"content": [{"type": "text", "text": json.dumps(RHR, ensure_ascii=True)}]}
@@ -851,6 +865,105 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     outcome = await coros.run_sync(db_session, conn)
     assert outcome == {"ok": False, "error": "COROS ne répond pas pour l'instant."}
     assert len(fake.tool_calls) - before == 3  # not one 30 s timeout per tool
+
+
+@pytest.mark.parametrize("first_sync", [False, True])
+async def test_latest_hrv_retries_a_failed_wide_request_once(db_session, test_user, fake, no_commit, monkeypatch,
+                                                           first_sync):
+    conn = await _link(db_session, test_user)
+    if not first_sync:
+        assert (await coros.run_sync(db_session, conn))["ok"]
+    today = datetime.now(timezone.utc).date()
+    await db_session.execute(sa.delete(HealthMetric).where(HealthMetric.metric == "hrv"))
+    original = coros.McpSession.call_tool
+
+    async def short_only(mcp, tool, args):
+        if tool == "querySleepHrv" and args["days"] > 2:
+            fake.tool_calls.append((tool, args))
+            raise coros.McpUnavailable("Temporary COROS failure")
+        return await original(mcp, tool, args)
+
+    monkeypatch.setattr(coros.McpSession, "call_tool", short_only)
+    fake.tool_calls.clear()
+    result = await coros.run_sync(db_session, conn)
+    hrv_calls = [a for n, a in fake.tool_calls if n == "querySleepHrv"]
+    assert result["ok"] and [a["days"] for a in hrv_calls] == ([7, 2, 7, 7, 7] if first_sync else [7, 2])
+    assert hrv_calls[1]["startDate"] == (today - timedelta(days=1)).strftime("%Y%m%d")
+    assert hrv_calls[1]["endDate"] == today.strftime("%Y%m%d")
+    assert today in (await _values(db_session, test_user))["hrv"]
+    # The latest value recovered; the unread remainder is still reported honestly.
+    assert conn.last_error == (coros.PARTIAL if first_sync else coros.HRV_PARTIAL) and conn.last_sync_at is not None
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["retryable_partial"] and status["partial"]
+    from app.routers.sante import STALE_NIGHT, _sync_stale
+    scheduled = []
+    monkeypatch.setattr(coros, "schedule_sync", lambda uid: scheduled.append(uid) or True)
+    assert not _sync_stale(test_user.id, [(coros, status)], STALE_NIGHT)
+    conn.last_sync_at = datetime.now(timezone.utc) - STALE_NIGHT - timedelta(minutes=1)
+    await db_session.flush()
+    assert _sync_stale(test_user.id, [(coros, await coros.coros_status(db_session, test_user.id))], STALE_NIGHT)
+    assert scheduled == [test_user.id]
+
+
+async def test_unreadable_hrv_preserves_values_and_reports_partial_sync(db_session, test_user, fake, no_commit,
+                                                                        as_user):
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    before = (await _values(db_session, test_user))["hrv"]
+    fake.texts["querySleepHrv"] = fake.texts["querySleepHrv"].replace("Sleep HRV Time Series", "Sleep HRV Readings")
+    fake.tool_calls.clear()
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and result["result"]["hrv_unreadable"]
+    assert conn.last_error == coros.HRV_UNREADABLE
+    assert (await _values(db_session, test_user))["hrv"] == before
+    assert [a["days"] for n, a in fake.tool_calls if n == "querySleepHrv"] == [7, 2]
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["partial"] and not status["retryable_partial"]
+    assert "Synchro incomplète" in (await as_user.get("/settings")).text
+
+
+@pytest.mark.parametrize("text", [
+    "Sleep HRV\nNo readings for this period.\n",
+    "Sleep HRV Time Series\n================\n",
+    "HRV Assessment\n2026-10-13:\n  HRV Avg: 83 ms — Normal\n",
+])
+async def test_empty_hrv_and_assessment_without_raw_points_are_not_sync_failures(db_session, test_user, fake,
+                                                                               no_commit, text):
+    conn = await _link(db_session, test_user)
+    fake.texts["querySleepHrv"] = text
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and not result["result"]["hrv_incomplete"]
+    assert conn.last_error is None
+    assert "hrv" not in await _values(db_session, test_user)  # never substitute COROS's arithmetic average
+    assert len([a for n, a in fake.tool_calls if n == "querySleepHrv"]) == 9  # no extra retries
+    status = await coros.coros_status(db_session, test_user.id)
+    assert "pas encore reçue" in status["hrv_note"]
+
+
+async def test_latest_hrv_status_uses_accepted_measurement_date_not_sync_or_other_watch(db_session, test_user,
+                                                                                     no_commit):
+    today = datetime.now(timezone.utc).date()
+    await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc))
+    for metric, day, source, details in (
+        ("sleep", today, "COROS", {}),
+        ("hrv", today, "COROS", {}),  # legacy vendor average, not PaceForge's nightly RMSSD
+        ("hrv", today - timedelta(days=1), "COROS", {"method": coros.HRV_METHOD}),
+        ("hrv", today, "Garmin", {"method": coros.HRV_METHOD}),
+    ):
+        db_session.add(HealthMetric(user_id=test_user.id, metric=metric, date=day, value=80,
+                                   source=source, details=details))
+    await db_session.flush()
+    status = await coros.coros_status(db_session, test_user.id)
+    assert f"nuit du {today.strftime('%d/%m')} pas encore reçue" in status["hrv_note"]
+    assert f"Dernière VFC reçue : {(today - timedelta(days=1)).strftime('%d/%m/%Y')}" in status["hrv_note"]
+    from app.services.sante import _night_state
+    assert (await _night_state(db_session, test_user.id, today, {"COROS"}))["COROS"]["hrv_pending"]
+    current = (await db_session.execute(select(HealthMetric).where(
+        HealthMetric.user_id == test_user.id, HealthMetric.date == today,
+        HealthMetric.metric == "hrv", HealthMetric.source == "COROS"))).scalar_one()
+    current.details = {"method": coros.HRV_METHOD}
+    await db_session.flush()
+    assert not (await _night_state(db_session, test_user.id, today, {"COROS"}))["COROS"]["hrv_pending"]
 
 
 async def test_a_claimed_sync_is_not_run_twice(db_session: AsyncSession, test_user: User, fake, no_commit):

@@ -36,9 +36,9 @@
             if (theme === 'true' || (theme === null && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
         } catch (_) { /* Storage may be unavailable in private browsers. */ }
     </script>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script>htmx.config.allowScriptTags = true;</script>
-    <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script><script defer src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+    <meta name="htmx-config" content='{"allowScriptTags":true}'>
+    <script defer src="/static/vendor/htmx-2.0.4.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
+    <script defer src="/static/vendor/lucide-0.469.0.min.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
     {% block head %}{% endblock %}
 </head>
 <body class="min-h-full bg-canvas text-ink antialiased{% if user is defined and user %} pf-app{% endif %}">
@@ -118,7 +118,7 @@
         navigator.serviceWorker.register('/static/sw.js').catch(() => {});
     }
     </script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{ request.app.state.build_id if request is defined and request else 0 }}"></script>
     {% if user is defined and user %}<script src="/static/js/page-state.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% if user is defined and user %}<script src="/static/js/refresh.js?v={{ request.app.state.build_id }}"></script>{% endif %}
     {% block scripts %}{% endblock %}

@@ -108,14 +108,19 @@ async def test_session_bridge_is_private_retryable_and_scoped_to_logged_in_accou
     assert 'Compte vérifié' not in response.text
 
 
-async def test_connections_bridge_requires_session_and_nonce_and_never_returns_tokens(client, db_session, test_user):
+@pytest.mark.parametrize('json_transport', [False, True])
+async def test_connections_bridge_requires_session_and_nonce_and_never_returns_tokens(client, db_session, test_user, json_transport):
+    if json_transport:
+        client.headers['Accept'] = 'application/json'
     url = '/mobile/connections?nonce=' + 'a' * 64
     assert (await client.get(url)).status_code == 303
     login(client, test_user)
     assert (await client.get('/mobile/connections?nonce=bad')).status_code == 400
     response = await client.get(url)
     assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
-    payload = bridge_payload(response.text)
+    assert response.headers['referrer-policy'] == 'no-referrer'
+    assert response.headers['x-frame-options'] == 'DENY'
+    payload = response.json() if json_transport else bridge_payload(response.text)
     assert payload['nonce'] == 'a' * 64 and payload['user_id'] == test_user.id
     assert payload['providers'] == {'coros': 'disconnected', 'garmin': 'disconnected', 'strava': 'reconnect'}
     assert set(payload) == {'type', 'nonce', 'user_id', 'name', 'providers'}
@@ -124,7 +129,7 @@ async def test_connections_bridge_requires_session_and_nonce_and_never_returns_t
     db_session.add(other); await db_session.flush()
     client.cookies.clear(); login(client, other)
     response = await client.get(url)
-    payload = bridge_payload(response.text)
+    payload = response.json() if json_transport else bridge_payload(response.text)
     assert payload['user_id'] == other.id and payload['providers']['strava'] == 'disconnected'
 
 

@@ -23,6 +23,10 @@ const bundle=fs.readFileSync(process.env.NATIVE_PREVIEW_BUNDLE||'/tmp/paceforge-
   assert.equal(await p.locator('[data-testid="mock-webview"]').count(),1);
   assert.equal(await p.locator('[data-testid="mock-webview"]').isVisible(),true); // kept mounted, hidden by opacity/accessibility
   await p.screenshot({path:'/tmp/paceforge-offline-plan.png'});
+  const beforeReturn=await p.evaluate(()=>navigations.length);
+  await p.getByRole('tab',{name:'Courses',exact:true}).click();
+  assert.equal(await p.evaluate(()=>navigations.length),beforeReturn,'closing an offline copy must reuse its still-mounted course');
+  assert.equal(await p.evaluate(()=>new URL(actual).pathname),'/simulator/routes/2');
   // Relaunch, no successful page/account response: the committed copy survives.
   await p.addInitScript(()=>{window.holdNavigation=true;});
   await p.reload();await p.waitForFunction(()=>window.pageFail);

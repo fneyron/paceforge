@@ -2,6 +2,8 @@
 
 {% block title %}Configuration Strava — PaceForge{% endblock title %}
 
+{% block head %}<script defer src="/static/vendor/alpine-3.14.8.min.js?v={{ request.app.state.build_id }}"></script>{% endblock %}
+
 {% block content_public %}
 <div class="min-h-screen bg-white" x-data="{ step: 1 }">
     <div class="max-w-2xl mx-auto px-6 py-12 sm:py-20">

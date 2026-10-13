@@ -105,7 +105,11 @@ async def build_athlete_gradient_profile(
     cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
 
     result = await db.execute(
-        select(Activity)
+        # Splits and duplicate-ranking fields are enough: GPS streams, raw
+        # provider payloads and the eager analysis relationship are not used.
+        select(Activity.id, Activity.start_date, Activity.sport_type,
+               Activity.distance, Activity.moving_time, Activity.average_heartrate,
+               Activity.splits_metric)
         .where(
             Activity.user_id == user_id,
             Activity.sport_type.in_(["Run", "TrailRun", "VirtualRun"]),
@@ -114,7 +118,7 @@ async def build_athlete_gradient_profile(
         )
         .order_by(Activity.start_date.desc())
     )
-    activities = result.scalars().all()
+    activities = result.all()
 
     # Double recordings (watch + phone) would count the same outing twice.
     from app.services.activity_dedupe import find_duplicate_ids

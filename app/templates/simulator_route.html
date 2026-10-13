@@ -3,7 +3,7 @@
 {% block title %}{{ saved_route_name }} — PaceForge{% endblock title %}
 
 {% block head %}
-<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
+<script defer src="/static/vendor/idiomorph-0.3.0.min.js?v={{ request.app.state.build_id }}"></script>
 <style>
 .maplibregl-popup-content { font-family: var(--pf-font-text); border-radius: 12px; padding: 12px; }
 .maplibregl-popup-content { font-size: 12px; line-height: 1.35; }
