@@ -102,6 +102,11 @@ Garmin:
   sync and cannot erase already stored nights. A successful empty response remains valid. This recovery
   is tested with synthetic nights dated 13 October, including time zones ahead of UTC; it does not verify
   receipt of that night's data on the owner's live account.
+- A failed daily-health read must not erase previously received sleep-phase totals. They are retained
+  only for the same user's COROS night with unchanged start, end, period and time asleep. An unread range
+  remains eligible for another sync; a fully readable response can clear the old phases, and valid new
+  phase totals replace them. These totals describe durations, not the chronological order of the phases
+  during the night.
 - A watch whose nights exist only in the old format reads its 60 days again once (`health.nights_upgraded`).
 - Brand rows are no longer written or read, and stored ones are kept: load, recovery, stress, fitness, hrv_norm, body_battery, sleep_score, vo2max and the daytime `rhr`.
 

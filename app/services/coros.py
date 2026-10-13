@@ -101,6 +101,7 @@ PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton histor
 HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues sont conservées ; réessaie la synchro."
 HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
 SLEEP_PARTIAL = "La lecture du sommeil est incomplète ; elle est nécessaire au calcul de la VFC. Les données déjà reçues sont conservées."
+PHASES_PARTIAL = "Les phases du sommeil n’ont pas pu être entièrement actualisées. Réessaie la synchronisation."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
 MAX_CALLS = 45  # a 60-day backfill takes 15 at most, the sessions 3 + 10 × (detail + laps): 38
@@ -1033,6 +1034,55 @@ def night_stages(row: dict | None, ov: dict) -> dict | None:
     return parts
 
 
+def daily_sleep_readable(text: str | None, daily: dict, activity: dict) -> bool:
+    """Only understood daily data can replace the known sleep phases.
+
+    A renamed summary or unreadable stage field is not an explicit absence.
+    Ordinary activity-only days and explicit empty responses remain valid.
+    """
+    empty = r"No (?:(?:daily health|sleep|sleep stage) )?(?:data|records|stages)(?: available)?(?: for (?:this|the|selected) period)?[.!]?"
+    blocks = list(_day_blocks(text or "", r"^\s*---\s*(\d{4})(\d{2})(\d{2})\s*---\s*$"))
+    if not blocks:
+        body = re.sub(r"(?m)^Daily Health Data[^\n]*\n?|^=+\n?|^Note: sleep entries are dated by their wake-up day\.\n?",
+                      "", text or "").strip()
+        return bool(re.fullmatch(empty, body, re.I))
+    for day, block in blocks:
+        summary = block.split("Sleep Summary:", 1)
+        if (re.fullmatch(empty, block.strip(), re.I)
+                or len(summary) == 2 and re.fullmatch(empty, summary[1].strip(), re.I)):
+            continue
+        if re.search(r"\bsleep\b", block, re.I):
+            if day not in daily or not {"total", "deep", "core", "rem"} <= daily[day].keys():
+                return False
+        elif day not in activity:
+            return False
+    return True
+
+
+async def preserve_unread_stages(db: AsyncSession, user_id: int, rows: list[Daily],
+                                 read: tuple[date, date] | None) -> None:
+    """Retain old COROS phase details only for the exact same unread episode."""
+    pending = {r.day: r for r in rows if r.metric == "sleep" and not (r.details or {}).get("stages")
+               and not (read and read[0] <= r.day <= read[1])}
+    if not pending:
+        return
+    existing = (await db.execute(select(HealthMetric).where(
+        HealthMetric.user_id == user_id, HealthMetric.source == SOURCE, HealthMetric.metric == "sleep",
+        HealthMetric.date.in_(sorted(pending))))).scalars()
+    for old in existing:
+        row, before = pending[old.date], old.details or {}
+        after = row.details or {}
+        if (abs(old.value - row.value) > 1e-6 or any(before.get(k) is None or before.get(k) != after.get(k)
+                                                    for k in ("main_start", "main_end", "period"))):
+            continue
+        # Do not carry timestamps, windows, totals or another source's data.
+        if before.get("stages"):
+            after["stages"] = dict(before["stages"])
+        if before.get(STAGES_READ):
+            after[STAGES_READ] = True  # this unchanged episode was read earlier, not during this failed attempt
+        row.details = after
+
+
 def fold_overview(overview: dict[date, dict], naps: dict[date, dict]) -> dict[date, dict]:
     """The main nights with the « naps » that are their start or end folded
     into their window (health.fold_naps, H: one overlapping the main window or
@@ -1368,7 +1418,9 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     data["daily"] = _parsed(parse_daily_sleep, text)
     data["activity"] = _parsed(parse_daily_activity, text)
     # the nights whose stages were looked for: the days that answer covers (a day ahead, as the nights)
-    data["daily_read"] = (hi - timedelta(days=call.answered - 1), hi) if call.answered else None
+    readable = daily_sleep_readable(text, data["daily"], data["activity"])
+    data["daily_read"] = (hi - timedelta(days=call.answered - 1), hi) if call.answered and readable else None
+    data["daily_incomplete"] = call.answered < days or not readable
     # the sessions last: the nights matter more on a morning when COROS is slow; their
     # failures never make the health history count as cut short
     data["health_stopped"] = call.stopped
@@ -1602,7 +1654,9 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     today = _today(latest)
     result = {"received": 0, "inserted": 0, "updated": 0, "unchanged": 0, "by_metric": {}, "days": {}}
     # the nightly rows of the days its parsers read that this sync no longer yields go (a few at most)
-    daily = await store_daily(db, conn.user_id, build_daily(data, today), SOURCE, covered_days(data))
+    rows = build_daily(data, today)
+    await preserve_unread_stages(db, conn.user_id, rows, data.get("daily_read"))
+    daily = await store_daily(db, conn.user_id, rows, SOURCE, covered_days(data))
     result["inserted"] += daily["inserted"]
     result["updated"] += daily["updated"]
     result["deleted"], result["stale_kept"] = daily["deleted"], daily["stale_kept"]
@@ -1621,8 +1675,9 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["hrv_incomplete"] = bool(data.get("hrv_failed_days"))
     result["hrv_unreadable"] = bool(data.get("hrv_unreadable_days"))
     result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
+    result["phases_incomplete"] = bool(data.get("daily_incomplete"))
     result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]
-                                   or result["sleep_incomplete"]) and days == BACKFILL_DAYS
+                                   or result["sleep_incomplete"] or result["phases_incomplete"]) and days == BACKFILL_DAYS
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result
@@ -1672,7 +1727,8 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         conn.last_error = (HRV_UNREADABLE if result.get("hrv_unreadable") else
                            PARTIAL if result.get("backfill_partial") else
                            SLEEP_PARTIAL if result.get("sleep_incomplete") else
-                           HRV_PARTIAL if result.get("hrv_incomplete") else None)
+                           HRV_PARTIAL if result.get("hrv_incomplete") else
+                           PHASES_PARTIAL if result.get("phases_incomplete") else None)
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
         outcome = {"ok": False, "error": str(e)}
@@ -1789,8 +1845,8 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
-        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL) and conn.last_sync_at is not None,
-        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL),
+        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL, PHASES_PARTIAL) and conn.last_sync_at is not None,
+        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL, PHASES_PARTIAL),
         "hrv_note": hrv_note,
         "per_metric": counts,
     }

@@ -628,7 +628,7 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
                                                  "queryRecoveryStatus", "queryFitnessAssessmentOverview",
                                                  "queryStressTimeSeries"}
     assert len(fake.tool_calls) <= coros.MAX_CALLS
-    assert conn.last_sync_at is not None and conn.last_error is None and conn.sync_claimed_at is None
+    assert conn.last_sync_at is not None and conn.last_error == coros.PARTIAL and conn.sync_claimed_at is None
 
     today = datetime.now(timezone.utc).date()
     rows = (await db_session.execute(select(HealthMetric).where(
@@ -662,9 +662,14 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
         HealthSample.user_id == test_user.id))).scalar() == 0
 
     fake.tool_calls.clear()
+    fake.max_days.clear()  # finish the historical daily details before moving to the recent week
     fake.sse = True  # same answers as server-sent events
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"] and outcome["result"]["inserted"] == 0 and outcome["result"]["updated"] == 0
+    assert [a for nm, a in fake.tool_calls if nm == "queryAvgHeartRate"] == [{"days": 60}]
+    assert conn.last_error is None
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
     assert [a for nm, a in fake.tool_calls if nm == "queryAvgHeartRate"] == [{"days": 7}]
     assert len([1 for nm, _ in fake.tool_calls if nm == "querySleepHrv"]) == 1
 
@@ -1227,6 +1232,109 @@ Nap Window: 2026-10-07 06:42 - 2026-10-07 09:07
 
 
 # ── v4.1: the sleep stages, the re-read, Réglages' sync ─────────────────────
+
+async def _latest_sleep(db, user, day=None):
+    return (await db.execute(select(HealthMetric).where(
+        HealthMetric.user_id == user.id, HealthMetric.source == "COROS", HealthMetric.metric == "sleep",
+        HealthMetric.date == (day or datetime.now(timezone.utc).date())))).scalar_one()
+
+
+@pytest.mark.parametrize("failure", ["503", "renamed_summary", "renamed_total", "renamed_light_and_no_hr"])
+async def test_unread_daily_details_keep_phases_visible_then_accept_corrections_and_explicit_empty(
+        db_session, test_user, fake, no_commit, as_user, failure):
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    row = await _latest_sleep(db_session, test_user)
+    original = dict(row.details["stages"])
+    text = fake.texts["queryDailyHealthData"]
+    if failure == "503":
+        fake.tool_status["queryDailyHealthData"] = 503
+    elif failure == "renamed_summary":
+        fake.texts["queryDailyHealthData"] = text.replace("Sleep Summary", "Sleep summary")
+    elif failure == "renamed_total":
+        fake.texts["queryDailyHealthData"] = text.replace("Total:", "Duration:")
+    else:
+        fake.texts["queryDailyHealthData"] = re.sub(r"Sleep HR:[^\n]*", "Sleep HR: No data",
+                                                    text.replace("Light:", "Light Sleep:"))
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and result["result"]["phases_incomplete"]
+    assert conn.last_error == coros.PHASES_PARTIAL
+    assert row.details["stages"] == original and row.details["stages_read"]
+    assert (await coros.coros_status(db_session, test_user.id))["retryable_partial"]
+    html = (await as_user.get("/sante")).text
+    assert 'class="pf-phases-bar"' in html and 'aria-label="Phases de la nuit"' in html
+    fake.tool_status.clear()
+    fake.texts["queryDailyHealthData"] = text.replace("Deep: 1h 16min | Light: 5h 43min",
+                                                       "Deep: 1h 6min | Light: 5h 53min")
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert row.details["stages"] == {**original, "deep": 66, "light": 353}
+    assert conn.last_error is None
+    fake.texts["queryDailyHealthData"] = "Daily Health Data\nNo data for this period.\n"
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert "stages" not in row.details and row.details["stages_read"]
+    assert conn.last_error is None
+
+
+@pytest.mark.parametrize("before,after", [("23:52", "23:42"), ("09:54", "10:04"),
+    ("Main Sleep Period (incl. awake): 10h 2min", "Main Sleep Period (incl. awake): 10h 12min"),
+    ("Main Sleep (asleep): 9h 48min", "Main Sleep (asleep): 9h 38min")])
+async def test_unread_phases_are_not_attached_to_a_corrected_episode(db_session, test_user, fake, no_commit,
+                                                                   before, after):
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    row = await _latest_sleep(db_session, test_user)
+    assert row.details.get("stages")
+    fake.texts["querySleepOverview"] = fake.texts["querySleepOverview"].replace(before, after)
+    fake.tool_status["queryDailyHealthData"] = 503
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert "stages" not in row.details and "stages_read" not in row.details
+
+
+async def test_phase_preservation_is_scoped_to_user_source_and_day(db_session, test_user):
+    today = datetime.now(timezone.utc).date()
+    other = User(firstname="Other athlete"); db_session.add(other); await db_session.flush()
+    details = {"main_start": f"{today - timedelta(days=1)}T23:00", "main_end": f"{today}T07:00", "period": 480}
+    phases = {"deep": 60, "light": 300, "rem": 100, "awake": 20}
+    for uid, source, day in [(other.id, "COROS", today), (test_user.id, "Garmin", today),
+                             (test_user.id, "COROS", today - timedelta(days=1))]:
+        db_session.add(HealthMetric(user_id=uid, source=source, date=day, metric="sleep", value=460,
+                                   details={**details, "stages": phases, "stages_read": True}))
+    await db_session.flush()
+    rows = [coros.Daily("sleep", today, 460, dict(details))]
+    await coros.preserve_unread_stages(db_session, test_user.id, rows, None)
+    assert rows[0].details == details
+
+
+async def test_daily_backfill_fallback_keeps_old_phases_but_history_stays_owed(db_session, test_user, fake,
+                                                                           no_commit, monkeypatch):
+    today = datetime.now(timezone.utc).date()
+    old_day = today - timedelta(days=20)
+    recent_daily = fake.texts["queryDailyHealthData"]
+    fake.texts["querySleepOverview"] += "\n" + _shift(SLEEP_OVERVIEW, (old_day - D30).days)
+    fake.texts["queryDailyHealthData"] += "\n" + _shift(DAILY, (old_day - D30).days)
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    row = await _latest_sleep(db_session, test_user, old_day)
+    original = dict(row.details)
+    conn.last_error = coros.PARTIAL
+    fake.max_days["queryDailyHealthData"] = 7
+    raw_call = coros.McpSession.call_tool
+
+    async def limited_daily(mcp, name, args):
+        result = await raw_call(mcp, name, args)
+        return recent_daily if name == "queryDailyHealthData" and args["days"] == 7 else result
+
+    monkeypatch.setattr(coros.McpSession, "call_tool", limited_daily)
+    fake.tool_calls.clear()
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and result["result"]["phases_incomplete"] and result["result"]["backfill_partial"]
+    assert row.details == original and conn.last_error == coros.PARTIAL
+    assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60, 7]
+    fake.max_days.clear(); fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60]
+    assert conn.last_error is None
+
 
 def test_the_stages_come_from_the_main_nights_sleep_summary_only():
     """The owner's real answers: each main night's stage minutes from its « Sleep Summary » when that summary is the
