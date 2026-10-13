@@ -867,6 +867,79 @@ async def test_a_timeout_or_a_5xx_loses_that_call_not_the_night(db_session: Asyn
     assert len(fake.tool_calls) - before == 3  # not one 30 s timeout per tool
 
 
+@pytest.mark.parametrize("days", [7, 60])
+async def test_failed_sleep_overview_retries_recent_window_and_recovers_oct13_hrv(monkeypatch, days):
+    """Raw COROS points cannot produce a VFC without their actual sleep window."""
+    today = date(2026, 10, 13)
+    texts = FakeCoros(shift_days=(today - D30).days).texts
+    calls = []
+    monkeypatch.setattr(coros, "CALL_DELAY_S", 0)
+
+    class MCP:
+        async def initialize(self):
+            pass
+
+        async def call_tool(self, name, args):
+            calls.append((name, args))
+            if name == "querySleepOverview":
+                a, b = [datetime.strptime(args[k], "%Y%m%d").date() for k in ("startDate", "endDate")]
+                if (b - a).days > 3:
+                    raise coros.McpUnavailable("Synthetic sleep-tool outage")
+            return texts[name]
+
+    data, _, _, stopped = await coros._fetch(MCP(), days, today)
+    sleeps = [args for name, args in calls if name == "querySleepOverview"]
+    assert len(sleeps) == (3 if days == 60 else 2)  # one recent retry, never a retry per historical chunk
+    assert sleeps[-1] == {"startDate": "20261011", "endDate": "20261014"}
+    assert [name for name, _ in calls][:4] == (["querySleepOverview", "querySleepOverview", "querySleepHrv",
+                                               "querySleepOverview"] if days == 60 else
+                                              ["querySleepOverview", "querySleepHrv", "querySleepOverview",
+                                               "queryAvgHeartRate"])
+    assert not stopped  # the sleep tool alone being down cannot hide an available HRV series
+    latest = next(r for r in coros.build_daily(data, today) if r.metric == "hrv" and r.day == today)
+    assert latest.details["n"] == 60 and latest.details["method"] == coros.HRV_METHOD
+    assert {today, today - timedelta(days=1)} <= data["overview_days"]
+    assert not {today, today - timedelta(days=1)} & data["overview_failed_days"]
+    assert data["overview_failed_days"]  # the unread older range still needs another sync
+
+
+@pytest.mark.parametrize("backfill", [False, True])
+async def test_persistent_sleep_failure_preserves_values_and_is_retryable_partial(db_session, test_user, fake,
+                                                                                no_commit, backfill):
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    before = await _values(db_session, test_user)
+    if backfill:
+        conn.last_error = coros.PARTIAL  # an unfinished historical import is still owed
+    fake.tool_status["querySleepOverview"] = 503
+    fake.tool_calls.clear()
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and result["result"]["sleep_incomplete"]
+    assert not result["result"]["hrv_incomplete"]  # raw readings arrived, their dependency did not
+    assert conn.last_error == (coros.PARTIAL if backfill else coros.SLEEP_PARTIAL)
+    assert await _values(db_session, test_user) == before
+    assert result["result"]["deleted"] == 0
+    assert len([1 for name, _ in fake.tool_calls if name == "querySleepOverview"]) == (3 if backfill else 2)
+    assert any(name == "queryDailyHealthData" for name, _ in fake.tool_calls)
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["partial"] and status["retryable_partial"] and status["last_sync_at"] is not None
+    fake.tool_status.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert conn.last_error is None  # a later successful read clears the partial failure
+
+
+@pytest.mark.parametrize("text", ["", "Sleep Overview\nNo data for this period.\n",
+    "Sleep Overview\n2026-10-13\nSleep detail for this day is not available yet.\n"])
+async def test_empty_sleep_overview_does_not_retry_or_invent_hrv(db_session, test_user, fake, no_commit, text):
+    conn = await _link(db_session, test_user)
+    fake.texts["querySleepOverview"] = text
+    result = await coros.run_sync(db_session, conn)
+    assert result["ok"] and not result["result"]["sleep_incomplete"]
+    assert conn.last_error is None
+    assert not {"sleep", "hrv"} & set(await _values(db_session, test_user))
+    assert len([1 for name, _ in fake.tool_calls if name == "querySleepOverview"]) == 2  # 60-day import, no retries
+
+
 @pytest.mark.parametrize("first_sync", [False, True])
 async def test_latest_hrv_retries_a_failed_wide_request_once(db_session, test_user, fake, no_commit, monkeypatch,
                                                            first_sync):

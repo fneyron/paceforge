@@ -100,6 +100,7 @@ CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
 HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues sont conservées ; réessaie la synchro."
 HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
+SLEEP_PARTIAL = "La lecture du sommeil est incomplète ; elle est nécessaire au calcul de la VFC. Les données déjà reçues sont conservées."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
 MAX_CALLS = 45  # a 60-day backfill takes 15 at most, the sessions 3 + 10 × (detail + laps): 38
@@ -1296,17 +1297,26 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     lo = hi - timedelta(days=days - 1)
     data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "hrv_failed_days": set(),
                   "hrv_unreadable_days": set(), "daily": {},
-                  "read": {"sleep": set(), "nap": set()}, "overview_days": set()}
-    # the nights first: last night is what the morning's decision reads
-    for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
+                  "read": {"sleep": set(), "nap": set()}, "overview_days": set(), "overview_failed_days": set()}
+
+    async def read_overview(a, b):
         text = await call("querySleepOverview", {"startDate": _ymd(a), "endDate": _ymd(b)})
+        asked = {a + timedelta(days=i) for i in range((b - a).days + 1)}
         overview, naps = _try_parse(parse_sleep_overview, text), _try_parse(parse_naps, text)
+        if text is None or overview is None or naps is None:
+            data["overview_failed_days"] |= asked
+            return
         data["overview"].update(overview or {})
         data["naps"].update(naps or {})
-        if text and overview is not None and naps is not None:  # read whole: its days' stale rows may go
-            data["overview_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
+        data["overview_failed_days"] -= asked
+        if text:  # read whole: its days' stale rows may go; empty successful responses are not outages
+            data["overview_days"] |= asked
             for key, days_read in overview_read(text, overview, naps).items():
                 data["read"][key] |= {d for d in days_read if a <= d <= b}
+
+    # The nights first: last night is what the morning's decision reads.
+    for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
+        await read_overview(a, b)
     points: dict[int, tuple] = {}
 
     async def read_hrv(a, b):
@@ -1332,8 +1342,18 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
 
     latest_night = max(data["overview"], default=None)
     retried_latest = False
+    retried_overview = False
+    recent_lo = max(lo, today - timedelta(days=2))
+    recent_days = {recent_lo + timedelta(days=i) for i in range((hi - recent_lo).days + 1)}
     for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
         await read_hrv(a, b)
+        if not retried_overview and not call.stopped and recent_days & data["overview_failed_days"]:
+            # Cover each possible local wake day and its previous evening.
+            # Try the latest HRV first: three failures of the sleep tool alone
+            # must not exhaust the outage limit before other data can arrive.
+            retried_overview = True
+            await read_overview(recent_lo, hi)
+            latest_night = max(data["overview"], default=None)
         if (latest_night and latest_night >= today - timedelta(days=1)
                 and not call.stopped and not retried_latest):
             start, end = latest_night - timedelta(days=1), latest_night
@@ -1600,7 +1620,9 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     # time (the sessions have their own flag above)
     result["hrv_incomplete"] = bool(data.get("hrv_failed_days"))
     result["hrv_unreadable"] = bool(data.get("hrv_unreadable_days"))
-    result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]) and days == BACKFILL_DAYS
+    result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
+    result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]
+                                   or result["sleep_incomplete"]) and days == BACKFILL_DAYS
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result
@@ -1649,6 +1671,7 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         # a history cut short is not done: said so, and the next sync asks for all of it again
         conn.last_error = (HRV_UNREADABLE if result.get("hrv_unreadable") else
                            PARTIAL if result.get("backfill_partial") else
+                           SLEEP_PARTIAL if result.get("sleep_incomplete") else
                            HRV_PARTIAL if result.get("hrv_incomplete") else None)
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
@@ -1766,8 +1789,8 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
-        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL) and conn.last_sync_at is not None,
-        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE),
+        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL, SLEEP_PARTIAL) and conn.last_sync_at is not None,
+        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE, SLEEP_PARTIAL),
         "hrv_note": hrv_note,
         "per_metric": counts,
     }

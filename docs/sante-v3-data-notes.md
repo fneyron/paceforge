@@ -97,6 +97,11 @@ Garmin:
   existing nightly values survive an unreadable response. Partial syncs are labelled in Réglages, alongside the
   latest accepted VFC date (separate from the sync time). A missing VFC after sleep arrived allows another
   background attempt after 30 minutes; format errors do not cause repeated page-triggered retries.
+- A failed sleep-overview request also makes the sync incomplete: the raw VFC readings need the main
+  sleep window. The recent overview gets one bounded retry; unresolved ranges stay eligible for a later
+  sync and cannot erase already stored nights. A successful empty response remains valid. This recovery
+  is tested with synthetic nights dated 13 October, including time zones ahead of UTC; it does not verify
+  receipt of that night's data on the owner's live account.
 - A watch whose nights exist only in the old format reads its 60 days again once (`health.nights_upgraded`).
 - Brand rows are no longer written or read, and stored ones are kept: load, recovery, stress, fitness, hrv_norm, body_battery, sleep_score, vo2max and the daytime `rhr`.
 
