@@ -31,9 +31,11 @@ def _activity(user: User, k: int, **kw) -> Activity:
 
 async def test_activity_rows_missing_values(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
     # a trail run imported without speed nor heart rate, a flat run with everything
-    db_session.add(_activity(test_user, 0))
+    # Keep both sessions in one week, including when the test runs on a Tuesday.
+    when = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+    db_session.add(_activity(test_user, 0, start_date=when))
     db_session.add(_activity(test_user, 1, sport_type="Run", name="Piste", total_elevation_gain=0.0,
-                             average_speed=1000 / 300, average_heartrate=152.0))
+                             average_speed=1000 / 300, average_heartrate=152.0, start_date=when - timedelta(hours=2)))
     await db_session.flush()
     page = (await as_user.get("/activities")).text
     rows = re.findall(r'<a href="/activity/\d+".*?</a>', page, re.S)
