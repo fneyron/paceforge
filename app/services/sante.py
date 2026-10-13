@@ -36,7 +36,7 @@ from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services import viz
-from app.services.health import WATCH_SOURCES, fmt_minutes
+from app.services.health import HRV_METHOD, WATCH_SOURCES, fmt_minutes
 from app.services.health_sources import SOURCE_NOTE, preference
 from app.services.sante_daily import daily_context
 
@@ -671,17 +671,20 @@ async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[st
     """Per watch that ever sent something: last night received, not yet, or
     not worn (today's daytime data came but no night). Drives how soon the
     page syncs again."""
-    rows = (await db.execute(select(HealthMetric.metric, HealthMetric.source, HealthMetric.value).where(
+    rows = (await db.execute(select(HealthMetric.metric, HealthMetric.source, HealthMetric.value, HealthMetric.details).where(
         HealthMetric.user_id == user_id, HealthMetric.date == today,
-        HealthMetric.metric.in_(("sleep", "steps", "hr_day"))))).all()
+        HealthMetric.metric.in_(("sleep", "steps", "hr_day", "hrv"))))).all()
     out = {}
     for src in ("COROS", "Garmin"):
         if src not in seen:
             continue
-        sleep = next((v for m, s, v in rows if m == "sleep" and s == src and v), None)
+        sleep = next((v for m, s, v, _ in rows if m == "sleep" and s == src and v), None)
         if sleep:
             out[src] = {"state": "received", "txt": fmt_minutes(sleep)}
-        elif any(s == src and m in ("steps", "hr_day") for m, s, _ in rows):
+            if src == "COROS":
+                out[src]["hrv_pending"] = not any(m == "hrv" and s == src and v is not None
+                    and (det or {}).get("method") == HRV_METHOD for m, s, v, det in rows)
+        elif any(s == src and m in ("steps", "hr_day") for m, s, _, _ in rows):
             out[src] = {"state": "none"}
         else:
             out[src] = {"state": "pending"}

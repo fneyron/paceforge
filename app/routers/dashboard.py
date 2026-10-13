@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -35,6 +35,13 @@ WEEKS_PER_PAGE = 6
 FILTERS = [(None, "Tout"), ("run", "Course"), ("trail", "Trail"), ("bike", "Vélo"), ("other", "Autre")]
 _FILTER_KEYS = {"run", "trail", "bike", "other"}
 _MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+# History rows need only these values. Loading Activity entities also decodes
+# every GPS stream / source payload and eagerly fetches their analyses.
+_SUMMARY_COLUMNS = (
+    Activity.id, Activity.strava_activity_id, Activity.sport_type, Activity.name,
+    Activity.start_date, Activity.distance, Activity.moving_time,
+    Activity.average_speed, Activity.average_heartrate, Activity.total_elevation_gain,
+)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -203,7 +210,9 @@ async def _recent(db: AsyncSession, user_id: int, depuis: str) -> dict | None:
     sessions = sorted((s for s in await st.load_sessions(db, user_id, today) if s.end_day >= since),
                       key=lambda s: s.start, reverse=True)
     ids = [s.id for s in sessions]
-    rows = {a.id: a for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars()} if ids else {}
+    rows = {a.id: a for a in (await db.execute(select(*_SUMMARY_COLUMNS).where(
+        Activity.user_id == user_id, Activity.id.in_(ids)
+    ))).all()} if ids else {}
     dplus = sum(s.dplus for s in sessions)
     return {"label": "7 derniers jours" if (today - since).days in (6, 7) else f"Depuis le {d_short(since)}",
             "activities": [_activity_to_summary(rows[s.id]) for s in sessions if s.id in rows],
@@ -242,7 +251,7 @@ def _week_label(monday: datetime, this_monday: datetime) -> str:
     return f"{monday.day} {_MONTHS_FR[monday.month - 1]} – {sunday.day} {_MONTHS_FR[sunday.month - 1]}{year}"
 
 
-def _activity_to_summary(activity: Activity, duplicate_ids: frozenset | set = frozenset()) -> ActivitySummary:
+def _activity_to_summary(activity: Activity | Row, duplicate_ids: frozenset | set = frozenset()) -> ActivitySummary:
     return ActivitySummary(
         id=activity.id,
         strava_activity_id=activity.strava_activity_id,
@@ -269,13 +278,15 @@ async def _week_groups(
     window_end = this_monday + timedelta(weeks=1) - timedelta(weeks=(page - 1) * WEEKS_PER_PAGE)
     window_start = window_end - timedelta(weeks=WEEKS_PER_PAGE)
 
-    query = select(Activity).where(
+    # Keep splits' original truth value for duplicate ranking (including older
+    # malformed values), but leave all unrelated bulk data in the database.
+    query = select(*_SUMMARY_COLUMNS, Activity.splits_metric).where(
         Activity.user_id == user_id,
         Activity.start_date >= window_start,
         Activity.start_date < window_end,
     )
     query = _sport_filter(query, sport).order_by(Activity.start_date.desc())
-    activities = (await db.execute(query)).scalars().all()
+    activities = (await db.execute(query)).all()
     duplicate_ids = find_duplicate_ids(activities)
 
     groups: dict[str, dict] = {}

@@ -2,6 +2,8 @@
 
 {% block title %}{{ activity.name }} — PaceForge{% endblock %}
 
+{% block head %}<script defer src="/static/vendor/alpine-3.14.8.min.js?v={{ request.app.state.build_id }}"></script>{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <!-- Back + Header -->

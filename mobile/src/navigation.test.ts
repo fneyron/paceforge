@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isBridgeUrl, screenUrl, tabForUrl } from './navigation';
+import { isBridgeUrl, sameScreen, screenUrl, tabForUrl } from './navigation';
 
 test('internal detail pages keep the right native tab; external URLs cannot change it', () => {
   assert.equal(tabForUrl('https://paceforge.fr/accueil'), 'health');
@@ -21,4 +21,13 @@ test('a sync always returns to a real screen, even if its saved location was a b
     assert.equal(screenUrl('https://paceforge.fr' + path), 'https://paceforge.fr' + path);
   }
   assert.equal(screenUrl('https://example.org/sante'), 'https://paceforge.fr/sante');
+});
+
+test('native screen reuse ignores only its navigation marker, preserving filters and section destinations', () => {
+  assert.equal(sameScreen('https://paceforge.fr/sante?r=14&app_nav=old', 'https://paceforge.fr/sante?r=14&app_nav=new'), true);
+  assert.equal(sameScreen('https://paceforge.fr/sante?r=14', 'https://paceforge.fr/sante?r=90'), false);
+  assert.equal(sameScreen('https://paceforge.fr/sante', 'https://paceforge.fr/sante#sommeil'), false);
+  assert.equal(sameScreen('https://paceforge.fr/activity/1', 'https://paceforge.fr/activity/2'), false);
+  assert.equal(sameScreen('https://paceforge.fr/mobile/session', 'https://paceforge.fr/mobile/session'), false);
+  assert.equal(sameScreen('https://other.test/sante', 'https://other.test/sante'), false);
 });

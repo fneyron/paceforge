@@ -69,9 +69,10 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
     except Exception:  # shown as an error, never as "connect your watch"
         logger.exception("Santé page failed for user %d", user.id)
         page = None
-    # last night not there yet (and the watch hasn't sent today's day either): look again sooner
+    # Retry sooner while last night, or COROS's separately published HRV, is pending.
     states = (page or {}).get("night_state") or {}
-    night_missing = any(link.get("connected") and states.get(name, {}).get("state") == "pending"
+    night_missing = any(link.get("connected") and (states.get(name, {}).get("state") == "pending"
+                        or states.get(name, {}).get("hrv_pending"))
                         for name, link in (("COROS", status), ("Garmin", garmin_link)))
     auto_sync = _sync_stale(user.id, ((coros, status), (garmin, garmin_link)),
                             STALE_NIGHT if night_missing else STALE_AFTER)
@@ -225,15 +226,16 @@ def _fresh_at(link: dict, within: timedelta) -> bool:
 
 def _sync_stale(user_id: int, links, stale_after: timedelta) -> bool:
     """Opening Santé syncs, in the background, every watch not synced within
-    `stale_after` (not one that failed last time: Réglages say why, and sync
-    on demand). True when a sync is running, so the page waits for it."""
+    `stale_after`. Only a transient partial import with a recorded attempt time
+    retries after a failure; auth and unreadable responses need attention in
+    Réglages. True when a sync is running, so the page waits for it."""
     running = False
     for service, link in links:
         if not link.get("connected") or link.get("needs_reauth"):
             continue
         if link.get("syncing"):
             running = True
-        elif not link.get("last_error") and not _fresh_at(link, stale_after):
+        elif (not link.get("last_error") or link.get("retryable_partial")) and not _fresh_at(link, stale_after):
             running = service.schedule_sync(user_id) or running
     return running
 

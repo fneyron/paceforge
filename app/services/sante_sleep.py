@@ -249,6 +249,19 @@ def sleep_baseline(nights: dict, d: date, raced=frozenset()) -> dict:
     The current night never lowers its own target. These selection rules and
     bounds are heuristics; sufficient observation is not clinical validation.
     """
+    # Each chart day also reads the preceding seven baselines for its debt.
+    # Reuse only within the current calculation's explicitly frozen nights;
+    # no result survives a request, account change or new import.
+    kept = nt._kept(nights)
+    if kept is None:
+        return _sleep_baseline(nights, d, raced)
+    key = ("sleep_baseline", d, frozenset(raced))
+    if key not in kept:
+        kept[key] = _sleep_baseline(nights, d, raced)
+    return dict(kept[key])
+
+
+def _sleep_baseline(nights: dict, d: date, raced) -> dict:
     prior = [(x, n) for x, n in nights.items() if x <= d and n.asleep is not None]
     source = max(prior, key=lambda item: item[0])[1].source if prior else None
     samples = []

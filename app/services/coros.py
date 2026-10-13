@@ -54,7 +54,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
@@ -98,6 +98,8 @@ SYNC_EVERY = timedelta(hours=2)  # last night shows up the same morning
 CLAIM_TTL = timedelta(minutes=15)  # a crashed sync frees its claim after this
 # read after « Dernière synchro échouée : »; also how the next sync knows the history is owed
 PARTIAL = "COROS a cessé de répondre en cours de route, le reste de ton historique arrive à la prochaine synchro."
+HRV_PARTIAL = "La lecture de la VFC est incomplète. Les autres données reçues sont conservées ; réessaie la synchro."
+HRV_UNREADABLE = "Le format de la VFC renvoyé par COROS n’a pas pu être lu. Les autres données reçues sont conservées."
 REFRESH_MARGIN = timedelta(days=1)  # access tokens last ~30 days
 CALL_DELAY_S = 0.5
 MAX_CALLS = 45  # a 60-day backfill takes 15 at most, the sessions 3 + 10 × (detail + laps): 38
@@ -558,6 +560,32 @@ def hrv_days(text: str) -> set[date]:
         return set()
     return {d for d in (_date(*m.groups()) for m in re.finditer(r"^\s*(\d{4})-(\d{2})-(\d{2}):", parts[1], re.M))
             if d}
+
+
+def hrv_answer_read(text: str) -> bool:
+    """An understood series (possibly empty), not merely an HTTP success.
+
+    COROS can publish the assessment before the raw readings, or explicitly
+    report no readings. Neither is a sync failure. Unknown prose or renamed
+    raw data must not mark a whole requested range as successfully parsed.
+    """
+    parts = re.split(r"^.*Time Series.*$", text or "", maxsplit=1, flags=re.M)
+    empty = r"No (?:HRV )?(?:readings|data)(?: available)?(?: for (?:this|the|selected) period)?\.?"
+    if len(parts) == 2:
+        for line in parts[1].splitlines():
+            line = line.strip()
+            if (not line or re.fullmatch(r"[=─-]+", line)
+                    or re.fullmatch(r"\d{4}-\d{2}-\d{2}:", line)
+                    or re.fullmatch(r"(?:\d{4}-\d{2}-\d{2}:\s*)?" + empty, line, re.I)):
+                continue
+            if not re.match(r"timestamp=\d+,\s*timezone=-?\d+,\s*hrv=" + _NUM + r"\s*ms\b", line):
+                return False
+        return True
+    if re.search(r"\btimestamp\s*=", text or ""):
+        return False
+    return bool(re.search(r"\bHRV Avg:\s*" + _NUM + r"\s*ms\b", text or "")
+                or re.search(r"\bNo (?:HRV )?(?:readings|data)(?: available)? for (?:this|the|selected) period\b",
+                             text or "", re.I))
 
 
 def local_time(ts: int, tz: int) -> datetime:
@@ -1266,7 +1294,8 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
     # ends a day later (an empty future day costs nothing) and keeps its size.
     hi = today + timedelta(days=1)
     lo = hi - timedelta(days=days - 1)
-    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "daily": {},
+    data: dict = {"overview": {}, "naps": {}, "hrv_points": [], "hrv_days": set(), "hrv_failed_days": set(),
+                  "hrv_unreadable_days": set(), "daily": {},
                   "read": {"sleep": set(), "nap": set()}, "overview_days": set()}
     # the nights first: last night is what the morning's decision reads
     for a, b in _ranges(lo, hi, SLEEP_CHUNK_DAYS):
@@ -1279,18 +1308,40 @@ async def _fetch(mcp: McpSession, days: int, today: date, activity_days: int = 0
             for key, days_read in overview_read(text, overview, naps).items():
                 data["read"][key] |= {d for d in days_read if a <= d <= b}
     points: dict[int, tuple] = {}
-    for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
+
+    async def read_hrv(a, b):
         text = await call("querySleepHrv", {"startDate": _ymd(a), "endDate": _ymd(b), "days": (b - a).days + 1})
-        if text is None:
-            continue
-        got = _try_parse(parse_hrv_points, text)
-        if got is not None:  # not understood: none of its days counts as read (no night computed from half of it)
-            points.update((p[0], p) for p in got)
-            # every day of the answered range counts as read (COROS may leave an empty day out)
-            data["hrv_days"] |= {a + timedelta(days=i) for i in range((b - a).days + 1)}
+        asked = {a + timedelta(days=i) for i in range((b - a).days + 1)}
+        got = _try_parse(parse_hrv_points, text) if text and hrv_answer_read(text) else None
+        if got is None:
+            data["hrv_failed_days"] |= asked
+            if text is not None:
+                data["hrv_unreadable_days"] |= asked
+                call.failed += 1
+                logger.warning("COROS HRV response not understood for %s to %s", a, b)
+            return
+        points.update((p[0], p) for p in got)
+        # Empty days may be omitted from a recognised answer, but an unknown
+        # answer cannot contribute half a night to a neighbouring chunk.
+        data["hrv_days"] |= asked
+        data["hrv_failed_days"] -= asked
+        data["hrv_unreadable_days"] -= asked
         if data.get("utc_offset") is None:  # latest chunk first: the athlete's current offset
             tz = _parsed(parse_tz_offset, text)
             data["utc_offset"] = tz if isinstance(tz, float) else None
+
+    latest_night = max(data["overview"], default=None)
+    retried_latest = False
+    for a, b in _ranges(lo, hi, HRV_CHUNK_DAYS):
+        await read_hrv(a, b)
+        if (latest_night and latest_night >= today - timedelta(days=1)
+                and not call.stopped and not retried_latest):
+            start, end = latest_night - timedelta(days=1), latest_night
+            if {start, end} & data["hrv_failed_days"]:
+                # Retry this morning before older backfill requests exhaust
+                # the outage limit. At most one short retry per sync.
+                retried_latest = True
+                await read_hrv(start, end)
     data["hrv_points"] = [points[k] for k in sorted(points)]
     data["hr_day"] = _parsed(parse_avg_hr, await call.recent("queryAvgHeartRate", days))
     text = await call.recent("queryDailyHealthData", days)
@@ -1493,7 +1544,7 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
             HealthMetric.metric.in_(("hr_day", "steps", "sleep")))
     )).scalar()
-    owed = (conn.last_sync_at is None or not have or conn.last_error == PARTIAL
+    owed = (conn.last_sync_at is None or not have or conn.last_error in (PARTIAL, HRV_UNREADABLE)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
@@ -1547,7 +1598,9 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["env"] = await activity_env.enrich(db, conn.user_id)
     # COROS stopped answering halfway through the health history: keep it, but ask for it all again next
     # time (the sessions have their own flag above)
-    result["backfill_partial"] = bool(data.get("health_stopped")) and days == BACKFILL_DAYS
+    result["hrv_incomplete"] = bool(data.get("hrv_failed_days"))
+    result["hrv_unreadable"] = bool(data.get("hrv_unreadable_days"))
+    result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]) and days == BACKFILL_DAYS
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result
@@ -1594,7 +1647,9 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
         result = await sync_connection(db, conn)
         conn.last_sync_at = datetime.now(timezone.utc)
         # a history cut short is not done: said so, and the next sync asks for all of it again
-        conn.last_error = PARTIAL if result.get("backfill_partial") else None
+        conn.last_error = (HRV_UNREADABLE if result.get("hrv_unreadable") else
+                           PARTIAL if result.get("backfill_partial") else
+                           HRV_PARTIAL if result.get("hrv_incomplete") else None)
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
         outcome = {"ok": False, "error": str(e)}
@@ -1698,6 +1753,11 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
+    counts, latest = await _synced_measurements(db, user_id, SOURCE)
+    sleep, hrv = latest.get("sleep"), latest.get("hrv")
+    hrv_note = f"Dernière VFC reçue : {hrv.strftime('%d/%m/%Y')}." if hrv else None
+    if sleep and (hrv is None or hrv < sleep):
+        hrv_note = f"VFC de la nuit du {sleep.strftime('%d/%m')} pas encore reçue." + (f" {hrv_note}" if hrv_note else "")
     return {
         "connected": True,
         "needs_reauth": conn.needs_reauth,
@@ -1706,17 +1766,30 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
                         and datetime.now(timezone.utc) - claimed < CLAIM_TTL),
         "last_error": conn.last_error,
-        "per_metric": await synced_counts(db, user_id, SOURCE),
+        "retryable_partial": conn.last_error in (PARTIAL, HRV_PARTIAL) and conn.last_sync_at is not None,
+        "partial": conn.last_error in (PARTIAL, HRV_PARTIAL, HRV_UNREADABLE),
+        "hrv_note": hrv_note,
+        "per_metric": counts,
     }
 
 
 async def synced_counts(db: AsyncSession, user_id: int, source: str) -> list[tuple[str, int]]:
     """What Réglages lists: days stored per value from this watch (brand rows
     stored before 2026-10 included, as they are still there)."""
-    rows = await db.execute(
-        select(HealthMetric.metric, func.count(HealthMetric.id))
+    return (await _synced_measurements(db, user_id, source))[0]
+
+
+async def _synced_measurements(db: AsyncSession, user_id: int, source: str) -> tuple[list[tuple[str, int]], dict]:
+    """Counts and last measurement dates in one query, distinct from last sync.
+
+    Legacy COROS HRV averages cannot be advertised as accepted nightly VFC.
+    """
+    rows = (await db.execute(
+        select(HealthMetric.metric, func.count(HealthMetric.id), func.max(HealthMetric.date),
+               func.max(case((HealthMetric.details["method"].as_string() == HRV_METHOD, HealthMetric.date))))
         .where(HealthMetric.user_id == user_id, HealthMetric.source == source,
                HealthMetric.metric.in_(DAILY_METRICS))
-        .group_by(HealthMetric.metric))
-    daily = dict(rows.all())
-    return [(label, daily[m]) for m, label in DAILY_LABELS.items() if daily.get(m)]
+        .group_by(HealthMetric.metric))).all()
+    daily = {metric: count for metric, count, _, _ in rows}
+    latest = {metric: accepted if metric == "hrv" else last for metric, _, last, accepted in rows}
+    return [(label, daily[m]) for m, label in DAILY_LABELS.items() if daily.get(m)], latest

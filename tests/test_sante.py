@@ -807,6 +807,12 @@ async def test_a_missing_night_syncs_again_sooner(as_user: AsyncClient, db_sessi
                                 source="COROS", n_samples=1, details={"bedtime": "23:10", "wake": "06:50"}))
     await db_session.flush()
     await as_user.get("/sante")
+    assert started == [test_user.id]  # sleep arrived, but its VFC is still missing
+    started.clear()
+    db_session.add(HealthMetric(user_id=test_user.id, date=today, metric="hrv", value=80,
+                                source="COROS", n_samples=1, details={"method": "ln_mean_main"}))
+    await db_session.flush()
+    await as_user.get("/sante")
     assert started == []
     conn.last_sync_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     await db_session.execute(delete(HealthMetric).where(HealthMetric.date == today))
