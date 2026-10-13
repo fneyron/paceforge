@@ -1,22 +1,22 @@
 {% import "partials/_viz.html" as viz %}
-<details id="au-quotidien" class="pf-health-panel pf-health-context">
-    <summary><span>Au quotidien</span></summary>
+<section id="au-quotidien" class="pf-health-panel pf-health-context" aria-labelledby="h-au-quotidien">
+    <header class="pf-health-panel-heading"><h2 id="h-au-quotidien" class="pf-health-panel-title">Au quotidien</h2></header>
     <div class="pf-panel-body">
     <div class="pf-daily-grid">
         {% for c in page.daily if not c.archived %}
         <article class="pf-card" aria-labelledby="daily-{{ c.key }}-title">
             <h3 class="pf-card-h" id="daily-{{ c.key }}-title">{{ c.title }}</h3>
-            {% if c.stale %}<p class="pf-card-status is-plain">Donnée ancienne</p>{% endif %}
+            {% if c.stale %}<p class="pf-measurement-meta">Donnée ancienne</p>{% endif %}
             {% if c.chart %}
             {{ viz.viz_night_card(c.chart, c.title, daytime=c.key != 'resp_night',
                 legend=[("is-ref", c.chart.ref.label)] if c.chart.ref else [],
-                quiet=True) }}
+                legend_details=True, explanations=[c.meaning, c.trend]) }}
             {% else %}
             <p class="pf-daily-value">{{ c.value }}</p>
-            {% if not c.latest %}<p class="pf-card-meaning">Valeur du profil</p>{% endif %}
+            <p class="pf-measurement-meta">{{ c.latest or 'Valeur du profil' }}{% if c.source %} · {{ c.source }}{% endif %}</p>
             {% endif %}
         </article>
         {% endfor %}
     </div>
     </div>
-</details>
+</section>

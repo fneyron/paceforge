@@ -127,7 +127,7 @@ async def test_the_card_never_asks_the_need(as_user: AsyncClient, db_session: As
     monkeypatch.setattr(sante, "athlete_today", today)
     await _seed_rows(db_session, test_user, _garmin_rows(D))
     for path in ("/sante", "/sante?besoin=1"):
-        card = (await as_user.get(path)).text.split('<details id="sommeil"')[1].split("</details>")[0]
+        card = (await as_user.get(path)).text.split('<section id="sommeil"')[1].split("</section>")[0]
         assert 'name="need"' not in card and "Combien d" not in card and "Changer" not in card and "pf-need-chip" not in card
         assert "Base personnelle estimée" not in card
         assert "Comprendre le sommeil" not in card

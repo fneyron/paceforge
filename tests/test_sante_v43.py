@@ -167,8 +167,9 @@ async def test_the_owner_s_sante_page_names_no_outing(as_user: AsyncClient, db_s
     for name in ("Transjeju", "Morning Trail Run", "Les Houches", "100M"):
         assert name not in main, name
     assert 'href="/sante/aide"' in main and "Comment je calcule" not in main
-    # The new Forme disclosure describes comparable runs; recovery still names no outing.
-    rest = H.unescape(re.sub(r'<details id="forme".*?</details>', "", main, flags=re.S))
+    # Forme and its compact training progress may describe comparable runs. Recovery still names no outing.
+    rest = re.sub(r'<section id="forme".*?</section>', "", main, flags=re.S)
+    rest = H.unescape(re.sub(r'<div class="pf-fitness-progress".*?</div>', "", rest, flags=re.S))
     for word in ("sortie", "ultra", "course", "il y a", "Plafonné", "Grosse"):
         assert word not in rest, word
     assert "◇ après un gros effort" in rest and "Récupération en cours" in rest  # the 06/10 and 07/10 nights; today
@@ -241,7 +242,7 @@ def garmin_rows_without_tz(days) -> dict:
 async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day, rested):
     """COROS nights every night for 40 days, no activity: a full normal, the score from the nights (no Charge,
     no window), « Bonne récupération »; the dials, the Récupération card's rows and the chart cards' status lines;
-    no Effort récent; no activity: « 0 min » over « pas encore d'habitude »; Activités empty."""
+    no Effort récent; no activity: « 0 min » over « 7 derniers jours »; Activités empty."""
     await test_coros._link(db_session, test_user)
     await _seed(db_session, test_user, coros_rows(D, range(0, 40), hrv=lambda k: 60.0 + (k % 3) - 1))
     page = await sante.health_page(db_session, test_user.id, today=D)
@@ -251,11 +252,18 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
     assert page["vfc"]["status"]["text"] == page["fc"]["status"]["text"] == "comme d'habitude"
     assert [(d["key"], d["value"], d["unit"], d["sub"], d["tone"]) for d in page["dials"]] == [
         ("sommeil", "100", "%", "suffisant", "sleep"), ("recup", "100", "%", "bonne", "ok"),
-        ("entrainement", "0 min", None, "pas encore d'habitude", "accent")]
+        ("entrainement", "0 min", None, "7 derniers jours", "accent")]
     assert [(f["key"], f["value"], f["word"], f["tone"]) for f in page["rows"]] == [
         ("vfc", None, "comme d'habitude", "ok"), ("fc", None, "comme d'habitude", "ok")]
     main = _coherent((await as_user.get("/sante")).text)
-    assert "Détail du score" not in main and "pf-card-status is-ok" in main and 'class="pf-row is-ok"' not in main
+    assert "Détail du score" not in main and 'class="pf-row is-ok"' not in main
+    for key, unit in (("vfc", "ms"), ("fc", "bpm")):
+        card = re.search(rf'<article id="{key}"[^>]*>(.*?)</article>', main, re.S).group(1)
+        primary, reference = card.split('<details', 1)
+        assert re.search(rf'<b data-r>\d+\u00a0{unit}</b>', primary)
+        assert "Dernière nuit" in primary and "COROS" in primary
+        assert "comme d&#39;habitude" in reference  # retained as explanation, not repeated before the value
+        assert 'pf-card-status is-ok' not in primary
     act = _coherent((await as_user.get("/activities")).text)
     assert 'id="semaines"' not in act and "Aucune activité pour l" in act
 

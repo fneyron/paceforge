@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from html import unescape
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -33,7 +32,6 @@ from tests.test_sante import _main, _visible
 from tests.test_sante_score import _session
 
 fake, no_commit, as_user = test_coros.fake, test_coros.no_commit, test_coros.as_user
-ROOT = Path(__file__).resolve().parent.parent
 D = date(2026, 10, 8)  # a Thursday: this week's Monday is 05/10
 TUE = D - timedelta(days=2)
 REST, PEAK = 50.0, 150.0  # a reserve of 100 bpm: x = (HR − 50) ÷ 100
@@ -229,7 +227,7 @@ def test_the_intensity_row():
     assert row([_session(TUE, 300, hr=125, sid=99)], bare) is not None
     assert row([]) is None  # no minute in the 7 days (0 %, « moins que d'habitude »)
     t = _train(_weeks([300] * 3, hr=120) + [_session(TUE, 300, hr=140, sid=99)])  # 3 weeks: no usual week
-    assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == ("5h00", "pas encore d'habitude", None)
+    assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == ("5h00", "7 derniers jours", None)
 
 
 async def _seed_runs(db: AsyncSession, user: User, hr_usual: float, hr_now: float) -> None:
@@ -248,10 +246,9 @@ async def _seed_runs(db: AsyncSession, user: User, hr_usual: float, hr_now: floa
 
 
 async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSession, test_user: User, monkeypatch):
-    """The page (the approved mockup): the dial's percentage from heart rate (its aria as before), the card's rows
-    « 7 derniers jours » (the hours, Activités') and « Intensité » with its word, a row like the others with its name
-    on the left and its word on the right, no dot, no colour, no number; never « TRIMP », « charge » or points; each
-    number printed once."""
+    """The dial keeps its HR-weighted percentage, while the visible chart shows moving time.
+    The separate usual duration and intensity wording explain their different units;
+    raw TRIMP/points remain absent and accumulated load is a secondary disclosure."""
     async def today(*a, **k):
         return D
     monkeypatch.setattr(sante, "athlete_today", today)
@@ -263,20 +260,24 @@ async def test_the_card_on_the_page(as_user: AsyncClient, db_session: AsyncSessi
     assert ('<a class="pf-ring pf-ring-entrainement is-accent" href="#entrainement" aria-label="Entraînement '
             '168 % de ta semaine habituelle, plus que d&#39;habitude. 100 % représente ta semaine habituelle ; '
             'un tour complet représente 200 %.">') in main
-    train = main.split('<details id="entrainement"')[1].split("</details>")[0]
-    assert ('<div class="pf-row pf-intensity"><span class="pf-row-name"><span>Intensité</span></span><span '
-            'class="pf-row-val"><span>plus élevée que d&#39;habitude</span></span></div>') in train
+    assert '<span class="pf-ring-usual" aria-hidden="true">100 %</span>' in main
+    train = main.split('<section id="entrainement"')[1].split("</section>")[0]
+    assert 'data-viz-key="entrainement"' in train
+    assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in train
+    chart_data = json.loads(re.search(r'<script[^>]*class="pf-viz-data">(.*?)</script>', train, re.S)[1])
+    assert chart_data["rest"][:2] == ["5h00", "7 derniers jours"]
+    assert len(chart_data["d"]) == 7
+    assert sum(row[0] == "1h40" for row in chart_data["r"]) == 3
+    seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
+    assert "ta semaine habituelle : 5h00" in seen
+    assert "Intensité · plus élevée que d'habitude" in seen
     words = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", train.split(">", 1)[1])).strip())
-    assert "ta semaine habituelle : 5h00 Intensité plus élevée que d'habitude" in words
     assert "Un tour = 200 %" not in words
     help_page = (await as_user.get("/sante/aide")).text
     assert "100 % correspond à ta semaine habituelle, pas à un objectif." in help_page
     assert "pf-dot" not in train and not re.search(r"(?i)trimp|points?\b", words)
-    seen = re.sub(r"\s+", " ", _visible(html).replace(" ", " "))
-    assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1 and len(re.findall(r"(?<![\d,h:])5h00", seen)) == 1
-    rules = (ROOT / "app/static/css/interface.css").read_text(encoding="utf-8")
-    assert ".pf-row.pf-intensity { border-top: 1px solid rgb(var(--pf-line)); }" in rules
-    assert ".pf-intensity .pf-row-val > span { font-size: 0.9375rem; color: rgb(var(--pf-ink)); }" in rules
+    assert len(re.findall(r"(?<![\d,h:])168 %", seen)) == 1
+    assert len(re.findall(r"(?<![\d,h:])5h00", seen)) == 2  # measured duration and usual reference
 
 
 # ── the laps: read once, COROS's kept, Strava's webhook kept ──────────────────

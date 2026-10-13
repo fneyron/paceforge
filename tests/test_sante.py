@@ -36,7 +36,7 @@ as_user, no_commit = test_coros.as_user, test_coros.no_commit
 ROOT = Path(__file__).resolve().parent.parent
 BRAND = ("Récup COROS", "calculée par COROS", "Training Readiness", "Body Battery", "Score de sommeil", "×1,",
          "forte hausse", "84 %", "VO2", "Stress de jour", "fatigue %", "Fraîcheur")
-NEVER = ("séance", "pas jugée", "pas assez de nuits", "autour de la course", "Ce matin",
+NEVER = ("pas jugée", "pas assez de nuits", "autour de la course", "Ce matin",
          "Comment je vais", "⚑", "J+", "J‑", "Jour de course", "Footing facile", "Reprise",
          "Forme du jour", "Cœur la nuit",
          # v4.1: no sync status (Réglages'), no Charge card (Activités'), no unlabelled tick on the Charge ring
@@ -306,7 +306,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     """The approved mockup (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple »), on his fixture: three
     dials — Sommeil 96 % « suffisant » (8h36 of a 9-h need: 8 h, + 1 h owed since the race,
     in the sleep hue), Récupération 65 % « en cours »,
-    Entraînement 15h35 (moving time, as Activités) « pas encore d'habitude » (his activities since 18/09 are 3 complete weeks: under the 4 of a
+    Entraînement 15h35 (moving time, as Activités) « 7 derniers jours » (his activities since 18/09 are 3 complete weeks: under the 4 of a
     usual week, so the 7 days' time itself, no arc, and no « Intensité » row: no usual week to weigh them against) —
     each a link to its card; the Récupération card's rows: « Effort récent » first, the row that decides the day
     (the audit, 2026-10-09), 8 days before he is recovered (the Transjeju's window to 16/10, at 65: orange), then
@@ -317,7 +317,7 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     assert [(d["key"], d["value"], d["unit"], d["label"], d["sub"], d["tone"], d["href"]) for d in page["dials"]] == [
         ("sommeil", "96", "%", "Sommeil", "suffisant", "sleep", "#sommeil"),
         ("recup", "69", "%", "Récupération", "en cours", "warn", "#recuperation"),
-        ("entrainement", "15h35", None, "Entraînement", "pas encore d'habitude", "accent", "#entrainement")]
+        ("entrainement", "15h35", None, "Entraînement", "7 derniers jours", "accent", "#entrainement")]
     assert [d["aria"] for d in page["dials"]] == [
         "Sommeil 96\u00a0% de ton besoin estimé de 9 heures, suffisant.", "Récupération 69\u00a0%, en cours.",
         "Entraînement : 15 heures 35 d'activité ces 7 derniers jours, pas encore d'habitude."]
@@ -326,9 +326,18 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
         ("Effort récent", None, None, "prudence après l’effort", "Son influence diminue progressivement. La montre ne mesure pas la récupération musculaire.", "warn"),
         ("VFC", "7 derniers jours", None, "en construction", "prête dans 2\u00a0nuits", "none"),
         ("FC de nuit", "7 derniers jours", None, "en construction", "prête après ta prochaine nuit", "none")]
-    assert page["training"] == {"dial": page["dials"][2], "week": None, "usual": None,
-                                "word": "pas encore de semaine habituelle", "intensity": None,
-                                "since": date(2026, 10, 2)}
+    train = page["training"]
+    assert {key: value for key, value in train.items() if key != "chart"} == {
+        "dial": page["dials"][2], "week": "15h35", "usual": None,
+        "word": "pas encore de semaine habituelle", "intensity": None, "since": date(2026, 10, 2)}
+    assert not train["dial"]["usual_marker"]  # a measured duration does not invent a usual week
+    chart = train["chart"]
+    chart_data = json.loads(chart["data"])
+    assert chart["duration"] == train["week"] and chart["minutes"] == 935 and chart["count"] == 1
+    assert chart["days"] == 7 and chart["since"] == train["since"] and chart["until"] == D8
+    assert chart_data["r"][1][:2] == ["15h35", "1 séance"]
+    assert all(row[:2] == ["0 min", "Aucune séance enregistrée"]
+               for i, row in enumerate(chart_data["r"]) if i != 1)
     # Sommeil: « Cette nuit », the times (22:42 is approximate: 22:40) and this morning's 24 h over its 9-h need,
     # its hours printed once (the dial says 96 %); the need said under it, computed (2026-10-09: never asked)
     s = page["sleep"]
@@ -467,19 +476,24 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     await seed_owner_v4(db_session, test_user)
     html = (await as_user.get("/sante")).text
     main = _main(html)
-    # Rings remain first; each opens a native disclosure with its explanation.
+    # Rings lead to visible charts; only secondary explanations and charge are folded.
     assert re.findall(r'class="pf-ring pf-ring-(\w+)', main) == ["sommeil", "recup", "entrainement"]
     for ident in ("sommeil", "recuperation", "entrainement"):
-        opened = " open" if ident != "entrainement" else ""
-        assert f'<details id="{ident}" class="pf-health-panel"{opened}>' in main
+        assert f'<section id="{ident}" class="pf-health-panel" aria-labelledby="h-{ident}">' in main
+        assert f'<details id="{ident}"' not in main
         assert f'href="#{ident}"' in main
     assert main.index('class="pf-dials"') < main.index('id="sommeil"') < main.index('id="vfc"') < main.index('id="fc"')
     assert 'data-viz-key="charge-accumulee"' in main
-    assert '<details id="forme" class="pf-health-panel">' in main
+    assert 'id="forme"' not in main  # no empty panel before qualifying runs exist
+    assert 'class="pf-fitness-progress"' in main and "0/6 sorties comparables" in main
+    assert '<progress value="0" max="6" aria-label="Sorties faciles comparables">' in main
     assert 'href="/sante/lactate"' not in main
-    assert main.count('class="pf-night-trend"') == 2
-    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 5
-    assert 'data-viz-key="recuperation"' in main and "Récupération · 14 jours" in main
+    assert 'class="pf-night-trend"' not in main
+    assert main.count('class="pf-measurement-head"') == 2
+    assert 'data-step=' not in main and main.count('class="pf-viz-range sr-only"') == 6
+    assert 'data-viz-key="recuperation"' in main and "Récupération sur 14 jours" in main
+    assert 'data-viz-key="entrainement"' in main and "Entraînement sur 7 jours" in main
+    assert '<details id="charge-detail" class="pf-chart-details pf-load-detail">' in main
     assert 'href="/activities?depuis=2026-10-02"' in main
     assert "besoin estimé 9h00" in main
     assert 'href="/sante/aide"' in main
@@ -490,20 +504,21 @@ async def test_owner_page_html(as_user: AsyncClient, db_session: AsyncSession, t
     assert "<form" not in main and "Transjeju" not in main and "/activity/" not in main
     assert main.count("<summary>Comment je calcule</summary>") == 0
     assert "Les chiffres de chaque nuit" in main
-    # The three scores and last night stay visible; cardiac charts are available in their disclosure.
+    # Cardiac measurements are visible, each once; training keeps its duration both
+    # in the baseline-free dial and above the now visible daily chart.
     seen = re.sub(r"\s+", " ", _visible(html).replace("\u00a0", " ").replace("\u202f", " "))
-    for number in ("96 %", "69 %", "15h35", "8h36"):
+    for number in ("96 %", "69 %", "8h36", "100 ms", "35 bpm"):
         assert len(re.findall(rf"(?<![\d,h:]){re.escape(number)}(?![\d,h:A-Za-z])", seen)) == 1, number
-    assert '<details id="mesures-nocturnes" class="pf-health-panel pf-health-context">' in main
-    assert "100 ms" not in seen and "35 bpm" not in seen
-    assert "100" in main and "35" in main
+    assert len(re.findall(r"(?<![\d,h:])15h35(?![\d,h:A-Za-z])", seen)) == 2
+    assert '<div id="mesures-nocturnes" class="pf-health-nights" role="group"' in main
+    assert '<details id="mesures-nocturnes"' not in main
     assert "Effort récent" not in seen and "Synchronisation réussie" not in seen
 
 
 async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
                                                    on_owner_day):
-    """No tabs, no check-in, no race chip or flag (a Route exists: Santé never reads it), no « séance », no filler
-    sentence, no brand value, no « Cœur la nuit », no clock-window chart."""
+    """No tabs, check-in, race chip or flag, training prescription, brand score or named activity.
+    Daily training may count recorded sessions without naming or prescribing one."""
     await _link(db_session, test_user)
     await seed_owner_v4(db_session, test_user)
     db_session.add(Route(user_id=test_user.id, name="Transjeju 100M", total_distance_km=162,
@@ -522,6 +537,7 @@ async def test_nothing_that_was_removed_comes_back(as_user: AsyncClient, db_sess
     lower = main.lower()
     for word in NEVER + BRAND:
         assert word.lower() not in lower, word
+    assert '"1 séance"' in main and '"Aucune séance enregistrée"' in main
     # no training prescription (« Pas d'intensité aujourd'hui », « Reprends l'intensité »): « Intensité » is only the
     # Entraînement card's row, a word on the 7 days (2026-10-09, the approved mockup)
     assert not re.search(r"[dl]'intensité", unescape(main).lower())
@@ -669,18 +685,22 @@ async def test_strava_only_has_no_score_and_one_line(as_user: AsyncClient, db_se
     assert page["recup"] is None and page["sleep"]["state"] == "never"
     assert page["vfc"] is None and page["fc"] is None and "charge" not in page
     # no card for them: the empty Sommeil and Récupération dials are plain (never a link to nothing), each with its
-    # word; Entraînement links to its card: the runs' time, « pas encore d'habitude » (under 4 complete weeks)
+    # word; Entraînement links to its card and shows its measured seven-day duration.
     sleep, recup, train = page["dials"]
     assert (sleep["value"], sleep["sub"], sleep["href"]) == ("—", "pas de données", None)
-    assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", "#recuperation")
-    assert (train["sub"], train["href"], train["unit"]) == ("pas encore d'habitude", "#entrainement", None)
+    assert (recup["value"], recup["sub"], recup["href"]) == ("—", "pas de score", None)
+    assert (train["sub"], train["href"], train["unit"]) == ("7 derniers jours", "#entrainement", None)
+    assert train["note"] is None and not train["usual_marker"]
     html = (await as_user.get("/sante")).text
     assert "Connecte ta montre pour voir ta récupération." in html
     assert 'href="/settings#coros"' in html and 'href="/settings#garmin"' in html
     assert 'id="sommeil"' not in html and "Comment je lis tes nuits" not in html
-    assert '<details id="recuperation"' in html  # explains why the ring is empty
+    assert 'id="recuperation"' not in html  # no empty card, and its dial is not a dead link
+    assert 'data-viz-key="recuperation"' not in html  # no invented recovery chart without nights
+    assert 'data-viz-key="entrainement"' in html
+    assert 'id="qualite-bilan"' not in html and "Indice partiel" not in _visible(html)
     rings = re.findall(r'<(a|div) class="pf-ring pf-ring-(\w+)[^"]*"(?: href="([^"]+)")?', _main(html))
-    assert rings == [("div", "sommeil", ""), ("a", "recup", "#recuperation"), ("a", "entrainement", "#entrainement")]
+    assert rings == [("div", "sommeil", ""), ("div", "recup", ""), ("a", "entrainement", "#entrainement")]
 
 
 async def test_a_watch_without_a_night_this_morning_is_not_asked_to_connect(db_session: AsyncSession,
@@ -720,7 +740,7 @@ async def test_the_dials_link_to_a_section_the_page_has(db_session: AsyncSession
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([3], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)
     assert page["score"]["value"] is None and page["recup"] is None and page["rows"] == []
-    assert [d["href"] for d in page["dials"]] == ["#sommeil", "#recuperation", "#entrainement"]
+    assert [d["href"] for d in page["dials"]] == ["#sommeil", None, "#entrainement"]
     assert page["line"] == sante.td.NO_NIGHT and page["sleep"]["state"] == "ok"
     await _seed_rows(db_session, test_user, _sleep_only(night_rows([2], **kw)))
     page = await sante.health_page(db_session, test_user.id, today=today)

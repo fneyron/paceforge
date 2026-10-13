@@ -13,9 +13,9 @@ async function check(engine,name,width){
  await page.goto(base+'/sante',{waitUntil:'networkidle'});
  await page.waitForFunction(()=>window.PFViz&&window.htmx&&window.paceforgeRefresh);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'horizontal overflow');
- await page.evaluate(()=>{window.refreshCount=0;window.stableDocument=document;document.addEventListener('pf:refreshed',()=>window.refreshCount++);document.querySelector('#entrainement').open=true;document.querySelector('#forme').open=true;document.querySelector('#sommeil').open=false;});
+ await page.evaluate(()=>{window.refreshCount=0;window.stableDocument=document;document.addEventListener('pf:refreshed',()=>window.refreshCount++);document.querySelector('#charge-detail').open=true;document.querySelector('#sommeil-habitudes').open=false;});
  // A vertical swipe, even if it drifts sideways afterwards, must not select.
- const selector='#recuperation figure[data-viz]';
+ const selector='#recuperation-detail figure[data-viz]';
  const before=await page.locator(selector+' input').inputValue();
  await page.locator(selector+' svg.pf-viz-svg').evaluate(svg=>{
   const r=svg.getBoundingClientRect();for(const [type,x,y]of[['pointerdown',20,20],['pointermove',23,45],['pointermove',120,60],['pointerup',120,60]])svg.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:1,clientX:r.x+x,clientY:r.y+y}));
@@ -36,8 +36,10 @@ async function check(engine,name,width){
  await page.evaluate(()=>window.refreshPromise);
  assert.equal(await page.evaluate(()=>refreshCount),1);
  assert.equal(await page.evaluate(()=>document===window.stableDocument),true);
- assert.equal(await page.locator('#sommeil').getAttribute('open'),null);
- assert.notEqual(await page.locator('#entrainement').getAttribute('open'),null);
+ assert.equal(await page.locator('#sommeil-habitudes').getAttribute('open'),null);
+ assert.notEqual(await page.locator('#charge-detail').getAttribute('open'),null);
+ assert.ok(await page.locator('#sommeil-detail [data-range-panel]:not([hidden]) figure').isVisible());
+ assert.ok(await page.locator('#entrainement-semaine figure').isVisible());
  assert.equal(await page.locator(selector+' input').inputValue(),selected);
  assert.ok(Math.abs((await page.evaluate(()=>scrollY))-oldY)<3,'scroll anchor moved');
  // HX-Refresh is caught before HTMX can reload the document.

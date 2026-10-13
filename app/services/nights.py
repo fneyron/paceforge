@@ -728,6 +728,12 @@ def band(nights: dict[date, Night], metric: str, until: date, source: str | None
     return kept[key]
 
 
+def reference_min_nights(metric: str, source: str | None, *, full: bool = False) -> int:
+    """The same minimum for a reference and its progress label; SDNN has no provisional band."""
+    sdnn = metric == "hrv" and bool(source and "(SDNN sommeil)" in source)
+    return MIN_BAND_NIGHTS if full or sdnn else MIN_PROVISIONAL_NIGHTS
+
+
 def _band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
           full: bool = False) -> dict | None:
     """The athlete's normal for `metric` (hr, hrv, tst24, resp) from every
@@ -742,7 +748,7 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
     out = {"metric": metric, "n": len(vals), "source": source, "until": until,
            "provisional": len(vals) < MIN_BAND_NIGHTS}
     sdnn = metric == "hrv" and bool(source and "(SDNN sommeil)" in source)
-    if len(vals) < (MIN_BAND_NIGHTS if full or sdnn else MIN_PROVISIONAL_NIGHTS):
+    if len(vals) < reference_min_nights(metric, source, full=full):
         return None
     if metric == "hrv":
         logs = [math.log(v) for v in vals if v > 0]

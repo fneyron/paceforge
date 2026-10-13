@@ -10,6 +10,8 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
+
 from app.services import nights as nt
 from app.services import sante, viz
 from tests.test_sante_score import D, _day, _nights, _runs, _session, night_rows
@@ -60,7 +62,7 @@ def test_without_usual_values_the_card_says_when_they_come():
     assert c["band"] == [] == c["band_prov"] and not c["edge_lo"] and not c["edge_prov_lo"]
     assert c["legend"] == [("is-dot", "nuit"), sante.LEGEND_MEAN]  # every night counts: one kind of dot
     c = _card(night_rows(range(0, 5)))
-    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 2\u00a0nuits", sante.BUILDS)
+    assert (c["status"]["detail"], c["status"]["text"]) == ("prête dans 2\u00a0nuits", sante.BUILDS.format(n=7))
     html = render("{{ v.viz_night_card(c, 'VFC · 14 nuits') }}", c=c)
     assert "pf-viz-band" not in html and "pf-viz-edge" not in html
     # the nights older than 60 days leave the band as the coming ones enter it: 3 nights 56 to 58 days old and 2
@@ -68,6 +70,71 @@ def test_without_usual_values_the_card_says_when_they_come():
     old = _nights(night_rows([0, 1, 56, 57, 58]))
     assert sante.nights_to_normal(old, "hrv", D) == 5 and sante.nights_to_normal(old, "hr", D) == 5
     assert sante.nights_to_normal(_nights(night_rows([0])), "hrv", D) == 6
+
+
+@pytest.mark.parametrize("count, remaining", [(1, 13), (8, 6), (13, 1), (14, 0)])
+def test_sdnn_progress_matches_its_fourteen_night_reference(count, remaining):
+    source = "Apple Santé:" + "a" * 64 + " (SDNN sommeil)"
+    nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
+              for i in range(count)}
+    # Existing RMSSD history must neither advance SDNN progress nor enter its band.
+    nights.update({D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=85, hrv_source="COROS")
+                   for i in range(count, count + 20)})
+    day = sante._assess(nights, [], [], D)
+    card = sante._night_card(nights, "hrv", D, day)
+    assert card["reference"] == {"n": count, "required": 14, "remaining": remaining,
+                                 "provisional": False, "ready": count == 14,
+                                 "source": "Apple Santé · SDNN", "detail": None,
+                                 "label": f"Référence · {count} nuits" if count == 14
+                                 else f"Référence · {count}/14 nuits"}
+    assert card["measurement"]["source"] == "Apple Santé · SDNN"
+    assert card["measurement"]["is_current"] and card["measurement"]["missing_label"] is None
+    assert day["score"]["value"] is None  # descriptive SDNN still never creates an RMSSD recovery score
+    if remaining:
+        assert sante.nights_to_normal(nights, "hrv", D) == remaining
+        assert card["status"]["text"].endswith("dès 14 nuits mesurées.")
+        assert day["stats"]["hrv"]["normal"] is None
+    else:
+        assert day["stats"]["hrv"]["normal"]["source"] == source
+        assert not day["stats"]["hrv"]["normal"]["provisional"]
+
+
+def test_sdnn_wait_accounts_for_nights_leaving_the_sixty_day_window():
+    source = "Apple Santé:watch (SDNN sommeil)"
+    nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), hrv=40 + i % 3, hrv_source=source)
+              for i in (0, 1, 56, 57, 58)}
+    assert sante.nights_to_normal(nights, "hrv", D) == 12  # old nights expire before fourteen can accumulate
+
+
+@pytest.mark.parametrize("metric, field, source_field, unit", [
+    ("hrv", "hrv", "hrv_source", "ms"), ("hr", "hr", "hr_source", "bpm"),
+])
+def test_missing_current_night_keeps_the_last_dated_measurement_and_real_gap(metric, field, source_field, unit):
+    nights = {D - timedelta(days=i): nt.Night(D - timedelta(days=i), **{field: 51 + i % 3, source_field: "COROS"})
+              for i in range(1, 20)}
+    day = sante._assess(nights, [], [], D)
+    card = sante._night_card(nights, metric, D, day)
+    previous = D - timedelta(days=1)
+    assert card["measurement"] == {"value": f"52\u202f{unit}", "date": previous.isoformat(),
+                                   "date_label": viz.d_short(previous), "source": "COROS", "is_current": False,
+                                   "missing_label": "Pas de mesure cette nuit"}
+    assert card["latest"] is None and day["score"]["value"] is None
+    data = json.loads(card["data"])
+    assert data["d"][card["sel"]] == previous.isoformat()
+    assert card["read"][0] == f"52\u00a0{unit}" and "COROS" in card["read"][2]
+    assert data["y"][0][-1] is None and data["r"][-1][:2] == ["—", "Pas de mesure"]
+    assert all(dot["i"] != len(data["d"]) - 1 for dot in card["dots"])
+    assert card["reference"]["n"] == 19 and card["reference"]["ready"]
+
+
+def test_provisional_metadata_describes_the_reference_not_the_measured_night():
+    card = _card(night_rows(range(9)))
+    assert card["reference"]["n"] == 9 and card["reference"]["required"] == 7
+    assert card["reference"]["provisional"] and card["reference"]["remaining"] == 0
+    assert card["reference"]["label"] == "Référence · 9 nuits"
+    assert card["reference"]["detail"] == card["trend"]["reference"] == "Référence provisoire : 9 nuits mesurées."
+    assert "provisoire" not in str(card["measurement"])
+    assert card["measurement"]["date"] == D.isoformat()
 
 
 def test_a_provisional_band_is_dashed_and_a_full_one_solid():

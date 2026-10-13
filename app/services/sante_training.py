@@ -386,6 +386,56 @@ def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
     return out
 
 
+def training_days(sessions: list[Session], today: date, until: date | None = None,
+                  *, missing_days: set[date] | None = None) -> dict:
+    """Seven calendar days of recorded moving time, on each session's local finish day.
+
+    ``until`` is the real calendar day when the sleep cycle still reads yesterday.
+    Sessions have already been deduplicated by ``load_sessions``. A zero means no
+    recorded session, never proven rest. Only explicitly unavailable days draw a
+    gap; without provider coverage metadata, absence alone cannot prove missing
+    data. A measured session survives a partial sync and is labelled as partial.
+    """
+    from app.services import viz
+
+    until = until or today
+    days = [until - timedelta(days=6 - i) for i in range(7)]
+    by: dict[date, list[Session]] = defaultdict(list)
+    for s in sessions:
+        if days[0] <= s.end_day <= until:
+            by[s.end_day].append(s)
+    unavailable = missing_days or set()
+    values, readouts, arias = [], [], []
+    for d in days:
+        recorded = by[d]
+        minutes = sum(s.minutes for s in recorded)
+        if recorded:
+            word = f"{len(recorded)} séance{'s' if len(recorded) > 1 else ''}"
+            if d in unavailable:
+                word += " · données partielles"
+            values.append(minutes)
+            readouts.append([viz.hm(minutes), word, viz.d_short(d)])
+            arias.append(f"{viz.d_long(d)} : {viz.hm_long(minutes)} enregistrées, {word}.")
+        elif d in unavailable:
+            values.append(None)
+            readouts.append(["—", "Données indisponibles", viz.d_short(d)])
+            arias.append(f"{viz.d_long(d)} : données indisponibles.")
+        else:
+            values.append(0)
+            readouts.append(["0 min", "Aucune séance enregistrée", viz.d_short(d)])
+            arias.append(f"{viz.d_long(d)} : aucune séance enregistrée.")
+    total = sum(v for v in values if v is not None)
+    summary = f"Entraînement sur 7 jours : durée enregistrée {viz.hm_long(total)}."
+    if unavailable.intersection(days):
+        summary += " Certaines données sont indisponibles."
+    chart = viz.day_bars("entrainement", days, values, readouts=readouts, arias=arias,
+                         min_top=30, today=6, summary=summary)
+    chart = viz.rest(chart, [viz.hm(total), "7 derniers jours", ""], summary)
+    chart.update(duration=viz.hm(total), minutes=total, count=sum(map(len, by.values())),
+                 days=7, since=days[0], until=until)
+    return chart
+
+
 # ── heart rate at easy pace (Nuuttila 2022) ─────────────────────────────────
 
 MIN_FIT_RUNS = 6  # (H) cool runs for the Theil–Sen slope
@@ -418,6 +468,32 @@ def is_hot(s: Session) -> bool:
     return t is not None and t >= HOT_C
 
 
+def _easy_sample(sessions: list[Session], today: date, peak: float) -> tuple[list[Session], list[Session]]:
+    """The exact sample shared by the fitted model and its collection progress."""
+    runs = sorted((s for s in easy_runs(sessions, peak)
+                   if today - timedelta(days=EASY_FIT_DAYS) < s.day <= today),
+                  key=lambda s: s.start)
+    return runs, [s for s in runs if not is_hot(s)]
+
+
+def _line_runs(cool: list[Session], today: date) -> list[Session]:
+    return [s for s in cool if today - timedelta(days=LINE_DAYS) < s.day <= today]
+
+
+def fitness_progress(sessions: list[Session], today: date, peak: float) -> dict:
+    """Actual comparable runs in the same 42-day window that unlocks the fitness line.
+
+    Like ``training_view.footing``, call this with completed sessions. Heat,
+    intensity, distance, duration, terrain and heart-rate requirements are the
+    model's own filters; no fitted slope is needed just to count its inputs.
+    """
+    _, cool = _easy_sample(sessions, today, peak)
+    count = len(_line_runs(cool, today))
+    return {"count": count, "required": LINE_RUNS, "remaining": max(0, LINE_RUNS - count),
+            "ready": count >= LINE_RUNS,
+            "label": f"{count}/{LINE_RUNS} sorties comparables", "days": LINE_DAYS}
+
+
 def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
     """(a, b) of y = a + b·x: median of the pairwise slopes, median intercept
     (on 300 evenly spread points at most: the pairs grow as n²)."""
@@ -439,9 +515,7 @@ def easy_model(sessions: list[Session], today: date, peak: float) -> dict | None
     of the cool runs of the 28 days before (3 at least, H). None under 6
     cool runs (H). {runs, cool (by start), value: {id: bpm}, pace: s/km,
     centre: day → bpm | None}."""
-    runs = sorted((s for s in easy_runs(sessions, peak) if today - timedelta(days=EASY_FIT_DAYS) < s.day <= today),
-                  key=lambda s: s.start)
-    cool = [s for s in runs if not is_hot(s)]
+    runs, cool = _easy_sample(sessions, today, peak)
     if len(cool) < MIN_FIT_RUNS:
         return None
     _, b = theil_sen([s.speed for s in cool], [s.hr for s in cool])
@@ -472,8 +546,7 @@ def easy_deltas(model: dict | None) -> list[tuple[date, float]]:
 def line_ok(model: dict | None, today: date) -> bool:
     """Activités › FC en footing is drawn (and its flag read) only with ≥ 6
     qualifying runs in the last 6 weeks (H, evidence row 16)."""
-    return bool(model) and sum(1 for s in model["cool"] if today - timedelta(days=LINE_DAYS) < s.day <= today) \
-        >= LINE_RUNS
+    return bool(model) and len(_line_runs(model["cool"], today)) >= LINE_RUNS
 
 
 def prior(model: dict, s: Session) -> float | None:

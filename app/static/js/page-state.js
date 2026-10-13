@@ -8,8 +8,10 @@
     function remember() {
         var folds = {}, charts = {};
         document.querySelectorAll('details[id]').forEach(function (el) {
-            if (!el.closest('[role="dialog"]') && el.id !== 'plan-more') folds[el.id] = el.open;
+            if (!el.hasAttribute('data-transient') && !el.closest('[role="dialog"]') && el.id !== 'plan-more') folds[el.id] = el.open;
         });
+        // Only explicit selections persist; a default dated readout must follow
+        // the newest measurement on the next visit, including after midnight.
         document.querySelectorAll('figure[data-viz-key].is-inspecting').forEach(function (fig) {
             try {
                 var data = JSON.parse(fig.querySelector('.pf-viz-data').textContent);
@@ -24,7 +26,10 @@
             var saved = JSON.parse(sessionStorage.getItem(key));
             if (!saved) return;
             Object.keys(saved.folds || {}).forEach(function (id) {
-                var el = document.getElementById(id); if (el?.tagName === 'DETAILS') el.open = saved.folds[id];
+                // Old fold IDs may now name permanently visible sections.
+                // Help and method disclosures open only on an explicit action.
+                var el = document.getElementById(id);
+                if (el?.tagName === 'DETAILS' && !el.hasAttribute('data-transient')) el.open = saved.folds[id];
             });
             document.querySelectorAll('figure[data-viz-key]').forEach(function (fig) {
                 try {

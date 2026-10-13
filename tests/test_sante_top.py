@@ -161,13 +161,13 @@ def test_an_overnight_race_counts_on_the_day_it_ended():
 
 def test_without_a_usual_week_the_dial_prints_the_time():
     """Fewer than 4 complete weeks holding an activity (H): no usual week, the dial prints the 7 days' time itself
-    and « pas encore d'habitude », no arc; the card then prints no time (the dial does), only its words, and no
-    « Intensité » (nothing to weigh the minutes against)."""
+    and « 7 derniers jours », no arc. The card retains the measured duration for its daily chart,
+    without an invented usual reference or intensity comparison."""
     t = sante.training(_weeks([300, 300, 300], 1013), D)
     d = t["dial"]
-    assert (d["value"], d["unit"], d["sub"], d["tone"], d["dash"]) == ("16h53", None, "pas encore d'habitude",
+    assert (d["value"], d["unit"], d["sub"], d["tone"], d["dash"]) == ("16h53", None, "7 derniers jours",
                                                                       "accent", 0)
-    assert (t["week"], t["usual"], t["word"], t["intensity"]) == (None, None, "pas encore de semaine habituelle",
+    assert (t["week"], t["usual"], t["word"], t["intensity"]) == ("16h53", None, "pas encore de semaine habituelle",
                                                                   None)
     assert d["aria"] == "Entraînement : 16 heures 53 d'activité ces 7 derniers jours, pas encore d'habitude."
     assert sante.usual_week(_weeks([300, 300, 300, 300]), SINCE) == 300  # 4 weeks: there is one
@@ -175,6 +175,24 @@ def test_without_a_usual_week_the_dial_prints_the_time():
     assert sante.usual_week(_weeks([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 30]), SINCE) is None  # a usual week of nothing
     html = render("{{ v.viz_ring(r) }}", r=d)
     assert '<span class="pf-ring-value is-long" aria-hidden="true">16h53</span>' in html
+
+
+def test_cycle_pending_keeps_the_dial_chart_and_activity_link_on_the_same_seven_days():
+    """Yesterday's sleep cycle must not extend the training window to eight days."""
+    calendar_day = D + timedelta(days=1)
+    first = calendar_day - timedelta(days=6)
+    sessions = [
+        _session(first - timedelta(days=1), 90, sid=1),
+        _session(first, 20, sid=2),
+        _session(calendar_day, 30, sid=3),
+        _session(calendar_day + timedelta(days=1), 120, sid=4),
+    ]
+    t = sante.training(sessions, D, until=calendar_day)
+    chart = st.training_days(sessions, D, until=calendar_day)
+    assert t["since"] == chart["since"] == first
+    assert t["week"] == chart["duration"] == t["dial"]["value"] == "50 min"
+    assert chart["minutes"] == 50 and chart["days"] == 7
+    assert t["usual"] is None and t["dial"]["unit"] is None
 
 
 def test_the_dials_arcs_reach_3_to_1_in_both_themes():
