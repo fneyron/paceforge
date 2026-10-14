@@ -750,10 +750,12 @@ def compute_passage_times(
     (aid stations). Stops shift the CLOCK times (and the target distribution's
     moving budget) — predictions themselves stay moving-time.
 
-    The target plan ("adjusted_*") is distributed by segment.base_time_s:
-    terrain, fatigue and night (heat excluded, applied per section here). A
-    plan on terrain alone asked for the second half faster than the first,
-    which nobody runs on a 100-miler.
+    The target plan ("adjusted_*") is distributed by segment.base_time_s
+    (terrain, fatigue and night) times each section's heat (computed here,
+    per section with the forecast): the prediction's own shape. A plan on
+    terrain alone asked for the second half faster than the first, which
+    nobody runs on a 100-miler; one without the heat, for the hot afternoon
+    as fast as the cool morning.
 
     A checkpoint with ``target_s`` (seconds after the start) is PINNED: the plan
     arrives there at exactly that time. Between two anchors (start, pins, the
@@ -830,8 +832,8 @@ def compute_passage_times(
 
     # Target distribution: the plan's moving budget is the target minus the
     # planned aid-station stops, split in proportion to each section's basis
-    # (terrain, fatigue, night): the finish is slower than the start.
-    total_base = sum(r["base"] for r in raw) or 1.0
+    # (terrain, fatigue, night) times its heat (pass 2): the finish is slower
+    # than the start, a 32 °C section slower than the same section at 10 °C.
     moving_target_s = None
     if target_time_s:
         moving_target_s = max(target_time_s - total_stops_s, 1)
@@ -887,9 +889,14 @@ def compute_passage_times(
         r["heat"] = sec_heat
         r["wx"] = (temperature_c, weather_code, wind_kmh, humidity_pct)
         r["model"] = r["time"] * sec_heat
+        # the plan's share of this section: its basis (heat-free) times its heat, as the prediction
+        # (the plan put 0 % on a 32 °C section the prediction slowed by 15 %)
+        r["plan_w"] = r["base"] * sec_heat
         # Stop at this arrival checkpoint? (intermediate aid stations only)
         r["stop"] = stops.get(round(float(r["end_km"]), 1), 0) if r["cp_index"] is not None else 0
         stops_acc += r["stop"]
+
+    total_base = sum(r["plan_w"] for r in raw) or 1.0
 
     # Pinned plan: an objective the athlete chose anchors the finish; the
     # estimate the page sends when he has not moved it does not.
@@ -916,7 +923,7 @@ def compute_passage_times(
             adj_cumulative = pin_plan["cums"][idx]  # exact at the pins (no float drift past the minute)
         else:
             # Plan (target): the moving budget split by the basis share.
-            adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
+            adjusted_time = (moving_target_s * (r["plan_w"] / total_base)) if moving_target_s else 0.0
             adj_cumulative += adjusted_time
 
         arrival_stop = r["stop"]
@@ -1028,7 +1035,7 @@ def _distribute(raw: list[dict], anchors: list[tuple[int, int]]) -> dict:
             e = int(math.ceil((prev_e + stops_between + floor) / 60.0) * 60)
             budget = e - prev_e - stops_between
             clamped[i] = e
-        fill(prev_i + 1, i, budget, [raw[k]["base"] for k in range(prev_i + 1, i + 1)])
+        fill(prev_i + 1, i, budget, [raw[k].get("plan_w", raw[k]["base"]) for k in range(prev_i + 1, i + 1)])
         cums[i] = prev_cum + budget  # snap: the anchor is hit to the second
         arrive[i] = float(e)
         prev_i, prev_e, prev_cum = i, e, cums[i]

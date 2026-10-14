@@ -159,8 +159,11 @@ def _ekm(p: dict) -> float:
 
 
 def fit_hours(p: dict) -> float:
-    """The hours a point weighs in the fit: its moving hours."""
-    return float(p.get("hours", 0) or 0)
+    """The hours a point weighs in the fit: its moving hours, heat taken out when
+    its mean heat factor is known (a race run at 30 °C is not the athlete's
+    level at 12 °C; the course's own forecast puts the heat back)."""
+    heat = p.get("heat") or 1.0
+    return float(p.get("hours", 0) or 0) / max(1.0, float(heat))
 
 
 def fit_effort_model(points: list[dict]) -> dict | None:
@@ -234,10 +237,11 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
         if not is_race and km < LONG_EFFORT_KM:
             continue
         dplus, src = activity_dplus(a)
+        heat = activity_heat(a)
         points.append(race_point(
             a.name, km, dplus, a.moving_time / 3600, is_race,
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
-            elapsed_h=round((a.elapsed_time or 0) / 3600, 2) or None,
+            elapsed_h=round((a.elapsed_time or 0) / 3600, 2) or None, **({"heat": heat} if heat else {}),
         ))
     return model_from_points(points)
 
@@ -596,7 +600,14 @@ async def backfill_race_dplus(db: AsyncSession, user, strava, limit: int = 20) -
     value. Stops at the first rate-limit answer (the next run carries on). A
     race without a usable stream is marked so it is not asked again; it keeps
     the Strava × STRAVA_DPLUS_FACTOR fallback. Returns the number of races
-    updated."""
+    updated. The races' heat (backfill_race_heat) is looked up after, in the
+    same pass (it never raises)."""
+    done = await _backfill_dplus(db, user, strava, limit)
+    await backfill_race_heat(db, user.id, limit=min(limit, HEAT_LOOKUPS_PER_PASS))
+    return done
+
+
+async def _backfill_dplus(db: AsyncSession, user, strava, limit: int) -> int:
     from app.exceptions import StravaAPIError, StravaRateLimitError
 
     # light query first (this runs at every poll): ids, tag and cache marker only
@@ -635,6 +646,98 @@ async def backfill_race_dplus(db: AsyncSession, user, strava, limit: int = 20) -
                  "src": "stream" if gain is not None else "none"}
         # reassign (not mutate) so the JSON column is saved
         a.raw_data = {**(a.raw_data or {}), DPLUS_CACHE_KEY: entry}
+        done += 1
+    if done:
+        await db.flush()
+    return done
+
+
+# ── the races' heat: a race run hot is not the athlete's level in the cool ──
+# Each race's mean heat factor (weather.compute_heat_factor, the curve the
+# course's own forecast goes through) over its hours, from Open-Meteo's hourly
+# temperature and humidity at its start point (the forecast API's past days,
+# else the ERA5 archive), cached in raw_data once: the fit then reads its
+# hours divided by it (fit_hours), and the course's forecast puts the heat of
+# race day back. A race without a position, or an answer without values, is
+# cached empty (factor 1, not asked again).
+HEAT_CACHE_KEY = "paceforge_heat"
+HEAT_CACHE_VERSION = 1
+HEAT_LOOKUPS_PER_PASS = 10
+
+
+def activity_heat(a: Activity) -> float | None:
+    """The race's mean heat factor when looked up (≥ 1), else None."""
+    c = (a.raw_data or {}).get(HEAT_CACHE_KEY) or {}
+    if c.get("v") == HEAT_CACHE_VERSION and c.get("h"):
+        return float(c["h"])
+    return None
+
+
+def mean_heat(series: dict, start: datetime, hours: float) -> tuple[float, float] | None:
+    """(mean heat factor, mean °C) over the hours of a race starting at ``start``
+    (UTC) and lasting ``hours``, from {« YYYY-MM-DDTHH:00 » (GMT): (°C, % RH)}."""
+    from app.services.weather import compute_heat_factor
+
+    t0 = start.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    n = max(1, int(math.ceil(hours)))
+    hs, ts = [], []
+    for i in range(n + 1):
+        v = series.get((t0 + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00"))
+        if v and v[0] is not None:
+            hs.append(compute_heat_factor(v[0], v[1] if v[1] is not None else 60))
+            ts.append(v[0])
+    if not hs:
+        return None
+    return sum(hs) / len(hs), sum(ts) / len(ts)
+
+
+async def backfill_race_heat(db: AsyncSession, user_id: int, limit: int = HEAT_LOOKUPS_PER_PASS,
+                             now: datetime | None = None) -> int:
+    """Look up the mean heat of the athlete's races not looked up yet (newest
+    first, one Open-Meteo call each, ``limit`` at most). Returns the number of
+    races updated; stops at the first outage; never raises."""
+    from app.config import settings
+
+    if not settings.ACTIVITY_ENV_FETCH:
+        return 0
+    try:
+        async with db.begin_nested():
+            return await _heat_pass(db, user_id, limit, now or datetime.now(timezone.utc))
+    except Exception:
+        logger.warning("race heat backfill failed for user %d", user_id, exc_info=True)
+        return 0
+
+
+async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) -> int:
+    from app.services import weather
+    from app.services.activity_env import start_point
+
+    wt = Activity.raw_data["workout_type"].as_integer()
+    cached_v = Activity.raw_data[(HEAT_CACHE_KEY, "v")].as_integer()
+    q = candidate_query(user_id).with_only_columns(Activity.id, Activity.distance, wt, cached_v)
+    rows = (await db.execute(q.order_by(Activity.start_date.desc()))).all()
+    ids = [r[0] for r in rows
+           if r[3] != HEAT_CACHE_VERSION and (r[2] == 1 or (r[1] or 0) >= LONG_EFFORT_KM * 1000)][:limit]
+    if not ids:
+        return 0
+    done = 0
+    for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars().all():
+        raw = a.raw_data if isinstance(a.raw_data, dict) else {}
+        place = start_point(raw)
+        hours = (a.elapsed_time or a.moving_time or 0) / 3600
+        entry = {"v": HEAT_CACHE_VERSION, "h": None, "src": "none"}
+        if place and a.start_date and hours > 0:
+            start = a.start_date if a.start_date.tzinfo else a.start_date.replace(tzinfo=timezone.utc)
+            last = start + timedelta(hours=hours)
+            try:
+                series = await weather.temperature_humidity(place[0], place[1], start.date(), last.date(), now.date())
+            except weather.LookupUnavailable as e:
+                logger.info("race heat backfill: Open-Meteo unavailable for user %d: %s", user_id, e)
+                break
+            got = mean_heat(series, start, hours)
+            if got:
+                entry = {"v": HEAT_CACHE_VERSION, "h": round(got[0], 3), "t": round(got[1], 1), "src": "open-meteo"}
+        a.raw_data = {**raw, HEAT_CACHE_KEY: entry}
         done += 1
     if done:
         await db.flush()

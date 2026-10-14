@@ -64,6 +64,61 @@ def test_the_level_is_the_mean_of_the_races_not_the_best():
     assert {p["name"] for p in m["races"]} == {"A", "B"} and m["n_eff"] == pytest.approx(2)
 
 
+def test_a_hot_race_is_read_without_its_heat():
+    cool = rc.model_from_points([_pt("Cool", 100, 11.0)])
+    hot = rc.model_from_points([_pt("Hot", 100, 11.0, heat=1.10)])  # run at ~30 °C: 10 % of its time was heat
+    assert rc.fit_hours(hot["races"][0]) == pytest.approx(10.0)
+    assert rc.predict_total_s(hot, 100) == pytest.approx(rc.predict_total_s(cool, 100) / 1.10, rel=1e-3)
+    assert hot["races"][0]["hours"] == 11.0  # what the athlete sees is his real time
+
+
+def test_mean_heat_over_the_race_hours():
+    from app.services.weather import compute_heat_factor
+
+    start = datetime(2026, 7, 4, 6, 30, tzinfo=timezone.utc)
+    series = {f"2026-07-04T{h:02d}:00": (10.0 + 2 * h, 50.0) for h in range(24)}
+    h, t = rc.mean_heat(series, start, 3.2)  # 06:00 → 10:00, five hours read
+    expected = [compute_heat_factor(10.0 + 2 * hh, 50.0) for hh in range(6, 11)]
+    assert h == pytest.approx(sum(expected) / 5) and t == pytest.approx(sum(10 + 2 * hh for hh in range(6, 11)) / 5)
+    assert rc.mean_heat({}, start, 3) is None
+
+
+@pytest.mark.asyncio
+async def test_the_races_heat_is_looked_up_once_and_read_by_the_model(db_session, test_user, monkeypatch):
+    from app.config import settings
+    from app.services import weather
+
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
+    calls = []
+
+    async def fake(lat, lon, first, last, today):
+        calls.append((round(lat, 2), first.isoformat()))
+        return {f"{first.isoformat()}T{h:02d}:00": (31.0, 40.0) for h in range(24)}
+
+    monkeypatch.setattr(weather, "temperature_humidity", fake)
+    now = datetime.now(timezone.utc)
+    race = Activity(strava_activity_id=91001, user_id=test_user.id, sport_type="TrailRun", name="Ultra chaud",
+                    start_date=(now - timedelta(days=40)).replace(hour=5, minute=0), distance=60000.0, moving_time=8 * 3600,
+                    elapsed_time=8 * 3600 + 900, total_elevation_gain=2000.0,
+                    raw_data={"workout_type": 1, "start_latlng": [43.3, 5.4]})
+    nowhere = Activity(strava_activity_id=91002, user_id=test_user.id, sport_type="TrailRun", name="Sans GPS",
+                       start_date=now - timedelta(days=60), distance=50000.0, moving_time=7 * 3600, elapsed_time=7 * 3600,
+                       total_elevation_gain=1500.0, raw_data={"workout_type": 1})
+    db_session.add_all([race, nowhere])
+    await db_session.flush()
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 2
+    assert len(calls) == 1  # the race without a position is not asked, only marked
+    assert race.raw_data[rc.HEAT_CACHE_KEY]["h"] == pytest.approx(weather.compute_heat_factor(31.0, 40.0), abs=1e-3)
+    assert nowhere.raw_data[rc.HEAT_CACHE_KEY] == {"v": 1, "h": None, "src": "none"}
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # never asked again
+    model = await rc.build_race_effort_model(db_session, test_user.id)
+    hot = next(p for p in model["races"] if p["name"] == "Ultra chaud")
+    assert hot["heat"] > 1.1 and rc.fit_hours(hot) < hot["hours"]
+    # off in the tests and the CI (no Open-Meteo call)
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", False)
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0
+
+
 def test_the_athletes_own_stops():
     field = rc.STOP_SHARE_18H * (20 / 18) ** rc.STOP_SHARE_EXP  # the field's share at 20 h elapsed
     one = [{"hours": 20 * (1 - 2 * field), "elapsed_h": 20.0, "weight": 1.0}]  # he stops twice as long as the field
@@ -167,5 +222,23 @@ def test_the_stop_he_sets_always_wins():
     # the safety column's longer stop only where the model sets it
     assert set(_safe_extra_stops(cps, None, 20 * 3600, 30.0)) == {20.0}
     assert _safe_extra_stops(cps, 4, 20 * 3600, 30.0) == {}
+
+
+# ── 4. heat: in the objective plan as in the prediction ──
+
+def test_the_objective_plan_gives_a_hot_section_its_heat():
+    pts = [GpxPoint(lat=45.0 + i * 1e-4, lon=6.0, elevation=500.0, distance_from_start=i * 10.0) for i in range(6001)]
+    from app.services.gpx import build_course_profile
+
+    course = build_course_profile(pts)
+    prof = AthleteGradientProfile(flat_pace_s_per_km=330, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
+                                  sport_types_used=[])
+    course = rs.predict_course(course, prof, start_hour=6, plan_moving_s=6 * 3600)
+    temps = [10.0] * 11 + [32.0] * 13  # 32 °C from 11:00
+    cps = [{"name": f"CP{k}", "distance_km": float(k)} for k in range(10, 60, 10)]
+    secs = rs.compute_passage_times(course, cps, 6 * 3600, 1.0, 6, 0, {"temps": temps, "humidity": [40] * 24})
+    assert secs[-1]["heat_factor"] > 1.1 and secs[0]["heat_factor"] == 1.0
+    ratios = [s["adjusted_time_s"] / s["predicted_time_s"] for s in secs]
+    assert max(ratios) - min(ratios) < 0.01  # the hot last section no longer 10 % short of its prediction
 
 

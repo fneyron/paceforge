@@ -467,3 +467,31 @@ async def feels_like(lat: float, lon: float, first: date, last: date, today: dat
     if not isinstance(times, list) or not isinstance(temps, list):
         return {}
     return {str(t): v for t, raw in zip(times, temps, strict=False) if (v := _value(raw)) is not None}
+
+
+async def temperature_humidity(lat: float, lon: float, first: date, last: date, today: date) -> dict[str, tuple]:
+    """Open-Meteo's hourly air temperature (°C) and relative humidity (%) at a
+    point from `first` to `last` (GMT days), keyed by GMT hour (« 2026-10-01T06:00 »):
+    the forecast API with past_days while `first` is within its last 92 days,
+    else the ERA5 archive. What a past race's heat is read on (the same two
+    variables as the course's forecast). {} for an answer without values.
+    Raises LookupUnavailable."""
+    point = {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}",
+             "hourly": "temperature_2m,relative_humidity_2m", "timezone": "GMT"}
+    if (today - first).days < PAST_DAYS:
+        data = await _get(FORECAST_URL, {**point, "past_days": max(1, (today - first).days + 1), "forecast_days": 2})
+    else:
+        data = await _get(ARCHIVE_URL, {**point, "start_date": first.isoformat(), "end_date": last.isoformat()})
+    hourly = data.get("hourly") if isinstance(data, dict) else None
+    if not isinstance(hourly, dict):
+        return {}
+    times, temps, hums = hourly.get("time"), hourly.get("temperature_2m"), hourly.get("relative_humidity_2m")
+    if not isinstance(times, list) or not isinstance(temps, list):
+        return {}
+    hums = hums if isinstance(hums, list) else []
+    out = {}
+    for i, t in enumerate(times):
+        v = _value(temps[i]) if i < len(temps) else None
+        if v is not None:
+            out[str(t)] = (v, _value(hums[i]) if i < len(hums) else None)
+    return out
