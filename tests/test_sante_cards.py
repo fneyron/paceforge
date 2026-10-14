@@ -212,3 +212,15 @@ def test_every_measured_night_is_a_filled_dot():
               "app/templates/partials/sante_page.html", "app/templates/partials/_viz.html"):
         text = (ROOT / f).read_text(encoding="utf-8")
         assert "ne compte pas" not in text and "ne comptent pas" not in text, f
+
+
+def test_the_illness_alert_shows_on_its_card_even_in_a_thin_week():
+    """Two nights of 58 bpm over a median of 45, the 5 nights before them not measured: the week holds 2 nights,
+    too few for a trend (no state), yet the alert reads its own 2 nights — the FC de nuit card says it, red; it
+    was hidden behind « trop peu de nuits pour comparer » (owner, 2026-10-14)."""
+    rows = night_rows([0, 1] + list(range(7, 60)), hr=lambda k: 58.0 if k < 2 else 44.0 + k % 3)
+    day = _day(rows)
+    assert day["alert"] and day["trends"]["hr"]["n"] == 2 and day["score"]["value"] is None
+    c = _card(rows, metric="hr")
+    assert (c["status"]["word"], c["status"]["tone"], c["status"]["key"]) == (
+        sante.ALERT_WORD, "danger", "above") and c["status_short"] == "Élevée sur 2 nuits"

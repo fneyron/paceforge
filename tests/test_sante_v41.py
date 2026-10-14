@@ -205,8 +205,9 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     dials = [words(b) for b in re.findall(r'<a class="pf-ring pf-ring-\w+ is-\w+"[^>]*>(.*?)</a>', top, re.S)]
     # 7h20 every night against the 8-h need: 92 % (owner, 2026-10-14: scientific basis — 94 % against a learnt
     # need); the night missing 4 days ago held the cycle's highest VFC, so the 7-night mean is 0.61 SD under the
-    # baseline (T 0.52 for 6 nights): the VFC outside its smallest worthwhile change, orange, held to 69
-    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "69 % Récupération en cours", dials
+    # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
+    # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
+    assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 % Récupération bonne", dials
     # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
     assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
     # Recovery and nightly graphs stay visible; secondary explanations stay in their own disclosures.

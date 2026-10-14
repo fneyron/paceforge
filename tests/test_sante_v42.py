@@ -96,23 +96,23 @@ def test_the_example_days_of_the_research_report():
 
 def test_the_joint_cap_vfc_under_its_band_and_fc_up_3_bpm():
     """Was: VFC under its band and FC de nuit ≥ + 3 bpm capped at 69 (the joint cap). Now (owner, 2026-10-14:
-    scientific basis) the VFC outside its smallest worthwhile change is the reason, whatever the FC de nuit: each
-    row says its own place; (0,9 + 0,417) / 2 → 66."""
-    mild = _example(z=-0.7, hr=3, tst=450)
-    assert (mild["score"]["value"], mild["score"]["caps"], mild["score"]["tone"]) == (66, [], "warn")
+    scientific basis) the VFC outside its threshold (T 0,70 for 7 nights against 30) is the reason, whatever the FC
+    de nuit: each row says its own place; (0,85 + 0,417) / 2 → 63."""
+    mild = _example(z=-0.8, hr=3, tst=450)
+    assert (mild["score"]["value"], mild["score"]["caps"], mild["score"]["tone"]) == (63, [], "warn")
     assert (mild["state"]["key"], mild["state"]["text"]) == ("hrv", None)
     rows = _rows(mild)
-    assert (rows["hrv"]["tone"], rows["hrv"]["sub"]) == ("warn", 90)
+    assert (rows["hrv"]["tone"], rows["hrv"]["sub"]) == ("warn", 85)
     assert (rows["hr"]["tone"], rows["hr"]["sub"]) == ("warn", 42)
-    # just inside the smallest worthwhile change (z −0,45 > −0,5): green, the FC de nuit's row orange
-    inside = _example(z=-0.45, hr=3, tst=450)
-    assert inside["score"]["tone"] == "ok" and _rows(inside)["hr"]["tone"] == "warn"
-    assert _example(z=-0.7, hr=0.5, tst=450)["state"]["key"] == "hrv"
+    # inside the threshold (z −0,7 > −0,70; it was outside under 0,5): green, the FC de nuit's row orange
+    inside = _example(z=-0.7, hr=3, tst=450)
+    assert (inside["score"]["value"], inside["score"]["tone"]) == (70, "ok") and _rows(inside)["hr"]["tone"] == "warn"
+    assert _example(z=-0.8, hr=0.5, tst=450)["state"]["key"] == "hrv"
     # an effort's window too: both reasons listed, the primary marker's first
     w = {"tone": "warn", "text": "fenêtre indicative jusqu'à J+3"}
-    both = _example(z=-0.7, hr=3, tst=450, window=w)
+    both = _example(z=-0.8, hr=3, tst=450, window=w)
     assert [r["key"] for r in both["score"]["reasons"]] == ["hrv", "effort"] and both["state"]["key"] == "hrv"
-    assert both["state"]["text"] is None and both["score"]["value"] == 66
+    assert both["state"]["text"] is None and both["score"]["value"] == 63
 
 
 def test_a_low_vfc_counts_as_red_only_with_the_nightly_hr_over_2_bpm():
@@ -133,13 +133,13 @@ def test_a_low_vfc_counts_as_red_only_with_the_nightly_hr_over_2_bpm():
 def test_the_nightly_hr_scale():
     """Was: 100 / 40 / 0 at + 2 / + 5 / + 8 bpm. Now (owner, 2026-10-14: scientific basis) the FC de nuit's part
     of the indice is s = clip((2,5 − z)/2, 0, 1), z its 7-night mean over its usual values in SD (H): 100 up to
-    its smallest worthwhile change (z 0,5), 0 at 2,5 SD; its row orange from + 0,5 SD (here 0,9 bpm), neutral
-    under (never praised), red only under the illness alert."""
+    z 0,5, 0 at 2,5 SD; its row orange from its threshold, + 0,70 SD for 7 nights against 30 (here 1,27 bpm),
+    neutral under (never praised), red only under the illness alert."""
     subs = {z: sc.sub("hr", z) for z in (-2, 0, 0.5, 1, 1.5, 2, 2.5, 3)}
     assert subs == pytest.approx({-2: 1, 0: 1, 0.5: 1, 1: 0.75, 1.5: 0.5, 2: 0.25, 2.5: 0, 3: 0})
     assert sc.sub("hrv", -1.5) == 0.5 and sc.sub("hrv", -0.5) == 1 and sc.sub("hrv", -3) == 0
-    tones = {d: _rows(_example(z=0, hr=d, tst=450))["hr"]["tone"] for d in (-4, 0, 0.8, 1, 4, 5.5)}
-    assert tones == {-4: "accent", 0: "ok", 0.8: "ok", 1: "warn", 4: "warn", 5.5: "warn"}
+    tones = {d: _rows(_example(z=0, hr=d, tst=450))["hr"]["tone"] for d in (-4, 0, 0.8, 1, 1.3, 4, 5.5)}
+    assert tones == {-4: "accent", 0: "ok", 0.8: "ok", 1: "ok", 1.3: "warn", 4: "warn", 5.5: "warn"}
     trend = _example(z=0, hr=5.5, tst=450)["day"]["trends"]["hr"]
     assert sc.row_tone("hr", trend, alert=True) == "danger"
 
@@ -174,14 +174,16 @@ def test_the_band_sd_is_shrunk_towards_a_prior():
     b = nt.band(steady, "hrv", D)
     assert b["provisional"] and b["sd"] == pytest.approx(0.1 * math.sqrt(7 / 14))
     assert (b["lo"], b["hi"]) == pytest.approx((60 * math.exp(-0.5 * b["sd"]), 60 * math.exp(0.5 * b["sd"])))
-    # nightly HR: 14 nights at 50 ± 3 bpm (MAD 3, robust SD 4,45): σ0 = 2 bpm, SD √((14·4,45² + 7·2²)/21) = 3,81;
-    # the alert line 50 + max(2 × 3,81, 5) = 57,6 (it was 58,9 unshrunk)
+    # nightly HR: 14 nights at 50 ± 3 bpm (MAD 3, robust SD 4,45): σ0 = 2 bpm, the alert's robust σ̂
+    # √((14·4,45² + 7·2²)/21) = 3,81, its line 50 + max(2 × 3,81, 5) = 57,6 (it was 58,9 unshrunk)
     noisy = nt.build_nights(night_rows(range(1, 15), today=D, hr=lambda k: 50.0 + (3 if k % 2 else -3)), D)
     h = nt.band(noisy, "hr", D)
     s = 1.4826 * 3
-    assert h["n"] == 14 and h["sd"] == pytest.approx(math.sqrt((14 * s * s + 7 * 4) / 21))
-    assert h["alert"] == pytest.approx(50 + 2 * h["sd"]) and round(h["alert"], 1) == 57.6
-    # the band itself: median ± 0,5 SD (owner, 2026-10-14: scientific basis — it was ± 3 bpm, a fixed width)
+    assert h["n"] == 14 and h["robust_sd"] == pytest.approx(math.sqrt((14 * s * s + 7 * 4) / 21))
+    assert h["alert"] == pytest.approx(50 + 2 * h["robust_sd"]) and round(h["alert"], 1) == 57.6
+    # the trend's band: the mean ± 0,5 SD, the SD (3,11) shrunk to 2,79 (owner, 2026-10-14: scientific basis — it
+    # was ± 3 bpm, a fixed width, then the median ± 0,5 robust σ̂)
+    assert h["sd"] == pytest.approx(math.sqrt((14 * (14 * 9 / 13) + 7 * 4) / 21)) and round(h["sd"], 2) == 2.79
     assert (h["lo"], h["hi"]) == pytest.approx((50 - 0.5 * h["sd"], 50 + 0.5 * h["sd"]))
     # a very steady HR: the 5-bpm floor holds
     flat = nt.build_nights(night_rows(range(1, 15), today=D, hr=45.0), D)

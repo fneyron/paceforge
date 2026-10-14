@@ -179,7 +179,8 @@ def _night_stat(nights, metric: str, d: date, trend: dict | None) -> dict:
     """The 7-night mean of every measured night (3 at least, Plews 2014; Lau 2022) and the usual values it is read
     against (nights.normal: the nights from d − 67 to d − 8 on its series, one baseline per series: Dial 2025;
     « provisoire » from 7 to 13 nights, H, never read by the state); the status from its trend (nights.trend: the
-    smallest worthwhile change, T = max(0.5, 1.28/√n7)). `seen`: the metric measured in those 60 days."""
+    band widened to 1.28 standard errors of a 7-night mean, nights.threshold). `seen`: the metric measured in
+    those 60 days."""
     t = trend or {}
     b = t.get("baseline")
     lo = d - timedelta(days=nt.BAND_DAYS - 1)
@@ -208,16 +209,25 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
     nights too: never « dans tes valeurs habituelles » the morning the alert stops); `resp`: the breathing flag
     (nights.resp_up_nights); `window`: the effort window (sante_training.effort_window)."""
     trends = {k: nt.trend(nights, k, d) for k in ("hrv", "hr")}
-    tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil dial's figure
+    # the 24 h before this morning's wake (the Sommeil dial's figure) on the nights known that day only: a nap
+    # after the wake moves to the next morning once that morning exists (owner, 2026-10-14: scientific basis — a
+    # past day of the 14-day card read it from the later nights)
+    tst = nt.day_tst24({x: n for x, n in nights.items() if x <= d}, d)
     night = nights.get(d)
     fresh = [k for k in ("hr", "hrv") if night and night.value(k) is not None]
     if tst is not None:
         fresh.append("sleep")
+    # a heart value of last night on another series than the one its trend reads (another watch, another
+    # calculation): no state from it, and the line says so rather than « il manque des données de nuit »
+    elsewhere = [k for k in ("hrv", "hr") if night and night.value(k) is not None and trends[k]
+                 and night.source_of(k) != trends[k]["source"] and not sc.is_sdnn({"source": night.source_of(k)})]
     day = {"day": d, "night_measured": _slept(nights, d), "trends": trends,
            "stats": {k: _night_stat(nights, k, d, trends[k]) for k in ("hr", "hrv")}, "tst24": tst,
            "measured_components": fresh, "window": st.effort_window(efforts, d),
            "alert": nt.illness_alert(nights, d), "resp": nt.resp_up_nights(nights, d),
-           "resp_ref": _resp_ref(nights, d)}
+           "resp_ref": _resp_ref(nights, d),
+           "elsewhere": {k: ("device" if nt.device(night.source_of(k)) != nt.device(trends[k]["source"])
+                             else "method") for k in elsewhere}}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
     return day
@@ -332,9 +342,9 @@ def training(sessions, today: date, until: date | None = None, rest: float = 50.
     heart-rate load of the last 7 days (sante_load: one pipeline, `load` the day's sante_training.loads, else
     computed with `rest` and `peak`, today's bounds for every week, H) against the usual week's (the mean of the
     11 weeks before the 7 days), as a percentage, 100 % as usual, the arc full at twice it, in the accent colour;
-    « comme d'habitude » while the 7 days' load lies between the 25th and the 75th percentiles of those 11 weeks
-    (owner, 2026-10-14: scientific basis — it was ± 20 %), else « plus que d'habitude » or « moins que
-    d'habitude »; without a usual week (4 active weeks), the measured duration and « 7 derniers jours ».
+    « comme d'habitude » while the 7 days' load lies between the lightest and the heaviest of those 11 weeks that
+    hold an activity (owner, 2026-10-14: scientific basis — it was ± 20 %), else « plus que d'habitude » or
+    « moins que d'habitude »; without a usual week (4 active weeks), the measured duration and « 7 derniers jours ».
     The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
     hours), each once, and « Intensité »: the minutes' weight against the usual week's (the load's ratio over the
     hours', so the dial is the hours' ratio times it: no number contradicts another), « plus élevée que
@@ -482,7 +492,7 @@ def card_status(nights, metric: str, day: dict) -> dict:
     """{key, value, word, detail, text, tone, meaning}, the card's status line:
     the 7-night mean as a signed percentage against the usual value (v4.4, owner: « Mets des pourcentages plutôt
     que des valeurs (comme WHOOP / Oura) »: « −8 % », « +3 % », « comme d'habitude » at 0 %) and its place against
-    the usual values (nights.trend: the smallest worthwhile change, T = max(0.5, 1.28/√n7)), « dans tes valeurs
+    the usual values (nights.trend: outside from T, nights.threshold), « dans tes valeurs
     habituelles » / « plus basse que d'habitude » / « plus haute que d'habitude » (key: in, below, above) with a dot
     in its colour (sante_score.row_tone: green in them, orange out of them on the side that matters, neutral on the
     other side, never praised; none for a descriptive SDNN or a series not measured last night), and « Ça arrive
@@ -498,9 +508,11 @@ def card_status(nights, metric: str, day: dict) -> dict:
         return {"key": "none", "value": None, "word": BUILDING, "detail": f"prête {when}", "tone": None,
                 "meaning": None, "text": BUILDS.format(n=nt.reference_min_nights(
                     metric, nt.mean_source(nights, metric, day["day"])))}
-    if s["value"] is None or s["status"] is None:
-        return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
     alert = metric == "hr" and bool(day["alert"])
+    # the illness alert reads its own 2 nights: shown even when the week is too thin for a trend (owner,
+    # 2026-10-14: scientific basis — it was hidden behind « trop peu de nuits pour comparer »)
+    if not alert and (s["value"] is None or s["status"] is None):
+        return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
     # A trend (or SDNN) remains readable even when it cannot enter today's state; its colour then stays neutral.
     colour = alert or (t and t["last"] and s["score_eligible"])
     tone = sc.row_tone(metric, t, alert) if colour else None
@@ -516,12 +528,12 @@ def card_status(nights, metric: str, day: dict) -> dict:
             "meaning": MEANING[metric] if status == BAD[metric] else None}
 
 
-def _drawn(b: dict | None, metric: str, n7: int) -> tuple | None:
+def _drawn(b: dict | None, metric: str, t: float | None) -> tuple | None:
     """A day's usual values as drawn: its baseline's centre ± T·σ̂, T the threshold its 7-night mean is read with
-    (nights.threshold; 0.5 under 3 nights), so a mean drawn inside reads « dans tes valeurs habituelles »."""
+    (nights.trend's; 0.5 without one), so a mean drawn inside reads « dans tes valeurs habituelles »."""
     if not b:
         return None
-    t = nt.threshold(n7) if n7 >= nt.MIN_MEAN_NIGHTS else nt.SWC
+    t = t or nt.SWC
     if metric == "hrv":
         return (b["center"] * math.exp(-t * b["sd"]), b["center"] * math.exp(t * b["sd"]))
     return (b["center"] - t * b["sd"], b["center"] + t * b["sd"])
@@ -549,9 +561,9 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
         days, values = days[-keep:], values[-keep:]
     averages = [nt.mean7(nights, metric, d) or {} for d in days]
     bands, prov = [], []
-    for d, m in zip(days, averages, strict=True):
+    for d in days:
         b = nt.normal(nights, metric, d)
-        bands.append(_drawn(b, metric, m.get("n", 0)))
+        bands.append(_drawn(b, metric, (nt.trend(nights, metric, d) or {}).get("T")))
         prov.append(bool(b and b["provisional"]))
     means = [m.get("value") for m in averages]
     sources = [nights[d].source_of(metric) if d in nights else None for d in days]

@@ -340,8 +340,10 @@ async def test_owner_dials_rows_and_sommeil(db_session: AsyncSession, test_user:
     h = s["hero"]
     assert (h["label"], h["times"], h["nap"], h["total"], h["need"]) == ("Cette nuit", "22:40 → 07:30", None, "8h36",
                                                                          "besoin estimé 8h00")
-    assert "need" not in s and s["deficit"] == {"minutes": 1020, "n": 4, "days": 7,
-                                                "text": "manque estimé sur 7 jours\u00a0: 17h00"}
+    # 3 measured nights and the night the Transjeju ran through: not estimable (4 measured nights needed; owner,
+    # 2026-10-14: scientific basis — the raced night was scaled up with the others, 17h00)
+    assert "need" not in s and (s["deficit"]["minutes"], s["deficit"]["n"], s["deficit"]["raced"],
+                                s["deficit"]["text"]) == (None, 3, 1, "manque non estimable (3/7 nuits)")
     # its stages from COROS's « Sleep Summary » (the main night's: shown, never judged), WHOOP's order; COROS has
     # no intervals: no hypnogram, and no plain night bar either (the stages bar replaces it)
     assert h["timeline"] is None and not h["stages"]

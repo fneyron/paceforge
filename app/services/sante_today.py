@@ -48,9 +48,9 @@ def state(score: dict, day: dict | None = None) -> dict | None:
 
 def no_state_line(has_watch: bool, missing: dict | None = None) -> str:
     """The one line without a state: connect a watch; else why there is none (the baselines building, a week too
-    thin), or no night this morning."""
+    thin, last night measured by another watch or calculation), or no night this morning."""
     if not has_watch:
         return NO_WATCH
-    if missing and missing.get("key") in ("building", "few"):
+    if missing and missing.get("key") in ("building", "few", "elsewhere"):
         return NOT_YET.format(label=missing["label"])
     return NO_NIGHT

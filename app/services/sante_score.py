@@ -9,7 +9,7 @@ state from sleep alone or from activities alone.
 - Primary marker: the VFC (RMSSD), else the FC de nuit.
 - Red (danger): the night-HR illness alert (nights.illness_alert), or D+0 and D+1 after an Ultra.
 - Orange (warn), each reason listed: the primary marker's 7-day trend outside its smallest worthwhile change
-  (z ≤ −T for the VFC, z ≥ +T for the FC de nuit, T = max(0.5, 1.28/√n7)); the breathing flag
+  (z ≤ −T for the VFC, z ≥ +T for the FC de nuit, T: nights.threshold); the breathing flag
   (nights.resp_up_nights); under 6 h of sleep in the 24 h (Craven 2022); an effort window open (C7).
   The FC de nuit outside while the VFC is inside shows on its own row, never changes the state.
 - Green (ok): none.
@@ -154,6 +154,11 @@ TEXTS = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de
          "short": "Moins de 6 h de sommeil sur 24 h."}
 
 
+# why there is no state when last night was measured elsewhere (missing_reason; its wording is a GUI proposal)
+ELSEWHERE = {"device": "dernière nuit mesurée par une autre montre que d'habitude",
+             "method": "dernière nuit mesurée avec un autre calcul que d'habitude"}
+
+
 def _reason(key: str, tone: str, text: str | None = None) -> dict:
     return {"key": key, "tone": tone, "label": LABELS[key], "text": text if text is not None else TEXTS.get(key)}
 
@@ -161,7 +166,8 @@ def _reason(key: str, tone: str, text: str | None = None) -> dict:
 def missing_reason(day: dict) -> dict:
     """Why there is no state (C8: a reason, never a number): {key, label}: no night (« pas de bilan »), a baseline
     under 14 nights (« repères en construction (n/14) »), under 3 nights this week (« pas assez de nuits cette
-    semaine (n/3) »), the heart not measured last night (« pas de bilan »)."""
+    semaine (n/3) »), the heart measured last night on another series only (ELSEWHERE: another watch, another
+    calculation), the heart not measured last night (« pas de bilan »)."""
     from app.services.nights import MIN_BAND_NIGHTS, MIN_MEAN_NIGHTS
 
     if not day.get("night_measured"):
@@ -169,6 +175,10 @@ def missing_reason(day: dict) -> dict:
     trends = day.get("trends") or {}
     measured = [m for m in HEART if (t := trends.get(m)) and t["last"] and not (m == "hrv" and is_sdnn(t))]
     if not measured:
+        elsewhere = day.get("elsewhere") or {}
+        if elsewhere:  # last night measured, but on another series than its usual values' (another watch or calculation)
+            kind = "device" if "device" in elsewhere.values() else "method"
+            return {"key": "elsewhere", "label": ELSEWHERE[kind], "kind": kind}
         return {"key": "no_heart", "label": "pas de bilan"}
     t = trends[measured[0]]
     if not t["baseline"] or t["baseline"]["provisional"]:
@@ -249,6 +259,9 @@ def quality(day: dict) -> dict:
         t = trends.get(key)
         if key in used:
             state = "Utilisée"
+        elif key in (day.get("elsewhere") or {}):
+            state = ("Mesurée par une autre montre cette nuit" if day["elsewhere"][key] == "device"
+                     else "Mesurée avec un autre calcul cette nuit")
         elif t is None or not t["last"]:
             state = "Absente pour cette nuit"
         elif key == "hrv" and is_sdnn(t):
