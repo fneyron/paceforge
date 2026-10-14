@@ -61,6 +61,40 @@ export function readReceipt(raw: string | null): SyncReport | null {
   } catch { return null; }
 }
 
+/** Where the lock is kept: expo-file-system's File in the app. */
+export type LockFile = { readonly exists: boolean; textSync(): string; write(text: string): void; delete(): void };
+type Holder = { owner?: unknown; until?: unknown };
+// null: not a holder (a write cut short, another format); read errors are left to the caller.
+const holder = (text: string): Holder | null => {
+  try { const v = JSON.parse(text); return v && typeof v === 'object' ? v : null; } catch { return null; }
+};
+/** Best effort across JavaScript runtimes (Android runs the task headless): one file,
+ * a 60 s expiry. A file that cannot be parsed is written over, then checked again; one
+ * that cannot be read or written never blocks syncs. */
+export function fileLock(open: () => LockFile, now: () => number = Date.now) {
+  return {
+    async acquire(owner: string, until: number): Promise<boolean> {
+      try {
+        const file = open();
+        const held = file.exists ? holder(file.textSync()) : null;
+        // An expiry far beyond a lock period was written under another clock: not a holder.
+        if (held && held.owner !== owner && typeof held.until === 'number' && held.until > now()
+          && held.until <= now() + 2 * LOCK_MS) return false;
+        file.write(JSON.stringify({ owner, until }));
+        return holder(file.textSync())?.owner === owner;
+      } catch { return true; }
+    },
+    async release(owner: string): Promise<void> {
+      try {
+        const file = open();
+        if (!file.exists) return;
+        const held = holder(file.textSync());
+        if (!held || held.owner === owner) file.delete();
+      } catch { /* expires */ }
+    },
+  };
+}
+
 export type Stored = { pair: Pair | null; automatic: boolean; receipt: SyncReport | null; state: BackgroundState };
 export type EngineDeps = {
   id: string; now: () => number;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from './api';
-import { createEngine, emptyState, EngineDeps, readState, RUN_MS } from './background-engine';
+import { createEngine, emptyState, EngineDeps, fileLock, LOCK_MS, LockFile, readState, RUN_MS } from './background-engine';
 import { isLockedError, KeychainLocked } from './secure-core';
 import type { SyncReport } from './sync';
 import type { Daily, HealthResult, Metric, Pair } from './types';
@@ -296,4 +296,36 @@ test('stored background state is read defensively', () => {
   assert.deepEqual(readState('{oops'), emptyState());
   assert.deepEqual(readState(JSON.stringify({ userId: 3, enabled: true, blocked: 'other', hashes: { a: 'b', c: 1 }, tokens: [], retryAt: 'x' })),
     { ...emptyState(3), enabled: true, hashes: { a: 'b' } });
+});
+
+test('the lock file: held until it expires, released by its owner, written over when unreadable', async () => {
+  let text: string | null = null, clock = start;
+  const file: LockFile = { get exists() { return text !== null; }, textSync: () => text ?? '',
+    write: value => { text = value; }, delete: () => { text = null; } };
+  const lock = fileLock(() => file, () => clock);
+  assert.equal(await lock.acquire('a', clock + LOCK_MS), true);
+  assert.equal(await lock.acquire('b', clock + LOCK_MS), false);
+  await lock.release('b');
+  assert.notEqual(text, null, 'only its owner releases it');
+  clock += LOCK_MS + 1;
+  assert.equal(await lock.acquire('b', clock + LOCK_MS), true, 'expired');
+  await lock.release('b');
+  assert.equal(text, null);
+  // A write cut short (a crash, a full disk) never switches the lock off for good.
+  for (const unreadable of ['', '{"owner":"a","unt', 'null', '42']) {
+    text = unreadable;
+    assert.equal(await lock.acquire('c', clock + LOCK_MS), true);
+    assert.equal(await lock.acquire('d', clock + LOCK_MS), false, 'written over: the lock works again');
+    text = unreadable;
+    await lock.release('d');
+    assert.equal(text, null, 'deleted on release');
+  }
+  // An expiry written before the clock was set back does not hold the lock for months.
+  text = JSON.stringify({ owner: 'e', until: clock + 90 * 86400000 });
+  assert.equal(await lock.acquire('f', clock + LOCK_MS), true);
+  // A file that cannot be read or written never blocks syncs.
+  const broken = fileLock(() => ({ exists: true, textSync: () => { throw new Error('io'); },
+    write: () => { throw new Error('io'); }, delete: () => { throw new Error('io'); } }));
+  assert.equal(await broken.acquire('g', clock + LOCK_MS), true);
+  await broken.release('g');
 });

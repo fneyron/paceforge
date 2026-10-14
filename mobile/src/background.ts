@@ -10,35 +10,13 @@ import { api } from './api';
 import { changedMetrics, collect, collectSleep, disableHealthBackground, enableHealthBackground, hasBackgroundAccess,
   protectedDataAvailable, watchHealthChanges } from './health';
 import { isLockedError, KEYS, readNow, secure } from './secure';
-import { Block, BackgroundState, createEngine, emptyState, LOCK_MS, readPair, readReceipt, readState,
+import { Block, BackgroundState, createEngine, emptyState, fileLock, LOCK_MS, readPair, readReceipt, readState,
   TASK_INTERVAL_MINUTES, TASK_NAME } from './background-engine';
 import type { SyncReport } from './sync';
 
 const id = Array.from(Crypto.getRandomBytes(8), b => b.toString(16).padStart(2, '0')).join('');
-// Created on use: nothing native may throw while this module is evaluated at launch.
-const lockFile = () => new File(Paths.document, 'paceforge-sync.lock');
-
-/** Best effort across JavaScript runtimes (Android runs the task headless): one file,
- * a 60 s expiry, and a broken file never blocks syncs. */
-export const syncLock = {
-  async acquire(owner: string, until: number): Promise<boolean> {
-    try {
-      const file = lockFile();
-      if (file.exists) {
-        const held = JSON.parse(file.textSync());
-        if (held?.owner !== owner && typeof held?.until === 'number' && held.until > Date.now()) return false;
-      }
-      file.write(JSON.stringify({ owner, until }));
-      return JSON.parse(file.textSync()).owner === owner;
-    } catch { return true; }
-  },
-  async release(owner: string): Promise<void> {
-    try {
-      const file = lockFile();
-      if (file.exists && JSON.parse(file.textSync()).owner === owner) file.delete();
-    } catch { /* expires */ }
-  },
-};
+// The file is created on use: nothing native may throw while this module is evaluated at launch.
+export const syncLock = fileLock(() => new File(Paths.document, 'paceforge-sync.lock'));
 
 // From the stored state, readable on a locked phone; null (unreadable) runs the engine anyway.
 let enabledHint: boolean | null = (() => {
