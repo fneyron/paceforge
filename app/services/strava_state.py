@@ -59,6 +59,14 @@ def mark(name: str, ttl: float, value: str = "1") -> None:
         logger.warning("Strava state unavailable: %s not marked", name)
 
 
+def keep(name: str, value: str) -> None:
+    """Sets `name` for good (no expiry)."""
+    try:
+        _redis().set(PREFIX + name, value)
+    except Exception:
+        logger.warning("Strava state unavailable: %s not kept", name)
+
+
 def read(name: str) -> str | None:
     try:
         return _redis().get(PREFIX + name)
@@ -91,8 +99,14 @@ def shared_subscription() -> tuple[bool, int | None]:
     return True, int(raw) if raw.isdigit() else None
 
 
-def remember_shared_subscription(sub_id: int | None, ttl: float) -> None:
-    mark("shared_sub", ttl, str(sub_id) if sub_id else "none")
+def remember_shared_subscription(sub_id: int | None, fresh_for: float) -> None:
+    """Kept for good (a later lookup that fails leaves it); read again from Strava after `fresh_for` s."""
+    keep("shared_sub", str(sub_id) if sub_id else "none")
+    mark("shared_sub:fresh", fresh_for)
+
+
+def shared_subscription_fresh() -> bool:
+    return read("shared_sub:fresh") is not None
 
 
 # ── the webhook ─────────────────────────────────────────────────────────────

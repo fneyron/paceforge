@@ -18,7 +18,7 @@ STRAVA_BASE_URL = "https://www.strava.com"
 STRAVA_API_URL = f"{STRAVA_BASE_URL}/api/v3"
 STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
 QUOTA_SHARE = 0.8  # of a Strava rate-limit window, the background syncs' share
-SHARED_SUB_KEEP_S = 12 * 3600  # the shared app's subscription id, as Strava gave it, is remembered this long
+SHARED_SUB_REFRESH_S = 12 * 3600  # the shared app's subscription id is read again this often (kept meanwhile)
 SHARED_SUB_RETRY_S = 5 * 60  # a failed lookup is not tried again before this
 SHARED_SUB_RECHECK_S = 10 * 60  # an event of another subscription asks Strava again at most this often
 
@@ -54,8 +54,9 @@ def shared_subscription_check(subscription_id: int) -> bool | None:
 
 async def lookup_shared_subscription() -> tuple[bool, int | None]:
     """The shared app's push subscription (one per app), from Strava's GET /push_subscriptions with the app's keys:
-    remembered SHARED_SUB_KEEP_S, a failure SHARED_SUB_RETRY_S (Strava not asked meanwhile). Returns (known, id),
-    id None when the app has none. An app-level request: no athlete's token, no athlete's quota."""
+    kept for good, read again after SHARED_SUB_REFRESH_S; a failure keeps what was known and is not tried again
+    for SHARED_SUB_RETRY_S. Returns (known, id), id None when the app has none. An app-level request: no
+    athlete's token, no athlete's quota."""
     if not settings.strava_shared_ready:
         return False, None
     if strava_state.read("shared_sub:failed") is not None:
@@ -73,7 +74,7 @@ async def lookup_shared_subscription() -> tuple[bool, int | None]:
         logger.warning("Strava: the shared app's webhook subscription could not be read", exc_info=True)
         strava_state.mark("shared_sub:failed", SHARED_SUB_RETRY_S)
         return strava_state.shared_subscription()
-    strava_state.remember_shared_subscription(sub_id, SHARED_SUB_KEEP_S)
+    strava_state.remember_shared_subscription(sub_id, SHARED_SUB_REFRESH_S)
     logger.info("Strava: the shared app's webhook subscription is %s", sub_id)
     return True, sub_id
 
@@ -89,9 +90,10 @@ async def shared_subscription_matches(subscription_id: int) -> bool | None:
 
 
 async def refresh_shared_subscription() -> None:
-    """The hourly round keeps the shared app's subscription id at hand (looked up again once forgotten)."""
+    """The hourly round keeps the shared app's subscription id at hand: read again from Strava every
+    SHARED_SUB_REFRESH_S (never forgotten meanwhile, nor when Strava cannot answer)."""
     if (settings.strava_shared_ready and configured_shared_subscription() is None
-            and not strava_state.shared_subscription()[0]):
+            and not strava_state.shared_subscription_fresh()):
         await lookup_shared_subscription()
 
 

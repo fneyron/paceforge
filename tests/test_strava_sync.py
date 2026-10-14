@@ -815,9 +815,9 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
                                                                  shared_app, queued, monkeypatch):
     """Review D2: without STRAVA_SUBSCRIPTION_ID every shared-app event was dropped (the poll then brought the
     activity from the list, without its splits). Now the shared app's subscription is read from Strava (GET
-    /push_subscriptions, remembered 12 h), never during the webhook's 2-s answer: an event of an id not known yet
-    is queued with it, and its task confirms it with Strava before anything else. A forged event costs that
-    app-level lookup at most, never a request with the athlete's token."""
+    /push_subscriptions, kept, read again every 12 h), never during the webhook's 2-s answer: an event of an id not
+    known yet is queued with it, and its task confirms it with Strava before anything else. A forged event costs
+    that app-level lookup at most, never a request with the athlete's token."""
     from app.tasks import poll_activities
     from app.tasks.webhook_sync import _run_webhook_sync
 
@@ -857,28 +857,28 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ignored"
     assert queued == [(782, 5001)] and len(lookups) == 2
 
-    # forgotten after 12 h: the hourly round reads it again (a failure: not before 5 min)
+    # 12 h later the round reads it again; Strava failing, the id known is kept (re-review N3: a real event of the
+    # shared app is never dropped for an id gone stale)
     monkeypatch.delenv("STRAVA_SUBSCRIPTION_ID")
-    strava_state.release("shared_sub")
+    strava_state.release("shared_sub:fresh")
     lookups = _push_subscriptions(monkeypatch, 503)
     monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: None)
     await poll_activities._run_poll()
-    await poll_activities._run_poll()
-    assert len(lookups) == 1 and strava_state.shared_subscription() == (False, None)
-    with pytest.raises(StravaAPIError):  # Strava cannot say: Celery asks again, the athlete untouched
-        await _run_webhook_sync(783, 5001, "create", 123456)
-    assert detail.await_count == 0 and len(lookups) == 1
-    # given up on at last: an event never confirmed does not make the round poll the athlete either
-    from app.tasks.webhook_sync import sync_activity_from_webhook
-
-    strava_state.webhook_reached(athlete.id)
-    result = await asyncio.to_thread(sync_activity_from_webhook.apply, args=(783, 5001, "create", 123456))
-    assert result.get() == {"status": "failed"} and strava_state.webhook_recent(athlete.id)
-    assert detail.await_count == 0 and len(lookups) == 1
+    await poll_activities._run_poll()  # a failure: not asked again before 5 min
+    assert len(lookups) == 1 and strava_state.shared_subscription() == (True, 123456)
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456, obj=784))).json()["status"] == "ok"
+    assert queued == [(784, 5001)]
     strava_state.release("shared_sub:failed")
     lookups = _push_subscriptions(monkeypatch, [{"id": 123456}])
     await poll_activities._run_poll()
-    assert len(lookups) == 1 and strava_state.shared_subscription() == (True, 123456)
+    assert len(lookups) == 1 and strava_state.shared_subscription_fresh()
+    # never known, Strava failing: Celery asks again, the athlete untouched meanwhile
+    strava_state.release("shared_sub")
+    lookups = _push_subscriptions(monkeypatch, 503)
+    with pytest.raises(StravaAPIError):
+        await _run_webhook_sync(783, 5001, "create", 123456)
+    assert detail.await_count == 0 and len(lookups) == 1
 
 
 async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncClient, db_session, test_user,
