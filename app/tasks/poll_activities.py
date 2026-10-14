@@ -1,155 +1,145 @@
+"""The hourly Strava round, the webhook's fallback (the webhook brings each activity as it is uploaded), and each
+athlete's poll, in a task and a transaction of its own."""
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.celery_app import celery_app
-from app.models.activity import Activity
+from app.exceptions import StravaTokenError
 from app.models.user import User
-from app.services.activity_sources import adopt_watch_twin
+from app.services import strava_state as state
 
 logger = logging.getLogger(__name__)
+
+POLL_PAGES = 3  # 90 activities: what an athlete uploads between two rounds, a late upload included
+POLL_CLAIM_S = 2 * 3600  # an athlete's poll queued or running is not queued again (a lost one is, after this)
 
 
 @celery_app.task(name="paceforge.poll_new_activities")
 def poll_new_activities() -> dict:
-    """Poll Strava for new activities for all active users (fallback for webhooks)."""
-    logger.info("Starting activity poll for all users")
+    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h while their app's
+    webhook is silent too (and of every one not polled for 24 h: an event may be lost), and the first imports due
+    again after a failure."""
     try:
         result = asyncio.run(_run_poll())
-        logger.info(
-            "Poll complete: checked %d users, found %d new activities",
-            result["users_checked"],
-            result["new_activities"],
-        )
+        logger.info("Strava round: %d polls and %d first imports queued",
+                    result["users_checked"], result["initial_requeued"])
         return result
     except Exception:
-        logger.exception("Activity poll failed")
-        return {"users_checked": 0, "new_activities": 0, "error": "failed"}
+        logger.exception("Strava round failed")
+        return {"users_checked": 0, "initial_requeued": 0, "error": "failed"}
 
 
 async def _run_poll() -> dict:
-    import asyncio as aio
-
+    """Linked athletes only (a disconnected link has no refresh token). The app's quota first: past 80 % of a
+    Strava window, nobody of that app is polled until it turns (StravaService._note_quota)."""
     from app.database import get_task_session
-    from app.services.strava import StravaService
+    from app.services.strava import backing_off, refresh_shared_subscription
+    from app.tasks.initial_sync import initial_sync
 
-    users_checked = 0
-    new_activities = 0
+    try:  # the shared app's webhook subscription id, for the webhook to check its events at once
+        await refresh_shared_subscription()
+    except Exception:
+        logger.warning("Strava: the shared app's subscription was not refreshed", exc_info=True)
+    async with get_task_session() as db:
+        users = (await db.execute(select(User).where(
+            User.strava_credentials_valid.is_(True),
+            User.strava_client_id.isnot(None),
+            User.strava_refresh_token.isnot(None),  # disconnected links have none
+        ).order_by(  # the longest without news first: those a quota backoff cut off last time lead the next
+            User.last_activity_poll_at.asc().nulls_first(), User.id))).scalars().all()
+
+    queued = requeued = 0
+    for user in users:
+        if not user.has_strava_app or backing_off(user.strava_client_id):
+            continue
+        if not user.initial_sync_done:
+            # a first import that failed (it stays undone): again once its wait is over
+            if state.initial_due(user.id):
+                try:
+                    initial_sync.delay(user.id)
+                    requeued += 1
+                except Exception:
+                    logger.exception("Initial sync could not be queued again for user %d", user.id)
+            continue
+        if state.polled_recently(user.id) and (state.webhook_recent(user.id)
+                                               or state.app_webhook_alive(user.strava_client_id)):
+            # the webhook brings their activities (theirs reached them, or their app's works and they are quiet):
+            # polled once a day all the same (an event may be lost)
+            continue
+        if not state.claim(f"poll:{user.id}", POLL_CLAIM_S):
+            continue
+        try:
+            poll_strava_user.delay(user.id)
+            queued += 1
+        except Exception:
+            state.release(f"poll:{user.id}")
+            logger.exception("Strava poll could not be queued for user %d", user.id)
+    return {"users_checked": queued, "initial_requeued": requeued}
+
+
+@celery_app.task(name="paceforge.poll_strava_user", acks_late=True)
+def poll_strava_user(user_id: int) -> dict:
+    try:
+        return asyncio.run(_poll_user(user_id))
+    except Exception:
+        logger.exception("Strava poll failed for user %d", user_id)
+        return {"user_id": user_id, "error": "failed"}
+    finally:
+        state.release(f"poll:{user_id}")
+
+
+async def _poll_user(user_id: int) -> dict:
+    """One athlete's poll, in its own transaction (a failure rolls back this athlete's import only): their newest
+    activities until a page is all known, whatever their start (one is often uploaded hours after it started), a few
+    races' D+, the activities' lookups; `last_activity_poll_at` says when (Réglages' « Dernière synchro »)."""
+    from app.database import get_task_session
+    from app.services.activity_env import enrich
+    from app.services.race_calibration import backfill_race_dplus
+    from app.services.strava import StravaService, link_intact
+    from app.services.strava_activities import adopt_zone, complete_details, import_recent
 
     async with get_task_session() as db:
-        # Get all active users with valid credentials
-        result = await db.execute(
-            select(User).where(
-                User.initial_sync_done.is_(True),
-                User.strava_credentials_valid.is_(True),
-                User.strava_client_id.isnot(None),
-                User.strava_refresh_token.isnot(None),  # disconnected links have none
-            )
-        )
-        users = result.scalars().all()
-
-        for user in users:
-            if not user.has_strava_app:
-                continue
-            try:
-                strava = StravaService.for_user(db, user)
-
-                # Determine "after" timestamp
-                if user.last_activity_poll_at:
-                    after_epoch = int(user.last_activity_poll_at.timestamp())
-                else:
-                    after_epoch = int(
-                        (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
-                    )
-
-                activities = await strava.get_recent_activities(user, per_page=10)
-
-                for data in activities:
-                    strava_id = data.get("id")
-                    if not strava_id:
-                        continue
-
-                    # Parse start_date to check if it's after our poll window
-                    start_date_str = data.get("start_date", "")
-                    if isinstance(start_date_str, str) and start_date_str:
-                        start_date = datetime.fromisoformat(
-                            start_date_str.replace("Z", "+00:00")
-                        )
-                        if start_date.timestamp() < after_epoch:
-                            continue
-
-                    # Check if already in DB
-                    exists = await db.execute(
-                        select(func.count(Activity.id)).where(
-                            Activity.strava_activity_id == strava_id
-                        )
-                    )
-                    if exists.scalar() > 0:
-                        continue
-
-                    # New activity — save to DB
-                    from datetime import datetime as _dt2
-                    start_val = data.get("start_date")
-                    if isinstance(start_val, str):
-                        start_val = _dt2.fromisoformat(
-                            start_val.replace("Z", "+00:00")
-                        )
-                    activity = Activity(
-                        strava_activity_id=strava_id,
-                        user_id=user.id,
-                        sport_type=data.get("sport_type", data.get("type", "Unknown")),
-                        name=data.get("name", "Untitled"),
-                        start_date=start_val,
-                        distance=data.get("distance", 0),
-                        moving_time=data.get("moving_time", 0),
-                        elapsed_time=data.get("elapsed_time", 0),
-                        total_elevation_gain=data.get("total_elevation_gain", 0),
-                        average_speed=data.get("average_speed"),
-                        max_speed=data.get("max_speed"),
-                        average_heartrate=data.get("average_heartrate"),
-                        max_heartrate=data.get("max_heartrate"),
-                        average_cadence=data.get("average_cadence"),
-                        average_watts=data.get("average_watts"),
-                        splits_metric=data.get("splits_metric"),
-                        raw_data=data,
-                    )
-                    activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
-                    logger.info(
-                        "Poll saved new activity %d for user %d: %s",
-                        strava_id, user.id, activity.name,
-                    )
-                    new_activities += 1
-
-                # The races' D+ from their altitude stream, a few per poll
-                # (new races, and the backlog of athletes synced before)
+        user = await db.get(User, user_id)
+        if not (user and user.initial_sync_done and user.strava_credentials_valid and user.strava_refresh_token
+                and user.has_strava_app):
+            return {"user_id": user_id, "status": "skipped"}
+        strava = StravaService.for_user(db, user)
+        if strava.backing_off():
+            return {"user_id": user_id, "status": "backoff"}
+        try:
+            new = await import_recent(db, user, strava, POLL_PAGES)
+            await db.flush()
+            if not strava.backing_off():
+                # the races' D+ from their altitude stream, a few per poll (new races, and the backlog)
                 try:
-                    from app.services.race_calibration import backfill_race_dplus
-
-                    await db.flush()
                     await backfill_race_dplus(db, user, strava, limit=3)
+                except StravaTokenError:
+                    raise
                 except Exception:
                     logger.warning("Race D+ backfill failed for user %d", user.id, exc_info=True)
-
-                # each new outdoor activity's altitude and weather (Open-Meteo), the backlog a few at a
-                # time; never fails the poll
-                from app.services.activity_env import enrich
-
-                await db.flush()
-                await enrich(db, user.id)
-
-                # Update poll timestamp
-                user.last_activity_poll_at = datetime.now(timezone.utc)
-                users_checked += 1
-
-                # Rate limit: wait between users
-                await aio.sleep(1)
-
-            except Exception:
-                logger.exception("Poll failed for user %d", user.id)
-                users_checked += 1
-
-        await db.commit()
-
-    return {"users_checked": users_checked, "new_activities": new_activities}
+            if not strava.backing_off():
+                # the details a list never carries (splits, laps…), a few per poll: what a first import cut short
+                # by the quota left, what the poll and « Synchroniser » saved from the list
+                await complete_details(db, user, strava)
+            # each new outdoor activity's altitude and weather (Open-Meteo), the backlog a few at a time
+            await db.flush()
+            await enrich(db, user.id)
+            await adopt_zone(db, user)
+            user.last_activity_poll_at = datetime.now(timezone.utc)
+            await db.commit()
+            state.polled(user_id)
+        except StravaTokenError:
+            if link_intact(user):  # Strava's token endpoint failed, nothing refused: the next round tries again
+                await db.rollback()
+                raise
+            await db.commit()  # what the refresh found (revoked: forgotten; keys refused: flagged) is kept
+            return {"user_id": user_id, "status": "reconnect"}
+        except Exception:
+            await db.rollback()
+            raise
+    if new:
+        logger.info("Strava poll saved %d new activities for user %d", new, user_id)
+    return {"user_id": user_id, "new_activities": new}

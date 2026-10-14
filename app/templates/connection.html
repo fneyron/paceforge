@@ -21,7 +21,7 @@
         {% else %}
             <p class="pf-pill pf-pill-ok"><span class="pf-dot"></span>Connecté</p>
             <p class="text-sm text-gray-500">{% if w.last_sync_at %}Dernière synchronisation : {{ w.last_sync_ago }}.{% else %}Les données apparaîtront après la première synchronisation.{% endif %}</p>
-            {% if w.last_error or w.interrupted %}<p class="pf-note">La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer.</p>{% endif %}
+            {% if w.last_error or w.interrupted %}<p class="pf-note">{% if provider == 'strava' %}{{ w.last_error }}{% else %}La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer.{% endif %}</p>{% endif %}
             <a href="paceforge://devices" class="pf-btn pf-btn-primary pf-btn-block">Revenir dans PaceForge</a>
         {% endif %}
         <details>
