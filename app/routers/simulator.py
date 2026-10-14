@@ -1107,7 +1107,9 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     if wind_mode == "auto" and weather:
         hw = weather.get("hourly") or {}
         if hw.get("wind"):
-            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or [], "points": hw.get("points") or []}
+            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or [], "points": hw.get("points") or [],
+                           # the air density at each segment's time of passage
+                           "temps": hw.get("temps") or [], "elevation": hw.get("elevation")}
         else:
             wind_speed = float(weather.get("wind_speed_kmh") or 0)
             wind_dir = weather.get("wind_direction_deg")

@@ -347,3 +347,41 @@ async def test_steep_hiked_splits_count(db_session, test_user):
     assert prof.gradient_factors[25] == pytest.approx(w * own + (1 - w) * rs._get_default_factor(25), abs=1e-3)
 
 
+# ── 5g. cycling: the air at the course's altitude, the drivetrain ──
+
+def test_air_density_and_drivetrain():
+    from app.services.cycling_simulator import (
+        DRIVETRAIN_EFFICIENCY,
+        air_density,
+        cycling_power,
+        estimate_cda_from_streams,
+    )
+
+    assert air_density(0) == pytest.approx(1.225, abs=1e-3)
+    assert air_density(2000) == pytest.approx(1.007, abs=0.005)
+    assert air_density(0, 30.0) < air_density(0, 0.0)
+    wheel = cycling_power(10.0, 80, 2.0, efficiency=1.0)
+    assert cycling_power(10.0, 80, 2.0) == pytest.approx(wheel / DRIVETRAIN_EFFICIENCY)
+    # a ride the model would produce (power at the pedals) gives back the CdA it was made with
+    n, v, rho = 3600, 9.0, air_density(500)
+    p = cycling_power(v, 80, 0.0, cda=0.30, crr=0.005, rho=rho)
+    streams = {"watts": [p] * n, "velocity_smooth": [v] * n, "altitude": [500.0] * n, "time": list(range(n))}
+    cda, _ = estimate_cda_from_streams(streams, 80, crr=0.005)
+    assert cda == pytest.approx(0.30, rel=0.01)
+
+
+def test_a_mountain_course_is_ridden_in_thinner_air():
+    from app.services.cycling_simulator import predict_cycling_course
+
+    low, high = _course(), _course()
+    for seg in high.segments:
+        seg.min_elevation += 2000
+        seg.max_elevation += 2000
+    t_low = predict_cycling_course(low, target_power_watts=200, rider_weight_kg=70).predicted_total_time_s
+    t_high = predict_cycling_course(high, target_power_watts=200, rider_weight_kg=70).predicted_total_time_s
+    assert t_high < t_low
+    assert predict_cycling_course(high, target_power_watts=200, rider_weight_kg=70).rho < 1.1
+    # a density given is used as is
+    assert predict_cycling_course(low, target_power_watts=200, rider_weight_kg=70, rho=1.225).rho == 1.225
+
+
