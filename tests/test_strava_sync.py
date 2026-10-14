@@ -434,7 +434,8 @@ async def test_one_athletes_failure_leaves_the_others_import_whole(task_db, monk
 async def test_the_round_is_hourly_and_leaves_the_webhooks_athletes_alone(db_session, test_user, task_session,
                                                                           monkeypatch):
     """Base code: every athlete, every 5 minutes (≥ 288 reads a day each: the shared app's 1,000 were gone with 4
-    athletes). Now hourly, and only for those the webhook has not reached for 24 h; one queued poll per athlete."""
+    athletes). Now hourly, and only for those the webhook has not reached for 24 h (all are polled once a day all
+    the same); one queued poll per athlete."""
     from celery.schedules import crontab
 
     from app.celery_app import celery_app
@@ -447,11 +448,12 @@ async def test_the_round_is_hourly_and_leaves_the_webhooks_athletes_alone(db_ses
     queued = []
     monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: queued.append(uid))
     strava_state.webhook_reached(test_user.id)
+    strava_state.polled(test_user.id)
     strava_state.back_off("902", time.time() + 600)
     assert (await poll_activities._run_poll())["users_checked"] == 1 and queued == [quiet.id]
     assert (await poll_activities._run_poll())["users_checked"] == 0  # still queued (claimed): never twice
     strava_state.release(f"poll:{quiet.id}")  # its poll ran
-    strava_state.webhook_forget(test_user.id)  # 24 h without an event
+    strava_state.release(f"polled:{test_user.id}")  # a day after its last poll: polled although reached
     strava_state.release("backoff:902")
     queued.clear()
     await poll_activities._run_poll()
@@ -462,6 +464,37 @@ async def test_the_round_is_hourly_and_leaves_the_webhooks_athletes_alone(db_ses
     monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
     strava_state.back_off("901", time.time() + 600)
     assert (await poll_activities._poll_user(quiet.id))["status"] == "backoff" and fetch.await_count == 0
+
+
+async def test_an_event_lost_is_recovered_by_the_daily_poll(db_session, test_user, task_session, monkeypatch):
+    """Review D4: an athlete uploading every day kept their webhook marker fresh, so an event lost once (the web
+    restarting during a deploy, the broker down at the enqueue) was never polled in. Every linked athlete is now
+    polled at least once a day, the webhook's included."""
+    from app.tasks import poll_activities, webhook_sync
+
+    await _own_app(db_session, test_user, sub=55)
+    now = datetime.now(timezone.utc)
+    lost = _data(980_000, now - timedelta(days=7))  # its event never reached PaceForge
+    uploads = [lost]
+    queued = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: queued.append(uid))
+    monkeypatch.setattr(StravaService, "get_recent_activities",
+                        AsyncMock(side_effect=lambda user, per_page=30, page=1: uploads[::-1][:per_page]))
+    polls = 0
+    for day in range(1, 4):  # an upload a day, its event handled; 24 rounds a day
+        detail = _data(980_000 + day, now - timedelta(days=7 - day))
+        uploads.append(detail)
+        monkeypatch.setattr(StravaService, "get_activity", AsyncMock(return_value=detail))
+        assert (await webhook_sync._run_webhook_sync(detail["id"], test_user.strava_athlete_id))["status"] == "saved"
+        for _ in range(24):
+            queued.clear()
+            await poll_activities._run_poll()
+            for uid in queued:
+                await poll_activities._poll_user(uid)
+                strava_state.release(f"poll:{uid}")
+                polls += 1
+        strava_state.release(f"polled:{test_user.id}")  # the day goes by
+    assert await _row(db_session, 980_000) is not None and polls == 3  # once a day, not hourly
 
 
 async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, monkeypatch):

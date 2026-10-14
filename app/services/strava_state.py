@@ -15,7 +15,8 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 PREFIX = "paceforge:strava:"
-WEBHOOK_FRESH_S = 24 * 3600  # an athlete the webhook reached within this is not polled
+WEBHOOK_FRESH_S = 24 * 3600  # an athlete the webhook reached within this is not polled hourly
+POLLED_EVERY_S = 24 * 3600  # every linked athlete is polled at least this often all the same (an event may be lost)
 INITIAL_RUN_S = 3 * 3600  # a first import running (a lost worker frees it after this)
 INITIAL_RETRY_S, INITIAL_RETRY_MAX_S = 3600, 24 * 3600  # a failed first import waits 1 h, 2 h, 4 h… 24 h at most
 _KEEP_FAILURE_S = 7 * 24 * 3600
@@ -107,6 +108,16 @@ def webhook_recent(user_id: int) -> bool:
 def webhook_forget(user_id: int) -> None:
     """The next round polls this athlete again (an event the webhook could not bring)."""
     release(f"webhook:{user_id}")
+    release(f"polled:{user_id}")
+
+
+def polled(user_id: int) -> None:
+    """The athlete's newest activities were just listed (a poll, « Synchroniser », the first import)."""
+    mark(f"polled:{user_id}", POLLED_EVERY_S)
+
+
+def polled_recently(user_id: int) -> bool:
+    return read(f"polled:{user_id}") is not None
 
 
 # ── the first import ────────────────────────────────────────────────────────

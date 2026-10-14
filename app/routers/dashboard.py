@@ -375,6 +375,7 @@ async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool 
         await db.flush()
         await adopt_zone(db, user)
         user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
+        strava_state.polled(user.id)  # as good as the round's poll
         if total_synced:
             logger.info(
                 "Synced %d new activities from Strava for user %d",

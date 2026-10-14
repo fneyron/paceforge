@@ -55,6 +55,7 @@ def initial_sync(self: Task, user_id: int) -> dict:
         state.release(state.initial_lock(user_id))
     if not result.get("error"):
         state.initial_clear(user_id)
+        state.polled(user_id)
     logger.info(
         "Initial sync complete for user %d: %d activities synced, %d enriched",
         user_id,

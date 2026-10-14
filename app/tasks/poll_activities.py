@@ -19,8 +19,8 @@ POLL_CLAIM_S = 2 * 3600  # an athlete's poll queued or running is not queued aga
 
 @celery_app.task(name="paceforge.poll_new_activities")
 def poll_new_activities() -> dict:
-    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h, and the first
-    imports due again after a failure."""
+    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h (and of every one
+    not polled for 24 h: an event may be lost), and the first imports due again after a failure."""
     try:
         result = asyncio.run(_run_poll())
         logger.info("Strava round: %d polls and %d first imports queued",
@@ -62,7 +62,9 @@ async def _run_poll() -> dict:
                 except Exception:
                     logger.exception("Initial sync could not be queued again for user %d", user.id)
             continue
-        if state.webhook_recent(user.id) or not state.claim(f"poll:{user.id}", POLL_CLAIM_S):
+        if state.webhook_recent(user.id) and state.polled_recently(user.id):
+            continue  # the webhook brings their activities; polled once a day all the same (an event may be lost)
+        if not state.claim(f"poll:{user.id}", POLL_CLAIM_S):
             continue
         try:
             poll_strava_user.delay(user.id)
@@ -119,6 +121,7 @@ async def _poll_user(user_id: int) -> dict:
             await adopt_zone(db, user)
             user.last_activity_poll_at = datetime.now(timezone.utc)
             await db.commit()
+            state.polled(user_id)
         except StravaTokenError:
             if link_intact(user):  # Strava's token endpoint failed, nothing refused: the next round tries again
                 await db.rollback()
