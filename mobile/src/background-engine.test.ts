@@ -14,19 +14,20 @@ const night = { date: '2026-10-14', source_id: 'a'.repeat(64), source_name: 'App
   sleep: [{ start: '2026-10-13T21:00:00Z', end: '2026-10-14T05:00:00Z', stage: 'core' }], naps: [], hr: [], hrv_sdnn: [], resp: [] } as AppleNight;
 
 function fixture(overrides: Partial<EngineDeps> = {}) {
-  let clock = start, held = false, active = 0, peak = 0;
+  // waitTick: fake time spent by each failed lock attempt (a foreground sync holding it).
+  let clock = start, held = false, active = 0, peak = 0, waitTick = 0;
   const calls: string[] = [];
   const sent: { path: string; body: unknown; token: string; timeout: number; readAt: string }[] = [];
   const stored = { pair: { token: 'token-2', user_id: 1, name: 'Florent' } as Pair, automatic: true,
     receipt: null as SyncReport | null, state: { ...emptyState(1), enabled: true } };
   const data = { days: [weighIn, steps], nights: [night] };
   const deps: EngineDeps = {
-    id: 'test', now: () => clock, debounceMs: 15,
+    id: 'test', now: () => clock, debounceMs: 15, retryMs: 2,
     load: async () => ({ pair: stored.pair, automatic: stored.automatic, receipt: stored.receipt, state: stored.state }),
     saveState: async state => { stored.state = state; },
     saveReceipt: async report => { stored.receipt = report; },
     savePair: async pair => { stored.pair = pair; },
-    lock: { acquire: async () => { if (held) return false; held = true; return true; }, release: async () => { held = false; } },
+    lock: { acquire: async () => { if (held) { clock += waitTick; return false; } held = true; return true; }, release: async () => { held = false; } },
     protectedData: async () => true,
     changes: async tokens => ({ daysBack: 3, tokens }),
     readDaily: async (daysBack, budget) => {
@@ -46,7 +47,7 @@ function fixture(overrides: Partial<EngineDeps> = {}) {
     ...overrides,
   };
   return { deps, stored, data, calls, sent, peak: () => peak, advance: (ms: number) => { clock += ms; },
-    hold: () => { held = true; }, free: () => { held = false; } };
+    hold: (tick = 1000) => { held = true; waitTick = tick; }, free: () => { held = false; } };
 }
 
 test('changes reported together (weight and body fat, per type) make one bounded background run', async () => {
@@ -97,11 +98,29 @@ test('one run at a time: a change during a run is read again right after it', as
   assert.equal(reads, 2); assert.equal(f.peak(), 1);
 });
 
-test('a run held by another runtime (lock file) is skipped without reading', async () => {
-  const f = fixture(), engine = createEngine(f.deps);
-  f.hold();
-  assert.equal(await engine.request('task'), 'busy');
-  assert.deepEqual(f.calls, []);
+test('a wake while the foreground sync holds the lock waits for it, or runs once that sync is over', async () => {
+  // Released within the wake's time: the same wake reads after it.
+  const quick = fixture(), engine = createEngine(quick.deps);
+  quick.hold(0);
+  const waiting = engine.request('healthkit');
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.deepEqual(quick.calls, [], 'nothing read while the lock is held');
+  quick.free();
+  assert.equal(await waiting, 'sent');
+  // Held past the wake's window (a long manual sync): kept, pending, then resumed.
+  const slow = fixture(), later = createEngine(slow.deps);
+  slow.hold(1000);
+  assert.equal(await later.request('healthkit'), 'busy');
+  assert.equal(slow.calls.length, 0);
+  assert.ok(later.pending());
+  slow.free();
+  later.resumeMissed(); // syncExclusively's finally, after releasing the lock
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.deepEqual(slow.calls.slice(0, 1), ['daily 3 8000/3000'], 'the kept wake gets a full run');
+  assert.equal(slow.sent.length, 2);
+  later.resumeMissed(); // nothing kept any more
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(slow.calls.filter(c => c.startsWith('daily')).length, 1);
 });
 
 test('the deadline stops before sending: nothing half-sent, the next opening syncs at once', async () => {
@@ -116,15 +135,26 @@ test('the deadline stops before sending: nothing half-sent, the next opening syn
   assert.ok(engine.pending());
 });
 
-test('the HealthKit wake window bounds the run; a timer that fires late gets a full run', async () => {
+test('a HealthKit run ends within 14 s of its JavaScript callback (boot allowance); a late one is short or full', async () => {
   const f = fixture(), engine = createEngine(f.deps);
+  const nights = () => f.calls.filter(c => c.startsWith('nights')).at(-1);
+  await engine.request('healthkit');
+  assert.equal(nights(), 'nights 3 10000/3000');
+  f.data.days = [{ ...weighIn, value: 70.4 }];
   const wake = engine.request('healthkit');
-  f.advance(12000); // the debounce fired late in the 25 s window
+  f.advance(9000); // the debounce fired late: 5 s of the window left
   await wake;
-  assert.deepEqual(f.calls.slice(0, 2), ['daily 3 8000/3000', 'nights 3 8000/3000']);
-  f.advance(60000);
-  await engine.request('healthkit').then(() => f.advance(0));
-  assert.equal(f.calls.at(-1), 'nights 3 10000/3000');
+  assert.deepEqual(f.calls.slice(-2), ['daily 3 5000/3000', 'nights 3 5000/3000']);
+  f.data.days = [{ ...weighIn, value: 70.6 }];
+  const end = engine.request('healthkit');
+  f.advance(13000); // at the very end of the window: a short attempt
+  await end;
+  assert.deepEqual(f.calls.slice(-2), ['daily 3 3000/3000', 'nights 3 3000/3000']);
+  f.data.days = [{ ...weighIn, value: 70.8 }];
+  const resumed = engine.request('healthkit');
+  f.advance(60000); // the app was suspended, then woken again or opened
+  await resumed;
+  assert.equal(nights(), 'nights 3 10000/3000');
 });
 
 test('a refused token stops background sync and asks to reconnect, without retrying', async () => {

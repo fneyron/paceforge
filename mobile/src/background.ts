@@ -140,12 +140,17 @@ export async function resetBackgroundState(userId: number): Promise<void> {
 /** The foreground sync takes the same lock, waiting for a background run (18 s at most). */
 export async function syncExclusively<T>(work: () => Promise<T>): Promise<T> {
   const owner = `${id}:foreground:${Date.now()}`, until = Date.now() + 25000;
-  while (!await syncLock.acquire(owner, Date.now() + 3 * LOCK_MS) && Date.now() < until) {
+  while (!await syncLock.acquire(owner, Date.now() + LOCK_MS) && Date.now() < until) {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
+  // Held for its real duration: renewed while the sync runs, gone 60 s after a crash.
+  const renew = setInterval(() => { void syncLock.acquire(owner, Date.now() + LOCK_MS); }, LOCK_MS / 3);
   try { return await work(); } finally {
+    clearInterval(renew);
     engine.clearPending();
     await syncLock.release(owner);
+    // A HealthKit wake that found the lock taken past its window runs now.
+    engine.resumeMissed();
   }
 }
 export const backgroundPending = () => engine.pending();

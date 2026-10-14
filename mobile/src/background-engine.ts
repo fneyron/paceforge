@@ -8,10 +8,15 @@ import type { ChangePlan, Daily, HealthResult, Metric, Pair, ReadBudget, SleepRe
 export const TASK_NAME = 'paceforge-health-sync';
 export const TASK_INTERVAL_MINUTES = 60;
 export const DEBOUNCE_MS = 1500;
-// HealthKit keeps the app awake ~25 s after its callback (a fixed native window).
-export const WAKE_MS = 20000;
+// HealthKit keeps the app awake ~25 s after its native callback, which comes before
+// JavaScript boots on a cold launch: leave a boot allowance and finish within 14 s
+// of the JavaScript callback. A run starting at the very end gets a short attempt.
+export const WAKE_MS = 14000;
+const MIN_RUN_MS = 3000;
 export const RUN_MS = 18000;
 export const LOCK_MS = 60000;
+// How often a wake checks whether the foreground sync has released the lock.
+const RETRY_MS = 1000;
 const NIGHTS = 3;
 const DAILY: Required<ReadBudget> = { total: 8000, perRead: 3000 };
 const SLEEP: Required<ReadBudget> = { total: 10000, perRead: 3000 };
@@ -20,7 +25,8 @@ const SEND_MS = 8000;
 // Hashes only skip identical re-sends: forgotten daily, so a loss on the server heals.
 const HASHES_MS = 24 * 3600000, HASH_DAYS = 10;
 
-export type Wake = 'healthkit' | 'task';
+// resume: a wake the foreground sync kept waiting, run once it is over.
+export type Wake = 'healthkit' | 'task' | 'resume';
 export type Outcome = 'off' | 'locked' | 'busy' | 'deferred' | 'unchanged' | 'sent' | 'partial' | 'reconnect' | 'failed';
 // logout / mismatch: the web session left the paired account; off until it is confirmed again.
 export type Block = '' | 'logout' | 'mismatch';
@@ -72,7 +78,7 @@ export type EngineDeps = {
   disable: () => Promise<void>;
   notify: (report: SyncReport) => void;
   locked: (error: unknown) => boolean;
-  debounceMs?: number;
+  debounceMs?: number; retryMs?: number;
 };
 
 const dailyKey = (d: Daily) => `d|${d.date}|${d.metric}`;
@@ -87,7 +93,7 @@ export function createEngine(deps: EngineDeps) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<void> | null = null;
   let queue: { wake: Wake; resolve: (outcome: Outcome) => void }[] = [];
-  let wakeEnd = 0, runs = 0, pendingHere = false;
+  let wakeEnd = 0, runs = 0, pendingHere = false, missed = false;
 
   /** Coalesces wakes (HealthKit calls once per changed type) into one run at a time. */
   function request(wake: Wake): Promise<Outcome> {
@@ -95,7 +101,7 @@ export function createEngine(deps: EngineDeps) {
     return new Promise(resolve => {
       queue.push({ wake, resolve });
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { timer = null; void drain(); }, wake === 'task' ? 0 : deps.debounceMs ?? DEBOUNCE_MS);
+      timer = setTimeout(() => { timer = null; void drain(); }, wake === 'healthkit' ? deps.debounceMs ?? DEBOUNCE_MS : 0);
     });
   }
   async function drain() {
@@ -105,7 +111,9 @@ export function createEngine(deps: EngineDeps) {
         const batch = queue;
         queue = [];
         let outcome: Outcome;
-        try { outcome = await once(batch.some(b => b.wake === 'task') ? 'task' : 'healthkit'); } catch { outcome = 'failed'; }
+        // Only HealthKit wakes are bounded by its window; the task and a resumed wake are not.
+        const wake = batch.find(b => b.wake !== 'healthkit')?.wake ?? 'healthkit';
+        try { outcome = await once(wake); } catch { outcome = 'failed'; }
         batch.forEach(b => b.resolve(outcome));
       }
     })();
@@ -114,12 +122,18 @@ export function createEngine(deps: EngineDeps) {
 
   async function once(wake: Wake): Promise<Outcome> {
     const start = deps.now();
-    // A late timer (the app was suspended) gets a full run: JavaScript only runs again
-    // when iOS wakes or opens the app.
-    const deadline = wake === 'healthkit' && wakeEnd > start + 2000 ? Math.min(start + RUN_MS, wakeEnd) : start + RUN_MS;
-    const owner = `${deps.id}:${++runs}`;
-    // Android may run the task in another JavaScript runtime than the screen: the lock is a file.
-    if (!await deps.lock.acquire(owner, start + LOCK_MS)) return 'busy';
+    // A run starting long after its window (the app was suspended, then woken again or
+    // opened) gets a full run: JavaScript only runs when iOS gives it time.
+    const deadline = wake === 'healthkit' && start - wakeEnd < 30000
+      ? Math.min(start + RUN_MS, Math.max(wakeEnd, start + MIN_RUN_MS)) : start + RUN_MS;
+    const owner = `${deps.id}:${++runs}`, retry = deps.retryMs ?? RETRY_MS;
+    // Android may run the task in another JavaScript runtime than the screen: the lock is
+    // a file. The foreground sync holds it while it runs: wait within this wake's time,
+    // otherwise keep the wake for when that sync finishes (resumeMissed).
+    while (!await deps.lock.acquire(owner, deps.now() + LOCK_MS)) {
+      if (deps.now() + retry >= deadline) { pendingHere = true; missed = true; return 'busy'; }
+      await new Promise(resolve => setTimeout(resolve, retry));
+    }
     try { return await run(deadline); } finally { await deps.lock.release(owner).catch(() => {}); }
   }
 
@@ -210,6 +224,8 @@ export function createEngine(deps: EngineDeps) {
     /** A locked phone or a time limit left work for the next opening. */
     pending: () => pendingHere,
     clearPending: () => { pendingHere = false; },
+    /** After the foreground sync released the lock: run a wake it kept waiting. */
+    resumeMissed: () => { if (missed) { missed = false; void request('resume'); } },
   };
 }
 export type Engine = ReturnType<typeof createEngine>;
