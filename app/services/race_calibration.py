@@ -237,6 +237,7 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
         points.append(race_point(
             a.name, km, dplus, a.moving_time / 3600, is_race,
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
+            elapsed_h=round((a.elapsed_time or 0) / 3600, 2) or None,
         ))
     return model_from_points(points)
 
@@ -279,7 +280,43 @@ def model_from_points(points: list[dict], today: date | None = None) -> dict | N
     model["ignored"] = sorted(ignored, key=lambda p: -p["hours"])[:6]
     model["n_races"] = len(races)
     model["n_used"] = len(used)
+    model["stop_factor"] = stop_factor(used)
     return model
+
+
+# ── the athlete's own stops: his races' (elapsed − moving) / elapsed against
+# the field's at the same finish time ──
+# The field's median share of the finish time spent stopped, 1 695 LiveTrail
+# finishers of 40-180 km whose departures were timed at ≥ 60 % of the
+# checkpoints (median regression): 2.69 % at 18 h, × (T / 18 h)^1.072. A
+# race's ratio to it, averaged in ln over his races of 3 h or more, is shrunk
+# halfway to the field (one race's share is noisy: ln SD 1.15) and bounded.
+# Checked on 112 UTMB Live runners linked across two races timed in and out
+# at the stations, the factor of one race applied to the other's median
+# stops: total stops off by 21.8 min against 24.8 without it (−3.0 [−5.3,
+# −0.6]), the clock after each station by 13.1 against 14.6 (−1.4 [−2.6,
+# −0.2]; 95 % CI, bootstrap over the runners).
+STOP_SHARE_18H, STOP_SHARE_EXP = 0.0269, 1.072
+STOP_FACTOR_SHRINK = 0.5
+STOP_FACTOR_RANGE = (0.5, 2.0)
+
+
+def stop_factor(races: list[dict]) -> float:
+    """The factor his planned stops take (1 = the field's), from his races'
+    elapsed and moving hours; 1 without a race that says it."""
+    logs, ws = [], []
+    for p in races:
+        el, mv = p.get("elapsed_h") or 0, p.get("hours") or 0
+        if mv < 3 or el <= mv:  # short, or no stop recorded (a watch that stops its clock)
+            continue
+        field = STOP_SHARE_18H * (el / 18) ** STOP_SHARE_EXP
+        logs.append(math.log(((el - mv) / el) / field))
+        ws.append(p.get("weight", 1.0))
+    if not logs:
+        return 1.0
+    mean = sum(w * x for w, x in zip(ws, logs, strict=True)) / sum(ws)
+    lo, hi = STOP_FACTOR_RANGE
+    return round(max(lo, min(hi, math.exp(STOP_FACTOR_SHRINK * mean))), 3)
 
 
 # Recency: a race weighs 0.5 ** (age / half-life) in the fit (None = off): the
@@ -430,6 +467,49 @@ def apply_race_calibration(course, model: dict | None, training_total_s: float |
         # the course and every race used have their D+ by the same algorithm
         "dplus_same_ruler": bool(model.get("dplus_all_stream")) and dplus_src == "effort",
     }
+
+
+# ── how sure the finish time is: the Optimiste / Sécurité scenarios ──
+# The finish time of an athlete on a course is the level of his races times
+# the course's law, with what neither knows. In ln T, independent terms:
+#   day        0.07   his own day-to-day spread (with the 0.07 of a level read on past
+#                     races, the 0.10 SD of 48 640 finishers around their UTMB index)
+#   edition    0.044  the same course from one edition to the next (39 courses, 104 editions)
+#   course     0.07   how far this course's difficulty sits from its effort-km
+#                     (0.04 on a course he has raced before)
+#   level      0.10 / √n  the level read on n races (one race's noise / √n; Kish
+#                     count with the recency weights); no race: 0.15 (H), the
+#                     level then comes from training paces
+#   reach      0.08 · ln(E / Ē)  the exponent's spread between athletes, read
+#                     from the mean effort-km Ē of his races to this one's E
+# Optimiste / Sécurité are the 20th / 80th percentiles: e^(∓0.84 σ) − 1. With
+# a fixed −5 / +10 % only 33-55 % of finishers fell between the two (16-42 %
+# with the former decay).
+SPREAD_DAY, SPREAD_EDITION = 0.07, 0.044
+SPREAD_COURSE, SPREAD_KNOWN_COURSE = 0.07, 0.04
+SPREAD_NO_RACE = 0.15  # (H)
+Z80 = 0.8416  # standard normal 80th percentile
+
+
+def finish_spread(model: dict | None, course_ekm: float | None, known_course: bool = False) -> float:
+    """σ of ln(finish time) for this athlete on this course (see above)."""
+    var = SPREAD_DAY ** 2 + SPREAD_EDITION ** 2 + (SPREAD_KNOWN_COURSE if known_course else SPREAD_COURSE) ** 2
+    n_eff = (model or {}).get("n_eff") or (model or {}).get("n") or 0
+    if n_eff > 0:
+        var += RACE_LOG_SD ** 2 / n_eff
+        mx = (model or {}).get("log_ekm_mean")
+        if mx is not None and course_ekm and course_ekm > 0:
+            var += (K_PRIOR_SD * (math.log(course_ekm) - mx)) ** 2
+    else:
+        var += SPREAD_NO_RACE ** 2
+    return math.sqrt(var)
+
+
+def scenario_pcts(model: dict | None, course_ekm: float | None, known_course: bool = False) -> tuple[float, float]:
+    """(Optimiste % faster, Sécurité % slower) on the moving time: the 20th and
+    80th percentiles of the finish time, to 0.1 %."""
+    sigma = finish_spread(model, course_ekm, known_course)
+    return round((1 - math.exp(-Z80 * sigma)) * 100, 1), round((math.exp(Z80 * sigma) - 1) * 100, 1)
 
 
 # ── personal fatigue tilt, measured on a matched race ──

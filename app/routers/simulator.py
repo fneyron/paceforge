@@ -332,26 +332,34 @@ async def _passage_table_context(
     )
 
     # Aid-station stops: the typed checkpoints; the stop duration comes from the
-    # live input (fallback: saved value).
+    # live input (fallback: saved value), else the stop model at the plan's finish.
     aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
     params: dict = {}
     if route_obj:
         if stop_minutes is None:
             stop_minutes = route_obj.stop_minutes
         params = route_obj.params_json or {}
-    aid_stops = _aid_stops(checkpoints, stop_minutes)
     stop_min = stop_minutes or 0
 
     # Re-predict so the night penalty reflects the chosen start time, and the
     # plan's fatigue and night the objective's clock. Heat is applied once, in
     # compute_passage_times.
     profile = profile or await build_athlete_gradient_profile(db, user_id)
-    course = predict_course(
-        course, profile, start_hour=start_hour, start_minute=start_minute,
-        plan_moving_s=objective_moving_s(
-            target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-        ),
-    )
+    stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
+    total_km = course.total_distance_km
+    if target_time_s:
+        finish_s = float(target_time_s)
+        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
+        course = predict_course(
+            course, profile, start_hour=start_hour, start_minute=start_minute,
+            plan_moving_s=objective_moving_s(
+                target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
+            ),
+        )
+    else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
+        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+        finish_s = _finish_with_stops(course.predicted_total_time_s, checkpoints, stop_minutes, total_km, stop_factor)
+        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -382,12 +390,13 @@ async def _passage_table_context(
 
     # pinned checkpoints make a plan even without an objective
     pinned = is_pinned(sections)
+    sc_set = _scenario_settings(params, profile, course, await _known_course(db, user_id, route_obj))
     scenarios = None if replan else build_scenarios(
         sections, start_offset_s, target_time_s,
-        fast_pct=float(params.get("scenario_fast_pct") or 5.0),
-        safe_pct=float(params.get("scenario_safe_pct") or 10.0),
+        fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
+        safe_extra_stops=_safe_extra_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor),
     )
     # What the profile draws: night, terrain bands, clocks, cutoffs.
     from app.services.pacing_guide import build_pacing_guide, resolve_hr_caps
@@ -830,7 +839,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "show_debrief": mode is not None,
         "race_date_label": fr_date_label(route.race_date),
         "start_label": "%02d:%02d" % (route.start_hour if route.start_hour is not None else 6, route.start_minute or 0),
-        "scenario": {"fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0), "switch_km": p.get("switch_km")},
+        "scenario": _scenario_settings(p, profile, course, await _known_course(db, user_id, route)),
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
         "geojson": json.dumps(geojson),
@@ -1513,10 +1522,12 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
 
                 sections = annotate_cutoffs(sections, cps, start_offset_s)
     pp = route.params_json or {}
+    sc_set = _scenario_settings(pp, b["profile"], course, await _known_course(db, user.id, route), sport=b["sport"])
     scenarios = None if live_applied else build_scenarios(
         sections, start_offset_s, route.target_time_s,
-        fast_pct=float(pp.get("scenario_fast_pct") or 5.0), safe_pct=float(pp.get("scenario_safe_pct") or 10.0),
+        fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
+        safe_extra_stops=b.get("safe_extra_stops"),
     )
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
@@ -1828,11 +1839,18 @@ def _aid_kms_from_checkpoints(cps: list[dict]) -> set:
     return {round(float(cp.get("distance_km") or 0), 1) for cp in cps if (cp.get("kind") or "none") != "none"}
 
 
-STOP_DEFAULT_S = {"water": 120, "full": 300, "base": 900}  # eau 2′ · ravito 5′ · base vie 15′
+def _stop_progress(cp: dict, total_km: float | None) -> float:
+    return float(cp.get("distance_km") or 0) / float(total_km) if total_km else 0.5
 
 
-def _aid_stops(cps: list[dict], override_min: int | None = None) -> dict:
-    """{km: stop seconds} for every aid station: by kind, or one value everywhere when set (> 0)."""
+def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float | None = None,
+               total_km: float | None = None, factor: float = 1.0) -> dict:
+    """{km: stop seconds} for every aid station: its own value when set on the point (wins, even 0), else one value
+    everywhere when set (> 0), else the stop model's median stop for its kind, at the runner's finish
+    ``finish_s`` and the station's share of the distance, times the athlete's own factor
+    (race_simulator.default_stop_s)."""
+    from app.services.race_simulator import default_stop_s
+
     forced = int(override_min) * 60 if override_min else None
     out: dict = {}
     for cp in cps:
@@ -1844,8 +1862,91 @@ def _aid_stops(cps: list[dict], override_min: int | None = None) -> dict:
             continue
         if kind == "none":
             continue
-        out[round(float(cp.get("distance_km") or 0), 1)] = forced if forced is not None else STOP_DEFAULT_S.get(kind, 300)
+        stop = forced if forced is not None else default_stop_s(kind, finish_s, _stop_progress(cp, total_km), factor)
+        if stop:
+            out[round(float(cp.get("distance_km") or 0), 1)] = stop
     return out
+
+
+def _safe_extra_stops(cps: list[dict], override_min: int | None, finish_s: float | None, total_km: float | None,
+                      factor: float = 1.0) -> dict:
+    """{km: seconds} the safety column adds at the stations left at the model's stop: its 80th percentile instead
+    of the median. A stop the athlete set (on the point, or one value everywhere) is his on every column."""
+    from app.services.race_simulator import default_stop_s, safe_stop_s
+
+    if override_min:
+        return {}
+    out: dict = {}
+    for cp in cps:
+        kind = cp.get("kind") or "none"
+        if cp.get("stop_s") is not None or kind == "none":
+            continue
+        prog = _stop_progress(cp, total_km)
+        extra = safe_stop_s(kind, finish_s, prog, factor) - default_stop_s(kind, finish_s, prog, factor)
+        if extra > 0:
+            out[round(float(cp.get("distance_km") or 0), 1)] = extra
+    return out
+
+
+def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None, total_km: float | None,
+                       factor: float = 1.0) -> float | None:
+    """The finish the stop model reads when no objective is set: the predicted moving time plus the stops it
+    gives (one pass: the stops are a few % of the finish)."""
+    if not moving_s:
+        return None
+    return float(moving_s) + sum(_aid_stops(cps, override_min, float(moving_s), total_km, factor).values())
+
+
+# The former fixed Optimiste / Sécurité defaults: saved with the form until now (the form posts both fields),
+# they are read as « automatique »: the 20th / 80th percentiles of the finish time.
+LEGACY_SCENARIO_PCTS = (5.0, 10.0)
+
+
+def _own_pct(value, legacy: float) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if v == legacy else v
+
+
+def _scenario_settings(params: dict, profile, course, known_course: bool = False, sport: str = "trail") -> dict:
+    """Optimiste / Sécurité: the athlete's own percentages when he set them, else the 20th / 80th percentiles of
+    his finish time on this course (race_calibration.scenario_pcts: his races' level, how many, how far this
+    course is from them). The race model counts only where it set the level (profile.race_calibration). A bike
+    plan keeps the former −5 / +10 % (no data on the bike's spread)."""
+    from app.services.race_calibration import course_dplus, effort_km, scenario_pcts
+
+    if sport == "bike":
+        auto_fast, auto_safe = LEGACY_SCENARIO_PCTS
+    else:
+        model = getattr(profile, "race_model", None) if getattr(profile, "race_calibration", None) else None
+        ekm = effort_km(course.total_distance_km, course_dplus(course)) if course is not None and course.total_distance_km else None
+        auto_fast, auto_safe = scenario_pcts(model, ekm, known_course)
+    own_fast = _own_pct(params.get("scenario_fast_pct"), LEGACY_SCENARIO_PCTS[0])
+    own_safe = _own_pct(params.get("scenario_safe_pct"), LEGACY_SCENARIO_PCTS[1])
+    return {
+        "fast_pct": own_fast if own_fast is not None else auto_fast,
+        "safe_pct": own_safe if own_safe is not None else auto_safe,
+        "fast_own": own_fast, "safe_own": own_safe, "fast_auto": auto_fast, "safe_auto": auto_safe,
+        "switch_km": params.get("switch_km"),
+    }
+
+
+async def _known_course(db: AsyncSession, user_id: int, route: Route | None) -> bool:
+    """He has raced this course before: one of his routes with a linked result is within 3 % of its distance
+    and 10 % of its D+ (100 m at least) — this route itself once its result is linked."""
+    from sqlalchemy import String, cast
+
+    if route is None or not route.total_distance_km:
+        return False
+    km, dp = float(route.total_distance_km), float(route.total_elevation_gain or 0)
+    rows = (await db.execute(
+        select(Route.total_distance_km, Route.total_elevation_gain)
+        .where(Route.user_id == user_id, Route.result_json.is_not(None),
+               cast(Route.result_json, String) != "null")  # a result set aside is stored as JSON null
+    )).all()
+    return any(abs(float(k or 0) - km) <= 0.03 * km and abs(float(d or 0) - dp) <= max(100.0, 0.10 * dp) for k, d in rows)
 
 
 async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None) -> dict:
@@ -1869,7 +1970,6 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
     aid = _aid_kms_from_checkpoints(cps)
     stop_min = route.stop_minutes or 0
-    aid_stops = _aid_stops(cps, route.stop_minutes)
 
     if route.sport_type == "bike":
         from app.services.cycling_simulator import build_bike_passage_sections
@@ -1896,12 +1996,21 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     course = CourseProfile(**route.course_json)
     if profile is None:
         profile = await build_athlete_gradient_profile(db, user.id)
-    course = predict_course(
-        course, profile, start_hour=start_hour, start_minute=start_minute,
-        plan_moving_s=objective_moving_s(
-            route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-        ),
-    )
+    stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
+    total_km = course.total_distance_km
+    if route.target_time_s:
+        finish_s = float(route.target_time_s)
+        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
+        course = predict_course(
+            course, profile, start_hour=start_hour, start_minute=start_minute,
+            plan_moving_s=objective_moving_s(
+                route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
+            ),
+        )
+    else:  # no objective: the stops of the predicted finish
+        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+        finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km, stop_factor)
+        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
@@ -1912,6 +2021,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
 
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
+        # the safety column's longer stops (stations at the model's stop)
+        "safe_extra_stops": _safe_extra_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor),
         "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         # pinned checkpoints make a plan (adjusted_*) even without an objective
@@ -1948,10 +2059,7 @@ async def _pacing_context(request: Request | None, route: Route, db: AsyncSessio
         "request": request, "route": route, "route_id": route.id, "guide": guide, "caps": caps,
         "walk_grade": walk_grade, "max_hr": zones.get("max_hr"), "defaults": defaults,
         "has_target": b["use_target"], "total_km": b["course"].total_distance_km,
-        "scenario": {
-            "fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0),
-            "switch_km": p.get("switch_km"),
-        },
+        "scenario": _scenario_settings(p, b["profile"], b["course"], await _known_course(db, user.id, route), sport=b["sport"]),
         "checkpoints": b["checkpoints"],
     }
 
@@ -2022,9 +2130,14 @@ def _form_num(form, key, lo, hi, cast=float):
 
 
 def _apply_scenarios(form, p: dict, route: Route) -> None:
-    fast, safe = _form_num(form, "scenario_fast_pct", 0, 30), _form_num(form, "scenario_safe_pct", 0, 60)
-    p["scenario_fast_pct"] = fast if fast is not None else 5.0
-    p["scenario_safe_pct"] = safe if safe is not None else 10.0
+    """The athlete's own Optimiste / Sécurité percentages; an empty field is « automatique » (the 20th / 80th
+    percentiles of his finish time, _scenario_settings)."""
+    for key, hi in (("scenario_fast_pct", 30), ("scenario_safe_pct", 60)):
+        v = _form_num(form, key, 0, hi)
+        if v is None:
+            p.pop(key, None)
+        else:
+            p[key] = v
     p["switch_km"] = _form_num(form, "switch_km", 0.1, float(route.total_distance_km or 9999))
 
 

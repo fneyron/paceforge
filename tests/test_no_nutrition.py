@@ -75,10 +75,12 @@ async def test_the_race_page_print_exports_and_rows_carry_nothing_of_the_tool(as
     assert rows.status_code == 200 and not GONE.search(rows.text), GONE.search(rows.text)
     # the checkpoint metadata stays: the kind in words, the drop bag flag
     assert "<span>Ravito</span>" in rows.text and "Drop bag ici" in rows.text
-    # the aid stops come from the typed points only (eau 2′, ravito 5′), never from an old plan's refills
+    # the aid stops come from the typed points only (their kind, at the plan's finish: the stop model), never from an
+    # old plan's refills; one value everywhere when set
     from app.routers.simulator import _aid_stops
 
-    assert _aid_stops(CPS) == {6.0: 120, 10.0: 300, 20.0: 300} and _aid_stops(CPS, 3) == {6.0: 180, 10.0: 180, 20.0: 180}
+    assert _aid_stops(CPS, None, 5 * 3600, 30.0) == {6.0: 61, 10.0: 84, 20.0: 97}
+    assert _aid_stops(CPS, 3, 5 * 3600, 30.0) == {6.0: 180, 10.0: 180, 20.0: 180}
 
 
 @pytest.mark.asyncio

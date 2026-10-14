@@ -64,3 +64,108 @@ def test_the_level_is_the_mean_of_the_races_not_the_best():
     assert {p["name"] for p in m["races"]} == {"A", "B"} and m["n_eff"] == pytest.approx(2)
 
 
+def test_the_athletes_own_stops():
+    field = rc.STOP_SHARE_18H * (20 / 18) ** rc.STOP_SHARE_EXP  # the field's share at 20 h elapsed
+    one = [{"hours": 20 * (1 - 2 * field), "elapsed_h": 20.0, "weight": 1.0}]  # he stops twice as long as the field
+    assert rc.stop_factor(one) == pytest.approx(math.sqrt(2), rel=1e-3)  # halfway (in ln) to the field
+    assert rc.stop_factor([{"hours": 10.0, "elapsed_h": 10.0}]) == 1.0  # a watch that stops its clock: says nothing
+    assert rc.stop_factor([{"hours": 2.0, "elapsed_h": 2.5}]) == 1.0  # too short
+    assert rc.stop_factor([{"hours": 10.0, "elapsed_h": 20.0}]) == rc.STOP_FACTOR_RANGE[1]  # bounded
+
+
+# ── 2. Optimiste / Sécurité: the 20th / 80th percentiles of the finish time ──
+
+def test_the_finish_time_spread():
+    base = 0.07 ** 2 + 0.044 ** 2 + 0.07 ** 2
+    assert rc.finish_spread({"n": 1, "n_eff": 1}, None) == pytest.approx(math.sqrt(base + 0.01))
+    assert rc.finish_spread({"n": 3, "n_eff": 3}, None) == pytest.approx(math.sqrt(base + 0.01 / 3))
+    # a course he raced before: its own difficulty is known better
+    known = rc.finish_spread({"n": 3, "n_eff": 3}, None, known_course=True)
+    assert known == pytest.approx(math.sqrt(0.07 ** 2 + 0.044 ** 2 + 0.04 ** 2 + 0.01 / 3))
+    # far from his races: the exponent's spread between athletes
+    m = {"n": 3, "n_eff": 3, "log_ekm_mean": math.log(100)}
+    assert rc.finish_spread(m, 250) == pytest.approx(math.sqrt(base + 0.01 / 3 + (0.08 * math.log(2.5)) ** 2))
+    # no race at all: the level from training (H)
+    assert rc.finish_spread(None, 100) == pytest.approx(math.sqrt(base + 0.15 ** 2))
+    # e^(∓0.84 σ) − 1
+    assert rc.scenario_pcts({"n": 3, "n_eff": 3}, None) == (9.8, 10.9)
+    fast, safe = rc.scenario_pcts(None, 100)
+    assert fast > 12 and safe > 15
+
+
+def test_scenarios_switch_at_five_percent_and_the_safety_columns_longer_stops():
+    sections = rs.compute_passage_times(_course(), CPS, 5 * 3600, 1.0, 6, 0, None, aid_stops={6.0: 120, 10.0: 300})
+    sc = rs.build_scenarios(sections, 6 * 3600, 5 * 3600, fast_pct=9.8, safe_pct=10.9, safe_extra_stops={6.0: 100, 10.0: 200})
+    sw = sc["switch"]
+    assert sw["km"] == 20.0 and sc["switch_late_pct"] == 5
+    assert sc["switch_late_s"] == round((sw["target_s"] - 6 * 3600) * 0.05 / 60) * 60  # 5 % of the plan there, to the minute
+    rows = {r["km"]: r for r in sc["rows"]}
+    assert rows[6.0]["safe_extra_s"] == 0 and rows[10.0]["safe_extra_s"] == 100 and rows[20.0]["safe_extra_s"] == 300
+    plain = rs.build_scenarios(sections, 6 * 3600, 5 * 3600, fast_pct=9.8, safe_pct=10.9)
+    assert sc["totals"]["safe_s"] - plain["totals"]["safe_s"] == 300
+    assert sc["totals"]["target_s"] == plain["totals"]["target_s"] and sc["totals"]["fast_s"] == plain["totals"]["fast_s"]
+
+
+def test_scenario_settings_his_own_values_win_the_former_defaults_are_automatic():
+    from app.routers.simulator import _apply_scenarios, _scenario_settings
+
+    course = _course()
+    auto = _scenario_settings({}, None, course)
+    assert (auto["fast_pct"], auto["safe_pct"]) == rc.scenario_pcts(None, rc.effort_km(30.0, rc.course_dplus(course)))
+    assert auto["fast_own"] is None and auto["safe_own"] is None
+    own = _scenario_settings({"scenario_fast_pct": 4.0, "scenario_safe_pct": 25.0}, None, course)
+    assert (own["fast_pct"], own["safe_pct"], own["fast_own"]) == (4.0, 25.0, 4.0)
+    legacy = _scenario_settings({"scenario_fast_pct": 5.0, "scenario_safe_pct": 10.0}, None, course)
+    assert (legacy["fast_pct"], legacy["safe_pct"]) == (auto["fast_pct"], auto["safe_pct"])
+    p = {"scenario_fast_pct": 7.0}
+    _apply_scenarios({"scenario_fast_pct": "", "scenario_safe_pct": "20", "switch_km": ""}, p, type("R", (), {"total_distance_km": 30})())
+    assert "scenario_fast_pct" not in p and p["scenario_safe_pct"] == 20.0  # empty = automatique
+
+
+@pytest.mark.asyncio
+async def test_a_course_is_known_once_he_has_raced_it(db_session: AsyncSession, test_user: User):
+    from app.models.route import Route
+    from app.routers.simulator import _known_course
+
+    raced = Route(user_id=test_user.id, name="Ultra 2025", total_distance_km=80.0, total_elevation_gain=4000.0,
+                  result_json={"activity_id": 1})
+    new = Route(user_id=test_user.id, name="Ultra 2026", total_distance_km=81.5, total_elevation_gain=4200.0)
+    other = Route(user_id=test_user.id, name="Autre", total_distance_km=60.0, total_elevation_gain=4000.0)
+    db_session.add_all([raced, new, other])
+    await db_session.flush()
+    assert await _known_course(db_session, test_user.id, new)  # within 3 % of its km and 10 % of its D+
+    assert not await _known_course(db_session, test_user.id, other)
+    raced.result_json = None  # « Ce n'est pas la bonne activité »: the result unlinked, stored as JSON null
+    await db_session.flush()
+    assert not await _known_course(db_session, test_user.id, new)
+
+
+# ── 3. stops: the median stop at the runner's finish, the 80th percentile on the safety column ──
+
+def test_the_stop_model():
+    # a water point mid-race for an 18 h finisher: median 3.9 min (the fit), the planned stop
+    med = rs.stop_median_s("water", 18 * 3600, 0.5)
+    assert med / 60 == pytest.approx(math.exp(1.149 + 0.441 * 0.5), rel=1e-6) and 3.8 < med / 60 < 4.0
+    assert rs.default_stop_s("water", 18 * 3600, 0.5) == round(med)
+    assert rs.safe_stop_s("water", 18 * 3600, 0.5) == round(med * 2.6)
+    # longer for a slower runner, later in the race, at a bigger station
+    assert rs.default_stop_s("full", 30 * 3600, 0.5) > rs.default_stop_s("full", 10 * 3600, 0.5)
+    assert rs.default_stop_s("full", 18 * 3600, 0.9) > rs.default_stop_s("full", 18 * 3600, 0.1)
+    assert rs.default_stop_s("base", 18 * 3600, 0.5) > rs.default_stop_s("full", 18 * 3600, 0.5) > rs.default_stop_s("water", 18 * 3600, 0.5)
+    assert rs.default_stop_s("none", 18 * 3600, 0.5) == 0
+    # his own factor
+    assert rs.default_stop_s("full", 18 * 3600, 0.5, factor=2.0) == pytest.approx(2 * rs.default_stop_s("full", 18 * 3600, 0.5), abs=1)
+
+
+def test_the_stop_he_sets_always_wins():
+    from app.routers.simulator import _aid_stops, _safe_extra_stops
+
+    cps = [dict(CPS[0], stop_s=0), dict(CPS[1], stop_s=420), CPS[2]]
+    stops = _aid_stops(cps, None, 20 * 3600, 30.0)
+    assert 6.0 not in stops and stops[10.0] == 420 and stops[20.0] == rs.default_stop_s("full", 20 * 3600, 20 / 30)
+    assert _aid_stops(cps, 4, 20 * 3600, 30.0) == {10.0: 420, 20.0: 240}  # one value everywhere, the point's own first
+    # the safety column's longer stop only where the model sets it
+    assert set(_safe_extra_stops(cps, None, 20 * 3600, 30.0)) == {20.0}
+    assert _safe_extra_stops(cps, 4, 20 * 3600, 30.0) == {}
+
+

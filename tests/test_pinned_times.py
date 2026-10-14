@@ -50,11 +50,15 @@ def _by(secs, name):
 # ── no pins: byte-for-byte what the plan gave before the feature ──
 
 HOURLY = {"temps": [12 + (h % 24) * 0.5 for h in range(48)], "humidity": [70] * 48, "codes": [3] * 48, "wind": [10] * 48}
-LEGACY = {  # sha256 of {sections, replan at Col +2h, scenarios}, computed before pins existed
-    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "7dd306c737ec235847f0ae303581ce29024e5ab40caac8220d35cdeb57dbeb12"),
-    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "af0d2a5ad451b40f6fc644565b1933d749d84c440634343502b20038fa6150cb"),
-    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "9ba200d49a1c8fdfb7688edda6e7dc1f84c58a436a52c5e2cc96eb853fd71b9b"),
-    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "dd7bc6b76345d155bae4200af5734a5241cec73f3030a41ef42b289c7b7d4628"),
+# sha256 of {sections, replan at Col +2h, scenarios} without pins, computed before pins existed; re-taken on
+# 2026-10-14 for one formula change only (every other byte identical): the safety switch at 5 % of the plan's
+# elapsed time at the switch point (switch_late_s 900 → 540 / 660 s, switch_late_pct added; each scenario row's
+# safe_extra_s, 0 without the stop model's longer stops).
+LEGACY = {
+    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "e95a216500ecb1e0c2cc43771614bdd478ceed2a1c2f04e2318c729762b2e5f6"),
+    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "80af6f8e1c2f1d0ca64a8a3f0c13121701c7e93c63e0e91501e1b02d43178671"),
+    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "2e86ad119fa0c3ab24656e7ba76666eb5366c9429fbf905a6764ac6cc79ccdc9"),
+    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "2dcfeab12e7be06c9c722c61c566593b0ff788e0c3ad11f346e3cc286378f972"),
 }
 
 

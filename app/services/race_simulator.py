@@ -1094,6 +1094,48 @@ def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | Non
     return {}
 
 
+# ── aid-station stops: how long, by station and by runner ──
+# Fitted on 126 840 stops timed in and out on UTMB Live (≥ 20 s, < 4 h):
+#   ln(minutes) = 1.149 + 0.953·ln(T / 18 h) + 0.441·progress + 0.263·FOOD + 0.605·HOT_FOOD
+# (T = the runner's finish time, progress = share of the distance at the
+# station, DRINK the reference; residual SD 1.14 in ln). The plan takes the
+# MEDIAN stop. Scored on the held-out events with the model fitted on the
+# others (5 655 runners of the 5 events with stations timed in and out; 95 %
+# CI from 4 000 resamples of the events): the clock after each station off by
+# 15.2 min on average against 18.9 with the former 2 / 5 / 15 min (−3.7
+# [−6.0, −0.3]), the total of the stops by 26.1 min against 33.6 (−7.5
+# [−10.6, −1.1]). The log-normal mean (1.81 × the median) read the clock
+# worse (19.3 min); the mean times the share of runners who stop at all,
+# nearly unbiased on the total (+4 min; the median −15, the former −20), was
+# not better beyond the noise (16.6 min: −2.3 [−4.9, +1.9]). The safety
+# column takes the 80th percentile (2.6 × the median). Kinds: eau → DRINK,
+# ravito → FOOD, base vie → HOT_FOOD.
+STOP_LOG_COEF = (1.149, 0.953, 0.441)  # intercept (DRINK, 18 h, start), ln(T / 18 h), progress
+STOP_KIND_LOG = {"water": 0.0, "full": 0.263, "base": 0.605}
+STOP_P80_FACTOR = 2.6    # 80th percentile / median
+STOP_REF_S = 18 * 3600
+
+
+def stop_median_s(kind: str, finish_s: float | None, progress: float) -> float:
+    """The median stop (seconds) of a runner finishing in ``finish_s`` at a station of ``kind``."""
+    if kind not in STOP_KIND_LOG:
+        return 0.0
+    t = float(finish_s) if finish_s and finish_s > 0 else STOP_REF_S
+    b0, b_t, b_p = STOP_LOG_COEF
+    p = max(0.0, min(1.0, float(progress)))
+    return 60.0 * math.exp(b0 + b_t * math.log(t / STOP_REF_S) + b_p * p + STOP_KIND_LOG[kind])
+
+
+def default_stop_s(kind: str, finish_s: float | None, progress: float, factor: float = 1.0) -> int:
+    """The planned stop: the median one (see above), times the athlete's own factor."""
+    return int(round(stop_median_s(kind, finish_s, progress) * factor))
+
+
+def safe_stop_s(kind: str, finish_s: float | None, progress: float, factor: float = 1.0) -> int:
+    """The safety column's stop: the 80th percentile, times the athlete's own factor."""
+    return int(round(stop_median_s(kind, finish_s, progress) * STOP_P80_FACTOR * factor))
+
+
 def replan_from_passage(
     sections: list[dict],
     start_offset_s: int,
@@ -1259,6 +1301,16 @@ def replan_from_passage(
 
 # ── Three scenarios with an explicit switch rule ──
 
+# The safety column takes over when the elapsed time at the switch point is
+# this much over the plan's there: relative, so a 6 h race and a 40 h one are
+# read alike. At ~60 % of the distance (UTMB Live held-out finishers, each on
+# the plan of his level group), late by ≥ 5 % flagged 30 % of the runners
+# against 40 % for a fixed 15 min, with a better precision for those who
+# finished beyond the safety total (36 vs 28 %) and about the same recall (93
+# vs 96 %); 15 min flagged 45 % of the 24 h+ plans (LiveTrail alike).
+SWITCH_LATE_RATIO = 1.05
+
+
 def build_scenarios(
     sections: list[dict],
     start_offset_s: int,
@@ -1267,15 +1319,23 @@ def build_scenarios(
     safe_pct: float = 10.0,
     switch_km: float | None = None,
     total_distance_km: float | None = None,
+    safe_extra_stops: dict | None = None,
 ) -> dict | None:
     """Target / optimistic / safety columns for every checkpoint, plus the
     rule that decides which column you are running.
 
-    The three plans share the SAME shape (even effort) and the same aid stops;
-    only the moving budget changes: cible = the plan (or the prediction when no
-    target is set), optimiste = cible × (1 − fast_pct), sécurité = cible ×
-    (1 + safe_pct). The switch checkpoint defaults to the one closest to 60 %
-    of the distance — past the point where a fast start can still be paid for.
+    The three plans share the SAME shape (even effort); only the moving
+    budget changes: cible = the plan (or the prediction when no target is
+    set), optimiste = cible × (1 − fast_pct), sécurité = cible × (1 +
+    safe_pct). The router passes the 20th / 80th percentiles of the finish
+    time (race_calibration.scenario_pcts) unless the athlete set his own.
+    Stops: the plan's; ``safe_extra_stops`` ({km: s}) adds what a long stop
+    costs on the safety column (the 80th percentile instead of the median at
+    the stations left at their default, see routers.simulator._aid_stops).
+    The switch checkpoint defaults to the one closest to 60 % of the
+    distance — past the point where a fast start can still be paid for — and
+    the safety column takes over at ≥ SWITCH_LATE_RATIO × the plan's elapsed
+    time there (``switch_late_s``: that margin, to the minute).
 
     With pinned checkpoints the cible column IS the pinned plan (to the minute)
     and the two others scale its moving time around it: they deliberately do
@@ -1287,7 +1347,9 @@ def build_scenarios(
     use_target = (bool(target_time_s) or pinned) and sections[0].get("adjusted_clock_time_s") is not None
     f_fast = max(0.0, fast_pct) / 100.0
     f_safe = max(0.0, safe_pct) / 100.0
+    extra = {round(float(k), 1): int(v) for k, v in (safe_extra_stops or {}).items() if v}
     rows = []
+    extra_acc = 0  # the safety column's longer stops made before this point
     for s in sections:
         cum = float(s["adjusted_cumulative_time_s"] if use_target else s["cumulative_time_s"])
         clock = int(s["adjusted_clock_time_s"] if use_target else s["clock_time_s"])
@@ -1296,10 +1358,13 @@ def build_scenarios(
             "name": s["end_name"], "km": s["end_km"], "cp_index": s.get("end_checkpoint_index"),
             "target_s": int(round(start_offset_s + cum + stops)),
             "fast_s": int(round(start_offset_s + cum * (1 - f_fast) + stops)),
-            "safe_s": int(round(start_offset_s + cum * (1 + f_safe) + stops)),
+            "safe_s": int(round(start_offset_s + cum * (1 + f_safe) + stops + extra_acc)),
+            "safe_extra_s": int(extra_acc),
             "cutoff_elapsed_s": s.get("cutoff_elapsed_s"),
             "kind": s.get("kind"),
         })
+        if s.get("end_checkpoint_index") is not None:
+            extra_acc += extra.get(round(float(s["end_km"]), 1), 0)
         cut = s.get("cutoff_elapsed_s")
         if cut is not None:
             cut_clock = int(start_offset_s) + int(cut)
@@ -1311,6 +1376,8 @@ def build_scenarios(
     want = float(switch_km) if switch_km else total_km * 0.6
     cps = [r for r in rows if r["cp_index"] is not None]
     switch = min(cps, key=lambda r: abs(float(r["km"]) - want)) if cps else None
+    # late by ≥ 5 % of the plan's elapsed time there → safety column (to the minute, at least 1)
+    late_s = max(60, int(round((switch["target_s"] - start_offset_s) * (SWITCH_LATE_RATIO - 1) / 60)) * 60) if switch else None
 
     total_target = rows[-1]["target_s"] - start_offset_s
     total_fast = rows[-1]["fast_s"] - start_offset_s
@@ -1318,7 +1385,8 @@ def build_scenarios(
     return {
         "rows": rows,
         "switch": switch,
-        "switch_late_s": 15 * 60,  # ≥ 15 min late at the switch point → safety column
+        "switch_late_s": late_s,
+        "switch_late_pct": round((SWITCH_LATE_RATIO - 1) * 100),
         "fast_pct": fast_pct, "safe_pct": safe_pct,
         "totals": {"target_s": int(total_target), "fast_s": int(total_fast), "safe_s": int(total_safe)},
         "basis": "target" if use_target else "prediction",

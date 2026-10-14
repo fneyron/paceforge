@@ -78,6 +78,7 @@ def build_plan_data(
             "km": float(s["end_km"]), "start_km": float(s["start_km"]), "name": s["end_name"],
             "cp_index": s.get("end_checkpoint_index"), "clock_s": int(clock) if clock is not None else None,
             "cum_s": float(cum) if cum is not None else None, "stops_s": round(stops),
+            "stop_s": int(s.get("stop_s") or 0),  # the stop planned at this point (the point dialog shows it)
             "kind": s.get("kind") or "none", "cutoff_clock": s.get("cutoff_clock"),
             "cutoff_margin_s": s.get("cutoff_margin_s"), "temp": s.get("temperature_c"), "code": s.get("weather_code"), "wind": s.get("wind_kmh"),
             "drop_bag": bool(s.get("drop_bag")), "crew": bool(s.get("crew")),
