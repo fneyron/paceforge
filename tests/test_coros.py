@@ -1403,3 +1403,23 @@ async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_sessi
     assert r.headers.get("HX-Refresh") == "true"
     page = (await as_user.get("/settings")).text
     assert "À reconnecter" in page and "coros-sync-btn" not in page
+
+
+# ── real commits (savepoint-bound session: no commit swapped for flush) ─────
+
+async def test_a_rotated_refresh_token_survives_a_later_rollback(committing_session: AsyncSession, fake):
+    """COROS rotates the refresh token on each use (the old one is then dead): the new pair is committed at
+    once, so a sync that fails afterwards and rolls back never loses it."""
+    db = committing_session
+    user = User(email="rotate@x.fr")
+    db.add(user)
+    await db.commit()
+    conn = await _link(db, user, expires_in=timedelta(hours=2))  # < 1 day left: refreshed
+    await db.commit()
+    async with coros.http_client() as client:
+        assert await coros.access_token(db, conn, client) == "at-2"
+    conn.last_error = "écrit puis annulé"
+    await db.rollback()  # what a crashed sync does next
+    await db.refresh(conn)
+    assert conn.last_error is None
+    assert decrypt_secret(conn.refresh_token_encrypted) == "rt-2" and decrypt_secret(conn.access_token_encrypted) == "at-2"
