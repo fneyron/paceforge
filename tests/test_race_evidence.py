@@ -290,11 +290,15 @@ def test_scenario_settings_his_own_values_win_the_former_defaults_are_automatic(
     p = {"scenario_fast_pct": 7.0}
     _apply_scenarios({"scenario_fast_pct": "", "scenario_safe_pct": "20", "switch_km": ""}, p, type("R", (), {"total_distance_km": 30})())
     assert "scenario_fast_pct" not in p and p["scenario_safe_pct"] == 20.0  # empty = automatique
-    # saved by today's form (its version marked), 5 / 10 are his own choice
-    p = {}
-    _apply_scenarios({"scenario_fast_pct": "5", "scenario_safe_pct": "10", "switch_km": ""}, p, type("R", (), {"total_distance_km": 30})())
+    # saved by today's form (its hidden version field), 5 / 10 are his own choice
+    p, r30 = {}, type("R", (), {"total_distance_km": 30})()
+    _apply_scenarios({"scenario_fast_pct": "5", "scenario_safe_pct": "10", "switch_km": "", "scenario_v": "2"}, p, r30)
     chosen = _scenario_settings(p, None, course)
     assert (chosen["fast_pct"], chosen["safe_pct"], chosen["fast_own"], chosen["safe_own"]) == (5.0, 10.0, 5.0, 10.0)
+    # a page opened before the release posts its former 5 / 10 without it: still « automatique », the mark dropped
+    _apply_scenarios({"scenario_fast_pct": "5", "scenario_safe_pct": "10", "switch_km": ""}, p, r30)
+    old_tab = _scenario_settings(p, None, course)
+    assert "scenario_v" not in p and (old_tab["fast_own"], old_tab["safe_own"]) == (None, None)
 
 
 @pytest.mark.asyncio

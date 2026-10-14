@@ -181,6 +181,7 @@
                 </div>
                 <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" hx-on::validation:halted="this.reportValidity()" class="pt-4 border-t border-line">
                     <span class="{{ lbl }}">Plans de rechange</span>
+                    <input type="hidden" name="scenario_v" value="2">{# this form's own choices: 5 / 10 are his (simulator._apply_scenarios) #}
                     <p>En plus de ta cible, un plan <b class="text-ink">Optimiste</b> (si tout va bien) et un plan <b class="text-ink">Sécurité</b> (si ça coince), à afficher en touchant ton objectif.</p>
                     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
                         <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_own|round|int if scenario is defined and scenario.fast_own is not none else '' }}" placeholder="{{ scenario.fast_auto|round|int if scenario is defined and scenario.fast_auto is defined else '' }}" aria-label="Optimiste, % plus rapide" class="{{ num }}"> % plus rapide</label>

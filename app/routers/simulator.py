@@ -1988,7 +1988,7 @@ def _objective_s(route: Route, estimate_s: float | None = None, imported_s: floa
 
 # The former fixed Optimiste / Sécurité defaults: saved with the form until 2026-10-14 (it posted both fields),
 # they are read as « automatique » (the 20th / 80th percentiles of the finish time) on settings saved before
-# then. The form now writes SCENARIO_VERSION with them: on those, 5 or 10 is the athlete's own choice.
+# then. Today's form sends SCENARIO_VERSION with them (a hidden field): on those, 5 or 10 is his own choice.
 LEGACY_SCENARIO_PCTS = (5.0, 10.0)
 SCENARIO_VERSION = 2
 
@@ -2241,8 +2241,12 @@ def _form_num(form, key, lo, hi, cast=float):
 
 def _apply_scenarios(form, p: dict, route: Route) -> None:
     """The athlete's own Optimiste / Sécurité percentages; an empty field is « automatique » (the 20th / 80th
-    percentiles of his finish time, _scenario_settings). Marked SCENARIO_VERSION: 5 / 10 are then his own."""
-    p["scenario_v"] = SCENARIO_VERSION
+    percentiles of his finish time, _scenario_settings). Marked SCENARIO_VERSION only when today's form says so
+    (its hidden scenario_v): 5 / 10 are then his own; a page opened before (posting its former 5 / 10) is not."""
+    if str(form.get("scenario_v") or "") == str(SCENARIO_VERSION):
+        p["scenario_v"] = SCENARIO_VERSION
+    else:
+        p.pop("scenario_v", None)
     for key, hi in (("scenario_fast_pct", 30), ("scenario_safe_pct", 60)):
         v = _form_num(form, key, 0, hi)
         if v is None:
