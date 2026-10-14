@@ -1270,12 +1270,11 @@ def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | Non
 # [−10.6, −1.1]). The log-normal mean (1.81 × the median) read the clock
 # worse (19.3 min); the mean times the share of runners who stop at all,
 # nearly unbiased on the total (+4 min; the median −15, the former −20), was
-# not better beyond the noise (16.6 min: −2.3 [−4.9, +1.9]). The safety
-# column takes the 80th percentile (2.6 × the median). Kinds: eau → DRINK,
-# ravito → FOOD, base vie → HOT_FOOD.
+# not better beyond the noise (16.6 min: −2.3 [−4.9, +1.9]). The Optimiste
+# and Sécurité columns scale the elapsed time, these stops included (see
+# build_scenarios). Kinds: eau → DRINK, ravito → FOOD, base vie → HOT_FOOD.
 STOP_LOG_COEF = (1.149, 0.953, 0.441)  # intercept (DRINK, 18 h, start), ln(T / 18 h), progress
 STOP_KIND_LOG = {"water": 0.0, "full": 0.263, "base": 0.605}
-STOP_P80_FACTOR = 2.6    # 80th percentile / median
 STOP_REF_S = 18 * 3600
 
 
@@ -1294,11 +1293,6 @@ def default_stop_s(kind: str, finish_s: float | None, progress: float) -> int:
     (elapsed − moving) is not what was checked (stations timed in and out), and one race with a forgotten
     pause pushed it to its cap."""
     return int(round(stop_median_s(kind, finish_s, progress)))
-
-
-def safe_stop_s(kind: str, finish_s: float | None, progress: float) -> int:
-    """The safety column's stop: the 80th percentile."""
-    return int(round(stop_median_s(kind, finish_s, progress) * STOP_P80_FACTOR))
 
 
 def replan_from_passage(
@@ -1484,20 +1478,18 @@ def build_scenarios(
     safe_pct: float = 10.0,
     switch_km: float | None = None,
     total_distance_km: float | None = None,
-    safe_extra_stops: dict | None = None,
 ) -> dict | None:
     """Target / optimistic / safety columns for every checkpoint, plus the
     rule that decides which column you are running.
 
-    The three plans share the SAME shape (even effort); only the moving
-    budget changes: cible = the plan (or the prediction when no target is
-    set), optimiste = cible × (1 − fast_pct), sécurité = cible × (1 +
-    safe_pct). The router passes the 20th / 80th percentiles of the finish
-    time (race_calibration.scenario_pcts) unless the athlete set his own.
-    Stops: the plan's; ``safe_extra_stops`` ({km: s}) adds what a long stop
-    costs on the safety column (the 80th percentile instead of the median at
-    the stations left at their default, see routers.simulator._aid_stops).
-    The switch checkpoint defaults to the one closest to 60 % of the
+    The three plans share the SAME shape (even effort): cible = the plan (or
+    the prediction when no target is set), optimiste = its elapsed time (on
+    the move and at the stops) × (1 − fast_pct), sécurité = × (1 + safe_pct),
+    at every point. When cible is the prediction, the router passes the 20th /
+    80th percentiles of the finish time (race_calibration.scenario_pcts, read
+    on finish times, stops included) unless the athlete set his own: the two
+    columns are then that finish's P20 / P80; around an objective he set, the
+    same percentages around it. The switch checkpoint defaults to the one closest to 60 % of the
     distance — past the point where a fast start can still be paid for — and
     the safety column takes over at ≥ SWITCH_LATE_RATIO × the plan's elapsed
     time there (``switch_late_s``: that margin, to the minute).
@@ -1512,9 +1504,7 @@ def build_scenarios(
     use_target = (bool(target_time_s) or pinned) and sections[0].get("adjusted_clock_time_s") is not None
     f_fast = max(0.0, fast_pct) / 100.0
     f_safe = max(0.0, safe_pct) / 100.0
-    extra = {round(float(k), 1): int(v) for k, v in (safe_extra_stops or {}).items() if v}
     rows = []
-    extra_acc = 0  # the safety column's longer stops made before this point
     for s in sections:
         cum = float(s["adjusted_cumulative_time_s"] if use_target else s["cumulative_time_s"])
         clock = int(s["adjusted_clock_time_s"] if use_target else s["clock_time_s"])
@@ -1522,14 +1512,11 @@ def build_scenarios(
         rows.append({
             "name": s["end_name"], "km": s["end_km"], "cp_index": s.get("end_checkpoint_index"),
             "target_s": int(round(start_offset_s + cum + stops)),
-            "fast_s": int(round(start_offset_s + cum * (1 - f_fast) + stops)),
-            "safe_s": int(round(start_offset_s + cum * (1 + f_safe) + stops + extra_acc)),
-            "safe_extra_s": int(extra_acc),
+            "fast_s": int(round(start_offset_s + (cum + stops) * (1 - f_fast))),
+            "safe_s": int(round(start_offset_s + (cum + stops) * (1 + f_safe))),
             "cutoff_elapsed_s": s.get("cutoff_elapsed_s"),
             "kind": s.get("kind"),
         })
-        if s.get("end_checkpoint_index") is not None:
-            extra_acc += extra.get(round(float(s["end_km"]), 1), 0)
         cut = s.get("cutoff_elapsed_s")
         if cut is not None:
             cut_clock = int(start_offset_s) + int(cut)

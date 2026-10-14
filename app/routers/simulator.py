@@ -415,7 +415,6 @@ async def _passage_table_context(
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
-        safe_extra_stops=_safe_extra_stops(checkpoints, stop_minutes, finish_s, total_km),
     )
     # What the profile draws: night, terrain bands, clocks, cutoffs.
     from app.services.pacing_guide import build_pacing_guide, resolve_hr_caps
@@ -1564,7 +1563,6 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         sections, start_offset_s, route.target_time_s,
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
-        safe_extra_stops=b.get("safe_extra_stops"),
     )
 
     guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
@@ -1909,26 +1907,6 @@ def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float
     return out
 
 
-def _safe_extra_stops(cps: list[dict], override_min: int | None, finish_s: float | None,
-                      total_km: float | None) -> dict:
-    """{km: seconds} the safety column adds at the stations left at the model's stop: its 80th percentile instead
-    of the median. A stop the athlete set (on the point, or one value everywhere) is his on every column."""
-    from app.services.race_simulator import default_stop_s, safe_stop_s
-
-    if override_min:
-        return {}
-    out: dict = {}
-    for cp in cps:
-        kind = cp.get("kind") or "none"
-        if cp.get("stop_s") is not None or kind == "none":
-            continue
-        prog = _stop_progress(cp, total_km)
-        extra = safe_stop_s(kind, finish_s, prog) - default_stop_s(kind, finish_s, prog)
-        if extra > 0:
-            out[round(float(cp.get("distance_km") or 0), 1)] = extra
-    return out
-
-
 def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None,
                        total_km: float | None) -> float | None:
     """The finish the stop model reads when no objective is set: the predicted moving time plus the stops it
@@ -2069,8 +2047,6 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
 
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
-        # the safety column's longer stops (stations at the model's stop)
-        "safe_extra_stops": _safe_extra_stops(cps, route.stop_minutes, finish_s, total_km),
         "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         # pinned checkpoints make a plan (adjusted_*) even without an objective

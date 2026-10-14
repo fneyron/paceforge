@@ -164,11 +164,11 @@ def test_scenarios_columns_and_switch_rule():
     assert sc["basis"] == "target"
     fin = sc["rows"][-1]
     assert fin["fast_s"] < fin["target_s"] < fin["safe_s"]
-    # stops are the same in all three columns: only the MOVING budget
-    # (target − 3 stops × 3 min) is scaled
-    moving = 5 * 3600 - 3 * 180
-    assert abs((sc["totals"]["safe_s"] - sc["totals"]["target_s"]) - 0.10 * moving) < 5
-    assert abs((sc["totals"]["target_s"] - sc["totals"]["fast_s"]) - 0.05 * moving) < 5
+    # the percentages scale the elapsed time, the 3 stops × 3 min included (they were read on finish times):
+    # Sécurité is the plan's finish × 1.10, Optimiste × 0.95
+    elapsed = 5 * 3600
+    assert abs((sc["totals"]["safe_s"] - sc["totals"]["target_s"]) - 0.10 * elapsed) < 5
+    assert abs((sc["totals"]["target_s"] - sc["totals"]["fast_s"]) - 0.05 * elapsed) < 5
     assert abs(sc["totals"]["target_s"] - 5 * 3600) < 5
     # switch defaults to the CP nearest 60 % (km 18 → Village at km 20)
     assert sc["switch"]["name"] == "Village"

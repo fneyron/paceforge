@@ -190,17 +190,18 @@ def test_the_finish_time_spread():
     assert fast > 12 and safe > 15
 
 
-def test_scenarios_switch_at_five_percent_and_the_safety_columns_longer_stops():
+def test_scenarios_switch_at_five_percent_and_scale_the_elapsed_time():
     sections = rs.compute_passage_times(_course(), CPS, 5 * 3600, 1.0, 6, 0, None, aid_stops={6.0: 120, 10.0: 300})
-    sc = rs.build_scenarios(sections, 6 * 3600, 5 * 3600, fast_pct=9.8, safe_pct=10.9, safe_extra_stops={6.0: 100, 10.0: 200})
+    sc = rs.build_scenarios(sections, 6 * 3600, 5 * 3600, fast_pct=9.8, safe_pct=10.9)
     sw = sc["switch"]
     assert sw["km"] == 20.0 and sc["switch_late_pct"] == 5
     assert sc["switch_late_s"] == round((sw["target_s"] - 6 * 3600) * 0.05 / 60) * 60  # 5 % of the plan there, to the minute
-    rows = {r["km"]: r for r in sc["rows"]}
-    assert rows[6.0]["safe_extra_s"] == 0 and rows[10.0]["safe_extra_s"] == 100 and rows[20.0]["safe_extra_s"] == 300
-    plain = rs.build_scenarios(sections, 6 * 3600, 5 * 3600, fast_pct=9.8, safe_pct=10.9)
-    assert sc["totals"]["safe_s"] - plain["totals"]["safe_s"] == 300
-    assert sc["totals"]["target_s"] == plain["totals"]["target_s"] and sc["totals"]["fast_s"] == plain["totals"]["fast_s"]
+    # the percentiles were read on finish times, stops included: they scale the elapsed time at every point
+    for r in sc["rows"]:
+        elapsed = r["target_s"] - 6 * 3600
+        assert abs(r["fast_s"] - 6 * 3600 - elapsed * (1 - 0.098)) <= 1 and abs(r["safe_s"] - 6 * 3600 - elapsed * 1.109) <= 1
+        assert "safe_extra_s" not in r
+    assert sc["totals"]["target_s"] == 5 * 3600 and abs(sc["totals"]["safe_s"] - 5 * 3600 * 1.109) <= 1  # its P80
 
 
 def test_scenario_settings_his_own_values_win_the_former_defaults_are_automatic():
@@ -237,14 +238,13 @@ async def test_a_course_is_known_once_he_has_raced_it(db_session: AsyncSession, 
     assert not await _known_course(db_session, test_user.id, new)
 
 
-# ── 3. stops: the median stop at the runner's finish, the 80th percentile on the safety column ──
+# ── 3. stops: the median stop at the runner's finish ──
 
 def test_the_stop_model():
     # a water point mid-race for an 18 h finisher: median 3.9 min (the fit), the planned stop
     med = rs.stop_median_s("water", 18 * 3600, 0.5)
     assert med / 60 == pytest.approx(math.exp(1.149 + 0.441 * 0.5), rel=1e-6) and 3.8 < med / 60 < 4.0
     assert rs.default_stop_s("water", 18 * 3600, 0.5) == round(med)
-    assert rs.safe_stop_s("water", 18 * 3600, 0.5) == round(med * 2.6)
     # longer for a slower runner, later in the race, at a bigger station
     assert rs.default_stop_s("full", 30 * 3600, 0.5) > rs.default_stop_s("full", 10 * 3600, 0.5)
     assert rs.default_stop_s("full", 18 * 3600, 0.9) > rs.default_stop_s("full", 18 * 3600, 0.1)
@@ -253,15 +253,12 @@ def test_the_stop_model():
 
 
 def test_the_stop_he_sets_always_wins():
-    from app.routers.simulator import _aid_stops, _safe_extra_stops
+    from app.routers.simulator import _aid_stops
 
     cps = [dict(CPS[0], stop_s=0), dict(CPS[1], stop_s=420), CPS[2]]
     stops = _aid_stops(cps, None, 20 * 3600, 30.0)
     assert 6.0 not in stops and stops[10.0] == 420 and stops[20.0] == rs.default_stop_s("full", 20 * 3600, 20 / 30)
     assert _aid_stops(cps, 4, 20 * 3600, 30.0) == {10.0: 420, 20.0: 240}  # one value everywhere, the point's own first
-    # the safety column's longer stop only where the model sets it
-    assert set(_safe_extra_stops(cps, None, 20 * 3600, 30.0)) == {20.0}
-    assert _safe_extra_stops(cps, 4, 20 * 3600, 30.0) == {}
 
 
 # ── 4. heat: in the objective plan as in the prediction ──

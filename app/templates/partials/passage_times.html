@@ -40,7 +40,7 @@
     <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
 </div>
 {% endif %}
-{% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></span><span></span></div>{% endif %}
+{% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps total">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps total">Sécurité</span></span><span></span></div>{% endif %}
 <div id="plan-table" class="pf-pass{% if sc %} has-alt{% endif %}" role="list" aria-label="Heures de passage">
     {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
     {% for s in sections %}
@@ -70,7 +70,7 @@
     <div data-day="{{ day }}" class="pf-day" role="presentation"><span data-day-label>jour {{ day + 1 }}</span></div>
     {% set ns.day = day %}
     {% endif %}
-    <div data-row role="listitem" data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}"{% if row and row.safe_extra_s %} data-safe-extra="{{ row.safe_extra_s|int }}"{% endif %} data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-key="{{ key }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
+    <div data-row role="listitem" data-start-km="{{ s.start_km }}" data-end-km="{{ s.end_km }}" data-cum="{{ cum_val|int }}" data-stops="{{ stops_val|int }}" data-clock="{{ clock_val|int }}" data-cp="{{ ci if ci is not none else '' }}" data-key="{{ key }}" data-gain="{{ s.elevation_gain|int }}" data-loss="{{ s.elevation_loss|int }}" data-sec="{{ sec_time|int }}"{% if s.is_anchor %} data-anchor{% endif %}{% if s.is_anchor or s.passed %} data-passed{% endif %}{% if pin_on %} data-pinned{% endif %}
          class="pf-prow{% if is_finish %} is-finish{% endif %}{% if s.passed and not s.is_anchor %} is-passed{% endif %}">
         <div class="pf-prow-head" role="button" tabindex="0" aria-expanded="false" aria-controls="cp-det-{{ key }}">
             <span class="pf-clk">{% if pin_on %}<span data-pin class="pf-pin {% if s.pin_clamped %}text-danger{% else %}text-accent{% endif %}" title="{% if s.pin_clamped %}heure fixée par toi, impossible à tenir : recalée{% else %}heure fixée par toi{% endif %}">{{ gl.glyph('pin', 'w-3.5 h-3.5') }}</span>{% endif %}<span data-cible-text class="{% if late %}text-danger{% endif %}">{{ hhmm(clock_val) }}</span></span>

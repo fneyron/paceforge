@@ -498,8 +498,9 @@ def finish_spread(model: dict | None, course_ekm: float | None, known_course: bo
 
 
 def scenario_pcts(model: dict | None, course_ekm: float | None, known_course: bool = False) -> tuple[float, float]:
-    """(Optimiste % faster, Sécurité % slower) on the moving time: the 20th and
-    80th percentiles of the finish time, to 0.1 %."""
+    """(Optimiste % faster, Sécurité % slower), to 0.1 %: the 20th and 80th
+    percentiles of the finish time (read on finish times, stops included), so
+    applied to the plan's elapsed time (race_simulator.build_scenarios)."""
     sigma = finish_spread(model, course_ekm, known_course)
     return round((1 - math.exp(-Z80 * sigma)) * 100, 1), round((math.exp(Z80 * sigma) - 1) * 100, 1)
 

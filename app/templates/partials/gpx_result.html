@@ -593,14 +593,14 @@ window._sim = {};
         if (legTimer) clearTimeout(legTimer);
         legTimer = setTimeout(function () { legTimer = null; hideCross(); highlightSection(null, null); }, 3000);
     }
-    // the plan shown: Cible, or Optimiste / Sécurité (same shape, the moving time scaled; Sécurité's stops longer)
+    // the plan shown: Cible, or Optimiste / Sécurité (same shape, the elapsed time scaled, stops included)
     function effScn() { return 'target'; }  // the list shows the three plans side by side; the profile follows Cible
     function shownClock(p) {
         if (!p || p.clock_s === null || p.clock_s === undefined) return null;
         var sc = planData && planData.scenarios, eff = effScn();
         if (!sc || eff === 'target' || p.cum_s === null || p.cum_s === undefined) return p.clock_s;
         var f = eff === 'fast' ? 1 - sc.fast_pct / 100 : 1 + sc.safe_pct / 100;
-        return Math.round(planData.start_offset_s + p.cum_s * f + (p.stops_s || 0));
+        return Math.round(planData.start_offset_s + (p.cum_s + (p.stops_s || 0)) * f);
     }
     // clock at any km, linear between points: of the plan shown (shown = true) or of Cible (the night bands are Cible's)
     function clockAtKm(km, shown) {
@@ -992,12 +992,12 @@ window._sim = {};
         var safe = planData.scenarios ? 1 + planData.scenarios.safe_pct / 100 : null, fast = planData.scenarios ? 1 - planData.scenarios.fast_pct / 100 : null;
         document.querySelectorAll('#plan-table [data-row]').forEach(function (r) {
             if (r.hasAttribute('data-passed') || r.hasAttribute('data-pinned')) return;  // a pinned time does not move with the objective
-            var cum = parseFloat(r.getAttribute('data-cum')), stops = parseFloat(r.getAttribute('data-stops') || '0'), sx = parseFloat(r.getAttribute('data-safe-extra') || '0'); if (isNaN(cum)) return;
+            var cum = parseFloat(r.getAttribute('data-cum')), stops = parseFloat(r.getAttribute('data-stops') || '0'); if (isNaN(cum)) return;
             var start = planData.start_offset_s + aCum, rest = cum - aCum, clk = start + rest * f + stops;
             var inp = r.querySelector('[data-cible]'); if (inp) inp.value = fmtClock(clk);
             var txt = r.querySelector('[data-cible-text]'); if (txt) txt.textContent = fmtClock(clk);
-            r.querySelectorAll('[data-safe], [data-range-safe]').forEach(function (sf) { if (safe) sf.textContent = fmtClock(start + rest * f * safe + stops + sx); });  // + its longer stops
-            r.querySelectorAll('[data-fast], [data-range-fast]').forEach(function (fs) { if (fast) fs.textContent = fmtClock(start + rest * f * fast + stops); });
+            r.querySelectorAll('[data-safe], [data-range-safe]').forEach(function (sf) { if (safe) sf.textContent = fmtClock(start + (rest * f + stops) * safe); });  // the elapsed time scaled
+            r.querySelectorAll('[data-fast], [data-range-fast]').forEach(function (fs) { if (fast) fs.textContent = fmtClock(start + (rest * f + stops) * fast); });
         });
     }
     function commitObjective(val) { var ts = sliderToS(val); setTarget(Math.floor(ts / 3600), Math.round((ts % 3600) / 60)); }
