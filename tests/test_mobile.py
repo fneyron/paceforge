@@ -385,38 +385,107 @@ async def test_bodies_are_capped_before_parsing_and_errors_keep_their_shape(clie
     assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 422
 
 
-async def test_bodies_are_read_and_parsed_before_the_database_session_is_used(client, db_session, test_user, monkeypatch):
-    # A slow 2 MB upload or a night's parse must not hold a database connection.
+async def test_a_body_is_parsed_after_the_token_check_with_no_connection_held(client, db_session, test_user, monkeypatch):
+    # A slow 2 MB upload or a night's parse must not hold a database connection: the
+    # token is checked in a session of its own, released before the body is parsed.
     from app.dependencies import get_db
     from tests.test_apple_nights import packet
     account, _ = await paired(client, test_user)
-    order = []
+    order, made = [], []
+
+    class Session:
+        """The test session, as a request's own session or as its token check's."""
+
+        def __init__(self, role):
+            self.role = role
+
+        def __getattr__(self, name):
+            if order[-1:] != [self.role]:
+                order.append(self.role)
+            return getattr(db_session, name)
+
+        async def commit(self):
+            order.append(self.role + ' commit')
+            await db_session.flush()  # the test's transaction is rolled back at its end
 
     async def database():
-        order.append('database')
-        yield db_session
+        # Each request solves its own session first, then the token check's.
+        made.append(('request', 'auth')[len(made) % 2])
+        yield Session(made[-1])
 
-    read, reduce = mobile.capped_body, mobile.apple_nights.reduce_night
+    read, check, reduce = mobile.capped_body, mobile.validated, mobile.apple_nights.reduce_night
 
     async def body(request, limit):
         order.append('body')
         return await read(request, limit)
 
+    def validated(model, raw):
+        order.append('parse')
+        return check(model, raw)
+
     def reduced(night):
-        order.append('reduced')
+        order.append('reduce')
         return reduce(night)
 
     client._transport.app.dependency_overrides[get_db] = database
     monkeypatch.setattr(mobile, 'capped_body', body)
+    monkeypatch.setattr(mobile, 'validated', validated)
     monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
     assert (await client.post('/api/mobile/daily', json={'days': [day()]}, headers=bearer(account['token']))).status_code == 200
-    assert order[:2] == ['body', 'database']
+    assert order[:5] == ['body', 'auth', 'auth commit', 'parse', 'request'] and 'request commit' not in order
     order.clear()
     assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 200
-    assert order[:3] == ['body', 'reduced', 'database']
-    # Consequence: an invalid body is refused before the token is checked.
-    assert (await client.post('/api/mobile/daily', json={'days': [day(value=0)]})).status_code == 422
-    assert (await client.post('/api/mobile/daily', json={'days': []})).status_code == 401
+    assert order[:6] == ['body', 'auth', 'auth commit', 'parse', 'reduce', 'request']
+    assert made == ['request', 'auth'] * 2
+
+
+async def test_a_body_is_parsed_only_for_a_known_phone(client, db_session, test_user, monkeypatch):
+    # Without a valid token, a night is never parsed (seconds of CPU at the validation
+    # maxima, outside any phone's budget), and a revoked phone always learns it is revoked.
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    night = packet()
+    start = datetime.fromisoformat(night['sleep'][0]['start'])
+    night['hr'] = [{'at': (start + timedelta(seconds=5 * i)).isoformat(), 'value': 50} for i in range(5000)]
+    calls = []
+    read, check, reduce = mobile.capped_body, mobile.validated, mobile.apple_nights.reduce_night
+
+    async def body(request, limit):
+        calls.append('read')
+        return await read(request, limit)
+
+    def validated(model, raw):
+        calls.append('parse')
+        return check(model, raw)
+
+    def reduced(packet):
+        calls.append('reduce')
+        return reduce(packet)
+
+    monkeypatch.setattr(mobile, 'capped_body', body)
+    monkeypatch.setattr(mobile, 'validated', validated)
+    monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
+    uploads = (('/api/mobile/nights', night), ('/api/mobile/daily', {'days': [day()]}),
+               ('/api/mobile/daily', {'days': [day(value=0)]}), ('/api/mobile/nights', {'date': 'no night'}))
+    for headers in ({}, {'Authorization': 'Basic ' + account['token']}, {'Authorization': 'Bearer '},
+                    {'Authorization': 'Bearer ' + 'x' * 200}):
+        for path, payload in uploads:
+            assert (await client.post(path, json=payload, headers=headers)).status_code == 401
+    assert calls == []  # not even read
+    for path, payload in uploads:
+        assert (await client.post(path, json=payload, headers=bearer('unknown'))).status_code == 401
+    assert calls == ['read'] * 4  # read and capped, never parsed
+    calls.clear()
+    assert (await client.delete('/api/mobile/device', headers=bearer(account['token']))).status_code == 200
+    for path, payload in uploads:
+        assert (await client.post(path, json=payload, headers=bearer(account['token']))).status_code == 401
+    headers = {**bearer(account['token']), 'Content-Type': 'application/json'}
+    assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 401
+    assert calls == ['read'] * 5
+    # The same night, from a known phone, is valid.
+    assert (await client.post('/api/mobile/nights', json=night, headers=bearer(other['token']))).status_code == 200
+    assert calls[5:] == ['read', 'parse', 'reduce']
 
 
 async def test_a_night_sets_the_athlete_zone_once_and_never_from_a_fixed_offset(client, test_user):

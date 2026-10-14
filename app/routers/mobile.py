@@ -5,7 +5,8 @@ health record, bearer token or authorization code is put in a URL or a log.
 
 The phone also syncs in the background, with its token only: the token's expiry
 slides with use, a rotated token keeps working a few days, each phone has a
-request budget, and bodies are capped before they are parsed.
+request budget, and an upload is capped before its token is checked, then
+parsed only for a known phone.
 """
 import asyncio
 import hashlib
@@ -237,7 +238,7 @@ async def exchange(body: Exchange, db: AsyncSession = Depends(get_db)):
 
 
 def bearer(authorization: str) -> str:
-    if not authorization.startswith("Bearer ") or len(authorization) > 200:
+    if not authorization.startswith("Bearer ") or not 7 < len(authorization) <= 200:
         raise HTTPException(401, "Téléphone non associé.")
     return digest(authorization[7:])
 
@@ -394,10 +395,43 @@ def daily_upsert(dialect: str, day: Daily, phone: MobileDevice, seen: datetime |
     ).returning(MobileDaily)
 
 
-# Bodies are read, capped and parsed in dependencies declared before the token
-# check: no database connection is held while a slow phone uploads or a night is parsed.
-async def daily_body(request: Request) -> Import:
-    return validated(Import, await capped_body(request, MAX_DAILY_BYTES))
+# An upload, in this order: the token's form (401 before anything is read); the
+# raw body, capped (413), with no connection held while a slow phone sends it;
+# the token and the request budget, checked in a short session released at once;
+# then the parse (off the event loop), and the writes in the request's session.
+# A body is never parsed for an unknown phone, and a revoked phone always gets 401.
+async def phone_token(authorization: str = Header(default="")) -> str:
+    return bearer(authorization)
+
+
+async def daily_bytes(request: Request, _: str = Depends(phone_token)) -> bytes:
+    return await capped_body(request, MAX_DAILY_BYTES)
+
+
+async def night_bytes(request: Request, _: str = Depends(phone_token)) -> bytes:
+    return await capped_body(request, MAX_NIGHT_BYTES)
+
+
+async def uploader(authorization: str = Header(default=""), db: AsyncSession = Depends(get_db),
+                   auth: AsyncSession = Depends(get_db, use_cache=False)) -> MobileDevice:
+    """The phone behind an upload, looked up and budgeted in a session of its own.
+
+    That session is committed at once (sliding expiry, retired previous token), so
+    its connection is back in the pool before the body is parsed. The request's
+    session is declared first: FastAPI caches the first `get_db` it solves. When
+    both are one session (the tests share theirs), it is left to the request.
+    """
+    phone = await device(authorization, auth)
+    await limiter.check(phone.id)
+    if auth is not db:
+        await auth.commit()
+    return phone
+
+
+async def synced(db: AsyncSession, phone: MobileDevice, now: datetime) -> None:
+    # In the request's session: the phone was read in the token check's.
+    await db.execute(update(MobileDevice).where(MobileDevice.id == phone.id)
+                     .values(last_sync_at=now))
 
 
 def parse_night(raw: bytes) -> tuple[AppleNight, list]:
@@ -408,15 +442,10 @@ def parse_night(raw: bytes) -> tuple[AppleNight, list]:
         raise HTTPException(422, str(exc)) from None
 
 
-async def night_body(request: Request) -> tuple[AppleNight, list]:
-    raw = await capped_body(request, MAX_NIGHT_BYTES)
-    # Up to ~25 000 validated objects, then quadratic overlap checks: off the event loop.
-    return await asyncio.to_thread(parse_night, raw)
-
-
 @router.post("/api/mobile/daily")
-async def ingest(body: Import = Depends(daily_body), phone: MobileDevice = Depends(limited),
+async def ingest(raw: bytes = Depends(daily_bytes), phone: MobileDevice = Depends(uploader),
                  db: AsyncSession = Depends(get_db), x_paceforge_read_at: str | None = Header(default=None)):
+    body = await asyncio.to_thread(validated, Import, raw)
     now = datetime.now(timezone.utc)
     seen = read_at(x_paceforge_read_at, now)
     received = 0
@@ -425,7 +454,7 @@ async def ingest(body: Import = Depends(daily_body), phone: MobileDevice = Depen
                                   execution_options={"populate_existing": True})
         received += len(result.all())
     if received:
-        phone.last_sync_at = now
+        await synced(db, phone, now)
     await db.flush()
     # A receipt describes what the server retained, including a later weigh-in
     # already sent by another phone. An ignored old snapshot is not an update.
@@ -435,16 +464,18 @@ async def ingest(body: Import = Depends(daily_body), phone: MobileDevice = Depen
 
 
 @router.post("/api/mobile/nights")
-async def ingest_night(night: tuple[AppleNight, list] = Depends(night_body), phone: MobileDevice = Depends(limited),
+async def ingest_night(raw: bytes = Depends(night_bytes), phone: MobileDevice = Depends(uploader),
                        db: AsyncSession = Depends(get_db)):
     if phone.platform != "ios":
         raise HTTPException(422, "Les nuits Apple Santé nécessitent un iPhone.")
-    packet, rows = night
+    # Up to ~25 000 validated objects, then quadratic overlap checks: off the event loop.
+    packet, rows = await asyncio.to_thread(parse_night, raw)
     received = await apple_nights.ingest(db, phone.user_id, packet, rows)
+    now = datetime.now(timezone.utc)
     if received:
-        phone.last_sync_at = datetime.now(timezone.utc)
+        await synced(db, phone, now)
     await db.flush()
-    return {"received": received, "checked_at": datetime.now(timezone.utc).isoformat()}
+    return {"received": received, "checked_at": now.isoformat()}
 
 
 @router.delete("/api/mobile/device")

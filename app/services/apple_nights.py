@@ -183,7 +183,7 @@ def athlete_zone_name(name: str) -> str | None:
 async def ingest(db, user_id, packet, rows=None):
     import asyncio
     # Overlap checks are quadratic in the intervals: keep them off the event loop
-    # (the phone endpoint reduces the night before it opens the session).
+    # (the phone endpoint reduces the night after the token check, with no connection held).
     if rows is None:
         rows = await asyncio.to_thread(reduce_night, packet)
     from app.models.user import User
