@@ -80,13 +80,11 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
 
 
 def _flags(conn, service) -> tuple[bool, str | None]:
-    """(needs_reauth, last_error) of a watch link as its service says them: a COROS link whose tokens no configured
-    key decrypts must be reconnected (coros.tokens_readable: « La connexion à COROS a expiré », computed when read,
-    never stored), its stored error in today's wording (coros._said) — coros_status's own rule, without its
-    measurement counts."""
+    """(needs_reauth, last_error) of a watch link as its service says them: COROS's coros.link_flags, the rule its
+    coros_status reads too (a link whose tokens no configured key decrypts must be reconnected, computed when read,
+    never stored; its stored error in today's wording), without its measurement counts."""
     if service is coros:
-        readable = coros.tokens_readable(conn)
-        return conn.needs_reauth or not readable, coros._said(conn.last_error) if readable else coros.EXPIRED
+        return coros.link_flags(conn)
     return conn.needs_reauth, conn.last_error
 
 

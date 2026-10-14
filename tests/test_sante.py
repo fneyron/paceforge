@@ -806,6 +806,7 @@ async def test_a_coros_link_no_key_decrypts_is_one_to_reconnect_and_never_synced
     assert started == [] and 'data-sync-issue="Reconnecte COROS dans Réglages."' in page
     link = (await routes.link_state(db_session, test_user.id))[0]
     assert link["needs_reauth"] and link["last_error"] == coros_service.EXPIRED
+    assert coros_service.link_flags(conn) == (True, coros_service.EXPIRED)  # Réglages' rule (coros_status) too
     r = await as_user.post("/sante/sync", headers={"accept": "application/json", "x-paceforge-refresh": "1"})
     assert r.json()["watches"] == [] and r.json()["errors"] == ["Reconnecte COROS dans Réglages."]
     r = await as_user.get("/sante/sync-status", params={"watches": "COROS"}, headers={"accept": "application/json"})
