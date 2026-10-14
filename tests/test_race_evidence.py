@@ -164,19 +164,13 @@ async def test_an_open_meteo_outage_stops_the_heat_lookups_for_every_worker(db_s
     from app.config import settings
     from app.services import weather
 
-    assert await weather.lookups_paused() is False  # Redis unreachable here: nothing shared, nothing paused
-    await weather.pause_lookups()  # and never an error
+    # Redis unreachable (a closed port, never a real server): nothing shared, nothing paused, never an error
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:1/0")
+    assert await weather.RedisMarker().is_set() is False
+    await weather.RedisMarker().set()
+    # the shared marker (in memory here, conftest): a failure pauses every pass for OUTAGE_S
     monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
-    marker = {}
-
-    async def paused():
-        return bool(marker)
-
-    async def pause():
-        marker["down"] = True
-
-    monkeypatch.setattr(weather, "lookups_paused", paused)
-    monkeypatch.setattr(weather, "pause_lookups", pause)
+    assert await weather.lookups_paused() is False
     calls = []
 
     async def down(lat, lon, first, last, today):
@@ -190,7 +184,8 @@ async def test_an_open_meteo_outage_stops_the_heat_lookups_for_every_worker(db_s
                             elapsed_time=8 * 3600, total_elevation_gain=2000.0,
                             raw_data={"workout_type": 1, "start_latlng": [43.3, 5.4]}))
     await db_session.flush()
-    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1 and marker  # failed: shared
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # failed: marker set
+    assert await weather.lookups_paused() is True
     assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # every worker waits
 
 

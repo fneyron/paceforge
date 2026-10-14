@@ -494,14 +494,40 @@ async def zone_name(lat: float, lon: float) -> str | None:
     return name
 
 
+class RedisMarker:
+    """The outage marker in Redis: every worker reads it; Redis down, never set and never an error."""
+
+    async def is_set(self) -> bool:
+        return bool(await _shared(lambda r: r.exists(OUTAGE_KEY)))
+
+    async def set(self) -> None:
+        await _shared(lambda r: r.set(OUTAGE_KEY, "1", ex=OUTAGE_S))
+
+
+class MemoryMarker:
+    """The same marker in this process only (tests: no Redis)."""
+
+    def __init__(self) -> None:
+        self.until = 0.0
+
+    async def is_set(self) -> bool:
+        return time.monotonic() < self.until
+
+    async def set(self) -> None:
+        self.until = time.monotonic() + OUTAGE_S
+
+
+_outage: RedisMarker | MemoryMarker = RedisMarker()
+
+
 async def lookups_paused() -> bool:
     """True while a background lookup failed in the last OUTAGE_S, on any worker."""
-    return bool(await _shared(lambda r: r.exists(OUTAGE_KEY)))
+    return await _outage.is_set()
 
 
 async def pause_lookups() -> None:
     """After a failed background lookup: none for OUTAGE_S, on every worker."""
-    await _shared(lambda r: r.set(OUTAGE_KEY, "1", ex=OUTAGE_S))
+    await _outage.set()
 
 
 async def _get(url: str, params: dict) -> dict | list | None:
