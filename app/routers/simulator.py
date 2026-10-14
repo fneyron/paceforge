@@ -360,14 +360,15 @@ async def _passage_table_context(
     db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
     start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
     anchor_km: float | None, anchor_clock: str | None, profile=None, route_id: int | None = None,
-    estimate_s: int | None = None,
+    estimate_s: int | None = None, race_date: str | None = None, weather_clock: dict | None = None,
 ) -> dict:
     """Everything partials/passage_times.html needs: the (re)planned sections, scenarios, plan data.
     Used by the recalculation endpoint and by the page itself, so the first paint already has the table.
 
     ``target_time_s``: his objective (the page sends it only when he set one), else None: the plan then runs on
     the estimate read now, with these points, stops and weather (``estimate_s`` when the caller has it), and the
-    plan data carries it back, so the page's hero and field follow every edit."""
+    plan data carries it back, so the page's hero and field follow every edit. ``race_date`` / ``weather_clock``:
+    the page's date and the zone of the weather it fetched, not saved yet (race_match.race_clock)."""
     from app.services.checkpoints import annotate_cutoffs, autonomy_legs
     from app.services.race_simulator import (
         _elevation_at_km,
@@ -395,7 +396,8 @@ async def _passage_table_context(
     # no weather (no date, nothing fetched): the level at the heat his races were run in (predict_course)
     own_weather = hourly_weather is not None or heat_factor != 1.0 or bool(route_obj and route_obj.weather_json)
     total_km = course.total_distance_km
-    clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
+    clock = await _race_clock(db, user_id, route_obj, course, race_date=race_date, weather=weather_clock,
+                              start_hour=start_hour, start_minute=start_minute)  # night by the sun once dated
     fine = _fine_terrain(course, profile)
     if estimate_s is None:  # the estimate now (these points, stops and weather): the hero and the field follow it
         course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes, total_km,
@@ -497,6 +499,10 @@ async def passage_times(
     stop_minutes: int | None = Form(default=None),
     anchor_km: float | None = Form(default=None),
     anchor_clock: str | None = Form(default=None),
+    race_date: str | None = Form(default=None),
+    wx_tz: str | None = Form(default=None),
+    wx_offset_s: int | None = Form(default=None),
+    wx_date: str | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -525,9 +531,14 @@ async def passage_times(
             if heat_factor == 1.0:
                 heat_factor = float((route_obj.weather_json or {}).get("heat_factor") or 1.0)
 
+        # the page's date and the zone of the weather it fetched, ahead of the save that will keep them
+        page_date = None if race_date is None else (_iso_date(race_date) or "")
+        page_wx = ({"tz": wx_tz, "utc_offset_s": wx_offset_s, "date": wx_date}
+                   if wx_tz or wx_offset_s is not None or wx_date else None)
         ctx = await _passage_table_context(
             db, user.id, course, checkpoints, target_time_s, heat_factor, start_hour, start_minute, hourly_weather,
-            route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id,
+            route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id, race_date=page_date,
+            weather_clock=page_wx,
         )
         return templates.TemplateResponse(request, "partials/passage_times.html", context=ctx)
     except Exception:
@@ -2125,11 +2136,11 @@ def _scenario_settings(params: dict, profile, course, known_course: bool = False
     }
 
 
-async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course) -> dict:
-    """race_match.race_clock on the course already parsed."""
+async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course, **page) -> dict:
+    """race_match.race_clock on the course already parsed (``page``: the page's own date, weather and start)."""
     from app.services.race_match import race_clock
 
-    return await race_clock(db, user_id, route, getattr(course, "route_coords", None) or [])
+    return await race_clock(db, user_id, route, getattr(course, "route_coords", None) or [], **page)
 
 
 async def _known_course(db: AsyncSession, user_id: int, route: Route | None) -> bool:

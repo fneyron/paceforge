@@ -1095,3 +1095,38 @@ async def test_an_older_pages_estimate_is_read_with_the_law_it_was_made_with(db_
         assert (b["objective_s"] is not None) == his and b["has_objective"] == his, label
     assert abs(imported / old_page - 1) > 0.02  # the import's estimate alone would not have told it
     assert abs(int((old_page + 30) // 60 * 60) / today - 1) > 0.02  # nor this release's law (the previous rule)
+
+
+@pytest.mark.asyncio
+async def test_the_page_reads_its_new_race_date_before_the_save(as_user: AsyncClient, db_session, test_user):
+    """Review: a race date set in the session reached the table only once saved (the recalc runs first). The page
+    posts its date and the fetched weather's zone with the recalc: night by the sun at once, the same plan the save
+    then keeps."""
+    import re
+
+    def finish(html):
+        return int(re.findall(r'data-clock="(\d+)"', html)[-1]) - 17 * 3600
+
+    rid = (await as_user.post("/api/simulator/routes", data={
+        "course_json": _flat().model_dump_json(), "checkpoints_json": "[]", "name": "Le soir",
+        "start_hour": 17, "start_minute": 0, "target_v": "2"})).json()["id"]
+    window = finish((await as_user.post("/partials/simulator/passage-times", data={
+        "route_id": rid, "checkpoints_json": "[]", "start_hour": 17, "start_minute": 0})).text)
+    december = finish((await as_user.post("/partials/simulator/passage-times", data={
+        "route_id": rid, "checkpoints_json": "[]", "start_hour": 17, "start_minute": 0, "race_date": "2026-12-20"})).text)
+    assert december > window  # dark from ~17:30 in December, not from 21:00: read before the save
+    await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": "[]", "race_date": "2026-12-20",
+                                                      "target_v": "2"})
+    saved = (await as_user.get(f"/api/simulator/routes/{rid}/offline")).json()["points"][-1]["clock_s"] - 17 * 3600
+    assert saved == december
+    # the weather fetched for it brings the start's zone (Tokyo's +9 h, not the athlete's): read before its save too
+    tokyo = finish((await as_user.post("/partials/simulator/passage-times", data={
+        "route_id": rid, "checkpoints_json": "[]", "start_hour": 17, "start_minute": 0, "race_date": "2026-12-20",
+        "wx_tz": "Asia/Tokyo", "wx_date": "2026-12-20"})).text)
+    assert tokyo != december
+    await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": "[]", "target_v": "2",
+                                                      "weather_json": json.dumps({"date": "2026-12-20", "tz": "Asia/Tokyo"})})
+    assert (await as_user.get(f"/api/simulator/routes/{rid}/offline")).json()["points"][-1]["clock_s"] - 17 * 3600 == tokyo
+    cleared = finish((await as_user.post("/partials/simulator/passage-times", data={
+        "route_id": rid, "checkpoints_json": "[]", "start_hour": 17, "start_minute": 0, "race_date": ""})).text)
+    assert cleared == window  # the date removed in the page: the fixed window again

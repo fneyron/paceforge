@@ -904,6 +904,9 @@ window._sim = {};
         b.append('checkpoints_json', JSON.stringify(checkpoints));
         if (ts > 0 && hasRealTarget()) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);  // no objective: the server reads the estimate again
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
+        // the date and the fetched weather's zone as the page has them, ahead of the save: night by the sun at once
+        b.append('race_date', raceDate || '');
+        if (currentWeather && !currentWeather.error) { if (currentWeather.tz) b.append('wx_tz', currentWeather.tz); if (currentWeather.utc_offset_s !== undefined && currentWeather.utc_offset_s !== null) b.append('wx_offset_s', currentWeather.utc_offset_s); if (currentWeather.date) b.append('wx_date', currentWeather.date); }
         if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
