@@ -69,10 +69,13 @@ DUMMY_HASH = PASSWORD_PREFIX + "$2b$12$edK.6ioJQ40/cwK4VO7A7eRiNpHRI8.fMNhHacQFb
 # Counted per client address and email, and per address alone (one address
 # trying many emails), in Redis so every web worker shares them; when Redis
 # does not answer, nobody is held back (fail open). Emails and addresses are
-# only stored hashed.
+# only stored hashed. Each attempt is counted first, atomically, before any
+# other work: parallel attempts cannot slip past the limit, and a refused one
+# costs neither a database connection nor a password check. A login that works
+# is then taken back (logins count failures only).
 
 LIMITS = {  # action: (per address and email, per address, window in seconds)
-    "login": (10, 50, 15 * 60),  # failed logins
+    "login": (10, 50, 15 * 60),  # failed logins (each counted when it starts, taken back if it works)
     "register": (5, 20, 60 * 60),
     "forgot": (5, 20, 60 * 60),  # reset emails asked for
 }
@@ -89,9 +92,6 @@ class MemoryCounter:
         count, until = self.hits.get(key, (0, 0.0))
         return count if until > time.monotonic() else 0
 
-    async def get(self, keys: list[str]) -> list[int]:
-        return [self._live(k) for k in keys]
-
     async def incr(self, keys: list[str], window: int) -> list[int]:
         out = []
         for k in keys:
@@ -104,15 +104,20 @@ class MemoryCounter:
     async def delete(self, key: str) -> None:
         self.hits.pop(key, None)
 
+    async def decr(self, key: str) -> None:
+        if count := self._live(key):
+            self.hits[key] = (count - 1, self.hits[key][1])
+
+
+# one less, never below zero, never a key without its window (a plain DECR would make one)
+_DECR = "local v = tonumber(redis.call('GET', KEYS[1]) or '0') if v > 0 then redis.call('DECR', KEYS[1]) end return 0"
+
 
 class _RedisCounter:
     def __init__(self):
         import redis.asyncio as aioredis
 
         self.r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
-
-    async def get(self, keys: list[str]) -> list[int]:
-        return [int(v or 0) for v in await self.r.mget(keys)]
 
     async def incr(self, keys: list[str], window: int) -> list[int]:
         async with self.r.pipeline(transaction=False) as pipe:
@@ -123,6 +128,9 @@ class _RedisCounter:
 
     async def delete(self, key: str) -> None:
         await self.r.delete(key)
+
+    async def decr(self, key: str) -> None:
+        await self.r.eval(_DECR, 1, key)
 
 
 _counter = None
@@ -141,36 +149,23 @@ def _keys(action: str, ip: str, email: str) -> list[str]:
     return [f"rl:{action}:{digest(f'{ip}|{email}')}", f"rl:{action}:ip:{digest(ip)}"]
 
 
-def _over(action: str, counts: list[int]) -> bool:
-    per_email, per_address, _ = LIMITS[action]
+async def count_attempt(action: str, ip: str, email: str) -> bool:
+    """Count one attempt, before any other work; True when it is over the limit (it must then be refused)."""
+    per_email, per_address, window = LIMITS[action]
+    try:
+        counts = await counter().incr(_keys(action, ip, email), window)
+    except Exception:
+        logger.warning("Rate limit counters unavailable: %s not limited", action)
+        return False
     return counts[0] > per_email or counts[1] > per_address
 
 
-async def rate_limited(action: str, ip: str, email: str) -> bool:
-    """Whether this address (or this address and email) used up the action's attempts, without counting one."""
-    per_email, per_address, _ = LIMITS[action]
-    try:
-        counts = await counter().get(_keys(action, ip, email))
-    except Exception:
-        logger.warning("Rate limit counters unavailable: %s not limited", action)
-        return False
-    return counts[0] >= per_email or counts[1] >= per_address
-
-
-async def count_attempt(action: str, ip: str, email: str) -> bool:
-    """Count one attempt; True when it is over the limit (it must then be refused)."""
-    try:
-        counts = await counter().incr(_keys(action, ip, email), LIMITS[action][2])
-    except Exception:
-        logger.warning("Rate limit counters unavailable: %s not limited", action)
-        return False
-    return _over(action, counts)
-
-
 async def forget_attempts(action: str, ip: str, email: str) -> None:
-    """A login that worked: this address and email start afresh (the address's count stays)."""
+    """A login that worked: this address and email start afresh, and the address is not charged for it."""
+    key, address = _keys(action, ip, email)
     try:
-        await counter().delete(_keys(action, ip, email)[0])
+        await counter().delete(key)
+        await counter().decr(address)
     except Exception:
         logger.warning("Rate limit counters unavailable: %s not reset", action)
 

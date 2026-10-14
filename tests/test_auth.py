@@ -257,3 +257,94 @@ async def test_sending_the_emails_never_logs_the_address(client, db_session, no_
         await c.post("/auth/register", data={"email": "private@x.fr", "password": "password-123"})
         await c.post("/auth/forgot-password", data={"email": "private@x.fr"})
     assert "SMTP" in caplog.text and "private@x.fr" not in caplog.text
+
+
+# ── parallel attempts: counted before any work, so none slips past the limit ──
+
+async def _burst(engine, monkeypatch, path: str, forms: list[dict]):
+    """The same form posted in parallel from one address, each request with its own database session as in
+    production. Returns the status codes and the password checks made."""
+    import asyncio
+
+    from httpx import ASGITransport
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.dependencies import get_db
+    from app.main import create_app
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    app = create_app()
+
+    async def per_request_db():
+        async with factory() as s:
+            yield s
+            await s.commit()
+    app.dependency_overrides[get_db] = per_request_db
+    checks = []
+    real = auth_service.verify_password
+
+    def spy(password, password_hash):
+        checks.append(password_hash)
+        return real(password, password_hash)
+    monkeypatch.setattr(auth_service, "verify_password", spy)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
+        responses = await asyncio.gather(*[c.post(path, data=form) for form in forms])
+    return [r.status_code for r in responses], checks
+
+
+@pytest.fixture
+async def committed(engine):
+    """Rows committed to the shared test database for a parallel test, deleted afterwards."""
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    emails = []
+
+    async def add(email, password="pw-12345678"):
+        async with factory() as s:
+            s.add(User(email=email, password_hash=hash_password(password), email_verified=True))
+            await s.commit()
+        emails.append(email)
+    yield add, emails
+    async with factory() as s:
+        await s.execute(delete(User).where(User.email.in_(emails) | User.email.like("burst-%@x.fr")))
+        await s.commit()
+
+
+async def test_parallel_failed_logins_never_pass_the_limit(engine, committed, monkeypatch):
+    add, _ = committed
+    await add("burst@x.fr")
+    monkeypatch.setitem(auth_service.LIMITS, "login", (3, 50, 900))
+    codes, checks = await _burst(engine, monkeypatch, "/auth/login",
+                                 [{"email": "burst@x.fr", "password": f"guess-{i}"} for i in range(30)])
+    assert len(checks) == 3 and codes.count(200) == 3 and codes.count(429) == 27
+
+
+async def test_parallel_reset_requests_never_pass_the_limit(engine, committed, monkeypatch):
+    add, _ = committed
+    await add("burst-reset@x.fr")
+    sent = []
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda to, token: sent.append(to))
+    codes, _ = await _burst(engine, monkeypatch, "/auth/forgot-password", [{"email": "burst-reset@x.fr"}] * 20)
+    assert len(sent) == 5 and codes.count(429) == 15
+
+
+async def test_parallel_sign_ups_never_pass_the_limit(engine, committed, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *args: True)
+    monkeypatch.setitem(auth_service.LIMITS, "register", (5, 3, 3600))
+    codes, _ = await _burst(engine, monkeypatch, "/auth/register",
+                            [{"email": f"burst-{i}@x.fr", "password": "pw-12345678"} for i in range(12)])
+    assert codes.count(302) == 3 and codes.count(429) == 9
+
+
+async def test_a_login_that_works_is_not_charged_to_the_address(client, db_session, no_commit, monkeypatch):
+    monkeypatch.setitem(auth_service.LIMITS, "login", (10, 3, 900))
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        for _ in range(5):  # five good logins from the address: none counts against it
+            assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+            await c.get("/auth/logout")
+        for i in range(3):
+            assert (await _login(c, f"x{i}@x.fr")).status_code == 200
+        assert (await _login(c, "x9@x.fr")).status_code == 429

@@ -22,7 +22,6 @@ from app.services.auth import (
     forget_attempts,
     generate_token,
     hash_password_async,
-    rate_limited,
     valid_email,
     valid_verification_token,
     verification_token,
@@ -185,7 +184,9 @@ async def login(
     email = email.strip().lower()
     next = next if next in ("coros", "garmin", "strava") else ""
     ip = _client_ip(request)
-    if await rate_limited("login", ip, email):  # refused before any password check
+    # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
+    # neither a database connection nor a password check
+    if await count_attempt("login", ip, email):
         return templates.TemplateResponse(
             request, "auth/login.html", status_code=429,
             context={"error": TOO_MANY, "email": email, "next": next},
@@ -197,7 +198,6 @@ async def login(
     # an unknown email is checked too, against a hash of nothing: the answer takes as long either way
     known = bool(user and user.password_hash)
     if not (await verify_password_async(password, user.password_hash if known else DUMMY_HASH) and known):
-        await count_attempt("login", ip, email)
         return templates.TemplateResponse(
             request, "auth/login.html",
             context={"error": "Email ou mot de passe incorrect.", "email": email, "next": next},
