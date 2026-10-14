@@ -54,10 +54,12 @@ def activity_from_strava(data: dict, user_id: int) -> Activity:
 
 
 def apply_detail(activity: Activity, detail: dict) -> None:
-    """A row saved from the list, completed by the activity's detail. PaceForge's own entries in raw_data
+    """A row saved from the list, completed by the activity's detail: a field the detail has (a field it lacks
+    keeps what is there, a watch's power, calories or laps on a merged row). PaceForge's own entries in raw_data
     (« paceforge_… »: the lookups, the races' D+) are kept: asked again, they would cost requests again."""
     for field in DETAIL_FIELDS:
-        setattr(activity, field, detail.get(field))
+        if detail.get(field) is not None:
+            setattr(activity, field, detail[field])
     ours = {k: v for k, v in (activity.raw_data or {}).items() if k.startswith("paceforge")}
     activity.raw_data = {**detail, **ours}
 

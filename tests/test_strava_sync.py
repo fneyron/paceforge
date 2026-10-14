@@ -939,6 +939,29 @@ async def test_an_edit_on_strava_renames_the_activity(db_session, test_user, tas
         assert (await _run_webhook_sync(730_003, test_user.strava_athlete_id, "create"))["status"] == "gone"
 
 
+async def test_a_rename_keeps_what_a_watch_brought(db_session, test_user, task_session, monkeypatch):
+    """Re-review N1: the edit's detail (apply_detail) wrote None over what COROS had brought to the merged row
+    (merge_twins keeps the watch's power, calories, laps when Strava's row has none). Only what the detail has is
+    set now."""
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    await _own_app(db_session, test_user, sub=55)
+    now = datetime.now(timezone.utc)
+    coros_laps = [{"lap_index": 1, "source": "coros"}]
+    row = Activity(user_id=test_user.id, strava_activity_id=990_001, coros_activity_id=55_001, sport_type="Run",
+                   name="Morning Run", start_date=now, distance=10_000, moving_time=3000, elapsed_time=3100,
+                   max_watts=410.0, weighted_average_watts=260.0, calories=640.0, laps=coros_laps,
+                   raw_data={"resource_state": 3})
+    db_session.add(row)
+    await db_session.flush()
+    detail = _data(990_001, now, name="Footing du lac", resource_state=3, splits_metric=[{"split": 1}])
+    monkeypatch.setattr(StravaService, "get_activity", AsyncMock(return_value=detail))  # no power, calories, laps
+    assert (await _run_webhook_sync(990_001, test_user.strava_athlete_id, "update"))["status"] == "updated"
+    assert row.name == "Footing du lac" and row.splits_metric == [{"split": 1}]
+    assert (row.max_watts, row.weighted_average_watts, row.calories, row.laps) == (410.0, 260.0, 640.0, coros_laps)
+    assert row.coros_activity_id == 55_001
+
+
 async def test_a_deletion_on_strava_is_checked_then_applied(db_session, test_user, task_session, monkeypatch):
     from app.tasks.webhook_sync import _run_webhook_sync
 
