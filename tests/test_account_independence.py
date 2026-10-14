@@ -38,6 +38,8 @@ async def test_register_plan_export_and_login_without_any_provider(client, db_se
         response = await c.post("/auth/register", data=credentials)
         assert response.headers["location"] == "/auth/check-email"
         response = await c.get("/auth/verify-email", params={"token": sent[0][1]})
+        assert "Email vérifié" in response.text  # verified; signing in is the athlete's own step
+        response = await c.post("/auth/login", data=credentials)
         assert response.headers["location"] == "/sante"
         user = (
             await db_session.execute(select(User).where(User.email == credentials["email"]))

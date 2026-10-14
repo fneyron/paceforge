@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -38,10 +39,80 @@ class VersionedStaticFiles(StaticFiles):
         return response
 
 
+DEFAULT_SECRET_KEYS = {"change-me-to-a-random-secret-key"}  # config.py's and .env.example's
+
+
+def check_secrets() -> None:
+    """No start with a SECRET_KEY anyone can guess (it signs the sessions: a forged one is any account),
+    unless DEBUG, nor with an ENCRYPTION_KEYS entry that is not a Fernet key."""
+    from app.crypto import check_keys
+
+    if not settings.DEBUG and (not settings.SECRET_KEY.strip() or settings.SECRET_KEY in DEFAULT_SECRET_KEYS):
+        raise RuntimeError(
+            "SECRET_KEY is empty or a known default: set a long random value. If tokens were stored under the "
+            "old one, first append legacy_key(old SECRET_KEY) to ENCRYPTION_KEYS (app.crypto), or they become "
+            "unreadable.")
+    try:
+        check_keys()
+    except ValueError as e:
+        raise RuntimeError("ENCRYPTION_KEYS: each entry must be a Fernet key (comma-separated).") from e
+    if not settings.ENCRYPTION_KEYS.strip():
+        logger.warning("ENCRYPTION_KEYS is not set: stored tokens are encrypted with a key derived from SECRET_KEY")
+
+
+KEY_HINT = ("Put back the key that encrypted them in ENCRYPTION_KEYS (any place after the first), or, after a "
+            "SECRET_KEY change, set ENCRYPTION_KEYS = new,legacy_key(old SECRET_KEY) (app.crypto).")
+
+
+async def scan_stored_secrets(engine=None) -> None:
+    """List in the logs, one ERROR per kind with its rows, the stored secrets no configured key decrypts. Never
+    stops the start: such links are only paused, untouched, until the key is back. A database that does not
+    answer within 10 s leaves them unlisted (warned)."""
+    from app.crypto import unreadable_rows
+
+    if engine is None:
+        from app.database import engine
+    try:
+        async with asyncio.timeout(10), engine.connect() as conn:
+            unreadable = await unreadable_rows(conn)
+    except Exception:
+        logger.warning("Stored secrets not checked at start: the database did not answer", exc_info=True)
+        return
+    for kind, ids in unreadable.items():
+        logger.error("Stored %s secrets no configured key decrypts, rows %s: those links are paused, nothing "
+                     "is changed. %s", kind, ", ".join(map(str, ids)), KEY_HINT)
+
+
+async def _first_start_of_this_build() -> bool:
+    """Whether this worker is the first of the deploy to start (a short Redis claim on the code and the keys: a
+    redeploy that only changes ENCRYPTION_KEYS scans again); every worker is, when Redis does not answer."""
+    import hashlib
+
+    keys = hashlib.sha256(f"{settings.SECRET_KEY}|{settings.ENCRYPTION_KEYS}".encode()).hexdigest()[:16]
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
+        try:
+            return bool(await r.set(f"paceforge:start-scan:{BUILD_ID}:{keys}", "1", nx=True, ex=15 * 60))
+        finally:
+            await r.aclose()
+    except Exception:
+        return True
+
+
+async def _scan_once_per_deploy() -> None:
+    if await _first_start_of_this_build():
+        await scan_stored_secrets()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
+    check_secrets()  # configuration only: stored data never stops the start
+    scan = asyncio.get_running_loop().create_task(_scan_once_per_deploy())  # in the background: no delay
     logger.info("PaceForge starting up")
     yield
+    scan.cancel()
     logger.info("PaceForge shutting down")
 
 

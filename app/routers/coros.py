@@ -1,17 +1,20 @@
 """COROS link from Réglages: OAuth connect/callback, disconnect (syncing on
 demand is Réglages' too: app.routers.settings.watch_sync).
 
-The OAuth state and PKCE verifier ride in the (signed) session cookie between
-/coros/connect and /coros/callback, like the Strava setup credentials do.
+The OAuth state rides in the (signed, readable) session cookie between
+/coros/connect and /coros/callback; the PKCE verifier too, but encrypted
+(Fernet, good for 10 minutes): only PaceForge can read it back.
 """
 import logging
 import secrets
 
 import httpx
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crypto import decrypt_secret, encrypt_secret
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services import coros
@@ -22,6 +25,7 @@ router = APIRouter(tags=["coros"])
 
 _SETTINGS = "/settings#coros"
 _PENDING = "coros_oauth"
+_PENDING_TTL_S = 10 * 60  # a connect not completed within it starts again
 
 
 def _back(request: Request, error: str | None = None, ok: str | None = None) -> RedirectResponse:
@@ -62,7 +66,7 @@ async def coros_connect(
     verifier, challenge = coros.pkce_pair()
     state = secrets.token_urlsafe(24)
     request.session[_PENDING] = {
-        "state": state, "verifier": verifier, "client_id": client_id, "retried": retried,
+        "state": state, "verifier": encrypt_secret(verifier).decode(), "client_id": client_id, "retried": retried,
         "issuer": disc["issuer"], "resource": disc["resource"],
         "token_endpoint": disc["token_endpoint"], "revocation_endpoint": disc["revocation_endpoint"],
     }
@@ -90,6 +94,10 @@ async def coros_callback(
 ):
     pending = request.session.pop(_PENDING, None)
     if not pending or not state or not secrets.compare_digest(str(state), str(pending.get("state"))):
+        return _back(request, error="La connexion à COROS a expiré. Réessaie.")
+    try:
+        pending = {**pending, "verifier": decrypt_secret(str(pending.get("verifier")).encode(), ttl=_PENDING_TTL_S)}
+    except InvalidToken:  # older than 10 minutes (or unreadable)
         return _back(request, error="La connexion à COROS a expiré. Réessaie.")
     if error:
         logger.info("COROS authorization error for user %d: %s", user.id, error)

@@ -11,7 +11,9 @@ from app.services.strava import StravaService
 
 
 @pytest.fixture
-def strava_service(db_session: AsyncSession):
+def strava_service(db_session: AsyncSession, monkeypatch):
+    # a refreshed token pair is committed at once: flushed here, so the test's rollback still cleans up
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     return StravaService(db_session)
 
 
