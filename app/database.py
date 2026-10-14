@@ -10,8 +10,8 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=settings.DB_POOL_SIZE,  # the connection budget: app.config
+    max_overflow=settings.DB_MAX_OVERFLOW,
 )
 
 async_session_factory = async_sessionmaker(
@@ -42,8 +42,8 @@ async def get_task_session() -> AsyncGenerator[AsyncSession, None]:
         settings.DATABASE_URL,
         echo=False,
         pool_pre_ping=True,
-        pool_size=2,
-        max_overflow=3,
+        pool_size=settings.DB_TASK_POOL_SIZE,
+        max_overflow=settings.DB_TASK_MAX_OVERFLOW,
     )
     factory = async_sessionmaker(
         task_engine,

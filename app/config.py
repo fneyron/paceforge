@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     STRAVA_CLIENT_ID: str = ""
     STRAVA_CLIENT_SECRET: str = ""
     STRAVA_WEBHOOK_VERIFY_TOKEN: str = "paceforge-verify"
+    # the shared app's webhook subscription id; optional, discovered when empty
+    STRAVA_SUBSCRIPTION_ID: str = ""
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
@@ -15,6 +17,15 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://paceforge:paceforge@localhost:5432/paceforge"
+    # Connection pools, against PostgreSQL's max_connections (100 by default, 3 of them kept for superusers):
+    # web: 4 uvicorn workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) = 40, twice while a deploy runs the old and
+    # the new container side by side = 80; Celery: 2 processes, one task each, every task its own engine of
+    # at most DB_TASK_POOL_SIZE + DB_TASK_MAX_OVERFLOW = 3 → 6, twice in a deploy = 12; Alembic at start: 1.
+    # 93 at worst. Raise them only with max_connections (or behind PgBouncer).
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    DB_TASK_POOL_SIZE: int = 1
+    DB_TASK_MAX_OVERFLOW: int = 2
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -29,7 +40,11 @@ class Settings(BaseSettings):
 
     # App
     BASE_URL: str = "http://localhost:8000"
+    # signs sessions and email links; the app refuses to start with an empty or default one unless DEBUG
     SECRET_KEY: str = "change-me-to-a-random-secret-key"
+    # Fernet keys for the secrets at rest (provider tokens), comma-separated, newest first: the first encrypts,
+    # all decrypt, and so does the key derived from SECRET_KEY used before them (app.crypto)
+    ENCRYPTION_KEYS: str = ""
     APP_NAME: str = "PaceForge"
     DEBUG: bool = False
     # Fetch each trace's road/track/trail surface from OpenStreetMap (off in tests)

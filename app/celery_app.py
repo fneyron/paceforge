@@ -61,3 +61,10 @@ celery_app.conf.task_queues = tuple(  # each its own binding (two on one key wou
 celery_app.conf.task_default_queue = "celery"
 celery_app.conf.task_routes = {name: {"queue": "long"} for name in (
     "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin")}
+
+# Expired Strava link attempts are purged every hour (app.tasks.oauth_cleanup)
+celery_app.conf.include = [*celery_app.conf.include, "app.tasks.oauth_cleanup"]
+celery_app.conf.beat_schedule["purge-oauth-attempts"] = {
+    "task": "paceforge.purge_oauth_attempts",
+    "schedule": crontab(minute=37),
+}

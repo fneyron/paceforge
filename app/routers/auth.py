@@ -1,25 +1,32 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.crypto import encrypt_secret
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, sign_in
 from app.models.user import User
 from app.services.auth import (
+    DUMMY_HASH,
     PASSWORD_PREFIX,
+    TOO_MANY,
+    count_attempt,
+    forget_attempts,
     generate_token,
-    hash_password,
+    hash_password_async,
     valid_email,
     valid_verification_token,
     verification_token,
-    verify_password,
+    verify_password_async,
 )
 from app.services.email import send_password_reset_email, send_verification_email
 from app.services.oauth_attempts import begin_strava, consume_strava
@@ -32,6 +39,31 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 HOME = "/sante"  # Santé is the main dashboard
 
 
+def _same_site(request: Request) -> None:
+    """Login CSRF: an auth form (login, sign-up, password reset) posted from another site is refused, so no page
+    elsewhere can sign this browser into an account of its choosing. Its own pages (the iPhone app's WebView
+    loads them from paceforge.fr too) send Sec-Fetch-Site same-origin and their own Origin; a browser or a
+    script sending neither header goes through."""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403)
+    origin = request.headers.get("origin")
+    if origin is not None:
+        ours = {host for host in (urlsplit(settings.BASE_URL).netloc, request.headers.get("host")) if host}
+        if urlsplit(origin).netloc not in ours:  # another site's, or « null » (a sandboxed frame)
+            raise HTTPException(status_code=403)
+
+
+def _client_ip(request: Request) -> str:
+    """The client's address for the attempt limits. Deployed behind exactly one proxy (Traefik), which appends
+    the address it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
+    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in
+    front (a CDN) would make its own address the last hop: then trust its header instead."""
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        return hops[-1]
+    return request.client.host if request.client else ""
+
+
 # ---------------------------------------------------------------------------
 # Register
 # ---------------------------------------------------------------------------
@@ -41,7 +73,7 @@ async def register_page(request: Request):
     return templates.TemplateResponse(request, "auth/register.html", context={})
 
 
-@router.post("/auth/register")
+@router.post("/auth/register", dependencies=[Depends(_same_site)])
 async def register(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -66,6 +98,12 @@ async def register(
             context={"error": "Le mot de passe doit contenir entre 8 et 1 024 caractères.", "email": email, "firstname": firstname, "lastname": lastname},
         )
 
+    if await count_attempt("register", _client_ip(request), email):
+        return templates.TemplateResponse(
+            request, "auth/register.html", status_code=429,
+            context={"error": TOO_MANY, "email": email, "firstname": firstname, "lastname": lastname},
+        )
+
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none():
@@ -77,7 +115,7 @@ async def register(
     verify_token = verification_token()
     user = User(
         email=email,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         firstname=firstname or None,
         lastname=lastname or None,
         email_verify_token=verify_token,
@@ -86,12 +124,12 @@ async def register(
     await db.flush()
     await db.refresh(user)
 
-    # Send verification email
-    sent = send_verification_email(email, verify_token)
+    # Send verification email (SMTP blocks: off the event loop)
+    sent = await run_in_threadpool(send_verification_email, email, verify_token)
     request.session.clear()
     request.session["pending_user_id"] = user.id
     request.session["verification_failed"] = not sent
-    logger.info("User %d registered: %s", user.id, email)
+    logger.info("User %d registered", user.id)
 
     return RedirectResponse(url="/auth/check-email", status_code=302)
 
@@ -112,7 +150,7 @@ async def resend_verification(request: Request, db: AsyncSession = Depends(get_d
     if user and user.email and not user.email_verified and not recent:
         user.email_verify_token = verification_token()
         await db.flush()
-        sent = send_verification_email(user.email, user.email_verify_token)
+        sent = await run_in_threadpool(send_verification_email, user.email, user.email_verify_token)
         request.session["verification_failed"] = not sent
     return RedirectResponse("/auth/check-email", status_code=303)
 
@@ -137,12 +175,14 @@ async def verify_email(
     user.email_verified = True
     user.email_verify_token = None
     await db.flush()
-
-    request.session.clear()
-    request.session["user_id"] = user.id
     logger.info("Email verified for user %d", user.id)
 
-    return RedirectResponse(url=HOME, status_code=302)
+    # The link verifies, it never signs in: anyone can send someone the link of an account of their own
+    # (login CSRF). A browser already signed in to that account goes on; any other signs in first
+    # (« Continuer » leads to the login page).
+    if request.session.get("user_id") == user.id:
+        return RedirectResponse(url=HOME, status_code=302)
+    return templates.TemplateResponse(request, "auth/verify_result.html", context={"success": True})
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +194,7 @@ async def login_page(request: Request, next: str = ""):
     return templates.TemplateResponse(request, "auth/login.html", context={"next": next if next in ("coros", "garmin", "strava") else ""})
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=[Depends(_same_site)])
 async def login(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -164,25 +204,36 @@ async def login(
 ):
     email = email.strip().lower()
     next = next if next in ("coros", "garmin", "strava") else ""
+    ip = _client_ip(request)
+    # counted before anything else: parallel attempts cannot slip past the limit, and a refused one costs
+    # neither a database connection nor a password check
+    if await count_attempt("login", ip, email):
+        return templates.TemplateResponse(
+            request, "auth/login.html", status_code=429,
+            context={"error": TOO_MANY, "email": email, "next": next},
+        )
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(password, user.password_hash):
+    # an unknown email is checked too, against a hash of nothing: the answer takes as long either way
+    known = bool(user and user.password_hash)
+    if not (await verify_password_async(password, user.password_hash if known else DUMMY_HASH) and known):
         return templates.TemplateResponse(
             request, "auth/login.html",
             context={"error": "Email ou mot de passe incorrect.", "email": email, "next": next},
         )
+    await forget_attempts("login", ip, email)
 
     if not user.password_hash.startswith(PASSWORD_PREFIX):
-        user.password_hash = hash_password(password)
+        user.password_hash = await hash_password_async(password)
         await db.flush()
     request.session.clear()
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
         return RedirectResponse("/auth/check-email", status_code=302)
-    request.session["user_id"] = user.id
-    logger.info("User %d logged in: %s", user.id, email)
+    sign_in(request, user)
+    logger.info("User %d logged in", user.id)
 
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
@@ -202,28 +253,35 @@ async def forgot_password_page(request: Request):
     return templates.TemplateResponse(request, "auth/forgot_password.html", context={})
 
 
-@router.post("/auth/forgot-password")
+@router.post("/auth/forgot-password", dependencies=[Depends(_same_site)])
 async def forgot_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
     email: str = Form(...),
 ):
     email = email.strip().lower()
+    if await count_attempt("forgot", _client_ip(request), email):  # no more emails for now; nothing revealed
+        return templates.TemplateResponse(request, "auth/forgot_password.html", context={"sent": True},
+                                          status_code=429)
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
+    email_task = None
     if user and user.password_hash:
         token = generate_token()
         user.password_reset_token = token
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-        await db.flush()
-        send_password_reset_email(email, token)
+        # saved before the email goes (get_db commits only after the response and its background work): the
+        # link is never dead on arrival, and no row lock is held through SMTP
+        await db.commit()
+        # sent once the answer is out: how long it takes never tells whether the email has an account
+        email_task = BackgroundTask(send_password_reset_email, email, token)
 
     # Always show success (don't reveal if email exists)
     return templates.TemplateResponse(
         request, "auth/forgot_password.html",
-        context={"sent": True},
+        context={"sent": True}, background=email_task,
     )
 
 
@@ -235,7 +293,7 @@ async def reset_password_page(request: Request, token: str):
     )
 
 
-@router.post("/auth/reset-password")
+@router.post("/auth/reset-password", dependencies=[Depends(_same_site)])
 async def reset_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -260,16 +318,17 @@ async def reset_password(
             context={"token": token, "error": "Lien expiré. Redemande un nouveau lien."},
         )
 
-    user.password_hash = hash_password(password)
+    user.password_hash = await hash_password_async(password)
     user.password_reset_token = None
     user.password_reset_expires_at = None
+    user.session_version = (user.session_version or 0) + 1  # every other session of the account is signed out
     await db.flush()
 
     request.session.clear()
     if not user.email_verified:
         request.session["pending_user_id"] = user.id
         return RedirectResponse("/auth/check-email", status_code=302)
-    request.session["user_id"] = user.id
+    sign_in(request, user)
     logger.info("Password reset for user %d", user.id)
 
     return RedirectResponse(url=HOME, status_code=302)
@@ -312,10 +371,11 @@ async def strava_link(request: Request, next: str | None = None,
         request.session.setdefault("strava_next", "/connections/strava")
     else:
         return RedirectResponse(f"/setup?next={next}" if next in ("settings", "devices") else "/setup", status_code=302)
-    # Bind the attempt to its selected app, even if configuration changes meanwhile.
-    state = await begin_strava(request, db, user.id, {
-        "client_id": service.client_id, "client_secret": service.client_secret, "mode": mode,
-    })
+    # Bind the attempt to its selected app, even if configuration changes meanwhile. The shared app's
+    # secret stays in the server configuration: the attempt keeps its client id only.
+    state = await begin_strava(request, db, user.id, {"mode": "shared", "client_id": service.client_id}
+                               if mode == "shared" else
+                               {"client_id": service.client_id, "client_secret": service.client_secret, "mode": mode})
     return RedirectResponse(service.get_authorize_url(state), status_code=302)
 
 
@@ -339,9 +399,10 @@ async def strava_callback(
 
     pending_id, pending_secret = pending.get("client_id"), pending.get("client_secret")
     shared = pending.get("mode") == "shared"
-    if shared and (not settings.strava_shared_ready or pending_id != settings.STRAVA_CLIENT_ID
-                   or pending_secret != settings.STRAVA_CLIENT_SECRET):
-        return _back_to_settings(request, "La connexion Strava a changé. Recommence depuis Réglages.") or RedirectResponse("/connections/strava", status_code=302)
+    if shared:
+        if not settings.strava_shared_ready or pending_id != settings.STRAVA_CLIENT_ID:
+            return _back_to_settings(request, "La connexion Strava a changé. Recommence depuis Réglages.") or RedirectResponse("/connections/strava", status_code=302)
+        pending_secret = settings.STRAVA_CLIENT_SECRET  # never stored with the attempt
     if pending_id and pending_secret:
         strava = StravaService(db, client_id=pending_id, client_secret=pending_secret)
     elif user.has_own_strava_app:

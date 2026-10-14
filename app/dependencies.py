@@ -18,6 +18,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def sign_in(request: Request, user: User) -> None:
+    """This browser's session for `user`, carrying the account's session version: a password reset bumps it,
+    and every session holding an older one is refused (get_current_user)."""
+    request.session["user_id"] = user.id
+    request.session["session_version"] = user.session_version or 0
+
+
+def _current(request: Request, user: User | None) -> bool:
+    """A session made before its account's last password reset is no longer valid (older sessions, made before
+    the version was kept, count as version 0, the default)."""
+    return user is not None and request.session.get("session_version", 0) == (user.session_version or 0)
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -28,7 +41,7 @@ async def get_current_user(
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    if not user:
+    if not _current(request, user):
         request.session.clear()
         raise _redirect_to_login()
 
@@ -51,7 +64,9 @@ async def get_optional_user(
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    return user if user and (not user.email or user.email_verified) else None
+    if not _current(request, user):
+        return None
+    return user if not user.email or user.email_verified else None
 
 
 def _redirect_to_login() -> Exception:
