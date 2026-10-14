@@ -392,8 +392,10 @@ def test_the_races_clock():
     assert rs.race_utc_offset_s("2027-02-13", 176.2, None, paris, start_zone="Pacific/Auckland") == 13 * 3600
     assert rs.race_utc_offset_s("2026-10-25", 2.35, None, paris, start_zone="Europe/Paris", start_hour=1) == 7200
     assert rs.race_utc_offset_s("2026-10-25", 2.35, None, paris, start_zone="Europe/Paris", start_hour=8) == 3600
-    # without it, his zone only when the course lies in its band (standard offset within 1 h of lon / 15)
+    # without it, his zone only when the course lies in its band (standard offset within 2 h of lon / 15)
     assert rs.race_utc_offset_s("2026-10-15", 55.45, None, paris) == 4 * 3600  # Réunion: not Paris's +2
+    for lon in (-0.58, -1.56, -4.5, -4.8):  # Bordeaux, Biarritz, Crozon, the Picos: Paris's +2 in summer, not UTC
+        assert rs.race_utc_offset_s("2026-06-13", lon, None, paris, start_hour=7) == 2 * 3600
 
 
 @pytest.mark.asyncio

@@ -646,14 +646,18 @@ def sun_clock(course: CourseProfile, race_date, start_hour: int, start_minute: i
     return SunClock(local - timedelta(seconds=int(utc_offset_s)), pos, [seg.start_km for seg in course.segments])
 
 
+ZONE_BAND_H = 2.0  # the athlete's zone serves a course whose lon / 15 lies within this of its standard offset
+
+
 def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
                       start_hour: int | None = None, start_minute: int = 0) -> int | None:
     """The UTC offset of the race's clock at its start: the start point's own
     time zone when known (``start_zone``, its IANA name: daylight saving read
     on the race date, at the start's local time), else the forecast's (the
     same zone, read on the forecast's day), else the athlete's zone when the
-    course lies in its band (its standard offset within 1 h of lon / 15),
-    else lon / 15 to the hour. None without a date or a place."""
+    course lies in its band (its standard offset within 2 h of lon / 15: the
+    west of France and Spain run 1.1-1.4 h ahead of the sun, Réunion is 2.7 h
+    off Paris), else lon / 15 to the hour. None without a date or a place."""
     if race_date is None or lon is None:
         return None
     from datetime import date as _date
@@ -681,7 +685,7 @@ def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=
     if zone is not None:
         at = local.replace(tzinfo=zone)
         off, dst = at.utcoffset(), at.dst()
-        if off is not None and abs((off - (dst or timedelta(0))).total_seconds() / 3600 - solar_h) <= 1:
+        if off is not None and abs((off - (dst or timedelta(0))).total_seconds() / 3600 - solar_h) <= ZONE_BAND_H:
             return int(off.total_seconds())
     return int(round(solar_h)) * 3600
 
