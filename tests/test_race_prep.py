@@ -178,7 +178,8 @@ def test_nights_without_a_usual_have_no_band_and_without_a_watch_say_so():
 def test_race_week_food_and_the_hot_line():
     # beyond 4 h: about 10 g/kg a day, 8–10 with a sensitive stomach (Tiller 2019)
     f = rp.food_plan(route(D, hour=6), 60780, 72)
-    assert "environ 10 g" in f["load"] and "580 à 720 g pour tes 72 kg" in f["load"]
+    assert "environ 10 g" in f["load"] and "720 g pour tes 72 kg" in f["load"] and "8–10 g/kg si ton estomac" in f["load"]
+    assert "580" not in f["load"]  # the sensitive stomach's range is said apart, never as everyone's grams
     # breakfast 2–3 g/kg 3–4 h before (Thomas 2016); fluid 5–7 ml/kg ≥ 4 h before, 3–5 more ~2 h before (Sawka 2007)
     assert "(vers 02:00–03:00)" in f["breakfast"] and "145 à 215 g" in f["breakfast"]
     assert "350 à 500 ml" in f["fluid"] and "200 à 350 ml" in f["fluid"] and "aliment salé" in f["fluid"]
@@ -235,7 +236,7 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
     assert 'id="prep"' in html and "Affûtage · J‑5" in html and "pf-viz.js" in html
     assert 'data-viz-key="affutage"' in html and 'data-viz-key="nuits-course"' in html
     assert "Vise 30 à 60 min de plus par jour, siestes comprises." in html
-    assert "Semaine de course" in html and "560 à 700 g" in html and "Nutrition" not in html  # 70 kg, ~17 h
+    assert "Semaine de course" in html and "700 g pour tes 70" in html and "Nutrition" not in html  # 70 kg, ~17 h
     assert "Course chaude" in html
     assert "Prêt pour la distance" not in html and "Cœur la nuit" not in html
     day = await _race(db_session, test_user, today, name="Aujourd'hui")

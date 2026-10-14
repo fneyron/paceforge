@@ -447,12 +447,12 @@ def food_plan(route, exp_s: int | None, weight_kg: float | None) -> dict | None:
     out = {"short": None, "weight_link": None}
     ultra = exp_s > ULTRA_CARBS_S
     if ultra and w:
-        out["load"] = (f"Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour (8–10 si ton estomac est "
-                       f"sensible), soit {_to(8 * w, 10)} à {_to(10 * w, 10)} g pour tes {num(w)} kg. Réduis fibres et "
-                       "graisses la veille.")
+        out["load"] = (f"Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour, soit {_to(10 * w, 10)} g "
+                       f"pour tes {num(w)} kg (8–10 g/kg si ton estomac est sensible). Réduis fibres et graisses la "
+                       "veille.")
     elif ultra:
-        out["load"] = ("Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour (8–10 si ton estomac est "
-                       "sensible). Réduis fibres et graisses la veille.")
+        out["load"] = ("Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour (8–10 g/kg si ton estomac "
+                       "est sensible). Réduis fibres et graisses la veille.")
     elif w:
         out["load"] = (f"Recharge J-2 et J-1 : 10 à 12 g de glucides par kg et par jour, soit {_to(10 * w, 10)} à "
                        f"{_to(12 * w, 10)} g pour tes {num(w)} kg. Réduis fibres et graisses la veille.")
