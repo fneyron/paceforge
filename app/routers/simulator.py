@@ -347,6 +347,7 @@ async def _passage_table_context(
     profile = profile or await build_athlete_gradient_profile(db, user_id)
     stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
     total_km = course.total_distance_km
+    clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
     if target_time_s:
         finish_s = float(target_time_s)
         aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
@@ -354,10 +355,10 @@ async def _passage_table_context(
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-            ),
+            ), **clock,
         )
     else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
-        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
         finish_s = _finish_with_stops(course.predicted_total_time_s, checkpoints, stop_minutes, total_km, stop_factor)
         aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
 
@@ -410,7 +411,11 @@ async def _passage_table_context(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
     )
-    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    from app.services.race_simulator import sun_clock
+
+    sun = sun_clock(course, clock.get("race_date"), start_hour, start_minute, clock.get("utc_offset_s")) if clock else None
+    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km,
+                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None)
     legs = _leg_details(guide, sections)
     return {
         "legs": legs,
@@ -782,6 +787,7 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         course, profile,
         start_hour=route.start_hour if route.start_hour is not None else 6,
         start_minute=route.start_minute or 0,
+        **await _race_clock(db, user_id, route, course),
     )
 
     cp_result = await db.execute(
@@ -1386,9 +1392,11 @@ async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, us
     if run:
         profile = await build_athlete_gradient_profile(db, user.id)
         run_start = start_offset + swim_s + t1_s + bike_s + t2_s
+        run_course = CourseProfile(**run.course_json)
         course = predict_course(
-            CourseProfile(**run.course_json), profile,
+            run_course, profile,
             start_hour=int(run_start // 3600) % 24, start_minute=int((run_start % 3600) // 60),
+            **await _race_clock(db, user.id, route, run_course),
         )
         run_pred_s = int(course.predicted_total_time_s)
         run_s = int(run.target_time_s or run_pred_s)
@@ -1933,6 +1941,13 @@ def _scenario_settings(params: dict, profile, course, known_course: bool = False
     }
 
 
+async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course) -> dict:
+    """race_match.race_clock on the course already parsed."""
+    from app.services.race_match import race_clock
+
+    return await race_clock(db, user_id, route, getattr(course, "route_coords", None) or [])
+
+
 async def _known_course(db: AsyncSession, user_id: int, route: Route | None) -> bool:
     """He has raced this course before: one of his routes with a linked result is within 3 % of its distance
     and 10 % of its D+ (100 m at least) — this route itself once its result is linked."""
@@ -1998,6 +2013,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         profile = await build_athlete_gradient_profile(db, user.id)
     stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
     total_km = course.total_distance_km
+    clock = await _race_clock(db, user.id, route, course)
     if route.target_time_s:
         finish_s = float(route.target_time_s)
         aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
@@ -2005,10 +2021,10 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
                 route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-            ),
+            ), **clock,
         )
     else:  # no objective: the stops of the predicted finish
-        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute)
+        course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
         finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km, stop_factor)
         aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
     sections = compute_passage_times(

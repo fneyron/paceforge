@@ -208,6 +208,27 @@ async def link_result(db: AsyncSession, route: Route, activity: Activity, user_i
     return route.result_json
 
 
+async def race_clock(db: AsyncSession, user_id: int, route: Route | None, coords: list | None = None) -> dict:
+    """{race_date, utc_offset_s} for night by the sun (race_simulator.predict_course): the race date and its
+    clock's UTC offset (the saved forecast's time zone, else the athlete's zone when it fits the course's
+    longitude, else the longitude's: race_simulator.race_utc_offset_s); {} without a date or a trace (the
+    fixed 21:00-06:00 window). ``coords``: the course's trace when the caller has it parsed."""
+    from app.models.user import User
+    from app.services.race_simulator import race_utc_offset_s
+    from app.services.timezones import zone_of
+
+    if route is None:
+        return {}
+    coords = coords if coords is not None else (route.course_json or {}).get("route_coords") or []
+    if not route.race_date or not coords or len(coords[0]) < 2:
+        return {}
+    tz = (await db.execute(select(User.timezone).where(User.id == user_id))).scalar_one_or_none()
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    wx_off = w.get("utc_offset_s") if str(w.get("date") or "")[:10] == str(route.race_date)[:10] else None
+    off = race_utc_offset_s(route.race_date, float(coords[0][1]), wx_off, zone_of(tz))
+    return {"race_date": route.race_date, "utc_offset_s": off} if off is not None else {}
+
+
 async def auto_link(db: AsyncSession, user_id: int, route: Route, now: datetime | None = None,
                     offset: timedelta | None = None, profile=None) -> Activity | None:
     """Find the race's activity and link it; the activity, or None when none fits."""

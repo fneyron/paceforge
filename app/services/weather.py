@@ -141,6 +141,8 @@ async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None
         "weather_code": day_code,
         "source": "prevision",
         "date": date,
+        # the start's own time zone on that date (timezone=auto): the race's clock for night by the sun
+        "utc_offset_s": data.get("utc_offset_seconds"),
         "hourly": {
             "temps": [round(t, 1) for t in hourly_temps],
             "humidity": [round(h, 0) for h in hourly_hum],

@@ -209,11 +209,32 @@ def describe(x):
 # ---------------------------------------------------------------- problem
 
 
-class Problem:
-    """All (race, level group) pairs of a race set, as padded numpy arrays."""
+def sun_elevation_np(lat, lon, epoch, year_start):
+    """race_simulator.sun_elevation_deg vectorised: degrees, UTC epoch seconds (year_start: Jan 1 of the year)."""
+    doy = np.floor((epoch - year_start) / 86400.0) + 1
+    hr = np.mod(epoch, 86400.0) / 3600.0
+    g = 2 * np.pi / 365 * (doy - 1 + (hr - 12) / 24)
+    decl = (0.006918 - 0.399912 * np.cos(g) + 0.070257 * np.sin(g) - 0.006758 * np.cos(2 * g)
+            + 0.000907 * np.sin(2 * g) - 0.002697 * np.cos(3 * g) + 0.00148 * np.sin(3 * g))
+    eqt = 229.18 * (0.000075 + 0.001868 * np.cos(g) - 0.032077 * np.sin(g) - 0.014615 * np.cos(2 * g)
+                    - 0.040849 * np.sin(2 * g))
+    ha = np.radians((hr * 60 + eqt + 4 * lon) / 4 - 180)
+    la = np.radians(lat)
+    cz = np.sin(la) * np.sin(decl) + np.cos(la) * np.cos(decl) * np.cos(ha)
+    return 90 - np.degrees(np.arccos(np.clip(cz, -1.0, 1.0)))
 
-    def __init__(self, races, groups=GROUPS, runner_filter=None, min_members=3):
+
+class Problem:
+    """All (race, level group) pairs of a race set, as padded numpy arrays.
+
+    ``night``: "sun" (the app's rule for a dated race: the sun's elevation at each segment's place and
+    UTC time; records built by fit_data.py with start_utc / seg_pos, a record without them keeps the
+    window) or "window" (the fixed 21:00-06:00 the app reads without a race date, as before 2026-10-14).
+    The legacy model always reads its own window."""
+
+    def __init__(self, races, groups=GROUPS, runner_filter=None, min_members=3, night="sun"):
         self.races = races
+        self.night = night
         H, alt, bprod, bcur = [], [], [], []
         off = []
         n = 0
@@ -259,10 +280,26 @@ class Problem:
         self.clock = np.ones(P, dtype=bool)  # False: no start clock (LiveTrail), night not applied
         self.nrun = np.zeros(P)
         self.km = np.zeros(P)
+        self.lat = np.zeros((P, S))
+        self.lon = np.zeros((P, S))
+        self.t0 = np.zeros(P)
+        self.y0 = np.zeros(P)
+        self.has_sun = np.zeros(P, dtype=bool)
         op, oi, oT, oa = [], [], [], []
         for p, (ri, lo, hi, mem) in enumerate(pairs):
             r = races[ri]
             ns = len(r["hist"])
+            pos = r.get("seg_pos")
+            if pos and r.get("start_utc") and len(pos) == ns:
+                import datetime as _dt
+
+                self.lat[p, :ns] = [q[0] for q in pos]
+                self.lon[p, :ns] = [q[1] for q in pos]
+                self.lat[p, ns:], self.lon[p, ns:] = pos[-1][0], pos[-1][1]
+                self.t0[p] = r["start_utc"]
+                y = _dt.datetime.fromtimestamp(r["start_utc"], _dt.timezone.utc).year
+                self.y0[p] = _dt.datetime(y, 1, 1, tzinfo=_dt.timezone.utc).timestamp()
+                self.has_sun[p] = True
             self.IDX[p, :ns] = off[ri] + np.arange(ns)
             self.dist[p, :ns] = r["prep"]["dist"]
             self.fat_prod[p, :ns] = r["fat_prod"]
@@ -340,6 +377,10 @@ class Problem:
                     fat = self.fat_prod[:, s]
                 hr = (self.sh + t / 3600) % 24
                 nf = np.where((hr >= 21) | (hr < 6), night, np.where(((hr >= 20) & (hr < 21)) | ((hr >= 6) & (hr < 7)), 1 + (night - 1) * 0.375, 1.0))
+                if self.night == "sun" and hours_fat:
+                    el = sun_elevation_np(self.lat[:, s], self.lon[:, s], self.t0 + t, self.y0)
+                    sun = np.where(el < rs.NIGHT_SUN_DEG, night, np.where(el < rs.TWILIGHT_SUN_DEG, 1 + (night - 1) * 0.375, 1.0))
+                    nf = np.where(self.has_sun, sun, nf)
                 nf = np.where(self.clock, nf, 1.0)
                 t = t + flat * base[:, s] * fat * nf * self.dist[:, s]
                 cum[:, s] = t

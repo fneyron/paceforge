@@ -515,7 +515,8 @@ DUSK_DAWN_FACTOR = 1.0122
 
 
 def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
-    """Penalty for running at night. Assumes race starts at start_hour.
+    """Penalty for running at night, without a race date (or a place): the
+    fixed window. Assumes race starts at start_hour.
 
     ``start_hour`` may be fractional (e.g. 6.5 for 06:30).
     Night = between 21:00 and 06:00. Returns multiplier >= 1.0.
@@ -530,6 +531,136 @@ def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     return 1.0
 
 
+# Night by the sun: dark when the sun is more than 6° below the horizon (civil
+# twilight over), dusk / dawn while it is within 6° of it, at the segment's own
+# place and time (the race date and its clock's UTC offset known). The fixed
+# 21:00-06:00 window mislabelled 4.5 % of the median finisher's time (> 20 %
+# on 12 of 174 races: Whistler at 05:00, Kullamannen in November, Chiang Mai
+# at night). Same fitted factors (NIGHT_FACTOR, DUSK_DAWN_FACTOR). Held-out
+# events: mean |ln(plan / actual)| 4.475 → 4.449 % (−0.026, event-bootstrap
+# 95 % CI [−0.046, −0.003]), mean |gap| 18.61 → 18.52 min; on the 14 train
+# events, where the factor was fitted with the window, +0.035 [+0.002, +0.074]:
+# a small effect either way. The factor refitted with the sun on train (1.0225)
+# did not help the held-out events (18.62 min): not taken.
+NIGHT_SUN_DEG = -6.0
+TWILIGHT_SUN_DEG = 6.0
+
+
+def sun_elevation_deg(lat: float, lon: float, t_utc: datetime) -> float:
+    """The sun's elevation (degrees) at a place and a UTC instant: NOAA's
+    general solar position equations (fractional year; ~0.5° accuracy)."""
+    doy = t_utc.timetuple().tm_yday
+    hr = t_utc.hour + t_utc.minute / 60 + t_utc.second / 3600
+    g = 2 * math.pi / 365 * (doy - 1 + (hr - 12) / 24)
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g) - 0.006758 * math.cos(2 * g)
+            + 0.000907 * math.sin(2 * g) - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    eqt = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g) - 0.014615 * math.cos(2 * g)
+                    - 0.040849 * math.sin(2 * g))
+    ha = math.radians((hr * 60 + eqt + 4 * lon) / 4 - 180)
+    la = math.radians(lat)
+    cz = math.sin(la) * math.sin(decl) + math.cos(la) * math.cos(decl) * math.cos(ha)
+    return 90 - math.degrees(math.acos(max(-1.0, min(1.0, cz))))
+
+
+def sun_night_factor(lat: float, lon: float, t_utc: datetime) -> float:
+    """NIGHT_FACTOR in the dark, DUSK_DAWN_FACTOR at twilight, else 1."""
+    e = sun_elevation_deg(lat, lon, t_utc)
+    if e < NIGHT_SUN_DEG:
+        return NIGHT_FACTOR
+    if e < TWILIGHT_SUN_DEG:
+        return DUSK_DAWN_FACTOR
+    return 1.0
+
+
+def segment_positions(course: CourseProfile) -> list[tuple[float, float]] | None:
+    """(lat, lon) where each segment starts, on the full-resolution trace; None without one."""
+    coords = course.route_coords or []
+    if len(coords) < 2 or len(coords[0]) < 3 or not course.segments:
+        return None
+    out, j = [], 0
+    for seg in course.segments:
+        km = seg.start_km
+        while j < len(coords) - 2 and coords[j + 1][2] < km:
+            j += 1
+        p, n = coords[j], coords[j + 1]
+        span = n[2] - p[2]
+        t = min(1.0, max(0.0, (km - p[2]) / span)) if span > 0 else 0.0
+        out.append((p[0] + t * (n[0] - p[0]), p[1] + t * (n[1] - p[1])))
+    return out
+
+
+class SunClock:
+    """What night-by-the-sun needs for one prediction: the race start in UTC
+    and each segment's place. Built by sun_clock(); None falls back to the
+    fixed window."""
+
+    def __init__(self, start_utc: datetime, positions: list[tuple[float, float]], kms: list[float] | None = None):
+        self.start_utc = start_utc
+        self.positions = positions
+        self.kms = kms or []
+
+    def factor(self, idx: int, clock_s: float) -> float:
+        lat, lon = self.positions[idx]
+        return sun_night_factor(lat, lon, self.start_utc + timedelta(seconds=clock_s))
+
+    def is_dark(self, elapsed_s: float, km: float) -> bool:
+        """The sun more than 6° below the horizon at ``km``, ``elapsed_s`` after the start (the
+        profile's night bands, plan_view)."""
+        import bisect
+
+        i = max(0, min(len(self.positions) - 1, bisect.bisect_right(self.kms, km) - 1)) if self.kms else 0
+        lat, lon = self.positions[i]
+        return sun_elevation_deg(lat, lon, self.start_utc + timedelta(seconds=elapsed_s)) < NIGHT_SUN_DEG
+
+
+def sun_clock(course: CourseProfile, race_date, start_hour: int, start_minute: int,
+              utc_offset_s: int | None) -> SunClock | None:
+    """The race start on the UTC clock (race date at start_hour:start_minute on
+    the race's own clock, minus its UTC offset) and the segments' places; None
+    without a date, an offset or a trace."""
+    from datetime import date as _date
+
+    if race_date is None or utc_offset_s is None:
+        return None
+    if isinstance(race_date, str):
+        try:
+            race_date = _date.fromisoformat(race_date[:10])
+        except ValueError:
+            return None
+    pos = segment_positions(course)
+    if not pos:
+        return None
+    local = datetime(race_date.year, race_date.month, race_date.day, int(start_hour), int(start_minute or 0),
+                     tzinfo=timezone.utc)
+    return SunClock(local - timedelta(seconds=int(utc_offset_s)), pos, [seg.start_km for seg in course.segments])
+
+
+def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None) -> int | None:
+    """The UTC offset of the race's clock: the forecast's (Open-Meteo, the
+    start's own time zone), else the athlete's zone on the race date when it
+    fits the course's longitude (within 3 h of lon / 15), else lon / 15 to the
+    hour. None without a date or a place."""
+    if race_date is None or lon is None:
+        return None
+    if weather_offset_s is not None:
+        try:
+            return int(weather_offset_s)
+        except (TypeError, ValueError):
+            pass
+    solar_h = float(lon) / 15
+    if zone is not None:
+        from datetime import date as _date
+
+        try:
+            d = _date.fromisoformat(str(race_date)[:10])
+            off = datetime(d.year, d.month, d.day, 12, tzinfo=zone).utcoffset()
+            if off is not None and abs(off.total_seconds() / 3600 - solar_h) <= 3:
+                return int(off.total_seconds())
+        except (ValueError, TypeError):
+            pass
+    return int(round(solar_h)) * 3600
+
+
 def _segment_times(
     course: CourseProfile,
     profile: AthleteGradientProfile,
@@ -538,12 +669,15 @@ def _segment_times(
     start_hour_frac: float,
     tilt: float,
     clock_scale: float = 1.0,
+    sun: "SunClock | None" = None,
 ) -> list[tuple[float, float]]:
     """(pace s/km, moving time s) of every segment at the profile's flat pace (heat included).
 
     Fatigue and night read the clock of the pace actually planned: the running
     total times ``clock_scale`` (planned level / the level simulated here). At
-    1.0 it is the training level itself.
+    1.0 it is the training level itself. Night: by the sun at the segment's
+    place and time when ``sun`` is known (race date and clock), else the fixed
+    window.
     """
     total_distance = course.total_distance_km
     cumulative_time = 0.0
@@ -571,7 +705,7 @@ def _segment_times(
         factor = grade_factor * alt * terrain
         factor *= _fatigue_factor(clock_s / 3600, progress, total_distance, tilt)
         factor *= heat_factor
-        factor *= _night_penalty(clock_s, start_hour_frac)
+        factor *= sun.factor(idx, clock_s) if sun is not None else _night_penalty(clock_s, start_hour_frac)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
@@ -587,7 +721,7 @@ LEVEL_PASSES = 12
 
 
 def _times_at_level(
-    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float,
+    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float, sun=None,
 ) -> list:
     """Segment (pace, time) whose clock, once re-levelled to ``total_s``, is the
     one fatigue and night were read on: scale = total_s / (total of the run at
@@ -595,7 +729,7 @@ def _times_at_level(
     rows = first
     prev = sum(t for _, t in rows)
     for _ in range(LEVEL_PASSES):
-        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0))
+        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0), sun)
         total = sum(t for _, t in rows)
         if abs(total - prev) < 1.0:
             break
@@ -611,6 +745,8 @@ def predict_course(
     start_minute: int = 0,
     plan_moving_s: float | None = None,
     fine_terrain: list[float] | None = None,
+    race_date=None,
+    utc_offset_s: int | None = None,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
 
@@ -623,12 +759,17 @@ def predict_course(
 
     ``fine_terrain``: ``_fine_terrain(course, profile)`` already computed, for
     repeated runs on the same course and gradient profile.
+
+    ``race_date`` and ``utc_offset_s`` (the race's clock, see
+    race_utc_offset_s): night by the sun at each segment's place and time;
+    without them, the fixed 21:00-06:00 window.
     """
     start_hour_frac = start_hour + (start_minute or 0) / 60
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
     fine = fine_terrain if fine_terrain is not None else _fine_terrain(course, profile)
+    sun = sun_clock(course, race_date, start_hour, start_minute, utc_offset_s)
 
-    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt)
+    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, sun=sun)
     training_total = sum(t for _, t in rows)
 
     # Races, not training, set the level of the prediction (see race_calibration).
@@ -639,7 +780,7 @@ def predict_course(
 
         race_total = race_level_total_s(course, race_model, training_total)
         if race_total:
-            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total)
+            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total, sun)
 
     # The basis used to split a TARGET into passage times: terrain, fatigue
     # and night, not heat (applied per section with the forecast). A plan
@@ -647,7 +788,7 @@ def predict_course(
     # faster than the 2025 Transjeju winner ran them.
     basis = rows
     if plan_moving_s and plan_moving_s > 0:
-        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s)
+        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s, sun)
 
     cumulative_time = 0.0
     for segment, (predicted_pace, predicted_time), (_, base) in zip(course.segments, rows, basis, strict=True):

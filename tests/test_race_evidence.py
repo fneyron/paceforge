@@ -242,3 +242,55 @@ def test_the_objective_plan_gives_a_hot_section_its_heat():
     assert max(ratios) - min(ratios) < 0.01  # the hot last section no longer 10 % short of its prediction
 
 
+# ── 5. night by the sun ──
+
+def test_the_suns_elevation():
+    # Chamonix at the June solstice: ~67° at solar noon (11:30 UTC), deep under the horizon at midnight
+    assert rs.sun_elevation_deg(45.92, 6.87, datetime(2026, 6, 21, 11, 30, tzinfo=timezone.utc)) == pytest.approx(67.5, abs=1.0)
+    assert rs.sun_elevation_deg(45.92, 6.87, datetime(2026, 6, 21, 23, 30, tzinfo=timezone.utc)) < -15
+    assert rs.sun_night_factor(45.92, 6.87, datetime(2026, 6, 21, 23, 30, tzinfo=timezone.utc)) == rs.NIGHT_FACTOR
+    # 19:30 UTC (21:30 CEST): the sun just set, twilight
+    assert rs.sun_night_factor(45.92, 6.87, datetime(2026, 6, 21, 19, 30, tzinfo=timezone.utc)) == rs.DUSK_DAWN_FACTOR
+    assert rs.sun_night_factor(45.92, 6.87, datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)) == 1.0
+
+
+def test_the_races_clock():
+    assert rs.race_utc_offset_s("2026-08-28", 6.9, weather_offset_s=7200) == 7200  # the forecast's time zone
+    assert rs.race_utc_offset_s("2026-08-28", 6.9, zone=ZoneInfo("Europe/Paris")) == 7200  # his zone fits the course
+    assert rs.race_utc_offset_s("2026-12-20", 6.9, zone=ZoneInfo("Europe/Paris")) == 3600
+    # a race abroad: his zone 8 h off the course's longitude, the longitude decides (Jeju, 126.5° E → +8 h)
+    assert rs.race_utc_offset_s("2026-10-02", 126.5, zone=ZoneInfo("Europe/Paris")) == 8 * 3600
+    assert rs.race_utc_offset_s(None, 6.9) is None and rs.race_utc_offset_s("2026-10-02", None) is None
+
+
+def _flat(km=40):
+    from app.services.gpx import build_course_profile
+
+    pts = [GpxPoint(lat=45.0, lon=6.0 + i * 1e-4, elevation=500.0, distance_from_start=i * 10.0) for i in range(km * 100 + 1)]
+    return build_course_profile(pts)
+
+
+def test_a_december_dusk_start_is_run_in_the_dark():
+    prof = AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
+                                  sport_types_used=[])
+    window = rs.predict_course(_flat(), prof, start_hour=17).predicted_total_time_s
+    # 45° N on 20 December: dark from ~17:40 (the window waited for 21:00)
+    dark = rs.predict_course(_flat(), prof, start_hour=17, race_date="2026-12-20", utc_offset_s=3600).predicted_total_time_s
+    assert dark > window * 1.01
+    # in June the same start is daylight to ~21:30: no slower than the window
+    june = rs.predict_course(_flat(), prof, start_hour=17, race_date="2026-06-21", utc_offset_s=7200).predicted_total_time_s
+    assert june <= window
+    # a course without a date keeps the window
+    assert rs.sun_clock(_flat(), None, 17, 0, 3600) is None
+
+
+def test_the_profiles_night_bands_follow_the_sun():
+    from app.services.plan_view import night_bands_km
+
+    sections = [{"end_km": 10.0 * k, "clock_time_s": 17 * 3600 + 3600 * k} for k in range(1, 5)]  # 17:00 → 21:00, 10 km/h
+    assert night_bands_km(sections, 17 * 3600, False) == []  # the window: night only from 21:00, the finish
+    sun = rs.sun_clock(_flat(), "2026-12-20", 17, 0, 3600)
+    bands = night_bands_km(sections, 17 * 3600, False, dark=sun.is_dark)
+    assert len(bands) == 1 and 5 < bands[0]["start_km"] < 15 and bands[0]["end_km"] == 40.0  # dark from ~17:45
+
+
