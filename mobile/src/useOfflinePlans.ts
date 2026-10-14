@@ -36,7 +36,7 @@ export function useOfflinePlans(inject: (script: string) => void, random: () => 
         setNotice('Les copies locales ne sont pas lisibles. Enregistre à nouveau tes plans.');
       }
       if (libraryRead.current && identity.current !== undefined) await checkAccount(identity.current);
-    }).catch(() => {});
+    }).catch(failed);
   }
   // Serialized with startup and writes; a late response cannot restore another account's copies.
   async function checkAccount(uid: number | null) {

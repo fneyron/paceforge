@@ -15,23 +15,28 @@ import { Block, BackgroundState, createEngine, emptyState, LOCK_MS, readPair, re
 import type { SyncReport } from './sync';
 
 const id = Array.from(Crypto.getRandomBytes(8), b => b.toString(16).padStart(2, '0')).join('');
-const lockFile = new File(Paths.document, 'paceforge-sync.lock');
+// Created on use: nothing native may throw while this module is evaluated at launch.
+const lockFile = () => new File(Paths.document, 'paceforge-sync.lock');
 
 /** Best effort across JavaScript runtimes (Android runs the task headless): one file,
  * a 60 s expiry, and a broken file never blocks syncs. */
 export const syncLock = {
   async acquire(owner: string, until: number): Promise<boolean> {
     try {
-      if (lockFile.exists) {
-        const held = JSON.parse(lockFile.textSync());
+      const file = lockFile();
+      if (file.exists) {
+        const held = JSON.parse(file.textSync());
         if (held?.owner !== owner && typeof held?.until === 'number' && held.until > Date.now()) return false;
       }
-      lockFile.write(JSON.stringify({ owner, until }));
-      return JSON.parse(lockFile.textSync()).owner === owner;
+      file.write(JSON.stringify({ owner, until }));
+      return JSON.parse(file.textSync()).owner === owner;
     } catch { return true; }
   },
   async release(owner: string): Promise<void> {
-    try { if (lockFile.exists && JSON.parse(lockFile.textSync()).owner === owner) lockFile.delete(); } catch { /* expires */ }
+    try {
+      const file = lockFile();
+      if (file.exists && JSON.parse(file.textSync()).owner === owner) file.delete();
+    } catch { /* expires */ }
   },
 };
 
