@@ -32,6 +32,8 @@ async def get_weather_forecast(lat: float, lon: float, date: str, points: list |
         if result:
             # Lets the plan page refresh a forecast on its own once it is stale.
             result["fetched_at"] = int(time.time())
+            if result.get("utc_offset_s") is None and not result.get("tz"):  # no forecast: the start's own zone
+                result["tz"] = await start_zone_name(lat, lon)
         return result
     except Exception:
         logger.exception("Failed to get weather for %s", date)
@@ -185,6 +187,7 @@ async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None
         "date": date,
         # the start's own time zone on that date (timezone=auto): the race's clock for night by the sun
         "utc_offset_s": data.get("utc_offset_seconds"),
+        "tz": _zone(data.get("timezone")),
         "hourly": {
             "temps": [round(t, 1) for t in hourly_temps],
             "humidity": [round(h, 0) for h in hourly_hum],
@@ -480,18 +483,55 @@ async def _shared(call):
             pass
 
 
+def _zone(name) -> str | None:
+    """An IANA time zone name zoneinfo reads, else None (« GMT » of an answer without a place is none)."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    if not isinstance(name, str) or "/" not in name:
+        return None
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    return name
+
+
 async def zone_name(lat: float, lon: float) -> str | None:
     """The IANA time zone of a place (« Europe/Paris »), from Open-Meteo's forecast (timezone=auto, one day).
     None for an answer without one. Raises LookupUnavailable."""
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
     data = await _get(FORECAST_URL, {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}", "timezone": "auto",
                                      "forecast_days": 1, "hourly": "temperature_2m"})
-    name = data.get("timezone") if isinstance(data, dict) else None
-    try:
-        ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError, TypeError):
+    return _zone(data.get("timezone")) if isinstance(data, dict) else None
+
+
+# A race's start zone when no forecast gives its offset (more than 15 days out): asked with the weather (a POST,
+# never while a page renders), once a day per place and worker, an answer or its absence alike.
+ZONE_TTL_S = 24 * 3600
+ZONE_CACHE_SIZE = 512
+_ZONES: dict[tuple, tuple[float, str | None]] = {}
+
+
+async def start_zone_name(lat: float, lon: float) -> str | None:
+    """The start's IANA zone for the race's clock (race_match.race_clock), or None: off like the background
+    lookups (ACTIVITY_ENV_FETCH, the outage marker); a failure sets the marker and is kept a day as « none »."""
+    from app.config import settings
+
+    key, now = (round(float(lat), 2), round(float(lon), 2)), time.monotonic()
+    hit = _ZONES.get(key)
+    if hit and now - hit[0] < ZONE_TTL_S:
+        return hit[1]
+    if not settings.ACTIVITY_ENV_FETCH or await lookups_paused():
         return None
+    try:
+        name = await zone_name(*key)
+    except LookupUnavailable:
+        await pause_lookups()
+        name = None
+    for k in [k for k, (at, _) in _ZONES.items() if now - at >= ZONE_TTL_S]:
+        del _ZONES[k]
+    if len(_ZONES) >= ZONE_CACHE_SIZE:
+        _ZONES.pop(min(_ZONES, key=lambda k: _ZONES[k][0]))
+    _ZONES[key] = (now, name)
     return name
 
 

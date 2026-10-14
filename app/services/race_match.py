@@ -210,35 +210,12 @@ async def link_result(db: AsyncSession, route: Route, activity: Activity, user_i
     return route.result_json
 
 
-async def start_zone(route: Route, coords: list) -> str | None:
-    """The IANA time zone of the course's start, looked up once (Open-Meteo, weather.zone_name) and kept in the
-    route's params_json with the start it was read at (another trace, another lookup). Off like every background
-    Open-Meteo call (ACTIVITY_ENV_FETCH, the shared outage marker); None until known."""
-    from app.config import settings
-    from app.services import weather
-
-    params = route.params_json if isinstance(route.params_json, dict) else {}
-    lat, lon = round(float(coords[0][0]), 2), round(float(coords[0][1]), 2)
-    kept = params.get("start_tz")
-    if isinstance(kept, dict) and kept.get("lat") == lat and kept.get("lon") == lon and kept.get("tz"):
-        return kept["tz"]
-    if not settings.ACTIVITY_ENV_FETCH or await weather.lookups_paused():
-        return None
-    try:
-        name = await weather.zone_name(lat, lon)
-    except weather.LookupUnavailable:
-        await weather.pause_lookups()
-        return None
-    if name:
-        route.params_json = {**params, "start_tz": {"lat": lat, "lon": lon, "tz": name}}
-    return name
-
-
 async def race_clock(db: AsyncSession, user_id: int, route: Route | None, coords: list | None = None) -> dict:
     """{race_date, utc_offset_s} for night by the sun (race_simulator.predict_course): the race date and its
-    clock's UTC offset at the start (the start point's own time zone, else the saved forecast's, else the
-    athlete's zone when the course lies in its band, else the longitude's: race_simulator.race_utc_offset_s);
-    {} without a date or a trace (the fixed 21:00-06:00 window). ``coords``: the course's trace when the caller
+    clock's UTC offset at the start (the start point's own time zone, which the saved weather carries, else the
+    saved forecast's offset, else the athlete's zone when the course lies in its band, else the longitude's:
+    race_simulator.race_utc_offset_s); {} without a date or a trace (the fixed 21:00-06:00 window). Reads the
+    route only: no lookup, nothing written (a page renders it). ``coords``: the course's trace when the caller
     has it parsed."""
     from app.models.user import User
     from app.services.race_simulator import race_utc_offset_s
@@ -252,9 +229,9 @@ async def race_clock(db: AsyncSession, user_id: int, route: Route | None, coords
     tz = (await db.execute(select(User.timezone).where(User.id == user_id))).scalar_one_or_none()
     w = route.weather_json if isinstance(route.weather_json, dict) else {}
     wx_off = w.get("utc_offset_s") if str(w.get("date") or "")[:10] == str(route.race_date)[:10] else None
-    off = race_utc_offset_s(route.race_date, float(coords[0][1]), wx_off, zone_of(tz),
-                            start_zone=await start_zone(route, coords), start_hour=route.start_hour,
-                            start_minute=route.start_minute or 0)
+    start_zone = w.get("tz") if isinstance(w.get("tz"), str) else None  # weather.get_weather_forecast
+    off = race_utc_offset_s(route.race_date, float(coords[0][1]), wx_off, zone_of(tz), start_zone=start_zone,
+                            start_hour=route.start_hour, start_minute=route.start_minute or 0)
     return {"race_date": route.race_date, "utc_offset_s": off} if off is not None else {}
 
 

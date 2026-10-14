@@ -402,7 +402,10 @@ def test_the_races_clock():
 
 
 @pytest.mark.asyncio
-async def test_the_starts_time_zone_is_looked_up_once_per_route(db_session, test_user, monkeypatch):
+async def test_the_starts_time_zone_comes_with_the_weather_never_from_a_page(db_session, test_user, monkeypatch):
+    """The start's own zone is asked with the weather (the page's POST, on a date set or a stale forecast), only
+    when no forecast gives the offset, once a day per place (an answer or its absence); the race clock a page
+    renders reads it from the saved weather: no lookup, nothing written."""
     from app.config import settings
     from app.models.route import Route
     from app.services import race_match, weather
@@ -414,19 +417,51 @@ async def test_the_starts_time_zone_is_looked_up_once_per_route(db_session, test
         return "Atlantic/Madeira"
 
     monkeypatch.setattr(weather, "zone_name", zone)
+    monkeypatch.setattr(weather, "_ZONES", {})
+
+    async def normals(lat, lon, race_date):
+        return {"source": "moyennes climatiques", "date": race_date.isoformat(), "heat_factor": 1.0,
+                "hourly": {"temps": [15.0] * 24, "humidity": [60] * 24}}
+
+    async def forecast(lat, lon, date, points=None):
+        return {"source": "prevision", "date": date, "heat_factor": 1.0, "utc_offset_s": 3600, "tz": "Atlantic/Madeira",
+                "hourly": {"temps": [15.0] * 48, "humidity": [60] * 48}}
+
+    monkeypatch.setattr(weather, "_fetch_climate", normals)
+    monkeypatch.setattr(weather, "_fetch_forecast", forecast)
+    far = (date.today() + timedelta(days=60)).isoformat()
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", False)  # off (tests, CI): no lookup
+    assert "tz" in (w := await weather.get_weather_forecast(32.86, -16.9, far)) and w["tz"] is None and not calls
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
+    for _ in range(2):  # asked once a day per place
+        assert (await weather.get_weather_forecast(32.86, -16.9, far))["tz"] == "Atlantic/Madeira"
+    soon = (date.today() + timedelta(days=3)).isoformat()
+    assert (await weather.get_weather_forecast(32.86, -16.9, soon))["tz"] == "Atlantic/Madeira"  # the forecast's own
+    assert calls == [(32.86, -16.9)]
+
+    async def down(lat, lon):
+        calls.append((lat, lon))
+        raise weather.LookupUnavailable("HTTP 503")
+
+    monkeypatch.setattr(weather, "zone_name", down)
+    for _ in range(2):  # a failure: none, the outage marker set, kept a day as none
+        assert (await weather.get_weather_forecast(45.92, 6.87, far))["tz"] is None
+    assert calls == [(32.86, -16.9), (45.92, 6.87)] and await weather.lookups_paused()
+
+    # the page's race clock reads the saved weather: no lookup, nothing written
+    async def never(lat, lon):
+        raise AssertionError("no lookup while a page renders")
+
+    monkeypatch.setattr(weather, "zone_name", never)
     route = Route(user_id=test_user.id, name="MIUT", total_distance_km=115, total_elevation_gain=7000, race_date="2026-04-25",
-                  start_hour=0, start_minute=0, course_json={"route_coords": [[32.86, -16.90], [32.70, -16.95]]})
+                  start_hour=0, start_minute=0, course_json={"route_coords": [[32.86, -16.90], [32.70, -16.95]]},
+                  weather_json={"date": "2026-04-25", "tz": "Atlantic/Madeira"})
     db_session.add(route)
     await db_session.flush()
-    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", False)  # off (tests, CI): no lookup, the fallback
-    assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == -3600 and not calls
-    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
-    for _ in range(2):
-        assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == 3600
-    assert calls == [(32.86, -16.9)] and route.params_json["start_tz"] == {"lat": 32.86, "lon": -16.9, "tz": "Atlantic/Madeira"}
-    route.course_json = {"route_coords": [[45.92, 6.87], [45.9, 6.9]]}  # another start: looked up again
-    await race_match.race_clock(db_session, test_user.id, route)
-    assert len(calls) == 2
+    assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == 3600  # WEST, not lon / 15
+    assert route.params_json is None
+    route.weather_json = None  # no weather yet: the fallback (lon / 15, 2 h off Paris)
+    assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == -3600
 
 
 def _flat(km=40):
