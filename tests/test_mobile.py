@@ -14,6 +14,7 @@ from app.config import settings
 from app.models.health import HealthMetric
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.user import User
+from app.routers import mobile
 from app.routers.mobile import digest
 from app.services.sante_daily import daily_card, daily_context
 
@@ -65,11 +66,13 @@ async def test_pair_ingest_idempotent_and_watch_is_preserved(client, db_session,
     await db_session.flush()
     headers = {"Authorization": 'Bearer ' + account['token']}
     payload = {"days": [day(), day(metric='hr_day', value=78, unit='bpm', measured_at=None)]}
-    for _ in range(2):
-        response = await client.post('/api/mobile/daily', json=payload, headers=headers)
-        assert response.status_code == 200 and response.json()['received'] == 2
+    response = await client.post('/api/mobile/daily', json=payload, headers=headers)
+    assert response.status_code == 200 and response.json()['received'] == 2
+    # An identical re-send (each background run) is accepted but changes nothing.
+    response = await client.post('/api/mobile/daily', json=payload, headers=headers)
+    assert response.status_code == 200 and (response.json()['received'], response.json()['skipped']) == (0, 2)
     rows = (await db_session.scalars(select(MobileDaily).where(MobileDaily.user_id == test_user.id))).all()
-    assert len(rows) == 2
+    assert len(rows) == 2 and {r.device_id for r in rows} == {phone.id}
     payload['days'][0]['value'] = 63.9
     await client.post('/api/mobile/daily', json=payload, headers=headers)
     older = {"days": [day(value=61, measured_at=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat())]}
@@ -235,6 +238,128 @@ async def test_rotation_keeps_the_previous_token_until_the_new_one_is_used(clien
     assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(fourth))).status_code == 200
     assert (await client.post('/api/mobile/token')).status_code == 401
     assert (await client.post('/api/mobile/token', headers=bearer('unknown'))).status_code == 401
+
+
+async def test_identical_resends_change_nothing_and_latest_is_one_row_per_metric(client, db_session, test_user):
+    from app.routers.sante import data_version
+    account, _ = await paired(client, test_user)
+    now = datetime.now(timezone.utc)
+    days = [day(date=(now - timedelta(days=i)).date().isoformat(), value=70 + i,
+                measured_at=(now - timedelta(days=i)).isoformat()) for i in range(3)]
+    days += [day(date=(now - timedelta(days=i)).date().isoformat(), metric='steps', value=1000 * i, unit='count',
+                 measured_at=None, sources=['iPhone']) for i in range(3)]
+    first = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert first.json()['received'] == 6
+    assert set(first.json()['latest']) == {'weight', 'steps'}
+    assert (first.json()['latest']['weight']['value'], first.json()['latest']['steps']['value']) == (70, 0)
+    version = await data_version(db_session, test_user.id)
+    stamps = {r.id: r.updated_at for r in await db_session.scalars(select(MobileDaily))}
+    again = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert again.json()['received'] == 0 and again.json()['latest'] == first.json()['latest']
+    assert await data_version(db_session, test_user.id) == version
+    assert {r.id: r.updated_at for r in await db_session.scalars(select(MobileDaily))} == stamps
+    days[3]['value'] = 1234
+    changed = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert changed.json()['received'] == 1 and changed.json()['latest']['steps']['value'] == 1234
+    assert await data_version(db_session, test_user.id) != version
+
+
+async def test_a_phone_corrects_its_own_day_but_an_older_snapshot_never_wins(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    at = datetime.now(timezone.utc) - timedelta(hours=3)
+    later, earlier = day(measured_at=at.isoformat(), value=71), day(measured_at=(at - timedelta(hours=1)).isoformat(), value=70)
+    assert (await client.post('/api/mobile/daily', json={'days': [later]}, headers=bearer(account['token']))).json()['received'] == 1
+    # Without a read time (older apps), or read before that row was stored (a
+    # delayed request), the earlier weigh-in never replaces the later one.
+    stale = {**bearer(account['token']), 'X-PaceForge-Read-At': (at - timedelta(minutes=5)).isoformat()}
+    for headers in (bearer(account['token']), stale):
+        response = await client.post('/api/mobile/daily', json={'days': [earlier]}, headers=headers)
+        assert response.json()['received'] == 0 and response.json()['latest']['weight']['value'] == 71
+    # Another phone, even when it read Santé just now, cannot replace it either.
+    now_read = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    response = await client.post('/api/mobile/daily', json={'days': [earlier]},
+                                 headers={**bearer(other['token']), 'X-PaceForge-Read-At': now_read})
+    assert response.json()['received'] == 0
+    # The same phone read Santé after the later weigh-in was deleted there.
+    response = await client.post('/api/mobile/daily', json={'days': [earlier]},
+                                 headers={**bearer(account['token']), 'X-PaceForge-Read-At': now_read})
+    assert response.json()['received'] == 1 and response.json()['latest']['weight']['value'] == 70
+    for implausible in ('2020-01-01T00:00:00Z', 'yesterday', (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()):
+        assert mobile.read_at(implausible, datetime.now(timezone.utc)) is None
+
+
+async def test_each_phone_has_a_request_budget(client, test_user, monkeypatch):
+    budget = mobile.PhoneLimiter(limit=2, window=600)
+    budget.redis_down_until = float('inf')  # this worker's count
+    monkeypatch.setattr(mobile, 'limiter', budget)
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    for _ in range(2):
+        assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    refused = await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))
+    assert refused.status_code == 429 and 0 < int(refused.headers['retry-after']) <= 600
+    assert (await client.post('/api/mobile/nights', json={}, headers=bearer(account['token']))).status_code == 429
+    assert (await client.post('/api/mobile/token', headers=bearer(account['token']))).status_code == 429
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(other['token']))).status_code == 200
+    assert (await client.delete('/api/mobile/device', headers=bearer(account['token']))).status_code == 200
+
+
+async def test_the_budget_is_shared_through_redis_and_survives_its_absence(monkeypatch):
+    class Pipeline:
+        def __init__(self, counts):
+            self.counts, self.keys = counts, []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def incr(self, key):
+            self.keys.append(key)
+            return self
+
+        def expire(self, key, seconds):
+            return self
+
+        async def execute(self):
+            key = self.keys[0]
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return [self.counts[key], True]
+
+    class Redis:
+        counts: dict = {}
+
+        def pipeline(self, transaction=True):
+            return Pipeline(self.counts)
+
+    budget = mobile.PhoneLimiter(limit=1, window=600)
+    budget.redis = Redis()
+    await budget.check(7)
+    with pytest.raises(mobile.HTTPException) as refused:
+        await budget.check(7)
+    assert refused.value.status_code == 429 and list(Redis.counts.values()) == [2]
+    budget.redis = object()  # a broken connection: count in this worker, without failing the request
+    await budget.check(8)
+    assert budget.redis is None and budget.local[8][1] == 1
+
+
+async def test_bodies_are_capped_before_parsing_and_errors_keep_their_shape(client, test_user):
+    account, _ = await paired(client, test_user)
+    headers = {**bearer(account['token']), 'Content-Type': 'application/json'}
+    big = b'{"days": [' + b' ' * mobile.MAX_DAILY_BYTES + b']}'
+    assert (await client.post('/api/mobile/daily', content=big, headers=headers)).status_code == 413
+
+    async def streamed():
+        yield b'{"date": "'
+        for _ in range(33):
+            yield b'x' * 65536
+
+    assert (await client.post('/api/mobile/nights', content=streamed(), headers=headers)).status_code == 413
+    response = await client.post('/api/mobile/daily', json={'days': [day(value=0)]}, headers=bearer(account['token']))
+    assert response.status_code == 422 and response.json()['detail'][0]['loc'][:3] == ['body', 'days', 0]
+    assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 422
 
 
 def test_mobile_migration_roundtrip():
