@@ -93,7 +93,7 @@ async def test_strava_row_is_like_the_others(as_user: AsyncClient, db_session: A
 async def test_connect_without_app_keys_goes_to_the_setup_wizard(client: AsyncClient, db_session: AsyncSession,
                                                                 no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
         "athlete": {"id": 779, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     started = []
@@ -111,7 +111,7 @@ async def test_connect_without_app_keys_goes_to_the_setup_wizard(client: AsyncCl
 async def test_connect_from_settings_comes_back_to_settings(client: AsyncClient, db_session: AsyncSession,
                                                             no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
         "athlete": {"id": 777, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     async with _logged_in(client, db_session, strava_client_id="4242",
@@ -252,7 +252,7 @@ async def test_a_refresh_lost_to_another_worker_is_not_a_revocation(db_session: 
     await db_session.flush()
     # another worker refreshed meanwhile and stored the new pair
     await db_session.execute(update(User).where(User.id == test_user.id).values(
-        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=9999999999)
+        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=2147483000)
         .execution_options(synchronize_session=False))
     resp = httpx.Response(400, json={"message": "Bad Request"},
                           request=httpx.Request("POST", "https://www.strava.com/oauth/token"))
@@ -265,7 +265,7 @@ async def test_a_pair_refreshed_by_another_worker_is_used_as_is(db_session: Asyn
     test_user.strava_token_expires_at = 0
     await db_session.flush()
     await db_session.execute(update(User).where(User.id == test_user.id).values(
-        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=9999999999)
+        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=2147483000)
         .execution_options(synchronize_session=False))
     post = AsyncMock()
     with patch("httpx.AsyncClient.post", post):
@@ -335,7 +335,7 @@ async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: As
 async def test_new_app_keys_from_settings_replace_the_old_app(client: AsyncClient, db_session: AsyncSession,
                                                               no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at2", "refresh_token": "rt2", "expires_at": 9999999999,
+        "access_token": "at2", "refresh_token": "rt2", "expires_at": 2147483000,
         "athlete": {"id": 778, "firstname": "A", "lastname": "B", "profile": None}}))
     unsubscribe = AsyncMock(return_value=True)
     monkeypatch.setattr(StravaService, "delete_webhook_subscription", unsubscribe)

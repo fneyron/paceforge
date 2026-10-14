@@ -145,7 +145,7 @@ async def test_watch_data_and_account_survive_strava_disconnect(
         user.strava_athlete_id = 456
         user.strava_access_token = "strava-token"
         user.strava_refresh_token = "refresh-token"
-        user.strava_token_expires_at = 9999999999
+        user.strava_token_expires_at = 2147483000
         await db_session.flush()
         response = await c.post("/settings/strava/disconnect")
         assert response.status_code == 303 and not user.has_strava_linked

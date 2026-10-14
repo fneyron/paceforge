@@ -112,7 +112,7 @@ def strava(monkeypatch):
 
 async def _athlete(db, email: str) -> User:
     user = User(email=email, email_verified=True, strava_athlete_id=hash(email) % 10**8,
-                strava_access_token="a" * 40, strava_refresh_token="b" * 40, strava_token_expires_at=9999999999,
+                strava_access_token="a" * 40, strava_refresh_token="b" * 40, strava_token_expires_at=2147483000,
                 strava_client_id="4242", strava_client_secret_encrypted=encrypt_secret("s3cret"),
                 strava_webhook_subscription_id=77)
     db.add(user)

@@ -80,7 +80,7 @@ async def test_exchange_token_success(strava_service: StravaService):
     mock_response.json.return_value = {
         "access_token": "token",
         "refresh_token": "refresh",
-        "expires_at": 9999999999,
+        "expires_at": 2147483000,
         "athlete": {"id": 123, "firstname": "Test"},
     }
 

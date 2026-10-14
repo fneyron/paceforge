@@ -277,7 +277,7 @@ async def test_tokens_left_in_clear_are_encrypted_by_the_hourly_upkeep(db_sessio
     await db_session.refresh(test_user)
 
     async def post(self, url, **kwargs):  # Strava's /oauth/token: a new access token, the same refresh token
-        return httpx.Response(200, json={"access_token": "c" * 40, "refresh_token": "f" * 40, "expires_at": 9999999999},
+        return httpx.Response(200, json={"access_token": "c" * 40, "refresh_token": "f" * 40, "expires_at": 2147483000},
                               request=httpx.Request("POST", url))
     monkeypatch.setattr(httpx.AsyncClient, "post", post)
     await StravaService(db_session, client_id="4242", client_secret="s3cret").refresh_token_if_needed(test_user)
