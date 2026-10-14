@@ -93,7 +93,7 @@ async def test_strava_row_is_like_the_others(as_user: AsyncClient, db_session: A
 async def test_connect_without_app_keys_goes_to_the_setup_wizard(client: AsyncClient, db_session: AsyncSession,
                                                                 no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
         "athlete": {"id": 779, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     started = []
@@ -111,7 +111,7 @@ async def test_connect_without_app_keys_goes_to_the_setup_wizard(client: AsyncCl
 async def test_connect_from_settings_comes_back_to_settings(client: AsyncClient, db_session: AsyncSession,
                                                             no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
         "athlete": {"id": 777, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     async with _logged_in(client, db_session, strava_client_id="4242",
@@ -252,7 +252,7 @@ async def test_a_refresh_lost_to_another_worker_is_not_a_revocation(db_session: 
     await db_session.flush()
     # another worker refreshed meanwhile and stored the new pair
     await db_session.execute(update(User).where(User.id == test_user.id).values(
-        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=9999999999)
+        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=2147483000)
         .execution_options(synchronize_session=False))
     resp = httpx.Response(400, json={"message": "Bad Request"},
                           request=httpx.Request("POST", "https://www.strava.com/oauth/token"))
@@ -265,7 +265,7 @@ async def test_a_pair_refreshed_by_another_worker_is_used_as_is(db_session: Asyn
     test_user.strava_token_expires_at = 0
     await db_session.flush()
     await db_session.execute(update(User).where(User.id == test_user.id).values(
-        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=9999999999)
+        strava_refresh_token="newer", strava_access_token="fresh", strava_token_expires_at=2147483000)
         .execution_options(synchronize_session=False))
     post = AsyncMock()
     with patch("httpx.AsyncClient.post", post):
@@ -335,7 +335,7 @@ async def test_cancel_or_refusal_from_settings_comes_back_to_settings(client: As
 async def test_new_app_keys_from_settings_replace_the_old_app(client: AsyncClient, db_session: AsyncSession,
                                                               no_commit, monkeypatch):
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at2", "refresh_token": "rt2", "expires_at": 9999999999,
+        "access_token": "at2", "refresh_token": "rt2", "expires_at": 2147483000,
         "athlete": {"id": 778, "firstname": "A", "lastname": "B", "profile": None}}))
     unsubscribe = AsyncMock(return_value=True)
     monkeypatch.setattr(StravaService, "delete_webhook_subscription", unsubscribe)
@@ -367,3 +367,29 @@ async def test_the_weight_has_no_helper_and_no_caffeine_line(as_user: AsyncClien
     profile = page.split('<h2 class="pf-h2">Profil</h2>')[1].split("</form>")[0]
     assert 'name="weight_kg"' in profile and "Sert à ta" not in profile and "nutrition" not in page.lower()
     assert "caféine" not in page and "400 mg" not in page and "Plafond de caféine" not in page
+
+
+async def test_a_typed_weight_is_dated_so_it_competes_with_weigh_ins(as_user: AsyncClient, db_session: AsyncSession,
+                                                                    test_user: User):
+    from datetime import timedelta
+
+    from app.models.mobile import MobileDaily
+    from app.services.athlete_weight import athlete_weight
+
+    now = datetime.now(timezone.utc)
+    db_session.add(MobileDaily(user_id=test_user.id, platform="ios", date=now.date(), metric="weight", value=74.0,
+                               sources=["Balance"], measured_at=now - timedelta(days=1)))
+    test_user.weight_kg, test_user.weight_set_at = 72.0, None
+    await db_session.flush()
+    assert (await athlete_weight(db_session, test_user)).kg == 74.0  # an undated typed value loses
+    assert (await as_user.post("/settings", data={"weight_kg": "70,5"})).status_code == 200
+    assert test_user.weight_kg == 70.5 and now - timedelta(minutes=1) < test_user.weight_set_at.replace(
+        tzinfo=timezone.utc) <= datetime.now(timezone.utc)
+    assert (await athlete_weight(db_session, test_user)).kg == 70.5  # typed after the weigh-in: it wins
+    typed_at = test_user.weight_set_at
+    await as_user.post("/settings", data={"weight_kg": "70.5", "health_source": "auto"})  # another field saved
+    assert test_user.weight_set_at == typed_at  # same weight: not typed again
+    assert (await as_user.post("/settings", data={"weight_kg": "250"})).status_code == 422  # the 30–200 kg check
+    assert test_user.weight_kg == 70.5 and test_user.weight_set_at == typed_at
+    await as_user.post("/settings", data={"weight_kg": ""})
+    assert test_user.weight_kg is None and test_user.weight_set_at is None

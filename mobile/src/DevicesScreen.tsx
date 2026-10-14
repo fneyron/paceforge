@@ -64,7 +64,7 @@ export function DevicesScreen(p: Props) {
         {!p.report.weightRead && <Text style={ui.small}>Vérifie le partage de ta balance vers {healthName}, puis l’accès de PaceForge au poids.</Text>}
       </View>}
       {pair && <>
-        <View style={ui.toggle}><View style={{ flex: 1 }}><Text style={ui.body}>Actualisation automatique</Text><Text style={ui.small}>À l’ouverture ou au retour, toutes les 15 min au plus. L’application doit être ouverte.</Text></View>
+        <View style={ui.toggle}><View style={{ flex: 1 }}><Text style={ui.body}>Actualisation automatique</Text><Text style={ui.small}>À l’ouverture ou au retour, toutes les 15 min au plus. {Platform.OS === 'ios' ? 'Aussi en arrière-plan après une pesée ou une nuit, si l’iPhone le permet.' : 'Aussi en arrière-plan, environ toutes les heures, si Health Connect l’autorise.'}</Text></View>
           <Switch accessibilityLabel="Actualisation automatique" value={p.automatic} disabled={busy || mismatch} onValueChange={p.auto} />
         </View>
         <Link text="Revoir les autorisations" onPress={p.connectHealth} disabled={busy} />

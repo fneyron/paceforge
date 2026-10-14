@@ -1,13 +1,14 @@
 import { File, Paths } from 'expo-file-system';
-import * as SecureStore from 'expo-secure-store';
 import { OfflineLibrary, readOfflinePlan } from './offline';
+import { OFFLINE_INDEX as INDEX, secure } from './secure';
 
-const INDEX = 'paceforge.offline.index.v1';
 const fileAt = (slot: number) => new File(Paths.document, `paceforge-plans-v1-${slot}.json`);
 const empty: OfflineLibrary = { userId: null, plans: [] };
 
+// A locked keychain throws KeychainLocked: never read as « no copies ». An index
+// rewritten by an interrupted keychain migration is recovered from its copy.
 async function index(): Promise<{ userId: number; slot: 0 | 1 } | null> {
-  const raw = await SecureStore.getItemAsync(INDEX);
+  const raw = await secure.recover(INDEX);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
@@ -32,11 +33,12 @@ export async function loadOfflineLibrary(): Promise<OfflineLibrary> {
  * An interrupted same-account save leaves the previous slot available on restart. */
 export async function storeOfflineLibrary(library: OfflineLibrary): Promise<void> {
   const previous = await index();
-  if (previous?.userId !== library.userId) await SecureStore.deleteItemAsync(INDEX);
+  // Also its copy, which recover() would otherwise bring back.
+  if (previous?.userId !== library.userId) await secure.erase(INDEX);
   if (library.userId !== null) {
     const slot = previous?.slot === 0 ? 1 : 0;
     fileAt(slot).write(JSON.stringify(library));
-    await SecureStore.setItemAsync(INDEX, JSON.stringify({ userId: library.userId, slot }));
+    await secure.set(INDEX, JSON.stringify({ userId: library.userId, slot }));
     // A cleanup error does not undo the committed copy. The old slot is never read.
     try { const old = fileAt(1 - slot); if (old.exists) old.delete(); } catch { /* overwritten on next save */ }
   } else {

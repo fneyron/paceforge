@@ -11,7 +11,9 @@ from app.services.strava import StravaService
 
 
 @pytest.fixture
-def strava_service(db_session: AsyncSession):
+def strava_service(db_session: AsyncSession, monkeypatch):
+    # a refreshed token pair is committed at once: flushed here, so the test's rollback still cleans up
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
     return StravaService(db_session)
 
 
@@ -78,7 +80,7 @@ async def test_exchange_token_success(strava_service: StravaService):
     mock_response.json.return_value = {
         "access_token": "token",
         "refresh_token": "refresh",
-        "expires_at": 9999999999,
+        "expires_at": 2147483000,
         "athlete": {"id": 123, "firstname": "Test"},
     }
 

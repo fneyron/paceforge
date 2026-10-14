@@ -2,11 +2,16 @@
 import React,{forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {View} from './native-web';
 const w=window as any;
-w.writes=[];w.scripts=[];w.collects=0;w.navigations=[];w.refreshes=[];
+w.writes=[];w.scripts=[];w.collects=0;w.navigations=[];w.refreshes=[];w.registered=[];w.tasks={};w.healthWatchers=[];
+// ?locked=1: the keychain is unreadable (iOS background launch on a locked phone) until unlock().
+w.lockedSecure=location.search.includes('locked');w.unlock=()=>{w.lockedSecure=false;};
 const data:Record<string,string>=sessionStorage.getItem('secure')?JSON.parse(sessionStorage.getItem('secure')!):location.search.includes('unpaired')?{}:{'paceforge.phone.v1':JSON.stringify({token:'fixture',user_id:1,name:'Athlete'}),'paceforge.phone.v1.auto':'true'};
-export const getItemAsync=async(k:string)=>data[k]||null;
-export const setItemAsync=async(k:string,v:string)=>{if(w.failSecure)throw Error('secure failure');data[k]=v;sessionStorage.setItem('secure',JSON.stringify(data))};
-export const deleteItemAsync=async(k:string)=>{delete data[k];sessionStorage.setItem('secure',JSON.stringify(data))};
+const locked=()=>{if(w.lockedSecure)throw Error("Calling the 'getValueWithKeyAsync' function has failed\n→ Caused by: User interaction is not allowed.");};
+export const AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY=1;
+export const getItem=(k:string)=>{locked();return data[k]||null;};
+export const getItemAsync=async(k:string)=>{locked();return data[k]||null;};
+export const setItemAsync=async(k:string,v:string)=>{locked();if(w.failSecure)throw Error('secure failure');data[k]=v;sessionStorage.setItem('secure',JSON.stringify(data))};
+export const deleteItemAsync=async(k:string)=>{locked();delete data[k];sessionStorage.setItem('secure',JSON.stringify(data))};
 export const Paths={document:'file:///documents'};
 export class File {
  uri:string;
@@ -14,6 +19,7 @@ export class File {
  get exists(){return sessionStorage.getItem(this.uri)!==null;}
  get size(){return (sessionStorage.getItem(this.uri)||'').length;}
  async text(){return sessionStorage.getItem(this.uri)||'';}
+ textSync(){return sessionStorage.getItem(this.uri)||'';}
  write(value:string){if(w.failDisk)throw Error('disk full');sessionStorage.setItem(this.uri,value);}
  delete(){sessionStorage.removeItem(this.uri);}
 }
@@ -21,9 +27,22 @@ export const getRandomBytes=(n:number)=>crypto.getRandomValues(new Uint8Array(n)
 export const CryptoDigestAlgorithm={SHA256:'SHA256'};
 export const digestStringAsync=async()=> 'a'.repeat(64);
 export const authorize=async()=>{};
+// Background sync: task registration and HealthKit change subscriptions are recorded.
+export const BackgroundTaskStatus={Restricted:1,Available:2};export const BackgroundTaskResult={Success:1,Failed:2};
+export const defineTask=(name:string,run:any)=>{w.tasks[name]=run;};
+export const getStatusAsync=async()=>BackgroundTaskStatus.Available;
+export const registerTaskAsync=async(name:string,options:any)=>{w.registered.push(['register',name,options.minimumInterval]);};
+export const unregisterTaskAsync=async(name:string)=>{w.registered.push(['unregister',name]);};
+export const backgroundTypes=['HKQuantityTypeIdentifierBodyMass'];
+export const protectedDataAvailable=async()=>!w.lockedSecure;
+export const hasBackgroundAccess=async()=>true;
+export const enableHealthBackground=async()=>{w.registered.push(['healthkit']);};
+export const disableHealthBackground=async()=>{w.registered.push(['healthkit off']);};
+export const watchHealthChanges=(change:()=>void)=>{w.healthWatchers.push(change);w.healthChange=()=>w.healthWatchers.at(-1)();return()=>{};};
+export const changedMetrics=async(tokens:any)=>({daysBack:3,tokens});
 export const collect=async()=>{w.collects++;if(w.holdHealth)await new Promise(resolve=>{w.releaseHealth=resolve});return{days:w.emptyHealth?[]:[{date:'2026-10-12',metric:'weight',value:64,unit:'kg',sources:['Fixture'],measured_at:'2026-10-12T08:00:00Z'}],complete:true,notices:[]}};
 export const collectSleep=async()=>({nights:[],notices:w.partialHealth?['Lecture du sommeil interrompue.']:[],complete:!w.partialHealth});
-w.fetch=async(url:string)=>{w.writes.push(url);if(w.failUpload)throw Error('Envoi de test interrompu');return{ok:true,json:async()=>url.endsWith('/exchange')?{token:'fixture',user_id:1,name:'Athlete'}:{received:w.emptyHealth?0:1,checked_at:new Date().toISOString(),latest:{weight:{value:64,measured_at:'2026-10-12T08:00:00Z'}}}}};
+w.fetch=async(url:string)=>{w.writes.push(url);if(w.failUpload)throw Error('Envoi de test interrompu');if(w.failStatus)return{ok:false,status:w.failStatus,headers:{get:()=>null},json:async()=>({})};return{ok:true,json:async()=>url.endsWith('/exchange')?{token:'fixture',user_id:1,name:'Athlete'}:url.endsWith('/token')?{token:'r'.repeat(64),user_id:1}:{received:w.emptyHealth?0:1,checked_at:new Date().toISOString(),latest:{weight:{value:64,measured_at:'2026-10-12T08:00:00Z'}}}}};
 export const SafeAreaProvider=({children}:any)=><View style={{flex:1}}>{children}</View>;
 export const SafeAreaView=({children,style}:any)=><View style={[style,{flex:1}]}>{children}</View>;
 export const StatusBar=()=>null;

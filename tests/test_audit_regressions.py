@@ -77,6 +77,9 @@ async def test_unverified_registration_and_login_cannot_access_private_pages(cli
         await c.post("/auth/resend-verification")
         assert len(sent) == 1
         response = await c.get("/auth/verify-email", params={"token": sent[0][1]})
+        assert "Email vérifié" in response.text  # verified, not signed in (login CSRF)
+        assert (await c.get("/settings")).status_code == 303
+        response = await c.post("/auth/login", data={"email": "new@example.com", "password": "é" * 80})
         assert response.headers["location"] == "/sante"
         assert (await c.get("/settings")).status_code == 200
         assert "Lien invalide" in (await c.get("/auth/verify-email", params={"token": sent[0][1]})).text
@@ -95,7 +98,7 @@ async def test_expired_verification_can_be_resent_after_login(client, db_session
         await c.post("/auth/login", data={"email": user.email, "password": "password-123"})
         await c.post("/auth/resend-verification")
         assert len(sent) == 1 and sent[0][1] != expired
-        assert (await c.get("/auth/verify-email", params={"token": sent[0][1]})).headers["location"] == "/sante"
+        assert "Email vérifié" in (await c.get("/auth/verify-email", params={"token": sent[0][1]})).text
 
 
 def _session(client):
@@ -103,7 +106,7 @@ def _session(client):
 
 
 async def test_oauth_credentials_are_server_side_and_state_is_single_use(client, db_session, monkeypatch):
-    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
                                      "athlete": {"id": 741}})
     monkeypatch.setattr(StravaService, "exchange_token", exchange)
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
@@ -145,7 +148,7 @@ async def test_strava_collision_preserves_the_other_account_and_health(client, d
     health = HealthMetric(user_id=old.id, date=datetime.now().date(), metric="sleep", source="Garmin", value=480)
     db_session.add(health)
     await db_session.flush()
-    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
                                      "athlete": {"id": 741}})
     monkeypatch.setattr(StravaService, "exchange_token", exchange)
     async with _logged_in(client, db_session, strava_client_id="42",
