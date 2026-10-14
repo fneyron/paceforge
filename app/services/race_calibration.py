@@ -256,7 +256,7 @@ async def build_race_effort_model(db: AsyncSession, user_id: int, months: int = 
         points.append(race_point(
             a.name, km, dplus, a.moving_time / 3600, is_race,
             day=a.start_date.date() if a.start_date else None, id=a.id, dplus_src=src,
-            elapsed_h=round((a.elapsed_time or 0) / 3600, 2) or None, **({"heat": heat} if heat else {}),
+            **({"heat": heat} if heat else {}),
         ))
     return model_from_points(points)
 
@@ -301,43 +301,7 @@ def model_from_points(points: list[dict], today: date | None = None) -> dict | N
     model["ignored"] = sorted(ignored, key=lambda p: -p["hours"])[:6]
     model["n_races"] = len(races)
     model["n_used"] = len(used)
-    model["stop_factor"] = stop_factor(used)
     return model
-
-
-# ── the athlete's own stops: his races' (elapsed − moving) / elapsed against
-# the field's at the same finish time ──
-# The field's median share of the finish time spent stopped, 1 695 LiveTrail
-# finishers of 40-180 km whose departures were timed at ≥ 60 % of the
-# checkpoints (median regression): 2.69 % at 18 h, × (T / 18 h)^1.072. A
-# race's ratio to it, averaged in ln over his races of 3 h or more, is shrunk
-# halfway to the field (one race's share is noisy: ln SD 1.15) and bounded.
-# Checked on 112 UTMB Live runners linked across two races timed in and out
-# at the stations, the factor of one race applied to the other's median
-# stops: total stops off by 21.8 min against 24.8 without it (−3.0 [−5.3,
-# −0.6]), the clock after each station by 13.1 against 14.6 (−1.4 [−2.6,
-# −0.2]; 95 % CI, bootstrap over the runners).
-STOP_SHARE_18H, STOP_SHARE_EXP = 0.0269, 1.072
-STOP_FACTOR_SHRINK = 0.5
-STOP_FACTOR_RANGE = (0.5, 2.0)
-
-
-def stop_factor(races: list[dict]) -> float:
-    """The factor his planned stops take (1 = the field's), from his races'
-    elapsed and moving hours; 1 without a race that says it."""
-    logs, ws = [], []
-    for p in races:
-        el, mv = p.get("elapsed_h") or 0, p.get("hours") or 0
-        if mv < 3 or el <= mv:  # short, or no stop recorded (a watch that stops its clock)
-            continue
-        field = STOP_SHARE_18H * (el / 18) ** STOP_SHARE_EXP
-        logs.append(math.log(((el - mv) / el) / field))
-        ws.append(p.get("weight", 1.0))
-    if not logs:
-        return 1.0
-    mean = sum(w * x for w, x in zip(ws, logs, strict=True)) / sum(ws)
-    lo, hi = STOP_FACTOR_RANGE
-    return round(max(lo, min(hi, math.exp(STOP_FACTOR_SHRINK * mean))), 3)
 
 
 # Recency: a race weighs 0.5 ** (age / half-life) in the fit (None = off): the

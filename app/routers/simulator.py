@@ -364,12 +364,11 @@ async def _passage_table_context(
     # plan's fatigue and night the objective's clock. Heat is applied once, in
     # compute_passage_times.
     profile = profile or await build_athlete_gradient_profile(db, user_id)
-    stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
     if target_time_s:
         finish_s = float(target_time_s)
-        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
+        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km)
         course = predict_course(
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
@@ -378,8 +377,8 @@ async def _passage_table_context(
         )
     else:  # no plan: the stops of the predicted finish (the prediction plus its own stops)
         course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
-        finish_s = _finish_with_stops(course.predicted_total_time_s, checkpoints, stop_minutes, total_km, stop_factor)
-        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor)
+        finish_s = _finish_with_stops(course.predicted_total_time_s, checkpoints, stop_minutes, total_km)
+        aid_stops = _aid_stops(checkpoints, stop_minutes, finish_s, total_km)
 
     sections = compute_passage_times(
         course, checkpoints, target_time_s, heat_factor,
@@ -416,7 +415,7 @@ async def _passage_table_context(
         fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
-        safe_extra_stops=_safe_extra_stops(checkpoints, stop_minutes, finish_s, total_km, stop_factor),
+        safe_extra_stops=_safe_extra_stops(checkpoints, stop_minutes, finish_s, total_km),
     )
     # What the profile draws: night, terrain bands, clocks, cutoffs.
     from app.services.pacing_guide import build_pacing_guide, resolve_hr_caps
@@ -1887,11 +1886,10 @@ def _stop_progress(cp: dict, total_km: float | None) -> float:
 
 
 def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float | None = None,
-               total_km: float | None = None, factor: float = 1.0) -> dict:
+               total_km: float | None = None) -> dict:
     """{km: stop seconds} for every aid station: its own value when set on the point (wins, even 0), else one value
     everywhere when set (> 0), else the stop model's median stop for its kind, at the runner's finish
-    ``finish_s`` and the station's share of the distance, times the athlete's own factor
-    (race_simulator.default_stop_s)."""
+    ``finish_s`` and the station's share of the distance (race_simulator.default_stop_s)."""
     from app.services.race_simulator import default_stop_s
 
     forced = int(override_min) * 60 if override_min else None
@@ -1905,14 +1903,14 @@ def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float
             continue
         if kind == "none":
             continue
-        stop = forced if forced is not None else default_stop_s(kind, finish_s, _stop_progress(cp, total_km), factor)
+        stop = forced if forced is not None else default_stop_s(kind, finish_s, _stop_progress(cp, total_km))
         if stop:
             out[round(float(cp.get("distance_km") or 0), 1)] = stop
     return out
 
 
-def _safe_extra_stops(cps: list[dict], override_min: int | None, finish_s: float | None, total_km: float | None,
-                      factor: float = 1.0) -> dict:
+def _safe_extra_stops(cps: list[dict], override_min: int | None, finish_s: float | None,
+                      total_km: float | None) -> dict:
     """{km: seconds} the safety column adds at the stations left at the model's stop: its 80th percentile instead
     of the median. A stop the athlete set (on the point, or one value everywhere) is his on every column."""
     from app.services.race_simulator import default_stop_s, safe_stop_s
@@ -1925,19 +1923,19 @@ def _safe_extra_stops(cps: list[dict], override_min: int | None, finish_s: float
         if cp.get("stop_s") is not None or kind == "none":
             continue
         prog = _stop_progress(cp, total_km)
-        extra = safe_stop_s(kind, finish_s, prog, factor) - default_stop_s(kind, finish_s, prog, factor)
+        extra = safe_stop_s(kind, finish_s, prog) - default_stop_s(kind, finish_s, prog)
         if extra > 0:
             out[round(float(cp.get("distance_km") or 0), 1)] = extra
     return out
 
 
-def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None, total_km: float | None,
-                       factor: float = 1.0) -> float | None:
+def _finish_with_stops(moving_s: float | None, cps: list[dict], override_min: int | None,
+                       total_km: float | None) -> float | None:
     """The finish the stop model reads when no objective is set: the predicted moving time plus the stops it
     gives (one pass: the stops are a few % of the finish)."""
     if not moving_s:
         return None
-    return float(moving_s) + sum(_aid_stops(cps, override_min, float(moving_s), total_km, factor).values())
+    return float(moving_s) + sum(_aid_stops(cps, override_min, float(moving_s), total_km).values())
 
 
 # The former fixed Optimiste / Sécurité defaults: saved with the form until now (the form posts both fields),
@@ -2046,12 +2044,11 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     course = CourseProfile(**route.course_json)
     if profile is None:
         profile = await build_athlete_gradient_profile(db, user.id)
-    stop_factor = float((getattr(profile, "race_model", None) or {}).get("stop_factor") or 1.0)
     total_km = course.total_distance_km
     clock = await _race_clock(db, user.id, route, course)
     if route.target_time_s:
         finish_s = float(route.target_time_s)
-        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
+        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
         course = predict_course(
             course, profile, start_hour=start_hour, start_minute=start_minute,
             plan_moving_s=objective_moving_s(
@@ -2060,8 +2057,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         )
     else:  # no objective: the stops of the predicted finish
         course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, **clock)
-        finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km, stop_factor)
-        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor)
+        finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km)
+        aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
     sections = compute_passage_times(
         course, cps, route.target_time_s, 1.0, start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
@@ -2073,7 +2070,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
         # the safety column's longer stops (stations at the model's stop)
-        "safe_extra_stops": _safe_extra_stops(cps, route.stop_minutes, finish_s, total_km, stop_factor),
+        "safe_extra_stops": _safe_extra_stops(cps, route.stop_minutes, finish_s, total_km),
         "predicted_total_s": int(course.predicted_total_time_s),
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
         # pinned checkpoints make a plan (adjusted_*) even without an objective

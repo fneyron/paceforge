@@ -1289,14 +1289,16 @@ def stop_median_s(kind: str, finish_s: float | None, progress: float) -> float:
     return 60.0 * math.exp(b0 + b_t * math.log(t / STOP_REF_S) + b_p * p + STOP_KIND_LOG[kind])
 
 
-def default_stop_s(kind: str, finish_s: float | None, progress: float, factor: float = 1.0) -> int:
-    """The planned stop: the median one (see above), times the athlete's own factor."""
-    return int(round(stop_median_s(kind, finish_s, progress) * factor))
+def default_stop_s(kind: str, finish_s: float | None, progress: float) -> int:
+    """The planned stop: the median one (see above). No personal factor: the one his Strava races could give
+    (elapsed − moving) is not what was checked (stations timed in and out), and one race with a forgotten
+    pause pushed it to its cap."""
+    return int(round(stop_median_s(kind, finish_s, progress)))
 
 
-def safe_stop_s(kind: str, finish_s: float | None, progress: float, factor: float = 1.0) -> int:
-    """The safety column's stop: the 80th percentile, times the athlete's own factor."""
-    return int(round(stop_median_s(kind, finish_s, progress) * STOP_P80_FACTOR * factor))
+def safe_stop_s(kind: str, finish_s: float | None, progress: float) -> int:
+    """The safety column's stop: the 80th percentile."""
+    return int(round(stop_median_s(kind, finish_s, progress) * STOP_P80_FACTOR))
 
 
 def replan_from_passage(

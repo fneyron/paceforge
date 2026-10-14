@@ -145,13 +145,16 @@ async def test_the_races_heat_is_looked_up_once_and_read_by_the_model(db_session
     assert await rc.backfill_race_heat(db_session, test_user.id) == 0
 
 
-def test_the_athletes_own_stops():
-    field = rc.STOP_SHARE_18H * (20 / 18) ** rc.STOP_SHARE_EXP  # the field's share at 20 h elapsed
-    one = [{"hours": 20 * (1 - 2 * field), "elapsed_h": 20.0, "weight": 1.0}]  # he stops twice as long as the field
-    assert rc.stop_factor(one) == pytest.approx(math.sqrt(2), rel=1e-3)  # halfway (in ln) to the field
-    assert rc.stop_factor([{"hours": 10.0, "elapsed_h": 10.0}]) == 1.0  # a watch that stops its clock: says nothing
-    assert rc.stop_factor([{"hours": 2.0, "elapsed_h": 2.5}]) == 1.0  # too short
-    assert rc.stop_factor([{"hours": 10.0, "elapsed_h": 20.0}]) == rc.STOP_FACTOR_RANGE[1]  # bounded
+def test_the_stops_are_the_stop_models_for_everyone():
+    """No personal stop factor: his Strava races' elapsed − moving is not what was checked (stations timed in and
+    out), and one race with a forgotten pause pushed it to its cap."""
+    m = rc.model_from_points([_pt("A", 100, 10.0), _pt("B", 160, 18.0)])
+    assert "stop_factor" not in m and not hasattr(rc, "stop_factor")
+    from app.routers.simulator import _aid_stops
+
+    cps = [dict(cp) for cp in CPS]
+    assert _aid_stops(cps, None, 5 * 3600, 30.0) == {
+        round(cp["distance_km"], 1): rs.default_stop_s(cp["kind"], 5 * 3600, cp["distance_km"] / 30.0) for cp in cps}
 
 
 @pytest.mark.parametrize("name", ["Shikoku Trail 100", "Walker Ridge 50K", "Treklanders 60K",
@@ -247,8 +250,6 @@ def test_the_stop_model():
     assert rs.default_stop_s("full", 18 * 3600, 0.9) > rs.default_stop_s("full", 18 * 3600, 0.1)
     assert rs.default_stop_s("base", 18 * 3600, 0.5) > rs.default_stop_s("full", 18 * 3600, 0.5) > rs.default_stop_s("water", 18 * 3600, 0.5)
     assert rs.default_stop_s("none", 18 * 3600, 0.5) == 0
-    # his own factor
-    assert rs.default_stop_s("full", 18 * 3600, 0.5, factor=2.0) == pytest.approx(2 * rs.default_stop_s("full", 18 * 3600, 0.5), abs=1)
 
 
 def test_the_stop_he_sets_always_wins():
