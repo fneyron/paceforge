@@ -21,7 +21,7 @@ def shared(monkeypatch):
 
 
 async def test_shared_connect_and_sync_without_personal_keys(client, db_session, no_commit, shared, monkeypatch):
-    exchange = AsyncMock(return_value={'access_token': 'at', 'refresh_token': 'rt', 'expires_at': 9999999999,
+    exchange = AsyncMock(return_value={'access_token': 'at', 'refresh_token': 'rt', 'expires_at': 2147483000,
                                       'athlete': {'id': 90002}})
     monkeypatch.setattr(StravaService, 'exchange_token', exchange)
     subscribe = AsyncMock()
@@ -104,7 +104,7 @@ async def test_shared_refresh_sends_the_bound_app_credentials(test_user, db_sess
     test_user.strava_client_id = '90001'
     test_user.strava_token_expires_at = 0
     await db_session.flush()
-    response = httpx.Response(200, json={'access_token': 'fresh', 'refresh_token': 'rotated', 'expires_at': 9999999999})
+    response = httpx.Response(200, json={'access_token': 'fresh', 'refresh_token': 'rotated', 'expires_at': 2147483000})
     post = AsyncMock(return_value=response)
     monkeypatch.setattr(httpx.AsyncClient, 'post', post)
     await StravaService.for_user(db_session, test_user).refresh_token_if_needed(test_user)
@@ -130,7 +130,7 @@ async def test_the_shared_secret_is_never_stored_in_a_link_attempt(client, db_se
     from app.crypto import decrypt_secret
     from app.models.oauth_attempt import OAuthAttempt
 
-    exchange = AsyncMock(return_value={'access_token': 'at', 'refresh_token': 'rt', 'expires_at': 9999999999,
+    exchange = AsyncMock(return_value={'access_token': 'at', 'refresh_token': 'rt', 'expires_at': 2147483000,
                                       'athlete': {'id': 90003}})
     monkeypatch.setattr(StravaService, 'exchange_token', exchange)
     monkeypatch.setattr(StravaService, 'create_webhook_subscription', AsyncMock())

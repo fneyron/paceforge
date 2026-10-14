@@ -106,7 +106,7 @@ def _session(client):
 
 
 async def test_oauth_credentials_are_server_side_and_state_is_single_use(client, db_session, monkeypatch):
-    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
                                      "athlete": {"id": 741}})
     monkeypatch.setattr(StravaService, "exchange_token", exchange)
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
@@ -148,7 +148,7 @@ async def test_strava_collision_preserves_the_other_account_and_health(client, d
     health = HealthMetric(user_id=old.id, date=datetime.now().date(), metric="sleep", source="Garmin", value=480)
     db_session.add(health)
     await db_session.flush()
-    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+    exchange = AsyncMock(return_value={"access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
                                      "athlete": {"id": 741}})
     monkeypatch.setattr(StravaService, "exchange_token", exchange)
     async with _logged_in(client, db_session, strava_client_id="42",

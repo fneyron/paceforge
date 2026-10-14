@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.database import Base
 from app.dependencies import get_db
@@ -25,7 +26,9 @@ from app.models.activity import Activity
 from app.models.analysis import Analysis
 from app.models.user import User
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# PostgreSQL, as in production, when TEST_DATABASE_URL names one: build its schema with `alembic upgrade head`
+# first (the models say JSONB where the migrated columns are json). Test values stay within int32 for it.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +40,9 @@ def event_loop():
 
 @pytest.fixture(scope="session")
 async def engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    # asyncpg connections belong to the loop that opened them: none kept between tests on PostgreSQL
+    pool = {"poolclass": NullPool} if TEST_DATABASE_URL.startswith("postgresql") else {}
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, **pool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -76,7 +81,7 @@ async def test_user(db_session: AsyncSession) -> User:
         strava_athlete_id=12345678,
         strava_access_token="test_access_token",
         strava_refresh_token="test_refresh_token",
-        strava_token_expires_at=9999999999,
+        strava_token_expires_at=2147483000,
         firstname="Test",
         lastname="Runner",
         profile_picture_url="https://example.com/avatar.jpg",

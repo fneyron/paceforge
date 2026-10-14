@@ -219,7 +219,7 @@ async def test_a_strava_link_lands_on_sante_unless_it_said_where(client: AsyncCl
     from tests.test_settings_links import _callback
 
     monkeypatch.setattr(StravaService, "exchange_token", AsyncMock(return_value={
-        "access_token": "at", "refresh_token": "rt", "expires_at": 9999999999,
+        "access_token": "at", "refresh_token": "rt", "expires_at": 2147483000,
         "athlete": {"id": 778, "firstname": "A", "lastname": "B", "profile": None}}))
     monkeypatch.setattr(StravaService, "create_webhook_subscription", AsyncMock(return_value=None))
     monkeypatch.setattr("app.tasks.initial_sync.initial_sync.delay", lambda uid: None)
