@@ -509,7 +509,7 @@ async def bike_gpx_upload(
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         ftp = await ftp_for_user(db, user)
-        rider_weight = user.weight_kg or 75
+        rider_weight = await _rider_weight(db, user)
         cda_est = await estimate_cda(db, user.id, rider_weight)
         cda_default = cda_est.estimated_cda if cda_est else 0.32
         # Default target power: 75% of FTP (endurance) if known, else 200W
@@ -1059,6 +1059,15 @@ async def set_live_passage(
 
 # ── Bike plan (road book with wind at time of passage) ──
 
+async def _rider_weight(db: AsyncSession, user: User) -> float:
+    """The athlete's weight by the one rule (services.athlete_weight: the most recent dated value among the
+    weigh-ins and the typed one), else 75 kg."""
+    from app.services.athlete_weight import athlete_weight
+
+    w = await athlete_weight(db, user)
+    return float(w.kg) if w else 75.0
+
+
 def _bike_leg_stats(cycling, a: float, b: float) -> dict:
     """Time-weighted wind and power over a leg of the course, plus its mean speed."""
     from app.services.cycling_simulator import wind_label
@@ -1087,7 +1096,7 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     course = CourseProfile(**route.course_json)
     ftp = await ftp_for_user(db, user)
     p = route.params_json or {}
-    rider_weight = float(p.get("rider_weight_kg") or user.weight_kg or 75)
+    rider_weight = float(p.get("rider_weight_kg") or await _rider_weight(db, user))
     bike_weight = float(p.get("bike_weight_kg") or 9.0)
     crr = float(p.get("crr") or 0.005)
     cda_est = await estimate_cda(db, user.id, rider_weight, bike_weight, crr=crr)

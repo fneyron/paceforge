@@ -385,3 +385,27 @@ def test_a_mountain_course_is_ridden_in_thinner_air():
     assert predict_cycling_course(low, target_power_watts=200, rider_weight_kg=70, rho=1.225).rho == 1.225
 
 
+# ── 7. race week: the weight by the one rule ──
+
+@pytest.mark.asyncio
+async def test_race_week_reads_the_weight_by_the_one_rule(db_session: AsyncSession, test_user: User, monkeypatch):
+    from app.models.mobile import MobileDaily
+    from app.models.route import Route
+    from app.services import race_prep as rp
+    from app.services import sante_training as st
+
+    now = datetime.now(timezone.utc)
+    test_user.weight_kg = 80.0
+    test_user.weight_set_at = now - timedelta(days=60)
+    db_session.add(MobileDaily(user_id=test_user.id, date=(now - timedelta(days=2)).date(), metric="weight", value=70.0,
+                               platform="ios", sources=["Apple Santé"], measured_at=now - timedelta(days=2)))
+    today = await st.athlete_today(db_session, test_user.id, now)
+    route = Route(user_id=test_user.id, name="Ultra", total_distance_km=80, total_elevation_gain=4000, course_json=None,
+                  race_date=(today + timedelta(days=3)).isoformat(), start_hour=6, start_minute=0, sport_type="trail")
+    db_session.add(route)
+    await db_session.flush()
+    await db_session.refresh(route)  # as the race page has it: every column loaded
+    prep = await rp.prep_context(db_session, test_user, route, now)
+    assert "pour tes 70 kg" in prep["food"]["load"]  # the weigh-in of 2 days ago, not the value typed 60 days ago
+
+

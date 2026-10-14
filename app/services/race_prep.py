@@ -5,17 +5,19 @@ Shown from J-42 to J0 (H), on the race page only (simulator_route.html): v4.3
 (owner: « Enlève la partie récupération sous le plan d'une course »), nothing
 after the race day — recovery is Santé's.
 - Affûtage: Activités' weeks S-6 → S0 (UTC Mondays, duplicates out), hours
-  done as bars, the taper J-14 → J-1 against the −41 to −60 % band of the
-  base (Bosquet 2007: about 2 weeks, volume −41–60 %, intensity and frequency
-  kept; Wang 2023: tapers of ≤ 21 days all worked, best at 8–14 days). The
-  14 days fall on 2 or 3 calendar weeks: a week's target is the base at its
-  usual rate for its days before J-14, plus the band for its days inside
-  J-14 → J-1 (each day 1/7 of the week; the race day and after are not
-  counted), so a race on any weekday compares like with like. No event longer than 40 km was
-  studied: for an ultra it is an extrapolation, said in the figure's summary.
-  Base = mean hours of the 4 complete weeks before the taper's first week
-  (before this week while the taper is still ahead). S0 counts the days
-  before the race only.
+  done as bars, the taper J-14 → J-1 as a progressive band of the base:
+  J-14 → J-8 at 55–70 % of it, J-7 → J-1 at 35–50 % (Bosquet 2007: about 2
+  weeks, volume −41–60 % overall, intensity and frequency kept; Mujika 2003:
+  a progressive, non-linear reduction beats a step one; Wang 2023: tapers of
+  ≤ 21 days all worked, best at 8–14 days). The 14 days fall on 2 or 3
+  calendar weeks: a week's target is the base at its usual rate for its days
+  before J-14, plus each band for its days inside it (each day 1/7 of the
+  week; the race day and after are not counted), so a race on any weekday
+  compares like with like. No event longer than 40 km was studied: for an
+  ultra it is an extrapolation, said in the figure's summary. Base = median
+  hours of the 4 complete weeks before the taper's first week (before this
+  week while the taper is still ahead): one long week does not lift it. S0
+  counts the days before the race only.
 - Tes nuits, J-14 → J-1: 24-h sleep (main night solid, naps stacked and
   hatched), against your usual + 30 to 60 min (H, below the doses of Mah 2011
   and Arnal 2016; Cunha 2023) on J-7 → J-2 only (the banking week: Walsh
@@ -26,8 +28,12 @@ after the race day — recovery is Santé's.
   race eve is never flagged (Lastella 2014; Juliff 2015): no target on it, no
   outline anywhere on this page.
 - Semaine de course (J-10 → J0): carbohydrate loading J-2 and J-1, 10–12
-  g/kg/day for races over 90 min (Burke 2011; ACSM/AND/DC 2016), breakfast
-  1–2 g/kg 3 h before, 5–7 ml/kg of fluid at least 4 h before (ACSM).
+  g/kg/day for races of 90 min to 4 h (Burke 2011; ACSM/AND/DC 2016), ≈ 10
+  g/kg/day (8–10 with a sensitive stomach) beyond 4 h (Tiller 2019, ISSN
+  position stand on ultra-marathons); breakfast 2–3 g/kg 3–4 h before
+  (Thomas 2016); 5–7 ml/kg of fluid at least 4 h before, 3–5 ml/kg more
+  about 2 h before when the urine is dark, with something salty (Sawka 2007,
+  ACSM). The weight is the athlete's by the one rule (athlete_weight).
 - Course chaude (J-14 → J-1): one line when the saved forecast is hot (heat
   factor ≥ 1.06 ≈ 25 °C, H): acclimatise over 1–2 weeks of repeated heat
   sessions (Racinais 2015), most of it in the first week (Périard 2015).
@@ -53,6 +59,7 @@ from app.services import nights as nt
 from app.services import sante_training as st
 from app.services import viz
 from app.services.health import feel_of
+from app.services.timezones import athlete_zone, local_date
 from app.services.viz import MOIS, NNBSP, X1, d_long, hm, hm_long, num
 
 logger = logging.getLogger(__name__)
@@ -63,13 +70,16 @@ EXTEND = (30, 60)  # usual + 30–60 min a day of 24-h sleep (H)
 BANK_DAYS = 7  # the sleep-banking line and target from J-7 (Walsh 2021: « even just 1 week » improves performance)
 EVE_LINE = ("Une nuit agitée avant une course est courante : si tu as bien dormi la semaine d'avant, elle ne devrait "
             "pas peser sur ta course.")  # Walsh 2021, Box 2
-TAPER_SHARE = (0.40, 0.59)  # the taper weeks at 40–59 % of the base: volume −41 to −60 % (Bosquet 2007)
+TAPER_SHARE_EARLY = (0.55, 0.70)  # J-14 → J-8 at 55–70 % of the base (volume −30 to −45 %)
+TAPER_SHARE_LATE = (0.35, 0.50)  # J-7 → J-1 at 35–50 % (−50 to −65 %): progressive (Bosquet 2007; Mujika 2003)
 TAPER_DAYS = 14  # J-14 → J-1: about 2 weeks (Bosquet 2007; Wang 2023)
+TAPER_LATE_DAYS = 7  # the second band from J-7
 CHART_WEEKS = 7  # S-6 → S0
 CARBS_DAYS = 10  # the race-week carbohydrates from J-10
 HOT_DAYS = 14  # the hot-race line J-14 → J-1
 HOT_FACTOR = 1.06  # (H) weather.compute_heat_factor at ≈ 25 °C
 LONG_S, CARBS_S = 3 * 3600, 90 * 60
+ULTRA_CARBS_S = 4 * 3600  # beyond: ≈ 10 g/kg/day (Tiller 2019)
 LONG_OUTING_MIN, LONG_OUTING_DPLUS = 180, 1500  # ◆ a long outing (H)
 NBH = "‑"  # non-breaking hyphen: « J‑12 » never wraps
 
@@ -150,6 +160,23 @@ def taper_days(m: date, rd: date) -> tuple[int, int]:
     return max(0, (min(nxt, lo) - m).days), max(0, (min(nxt, rd) - max(m, lo)).days)
 
 
+def taper_split(m: date, rd: date) -> tuple[int, int, int]:
+    """(days before J-14, days in J-14 → J-8, days in J-7 → J-1) of the week of Monday `m`."""
+    pre, k = taper_days(m, rd)
+    mid, nxt = rd - timedelta(days=TAPER_LATE_DAYS), m + timedelta(days=7)
+    late = max(0, (min(nxt, rd) - max(m, mid)).days)
+    return pre, k - late, late
+
+
+def week_target(base: float, m: date, rd: date) -> tuple[float, float] | None:
+    """(low, high) minutes the week of Monday `m` aims at: its days before J-14 at the base rate, its days of
+    each taper band at that band (1/7 of the week a day); None for a week outside the taper."""
+    pre, early, late = taper_split(m, rd)
+    if not early and not late:
+        return None
+    return tuple(base * (pre + TAPER_SHARE_EARLY[i] * early + TAPER_SHARE_LATE[i] * late) / 7 for i in (0, 1))
+
+
 # ── formats ─────────────────────────────────────────────────────────────────
 
 def j_label(k: int) -> str:
@@ -184,8 +211,22 @@ def _to(x: float, step: int) -> int:
     return int(round(x / step)) * step
 
 
+def week_monday(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def athlete_week(today: date, now: datetime, zone) -> date:
+    """This week's Monday as Activités reads it (routers.dashboard._clock): the wall clock in the athlete's zone,
+    unless the athlete's day is further from it than a zone can be (then that day). Near Monday midnight the
+    UTC Monday is the week before: a link then opened the page before."""
+    day = local_date(now, zone)
+    if abs((today - day).days) > 1:
+        day = today
+    return week_monday(day)
+
+
 def activities_href(m: date, this_monday: date) -> str:
-    """The week on Activités (6 weeks a page, newest first)."""
+    """The week on Activités (6 weeks a page, newest first; the athlete's weeks, Monday to Sunday in his zone)."""
     page = (this_monday - m).days // 7 // 6 + 1
     return f"/activities?page={page}#week-{m.isoformat()}"
 
@@ -193,29 +234,29 @@ def activities_href(m: date, this_monday: date) -> str:
 # ── Affûtage ────────────────────────────────────────────────────────────────
 
 def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetime,
-          race_days: frozenset = frozenset()) -> dict | None:
+          race_days: frozenset = frozenset(), zone=None) -> dict | None:
     """Weeks S-6 → S0 as bars against the taper band; None without a session
     in those weeks nor a base. The base leaves races out (a race week is no
     training volume to taper from, H); the bars are Activités' totals."""
     race_monday = rd - timedelta(days=rd.weekday())
     mondays = [race_monday - timedelta(weeks=CHART_WEEKS - 1 - i) for i in range(CHART_WEEKS)]
-    this_monday = st.monday(now).date()
+    zone = zone or timezone.utc  # the athlete's (users.timezone): Activités' weeks
+    this_monday = athlete_week(today, now, zone)
     by: dict[date, list] = defaultdict(list)
     for s in sessions:
         if s.day < rd:  # S0 without the race (nor anything after it)
-            by[st.monday(s.start).date()].append(s)
+            by[week_monday(local_date(s.start, zone))].append(s)
     taper_from = rd - timedelta(days=TAPER_DAYS)
     share = {m: taper_days(m, rd) for m in mondays}  # (days before J-14, days in J-14 → J-1)
     end = min(next(m for m in mondays if share[m][1]), this_monday)
     four = [sum(s.minutes for s in by.get(end - timedelta(weeks=k), [])
                 if s.workout_type != 1 and s.day not in race_days) for k in range(1, 5)]
-    base = statistics.fmean(four) if any(four) else None
+    base = statistics.median(four) if any(four) else None
     done = [sum(s.minutes for s in by.get(m, [])) if m <= this_monday else None for m in mondays]
     if base is None and not any(done):
         return None
-    # a taper week's target: its days before J-14 at the base rate, its taper days in the band (1/7 a day)
-    target = {m: (base * (pre + TAPER_SHARE[0] * k) / 7, base * (pre + TAPER_SHARE[1] * k) / 7)
-              for m, (pre, k) in share.items() if k} if base else {}
+    # a taper week's target: its days before J-14 at the base rate, its days in each band (1/7 a day)
+    target = {m: week_target(base, m, rd) for m, (pre, k) in share.items() if k} if base else {}
 
     n = len(mondays)
     xs = viz.slot_x(n)
@@ -262,20 +303,23 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
     sel = next((i for i, m in enumerate(mondays) if m == this_monday), n - 1 if this_monday > mondays[-1] else 0)
     ev = viz.events(mondays, xs, longs=longs)
     ultra = (route.total_distance_km or 0) > 40  # no taper study beyond 40 km (Bosquet 2007; Wang 2023)
-    summary = ("Heures par semaine jusqu'à la course, et la cible des 2 semaines d'affûtage : 41 à 60 % de volume en "
-               "moins que ta base." + (" Au-delà de 40 km, aucune étude : c'est une extrapolation." if ultra else ""))
+    summary = ("Heures par semaine jusqu'à la course, et la cible des 2 semaines d'affûtage : 30 à 45 % de volume en "
+               "moins que ta base la première, 50 à 65 % la seconde."
+               + (" Au-delà de 40 km, aucune étude : c'est une extrapolation." if ultra else ""))
     out = {"n": n, "W": viz.W, "H": 168, "X1": X1, "cols": cols, "base": 132,
            "base_y": y(base) if base else None, **ev, "summary": summary,
            **viz._data(xs, [], mondays, r, a, h=h, sel=sel)}
-    out["sentence"] = fr(taper_sentence(sessions, rd, today, now, target, taper_from))
+    out["sentence"] = fr(taper_sentence(sessions, rd, today, now, target, taper_from, zone))
     # resting readout: this week's hours are Activités' (its week heading prints them)
     back = sel  # this week (the latest one lived)
     if base:
-        t = (base * TAPER_SHARE[0], base * TAPER_SHARE[1])  # a full week of the taper
+        t1 = (base * TAPER_SHARE_EARLY[0], base * TAPER_SHARE_EARLY[1])  # a full week of each band
+        t2 = (base * TAPER_SHARE_LATE[0], base * TAPER_SHARE_LATE[1])
         out = viz.rest(out, [f"S{NBH}6 → S0", f"base : {hm(round(base / 5) * 5)} par semaine",
-                             f"cible J{NBH}14 → J{NBH}1 : {range_hm(*t)} par semaine"],
+                             f"cible : {range_hm(*t1)} puis {range_hm(*t2)}"],
                        f"Affûtage, 7 semaines jusqu'à la course : ta base {hm_long(round(base / 5) * 5)} par semaine, cible "
-                       f"de J-14 à J-1 {hm_long(round(t[0] / 5) * 5)} à {hm_long(round(t[1] / 5) * 5)} par semaine, au "
+                       f"de J-14 à J-8 {hm_long(round(t1[0] / 5) * 5)} à {hm_long(round(t1[1] / 5) * 5)} par semaine, "
+                       f"de J-7 à J-1 {hm_long(round(t2[0] / 5) * 5)} à {hm_long(round(t2[1] / 5) * 5)}, au "
                        "prorata des jours d'une semaine entamée. Choisis une semaine pour ses heures.", back=back)
     else:
         out = viz.rest(out, [f"S{NBH}6 → S0", "heures par semaine", ""],
@@ -284,17 +328,19 @@ def taper(sessions: list[st.Session], route, rd: date, today: date, now: datetim
     return out
 
 
-def taper_sentence(sessions, rd: date, today: date, now: datetime, target: dict, taper_from: date) -> str | None:
+def taper_sentence(sessions, rd: date, today: date, now: datetime, target: dict, taper_from: date,
+                   zone=None) -> str | None:
     """One sentence (≤ 90 characters), or none."""
     days = (rd - today).days
     if days <= 0:
         return None
     if today < taper_from:
-        return (f"Affûtage dès le {viz.d_short(taper_from)} : 41 à 60 % de volume en moins, même intensité."
+        return (f"Affûtage dès le {viz.d_short(taper_from)} : −30 à −45 % de volume, puis −50 à −65 %, même intensité."
                 if days <= 28 else None)
-    this_monday = st.monday(now).date()
+    zone = zone or timezone.utc
+    this_monday = athlete_week(today, now, zone)
     t = target.get(this_monday)
-    so_far = sum(s.minutes for s in sessions if st.monday(s.start).date() == this_monday and s.day < rd)
+    so_far = sum(s.minutes for s in sessions if week_monday(local_date(s.start, zone)) == this_monday and s.day < rd)
     if t and so_far > t[1]:
         return "Déjà au-dessus de ta cible cette semaine : lève le pied, garde l'intensité."
     return "Moins de volume, même intensité : c'est elle qui entretient ta forme."
@@ -392,31 +438,43 @@ def night_bars(nights: dict, rd: date, today: date) -> dict:
 
 def food_plan(route, exp_s: int | None, weight_kg: float | None) -> dict | None:
     """Carbohydrate loading J-2 and J-1, breakfast and fluid, for races of 90
-    min and more."""
+    min and more (≈ 10 g/kg/day beyond 4 h: Tiller 2019)."""
     if exp_s is None:
         return None
     if exp_s < CARBS_S:
         return {"short": fr("Pas besoin de surcharge : mange normalement, petit-déj 2 à 3 h avant.")}
     w = weight_kg if weight_kg and weight_kg > 0 else None
     out = {"short": None, "weight_link": None}
-    if w:
+    ultra = exp_s > ULTRA_CARBS_S
+    if ultra and w:
+        out["load"] = (f"Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour (8–10 si ton estomac est "
+                       f"sensible), soit {_to(8 * w, 10)} à {_to(10 * w, 10)} g pour tes {num(w)} kg. Réduis fibres et "
+                       "graisses la veille.")
+    elif ultra:
+        out["load"] = ("Recharge J-2 et J-1 : environ 10 g de glucides par kg et par jour (8–10 si ton estomac est "
+                       "sensible). Réduis fibres et graisses la veille.")
+    elif w:
         out["load"] = (f"Recharge J-2 et J-1 : 10 à 12 g de glucides par kg et par jour, soit {_to(10 * w, 10)} à "
                        f"{_to(12 * w, 10)} g pour tes {num(w)} kg. Réduis fibres et graisses la veille.")
     else:
         out["load"] = ("Recharge J-2 et J-1 : 10 à 12 g de glucides par kg et par jour. Réduis fibres et graisses la "
                        "veille.")
+    if not w:
         out["weight_link"] = {"text": "Ajoute ton poids dans Réglages pour un chiffre en grammes ›",
                               "href": "/settings"}
     out["equiv"] = "100 g de glucides ≈ 130 g de pâtes sèches."
     out["test"] = "Teste-le à l'entraînement, avant une sortie longue, jamais pour la première fois avant la course."
     start = route.start_hour * 60 + (route.start_minute or 0) if route.start_hour is not None else None
-    at = f" (vers {clock(start - 180)})" if start is not None else ""
-    out["breakfast"] = (f"Petit-déjeuner 3 h avant le départ{at} : {_to(w, 5)} à {_to(2 * w, 5)} g de glucides "
-                        "(1 à 2 g/kg), ce que tu as déjà testé." if w else
-                        f"Petit-déjeuner 3 h avant le départ{at} : 1 à 2 g de glucides par kg, ce que tu as déjà "
+    at = f" (vers {clock(start - 240)}–{clock(start - 180)})" if start is not None else ""
+    out["breakfast"] = (f"Petit-déjeuner 3 à 4 h avant le départ{at} : {_to(2 * w, 5)} à {_to(3 * w, 5)} g de glucides "
+                        "(2 à 3 g/kg), ce que tu as déjà testé." if w else
+                        f"Petit-déjeuner 3 à 4 h avant le départ{at} : 2 à 3 g de glucides par kg, ce que tu as déjà "
                         "testé.")
-    out["fluid"] = (f"Bois {_to(5 * w, 50)} à {_to(7 * w, 50)} ml (5–7 ml/kg) au moins 4 h avant le départ." if w
-                    else "Bois 5 à 7 ml par kg au moins 4 h avant le départ.")
+    out["fluid"] = (f"Bois {_to(5 * w, 50)} à {_to(7 * w, 50)} ml (5–7 ml/kg) au moins 4 h avant le départ ; si tes "
+                    f"urines restent foncées, encore {_to(3 * w, 50)} à {_to(5 * w, 50)} ml (3–5 ml/kg) environ 2 h "
+                    "avant, avec un aliment salé." if w else
+                    "Bois 5 à 7 ml par kg au moins 4 h avant le départ ; si tes urines restent foncées, encore 3 à 5 ml "
+                    "par kg environ 2 h avant, avec un aliment salé.")
     return {k: fr(v) if isinstance(v, str) else v for k, v in out.items()}
 
 
@@ -471,13 +529,16 @@ async def _prep(db: AsyncSession, user, route, now: datetime | None) -> dict | N
            "bank": -BANK_DAYS <= k < 0, "eve": EVE_LINE if -BANK_DAYS <= k <= 0 else None,
            "title": "Jour J" if k == 0 else f"Affûtage · {j_label(k)}"}
     races = all_races(await load_races(db, user.id, today), sessions)
-    out["taper"] = taper(sessions, route, rd, today, now, frozenset(d for d, _ in races))
+    out["taper"] = taper(sessions, route, rd, today, now, frozenset(d for d, _ in races), zone=athlete_zone(user))
     if -k <= NIGHT_DAYS:
         nights = await _nights(db, user.id, today, rd - timedelta(days=NIGHT_DAYS + nt.BAND_DAYS + 1),
                                sessions, races)
         out["nights"] = night_bars(nights, rd, today)
     if -k <= CARBS_DAYS:
-        out["food"] = food_plan(route, expected_s(route), getattr(user, "weight_kg", None))
+        from app.services.athlete_weight import athlete_weight
+
+        w = await athlete_weight(db, user, now)  # the one weight rule: the most recent dated value
+        out["food"] = food_plan(route, expected_s(route), w.kg if w else None)
     if 1 <= -k <= HOT_DAYS and hot(route):
         out["hot"] = fr("Course chaude : quelques sorties à la chaleur sur 1 à 2 semaines t'y préparent.")
     return out
