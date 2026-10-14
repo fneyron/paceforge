@@ -1,6 +1,6 @@
 import type { CategoryTypeIdentifier, QuantityTypeIdentifier } from '@kingstinct/react-native-healthkit';
 import { AppleNight, episodes, nightReadings } from './night-samples';
-import { Daily, HealthResult, SleepResult, Metric, labels, latestWeighIn, valid, windows } from './types';
+import { Daily, HealthResult, ReadBudget, SleepResult, Metric, labels, latestWeighIn, valid, windows } from './types';
 import { healthReader, readIssue } from './health-read';
 
 export type HealthQueries = Pick<typeof import('@kingstinct/react-native-healthkit'),
@@ -9,8 +9,8 @@ export type HealthQueries = Pick<typeof import('@kingstinct/react-native-healthk
   prepareRead?: (identifier: QuantityTypeIdentifier | CategoryTypeIdentifier) => Promise<void>;
 };
 
-function collectionReader(d: HealthQueries, budget: number) {
-  const read = d.reader || healthReader(budget);
+function collectionReader(d: HealthQueries, budget: number, perRead?: number) {
+  const read = d.reader || healthReader(budget, perRead);
   const prepared = new Set<string>();
   return async <T>(identifier: QuantityTypeIdentifier | CategoryTypeIdentifier, query: () => Promise<T>) => {
     if (!prepared.has(identifier)) {
@@ -26,9 +26,11 @@ export const identifiers: Record<Metric, QuantityTypeIdentifier> = {
   steps: 'HKQuantityTypeIdentifierStepCount', hr_day: 'HKQuantityTypeIdentifierHeartRate', resp_day: 'HKQuantityTypeIdentifierRespiratoryRate',
 };
 const units = { weight: 'kg', body_fat: '%', steps: 'count', hr_day: 'count/min', resp_day: 'count/min' };
-export async function collectDaily(d: HealthQueries, progress: (s: string) => void, daysBack = 30): Promise<HealthResult> {
+// Foreground: 60 s for the days, 90 s for the nights. Background runs pass
+// their own budget: iOS gives the app about 25 s after a HealthKit wake.
+export async function collectDaily(d: HealthQueries, progress: (s: string) => void, daysBack = 30, budget: ReadBudget = {}): Promise<HealthResult> {
   const days: Daily[] = [], errors = new Map<string, string>();
-  const read = collectionReader(d, 60000);
+  const read = collectionReader(d, budget.total ?? 60000, budget.perRead);
   const { queryQuantitySamples, queryStatisticsForQuantity } = d;
   for (const w of windows(d.now?.() || new Date(), daysBack)) {
     progress(`Lecture d’Apple Santé · ${w.date}`);
@@ -67,11 +69,11 @@ export async function collectDaily(d: HealthQueries, progress: (s: string) => vo
   return { days, notices, complete: errors.size === 0 };
 }
 
-export async function collectNights(d: HealthQueries, progress: (s: string) => void, daysBack = 60): Promise<SleepResult> {
+export async function collectNights(d: HealthQueries, progress: (s: string) => void, daysBack = 60, budget: ReadBudget = {}): Promise<SleepResult> {
   const notices: string[] = [];
   const now = d.now?.() || new Date(), start = new Date(now); start.setDate(start.getDate()-daysBack-1); start.setHours(0,0,0,0);
   const nights: AppleNight[] = [], errors = new Map<string, string>();
-  const read = collectionReader(d, 90000);
+  const read = collectionReader(d, budget.total ?? 90000, budget.perRead);
   const { queryCategorySamples, queryQuantitySamples } = d;
   let processing = false;
   try {

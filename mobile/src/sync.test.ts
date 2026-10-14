@@ -122,3 +122,42 @@ test('server rejection details expose only known field labels, never measurement
     assert.equal(rejectedField(raw), '');
   }
 });
+
+test('background runs never reread the history, stop at their deadline and stay pending', async () => {
+  const { deps, events, saved } = fixture();
+  let clock = Date.parse(at);
+  const report = await syncHealth({ ...deps, full: true, trigger: 'background', clock: () => clock,
+    deadline: clock + 1000, daily: async () => { events.push('read daily'); clock += 2000; return { days: [weighing], notices: [], complete: true }; } });
+  assert.deepEqual(events, ['read daily'], 'nothing sent after the deadline');
+  assert.equal(report.pending, true); assert.equal(report.complete, false);
+  assert.equal(report.fullAt, ''); assert.equal(saved.at(-1)?.trigger, 'background');
+  const finished = await syncHealth({ ...fixture().deps, previous: { ...report, retryFull: true }, trigger: 'background' });
+  assert.equal(finished.complete, true); assert.equal(finished.pending, false);
+  assert.equal(finished.fullAt, '', 'a background run is never the full reread');
+  assert.equal(finished.retryFull, true, 'the full reread stays due for the app');
+});
+
+test('unchanged payloads are skipped; only confirmed sends are recorded, with the read time', async () => {
+  const { deps, events } = fixture();
+  const recorded: string[] = [], metas: unknown[] = [];
+  const report = await syncHealth({ ...deps,
+    send: async (path, body, meta) => { metas.push(meta); return deps.send(path, body); },
+    unsent: async path => path.endsWith('/daily') ? null : night,
+    sent: async path => { recorded.push(path); } });
+  assert.deepEqual(events, ['read daily', 'read sleep', '/api/mobile/nights']);
+  assert.deepEqual(recorded, ['/api/mobile/nights']);
+  assert.deepEqual(metas, [{ readAt: at }]);
+  assert.equal(report.complete, true); assert.equal(report.received, 1);
+  const failing = fixture();
+  const kept: string[] = [];
+  await syncHealth({ ...failing.deps, send: async () => { throw new ApiError(503); }, sent: async path => { kept.push(path); } });
+  assert.deepEqual(kept, []);
+});
+
+test('a pending background run makes the next opening sync at once, at most once a minute', () => {
+  const report = { complete: true, pending: true, checkedAt: at } as SyncReport;
+  const now = Date.parse(at) + 60000;
+  assert.equal(due(report, 0, now), true);
+  assert.equal(due(report, now - 30000, now), false);
+  assert.equal(due({ ...report, pending: false }, 0, now), false);
+});
