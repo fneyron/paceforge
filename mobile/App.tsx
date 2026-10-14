@@ -56,6 +56,7 @@ function Companion() {
   // the WebView would load Santé for nobody. It mounts on the first return to the foreground.
   const [webStarted, setWebStarted] = useState(AppState.currentState !== 'background');
   const stored = useRef(false);
+  const storedJob = useRef<Promise<void>>(Promise.resolve());
   const reconciled = useRef(false);
   const rotationRefused = useRef(false);
   const syncTrigger = useRef<Trigger>('manual');
@@ -82,7 +83,7 @@ function Companion() {
 
   // A locked phone (background launch) cannot read the keychain: this is never « not
   // paired ». The read is retried on the first return to the foreground.
-  const loadStored = useEffectEvent(async () => {
+  const readStored = useEffectEvent(async () => {
     try {
       await secure.migrate().catch(e => { if (e instanceof KeychainLocked) throw e; });
       const [saved, time, auto, receipt, blocked] = await Promise.all([secure.recover(KEYS.pair), secure.get(KEYS.last),
@@ -98,6 +99,12 @@ function Companion() {
       setError('Impossible de lire l’association. Reconnecte le téléphone.');
     }
     setReady(true);
+  });
+  // Serialized: a request during a read (the user's tap during a background launch)
+  // waits for it, then reads again only if that read was refused.
+  const loadStored = useEffectEvent(() => {
+    storedJob.current = storedJob.current.then(() => stored.current ? undefined : readStored());
+    return storedJob.current;
   });
   // Background runs keep the receipt up to date while the app is away.
   const rereadReceipt = useEffectEvent(async () => {
@@ -396,14 +403,17 @@ function Companion() {
     void (wantBackground ? enableBackgroundSync() : disableBackgroundSync()).catch(() => {});
   });
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') return;
+    const active = () => {
       setWebStarted(true);
       if (!stored.current) void loadStored();
       else void rereadReceipt();
       if (!reconciled.current) reconcile();
       onForeground();
-    });
+    };
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') active(); });
+    // Already active before this listener existed (a tap during a HealthKit cold launch):
+    // no change event will come, and the WebView would stay unmounted.
+    if (AppState.currentState === 'active') active();
     return () => subscription.remove();
   }, []);
   useEffect(() => { reconcile(); }, [ready, wantBackground]);

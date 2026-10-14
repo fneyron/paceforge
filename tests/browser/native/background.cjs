@@ -46,6 +46,12 @@ const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'
   assert.equal(await woken.evaluate(()=>writes.filter(u=>u.endsWith('/api/mobile/daily')).length),1,'unchanged data is not sent again');
   assert.deepEqual(woken.errors,[]);await woken.close();
 
+  // A tap during a HealthKit cold launch: active before any listener, without a change event.
+  const tapped=await page('?state=background&missed=1',stored());
+  await tapped.waitForFunction(()=>window.actual==='https://paceforge.fr/sante',null,{timeout:5000});
+  assert.equal(await tapped.locator('[data-testid="mock-webview"]').count(),1,'the WebView must mount without a change event');
+  assert.deepEqual(tapped.errors,[]);await tapped.close();
+
   // Locked phone: the keychain cannot be read. Never « not paired », nothing read, and the
   // offline copies survive until the app is opened and unlocked.
   const locked=await page('?state=background&locked=1',stored());
@@ -91,6 +97,6 @@ const stored=(extra={})=>({'paceforge.phone.v1':pair,'paceforge.phone.v1.auto':'
   await logout.evaluate(()=>reply());
   await logout.waitForFunction(()=>registered.filter(r=>r[0]==='register').length===2);
   await logout.close();
-  console.log('Background sync: launch without screen, one run per wake, skip unchanged, locked keychain and offline copies, refused token, logout passed (native APIs mocked).');
+  console.log('Background sync: launch without screen, one run per wake, skip unchanged, tap during a cold launch, locked keychain and offline copies, refused token, logout passed (native APIs mocked).');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
