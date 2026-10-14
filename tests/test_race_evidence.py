@@ -333,6 +333,39 @@ def test_the_objective_plan_gives_a_hot_section_its_heat():
     assert max(ratios) - min(ratios) < 0.01  # the hot last section no longer 10 % short of its prediction
 
 
+@pytest.mark.asyncio
+async def test_a_plan_without_weather_takes_the_heat_his_races_were_read_in(db_session, test_user, monkeypatch):
+    """The level is read without the races' heat; a course with no weather (no date, nothing fetched) takes back
+    the heat they were run in, so it stays where it was before (not 1-4 % faster)."""
+    from app.models.route import Route
+    from app.routers import simulator as sim
+    from app.services import race_simulator
+
+    m = rc.model_from_points([_pt("A", 100, 10.0, heat=1.04), _pt("B", 160, 18.0, heat=1.02)])
+    assert m["heat_mean"] == pytest.approx(1.03)
+    assert rc.model_from_points([_pt("A", 100, 10.0)])["heat_mean"] == 1.0
+    prof = AthleteGradientProfile(flat_pace_s_per_km=330, gradient_factors=dict(rs._DEFAULT_GRADIENT_FACTORS), data_points=0,
+                                  sport_types_used=[], race_model=m)
+    assert sim._no_weather_heat(prof.model_copy(update={"race_calibration": {"total_s": 1}})) == pytest.approx(1.03)
+    assert sim._no_weather_heat(prof) == 1.0  # the level not read on his races (predict_course sets race_calibration)
+    seen = []
+    real = race_simulator.compute_passage_times
+
+    def spy(course, cps, target, heat, *a, **kw):
+        seen.append(heat)
+        return real(course, cps, target, heat, *a, **kw)
+
+    monkeypatch.setattr(race_simulator, "compute_passage_times", spy)
+    route = Route(user_id=test_user.id, name="Sans météo", total_distance_km=30.0, total_elevation_gain=800.0,
+                  course_json=json.loads(_course().model_dump_json()), sport_type="trail")
+    db_session.add(route)
+    await db_session.flush()
+    await sim._plan_bundle(route, db_session, test_user, profile=prof)
+    route.weather_json = {"heat_factor": 1.0, "hourly": {"temps": [10.0] * 48, "humidity": [50] * 48}}
+    await sim._plan_bundle(route, db_session, test_user, profile=prof)
+    assert seen == [pytest.approx(1.03), 1.0]  # with its own weather, the forecast decides
+
+
 # ── 5. night by the sun ──
 
 def test_the_suns_elevation():

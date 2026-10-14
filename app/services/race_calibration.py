@@ -301,6 +301,10 @@ def model_from_points(points: list[dict], today: date | None = None) -> dict | N
     model["ignored"] = sorted(ignored, key=lambda p: -p["hours"])[:6]
     model["n_races"] = len(races)
     model["n_used"] = len(used)
+    # the heat his races were run in (1 for a race not looked up): the level is read without it, so a course
+    # without weather (no date, nothing fetched) takes it back, neutral against the level read with it
+    sw = sum(p.get("weight", 1.0) for p in used)
+    model["heat_mean"] = round(sum(p.get("weight", 1.0) * max(1.0, float(p.get("heat") or 1.0)) for p in used) / sw, 3) if sw else 1.0
     return model
 
 

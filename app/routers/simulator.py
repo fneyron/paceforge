@@ -364,6 +364,8 @@ async def _passage_table_context(
     # plan's fatigue and night the objective's clock. Heat is applied once, in
     # compute_passage_times.
     profile = profile or await build_athlete_gradient_profile(db, user_id)
+    if hourly_weather is None and heat_factor == 1.0 and not (route_obj and route_obj.weather_json):
+        heat_factor = _no_weather_heat(profile)  # no weather: the heat his races were read in
     total_km = course.total_distance_km
     clock = await _race_clock(db, user_id, route_obj, course)  # night by the sun once the race is dated
     if target_time_s:
@@ -1955,6 +1957,14 @@ def _scenario_settings(params: dict, profile, course, known_course: bool = False
     }
 
 
+def _no_weather_heat(profile) -> float:
+    """The heat of a plan without weather (no race date, nothing fetched): the mean heat the athlete's races were
+    run in when his level comes from them (read without it), so such a plan stays where it was before the level
+    was read heat-free; 1 otherwise."""
+    model = getattr(profile, "race_model", None) if getattr(profile, "race_calibration", None) else None
+    return float((model or {}).get("heat_mean") or 1.0)
+
+
 async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course) -> dict:
     """race_match.race_clock on the course already parsed."""
     from app.services.race_match import race_clock
@@ -2041,7 +2051,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
         finish_s = _finish_with_stops(course.predicted_total_time_s, cps, route.stop_minutes, total_km)
         aid_stops = _aid_stops(cps, route.stop_minutes, finish_s, total_km)
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute,
+        course, cps, route.target_time_s, 1.0 if route.weather_json else _no_weather_heat(profile), start_hour, start_minute,
         route.weather_json.get("hourly") if route.weather_json else None,
         stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
     )
