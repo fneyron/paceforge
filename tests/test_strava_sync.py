@@ -326,24 +326,32 @@ async def test_a_token_endpoint_failure_is_tried_again_never_taken_for_a_refusal
 async def test_a_failed_first_import_shows_where_the_watches_errors_do(client: AsyncClient, db_session, test_user,
                                                                        monkeypatch):
     """Review D11: the first import's failure is strava_status' last_error, the key the connection page and the
-    app's list of connections already read for the watches (no template changed): /connections/strava shows its
-    « La synchronisation est à vérifier… » note, the app's list says « attention »; Réglages are unchanged."""
+    app's list of connections already read for the watches: the app's list says « attention », and
+    /connections/strava shows the error itself (re-review N2: the watches' note, « Ouvre « Options et aide » pour
+    la relancer », offers no relaunch for Strava: the round tries again by itself). Réglages are unchanged."""
     from app.dependencies import get_optional_user
+    from tests.test_coros import _link
 
     monkeypatch.setattr(db_session, "commit", db_session.flush)
     await _own_app(db_session, test_user, done=False)
     overrides = client._transport.app.dependency_overrides
     overrides[get_current_user] = overrides[get_optional_user] = lambda: test_user
-    note = "La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer."
+    error = "Strava a limité la première synchro ; nouvel essai automatique."
+    watches_note = "La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer."
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:
         async def shown():
             providers = (await c.get("/mobile/connections?nonce=" + "a" * 64,
                                      headers={"accept": "application/json"})).json()["providers"]
-            return note in (await c.get("/connections/strava")).text, providers["strava"]
-        assert await shown() == (False, "connected")
+            page = (await c.get("/connections/strava")).text
+            return f'<p class="pf-note">{error}</p>' in page, watches_note in page, providers["strava"]
+        assert await shown() == (False, False, "connected")
         strava_state.initial_failed(test_user.id, "rate_limited")
-        assert await shown() == (True, "attention")
+        assert await shown() == (True, False, "attention")
         assert "nouvel essai automatique" not in (await c.get("/settings")).text
+        # a watch keeps its sentence
+        (await _link(db_session, test_user)).last_error = "Previous network failure"
+        await db_session.flush()
+        assert watches_note in (await c.get("/connections/coros")).text
 
 
 async def test_the_first_imports_details_stop_at_the_quota(db_session, test_user, task_session, monkeypatch):
