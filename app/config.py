@@ -15,6 +15,15 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://paceforge:paceforge@localhost:5432/paceforge"
+    # Connection pools, against PostgreSQL's max_connections (100 by default, 3 of them kept for superusers):
+    # web: 4 uvicorn workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) = 40, twice while a deploy runs the old and
+    # the new container side by side = 80; Celery: 2 processes, one task each, every task its own engine of
+    # at most DB_TASK_POOL_SIZE + DB_TASK_MAX_OVERFLOW = 3 → 6, twice in a deploy = 12; Alembic at start: 1.
+    # 93 at worst. Raise them only with max_connections (or behind PgBouncer).
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    DB_TASK_POOL_SIZE: int = 1
+    DB_TASK_MAX_OVERFLOW: int = 2
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

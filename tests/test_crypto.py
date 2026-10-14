@@ -122,3 +122,4 @@ async def test_a_strava_attempt_no_key_reads_is_an_expired_link(client, db_sessi
         assert r.status_code == 302 and r.headers["location"] == "/setup?error=auth_failed"
     assert exchange.await_count == 0
 
+
