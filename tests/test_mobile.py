@@ -422,6 +422,12 @@ async def test_bodies_are_read_and_parsed_before_the_database_session_is_used(cl
 async def test_a_night_sets_the_athlete_zone_once_and_never_from_a_fixed_offset(client, test_user):
     from tests.test_apple_nights import packet
     account, _ = await paired(client, test_user)
+    # A zone already set (Strava, a previous night) is never written over.
+    test_user.timezone = 'America/Montreal'
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Europe/Paris'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'America/Montreal'
+    test_user.timezone = None
     for zone in ('UTC', 'Etc/GMT-2'):
         assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': zone},
                                   headers=bearer(account['token']))).status_code == 200
