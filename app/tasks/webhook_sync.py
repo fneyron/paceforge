@@ -70,7 +70,9 @@ async def _confirmed(subscription_id: int | None) -> bool:
     ok = await shared_subscription_matches(subscription_id)
     if ok is None:
         raise SubscriptionUnknown()
-    if not ok:
+    if ok:
+        state.app_webhook_reached(settings.STRAVA_CLIENT_ID)
+    else:
         logger.warning("Webhook: subscription %d is not the shared app's, event ignored", subscription_id)
     return ok
 

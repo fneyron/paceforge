@@ -9,6 +9,7 @@ from app.config import settings
 from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.strava import StravaWebhookEvent
+from app.services import strava_state
 from app.services.strava import shared_subscription_check
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,8 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
         return JSONResponse(status_code=200, content={"status": "ignored"})
 
     logger.info("Strava webhook: %s %d for user %d, enqueuing", kind, event.object_id, user.id)
+    if verified:  # the app's webhook works: its quiet athletes need a daily poll only
+        strava_state.app_webhook_reached(user.strava_client_id)
     # the shared app's subscription not known yet: the task checks it with Strava before anything else
     check = {} if verified else {"subscription_id": event.subscription_id}
     # Enqueue async, but never let a broker hiccup break the webhook ACK —

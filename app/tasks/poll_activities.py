@@ -19,8 +19,9 @@ POLL_CLAIM_S = 2 * 3600  # an athlete's poll queued or running is not queued aga
 
 @celery_app.task(name="paceforge.poll_new_activities")
 def poll_new_activities() -> dict:
-    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h (and of every one
-    not polled for 24 h: an event may be lost), and the first imports due again after a failure."""
+    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h while their app's
+    webhook is silent too (and of every one not polled for 24 h: an event may be lost), and the first imports due
+    again after a failure."""
     try:
         result = asyncio.run(_run_poll())
         logger.info("Strava round: %d polls and %d first imports queued",
@@ -47,7 +48,8 @@ async def _run_poll() -> dict:
             User.strava_credentials_valid.is_(True),
             User.strava_client_id.isnot(None),
             User.strava_refresh_token.isnot(None),  # disconnected links have none
-        ))).scalars().all()
+        ).order_by(  # the longest without news first: those a quota backoff cut off last time lead the next
+            User.last_activity_poll_at.asc().nulls_first(), User.id))).scalars().all()
 
     queued = requeued = 0
     for user in users:
@@ -62,8 +64,11 @@ async def _run_poll() -> dict:
                 except Exception:
                     logger.exception("Initial sync could not be queued again for user %d", user.id)
             continue
-        if state.webhook_recent(user.id) and state.polled_recently(user.id):
-            continue  # the webhook brings their activities; polled once a day all the same (an event may be lost)
+        if state.polled_recently(user.id) and (state.webhook_recent(user.id)
+                                               or state.app_webhook_alive(user.strava_client_id)):
+            # the webhook brings their activities (theirs reached them, or their app's works and they are quiet):
+            # polled once a day all the same (an event may be lost)
+            continue
         if not state.claim(f"poll:{user.id}", POLL_CLAIM_S):
             continue
         try:

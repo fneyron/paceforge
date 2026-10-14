@@ -111,6 +111,15 @@ def webhook_forget(user_id: int) -> None:
     release(f"polled:{user_id}")
 
 
+def app_webhook_reached(client_id: str | None) -> None:
+    """An event of this app was accepted: its webhook works (for all of its athletes)."""
+    mark(f"webhook_app:{client_id}", WEBHOOK_FRESH_S)
+
+
+def app_webhook_alive(client_id: str | None) -> bool:
+    return read(f"webhook_app:{client_id}") is not None
+
+
 def polled(user_id: int) -> None:
     """The athlete's newest activities were just listed (a poll, « Synchroniser », the first import)."""
     mark(f"polled:{user_id}", POLLED_EVERY_S)

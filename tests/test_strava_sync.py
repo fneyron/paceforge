@@ -497,6 +497,61 @@ async def test_an_event_lost_is_recovered_by_the_daily_poll(db_session, test_use
     assert await _row(db_session, 980_000) is not None and polls == 3  # once a day, not hourly
 
 
+async def test_the_round_starves_nobody_and_spares_a_live_apps_quiet_athletes(db_session, task_session, shared_app,
+                                                                             client: AsyncClient, queued, monkeypatch):
+    """Review D9: the athletes a round queued after the app's 80 % mark were skipped, and queued in the same order
+    by the next round: the same ones were never polled. And a quiet athlete cost a read every round although the
+    app's webhook worked (24 a day each: the shared app's 80 % of 1,000 reached with ~33 of them). The round now
+    starts with the longest without news, and an app whose webhook brought an event within 24 h has its quiet
+    athletes polled once a day."""
+    from collections import Counter
+
+    from app.tasks import poll_activities
+
+    users = [await _athlete(db_session, 8000 + i, strava_client_id="90001", initial_sync_done=True)
+             for i in range(5)]
+    strava_state.mark("shared_sub", 24 * 3600, "123456")  # the shared app's subscription, read from Strava before
+    polled, window = Counter(), {"reads": 0}
+
+    async def fetch(self, user, per_page=30, page=1):
+        polled[user.strava_athlete_id] += 1
+        window["reads"] += 1
+        if window["reads"] >= 3:  # the app's 80 % mark, reached after 3 polls
+            strava_state.back_off("90001", time.time() + 600)
+        return []
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    polls = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: polls.append(uid))
+
+    async def round_():
+        strava_state.release("backoff:90001")  # the window has turned by the next round
+        window["reads"] = 0
+        polls.clear()
+        await poll_activities._run_poll()
+        for uid in polls:
+            await poll_activities._poll_user(uid)
+            strava_state.release(f"poll:{uid}")
+    await round_()
+    await round_()
+    assert all(polled[u.strava_athlete_id] for u in users), polled
+
+    # the app's webhook works (an event for one athlete): the others, quiet, are polled once a day
+    strava_state.release("backoff:90001")
+    r = await client.post("/webhook/strava", json={
+        "object_type": "activity", "object_id": 1, "aspect_type": "create", "owner_id": 8000,
+        "subscription_id": 123456, "event_time": 1, "updates": {}})
+    assert r.json()["status"] == "ok" and strava_state.app_webhook_alive("90001")
+    polled.clear()
+    for _ in range(24):
+        await round_()
+    assert sum(polled.values()) == 0  # all polled in the last 24 h already
+    for u in users:
+        strava_state.release(f"polled:{u.id}")  # a day later
+    for _ in range(24):
+        await round_()
+    assert polled == Counter({u.strava_athlete_id: 1 for u in users})
+
+
 async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, monkeypatch):
     """Base code: three failures (a 429…) left initial_sync_done False, which the poll's filter excluded forever,
     Réglages still saying « Première synchro en cours… ». Now the failure is kept (strava_status: sync_error), and
