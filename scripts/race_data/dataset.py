@@ -156,6 +156,24 @@ def load_livetrail(path: pathlib.Path) -> dict | None:
             "start": None, "cps": cps, "points": pts, "surface": surface, "has_track": False, "runners": runners}
 
 
+def known_events(baseline: pathlib.Path) -> dict | None:
+    """{source: set of events} of the model's development data (lockbox_baseline.json: the corpus as committed
+    on 2026-10-05), None when the file is missing or unreadable."""
+    try:
+        data = json.loads(baseline.read_text())
+    except (OSError, ValueError):
+        return None
+    return {src: set(evs) for src, evs in (data.get("events") or {}).items()}
+
+
+def in_lockbox(race: dict, known: dict | None) -> bool:
+    """A race of an event the development data did not hold (the lockbox, fit_model.py SPLIT): any edition of
+    an event first collected after that day. New editions of a known event are not."""
+    if known is None:
+        return False
+    return race["event"] not in known.get(race.get("source", "utmb"), set())
+
+
 def races(sources=("utmb", "livetrail")):
     for src in sources:
         for path in sorted((ROOT / src).glob("*/*.json.gz")):

@@ -94,6 +94,9 @@ _DEFAULT_GRADIENT_FACTORS = {
 # How many km splits of his own an athlete needs on a gradient for them to
 # weigh as much as the generic curve (8 splits → 50 %, 40 → 83 %).
 GRADIENT_PRIOR_SPLITS = 8
+# The slowest km split read as running (s/km): 20 min/km, 40 min/km where the
+# slope passes 15 % (up or down).
+MAX_PACE_S, STEEP_MAX_PACE_S, STEEP_GRADIENT_PCT = 1200, 2400, 15
 
 
 async def build_athlete_gradient_profile(
@@ -149,12 +152,15 @@ async def build_athlete_gradient_profile(
                 continue
 
             pace_s_per_km = moving_time / (distance / 1000)
+            gradient_pct = (elevation_diff / distance) * 100
 
-            # Filter unrealistic paces
-            if pace_s_per_km < 120 or pace_s_per_km > 1200:  # 2min/km to 20min/km
+            # Filter unrealistic paces: 2 to 20 min/km, 40 min/km on slopes over 15 %
+            # (a 25-30 % climb is hiked at 20-35 min/km: cut at 20, the steep buckets
+            # kept only their fastest km and read the athlete faster than he climbs)
+            slowest = STEEP_MAX_PACE_S if abs(gradient_pct) > STEEP_GRADIENT_PCT else MAX_PACE_S
+            if pace_s_per_km < 120 or pace_s_per_km > slowest:
                 continue
 
-            gradient_pct = (elevation_diff / distance) * 100
             data_points.append((gradient_pct, pace_s_per_km))
 
     if not data_points:
@@ -232,17 +238,19 @@ async def _race_model(db: AsyncSession, user_id: int) -> dict | None:
 async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
     """Personal fresh→fade tilt, calibrated when a matched race result exists.
 
-    The tilt is computed once at match time (see save_route_result) and stored
-    in Route.result_json; here the median of the most recent ones (up to
-    PERSONAL_TILT_RACES, by race date): one race reads a bad day or a good one,
-    a few say how the athlete fades. Clamped hard. Only tilts measured against
-    the hours-on-course fatigue count (``fatigue_model``): older ones measured
-    the gap to the distance-scaled curve, which the fitted one already corrects.
-    Tilts fitted on every checkpoint (``fatigue_tilt_cps``) replace the ones
-    read on the first checkpoint alone as soon as one exists: matching a race
-    again re-measures it.
+    Each matched race stores its own tilt (Route.result_json, see
+    race_calibration.measure_fatigue_tilt and raw_tilt); here the mean of the
+    most recent ones (up to PERSONAL_TILT_RACES, by race date), shrunk toward
+    the neutral tilt by m / (m + 2), m = those races: one race moves it a third
+    of the way, three races 60 % (race_calibration.tilt_weight). Clamped. Only
+    tilts measured against the hours-on-course fatigue count
+    (``fatigue_model``): older ones measured the gap to the distance-scaled
+    curve, which the fitted one already corrects. Tilts fitted on every
+    checkpoint (``fatigue_tilt_cps``) replace the ones read on the first
+    checkpoint alone as soon as one exists: matching a race again re-measures it.
     """
     from app.models.route import Route
+    from app.services.race_calibration import TILT_MAX, TILT_MIN, raw_tilt, tilt_weight
 
     try:
         result = await db.execute(
@@ -255,20 +263,23 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
         seen: set = set()  # a race saved twice links the same activity: it counts once
         for route_id, rj in result.all():
             rj = rj or {}
-            tilt = rj.get("fatigue_tilt")
-            if tilt is None or rj.get("fatigue_model") != FATIGUE_MODEL or rj.get("activity_id") in seen:
+            raw = raw_tilt(rj)
+            aid = rj.get("activity_id")
+            if raw is None or rj.get("fatigue_model") != FATIGUE_MODEL or (aid is not None and aid in seen):
                 continue
-            seen.add(rj.get("activity_id"))
+            if aid is not None:  # results stored without an activity id are different races
+                seen.add(aid)
             try:
                 day = datetime.strptime(rj.get("activity_date") or "", "%d/%m/%Y")
             except ValueError:
                 day = datetime.min
-            measured.append((day, route_id, float(tilt), rj.get("fatigue_tilt_cps") is not None))
+            measured.append((day, route_id, raw, rj.get("fatigue_tilt_cps") is not None))
         measured = [m for m in measured if m[3]] or measured
         if measured:
             measured.sort(reverse=True)  # most recent race first (then most recent match)
-            tilt = statistics.median(m[2] for m in measured[:PERSONAL_TILT_RACES])
-            return max(0.05, min(tilt, 0.40))
+            used = [m[2] for m in measured[:PERSONAL_TILT_RACES]]
+            tilt = DEFAULT_FATIGUE_TILT + tilt_weight(len(used)) * (statistics.fmean(used) - DEFAULT_FATIGUE_TILT)
+            return round(max(TILT_MIN, min(tilt, TILT_MAX)), 3)
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
     return DEFAULT_FATIGUE_TILT
@@ -515,7 +526,8 @@ DUSK_DAWN_FACTOR = 1.0122
 
 
 def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
-    """Penalty for running at night. Assumes race starts at start_hour.
+    """Penalty for running at night, without a race date (or a place): the
+    fixed window. Assumes race starts at start_hour.
 
     ``start_hour`` may be fractional (e.g. 6.5 for 06:30).
     Night = between 21:00 and 06:00. Returns multiplier >= 1.0.
@@ -530,6 +542,154 @@ def _night_penalty(cumulative_time_s: float, start_hour: float = 6) -> float:
     return 1.0
 
 
+# Night by the sun: dark when the sun is more than 6° below the horizon (civil
+# twilight over), dusk / dawn while it is within 6° of it, at the segment's own
+# place and time (the race date and its clock's UTC offset known). The fixed
+# 21:00-06:00 window mislabelled 4.5 % of the median finisher's time (> 20 %
+# on 12 of 174 races: Whistler at 05:00, Kullamannen in November, Chiang Mai
+# at night). Same fitted factors (NIGHT_FACTOR, DUSK_DAWN_FACTOR). Held-out
+# events: mean |ln(plan / actual)| 4.475 → 4.449 % (−0.026, event-bootstrap
+# 95 % CI [−0.046, −0.003]), mean |gap| 18.61 → 18.52 min; on the 14 train
+# events, where the factor was fitted with the window, +0.035 [+0.002, +0.074]:
+# a small effect either way. The factor refitted with the sun on train (1.0225)
+# did not help the held-out events (18.62 min): not taken.
+NIGHT_SUN_DEG = -6.0
+TWILIGHT_SUN_DEG = 6.0
+
+
+def sun_elevation_deg(lat: float, lon: float, t_utc: datetime) -> float:
+    """The sun's elevation (degrees) at a place and a UTC instant: NOAA's
+    general solar position equations (fractional year; ~0.5° accuracy)."""
+    doy = t_utc.timetuple().tm_yday
+    hr = t_utc.hour + t_utc.minute / 60 + t_utc.second / 3600
+    g = 2 * math.pi / 365 * (doy - 1 + (hr - 12) / 24)
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g) - 0.006758 * math.cos(2 * g)
+            + 0.000907 * math.sin(2 * g) - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    eqt = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g) - 0.014615 * math.cos(2 * g)
+                    - 0.040849 * math.sin(2 * g))
+    ha = math.radians((hr * 60 + eqt + 4 * lon) / 4 - 180)
+    la = math.radians(lat)
+    cz = math.sin(la) * math.sin(decl) + math.cos(la) * math.cos(decl) * math.cos(ha)
+    return 90 - math.degrees(math.acos(max(-1.0, min(1.0, cz))))
+
+
+def sun_night_factor(lat: float, lon: float, t_utc: datetime) -> float:
+    """NIGHT_FACTOR in the dark, DUSK_DAWN_FACTOR at twilight, else 1."""
+    e = sun_elevation_deg(lat, lon, t_utc)
+    if e < NIGHT_SUN_DEG:
+        return NIGHT_FACTOR
+    if e < TWILIGHT_SUN_DEG:
+        return DUSK_DAWN_FACTOR
+    return 1.0
+
+
+def segment_positions(course: CourseProfile) -> list[tuple[float, float]] | None:
+    """(lat, lon) where each segment starts, on the full-resolution trace; None without one."""
+    coords = course.route_coords or []
+    if len(coords) < 2 or len(coords[0]) < 3 or not course.segments:
+        return None
+    out, j = [], 0
+    for seg in course.segments:
+        km = seg.start_km
+        while j < len(coords) - 2 and coords[j + 1][2] < km:
+            j += 1
+        p, n = coords[j], coords[j + 1]
+        span = n[2] - p[2]
+        t = min(1.0, max(0.0, (km - p[2]) / span)) if span > 0 else 0.0
+        out.append((p[0] + t * (n[0] - p[0]), p[1] + t * (n[1] - p[1])))
+    return out
+
+
+class SunClock:
+    """What night-by-the-sun needs for one prediction: the race start in UTC
+    and each segment's place. Built by sun_clock(); None falls back to the
+    fixed window."""
+
+    def __init__(self, start_utc: datetime, positions: list[tuple[float, float]], kms: list[float] | None = None):
+        self.start_utc = start_utc
+        self.positions = positions
+        self.kms = kms or []
+
+    def factor(self, idx: int, clock_s: float) -> float:
+        lat, lon = self.positions[idx]
+        return sun_night_factor(lat, lon, self.start_utc + timedelta(seconds=clock_s))
+
+    def is_dark(self, elapsed_s: float, km: float) -> bool:
+        """The sun more than 6° below the horizon at ``km``, ``elapsed_s`` after the start (the
+        profile's night bands, plan_view)."""
+        import bisect
+
+        i = max(0, min(len(self.positions) - 1, bisect.bisect_right(self.kms, km) - 1)) if self.kms else 0
+        lat, lon = self.positions[i]
+        return sun_elevation_deg(lat, lon, self.start_utc + timedelta(seconds=elapsed_s)) < NIGHT_SUN_DEG
+
+
+def sun_clock(course: CourseProfile, race_date, start_hour: int, start_minute: int,
+              utc_offset_s: int | None) -> SunClock | None:
+    """The race start on the UTC clock (race date at start_hour:start_minute on
+    the race's own clock, minus its UTC offset) and the segments' places; None
+    without a date, an offset or a trace."""
+    from datetime import date as _date
+
+    if race_date is None or utc_offset_s is None:
+        return None
+    if isinstance(race_date, str):
+        try:
+            race_date = _date.fromisoformat(race_date[:10])
+        except ValueError:
+            return None
+    pos = segment_positions(course)
+    if not pos:
+        return None
+    local = datetime(race_date.year, race_date.month, race_date.day, int(start_hour), int(start_minute or 0),
+                     tzinfo=timezone.utc)
+    return SunClock(local - timedelta(seconds=int(utc_offset_s)), pos, [seg.start_km for seg in course.segments])
+
+
+ZONE_BAND_H = 2.0  # the athlete's zone serves a course whose lon / 15 lies within this of its standard offset
+
+
+def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
+                      start_hour: int | None = None, start_minute: int = 0) -> int | None:
+    """The UTC offset of the race's clock at its start: the start point's own
+    time zone when known (``start_zone``, its IANA name: daylight saving read
+    on the race date, at the start's local time), else the forecast's (the
+    same zone, read on the forecast's day), else the athlete's zone when the
+    course lies in its band (its standard offset within 2 h of lon / 15: the
+    west of France and Spain run 1.1-1.4 h ahead of the sun, Réunion is 2.7 h
+    off Paris), else lon / 15 to the hour. None without a date or a place."""
+    if race_date is None or lon is None:
+        return None
+    from datetime import date as _date
+
+    try:
+        d = _date.fromisoformat(str(race_date)[:10])
+    except (ValueError, TypeError):
+        return None
+    local = datetime(d.year, d.month, d.day, int(start_hour) if start_hour is not None else 12, int(start_minute or 0))
+    if start_zone:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            off = local.replace(tzinfo=ZoneInfo(start_zone)).utcoffset()
+            if off is not None:
+                return int(off.total_seconds())
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    if weather_offset_s is not None:
+        try:
+            return int(weather_offset_s)
+        except (TypeError, ValueError):
+            pass
+    solar_h = float(lon) / 15
+    if zone is not None:
+        at = local.replace(tzinfo=zone)
+        off, dst = at.utcoffset(), at.dst()
+        if off is not None and abs((off - (dst or timedelta(0))).total_seconds() / 3600 - solar_h) <= ZONE_BAND_H:
+            return int(off.total_seconds())
+    return int(round(solar_h)) * 3600
+
+
 def _segment_times(
     course: CourseProfile,
     profile: AthleteGradientProfile,
@@ -538,12 +698,18 @@ def _segment_times(
     start_hour_frac: float,
     tilt: float,
     clock_scale: float = 1.0,
+    sun: "SunClock | None" = None,
+    stops_before: list[float] | None = None,
 ) -> list[tuple[float, float]]:
     """(pace s/km, moving time s) of every segment at the profile's flat pace (heat included).
 
     Fatigue and night read the clock of the pace actually planned: the running
     total times ``clock_scale`` (planned level / the level simulated here). At
-    1.0 it is the training level itself.
+    1.0 it is the training level itself. Night: by the sun at the segment's
+    place and time when ``sun`` is known (race date and clock), else the fixed
+    window, on the clock the plan draws: the moving time plus the planned stops
+    made before the segment (``stops_before``, s per segment). Fatigue keeps the
+    hours on the move (as fitted).
     """
     total_distance = course.total_distance_km
     cumulative_time = 0.0
@@ -571,7 +737,8 @@ def _segment_times(
         factor = grade_factor * alt * terrain
         factor *= _fatigue_factor(clock_s / 3600, progress, total_distance, tilt)
         factor *= heat_factor
-        factor *= _night_penalty(clock_s, start_hour_frac)
+        night_s = clock_s + (stops_before[idx] if stops_before else 0.0)
+        factor *= sun.factor(idx, night_s) if sun is not None else _night_penalty(night_s, start_hour_frac)
 
         predicted_pace = profile.flat_pace_s_per_km * factor
         predicted_time = predicted_pace * (segment.distance_m / 1000)
@@ -587,7 +754,7 @@ LEVEL_PASSES = 12
 
 
 def _times_at_level(
-    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float,
+    course, profile, fine, heat_factor, start_hour_frac, tilt, first: list, total_s: float, sun=None, stops_before=None,
 ) -> list:
     """Segment (pace, time) whose clock, once re-levelled to ``total_s``, is the
     one fatigue and night were read on: scale = total_s / (total of the run at
@@ -595,7 +762,8 @@ def _times_at_level(
     rows = first
     prev = sum(t for _, t in rows)
     for _ in range(LEVEL_PASSES):
-        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0))
+        rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, total_s / (prev or 1.0), sun,
+                              stops_before)
         total = sum(t for _, t in rows)
         if abs(total - prev) < 1.0:
             break
@@ -611,6 +779,10 @@ def predict_course(
     start_minute: int = 0,
     plan_moving_s: float | None = None,
     fine_terrain: list[float] | None = None,
+    race_date=None,
+    utc_offset_s: int | None = None,
+    aid_stops: dict | None = None,
+    own_weather: bool = False,
 ) -> CourseProfile:
     """Apply gradient-adjusted pace prediction with fatigue, heat, altitude, terrain, night.
 
@@ -623,23 +795,38 @@ def predict_course(
 
     ``fine_terrain``: ``_fine_terrain(course, profile)`` already computed, for
     repeated runs on the same course and gradient profile.
+
+    ``race_date`` and ``utc_offset_s`` (the race's clock, see
+    race_utc_offset_s): night by the sun at each segment's place and time;
+    without them, the fixed 21:00-06:00 window. ``aid_stops`` ({km: s}, the
+    plan's): night read on the clock with the stops made before each segment,
+    as the plan's night bands are drawn.
+
+    ``own_weather``: the course has its race day's weather (forecast or season
+    normals, applied by compute_passage_times), and the race level is read
+    heat-free, as fitted. Without it (no date, nothing fetched) the level is
+    read at the heat his races were run in (the race model's heat_mean), so
+    such a course is not 1-4 % faster than his races say.
     """
     start_hour_frac = start_hour + (start_minute or 0) / 60
     tilt = getattr(profile, "fatigue_tilt", None) or DEFAULT_FATIGUE_TILT
     fine = fine_terrain if fine_terrain is not None else _fine_terrain(course, profile)
+    sun = sun_clock(course, race_date, start_hour, start_minute, utc_offset_s)
+    stops = _stops_before(course, aid_stops)
 
-    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt)
+    rows = _segment_times(course, profile, fine, heat_factor, start_hour_frac, tilt, sun=sun, stops_before=stops)
     training_total = sum(t for _, t in rows)
 
     # Races, not training, set the level of the prediction (see race_calibration).
     race_model = getattr(profile, "race_model", None)
     race_total = None
+    level_heat = 1.0 if own_weather else float((race_model or {}).get("heat_mean") or 1.0)
     if race_model:
         from app.services.race_calibration import race_level_total_s
 
-        race_total = race_level_total_s(course, race_model, training_total)
+        race_total = race_level_total_s(course, race_model, training_total, level_heat)
         if race_total:
-            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total)
+            rows = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, race_total, sun, stops)
 
     # The basis used to split a TARGET into passage times: terrain, fatigue
     # and night, not heat (applied per section with the forecast). A plan
@@ -647,7 +834,7 @@ def predict_course(
     # faster than the 2025 Transjeju winner ran them.
     basis = rows
     if plan_moving_s and plan_moving_s > 0:
-        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s)
+        basis = _times_at_level(course, profile, fine, heat_factor, start_hour_frac, tilt, rows, plan_moving_s, sun, stops)
 
     cumulative_time = 0.0
     for segment, (predicted_pace, predicted_time), (_, base) in zip(course.segments, rows, basis, strict=True):
@@ -665,10 +852,24 @@ def predict_course(
         from app.services.race_calibration import apply_race_calibration
 
         profile.race_calibration = (
-            apply_race_calibration(course, race_model, training_total) if race_total else None
+            apply_race_calibration(course, race_model, training_total, level_heat) if race_total else None
         )
 
     return course
+
+
+def _stops_before(course: CourseProfile, aid_stops: dict | None) -> list[float] | None:
+    """Seconds of planned stops made before each segment starts (a station at km X delays every segment from X)."""
+    if not aid_stops:
+        return None
+    marks = sorted((float(k), float(v)) for k, v in aid_stops.items() if v)
+    out, acc, i = [], 0.0, 0
+    for seg in course.segments:
+        while i < len(marks) and marks[i][0] <= seg.start_km + 1e-6:
+            acc += marks[i][1]
+            i += 1
+        out.append(acc)
+    return out
 
 
 def format_time(seconds: int) -> str:
@@ -731,6 +932,7 @@ def compute_passage_times(
     stop_s_per_aid: int = 0,
     aid_kms: set | None = None,
     aid_stops: dict | None = None,
+    objective: bool | None = None,
 ) -> list[dict]:
     """Compute passage times between checkpoints.
 
@@ -750,10 +952,12 @@ def compute_passage_times(
     (aid stations). Stops shift the CLOCK times (and the target distribution's
     moving budget) — predictions themselves stay moving-time.
 
-    The target plan ("adjusted_*") is distributed by segment.base_time_s:
-    terrain, fatigue and night (heat excluded, applied per section here). A
-    plan on terrain alone asked for the second half faster than the first,
-    which nobody runs on a 100-miler.
+    The target plan ("adjusted_*") is distributed by segment.base_time_s
+    (terrain, fatigue and night) times each section's heat (computed here,
+    per section with the forecast): the prediction's own shape. A plan on
+    terrain alone asked for the second half faster than the first, which
+    nobody runs on a 100-miler; one without the heat, for the hot afternoon
+    as fast as the cool morning.
 
     A checkpoint with ``target_s`` (seconds after the start) is PINNED: the plan
     arrives there at exactly that time. Between two anchors (start, pins, the
@@ -763,7 +967,9 @@ def compute_passage_times(
     flagged (``pin_clamped``). Sections of a pinned plan carry ``pinned``,
     ``pin_target_s``, ``pin_clamped`` and ``auto_clock_s`` (the clock the plan
     would give there without that pin); the finish carries ``objective_s``.
-    Without pins the output is unchanged (no extra keys).
+    Without pins the output is unchanged (no extra keys). ``objective``: the
+    target is his objective (True) or the estimate the plan runs on (False);
+    None (unsaid): an objective when more than a minute from the estimate.
     """
     from app.schemas.simulator import PassageTimeSection
     from app.services.weather import compute_heat_factor
@@ -830,8 +1036,8 @@ def compute_passage_times(
 
     # Target distribution: the plan's moving budget is the target minus the
     # planned aid-station stops, split in proportion to each section's basis
-    # (terrain, fatigue, night): the finish is slower than the start.
-    total_base = sum(r["base"] for r in raw) or 1.0
+    # (terrain, fatigue, night) times its heat (pass 2): the finish is slower
+    # than the start, a 32 °C section slower than the same section at 10 °C.
     moving_target_s = None
     if target_time_s:
         moving_target_s = max(target_time_s - total_stops_s, 1)
@@ -887,16 +1093,24 @@ def compute_passage_times(
         r["heat"] = sec_heat
         r["wx"] = (temperature_c, weather_code, wind_kmh, humidity_pct)
         r["model"] = r["time"] * sec_heat
+        # the plan's share of this section: its basis (heat-free) times its heat, as the prediction
+        # (the plan put 0 % on a 32 °C section the prediction slowed by 15 %)
+        r["plan_w"] = r["base"] * sec_heat
         # Stop at this arrival checkpoint? (intermediate aid stations only)
         r["stop"] = stops.get(round(float(r["end_km"]), 1), 0) if r["cp_index"] is not None else 0
         stops_acc += r["stop"]
 
+    total_base = sum(r["plan_w"] for r in raw) or 1.0
+
     # Pinned plan: an objective the athlete chose anchors the finish; the
-    # estimate the page sends when he has not moved it does not.
+    # estimate the page sends when he has not moved it does not. The estimate
+    # is the model's finish: each section at its heat, with the planned stops.
     pin_plan = None
     if pins:
-        objective = target_time_s if has_objective(target_time_s, course.predicted_total_time_s) else None
-        pin_plan = _pinned_plan(raw, pins, objective)
+        if objective is None:
+            estimate_s = sum(r["model"] for r in raw) + sum(r["stop"] for r in raw)
+            objective = has_objective(target_time_s, estimate_s)
+        pin_plan = _pinned_plan(raw, pins, target_time_s if objective and target_time_s else None)
 
     # Pass 3: accumulate final times.
     sections = []
@@ -916,7 +1130,7 @@ def compute_passage_times(
             adj_cumulative = pin_plan["cums"][idx]  # exact at the pins (no float drift past the minute)
         else:
             # Plan (target): the moving budget split by the basis share.
-            adjusted_time = (moving_target_s * (r["base"] / total_base)) if moving_target_s else 0.0
+            adjusted_time = (moving_target_s * (r["plan_w"] / total_base)) if moving_target_s else 0.0
             adj_cumulative += adjusted_time
 
         arrival_stop = r["stop"]
@@ -962,18 +1176,23 @@ def compute_passage_times(
 
 
 # A pinned passage time may ask for a leg down to this share of the model's own
-# time for it (heat included), not faster: nobody runs a leg in half the time
-# his races say. Past it the pin is moved later and flagged.
-MIN_PIN_RATIO = 0.5
+# time for it (heat included), not faster: past it the pin is moved later and
+# flagged. Held-out finishers (UTMB Live, 152 702 legs of 10 min or more):
+# leg time / plan at the runner's own finish 0.70 at the 1st percentile, 0.79
+# at the 5th; below 0.70: 0.9 % of the legs (3 % against the plan of the
+# runner's level group). The former 0.5 (3 legs in 10 000) let a pin twice
+# too fast pass as « feasible ».
+MIN_PIN_RATIO = 0.7
 
 
-def has_objective(target_time_s: int | None, predicted_total_s: int | None) -> bool:
+def has_objective(target_time_s: int | None, estimate_s: float | None) -> bool:
     """An objective the athlete chose: set, and more than a minute away from the
-    estimate (the page sends the estimate itself until he moves the objective
-    — the same rule as the hero's « ton objectif »)."""
+    estimate, the finish with its planned stops (the page sends the estimate
+    itself until he moves the objective — the same rule as the hero's « ton
+    objectif »)."""
     if not target_time_s:
         return False
-    return not predicted_total_s or abs(int(target_time_s) - int(predicted_total_s)) > 60
+    return not estimate_s or abs(int(target_time_s) - int(round(estimate_s))) > 60
 
 
 def is_pinned(sections: list[dict] | None) -> bool:
@@ -1028,7 +1247,7 @@ def _distribute(raw: list[dict], anchors: list[tuple[int, int]]) -> dict:
             e = int(math.ceil((prev_e + stops_between + floor) / 60.0) * 60)
             budget = e - prev_e - stops_between
             clamped[i] = e
-        fill(prev_i + 1, i, budget, [raw[k]["base"] for k in range(prev_i + 1, i + 1)])
+        fill(prev_i + 1, i, budget, [raw[k].get("plan_w", raw[k]["base"]) for k in range(prev_i + 1, i + 1)])
         cums[i] = prev_cum + budget  # snap: the anchor is hit to the second
         arrive[i] = float(e)
         prev_i, prev_e, prev_cum = i, e, cums[i]
@@ -1092,6 +1311,44 @@ def _stops_by_km(stop_s_per_aid: int, aid_kms: set | None, aid_stops: dict | Non
     if stop_s_per_aid:
         return {round(float(k), 1): int(stop_s_per_aid) for k in (aid_kms or set())}
     return {}
+
+
+# ── aid-station stops: how long, by station and by runner ──
+# Fitted on 126 840 stops timed in and out on UTMB Live (≥ 20 s, < 4 h):
+#   ln(minutes) = 1.149 + 0.953·ln(T / 18 h) + 0.441·progress + 0.263·FOOD + 0.605·HOT_FOOD
+# (T = the runner's finish time, progress = share of the distance at the
+# station, DRINK the reference; residual SD 1.14 in ln). The plan takes the
+# MEDIAN stop. Scored on the held-out events with the model fitted on the
+# others (5 655 runners of the 5 events with stations timed in and out; 95 %
+# CI from 4 000 resamples of the events): the clock after each station off by
+# 15.2 min on average against 18.9 with the former 2 / 5 / 15 min (−3.7
+# [−6.0, −0.3]), the total of the stops by 26.1 min against 33.6 (−7.5
+# [−10.6, −1.1]). The log-normal mean (1.81 × the median) read the clock
+# worse (19.3 min); the mean times the share of runners who stop at all,
+# nearly unbiased on the total (+4 min; the median −15, the former −20), was
+# not better beyond the noise (16.6 min: −2.3 [−4.9, +1.9]). The Optimiste
+# and Sécurité columns scale the elapsed time, these stops included (see
+# build_scenarios). Kinds: eau → DRINK, ravito → FOOD, base vie → HOT_FOOD.
+STOP_LOG_COEF = (1.149, 0.953, 0.441)  # intercept (DRINK, 18 h, start), ln(T / 18 h), progress
+STOP_KIND_LOG = {"water": 0.0, "full": 0.263, "base": 0.605}
+STOP_REF_S = 18 * 3600
+
+
+def stop_median_s(kind: str, finish_s: float | None, progress: float) -> float:
+    """The median stop (seconds) of a runner finishing in ``finish_s`` at a station of ``kind``."""
+    if kind not in STOP_KIND_LOG:
+        return 0.0
+    t = float(finish_s) if finish_s and finish_s > 0 else STOP_REF_S
+    b0, b_t, b_p = STOP_LOG_COEF
+    p = max(0.0, min(1.0, float(progress)))
+    return 60.0 * math.exp(b0 + b_t * math.log(t / STOP_REF_S) + b_p * p + STOP_KIND_LOG[kind])
+
+
+def default_stop_s(kind: str, finish_s: float | None, progress: float) -> int:
+    """The planned stop: the median one (see above). No personal factor: the one his Strava races could give
+    (elapsed − moving) is not what was checked (stations timed in and out), and one race with a forgotten
+    pause pushed it to its cap."""
+    return int(round(stop_median_s(kind, finish_s, progress)))
 
 
 def replan_from_passage(
@@ -1259,6 +1516,16 @@ def replan_from_passage(
 
 # ── Three scenarios with an explicit switch rule ──
 
+# The safety column takes over when the elapsed time at the switch point is
+# this much over the plan's there: relative, so a 6 h race and a 40 h one are
+# read alike. At ~60 % of the distance (UTMB Live held-out finishers, each on
+# the plan of his level group), late by ≥ 5 % flagged 30 % of the runners
+# against 40 % for a fixed 15 min, with a better precision for those who
+# finished beyond the safety total (36 vs 28 %) and about the same recall (93
+# vs 96 %); 15 min flagged 45 % of the 24 h+ plans (LiveTrail alike).
+SWITCH_LATE_RATIO = 1.05
+
+
 def build_scenarios(
     sections: list[dict],
     start_offset_s: int,
@@ -1271,11 +1538,17 @@ def build_scenarios(
     """Target / optimistic / safety columns for every checkpoint, plus the
     rule that decides which column you are running.
 
-    The three plans share the SAME shape (even effort) and the same aid stops;
-    only the moving budget changes: cible = the plan (or the prediction when no
-    target is set), optimiste = cible × (1 − fast_pct), sécurité = cible ×
-    (1 + safe_pct). The switch checkpoint defaults to the one closest to 60 %
-    of the distance — past the point where a fast start can still be paid for.
+    The three plans share the SAME shape (even effort): cible = the plan (or
+    the prediction when no target is set), optimiste = its elapsed time (on
+    the move and at the stops) × (1 − fast_pct), sécurité = × (1 + safe_pct),
+    at every point. When cible is the prediction, the router passes the 20th /
+    80th percentiles of the finish time (race_calibration.scenario_pcts, read
+    on finish times, stops included) unless the athlete set his own: the two
+    columns are then that finish's P20 / P80; around an objective he set, the
+    same percentages around it. The switch checkpoint defaults to the one closest to 60 % of the
+    distance — past the point where a fast start can still be paid for — and
+    the safety column takes over at ≥ SWITCH_LATE_RATIO × the plan's elapsed
+    time there (``switch_late_s``: that margin, to the minute).
 
     With pinned checkpoints the cible column IS the pinned plan (to the minute)
     and the two others scale its moving time around it: they deliberately do
@@ -1295,8 +1568,8 @@ def build_scenarios(
         rows.append({
             "name": s["end_name"], "km": s["end_km"], "cp_index": s.get("end_checkpoint_index"),
             "target_s": int(round(start_offset_s + cum + stops)),
-            "fast_s": int(round(start_offset_s + cum * (1 - f_fast) + stops)),
-            "safe_s": int(round(start_offset_s + cum * (1 + f_safe) + stops)),
+            "fast_s": int(round(start_offset_s + (cum + stops) * (1 - f_fast))),
+            "safe_s": int(round(start_offset_s + (cum + stops) * (1 + f_safe))),
             "cutoff_elapsed_s": s.get("cutoff_elapsed_s"),
             "kind": s.get("kind"),
         })
@@ -1311,6 +1584,8 @@ def build_scenarios(
     want = float(switch_km) if switch_km else total_km * 0.6
     cps = [r for r in rows if r["cp_index"] is not None]
     switch = min(cps, key=lambda r: abs(float(r["km"]) - want)) if cps else None
+    # late by ≥ 5 % of the plan's elapsed time there → safety column (to the minute, at least 1)
+    late_s = max(60, int(round((switch["target_s"] - start_offset_s) * (SWITCH_LATE_RATIO - 1) / 60)) * 60) if switch else None
 
     total_target = rows[-1]["target_s"] - start_offset_s
     total_fast = rows[-1]["fast_s"] - start_offset_s
@@ -1318,7 +1593,8 @@ def build_scenarios(
     return {
         "rows": rows,
         "switch": switch,
-        "switch_late_s": 15 * 60,  # ≥ 15 min late at the switch point → safety column
+        "switch_late_s": late_s,
+        "switch_late_pct": round((SWITCH_LATE_RATIO - 1) * 100),
         "fast_pct": fast_pct, "safe_pct": safe_pct,
         "totals": {"target_s": int(total_target), "fast_s": int(total_fast), "safe_s": int(total_safe)},
         "basis": "target" if use_target else "prediction",

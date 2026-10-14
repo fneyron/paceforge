@@ -1,8 +1,8 @@
 """Race page › Préparation (#prep, v3, moved from Santé › Course): the taper
-against the −41–60 % band, nights J-14 → J-1 against usual + 30–60 min, the
-race week, the hot-race line; nothing after the race (v4.3: the recovery part,
-« Cœur la nuit » J+1 → J+14 and the driving line, is gone: recovery is
-Santé's)."""
+against a progressive band of the base (J-14 → J-8 at 55–70 %, J-7 → J-1 at
+35–50 %), nights J-14 → J-1 against usual + 30–60 min, the race week, the
+hot-race line; nothing after the race (v4.3: the recovery part, « Cœur la
+nuit » J+1 → J+14 and the driving line, is gone: recovery is Santé's)."""
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -56,7 +56,7 @@ def data(c: dict) -> dict:
 
 # ── before the race ─────────────────────────────────────────────────────────
 
-def test_taper_bars_against_the_41_60_percent_band_of_the_base():
+def test_taper_bars_against_the_progressive_band_of_the_base():
     rd = D + timedelta(days=5)  # Monday 12 Oct: S0 is its week, S-1 this one
     ss = steady(D)
     c = rp.taper(ss + [S(rd, minutes=900, km=160, workout_type=1)], route(rd), rd, D, NOW)
@@ -65,38 +65,45 @@ def test_taper_bars_against_the_41_60_percent_band_of_the_base():
     # a Monday race: J-14 → J-1 is S-2 and S-1 whole; S0 holds no day before the race, so no target
     assert [bool(col.get("tgt")) for col in c["cols"]] == [False] * 4 + [True, True, False]
     assert d["r"][5][0] == "sem. du 5 oct. · en cours" and c["cols"][5]["cur"]
-    assert d["r"][5][2] == "cible 2h55–4h20" and d["r"][4][2] == "cible 2h55–4h20"  # base 7h20: −41 to −60 %
+    # base 7h20: J-14 → J-8 (S-2) at 55–70 % of it, J-7 → J-1 (S-1) at 35–50 % (Bosquet 2007; Mujika 2003)
+    assert d["r"][4][2] == "cible 4h00–5h10" and d["r"][5][2] == "cible 2h35–3h40"
     assert d["r"][6][1] == "à venir" and d["r"][6][2] == "sans la course"
     assert d["r"][1][2] == "dans ta base"
     # resting readout: this week's hours are Activités' (its week heading), so the base and the target instead
     assert c["rest"] and d["sel"] == 7 and c["read"] == ["S‑6 → S0", "base : 7h20 par semaine",
-                                                        "cible J‑14 → J‑1 : 2h55–4h20 par semaine"]
+                                                        "cible : 4h00–5h10 puis 2h35–3h40"]
     assert d["back"] == 5  # ‹ from the rest: this week, not S0 « à venir »
     assert "extrapolation" in c["summary"]  # 160 km: beyond what was studied
     assert c["sentence"] == "Moins de volume, même intensité\u00a0: c'est elle qui entretient ta forme."
-    heavy = ss + [S(D - timedelta(days=1), minutes=300, i=1)]  # 1h50 + 5 h this week: above 4h20
+    heavy = ss + [S(D - timedelta(days=1), minutes=300, i=1)]  # 1h50 + 5 h this week: above 3h40
     assert rp.taper(heavy, route(rd), rd, D, NOW)["sentence"].startswith("Déjà au-dessus de ta cible")
     early = rp.taper(ss, route(D + timedelta(days=20)), D + timedelta(days=20), D, NOW)
-    assert early["sentence"] == "Affûtage dès le mar. 13 oct.\u00a0: 41 à 60\u202f% de volume en moins, même intensité."
+    assert early["sentence"] == ("Affûtage dès le mar. 13 oct.\u00a0: −30 à −45\u202f% de volume, puis −50 à −65\u202f%, "
+                                 "même intensité.")
+    assert len(early["sentence"]) <= 90
     assert rp.taper([], route(rd), rd, D, NOW) is None
     # a race inside the base weeks is no training volume: the base leaves it out
     raced = ss + [S(D - timedelta(days=17), minutes=900, km=100, workout_type=1, i=2)]
-    assert data(rp.taper(raced, route(rd), rd, D, NOW))["r"][5][2] == "cible 2h55–4h20"
+    assert data(rp.taper(raced, route(rd), rd, D, NOW))["r"][5][2] == "cible 2h35–3h40"
+    # the base is the median of the 4 weeks: one long week does not lift it
+    long = ss + [S(D - timedelta(days=12), minutes=600, km=60, i=3)]
+    assert data(rp.taper(long, route(rd), rd, D, NOW))["r"][5][2] == "cible 2h35–3h40"
 
 
 def test_a_partial_taper_week_is_compared_with_its_own_days():
-    """L-F7: a Wednesday race. J-14 → J-1 holds 5 days of S-2, S-1 and 2 days of
-    S0: S0's target is 2/7 of the band, S-2's its 2 base days + 5/7 of the band;
-    a textbook 50 % taper sits inside every band, base volume never does."""
+    """L-F7: a Wednesday race. J-14 → J-1 holds 5 days of S-2 (J-14 → J-10), S-1
+    (J-9, J-8 then J-7 → J-3) and 2 days of S0 (J-2, J-1): each day weighs 1/7 of
+    the week at its band (55–70 % of the base to J-8, 35–50 % from J-7), S-2 also
+    its 2 base days; a textbook progressive taper (62 % then 42 % of the base)
+    sits inside every band, base volume never does."""
     rd = date(2026, 10, 21)  # Wednesday
     today, now = rd - timedelta(days=1), datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
     base = steady(rd - timedelta(days=14), days=60)  # 7h20 a week until J-14
-    per_day = 440 / 7 / 2  # half the base, every day of J-14 → J-1
-    taper_days = [S(rd - timedelta(days=k), minutes=per_day, i=5) for k in range(1, 15)]
+    taper_days = [S(rd - timedelta(days=k), minutes=440 / 7 * (0.62 if k > 7 else 0.42), i=5) for k in range(1, 15)]
     c = rp.taper(base + taper_days, route(rd), rd, today, now)
     d = data(c)
     assert [col.get("tgt") is not None for col in c["cols"]] == [False] * 4 + [True] * 3
-    assert d["r"][6][2] == "sans la course · cible 50 min–1h15 · 2 jours d'affûtage"  # 2/7 × 2h55–4h20
+    assert d["r"][6][2] == "sans la course · cible 45 min–1h05 · 2 jours d'affûtage"  # 2/7 × 2h35–3h40
     assert d["r"][4][2].startswith("cible ") and d["r"][4][2].endswith(" · 5 jours d'affûtage")
     for col in c["cols"][4:]:  # each bar inside its own band (y grows downwards)
         assert col["tgt"]["y"] <= col["y"] <= col["tgt"]["y"] + col["tgt"]["h"], col
@@ -106,6 +113,31 @@ def test_a_partial_taper_week_is_compared_with_its_own_days():
     assert c["cols"][6]["y"] < c["cols"][6]["tgt"]["y"]
     assert c["sentence"].startswith("Déjà au-dessus de ta cible")
     assert rp.taper_days(date(2026, 10, 5), rd) == (2, 5) and rp.taper_days(date(2026, 10, 19), rd) == (0, 2)
+    assert [rp.taper_split(date(2026, 10, m), rd) for m in (5, 12, 19)] == [(2, 5, 0), (0, 2, 5), (0, 0, 2)]
+
+
+def test_the_weeks_and_their_links_are_the_athletes_as_on_activites():
+    """Activités pages the athlete's weeks (Monday to Sunday in his zone, 6 a page, newest first): at 00:30 on a
+    Monday in Paris (Sunday 22:30 UTC) this week starts that Monday, a run of that night counts in it and its link
+    opens page 1 (the UTC Monday, the week before, gave « page=0 »)."""
+    from dataclasses import replace
+    from zoneinfo import ZoneInfo
+
+    monday = date(2026, 10, 12)
+    now = datetime(2026, 10, 11, 22, 30, tzinfo=timezone.utc)  # Monday 00:30 in Paris
+    rd = monday + timedelta(days=12)  # Saturday 24 Oct: S0 the week of the 19th, S-1 this one
+    night_run = replace(S(monday, minutes=20, km=4, i=9), start=now - timedelta(minutes=20))
+    c = rp.taper(steady(monday - timedelta(days=1), days=60) + [night_run], route(rd), rd, monday, now,
+                 zone=ZoneInfo("Europe/Paris"))
+    d = data(c)
+    assert [col["cur"] for col in c["cols"]].index(True) == 5  # the week of the 12th
+    assert d["r"][5][1] == "20 min"  # the run of that night is this week's
+    assert d["h"][5]["href"] == "/activities?page=1#week-2026-10-12"
+    assert d["h"][4]["href"] == "/activities?page=1#week-2026-10-05"
+    # 6 weeks a page: the week of 31 August is on page 2 (page 1 with the UTC Monday)
+    paris = rp.athlete_week(monday, now, ZoneInfo("Europe/Paris"))
+    assert rp.activities_href(date(2026, 8, 31), paris) == "/activities?page=2#week-2026-08-31"
+    assert rp.activities_href(date(2026, 8, 31), rp.athlete_week(monday, now, timezone.utc)).startswith("/activities?page=1")
 
 
 def _pre_race_nights(rd: date, nap_day: date | None = None, days=range(0, 90)):
@@ -144,8 +176,15 @@ def test_nights_without_a_usual_have_no_band_and_without_a_watch_say_so():
 
 
 def test_race_week_food_and_the_hot_line():
+    # beyond 4 h: about 10 g/kg a day, 8–10 with a sensitive stomach (Tiller 2019)
     f = rp.food_plan(route(D, hour=6), 60780, 72)
-    assert "720 à 860 g pour tes 72 kg" in f["load"] and "(vers 03:00)" in f["breakfast"]
+    assert "environ 10 g" in f["load"] and "720 g pour tes 72 kg" in f["load"] and "8–10 g/kg si ton estomac" in f["load"]
+    assert "580" not in f["load"]  # the sensitive stomach's range is said apart, never as everyone's grams
+    # breakfast 2–3 g/kg 3–4 h before (Thomas 2016); fluid 5–7 ml/kg ≥ 4 h before, 3–5 more ~2 h before (Sawka 2007)
+    assert "(vers 02:00–03:00)" in f["breakfast"] and "145 à 215 g" in f["breakfast"]
+    assert "350 à 500 ml" in f["fluid"] and "200 à 350 ml" in f["fluid"] and "aliment salé" in f["fluid"]
+    # 90 min to 4 h: 10–12 g/kg (Burke 2011)
+    assert "720 à 860 g pour tes 72 kg" in rp.food_plan(route(D, hour=6), 3 * 3600, 72)["load"]
     assert rp.food_plan(route(D), 3600, 72)["short"].startswith("Pas besoin de surcharge")
     assert rp.food_plan(route(D), None, 72) is None
     assert "Ajoute ton poids" in rp.food_plan(route(D), 60780, None)["weight_link"]["text"]
@@ -197,7 +236,7 @@ async def test_race_page_prep_before_and_after_the_race(client: AsyncClient, db_
     assert 'id="prep"' in html and "Affûtage · J‑5" in html and "pf-viz.js" in html
     assert 'data-viz-key="affutage"' in html and 'data-viz-key="nuits-course"' in html
     assert "Vise 30 à 60 min de plus par jour, siestes comprises." in html
-    assert "Semaine de course" in html and "700 à 840 g" in html and "Nutrition" not in html
+    assert "Semaine de course" in html and "700 g pour tes 70" in html and "Nutrition" not in html  # 70 kg, ~17 h
     assert "Course chaude" in html
     assert "Prêt pour la distance" not in html and "Cœur la nuit" not in html
     day = await _race(db_session, test_user, today, name="Aujourd'hui")

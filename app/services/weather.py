@@ -32,10 +32,62 @@ async def get_weather_forecast(lat: float, lon: float, date: str, points: list |
         if result:
             # Lets the plan page refresh a forecast on its own once it is stale.
             result["fetched_at"] = int(time.time())
+            if result.get("utc_offset_s") is None and not result.get("tz"):  # no forecast: the start's own zone
+                result["tz"] = await start_zone_name(lat, lon)
         return result
     except Exception:
         logger.exception("Failed to get weather for %s", date)
         return None
+
+
+# One upstream call per place, race day and points for a while: a plan page asks again at every visit and a
+# forecast changes by the hour. Per worker, bounded (about 0.2 MB a 24-point forecast); expired entries go at
+# every insert; a failure is never cached.
+FORECAST_TTL_S = 30 * 60
+FORECAST_CACHE_SIZE = 128
+FORECAST_MAX_LOCS = 24  # the start and the first 23 distinct points: what one Open-Meteo call asks for
+_FORECAST_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _forecast_locs(lat: float, lon: float, points: list | None) -> list[list[float]]:
+    """[[lat, lon, km]] the forecast is fetched at: the start, then each point more than ~200 m from the ones
+    kept, the first FORECAST_MAX_LOCS only."""
+    locs = [[float(lat), float(lon), 0.0]]
+    for pt in points or []:
+        if len(locs) >= FORECAST_MAX_LOCS:
+            break
+        try:
+            plat, plon, pkm = float(pt[0]), float(pt[1]), float(pt[2])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if all(abs(plat - l[0]) > 0.002 or abs(plon - l[1]) > 0.002 for l in locs):
+            locs.append([plat, plon, pkm])
+    return locs
+
+
+def _forecast_key(lat: float, lon: float, date: str, points: list | None) -> tuple:
+    """The day and the places actually fetched (never the whole points list a client sent)."""
+    return str(date)[:10], tuple((round(a, 3), round(b, 3), round(k, 1)) for a, b, k in _forecast_locs(lat, lon, points))
+
+
+async def cached_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
+    """get_weather_forecast through the per-worker cache (the places fetched, the date; FORECAST_TTL_S)."""
+    import copy
+
+    key = _forecast_key(lat, lon, date, points)
+    now = time.monotonic()
+    hit = _FORECAST_CACHE.get(key)
+    if hit and now - hit[0] < FORECAST_TTL_S:
+        return copy.deepcopy(hit[1])
+    locs = _forecast_locs(lat, lon, points)
+    result = await get_weather_forecast(lat, lon, date, points=locs[1:])
+    if result:
+        for k in [k for k, (at, _) in _FORECAST_CACHE.items() if now - at >= FORECAST_TTL_S]:
+            del _FORECAST_CACHE[k]
+        if len(_FORECAST_CACHE) >= FORECAST_CACHE_SIZE:
+            _FORECAST_CACHE.pop(min(_FORECAST_CACHE, key=lambda k: _FORECAST_CACHE[k][0]))
+        _FORECAST_CACHE[key] = (now, copy.deepcopy(result))
+    return result
 
 
 HOURS = 48  # two days of hourly data: the race may cross midnight
@@ -78,15 +130,7 @@ def _hourly_arrays(data: dict, fallback: dict | None = None) -> dict | None:
 
 async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
     """Real forecast for dates within 15 days, at the start and at each point."""
-    locs = [[float(lat), float(lon), 0.0]]
-    for pt in points or []:
-        try:
-            plat, plon, pkm = float(pt[0]), float(pt[1]), float(pt[2])
-        except (TypeError, ValueError, IndexError):
-            continue
-        if all(abs(plat - l[0]) > 0.002 or abs(plon - l[1]) > 0.002 for l in locs):
-            locs.append([plat, plon, pkm])
-    locs = locs[:24]
+    locs = _forecast_locs(lat, lon, points)
     end_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(FORECAST_URL, params={
@@ -141,6 +185,9 @@ async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None
         "weather_code": day_code,
         "source": "prevision",
         "date": date,
+        # the start's own time zone on that date (timezone=auto): the race's clock for night by the sun
+        "utc_offset_s": data.get("utc_offset_seconds"),
+        "tz": _zone(data.get("timezone")),
         "hourly": {
             "temps": [round(t, 1) for t in hourly_temps],
             "humidity": [round(h, 0) for h in hourly_hum],
@@ -370,7 +417,10 @@ WMO_LABELS = {
 
 
 def compute_heat_factor(temp_c: float, humidity_pct: float) -> float:
-    """Pace penalty factor based on temperature and humidity. >= 1.0."""
+    """Pace penalty factor based on temperature and humidity. >= 1.0. Humidity
+    adds to the heat only from 15 °C, where the curve starts, phased in to its
+    full weight at 20 °C: a cool, damp hour is not a hot one, and 15.0 °C reads
+    as 14.9 °C (no step of up to 3.5 % there)."""
     if temp_c < 15:
         factor = 1.0
     elif temp_c < 20:
@@ -384,8 +434,8 @@ def compute_heat_factor(temp_c: float, humidity_pct: float) -> float:
     else:
         factor = 1.20 + (temp_c - 35) * 0.02
 
-    if humidity_pct > 65:
-        factor += (humidity_pct - 65) * 0.001
+    if temp_c > 15 and humidity_pct > 65:
+        factor += (humidity_pct - 65) * 0.001 * min(1.0, (temp_c - 15) / 5)
 
     return min(factor, 1.5)
 
@@ -404,6 +454,123 @@ _transport: httpx.AsyncBaseTransport | None = None
 
 class LookupUnavailable(Exception):
     """Open-Meteo did not answer (a timeout, a 5xx, a 429): ask again at a later sync."""
+
+
+# Open-Meteo down: one marker shared by every worker (Redis), set by a failed background lookup (a past race's
+# heat, a start point's time zone) for OUTAGE_S; while it is there, none of them asks. Redis down: nothing is
+# shared and each lookup goes as before.
+OUTAGE_KEY = "paceforge:openmeteo:down"
+OUTAGE_S = 15 * 60
+
+
+async def _shared(call):
+    try:
+        import redis.asyncio as aioredis
+
+        from app.config import settings
+
+        client = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
+    except Exception:
+        return None
+    try:
+        return await call(client)
+    except Exception:
+        return None
+    finally:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+def _zone(name) -> str | None:
+    """An IANA time zone name zoneinfo reads, else None (« GMT » of an answer without a place is none)."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    if not isinstance(name, str) or "/" not in name:
+        return None
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    return name
+
+
+async def zone_name(lat: float, lon: float) -> str | None:
+    """The IANA time zone of a place (« Europe/Paris »), from Open-Meteo's forecast (timezone=auto, one day).
+    None for an answer without one. Raises LookupUnavailable."""
+    data = await _get(FORECAST_URL, {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}", "timezone": "auto",
+                                     "forecast_days": 1, "hourly": "temperature_2m"})
+    return _zone(data.get("timezone")) if isinstance(data, dict) else None
+
+
+# A race's start zone when no forecast gives its offset (more than 15 days out): asked with the weather (a POST,
+# never while a page renders), per place and worker: a zone, or that the place has none, kept a day; a lookup that
+# failed (Open-Meteo down, slow, rate-limiting) asked again after ZONE_RETRY_S at most, never kept as « none ».
+ZONE_TTL_S = 24 * 3600
+ZONE_RETRY_S = 15 * 60
+ZONE_CACHE_SIZE = 512
+_ZONES: dict[tuple, tuple[float, str | None]] = {}  # place -> (until, zone)
+
+
+async def start_zone_name(lat: float, lon: float) -> str | None:
+    """The start's IANA zone for the race's clock (race_match.race_clock), or None: off like the background
+    lookups (ACTIVITY_ENV_FETCH, the outage marker); a failure sets the marker."""
+    from app.config import settings
+
+    key, now = (round(float(lat), 2), round(float(lon), 2)), time.monotonic()
+    hit = _ZONES.get(key)
+    if hit and now < hit[0]:
+        return hit[1]
+    if not settings.ACTIVITY_ENV_FETCH or await lookups_paused():
+        return None
+    try:
+        name, ttl = await zone_name(*key), ZONE_TTL_S
+    except LookupUnavailable:
+        await pause_lookups()
+        name, ttl = None, ZONE_RETRY_S
+    for k in [k for k, (until, _) in _ZONES.items() if now >= until]:
+        del _ZONES[k]
+    if len(_ZONES) >= ZONE_CACHE_SIZE:
+        _ZONES.pop(min(_ZONES, key=lambda k: _ZONES[k][0]))
+    _ZONES[key] = (now + ttl, name)
+    return name
+
+
+class RedisMarker:
+    """The outage marker in Redis: every worker reads it; Redis down, never set and never an error."""
+
+    async def is_set(self) -> bool:
+        return bool(await _shared(lambda r: r.exists(OUTAGE_KEY)))
+
+    async def set(self) -> None:
+        await _shared(lambda r: r.set(OUTAGE_KEY, "1", ex=OUTAGE_S))
+
+
+class MemoryMarker:
+    """The same marker in this process only (tests: no Redis)."""
+
+    def __init__(self) -> None:
+        self.until = 0.0
+
+    async def is_set(self) -> bool:
+        return time.monotonic() < self.until
+
+    async def set(self) -> None:
+        self.until = time.monotonic() + OUTAGE_S
+
+
+_outage: RedisMarker | MemoryMarker = RedisMarker()
+
+
+async def lookups_paused() -> bool:
+    """True while a background lookup failed in the last OUTAGE_S, on any worker."""
+    return await _outage.is_set()
+
+
+async def pause_lookups() -> None:
+    """After a failed background lookup: none for OUTAGE_S, on every worker."""
+    await _outage.set()
 
 
 async def _get(url: str, params: dict) -> dict | list | None:
@@ -467,3 +634,32 @@ async def feels_like(lat: float, lon: float, first: date, last: date, today: dat
     if not isinstance(times, list) or not isinstance(temps, list):
         return {}
     return {str(t): v for t, raw in zip(times, temps, strict=False) if (v := _value(raw)) is not None}
+
+
+async def temperature_humidity(lat: float, lon: float, first: date, last: date,
+                               today: date) -> tuple[dict[str, tuple], float | None]:
+    """Open-Meteo's hourly air temperature (°C) and relative humidity (%) at a
+    point from `first` to `last` (GMT days), keyed by GMT hour (« 2026-10-01T06:00 »),
+    and the elevation (m) those temperatures are for: the forecast API with
+    past_days while `first` is within its last 92 days, else the ERA5 archive.
+    What a past race's heat is read on (the same two variables as the course's
+    forecast). ({}, None) for an answer without values. Raises LookupUnavailable."""
+    point = {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}",
+             "hourly": "temperature_2m,relative_humidity_2m", "timezone": "GMT"}
+    if (today - first).days < PAST_DAYS:
+        data = await _get(FORECAST_URL, {**point, "past_days": max(1, (today - first).days + 1), "forecast_days": 2})
+    else:
+        data = await _get(ARCHIVE_URL, {**point, "start_date": first.isoformat(), "end_date": last.isoformat()})
+    hourly = data.get("hourly") if isinstance(data, dict) else None
+    if not isinstance(hourly, dict):
+        return {}, None
+    times, temps, hums = hourly.get("time"), hourly.get("temperature_2m"), hourly.get("relative_humidity_2m")
+    if not isinstance(times, list) or not isinstance(temps, list):
+        return {}, None
+    hums = hums if isinstance(hums, list) else []
+    out = {}
+    for i, t in enumerate(times):
+        v = _value(temps[i]) if i < len(temps) else None
+        if v is not None:
+            out[str(t)] = (v, _value(hums[i]) if i < len(hums) else None)
+    return out, _value(data.get("elevation"))

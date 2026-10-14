@@ -2,9 +2,11 @@
 (effort-km/h model) and his matched races shape it (fatigue tilt).
 
 - D+ measured with one algorithm for the course and for the past races
-- what counts as a race (no triathlon run leg, relay leg, abandon)
+- what counts as a race (no triathlon run leg, relay leg, abandon, hike; whole words)
 - recency weighting of the races
-- the fatigue tilt fitted on every matched checkpoint, combined over races
+- the level: ln T = c + k ln E, k shrunk toward the population 1.28, c the weighted mean
+- the races' heat taken out, the athlete's own stops
+- the fatigue tilt fitted on every matched checkpoint, combined over races (m / (m + 2))
 """
 
 import math
@@ -217,9 +219,13 @@ def test_triathlon_legs_and_relays_never_come_back():
         {"name": "Ultra 01 - Relais 7", "hours": 1.74, "ekm_h": 17.5},
         {"name": "Reco CCC", "hours": 8.0, "ekm_h": 8.0},
     ]
-    used, ignored = rc.select_best_efforts(pts)
-    # one race left: the recce still helps, the tri leg and the relay don't
-    assert {p["name"] for p in used} == {"UTMB", "Reco CCC"}
+    used, ignored = rc.select_races(pts)
+    # one real race left: it alone (a recce beside it would read him slow); the tri leg and the relay never come back
+    assert {p["name"] for p in used} == {"UTMB"}
+    assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais", "pas une course"}
+    # no real race at all: the recce still beats nothing, never the tri leg or the relay
+    used, ignored = rc.select_races(pts[1:])
+    assert {p["name"] for p in used} == {"Reco CCC"}
     assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais"}
 
 
@@ -235,10 +241,10 @@ def test_long_efforts_help_when_the_tagged_races_are_all_excluded():
     assert model and model["n_used"] >= 2
     assert {p["name"] for p in model["races"]} <= {p["name"] for p in long_runs}
     assert {p["name"] for p in model["ignored"]} >= {"SaintéLyon relais", "Ironman 70.3 Nice"}
-    # one real race left: still with the long efforts
+    # one real race left: the level is read on it alone (long runs beside it read him slow)
     one = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), legs[0]]
     model = rc.model_from_points(one + long_runs, today=date(2026, 10, 1))
-    assert model["n_used"] >= 2 and "Trail X" in {p["name"] for p in model["races"]}
+    assert model["n_used"] == 1 and {p["name"] for p in model["races"]} == {"Trail X"} and model["n_eff"] == 1
     # two real races: the tagged races alone
     two = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), rc.race_point("Ultra Y", 100, 6000, 17, True, day=d)]
     model = rc.model_from_points(two + long_runs, today=date(2026, 10, 1))
@@ -292,11 +298,16 @@ def test_owner_races_selection():
         assert rc.not_a_race_reason(leg) == "course d'un triathlon"
     assert ignored.get("Ultra 01 - Relais 7") == "relais"
     used = {p["name"] for p in model["races"]}
-    assert {"UTMB Transjeju 100M - 2eme", "TDS UTMB - 30eme", "100k UTMB Chiang Mai"} <= used
+    # every real race counts (no « best effort per duration »: it read him faster than he is)
+    assert used == {"UTMB Transjeju 100M - 2eme", "TDS UTMB - 30eme", "100k UTMB Chiang Mai", "Marathon du mont blanc 90km",
+                    "Marathon du mont blanc 90k", "Trans Inthanon", "Maxi Race", "Semi Pollencia"}
     assert not used & {"IM 70.3 monde - CaP", "Alpsman - CAP", "Half IM Greece - Run", "70.3 Marbella - Run", "Ultra 01 - Relais 7"}
-    # replayed on his Transjeju course (147.9 km, 4854 m by the effort algorithm): 16h-17h30 moving (real 16h04)
+    # replayed on his Transjeju course (147.9 km, 4854 m by the effort algorithm): 18h-19h moving at the weighted
+    # mean of his races (real 16h04, his best race by far: the former best-effort selection said 16h47)
     hours = rc.predict_total_s(model, rc.effort_km(147.9, 4854)) / 3600
-    assert 16.0 < hours < 17.5
+    assert 18.0 < hours < 19.0
+    # his own exponent, shrunk toward the population's: races from 21 to 237 effort-km say a little less than 1.28
+    assert 1.18 < model["k"] < 1.28 and model["b"] == pytest.approx(1 - 1 / model["k"])
 
 
 # ── recency ──
@@ -318,7 +329,6 @@ def test_recent_races_weigh_more_in_the_fit(monkeypatch):
         rc.race_point("Old ultra", 100, 4000, 10.0, True, day=today - timedelta(days=760)),
         rc.race_point("Recent ultra", 100, 4000, 9.0, True, day=today - timedelta(days=30)),
     ]
-    monkeypatch.setattr(rc, "BEST_BIN_FACTOR", 1.05)  # narrow duration bins: both kept
     monkeypatch.setattr(rc, "RECENCY_HALF_LIFE_DAYS", None)
     flat = rc.model_from_points(pts, today=today)
     monkeypatch.setattr(rc, "RECENCY_HALF_LIFE_DAYS", 548.0)
@@ -371,8 +381,8 @@ def test_tilt_fitted_on_all_checkpoints_recovers_the_runner_shape():
     actual = _passages(cj, cps, 0.32, total)  # a runner who fades more than the field
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, actual, total, 6, 0)
     assert res["raw"] == pytest.approx(0.32, abs=0.011) and res["n"] == 5
-    # 5 checkpoints: 5/9 of the way from the neutral tilt
-    assert res["tilt"] == pytest.approx(rs.DEFAULT_FATIGUE_TILT + 5 / 9 * (res["raw"] - rs.DEFAULT_FATIGUE_TILT), abs=1e-3)
+    # one race alone: a third of the way from the neutral tilt (m / (m + 2), m = 1), whatever its checkpoints
+    assert res["tilt"] == pytest.approx(rs.DEFAULT_FATIGUE_TILT + 1 / 3 * (res["raw"] - rs.DEFAULT_FATIGUE_TILT), abs=1e-3)
     # one who fades less
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, _passages(cj, cps, 0.12, total), total, 6, 0)
     assert res["raw"] == pytest.approx(0.12, abs=0.011) and res["tilt"] < rs.DEFAULT_FATIGUE_TILT
@@ -383,7 +393,7 @@ def test_tilt_with_one_checkpoint_moves_little_and_none_without():
     cps = [{"name": "CP", "distance_km": 30.0}]
     total = 8 * 3600
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, _passages(cj, cps, 0.40, total), total, 6, 0)
-    assert res["n"] == 1 and abs(res["tilt"] - rs.DEFAULT_FATIGUE_TILT) <= 0.2 * (0.40 - rs.DEFAULT_FATIGUE_TILT) + 1e-3
+    assert res["n"] == 1 and abs(res["tilt"] - rs.DEFAULT_FATIGUE_TILT) <= (0.40 - rs.DEFAULT_FATIGUE_TILT) / 3 + 1e-3
     assert rc.measure_fatigue_tilt(cj, _prof(), cps, [], total, 6, 0) is None
     # a checkpoint at the finish says nothing: the plan is pinned there
     assert rc.measure_fatigue_tilt(cj, _prof(), [{"name": "F", "distance_km": 59.5}],
@@ -415,7 +425,7 @@ def test_tilt_is_clamped():
 
 
 @pytest.mark.asyncio
-async def test_personal_tilt_is_the_median_of_the_three_latest_races(db_session, test_user):
+async def test_personal_tilt_is_the_shrunk_mean_of_the_three_latest_races(db_session, test_user):
     def route(name, tilt, day, model=rs.FATIGUE_MODEL):
         return Route(user_id=test_user.id, name=name, total_distance_km=100,
                      result_json={"fatigue_tilt": tilt, "fatigue_model": model, "activity_date": day})
@@ -428,7 +438,8 @@ async def test_personal_tilt_is_the_median_of_the_three_latest_races(db_session,
         route("2025a", 0.20, "05/12/2025"),
     ])
     await db_session.flush()
-    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.20)
+    # the three latest (0.10, 0.20, 0.30): their mean 0.20, 3/5 of the way from the neutral 0.22
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.22 + 0.6 * (0.20 - 0.22))
 
 
 @pytest.mark.asyncio
@@ -444,7 +455,9 @@ async def test_personal_tilt_prefers_the_tilts_fitted_on_every_checkpoint(db_ses
         route("all CPs 2025a", 0.12, "05/12/2025", cps=9),
     ])
     await db_session.flush()
-    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.12)
+    # stored with the former n / (n + 4) shrinkage: its raw tilt 0.22 − 0.10 × 13/9, then a third of the way (one race)
+    raw = 0.22 + (0.12 - 0.22) * 13 / 9
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.22 + (raw - 0.22) / 3, abs=1e-3)
 
 
 @pytest.mark.asyncio

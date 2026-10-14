@@ -80,7 +80,7 @@
                 </div>
                 <div class="rounded-2xl bg-white p-5">
                     <h3 class="font-semibold text-gray-900">La nuit{{ tag() }}</h3>
-                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">On avance moins vite de nuit. Le modèle utilise une plage fixe de 21 h à 6 h, avec une transition au crépuscule et à l’aube. C’est une approximation : elle ne suit pas les heures de lever et de coucher du soleil selon le lieu et la saison.</p>
+                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">On avance moins vite de nuit. La nuit suit le soleil, là où tu passes et à ton heure de passage (soleil à plus de 6° sous l’horizon), avec une transition au crépuscule et à l’aube. Sans date de course, une plage fixe de 21 h à 6 h.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
                     <h3 class="font-semibold text-gray-900">Le terrain</h3>
@@ -91,14 +91,14 @@
                     <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Prévision météo à chaque point, à ton heure de passage. Au-delà de 15 jours, les normales de saison.</p>
                 </div>
                 <div class="rounded-2xl bg-white p-5">
-                    <h3 class="font-semibold text-gray-900">Tes arrêts</h3>
-                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Un temps d'arrêt par type de poste (eau, ravito, base vie), que tu règles point par point.</p>
+                    <h3 class="font-semibold text-gray-900">Tes arrêts{{ tag() }}</h3>
+                    <p class="mt-1.5 text-sm text-gray-500 leading-relaxed">Un temps d'arrêt par type de poste (eau, ravito, base vie), plus long quand ta course est longue, mesuré sur les arrêts chronométrés d'UTMB Live. Tu le règles point par point.</p>
                 </div>
             </div>
 
             <h3 class="mt-10 text-lg font-bold tracking-tight text-gray-900">Puis ton niveau</h3>
             <div class="mt-4 space-y-4 text-sm sm:text-base text-gray-600 leading-relaxed">
-                <p><b class="font-semibold text-gray-900">Tes courses.</b> PaceForge prend tes courses Strava marquées «&nbsp;Course&nbsp;» et mesure ce que tu tiens en km-effort par heure : 1&nbsp;km à plat ou 100&nbsp;m de D+ valent chacun 1&nbsp;km-effort. Ce rythme baisse quand la course s'allonge. Avec une course, on prend une baisse type. Avec deux ou plus, c'est la tienne. Le plan est ensuite mis à ce niveau, puis la fatigue et la nuit sont recalculées sur ces nouvelles heures.</p>
+                <p><b class="font-semibold text-gray-900">Tes courses.</b> PaceForge prend tes courses Strava marquées «&nbsp;Course&nbsp;» et mesure ce que tu tiens en km-effort par heure : 1&nbsp;km à plat ou 100&nbsp;m de D+ valent chacun 1&nbsp;km-effort. Ce rythme baisse quand la course s'allonge. Avec une course, on prend la baisse mesurée sur des milliers de finishers. Avec plusieurs courses de longueurs différentes, on se rapproche de la tienne. Le plan est ensuite mis à ce niveau, puis la fatigue et la nuit sont recalculées sur ces nouvelles heures.</p>
                 <p><b class="font-semibold text-gray-900">Ta façon de finir.</b> Après une course, associe ton activité au plan. Si tu as fini plus fort ou plus faible que prévu, le plan suivant en tient compte.</p>
             </div>
         </div>
@@ -110,7 +110,7 @@
         <div class="max-w-3xl mx-auto px-5 sm:px-6">
             <h2 id="test" class="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Comment on le teste</h2>
             <div class="mt-4 space-y-3 text-sm sm:text-base text-gray-600 leading-relaxed">
-                <p>On a gardé de côté <b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_races }}</b> courses{% if va.held_out_events %} (<b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_events }}</b> événements){% endif %} que le modèle n'a jamais vues pendant le réglage.</p>
+                <p>On a gardé de côté <b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_races }}</b> courses{% if va.held_out_events %} (<b class="font-semibold text-gray-900 tabular-nums">{{ va.held_out_events }}</b> événements){% endif %} sur lesquelles la courbe n'est pas ajustée. Quelques réglages ont toutefois été choisis en les regardant : ce test est un peu optimiste.</p>
                 <p>Pour chaque coureur, on part de son temps final réel et on regarde où le plan le fait passer aux points intermédiaires.</p>
             </div>
 

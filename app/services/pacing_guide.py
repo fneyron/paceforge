@@ -116,11 +116,14 @@ def build_pacing_guide(
 ) -> dict:
     """Return {"blocks": [...], "alerts": [...], "caps": {...}, "plan_factor": f}.
 
-    Planned times per block are the even-effort plan (segment base_time share
-    of the target) when a target exists, else the model prediction — so the VAM
-    and paces shown are the ones that hit the objective. When checkpoints are
-    pinned (``plan_sections`` from compute_passage_times), each leg's planned
-    time is spread over its km instead: the VAM is the one that hits the pins.
+    Planned times per block are the plan's own: when a target exists and the
+    plan's sections are given (``plan_sections`` from compute_passage_times),
+    each leg's planned moving time is spread over its km by their effort basis
+    — the plan's weights, terrain times each leg's heat, its stops out; pinned
+    legs the same way, so the VAM is the one that hits the pins. A target
+    without sections: its moving time (the stops out) by the segments' basis.
+    Else the model prediction. The VAM and paces shown are the ones that hit
+    the objective, on a hot day as on a cool one.
     """
     segs = course.segments
     total_km = course.total_distance_km or 1.0
@@ -128,14 +131,17 @@ def build_pacing_guide(
         return {"blocks": [], "alerts": [], "caps": {}, "plan_factor": 1.0, "total_km": total_km}
 
     total_base = sum((s.base_time_s or s.predicted_time_s) for s in segs) or 1.0
-    if plan_sections and any(s.get("pinned") for s in plan_sections):
-        pinned_times = _seg_times_from_sections(segs, plan_sections)
+    planned = bool(plan_sections) and all(x.get("adjusted_time_s") is not None for x in plan_sections)
+    if planned and (target_time_s or any(x.get("pinned") for x in plan_sections)):
+        plan_times = _seg_times_from_sections(segs, plan_sections)
 
         def seg_time(s):
-            return pinned_times[id(s)]
+            return plan_times[id(s)]
     elif target_time_s:
+        moving_s = max(1.0, target_time_s - sum(float(x.get("stop_s") or 0) for x in plan_sections or []))
+
         def seg_time(s):
-            return target_time_s * ((s.base_time_s or s.predicted_time_s) / total_base)
+            return moving_s * ((s.base_time_s or s.predicted_time_s) / total_base)
     else:
         def seg_time(s):
             return s.predicted_time_s

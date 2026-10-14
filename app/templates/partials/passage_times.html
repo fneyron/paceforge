@@ -40,7 +40,7 @@
     <button type="button" onclick="window._sim && window._sim.openAddSheet()" class="pf-btn pf-btn-secondary pf-btn-sm">+ Ajouter un ravito</button>
 </div>
 {% endif %}
-{% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps en mouvement">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps en mouvement">Sécurité</span></span><span></span></div>{% endif %}
+{% if sc %}<div class="pf-pass-cols" aria-hidden="true"><span></span><span></span><span class="pf-prow-alt"><span title="−{{ sc.fast_pct|round|int }} % de temps total">Optimiste</span><span title="+{{ sc.safe_pct|round|int }} % de temps total">Sécurité</span></span><span></span></div>{% endif %}
 <div id="plan-table" class="pf-pass{% if sc %} has-alt{% endif %}" role="list" aria-label="Heures de passage">
     {% set ns = namespace(day=(start_offset_s // 86400) | int) %}
     {% for s in sections %}

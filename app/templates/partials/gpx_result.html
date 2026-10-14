@@ -7,10 +7,11 @@
 <div id="glyph-registry-lg" hidden>
     {% for k in ["none","water","full","base","crew","bag","pin"] %}<span data-kind="{{ k }}">{{ gl.glyph(k, "w-6 h-6") }}</span>{% endfor %}
 </div>
-{# every time on this page is rounded to the minute the way the script does it (fmtHM): one estimate, one number #}
-{% set est_s = ((course.predicted_total_time_s + 30) // 60 * 60) | int %}
-{% set tgt = (((saved_target_time_s + 30) // 60 * 60) | int) if saved_target_time_s is defined and saved_target_time_s else est_s %}
-{% set has_obj = saved_target_time_s is defined and saved_target_time_s and ((saved_target_time_s - course.predicted_total_time_s)|abs > 60) %}
+{# every time on this page is rounded to the minute the way the script does it (fmtHM): one estimate, one number.
+   The estimate is a finish time (its heat and its planned stops in it), the objective one he set (simulator._objective_s) #}
+{% set est_s = (estimate_s | int) if estimate_s is defined and estimate_s else ((course.predicted_total_time_s + 30) // 60 * 60) | int %}
+{% set has_obj = objective_s is defined and objective_s %}
+{% set tgt = (((objective_s + 30) // 60 * 60) | int) if has_obj else est_s %}
 {% set hero_s = tgt if has_obj else est_s %}
 {% set has_data = profile is defined and profile and profile.data_points and profile.data_points > 0 %}
 {% set sh = saved_start_hour if saved_start_hour is not none else 6 %}
@@ -163,7 +164,7 @@
                     {% if race_calibration is defined and race_calibration %}
                     {% set rc = race_calibration %}
                     {% set rc_s = ((rc.total_s + 30) // 60 * 60) | int %}{% set rc_t = ((rc.training_total_s + 30) // 60 * 60) | int %}
-                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc_s // 3600, (rc_s % 3600) // 60) }}</b>. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc_t // 3600, (rc_t % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
+                    <p>De tes courses passées{% if rc.races %} ({% for r in rc.races[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} : à ce niveau, ce parcours se boucle en <b class="text-ink">{{ '%dh%02d'|format(rc_s // 3600, (rc_s % 3600) // 60) }}</b> en mouvement. <span class="text-gray-500">Tes entraînements seuls donneraient {{ '%dh%02d'|format(rc_t // 3600, (rc_t % 3600) // 60) }} : on se fie à tes courses, plus proches de l'effort du jour J.</span></p>
                     {% set skipped = rc.ignored|default([])|selectattr('why', 'in', ["relais", "course d'un triathlon", "abandon"])|list %}
                     <p class="mt-1 text-gray-500">Tes courses récentes comptent plus que les anciennes.{% if rc.dplus_same_ruler %} Le D+ de tes courses est mesuré comme celui de ce parcours.{% endif %}{% if skipped %} Pas prises en compte : {% for r in skipped[:3] %}{{ r.name }}{% if not loop.last %}, {% endif %}{% endfor %} (relais, triathlon ou abandon).{% endif %}</p>
                     {% elif has_data %}
@@ -175,15 +176,16 @@
                 </div>
                 <div class="pt-4 border-t border-line">
                     <span class="{{ lbl }}">Temps d'arrêt aux ravitos</span>
-                    <p>Par défaut 2 min aux points d'eau, 5 min aux ravitos, 15 min aux bases vie. Pour un point précis, ouvre-le dans la liste.</p>
+                    <p>Par défaut, une durée par type de poste qui s'allonge avec ta durée de course (mesurée sur les arrêts chronométrés d'UTMB Live). Pour un point précis, ouvre-le dans la liste.</p>
                     <label class="mt-2 inline-flex flex-wrap items-center gap-1.5">Même durée partout <input type="number" id="stop-min" min="0" max="60" step="1" value="{{ saved_stop_minutes if saved_stop_minutes else '' }}" placeholder="—" onchange="window._sim && window._sim.recalc(); window._sim && window._sim.scheduleSave()" aria-label="Arrêt à chaque poste, en minutes" class="{{ num }}"> min <span class="text-gray-500">(vide = par défaut)</span></label>
                 </div>
                 <form hx-post="/api/simulator/routes/{{ saved_route_id }}/scenarios" hx-swap="none" hx-trigger="change" hx-on::after-request="window._sim && window._sim.recalc()" hx-on::validation:halted="this.reportValidity()" class="pt-4 border-t border-line">
                     <span class="{{ lbl }}">Plans de rechange</span>
+                    <input type="hidden" name="scenario_v" value="2">{# this form's own choices: 5 / 10 are his (simulator._apply_scenarios) #}
                     <p>En plus de ta cible, un plan <b class="text-ink">Optimiste</b> (si tout va bien) et un plan <b class="text-ink">Sécurité</b> (si ça coince), à afficher en touchant ton objectif.</p>
                     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_pct|round|int if scenario is defined else 5 }}" aria-label="Optimiste, % plus rapide" class="{{ num }}"> % plus rapide</label>
-                        <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_pct|round|int if scenario is defined else 10 }}" aria-label="Sécurité, % plus lent" class="{{ num }}"> % plus lent</label>
+                        <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Optimiste<input name="scenario_fast_pct" type="number" min="0" max="30" step="1" value="{{ scenario.fast_own|round|int if scenario is defined and scenario.fast_own is not none else '' }}" placeholder="{{ scenario.fast_auto|round|int if scenario is defined and scenario.fast_auto is defined else '' }}" aria-label="Optimiste, % plus rapide" class="{{ num }}"> % plus rapide</label>
+                        <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Sécurité<input name="scenario_safe_pct" type="number" min="0" max="60" step="1" value="{{ scenario.safe_own|round|int if scenario is defined and scenario.safe_own is not none else '' }}" placeholder="{{ scenario.safe_auto|round|int if scenario is defined and scenario.safe_auto is defined else '' }}" aria-label="Sécurité, % plus lent" class="{{ num }}"> % plus lent</label>
                         <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Choisir à <select name="switch_km" data-switch-select data-value="{{ scenario.switch_km if scenario is defined and scenario.switch_km else '' }}" aria-label="Point où choisir le plan" class="h-9 pl-2 pr-7 rounded-lg border border-gray-200 text-sm text-ink bg-surface max-w-[190px]"><option value="">automatique</option></select></label>
                     </div>
                 </form>
@@ -214,7 +216,8 @@ window._sim = {};
     var routeCoords = course.route_coords || [];
     var elevData = course.elevation_points || [];
     var totalDistKm = course.total_distance_km || 0;
-    var predictedTotalS = course.predicted_total_time_s || 0;
+    var predictedTotalS = {{ est_s }};  // « Estimation »: the finish, its stops in it (not the course's moving time)
+    var objectiveSet = {{ 'true' if has_obj else 'false' }};  // a time he set (typed, slid): his until « Revenir à l'estimation »
 
     var map = null, hoverMarker = null;
     var checkpoints = [], cpMarkerEls = [];
@@ -593,14 +596,14 @@ window._sim = {};
         if (legTimer) clearTimeout(legTimer);
         legTimer = setTimeout(function () { legTimer = null; hideCross(); highlightSection(null, null); }, 3000);
     }
-    // the plan shown: Cible, or Optimiste / Sécurité (same shape, the moving time scaled, the same stops)
+    // the plan shown: Cible, or Optimiste / Sécurité (same shape, the elapsed time scaled, stops included)
     function effScn() { return 'target'; }  // the list shows the three plans side by side; the profile follows Cible
     function shownClock(p) {
         if (!p || p.clock_s === null || p.clock_s === undefined) return null;
         var sc = planData && planData.scenarios, eff = effScn();
         if (!sc || eff === 'target' || p.cum_s === null || p.cum_s === undefined) return p.clock_s;
         var f = eff === 'fast' ? 1 - sc.fast_pct / 100 : 1 + sc.safe_pct / 100;
-        return Math.round(planData.start_offset_s + p.cum_s * f + (p.stops_s || 0));
+        return Math.round(planData.start_offset_s + (p.cum_s + (p.stops_s || 0)) * f);
     }
     // clock at any km, linear between points: of the plan shown (shown = true) or of Cible (the night bands are Cible's)
     function clockAtKm(km, shown) {
@@ -719,10 +722,12 @@ window._sim = {};
     // a selected choice is tinted, never filled black: the coloured icons stay visible
     var KIND_ON = { none: 'border-gray-500 bg-gray-100 text-gray-800', water: 'border-blue-500 bg-blue-50 text-blue-800', full: 'border-amber-500 bg-amber-50 text-amber-900', base: 'border-violet-500 bg-violet-50 text-violet-800' };
     var ON = 'border-accent bg-accent-soft text-ink font-semibold', OFF = 'border-gray-200 text-gray-700 bg-surface';
-    function stopMinOf(cp) {  // the stop this point gets: its own value, else the global override, else its kind's default
+    function stopMinOf(cp) {  // the stop this point gets: its own value, else the global override, else the plan's default for it
         if (cp.stop_s !== null && cp.stop_s !== undefined) return Math.round(cp.stop_s / 60);
         var ov = parseInt((document.getElementById('stop-min') || {}).value, 10);
         if (ov > 0 && (cp.kind || 'none') !== 'none') return ov;
+        var pt = planPoint(checkpoints.indexOf(cp));  // the server's stop model (kind, finish time, place in the race)
+        if (pt && pt.kind === (cp.kind || 'none') && pt.stop_s !== null && pt.stop_s !== undefined) return Math.round(pt.stop_s / 60);
         return STOP_DEFAULT_MIN[cp.kind || 'none'] || 0;
     }
     var sheetCp = null;
@@ -765,7 +770,7 @@ window._sim = {};
         var own = cp.stop_s !== null && cp.stop_s !== undefined, cur = stopMinOf(cp);
         h += sec('Temps d\'arrêt ici') + '<div class="flex flex-wrap items-center gap-1.5 mb-1">' + [0, 2, 5, 10, 15, 30].map(function (m) { var on = cur === m; return '<button type="button" data-stop="' + m + '" aria-pressed="' + on + '" class="h-9 min-w-[44px] px-2 rounded-lg border-2 text-[13px] tabular-nums ' + (on ? ON : OFF) + '">' + (m ? m + '\'' : '0') + '</button>'; }).join('')
             + '<label class="inline-flex items-center gap-1 text-[12px] text-gray-500 ml-1">ou <input type="number" data-stop-custom inputmode="numeric" min="0" max="240" step="1" value="' + (([0, 2, 5, 10, 15, 30].indexOf(cur) < 0) ? cur : '') + '" placeholder="…" aria-label="Temps d\'arrêt en minutes" class="sim-num w-14 h-9 px-1 rounded-lg border border-gray-200 text-[13px] tabular-nums text-center text-gray-900"> min</label></div>';
-        h += '<p class="text-[11px] text-gray-400 mb-4">' + (own ? 'Réglé pour ce point · <button type="button" data-stop-auto class="underline">revenir à la valeur du type (' + (STOP_DEFAULT_MIN[kind] || 0) + '\')</button>' : 'Valeur du type de poste (eau 2′, ravito 5′, base vie 15′). Les heures qui suivent en tiennent compte.') + '</p>';
+        h += '<p class="text-[11px] text-gray-400 mb-4">' + (own ? 'Réglé pour ce point · <button type="button" data-stop-auto class="underline">revenir à la valeur par défaut</button>' : 'Valeur par défaut, selon le type de poste et ta durée de course. Les heures qui suivent en tiennent compte.') + '</p>';
         h += '<div class="flex gap-2 mb-5">' + [['crew', 'Assistance', 'crew'], ['drop_bag', 'Drop bag', 'bag']].map(function (t) { var on = !!cp[t[0]]; return '<button type="button" data-toggle="' + t[0] + '" aria-pressed="' + on + '" class="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border-2 py-2 text-[12px] ' + (on ? ON : OFF) + '"><span class="inline-flex">' + glyphHtml(t[2]) + '</span>' + t[1] + '</button>'; }).join('') + '</div>';
         h += '<button type="button" data-del onclick="window._sim.confirmRemove(this, ' + i + ')" class="w-full h-10 rounded-lg border border-gray-200 text-sm text-gray-500">Supprimer ce point</button>';
         p.innerHTML = h;
@@ -897,8 +902,11 @@ window._sim = {};
         var b = new URLSearchParams();
         if (!currentRouteId) b.append('course_json', document.getElementById('courseJsonData').value);
         b.append('checkpoints_json', JSON.stringify(checkpoints));
-        if (ts > 0) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);
+        if (ts > 0 && hasRealTarget()) b.append('target_time_s', ts); if (currentHeatFactor > 1) b.append('heat_factor', currentHeatFactor);  // no objective: the server reads the estimate again
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m);
+        // the date and the fetched weather's zone as the page has them, ahead of the save: night by the sun at once
+        b.append('race_date', raceDate || '');
+        if (currentWeather && !currentWeather.error) { if (currentWeather.tz) b.append('wx_tz', currentWeather.tz); if (currentWeather.utc_offset_s !== undefined && currentWeather.utc_offset_s !== null) b.append('wx_offset_s', currentWeather.utc_offset_s); if (currentWeather.date) b.append('wx_date', currentWeather.date); }
         if (currentHourly && !(currentRouteId && hourlySaved)) b.append('hourly_json', JSON.stringify(currentHourly)); if (currentRouteId) b.append('route_id', currentRouteId);
         if (liveAnchor) { b.append('anchor_km', liveAnchor.anchor_km); b.append('anchor_clock', liveAnchor.anchor_clock); }
         var stEl = document.getElementById('stop-min'); if (stEl && stEl.value !== '') b.append('stop_minutes', parseInt(stEl.value) || 0);
@@ -947,6 +955,10 @@ window._sim = {};
     function afterTable() {
         renderedCps = checkpoints.slice();
         var pd = document.getElementById('plan-data'); planData = pd ? JSON.parse(pd.textContent) : null;
+        if (planData && planData.estimate_s) {  // the estimate read with this edit: the hero, the field and the slider follow it
+            predictedTotalS = planData.estimate_s;
+            if (!objectiveSet && !heroOpen()) fieldToEstimate();
+        }
         drawOverlays(); bindRows(); syncSlider(); labelDays(); applyPhoneState(); renderCpOnMap(); refreshSheet(); fillSwitchSelect(); updateHero();
     }
     // the switch-point choice follows the checkpoints
@@ -962,7 +974,7 @@ window._sim = {};
     // ── OBJECTIVE: the number is the control ──
     var sliderMin = 0, sliderMax = 0;
     function currentTargetS() { var h = parseInt(document.getElementById('target-h').value) || 0, m = parseInt(document.getElementById('target-m').value) || 0; return h * 3600 + m * 60; }
-    function hasRealTarget() { var ts = currentTargetS(); return ts > 0 && Math.abs(ts - predictedTotalS) > 60; }
+    function hasRealTarget() { return objectiveSet && currentTargetS() > 0; }
     function syncSlider() {
         var sl = document.getElementById('obj-slider'), est = document.getElementById('obj-est');
         if (!sl || !predictedTotalS) { if (est) est.classList.add('hidden'); return; }
@@ -994,8 +1006,8 @@ window._sim = {};
             var start = planData.start_offset_s + aCum, rest = cum - aCum, clk = start + rest * f + stops;
             var inp = r.querySelector('[data-cible]'); if (inp) inp.value = fmtClock(clk);
             var txt = r.querySelector('[data-cible-text]'); if (txt) txt.textContent = fmtClock(clk);
-            r.querySelectorAll('[data-safe], [data-range-safe]').forEach(function (sf) { if (safe) sf.textContent = fmtClock(start + rest * f * safe + stops); });
-            r.querySelectorAll('[data-fast], [data-range-fast]').forEach(function (fs) { if (fast) fs.textContent = fmtClock(start + rest * f * fast + stops); });
+            r.querySelectorAll('[data-safe], [data-range-safe]').forEach(function (sf) { if (safe) sf.textContent = fmtClock(start + (rest * f + stops) * safe); });  // the elapsed time scaled
+            r.querySelectorAll('[data-fast], [data-range-fast]').forEach(function (fs) { if (fast) fs.textContent = fmtClock(start + (rest * f + stops) * fast); });
         });
     }
     function commitObjective(val) { var ts = sliderToS(val); setTarget(Math.floor(ts / 3600), Math.round((ts % 3600) / 60)); }
@@ -1024,6 +1036,7 @@ window._sim = {};
     // heroPrev: the objective last committed (on opening, then by the slider or « Revenir à l'estimation » while open)
     var heroPrev = null;
     function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function fieldToEstimate() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m); }
     function heroOpen() { var e = document.getElementById('hero-edit'); return !!e && !e.classList.contains('hidden'); }
     function heroEdit() {
         var b = document.getElementById('hero-time'), e = document.getElementById('hero-edit'), th = document.getElementById('target-h'); if (!b || !e) return;
@@ -1042,6 +1055,7 @@ window._sim = {};
         if (commit && valid) { if (isNaN(m)) m = 0; th.value = h; tm.value = pad2(m); if (!heroPrev || h !== heroPrev.h || m !== heroPrev.m) setTarget(h, m); }
         else if (heroPrev) { th.value = heroPrev.h; tm.value = pad2(heroPrev.m); }
         heroPrev = null;
+        if (!objectiveSet) fieldToEstimate();  // the estimate may have moved while the editor was open
         if (refocus) { try { b.focus({ preventScroll: true }); } catch (err) {} }
     }
 
@@ -1063,8 +1077,9 @@ window._sim = {};
         var course = document.getElementById('courseJsonData').value;
         b.append('checkpoints_json', JSON.stringify(checkpoints));
         b.append('name', (raceName || '').trim() || 'Parcours');
-        var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0;
-        if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
+        // only an objective he set is saved: the estimate the field shows until he moves it is not one
+        if (hasRealTarget()) b.append('target_time_s', currentTargetS());
+        b.append('target_v', '2');
         b.append('race_date', raceDate || '');
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);
@@ -1125,13 +1140,14 @@ window._sim = {};
     function printPlan() { _saveThenOpen(function(id) { return '/simulator/routes/' + id + '/print'; }); }
 
     // ── START / OBJECTIVE / PASSAGE ──
-    function setTarget(h, m) {
+    function setTarget(h, m, own) {
+        objectiveSet = own !== false;  // set by him, unless « Revenir à l'estimation »
         h = parseInt(h, 10) || 0; m = parseInt(m, 10) || 0; if (m > 59) m = 59;
         document.getElementById('target-h').value = h; document.getElementById('target-m').value = pad2(m);
         if (heroOpen()) heroPrev = { h: h, m: m };  // committed while the editor is open: a later OK or Escape compares with this one
         recalc(); scheduleSave();
     }
-    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m); }
+    function resetTarget() { var h = Math.floor(predictedTotalS / 3600), m = Math.round((predictedTotalS % 3600) / 60); if (m === 60) { h += 1; m = 0; } setTarget(h, m, false); }
     function setStartTime(v) { if (!v || !/^\d{2}:\d{2}$/.test(v)) return; startVal = v; var el = document.getElementById('start-time'); if (el) el.value = v; updateMeta(); recalc(); scheduleSave(); }
     function setPassage(cpIndex, km, clock) { if (!clock || !/^\d{2}:\d{2}$/.test(clock)) return; var cp = checkpoints[cpIndex]; liveAnchor = { anchor_km: km, anchor_clock: clock, anchor_name: cp ? cp.name : ('km ' + km) }; recalc(); persistLive(); }
     function clearPassage() { liveAnchor = null; recalc(); persistLive(); }

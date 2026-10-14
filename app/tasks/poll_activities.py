@@ -1,8 +1,9 @@
-"""The hourly Strava round, the webhook's fallback (the webhook brings each activity as it is uploaded), and each
-athlete's poll, in a task and a transaction of its own."""
+"""The Strava round every 10 minutes, the webhook's fallback (the webhook brings each activity as it is uploaded),
+and each athlete's poll, in a task and a transaction of its own. An athlete on their own Strava app is polled every
+round (the app's quota is theirs alone); on the shared app, once an hour at most (one quota for everyone)."""
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -15,13 +16,14 @@ logger = logging.getLogger(__name__)
 
 POLL_PAGES = 3  # 90 activities: what an athlete uploads between two rounds, a late upload included
 POLL_CLAIM_S = 2 * 3600  # an athlete's poll queued or running is not queued again (a lost one is, after this)
+SHARED_APP_EVERY = timedelta(minutes=55)  # the shared app's athletes: one poll an hour at most
 
 
 @celery_app.task(name="paceforge.poll_new_activities")
 def poll_new_activities() -> dict:
-    """The hourly round: queues the poll of each athlete the webhook has not reached for 24 h while their app's
-    webhook is silent too (and of every one not polled for 24 h: an event may be lost), and the first imports due
-    again after a failure."""
+    """The round, every 10 minutes: queues the poll of each athlete the webhook has not reached for 24 h while
+    their app's webhook is silent too (and of every one not polled for 24 h: an event may be lost), the shared
+    app's athletes once an hour at most, and the first imports due again after a failure."""
     try:
         result = asyncio.run(_run_poll())
         logger.info("Strava round: %d polls and %d first imports queued",
@@ -69,6 +71,8 @@ async def _run_poll() -> dict:
             # the webhook brings their activities (theirs reached them, or their app's works and they are quiet):
             # polled once a day all the same (an event may be lost)
             continue
+        if not user.has_own_strava_app and _polled_within(user, SHARED_APP_EVERY):
+            continue  # the shared app's quota is everyone's: an hour between two polls of one athlete
         if not state.claim(f"poll:{user.id}", POLL_CLAIM_S):
             continue
         try:
@@ -78,6 +82,16 @@ async def _run_poll() -> dict:
             state.release(f"poll:{user.id}")
             logger.exception("Strava poll could not be queued for user %d", user.id)
     return {"users_checked": queued, "initial_requeued": requeued}
+
+
+def _polled_within(user: User, window: timedelta) -> bool:
+    """Their newest activities were listed less than `window` ago (a poll, « Synchroniser », the first import)."""
+    at = user.last_activity_poll_at
+    if at is None:
+        return False
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - at < window
 
 
 @celery_app.task(name="paceforge.poll_strava_user", acks_late=True)

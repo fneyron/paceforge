@@ -48,28 +48,51 @@ retenues (`hours`, `lam_c=0`, `lam_t=3`). La recherche d’autres familles reste
 dans `fit_model.py` ; elle n’est pas sélectionnée sur les résultats de validation.
 
 Les événements de validation restent séparés de ceux de l’ajustement, toutes
-éditions et distances d’un même événement du même côté. Les contrôles exigent :
+éditions et distances d’un même événement du même côté. Les événements apparus
+après le 5 octobre 2026 (absents de `lockbox_baseline.json`) ne servent ni à
+l’ajustement, ni à la validation, ni au contrôle du temps final : ils forment
+une réserve (**lockbox**), notée une seule fois par version du modèle avec
+`lockbox.py`, sur la répartition des temps (mesure principale) et sur le temps
+final (erreur moyenne, part entre Optimiste et Sécurité), résultat consigné
+dans `lockbox_ledger.json`, jamais par la tâche mensuelle. Les six événements de
+validation fixes ont en effet servi à choisir certaines constantes (la valeur à
+−20 %, l’ancrage de la fatigue, le coefficient des sentiers, le contrôle
+Transjeju, la règle de nuit, le seuil des heures fixées, la bascule à 5 % et le
+choix de l’arrêt médian) : ils ne sont plus « jamais vus ».
+
+La mesure principale est l’erreur **relative** aux points de passage, la
+moyenne de |ln(prévu / réel)|, chaque arrivant planifié sur son propre temps
+final, par bande de distance : en minutes, l’écart grandit avec la course
+(8,4 min sur 40-60 km, 28,8 min sur 140-180 km) alors qu’il vaut 1,4 à 1,7 %
+du temps final partout. Les contrôles exigent :
 
 - au moins 8 événements d’ajustement, 4 de validation, 20 courses de validation
-  et 1 000 arrivants ;
-- une baisse d’au moins **2 % et 0,25 minute** de l’erreur moyenne aux passages ;
-- au moins 60 % des courses de validation améliorées ;
-- aucune régression par groupe de durée ou de distance dépassant le plus grand
-  de 2 % et 0,25 minute, ni par course dépassant le plus grand de 5 % et 1 minute ;
-- aucune dégradation des contrôles Transjeju 2025/2026, avec 0,1 minute de
-  tolérance d’arrondi ;
-- au moins 20 courses LiveTrail de contrôle, sans dégradation dépassant le plus
-  grand de 1 % et 0,2 minute.
+  et 1 000 arrivants, chaque course de validation comparée, les quatre bandes
+  de distance présentes ;
+- une amélioration de la mesure principale dont l’intervalle de confiance à
+  95 % (4 000 rééchantillonnages des **événements** de validation) reste
+  entièrement sous zéro ;
+- aucune bande de distance dégradée de plus de 2 % (relatif).
+
+Les résultats par course, les contrôles Transjeju 2025/2026, l’écart en
+minutes, la part des courses améliorées et les courses LiveTrail sont publiés
+comme **indicateurs**, sans veto : une course ou un coureur ne valident rien.
+Le rapport donne aussi le temps final (`level_benchmark.py`) : chaque arrivant
+UTMB Live prédit d’après son indice UTMB et le km-effort du parcours, un
+événement laissé de côté à la fois — erreur moyenne en %, part des arrivants
+entre Optimiste et Sécurité (cible 60 %) et score d’intervalle, par bande de
+distance et par niveau (bande d’indice), avec l’exposant ajusté par niveau et
+son intervalle de confiance : la loi ne doit pas desservir les coureurs forts.
 
 La métrique compare les passages **à durée finale connue**, avec les arrêts
 retirés lorsqu’ils sont mesurés. Elle évalue la répartition des temps sur le
 parcours, pas à elle seule l’estimation du temps final d’un athlète.
 
 Un candidat est `rejected` ou `eligible_for_review`. **Aucun paramètre de
-production n’est remplacé automatiquement** : un candidat admissible doit
-encore passer `validate_app.py` avec son implémentation dans le simulateur, puis
-être validé et déployé. Une amélioration moyenne ne suffit pas à publier un
-modèle qui dégrade certaines courses.
+production n’est remplacé automatiquement** : une étape du workflow échoue si
+le code de l’application a changé pendant l’exécution, et un candidat
+admissible doit encore passer `validate_app.py` avec son implémentation dans
+le simulateur, puis la réserve (`lockbox.py`), avant d’être validé et déployé.
 
 ## Vérification et exploitation
 

@@ -1,10 +1,11 @@
 import json
 import logging
 import re
+import time
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -32,12 +33,26 @@ async def simulator_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Saved routes (bike / triathlon ones stay out while cycling is off)
-    query = select(Route).where(Route.user_id == user.id)
+    # Saved routes (bike / triathlon ones stay out while cycling is off), without their course: a 100-mile
+    # course is ~0.7 MB of trace, the card draws 80 points of its elevation profile (read alone, below)
+    from sqlalchemy.orm import defer
+
+    query = select(Route).options(defer(Route.course_json)).where(Route.user_id == user.id)
     if hidden_sports():
         query = query.where(Route.sport_type.notin_(hidden_sports()))
     result = await db.execute(query.order_by(Route.created_at.desc()).limit(40))
     saved_routes = list(result.scalars().all())
+    light = {}
+    if saved_routes:
+        light = {rid: (pts, imp) for rid, pts, imp in (await db.execute(
+            select(Route.id, Route.course_json["elevation_points"], Route.course_json["predicted_total_time_s"])
+            .where(Route.id.in_([rt.id for rt in saved_routes]))
+        )).all()}
+    for rt in saved_routes:
+        pts, imp = light.get(rt.id, (None, None))
+        rt.profile_points = pts if isinstance(pts, list) else []
+        rt.imported_estimate_s = imp if isinstance(imp, (int, float)) else 0  # the course's import estimate (_objective_s)
+        rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
     # upcoming races first (soonest), then past ones (most recent first), then undated
     from datetime import date as _date
 
@@ -59,7 +74,7 @@ async def simulator_page(
     from app.services.race_simulator import build_athlete_gradient_profile
 
     profile = None
-    todo = [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.course_json][:10]
+    todo = [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.has_course][:10]
     if todo:
         now, offset = _dt.now(_tz.utc), await athlete_offset(db, user.id, todo[0])
         for rt in todo:
@@ -67,11 +82,31 @@ async def simulator_page(
                 act = await find_race_activity(db, user.id, rt, now=now, offset=offset)
                 if act is None:
                     continue
+                await db.refresh(rt, attribute_names=["course_json"])  # the match measures the tilt on the course
                 if profile is None and act.splits_metric:
                     profile = await build_athlete_gradient_profile(db, user.id)
                 await link_result(db, rt, act, user.id, profile=profile)
             except Exception:
                 logger.exception("automatic race link failed for route %s", rt.id)
+    # a time an older page saved: his objective, or that page's own estimate (_objective_s), read on the course
+    # for those routes alone (per worker for a while: _legacy_estimate_s)
+    for rt in saved_routes:
+        rt.legacy_estimate_s = 0
+        imp = rt.imported_estimate_s
+        if (rt.target_time_s and rt.has_course and (rt.params_json or {}).get("target_v") != TARGET_VERSION
+                and (rt.sport_type or "trail") not in ("bike", "triathlon")
+                and not (imp and abs(rt.target_time_s - imp) <= LEGACY_TARGET_SHARE * imp)):  # the import's: settled
+            try:
+                known, m = _legacy_cached(rt)
+                if not known:
+                    if "course_json" in inspect(rt).unloaded:
+                        await db.refresh(rt, attribute_names=["course_json"])
+                    if profile is None:
+                        profile = await build_athlete_gradient_profile(db, user.id)
+                    m = _legacy_estimate_s(rt, await _legacy_profile(db, user.id, profile))
+                rt.legacy_estimate_s = m or 0
+            except Exception:
+                logger.exception("legacy objective check failed for route %s", rt.id)
     run = await _races_vs_plan([rt for rt in saved_routes if rt.result_json], db, user, profile=profile)
     for rt in saved_routes:
         rt.card = _route_card(rt, *run.get(rt.id, (None, None)))
@@ -145,8 +180,12 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     )).scalars())
     out = {}
     for rt in routes:
-        plan = rt.target_time_s
-        if rt.id in pinned and rt.course_json and rt.sport_type != "bike":
+        plan = _objective_s(rt, legacy_s=getattr(rt, "legacy_estimate_s", 0), imported_s=getattr(rt, "imported_estimate_s", 0))
+        if rt.id in pinned and getattr(rt, "has_course", True) and rt.sport_type != "bike":
+            if "course_json" in inspect(rt).unloaded:  # « Mes courses » reads the routes without their course
+                await db.refresh(rt, attribute_names=["course_json"])
+            if not rt.course_json:
+                continue
             if profile is None:
                 profile = await build_athlete_gradient_profile(db, user.id)
             plan = _plan_finish_s(await _plan_bundle(rt, db, user, profile=profile))
@@ -173,8 +212,8 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
                        else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
-    if rt.target_time_s:
-        out["objective"] = _hm(rt.target_time_s)
+    if obj := _objective_s(rt, legacy_s=getattr(rt, "legacy_estimate_s", 0), imported_s=getattr(rt, "imported_estimate_s", 0)):
+        out["objective"] = _hm(obj)
     if real_s:
         out["real"] = _hm(_min(real_s) * 60)
         if plan_s:
@@ -182,8 +221,10 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
             out["diff"] = ("−" if diff < 0 else "+") + (f"{abs(diff)} min" if abs(diff) < 60 else _hm(abs(diff) * 60))
             # neutral when the débrief calls it « proche du plan » (its gap is neutral there too)
             out["good"] = None if close_to_plan(diff * 60, plan_s) else diff < 0
-    # mini profile: 80 points, 400 × 70 viewBox
-    pts = (rt.course_json or {}).get("elevation_points") or []
+    # mini profile: 80 points, 400 × 70 viewBox (the course's elevation points, read alone on « Mes courses »)
+    pts = getattr(rt, "profile_points", None)
+    if pts is None:
+        pts = (rt.course_json or {}).get("elevation_points") or []
     if len(pts) > 2:
         step = max(1, len(pts) // 80)
         sample = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
@@ -319,12 +360,19 @@ async def _passage_table_context(
     db: AsyncSession, user_id: int, course, checkpoints: list[dict], target_time_s: int | None, heat_factor: float,
     start_hour: int, start_minute: int, hourly_weather: dict | None, route_obj: Route | None, stop_minutes: int | None,
     anchor_km: float | None, anchor_clock: str | None, profile=None, route_id: int | None = None,
+    estimate_s: int | None = None, race_date: str | None = None, weather_clock: dict | None = None,
 ) -> dict:
     """Everything partials/passage_times.html needs: the (re)planned sections, scenarios, plan data.
-    Used by the recalculation endpoint and by the page itself, so the first paint already has the table."""
+    Used by the recalculation endpoint and by the page itself, so the first paint already has the table.
+
+    ``target_time_s``: his objective (the page sends it only when he set one), else None: the plan then runs on
+    the estimate read now, with these points, stops and weather (``estimate_s`` when the caller has it), and the
+    plan data carries it back, so the page's hero and field follow every edit. ``race_date`` / ``weather_clock``:
+    the page's date and the zone of the weather it fetched, not saved yet (race_match.race_clock)."""
     from app.services.checkpoints import annotate_cutoffs, autonomy_legs
     from app.services.race_simulator import (
         _elevation_at_km,
+        _fine_terrain,
         build_athlete_gradient_profile,
         compute_passage_times,
         objective_moving_s,
@@ -332,31 +380,40 @@ async def _passage_table_context(
     )
 
     # Aid-station stops: the typed checkpoints; the stop duration comes from the
-    # live input (fallback: saved value).
+    # live input (fallback: saved value), else the stop model at the plan's finish.
     aid_kms: set = _aid_kms_from_checkpoints(checkpoints)
     params: dict = {}
     if route_obj:
         if stop_minutes is None:
             stop_minutes = route_obj.stop_minutes
         params = route_obj.params_json or {}
-    aid_stops = _aid_stops(checkpoints, stop_minutes)
     stop_min = stop_minutes or 0
 
     # Re-predict so the night penalty reflects the chosen start time, and the
     # plan's fatigue and night the objective's clock. Heat is applied once, in
     # compute_passage_times.
     profile = profile or await build_athlete_gradient_profile(db, user_id)
+    # no weather (no date, nothing fetched): the level at the heat his races were run in (predict_course)
+    own_weather = hourly_weather is not None or heat_factor != 1.0 or bool(route_obj and route_obj.weather_json)
+    total_km = course.total_distance_km
+    clock = await _race_clock(db, user_id, route_obj, course, race_date=race_date, weather=weather_clock,
+                              start_hour=start_hour, start_minute=start_minute)  # night by the sun once dated
+    fine = _fine_terrain(course, profile)
+    if estimate_s is None:  # the estimate now (these points, stops and weather): the hero and the field follow it
+        course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, checkpoints, stop_minutes, total_km,
+                                   own_weather, heat_factor, hourly_weather, aid_kms, fine)
+        estimate_s = _to_minute(est)
+    target = target_time_s or estimate_s  # the plan: on his objective, else on the estimate (to the minute)
+    aid_stops = _aid_stops(checkpoints, stop_minutes, float(target), total_km)
     course = predict_course(
         course, profile, start_hour=start_hour, start_minute=start_minute,
-        plan_moving_s=objective_moving_s(
-            target_time_s, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops,
-        ),
+        plan_moving_s=objective_moving_s(target, course.total_distance_km, checkpoints, stop_min * 60, aid_kms, aid_stops),
+        fine_terrain=fine, aid_stops=aid_stops, own_weather=own_weather, **clock,
     )
-
     sections = compute_passage_times(
-        course, checkpoints, target_time_s, heat_factor,
+        course, checkpoints, target, heat_factor,
         start_hour, start_minute, hourly_weather,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops, objective=target_time_s is not None,
     )
     has_weather = any(s.get("temperature_c") is not None for s in sections)
     start_offset_s = start_hour * 3600 + start_minute * 60
@@ -369,7 +426,7 @@ async def _passage_table_context(
         anchor_clock_s = _clock_to_s(anchor_clock)
         if anchor_clock_s is not None:
             sections, replan = replan_from_passage(
-                sections, start_hour * 3600 + start_minute * 60, target_time_s,
+                sections, start_hour * 3600 + start_minute * 60, target,
                 anchor_km, anchor_clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=aid_stops,
             )
     # Cutoff margins and autonomy legs read the (re)planned clocks, so they
@@ -382,10 +439,10 @@ async def _passage_table_context(
 
     # pinned checkpoints make a plan even without an objective
     pinned = is_pinned(sections)
+    sc_set = _scenario_settings(params, profile, course, await _known_course(db, user_id, route_obj))
     scenarios = None if replan else build_scenarios(
-        sections, start_offset_s, target_time_s,
-        fast_pct=float(params.get("scenario_fast_pct") or 5.0),
-        safe_pct=float(params.get("scenario_safe_pct") or 10.0),
+        sections, start_offset_s, target,
+        fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=params.get("switch_km"),
         total_distance_km=course.total_distance_km,
     )
@@ -396,18 +453,23 @@ async def _passage_table_context(
 
     zones = await estimate_training_zones(db, user_id)
     rc = resolve_hr_caps(params, zones.get("max_hr"))
-    plan_s = plan_total_s(sections, start_offset_s, target_time_s) or int(course.predicted_total_time_s)
+    plan_s = plan_total_s(sections, start_offset_s, target)
     guide = build_pacing_guide(
         course, plan_s, hr_cap_climb=rc["climb"], hr_cap_flat=rc["flat"], hr_release_descent=rc["descent"],
         walk_grade=rc["walk_grade"], plan_sections=sections,
     )
-    plan_data = build_plan_data(sections, start_offset_s, bool(target_time_s) or replan is not None or pinned, course.total_distance_km, guide["blocks"], scenarios, autonomy=autonomy)
+    from app.services.race_simulator import sun_clock
+
+    sun = sun_clock(course, clock.get("race_date"), start_hour, start_minute, clock.get("utc_offset_s")) if clock else None
+    plan_data = build_plan_data(sections, start_offset_s, True, course.total_distance_km,
+                                guide["blocks"], scenarios, autonomy=autonomy, dark=sun.is_dark if sun else None)
+    plan_data["estimate_s"] = estimate_s  # the page's « Estimation » now: its hero, field and slider follow it
     legs = _leg_details(guide, sections)
     return {
         "legs": legs,
         "plan_data": _script_json(plan_data),
         "sections": sections,
-        "has_target": (target_time_s is not None) or replan is not None or pinned,
+        "has_target": True,  # the plan's own times: on the objective, else on the estimate
         "replan": replan,
         "has_weather": has_weather,
         "predicted_total": course.predicted_total_time_s,
@@ -437,6 +499,10 @@ async def passage_times(
     stop_minutes: int | None = Form(default=None),
     anchor_km: float | None = Form(default=None),
     anchor_clock: str | None = Form(default=None),
+    race_date: str | None = Form(default=None),
+    wx_tz: str | None = Form(default=None),
+    wx_offset_s: int | None = Form(default=None),
+    wx_date: str | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -465,9 +531,14 @@ async def passage_times(
             if heat_factor == 1.0:
                 heat_factor = float((route_obj.weather_json or {}).get("heat_factor") or 1.0)
 
+        # the page's date and the zone of the weather it fetched, ahead of the save that will keep them
+        page_date = None if race_date is None else (_iso_date(race_date) or "")
+        page_wx = ({"tz": wx_tz, "utc_offset_s": wx_offset_s, "date": wx_date}
+                   if wx_tz or wx_offset_s is not None or wx_date else None)
         ctx = await _passage_table_context(
             db, user.id, course, checkpoints, target_time_s, heat_factor, start_hour, start_minute, hourly_weather,
-            route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id,
+            route_obj, stop_minutes, anchor_km, anchor_clock, route_id=route_id, race_date=page_date,
+            weather_clock=page_wx,
         )
         return templates.TemplateResponse(request, "partials/passage_times.html", context=ctx)
     except Exception:
@@ -495,7 +566,7 @@ async def bike_gpx_upload(
         snapped_wpts = snap_waypoints_to_route(gpx_waypoints, points)
 
         ftp = await ftp_for_user(db, user)
-        rider_weight = user.weight_kg or 75
+        rider_weight = await _rider_weight(db, user)
         cda_est = await estimate_cda(db, user.id, rider_weight)
         cda_default = cda_est.estimated_cda if cda_est else 0.32
         # Default target power: 75% of FTP (endurance) if known, else 200W
@@ -599,7 +670,9 @@ async def save_route(
             route = _visible(result.scalar_one_or_none())
             if route is None:
                 return JSONResponse({"error": "Parcours introuvable"}, status_code=404)
-        total = course_data["total_distance_km"] if course_data else (route.total_distance_km if route else 0)
+        if route is None and not course_data:  # a new route needs its course before its points are checked
+            return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+        total = course_data["total_distance_km"] if course_data else route.total_distance_km
         if any(cp["distance_km"] > total + 0.1 for cp in cps):
             return JSONResponse({"error": "Un passage dépasse la distance du parcours"}, status_code=422)
         async with db.begin_nested():
@@ -611,7 +684,13 @@ async def save_route(
                     route.total_distance_km = course_data.get("total_distance_km", route.total_distance_km)
                     route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
                     route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
+                # a page that saves only his objective says so (an older one saved its estimate there too); a tab
+                # opened before this release re-saving his marked objective as it is leaves it his
+                marked = form.get("target_v") == str(TARGET_VERSION) or (
+                    (route.params_json or {}).get("target_v") == TARGET_VERSION and target_time_s == route.target_time_s)
                 route.target_time_s = target_time_s
+                p = {k: v for k, v in (route.params_json or {}).items() if k != "target_v"}
+                route.params_json = {**p, "target_v": TARGET_VERSION} if marked else p
                 if "race_date" in form: route.race_date = _iso_date(race_date)
                 if start_hour is not None: route.start_hour = start_hour
                 if start_minute is not None: route.start_minute = start_minute
@@ -625,9 +704,7 @@ async def save_route(
                     delete(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id)
                 )
             else:
-                # Create new
-                if not course_data:
-                    return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+                # Create new (its course checked above)
                 route = Route(
                     user_id=user.id,
                     name=name or course_data.get("name", "Parcours"),
@@ -636,6 +713,7 @@ async def save_route(
                     total_elevation_loss=course_data.get("total_elevation_loss", 0),
                     course_json=course_data,
                     target_time_s=target_time_s,
+                    params_json={"target_v": TARGET_VERSION} if form.get("target_v") == str(TARGET_VERSION) else None,
                     race_date=_iso_date(race_date),
                     start_hour=start_hour,
                     start_minute=start_minute,
@@ -765,22 +843,29 @@ def debrief_mode(race_date: str | None, has_result: bool, today=None) -> str | N
 async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
     """Shared context for the route detail page and its partial."""
     from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
+    from app.services.checkpoints import normalize_checkpoint
+    from app.services.race_simulator import build_athlete_gradient_profile
 
     course = CourseProfile(**route.course_json)
     profile = await build_athlete_gradient_profile(db, user_id)
-    course = predict_course(
-        course, profile,
-        start_hour=route.start_hour if route.start_hour is not None else 6,
-        start_minute=route.start_minute or 0,
-    )
-
     cp_result = await db.execute(
         select(RouteCheckpoint)
         .where(RouteCheckpoint.route_id == route.id)
         .order_by(RouteCheckpoint.distance_km)
     )
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
+    ncps = [normalize_checkpoint(c) for c in cps]
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    sh, sm = (route.start_hour if route.start_hour is not None else 6), (route.start_minute or 0)
+    # « Estimation »: the finish with its heat and its planned stops, to the minute, as the printed plan, the
+    # phone's copy and the débrief read it; the objective: the saved time, when more than a minute from it
+    course, est, _ = _estimate(
+        course, profile, sh, sm, await _race_clock(db, user_id, route, course), ncps, route.stop_minutes,
+        course.total_distance_km, bool(route.weather_json), float(w.get("heat_factor") or 1.0), w.get("hourly"),
+        _aid_kms_from_checkpoints(ncps),
+    )
+    estimate_s = _to_minute(est)
+    objective_s = await _route_objective(db, route, profile)
 
     coords = course.route_coords or []
     geojson = {
@@ -795,18 +880,14 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     # The table itself, rendered now: no blank band and no round trip before the plan shows.
     initial_table_html = None
     try:
-        from app.services.checkpoints import normalize_checkpoint
-
-        w = route.weather_json or {}
         live = route.live_json or {}
         # No objective: the plan runs on the estimate, to the minute, exactly as the page's own recalculations
-        # do (they send the objective field, which then holds the estimate). The first render and the next
-        # ones agree, and the hero's « Estimation » plus the start gives the arrival shown under it.
-        table_target = route.target_time_s or (int((course.predicted_total_time_s + 30) // 60) * 60 if course.predicted_total_time_s else None)
+        # do (they send no objective then, and the table reads the estimate again with every edit). The first
+        # render and the next ones agree, and the hero's « Estimation » plus the start gives the arrival under it.
         tctx = await _passage_table_context(
-            db, user_id, CourseProfile(**route.course_json), [normalize_checkpoint(c) for c in cps], table_target,
-            float(w.get("heat_factor") or 1.0), route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
-            w.get("hourly"), route, route.stop_minutes, live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id,
+            db, user_id, CourseProfile(**route.course_json), ncps, objective_s,
+            float(w.get("heat_factor") or 1.0), sh, sm, w.get("hourly"), route, route.stop_minutes,
+            live.get("anchor_km"), live.get("anchor_clock"), profile=profile, route_id=route.id, estimate_s=estimate_s,
         )
         initial_table_html = templates.get_template("partials/passage_times.html").render(tctx)
     except Exception:
@@ -830,13 +911,14 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
         "show_debrief": mode is not None,
         "race_date_label": fr_date_label(route.race_date),
         "start_label": "%02d:%02d" % (route.start_hour if route.start_hour is not None else 6, route.start_minute or 0),
-        "scenario": {"fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0), "switch_km": p.get("switch_km")},
+        "scenario": _scenario_settings(p, profile, course, await _known_course(db, user_id, route)),
         "course_json": course.model_dump_json(),
         "gpx_waypoints": _script_json(cps),
         "geojson": json.dumps(geojson),
         "saved_route_id": route.id,
         "saved_route_name": route.name,
         "saved_target_time_s": route.target_time_s,
+        "estimate_s": estimate_s, "objective_s": objective_s,
         "saved_race_date": route.race_date,
         "saved_start_hour": route.start_hour,
         "saved_start_minute": route.start_minute,
@@ -1044,6 +1126,15 @@ async def set_live_passage(
 
 # ── Bike plan (road book with wind at time of passage) ──
 
+async def _rider_weight(db: AsyncSession, user: User) -> float:
+    """The athlete's weight by the one rule (services.athlete_weight: the most recent dated value among the
+    weigh-ins and the typed one), else 75 kg."""
+    from app.services.athlete_weight import athlete_weight
+
+    w = await athlete_weight(db, user)
+    return float(w.kg) if w else 75.0
+
+
 def _bike_leg_stats(cycling, a: float, b: float) -> dict:
     """Time-weighted wind and power over a leg of the course, plus its mean speed."""
     from app.services.cycling_simulator import wind_label
@@ -1072,7 +1163,7 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     course = CourseProfile(**route.course_json)
     ftp = await ftp_for_user(db, user)
     p = route.params_json or {}
-    rider_weight = float(p.get("rider_weight_kg") or user.weight_kg or 75)
+    rider_weight = float(p.get("rider_weight_kg") or await _rider_weight(db, user))
     bike_weight = float(p.get("bike_weight_kg") or 9.0)
     crr = float(p.get("crr") or 0.005)
     cda_est = await estimate_cda(db, user.id, rider_weight, bike_weight, crr=crr)
@@ -1092,7 +1183,9 @@ async def _bike_plan_context(request: Request, route: Route, db: AsyncSession, u
     if wind_mode == "auto" and weather:
         hw = weather.get("hourly") or {}
         if hw.get("wind"):
-            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or [], "points": hw.get("points") or []}
+            hourly_wind = {"speed": hw["wind"], "dir": hw.get("wind_dir") or [], "points": hw.get("points") or [],
+                           # the air density at each segment's time of passage
+                           "temps": hw.get("temps") or [], "elevation": hw.get("elevation")}
         else:
             wind_speed = float(weather.get("wind_speed_kmh") or 0)
             wind_dir = weather.get("wind_direction_deg")
@@ -1377,9 +1470,11 @@ async def _tri_plan_context(request: Request, route: Route, db: AsyncSession, us
     if run:
         profile = await build_athlete_gradient_profile(db, user.id)
         run_start = start_offset + swim_s + t1_s + bike_s + t2_s
+        run_course = CourseProfile(**run.course_json)
         course = predict_course(
-            CourseProfile(**run.course_json), profile,
+            run_course, profile,
             start_hour=int(run_start // 3600) % 24, start_minute=int((run_start % 3600) // 60),
+            **await _race_clock(db, user.id, route, run_course),
         )
         run_pred_s = int(course.predicted_total_time_s)
         run_s = int(run.target_time_s or run_pred_s)
@@ -1468,7 +1563,7 @@ async def offline_route_plan(
     ctx = await _print_plan_context(route, db, user)
     points = []
     for section in ctx["sections"]:
-        clock = section.get("adjusted_clock_time_s") if ctx["has_target"] else None
+        clock = section.get("adjusted_clock_time_s")  # the plan: on the objective, else on the estimate
         if clock is None:
             clock = section.get("clock_time_s")
         points.append({
@@ -1504,7 +1599,7 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         clock_s = _clock_to_s(live["anchor_clock"])
         if clock_s is not None:
             sections, rp = replan_from_passage(
-                sections, start_offset_s, route.target_time_s,
+                sections, start_offset_s, b["plan_target_s"],
                 float(live["anchor_km"]), clock_s, stop_s_per_aid=stop_min * 60, aid_kms=aid_kms, aid_stops=b.get("aid_stops"),
             )
             live_applied = rp is not None
@@ -1513,19 +1608,21 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
 
                 sections = annotate_cutoffs(sections, cps, start_offset_s)
     pp = route.params_json or {}
+    sc_set = _scenario_settings(pp, b["profile"], course, await _known_course(db, user.id, route), sport=b["sport"])
     scenarios = None if live_applied else build_scenarios(
-        sections, start_offset_s, route.target_time_s,
-        fast_pct=float(pp.get("scenario_fast_pct") or 5.0), safe_pct=float(pp.get("scenario_safe_pct") or 10.0),
+        sections, start_offset_s, b["plan_target_s"],
+        fast_pct=sc_set["fast_pct"], safe_pct=sc_set["safe_pct"],
         switch_km=pp.get("switch_km"), total_distance_km=course.total_distance_km,
     )
 
-    guide = (await _pacing_guide_for(route, db, user)) if b["sport"] != "bike" else None
+    guide = (await _pacing_guide_for(route, db, user, b)) if b["sport"] != "bike" else None
     legs_guide = None
     if guide:
         from app.services.pacing_guide import leg_instructions
 
         legs_guide = leg_instructions(guide, sections)
-    total_fmt = f"{b['predicted_total_s'] // 3600}h{(b['predicted_total_s'] % 3600) // 60:02d}"
+    est = int(b["estimate_s"])  # « Estimé »: the page's « Estimation », the finish with its stops
+    total_fmt = f"{est // 3600}h{(est % 3600) // 60:02d}"
     # « Consignes »: per leg, the passage row's own words (cardio ceiling + what to do);
     # the pace is the cell's, so no second one here. Consecutive legs with the same
     # instruction print as one row (« → A, B, C »).
@@ -1549,7 +1646,9 @@ async def _print_plan_context(route: Route, db: AsyncSession, user: User) -> dic
         "course": course,
         "predicted_total_formatted": total_fmt,
         "sections": sections,
-        "has_target": route.target_time_s is not None or live_applied or b["pinned"],
+        # a plan he set (an objective, pinned times) or a race-day replan; the times are the plan's either way
+        "has_target": b["has_objective"] or live_applied,
+        "objective_s": b["objective_s"],
         "pinned": b["pinned"],
         "plan_total_s": b["plan_total_s"],
         "start_offset_s": start_offset_s,
@@ -1635,9 +1734,14 @@ async def get_weather(
     lon: float = Form(...),
     date: str = Form(...),
     points_json: str = Form(default=""),
+    user: User = Depends(get_current_user),
 ):
-    from app.services.weather import get_weather_forecast
+    """The race-day forecast (or climate normals) for a signed-in athlete: never an open proxy to Open-Meteo,
+    and one upstream call per place, day and points for a while (weather.cached_forecast)."""
+    from app.services.weather import cached_forecast
 
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return JSONResponse({"error": "position invalide"}, status_code=422)
     points = None
     if points_json:
         try:
@@ -1645,7 +1749,7 @@ async def get_weather(
         except (ValueError, TypeError):
             points = None
     try:
-        weather = await get_weather_forecast(lat, lon, date, points=points)
+        weather = await cached_forecast(lat, lon, date, points=points)
     except Exception:  # the service already logs; the page shows a retry chip either way
         weather = None
     if not weather:
@@ -1704,7 +1808,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         debrief = leg_debrief(
             act.splits_metric, b["sections"], route.total_distance_km,
             use_target=b["use_target"], stop_s_per_aid=b["stop_min"] * 60,
-            hr_cap=int(hr_cap) if hr_cap else None,
+            hr_cap=int(hr_cap) if hr_cap else None, named_plan=b["has_objective"],
         )
         if not debrief.get("legs"):
             debrief = None
@@ -1727,7 +1831,7 @@ async def _result_compare_context(request: Request, route: Route, db: AsyncSessi
         except ValueError:
             day = None
     lead["day"] = _date_fr(day) if day else None
-    ctx.update(result=result, lead=lead, debrief=debrief, basis="plan" if b["use_target"] else "prediction")
+    ctx.update(result=result, lead=lead, debrief=debrief, basis="plan" if b["has_objective"] else "prediction")
     return ctx
 
 
@@ -1828,11 +1932,17 @@ def _aid_kms_from_checkpoints(cps: list[dict]) -> set:
     return {round(float(cp.get("distance_km") or 0), 1) for cp in cps if (cp.get("kind") or "none") != "none"}
 
 
-STOP_DEFAULT_S = {"water": 120, "full": 300, "base": 900}  # eau 2′ · ravito 5′ · base vie 15′
+def _stop_progress(cp: dict, total_km: float | None) -> float:
+    return float(cp.get("distance_km") or 0) / float(total_km) if total_km else 0.5
 
 
-def _aid_stops(cps: list[dict], override_min: int | None = None) -> dict:
-    """{km: stop seconds} for every aid station: by kind, or one value everywhere when set (> 0)."""
+def _aid_stops(cps: list[dict], override_min: int | None = None, finish_s: float | None = None,
+               total_km: float | None = None) -> dict:
+    """{km: stop seconds} for every aid station: its own value when set on the point (wins, even 0), else one value
+    everywhere when set (> 0), else the stop model's median stop for its kind, at the runner's finish
+    ``finish_s`` and the station's share of the distance (race_simulator.default_stop_s)."""
+    from app.services.race_simulator import default_stop_s
+
     forced = int(override_min) * 60 if override_min else None
     out: dict = {}
     for cp in cps:
@@ -1844,8 +1954,209 @@ def _aid_stops(cps: list[dict], override_min: int | None = None) -> dict:
             continue
         if kind == "none":
             continue
-        out[round(float(cp.get("distance_km") or 0), 1)] = forced if forced is not None else STOP_DEFAULT_S.get(kind, 300)
+        stop = forced if forced is not None else default_stop_s(kind, finish_s, _stop_progress(cp, total_km))
+        if stop:
+            out[round(float(cp.get("distance_km") or 0), 1)] = stop
     return out
+
+
+ESTIMATE_PASSES = 4  # the estimate's fixed point: stops a few % of the finish, settled to the second in 2-3
+
+
+def _estimate(course, profile, start_hour: int, start_minute: int, clock: dict, cps: list[dict],
+              override_min: int | None, total_km: float | None, own_weather: bool = False, heat_factor: float = 1.0,
+              hourly: dict | None = None, aid_kms: set | None = None, fine: list | None = None):
+    """Without an objective: (course, estimate, stops). The estimate is a finish time: the moving time at his
+    level, each section at its heat, plus the planned stops, which the stop model reads at that very finish (a
+    fixed point). The night is read on the clock those stops make; the terrain once (``fine``). The page shows
+    it as « Estimation » (to the minute) and every plan without an objective runs on it: the page's, the
+    printed one, the phone's copy, the exports and the débrief."""
+    from app.services.race_simulator import _fine_terrain, compute_passage_times, predict_course
+
+    fine = fine if fine is not None else _fine_terrain(course, profile)
+    course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
+                            own_weather=own_weather, **clock)
+    finish, stops = float(course.predicted_total_time_s), {}
+    start = start_hour * 3600 + start_minute * 60
+    for _ in range(ESTIMATE_PASSES):
+        now = _aid_stops(cps, override_min, finish, total_km)
+        if now != stops:
+            stops = now
+            course = predict_course(course, profile, start_hour=start_hour, start_minute=start_minute, fine_terrain=fine,
+                                    aid_stops=stops or None, own_weather=own_weather, **clock)
+        secs = compute_passage_times(course, cps, None, heat_factor, start_hour, start_minute, hourly,
+                                     stop_s_per_aid=(override_min or 0) * 60, aid_kms=aid_kms, aid_stops=stops)
+        new = float(secs[-1]["clock_time_s"] - start) if secs else finish
+        settled, finish = abs(new - finish) < 1.0, new
+        if settled:
+            break
+    return course, finish, stops
+
+
+def _to_minute(seconds: float) -> int:
+    """A time as the page shows and plans it: to the minute (fmtHM)."""
+    return int((float(seconds) + 30) // 60) * 60
+
+
+# Until 2026-10-14 the page saved its objective field at every save: his objective, or its own estimate when he
+# had not moved it — the moving time at his level from the route's start, his level read with the law of the day.
+# Today's page saves only a time he set and marks its saves (TARGET_VERSION, params_json): a marked time is his
+# objective, always. An unmarked one is that older page's estimate when within LEGACY_TARGET_SHARE of it — read
+# again with that law (race_legacy, frozen for this alone: this release's law moves the owner's estimates 4-10 %)
+# or as stored with the course at its import — else his objective.
+TARGET_VERSION = 2
+LEGACY_TARGET_SHARE = 0.02
+LEGACY_TTL_S = 15 * 60
+_LEGACY: dict[tuple, tuple[float, float | None]] = {}
+_LEGACY_MODELS: dict[int, tuple[float, dict | None]] = {}
+
+
+def _marked(route: Route) -> bool:
+    return (route.params_json or {}).get("target_v") == TARGET_VERSION
+
+
+def _legacy_cached(route: Route) -> tuple[bool, float | None]:
+    """(known, estimate) from the per-worker cache of _legacy_estimate_s, without reading the course."""
+    hit = _LEGACY.get((route.id, route.user_id, route.start_hour, route.start_minute))
+    return (True, hit[1]) if hit and time.monotonic() - hit[0] < LEGACY_TTL_S else (False, None)
+
+
+async def _legacy_profile(db: AsyncSession, user_id: int, profile):
+    """His profile with his race model as the law before 2026-10-14 read it (race_legacy), no heat in it; the
+    model per worker for LEGACY_TTL_S."""
+    from app.services import race_legacy
+
+    now = time.monotonic()
+    hit = _LEGACY_MODELS.get(user_id)
+    if hit and now - hit[0] < LEGACY_TTL_S:
+        model = hit[1]
+    else:
+        model = await race_legacy.legacy_model(db, user_id)
+        for k in [k for k, (at, _) in _LEGACY_MODELS.items() if now - at >= LEGACY_TTL_S]:
+            del _LEGACY_MODELS[k]
+        _LEGACY_MODELS[user_id] = (now, model)
+    return profile.model_copy(update={"race_model": model, "race_calibration": None})
+
+
+def _legacy_estimate_s(route: Route, legacy_profile) -> float | None:
+    """What a page before TARGET_VERSION showed, and saved, in the objective field: the moving time at his level
+    (``legacy_profile``: _legacy_profile) from the route's own start, by today's prediction (that page's
+    predict_course call, without the races' mean heat); per worker for LEGACY_TTL_S. None for a bike or
+    triathlon route, or without a course or a profile."""
+    from app.schemas.simulator import CourseProfile
+    from app.services.race_simulator import predict_course
+
+    known, m = _legacy_cached(route)
+    if known:
+        return m
+    if legacy_profile is None or not route.course_json or (route.sport_type or "trail") in ("bike", "triathlon"):
+        return None
+    key, now = (route.id, route.user_id, route.start_hour, route.start_minute), time.monotonic()
+    try:
+        m = float(predict_course(CourseProfile(**route.course_json), legacy_profile.model_copy(),
+                                 start_hour=route.start_hour if route.start_hour is not None else 6,
+                                 start_minute=route.start_minute or 0).predicted_total_time_s) or None
+    except Exception:
+        logger.exception("legacy estimate failed for route %s", route.id)
+        m = None
+    for k in [k for k, (at, _) in _LEGACY.items() if now - at >= LEGACY_TTL_S]:
+        del _LEGACY[k]
+    _LEGACY[key] = (now, m)
+    return m
+
+
+def _objective_s(route: Route, legacy_s: float | None = None, imported_s: float | None = None) -> int | None:
+    """The objective he set. Saved by today's page (TARGET_VERSION): typed by him, his objective whatever the
+    estimate says. Saved before: the older page's own estimate when within LEGACY_TARGET_SHARE of it — read again
+    (``legacy_s``: _legacy_estimate_s) or stored at the course's import (``imported_s``, else read from the
+    course) — else his objective."""
+    t = route.target_time_s
+    if not t:
+        return None
+    if _marked(route):
+        return int(t)
+    if imported_s is None:
+        imported_s = (route.course_json or {}).get("predicted_total_time_s")
+    for ref in (legacy_s, imported_s):
+        try:
+            if ref and abs(int(t) - float(ref)) <= LEGACY_TARGET_SHARE * float(ref):
+                return None
+        except (TypeError, ValueError):
+            continue
+    return int(t)
+
+
+async def _route_objective(db: AsyncSession, route: Route, profile) -> int | None:
+    """_objective_s, the older page's estimate read again only when the import's does not settle it."""
+    t = _objective_s(route)
+    if t is None or _marked(route) or (route.sport_type or "trail") in ("bike", "triathlon"):
+        return t
+    known, m = _legacy_cached(route)
+    if not known:
+        m = _legacy_estimate_s(route, await _legacy_profile(db, route.user_id, profile))
+    return _objective_s(route, legacy_s=m)
+
+
+# The former fixed Optimiste / Sécurité defaults: saved with the form until 2026-10-14 (it posted both fields),
+# they are read as « automatique » (the 20th / 80th percentiles of the finish time) on settings saved before
+# then. Today's form sends SCENARIO_VERSION with them (a hidden field): on those, 5 or 10 is his own choice.
+LEGACY_SCENARIO_PCTS = (5.0, 10.0)
+SCENARIO_VERSION = 2
+
+
+def _own_pct(value, legacy: float | None) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if legacy is not None and v == legacy else v
+
+
+def _scenario_settings(params: dict, profile, course, known_course: bool = False, sport: str = "trail") -> dict:
+    """Optimiste / Sécurité: the athlete's own percentages when he set them, else the 20th / 80th percentiles of
+    his finish time on this course (race_calibration.scenario_pcts: his races' level, how many, how far this
+    course is from them). The race model counts only where it set the level (profile.race_calibration). A bike
+    plan keeps the former −5 / +10 % (no data on the bike's spread)."""
+    from app.services.race_calibration import course_dplus, effort_km, scenario_pcts
+
+    if sport == "bike":
+        auto_fast, auto_safe = LEGACY_SCENARIO_PCTS
+    else:
+        model = getattr(profile, "race_model", None) if getattr(profile, "race_calibration", None) else None
+        ekm = effort_km(course.total_distance_km, course_dplus(course)) if course is not None and course.total_distance_km else None
+        auto_fast, auto_safe = scenario_pcts(model, ekm, known_course)
+    legacy = (None, None) if params.get("scenario_v") == SCENARIO_VERSION else LEGACY_SCENARIO_PCTS
+    own_fast = _own_pct(params.get("scenario_fast_pct"), legacy[0])
+    own_safe = _own_pct(params.get("scenario_safe_pct"), legacy[1])
+    return {
+        "fast_pct": own_fast if own_fast is not None else auto_fast,
+        "safe_pct": own_safe if own_safe is not None else auto_safe,
+        "fast_own": own_fast, "safe_own": own_safe, "fast_auto": auto_fast, "safe_auto": auto_safe,
+        "switch_km": params.get("switch_km"),
+    }
+
+
+async def _race_clock(db: AsyncSession, user_id: int, route: Route | None, course, **page) -> dict:
+    """race_match.race_clock on the course already parsed (``page``: the page's own date, weather and start)."""
+    from app.services.race_match import race_clock
+
+    return await race_clock(db, user_id, route, getattr(course, "route_coords", None) or [], **page)
+
+
+async def _known_course(db: AsyncSession, user_id: int, route: Route | None) -> bool:
+    """He has raced this course before: one of his routes with a linked result is within 3 % of its distance
+    and 10 % of its D+ (100 m at least) — this route itself once its result is linked."""
+    from sqlalchemy import String, cast
+
+    if route is None or not route.total_distance_km:
+        return False
+    km, dp = float(route.total_distance_km), float(route.total_elevation_gain or 0)
+    rows = (await db.execute(
+        select(Route.total_distance_km, Route.total_elevation_gain)
+        .where(Route.user_id == user_id, Route.result_json.is_not(None),
+               cast(Route.result_json, String) != "null")  # a result set aside is stored as JSON null
+    )).all()
+    return any(abs(float(k or 0) - km) <= 0.03 * km and abs(float(d or 0) - dp) <= max(100.0, 0.10 * dp) for k, d in rows)
 
 
 async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None) -> dict:
@@ -1857,6 +2168,7 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     from app.schemas.simulator import CourseProfile
     from app.services.checkpoints import annotate_cutoffs
     from app.services.race_simulator import (
+        _fine_terrain,
         build_athlete_gradient_profile,
         compute_passage_times,
         objective_moving_s,
@@ -1869,7 +2181,6 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
     aid = _aid_kms_from_checkpoints(cps)
     stop_min = route.stop_minutes or 0
-    aid_stops = _aid_stops(cps, route.stop_minutes)
 
     if route.sport_type == "bike":
         from app.services.cycling_simulator import build_bike_passage_sections
@@ -1886,6 +2197,8 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
             "checkpoints": cps, "sections": sections, "predicted_total_s": int(cycling.predicted_total_time_s),
             "start_hour": bctx["start_hour"], "start_minute": bctx["start_minute"], "start_offset_s": start_offset_s,
             "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s),
+            "has_objective": bool(route.target_time_s), "objective_s": route.target_time_s,
+            "estimate_s": int(cycling.predicted_total_time_s), "plan_target_s": route.target_time_s,
             "pinned": False, "plan_total_s": route.target_time_s,
             "params": route.params_json or {}, "sport": "bike",
         }
@@ -1896,62 +2209,78 @@ async def _plan_bundle(route: Route, db: AsyncSession, user: User, profile=None)
     course = CourseProfile(**route.course_json)
     if profile is None:
         profile = await build_athlete_gradient_profile(db, user.id)
+    total_km = course.total_distance_km
+    clock = await _race_clock(db, user.id, route, course)
+    own_weather = bool(route.weather_json)  # without: the level at the heat his races were run in (predict_course)
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    heat, hourly = float(w.get("heat_factor") or 1.0), w.get("hourly")
+    # the page's two numbers: the estimate (the finish with its heat and stops, to the minute) and the objective
+    # (the saved time, when more than a minute from it); the plan runs on the objective, else on the estimate,
+    # exactly as the page's table does
+    fine = _fine_terrain(course, profile)
+    course, est, _ = _estimate(course, profile, start_hour, start_minute, clock, cps, route.stop_minutes, total_km,
+                               own_weather, heat, hourly, aid, fine)
+    estimate_s = _to_minute(est)
+    objective_s = await _route_objective(db, route, profile)
+    target = objective_s or estimate_s
+    aid_stops = _aid_stops(cps, route.stop_minutes, float(target), total_km)
     course = predict_course(
         course, profile, start_hour=start_hour, start_minute=start_minute,
-        plan_moving_s=objective_moving_s(
-            route.target_time_s, course.total_distance_km, cps, stop_min * 60, aid, aid_stops,
-        ),
+        plan_moving_s=objective_moving_s(target, course.total_distance_km, cps, stop_min * 60, aid, aid_stops),
+        fine_terrain=fine, aid_stops=aid_stops, own_weather=own_weather, **clock,
     )
     sections = compute_passage_times(
-        course, cps, route.target_time_s, 1.0, start_hour, start_minute,
-        route.weather_json.get("hourly") if route.weather_json else None,
-        stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops,
+        course, cps, target, heat, start_hour, start_minute, hourly,
+        stop_s_per_aid=stop_min * 60, aid_kms=aid, aid_stops=aid_stops, objective=objective_s is not None,
     )
     sections = annotate_cutoffs(sections, cps, start_offset_s)
     from app.services.race_simulator import is_pinned, plan_total_s
 
+    pinned = is_pinned(sections)
     return {
         "course": course, "profile": profile, "checkpoints": cps, "sections": sections, "aid_stops": aid_stops,
-        "predicted_total_s": int(course.predicted_total_time_s),
+        "predicted_total_s": int(course.predicted_total_time_s),  # the moving time at his level
+        "estimate_s": estimate_s, "objective_s": objective_s, "plan_target_s": target,
         "start_hour": start_hour, "start_minute": start_minute, "start_offset_s": start_offset_s,
-        # pinned checkpoints make a plan (adjusted_*) even without an objective
-        "stop_min": stop_min, "aid_kms": aid, "use_target": bool(route.target_time_s) or is_pinned(sections),
-        "pinned": is_pinned(sections),
-        # the plan's finish (stops included): the objective, or where the pins lead
-        "plan_total_s": plan_total_s(sections, start_offset_s, route.target_time_s),
+        # the sections' plan (adjusted_*) is the one to follow: on the objective, else on the estimate, as the page
+        "stop_min": stop_min, "aid_kms": aid, "use_target": True,
+        # named a plan (« le plan », « Objectif », the phone's « plan enregistré ») only when he set one: an
+        # objective or pinned times
+        "has_objective": objective_s is not None or pinned,
+        "pinned": pinned,
+        # the plan's finish (stops included): the objective, the estimate, or where the pins lead
+        "plan_total_s": plan_total_s(sections, start_offset_s, target),
         "params": route.params_json or {}, "sport": "trail",
     }
 
 
 # ── Pacing guide (terrain-typed instructions) ──
 
-async def _pacing_guide_for(route: Route, db: AsyncSession, user: User) -> dict:
+async def _pacing_guide_for(route: Route, db: AsyncSession, user: User, b: dict | None = None) -> dict:
     """The terrain guide with the athlete's ceilings (used by the Pilotage tab,
     the watch export and the printed band)."""
-    ctx = await _pacing_context(None, route, db, user)
+    ctx = await _pacing_context(None, route, db, user, b)
     return ctx["guide"]
 
 
-async def _pacing_context(request: Request | None, route: Route, db: AsyncSession, user: User) -> dict:
+async def _pacing_context(request: Request | None, route: Route, db: AsyncSession, user: User,
+                          b: dict | None = None) -> dict:
     from app.services.pacing_guide import build_pacing_guide, default_hr_caps, resolve_hr_caps
     from app.services.training_zones import estimate_training_zones
 
-    b = await _plan_bundle(route, db, user)
+    b = b or await _plan_bundle(route, db, user)  # the caller's own, when it has it: one plan per request
     p = b["params"]
     zones = await estimate_training_zones(db, user.id)
     defaults = default_hr_caps(zones.get("max_hr"))
     rc = resolve_hr_caps(p, zones.get("max_hr"))  # the same ceilings as the passage rows
     caps = {"hr_cap_climb": rc["climb"], "hr_cap_flat": rc["flat"], "hr_release_descent": rc["descent"]}
     walk_grade = rc["walk_grade"]
-    guide = build_pacing_guide(b["course"], b["plan_total_s"] or int(b["course"].predicted_total_time_s), walk_grade=walk_grade, plan_sections=b["sections"], **caps)
+    guide = build_pacing_guide(b["course"], b["plan_total_s"], walk_grade=walk_grade, plan_sections=b["sections"], **caps)
     return {
         "request": request, "route": route, "route_id": route.id, "guide": guide, "caps": caps,
         "walk_grade": walk_grade, "max_hr": zones.get("max_hr"), "defaults": defaults,
-        "has_target": b["use_target"], "total_km": b["course"].total_distance_km,
-        "scenario": {
-            "fast_pct": float(p.get("scenario_fast_pct") or 5.0), "safe_pct": float(p.get("scenario_safe_pct") or 10.0),
-            "switch_km": p.get("switch_km"),
-        },
+        "has_target": b["has_objective"], "total_km": b["course"].total_distance_km,
+        "scenario": _scenario_settings(p, b["profile"], b["course"], await _known_course(db, user.id, route), sport=b["sport"]),
         "checkpoints": b["checkpoints"],
     }
 
@@ -2022,9 +2351,19 @@ def _form_num(form, key, lo, hi, cast=float):
 
 
 def _apply_scenarios(form, p: dict, route: Route) -> None:
-    fast, safe = _form_num(form, "scenario_fast_pct", 0, 30), _form_num(form, "scenario_safe_pct", 0, 60)
-    p["scenario_fast_pct"] = fast if fast is not None else 5.0
-    p["scenario_safe_pct"] = safe if safe is not None else 10.0
+    """The athlete's own Optimiste / Sécurité percentages; an empty field is « automatique » (the 20th / 80th
+    percentiles of his finish time, _scenario_settings). Marked SCENARIO_VERSION only when today's form says so
+    (its hidden scenario_v): 5 / 10 are then his own; a page opened before (posting its former 5 / 10) is not."""
+    if str(form.get("scenario_v") or "") == str(SCENARIO_VERSION):
+        p["scenario_v"] = SCENARIO_VERSION
+    else:
+        p.pop("scenario_v", None)
+    for key, hi in (("scenario_fast_pct", 30), ("scenario_safe_pct", 60)):
+        v = _form_num(form, key, 0, hi)
+        if v is None:
+            p.pop(key, None)
+        else:
+            p[key] = v
     p["switch_km"] = _form_num(form, "switch_km", 0.1, float(route.total_distance_km or 9999))
 
 
@@ -2071,7 +2410,7 @@ async def export_pace_strategy(
     if b["sport"] != "bike":
         from app.services.pacing_guide import leg_instructions
 
-        leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user), b["sections"])]
+        leg_codes = [li["code"] for li in leg_instructions(await _pacing_guide_for(route, db, user, b), b["sections"])]
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in route.name).strip() or "parcours"
     fmt = (fmt or "gpx").lower()
     if fmt == "csv":
