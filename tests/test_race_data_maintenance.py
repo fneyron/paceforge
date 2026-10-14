@@ -3,6 +3,7 @@
 import copy
 import gzip
 import json
+import math
 import subprocess
 from datetime import date
 from types import SimpleNamespace
@@ -319,3 +320,28 @@ def test_the_lockbox_holds_the_events_first_collected_after_the_baseline():
     assert dataset.in_lockbox({"event": "transjeju", "source": "livetrail"}, known)  # per source
     assert dataset.known_events(Path("missing.json")) is None
     assert not dataset.in_lockbox({"event": "newrace"}, None)  # no baseline: no lockbox
+
+
+def test_the_level_benchmark_checks_strong_runners_apart(tmp_path):
+    """The finish-time benchmark by UTMB index band too, with the exponent fitted in each band and its
+    leave-one-event-out CI: the law must not fit strong runners worse than the others."""
+    np = pytest.importorskip("numpy")
+    from scripts.race_data import level_benchmark as lb
+
+    rng = np.random.default_rng(3)
+    for e in range(6):
+        for name, km, dp in (("50K", 50.0, 2500), ("100K", 100.0, 5000), ("100M", 165.0, 9000)):
+            runners = {}
+            for j, i in enumerate(rng.integers(420, 880, 60)):
+                hours = math.exp(-3.9 + 1.25 * math.log(km + dp / 100) - 0.9 * math.log(i / 600) + rng.normal(0, 0.05))
+                runners[str(j)] = {"index": int(i), "time_s": int(hours * 3600)}
+            folder = tmp_path / "utmb" / f"event{e}_2025"
+            folder.mkdir(parents=True, exist_ok=True)
+            doc = {"summary": {"name": name}, "info": {"elevationGain": dp},
+                   "points": [{"distance": 0}, {"distance": km * 1000}], "runners": runners}
+            (folder / f"{name.lower()}.json.gz").write_bytes(gzip.compress(json.dumps(doc).encode()))
+    out = lb.benchmark(tmp_path)
+    assert set(out["by_level"]) == {"index 0-550", "index 550-650", "index 650-750", "index 750+"}
+    assert set(out["k_by_level"]) == set(out["by_level"])
+    for row in out["k_by_level"].values():  # the exponent the data were made with, in every band
+        assert row["ci95"][0] <= row["k"] <= row["ci95"][1] and abs(row["k"] - 1.25) < 0.05

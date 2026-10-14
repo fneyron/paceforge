@@ -111,6 +111,12 @@ def evaluate(data: Path, livetrail: Path, out: Path, corpus: Path):
         + (f"Temps final (indice UTMB, un événement laissé de côté à la fois, {lv.get('finishers')} arrivants) : "
            f"erreur moyenne {lv.get('mae_pct')} %, {lv.get('coverage_pct')} % entre Optimiste et Sécurité (cible 60 %).\n\n"
            if lv else "")
+        + ("Par niveau (indice UTMB) : " + " ; ".join(
+            f"{lab} : erreur {row['mae_pct']} %, exposant "
+            + (f"{lv['k_by_level'][lab]['k']} [{lv['k_by_level'][lab]['ci95'][0]} ; {lv['k_by_level'][lab]['ci95'][1]}]"
+               if lab in (lv.get("k_by_level") or {}) else "—")
+            for lab, row in lv["by_level"].items()) + f" (loi de l'app : {lv.get('k_app')}).\n\n"
+           if lv.get("by_level") else "")
         + "Le candidat doit encore être vérifié avec le code de production "
         "(validate_app.py), puis sur les événements mis de côté (lockbox.py, une fois par version) avant adoption.\n\n"
         + "\n".join(

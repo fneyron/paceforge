@@ -12,8 +12,11 @@ other events; the Optimiste / Sécurité band is the app's
 (race_calibration.scenario_pcts, the index read as 3 past races). Reported:
 finish MAE %, median actual / predicted, coverage of the band (target 60 %),
 interval score (Gneiting & Raftery 2007, central 60 %, ln units × 100), by
-distance band; and the exponent fitted freely (k drifting away from the app's
-is a reason to look again). Diagnostics only: nothing here changes the app.
+distance band and by level (UTMB index band: does the law fit strong runners as
+well as the others?); the exponent fitted freely, leave-one-event-out, and per
+index band with its 95 % CI (leave-one-event-out jackknife): k drifting away
+from the app's, overall or for one level, is a reason to look again.
+Diagnostics only: nothing here changes the app.
 
 Run: .venv/bin/python scripts/race_data/level_benchmark.py [--root data/races] [--out level.json]
 """
@@ -33,13 +36,14 @@ sys.path.insert(0, str(HERE))
 import dataset  # noqa: E402
 
 BANDS = ((15, 60), (60, 100), (100, 140), (140, 200))
+LEVELS = ((0, 550), (550, 650), (650, 750), (750, None))  # UTMB index bands
 ALPHA = 0.4  # central 60 % interval: P20-P80
 INDEX_RACES = 3  # the UTMB index averages several results: read as 3 past races
 
 
 def finishers(root: pathlib.Path) -> list[tuple]:
-    """(event, ln E, ln(index / 600), ln T hours, km) of every indexed finisher of a solo running race of
-    15 km or more with 25 indexed finishers or more."""
+    """(event, ln E, ln(index / 600), ln T hours, km, index) of every indexed finisher of a solo running race
+    of 15 km or more with 25 indexed finishers or more."""
     out = []
     for path in sorted((root / "utmb").glob("*/*.json.gz")):
         d = json.loads(gzip.decompress(path.read_bytes()))
@@ -56,8 +60,24 @@ def finishers(root: pathlib.Path) -> list[tuple]:
             continue
         ev = path.parent.name.rsplit("_", 1)[0]
         for i, t in run:
-            out.append((ev, math.log(km + dp / 100), math.log(i / 600), math.log(t / 3600), km))
+            out.append((ev, math.log(km + dp / 100), math.log(i / 600), math.log(t / 3600), km, i))
     return out
+
+
+def k_band(design, y, ev, sel) -> dict:
+    """The exponent fitted freely on one level band (all events), its 95 % CI by a leave-one-event-out
+    jackknife."""
+    import numpy as np
+
+    def fit(s):
+        c, *_ = np.linalg.lstsq(design[s], y[s], rcond=None)
+        return float(c[1])
+
+    k = fit(sel)
+    ks = np.array([fit(sel & (ev != e)) for e in sorted(set(ev[sel]))])
+    g = len(ks)
+    se = float(np.sqrt((g - 1) / g * np.sum((ks - ks.mean()) ** 2))) if g > 1 else 0.0
+    return {"finishers": int(sel.sum()), "k": round(k, 3), "ci95": [round(k - 1.96 * se, 3), round(k + 1.96 * se, 3)]}
 
 
 def benchmark(root: pathlib.Path) -> dict | None:
@@ -96,6 +116,10 @@ def benchmark(root: pathlib.Path) -> dict | None:
     out = {"k_app": K_PRIOR, "k_free_loeo": [round(min(ks), 3), round(max(ks), 3)], "events": len(events),
            "band_pct": [-fast, safe], **stats(np.ones(len(y), dtype=bool))}
     out["by_band"] = {f"{a}-{b} km": stats((km >= a) & (km < b)) for a, b in BANDS if ((km >= a) & (km < b)).any()}
+    ix = np.array([r[5] for r in rows])
+    levels = {(f"index {a}-{b}" if b else f"index {a}+"): (ix >= a) & (ix < (b or 10 ** 6)) for a, b in LEVELS}
+    out["by_level"] = {lab: stats(sel) for lab, sel in levels.items() if sel.any()}
+    out["k_by_level"] = {lab: k_band(design, y, ev, sel) for lab, sel in levels.items() if sel.sum() >= 50}
     return out
 
 

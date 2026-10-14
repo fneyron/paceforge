@@ -77,7 +77,9 @@ comme **indicateurs**, sans veto : une course ou un coureur ne valident rien.
 Le rapport donne aussi le temps final (`level_benchmark.py`) : chaque arrivant
 UTMB Live prédit d’après son indice UTMB et le km-effort du parcours, un
 événement laissé de côté à la fois — erreur moyenne en %, part des arrivants
-entre Optimiste et Sécurité (cible 60 %) et score d’intervalle.
+entre Optimiste et Sécurité (cible 60 %) et score d’intervalle, par bande de
+distance et par niveau (bande d’indice), avec l’exposant ajusté par niveau et
+son intervalle de confiance : la loi ne doit pas desservir les coureurs forts.
 
 La métrique compare les passages **à durée finale connue**, avec les arrêts
 retirés lorsqu’ils sont mesurés. Elle évalue la répartition des temps sur le

@@ -26,6 +26,18 @@ Population k = 1.28 (b ≈ 0.22): at a fixed UTMB index, the finish time of
 fast and < 60 km ones 9.5 % too slow (leave-one-event-out finish MAE 12.9 %
 vs 10.1 % at k = 1.28).
 
+Checked by level (2026-10-14; level_benchmark.py k_by_level): at a fixed
+index the exponent does not fall for strong runners: 1.29 [1.25, 1.32] under
+index 550, 1.32 [1.26, 1.39] at 550-650, 1.32 [1.27, 1.37] at 650-750, 1.27
+[1.25, 1.30] from 750 (jackknife over the 21 events). 242 runners followed
+across 2 to 8 races (sex, birth year, index) show no spread of their own
+exponent beyond the races' noise (SD 0.00, CI up to 0.05): the prior SD
+stays 0.08. Each of their races predicted from the earlier ones: MAE 13.3 %
+with the former law, 11.8 % with this one at SD 0.08, 0.12 or 0.15, 11.7-11.8
+% with an exponent by level band. Every index band does better than with the
+former law on the 48 640 finishers (MAE -20 to -26 %); on the followed
+runners, the strongest (index 750+) about as well (9.2 vs 9.4 %).
+
 The resulting total time re-levels the terrain-shaped prediction: the shape
 (where the time goes) still comes from the gradient profile, the level (how
 fast overall) from the races.
