@@ -363,7 +363,8 @@ def daily_upsert(dialect: str, day: Daily, phone: MobileDevice, seen: datetime |
     new = stmt.excluded
     # The production column is `json` (migration d4a5b6c7d8e9), which has no equality
     # operator on PostgreSQL: compare the sources as jsonb there.
-    sources = (cast(MobileDaily.sources, JSONB), cast(new.sources, JSONB)) if postgres else (MobileDaily.sources, new.sources)
+    sources = ((cast(MobileDaily.sources, JSONB), cast(new.sources, JSONB)) if postgres
+               else (MobileDaily.sources, new.sources))
     # Identical re-sends (every background run) change nothing: no updated_at,
     # receipt count or Santé data version bump.
     changed = or_(MobileDaily.value.is_distinct_from(new.value), sources[0].is_distinct_from(sources[1]),
@@ -384,10 +385,29 @@ def daily_upsert(dialect: str, day: Daily, phone: MobileDevice, seen: datetime |
     ).returning(MobileDaily)
 
 
+# Bodies are read, capped and parsed in dependencies declared before the token
+# check: no database connection is held while a slow phone uploads or a night is parsed.
+async def daily_body(request: Request) -> Import:
+    return validated(Import, await capped_body(request, MAX_DAILY_BYTES))
+
+
+def parse_night(raw: bytes) -> tuple[AppleNight, list]:
+    packet = validated(AppleNight, raw)
+    try:
+        return packet, apple_nights.reduce_night(packet)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+async def night_body(request: Request) -> tuple[AppleNight, list]:
+    raw = await capped_body(request, MAX_NIGHT_BYTES)
+    # Up to ~25 000 validated objects, then quadratic overlap checks: off the event loop.
+    return await asyncio.to_thread(parse_night, raw)
+
+
 @router.post("/api/mobile/daily")
-async def ingest(request: Request, phone: MobileDevice = Depends(limited), db: AsyncSession = Depends(get_db),
-                 x_paceforge_read_at: str | None = Header(default=None)):
-    body = validated(Import, await capped_body(request, MAX_DAILY_BYTES))
+async def ingest(body: Import = Depends(daily_body), phone: MobileDevice = Depends(limited),
+                 db: AsyncSession = Depends(get_db), x_paceforge_read_at: str | None = Header(default=None)):
     now = datetime.now(timezone.utc)
     seen = read_at(x_paceforge_read_at, now)
     received = 0
@@ -406,16 +426,12 @@ async def ingest(request: Request, phone: MobileDevice = Depends(limited), db: A
 
 
 @router.post("/api/mobile/nights")
-async def ingest_night(request: Request, phone: MobileDevice = Depends(limited), db: AsyncSession = Depends(get_db)):
-    raw = await capped_body(request, MAX_NIGHT_BYTES)
+async def ingest_night(night: tuple[AppleNight, list] = Depends(night_body), phone: MobileDevice = Depends(limited),
+                       db: AsyncSession = Depends(get_db)):
     if phone.platform != "ios":
         raise HTTPException(422, "Les nuits Apple Santé nécessitent un iPhone.")
-    # Up to ~25 000 validated objects: parse off the event loop.
-    body = await asyncio.to_thread(validated, AppleNight, raw)
-    try:
-        received = await apple_nights.ingest(db, phone.user_id, body)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+    packet, rows = night
+    received = await apple_nights.ingest(db, phone.user_id, packet, rows)
     if received:
         phone.last_sync_at = datetime.now(timezone.utc)
     await db.flush()

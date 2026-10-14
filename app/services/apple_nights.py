@@ -180,10 +180,12 @@ def athlete_zone_name(name: str) -> str | None:
     return name
 
 
-async def ingest(db, user_id, packet):
+async def ingest(db, user_id, packet, rows=None):
     import asyncio
-    # Overlap checks are quadratic in the intervals: keep them off the event loop.
-    rows = await asyncio.to_thread(reduce_night, packet)
+    # Overlap checks are quadratic in the intervals: keep them off the event loop
+    # (the phone endpoint reduces the night before it opens the session).
+    if rows is None:
+        rows = await asyncio.to_thread(reduce_night, packet)
     from app.models.user import User
     user = await db.get(User, user_id)
     if user is not None and not user.timezone and (zone := athlete_zone_name(packet.timezone)):

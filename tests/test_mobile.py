@@ -305,6 +305,7 @@ async def test_a_phone_corrects_its_own_day_but_an_older_snapshot_never_wins(cli
 
 
 async def test_each_phone_has_a_request_budget(client, test_user, monkeypatch):
+    from tests.test_apple_nights import packet
     budget = mobile.PhoneLimiter(limit=2, window=600)
     budget.redis_down_until = float('inf')  # this worker's count
     monkeypatch.setattr(mobile, 'limiter', budget)
@@ -314,7 +315,7 @@ async def test_each_phone_has_a_request_budget(client, test_user, monkeypatch):
         assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
     refused = await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))
     assert refused.status_code == 429 and 0 < int(refused.headers['retry-after']) <= 600
-    assert (await client.post('/api/mobile/nights', json={}, headers=bearer(account['token']))).status_code == 429
+    assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 429
     assert (await client.post('/api/mobile/token', headers=bearer(account['token']))).status_code == 429
     assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(other['token']))).status_code == 200
     assert (await client.delete('/api/mobile/device', headers=bearer(account['token']))).status_code == 200
@@ -375,6 +376,40 @@ async def test_bodies_are_capped_before_parsing_and_errors_keep_their_shape(clie
     response = await client.post('/api/mobile/daily', json={'days': [day(value=0)]}, headers=bearer(account['token']))
     assert response.status_code == 422 and response.json()['detail'][0]['loc'][:3] == ['body', 'days', 0]
     assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 422
+
+
+async def test_bodies_are_read_and_parsed_before_the_database_session_is_used(client, db_session, test_user, monkeypatch):
+    # A slow 2 MB upload or a night's parse must not hold a database connection.
+    from app.dependencies import get_db
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    order = []
+
+    async def database():
+        order.append('database')
+        yield db_session
+
+    read, reduce = mobile.capped_body, mobile.apple_nights.reduce_night
+
+    async def body(request, limit):
+        order.append('body')
+        return await read(request, limit)
+
+    def reduced(night):
+        order.append('reduced')
+        return reduce(night)
+
+    client._transport.app.dependency_overrides[get_db] = database
+    monkeypatch.setattr(mobile, 'capped_body', body)
+    monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
+    assert (await client.post('/api/mobile/daily', json={'days': [day()]}, headers=bearer(account['token']))).status_code == 200
+    assert order[:2] == ['body', 'database']
+    order.clear()
+    assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 200
+    assert order[:3] == ['body', 'reduced', 'database']
+    # Consequence: an invalid body is refused before the token is checked.
+    assert (await client.post('/api/mobile/daily', json={'days': [day(value=0)]})).status_code == 422
+    assert (await client.post('/api/mobile/daily', json={'days': []})).status_code == 401
 
 
 async def test_a_night_sets_the_athlete_zone_once_and_never_from_a_fixed_offset(client, test_user):
