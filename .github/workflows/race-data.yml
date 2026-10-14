@@ -100,6 +100,12 @@ jobs:
         run: |
           python -m scripts.race_data.reevaluate --data "$PACEFORGE_FIT_DIR/fitdata.pkl" \
             --livetrail "$PACEFORGE_FIT_DIR/livetrail.pkl"
+      - name: Check that the application was not touched
+        if: always()
+        # a candidate is a report: the production model changes only through a reviewed commit on main
+        run: |
+          git diff --exit-code -- app/ alembic/
+          test -z "$(git status --porcelain -- app/ alembic/)"
       - name: Persist the candidate and validation report
         if: steps.evaluate.outcome == 'success'
         run: python -m scripts.race_data.state_store save

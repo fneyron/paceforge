@@ -155,8 +155,15 @@ def build(path: pathlib.Path, source: str = "utmb"):
     prep = {"total": total, "cp_km": [c["km"] * scale for c in race["cps"]], "dist": [s.distance_m / 1000 for s in segs],
             "end": [s.end_km for s in segs], "start": [s.start_km for s in segs], "gain": [s.elevation_gain for s in segs],
             "base": [t * a for t, a in zip(fine, alt)], "base_cur": [t * a for t, a in zip(fine_cur, alt)]}
+    start_utc = None
+    if race["start"]:
+        from datetime import datetime, timezone
+
+        start_utc = datetime.fromisoformat(race["start"]).astimezone(timezone.utc).timestamp()
     out = {
         "id": race["id"], "source": source, "event": path.parent.name.rsplit("_", 1)[0], "year": path.parent.name.rsplit("_", 1)[1],
+        # night by the sun: the start on the UTC clock (epoch s) and where each segment starts
+        "start_utc": start_utc, "seg_pos": rs.segment_positions(course) if source == "utmb" else None,
         "name": race["name"], "km": km, "dplus": dplus,
         "start": race["start"], "start_hour": cal.start_hour(race), "has_clock": bool(race["start"]), "cps": race["cps"], "prep": prep,
         "fat_prod": fat, "alt": alt, "hist": _hist(course, track), "runners": runners,

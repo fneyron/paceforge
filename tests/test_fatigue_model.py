@@ -154,4 +154,5 @@ async def test_only_tilts_measured_on_the_hours_curve_count(db_session, test_use
     db_session.add(Route(user_id=test_user.id, name="new", total_distance_km=30,
                          result_json={"fatigue_tilt": 0.31, "fatigue_model": rs.FATIGUE_MODEL}))
     await db_session.flush()
-    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == 0.31
+    # one matched race moves the tilt a third of the way from the neutral one (m / (m + 2), m = 1)
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.25)

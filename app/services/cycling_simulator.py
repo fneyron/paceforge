@@ -66,6 +66,22 @@ def headwind_component(wind_speed_ms: float, wind_from_deg: float, rider_bearing
     return wind_speed_ms * math.cos(delta)
 
 
+# What the power meter reads (cranks, pedals) is not what reaches the wheel:
+# chain, bearings and derailleur take about 2.5 % (1.5-3 % in lab tests of
+# clean drivetrains; H). Read the same way in the prediction and in the CdA
+# estimate, so the loss is not counted in the CdA as drag.
+DRIVETRAIN_EFFICIENCY = 0.975
+
+
+def air_density(alt_m: float | None, temp_c: float | None = None) -> float:
+    """Air density (kg/m³): the ISA pressure at the altitude and the
+    temperature given (else ISA's at that altitude, 15 °C at sea level)."""
+    h = max(-500.0, min(9000.0, float(alt_m or 0.0)))
+    pressure = 101325.0 * (1 - 2.25577e-5 * h) ** 5.25588
+    t_k = (float(temp_c) + 273.15) if temp_c is not None else 288.15 - 0.0065 * h
+    return pressure / (287.05 * t_k)
+
+
 def cycling_power(
     speed_ms: float,
     total_weight_kg: float,
@@ -74,12 +90,14 @@ def cycling_power(
     cda: float = 0.32,
     crr: float = 0.005,
     rho: float = 1.225,
+    efficiency: float = DRIVETRAIN_EFFICIENCY,
 ) -> float:
-    """Power (W) the rider must produce to hold ground speed `speed_ms`.
+    """Power (W) the rider must produce (at the power meter) to hold ground speed `speed_ms`.
 
     Includes gravity (signed by gradient), rolling resistance, and aero drag in
-    a wind-aware form. Power can be negative on a descent + tailwind (rider
-    would be accelerated by gravity/wind beyond the target speed).
+    a wind-aware form, at the wheel, over the drivetrain's efficiency. Power can
+    be negative on a descent + tailwind (rider would be accelerated by
+    gravity/wind beyond the target speed).
     """
     grade = gradient_pct / 100
     theta = math.atan(grade)
@@ -88,7 +106,7 @@ def cycling_power(
     p_rolling = crr * total_weight_kg * 9.81 * math.cos(theta) * speed_ms
     v_air = speed_ms + headwind_ms
     p_aero = 0.5 * cda * rho * v_air * abs(v_air) * speed_ms
-    return p_gravity + p_rolling + p_aero
+    return (p_gravity + p_rolling + p_aero) / (efficiency or 1.0)
 
 
 def solve_cycling_speed(
@@ -134,7 +152,7 @@ def predict_cycling_course(
     bike_weight_kg: float = 9.0,
     cda: float = 0.32,
     crr: float = 0.005,
-    rho: float = 1.225,
+    rho: float | None = None,
     wind_speed_kmh: float = 0.0,
     wind_direction_deg: float | None = None,
     wind_source: str | None = None,
@@ -154,6 +172,12 @@ def predict_cycling_course(
     taken at each segment's estimated time of passage (``start_offset_s`` +
     cumulative time). Forecast wind is reported at 10 m; ``wind_height_factor``
     scales it to rider height (~1.5 m, log wind profile ≈ 0.75).
+
+    Air density: ``rho`` when given, else each segment's from its altitude and
+    the forecast temperature at its time of passage (``hourly_wind["temps"]``,
+    lapse-rate corrected from the forecast point's elevation), else ISA's at
+    that altitude — as the CdA was estimated (sea-level 1.225 overstated the
+    drag of a mountain course). The profile's ``rho`` is the time-weighted mean.
     """
     total_weight = rider_weight_kg + bike_weight_kg
     wind_speed_ms = wind_speed_kmh / 3.6
@@ -162,6 +186,7 @@ def predict_cycling_course(
 
     cycling_segments: list[CyclingSegment] = []
     cumulative_time = 0.0
+    rho_time = 0.0  # Σ ρ·t (the profile's mean density)
     work_j = 0.0
     fourth_power_time_sum = 0.0  # Σ p_i^4 * t_i
 
@@ -191,17 +216,19 @@ def predict_cycling_course(
         else:
             headwind_ms = 0.0
 
+        seg_rho = rho if rho is not None else _segment_density(seg, hourly_wind, start_offset_s + cumulative_time)
         speed_ms = solve_cycling_speed(
             target_power_watts, total_weight, seg.avg_gradient_pct,
-            headwind_ms, cda, crr, rho, max_speed_ms=max_speed_kmh / 3.6,
+            headwind_ms, cda, crr, seg_rho, max_speed_ms=max_speed_kmh / 3.6,
         )
         # Power actually produced at that speed (clamped to >= 0 for display: rider
         # can't pedal negative, but we still report the target-driven solution).
         seg_power = max(0.0, cycling_power(
             speed_ms, total_weight, seg.avg_gradient_pct,
-            headwind_ms, cda, crr, rho,
+            headwind_ms, cda, crr, seg_rho,
         ))
         seg_time_s = seg.distance_m / speed_ms if speed_ms > 0 else 0
+        rho_time += seg_rho * seg_time_s
         cumulative_time += seg_time_s
         work_j += seg_power * seg_time_s
         fourth_power_time_sum += (seg_power ** 4) * seg_time_s
@@ -252,7 +279,7 @@ def predict_cycling_course(
         bike_weight_kg=bike_weight_kg,
         cda=cda,
         crr=crr,
-        rho=rho,
+        rho=round(rho_time / cumulative_time, 3) if rho is None and cumulative_time > 0 else (rho or 1.225),
         wind_speed_kmh=wind_speed_kmh if apply_wind else 0,
         wind_direction_deg=wind_direction_deg if apply_wind else None,
         wind_source=wind_source if apply_wind else None,
@@ -280,8 +307,27 @@ def format_time(seconds: int) -> str:
 
 
 def _air_density_at_altitude(alt_m: float) -> float:
-    """Approximate ISA air density (kg/m³) at the given altitude in metres."""
-    return 1.225 * math.exp(-alt_m / 8500)
+    """ISA air density (kg/m³) at the given altitude in metres (air_density, the prediction's)."""
+    return air_density(alt_m)
+
+
+_LAPSE_C_PER_M = 0.0065
+
+
+def _segment_density(seg, hourly: dict | None, clock_s: float) -> float:
+    """A segment's air density: its mean altitude, the forecast temperature at its time of passage when the
+    hourly forecast carries one (lapse-rate corrected from the forecast's elevation), else ISA's."""
+    alt = (seg.min_elevation + seg.max_elevation) / 2
+    temps = (hourly or {}).get("temps") or []
+    if temps:
+        from app.services.weather import hourly_index
+
+        t = temps[hourly_index(int(clock_s // 3600), len(temps))]
+        if t is not None:
+            ref = (hourly or {}).get("elevation")
+            temp = float(t) - _LAPSE_C_PER_M * (alt - float(ref)) if ref is not None else float(t)
+            return air_density(alt, temp)
+    return air_density(alt)
 
 
 def estimate_cda_from_streams(
@@ -322,7 +368,7 @@ def estimate_cda_from_streams(
         if v < 1.0:  # Effectively stopped — drop, contributes no aero info
             continue
 
-        work_j += p * dt
+        work_j += p * dt * DRIVETRAIN_EFFICIENCY  # at the wheel, as the prediction reads it
         rolling_int += v * dt
         aero_int += (v ** 3) * dt
         moving_dt += dt

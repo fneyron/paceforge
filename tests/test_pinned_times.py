@@ -50,11 +50,17 @@ def _by(secs, name):
 # ── no pins: byte-for-byte what the plan gave before the feature ──
 
 HOURLY = {"temps": [12 + (h % 24) * 0.5 for h in range(48)], "humidity": [70] * 48, "codes": [3] * 48, "wind": [10] * 48}
-LEGACY = {  # sha256 of {sections, replan at Col +2h, scenarios}, computed before pins existed
-    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "7dd306c737ec235847f0ae303581ce29024e5ab40caac8220d35cdeb57dbeb12"),
-    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "af0d2a5ad451b40f6fc644565b1933d749d84c440634343502b20038fa6150cb"),
-    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "9ba200d49a1c8fdfb7688edda6e7dc1f84c58a436a52c5e2cc96eb853fd71b9b"),
-    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "dd7bc6b76345d155bae4200af5734a5241cec73f3030a41ef42b289c7b7d4628"),
+# sha256 of {sections, replan at Col +2h, scenarios} without pins, computed before pins existed; re-taken on
+# 2026-10-14 for four formula changes only (every other byte identical): the safety switch at 5 % of the plan's
+# elapsed time at the switch point (switch_late_s 900 → 540 / 660 s, switch_late_pct added), Optimiste / Sécurité
+# scaling the elapsed time, stops included (target_stops_night), and, with an hourly forecast, the objective plan
+# weighted by each section's heat and humidity counted in the heat from 15 °C only, phased in to 20 °C
+# (target_hourly: two sections at 15-17 °C and 70 % lose 0.3-0.5 %, the plan moves 4-12 s).
+LEGACY = {
+    "no_target": (dict(target=None, sh=6, stops=None, hourly=None), "6fe0b2dd1ba80cf8595745a3e3a2142128a7741989514fb82a98e9ff6956c851"),
+    "target": (dict(target=5 * 3600, sh=6, stops=None, hourly=None), "11eed93b9c769356005409659bcca443b2f183a7fb51f8741f9f9b596fd4fe4a"),
+    "target_stops_night": (dict(target=5 * 3600 + 600, sh=21, stops=STOPS, hourly=None), "3bccdb316f94a8791a20aab92d46766221e45caa5e41b665e84eba57129b4122"),
+    "target_hourly": (dict(target=4 * 3600, sh=9, stops={10.0: 300}, hourly=HOURLY), "c58e276dd66cd137fcc41c19086e404ad651c314162874c59687200f88ae5beb"),
 }
 
 
@@ -101,12 +107,15 @@ def test_pin_past_midnight_and_on_the_last_checkpoint_without_objective():
 
 
 def test_the_estimate_sent_as_target_is_not_an_objective():
-    course = _course()
-    est = course.predicted_total_time_s + 20  # the page sends the estimate, rounded to the minute
-    pinned = _plan(_cps(Col=7200), target=est)
     free = _plan(_cps(Col=7200), target=None)
+    # the page sends its estimate, the finish with its stops in it, rounded to the minute
+    est = free[-1]["clock_time_s"] - START_21 + 20
+    pinned = _plan(_cps(Col=7200), target=est)
     assert pinned[-1]["objective_s"] is None
     assert [s["adjusted_clock_time_s"] for s in pinned] == [s["adjusted_clock_time_s"] for s in free]
+    # the moving time is not the estimate: sent as the target, 22 min of stops short of it, it is an objective
+    moving = _course().predicted_total_time_s
+    assert _plan(_cps(Col=7200), target=moving)[-1]["objective_s"] == moving
 
 
 def test_auto_clock_is_where_the_plan_would_pass_without_the_pin():

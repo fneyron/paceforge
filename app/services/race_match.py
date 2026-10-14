@@ -187,9 +187,11 @@ async def link_result(db: AsyncSession, route: Route, activity: Activity, user_i
             if profile is None:
                 profile = await build_athlete_gradient_profile(db, user_id)
             sh = route.start_hour if route.start_hour is not None else 6
-            measured = measure_fatigue_tilt(route.course_json, profile, cps, actual, total_actual_s, sh, route.start_minute or 0)
+            measured = measure_fatigue_tilt(route.course_json, profile, cps, actual, total_actual_s, sh, route.start_minute or 0,
+                                            **await race_clock(db, user_id, route))
             if measured:
-                fatigue = {"fatigue_tilt": measured["tilt"], "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": measured["n"]}
+                fatigue = {"fatigue_tilt": measured["tilt"], "fatigue_tilt_raw": measured["raw"],
+                           "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": measured["n"]}
         except Exception:
             logger.exception("fatigue tilt calibration failed")
 
@@ -206,6 +208,31 @@ async def link_result(db: AsyncSession, route: Route, activity: Activity, user_i
     }
     await db.flush()
     return route.result_json
+
+
+async def race_clock(db: AsyncSession, user_id: int, route: Route | None, coords: list | None = None) -> dict:
+    """{race_date, utc_offset_s} for night by the sun (race_simulator.predict_course): the race date and its
+    clock's UTC offset at the start (the start point's own time zone, which the saved weather carries, else the
+    saved forecast's offset, else the athlete's zone when the course lies in its band, else the longitude's:
+    race_simulator.race_utc_offset_s); {} without a date or a trace (the fixed 21:00-06:00 window). Reads the
+    route only: no lookup, nothing written (a page renders it). ``coords``: the course's trace when the caller
+    has it parsed."""
+    from app.models.user import User
+    from app.services.race_simulator import race_utc_offset_s
+    from app.services.timezones import zone_of
+
+    if route is None:
+        return {}
+    coords = coords if coords is not None else (route.course_json or {}).get("route_coords") or []
+    if not route.race_date or not coords or len(coords[0]) < 2:
+        return {}
+    tz = (await db.execute(select(User.timezone).where(User.id == user_id))).scalar_one_or_none()
+    w = route.weather_json if isinstance(route.weather_json, dict) else {}
+    wx_off = w.get("utc_offset_s") if str(w.get("date") or "")[:10] == str(route.race_date)[:10] else None
+    start_zone = w.get("tz") if isinstance(w.get("tz"), str) else None  # weather.get_weather_forecast
+    off = race_utc_offset_s(route.race_date, float(coords[0][1]), wx_off, zone_of(tz), start_zone=start_zone,
+                            start_hour=route.start_hour, start_minute=route.start_minute or 0)
+    return {"race_date": route.race_date, "utc_offset_s": off} if off is not None else {}
 
 
 async def auto_link(db: AsyncSession, user_id: int, route: Route, now: datetime | None = None,

@@ -263,6 +263,15 @@ async def committing_client(committing_session: AsyncSession):
 
 
 @pytest.fixture(autouse=True)
+def _open_meteo_marker_in_memory(monkeypatch):
+    """The Open-Meteo outage marker in this process, fresh for each test: no test reaches a real Redis (production
+    shares it between the workers there, weather.RedisMarker)."""
+    from app.services import weather
+
+    monkeypatch.setattr(weather, "_outage", weather.MemoryMarker())
+
+
+@pytest.fixture(autouse=True)
 def _rate_limits_in_memory(monkeypatch):
     """The login, sign-up and reset counters in this process, fresh for each test (production keeps them in
     Redis, shared by the web workers)."""

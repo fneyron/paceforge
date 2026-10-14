@@ -138,6 +138,9 @@ async def test_no_reference_finisher_and_the_debrief(as_user: AsyncClient, db_se
     rj = (await db_session.get(Route, route_id)).result_json
     assert 0.05 <= rj["fatigue_tilt"] <= 0.40 and rj["fatigue_model"] == "hours"
     assert rj["fatigue_tilt_cps"] >= 1  # fitted on every matched checkpoint, not the first only
+    # the race's own tilt is stored: the plan combines the races on it (m / (m + 2)); one race alone is a third of the way
+    assert 0.05 <= rj["fatigue_tilt_raw"] <= 0.40
+    assert rj["fatigue_tilt"] == pytest.approx(0.22 + (rj["fatigue_tilt_raw"] - 0.22) / 3, abs=1e-3)
 
 
 @pytest.mark.asyncio
@@ -177,7 +180,7 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     """One écart: real elapsed time (stops included) against the plan's finish (the objective,
     stops by point kind included) — the sum of the legs' gaps, whatever the stored moving total."""
     course = _course()
-    r = await as_user.post("/api/simulator/routes", data={  # no stop_minutes: stops by kind (2′ + 5′ + 5′)
+    r = await as_user.post("/api/simulator/routes", data={  # no stop_minutes: the stop model's, by kind
         "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Jeju sans arrêt réglé",
         "target_time_s": 5 * 3600, "race_date": "2026-10-02", "start_hour": 21, "start_minute": 0, "sport_type": "trail",
     })
@@ -194,7 +197,8 @@ async def test_debrief_shows_one_gap_against_the_plans_finish(as_user: AsyncClie
     t = r.text
     assert "Réalisé <b>5h15</b>" in t and "Plan <b>5h00</b>" in t
     assert '<p class="pf-db-num is-bad">+15<small' in t  # +15 min, not +27 (stops forgotten) nor −3 (moving vs estimate)
-    assert "(12 prévues)" in t  # the plan's stops: eau 2′ + ravito 5′ + ravito 5′
+    # the plan's stops: the stop model's for a 5 h finisher (eau 1′01 + ravito 1′24 + ravito 1′37, by place in the race)
+    assert "(4 prévues)" in t
     assert "<span>ven. 2 oct. 2026</span>" in t  # the activity's day in words, as the app writes dates
     # a reason shared by consecutive legs is written once (the next rows say it to screen readers only)
     whys = re.findall(r'<span class="pf-cmp-why( is-same)?" role="cell">(.*?)</span>\s*</div>', t, re.S)

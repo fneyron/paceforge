@@ -3,6 +3,8 @@ race calibration, pace export, debrief."""
 
 import math
 
+import pytest
+
 from app.schemas.simulator import CourseProfile, CourseSegment
 from app.services import checkpoints as cpsvc
 from app.services.debrief import leg_debrief
@@ -162,11 +164,11 @@ def test_scenarios_columns_and_switch_rule():
     assert sc["basis"] == "target"
     fin = sc["rows"][-1]
     assert fin["fast_s"] < fin["target_s"] < fin["safe_s"]
-    # stops are the same in all three columns: only the MOVING budget
-    # (target − 3 stops × 3 min) is scaled
-    moving = 5 * 3600 - 3 * 180
-    assert abs((sc["totals"]["safe_s"] - sc["totals"]["target_s"]) - 0.10 * moving) < 5
-    assert abs((sc["totals"]["target_s"] - sc["totals"]["fast_s"]) - 0.05 * moving) < 5
+    # the percentages scale the elapsed time, the 3 stops × 3 min included (they were read on finish times):
+    # Sécurité is the plan's finish × 1.10, Optimiste × 0.95
+    elapsed = 5 * 3600
+    assert abs((sc["totals"]["safe_s"] - sc["totals"]["target_s"]) - 0.10 * elapsed) < 5
+    assert abs((sc["totals"]["target_s"] - sc["totals"]["fast_s"]) - 0.05 * elapsed) < 5
     assert abs(sc["totals"]["target_s"] - 5 * 3600) < 5
     # switch defaults to the CP nearest 60 % (km 18 → Village at km 20)
     assert sc["switch"]["name"] == "Village"
@@ -186,15 +188,22 @@ def test_scenarios_flag_cutoff_breach():
 # ── 1. race calibration ──
 
 def test_effort_model_fit_and_prediction():
+    from app.services.race_calibration import DECAY_MAX, DECAY_MIN, K_PRIOR
+
     # two races: 90 km/6000 m in 16 h (ekm 150 → 9.4/h) and 100 km/3000 m in 10 h (ekm 130 → 13/h)
     pts = [{"hours": 16, "ekm_h": 150 / 16, "weight": 1}, {"hours": 10, "ekm_h": 13.0, "weight": 1}]
     m = fit_effort_model(pts)
-    assert m["fitted"] and 0.02 <= m["b"] <= 0.20
+    assert m["fitted"] and DECAY_MIN <= m["b"] <= DECAY_MAX
+    # two races of nearly the same effort-km say little about the exponent: it stays near the population's
+    # 1.28 (their raw slope, 3.3, is the technical course's, not a decay)
+    assert abs(m["k"] - K_PRIOR) < 0.02
     # a 148 km / 5000 m course (ekm 198) lands between the two rates' implied durations
     t = predict_total_s(m, effort_km(148, 5000)) / 3600
     assert 15 < t < 24
     single = fit_effort_model(pts[:1])
-    assert single["n"] == 1 and single["b"] == 0.08
+    assert single["n"] == 1 and single["k"] == K_PRIOR and single["b"] == pytest.approx(1 - 1 / K_PRIOR)
+    # one race: T = its time × (E / its E)^1.28
+    assert predict_total_s(single, 300) / 3600 == pytest.approx(16 * (300 / 150) ** K_PRIOR, rel=1e-3)
 
 
 def test_apply_race_calibration_relevels_keeping_shape():
@@ -384,27 +393,29 @@ def test_weather_hourly_lookup_uses_nearest_point_and_second_day():
     assert hourly_at({"temps": [12.0] * 24}, 27, 50.0)["temp"] == 12.0  # legacy 24 h payload wraps
 
 
-def test_best_efforts_ignore_hikes_and_slow_duplicates():
-    from app.services.race_calibration import fit_effort_model, select_best_efforts
+def test_races_ignore_hikes_and_set_aside_what_sits_far_off_the_curve():
+    from app.services.race_calibration import fit_effort_model, select_races
 
     pts = [
         {"name": "Trail 30", "hours": 3.0, "ekm_h": 13.0, "weight": 1.0},
-        {"name": "Trail 30 malade", "hours": 3.2, "ekm_h": 10.0, "weight": 1.0},   # same bin, slower
+        {"name": "Trail 30 malade", "hours": 3.2, "ekm_h": 10.0, "weight": 1.0},   # 39 % over the others' curve
         {"name": "Trans Inthanon", "hours": 12.0, "ekm_h": 10.9, "weight": 1.0},
         {"name": "TDS UTMB", "hours": 22.0, "ekm_h": 10.5, "weight": 1.0},
         {"name": "Fast Hiking - TMB", "hours": 34.0, "ekm_h": 8.3, "weight": 1.0},  # a hike tagged race
     ]
-    used, ignored = select_best_efforts(pts)
-    names = {p["name"] for p in used}
-    assert "Fast Hiking - TMB" not in names and "Trail 30 malade" not in names
-    assert {"Trail 30", "Trans Inthanon", "TDS UTMB"} <= names
-    assert {p["why"] for p in ignored} >= {"pas une course", "moins bonne perf sur cette durée"}
-    # the curve at 20 h now sits near the TDS level, not dragged toward the hike
+    used, ignored = select_races(pts)
+    assert {p["name"] for p in used} == {"Trail 30", "Trans Inthanon", "TDS UTMB"}
+    assert {p["name"]: p["why"] for p in ignored} == {"Fast Hiking - TMB": "pas une course", "Trail 30 malade": "bien sous ta courbe"}
+    # the curve at 20 h sits near the TDS level (231 effort-km in 22 h), not dragged toward the hike
     m = fit_effort_model(used)
     at20 = m["a"] * 20 ** (-m["b"])
-    assert 10.2 <= at20 <= 11.5
+    assert 9.8 <= at20 <= 10.4
     m_all = fit_effort_model(pts)
     assert m_all["a"] * 20 ** (-m_all["b"]) < at20
+    # far off either way: a race 40 % faster than the others' curve (a short course, a GPS cut) is set aside too
+    fast = [*pts[:1], *pts[2:4], {"name": "Trail court", "hours": 7.0, "ekm_h": 20.0, "weight": 1.0}]
+    used, ignored = select_races(fast)
+    assert "Trail court" not in {p["name"] for p in used} and {p["why"] for p in ignored} == {"bien au-dessus de ta courbe"}
 
 
 def test_elevation_at_km_reads_the_full_resolution_trace():

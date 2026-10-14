@@ -84,19 +84,24 @@ def leg_debrief(
     use_target: bool,
     stop_s_per_aid: int = 0,
     hr_cap: int | None = None,
+    named_plan: bool | None = None,
 ) -> dict:
     """Return {"legs": [...], "summary": {...}}.
 
     ``sections`` are the plan's passage sections (start_km/end_km/end_name,
-    adjusted_time_s or predicted_time_s). The activity is mapped onto the
-    route by proportion of total distance (GPS totals differ a little).
+    adjusted_time_s when ``use_target``, else predicted_time_s). The activity is
+    mapped onto the route by proportion of total distance (GPS totals differ a
+    little). ``named_plan``: the words — « le plan » when he set one (an
+    objective, pinned times), « l'estimation » when the plan ran on the
+    estimate (default: ``use_target``).
     """
     pts = _cumulative(splits_metric)
     total_d = pts[-1][0]
     if total_d <= 0 or not sections:
         return {"legs": [], "summary": None}
     # the basis the débrief compares with, named as its headline names it: no objective, no plan
-    vs = "le plan" if use_target else "l'estimation"
+    named = use_target if named_plan is None else named_plan
+    vs = "le plan" if named else "l'estimation"
     scale = total_d / (route_total_km * 1000) if route_total_km else 1.0
     n = len(sections)
     legs = []
@@ -124,7 +129,7 @@ def leg_debrief(
 
         # one probable reason, short: the signed gap beside it already says faster or slower
         if abs(delta_total) < SIGNIFICANT_S:
-            reason, tag = ("dans le plan" if use_target else "comme estimé"), "ok"
+            reason, tag = ("dans le plan" if named else "comme estimé"), "ok"
         elif delta_total > 0 and stops - planned_stop >= max(STOP_MIN_S, STOP_SHARE * delta_total):
             reason, tag = f"arrêts : {int(round((stops - planned_stop) / 60))} min de plus que prévu", "stops"
         elif delta_moving > 0 and hr_cap and hr is not None and hr <= hr_cap - HR_LOW_MARGIN:
@@ -183,7 +188,7 @@ def leg_debrief(
         # no pattern: never call a race far from the plan « proche du plan »
         plan_total = legs[-1]["cum_plan_s"] if legs else 0
         if close_to_plan(total_delta, plan_total):
-            verdict.append("Course proche du plan." if use_target else "Course proche de l'estimation.")
+            verdict.append("Course proche du plan." if named else "Course proche de l'estimation.")
         else:
             # « du début à la fin » only when it is: 2/3 of the legs off on the same side, none on the other
             # (a race lost on one leg gets no verdict: the table marks that leg)
@@ -193,7 +198,7 @@ def leg_debrief(
                 if total_delta > 0:
                     # no objective set: the estimate was off, not an objective
                     verdict.append(f"Plus lent que {vs} du début à la fin : "
-                                   + ("l'objectif était trop ambitieux." if use_target else "elle était trop optimiste."))
+                                   + ("l'objectif était trop ambitieux." if named else "elle était trop optimiste."))
                 else:
                     verdict.append(f"Plus rapide que {vs} du début à la fin : tu peux viser plus haut.")
     return {

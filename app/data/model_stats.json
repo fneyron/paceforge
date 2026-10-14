@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05",
+  "updated": "2026-10-14",
   "dataset": {
     "races": 770,
     "events": 162,
@@ -7,8 +7,14 @@
     "finisher_results": 105743,
     "checkpoint_passages": 919486,
     "races_with_gps_track": 124,
-    "sources": {"utmb_live": 169, "livetrail": 601},
-    "stored": {"utmb_live": 175, "livetrail": 821},
+    "sources": {
+      "utmb_live": 169,
+      "livetrail": 601
+    },
+    "stored": {
+      "utmb_live": 175,
+      "livetrail": 821
+    },
     "note": "solo running races only (scripts/race_data/dataset_stats.py): left out 216 bike / triathlon / relay / duo / pairs / team / walk / hike / stage / time-limited formats and PTL by name, 3 courses whose median finisher effort speed is a bike's or broken timing, 5 with fewer than 10 finishers, 2 without checkpoint distances. events = event series (an event's editions count once); finishers are those stored (UTMB Live up to 676 per race; of the 175 races stored, all finishers on 68, the fastest third whole then an even sample by rank on 60, an even sample of 150-450 by rank on the 47 collected first; LiveTrail up to 80, an even sample by rank)"
   },
   "fit": {
@@ -29,20 +35,25 @@
     "held_out_events": 6,
     "held_out_finishers": 14100,
     "mean_abs_gap_min_before": 21.92,
-    "mean_abs_gap_min_after": 18.61,
+    "mean_abs_gap_min_after": 18.52,
     "races_improved": 42,
     "legacy_mean_abs_gap_min": 21.92,
     "races_improved_vs_legacy": 42,
     "refit_mean_abs_gap_min": 18.59,
     "refit_races_improved": 23,
-    "transjeju_2025_guard": {"runners": 4, "finish_h": "16-21", "mean_abs_gap_min": 8.0, "refit_mean_abs_gap_min": 8.3},
+    "transjeju_2025_guard": {
+      "runners": 4,
+      "finish_h": "16-21",
+      "mean_abs_gap_min": 8.0,
+      "refit_mean_abs_gap_min": 8.3
+    },
     "transjeju_2026": {
       "runners": 362,
-      "mean_abs_gap_min": 30.1,
+      "mean_abs_gap_min": 29.6,
       "legacy_mean_abs_gap_min": 36.1,
       "refit_mean_abs_gap_min": 29.3,
       "all_finishers": 362,
-      "all_finishers_mean_abs_gap_min": 30.1,
+      "all_finishers_mean_abs_gap_min": 29.6,
       "guard_16_21h_runners": 12,
       "guard_16_21h_mean_abs_gap_min": 9.9,
       "guard_16_21h_refit_mean_abs_gap_min": 10.2,
@@ -62,6 +73,8 @@
       "legacy_mean_abs_gap_min": 21.48,
       "note": "extra validation, never used to fit or select: LiveTrail running courses 40-180 km without GPS track (profile from section D+/D-), night not scored"
     },
-    "note": "mean |gap| between the plan and the finishers' times at the checkpoints, each finisher planned at his own finish, on 6 events held out since the first fit (chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler). before = legacy = the app before the first fit; after = the app as it ships; races_improved = races where the app beats legacy. refit_* = the 2026-10-04 refit, not adopted (18.59 vs 18.61, better on 23/47 races, Transjeju guard worse)"
+    "note": "mean |gap| between the plan and the finishers' times at the checkpoints, each finisher planned at his own finish, on the 6 events held out by event since the first fit (chiangmai, kullamannen, puertovallarta, transjeju, utmb, whistler): the curve is not fitted on them, but the -20 % gradient value, the fatigue's level anchor, the trail factor, the Transjeju guard, the night rule (by the sun), the pin floor (0.70), the safety switch ratio (5 %) and the median stop were chosen looking at them. before = legacy = the app before the first fit; after = the app as it ships (night by the sun since 2026-10-14); races_improved = races where the app beats legacy. mean_abs_ln_ratio_pct_* = the primary metric, mean |ln(predicted / actual)| x 100. Written by scripts/race_data/validate_app.py --publish",
+    "mean_abs_ln_ratio_pct_after": 4.449,
+    "mean_abs_ln_ratio_pct_legacy": 5.654
   }
 }
