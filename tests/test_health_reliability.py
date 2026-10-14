@@ -77,8 +77,11 @@ async def test_phone_only_local_next_day_is_not_hidden(db_session, test_user):
                               value=70, measured_at=now, sources=['Scale']))
     await db_session.flush()
     assert await st.athlete_today(db_session, test_user.id, now) == tomorrow
-    # No offset/history: use the supplied clock, not the machine's real date.
+    # No data: the supplied clock in the athlete's zone (users.timezone, else Europe/Paris: owner, 2026-10-14 —
+    # it was UTC without a session's offset), not the machine's real date: 23:30 UTC on 12/09 is 01:30 on 13/09
     other = User(firstname='Other'); db_session.add(other); await db_session.flush()
+    assert await st.athlete_today(db_session, other.id, now - timedelta(days=30)) == now.date() - timedelta(days=29)
+    other.timezone = "America/New_York"  # 19:30 on 12/09 there
     assert await st.athlete_today(db_session, other.id, now - timedelta(days=30)) == now.date() - timedelta(days=30)
 
 
@@ -87,12 +90,12 @@ def test_old_heart_trends_do_not_become_fresh_because_sleep_arrived():
     rows['hrv'].pop(D); rows['hr_night'].pop(D)
     day = _day(rows)
     assert day['stats']['hr']['value'] is not None  # trend remains visible
-    assert {p['key'] for p in day['score']['parts']} == {'sleep'}
-    assert day['score']['value'] <= sc.CAP_NO_HEART
+    # last night's heart not measured: no state (it was a sleep-only score capped at 80)
+    assert day['score']['parts'] == [] and day['score']['value'] is None
+    assert day['score']['missing'] == {'key': 'no_heart', 'label': 'pas de bilan'}
     quality = sc.quality(day)
-    assert quality['partial'] and quality['label'] == 'Bilan partiel'
-    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Absent pour cette nuit', 'Absent pour cette nuit',
-                                                 'Aucune activité reçue']
+    assert not quality['partial'] and quality['label'] == 'Données du bilan'
+    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Absente pour cette nuit', 'Absente pour cette nuit']
     card = sante._night_card(_nights(rows), 'hr', D, day)
     assert card['latest'] is None and card['trend']['value']
 
@@ -108,12 +111,20 @@ def test_last_night_is_not_the_seven_day_average():
     assert '7' in card['trend']['short_label']
 
 
-def test_quality_distinguishes_provisional_from_missing_and_never_claims_precision():
+def test_quality_distinguishes_building_from_missing_and_never_claims_precision():
+    """« Mesures utilisées » says each signal's place: used, building its baseline (n/14: owner, 2026-10-14:
+    scientific basis — a provisional baseline made a provisional score), absent; never a percentage."""
     young = _day(night_rows(range(10)))
     quality = sc.quality(young)
-    assert not quality['partial'] and quality['provisional']
-    assert quality['label'] == 'Repères provisoires'
+    assert not quality['partial'] and not quality['provisional'] and young['score']['value'] is None
+    assert [r['state'] for r in quality['rows']] == ['Utilisé', 'Repères en construction (2/14)',
+                                                  'Repères en construction (2/14)']
     assert '%' not in str(quality)
     mature = sc.quality(_day(_rich()))
     assert not mature['partial'] and not mature['provisional']
     assert mature['label'] == 'Données du bilan'
+    assert [r['state'] for r in mature['rows']] == ['Utilisé', 'Utilisée', 'Utilisée']
+    no_hr = _rich()
+    no_hr['hr_night'].pop(D)
+    partial = sc.quality(_day(no_hr))
+    assert partial['partial'] and partial['label'] == 'Bilan partiel'  # the indice from the VFC alone

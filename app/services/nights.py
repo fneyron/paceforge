@@ -79,28 +79,37 @@ heuristic, never shown as a finding):
   the illness alert until it is shown that COROS leaves the nap out of its
   « Sleep HR » line (docs/sante-v3-data-notes.md: consistent with the main
   sleep only).
-- Bands (H): every measured night of 60 days on one watch (Dial 2025: brands
-  average over different windows) — Santé's usual values (`normal`) the 60
-  days up to and including last night, the illness alert the 60 days before
-  its 2 nights; full from 14 nights, « provisoire » from 7 (owner decision
-  2026-10-07), labelled so wherever it is read, until 14 — never for the
-  illness alert nor its episodes (specific, not sensitive: Quer 2021; a
-  provisional band would make the alert fire on noise). HR: median ± 3 bpm;
-  HRV: exp(mean ln ± 0.5 SD) (the SWC convention of HRV-guided training);
-  both SDs shrunk towards a prior (H, Kellmann 2018's Bayesian
-  individualisation): σ0 = 0.10 ln units for HRV, 4 % of the median for the
-  robust HR SD behind the alert line (Mishica 2022), as if 7 nights had it;
-  24-h sleep: median ± 30 min; respiration: median.
-- 7-night means: every measured night of the last 7, 3 at least (Plews 2014;
-  Lau 2022).
-- Illness alert (H): the full HR band of the watch that measured both nights
-  (the 60 days before them), then 2 nights in a row each ≥ median + max(2
-  robust SD, 5 bpm) (Alavi 2022: 2 nights at + 4 bpm over the median; ours
-  stricter, specific, not sensitive: Quer 2021). Context-tagged nights (the
-  nights after an effort included) never fire it; it re-arms by itself after
-  them (Schwellnus 2016: symptoms more frequent in the 1–2 weeks after a
-  race); on the race page, the nights after its race never fire it.
-  Respiration ≥ median + 2/min only backs it up.
+- Baselines (owner, 2026-10-14: scientific basis): one series per (metric,
+  watch, method), the nights from day −67 to day −8 (60 days, the 7 nights
+  a trend judges never in its own baseline: a period is not compared to a
+  mean that holds it — the « uncoupled » reading of Plews 2013 and Buchheit
+  2014), every measured night whatever its tags; full from 14 nights,
+  « provisoire » from 7 (drawn dashed, never read by the daily state).
+  Centre: the mean of ln RMSSD (HRV), the median (night HR, breathing).
+  Spread σ̂ = √((n·s² + 7·σ0²)/(n + 7)) (an individual range drawn towards a
+  prior: Hecksteden 2017; Kellmann 2018), s the SD (HRV) or 1.4826·MAD
+  (HR, breathing), σ0 = 0.10 ln units (HRV; Buchheit 2014's ≈ 12 % CV),
+  4 % of the median (HR; Mishica 2022), 0.5 /min (breathing; Miller 2020).
+  24-h sleep (the race page only): median ± 30 min.
+- Trends (Plews 2013; Vesterinen 2016; Javaloyes 2019; Nuuttila 2022): the
+  mean of the nights measured in the last 7 days on the series (ln for
+  HRV), last night measured and 3 nights at least; z = (mean − centre)/σ̂;
+  « outside » from |z| ≥ T = max(0.5, 1.28/√n7): the smallest worthwhile
+  change of 0.5 σ̂ (Plews 2013; Buchheit 2014), widened when the week holds few
+  nights so that a thin week does not cross it by chance (one-sided 90 %).
+- Which series: the device with the most measured nights in the 28 days, among
+  those measured in the last 7 (its latest method: a method upgrade switches at
+  once); two devices taking turns no longer swap the series night after night.
+- 7-night means (the charts): every measured night of the last 7, 3 at least
+  (Plews 2014; Lau 2022).
+- Illness alert (C4, H): 2 nights in a row, both on the series, neither
+  context-tagged, each ≥ median + max(2 σ̂, 5 bpm) of the full baseline
+  (Alavi 2022: 2 nights at + 4 bpm over the median; ours stricter, specific,
+  not sensitive: Quer 2021). Context-tagged nights (the nights after an
+  effort included) never fire it; it re-arms by itself after them
+  (Schwellnus 2016); on the race page, the nights after its race never fire
+  it. Breathing: the 2 nights' mean ≥ median + max(1 /min, 2 σ̂) of its full
+  baseline (Miller 2020), an illness signal, never a recovery one.
 """
 import copy
 import math
@@ -117,22 +126,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.apple_nights import supported_hrv, usable as apple_usable
 from app.models.health import HealthMetric
-from app.services.health import HRV_METHOD, fold_naps, main_window, nap_windows
+from app.services.health import fold_naps, main_window, nap_windows
 from app.services.night_measurements import measurement_note, series_source
 
 BAND_DAYS = 60  # (H)
+# owner, 2026-10-14: scientific basis — the baseline stops 7 days before the day read: the 7 nights its trend
+# judges are never in it (it was the 60 days up to and including last night: a week compared to a mean holding it)
+BASELINE_LAG = 7
 MIN_BAND_NIGHTS = 14  # (H) a full normal
-MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14
+MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14: drawn, never read
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 WEEK_DAYS = 7
-HR_BAND_BPM = 3  # (H)
-HRV_BAND_SD = 0.5  # (H) the SWC convention of HRV-guided training
+# owner, 2026-10-14: scientific basis — the smallest worthwhile change, 0.5 SD (Plews 2013; Buchheit 2014), for
+# night HR too (it was ± 3 bpm, a fixed width with no basis), widened for a thin week: T = max(0.5, 1.28/√n7)
+SWC = 0.5
+SWC_Z = 1.28  # one-sided 90 %: the 7-night mean's own error (SD/√n) never crosses the line by chance
+SERIES_DAYS, SERIES_ACTIVE_DAYS = 28, 7  # (H) owner, 2026-10-14: scientific basis — the most measured device
 # the band's SD is shrunk towards a prior, √((n·s² + k·σ0²)/(n + k)): the Bayesian individualisation of reference
 # ranges (Kellmann 2018), which matters most at 7–13 nights (an SD from 7 nights is 0.64–2.20 × the true one)
 PRIOR_NIGHTS = 7  # (H) k: the prior weighs as much as 7 nights
 HRV_SD_PRIOR = 0.10  # (H) σ0 in ln units (nocturnal RMSSD CV 9.5–12.4 %: Mishica 2022; ≈ 12 %: Buchheit 2014)
 HR_SD_PRIOR = 0.04  # (H) σ0 as a share of the median (nocturnal HR CV ≈ 4.1 %: Mishica 2022)
-SLEEP_BAND_MIN = 30  # (H)
+SLEEP_BAND_MIN = 30  # (H) the race page's 24-h sleep band
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
 # the breathing rate's usual line (owner, 2026-10-09: « utilise la respiration aussi si tu l'as »; research_ind_
 # sleep_resp.md B3): its night-to-night SD is small (0.51 ± 0.20 /min: Miller 2020, 25,000 WHOOP members), so the
@@ -354,7 +369,8 @@ def build_nights(rows: dict[str, dict[date, tuple]], today: date) -> dict[date, 
 # ── context tags ────────────────────────────────────────────────────────────
 
 def _local(s, t: datetime) -> datetime:
-    return (t + timedelta(seconds=s.offset or 0)).replace(tzinfo=None)
+    offset = s.offset if s.offset is not None else getattr(s, "zone_offset", 0.0)
+    return (t + timedelta(seconds=offset or 0)).replace(tzinfo=None)
 
 
 def vigorous(s, rest: float, peak: float) -> bool:
@@ -482,9 +498,35 @@ def hr_segments(laps, splits) -> tuple:
     return ()
 
 
+def km_splits(laps, splits) -> tuple:
+    """((minutes, km, average HR, grade or None), …) of an activity's km splits (Strava's splits_metric: their
+    elevation difference over their distance is the grade), else of its laps that carry a distance (COROS's auto
+    laps, no grade): what « FC à allure comparable » reads (sante_training.comparable); () without them."""
+    for rows, graded in ((splits, True), (laps, False)):
+        if not isinstance(rows, list):
+            continue
+        out = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            try:
+                hr = float(r.get("average_heartrate") or 0)
+                sec = float(r.get("moving_time") or r.get("elapsed_time") or 0)
+                m = float(r.get("distance") or 0)
+                rise = r.get("elevation_difference")
+                grade = float(rise) / m if graded and rise is not None and m > 0 else None
+            except (TypeError, ValueError):
+                continue
+            if sec > 0 and m > 0:
+                out.append((sec / 60, m / 1000, hr if hr > 0 else None, grade))
+        if out:
+            return tuple(out)
+    return ()
+
+
 async def read_segments(db: AsyncSession, sessions) -> None:
     """Each of `sessions` with an average HR and no `segs` yet gets its laps'
-    (else its splits') HR segments (hr_segments), in one read; () without
+    (else its splits') HR segments (hr_segments) and its km splits (km_splits), in one read; () without
     them. The laps are Strava's, or COROS's auto laps stored in Strava's
     shape (coros.apply_details)."""
     from app.models.activity import Activity
@@ -497,10 +539,12 @@ async def read_segments(db: AsyncSession, sessions) -> None:
         return
     rows = (await db.execute(select(Activity.id, Activity.laps, Activity.splits_metric)
                              .where(Activity.id.in_(list(want))))).all()
-    found = {i: hr_segments(laps, splits) for i, laps, splits in rows}
+    found = {i: (hr_segments(laps, splits), km_splits(laps, splits)) for i, laps, splits in rows}
     for i, ss in want.items():
         for s in ss:
-            s.segs = found.get(i, ())
+            s.segs, kms = found.get(i, ((), ()))
+            if hasattr(s, "splits"):
+                s.splits = kms
 
 
 async def load_segments(db: AsyncSession, nights: dict[date, Night], sessions) -> None:
@@ -653,23 +697,41 @@ def illness_days(feel: dict[date, dict]) -> set[date]:
 
 # ── the athlete's normal ────────────────────────────────────────────────────
 
+def device(series: str | None) -> str | None:
+    """The watch (or Apple writer) behind a series: « Garmin (sommeil) » → « Garmin »."""
+    return series.split(" (")[0] if series else series
+
+
 def _latest_source(nights: dict[date, Night], metric: str, until: date) -> str | None:
     kept = _kept(nights)
     if kept is None:
-        return _latest_source_(nights, metric, until)
+        return _series_source(nights, metric, until)
     key = ("source", metric, until)
     if key not in kept:
-        kept[key] = _latest_source_(nights, metric, until)
+        kept[key] = _series_source(nights, metric, until)
     return kept[key]
 
 
-def _latest_source_(nights: dict[date, Night], metric: str, until: date) -> str | None:
-    for k in range(WEEK_DAYS):  # nearly always a night of the last days: no scan of the whole year
+def _series_source(nights: dict[date, Night], metric: str, until: date) -> str | None:
+    """The series `metric` reads as of `until` (owner, 2026-10-14: scientific basis — it was the latest night's,
+    so two devices taking turns swapped the series, its baseline and its trend, night after night): among the
+    devices that measured it in the last 7 days, the one with the most measured nights in the 28 days (ties: the
+    latest), its latest series (a method upgrade, e.g. Garmin's awake filtering, switches at once: never mixed
+    with the older calculation); no night in 7 days: the latest series ever, as before."""
+    counts: dict[str, int] = defaultdict(int)
+    latest: dict[str, tuple[date, str]] = {}
+    for k in range(SERIES_DAYS):
         x = until - timedelta(days=k)
-        if night_value(nights, x, metric) is not None:
-            return nights[x].source_of(metric)
-    lo = until - timedelta(days=WEEK_DAYS)
-    last = max((d for d in nights if d <= lo and night_value(nights, d, metric) is not None), default=None)
+        if night_value(nights, x, metric) is None:
+            continue
+        series = nights[x].source_of(metric)
+        dev = device(series)
+        counts[dev] += 1
+        latest.setdefault(dev, (x, series))
+    active = [dev for dev, (x, _) in latest.items() if (until - x).days < SERIES_ACTIVE_DAYS]
+    if active:
+        return latest[max(active, key=lambda dev: (counts[dev], latest[dev][0]))][1]
+    last = max((d for d in nights if d <= until and night_value(nights, d, metric) is not None), default=None)
     return nights[last].source_of(metric) if last is not None else None
 
 
@@ -736,15 +798,19 @@ def reference_min_nights(metric: str, source: str | None, *, full: bool = False)
 
 def _band(nights: dict[date, Night], metric: str, until: date, source: str | None = None,
           full: bool = False) -> dict | None:
-    """The athlete's normal for `metric` (hr, hrv, tst24, resp) from every
-    measured night of the 60 days before `until` (excluded), whatever its tags
-    (owner, 2026-10-08), on one watch (the latest one's unless `source`): None
-    under 7 nights, `provisional` from 7 to 13 nights (« provisoire », H);
-    `full`: None under 14 nights (the illness alert and its episodes)."""
+    """The reference of `metric` (hr, hrv, tst24, resp) from every measured night of the 60 days before `until`
+    (excluded), whatever its tags (owner, 2026-10-08), on one series (the one read the day before `until` unless
+    `source`): None under 7 nights, `provisional` from 7 to 13 nights (« provisoire », H); `full`: None under 14
+    nights. {center, sd (σ̂, the module docstring), lo, hi (± 0.5 σ̂: the smallest worthwhile change; tst24 ± 30
+    min), mean (ln, HRV), alert (HR's illness line), up (breathing's line)}. Santé's baseline of a day is the one
+    that stops a week before it (normal)."""
     source = source or _latest_source(nights, metric, until - timedelta(days=1))
-    lo = until - timedelta(days=BAND_DAYS)
-    vals = [v for d, n in nights.items()
-            if lo <= d < until and (v := night_value(nights, d, metric)) is not None and n.source_of(metric) == source]
+    vals = []
+    for k in range(1, BAND_DAYS + 1):
+        x = until - timedelta(days=k)
+        n = nights.get(x)
+        if n is not None and n.source_of(metric) == source and (v := night_value(nights, x, metric)) is not None:
+            vals.append(v)
     out = {"metric": metric, "n": len(vals), "source": source, "until": until,
            "provisional": len(vals) < MIN_BAND_NIGHTS}
     sdnn = metric == "hrv" and bool(source and "(SDNN sommeil)" in source)
@@ -755,36 +821,41 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
         mean = statistics.fmean(logs)
         # The RMSSD variability prior is not evidence for Apple SDNN.
         sd = statistics.stdev(logs) if sdnn else shrunk_sd(statistics.stdev(logs), len(logs), HRV_SD_PRIOR)
-        out.update(center=math.exp(mean), lo=math.exp(mean - HRV_BAND_SD * sd), hi=math.exp(mean + HRV_BAND_SD * sd),
+        out.update(center=math.exp(mean), mean=mean, lo=math.exp(mean - SWC * sd), hi=math.exp(mean + SWC * sd),
                    sd=sd)
         return out
     med = statistics.median(vals)
     sd = 1.4826 * statistics.median(abs(v - med) for v in vals)  # robust
-    if metric == "hr":  # the SD behind the alert line, shrunk towards 4 % of the median (H)
+    if metric == "hr":  # shrunk towards 4 % of the median (H)
         sd = shrunk_sd(sd, len(vals), HR_SD_PRIOR * med)
-    out.update(center=med, sd=sd)
-    if metric == "hr":
-        out.update(lo=med - HR_BAND_BPM, hi=med + HR_BAND_BPM, alert=med + max(ALERT_SD * sd, ALERT_MIN_BPM))
+        # owner, 2026-10-14: scientific basis — the band is ± 0.5 σ̂ (it was ± 3 bpm)
+        out.update(center=med, sd=sd, lo=med - SWC * sd, hi=med + SWC * sd,
+                   alert=med + max(ALERT_SD * sd, ALERT_MIN_BPM))
     elif metric == "tst24":
-        out.update(lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
+        out.update(center=med, sd=sd, lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
     else:  # resp: no band drawn, one upper line (RESP_UP_MIN, RESP_UP_SD)
         sd = shrunk_sd(sd, len(vals), RESP_SD_PRIOR)
-        out.update(sd=sd, lo=None, hi=None, up=med + max(RESP_UP_MIN, RESP_UP_SD * sd))
+        out.update(center=med, sd=sd, lo=None, hi=None, up=med + max(RESP_UP_MIN, RESP_UP_SD * sd))
     return out
 
 
+def baseline_until(d: date) -> date:
+    """The exclusive end of day `d`'s baseline: its 60 days run from d − 67 to d − 8 (BASELINE_LAG)."""
+    return d - timedelta(days=BASELINE_LAG)
+
+
 def normal(nights: dict[date, Night], metric: str, d: date) -> dict | None:
-    """The usual values day `d` reads (Santé's cards, their status lines and the score): the band of every
-    measured night of the 60 days up to and including `d` — last night included (owner, 2026-10-08: « Tous les
-    relevés VFC doivent compter en fait, pareil pour la FC », like WHOOP's and Oura's rolling baselines) — on the
-    watch its 7-night mean reads (mean_source)."""
-    return band(nights, metric, d + timedelta(days=1), source=mean_source(nights, metric, d))
+    """The usual values day `d` reads (Santé's cards, their status lines and the daily state): the baseline of the
+    nights from d − 67 to d − 8 (owner, 2026-10-14: scientific basis — it held the very week its trend judges) on
+    the series its trend reads (mean_source)."""
+    return band(nights, metric, baseline_until(d), source=mean_source(nights, metric, d))
 
 
 def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | None:
-    """The watch the 7-night mean of `today` reads (the latest one that measured
-    `metric`): its value is judged against that watch's band only (Dial 2025)."""
+    """The series the trend of `today` reads (_series_source): it is judged against that series' baseline only
+    (Dial 2025)."""
     return _latest_source(nights, metric, today)
+
 
 
 def mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
@@ -797,24 +868,82 @@ def mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
     return kept[key]
 
 
+def _week(nights: dict[date, Night], metric: str, today: date, source: str | None) -> list:
+    """The values of the last 7 days (today included) on `source`."""
+    out = []
+    for k in range(WEEK_DAYS):
+        x = today - timedelta(days=k)
+        n = nights.get(x)
+        if n is not None and n.source_of(metric) == source and (v := night_value(nights, x, metric)) is not None:
+            out.append(v)
+    return out
+
+
 def _mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
-    """The mean of every measured night of the last 7 days on the latest watch (HRV: exp of the mean ln), {value,
-    n}; None under 3 nights."""
-    source = _latest_source(nights, metric, today)
-    lo = today - timedelta(days=6)
-    vals = [v for d, n in nights.items()
-            if lo <= d <= today and (v := night_value(nights, d, metric)) is not None and n.source_of(metric) == source]
+    """The mean of every measured night of the last 7 days on the series (HRV: exp of the mean ln), {value, n};
+    None under 3 nights."""
+    vals = _week(nights, metric, today, _latest_source(nights, metric, today))
     if len(vals) < MIN_MEAN_NIGHTS:
         return None
     v = math.exp(statistics.fmean(math.log(x) for x in vals)) if metric == "hrv" else statistics.fmean(vals)
     return {"value": v, "n": len(vals)}
 
 
-def status(value: float | None, b: dict | None) -> str | None:
-    """« above » / « below » / « in » against the band; None without both."""
-    if value is None or not b or b.get("lo") is None:
+def baseline_count(nights: dict[date, Night], metric: str, d: date, source: str | None = None) -> int:
+    """How many nights day `d`'s baseline holds (days −67 → −8) on `source` (default: its series)."""
+    source = source or mean_source(nights, metric, d)
+    until = baseline_until(d)
+    count = 0
+    for k in range(1, BAND_DAYS + 1):
+        x = until - timedelta(days=k)
+        n = nights.get(x)
+        if n is not None and n.source_of(metric) == source and night_value(nights, x, metric) is not None:
+            count += 1
+    return count
+
+
+def threshold(n7: int) -> float:
+    """T = max(0.5, 1.28/√n7) (owner, 2026-10-14: scientific basis): the smallest worthwhile change of 0.5 σ̂
+    (Plews 2013; Buchheit 2014), widened for a week of few nights — the error of a mean of n nights is σ/√n, so 1.28/√n keeps
+    a week of 3 nights from crossing the line by chance more than 10 % of the time."""
+    return max(SWC, SWC_Z / math.sqrt(n7))
+
+
+def trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
+    kept = _kept(nights)
+    if kept is None:
+        return _trend(nights, metric, d)
+    key = ("trend", metric, d)
+    if key not in kept:
+        kept[key] = _trend(nights, metric, d)
+    return kept[key]
+
+
+def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
+    """Day `d`'s 7-day trend of `metric` (hrv, hr) on its series against its baseline (C3, the module
+    docstring): {source, n (nights in the 7 days), last (last night measured on the series), value (the 7-night
+    mean, geometric for HRV), baseline (normal: None, provisional or full), z, T, status (in, below, above; None
+    without a baseline or under 3 nights)}; None when the metric was never measured."""
+    source = mean_source(nights, metric, d)
+    if source is None:
         return None
-    return "above" if value > b["hi"] else "below" if value < b["lo"] else "in"
+    vals = _week(nights, metric, d, source)
+    n = nights.get(d)
+    last = n is not None and n.source_of(metric) == source and n.value(metric) is not None
+    b = normal(nights, metric, d)
+    out = {"metric": metric, "source": source, "n": len(vals), "last": last, "baseline": b, "value": None,
+           "z": None, "T": None, "status": None,
+           "baseline_n": b["n"] if b else baseline_count(nights, metric, d, source)}
+    if len(vals) < MIN_MEAN_NIGHTS:
+        return out
+    mean = statistics.fmean(math.log(v) for v in vals) if metric == "hrv" else statistics.fmean(vals)
+    out["value"] = math.exp(mean) if metric == "hrv" else mean
+    if b is None or not b.get("sd"):
+        return out
+    z = (mean - (b["mean"] if metric == "hrv" else b["center"])) / b["sd"]
+    t = threshold(len(vals))
+    out.update(z=z, T=t, status="below" if z <= -t else "above" if z >= t else "in")
+    return out
 
 
 # ── the 24 hours before the morning's wake ──────────────────────────────────
@@ -977,65 +1106,77 @@ def illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | No
     return kept[key]
 
 
-def resp_up_nights(nights: dict[date, Night], today: date) -> dict | None:
-    """The breathing rate over its usual line 2 nights in a row (yesterday's and today's), each against the FULL
-    band (14 nights) of the 60 days before the first one, on the watch that measured both, neither night tagged
-    (CONTEXT: after an effort, altitude, a time zone, an evening session, alcohol: a faster breathing expected
-    there): {days, values, line}; None otherwise. The score is then capped (sante_score.CAP_RESP), as WHOOP's one-
-    sided adjustment does (« only when respiratory rate is elevated »); never an illness sentence on its own (about
-    5 % of healthy days flagged: Miller 2020)."""
-    d2, d1 = today, today - timedelta(days=1)
-    n1, n2 = nights.get(d1), nights.get(d2)
-    if not (n1 and n2) or n1.resp is None or n2.resp is None or n1.resp_source != n2.resp_source:
+def _two_nights(nights: dict[date, Night], metric: str, today: date) -> tuple[list[float], str] | None:
+    """Last night's and the night before's values of `metric`, both measured on one series and neither
+    context-tagged (CONTEXT: after an effort, altitude, a time zone, an evening session, alcohol: a rise is
+    expected there), with that series; None otherwise."""
+    n1, n2 = nights.get(today - timedelta(days=1)), nights.get(today)
+    if not (n1 and n2) or n1.value(metric) is None or n2.value(metric) is None:
+        return None
+    if n1.source_of(metric) != n2.source_of(metric):
         return None
     if not (n1.tags.isdisjoint(CONTEXT) and n2.tags.isdisjoint(CONTEXT)):
         return None
-    b = band(nights, "resp", d1, source=n1.resp_source, full=True)
-    if not b or not (n1.resp >= b["up"] and n2.resp >= b["up"]):
+    return [n1.value(metric), n2.value(metric)], n2.source_of(metric)
+
+
+def resp_up_nights(nights: dict[date, Night], today: date) -> dict | None:
+    """The breathing flag (C4; owner, 2026-10-14: scientific basis — it capped a « recovery » score at 69, now an
+    illness signal, its own reason): the mean of last night and the night before, on one series, neither
+    context-tagged, ≥ the median + max(1 /min, 2 σ̂) of that series' full baseline (14 nights, days −67 to −8;
+    Miller 2020: night-to-night SD ≈ 0.5 /min, a rise precedes illness). {days, values, mean, line}; None otherwise
+    (about 5 % of healthy days cross a 2-SD line by chance: never an illness sentence on its own)."""
+    two = _two_nights(nights, "resp", today)
+    if two is None:
         return None
-    return {"days": [d1, d2], "values": [n1.resp, n2.resp], "line": b["up"]}
+    vals, source = two
+    b = band(nights, "resp", baseline_until(today), source=source, full=True)
+    mean = statistics.fmean(vals)
+    if not b or mean < b["up"]:
+        return None
+    return {"days": [today - timedelta(days=1), today], "values": vals, "mean": mean, "line": b["up"]}
 
 
 def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | None:
-    """The two nights in a row (yesterday's and today's) each ≥ the HR band's
-    alert line, against the FULL band (14 nights, never a provisional one) of
-    the 60 days before them on the watch that measured both (one band per
-    watch: a new watch has none for 14 nights, so no alert): {days, values, threshold, resp_up, source}; None otherwise (no
-    band, a night missing or tagged, two watches)."""
+    """The two nights in a row (yesterday's and today's) each ≥ the HR alert line — the median + max(2 σ̂, 5 bpm)
+    of the FULL baseline (14 nights, never a provisional one) from day −67 to day −8 of the series that measured
+    both (one baseline per series: a new watch has none for 3 weeks, so no alert): {days, values, threshold, hi
+    (the baseline's band top: the episode's end), resp_up, source}; None otherwise (no baseline, a night missing
+    or tagged, two series)."""
     d2, d1 = today, today - timedelta(days=1)
     if not all(alert_night(nights, races, d) for d in (d1, d2)):
         return None
     src = nights[d2].hr_source
     if nights[d1].hr_source != src:
         return None
-    b = band(nights, "hr", d1, source=src, full=True)  # never a provisional band: specific, not sensitive (Quer 2021)
+    b = band(nights, "hr", baseline_until(today), source=src, full=True)  # specific, not sensitive (Quer 2021)
     if not b:
         return None
     vals = [nights[d1].hr, nights[d2].hr]
     if not all(v >= b["alert"] for v in vals):
         return None
     resp_source = nights[d2].resp_source
-    rb = (band(nights, "resp", d1, source=resp_source, full=True)
+    rb = (band(nights, "resp", baseline_until(today), source=resp_source, full=True)
           if resp_source and nights[d1].resp_source == resp_source else None)
     resp = [nights[d].resp for d in (d1, d2)]
-    resp_up = (all(r is not None and r >= rb["up"] for r in resp)) if rb else None
-    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "resp_up": resp_up, "source": src}
+    resp_up = (all(r is not None for r in resp) and statistics.fmean(resp) >= rb["up"]) if rb else None
+    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "hi": b["hi"], "resp_up": resp_up,
+            "source": src}
 
 
 def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int = BAND_DAYS + 7) -> set[date]:
     """The nights of the alert episodes of the last `days` days (H): from the
-    first of the 2 nights, while the measured nights stay above the band (14
-    days at most)."""
+    first of the 2 nights, while the measured nights stay above the band of the alert's baseline (14 days at
+    most)."""
     out: set[date] = set()
     d = today - timedelta(days=days)
     while d <= today:
         a = illness_alert(nights, d, races)
         if a and a["days"][0] not in out:
-            b = band(nights, "hr", a["days"][0], source=a["source"], full=True)
             k = a["days"][0]
             while k <= min(today, a["days"][0] + timedelta(days=ILL_MAX)):
                 n = nights.get(k)
-                if n and n.hr is not None and n.hr <= b["hi"] and k > a["days"][1]:
+                if n and n.hr is not None and n.hr <= a["hi"] and k > a["days"][1]:
                     break
                 out.add(k)
                 k += timedelta(days=1)
