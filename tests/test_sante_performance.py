@@ -2,6 +2,7 @@
 2026-10-14: the page cost 1.5–2.8 s of CPU per load: the Charge accumulée recomputed every session's load for each
 of 400 days, the 14-day history its sleep bases, and every daily row was read whole)."""
 import math
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from app.models.mobile import MobileDaily
 from app.services import nights as nt
 from app.services import sante
 from app.services import sante_training as st
+from app.services.sante import local_clock as _local_clock  # the real one (the suite moves sante.local_clock)
 
 TODAY = date(2026, 10, 13)
 
@@ -75,13 +77,16 @@ def test_a_session_load_is_memoized_per_its_bounds():
         assert st.session_load(s, 48, 190) != first and calculate.call_count == 2  # other bounds: computed anew
 
 
-async def test_the_page_stays_within_its_budget(db_session, test_user):
+async def test_the_page_stays_within_its_budget(db_session, test_user, monkeypatch):
     """500 activities with laps and splits, 400 nights of Garmin rows, Garmin day rows carrying their raw readings:
     the whole page in a few statements and well under a second (it took 1.5–2.8 s of CPU), on SQLite and on
     PostgreSQL alike: the statements and the process's CPU (the page's own work, the driver's decoding included),
     and the wall time, which holds the database's (PostgreSQL's server and its transfers: reading the raw readings
     would show there). The first load reads the sessions (their raw data, laps and splits); the next one reuses
-    them, as a worker does until an activity is added."""
+    them, as a worker does until an activity is added. The route's own path: the page finds its day and its wall
+    clock (the athlete's zone unset: their latest activity's UTC offset), the user read once (review, 2026-10-14:
+    three identical reads of it per load)."""
+    monkeypatch.setattr(sante, "local_clock", _local_clock)
     for k in range(400):
         d = TODAY - timedelta(days=k)
         start = datetime.combine(d - timedelta(days=1), datetime.min.time()).replace(hour=23)
@@ -110,25 +115,30 @@ async def test_the_page_stays_within_its_budget(db_session, test_user):
     st._CACHE.clear()
     st._SEGS.clear()
     engine = db_session.get_bind()
-    count = [0]
+    count, users = [0], [0]
 
-    def counted(*a, **k):
+    def counted(conn, cursor, statement, *a):
         count[0] += 1
+        users[0] += bool(re.search(r"\bFROM users\b", statement))
     event.listen(engine, "before_cursor_execute", counted)
+    db_session.expunge(test_user)  # as a request's session holds it: not yet read
     try:
-        now = datetime(2026, 10, 13, 8, tzinfo=timezone.utc)
+        now = datetime(2026, 10, 13, 8, tzinfo=timezone.utc)  # 10:00 on the athlete's clock (their runs' +2 h)
         cold_wall = time.perf_counter()
-        await sante.health_page(db_session, test_user.id, today=TODAY, now=now)  # cold: the sessions read
-        cold_wall, cold_count = time.perf_counter() - cold_wall, count[0]
+        await sante.health_page(db_session, test_user.id, now=now)  # cold: the sessions read
+        cold_wall, cold_count, cold_users = time.perf_counter() - cold_wall, count[0], users[0]
         count[0] = 0
         started, wall = time.process_time(), time.perf_counter()
-        page = await sante.health_page(db_session, test_user.id, today=TODAY, now=now)
+        page = await sante.health_page(db_session, test_user.id, now=now)
         cpu, wall = time.process_time() - started, time.perf_counter() - wall
     finally:
         event.remove(engine, "before_cursor_execute", counted)
-    assert page["state"] and page["load"] and page["fitness_progress"]
-    # measured 2026-10-14, SQLite and PostgreSQL alike: 14 statements and ≈ 0,26 s cold; 12 and ≈ 0,2 s warm
-    # (≈ 3 s of CPU before)
-    assert cold_count <= 18 and cold_wall < 1.5, (cold_count, cold_wall)
-    assert count[0] <= 16, count[0]
+    assert page["state"] and page["load"] and page["fitness_progress"] and page["today"] == TODAY
+    assert (cold_users, users[0]) == (1, 2), users  # the user read once per load (it was three times)
+    # measured 2026-10-14 on the route's path, SQLite and PostgreSQL alike: 18 statements and ≈ 0,25 s cold, 16
+    # and ≈ 0,2 s warm (≈ 3 s of CPU before): its day (the latest dates, the user once, their latest offsets: no
+    # zone set), the sessions' key (and, cold, the sessions and their laps), the nights, the sources, the daily
+    # cards and the weight; one statement more is a decision
+    assert cold_count <= 19 and cold_wall < 1.5, (cold_count, cold_wall)
+    assert count[0] <= 17, count[0]
     assert cpu < 0.6 and wall < 1.0, (cpu, wall)

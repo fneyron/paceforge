@@ -58,12 +58,12 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
-    zone = await st.athlete_clock(db, user_id, now)
+    user = await db.get(User, user_id)  # read once, held for the page (every later read of it is this one)
+    zone = await st.athlete_clock(db, user_id, now, user)
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
     if today is None:
         today = await athlete_today(db, user_id, now, latest, zone=zone)
         clock = await local_clock(db, user_id, now, zone=zone)
-    user = await db.get(User, user_id)
     sex = getattr(user, "sex", None)  # no such field yet: Banister's men's constants (sante_training.LOAD_WOMEN)
     sessions = await st.load_sessions(db, user_id, today, zone=zone)
     peak = st.hr_max(sessions, today)
