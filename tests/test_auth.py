@@ -196,3 +196,18 @@ async def test_without_redis_nobody_is_held_back(client, db_session, no_commit, 
         for _ in range(12):
             assert (await _login(c, user.email)).status_code == 200
         assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+
+
+async def test_a_verification_link_verifies_but_never_signs_the_browser_in(client, db_session, no_commit, monkeypatch):
+    """Login CSRF: anyone can send someone the link of an account they registered; opening it must not put that
+    browser into their account (whatever the victim then links or types would land there)."""
+    sent = []
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *args: sent.append(args) or True)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as attacker:
+        await attacker.post("/auth/register", data={"email": "attacker@x.fr", "password": "pw-12345678"})
+    async with AsyncClient(transport=client._transport, base_url="https://test") as victim:
+        r = await victim.get("/auth/verify-email", params={"token": sent[0][1]})
+        assert r.status_code == 200 and "Email vérifié" in r.text
+        assert (await victim.get("/settings")).headers["location"] == "/auth/login"  # not signed in
+    user = (await db_session.execute(select(User).where(User.email == "attacker@x.fr"))).scalar_one()
+    assert user.email_verified and user.email_verify_token is None

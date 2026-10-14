@@ -155,12 +155,14 @@ async def verify_email(
     user.email_verified = True
     user.email_verify_token = None
     await db.flush()
-
-    request.session.clear()
-    request.session["user_id"] = user.id
     logger.info("Email verified for user %d", user.id)
 
-    return RedirectResponse(url=HOME, status_code=302)
+    # The link verifies, it never signs in: anyone can send someone the link of an account of their own
+    # (login CSRF). A browser already signed in to that account goes on; any other signs in first
+    # (« Continuer » leads to the login page).
+    if request.session.get("user_id") == user.id:
+        return RedirectResponse(url=HOME, status_code=302)
+    return templates.TemplateResponse(request, "auth/verify_result.html", context={"success": True})
 
 
 # ---------------------------------------------------------------------------
