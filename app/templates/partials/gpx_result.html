@@ -1066,8 +1066,9 @@ window._sim = {};
         var course = document.getElementById('courseJsonData').value;
         b.append('checkpoints_json', JSON.stringify(checkpoints));
         b.append('name', (raceName || '').trim() || 'Parcours');
-        var th = parseInt(document.getElementById('target-h').value) || 0, tm = parseInt(document.getElementById('target-m').value) || 0;
-        if (th > 0 || tm > 0) b.append('target_time_s', th * 3600 + tm * 60);
+        // only an objective he set is saved: the estimate the field shows until he moves it is not one
+        if (hasRealTarget()) b.append('target_time_s', currentTargetS());
+        b.append('target_v', '2');
         b.append('race_date', raceDate || '');
         var sp = startParts(); b.append('start_hour', sp.h); b.append('start_minute', sp.m); b.append('sport_type', savedSportType || 'trail');
         var stopEl = document.getElementById('stop-min'); if (stopEl && stopEl.value !== '') b.append('stop_minutes', parseInt(stopEl.value) || 0);

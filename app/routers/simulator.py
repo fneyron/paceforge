@@ -43,12 +43,15 @@ async def simulator_page(
     saved_routes = list(result.scalars().all())
     light = {}
     if saved_routes:
-        light = dict((await db.execute(
-            select(Route.id, Route.course_json["elevation_points"]).where(Route.id.in_([rt.id for rt in saved_routes]))
-        )).all())
+        light = {rid: (pts, imp) for rid, pts, imp in (await db.execute(
+            select(Route.id, Route.course_json["elevation_points"], Route.course_json["predicted_total_time_s"])
+            .where(Route.id.in_([rt.id for rt in saved_routes]))
+        )).all()}
     for rt in saved_routes:
-        pts = light.get(rt.id)
+        pts, imp = light.get(rt.id, (None, None))
         rt.profile_points = pts if isinstance(pts, list) else []
+        # the estimate of the course's import: an older page saved it as the objective (_objective_s)
+        rt.imported_estimate_s = imp if isinstance(imp, (int, float)) else 0
         rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
     # upcoming races first (soonest), then past ones (most recent first), then undated
     from datetime import date as _date
@@ -158,7 +161,7 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     )).scalars())
     out = {}
     for rt in routes:
-        plan = rt.target_time_s
+        plan = _objective_s(rt, imported_s=getattr(rt, "imported_estimate_s", 0))
         if rt.id in pinned and getattr(rt, "has_course", True) and rt.sport_type != "bike":
             if "course_json" in inspect(rt).unloaded:  # « Mes courses » reads the routes without their course
                 await db.refresh(rt, attribute_names=["course_json"])
@@ -190,8 +193,8 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
     if days is not None and days >= 0:
         out["when"] = ("aujourd'hui" if days == 0 else "demain" if days == 1 else f"J-{days}" if days <= 14
                        else f"dans {round(days / 7)} sem." if days < 63 else f"dans {round(days / 30.4)} mois")
-    if rt.target_time_s:
-        out["objective"] = _hm(rt.target_time_s)
+    if obj := _objective_s(rt, imported_s=getattr(rt, "imported_estimate_s", 0)):
+        out["objective"] = _hm(obj)
     if real_s:
         out["real"] = _hm(_min(real_s) * 60)
         if plan_s:
@@ -646,6 +649,10 @@ async def save_route(
                     route.total_elevation_gain = course_data.get("total_elevation_gain", route.total_elevation_gain)
                     route.total_elevation_loss = course_data.get("total_elevation_loss", route.total_elevation_loss)
                 route.target_time_s = target_time_s
+                # a page that saves only his objective says so; an older one saved its estimate there too
+                marked = form.get("target_v") == str(TARGET_VERSION)
+                p = {k: v for k, v in (route.params_json or {}).items() if k != "target_v"}
+                route.params_json = {**p, "target_v": TARGET_VERSION} if marked else p
                 if "race_date" in form: route.race_date = _iso_date(race_date)
                 if start_hour is not None: route.start_hour = start_hour
                 if start_minute is not None: route.start_minute = start_minute
@@ -668,6 +675,7 @@ async def save_route(
                     total_elevation_loss=course_data.get("total_elevation_loss", 0),
                     course_json=course_data,
                     target_time_s=target_time_s,
+                    params_json={"target_v": TARGET_VERSION} if form.get("target_v") == str(TARGET_VERSION) else None,
                     race_date=_iso_date(race_date),
                     start_hour=start_hour,
                     start_minute=start_minute,
@@ -1952,14 +1960,29 @@ def _to_minute(seconds: float) -> int:
     return int((float(seconds) + 30) // 60) * 60
 
 
-def _objective_s(route: Route, estimate_s: float | None = None) -> int | None:
-    """The objective he set: the route's saved time, unless it is the estimate — within a minute of today's
-    (``estimate_s``, when known: the page's own rule)."""
+# Until 2026-10-14 the page saved its objective field on every save, the estimate when he had not moved it: a
+# saved time is his objective only when the page that saved it marks it so (TARGET_VERSION, params_json), or,
+# saved before, when it is not the estimate of the course's import (the one that first page showed and kept).
+TARGET_VERSION = 2
+
+
+def _objective_s(route: Route, estimate_s: float | None = None, imported_s: float | None = None) -> int | None:
+    """The objective he set: the route's saved time, unless it is an estimate — within a minute of today's
+    (``estimate_s``, when known: the page's own rule), or saved before TARGET_VERSION within a minute of the
+    estimate stored with the course at its import (``imported_s``, read from the course when not given)."""
     from app.services.race_simulator import has_objective
 
     t = route.target_time_s
     if not t or (estimate_s is not None and not has_objective(t, estimate_s)):
         return None
+    if (route.params_json or {}).get("target_v") != TARGET_VERSION:
+        if imported_s is None:
+            imported_s = (route.course_json or {}).get("predicted_total_time_s")
+        try:
+            if imported_s and abs(int(t) - float(imported_s)) <= 60:
+                return None
+        except (TypeError, ValueError):
+            pass
     return int(t)
 
 

@@ -750,14 +750,14 @@ async def test_without_an_objective_the_page_print_phone_exports_and_debrief_fin
 
     r = await as_user.post("/api/simulator/routes", data={
         "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Sans objectif",
-        "start_hour": 6, "start_minute": 0, "sport_type": "trail"})
+        "start_hour": 6, "start_minute": 0, "sport_type": "trail", "target_v": "2"})
     rid = r.json()["id"]
     route = await db_session.get(Route, rid)
-    assert route.target_time_s is None
+    assert route.target_time_s is None and route.params_json == {"target_v": 2}
     for objective in (None, 5 * 3600):
         if objective:
             await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": json.dumps(CPS),
-                                                              "target_time_s": objective})
+                                                              "target_time_s": objective, "target_v": "2"})
         await db_session.refresh(route)
         ctx = await sim._build_route_context(route, db_session, test_user.id)
         est, obj = ctx["estimate_s"], ctx["objective_s"]
@@ -776,6 +776,49 @@ async def test_without_an_objective_the_page_print_phone_exports_and_debrief_fin
         assert b["has_objective"] == (obj is not None)
         stops = sum(s["stop_s"] for s in b["sections"])
         assert stops > 0 and (obj or est) - stops == pytest.approx(sum(s["adjusted_time_s"] for s in b["sections"]), abs=2)
+
+
+@pytest.mark.asyncio
+async def test_no_phantom_objective_once_the_date_and_its_weather_are_saved(as_user: AsyncClient, db_session, test_user):
+    """Review repro: the page used to save its estimate in the objective field; once the race date and its season
+    normals were saved the estimate moved and the old one read as an objective he never set (« Modifier
+    l'objectif », 251 min). The page now saves only a time he set; an estimate an older page saved (within a
+    minute of the course's import estimate, no TARGET_VERSION) reads as none; one he typed stays his."""
+    from app.models.route import Route
+
+    imported = _course().predicted_total_time_s  # 251 min: what the older page showed and saved
+    weather = {"source": "moyennes climatiques", "date": "2026-11-20", "heat_factor": 1.0,
+               "hourly": {"temps": [8.0] * 24, "humidity": [80] * 24}}
+
+    async def page(rid):
+        return (await as_user.get(f"/simulator/routes/{rid}")).text
+
+    for label, first, later in (
+        ("this page: nothing saved", {"target_v": "2"}, {"target_v": "2"}),
+        ("an older tab: its estimate saved", {"target_time_s": (imported + 30) // 60 * 60},
+         {"target_time_s": (imported + 30) // 60 * 60}),
+    ):
+        r = await as_user.post("/api/simulator/routes", data={
+            "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": label,
+            "start_hour": 6, "start_minute": 0, **first})
+        rid = r.json()["id"]
+        await as_user.post("/api/simulator/routes", data={
+            "route_id": rid, "checkpoints_json": json.dumps(CPS), "race_date": "2026-11-20",
+            "weather_json": json.dumps(weather), **later})
+        html = await page(rid)
+        assert "Modifier l'objectif" not in html and ">Estimation<" in html, label
+    # an objective he typed: his, before and after the weather
+    r = await as_user.post("/api/simulator/routes", data={
+        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Objectif",
+        "start_hour": 6, "start_minute": 0, "target_time_s": 5 * 3600, "target_v": "2"})
+    rid = r.json()["id"]
+    assert "Modifier l'objectif" in await page(rid)
+    await as_user.post("/api/simulator/routes", data={
+        "route_id": rid, "checkpoints_json": json.dumps(CPS), "race_date": "2026-11-20",
+        "weather_json": json.dumps(weather), "target_time_s": 5 * 3600, "target_v": "2"})
+    html = await page(rid)
+    assert "Modifier l'objectif" in html and ">Objectif<" in html
+    assert (await db_session.get(Route, rid)).target_time_s == 5 * 3600
 
 
 def test_the_pacing_guide_plans_the_moving_time_of_its_target():
