@@ -229,3 +229,180 @@ async def test_the_athletes_zone_comes_from_their_strava_activities(db_session, 
     test_user.timezone = "Asia/Tokyo"  # chosen otherwise: kept
     await adopt_zone(db_session, test_user)
     assert test_user.timezone == "Asia/Tokyo"
+
+
+# ── the hourly round and each athlete's poll; Celery ─────────────────────────
+
+async def test_the_poll_finds_an_activity_uploaded_long_after_its_start(db_session, test_user, task_session,
+                                                                         monkeypatch):
+    """Base code: a run started 2 h ago and uploaded after the previous round (5 min ago then) was skipped, its
+    start being before that round, and never found again ({'users_checked': 1, 'new_activities': 0})."""
+    from app.tasks.poll_activities import _poll_user
+
+    now = datetime.now(timezone.utc)
+    await _own_app(db_session, test_user)
+    test_user.last_activity_poll_at = now - timedelta(minutes=61)
+    await db_session.flush()
+    fetch = AsyncMock(return_value=[_data(700_001, now - timedelta(hours=2))])
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    assert await _poll_user(test_user.id) == {"user_id": test_user.id, "new_activities": 1}
+    assert (await _row(db_session, 700_001)).name == "Sortie 700001"
+    assert test_user.last_activity_poll_at > now - timedelta(seconds=5)  # Réglages' « Dernière synchro »
+    assert (await _poll_user(test_user.id))["new_activities"] == 0  # known: never twice
+
+
+async def test_the_poll_pages_until_a_page_is_all_known(db_session, test_user, task_session, monkeypatch):
+    from app.tasks.poll_activities import POLL_PAGES, _poll_user
+
+    now = datetime.now(timezone.utc)
+    await _own_app(db_session, test_user)
+    pages = {p: [_data(710_000 + 30 * p + i, now - timedelta(hours=30 * p + i)) for i in range(30)]
+             for p in range(1, 6)}
+    calls = []
+
+    async def fetch(self, user, per_page=30, page=1):
+        calls.append(page)
+        return pages[page]
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    assert (await _poll_user(test_user.id))["new_activities"] == 30 * POLL_PAGES and calls == [1, 2, 3]
+    calls.clear()  # the second round: page 1 is all known, nothing more is asked
+    assert (await _poll_user(test_user.id))["new_activities"] == 0 and calls == [1]
+
+
+async def test_one_athletes_failure_leaves_the_others_import_whole(task_db, monkeypatch):
+    """Base code: one session and one commit for the whole round; a flush error of one athlete (e.g. the webhook
+    saving the same activity meanwhile) failed the session, the next athletes raised PendingRollbackError and the
+    round's imports were all lost. Now each athlete's poll is a task and a transaction of its own."""
+    from app.services import activity_env
+    from app.tasks import poll_activities
+
+    async with task_db() as db:
+        bad = await _own_app(db, await _athlete(db, 801), client_id="801")
+        good = await _own_app(db, await _athlete(db, 802), client_id="802")
+        await db.commit()
+    now = datetime.now(timezone.utc)
+
+    async def fetch(self, user, per_page=30, page=1):
+        return [_data(800_000 + user.strava_athlete_id, now - timedelta(hours=1), athlete_id=user.strava_athlete_id)]
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    real_enrich = activity_env.enrich
+
+    async def enrich(db, user_id, now=None):
+        if user_id == bad.id:
+            raise RuntimeError("flush failed")  # after its row was added
+        return await real_enrich(db, user_id, now)
+    monkeypatch.setattr(activity_env, "enrich", enrich)
+    queued = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: queued.append(uid))
+
+    assert (await poll_activities._run_poll())["users_checked"] == 2 and sorted(queued) == sorted([bad.id, good.id])
+    # each poll as Celery runs it (its own event loop, its own session)
+    results = {uid: await asyncio.to_thread(poll_activities.poll_strava_user.run, uid) for uid in queued}
+    assert results[bad.id] == {"user_id": bad.id, "error": "failed"}
+    assert results[good.id] == {"user_id": good.id, "new_activities": 1}
+    async with task_db() as db:
+        assert await _row(db, 800_802) is not None and await _row(db, 800_801) is None  # rolled back alone
+        assert (await db.get(User, good.id)).last_activity_poll_at is not None
+    assert strava_state.read(f"poll:{bad.id}") is None  # claims freed: the next round polls them again
+
+
+async def test_the_round_is_hourly_and_leaves_the_webhooks_athletes_alone(db_session, test_user, task_session,
+                                                                          monkeypatch):
+    """Base code: every athlete, every 5 minutes (≥ 288 reads a day each: the shared app's 1,000 were gone with 4
+    athletes). Now hourly, and only for those the webhook has not reached for 24 h; one queued poll per athlete."""
+    from celery.schedules import crontab
+
+    from app.celery_app import celery_app
+    from app.tasks import poll_activities
+
+    assert celery_app.conf.beat_schedule["poll-new-activities"]["schedule"] == crontab(minute=7)
+    await _own_app(db_session, test_user)
+    quiet = await _own_app(db_session, await _athlete(db_session, 901), client_id="901")
+    backing = await _own_app(db_session, await _athlete(db_session, 902), client_id="902")
+    queued = []
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: queued.append(uid))
+    strava_state.webhook_reached(test_user.id)
+    strava_state.back_off("902", time.time() + 600)
+    assert (await poll_activities._run_poll())["users_checked"] == 1 and queued == [quiet.id]
+    assert (await poll_activities._run_poll())["users_checked"] == 0  # still queued (claimed): never twice
+    strava_state.release(f"poll:{quiet.id}")  # its poll ran
+    strava_state.webhook_forget(test_user.id)  # 24 h without an event
+    strava_state.release("backoff:902")
+    queued.clear()
+    await poll_activities._run_poll()
+    assert sorted(queued) == sorted([test_user.id, quiet.id, backing.id])
+
+    # a poll queued before the backoff began asks nothing
+    fetch = AsyncMock(return_value=[])
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    strava_state.back_off("901", time.time() + 600)
+    assert (await poll_activities._poll_user(quiet.id))["status"] == "backoff" and fetch.await_count == 0
+
+
+async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, monkeypatch):
+    """Base code: three failures (a 429…) left initial_sync_done False, which the poll's filter excluded forever,
+    Réglages still saying « Première synchro en cours… ». Now the failure is kept (strava_status: sync_error), and
+    the round queues the import again after 1 h, 2 h, 4 h… (24 h at most)."""
+    from app.tasks import initial_sync as task
+    from app.tasks import poll_activities
+
+    async with task_db() as db:
+        uid = (await _own_app(db, await _athlete(db, 12345678), done=False)).id
+        await db.commit()
+
+    async def user() -> User:
+        async with task_db() as db:
+            return await db.get(User, uid)
+
+    def run():  # as Celery runs it: its own event loop
+        return asyncio.to_thread(task.initial_sync.run, uid)
+
+    monkeypatch.setattr(StravaService, "get_all_activities_since", AsyncMock(side_effect=StravaRateLimitError()))
+    assert (await run())["error"] == "rate_limited"
+    status = strava_status(await user())
+    assert status["connected"] and status["sync_error"] == "rate_limited"
+    assert timedelta(minutes=59) < status["sync_retry_at"] - datetime.now(timezone.utc) <= timedelta(hours=1)
+    assert strava_state.read(strava_state.initial_lock(uid)) is None  # not left running
+
+    requeued = []
+    monkeypatch.setattr(task.initial_sync, "delay", lambda u: requeued.append(u))
+    assert (await poll_activities._run_poll())["initial_requeued"] == 0  # its hour is not over
+    failed = strava_state.initial_failed(uid, "failed")  # a second failure: 2 h
+    assert failed["failures"] == 2 and 7190 < failed["next_at"] - time.time() <= 7200
+    assert not strava_state.initial_due(uid) and strava_state.initial_due(uid, failed["next_at"])
+    for _ in range(8):
+        failed = strava_state.initial_failed(uid, "failed")
+    assert failed["next_at"] - time.time() <= 24 * 3600
+    strava_state.mark(f"initial:{uid}:failed", 3600, '{"failures": 3, "next_at": 0, "error": "failed"}')
+    assert (await poll_activities._run_poll())["initial_requeued"] == 1 and requeued == [uid]
+    # never two at once
+    assert strava_state.claim(strava_state.initial_lock(uid), 60)
+    assert (await run())["status"] == "already_running"
+    assert (await poll_activities._run_poll())["initial_requeued"] == 0  # not queued again while it runs
+    strava_state.release(strava_state.initial_lock(uid))
+
+    # it works at last: done, the failure gone, « Dernière synchro » set
+    monkeypatch.setattr(StravaService, "get_all_activities_since", AsyncMock(return_value=[]))
+    assert (await run())["synced"] == 0
+    done = await user()
+    assert done.initial_sync_done and done.last_activity_poll_at is not None
+    assert strava_state.initial_failure(uid) is None and strava_status(done)["sync_error"] is None
+    assert (await run())["status"] == "already_done"  # a copy the round queued meanwhile
+
+
+def test_long_syncs_have_their_queue_and_are_never_redelivered_while_running():
+    """Base code: Redis's default 1-h visibility timeout redelivered (acks_late) a round still running; every task on
+    one queue, a long sync holding the 2 slots while the 5-min poll waited."""
+    from app.celery_app import celery_app
+
+    assert celery_app.conf.broker_transport_options["visibility_timeout"] >= 4 * 3600
+    route = celery_app.amqp.router.route
+    for name in ("paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin"):
+        assert route({}, name)["queue"].name == "long", name
+    for name in ("paceforge.poll_new_activities", "paceforge.poll_strava_user",
+                 "paceforge.sync_activity_from_webhook", "paceforge.strava_deauthorized"):
+        assert route({}, name)["queue"].name == "celery", name
+    queues = celery_app.amqp.queues
+    assert sorted(queues.consume_from) == ["celery", "long"]  # a worker without -Q (as deployed) takes both
+    # one binding each: two queues on one routing key would both receive every message
+    assert len({(q.exchange.name, q.routing_key) for q in queues.values()}) == len(queues)

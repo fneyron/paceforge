@@ -2,6 +2,7 @@ import logging
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Exchange, Queue
 
 from app.config import settings
 
@@ -30,7 +31,7 @@ celery_app.conf.update(
     beat_schedule={
         "poll-new-activities": {
             "task": "paceforge.poll_new_activities",
-            "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "schedule": crontab(minute=7),  # hourly: the webhook's fallback (tasks/poll_activities)
         },
         "sync-coros": {
             "task": "paceforge.sync_coros",
@@ -43,3 +44,20 @@ celery_app.conf.update(
         # disabled: weekly-digest
     },
 )
+
+# ── Strava rounds and long syncs ────────────────────────────────────────────
+# Beat runs inside the worker (`worker --beat`, docker-compose.prod.yml): that worker must never run as two
+# replicas, or every beat entry fires twice (each athlete's poll queued twice, two Garmin or COROS rounds at once).
+# More workers can be added without --beat; beat stays in exactly one process.
+#
+# A task taken but not yet acknowledged (acks_late) is handed out again after the broker's visibility timeout: it
+# must outlast the longest task (a first Strava import, a Garmin or COROS round), else a slow one runs twice at once.
+# A countdown longer than it would be delivered twice too: the waits after a failure are the round's, not ETAs.
+celery_app.conf.broker_transport_options = {"visibility_timeout": 6 * 3600}
+# The long syncs have a queue of their own. A worker started without -Q consumes both (as deployed); a worker
+# `-Q celery` beside one `-Q long` keeps the hourly round, the polls and the webhook events moving during them.
+celery_app.conf.task_queues = tuple(  # each its own binding (two on one key would both get every message)
+    Queue(name, Exchange(name, type="direct"), routing_key=name) for name in ("celery", "long"))
+celery_app.conf.task_default_queue = "celery"
+celery_app.conf.task_routes = {name: {"queue": "long"} for name in (
+    "paceforge.initial_sync", "paceforge.sync_coros", "paceforge.sync_garmin")}
