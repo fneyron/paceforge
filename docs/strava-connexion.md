@@ -34,13 +34,16 @@ mois (son détail) : avec le quota par défaut (1 000 lectures par jour), un nou
 athlète peut en consommer l’essentiel.
 
 Le webhook est la voie principale : chaque activité arrive à son envoi. Le polling
-n’en est que le secours : une tournée par heure, pour les seuls athlètes que le
-webhook n’a pas atteints depuis 24 h. À 80 % d’une fenêtre de quota Strava (15 min
-ou jour), ou sur une réponse 429, les synchronisations de fond (tournée, détails de
-l’import initial, D+ des courses) attendent la fenêtre suivante ; le webhook et le
-bouton « Synchroniser » (une fois par minute au plus) gardent le reste. Un import
-initial en échec est relancé par la tournée après 1 h, 2 h, 4 h… (24 h au plus).
-Ces états vivent dans Redis (aucune colonne).
+n’en est que le secours, par une tournée horaire : chaque athlète relié est relu au
+moins une fois par jour (un événement peut se perdre), et toutes les heures
+seulement quand ni lui ni son app n’ont reçu d’événement depuis 24 h ; les athlètes
+restés le plus longtemps sans nouvelles passent d’abord. Chaque relecture complète
+aussi quelques activités importées sans leur détail (courses et sorties longues
+d’abord). À 80 % d’une fenêtre de quota Strava (15 min ou jour), ou sur une réponse
+429, les synchronisations de fond (tournée, détails, D+ des courses) attendent la
+fenêtre suivante ; le webhook et le bouton « Synchroniser » (une fois par minute au
+plus) gardent le reste. Un import initial en échec est relancé par la tournée après
+1 h, 2 h, 4 h… (24 h au plus). Ces états vivent dans Redis (aucune colonne).
 
 Configurer une seule souscription pour l’app commune vers
 `https://paceforge.fr/webhook/strava`, avec `STRAVA_WEBHOOK_VERIFY_TOKEN` défini
