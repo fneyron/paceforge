@@ -1,43 +1,44 @@
 """Santé: three visual rings, with explanations available on demand.
 
-Sommeil compares the measured 24 h (naps included) to an estimated need.
-Récupération combines nightly signals and the existing effort limits; at
-least one usable component must actually be measured on the selected day.
-Before noon a pending night may retain yesterday's explicitly dated cycle.
-Entraînement compares the last seven days to the usual week: 100 % is a
-reference, not a target, and the full arc is 200 %.
+Sommeil compares the measured 24 h (naps included) to the 8-h need; the sleep owed over 7 nights is said apart
+(sante_sleep.deficit), never added to it. Récupération is the day's rule-based state (sante_score.score_of: the
+7-day VFC, else FC de nuit, trend against its baseline of days −67 to −8, the illness alert, the breathing flag, a
+short 24 h, an effort window) and its « indice nocturne »; last night must be measured, and a state never comes
+from sleep alone or from activities alone (owner, 2026-10-14: scientific basis — it replaces a weighted index and
+its caps that had no validated basis). Before noon a pending night may retain yesterday's explicitly dated cycle.
+Entraînement compares the last seven days' load to the usual week: 100 % is a reference, not a target, and the
+full arc is 200 %; the same load (sante_load, one pipeline) draws the Charge accumulée and Activités' 7 / 28 days.
 
-The rings open native disclosures with sleep details, recovery factors and
-history, or training context. The nightly VFC/FC charts remain visible:
-rolling trends, measured points and provisional references are labelled
-separately. Extra daytime measurements stay visible with recent median references.
-Measurement dates and successful syncs are distinct in the source details.
+The rings open native disclosures with sleep details, recovery factors and history, or training context. The
+nightly VFC/FC charts remain visible: rolling trends, measured points and provisional references are labelled
+separately. Extra daytime measurements stay visible with recent median references. Measurement dates and
+successful syncs are distinct in the source details.
 
-No check-in, planned race or brand recovery score enters the calculation.
-Each source is preserved separately; nights.read_rows applies the user's
-watch preference and baselines remain specific to a source and method.
-Missing measurements remain gaps, never zeroes.
-Heuristic choices are marked (H); these indices are not validated clinical measures.
+No check-in, planned race or brand recovery score enters the calculation. Each source is preserved separately;
+nights.read_rows applies the user's watch preference and baselines remain specific to a series (source and method).
+Missing measurements remain gaps, never zeroes. Heuristic choices are marked (H); these readings are not
+validated clinical measures. The page's reads come first; its pure computation runs in a worker thread.
 """
 import logging
+import math
 import statistics
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
 
+import anyio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health import HealthMetric
 from app.services import nights as nt
+from app.services import sante_load
 from app.services import sante_score as sc
-from app.services import sante_recovery as sr
 from app.services import sante_sleep as sl
 from app.services import sante_today as td
 from app.services import sante_training as st
 from app.services import viz
 from app.services.health import HRV_METHOD, WATCH_SOURCES, fmt_minutes
-from app.services.health_sources import SOURCE_NOTE, preference
 from app.services.sante_daily import daily_context
 
 logger = logging.getLogger(__name__)
@@ -51,32 +52,34 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
                       r: str | None = None) -> dict:
     """Everything /sante draws. `has_data` is False when neither a watch nor an
     activity ever arrived. `r`: the sleep bars' range (14 or 90; else the
-    first holding a night)."""
+    first holding a night). Every read first, then the pure computation in a worker thread (it took 1.5–2.8 s of
+    CPU on the event loop)."""
+    from app.models.user import User
+
     now = now or datetime.now(timezone.utc)
     latest = (await db.execute(select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
+    user = await db.get(User, user_id)  # read once, held for the page (every later read of it is this one)
+    zone = await st.athlete_clock(db, user_id, user)
     clock = None  # the athlete's wall clock, only for the day the page finds itself (a given day stays as given)
     if today is None:
-        today = await athlete_today(db, user_id, now, latest)
-        clock = await local_clock(db, user_id, now)
-    sessions = await st.load_sessions(db, user_id, today)
+        today = await athlete_today(db, user_id, now, latest, zone=zone)
+        clock = await local_clock(db, user_id, now, zone=zone)
+    sex = getattr(user, "sex", None)  # no such field yet: Banister's men's constants (sante_training.LOAD_WOMEN)
+    sessions = await st.load_sessions(db, user_id, today, zone=zone)
     peak = st.hr_max(sessions, today)
-    # the laps (else km splits) of the sessions with HR the Entraînement dial weighs: its 12 months of own rates
+    # the laps (else km splits) of the sessions with HR: their loads and their steady splits (Forme)
     await st.load_hr_segments(db, user_id, sessions, today - timedelta(days=st.RATE_DAYS))
     # Garmin's day altitudes: where the athlete slept, first (R2)
     day_alt = await nt.day_altitudes(db, user_id, today - timedelta(days=HISTORY_DAYS), today)
     # the nights' tags read the efforts' classes only
     nights = await nt.load_nights(db, user_id, today, days=HISTORY_DAYS, sessions=sessions,
                                   efforts=st.efforts(sessions), peak=peak, day_alt=day_alt)
-    # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
-    rest_of = partial(nt.rest_hr, nights)
-    # a dawn finish: D on the day before its first morning
-    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
     sources = set((await db.execute(select(HealthMetric.source).distinct().where(
         HealthMetric.user_id == user_id, HealthMetric.metric != "feel"))).scalars().all())
     # the night awaited is the calendar day's (how soon the page syncs again); the page reads the cycle's day
     night_state = await _night_state(db, user_id, today, sources & set(WATCH_SOURCES))
     until, today = today, cycle_day(nights, today, clock)
-    daily = await daily_context(db, user_id, until)
+    daily = await daily_context(db, user_id, until, now=now, zone=zone)
     out = {
         "has_data": bool(sources) or bool(sessions) or bool(daily),
         "daily": daily,
@@ -85,38 +88,47 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         "calendar_day": until,
         "cycle_pending": today != until,
         "night_state": night_state,
+        "day_label": viz.d_short(today),
     }
     if not out["has_data"]:
-        out["day_label"] = viz.d_short(today)
         return out
-    with nt.memo():  # the nights no longer change: their bands and alerts are computed once
+    hero_day = sl.hero_day(nights, today)
+    samples = await _timeline(db, user_id, nights, hero_day) if hero_day else {}
+    out.update(await anyio.to_thread.run_sync(partial(
+        _compute, nights, sessions, today, until, r, samples, bool(sources), peak, day_alt, sex)))
+    return out
+
+
+def _compute(nights, sessions, today: date, until: date, r, samples, has_watch: bool, peak: float, day_alt,
+             sex=None) -> dict:
+    """The page's pure computation (no database): the day's state, its 14 days, the cards, the dials, the load."""
+    from app.services import training_view
+
+    # a Longue run like a race (R3): its HR against the athlete's bounds as of its day (the nights' resting HR)
+    rest_of = partial(nt.rest_hr, nights)
+    # a dawn finish: D on the day before its first morning
+    efforts = nt.anchor_efforts(nights, st.efforts(sessions, rest_of))
+    raced = st.raced_nights(efforts)
+    out = {}
+    with nt.memo():  # the nights no longer change: their baselines, trends and alerts are computed once
         nt.freeze(nights)
         day = _assess(nights, sessions, efforts, today)
         history = (_history(nights, sessions, efforts, today, rest_of, day_alt)
                    + [(today, day["state"], day["score"])])
         out["recup"] = sc.history_card(history, today)
-        hero = sl.hero(nights, today)
-        samples = await _timeline(db, user_id, nights, hero["day"]) if hero else {}
-        raced = st.raced_nights(efforts)
-
-        def need_of(x: date) -> int:
-            return sl.sleep_need(nights, x, raced)["total"]
-        out["sleep"] = sl.sleep_section(nights, today, r, samples, need_of)
-        if out["sleep"].get("hero"):  # the need of the night shown: its line when something adds to the 8 h
-            if out["cycle_pending"]:
-                out["sleep"]["hero"]["label"] = viz.night_label(out["sleep"]["hero"]["day"]).capitalize()
-            out["sleep"]["need"] = sl.need_line(sl.sleep_need(nights, out["sleep"]["hero"]["day"], raced))
-            out["sleep"]["baseline"] = sl.baseline_note(sl.sleep_baseline(nights, out["sleep"]["hero"]["day"], raced))
+        out["sleep"] = sl.sleep_section(nights, today, r, samples, raced)
+        if out["sleep"].get("hero") and today != until:
+            out["sleep"]["hero"]["label"] = viz.night_label(out["sleep"]["hero"]["day"]).capitalize()
         out["vfc"] = _night_card(nights, "hrv", today, day)
         out["fc"] = _night_card(nights, "hr", today, day)
-        # the Entraînement dial reads every week with today's bounds (H): the night tags' resting HR and peak
-        out.update(_top(day, efforts, sessions, bool(sources), out, until, nights, nt.rest_hr(nights, until), peak))
-    from app.services import sante_load, training_view
-    out["load"] = sante_load.card(sessions, until, rest_of)
-    out["fitness"] = training_view.footing([s for s in sessions if s.end_day <= until], until, peak)
-    out["fitness_progress"] = st.fitness_progress(
-        [s for s in sessions if s.end_day <= until], until, peak
-    )
+        # one load for every view (sante_load): today's bounds, the nights' resting HR and the sessions' peak
+        rest = nt.rest_hr(nights, until)
+        load = st.loads(sessions, until, rest, peak, sex)
+        out.update(_top(day, sessions, has_watch, out, until, load))
+    done = [s for s in sessions if s.end_day <= until]
+    out["load"] = sante_load.card(sessions, until, load)
+    out["fitness"] = training_view.footing(done, until, peak)
+    out["fitness_progress"] = st.fitness_progress(done, until, peak)
     if out["fitness"]:
         import json
         c = out["fitness"]
@@ -125,15 +137,6 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
         c["data"] = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
         # The measured values are available on touch, without repeating Activités' latest readout.
         viz.rest(c, ["", "Tes sorties comparables", ""], c["summary"])
-    out["day_label"] = viz.d_short(today)
-    out["method"] = sc.typo(sc.METHOD)
-    out["source_note"] = SOURCE_NOTE
-    out["preferred_source"] = await preference(db, user_id) or "Automatique · COROS puis Garmin"
-    measured = (await db.execute(select(HealthMetric.source, func.max(HealthMetric.date)).where(
-        HealthMetric.user_id == user_id, HealthMetric.date <= until,
-        HealthMetric.metric.in_(("sleep", "hrv", "hr_night")), HealthMetric.source.in_(WATCH_SOURCES)
-    ).group_by(HealthMetric.source))).all()
-    out["measured_sources"] = {source: d.strftime("%d/%m/%Y") for source, d in measured}
     return out
 
 
@@ -142,11 +145,13 @@ async def health_page(db: AsyncSession, user_id: int, today: date | None = None,
 CYCLE_NOON = 12  # (H) from noon, a day whose night never came is that day anyway (the watch was not worn)
 
 
-async def local_clock(db: AsyncSession, user_id: int, now: datetime) -> datetime | None:
-    """The athlete's wall-clock time (naive) from their UTC offset (their latest sessions, as athlete_today); None
-    without one (a seam the tests move)."""
-    offset = await st.utc_offset(db, user_id, now)
-    return None if offset is None else (now + timedelta(seconds=offset)).replace(tzinfo=None)
+async def local_clock(db: AsyncSession, user_id: int, now: datetime, zone=None) -> datetime | None:
+    """The athlete's wall-clock time (naive) on sante_training.athlete_clock; a seam the tests move (None: no
+    clock, a day as the calendar's). `zone`: athlete_clock's, when the caller read it."""
+    if zone is None:
+        zone = await st.athlete_clock(db, user_id)
+    moment = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    return moment.astimezone(zone).replace(tzinfo=None)
 
 
 def _slept(nights, d: date) -> bool:
@@ -159,56 +164,70 @@ def cycle_day(nights, today: date, clock: datetime | None) -> date:
     """The day Santé reads, like WHOOP's cycle, « from sleep onset to sleep onset » rather than midnight to
     midnight (WHOOP's engineering blog; owner, 2026-10-09, awake at 1 a.m. on a plane: « J'ai sommeil vide »):
     before noon (H), while this morning's night has not reached the page and last night's has, it is still
-    yesterday — its night, its score, its 7 days (and the activities since midnight); from noon, or as soon as the
-    night is in, today (a night not received then reads « pas de données »). `clock` None (no offset known,
-    or a day given): `today`."""
+    yesterday — its night, its state, its 7 days (and the activities since midnight); from noon, or as soon as the
+    night is in, today (a night not received then reads « pas de données »). `clock` None (a day given):
+    `today`."""
     if clock is None or clock.date() != today or clock.hour >= CYCLE_NOON:
         return today
     yesterday = today - timedelta(days=1)
     return yesterday if not _slept(nights, today) and _slept(nights, yesterday) else today
 
 
-# ── one day: its state and its score ────────────────────────────────────────
+# ── one day: its state ──────────────────────────────────────────────────────
 
-def _night_stat(nights, metric: str, d: date) -> dict:
-    """The 7-night mean of every measured night (3 at least, Plews 2014; Lau
-    2022) and the usual values it is read against (nights.normal: every
-    measured night of the 60 days up to and including last night, on the
-    watch that mean reads: one band per watch, Dial 2025; « provisoire » from
-    7 to 13 nights, H); the band even without a mean (« en construction » is
-    said only when there is none). The status is judged on the unrounded
-    mean. `seen`: the metric measured in those 60 days."""
-    m = nt.mean7(nights, metric, d)
-    src = nt.mean_source(nights, metric, d)
-    b = nt.normal(nights, metric, d)
-    v = m["value"] if m else None
+def _night_stat(nights, metric: str, d: date, trend: dict | None) -> dict:
+    """The 7-night mean of every measured night (3 at least, Plews 2014; Lau 2022) and the usual values it is read
+    against (nights.normal: the nights from d − 67 to d − 8 on its series, one baseline per series: Dial 2025;
+    « provisoire » from 7 to 13 nights, H, never read by the state); the status from its trend (nights.trend: the
+    band widened to 1.28 standard errors of a 7-night mean, nights.threshold). `seen`: the metric measured in
+    those 60 days."""
+    t = trend or {}
+    b = t.get("baseline")
     lo = d - timedelta(days=nt.BAND_DAYS - 1)
-    seen = src is not None and any(lo <= x <= d and n.value(metric) is not None for x, n in nights.items())
-    return {"value": v, "normal": b, "status": nt.status(v, b) if b and v is not None else None, "seen": seen,
-            "score_eligible": not (metric == "hrv" and src and "(SDNN sommeil)" in src)}
+    src = t.get("source")
+    seen = src is not None and any(n.value(metric) is not None for x, n in nights.items() if lo <= x <= d)
+    return {"value": t.get("value"), "normal": b, "status": t.get("status") if b else None, "seen": seen,
+            "score_eligible": not (metric == "hrv" and sc.is_sdnn(trend))}
+
+
+def _resp_ref(nights, d: date) -> dict | None:
+    """The breathing rate's place in the day's state (sante_score.quality): None when the watch never measured it
+    in the 60 days; else {last (measured last night), ready (a full baseline, the flag readable), n}."""
+    lo = d - timedelta(days=nt.BAND_DAYS - 1)
+    if not any(n.resp is not None for x, n in nights.items() if lo <= x <= d):
+        return None
+    n = nights.get(d)
+    last = bool(n and n.resp is not None)
+    source = n.resp_source if last else None
+    b = nt.band(nights, "resp", nt.baseline_until(d), source=source, full=True) if last else None
+    return {"last": last, "ready": bool(b), "n": nt.baseline_count(nights, "resp", d, source) if last else 0}
 
 
 def _assess(nights, sessions, efforts, d: date) -> dict:
-    """What day `d` reads — today, or a past day of the 14-day card (_history:
-    the rows and activities known that day) — and its score and state (the
-    band of the score). Every measured night counts in the 7-night means (an
-    alert episode's own nights too: the score shows the episode, never « dans
-    tes valeurs habituelles » the morning the alert stops). The day's sleep
-    need (sante_sleep.sleep_need) is what its 24 h are read against, by the
-    Sommeil dial and the score; `resp`: the breathing rate's 2 nights over its
-    usual line (nights.resp_up_nights)."""
-    alert = nt.illness_alert(nights, d)
-    stats = {k: _night_stat(nights, k, d) for k in ("hr", "hrv")}
-    tst = nt.day_tst24(nights, d)  # the 24 h before this morning's wake: the Sommeil row's number and the score's
+    """What day `d` reads — today, or a past day of the 14-day card (_history: the rows and activities known that
+    day) — and its state (sante_score.score_of). Every measured night counts in the trends (an alert episode's own
+    nights too: never « dans tes valeurs habituelles » the morning the alert stops); `resp`: the breathing flag
+    (nights.resp_up_nights); `window`: the effort window (sante_training.effort_window)."""
+    trends = {k: nt.trend(nights, k, d) for k in ("hrv", "hr")}
+    # the 24 h before this morning's wake (the Sommeil dial's figure) on the nights known that day only: a nap
+    # after the wake moves to the next morning once that morning exists (owner, 2026-10-14: scientific basis — a
+    # past day of the 14-day card read it from the later nights)
+    tst = nt.day_tst24({x: n for x, n in nights.items() if x <= d}, d)
     night = nights.get(d)
     fresh = [k for k in ("hr", "hrv") if night and night.value(k) is not None]
     if tst is not None:
         fresh.append("sleep")
-    day = {"day": d, "night_measured": _slept(nights, d), "stats": stats, "tst24": tst,
-           "measured_components": fresh,
-           "need": sl.sleep_need(nights, d, st.raced_nights(efforts)),
-           "recovery_load": sr.assessment(sessions, nights, d),
-           "window": st.effort_window(efforts, d), "alert": alert, "resp": nt.resp_up_nights(nights, d)}
+    # a heart value of last night on another series than the one its trend reads (another watch, another
+    # calculation): no state from it, and the line says so rather than « il manque des données de nuit »
+    elsewhere = [k for k in ("hrv", "hr") if night and night.value(k) is not None and trends[k]
+                 and night.source_of(k) != trends[k]["source"] and not sc.is_sdnn({"source": night.source_of(k)})]
+    day = {"day": d, "night_measured": _slept(nights, d), "trends": trends,
+           "stats": {k: _night_stat(nights, k, d, trends[k]) for k in ("hr", "hrv")}, "tst24": tst,
+           "measured_components": fresh, "window": st.effort_window(efforts, d),
+           "alert": nt.illness_alert(nights, d), "resp": nt.resp_up_nights(nights, d),
+           "resp_ref": _resp_ref(nights, d),
+           "elsewhere": {k: ("device" if nt.device(night.source_of(k)) != nt.device(trends[k]["source"])
+                             else "method") for k in elsewhere}}
     score = sc.score_of(day)
     day.update(score=score, state=td.state(score, day))
     return day
@@ -216,19 +235,19 @@ def _assess(nights, sessions, efforts, d: date) -> dict:
 
 def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None) -> list:
     """[(day, state, score)] of the 13 days before today, each as the page
-    computed it on that day: from the nights up to that day (the bands, the
-    means, the alert and the 24 h read nothing dated after it) and the
+    computed it on that day: from the nights up to that day (the baselines, the
+    trends, the alert and the 24 h read nothing dated after it) and the
     activities known then only — an activity is known once it ended (it is
     uploaded then), so one still running at midnight belongs to the next day
     — and the efforts as that day saw them (st.efforts on those activities: a
     chain across midnight joins a later day, so a past day may have seen a
     smaller effort). The nights' tags only keep a night from firing the
-    illness alert (every measured night counts in the bands and the means):
+    illness alert (every measured night counts in the baselines and the trends):
     as of that day they are today's (an effort tags the nights after it, a
     session the night after it: both known by then) but for « sortie intense
     le soir » (it reads that day's HR bounds). The nights are tagged once, as
     of today; a day whose « late » tags and efforts are the same, with no
-    activity still running at its midnight, reads them and shares their bands
+    activity still running at its midnight, reads them and shares their baselines
     (nights.memo); any other day is tagged anew from what it knew. `rest_of`:
     what the efforts were computed with (st.efforts): a Longue's heart-rate
     test reads the bounds as of its own day, the same whichever later day
@@ -236,8 +255,10 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     night reads the day before)."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
-    nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today), day_alt)
+    nt.tag_activities(base, sessions, efforts, nt.rest_hr(nights, today), st.hr_max(sessions, today), day_alt)
     nt.freeze(base)
+    # the series each day read, decided as far back as the live page's (nights: the full nights, its SERIES_LOOKBACK)
+    nt.share_series(base, nights, today, sc.HISTORY_NIGHTS)
     by_day = defaultdict(list)
     for s in sessions:
         by_day[s.day].append(s)
@@ -263,6 +284,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
             nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
             nt.freeze(nd)
+            nt.share_series(nd, nights, d, sc.HISTORY_NIGHTS)
         past = _assess(nd, ss, efs, d)
         out.append((d, past["state"], past["score"]))
     return out
@@ -270,42 +292,35 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
 
 # ── the top: three dials, like WHOOP's (2026-10-08, owner: « Fais comme WHOOP, ça doit rester simple ») ─────
 
-# the Sommeil dial's word from this morning's 24 h against the day's need: « suffisant » from the larger of 7 h
-# (Watson 2015a) and 7/8 of the need (H: an 8-h need gives the 7 h), « court » under 6 h (Craven 2022)
-SUFFICIENT_SHARE = 7 / 8  # (H)
+# the Sommeil dial's word from this morning's 24 h against the 8-h need: « suffisant » from 7 h (Watson 2015a;
+# Hirshkowitz 2015), « court » under 6 h (Craven 2022), « un peu court » between
 NO_NIGHT_WORD = "pas de données"
-USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the mean of the 11 weeks just before the 7 days (77
-# days, never the 7 days themselves: a period is not compared to a mean that holds it, the « uncoupled » ratio:
-# Lolli 2019; Windt & Gabbett 2019; owner, 2026-10-09: his Transjeju counted in both), 4 with an activity at least
 TRAIN_TURN = 2  # the Entraînement dial's full turn: twice the usual week
-USUAL_SPREAD = 0.2  # (H) within ± 20 % of the usual week: « comme d'habitude »
 NO_HABIT = "pas encore d'habitude"  # the Entraînement dial without a usual week
 NO_USUAL = "pas encore de semaine habituelle"  # its card's row then
 # its card's « Intensité » (owner, 2026-10-09, the approved mockup): the minutes' weight against the usual week's
 INTENSITY_SPREAD = 0.1  # (H) within ± 10 %: « comme d'habitude »
 INTENSITY_READ = 0.5  # (H) half of the minutes read from their HR, the 7 days' and the usual weeks', or no row
 INTENSITY_WORDS = ("plus élevée que d'habitude", "comme d'habitude", "plus basse que d'habitude")
-EFFORT_ORANGE = 65  # a recovery window's cap from which « Effort récent » wears orange (its 65 days); red under it
-NIGHT_ROWS = {"hrv": ("vfc", "VFC"), "hr": ("fc", "FC de nuit")}
-ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit row under the illness alert
+TRAIN_WORDS = {"more": "plus que d'habitude", "same": "comme d'habitude", "less": "moins que d'habitude"}
+ALERT_WORD = "nettement plus haute depuis 2 nuits"  # the FC de nuit card under the illness alert
 SAME = "comme d'habitude"  # a 7-night mean at its usual value, to the percent: « 0 % » said in words
 
 
-def sleep_word(tst24: int, need: int) -> str:
-    """The Sommeil dial's word: « suffisant » from the larger of 7 h and 7/8 of the need, « court » under 6 h,
-    « un peu court » between (an 8-h need reads as before: 7 h, 6 h)."""
-    if tst24 >= max(sl.REF_MIN, SUFFICIENT_SHARE * need):
+def sleep_word(tst24: int, need: int = sl.NEED_DEFAULT) -> str:
+    """The Sommeil dial's word: « suffisant » from 7 h (420 min), « court » under 6 h, « un peu court » between
+    (owner, 2026-10-14: scientific basis — the need no longer moves: 7/8 of 8 h is 7 h)."""
+    if tst24 >= sl.REF_MIN:
         return "suffisant"
     return "court" if tst24 < nt.SHORT_DAY_MIN else "un peu court"
 
 
 def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
-    """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24: the score's figure), as a
-    percentage of the day's need (sante_sleep.sleep_need: 8 h, a little more after a big effort or when sleep is
-    owed), at most 100 % (the hours are the Sommeil card's, printed once), its
-    arc in the sleep colour (one stable hue), in the warning colour under 6 h; its word (sleep_word); « — » and
-    « pas de données » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a
-    plain dial)."""
+    """« Sommeil »: the 24 h before this morning's wake, naps in (nights.day_tst24), as a percentage of the 8-h need
+    (sante_sleep.NEED_DEFAULT), at most 100 % (the hours are the Sommeil card's, printed once), its arc in the
+    sleep colour (one stable hue), in the warning colour under 6 h; its word (sleep_word); « — » and « pas de
+    données » without a night this morning. `href`: the Sommeil card, None without one (no night ever: a plain
+    dial)."""
     if tst24 is None:
         return viz.ring("sommeil", None, "—", "Sommeil", NO_NIGHT_WORD, tone="none", href=href,
                         aria="Sommeil : aucune donnée de nuit reçue pour ce matin.")
@@ -317,177 +332,99 @@ def sleep_dial(tst24: int | None, need: int, href: str | None) -> dict:
 
 
 def usual_week(sessions, since: date, value=None) -> float | None:
-    """The usual week (H): the mean of the activities' moving minutes over the 11 weeks just before the 7 days
-    (the 77 days before `since`, their first day; each activity on the day it ended: Session.end_day), the weeks
-    since the first activity only; None with fewer than 4 of those weeks holding an activity. Never the 7 days
-    themselves (USUAL_WEEKS). `value(s)`: what a session counts over those same weeks instead of its minutes (its
-    heart-rate load: the Entraînement dial)."""
-    if not sessions:
-        return None
-    value = value or (lambda s: s.minutes)
-    first = min(s.end_day for s in sessions)
-    held, per = defaultdict(float), defaultdict(float)
-    for s in sessions:
-        k = (since - s.end_day).days - 1  # 0: the day before the 7 days
-        if 0 <= k < 7 * USUAL_WEEKS:
-            held[k // 7] += s.minutes
-            per[k // 7] += value(s)
-    weeks = [k for k in range(USUAL_WEEKS) if since - timedelta(days=7 * k + 1) >= first]
-    if sum(1 for k in weeks if held.get(k, 0.0) > 0) < USUAL_MIN_WEEKS:
-        return None
-    return statistics.fmean(per.get(k, 0.0) for k in weeks) or None
+    """The usual week (H): the mean of the activities' moving minutes (or of `value(s)`: their load) over the 11
+    weeks just before the 7 days (sante_load.usual_weeks: 4 of them holding an activity at least); None without
+    one, or one of nothing."""
+    weeks = sante_load.usual_weeks(sessions, since, value)
+    return (statistics.fmean(weeks) or None) if weeks is not None else None
 
 
-def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0) -> dict:
+def training(sessions, today: date, until: date | None = None, rest: float = 50.0, peak: float = 190.0,
+             load: dict | None = None, sex: str | None = None) -> dict:
     """« Entraînement », the third dial and its card (owner, 2026-10-09: « Oui vas-y », research_ind_train.md): the
-    heart-rate load of the last 7 days (sante_training.loads: each minute weighted by its share of the heart-rate
-    reserve, Banister 1991; a minute without a readable HR, or of strength, at the athlete's usual minute) against
-    the usual week's (the 11 weeks before the 7 days: usual_week), as a percentage, 100 % as usual, the arc full at
-    twice it, in the accent colour (one stable hue); within ± 20 % « comme d'habitude » (H), else « plus que
-    d'habitude » or « moins que d'habitude »; without a usual week, the measured duration and « 7 derniers jours ».
+    heart-rate load of the last 7 days (sante_load: one pipeline, `load` the day's sante_training.loads, else
+    computed with `rest` and `peak`, today's bounds for every week, H) against the usual week's (the mean of the
+    11 weeks before the 7 days), as a percentage, 100 % as usual, the arc full at twice it, in the accent colour;
+    « comme d'habitude » while the 7 days' load lies between the lightest and the heaviest of those 11 weeks that
+    hold an activity (owner, 2026-10-14: scientific basis — it was ± 20 %), else « plus que d'habitude » or
+    « moins que d'habitude »; without a usual week (4 active weeks), the measured duration and « 7 derniers jours ».
     The card prints the 7 days' moving time and the usual week's (to 5 min: a typical value; Activités'
     hours), each once, and « Intensité »: the minutes' weight against the usual week's (the load's ratio over the
     hours', so the dial is the hours' ratio times it: no number contradicts another), « plus élevée que
     d'habitude » / « comme d'habitude » / « plus basse que d'habitude » within ± 10 % (H), a word, never a number;
     left out when under half of the minutes, of the 7 days or of the usual weeks, were read from their HR (H): the
-    dial is then nearly the hours' ratio. Without a usual week both the dial and chart retain the measured time;
-    the missing reference is explained in the training details.
-    `rest`, `peak`: today's heart-rate bounds, for every week compared (H). `until`: the calendar day when the page
-    still reads yesterday's cycle (cycle_day): the window is always the seven calendar days ending at until.
-    Each activity counts on
-    the day it ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (owner,
-    2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word, intensity, since}."""
+    dial is then nearly the hours' ratio. `until`: the calendar day when the page still reads yesterday's cycle
+    (cycle_day): the window is always the seven calendar days ending at until. Each activity counts on the day it
+    ended (Session.end_day). `since`: the 7 days' first day, the card's link to them in Activités (owner,
+    2026-10-09: « Ça ne filtre pas sur la semaine ? »). {dial, week, usual, word, intensity, since, ratio}."""
     until = until or today
     since = until - timedelta(days=6)
+    sessions = sante_load.valid(sessions)
     days7 = [s for s in sessions if since <= s.end_day <= until]
     week = sum(s.minutes for s in days7)  # moving time, as Activités
     usual = usual_week(sessions, since)
     href = "#entrainement"
-    if usual is None:
+    load = load if load is not None else st.loads(sessions, until, rest, peak, sex)
+    ratio = sante_load.week_ratio(sessions, load, until) if usual is not None else None
+    if ratio is None:
         return {"dial": viz.ring("entrainement", None, viz.hm(week), "Entraînement", "7 derniers jours", tone="accent",
                                  href=href, aria=f"Entraînement : {viz.hm_long(week)} d'activité ces 7 derniers "
                                                  f"jours, {NO_HABIT}."),
-                "week": viz.hm(week), "usual": None, "word": NO_USUAL, "intensity": None, "since": since}
-    load = st.loads(sessions, until, rest, peak)
-    usual_load = usual_week(sessions, since, lambda s: load[s.id][0])
+                "week": viz.hm(week), "usual": None, "word": NO_USUAL, "intensity": None, "since": since,
+                "ratio": None}
+    usual_load = ratio["usual"]
     # snapped to 1e-9 (as sante_score.rounded): minutes that all weigh the same (no HR at all) give exactly the
-    # hours' ratio
-    intensity = (round(sum(load[s.id][0] for s in days7) / week / (usual_load / usual), 9)
-                 if week and usual_load else 1.0)
-    ratio = week / usual * intensity
-    word = ("plus que d'habitude" if ratio > 1 + USUAL_SPREAD else
-            "moins que d'habitude" if ratio < 1 - USUAL_SPREAD else "comme d'habitude")
-    p = sc.rounded(100 * ratio)
+    # hours' ratio; a usual week that weighs nothing reads its hours (week_ratio's `by`)
+    intensity = round(ratio["load7"] / week / (usual_load / usual), 9) if week and ratio["by"] == "load" else 1.0
+    word = TRAIN_WORDS[ratio["side"]]
+    p = sc.rounded(100 * ratio["ratio"])
     read7 = sum(s.minutes for s in days7 if load[s.id][1])
     read_usual = usual_week(sessions, since, lambda s: s.minutes if load[s.id][1] else 0.0) or 0.0
     pace = None
     if week and read7 >= INTENSITY_READ * week and read_usual >= INTENSITY_READ * usual:
         pace = (INTENSITY_WORDS[0] if intensity > 1 + INTENSITY_SPREAD else
                 INTENSITY_WORDS[2] if intensity < 1 - INTENSITY_SPREAD else INTENSITY_WORDS[1])
-    return {"dial": viz.ring("entrainement", ratio / TRAIN_TURN, str(p), "Entraînement", word,
+    return {"dial": viz.ring("entrainement", ratio["ratio"] / TRAIN_TURN, str(p), "Entraînement", word,
                              tone="accent", unit="%", href=href,
                              aria=f"Entraînement {sc.pct(p)} de ta semaine habituelle, {word}."),
             "week": viz.hm(week), "usual": f"ta semaine habituelle{viz.NBSP}: {viz.hm(round(usual / 5) * 5)}",
-            "word": None, "intensity": pace, "since": since}
+            "word": None, "intensity": pace, "since": since, "ratio": p}
 
 
-def _row(key: str, name: str, value: str | None, word: str, tone: str | None, qual: str | None = None,
-         detail: str | None = None) -> dict:
-    """One row of a card under the dials: a dot in `tone` (ok, accent: neutral, warn, danger, none: grey) and the
-    name on the left (`qual` under it, muted: « 7 nuits »), the value over its word on the right (`detail`, a
-    second line: when the usual values will be ready); never colour alone."""
-    return {"key": key, "name": name, "qual": qual, "value": value, "word": word, "detail": detail, "tone": tone}
+def training_context(train: dict) -> dict:
+    """The recovery card's context line (owner, 2026-10-14: scientific basis — the load no longer caps the state,
+    the HRV already reads what it does to the night): « Charge 7 j : x % de l'habitude », the Entraînement dial's
+    number; the 7 days' time without a usual week. {recorded (sessions in the 7 days), word}."""
+    count = train["chart"]["count"] if train.get("chart") else 0
+    if train["ratio"] is None:
+        return {"recorded": count, "word": f"{train['week']} sur 7 jours", "ratio": None}
+    return {"recorded": count, "word": f"{train['ratio']}{viz.NBSP}% de ta semaine habituelle",
+            "ratio": train["ratio"]}
 
 
-def night_row(card: dict | None, metric: str) -> dict | None:
-    """« VFC » / « FC de nuit » (7 nuits) in the Récupération card: its chart card's status (card_status: one
-    source of truth), its percentage and its word, in its colour: « −8 % plus basse que d'habitude », « +2 % dans
-    tes valeurs habituelles », « comme d'habitude » at 0 %; grey without a comparison, « en construction » over
-    when its usual values will be ready (« prête dans 2 nuits »), or « trop peu de nuits pour comparer »; under the
-    illness alert the FC de nuit row says « nettement plus haute depuis 2 nuits » (red). None without its card
-    (the watch never measured it in 30 days)."""
-    if card is None:
-        return None
-    key, name = NIGHT_ROWS[metric]
-    s = card["status"]
-    return _row(key, name, s["value"], s["word"], s["tone"] or "none",
-                qual=card["period"], detail=s.get("detail") or
-                ("comparaison provisoire" if card.get("trend", {}).get("provisional") else None))
-
-
-RESP_WORDS = {"in": "dans tes valeurs habituelles", "up": "plus rapide que d'habitude",
-              "up2": "plus rapide depuis 2 nuits"}
-
-
-def resp_row(nights, d: date, day: dict) -> dict | None:
-    """« Respiration · cette nuit » in the Récupération card, only when the watch measured last night's breathing
-    (Garmin; COROS sends none: no row, nothing changes): last night against the usual values of the 60 days
-    before it, as a signed percentage, « comme d'habitude » at 0 %; « dans tes valeurs habituelles » under its
-    line, whatever the side (a slow night is never praised nor flagged), green; « plus rapide que d'habitude » one
-    night over it, neutral (about 2.5 % of nights by chance); « plus rapide depuis 2 nuits » in orange when the
-    score is capped (nights.resp_up_nights); « en construction » without usual values yet (7 nights), and when
-    they will be ready."""
-    n = nights.get(d)
-    if n is None or n.resp is None:
-        return None
-    b = nt.band(nights, "resp", d, source=n.resp_source)
-    if b is None:
-        k = nights_to_normal(nights, "resp", d)
-        return _row("resp", "Respiration", None, BUILDING, "none", qual="cette nuit",
-                    detail="prête " + (f"dans {k}{viz.NBSP}nuits" if k > 1 else "après ta prochaine nuit"))
-    p = signed_pct(n.resp, b["center"])
-    if day.get("resp"):
-        word, tone = RESP_WORDS["up2"], "warn"
-    elif n.resp >= b["up"]:
-        word, tone = RESP_WORDS["up"], "accent"
-    else:
-        word, tone = (SAME if p == 0 else RESP_WORDS["in"]), "ok"
-    return _row("resp", "Respiration", None if p == 0 else f"{viz.signed(p)}{viz.NBSP}%", word, tone,
-                qual="cette nuit")
-
-
-def effort_row(efforts, day: dict) -> dict | None:
-    """« Effort récent », whenever a recovery window is open (owner, 2026-10-08: « Un effort récent, il faut le
-    prendre en compte et afficher la fatigue quand même »), whether its cap binds or not.
-    Its influence decreases progressively; no countdown implies a recovery deadline.
-    No activity name, date or duration on Santé. The tone follows the cap."""
-    w = day["window"]
-    if not w:
-        return None
-    return _row("effort", "Effort récent", None, "prudence après l’effort",
-                "warn" if w["cap"] >= EFFORT_ORANGE else "danger",
-                detail="Son influence diminue progressivement. La montre ne mesure pas la récupération musculaire.")
-
-
-def _top(day: dict, efforts, sessions, has_watch: bool, page: dict, until: date | None = None,
-         nights=None, rest: float = 50.0, peak: float = 190.0) -> dict:
+def _top(day: dict, sessions, has_watch: bool, page: dict, until: date, load: dict) -> dict:
     """The three dials, each a link to its card right under the dials, else to its details further down (a plain
     dial when the page has neither): Sommeil, Récupération, Entraînement (WHOOP's order); the illness alert's
-    sentence under them (sante_today), or the line that says why there is no score; the Récupération card's rows
-    (Effort récent, VFC, FC de nuit, Respiration when measured: `nights`) and the Entraînement card (`rest`,
-    `peak`: today's heart-rate bounds)."""
+    sentence under them (sante_today), or the line that says why there is no state; the Entraînement card (`load`:
+    the day's sante_training.loads) and its number as the recovery card's context."""
     state, score = day["state"], day["score"]
     sleep = page.get("sleep") or {}
     sleep_href = ("#sommeil" if sleep.get("state") == "old" or sleep.get("hero") else
                   "#sommeil-detail" if sleep.get("state") == "ok" else None)
-    # « Effort récent » first: the row that decides the day (the audit, 2026-10-09: it came last)
-    rows = [r for r in (effort_row(efforts, day), night_row(page.get("vfc"), "hrv"), night_row(page.get("fc"), "hr"),
-                        resp_row(nights, day["day"], day) if nights is not None else None) if r]
     recup_href = "#recuperation" if (
         page.get("recup") or page.get("vfc") or page.get("fc") or score["value"] is not None
     ) else None
-    train = training(sessions, day["day"], until, rest, peak)
+    train = training(sessions, day["day"], until, load=load)
     train["chart"] = st.training_days(sessions, day["day"], until)
     train["dial"]["note"] = "7 jours" if train["usual"] is not None else None
     train["dial"]["usual_marker"] = train["usual"] is not None
     if train["usual"] is not None:
         train["dial"]["aria"] += " 100 % représente ta semaine habituelle ; un tour complet représente 200 %."
-    return {"dials": [sleep_dial(day["tst24"], day["need"]["total"], sleep_href), sc.dial(score, state, recup_href),
+    return {"dials": [sleep_dial(day["tst24"], sl.NEED_DEFAULT, sleep_href), sc.dial(score, state, recup_href),
                       train["dial"]],
-            "state": state, "line": None if state else td.no_state_line(has_watch),
+            "state": state, "line": None if state else td.no_state_line(has_watch, score["missing"]),
             "connect": not has_watch,  # no watch: how to add the nights, under the line
-            "rows": rows, "training": train, "score": score, "score_notes": sc.explanation(day),
-            "training_effect": day.get("recovery_load"),
+            "training": train, "score": score, "training_effect": training_context(train),
             "quality": sc.quality(day)}
 
 
@@ -507,21 +444,22 @@ def _span(metric: str, values: list, bands: list) -> float:
     return max(14.0, 2 * widest)
 
 
-# each night card's status line (v4.3): its last 7 nights against the usual values the score reads, in the words
-# and the colour of its facts row (sante_score.row_tone); what it often means, only out of them on the side that
-# matters; without usual values yet, how many nights until they exist (v4.4, owner: « les explications en
-# français ne sont pas claires »: « tes valeurs habituelles », « d'habitude », never « ta normale »)
+# each night card's status line (v4.3): its last 7 nights against the usual values the state reads, in words and
+# its colour (sante_score.row_tone); what it often means, only out of them on the side that matters; without usual
+# values yet, how many nights until they exist (v4.4, owner: « les explications en français ne sont pas claires »:
+# « tes valeurs habituelles », « d'habitude », never « ta normale »)
 STATUS = {"in": "dans tes valeurs habituelles", "below": "plus basse que d'habitude",
           "above": "plus haute que d'habitude"}
-BAD = {"hrv": "below", "hr": "above"}  # VFC under its normal, FC de nuit over it: the side that matters
-MEANING = {"hrv": "Ça arrive avec la fatigue, le stress, l'alcool ou un début de maladie.",
-           "hr": "Ça arrive avec la fatigue, la chaleur, l'alcool ou un début de maladie."}
+BAD = sc.BAD  # VFC under its normal, FC de nuit over it: the side that matters
+MEANING = {"hrv": sc.TEXTS["hrv"], "hr": sc.TEXTS["hr"]}
 NO_MEAN = "Trop peu de nuits mesurées ces 7 derniers jours pour comparer."
-FEW = "trop peu de nuits pour comparer"  # its row's word
-BUILDING = "en construction"  # a signal without usual values yet: its row's word, its card's first words
-# while they build, the chart card says it in words (the row prints when they will be ready: printed once; owner,
-# 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
-BUILDS = "Tes valeurs habituelles s'afficheront ici dès {n} nuits mesurées."
+FEW = "trop peu de nuits pour comparer"
+BUILDING = "en construction"  # a signal without usual values yet: its card's first words
+# while they build, the chart card says it in words (the reference row says when they will be ready: printed once;
+# owner, 2026-10-09, « Tu ne mets pas les fourchettes pour VFC et FC repos dans les graphiques ? »)
+# owner, 2026-10-14: scientific basis — a night counts in the usual values a week after it: « dès 7 nuits
+# mesurées » alone became false (a minimal fix, the wording is a GUI proposal)
+BUILDS = "Tes valeurs habituelles s'afficheront ici dès {n} nuits mesurées avant les 7 derniers jours."
 # the cards' legend (v4.4, owner: « comment matérialiser que c'est en cours de construction dans le graphique ? »):
 # every measured night is a filled dot (each one counts: owner, 2026-10-08); the band solid, or dashed while
 # provisional
@@ -532,55 +470,58 @@ LEGEND_PROV = ("is-band-prov", "repère provisoire")
 
 
 def nights_to_normal(nights, metric: str, d: date) -> int:
-    """How many nights until the usual values the score reads on `metric` exist, every coming night being
-    measured: the first j ≥ 1 for which the band of day d + j (nights.normal: every measured night of the 60 days
-    up to and including d + j, on the latest watch) reaches its required count: 7 nights for RMSSD/HR,
-    14 for SDNN — those already slept and the j coming ones."""
+    """How many nights until the usual values exist on `metric`, every coming night being measured: the first
+    j ≥ 1 for which the baseline of day d + j (nights.normal: the nights from d + j − 67 to d + j − 8, on its
+    series) reaches its required count: 7 nights for RMSSD/HR, 14 for SDNN — those already slept (a night counts
+    a week after it, owner, 2026-10-14: scientific basis) and the coming ones."""
     src = nt.mean_source(nights, metric, d)
     required = nt.reference_min_nights(metric, src)
     known = [x for x, n in nights.items() if x <= d and n.value(metric) is not None and n.source_of(metric) == src]
-    for j in range(1, required):
-        lo = d + timedelta(days=j - nt.BAND_DAYS + 1)  # the first day of the band of day d + j
-        if sum(1 for x in known if x >= lo) + j >= required:
+    lag = nt.BASELINE_LAG + 1
+    for j in range(1, required + lag + 1):
+        lo, hi = d + timedelta(days=j - nt.BAND_DAYS - nt.BASELINE_LAG), d + timedelta(days=j - lag)
+        if sum(1 for x in known if lo <= x <= hi) + max(0, j - lag) >= required:
             return j
-    return required
+    return required + lag
 
 
 def signed_pct(value: float, centre: float) -> int:
-    """How far a 7-night mean is from the usual value (the band's centre: the median, the geometric mean for
+    """How far a 7-night mean is from the usual value (the baseline's centre: the median, the geometric mean for
     VFC), in whole percent (half up)."""
     return sc.rounded(100 * (value - centre) / centre)
 
 
 def card_status(nights, metric: str, day: dict) -> dict:
-    """{key, value, word, detail, text, tone, meaning}, the card's status line and its row in the Récupération card
-    (one source of truth):
+    """{key, value, word, detail, text, tone, meaning}, the card's status line:
     the 7-night mean as a signed percentage against the usual value (v4.4, owner: « Mets des pourcentages plutôt
     que des valeurs (comme WHOOP / Oura) »: « −8 % », « +3 % », « comme d'habitude » at 0 %) and its place against
-    the usual values, « dans tes valeurs habituelles » / « plus basse que d'habitude » / « plus haute que
-    d'habitude » (key: in, below, above) with a dot in its colour (sante_score.row_tone: green in them, orange or
-    red out of them on the side that matters, neutral on the other side, never praised), and « Ça arrive avec … »
-    only out of them on the side that matters. Under the illness alert the FC de nuit reads the alert's 2 nights,
-    as the score does: their percentage, « nettement plus haute depuis 2 nuits ». Without a band (none): « en
-    construction » and, on the row (`detail`), how many nights until there is one (nights_to_normal: « prête dans
-    2 nuits », « prête après ta prochaine nuit »); a plain line when the week holds under 3 measured nights
-    (few). `text`: the chart card's line, in words (the row prints the numbers: each once)."""
-    s = day["stats"][metric]
+    the usual values (nights.trend: outside from T, nights.threshold), « dans tes valeurs
+    habituelles » / « plus basse que d'habitude » / « plus haute que d'habitude » (key: in, below, above) with a dot
+    in its colour (sante_score.row_tone: green in them, orange out of them on the side that matters, neutral on the
+    other side, never praised; none for a descriptive SDNN or a series not measured last night), and « Ça arrive
+    avec … » only out of them on the side that matters. Under the illness alert the FC de nuit reads the alert's 2
+    nights: their percentage, « nettement plus haute depuis 2 nuits », red. Without a baseline (none): « en
+    construction » and (`detail`) how many nights until there is one (nights_to_normal: « prête dans 2 nuits »,
+    « prête après ta prochaine nuit »); a plain line when the week holds under 3 measured nights (few). `text`: the
+    chart card's line, in words."""
+    s, t = day["stats"][metric], day["trends"].get(metric)
     if not s["normal"]:
         n = nights_to_normal(nights, metric, day["day"])
         when = f"dans {n}{viz.NBSP}nuits" if n > 1 else "après ta prochaine nuit"
         return {"key": "none", "value": None, "word": BUILDING, "detail": f"prête {when}", "tone": None,
                 "meaning": None, "text": BUILDS.format(n=nt.reference_min_nights(
                     metric, nt.mean_source(nights, metric, day["day"])))}
-    part = next((p for p in day["score"]["parts"] if p["key"] == metric), None)
-    if s["value"] is None:
+    alert = metric == "hr" and bool(day["alert"])
+    # the illness alert reads its own 2 nights: shown even when the week is too thin for a trend (owner,
+    # 2026-10-14: scientific basis — it was hidden behind « trop peu de nuits pour comparer »)
+    if not alert and (s["value"] is None or s["status"] is None):
         return {"key": "few", "value": None, "word": FEW, "text": NO_MEAN, "tone": None, "meaning": None}
-    # A historical trend (or SDNN) remains readable even when it cannot enter
-    # today's index. Absence this night is stated on its own readout/quality row.
-    tone = sc.row_tone(part) if part else None
-    status = BAD[metric] if tone in ("warn", "danger") else s["status"]
+    # A trend (or SDNN) remains readable even when it cannot enter today's state; its colour then stays neutral.
+    colour = alert or (t and t["last"] and s["score_eligible"])
+    tone = sc.row_tone(metric, t, alert) if colour else None
+    status = BAD[metric] if alert else s["status"]
     centre = s["normal"]["center"]
-    if metric == "hr" and day["alert"]:  # the alert's own 2 nights, as the score reads them
+    if alert:  # the alert's own 2 nights
         p, word = signed_pct(statistics.fmean(day["alert"]["values"]), centre), ALERT_WORD
     else:
         p = signed_pct(s["value"], centre)
@@ -590,15 +531,26 @@ def card_status(nights, metric: str, day: dict) -> dict:
             "meaning": MEANING[metric] if status == BAD[metric] else None}
 
 
+def _drawn(b: dict | None, metric: str, t: float | None) -> tuple | None:
+    """A day's usual values as drawn: its baseline's centre ± T·σ̂, T the threshold its 7-night mean is read with
+    (nights.trend's; 0.5 without one), so a mean drawn inside reads « dans tes valeurs habituelles »."""
+    if not b:
+        return None
+    t = t or nt.SWC
+    if metric == "hrv":
+        return (b["center"] * math.exp(-t * b["sd"]), b["center"] * math.exp(t * b["sd"]))
+    return (b["center"] - t * b["sd"], b["center"] + t * b["sd"])
+
+
 def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     """« VFC · 30 nuits » / « FC de nuit · 30 nuits » (viz.night_card): None
     without a night measured in the 30 days. With fewer than 10 measured
     nights the axis spans them (from the first, 14 days at least), not 30
     nights with a few dots against the right edge. Each day's band is the
-    usual values its 7-night mean is read against (nights.normal: every
-    measured night of the 60 days up to and including that night, on the
-    watch the mean reads: v4.3, one normal for the card, its status line and
-    the score), its status line opens the card (card_status). Every measured
+    usual values its 7-night mean is read against (nights.normal: the nights
+    from that day − 67 to − 8, on the series the mean reads: one baseline for
+    the card, its status line and the state, drawn ± T·σ̂: _drawn), its status
+    line opens the card (card_status). Every measured
     night is a filled dot (each one counts: owner, 2026-10-08), a night
     without a measure draws nothing; the provisional band is dashed; the
     legend names only what is drawn."""
@@ -610,12 +562,12 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     if len(seen) < SPARSE_NIGHTS:
         keep = max(SPARSE_DAYS, CARD_NIGHTS - seen[0])
         days, values = days[-keep:], values[-keep:]
+    averages = [nt.mean7(nights, metric, d) or {} for d in days]
     bands, prov = [], []
     for d in days:
         b = nt.normal(nights, metric, d)
-        bands.append((b["lo"], b["hi"]) if b else None)
+        bands.append(_drawn(b, metric, (nt.trend(nights, metric, d) or {}).get("T")))
         prov.append(bool(b and b["provisional"]))
-    averages = [nt.mean7(nights, metric, d) or {} for d in days]
     means = [m.get("value") for m in averages]
     sources = [nights[d].source_of(metric) if d in nights else None for d in days]
     notes = [nights[d].measurement_notes.get(metric) if d in nights else None for d in days]
@@ -642,8 +594,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     provisional = bool(reference and reference["provisional"])
     source = nt.mean_source(nights, metric, today)
     required = nt.reference_min_nights(metric, source)
-    count = sum(1 for d, n in nights.items() if today - timedelta(days=nt.BAND_DAYS - 1) <= d <= today
-                and n.value(metric) is not None and n.source_of(metric) == source)
+    count = nt.baseline_count(nights, metric, today, source)
     label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
     reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
     c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),
@@ -673,10 +624,9 @@ async def _timeline(db: AsyncSession, user_id: int, nights, d: date) -> dict:
     if not n or not n.timeline or not n.start:
         return {}
     if n.source and n.source.startswith("Apple Santé:"):
-        row = await db.scalar(select(HealthMetric).where(HealthMetric.user_id == user_id,
-                    HealthMetric.date == d, HealthMetric.metric == "sleep", HealthMetric.source == n.source))
-        segs = [(k, datetime.fromisoformat(a), datetime.fromisoformat(b))
-                for k, a, b in (row.details or {}).get("segments", [])] if row else []
+        row = await db.scalar(select(HealthMetric.details["segments"]).where(HealthMetric.user_id == user_id,
+                              HealthMetric.date == d, HealthMetric.metric == "sleep", HealthMetric.source == n.source))
+        segs = [(k, datetime.fromisoformat(a), datetime.fromisoformat(b)) for k, a, b in row or []]
         return {d: segs} if segs else {}
     rows = (await db.execute(select(HealthSample.kind, HealthSample.start_at, HealthSample.end_at).where(
         HealthSample.user_id == user_id, HealthSample.metric == "sleep", HealthSample.source == "Garmin",
@@ -687,16 +637,17 @@ async def _timeline(db: AsyncSession, user_id: int, nights, d: date) -> dict:
 
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
-                        latest: date | None = None) -> date:
+                        latest: date | None = None, zone=None) -> date:
     """sante_training.athlete_today (a seam the tests move to a fixed day)."""
-    return await st.athlete_today(db, user_id, now, latest)
+    return await st.athlete_today(db, user_id, now, latest, zone=zone)
 
 
 async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[str]) -> dict[str, dict]:
     """Per watch that ever sent something: last night received, not yet, or
     not worn (today's daytime data came but no night). Drives how soon the
-    page syncs again."""
-    rows = (await db.execute(select(HealthMetric.metric, HealthMetric.source, HealthMetric.value, HealthMetric.details).where(
+    page syncs again. Reads the HRV row's method only (a Garmin day row carries its raw readings)."""
+    rows = (await db.execute(select(HealthMetric.metric, HealthMetric.source, HealthMetric.value,
+                                    HealthMetric.details["method"].as_string()).where(
         HealthMetric.user_id == user_id, HealthMetric.date == today,
         HealthMetric.metric.in_(("sleep", "steps", "hr_day", "hrv"))))).all()
     out = {}
@@ -707,8 +658,8 @@ async def _night_state(db: AsyncSession, user_id: int, today: date, seen: set[st
         if sleep:
             out[src] = {"state": "received", "txt": fmt_minutes(sleep)}
             if src == "COROS":
-                out[src]["hrv_pending"] = not any(m == "hrv" and s == src and v is not None
-                    and (det or {}).get("method") == HRV_METHOD for m, s, v, det in rows)
+                out[src]["hrv_pending"] = not any(m == "hrv" and s == src and v is not None and method == HRV_METHOD
+                                                  for m, s, v, method in rows)
         elif any(s == src and m in ("steps", "hr_day") for m, s, _, _ in rows):
             out[src] = {"state": "none"}
         else:

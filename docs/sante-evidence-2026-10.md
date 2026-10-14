@@ -4,12 +4,24 @@ Revue ciblée au **12 octobre 2026**, confrontée au code PaceForge. Ce document
 n’est pas une revue systématique. Les descriptions des fabricants expliquent
 leurs produits ; elles ne valident pas scientifiquement leurs scores, ni le nôtre.
 
+> **Révision du 14 octobre 2026.** Le score pondéré (VFC 25 · FC 25 · sommeil 30),
+> ses limites, la base de sommeil apprise et la précaution cumulative
+> `cumulative-1` sont remplacés par un état du jour fondé sur des règles :
+> tendance sur 7 jours de la VFC (sinon de la FC de nuit) contre une référence
+> des jours −67 à −8, alerte FC de nuit, respiration, sommeil de moins de 6 h et
+> fenêtres d'effort, chaque raison listée. Le besoin de sommeil vaut 8 h ; le
+> manque sur 7 jours est dit à part. Un seul calcul de charge sert le cadran
+> Entraînement, la Charge accumulée et Activités ; la récupération ne la lit
+> plus. Détails : [estimations](sante-estimates.md) et
+> [charge d'entraînement](recovery-cumulative.md). Les passages ci-dessous
+> marqués « (avant le 14 octobre) » décrivent l'état antérieur.
+
 ## Mise en œuvre après cette revue
 
-Complément récupération : [effet cumulé des entraînements](recovery-cumulative.md).
-Les séances ordinaires influencent désormais une précaution du score, avec
-références personnelles et décroissance progressive. Les passages ci-dessous
-sur l'absence de cette contribution décrivent le constat antérieur à ce complément.
+Complément récupération (avant le 14 octobre) : les séances ordinaires
+influençaient une précaution du score (`cumulative-1`). Elle est retirée le
+14 octobre : la récupération lit la réponse nocturne, la charge s'affiche comme
+contexte ([charge d'entraînement](recovery-cumulative.md)).
 
 Complément du 12 octobre : [utilité des mesures, matériel et validation](mesures-athlete-fiabilite.md).
 La fiabilité des imports et la validité scientifique d’un indice sont vérifiées
@@ -22,9 +34,9 @@ ni les seuils physiologiques propres à PaceForge.
 - Synchronisation : quotidien envoyé avant sommeil, reprise après erreur,
   actualisation automatique optionnelle aussi au démarrage, recouvrement court
   et relecture périodique complète. Voir `mobile/README.md` pour les limites.
-- Bilan : une tendance cardiaque ancienne n’entre plus dans le score quand sa
-  mesure manque pour la nuit du bilan. La dernière valeur et la moyenne sur sept
-  jours sont distinctes. « Bilan partiel »/« Repères provisoires » décrivent les
+- Bilan : une tendance cardiaque n’entre dans l’état du jour que si la nuit du
+  bilan est mesurée. La dernière valeur et la moyenne sur sept jours sont
+  distinctes. « Bilan partiel » et « Référence provisoire » décrivent les
   données utilisables ; aucun pourcentage de confiance n’est inventé.
 
 Priorités implémentées dans cet ordre :
@@ -75,21 +87,20 @@ sous chaque valeur.
   disponibles, pas sur un signal continu. Les points bruts cardiaques envoyés
   ne sont pas conservés après agrégation. Voir aussi `mobile/README.md`.
 - SDNN : moyenne géométrique nocturne, référence personnelle après 14 nuits du
-  même appareil/méthode, sans prior de variance RMSSD. Il reste descriptif :
-  **aucun sous-score prévu pour le RMSSD ne lui est appliqué**, et il ne
-  sélectionne pas les nuits de calibration du besoin de sommeil. Sommeil et
-  FC Apple peuvent alimenter le bilan existant. Cela ne valide pas les autres
-  pondérations du score, qui restent des heuristiques.
-- Charge : moyennes exponentielles quotidiennes de constantes 7 et 42 jours,
-  unités arbitraires de durée pondérée par la FC, ou estimation par la durée
-  si FC absente/non pertinente pour le sport. Historique limité à 400 jours,
-  affichage des 90 derniers ; comparaison habituelle après 42 jours et quatre
-  semaines actives. Bornes cardiaques et taux calculés avec les données connues
-  au jour considéré, sans activité future. Un jour sans activité reçue réduit
-  la charge **enregistrée**, sans prouver un repos. Ces constantes ne sont pas
-  une durée individuelle de récupération. Le complément `cumulative-1` utilise
-  un calcul distinct et explicite pour le bilan ; sa validation physiologique
-  reste à réaliser, comme celle des limites du modèle nocturne initial.
+  même appareil/méthode, mesurées avant les 7 derniers jours, sans prior de
+  variance RMSSD. Il reste descriptif : **aucune règle prévue pour le RMSSD ne
+  lui est appliquée**. La FC de nuit Apple peut être le marqueur principal de
+  l’état du jour, et son sommeil compte dans les 24 h. Les seuils de l’état
+  restent des heuristiques.
+- Charge (14 octobre) : moyennes exponentielles quotidiennes de constantes 7 et
+  42 jours, initialisées à la moyenne des 28 premiers jours, unités arbitraires
+  de durée pondérée par la FC, ou durée × charge médiane par minute de la
+  famille de sports si la FC manque ou ne s’applique pas (musculation).
+  180 jours de chauffe, 90 jours affichés ; courbe habituelle après 28 jours et
+  quatre semaines actives. Mêmes bornes cardiaques pour toutes les vues, sans
+  activité future. Un jour sans activité reçue réduit la charge
+  **enregistrée**, sans prouver un repos. Ces constantes ne sont pas une durée
+  individuelle de récupération, et la récupération ne lit plus la charge.
 - Lactate : courbe des observations, sans lissage ni seuil automatique à 2/4
   mmol/L. Axe d’intensité linéaire en km/h pour la course, même si les paliers
   sont saisis en min/km ; watts pour le vélo. Les conditions, durées et moment
@@ -244,21 +255,24 @@ futures. Sommeil et gros efforts peuvent influencer plusieurs jours.
 
 **Limites à ne pas cacher :**
 
-- Le score combine des poids heuristiques (VFC 25, FC nocturne 25, sommeil 30,
-  renormalisés selon les composantes disponibles). Les études ne valident pas
-  ces nombres ou le pourcentage final.
+- Avant le 14 octobre, le score combinait des poids heuristiques (VFC 25, FC
+  nocturne 25, sommeil 30). Il est remplacé par un état fondé sur des règles
+  publiées (plus petit changement utile, tendance sur 7 jours) ; ses seuils et
+  l’indice nocturne affiché restent des choix (H), non validés.
 - La moyenne cardiaque sur sept nuits amortit le bruit mais peut masquer un
   changement aigu. Une barre quotidienne ne signifie pas que toutes ses entrées
   concernent uniquement la dernière nuit.
-- Les limites après longues sorties sont des précautions décroissantes. Plusieurs
-  efforts conservent la limite la plus prudente ; ce n’est pas une addition
-  physiologique de fatigue.
-- Avant le complément `cumulative-1`, les séances ordinaires comptaient dans la
-  charge de sept jours sans précaution cumulative dans la récupération. Cette
-  limite est corrigée ; les coefficients restent des hypothèses de produit.
+- Les fenêtres après longues sorties sont des raisons de l’état, indicatives
+  (« jusqu’à J+n »). Plusieurs efforts : la plus forte nomme le jour ; ce n’est
+  pas une addition physiologique de fatigue.
+- Les séances ordinaires ne changent pas l’état du jour : leur effet se lit dans
+  la VFC et la FC de nuit. La précaution `cumulative-1` (12 octobre) est retirée.
 - La charge hebdomadaire est une comparaison à la semaine habituelle des onze
-  semaines précédentes, avec au moins quatre semaines actives. Elle ne mesure
-  pas la récupération musculaire ni une probabilité de blessure.
+  semaines précédentes, avec au moins huit semaines actives (« comme
+  d’habitude » de la plus légère à la plus chargée de ses semaines actives : une
+  semaine ordinaire en sort avec une probabilité 2/(n_a + 1), 22 % à huit
+  semaines actives). Elle ne mesure pas la récupération musculaire ni une
+  probabilité de blessure.
 
 **La version de départ examinée** fusionnait la navigation dans Santé, nomme le bilan du jour,
 actualisait l’aide et les références. Elle ne remplaçait pas les poids par une autre

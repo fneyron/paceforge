@@ -117,30 +117,33 @@ def _rest(d):
 
 
 def _caps(s, rest_of=_rest):
+    """(class, the last day of its window D+n) of one activity (owner, 2026-10-14: scientific basis — windows,
+    no caps)."""
     [e] = st.efforts([s], rest_of)
-    return e.kind, e.caps
+    return e.kind, e.last
 
 
 def test_a_longue_at_80_percent_of_the_reserve_keeps_the_race_window():
-    """R3 (H): a Longue (≥ 3 h, or ≥ 1 500 m D+ on foot) gets 65 until D+5 when it is marked as a race on Strava
-    (as before), OR its average HR ≥ 80 % of the heart-rate reserve (the « vigorous » test: rest = the median
-    nightly HR, peak = hr_max), OR Strava's perceived exertion ≥ 8. An easy 3 h run keeps D+3."""
+    """R3 (H): a Longue (≥ 3 h, or ≥ 1 500 m D+ on foot) is orange through D+2 when it is marked as a race on
+    Strava (as before), OR its average HR ≥ 80 % of the heart-rate reserve (the « vigorous » test: rest = the
+    median nightly HR, peak = hr_max), OR Strava's perceived exertion ≥ 8. An easy 3 h run: D+1 (owner,
+    2026-10-14: scientific basis — they were 65 to D+5 and D+3; Petersen 2007)."""
     d = D - timedelta(days=4)
-    assert _caps(run(d, 200, hr=165)) == ("long", ((5, 65),))  # 165 ≥ 161, no Strava flag
-    assert _caps(run(d, 200, hr=161)) == ("long", ((5, 65),))  # at the line
-    assert _caps(run(d, 200, hr=150)) == ("long", ((3, 65),))  # an easy 3 h run: D+3
-    assert _caps(run(d, 170, hr=165, dplus=1600)) == ("long", ((5, 65),))  # the legs rule is a Longue too
-    assert _caps(run(d, 200, hr=150, workout_type=1)) == ("long", ((5, 65),))  # marked on Strava, as before
-    assert _caps(run(d, 200, hr=150, rpe=8)) == ("long", ((5, 65),))  # rated 8/10 on Strava
-    assert _caps(run(d, 200, hr=150, rpe=7)) == ("long", ((3, 65),))
-    assert _caps(run(d, 200, hr=None, rpe=9)) == ("long", ((5, 65),))  # no HR needed for the rating
-    assert _caps(run(d, 200, hr=165), rest_of=None) == ("long", ((3, 65),))  # no bounds: no HR test
+    assert _caps(run(d, 200, hr=165)) == ("long", 2)  # 165 ≥ 161, no Strava flag
+    assert _caps(run(d, 200, hr=161)) == ("long", 2)  # at the line
+    assert _caps(run(d, 200, hr=150)) == ("long", 1)  # an easy 3 h run: D+1
+    assert _caps(run(d, 170, hr=165, dplus=1600)) == ("long", 2)  # the legs rule is a Longue too
+    assert _caps(run(d, 200, hr=150, workout_type=1)) == ("long", 2)  # marked on Strava, as before
+    assert _caps(run(d, 200, hr=150, rpe=8)) == ("long", 2)  # rated 8/10 on Strava
+    assert _caps(run(d, 200, hr=150, rpe=7)) == ("long", 1)
+    assert _caps(run(d, 200, hr=None, rpe=9)) == ("long", 2)  # no HR needed for the rating
+    assert _caps(run(d, 200, hr=165), rest_of=None) == ("long", 1)  # no bounds: no HR test
     # Très longue and Ultra unchanged, however hard (their windows already run longer)
-    assert _caps(run(d, 400, hr=170)) == _caps(run(d, 400, hr=120)) == ("very_long", ((2, 45), (5, 65)))
-    assert _caps(run(d, 700, hr=170)) == _caps(run(d, 700, hr=120)) == ("ultra", ((3, 35), (10, 65)))
+    assert _caps(run(d, 400, hr=170)) == _caps(run(d, 400, hr=120)) == ("very_long", 3)
+    assert _caps(run(d, 700, hr=170)) == _caps(run(d, 700, hr=120)) == ("ultra", 5)
     e = st.efforts([run(d, 200, hr=165)], _rest)[0]
-    assert st.effort_window([e], d + timedelta(days=5))["cap"] == 93
-    assert st.effort_window([e], d + timedelta(days=6)) is None
+    assert st.effort_window([e], d + timedelta(days=2))["text"] == "fenêtre indicative jusqu'à J+2"
+    assert st.effort_window([e], d + timedelta(days=3)) is None
     assert st.INTENSE_RPE == 8 and nt.VIGOROUS_HRR == 0.8  # (H)
 
 
@@ -155,10 +158,10 @@ def test_the_heart_rate_test_reads_the_bounds_as_of_the_effort():
     assert st.hr_max(before + after, d) == 170 and st.hr_max(before + after, D) == 200
     # 150 ≥ 45 + 0.8 × (170 − 45) = 145: run like a race, with the peak it had then (200 later would say 161)
     [e] = [x for x in st.efforts(before + after + [long], _rest) if x.session_id == 1]
-    assert e.caps == ((5, 65),)
+    assert e.last == 2
     chain = [run(d, 120, hr=170, sid=1), run(d, 100, hr=140, hour=10, sid=2)]  # 10:00, 0 min after the first
     [c] = st.efforts(chain, _rest)
-    assert c.kind == "long" and c.caps == ((3, 65),)  # (120·170 + 100·140) / 220 = 156 < 161
+    assert c.kind == "long" and c.last == 1  # (120·170 + 100·140) / 220 = 156 < 161
 
 
 async def test_strava_perceived_exertion_is_read(db_session: AsyncSession, test_user: User):
@@ -174,12 +177,12 @@ async def test_strava_perceived_exertion_is_read(db_session: AsyncSession, test_
     by = {a.strava_activity_id: a.id for a in (await db_session.execute(
         select(Activity).where(Activity.user_id == test_user.id))).scalars()}
     assert [ss[by[4400 + i]].rpe for i in range(4)] == [8, None, None, 7]
-    assert st.efforts([ss[by[4400]]], _rest)[0].caps == ((5, 65),)
+    assert st.efforts([ss[by[4400]]], _rest)[0].last == 2
 
 
 def test_the_history_reads_each_longue_as_its_own_day_saw_it():
-    """The 14-day card: each past day's score is what the page computed that day (rows stored and activities
-    finished by then), the Longue's heart-rate test included."""
+    """The 14-day card: each past day's state is what the page computed that day (rows stored and activities
+    finished by then), the Longue's heart-rate test included: run like a race, its window holds D+0 → D+2."""
     rows = night_rows(range(0, 60), today=D, hr=lambda k: 44.0 + k % 3, hrv=60.0)
     runs = [run(D - timedelta(days=3 + 4 * i), 50, hr=130, sid=100 + i) for i in range(8)]  # never on D-6
     sessions = runs + [run(D - timedelta(days=6), 200, hr=163, sid=9)]
@@ -196,15 +199,15 @@ def test_the_history_reads_each_longue_as_its_own_day_saw_it():
                     sante._history(nights, sessions, efforts, today, rest_of))
 
     day, hist = page(rows, sessions, D)
-    assert day["window"] is None  # D+6: past D+5
+    assert day["window"] is None  # D+6: past D+2
     seen = {}
     for d, state, score in hist:
         past = {m: {x: v for x, v in per.items() if x <= d} for m, per in rows.items()}
         midnight = datetime.combine(d + timedelta(days=1), time(0))
         then = page(past, [s for s in sessions if st.local_end(s) <= midnight], d)[0]
         assert score["value"] == then["score"]["value"], d
-        seen[(d - (D - timedelta(days=6))).days] = (then["window"] or {}).get("cap")
-    assert (seen[0], seen[4], seen[5]) == (65, 86, 93) and seen[-1] is None  # D+0 → D+5: the race window
+        seen[(d - (D - timedelta(days=6))).days] = (then["window"] or {}).get("last")
+    assert (seen[0], seen[2], seen[3]) == (2, 2, None) and seen[-1] is None  # D+0 → D+2: the race window
 
 
 # ── Open-Meteo: each outdoor activity's altitude and its start's weather, in the syncs only ──

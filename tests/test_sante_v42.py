@@ -2,15 +2,15 @@
 optimiser »): each rule as V42_BRIEF.md sets it from the three research reports, with exact values from the
 formulas.
 
-- §A the score: weights VFC 25 · FC de nuit 25 · Sommeil 30 (2026-10-08, like WHOOP: no Charge récente any
-  more, a recovery window caps the score);
-  HR and HRV read together (a low VFC alone caps nothing, the joint cap 69; Buchheit 2014, Table 2); the FC de
-  nuit scale 100 / 40 / 0 at + 2 / + 5 / + 8 bpm (Alavi 2022; Bosquet 2008); the bands' SDs shrunk towards a
-  prior (Kellmann 2018); research_recovery.md §3.4's example days.
-- §B the recovery windows from activities (research_efforts.md §b, « indicatives », all H): Longue D+3 (D+5
-  for a race), Ultra D+13 after ≥ 24 h or a night run through; the nights after an effort by its class; the
-  alert muted then re-armed; M4 low-impact sports (v4.3: no M1 unusual climb, no M3 back-to-back days any
-  more: the owner's Les Houches days are two efforts); the owner's Transjeju; Activités' « après ultra ».
+- §A the state (owner, 2026-10-14: scientific basis — the weighted score VFC 25 · FC de nuit 25 · Sommeil 30,
+  its joint cap and its FC de nuit scale had no validated basis): the rule-based state of sante_score, the
+  primary marker's 7-day trend against its smallest worthwhile change, the FC de nuit outside alone on its own
+  row; the bands' SDs shrunk towards a prior (Kellmann 2018); research_recovery.md §3.4's example days.
+- §B the recovery windows from activities (research_efforts.md §b, « indicatives », all H): reasons, no caps:
+  Longue D+1 (D+2 run like a race), Très longue D+3, Ultra D+5 (red D+0/D+1), D+7 after ≥ 24 h; the nights
+  after an effort by its class; the alert muted then re-armed; M4 low-impact sports (v4.3: no M1 unusual climb,
+  no M3 back-to-back days any more: the owner's Les Houches days are two efforts); the owner's Transjeju;
+  Activités' « après ultra ».
 """
 import math
 from dataclasses import replace
@@ -21,162 +21,143 @@ import pytest
 
 from app.services import nights as nt
 from app.services import sante_score as sc
-from app.services import sante_today as td
 from app.services import sante_training as st
 from tests import test_coros  # the linked athlete's client fixture (as_user)
 from tests.test_nights import night_rows
-from tests.test_sante import rested  # noqa: F401 (a fixture: a 7h30 need, these 7h20 nights « suffisant »)
+from tests.test_sante import rested  # noqa: F401 (a fixture the tests name: a no-op since the 8-h need, 2026-10-14)
 from tests.test_sante_score import _day, _history, _rich, _runs, _session, _then
+from tests.test_sante_score import _example as _score_example
 
 as_user, no_commit = test_coros.as_user, test_coros.no_commit
 
 D = date(2026, 10, 8)
 ROOT = Path(__file__).resolve().parent.parent
-HRV_BAND = {"center": 70.0, "sd": 0.1, "provisional": False, "lo": 70 * math.exp(-0.05), "hi": 70 * math.exp(0.05)}
-HR_BAND = {"center": 45.0, "sd": 1.8, "provisional": False, "lo": 42.0, "hi": 48.0}
-
-
-class _Ef:  # what a window's sentence reads of its effort
-    name, session_id = "Trail des Crêtes", 1
+HR_BAND = {"center": 45.0, "sd": 1.8}  # the example days' FC de nuit: its usual value and SD (bpm)
 
 
 def _example(z=None, hr=None, tst=None, window=None) -> dict:
     """One day of research_recovery.md §3.4 from its numbers: the 7-night HRV `z` (ln units over the band's SD),
-    the 7-night nightly HR over its median (bpm), the 24-h sleep (minutes), an effort window."""
-    stats = {k: {"value": None, "normal": None, "status": None} for k in ("hrv", "hr")}
-    if z is not None:
-        v = 70 * math.exp(0.1 * z)
-        stats["hrv"] = {"value": v, "normal": HRV_BAND, "status": nt.status(v, HRV_BAND)}
-    if hr is not None:
-        v = 45.0 + hr
-        stats["hr"] = {"value": v, "normal": HR_BAND, "status": nt.status(v, HR_BAND)}
-    day = {"day": D, "night_measured": any(v is not None for v in (z, hr, tst)),
-           "measured_components": [k for k, v in (("hrv", z), ("hr", hr), ("sleep", tst)) if v is not None],
-           "stats": stats, "tst24": tst, "need": {"total": 480, "base": 480, "effort": 0, "debt": 0},
-           "window": window, "alert": None}  # an 8-h need, nothing owed: the example days read the sleep as before
-    score = sc.score_of(day)
-    return {"score": score, "state": td.state(score, day), "day": day}
+    the 7-night nightly HR over its median (bpm, over the band's SD 1,8: its z), the 24-h sleep (minutes), an
+    effort window (owner, 2026-10-14: scientific basis — read by the rule-based state, tests.test_sante_score)."""
+    x = _score_example(z_hrv=z, z_hr=None if hr is None else hr / HR_BAND["sd"], tst=tst, window=window)
+    if z is None and hr is None:  # sleep alone: never a state (C8)
+        x["day"]["night_measured"] = tst is not None
+    return x
 
 
 def _rows(x: dict) -> dict:
-    """Each component's note (rounded) and the colour it wears on the page (v4.4: no sub-score is shown; a heart
-    signal's row is sante_score.row_tone, the Sommeil dial its 24 h's colour), in the score's order."""
-    from app.services import sante
-
-    out = {}
-    for p in sorted(x["score"]["parts"], key=lambda p: sc.ORDER.index(p["key"])):
-        tone = (sc.row_tone(p) if p["key"] in sc.HEART else
-                sante.sleep_dial(p["tst24"], 480, "#sommeil")["tone"] if p["key"] == "sleep" else None)
-        out[p["key"]] = {"sub": round(p["sub"]), "tone": tone}
-    return out
+    """Each heart signal's part of the indice (s × 100, rounded) and the colour its row wears on the page
+    (sante_score.row_tone: its place against its usual values), in the score's order."""
+    trends = x["day"]["trends"]
+    return {p["key"]: {"sub": round(100 * p["s"]), "tone": sc.row_tone(p["key"], trends[p["key"]])}
+            for p in x["score"]["parts"]}
 
 
 # ── §A: research_recovery.md §3.4, the example days ─────────────────────────
 
 def test_the_example_days_of_the_research_report():
-    """§3.4: what v4 said and what v4.2 says, from the formulas (no Charge outside a window). v4.3: the page prints
-    the state's word only; each row its note and its colour (its place against the normal)."""
+    """§3.4, read by the rule-based state (owner, 2026-10-14: scientific basis — the weighted index and its caps
+    had no validated basis): the primary marker (VFC) outside its smallest worthwhile change, a short 24 h or an
+    effort window turn it orange; the FC de nuit outside alone shows on its own row; the indice is 100 × the mean
+    of s_VFC = clip((z + 2,5)/2) and s_FC = clip((2,5 − z)/2), held to the state's range."""
     normal = _example(z=0, hr=0, tst=450)
-    assert (normal["score"]["value"], normal["score"]["caps"]) == (100, [])
-    # 2. HRV low, HR low: the « saturation » of a well-trained athlete (Buchheit 2014, Table 2) — 69 in v4 (a red
-    # VFC capped it), now the mean: (25·25 + 25·100 + 30·100) / 80 = 76,6 → 77, green; the VFC row orange
+    assert (normal["score"]["value"], normal["score"]["tone"], normal["score"]["caps"]) == (100, "ok", [])
+    # 2. HRV low, HR low (was 77, green: the « saturation » of Buchheit 2014 cannot be told from fatigue by one
+    # athlete's 7 days, Plews 2013 reads the VFC first): the VFC 2 SD under, orange; (0,25 + 1) / 2 → 63
     sat = _example(z=-2.0, hr=-2, tst=450)
-    assert sat["score"]["raw0"] == (25 * 25 + 25 * 100 + 30 * 100) / 80 == 76.5625
-    assert (sat["score"]["value"], sat["score"]["tone"], sat["score"]["caps"]) == (77, "ok", [])
-    assert sat["state"]["key"] == "ok" and sat["state"]["text"] is None
-    assert (_rows(sat)["hrv"]["sub"], _rows(sat)["hrv"]["tone"]) == (25, "warn")  # never red under green
-    # 3. HRV low, HR up: « accumulated fatigue » — 74 (green) in v4, now (25·50 + 25·60 + 30·80) / 80 = 64,4 → 64,
-    # under the joint cap (69): orange, both rows orange; 6h30 of sleep: the sleep colour (« un peu court »)
+    assert (sat["score"]["value"], sat["score"]["tone"], sat["state"]["key"]) == (63, "warn", "hrv")
+    assert (_rows(sat)["hrv"]["sub"], _rows(sat)["hrv"]["tone"]) == (25, "warn")  # never red
+    # 3. HRV low, HR up: « accumulated fatigue » (was 64): the VFC's reason; (0,5 + 0,139) / 2 → 32; 6h30 of sleep
+    # is no reason (from 6 h)
     tired = _example(z=-1.5, hr=4, tst=390)
-    assert tired["score"]["raw0"] == (25 * 50 + 25 * 60 + 30 * 80) / 80 == 64.375
-    assert (tired["score"]["value"], tired["score"]["tone"], tired["score"]["caps"]) == (64, "warn", [])
-    assert (tired["state"]["key"], tired["state"]["text"]) == ("joint", None)
-    assert [(r["sub"], r["tone"]) for r in _rows(tired).values()] == [(50, "warn"), (60, "warn"), (80, "sleep")]
-    # 4. HR + 3 alone: 97 in v4, now (25·100 + 25·80 + 30·100) / 80 = 93,75 → 94; + 3 bpm is the band's edge: green
+    assert (tired["score"]["value"], tired["score"]["tone"]) == (32, "warn")
+    assert [r["key"] for r in tired["score"]["reasons"]] == ["hrv"] and tired["state"]["text"] is None
+    assert [(r["sub"], r["tone"]) for r in _rows(tired).values()] == [(50, "warn"), (14, "warn")]
+    # 4. HR + 3 alone (z 1,67, over its smallest worthwhile change): its row orange, the state green (the VFC in
+    # its values): (1 + 0,417) / 2 → 71
     plus3 = _example(z=0, hr=3, tst=420)
-    assert (plus3["score"]["raw0"], plus3["score"]["value"]) == (93.75, 94)
-    assert (_rows(plus3)["hr"]["sub"], _rows(plus3)["hr"]["tone"]) == (80, "ok")
-    # 5. HR + 6 for a week, HRV in its band: 88 (green) in v4, now FC de nuit 26,7 is red: capped at 69
+    assert (plus3["score"]["value"], plus3["score"]["tone"]) == (71, "ok")
+    assert (_rows(plus3)["hr"]["sub"], _rows(plus3)["hr"]["tone"]) == (42, "warn")
+    # 5. HR + 6 for a week, HRV in its band: green, its row orange; the indice 50 held to 70 (never contradicting
+    # the state); the FC de nuit turns the day red only through the 2-night illness alert
     plus6 = _example(z=-0.3, hr=6, tst=420)
-    assert plus6["score"]["raw0"] == pytest.approx((25 * 100 + 25 * 80 / 3 + 30 * 100) / 80)  # 77,1
-    assert (plus6["score"]["value"], plus6["score"]["caps"]) == (69, ["red"])
-    assert (plus6["state"]["key"], plus6["state"]["text"]) == ("hr", None)
-    assert (_rows(plus6)["hr"]["sub"], _rows(plus6)["hr"]["tone"]) == (27, "danger")
-    # 6. a short night (5h30), the rest normal: 65 both times
+    assert (plus6["score"]["value"], plus6["score"]["tone"], plus6["state"]["key"]) == (70, "ok", "ok")
+    assert (_rows(plus6)["hr"]["sub"], _rows(plus6)["hr"]["tone"]) == (0, "warn")
+    # 6. a short night (5h30), the rest normal: orange, the indice held to 69 (was 59)
     short = _example(z=0, hr=0, tst=330)
-    assert (short["score"]["value"], short["score"]["caps"], short["state"]["key"]) == (59, ["short"], "short")
-    # 7. the day after a 4-h trail (a Longue: cap 65): 65 both times; no Charge in the mean any more (2026-10-08,
-    # like WHOOP: strain stays out of recovery), the window's cap alone holds the score down
-    trail = _example(z=0, hr=0, tst=450, window={"cap": 65, "ago": 1, "effort": _Ef()})
-    assert trail["score"]["raw0"] == (25 * 100 + 25 * 100 + 30 * 100) / 80 == 100
-    assert (trail["score"]["value"], trail["score"]["caps"]) == (65, ["effort"])
-    # 8. sleep only, 8 h: 80 both times
+    assert (short["score"]["value"], short["score"]["tone"], short["state"]["key"]) == (69, "warn", "short")
+    # 7. the day after a 4-h trail (a Longue: orange through D+1): the window is a reason, the indice held to 69
+    trail = _example(z=0, hr=0, tst=450, window={"tone": "warn", "text": "fenêtre indicative jusqu'à J+1"})
+    assert (trail["score"]["value"], trail["state"]["key"], trail["score"]["caps"]) == (69, "effort", [])
+    # 8. sleep only, 8 h: no state from sleep alone (was 80), a reason, never a number
     alone = _example(tst=480)
-    assert (alone["score"]["value"], alone["score"]["caps"]) == (80, ["no_heart"])
+    assert alone["score"]["value"] is None and alone["score"]["missing"]["key"] == "no_heart"
 
 
 def test_the_joint_cap_vfc_under_its_band_and_fc_up_3_bpm():
-    """VFC under its band (z < −0.5) and FC de nuit ≥ median + 3 bpm → 69 (H; Buchheit 2014, Table 2: rMSSD down
-    with HR up, outside a taper, « accumulated fatigue »). Mild on each row (VFC 90, FC 80) the mean is 90,6:
-    the cap binds, both rows orange."""
-    mild = _example(z=-0.7, hr=3, tst=450)
-    assert mild["score"]["raw0"] == (25 * 90 + 25 * 80 + 30 * 100) / 80 == 90.625
-    assert (mild["score"]["value"], mild["score"]["caps"], mild["score"]["tone"]) == (69, ["joint"], "warn")
-    assert (mild["state"]["key"], mild["state"]["text"]) == ("joint", None)
+    """Was: VFC under its band and FC de nuit ≥ + 3 bpm capped at 69 (the joint cap). Now (owner, 2026-10-14:
+    scientific basis) the VFC outside its threshold (T 0,70 for 7 nights against 30) is the reason, whatever the FC
+    de nuit: each row says its own place; (0,85 + 0,417) / 2 → 63."""
+    mild = _example(z=-0.8, hr=3, tst=450)
+    assert (mild["score"]["value"], mild["score"]["caps"], mild["score"]["tone"]) == (63, [], "warn")
+    assert (mild["state"]["key"], mild["state"]["text"]) == ("hrv", None)
     rows = _rows(mild)
-    assert (rows["hrv"]["tone"], rows["hrv"]["sub"]) == ("warn", 90)
-    assert (rows["hr"]["tone"], rows["hr"]["sub"]) == ("warn", 80)  # at its band's edge, orange under the joint cap
-    # just inside the band (z −0.5) or FC + 2,9: no joint cap
-    assert _example(z=-0.5, hr=3, tst=450)["score"]["caps"] == []
-    assert _example(z=-0.7, hr=2.9, tst=450)["score"]["caps"] == []
-    # an effort's window that binds lower is the reason; the joint pattern still caps
-    w = {"cap": 45, "ago": 2, "effort": _Ef()}  # no Charge component: no red one either (2026-10-08)
-    both = _example(z=-0.7, hr=3, tst=450, window=w)
-    assert both["score"]["caps"] == ["effort", "joint"] and both["state"]["key"] == "effort"
-    assert both["state"]["text"] is None
+    assert (rows["hrv"]["tone"], rows["hrv"]["sub"]) == ("warn", 85)
+    assert (rows["hr"]["tone"], rows["hr"]["sub"]) == ("warn", 42)
+    # inside the threshold (z −0,7 > −0,70; it was outside under 0,5): green, the FC de nuit's row orange
+    inside = _example(z=-0.7, hr=3, tst=450)
+    assert (inside["score"]["value"], inside["score"]["tone"]) == (70, "ok") and _rows(inside)["hr"]["tone"] == "warn"
+    assert _example(z=-0.8, hr=0.5, tst=450)["state"]["key"] == "hrv"
+    # an effort's window too: both reasons listed, the primary marker's first
+    w = {"tone": "warn", "text": "fenêtre indicative jusqu'à J+3"}
+    both = _example(z=-0.8, hr=3, tst=450, window=w)
+    assert [r["key"] for r in both["score"]["reasons"]] == ["hrv", "effort"] and both["state"]["key"] == "hrv"
+    assert both["state"]["text"] is None and both["score"]["value"] == 63
 
 
 def test_a_low_vfc_counts_as_red_only_with_the_nightly_hr_over_2_bpm():
-    """« VFC counts as a red contributor only when FC de nuit is measured and its 7-night mean is > + 2 bpm » (§A2):
-    FC de nuit and Sommeil always count. A VFC under 40 with no FC de nuit caps nothing either."""
-    for hr, red in ((None, False), (-2, False), (2, False), (2.5, True)):
+    """Was: a low VFC a red contributor only with the FC de nuit > + 2 bpm. Now (owner, 2026-10-14: scientific
+    basis) a low VFC is an orange reason, never red (red: the illness alert or the days after an Ultra), whatever
+    the FC de nuit; without it the indice is the VFC's alone (25, was 66). A 5-h day is its own reason."""
+    for hr in (None, -2, 2, 2.5):
         x = _example(z=-2.0, hr=hr, tst=450)
-        vfc = next(p for p in x["score"]["parts"] if p["key"] == "hrv")
-        assert vfc["red"] is red and ("red" in x["score"]["caps"]) is red, hr
-        assert _rows(x)["hrv"]["tone"] == ("danger" if red else "warn"), hr
-    # no FC de nuit: (25·25 + 30·100) / 55 = 65,9 → 66; VFC is a heart signal, so no 80 cap either
+        assert (x["score"]["tone"], x["state"]["key"]) == ("warn", "hrv"), hr
+        assert _rows(x)["hrv"]["tone"] == "warn", hr
     alone = _example(z=-2.0, tst=450)
-    assert alone["score"]["raw0"] == pytest.approx((25 * 25 + 30 * 100) / 55) and alone["score"]["value"] == 66
+    assert [p["key"] for p in alone["score"]["parts"]] == ["hrv"] and alone["score"]["value"] == 25
     assert alone["score"]["caps"] == []
-    # a sleep sub-score under 40 (5 h → 30) always counts: (25·100 + 25·100 + 30·30) / 80 = 73,75, capped at 65
     sleepy = _example(z=0, hr=0, tst=300)
-    assert sleepy["score"]["raw0"] == 73.75 and sleepy["score"]["caps"] == ["short"]
-    assert next(p for p in sleepy["score"]["parts"] if p["key"] == "sleep")["red"]
+    assert [r["key"] for r in sleepy["score"]["reasons"]] == ["short"] and sleepy["score"]["value"] == 69
 
 
 def test_the_nightly_hr_scale():
-    """100 at ≤ + 2 bpm, 40 at + 5, 0 at + 8, linear between (H; Alavi 2022: + 4 bpm on 2 nights; Bosquet 2008:
-    ≈ + 4,5 bpm in a short overload; Altini & Plews 2021: ≈ + 6 % when sick). Its colour is its place against
-    the normal (± 3 bpm): green in it, orange over it, red once its note is under 40."""
-    subs = {d: sc.hr_sub(45 + d, HR_BAND) for d in (-3, 0, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9)}
-    assert subs == pytest.approx({-3: 100, 0: 100, 2: 100, 2.5: 90, 3: 80, 3.5: 70, 4: 60, 5: 40, 6: 80 / 3,
-                                  7: 40 / 3, 8: 0, 9: 0})
-    tones = {d: _rows(_example(z=0, hr=d, tst=450))["hr"]["tone"] for d in (-4, 0, 2.5, 3, 4, 5.5)}
-    assert tones == {-4: "accent", 0: "ok", 2.5: "ok", 3: "ok", 4: "warn", 5.5: "danger"}
+    """Was: 100 / 40 / 0 at + 2 / + 5 / + 8 bpm. Now (owner, 2026-10-14: scientific basis) the FC de nuit's part
+    of the indice is s = clip((2,5 − z)/2, 0, 1), z its 7-night mean over its usual values in SD (H): 100 up to
+    z 0,5, 0 at 2,5 SD; its row orange from its threshold, + 0,70 SD for 7 nights against 30 (here 1,27 bpm),
+    neutral under (never praised), red only under the illness alert."""
+    subs = {z: sc.sub("hr", z) for z in (-2, 0, 0.5, 1, 1.5, 2, 2.5, 3)}
+    assert subs == pytest.approx({-2: 1, 0: 1, 0.5: 1, 1: 0.75, 1.5: 0.5, 2: 0.25, 2.5: 0, 3: 0})
+    assert sc.sub("hrv", -1.5) == 0.5 and sc.sub("hrv", -0.5) == 1 and sc.sub("hrv", -3) == 0
+    tones = {d: _rows(_example(z=0, hr=d, tst=450))["hr"]["tone"] for d in (-4, 0, 0.8, 1, 1.3, 4, 5.5)}
+    assert tones == {-4: "accent", 0: "ok", 0.8: "ok", 1: "ok", 1.3: "warn", 4: "warn", 5.5: "warn"}
+    trend = _example(z=0, hr=5.5, tst=450)["day"]["trends"]["hr"]
+    assert sc.row_tone("hr", trend, alert=True) == "danger"
 
 
 def test_charge_is_no_component_any_more():
-    """No Charge récente in the score (2026-10-08, owner: « Fais comme WHOOP », whose recovery leaves strain out):
-    never a component, never missing, in a recovery window too (the window caps the score: « Un effort récent, il
-    faut le prendre en compte et afficher la fatigue quand même »); the week's time is the Entraînement dial's."""
+    """No Charge récente in the state (2026-10-08, owner: « Fais comme WHOOP »), never a component, never
+    missing; no sleep component either (owner, 2026-10-14: scientific basis — a short 24 h is a reason, the
+    Sommeil dial says the rest): the heart series only; an effort's window is a reason (a Longue: orange through
+    D+1), the week's time is the Entraînement dial's."""
     day = _day(_rich(), _runs(n=12))
-    assert [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr", "sleep"] and day["score"]["absent"] == []
+    assert [p["key"] for p in day["score"]["parts"]] == ["hrv", "hr"] and day["score"]["absent"] == []
     young = _day(night_rows(range(0, 3), today=D), _runs(n=12))  # no band yet: VFC and FC missing, not Charge
     assert young["score"]["absent"] == ["hrv", "hr"] and young["score"]["building"] == ["hrv", "hr"]
     big = _day(_rich(), _runs(n=12) + [_session(D - timedelta(days=1), 200, sid=9)])
-    assert [p["key"] for p in big["score"]["parts"]] == ["hrv", "hr", "sleep"] and big["window"]["cap"] == 65
-    assert (big["score"]["value"], big["score"]["caps"]) == (65, ["effort"]) and "load" not in big["window"]
-    assert sc.WEIGHTS == {"hrv": 25, "hr": 25, "sleep": 30} and sc.ORDER == ("hrv", "hr", "sleep")
+    assert [p["key"] for p in big["score"]["parts"]] == ["hrv", "hr"] and big["window"]["tone"] == "warn"
+    assert (big["score"]["value"], big["state"]["key"], big["score"]["caps"]) == (69, "effort", [])
+    assert "load" not in big["window"]
+    assert not hasattr(sc, "WEIGHTS") and sc.HEART == ("hrv", "hr")
 
 
 # ── §A4: the bands' SDs shrunk towards a prior ──────────────────────────────
@@ -193,14 +174,17 @@ def test_the_band_sd_is_shrunk_towards_a_prior():
     b = nt.band(steady, "hrv", D)
     assert b["provisional"] and b["sd"] == pytest.approx(0.1 * math.sqrt(7 / 14))
     assert (b["lo"], b["hi"]) == pytest.approx((60 * math.exp(-0.5 * b["sd"]), 60 * math.exp(0.5 * b["sd"])))
-    # nightly HR: 14 nights at 50 ± 3 bpm (MAD 3, robust SD 4,45): σ0 = 2 bpm, SD √((14·4,45² + 7·2²)/21) = 3,81;
-    # the alert line 50 + max(2 × 3,81, 5) = 57,6 (it was 58,9 unshrunk)
+    # nightly HR: 14 nights at 50 ± 3 bpm (MAD 3, robust SD 4,45): σ0 = 2 bpm, the alert's robust σ̂
+    # √((14·4,45² + 7·2²)/21) = 3,81, its line 50 + max(2 × 3,81, 5) = 57,6 (it was 58,9 unshrunk)
     noisy = nt.build_nights(night_rows(range(1, 15), today=D, hr=lambda k: 50.0 + (3 if k % 2 else -3)), D)
     h = nt.band(noisy, "hr", D)
     s = 1.4826 * 3
-    assert h["n"] == 14 and h["sd"] == pytest.approx(math.sqrt((14 * s * s + 7 * 4) / 21))
-    assert h["alert"] == pytest.approx(50 + 2 * h["sd"]) and round(h["alert"], 1) == 57.6
-    assert (h["lo"], h["hi"]) == (47.0, 53.0)  # the band itself: median ± 3 bpm, unchanged
+    assert h["n"] == 14 and h["robust_sd"] == pytest.approx(math.sqrt((14 * s * s + 7 * 4) / 21))
+    assert h["alert"] == pytest.approx(50 + 2 * h["robust_sd"]) and round(h["alert"], 1) == 57.6
+    # the trend's band: the mean ± 0,5 SD, the SD (3,11) shrunk to 2,79 (owner, 2026-10-14: scientific basis — it
+    # was ± 3 bpm, a fixed width, then the median ± 0,5 robust σ̂)
+    assert h["sd"] == pytest.approx(math.sqrt((14 * (14 * 9 / 13) + 7 * 4) / 21)) and round(h["sd"], 2) == 2.79
+    assert (h["lo"], h["hi"]) == pytest.approx((50 - 0.5 * h["sd"], 50 + 0.5 * h["sd"]))
     # a very steady HR: the 5-bpm floor holds
     flat = nt.build_nights(night_rows(range(1, 15), today=D, hr=45.0), D)
     assert nt.band(flat, "hr", D)["alert"] == 50
@@ -209,41 +193,44 @@ def test_the_band_sd_is_shrunk_towards_a_prior():
 # ── §B: recovery windows from activities (research_efforts.md §b, all H, « indicatives ») ──
 
 def _caps(s):
+    """(class, its nights' class, the last day of its window D+n) of one activity alone."""
     e = st.effort_of(s)
-    return (e.kind, e.nights, e.caps) if e else None
+    return (e.kind, e.nights, e.last) if e else None
 
 
 def test_the_classes_and_their_windows():
-    """Longue (≥ 3 h, or ≥ 1 500 m D+ on foot) 65 until D+3 (was D+2), D+5 when Strava marks it a race; Très
-    longue 45 to D+2, 65 to D+5; Ultra 35 to D+3 (v4.3, was 40), 65 to D+10, D+13 when ≥ 24 h or run through a
-    night (01:00 → 05:00 local); no Charge (2026-10-08)."""
-    assert _caps(_session(D, 200)) == ("long", "long", ((3, 65),))
-    assert _caps(_session(D, 200, workout_type=1)) == ("long", "long", ((5, 65),))  # a race (Strava)
-    assert _caps(_session(D, 170, dplus=1600)) == ("long", "long", ((3, 65),))  # the legs rule
-    assert _caps(_session(D, 420)) == ("very_long", "very_long", ((2, 45), (5, 65)))
-    assert _caps(_session(D, 420, workout_type=1)) == ("very_long", "very_long", ((2, 45), (5, 65)))
-    assert _caps(_session(D, 660, hour=5)) == ("ultra", "ultra", ((3, 35), (10, 65)))  # 05:00 → 16:00
-    assert _caps(_session(D, 1500, hour=5)) == ("ultra", "ultra", ((3, 35), (13, 65)))  # ≥ 24 h
+    """Owner, 2026-10-14: scientific basis — windows are reasons, no caps: Longue (≥ 3 h, or ≥ 1 500 m D+ on
+    foot) orange through D+1, D+2 run like a race (Petersen 2007); Très longue D+3 (Fazackerley 2019); Ultra
+    D+5 (Hoffman 2017), D+7 when ≥ 24 h (a night run through no longer extends it; it still counts for the
+    sleep: sante_training.raced_nights); no Charge (2026-10-08)."""
+    assert _caps(_session(D, 200)) == ("long", "long", 1)
+    assert _caps(_session(D, 200, workout_type=1)) == ("long", "long", 2)  # a race (Strava)
+    assert _caps(_session(D, 170, dplus=1600)) == ("long", "long", 1)  # the legs rule
+    assert _caps(_session(D, 420)) == ("very_long", "very_long", 3)
+    assert _caps(_session(D, 420, workout_type=1)) == ("very_long", "very_long", 3)
+    assert _caps(_session(D, 660, hour=5)) == ("ultra", "ultra", 5)  # 05:00 → 16:00
+    assert _caps(_session(D, 1500, hour=5)) == ("ultra", "ultra", 7)  # ≥ 24 h
     night = _session(D, 660, hour=20)  # 20:00 → 07:00: ran from 01:00 to 05:00
-    assert _caps(night) == ("ultra", "ultra", ((3, 35), (13, 65))) and st.through_night(
-        st.local_start(night), st.local_end(night))
+    assert _caps(night) == ("ultra", "ultra", 5) and st.through_night(st.local_start(night), st.local_end(night))
     assert not st.through_night(datetime(2026, 10, 8, 2), datetime(2026, 10, 8, 12))  # started after 01:00
     assert not st.through_night(datetime(2026, 10, 7, 22), datetime(2026, 10, 8, 4, 59))  # ended before 05:00
     e = st.effort_of(_session(D, 200, workout_type=1))
-    assert [(st.effort_window([e], D + timedelta(days=k)) or {}).get("cap") for k in (0, 3, 5, 6)] == [65, 79, 93, None]
+    assert [(st.effort_window([e], D + timedelta(days=k)) or {}).get("tone") for k in (0, 2, 3)] == [
+        "warn", "warn", None]
 
 
 def test_the_owner_transjeju_window_and_nights():
     """The owner (brief §E): the Transjeju started 02/10 21:00, 16h53, ending 03/10 13:53 local → D+0 = 03/10, an
-    Ultra: cap 35 to D+3 (06/10; v4.3, was 40); it ran through the night, so 65 to D+13 (16/10); nights D+1 → D+4
-    (04 → 07/10) never fire the alert, and count in the band like any night (2026-10-08)."""
+    Ultra: red on D+0 and D+1 (03 → 04/10), orange to D+5 (08/10) (owner, 2026-10-14: scientific basis — it was
+    35 to D+3, 65 to D+13: a night run through no longer extends it); nights D+1 → D+4 (04 → 07/10) never fire
+    the alert, and count in the band like any night (2026-10-08)."""
     s = _session(date(2026, 10, 2), 935, elapsed=1013, hour=21, offset=32400, workout_type=1, name="Transjeju 100M")
     [e] = st.efforts([s])
     assert (e.kind, e.nights, e.day, e.end) == ("ultra", "ultra", date(2026, 10, 3), datetime(2026, 10, 3, 13, 53))
-    assert e.caps == ((3, 35), (13, 65)) and not hasattr(e, "load")
-    caps = {k: (st.effort_window([e], date(2026, 10, k)) or {}).get("cap") for k in (3, 6, 7, 16, 17)}
-    assert caps == {3: 35, 6: 55, 7: 65, 16: 96.5, 17: None}
-    assert st.effort_window([e], date(2026, 10, 8))["until"] == date(2026, 10, 16)
+    assert e.last == 5 and not hasattr(e, "load") and not hasattr(e, "caps")
+    tones = {k: (st.effort_window([e], date(2026, 10, k)) or {}).get("tone") for k in (3, 4, 5, 8, 9)}
+    assert tones == {3: "danger", 4: "danger", 5: "warn", 8: "warn", 9: None}
+    assert st.effort_window([e], date(2026, 10, 6))["until"] == date(2026, 10, 8)
     rows = night_rows(range(0, 12), today=D)
     nights = nt.build_nights(rows, D)
     nt.tag_efforts(nights, [e])
@@ -278,7 +265,7 @@ def test_the_illness_alert_is_muted_then_rearms_against_the_band_before():
     """The alert is muted on the nights after an effort (Longue D+1, Très longue D+1 → D+3, Ultra D+1 → D+4)
     and re-arms by itself after them (Schwellnus 2016: symptoms more frequent in the 1–2 weeks after a race); those
     nights count in its band like any night (2026-10-08), their 52 bpm leaving its median at 45; after ≥ 20 h too,
-    the nights D+5 → D+7 can fire it."""
+    the nights D+5 → D+7 can fire it. Red: the alert is the one heart reason that makes the day red."""
     def rows(high):  # 60 nights at 44–46 bpm; `high`: days ago at 58 bpm; 52 bpm on the nights D+1 → D+4
         return night_rows(range(0, 60), today=D, hr=lambda k: 58.0 if k in high else 52.0 if 2 <= k <= 5 and
                           not high & {2, 3} else 44.0 + k % 3)
@@ -290,18 +277,19 @@ def test_the_illness_alert_is_muted_then_rearms_against_the_band_before():
     assert muted["alert"] is None and muted["state"]["key"] == "effort"
     long_ = _session(D - timedelta(days=6), 1260, hour=0, sid=9)  # 21 h: D+5 → D+7 fire it like any night
     tail = _day(rows({0, 1}), _runs() + [long_])
-    assert tail["alert"] and tail["state"]["key"] == "ill"
-    hr = next(p for p in tail["score"]["parts"] if p["key"] == "hr")  # the episode's nights are read
-    assert hr["alert"] and hr["sub"] < sc.RED_SUB
+    assert tail["alert"] and tail["state"]["key"] == "ill" and tail["state"]["tone"] == "danger"
+    assert tail["score"]["value"] <= 39  # the indice held to the red range
+    trend = tail["trends"]["hr"]  # the episode's nights are read
+    assert trend["status"] == "above" and sc.row_tone("hr", trend, alert=bool(tail["alert"])) == "danger"
 
 
 def test_m4_cycling_is_one_class_lower_its_nights_follow_its_time():
     """M4: not on foot (ride, swim…) one class lower — ≥ 10 h Très longue, 6–10 h Longue, 3–6 h none — while its
     nights follow its time (Koller 1998; Shave 2007). A chain with a run in it is on foot (a triathlon)."""
-    assert _caps(_session(D, 720, sport="Ride")) == ("very_long", "ultra", ((2, 45), (5, 65)))
-    assert _caps(_session(D, 420, sport="Ride")) == ("long", "very_long", ((3, 65),))
-    assert _caps(_session(D, 420, sport="Ride", workout_type=11)) == ("long", "very_long", ((5, 65),))
-    assert _caps(_session(D, 240, sport="Ride")) == (None, "long", ())
+    assert _caps(_session(D, 720, sport="Ride")) == ("very_long", "ultra", 3)
+    assert _caps(_session(D, 420, sport="Ride")) == ("long", "very_long", 1)
+    assert _caps(_session(D, 420, sport="Ride", workout_type=11)) == ("long", "very_long", 2)
+    assert _caps(_session(D, 240, sport="Ride")) == (None, "long", None)
     four = st.effort_of(_session(D - timedelta(days=1), 240, sport="Ride"))
     assert st.effort_window([four], D) is None  # no window
     nights = nt.build_nights(night_rows(range(0, 5), today=D), D)
@@ -336,10 +324,12 @@ def test_activites_a_raised_easy_pace_hr_after_an_ultra_is_annotated_not_flagged
 
 
 async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session, test_user, rested):
-    """A Garmin athlete every night, a 3h30 marathon marked as a race on Strava 4 days ago: a Longue, 65 until D+5
-    (v4.2; an unmarked one ends at D+3); its night D+1 never fires the alert. Raw ≈ (25·100 + 25·100 + 30·100)
-    / 80 = 100 (no Charge: 2026-10-08), capped at 65: « Récupération en cours », the word only (v4.3: no activity
-    named); « Effort récent » on the Récupération card, orange (cap 65), the days to the window's end."""
+    """A Garmin athlete every night, a 3h30 marathon marked as a race on Strava: a Longue run like a race, orange
+    through D+2 (owner, 2026-10-14: scientific basis — power still −18 % at D+2 after a marathon, Petersen 2007;
+    it was a cap of 65 until D+5); its night D+1 never fires the alert. 4 days ago: its window is over, « Bonne
+    récupération »; 2 days ago: « Récupération en cours », the word only (v4.3: no activity named), its reason
+    « fenêtre indicative jusqu'à J+2 »; unmarked but run at ≥ 80 % of the heart-rate reserve: the same (R3); an
+    easy long run: D+1 only."""
     from app.models.activity import Activity
     from app.services import sante
     from tests.test_sante import _garmin_rows, _seed_rows
@@ -357,52 +347,55 @@ async def test_a_rich_garmin_wearer_after_a_marathon_marked_as_a_race(db_session
     page = await sante.health_page(db_session, test_user.id, today=D)
     st_, s = page["state"], page["score"]
     assert (st_["key"], st_["word"], st_["text"]) == ("ok", "Bonne récupération", None)
-    subs = {q["key"]: q["sub"] for q in s["parts"]}
-    assert set(subs) == {"hrv", "hr", "sleep"} and subs["sleep"] == 100 and subs["hr"] == 100 and subs["hrv"] > 95
-    assert s["raw0"] == pytest.approx((25 * subs["hrv"] + 25 * 100 + 30 * 100) / 80)
-    assert s["value"] == 86 and s["caps"] == ["effort"]
-    effort = {r["key"]: r for r in page["rows"]}["effort"]  # 65 until D+5: the 4th day of 5, one day left
-    assert (effort["value"], effort["word"], effort["tone"]) == (None, "prudence après l’effort", "warn")
+    assert [q["key"] for q in s["parts"]] == ["hrv", "hr"] and s["reasons"] == [] and s["value"] >= 70
     assert {r["iso"]: r["marks"] for r in page["sleep"]["rows"]}[(d + timedelta(days=1)).isoformat()] == \
         "◇ après un gros effort"  # v4.3: Santé names no outing (its plain words)
+    two = D - timedelta(days=2)
+    act.start_date = datetime(two.year, two.month, two.day, 12, tzinfo=timezone.utc)
+    act.name = "Marathon de Lyon 2"  # a change the sessions' cache sees
+    await db_session.flush()
+    page = await sante.health_page(db_session, test_user.id, today=D)
+    assert (page["state"]["key"], page["state"]["word"], page["score"]["value"]) == (
+        "effort", "Récupération en cours", 69)
+    assert [(r["key"], r["text"]) for r in page["state"]["reasons"]] == [("effort", "fenêtre indicative jusqu'à J+2")]
     act.raw_data = {"utc_offset": 7200, "workout_type": 0}  # not marked as a race on Strava
-    act.name = "Marathon de Lyon "  # a change the sessions' cache sees
+    act.name = "Marathon de Lyon "
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
     # v4.4 (R3): 162 bpm for 3h30 is ≥ 80 % of the heart-rate reserve (rest ≈ 45, peak 190: 161, H): run like a race
-    assert page["state"]["key"] == "ok" and page["score"]["value"] == 86
-    act.average_heartrate = 140  # an easy long run: its window ended on D+3
+    assert page["state"]["key"] == "effort" and page["state"]["reasons"][0]["text"].endswith("J+2")
+    act.average_heartrate = 140  # an easy long run: its window ended on D+1
     await db_session.flush()
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["state"]["key"] == "ok" and page["score"]["value"] == 100
+    assert page["state"]["key"] == "ok" and page["score"]["value"] >= 70
 
 
 # ── §C: sleep (research_sleep.md §a–§b; the owner's requests win) ───────────
 
 async def test_the_sommeil_dial_marks_a_short_day_only(db_session, test_user):
-    """The Sommeil dial prints the last 24 h as a percentage of the day's need, at most 100 % (owner: « Mets des
-    pourcentages plutôt que des valeurs »; 2026-10-08: « Fais comme WHOOP »): 8 h without an answer, 9 h after a
-    week of 5h30 or 6h30 nights (1 h owed at most, 2026-10-09), 8 h after a week of 10-h nights (nothing owed);
-    with a word from the hours: under 6 h « court », its arc in the warning colour (Craven 2022), from 6 h
-    « un peu court », from 7 h and ⅞ of the need « suffisant » (Watson 2015a), both in the sleep colour; a long
-    night is never flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »); the score's note follows
-    its own scale (100 from ⅞ of the need)."""
+    """The Sommeil dial prints the last 24 h as a percentage of the need, at most 100 % (owner: « Mets des
+    pourcentages plutôt que des valeurs »; 2026-10-08: « Fais comme WHOOP »): 8 h for everyone, whatever the week
+    before (owner, 2026-10-14: scientific basis — it was 9 h after a week of short nights: the sleep owed is said
+    apart, never added to the need); with a word from the hours: under 6 h « court », its arc in the warning
+    colour (Craven 2022), from 6 h « un peu court », from 7 h « suffisant » (Watson 2015a), both in the sleep
+    colour; a long night is never flagged, no ceiling (Watson 2015a: > 9 h « may be appropriate »); under 6 h is a
+    reason of the state (« Sommeil court »), never more."""
     from app.services import sante
     from tests.test_sante import _seed_rows
 
-    for asleep, need, value, word, tone in ((330, 540, "61", "court", "warn"), (390, 540, "72", "un peu court", "sleep"),
-                                            (600, 480, "100", "suffisant", "sleep")):
-        rows = night_rows(range(0, 20), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
+    for asleep, value, word, tone in ((330, "69", "court", "warn"), (390, "81", "un peu court", "sleep"),
+                                      (600, "100", "suffisant", "sleep")):
+        # 30 nights: a full baseline (22 nights from day −67 to −8), so the day has a state
+        rows = night_rows(range(0, 30), today=D, asleep=asleep, start=(21, 0), end=(9, 0))
         await _seed_rows(db_session, test_user, rows)
         page = await sante.health_page(db_session, test_user.id, today=D)
         dial = page["dials"][0]
         assert (dial["key"], dial["value"], dial["unit"], dial["sub"], dial["tone"], dial["href"]) == (
             "sommeil", value, "%", word, tone, "#sommeil"), asleep
-        assert page["sleep"]["hero"]["need"] == f"besoin estimé {sante.viz.hm(need)}", asleep
+        assert page["sleep"]["hero"]["need"] == "besoin estimé 8h00" and page["score"]["value"] is not None, asleep
         # the arc: the hours of the need, at most full
-        assert dial["dash"] == pytest.approx(min(1, asleep / need) * dial["c"], abs=0.01)
-        sub = next(p for p in page["score"]["parts"] if p["key"] == "sleep")["sub"]
-        assert (sub == 100) is (asleep >= 7 / 8 * need), asleep  # 10 h: 100, never « too long »
+        assert dial["dash"] == pytest.approx(min(1, asleep / 480) * dial["c"], abs=0.01)
+        assert ("short" in [r["key"] for r in page["score"]["reasons"]]) is (asleep < 360), asleep
         from sqlalchemy import delete
 
         from app.models.health import HealthMetric
@@ -532,33 +525,33 @@ def test_a_big_climb_is_no_modifier_any_more():
     before = [_session(D - timedelta(days=d), 120, dplus=1000 if d == 30 else 400, sid=d) for d in range(5, 50, 5)]
     climb = _session(D, 240, dplus=1600, sid=100)  # 1 600 m: 1,6 × the largest of the 8 weeks before
     [e] = [x for x in st.efforts(before + [climb]) if x.session_id == 100]
-    assert (e.kind, e.caps) == ("long", ((3, 65),))
-    assert [x.caps for x in st.efforts(before + [_session(D, 420, dplus=2000, sid=101)]) if x.session_id == 101] == [
-        ((2, 45), (5, 65))]
+    assert (e.kind, e.last) == ("long", 1)
+    assert [x.last for x in st.efforts(before + [_session(D, 420, dplus=2000, sid=101)]) if x.session_id == 101] == [3]
     for name in ("CLIMB_RATIO", "CLIMB_MIN_M", "CLIMB_DAYS", "CLIMB_EXTRA", "_climbs", "back_to_back"):
         assert not hasattr(st, name), name
 
 
 def test_back_to_back_days_are_two_efforts_each_its_own_window():
     """v4.3: no back-to-back merge (M3). The owner's Les Houches block — 18/09, 9h04 stops included (+3 511 m), and
-    19/09, 7h04 (+2 847 m) — is two Très longues: 45 to D+2, 65 to D+5 each, so the last 65 day is 24/09 and 25/09
-    is free (v4.2 made them one 16-h ultra, 65 until 29/09, named after the longest with no date: the owner's
-    « Récupération morning trail run pour la première image je ne comprends pas »). Overlapping windows keep the
-    lowest cap: 20/09 is the 18th's D+2 (45) and the 19th's D+1 (45)."""
+    19/09, 7h04 (+2 847 m) — is two Très longues, each orange through D+3 (owner, 2026-10-14: scientific basis —
+    it was 45 to D+2, 65 to D+5), so the last orange day is 22/09 and 23/09 is free (v4.2 made them one 16-h
+    ultra, named after the longest with no date: the owner's « Récupération morning trail run pour la première
+    image je ne comprends pas »). Overlapping windows: the bigger class, then the latest, names the day."""
     d18 = _session(date(2026, 9, 18), 491.6, elapsed=544, hour=10, offset=7200, sid=1, dplus=3511,
                    name="Morning Trail Run")
     d19 = _session(date(2026, 9, 19), 399.9, elapsed=423.7, hour=9, offset=7200, sid=2, dplus=2847,
                    name="Morning Trail Run")
     a, b = st.efforts([d18, d19])
-    assert (a.kind, a.day, a.caps, b.kind, b.day, b.caps) == ("very_long", date(2026, 9, 18), ((2, 45), (5, 65)),
-                                                             "very_long", date(2026, 9, 19), ((2, 45), (5, 65)))
-    caps = {k: (st.effort_window([a, b], date(2026, 9, k)) or {}).get("cap") for k in range(18, 27)}
-    assert caps == pytest.approx({18: 45, 19: 45, 20: 45, 21: 55, 22: 65, 23: 230/3, 24: 265/3, 25: None, 26: None})
-    assert st.effort_window([a, b], date(2026, 9, 24))["effort"].session_id == 2
+    assert (a.kind, a.day, a.last, b.kind, b.day, b.last) == ("very_long", date(2026, 9, 18), 3,
+                                                             "very_long", date(2026, 9, 19), 3)
+    tones = {k: (st.effort_window([a, b], date(2026, 9, k)) or {}).get("tone") for k in range(18, 27)}
+    assert tones == {18: "warn", 19: "warn", 20: "warn", 21: "warn", 22: "warn", 23: None, 24: None, 25: None,
+                     26: None}
+    assert st.effort_window([a, b], date(2026, 9, 22))["effort"].session_id == 2
     # each past day of the 14-day history saw what it knew: the 18th alone on the 18th, both from the 19th
     rows, sessions = _rich(today=date(2026, 9, 26)), _runs(today=date(2026, 9, 26), start=5) + [d18, d19]
     hist = {d: score["value"] for d, _, score in _history(rows, sessions, today=date(2026, 9, 26))}
-    assert [hist[date(2026, 9, k)] for k in (17, 18, 21, 22, 24, 25)] == [100, 45, 55, 65, 88, 100]
+    assert [hist[date(2026, 9, k)] for k in (17, 18, 21, 22, 23, 25)] == [100, 69, 69, 69, 100, 100]
 
 
 async def test_the_method_folds_and_their_sources(as_user, db_session, test_user, monkeypatch):

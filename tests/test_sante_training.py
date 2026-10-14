@@ -1,4 +1,5 @@
 """The training model (sante_training): weeks, heart-rate bounds, easy-pace HR (no Relative Effort, v4.4)."""
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -51,6 +52,13 @@ def test_weeks_match_activites():
     assert w[-2]["minutes"] == 45 and w[-3]["minutes"] == 230 and w[-3]["longest"] == 200
     assert w[-2]["href"] == "/activities?page=1#week-2026-09-28"
     assert w[0]["href"] == "/activities?page=2#week-2026-07-20"
+    # on the athlete's clock (2026-10-14): Sunday 4 at 22:30 UTC is Monday 5 at 00:30 in Paris, that week's
+    from zoneinfo import ZoneInfo
+    late = replace(S(2, minutes=20, id=77), start=datetime(2026, 10, 4, 22, 30, tzinfo=timezone.utc))
+    paris = st.weeks(ss + [late], now, zone=ZoneInfo("Europe/Paris"))
+    assert (paris[-1]["minutes"], paris[-2]["minutes"]) == (110, 45)
+    assert (st.weeks(ss + [late], now)[-1]["minutes"], st.local_monday(late.start, ZoneInfo("Europe/Paris"))) == (
+        90, date(2026, 10, 5))
 
 
 def test_easy_runs_and_theil_sen():

@@ -116,11 +116,20 @@ def test_new_means_bands_and_alerts_never_use_unfiltered_history():
         rows["hrv"][d] = (50, {"method": "ln_mean_main", "scope": ASLEEP, "n": 20}, "Garmin")
         rows["hr_night"][d] = (80, {"method": "points", "scope": ASLEEP}, "Garmin")
     ns = nights.build_nights(rows, D)
-    assert nights.mean7(ns, "hrv", D) == {"value": pytest.approx(50), "n": 3}
-    assert nights.mean7(ns, "hr", D) == {"value": 80, "n": 3}
-    assert nights.normal(ns, "hrv", D) is None  # 3 filtered nights, not 25 comparable nights
+    # 2026-10-14 (the series with the most nights, not the latest: a one-off night of another calculation is no
+    # upgrade): the unfiltered series, still measured this week, holds — never mixed with the 3 filtered nights
+    assert nights.mean7(ns, "hrv", D) == {"value": pytest.approx(100), "n": 4}
+    assert nights.mean7(ns, "hr", D) == {"value": 45, "n": 4}
+    assert nights.normal(ns, "hrv", D)["center"] == pytest.approx(100)  # its own 17 nights, none filtered
     assert nights.illness_alert(ns, D) is None
-    assert nights.rest_hr(ns, D) == 80
+    assert nights.rest_hr(ns, D) == 45
+    for k in range(3, 8):  # the old calculation no longer measured for 7 days: the filtered series takes over
+        d = D - timedelta(days=k)
+        rows["hrv"][d] = (50, {"method": "ln_mean_main", "scope": ASLEEP, "n": 20}, "Garmin")
+        rows["hr_night"][d] = (80, {"method": "points", "scope": ASLEEP}, "Garmin")
+    ns = nights.build_nights(rows, D)
+    assert nights.mean7(ns, "hrv", D) == {"value": pytest.approx(50), "n": 7}
+    assert nights.normal(ns, "hrv", D) is None and nights.rest_hr(ns, D) == 80  # 8 filtered nights, no baseline
 
 
 def test_respiratory_context_cannot_compare_filtered_values_with_an_unfiltered_band():

@@ -4,13 +4,11 @@ autumn clock change), the « Sleep HR » line kept only for main sleeps, naps on
 local ISO windows with their guards, the 24-h total, and the readers that still
 accept the rows written before."""
 from datetime import date, datetime, timedelta
-from types import SimpleNamespace
 
 from app.services import coros
+from app.services import health
 from app.services.health import (
-    aggregate_days,
     feel_of,
-    main_episode,
     main_window,
     nap_daily,
     nap_guard,
@@ -177,18 +175,12 @@ def test_old_rows_are_still_read():
 
 
 def test_sample_only_sources_split_episodes_on_an_hour_awake():
-    """The hour rule merged a morning nap into the night; episodes keep it out (H: a gap ≥ 60 min)."""
-    t = lambda h, m=0, day=7: datetime(2026, 10, day, h, m)  # noqa: E731
-    row = lambda a, b, kind="core": SimpleNamespace(start_at=a, end_at=b, value=0, source="Phone", kind=kind)  # noqa: E731
-    night = [row(t(23, 35, 6), t(2, 0)), row(t(2, 0), t(5, 38), "rem")]
-    nap = [row(t(6, 42), t(9, 7))]
-    out = aggregate_days("sleep", night + nap, [D])[D]
-    assert out["value"] == 363 and out["details"]["wake"] == "05:38"
-    assert out["details"]["main_end"] == "2026-10-07T05:38"
-    close = [row(t(6, 20), t(7, 0))]  # back asleep after 42 min: the same episode
-    assert aggregate_days("sleep", night + close, [D])[D]["details"]["wake"] == "07:00"
-    assert main_episode([(t(14, 0), t(15, 0))], D) is None  # an afternoon episode is never the night
-    # a watch's samples are its timeline only: never aggregated into the night
-    watch = [SimpleNamespace(start_at=r.start_at, end_at=r.end_at, value=0, source="Garmin", kind=r.kind)
-             for r in night]
-    assert aggregate_days("sleep", watch, [D]) == {}
+    """Was: a sample-only source's night split into episodes on an hour awake (the morning nap kept out). That
+    source (the Apple import PaceForge had before) is gone (2026-10-14): the phone sends its nights whole
+    (apple_nights) and a watch's samples are its timeline only, so no night is built from samples any more; a
+    COROS night's main window still leaves the morning nap out (main_window, nap_guard)."""
+    assert not hasattr(health, "main_episode") and not hasattr(health, "aggregate_days")
+    window = main_window(D, {"main_start": "2026-10-06T23:35", "main_end": "2026-10-07T05:38"})
+    assert window == (datetime(2026, 10, 6, 23, 35), datetime(2026, 10, 7, 5, 38))
+    nap = (datetime(2026, 10, 7, 6, 42), datetime(2026, 10, 7, 9, 7))
+    assert nap_guard(D, [nap], window) == [nap]  # after the wake: a nap of its own, never the night

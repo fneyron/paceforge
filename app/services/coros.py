@@ -1906,20 +1906,26 @@ async def disconnect(db: AsyncSession, conn: CorosConnection) -> None:
 
 # ── settings status ─────────────────────────────────────────────────────────
 
+def link_flags(conn: CorosConnection) -> tuple[bool, str | None]:
+    """(needs_reauth, last_error) of a link as Réglages and Santé say them: tokens no configured key decrypts need
+    a reconnection (« reconnecte-toi », computed when read, never stored), a stored error in today's wording."""
+    readable = tokens_readable(conn)
+    return conn.needs_reauth or not readable, _said(conn.last_error) if readable else EXPIRED
+
+
 async def coros_status(db: AsyncSession, user_id: int) -> dict:
     conn = await connection_for(db, user_id)
     if conn is None:
         return {"connected": False}
     counts, latest = await _synced_measurements(db, user_id, SOURCE)
     sleep, hrv = latest.get("sleep"), latest.get("hrv")
-    readable = tokens_readable(conn)  # unreadable: « reconnecte-toi », computed here, never stored
-    error = _said(conn.last_error) if readable else EXPIRED
+    needs_reauth, error = link_flags(conn)
     hrv_note = f"Dernière VFC reçue : {hrv.strftime('%d/%m/%Y')}." if hrv else None
     if sleep and (hrv is None or hrv < sleep):
         hrv_note = f"VFC de la nuit du {sleep.strftime('%d/%m')} pas encore reçue." + (f" {hrv_note}" if hrv_note else "")
     return {
         "connected": True,
-        "needs_reauth": conn.needs_reauth or not readable,
+        "needs_reauth": needs_reauth,
         "last_sync_at": conn.last_sync_at,
         "last_sync_ago": _ago(conn.last_sync_at),
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))

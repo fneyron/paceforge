@@ -1,10 +1,9 @@
-"""Health data: daily aggregation, the fitness signal, migrations."""
+"""Health data: raw samples (a timeline only, never aggregated: 2026-10-14), the fitness signal, migrations."""
 
 import importlib.util
 import pathlib
 import re
 from datetime import date, datetime, timedelta
-from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
@@ -14,10 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user
 from app.models.health import HealthMetric
 from app.models.user import User
+from app.services import health
 from app.services.health import (
-    aggregate_days,
+    Sample,
     compute_form,
     current_form,
+    store_samples,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -30,43 +31,47 @@ async def as_user(client: AsyncClient, test_user: User):
     return client
 
 
-# ── daily aggregation ───────────────────────────────────────────────────────
+# ── raw samples: a timeline only (2026-10-14: no daily value is made from them) ──────────────
 
-def _row(start, end=None, value=0.0, source="", kind=""):
-    return SimpleNamespace(start_at=start, end_at=end or start, value=value, source=source, kind=kind)
-
-
-def test_hrv_night_window_then_daytime_fallback():
-    d = date(2026, 9, 30)
-    rows = [_row(datetime(2026, 9, 29, 23, 30), value=40), _row(datetime(2026, 9, 30, 4, 0), value=60),
-            _row(datetime(2026, 9, 30, 4, 0, 30), value=60, source="export"),  # same reading, other source
-            _row(datetime(2026, 9, 30, 18, 0), value=100),
-            _row(datetime(2026, 10, 1, 14, 0), value=30), _row(datetime(2026, 10, 1, 16, 0), value=50)]
-    out = aggregate_days("hrv", rows, [d, d + timedelta(days=1)])
-    assert out[d]["value"] == 50 and out[d]["n"] == 2
-    assert out[d + timedelta(days=1)]["value"] == 40 and out[d + timedelta(days=1)]["details"]["window"] == "journée"
+async def _stored(db, user, samples) -> tuple[dict, list]:
+    result = await store_samples(db, user.id, samples)
+    rows = (await db.execute(sa.select(HealthMetric).where(HealthMetric.user_id == user.id))).scalars().all()
+    return result, rows
 
 
-def test_sleep_one_source_per_night_and_naps_left_out():
-    d = date(2026, 9, 30)
+async def test_hrv_night_window_then_daytime_fallback(db_session: AsyncSession, test_user: User):
+    """Was: HRV samples aggregated into a day (the night window, else the daytime). Their only producer (the Apple
+    import PaceForge had before) is gone and a night's HRV comes whole (store_daily): HRV samples are kept, idempotently,
+    and never make a daily value."""
+    samples = [Sample("hrv", "", datetime(2026, 9, 29, 23, 30), datetime(2026, 9, 29, 23, 30), 40, "export"),
+               Sample("hrv", "", datetime(2026, 9, 30, 4, 0), datetime(2026, 9, 30, 4, 0), 60, "export")]
+    result, rows = await _stored(db_session, test_user, samples)
+    assert (result["inserted"], result["days"], rows) == (2, {}, [])
+    again, _ = await _stored(db_session, test_user, samples)
+    assert (again["inserted"], again["unchanged"]) == (0, 2)
+    assert not hasattr(health, "aggregate_days") and not hasattr(health, "reaggregate")
+
+
+async def test_sleep_one_source_per_night_and_naps_left_out(db_session: AsyncSession, test_user: User):
+    """Was: one source's samples per night, naps left out. Sleep samples are Garmin's stage intervals, the
+    hypnogram's timeline: never a night of their own (its main window is the night, store_daily), never a nap."""
     t = lambda h, m=0, day=30: datetime(2026, 9, day, h, m)  # noqa: E731
-    watch = [_row(t(23, 0, 29), t(2, 0), source="Watch", kind="core"),
-             _row(t(1, 30), t(3, 0), source="Watch", kind="deep"),  # overlaps core: counted once
-             _row(t(3, 0), t(6, 0), source="Watch", kind="rem")]
-    phone = [_row(t(22, 30, 29), t(7, 0), source="iPhone", kind="in_bed"),
-             _row(t(23, 0, 29), t(6, 30), source="iPhone", kind="asleep")]  # longer, but no stages
-    nap = [_row(t(14, 0), t(15, 0), source="Watch", kind="core")]
-    out = aggregate_days("sleep", watch + phone + nap, [d])[d]
-    assert out["value"] == 7 * 60 and out["source"] == "Watch"
-    phone_only = aggregate_days("sleep", [phone[0]], [d])[d]
-    assert phone_only["value"] == 510 and phone_only["details"]["from_in_bed"]
+    samples = [Sample("sleep", "core", t(23, 0, 29), t(2, 0), 180, "Garmin"),
+               Sample("sleep", "rem", t(3, 0), t(6, 0), 180, "Garmin"),
+               Sample("sleep", "core", t(14, 0), t(15, 0), 60, "Garmin")]
+    result, rows = await _stored(db_session, test_user, samples)
+    assert (result["by_metric"], result["days"], rows) == ({"sleep": 3}, {}, [])
+    assert not hasattr(health, "main_episode") and not hasattr(health, "sleep_episodes")
 
 
-def test_last_of_day_for_weight():
-    d = date(2026, 9, 30)
-    out = aggregate_days("weight", [_row(datetime(2026, 9, 30, 7), value=72.4),
-                                    _row(datetime(2026, 9, 30, 21), value=73.0)], [d])
-    assert out[d]["value"] == 73.0 and out[d]["n"] == 2
+async def test_last_of_day_for_weight(db_session: AsyncSession, test_user: User):
+    """Was: the day's last weight sample. The weight is the phone's (MobileDaily) or the typed one
+    (athlete_weight): a weight sample makes no daily row."""
+    samples = [Sample("weight", "", datetime(2026, 9, 30, 7), datetime(2026, 9, 30, 7), 72.4, "Balance"),
+               Sample("weight", "", datetime(2026, 9, 30, 21), datetime(2026, 9, 30, 21), 73.0, "Balance")]
+    result, rows = await _stored(db_session, test_user, samples)
+    assert (result["inserted"], result["days"], rows) == (2, {}, [])
+    assert not hasattr(health, "METRICS") and not hasattr(health, "_RANGES")
 
 
 # ── fitness signal ──────────────────────────────────────────────────────────

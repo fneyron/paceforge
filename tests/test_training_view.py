@@ -149,6 +149,46 @@ async def test_a_week_reads_the_same_in_a1_and_in_its_list_heading(client: Async
     assert heading.replace(" ", " ") == f"{week('distance')} · {week('dplus')} · {week('duree')}"
 
 
+async def test_the_weeks_run_monday_to_sunday_on_the_athletes_clock(db_session: AsyncSession, test_user: User):
+    """« Semaines » counts the weeks as the list's headings do (2026-10-14: it counted UTC Mondays): a run at 00:30
+    on Monday in Paris (22:30 UTC on Sunday) is that Monday's week; for an athlete in New York the same moment is
+    Sunday evening, the week before."""
+    now = datetime(2026, 10, 14, 12, tzinfo=timezone.utc)  # a Wednesday
+    monday = date(2026, 10, 12)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=991_000, sport_type="Run", name="Minuit",
+                            start_date=datetime(2026, 10, 11, 22, 30, tzinfo=timezone.utc), distance=10_000,
+                            moving_time=3000, elapsed_time=3000, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    weeks, first = await tv.week_totals(db_session, test_user.id, None, now)
+    assert (weeks[-1]["monday"], weeks[-1]["count"], weeks[-2]["count"], first) == (monday, 1, 0, monday)
+    test_user.timezone = "America/New_York"
+    await db_session.flush()
+    weeks, first = await tv.week_totals(db_session, test_user.id, None, now)
+    assert (weeks[-1]["count"], weeks[-2]["count"], first) == (0, 1, monday - timedelta(days=7))
+
+
+async def test_one_activites_load_reads_the_athletes_clock_once(client: AsyncClient, db_session: AsyncSession,
+                                                                test_user: User, monkeypatch):
+    """The page resolves the athlete's clock once (sante_training.athlete_clock, Santé's) and passes it to the 7 /
+    28 days, the list, the spikes and « Semaines » (the second back-end review, 2026-10-14: without a zone set, one
+    load read the activities' offsets four times, 23 statements against 15)."""
+    from app.services import sante_training as st
+
+    calls = []
+    real = st.athlete_clock
+
+    async def counted(*a, **k):
+        calls.append(a[1])
+        return await real(*a, **k)
+    monkeypatch.setattr(st, "athlete_clock", counted)
+    await _add_runs(db_session, test_user, datetime.now(timezone.utc).date() - timedelta(days=3), n=12)
+    html = await _week_page(client, db_session, test_user)
+    assert 'id="semaines"' in html and calls == [test_user.id]
+    calls.clear()
+    await _week_page(client, db_session, test_user, "/activities?sport=run")  # « FC en footing » too
+    assert calls == [test_user.id]
+
+
 async def test_the_races_are_read_without_their_course(db_session: AsyncSession, test_user: User):
     """R1: Activités, Santé and the race page list the races without loading
     the course, plan or weather JSON (≈ 1 MB a 100-mile course)."""
