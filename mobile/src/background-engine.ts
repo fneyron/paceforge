@@ -175,6 +175,8 @@ export function createEngine(deps: EngineDeps) {
     if (plan.daysBack === 0) { await deps.saveState({ ...state, tokens: plan.tokens }); return 'unchanged'; }
 
     const hashes = { ...state.hashes };
+    // The stored pairing the credentials come from, re-read if the app rotated the token.
+    let base: Pair = pair;
     let credentials: Credentials = { token: pair.token, prev_token: pair.prev_token };
     let refused: unknown = null, quota = false, dailyDone = false, sent = 0, daily: HealthResult | null = null;
     const report = await syncHealth({
@@ -191,7 +193,7 @@ export function createEngine(deps: EngineDeps) {
           .catch(e => { refused = e; throw e; });
         const keep = async (next: Credentials) => {
           credentials = next;
-          await deps.savePair({ ...pair, token: next.token, prev_token: next.prev_token });
+          await deps.savePair({ ...base, token: next.token, prev_token: next.prev_token });
         };
         try {
           return await authorized(credentials, request, keep);
@@ -201,6 +203,7 @@ export function createEngine(deps: EngineDeps) {
           if (!(e instanceof ApiError) || e.status !== 401) throw e;
           const latest = (await deps.load().catch(() => null))?.pair;
           if (!latest || latest.user_id !== pair.user_id || latest.token === credentials.token) throw e;
+          base = latest; // its rotation date and name, not the ones read when the run started
           credentials = { token: latest.token, prev_token: latest.prev_token };
           return authorized(credentials, request, keep);
         }

@@ -199,12 +199,12 @@ test('after a rotation the server never stored, the previous token is retried on
 test('a token rotated by the app while a run was suspended is picked up: no reconnect', async () => {
   const tokens: string[] = [];
   const f = fixture();
-  f.stored.pair = { token: 'old', user_id: 1, name: 'Florent' };
+  f.stored.pair = { token: 'old', user_id: 1, name: 'Florent', rotated_at: '2026-08-01T00:00:00Z' };
   const base = f.deps.send, load = f.deps.load;
   let loads = 0;
   f.deps.load = async () => {
     // The run starts with the old token; the app stores the rotated one meanwhile.
-    if (loads++ === 1) f.stored.pair = { token: 'new', user_id: 1, name: 'Florent', prev_token: 'old' };
+    if (loads++ === 1) f.stored.pair = { token: 'new', user_id: 1, name: 'Flo', prev_token: 'old', rotated_at: '2026-10-14T07:59:00Z' };
     return load();
   };
   f.deps.send = async (path, body, token, timeout, readAt) => {
@@ -215,6 +215,8 @@ test('a token rotated by the app while a run was suspended is picked up: no reco
   const engine = createEngine(f.deps);
   assert.equal(await engine.request('task'), 'sent');
   assert.deepEqual(tokens.slice(0, 2), ['old', 'new']);
+  // Kept from the pairing read again: its rotation date (no early rotation) and name.
+  assert.deepEqual(f.stored.pair, { token: 'new', user_id: 1, name: 'Flo', prev_token: undefined, rotated_at: '2026-10-14T07:59:00Z' });
   assert.equal(f.stored.receipt?.reconnect, false);
   assert.ok(!f.calls.includes('disable'));
   // Without a newer stored token, a refused token still asks to reconnect.
