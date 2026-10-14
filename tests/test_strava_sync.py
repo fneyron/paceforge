@@ -3,8 +3,10 @@ the app's quota, a failed first import tried again, one Strava → Activity buil
 weeks and on one clock, the « Synchroniser » cooldown."""
 import asyncio
 import logging
+import os
 import re
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock
@@ -12,8 +14,9 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.crypto import encrypt_secret
@@ -75,25 +78,42 @@ def task_session(db_session: AsyncSession, monkeypatch):
 @pytest.fixture
 async def task_db(tmp_path, monkeypatch):
     """A database of its own whose sessions really commit and roll back, a fresh engine per task as in production
-    (so a task can run in a thread, as Celery runs it)."""
+    (so a task can run in a thread, as Celery runs it): an SQLite file, or a schema of its own when the suite runs
+    on PostgreSQL (TEST_DATABASE_URL), production's database."""
     import app.database
 
-    url = f"sqlite+aiosqlite:///{tmp_path}/tasks.db"
-    engine = create_async_engine(url)
+    url, options, schema = f"sqlite+aiosqlite:///{tmp_path}/tasks.db", {}, None
+    server = os.getenv("TEST_DATABASE_URL", "")
+    if server.startswith("postgresql"):
+        schema = f"a1_tasks_{uuid.uuid4().hex[:12]}"
+        url, options = server, {"poolclass": NullPool, "connect_args": {"server_settings": {"search_path": schema}}}
+        await _on_server(server, f'CREATE SCHEMA "{schema}"')
+    engine = create_async_engine(url, **options)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await engine.dispose()
 
     @asynccontextmanager
     async def session():
-        task_engine = create_async_engine(url)
+        task_engine = create_async_engine(url, **options)
         try:
             async with async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)() as s:
                 yield s
         finally:
             await task_engine.dispose()
     monkeypatch.setattr(app.database, "get_task_session", session)
-    return session
+    yield session
+    if schema:
+        await _on_server(server, f'DROP SCHEMA "{schema}" CASCADE')
+
+
+async def _on_server(url: str, statement: str) -> None:
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(statement))
+    finally:
+        await engine.dispose()
 
 
 async def _own_app(db: AsyncSession, user: User, client_id="4242", sub=None, done=True) -> User:
@@ -107,7 +127,7 @@ async def _own_app(db: AsyncSession, user: User, client_id="4242", sub=None, don
 
 async def _athlete(db: AsyncSession, athlete_id: int, **fields) -> User:
     user = User(strava_athlete_id=athlete_id, strava_access_token="at", strava_refresh_token="rt",
-                strava_token_expires_at=9999999999, firstname="A", **fields)
+                strava_token_expires_at=2147483000, firstname="A", **fields)
     db.add(user)
     await db.flush()
     return user
@@ -1118,12 +1138,14 @@ async def test_synchroniser_asks_strava_once_a_minute(as_user, db_session, test_
     assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 0, "errors": []}
     assert fetch.await_count == 1
     assert "last_strava_sync" not in str(as_user.cookies.get("paceforge_session"))
-    # a failed attempt can be tried again at once
+    # a failed attempt can be tried again at once (last: its request rolls the test's session back, and the fixture
+    # rows with it, so nothing is saved after it)
     strava_state.release(f"manual:{test_user.id}")
     fetch.side_effect = httpx.ConnectError("down")
     assert (await as_user.post("/api/sync", headers=headers)).json()["errors"]
-    fetch.side_effect, fetch.return_value = None, [_data(795_001, datetime.now(timezone.utc))]
-    assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 1, "errors": []}
+    fetch.side_effect = None
+    assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 0, "errors": []}
+    assert fetch.await_count == 3  # asked again at once
 
 
 async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, db_session, test_user, monkeypatch):
