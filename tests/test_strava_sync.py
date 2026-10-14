@@ -303,6 +303,29 @@ async def test_a_token_endpoint_failure_is_tried_again_never_taken_for_a_refusal
 
 # ── the first import, one builder, the athlete's zone ────────────────────────
 
+async def test_a_failed_first_import_shows_where_the_watches_errors_do(client: AsyncClient, db_session, test_user,
+                                                                       monkeypatch):
+    """Review D11: the first import's failure is strava_status' last_error, the key the connection page and the
+    app's list of connections already read for the watches (no template changed): /connections/strava shows its
+    « La synchronisation est à vérifier… » note, the app's list says « attention »; Réglages are unchanged."""
+    from app.dependencies import get_optional_user
+
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    await _own_app(db_session, test_user, done=False)
+    overrides = client._transport.app.dependency_overrides
+    overrides[get_current_user] = overrides[get_optional_user] = lambda: test_user
+    note = "La synchronisation est à vérifier. Ouvre « Options et aide » pour la relancer."
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        async def shown():
+            providers = (await c.get("/mobile/connections?nonce=" + "a" * 64,
+                                     headers={"accept": "application/json"})).json()["providers"]
+            return note in (await c.get("/connections/strava")).text, providers["strava"]
+        assert await shown() == (False, "connected")
+        strava_state.initial_failed(test_user.id, "rate_limited")
+        assert await shown() == (True, "attention")
+        assert "nouvel essai automatique" not in (await c.get("/settings")).text
+
+
 async def test_the_first_imports_details_stop_at_the_quota(db_session, test_user, task_session, monkeypatch):
     """One request per activity for its detail: past the app's 80 %, the rest keep the list's data (the base code
     asked on, each answer a 429)."""
@@ -603,7 +626,7 @@ async def test_the_round_starves_nobody_and_spares_a_live_apps_quiet_athletes(db
 
 async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, monkeypatch):
     """Base code: three failures (a 429…) left initial_sync_done False, which the poll's filter excluded forever,
-    Réglages still saying « Première synchro en cours… ». Now the failure is kept (strava_status: sync_error), and
+    Réglages still saying « Première synchro en cours… ». Now the failure is kept (strava_status: last_error), and
     the round queues the import again after 1 h, 2 h, 4 h… (24 h at most)."""
     from app.tasks import initial_sync as task
     from app.tasks import poll_activities
@@ -622,7 +645,7 @@ async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, mon
     monkeypatch.setattr(StravaService, "get_all_activities_since", AsyncMock(side_effect=StravaRateLimitError()))
     assert (await run())["error"] == "rate_limited"
     status = strava_status(await user())
-    assert status["connected"] and status["sync_error"] == "rate_limited"
+    assert status["connected"] and status["last_error"] == "Strava a limité la première synchro ; nouvel essai automatique."
     assert timedelta(minutes=59) < status["sync_retry_at"] - datetime.now(timezone.utc) <= timedelta(hours=1)
     assert strava_state.read(strava_state.initial_lock(uid)) is None  # not left running
 
@@ -648,7 +671,7 @@ async def test_a_failed_first_import_is_queued_again_later_and_said(task_db, mon
     assert (await run())["synced"] == 0
     done = await user()
     assert done.initial_sync_done and done.last_activity_poll_at is not None
-    assert strava_state.initial_failure(uid) is None and strava_status(done)["sync_error"] is None
+    assert strava_state.initial_failure(uid) is None and strava_status(done)["last_error"] is None
     assert (await run())["status"] == "already_done"  # a copy the round queued meanwhile
 
 

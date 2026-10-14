@@ -467,7 +467,8 @@ def strava_status(user: User) -> dict:
         # stored keys Strava refused: say so and offer the wizard
         return {"connected": False, "bad_keys": user.has_own_strava_app and not user.strava_credentials_valid,
                 "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready}
-    # a first import that failed (Strava's quota, an error): the round tries it again at `sync_retry_at`
+    # a first import that failed (Strava's quota, an error), tried again by the round at `sync_retry_at`: as the
+    # watches' last_error, read by /connections/strava (« La synchronisation est à vérifier… ») and the app's list
     failed = None
     if not user.initial_sync_done:
         failed = strava_state.initial_failure(user.id)
@@ -477,9 +478,15 @@ def strava_status(user: User) -> dict:
         "own_app": user.has_own_strava_app, "shared_ready": settings.strava_shared_ready,
         "last_sync_at": user.last_activity_poll_at,
         "last_sync_ago": _ago(user.last_activity_poll_at),
-        "sync_error": failed.get("error") if failed else None,  # "rate_limited" | "failed"
+        "last_error": FIRST_IMPORT_ERRORS.get(failed.get("error"), FIRST_IMPORT_ERRORS["failed"]) if failed else None,
         "sync_retry_at": datetime.fromtimestamp(failed.get("next_at", 0), timezone.utc) if failed else None,
     }
+
+
+FIRST_IMPORT_ERRORS = {  # strava_status' last_error (no template prints it yet: the interface pass decides)
+    "rate_limited": "Strava a limité la première synchro ; nouvel essai automatique.",
+    "failed": "La première synchro a échoué ; nouvel essai automatique.",
+}
 
 
 async def disconnect(db: AsyncSession, user: User) -> None:
