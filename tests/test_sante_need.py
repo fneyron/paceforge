@@ -37,14 +37,19 @@ def _asleep(rows: dict, minutes: dict) -> dict:
 
 # ── the need: 8 h, never asked; the sleep owed said apart ───────────────────
 
+def _owed(deficit: dict) -> dict:
+    """What a deficit says (its raw value and noise floor apart)."""
+    return {k: deficit[k] for k in ("minutes", "n", "raced", "days", "text")}
+
+
 def test_the_need_is_8_h_and_a_short_week_is_said_apart():
     """7h20 every night: 40 min short each of the 7 nights, the sleep owed is 4h40, said in hours, never added to
     the need (it was a 9-h need: 8 h + a quarter of it, 1 h at most); 7h20 is 92 % of 8 h, « suffisant » (from
     7 h: it read « un peu court » against the 9 h). 8 h
     every night: nothing owed."""
     rows = night_rows(range(0, 20))
-    assert sl.deficit(_nights(rows), D) == {"minutes": 280, "n": 7, "days": 7,
-                                            "text": f"manque estimé sur 7 jours{NB}: 4h40"}
+    assert _owed(sl.deficit(_nights(rows), D)) == {"minutes": 280, "n": 7, "raced": 0, "days": 7,
+                                                   "text": f"manque estimé sur 7 jours{NB}: 4h40"}
     day = _day(rows)
     assert day["tst24"] == 440 and "need" not in day
     dial = sante.sleep_dial(day["tst24"], sl.NEED_DEFAULT, "#sommeil")
@@ -54,12 +59,14 @@ def test_the_need_is_8_h_and_a_short_week_is_said_apart():
 
 
 def test_a_long_night_repays_the_short_ones_and_a_night_not_measured_is_never_0_h():
-    """7h20 this morning, 3 nights of 9 h and 3 of 7 h: 40 − 3 × 60 + 3 × 60 = 40 min owed; a night not recorded
-    is never 0 h: over the 4 nights measured, the 7 nights' estimate is 7/4 of their sum (owner, 2026-10-14:
-    scientific basis — they were skipped, so the debt halved when the watch was worn one night in two); under 4
-    nights of the 7, not estimable."""
+    """7h20 this morning, 3 nights of 9 h and 3 of 7 h: 40 − 3 × 60 + 3 × 60 = 40 min owed, under its noise floor
+    (1,28 · σ_T · 7/√7 = 93 min for a σ_T of 27 min): « none » (owner, 2026-10-14: scientific basis — a sleeper who
+    meets 8 h on average showed a deficit on half the mornings); a night not recorded is never 0 h: over the 4
+    nights measured, the 7 nights' estimate is 7/4 of their sum (they were skipped, so the debt halved when the
+    watch was worn one night in two); under 4 nights of the 7, not estimable."""
     rows = _asleep(night_rows(range(0, 20)), {1: 540, 2: 540, 3: 540, 4: 420, 5: 420, 6: 420, 7: 420})
-    assert sl.deficit(_nights(rows), D)["minutes"] == 40
+    repaid = sl.deficit(_nights(rows), D)
+    assert (repaid["raw"], round(repaid["floor"]), repaid["minutes"]) == (40, 93, 0)
     for k in (1, 2, 3):
         for metric in rows:
             rows[metric].pop(D - timedelta(days=k), None)
@@ -82,15 +89,21 @@ def test_a_big_effort_no_longer_adds_to_the_need():
 
 def test_a_night_spent_racing_counts_as_its_naps_only():
     """A race through the night (01:00 → 05:00 covered) leaves no main night: its day is not skipped but counted as
-    its naps (Kishi 2024), 8 h owed; the wake days a 25-h race ran through, from its effort."""
+    its naps (Kishi 2024), 8 h owed, never scaled up by the other nights' 7/n (owner, 2026-10-14: scientific
+    basis — 3 nights of 8 h and a raced one read 14h00, and became estimable with 3 measured nights); the wake
+    days a 25-h race ran through, from its effort."""
     rows = night_rows(range(0, 20), asleep=480)
     for metric in rows:
         rows[metric].pop(D - timedelta(days=2), None)
     nights = _nights(rows)
     assert sl.deficit(nights, D)["minutes"] == 0  # not recorded: 6 nights, none short
     raced = frozenset({D - timedelta(days=2)})
-    assert sl.deficit(nights, D, raced) == {"minutes": 480, "n": 7, "days": 7,
-                                            "text": f"manque estimé sur 7 jours{NB}: 8h00"}
+    assert _owed(sl.deficit(nights, D, raced)) == {"minutes": 480, "n": 6, "raced": 1, "days": 7,
+                                                   "text": f"manque estimé sur 7 jours{NB}: 8h00"}
+    for k in (1, 3, 4):  # 3 nights of 8 h measured and the raced one: not estimable (4 measured nights needed)
+        for metric in rows:
+            rows[metric].pop(D - timedelta(days=k), None)
+    assert sl.deficit(_nights(rows), D, raced)["text"] == "manque non estimable (3/7 nuits)"
     start = datetime(2026, 10, 2, 21, 0)  # Friday 21:00 → Sunday 0:00 local: the nights of Saturday and Sunday
     race = Effort(session_id=1, kind="ultra", minutes=27 * 60, end=start + timedelta(hours=27), day=date(2026, 10, 3))
     assert st.raced_nights([race]) == {date(2026, 10, 3)}  # Sunday's 01:00 → 05:00 not covered: its night slept
@@ -107,20 +120,23 @@ def test_a_rendormi_nap_counts_once_with_its_own_night():
     rows["nap"][y] = (120, {"windows": [[f"{y}T07:00", f"{y}T09:00"]]}, "Garmin")  # back to sleep 2 h
     nights = _nights(rows)
     assert nt.slept_before_wake(nights, y) == 420 and nt.day_tst24(nights, D) == 480  # never the next morning's
-    assert sl.deficit(nights, D)["minutes"] == 60  # 1 h short, once
+    assert sl.deficit(nights, D)["raw"] == 60  # 1 h short, once (under its noise floor: « none »)
     rows["nap"][y] = (120, {"windows": [[f"{y}T15:00", f"{y}T17:00"]]}, "Garmin")  # an afternoon nap
     nights = _nights(rows)
     assert nt.slept_before_wake(nights, y) == 300 and nt.slept_before_wake(nights, D) == 600
-    assert sl.deficit(nights, D)["minutes"] == 60  # 3 h short yesterday, 2 h over this morning: 1 h
+    assert sl.deficit(nights, D)["raw"] == 60  # 3 h short yesterday, 2 h over this morning: 1 h
 
 
 # ── the sleep owed on the Sommeil card ──────────────────────────────────────
 
 def test_the_deficit_says_the_sleep_owed_in_hours():
-    """The Sommeil card's data (its wording on the page: a GUI proposal): « manque estimé sur 7 jours : 1h00 »,
-    « pas de manque sur 7 jours », « manque non estimable (3/7 nuits) »; never a « besoin » raised by it."""
-    short = sl.deficit(_nights(_asleep(night_rows(range(0, 20), asleep=480), {0: 420})), D)
-    assert short["text"] == f"manque estimé sur 7 jours{NB}: 1h00"
+    """The Sommeil card's data (its wording on the page: a GUI proposal): « manque estimé sur 7 jours : 3h00 »,
+    « pas de manque sur 7 jours » (also under its noise floor: 1 h short once is within a week's own scatter, owner,
+    2026-10-14: scientific basis), « manque non estimable (3/7 nuits) »; never a « besoin » raised by it."""
+    short = sl.deficit(_nights(_asleep(night_rows(range(0, 20), asleep=480), {0: 300})), D)
+    assert short["text"] == f"manque estimé sur 7 jours{NB}: 3h00"
+    once = sl.deficit(_nights(_asleep(night_rows(range(0, 20), asleep=480), {0: 420})), D)
+    assert (once["raw"], once["text"]) == (60, "pas de manque sur 7 jours")
     assert sl.deficit(_nights(night_rows(range(0, 20), asleep=500)), D)["text"] == "pas de manque sur 7 jours"
     assert sl.deficit(_nights(night_rows([0, 2, 5], asleep=420)), D)["text"] == "manque non estimable (3/7 nuits)"
 

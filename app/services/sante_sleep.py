@@ -56,6 +56,7 @@ The nights are drawn as they are: no race, no event marker, no tag glyph on a
 chart (the table names the tags).
 """
 import math
+import statistics
 from datetime import date, timedelta
 
 from app.services import nights as nt
@@ -69,11 +70,14 @@ REF_MIN = 7 * 60  # lower threshold for sufficient sleep (Watson 2015a; Hirshkow
 # learnt from the athlete's own nights, never raised by an effort or the sleep owed: the middle of the 7–9 h of
 # Hirshkowitz 2015 and Watson 2015, Van Dongen 2003's 8.16 h (a need of 7 to 9 h set in Réglages: a proposal)
 NEED_DEFAULT = 8 * 60  # (H) the middle of 7–9 h
-# the sleep owed over the last 7 nights, said in hours, never added to the need: D7 = max(0, 7/n · Σ (N − 24 h))
-# over the n nights measured (a night not measured is never 0 h; Van Dongen 2003: the deficit of a week of short
-# nights adds up; Kitamura 2016: it takes days to repay), only from 4 of the 7 nights measured (a sparse week says
-# too little: Walsh 2021)
+# the sleep owed over the last 7 nights, said in hours, never added to the need: D7 = max(0, Σ_raced (N − naps) +
+# (7 − r)/n · Σ (N − 24 h)) over the n nights measured and the r raced through (a night not measured is never 0 h, a
+# raced night never scaled up; Van Dongen 2003: the deficit of a week of short nights adds up; Kitamura 2016: it takes
+# days to repay), only from 4 measured nights (a sparse week says too little: Walsh 2021)
 DEFICIT_DAYS, DEFICIT_MIN_NIGHTS = 7, 4  # (H)
+# owner, 2026-10-14: scientific basis — a deficit under its own noise is « none »: D7 must exceed 1.28 standard errors of
+# a 7-night estimate from n measured nights (σ_T·7/√n), σ_T shrunk towards 45 min (H, a night-to-night SD of the 24 h)
+DEFICIT_Z, TST_SD_PRIOR = 1.28, 45.0  # (H)
 
 # the nights' table's words for its marks (« À noter »): no outing named (v4.3), plain words (v4.4); the others are
 # nights.TAG_WORDS'
@@ -235,26 +239,47 @@ def phases(stages: dict | None) -> dict | None:
 def deficit(nights: dict, d: date, raced=frozenset()) -> dict:
     """The sleep owed over the last 7 nights (the mornings of d − 6 → d), in minutes, never added to the need
     (owner, 2026-10-14: scientific basis — it was summed over the measured nights only, so it halved when the watch
-    was worn one night in two, then a quarter of it was added to the need): D7 = max(0, 7/n · Σ (8 h − 24 h)) over
-    the n nights measured (each nap once: nights.day_tst24), a night spent racing (`raced`: an effort through
-    01:00 → 05:00, sante_training.raced_nights) counted as its naps only (Kishi 2024), a night not measured never
-    0 h; only from 4 of the 7 nights measured. {minutes (to 10 min; None: not estimable), n, days, text}."""
-    gaps = []
+    was worn one night in two, then a quarter of it was added to the need):
+    D7 = max(0, Σ_raced (8 h − naps) + (7 − r)/n_m · Σ_measured (8 h − 24 h)): a night spent racing (`raced`: an
+    effort through 01:00 → 05:00, sante_training.raced_nights; Kishi 2024) counts its own sleep, never scaled up;
+    the n_m measured nights stand for the 7 − r others (a night not measured is never 0 h); only from 4 measured
+    nights (H). Under 1.28 · σ_T · 7/√n_m it is « none » (H: about 2h30 for σ_T 45 min and 7 nights): a sleeper who
+    meets 8 h on average would show a positive D7 on half the mornings; σ_T is the athlete's SD of the 24 h over
+    the baseline days (−67 → −8), shrunk towards 45 min as the bands are (nights.shrunk_sd).
+    {minutes (to 10 min; None: not estimable), n (measured), raced, days, raw (D7 before the noise floor, min),
+    floor (min), text}."""
+    raced_gap, gaps = 0.0, []
+    r = 0
     for k in range(DEFICIT_DAYS):
         x = d - timedelta(days=k)
         slept = nt.slept_before_wake(nights, x)
-        if slept is None and x in raced:
-            slept = sum(m for _, _, m in nt.day_naps(nights, x)) + nt.bar_nap_min(nights, x)
-        if slept is not None:
+        if x in raced:
+            r += 1
+            own = slept if slept is not None else (sum(m for _, _, m in nt.day_naps(nights, x))
+                                                    + nt.bar_nap_min(nights, x))
+            raced_gap += NEED_DEFAULT - own
+        elif slept is not None:
             gaps.append(NEED_DEFAULT - slept)
     n = len(gaps)
+    out = {"n": n, "raced": r, "days": DEFICIT_DAYS}
     if n < DEFICIT_MIN_NIGHTS:
-        return {"minutes": None, "n": n, "days": DEFICIT_DAYS,
+        return {**out, "minutes": None, "raw": None, "floor": None,
                 "text": f"manque non estimable ({n}/{DEFICIT_DAYS} nuits)"}
-    minutes = int(10 * math.floor(max(0.0, DEFICIT_DAYS / n * sum(gaps)) / 10 + 0.5))
-    return {"minutes": minutes, "n": n, "days": DEFICIT_DAYS,
+    raw = max(0.0, raced_gap + (DEFICIT_DAYS - r) / n * sum(gaps))
+    floor = DEFICIT_Z * tst_spread(nights, d) * DEFICIT_DAYS / math.sqrt(n)
+    minutes = int(10 * math.floor(raw / 10 + 0.5)) if raw > floor else 0
+    return {**out, "minutes": minutes, "raw": raw, "floor": floor,
             "text": f"manque estimé sur 7 jours{viz.NBSP}: {viz.hm(minutes)}" if minutes else
             "pas de manque sur 7 jours"}
+
+
+def tst_spread(nights: dict, d: date) -> float:
+    """σ_T: the SD of the athlete's 24 h over the baseline days (−67 → −8; nights.baseline_until), shrunk towards
+    45 min (H) with the bands' prior weight: √((n·s² + 7·45²)/(n + 7)); 45 min without two of them."""
+    until = nt.baseline_until(d)
+    vals = [v for k in range(1, nt.BAND_DAYS + 1) if (v := nt.day_tst24(nights, until - timedelta(days=k))) is not None]
+    s = statistics.stdev(vals) if len(vals) > 1 else 0.0
+    return nt.shrunk_sd(s, len(vals), TST_SD_PRIOR)
 
 
 def hero_day(nights: dict, today: date) -> date | None:

@@ -39,8 +39,8 @@ def test_the_deficit_waits_for_4_of_the_7_nights():
     nights = history(40, 420)
     for k in range(4, 8):  # 3 of the 7 left: D−1, D−2, D−3
         nights.pop(D - timedelta(days=k))
-    assert sl.deficit(nights, D) == {"minutes": None, "n": 3, "days": 7,
-                                     "text": "manque non estimable (3/7 nuits)"}
+    thin = sl.deficit(nights, D)
+    assert (thin["minutes"], thin["n"], thin["days"], thin["text"]) == (None, 3, 7, "manque non estimable (3/7 nuits)")
     nights[D - timedelta(days=4)] = replace(nights[D - timedelta(days=1)], day=D - timedelta(days=4))
     assert sl.deficit(nights, D)["minutes"] == 7 * 60  # 7/4 × 4 × 1 h
 
@@ -49,8 +49,9 @@ def test_chronic_short_sleep_is_owed_never_learnt():
     """6 h every night (none yet this morning): 2 h owed each night, 14 h over the 7 (it never lowered a learnt
     base either); a night's
     context (an effort, a time zone, « malade ») changes nothing: each measured night counts."""
-    assert sl.deficit(history(60, 360), D) == {"minutes": 840, "n": 6, "days": 7,  # 7/6 × 6 × 2 h
-                                               "text": "manque estimé sur 7 jours\u00a0: 14h00"}
+    owed = sl.deficit(history(60, 360), D)  # 7/6 × 6 × 2 h, far over its noise floor (56 min)
+    assert (owed["minutes"], owed["n"], owed["days"], owed["text"]) == (840, 6, 7, "manque estimé sur 7 jours\u00a0: 14h00")
+    assert owed["raw"] > owed["floor"]
     for tag in (*nt.CONTEXT, "ill"):
         nights = {d: replace(n, tags={tag}) for d, n in history(60, 360).items()}
         assert sl.deficit(nights, D)["minutes"] == 840, tag
