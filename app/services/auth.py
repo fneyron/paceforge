@@ -109,6 +109,10 @@ class MemoryCounter:
             self.hits[key] = (count - 1, self.hits[key][1])
 
 
+# one more on each key, its window starting with its first (EXPIRE when the count is 1): one atomic step, so no
+# key is ever left without its window
+_INCR = ("local out = {} for i, key in ipairs(KEYS) do local n = redis.call('INCR', key) "
+         "if n == 1 then redis.call('EXPIRE', key, ARGV[1]) end out[i] = n end return out")
 # one less, never below zero, never a key without its window (a plain DECR would make one)
 _DECR = "local v = tonumber(redis.call('GET', KEYS[1]) or '0') if v > 0 then redis.call('DECR', KEYS[1]) end return 0"
 
@@ -120,11 +124,7 @@ class _RedisCounter:
         self.r = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
 
     async def incr(self, keys: list[str], window: int) -> list[int]:
-        async with self.r.pipeline(transaction=False) as pipe:
-            for k in keys:
-                pipe.set(k, 0, ex=window, nx=True)  # the window starts with the first attempt
-                pipe.incr(k)
-            return (await pipe.execute())[1::2]
+        return [int(n) for n in await self.r.eval(_INCR, len(keys), *keys, window)]
 
     async def delete(self, key: str) -> None:
         await self.r.delete(key)
