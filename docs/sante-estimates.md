@@ -16,32 +16,48 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
 
 - **Fenêtre décalée.** Les valeurs habituelles d'un jour J portent sur les nuits de J−67 à J−8.
   Les 7 nuits que la tendance juge n'y entrent jamais : une semaine n'est plus comparée à une
-  moyenne qui la contient (Plews 2013a ; Buchheit 2014). Avant, la référence allait jusqu'à la
-  dernière nuit incluse.
+  moyenne qui la contient. C'est un choix de conception **(H)**, pas une règle publiée. Avant, la
+  référence allait jusqu'à la dernière nuit incluse.
 - **Nombre de nuits.** Référence complète dès 14 nuits mesurées dans cette fenêtre. De 7 à 13
   nuits, une référence « provisoire » est tracée en pointillés. Elle n'alimente jamais l'état du
   jour **(H)**.
-- **Centre.** Moyenne du ln RMSSD pour la VFC (moyenne géométrique). Médiane pour la FC de nuit
-  et la respiration.
+- **Centre.** Moyenne du ln RMSSD pour la VFC (moyenne géométrique). Moyenne pour la tendance de
+  la FC de nuit : elle compare une moyenne de 7 nuits, et la comparer à une médiane donnait 26 à
+  32 % de matins « au-dessus » quand quelques nuits chaudes étirent la distribution vers le haut.
+  L'alerte FC de nuit garde la médiane. Médiane pour la respiration.
 - **Dispersion.** σ̂ = √((n·s² + 7·σ0²)/(n + 7)) : l'écart-type de l'athlète tiré vers un a priori,
   comme une plage de référence individualisée (Hecksteden 2017 ; Kellmann 2018). s est l'écart-type
-  (VFC) ou 1,4826 × MAD (FC, respiration). σ0 **(H)** : 0,10 en ln pour la VFC (CV nocturne de
-  9,5 à 12,4 %, Mishica 2022 ; environ 12 %, Buchheit 2014), 4 % de la médiane pour la FC
+  (VFC, tendance de la FC de nuit) ou 1,4826 × MAD (alerte FC de nuit, respiration). σ0 **(H)** :
+  0,10 en ln pour la VFC (CV nocturne de 9,5 à 12,4 %, Mishica 2022), 4 % du centre pour la FC
   (Mishica 2022), 0,5 /min pour la respiration (Miller 2020). Le SDNN d'Apple n'a pas d'a priori :
   il garde sa propre référence, sans conversion, et l'état ne le lit jamais.
-- **Série.** Une référence par série, c'est-à-dire par source et méthode (Dial 2025). La série lue
-  est celle de l'appareil qui a le plus de nuits mesurées sur 28 jours, parmi ceux portés ces
-  7 derniers jours **(H)**. Deux montres portées en alternance ne changent plus de série chaque
-  nuit.
+- **Série.** Une référence par série, c'est-à-dire par source et méthode (Dial 2025). Parmi les
+  appareils portés ces 7 derniers jours, celui qui a le plus de nuits sur 28 jours ; dans cet
+  appareil, parmi ses séries mesurées ces 7 jours, celle qui a le plus de nuits sur 28 jours
+  **(H)**. Égalités : la plus grande référence (nuits de J−67 à J−8), puis la série de la veille,
+  puis un ordre fixe (COROS, Garmin, puis les autres par nom) ; jamais la dernière nuit. Deux
+  montres portées en alternance gardent une seule série ; une nuit isolée d'un autre calcul
+  (Garmin sans phases) n'est pas une mise à jour. Un vrai changement de calcul prend la main
+  quand l'ancien n'est plus mesuré depuis 7 jours. Quand la dernière nuit vient d'une autre série,
+  pas d'état ce matin-là, et la page dit pourquoi.
 
 ## C3 — Tendances sur 7 jours
 
 - Moyenne des nuits mesurées des 7 derniers jours sur la série (géométrique pour la VFC).
 - Exige la dernière nuit mesurée et au moins 3 nuits sur 7 (Plews 2014).
 - z = (moyenne − centre)/σ̂. « Hors de tes valeurs habituelles » dès |z| ≥ T, avec
-  T = max(0,5 ; 1,28/√n7). 0,5 σ̂ est le plus petit changement utile (Plews 2013a et 2013b ;
-  Buchheit 2014). Le terme 1,28/√n7 élargit le seuil quand la semaine a peu de nuits : l'erreur
-  d'une moyenne de n nuits vaut σ/√n, et 1,28 correspond à un test unilatéral à 90 %.
+  T = max(0,5 ; 1,28·√(Σᵢⱼ ρ^|tᵢ−tⱼ|/n7² + (1+ρ)/((1−ρ)·n_b))) et ρ = 0,3 **(H)**. tᵢ sont les
+  jours des n7 nuits mesurées de la semaine, n_b le nombre de nuits de la référence.
+- Le plancher de 0,5 σ̂ est la bande des entraînements guidés par la VFC (Vesterinen 2016 ;
+  Javaloyes 2019 : valeurs quotidiennes contre une référence de 4 semaines). Buchheit 2014 rappelle
+  qu'aucune fraction du CV n'est démontrée comme seuil pertinent.
+- La racine est l'erreur type de l'écart entre la moyenne de la semaine et celle de la référence
+  quand une nuit ressemble à la précédente (corrélation de ρ d'une nuit à l'autre). T vaut
+  environ 0,67 pour 7 nuits de suite contre une référence de 60 nuits, 0,71, 0,76, 0,83 et 0,92
+  pour 6, 5, 4 et 3 nuits de suite (0,69 à 0,84 en moyenne pour des nuits manquantes au hasard).
+- Taux de faux « en dessous » chez un athlète stable, simulés : 10 à 11 % des matins à ρ = 0,3,
+  avec un port complet ou d'une nuit sur deux. Ils dépendent du ρ réel : environ 5 % si les nuits
+  sont indépendantes, 15 % à ρ = 0,5. Avant (max(0,5 ; 1,28/√n7)) : 17 %.
 - La bande tracée sur les cartes vaut centre ± T·σ̂ : une moyenne dessinée dedans se lit « dans
   tes valeurs habituelles ».
 
@@ -63,12 +79,19 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
   comprises, chacune comptée une fois. Mots : « suffisant » dès 7 h, « un peu court » de 6 à 7 h,
   « court » sous 6 h. Moins de 6 h est une raison orange de l'état du jour (Craven 2022 :
   performance réduite après une privation aiguë).
-- **Manque sur 7 jours.** D7 = max(0 ; (7/n) · Σ(N − TST24)) sur les n nuits mesurées des
-  7 derniers matins. Une nuit non mesurée ne vaut jamais 0 h. Il n'est calculé qu'avec au moins
-  4 nuits sur 7 **(H)** (Walsh 2021). Arrondi à 10 min, il s'affiche à part et ne s'ajoute
-  jamais à N. Van Dongen 2003 montre que la dette d'une semaine de nuits courtes s'accumule ;
-  Kitamura 2016, qu'il faut plusieurs jours pour la rembourser. Une nuit passée à courir ne
-  compte que ses siestes.
+- **Manque sur 7 jours.** D7 = max(0 ; Σ_courues(N − siestes) + (7 − r)/n_m · Σ_mesurées(N − TST24)).
+  Les n_m nuits mesurées représentent les 7 − r autres ; une nuit non mesurée ne vaut jamais 0 h.
+  Les r nuits passées à courir comptent leur propre sommeil (leurs siestes), sans extrapolation :
+  trois nuits de 8 h et une nuit courue donnaient « 14h00 » pour un manque réel d'environ 8 h.
+  D7 n'est calculé qu'avec au moins 4 nuits mesurées **(H)** (Walsh 2021).
+- **Plancher de bruit.** Un manque n'est dit que s'il dépasse 1,28 · σ_T · 7/√n_m **(H)** :
+  sinon « pas de manque sur 7 jours ». σ_T est l'écart-type des 24 h de l'athlète sur les jours
+  J−67 à J−8, tiré vers 45 min comme les autres dispersions ; le plancher vaut environ 2 h 30 pour
+  σ_T = 45 min et 7 nuits. Sans lui, un dormeur qui atteint 8 h en moyenne voyait un manque positif
+  un matin sur deux (45 % des matins simulés) ; avec lui, 8 %.
+- Arrondi à 10 min, D7 s'affiche à part et ne s'ajoute jamais à N. Van Dongen 2003 montre que la
+  dette d'une semaine de nuits courtes s'accumule ; Kitamura 2016, qu'il faut plusieurs jours pour
+  la rembourser.
 
 ## C6 — Charge d'entraînement : un seul calcul
 
@@ -85,14 +108,19 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   minute médiane de sa famille de sports sur 12 mois (5 séances lues au moins), sinon de toutes les
   séances, sinon 1,2 **(H)**.
 - **Charge du jour D.** Σ L des séances dédoublonnées, sur le jour local où chacune s'est terminée.
-- **Charge accumulée.** Moyennes exponentielles A (τ = 7 j) et C (τ = 42 j). Toutes deux partent
-  de la moyenne de D sur les 28 premiers jours, avec 180 jours de chauffe avant les 90 jours
-  tracés. Démarrée à 0, la courbe « habituelle » lisait 24 % trop bas au 56e jour. Ce sont des
-  constantes de lissage, pas des délais de récupération (Busso 2003 ; Williams 2017 ; Imbach 2022).
+- **Charge accumulée.** Moyennes exponentielles A (τ = 7 j) et C (τ = 42 j) : chaque jour,
+  x ← x + α·(D − x) avec α = 1 − e^(−1/τ), la décroissance du modèle forme-fatigue (Morton,
+  Fitz-Clarke et Banister 1990 ; Busso 2003). La moyenne exponentielle de Williams 2017 utilise
+  λ = 2/(N + 1), un peu plus rapide. Toutes deux partent de la moyenne de D sur les 28 premiers
+  jours, avec 180 jours de chauffe avant les 90 jours tracés. Démarrée à 0, la courbe
+  « habituelle » lisait 24 % trop bas au 56e jour. Ce sont des constantes de lissage, pas des
+  délais de récupération (Imbach 2022).
 - **Entraînement %.** Σ D des 7 jours ÷ Σ D moyenne par semaine des 11 semaines précédentes, avec
   au moins 4 semaines actives. Le ratio est découplé : la semaine en cours reste hors de sa
-  référence (Lolli 2019 ; Impellizzeri 2020). « Comme d'habitude » entre le 25e et le 75e centile
-  de ces 11 semaines (avant : ± 20 %).
+  référence (Lolli 2019 ; Impellizzeri 2020). « Comme d'habitude » de la plus légère à la plus
+  chargée des semaines actives parmi ces 11 (une semaine vide n'est pas un minimum) **(H)**.
+  Avant : ± 20 %, puis les 25e et 75e centiles, qui disaient « plus » ou « moins » pour 57 % des
+  semaines ordinaires ; désormais environ 16 %.
 - **Activités 7 j / 28 j.** Les mêmes séances et la même charge D. Les kilomètres sont donnés par
   sport ; ceux affichés en tête sont ceux de la course à pied.
 - **Récupération.** Aucune limite liée à la charge. L'Entraînement % s'affiche comme contexte.
@@ -116,10 +144,13 @@ efforts sont proches, la fenêtre la plus forte nomme le jour.
 
 ## C8 — État du jour et indice nocturne
 
-- **Conditions.** La dernière nuit est mesurée ; au moins une série cardiaque a une référence
-  complète ; la semaine compte au moins 3 nuits. Sinon, la page dit pourquoi, sans nombre
-  (« Pas de score ce matin : repères en construction (n/14). »). Jamais d'état à partir du seul
-  sommeil ou des seules activités.
+- **Conditions.** La dernière nuit est mesurée sur la série ; au moins une série cardiaque a une
+  référence complète ; la semaine compte au moins 3 nuits. Sinon, la page dit pourquoi, sans
+  nombre : « repères en construction (n/14) », « pas assez de nuits cette semaine (n/3) »,
+  « dernière nuit mesurée par une autre montre que d'habitude » ou « … avec un autre calcul que
+  d'habitude », « il manque des données de nuit ». Jamais d'état à partir du seul sommeil ou des
+  seules activités. L'alerte FC de nuit s'affiche sur sa carte même quand la semaine est trop
+  mince pour une tendance.
 - **Marqueur principal.** La VFC (RMSSD), sinon la FC de nuit.
 - **Rouge.** L'alerte FC de nuit, ou J0 et J+1 après un ultra.
 - **Orange**, chaque raison listée. Tendance du marqueur principal hors du seuil T (VFC en
@@ -131,7 +162,8 @@ efforts sont proches, la fenêtre la plus forte nomme le jour.
   moins en vert **(H)** : le nombre ne contredit jamais l'état. Ce n'est pas un pourcentage de
   récupération.
 - L'historique de 14 jours recalcule chaque jour avec ce qu'il savait alors, sans donnée datée
-  après lui.
+  après lui, ses 24 h de sommeil comprises : une sieste de l'après-midi sans nuit suivante ne
+  rejoint plus son jour après coup.
 
 ## FC à allure comparable (Forme, Activités)
 
@@ -153,17 +185,22 @@ sorties chaudes (25 °C ressentis ou plus) restent hors de la référence **(H)*
 Scripts hors dépôt, mêmes générateurs avant et après ; « avant » désigne le commit `0f276af`.
 
 - **Athlète stable, port complet** (40 × 110 matins ; ln RMSSD σ 0,11, AR(1) 0,3 ; FC σ 1,9 bpm).
-  Matins orange : 9,9 % avant, 22,1 % après (raison VFC 16,7 %, sommeil < 6 h 6,7 %). VFC
-  « en dessous » : 13,2 % avant, 16,7 % après. Ce taux reste proche quel que soit le nombre de
-  nuits de la semaine (13,5 à 18 % de 3 à 6 nuits). C'est le prix d'un seuil à 0,5 σ sur une
-  moyenne de 7 nuits autocorrélées, comparée à une référence qui ne la contient plus.
-- **Port de 50 %.** État disponible 45 % des matins (51 % avant) ; 21,3 % de matins orange.
-- **Vraie baisse de la VFC de 10 % (1 σ) avec FC + 3 bpm**, port complet. Matins orange ou rouge
-  à J0, J+2, J+4, J+6 : 26, 43, 68 et 81 % après, contre 0, 4, 10 et 33 % avant.
+  VFC « en dessous » : 13,2 % avant (score pondéré), 16,7 % avec le seuil max(0,5 ; 1,28/√n7),
+  10,1 % avec le seuil actuel. FC de nuit « au-dessus » (sa seule ligne) : 18,1 % puis 10,7 % ;
+  10 % encore avec 5 à 10 % de nuits chaudes à + 8 bpm (l'alerte rouge s'y déclenche 0,4 à 1 % des
+  matins). Matins orange : 16,4 %, dont 7 % pour un sommeil de moins de 6 h.
+- **Port de 50 %.** État disponible 46 % des matins (51 % avant) ; VFC « en dessous » 10,9 %, de
+  8,9 à 13,7 % selon le nombre de nuits de la semaine.
+- **Vraie baisse de la VFC de 10 % (1 σ) avec FC + 3 bpm.** VFC « en dessous » au moins une fois
+  au 6e, 9e et 13e jour : 79, 88 et 96 % des cas en port complet ; 60, 74 et 86 % en port de 50 %.
+  Le modèle indépendant du relecteur trouve 80, 90 et 97 %, et 10,6 % de faux « en dessous » ; les
+  deux implémentations s'accordent sur 1 320 matins sur 1 320.
 - **Sommeil, dormeur de 6 h 45.** Cadran médian 85 % (77 % avant, quand le besoin montait à
   8 h 50 avec la dette). Manque sur 7 jours médian 8 h 30 pour un manque réel de 8 h 33 en port
   complet, 8 h 10 avec 50 % de port au hasard, 6 h 40 si les nuits courtes sont moins portées
   (biais inévitable). Avant, la dette plafonnait à 60 min.
+- **Dormeur de 8 h en moyenne.** Cadran médian 100 % ; un manque est dit 8 % des matins (9 %
+  avec un port d'une nuit sur deux), contre 45 % sans plancher de bruit.
 - **Charge.** Voir [recovery-cumulative.md](recovery-cumulative.md).
 
 ## Sources

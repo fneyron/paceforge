@@ -269,7 +269,7 @@ futures. Sommeil et gros efforts peuvent influencer plusieurs jours.
   la VFC et la FC de nuit. La précaution `cumulative-1` (12 octobre) est retirée.
 - La charge hebdomadaire est une comparaison à la semaine habituelle des onze
   semaines précédentes, avec au moins quatre semaines actives (« comme
-  d’habitude » entre ses 25e et 75e centiles). Elle ne mesure pas la
+  d’habitude » de la plus légère à la plus chargée de ses semaines actives). Elle ne mesure pas la
   récupération musculaire ni une probabilité de blessure.
 
 **La version de départ examinée** fusionnait la navigation dans Santé, nomme le bilan du jour,

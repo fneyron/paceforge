@@ -40,15 +40,16 @@ jour qui dit « fenêtre indicative jusqu'à J+n ».
   empruntent leur médiane.
 - **Charge du jour D.** Σ L des séances dédoublonnées (un même identifiant une seule fois, une
   durée invalide écartée), sur le jour local où chacune s'est terminée. Aucune séance future.
-- **Charge accumulée.** A et C, moyennes exponentielles de τ = 7 et 42 jours, initialisées à la
-  moyenne de D sur les 28 premiers jours (Busso 2003 ; Williams 2017), 180 jours de chauffe avant
-  les 90 jours tracés. La courbe habituelle apparaît après 28 jours d'historique et 4 semaines
-  actives.
+- **Charge accumulée.** A et C, moyennes exponentielles de τ = 7 et 42 jours : chaque jour,
+  x ← x + α·(D − x) avec α = 1 − e^(−1/τ), la décroissance du modèle forme-fatigue (Busso 2003 ;
+  la moyenne de Williams 2017 utilise λ = 2/(N + 1)). Initialisées à la moyenne de D sur les
+  28 premiers jours, 180 jours de chauffe avant les 90 jours tracés. La courbe habituelle apparaît
+  après 28 jours d'historique et 4 semaines actives.
 - **Entraînement %.** Σ D des 7 jours ÷ moyenne hebdomadaire de Σ D des 11 semaines précédentes,
   avec au moins 4 semaines actives. La semaine en cours reste hors de sa référence (ratio
-  découplé). « Comme d'habitude » entre le 25e et le 75e centile de ces semaines, « plus » ou
-  « moins que d'habitude » au-delà. Une référence où tout pèse zéro (toutes les séances à la FC
-  de repos) se lit en minutes.
+  découplé). « Comme d'habitude » de la plus légère à la plus chargée des semaines actives
+  parmi ces 11 **(H)**, « plus » ou « moins que d'habitude » au-delà. Une référence où tout pèse
+  zéro (toutes les séances à la FC de repos) se lit en minutes.
 - **Activités 7 j / 28 j.** Les mêmes séances, la même charge D, les mêmes jours locaux ;
   kilomètres par sport, jamais ceux d'un vélo ajoutés à une course.
 
@@ -59,11 +60,11 @@ Plan stable de 6 séances par semaine sur 220 jours, 10 % des séances sautées,
 
 - **Récupération.** `cumulative-1` abaissait la limite sur 28 % des matins d'un plan stable (sous
   90 sur 5 %, minimum 81) et sur 45 % des matins autour d'une semaine à + 30 %. Désormais jamais.
-- **Entraînement %.** Quartiles inchangés : 89, 103 et 113 %. La règle des centiles 25–75 dit
-  « plus » ou « moins que d'habitude » 57 % des jours d'un plan stable, contre 26 % avec ± 20 %.
-  C'est attendu : une semaine ordinaire tombe hors de l'intervalle interquartile de ses
-  11 semaines une fois sur deux. Le dernier jour d'une semaine à + 30 %, le cadran dit « plus que
-  d'habitude » 80 % du temps (médiane 137 %).
+- **Entraînement %.** Quartiles inchangés : 89, 103 et 113 %. Part des jours d'un plan stable
+  dits « plus » ou « moins que d'habitude » : 26 % avec ± 20 %, 57 % avec les centiles 25–75 (une
+  semaine ordinaire tombe hors de l'intervalle interquartile une fois sur deux), 16 % avec la
+  plage des semaines actives retenue. Le dernier jour d'une semaine à + 30 %, le cadran dit « plus
+  que d'habitude » 75 % du temps (médiane 137 %).
 - **Charge accumulée.** Rapport récente/habituelle : quartiles 0,92 ; 1,00 ; 1,07. La courbe
   habituelle lisait 24 % trop bas au 56e jour quand elle partait de 0 ; elle est à 2 % près
   désormais.
