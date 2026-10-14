@@ -1624,7 +1624,10 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     # a link made before the daily values were read gets them too), and once
     # more when the nights are still in their pre-2026-10 format, or were
     # written before their stage minutes were read (2026-10-08), or before the
-    # naps that are a night's start were folded into it (2026-10-09)
+    # naps that are a night's start were folded into it (2026-10-09); while it
+    # is owed, it is read whole at most once a (UTC) day, the first sync of the
+    # day: a history COROS keeps cutting short (or never sends) is not 45 calls
+    # every 2 hours; the syncs in between read the last week
     have = (await db.execute(
         select(func.count(HealthMetric.id)).where(
             HealthMetric.user_id == conn.user_id, HealthMetric.source == SOURCE,
@@ -1634,7 +1637,9 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=STAGES_READ)
             or not await nights_upgraded(db, conn.user_id, SOURCE, days=BACKFILL_DAYS, key=NAPS_FOLDED))
-    days = BACKFILL_DAYS if owed else RECENT_DAYS
+    full = owed and (conn.last_sync_at is None
+                     or _as_utc(conn.last_sync_at).date() < datetime.now(timezone.utc).date())
+    days = BACKFILL_DAYS if full else RECENT_DAYS
     # the sessions' history comes once too: until every piece of it was read, and once more when it was read
     # before their start coordinates were (Santé v4.4)
     activity_days = (ACTIVITY_BACKFILL_DAYS if conn.sessions_synced_at is None
@@ -1690,8 +1695,11 @@ async def sync_connection(db: AsyncSession, conn: CorosConnection) -> dict:
     result["hrv_unreadable"] = bool(data.get("hrv_unreadable_days"))
     result["sleep_incomplete"] = bool(data.get("overview_failed_days"))
     result["phases_incomplete"] = bool(data.get("daily_incomplete"))
-    result["backfill_partial"] = (bool(data.get("health_stopped")) or result["hrv_incomplete"]
-                                   or result["sleep_incomplete"] or result["phases_incomplete"]) and days == BACKFILL_DAYS
+    # a history cut short (or not understood) earlier, left for the day's whole read: still owed, still said
+    deferred = owed and not full and conn.last_error in (PARTIAL, HRV_UNREADABLE)
+    result["backfill_partial"] = ((bool(data.get("health_stopped")) or result["hrv_incomplete"]
+                                   or result["sleep_incomplete"] or result["phases_incomplete"])
+                                  and days == BACKFILL_DAYS) or deferred
     logger.info("COROS sync user %d (%d days, %d calls, %d failed%s): %s, sessions %s",
                 conn.user_id, days, calls, failed, ", stopped" if stopped else "", result["by_metric"], sessions)
     return result

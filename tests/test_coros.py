@@ -687,6 +687,7 @@ async def test_first_sync_backfills_then_last_week(db_session: AsyncSession, tes
     fake.tool_calls.clear()
     fake.max_days.clear()  # finish the historical daily details before moving to the recent week
     fake.sse = True  # same answers as server-sent events
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"] and outcome["result"]["inserted"] == 0 and outcome["result"]["updated"] == 0
     assert [a for nm, a in fake.tool_calls if nm == "queryAvgHeartRate"] == [{"days": 60}]
@@ -864,6 +865,7 @@ async def test_coros_going_down_mid_sync_keeps_the_nights(db_session: AsyncSessi
 
     fake.timeouts, fake.tool_status = set(), {}
     before = len(fake.tool_calls)
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     assert (await coros.run_sync(db_session, conn))["ok"]
     again = fake.tool_calls[before:]
     assert {"days": 60} in [a for n, a in again if n == "queryAvgHeartRate"]  # the whole history
@@ -939,6 +941,7 @@ async def test_persistent_sleep_failure_preserves_values_and_is_retryable_partia
     before = await _values(db_session, test_user)
     if backfill:
         conn.last_error = coros.PARTIAL  # an unfinished historical import is still owed
+        conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     fake.tool_status["querySleepOverview"] = 503
     fake.tool_calls.clear()
     result = await coros.run_sync(db_session, conn)
@@ -952,6 +955,9 @@ async def test_persistent_sleep_failure_preserves_values_and_is_retryable_partia
     status = await coros.coros_status(db_session, test_user.id)
     assert status["partial"] and status["retryable_partial"] and status["last_sync_at"] is not None
     fake.tool_status.clear()
+    if backfill:  # the history still owed comes with the next day's whole read, never a week's read
+        assert (await coros.run_sync(db_session, conn))["ok"] and conn.last_error == coros.PARTIAL
+        conn.last_sync_at -= timedelta(days=1)
     assert (await coros.run_sync(db_session, conn))["ok"]
     assert conn.last_error is None  # a later successful read clears the partial failure
 
@@ -1154,7 +1160,7 @@ async def test_link_made_before_the_daily_values_backfills_them(db_session: Asyn
                                                                 fake, no_commit):
     """A link that already has its nights (synced before the daily values were
     read) gets the 60 days of load, steps… once."""
-    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=7))
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(days=1))
     db_session.add(HealthSample(user_id=test_user.id, metric="hrv", kind="", source="COROS", value=80,
                                 start_at=datetime.now() - timedelta(days=3), end_at=datetime.now() - timedelta(days=3)))
     await db_session.flush()
@@ -1205,7 +1211,7 @@ def test_migration_is_the_head_and_round_trips():
 
 async def test_sync_backfills_again_while_no_daily_value_arrived(db_session: AsyncSession, test_user: User, fake, no_commit):
     conn = await _link(db_session, test_user)
-    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(hours=7)  # synced once, but read nothing
+    conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=1)  # synced once, but read nothing
     await db_session.flush()
     outcome = await coros.run_sync(db_session, conn)
     assert outcome["ok"], outcome
@@ -1346,6 +1352,7 @@ async def test_daily_backfill_fallback_keeps_old_phases_but_history_stays_owed(d
     row = await _latest_sleep(db_session, test_user, old_day)
     original = dict(row.details)
     conn.last_error = coros.PARTIAL
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     fake.max_days["queryDailyHealthData"] = 7
     raw_call = coros.McpSession.call_tool
 
@@ -1360,6 +1367,7 @@ async def test_daily_backfill_fallback_keeps_old_phases_but_history_stays_owed(d
     assert row.details == original and conn.last_error == coros.PARTIAL
     assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60, 7]
     fake.max_days.clear(); fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the history owed is read whole again
     assert (await coros.run_sync(db_session, conn))["ok"]
     assert [a["days"] for n, a in fake.tool_calls if n == "queryDailyHealthData"] == [60]
     assert conn.last_error is None
@@ -1394,7 +1402,7 @@ async def test_nights_written_before_the_stages_are_read_again_once(db_session: 
     more, then a week again: the owner's nights get their stages."""
     from app.services.health import STAGES_READ, nights_upgraded
 
-    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(days=1))
     today = datetime.now(timezone.utc).date()
     for k in (1, 2):
         d = today - timedelta(days=k)
@@ -1521,3 +1529,46 @@ async def test_connecting_or_opening_sante_queues_the_sync_for_the_worker(db_ses
     assert coros.schedule_sync(test_user.id)
     await asyncio.gather(*list(coros._pending))
     assert len(queued) == 1 and conn.sync_claimed_at is not None and not fake.tool_calls
+
+
+# ── a history that keeps failing: read whole at most once a day ─────────────
+
+def _asked(fake: FakeCoros, tool: str) -> list:
+    return [a for n, a in fake.tool_calls if n == tool]
+
+
+async def test_a_history_cut_short_is_read_whole_once_a_day_and_stays_owed(db_session: AsyncSession, test_user: User,
+                                                                           fake, no_commit):
+    """COROS cutting every 60-day read short (its daily answer refused beyond a week) used to make every sync,
+    every 2 hours, a 60-day read (45 calls). Now: the 60 days once a day, the last week in between, and the
+    history stays owed until it has arrived."""
+    fake.max_days = {"queryDailyHealthData": 7}
+    conn = await _link(db_session, test_user)
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the first sync: the 60 days, cut short
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error == coros.PARTIAL
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]  # 2 hours later, the same day: the last week only
+    assert len(_asked(fake, "querySleepHrv")) == 1 and _asked(fake, "queryAvgHeartRate") == [{"days": 7}]
+    assert conn.last_error == coros.PARTIAL  # still owed, still said
+    fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # the next day: the 60 days again, still cut short
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error == coros.PARTIAL
+    fake.max_days.clear()
+    fake.tool_calls.clear()
+    conn.last_sync_at -= timedelta(days=1)  # COROS answers again: the history arrives, nothing is owed
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 9 and conn.last_error is None
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]
+    assert len(_asked(fake, "querySleepHrv")) == 1 and conn.last_error is None
+
+
+async def test_an_hrv_format_not_understood_is_not_a_60_day_read_every_sync(db_session: AsyncSession,
+                                                                             test_user: User, fake, no_commit):
+    conn = await _link(db_session, test_user)
+    fake.texts["querySleepHrv"] = fake.texts["querySleepHrv"].replace("Sleep HRV Time Series", "Sleep HRV Readings")
+    assert (await coros.run_sync(db_session, conn))["ok"] and conn.last_error == coros.HRV_UNREADABLE
+    fake.tool_calls.clear()
+    assert (await coros.run_sync(db_session, conn))["ok"]  # the same day
+    assert [a["days"] for a in _asked(fake, "querySleepHrv")] == [7, 2] and conn.last_error == coros.HRV_UNREADABLE
