@@ -1771,6 +1771,16 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
     return outcome
 
 
+async def release_reservation(db: AsyncSession, conn_id: int, claimed_at: str) -> bool:
+    """Let go of a queued reservation its job never took (the job died before run_sync could consume it). Only
+    that reservation: once taken (its stamp replaced), released, or replaced by a newer one, nothing changes."""
+    res = await db.execute(update(CorosConnection).where(
+        CorosConnection.id == conn_id, CorosConnection.sync_claimed_at == datetime.fromisoformat(claimed_at),
+    ).values(sync_claimed_at=None).execution_options(synchronize_session=False))
+    await db.commit()
+    return res.rowcount == 1
+
+
 async def _release(db: AsyncSession, conn, user_id: int) -> None:
     """Best effort, shielded from the cancellation that called it."""
     try:

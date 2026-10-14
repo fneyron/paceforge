@@ -1596,3 +1596,39 @@ async def test_a_connect_left_for_more_than_10_minutes_starts_again(as_user: Asy
     assert r.status_code == 303 and not fake.token_calls
     assert "La connexion à COROS a expiré. Réessaie." in (await as_user.get("/settings")).text
     assert (await db_session.execute(select(CorosConnection))).scalar_one_or_none() is None
+
+
+async def test_a_job_that_dies_before_its_sync_lets_go_of_the_reservation(db_session: AsyncSession, test_user: User,
+                                                                          fake, no_commit, queued):
+    """No database for the job's own session (or any crash before run_sync takes the reservation): the link is not
+    left « en cours » for the claim's 15 minutes. Only that job's reservation goes, never a newer one."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.tasks import coros_sync
+
+    conn = await _link(db_session, test_user)
+    assert await coros.queue_sync(db_session, conn)
+    job = queued.pop()
+    sessions = []
+
+    @asynccontextmanager
+    async def first_one_fails():
+        sessions.append(1)
+        if len(sessions) == 1:
+            raise OperationalError("connect", None, ConnectionRefusedError())
+        yield db_session
+    with patch("app.database.get_task_session", first_one_fails), pytest.raises(OperationalError):
+        await coros_sync._run_one(*job)
+
+    async def claimed():
+        return (await db_session.execute(select(CorosConnection.sync_claimed_at)
+                                         .where(CorosConnection.id == conn.id))).scalar_one()
+    assert await claimed() is None and not fake.tool_calls
+    await db_session.refresh(conn)
+    assert await coros.queue_sync(db_session, conn)  # pressed again: a new reservation
+    newer = queued.pop()
+    sessions.clear()
+    with patch("app.database.get_task_session", first_one_fails), pytest.raises(OperationalError):
+        await coros_sync._run_one(*job)  # the old job, delivered again, dies again
+    assert await claimed() is not None  # the newer reservation is kept
+    assert (await _work(db_session, newer))["ok"]
