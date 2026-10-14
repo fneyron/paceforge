@@ -13,7 +13,8 @@ the recovery's cumulative cap and Activités' 7 / 28 days).
   2/(n_a + 1) of the time); Charge accumulée (history,
   card): A and C, exponential averages of τ = 7 and 42 days, each day x ← x + α·(D − x) with α = 1 − e^(−1/τ)
   (the decay of the fitness-fatigue model: Morton, Fitz-Clarke & Banister 1990; Busso 2003 — Williams 2017's
-  EWMA uses λ = 2/(N + 1), slightly faster), both started at the mean D of their first 28 days (started at 0,
+  EWMA uses λ = 2/(N + 1), about twice as fast: 0.25 against α = 0.133 at N = τ = 7 days, 0.047 against 0.024
+  at 42), both started at the mean D of their first 28 days (started at 0,
   « habituelle » read 37 % too low at day 42); Activités' 7 j / 28 j (totals): the same sessions, the same D.
 
 Descriptive: the time constants are smoothing constants, not individual recovery times, injury cutoffs or

@@ -42,7 +42,8 @@ jour qui dit « fenêtre indicative jusqu'à J+n ».
   durée invalide écartée), sur le jour local où chacune s'est terminée. Aucune séance future.
 - **Charge accumulée.** A et C, moyennes exponentielles de τ = 7 et 42 jours : chaque jour,
   x ← x + α·(D − x) avec α = 1 − e^(−1/τ), la décroissance du modèle forme-fatigue (Busso 2003 ;
-  la moyenne de Williams 2017 utilise λ = 2/(N + 1)). Initialisées à la moyenne de D sur les
+  la moyenne de Williams 2017 utilise λ = 2/(N + 1), environ deux fois plus réactive : 0,25 contre
+  α = 0,133 pour N = τ = 7 jours). Initialisées à la moyenne de D sur les
   28 premiers jours, 180 jours de chauffe avant les 90 jours tracés. La courbe habituelle apparaît
   après 28 jours d'historique et 4 semaines actives.
 - **Entraînement %.** Σ D des 7 jours ÷ moyenne hebdomadaire de Σ D des 11 semaines précédentes,

@@ -116,7 +116,8 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
 - **Charge accumulée.** Moyennes exponentielles A (τ = 7 j) et C (τ = 42 j) : chaque jour,
   x ← x + α·(D − x) avec α = 1 − e^(−1/τ), la décroissance du modèle forme-fatigue (Morton,
   Fitz-Clarke et Banister 1990 ; Busso 2003). La moyenne exponentielle de Williams 2017 utilise
-  λ = 2/(N + 1), un peu plus rapide. Toutes deux partent de la moyenne de D sur les 28 premiers
+  λ = 2/(N + 1), environ deux fois plus réactive : 0,25 contre α = 0,133 pour N = τ = 7 jours,
+  0,047 contre 0,024 pour 42 jours. Toutes deux partent de la moyenne de D sur les 28 premiers
   jours, avec 180 jours de chauffe avant les 90 jours tracés. Démarrée à 0, la courbe
   « habituelle » lisait 24 % trop bas au 56e jour. Ce sont des constantes de lissage, pas des
   délais de récupération (Imbach 2022).
