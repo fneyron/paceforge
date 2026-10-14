@@ -952,6 +952,19 @@ def normal(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     return band(nights, metric, baseline_until(d), source=mean_source(nights, metric, d))
 
 
+def drawn_band(nights: dict[date, Night], metric: str, d: date) -> dict | None:
+    """The usual values day `d`'s card draws: its baseline (normal: the nights from d − 67 to d − 8), else, while
+    that window holds too few nights (a watch newer than a fortnight: the owner's COROS, 2026-10-14, drew no band
+    at all where the cards drew a dashed one before the lag), a provisional one from the 60 nights up to and
+    including last night, dashed, never read by the state (which reads normal, full, alone); `lagged` False then."""
+    b = normal(nights, metric, d)
+    if b is not None:
+        return b
+    # the 60 nights up to and including last night (dated `d`), as the cards drew their band before the lag
+    b = band(nights, metric, d + timedelta(days=1), source=mean_source(nights, metric, d))
+    return {**b, "provisional": True, "lagged": False} if b is not None else None
+
+
 def mean_source(nights: dict[date, Night], metric: str, today: date) -> str | None:
     """The series the trend of `today` reads (_series_source): it is judged against that series' baseline only
     (Dial 2025)."""

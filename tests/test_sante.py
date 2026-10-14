@@ -536,6 +536,31 @@ def _garmin_rows(today: date, hrv_last=None, hr_last=None, days=60) -> dict:
                       hrv=lambda k: hrv_last if hrv_last is not None and k < 7 else 70 * math.exp(0.08 * (k % 5 - 2)))
 
 
+async def test_a_young_watch_draws_its_provisional_band_before_the_lag_fills(db_session: AsyncSession,
+                                                                            test_user: User):
+    """Production, 2026-10-14 (the owner, COROS since 29/09): the cards' usual values come from the nights a week
+    before the day read, so a watch newer than a fortnight drew no band at all where it drew a dashed provisional
+    one before. The card draws that band from the 60 nights before the day itself while the lagged window holds
+    under 7 nights (nights.drawn_band); the status says « en construction » and the state still waits for 14
+    lagged nights. Under 7 nights up to last night, nothing is drawn."""
+    from tests.test_nights import night_rows
+
+    today = date(2026, 10, 14)
+    await _seed_rows(db_session, test_user, night_rows(range(0, 12), source="Garmin", today=today,
+                                                       hr=lambda k: 44 + k % 3, hrv=lambda k: 60 + k % 7))
+    page = await sante.health_page(db_session, test_user.id, today=today)
+    assert page["state"] is None and page["line"] == "Pas de score ce matin : repères en construction (4/14)."
+    for key in ("vfc", "fc"):
+        c = page[key]
+        assert c["band_prov"] and not c["band"], key  # dashed, from the 12 nights up to last night
+        assert c["reference"]["label"] == "Référence · 4/7 nuits" and not c["reference"]["ready"]  # lagged nights, 7 for a provisional one
+        assert c["reference"]["detail"] == "Référence provisoire : 12 nuits mesurées."
+        assert c["status"]["key"] == "none" and c["status"]["word"] == "en construction"
+        assert ("is-band-prov", "repère provisoire") in c["legend"]
+    nights = nt.build_nights(night_rows(range(0, 6), source="Garmin", today=today), today)
+    assert nt.drawn_band(nights, "hrv", today) is None and nt.drawn_band(nights, "hr", today) is None
+
+
 async def _seed_rows(db: AsyncSession, user: User, rows: dict):
     for metric, per_day in rows.items():
         for d, (v, det, src) in per_day.items():
