@@ -180,7 +180,8 @@ def test_an_athlete_without_hr_gets_the_time_dial():
                          _session(TUE, 40, hr=None, sport="WeightTraining", sid=99)]
         t = _train(sessions)
         ratio = minutes / 350
-        word = ("plus que d'habitude" if ratio > 1.2 else "moins que d'habitude" if ratio < 0.8
+        # between the usual weeks' 25th and 75th percentiles, 300 and 400 min (owner, 2026-10-14: it was ± 20 %)
+        word = ("plus que d'habitude" if minutes > 400 else "moins que d'habitude" if minutes < 300
                 else "comme d'habitude")
         assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == (str(sc.rounded(100 * ratio)), word, None)
         assert t["dial"]["dash"] == viz.ring("x", ratio / 2, "", None)["dash"], minutes
@@ -198,9 +199,11 @@ def test_todays_bounds_for_every_week():
 
 def test_a_usual_week_that_weighs_nothing_reads_its_hours():
     """The usual week's 4 weeks with an activity are counted on the activities, not on their load: rides at the
-    resting HR weigh nothing, the dial then reads the hours' ratio (never a division by zero)."""
+    resting HR weigh nothing, the dial then reads the hours' ratio (never a division by zero); 11 weeks of exactly
+    300 min make 330 more than usual (it lies over their 75th percentile: owner, 2026-10-14 — « comme d'habitude »
+    within ± 20 % before)."""
     t = _train(_weeks([300] * 11, hr=48, sport="Ride") + [_session(TUE, 330, hr=48, sport="Ride", sid=99)])
-    assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == ("110", "comme d'habitude", "comme d'habitude")
+    assert (t["dial"]["value"], t["dial"]["sub"], t["intensity"]) == ("110", "plus que d'habitude", "comme d'habitude")
 
 
 # ── the card's « Intensité » ────────────────────────────────────────────────

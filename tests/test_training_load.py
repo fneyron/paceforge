@@ -62,7 +62,11 @@ async def test_calculate_training_load_with_activities(
 
     assert result.volume_7d_km == 15.0  # 3 * 5km
     assert result.count_7d == 3
-    assert result.volume_28d_km == 45.0  # 15 + 30km
+    # owner, 2026-10-14: scientific basis — the headline km are the running's: a ride's 30 km are never added to a
+    # run's (it read 45); each sport's km apart, the hours of every sport
+    assert result.volume_28d_km == 15.0
+    assert result.sport_breakdown_28d == {"Run": 15.0, "Ride": 30.0}
+    assert result.volume_28d_hours == 2.25 and result.volume_7d_hours == 1.25
     assert result.count_28d == 4
     assert "Run" in result.sport_breakdown_7d
     assert result.sport_breakdown_7d["Run"] == 15.0

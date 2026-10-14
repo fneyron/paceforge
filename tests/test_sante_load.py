@@ -28,7 +28,11 @@ def test_history_uses_no_future_workout_or_hr_bounds_and_waits_for_reference():
     extreme=S(-1,600,hr=180,hr_peak=215,id=999)
     assert sante_load.history(sessions+[extreme],T)==rows
     assert [r for r in rows if r['day']<=before]==prior
-    assert rows[41]['usual'] is None and rows[42]['usual'] is not None
+    # owner, 2026-10-14: scientific basis — both averages start at the mean daily load of their first 28 days (from
+    # 0, « habituelle » read 37 % low at day 42): the usual curve is drawn from day 28 (it was day 43)
+    assert rows[26]['usual'] is None and rows[27]['usual'] is not None
+    first = sum(r['daily'] for r in rows[:28]) / 28
+    assert rows[0]['recent'] == pytest.approx(first + (rows[0]['daily'] - first) * (1 - math.exp(-1 / 7)))
     assert all(r['usual'] is None for r in sante_load.history([S(100,id=1)],T))
     c=sante_load.card(sessions,T)
     assert c['ready'] and len(json.loads(c['data'])['r'])==90

@@ -6,7 +6,9 @@ built on it are gone; nothing drew it since Santé v4.1).
 - the weeks exactly as Activités counts them (UTC Monday, duplicates and false
   starts left out), so a bar's total is the week's total there;
 - heart rate at easy pace on flat easy runs (Theil–Sen HR = a + b·speed), the
-  model of Activités › FC en footing (Nuuttila 2022);
+  model of Activités › FC en footing and Santé › Forme (Nuuttila 2022;
+  Vesterinen 2014), read from their km splits after the first 10 min on flat
+  ground (± 2 %) when the athlete's runs have them;
 - the big efforts (Santé v4, owner 2026-10-08: « tu te bases que sur les
   activités passées pour juger de la récupération »): each activity sized by
   its own time, stops included, whatever it was (a race marked on Strava is
@@ -14,21 +16,23 @@ built on it are gone; nothing drew it since Santé v4.1).
   and the recovery window it opens (`efforts`, `effort_window`); a Longue run
   like a race keeps it longer, for every user (v4.4, R3: marked so on
   Strava, rated 8/10 or more there, or its average HR at 80 % of the reserve);
-- each activity's heart-rate load, the Entraînement dial's (owner, 2026-10-09:
-  « Oui vas-y », research_ind_train.md): its minutes weighted by their share
-  of the heart-rate reserve (Banister 1991), from its laps when it has them;
-  shown only as a ratio to the athlete's own usual week, never as a number.
+- each activity's heart-rate load (owner, 2026-10-09: « Oui vas-y »,
+  research_ind_train.md): its minutes weighted by their share of the
+  heart-rate reserve (Banister 1991), from its laps when it has them, one
+  pipeline for the Entraînement dial, the Charge accumulée and Activités
+  (sante_load); shown only against the athlete's own usual week.
 Everything is computed on the fly; nothing is written to Activity. Activités
 (training_view), the race page (race_prep) and Santé read it.
 """
 import math
 import statistics
+import threading
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import String, and_, case, cast, column, func, literal, select, true
+from sqlalchemy import Integer, String, and_, case, cast, column, func, literal, select, true
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,6 +63,7 @@ class Session:
     name: str = ""
     elapsed: float = 0.0  # minutes, stops included (a race's real time)
     offset: float | None = None  # s east of UTC (None: unknown): the session's local clock is start + offset
+    zone_offset: float = 0.0  # s east of UTC of the athlete's own zone at its start: its clock when `offset` is None
     rpe: float | None = None  # Strava's perceived exertion (1–10), when the athlete rated it (its detail only)
     indoor: bool = False  # a treadmill, a home trainer, a virtual ride (activity_env.is_indoor)
     located: bool = False  # it carries a GPS position, start or end (Strava, Garmin, COROS)
@@ -66,6 +71,7 @@ class Session:
     elev_low: float | None = None  # m, its lowest point (Strava elev_low)
     feels: float | None = None  # °C, the apparent temperature at its start (Open-Meteo, looked up in the sync)
     segs: tuple | None = None  # ((minutes, average HR), …) of its laps or splits, once read (nights.read_segments)
+    splits: tuple | None = None  # ((minutes, km, average HR, grade), …) of its km splits, once read (nights.km_splits)
 
     @property
     def end_day(self) -> date:
@@ -80,9 +86,17 @@ def _utc(dt: datetime) -> datetime:
 
 
 def monday(dt: datetime) -> datetime:
-    """The UTC Monday 00:00 of a session's week — Activités' week."""
+    """The UTC Monday 00:00 of a moment's week (the race page's, race_prep, until it reads the athlete's zone:
+    Activités' weeks are local_monday's)."""
     dt = _utc(dt)
     return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def local_monday(dt: datetime, zone) -> date:
+    """The Monday of a moment's week on the athlete's clock (`zone`: timezones.athlete_zone): Activités' weeks run
+    Monday to Sunday there, a run at 00:30 on a Monday is that week's (2026-10-14: they were UTC Mondays)."""
+    d = _utc(dt).astimezone(zone).date()
+    return d - timedelta(days=d.weekday())
 
 
 _CACHE: dict[int, tuple[tuple, list[Session]]] = {}
@@ -125,7 +139,13 @@ def _offset(strava: float | None, local: str | None, gmt: str | None) -> float |
 async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS) -> list[Session]:
     """The sessions of the last `days` days, duplicates and false starts left
     out exactly as on Activités. Kept per worker until a session is added (the
-    JSON fields cost a read of every activity's raw_data)."""
+    JSON fields cost a read of every activity's raw_data). A session whose UTC offset is unknown is dated on the
+    athlete's own clock (users.timezone: timezones.athlete_zone), never on UTC's; its `offset` stays None (it says
+    nothing of a time zone change)."""
+    from app.models.user import User
+    from app.services import timezones
+
+    zone = timezones.athlete_zone(await db.get(User, user_id))
     since = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=timezone.utc)
     where = (Activity.user_id == user_id, Activity.start_date >= since)
     # the sport's family weighs differently, so a re-import from one family to another is seen
@@ -135,13 +155,15 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     # too (what load_hr_segments keeps with the sessions), measured the same way, without detoasting them
     pg = db.get_bind().dialect.name == "postgresql"
     stored = func.pg_column_size if pg else func.length
-    key = (today, days, *(await db.execute(  # what a sync can add or rewrite in place
+
+    def whole(col, scale=1):  # an integer sum: PostgreSQL's float sums may differ in their last digits run to run
+        return func.sum(cast(func.round(func.coalesce(col, 0) * scale), Integer))
+    key = (today, days, str(zone), *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
                func.sum(env.raw_size(db)), func.sum(stored(Activity.laps)), func.sum(stored(Activity.splits_metric)),
                func.max(Activity.start_date), func.sum(Activity.moving_time), func.sum(Activity.elapsed_time),
-               func.sum(Activity.distance), func.sum(Activity.total_elevation_gain),
-               func.sum(func.coalesce(Activity.average_heartrate, 0)),
-               func.sum(func.coalesce(Activity.max_heartrate, 0)),
+               whole(Activity.distance), whole(Activity.total_elevation_gain, 10),
+               whole(Activity.average_heartrate, 10), whole(Activity.max_heartrate, 10),
                func.sum(family), func.sum(func.length(Activity.sport_type)),
                func.sum(func.length(func.coalesce(Activity.name, "")))).where(*where))).one())
     hit = _CACHE.get(user_id)
@@ -184,7 +206,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             continue
         start = _utc(r.start_date)
         known = _offset(_float(x["utc_offset"]), x["startTimeLocal"], x["startTimeGMT"])
-        offset = known or 0
+        clock = start.astimezone(zone).utcoffset().total_seconds()
+        offset = known if known is not None else clock
         speed = r.average_speed if r.average_speed else ((r.distance or 0) / r.moving_time)
         looked = env.env_of(x)
         out.append(Session(
@@ -192,7 +215,8 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
             minutes=r.moving_time / 60, dplus=r.total_elevation_gain or 0, km=(r.distance or 0) / 1000,
             speed=speed or None, hr=r.average_heartrate or None, hr_peak=r.max_heartrate or None,
             workout_type=_int(x["workout_type"]), temp=_float(x["average_temp"]), name=r.name or "",
-            elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known, rpe=_rpe(x["perceived_exertion"]),
+            elapsed=max(r.elapsed_time or 0, r.moving_time) / 60, offset=known, zone_offset=clock,
+            rpe=_rpe(x["perceived_exertion"]),
             indoor=env.is_indoor(r.sport_type, x), located=env.located(x), alt=_float(looked.get("alt")),
             elev_low=_float(x["elev_low"]), feels=_float(looked.get("feels"))))
     if len(_CACHE) >= _CACHE_SIZE:
@@ -201,7 +225,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     return [replace(s) for s in out]
 
 
-_SEGS: dict[int, tuple[tuple, dict[int, tuple]]] = {}  # user → (load_sessions' key, {activity id: its segs})
+_SEGS: dict[int, tuple[tuple, dict[int, tuple]]] = {}  # user → (load_sessions' key, {id: (its segs, splits)})
 
 
 async def load_hr_segments(db: AsyncSession, user_id: int, sessions: list[Session], since: date) -> None:
@@ -217,12 +241,12 @@ async def load_hr_segments(db: AsyncSession, user_id: int, sessions: list[Sessio
     want = [s for s in sessions if s.hr and s.day >= since]
     for s in want:
         if s.segs is None and s.id in memo:
-            s.segs = memo[s.id]
+            s.segs, s.splits = memo[s.id]
     await read_segments(db, want)
     if key is not None and (_CACHE.get(user_id) or (None,))[0] == key:
         if user_id not in _SEGS and len(_SEGS) >= _CACHE_SIZE:
             _SEGS.pop(next(iter(_SEGS)))
-        _SEGS[user_id] = (key, {**memo, **{s.id: s.segs for s in want}})
+        _SEGS[user_id] = (key, {**memo, **{s.id: (s.segs, s.splits) for s in want}})
 
 
 async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None) -> float | None:
@@ -250,11 +274,14 @@ async def utc_offset(db: AsyncSession, user_id: int, now: datetime | None = None
 
 async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = None,
                         latest: date | None = None) -> date:
-    """The athlete's date, the one Santé, Activités and the race page read: the
-    server's clock moved by their UTC offset (latest session), else the
-    watch's latest day; the watch's day when it is already on tomorrow."""
+    """The athlete's date, the one Santé, Activités and the race page read: the clock in the athlete's own zone
+    (users.timezone, else Europe/Paris: timezones.athlete_today; owner, 2026-10-14: scientific basis — it was the
+    latest activity's fixed UTC offset, a day off after the 25 October clock change or a trip); the watch's day
+    when it is already on tomorrow (a zone not yet updated after flying east)."""
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
+    from app.models.user import User
+    from app.services import timezones
 
     now = now or datetime.now(timezone.utc)
     if latest is None:
@@ -262,8 +289,7 @@ async def athlete_today(db: AsyncSession, user_id: int, now: datetime | None = N
             select(func.max(HealthMetric.date)).where(HealthMetric.user_id == user_id))).scalar()
     mobile_day = await db.scalar(select(func.max(MobileDaily.date)).where(MobileDaily.user_id == user_id))
     latest = max((d for d in (latest, mobile_day) if d is not None), default=None)
-    offset = await utc_offset(db, user_id, now)
-    today = (now + timedelta(seconds=offset)).date() if offset is not None else now.date()
+    today = timezones.athlete_today(await db.get(User, user_id), now)
     if latest and today < latest <= today + timedelta(days=1):  # the watch is already on tomorrow
         today = latest
     return today
@@ -292,12 +318,16 @@ def hr_rest(night_rhr: dict[date, float], day_min: dict[date, float], today: dat
     return 50.0
 
 
-# ── heart-rate load: the Entraînement dial (owner, 2026-10-09: « Oui vas-y »; research_ind_train.md) ──────────
-# Each minute of an activity weighs x·0.64·e^(1.92x), x its share of the heart-rate reserve (Banister 1991): an easy
-# minute at 60 % of the reserve about 1.2, a hard one at 90 % about 3.2. Internal load is the consensus construct
-# (Impellizzeri 2019; Bourdon 2017), yet never validated as an absolute dose (Passfield 2022): Santé shows it only
-# against the athlete's own usual week, as a ratio, never as a number (no TRIMP, no points). No brand load is read.
-LOAD_A, LOAD_B = 0.64, 1.92  # (H) Banister 1991's men's constants for everyone: no sex known (women's: ≤ 3.5 points)
+# ── heart-rate load: one pipeline for every view (owner, 2026-10-14: scientific basis) ──────────────────────
+# Each minute of an activity weighs x·0.64·e^(1.92x), x its share of the heart-rate reserve (Banister 1991; Morton,
+# Fitz-Clarke & Banister 1990): an easy minute at 60 % of the reserve about 1.2, a hard one at 90 % about 3.2.
+# Internal load is the consensus construct (Impellizzeri 2019; Bourdon 2017), yet never validated as an absolute
+# dose (Passfield 2022): Santé shows it only against the athlete's own usual week, as a ratio, never as a number (no
+# TRIMP, no points). No brand load is read. One set of bounds a day (rest: the median sleeping HR of 60 days, else
+# 50; max: the 98th percentile of the sessions' peaks over 12 months, else 190) weighs every session of every view
+# that day: the Entraînement dial, the Charge accumulée curves and Activités' 7 / 28 days (sante_load).
+LOAD_A, LOAD_B = 0.64, 1.92  # (H) Banister 1991's men's constants: no sex is known to the app (women's: LOAD_WOMEN)
+LOAD_WOMEN = (0.86, 1.67)  # Banister 1991's women's constants, read once the athlete's sex is known
 SEG_COVER = 0.8  # (H) laps (else km splits) with HR over 80 % of the moving time: their load, scaled to it
 HR_FLOOR, HR_OVER_MAX = 40, 10  # (H) an average under 40 bpm or over max + 10 bpm: a glitch, no HR
 RUN_MIN_HRR = 0.3  # (H) a run under 30 % of the heart-rate reserve: an optical dropout, no HR
@@ -308,11 +338,18 @@ RATE_DAYS, RATE_MIN = 365, 5  # (H) the athlete's own load per minute: 12 months
 RATE_DEFAULT = 1.2  # (H) else an easy minute's (60 % of the reserve)
 
 
-def minute_load(hr: float, rest: float, peak: float) -> float:
-    """One minute's weight at `hr` (Banister 1991): x·0.64·e^(1.92x), x = (hr − rest) ÷ (peak − rest) kept in
+def load_constants(sex: str | None = None) -> tuple[float, float]:
+    """Banister's (a, b): the women's (0.86, 1.67) for « F », else the men's (0.64, 1.92), the app's default (no
+    sex field)."""
+    return LOAD_WOMEN if sex == "F" else (LOAD_A, LOAD_B)
+
+
+def minute_load(hr: float, rest: float, peak: float, sex: str | None = None) -> float:
+    """One minute's weight at `hr` (Banister 1991): x·a·e^(b·x), x = (hr − rest) ÷ (peak − rest) kept in
     [0, 1]."""
+    a, b = load_constants(sex)
     x = min(1.0, max(0.0, (hr - rest) / max(peak - rest, 1.0)))
-    return x * LOAD_A * math.exp(LOAD_B * x)
+    return x * a * math.exp(b * x)
 
 
 def hr_readable(s: Session, rest: float, peak: float) -> bool:
@@ -323,18 +360,49 @@ def hr_readable(s: Session, rest: float, peak: float) -> bool:
     return s.sport not in RUN_TYPES or (s.hr - rest) / max(peak - rest, 1.0) >= RUN_MIN_HRR
 
 
-def session_load(s: Session, rest: float, peak: float) -> float | None:
+class _Memo:
+    """A small thread-safe LRU (the page's pure computation runs in a worker thread)."""
+
+    def __init__(self, size: int):
+        self.size, self.data, self.lock = size, {}, threading.Lock()
+
+    def get(self, key, make):
+        with self.lock:
+            if key in self.data:
+                return self.data[key]
+        value = make()
+        with self.lock:
+            if len(self.data) >= self.size:
+                self.data.pop(next(iter(self.data)))
+            self.data[key] = value
+        return value
+
+
+_LOADS = _Memo(20_000)  # session load per (session, bounds): a page reads each session once a day
+
+
+def session_load(s: Session, rest: float, peak: float, sex: str | None = None) -> float | None:
     """One activity's heart-rate load (Banister 1991): its laps', else its km splits' (`segs`, laps or splits with a
     plausible HR) minutes × each one's minute weight, scaled to its moving time when they cover 80 % of it at least
     (H), else its moving minutes at its average HR (summed per segment, a load reads ≈ 9 % higher, more on hard
-    sessions: García-Ramos 2015). None when its HR cannot be read (hr_readable): `loads` counts it by time."""
+    sessions: García-Ramos 2015). None when its HR cannot be read (hr_readable): `loads` counts it by time.
+    Memoized per (session, its HR fields, bounds)."""
+    key = (s.id, s.sport, s.minutes, s.hr, s.segs, rest, peak, sex)
+    try:
+        hash(key)
+    except TypeError:  # segments given as lists: no memo
+        return _session_load(s, rest, peak, sex)
+    return _LOADS.get(key, lambda: _session_load(s, rest, peak, sex))
+
+
+def _session_load(s: Session, rest: float, peak: float, sex: str | None) -> float | None:
     if not hr_readable(s, rest, peak):
         return None
     segs = [(m, hr) for m, hr in s.segs or () if HR_FLOOR <= hr <= peak + HR_OVER_MAX]
     covered = sum(m for m, _ in segs)
     if covered and covered >= SEG_COVER * s.minutes:
-        return s.minutes * sum(m * minute_load(hr, rest, peak) for m, hr in segs) / covered
-    return s.minutes * minute_load(s.hr, rest, peak)
+        return s.minutes * sum(m * minute_load(hr, rest, peak, sex) for m, hr in segs) / covered
+    return s.minutes * minute_load(s.hr, rest, peak, sex)
 
 
 def load_family(sport: str) -> str:
@@ -343,14 +411,15 @@ def load_family(sport: str) -> str:
     return "run" if sport in RUN_TYPES else "bike" if sport in BIKE else sport
 
 
-def loads(sessions: list[Session], today: date, rest: float, peak: float) -> dict[int, tuple[float, bool]]:
+def loads(sessions: list[Session], today: date, rest: float, peak: float,
+          sex: str | None = None) -> dict[int, tuple[float, bool]]:
     """{session id: (its heart-rate load, read from its HR)}, every session with the same bounds, today's (H: a new
     max or resting HR never moves the dial by itself). A session whose HR cannot be read, and every strength,
     Workout, yoga or Pilates session, counts its moving minutes at the athlete's own median load per minute (H):
     over the 12 months up to `today`, that of the sessions read from their HR in its family (load_family, 5 at
     least), else of all of them (a strength session: always all of them), else 1.2 (an easy minute). Without any
     HR, every minute weighs the same: the dial is the time's."""
-    own = {s.id: session_load(s, rest, peak) for s in sessions}
+    own = {s.id: session_load(s, rest, peak, sex) for s in sessions}
     lo = today - timedelta(days=RATE_DAYS)
     per = defaultdict(list)
     for s in sessions:
@@ -366,18 +435,19 @@ def loads(sessions: list[Session], today: date, rest: float, peak: float) -> dic
 
 # ── weeks (as Activités counts them) ────────────────────────────────────────
 
-def weeks(sessions: list[Session], now: datetime, n: int = 12) -> list[dict]:
-    """The last `n` weeks, oldest first, the current one last."""
-    this_monday = monday(now)
-    by: dict[datetime, list[Session]] = defaultdict(list)
+def weeks(sessions: list[Session], now: datetime, n: int = 12, zone=timezone.utc) -> list[dict]:
+    """The last `n` weeks, oldest first, the current one last: Monday to Sunday on the athlete's clock (`zone`,
+    timezones.athlete_zone: Activités' list's weeks; UTC when none is given)."""
+    this_monday = local_monday(now, zone)
+    by: dict[date, list[Session]] = defaultdict(list)
     for s in sessions:
-        by[monday(s.start)].append(s)
+        by[local_monday(s.start, zone)].append(s)
     out = []
     for i in range(n - 1, -1, -1):
         m = this_monday - timedelta(weeks=i)
         ss = by.get(m, [])
         longest = max(ss, key=lambda s: s.minutes, default=None)
-        out.append({"monday": m.date(), "key": m.strftime("%Y-%m-%d"), "weeks_ago": i, "current": i == 0,
+        out.append({"monday": m, "key": m.strftime("%Y-%m-%d"), "weeks_ago": i, "current": i == 0,
                     "minutes": sum(s.minutes for s in ss), "dplus": sum(s.dplus for s in ss),
                     "count": len(ss),
                     "longest": longest.minutes if longest else 0.0, "longest_id": longest.id if longest else None,
@@ -445,6 +515,10 @@ FLAG_REF_DAYS, FLAG_REF_MIN = 14, 2  # (H) each run against the cool runs of the
 LINE_DAYS, LINE_RUNS = 42, 6  # (H) the line needs ≥ 6 qualifying runs in 6 weeks (evidence row 16)
 HOT_C = 25  # (H) °C felt at the start (Open-Meteo's apparent temperature), else the device's (R4)
 EASY_KM, EASY_MIN_MIN, EASY_MAX_MIN, EASY_DPLUS_PER_KM, EASY_HR_SHARE = 5, 25, 150, 12, 0.82  # (H) a flat easy run
+# owner, 2026-10-14: scientific basis — a run's HR and speed from its km splits after its first 10 min (the warm-up's
+# rising HR left out) whose grade is within ± 2 % (Vesterinen 2014: HR at a fixed submaximal speed on flat ground);
+# 2 km of them at least (H)
+STEADY_AFTER_MIN, FLAT_GRADE, STEADY_MIN_KM = 10, 0.02, 2
 
 
 def easy_runs(sessions: list[Session], peak: float) -> list[Session]:
@@ -468,12 +542,33 @@ def is_hot(s: Session) -> bool:
     return t is not None and t >= HOT_C
 
 
-def _easy_sample(sessions: list[Session], today: date, peak: float) -> tuple[list[Session], list[Session]]:
-    """The exact sample shared by the fitted model and its collection progress."""
+def comparable(s: Session) -> tuple[float, float] | None:
+    """(HR, speed in m/s) of a run from its km splits (Session.splits) after its first 10 minutes, those within ± 2 %
+    of grade (a COROS lap carries no grade: the run's own flatness gate holds, easy_runs), their time-weighted HR and
+    their distance over their time; None under 2 km of them (STEADY_MIN_KM, H)."""
+    elapsed = minutes = km = beats = 0.0
+    for m, k, hr, grade in getattr(s, "splits", None) or ():
+        start, elapsed = elapsed, elapsed + m
+        if start < STEADY_AFTER_MIN or hr is None or (grade is not None and abs(grade) > FLAT_GRADE):
+            continue
+        minutes, km, beats = minutes + m, km + k, beats + m * hr
+    if km < STEADY_MIN_KM or minutes <= 0:
+        return None
+    return beats / minutes, km * 1000 / (minutes * 60)
+
+
+def _easy_sample(sessions: list[Session], today: date, peak: float) -> tuple[list[Session], list[Session], dict, bool]:
+    """The exact sample shared by the fitted model and its collection progress, and each run's (HR, speed): from
+    its steady flat splits (comparable) when 6 cool runs of the 12 months have them, every run read that way; else
+    from every run's own averages (no splits stored: a Garmin-only athlete) — one method per model, never mixed."""
     runs = sorted((s for s in easy_runs(sessions, peak)
                    if today - timedelta(days=EASY_FIT_DAYS) < s.day <= today),
                   key=lambda s: s.start)
-    return runs, [s for s in runs if not is_hot(s)]
+    points = {s.id: comparable(s) for s in runs}
+    split = [s for s in runs if points[s.id]]
+    if sum(1 for s in split if not is_hot(s)) >= MIN_FIT_RUNS:
+        return split, [s for s in split if not is_hot(s)], points, True
+    return runs, [s for s in runs if not is_hot(s)], {s.id: (s.hr, s.speed) for s in runs}, False
 
 
 def _line_runs(cool: list[Session], today: date) -> list[Session]:
@@ -487,7 +582,7 @@ def fitness_progress(sessions: list[Session], today: date, peak: float) -> dict:
     intensity, distance, duration, terrain and heart-rate requirements are the
     model's own filters; no fitted slope is needed just to count its inputs.
     """
-    _, cool = _easy_sample(sessions, today, peak)
+    _, cool, _, _ = _easy_sample(sessions, today, peak)
     count = len(_line_runs(cool, today))
     return {"count": count, "required": LINE_RUNS, "remaining": max(0, LINE_RUNS - count),
             "ready": count >= LINE_RUNS,
@@ -508,27 +603,26 @@ def theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
 
 
 def easy_model(sessions: list[Session], today: date, peak: float) -> dict | None:
-    """The one easy-pace model Activités (A3) and Santé (the « FC en footing »
-    tile, R8, Reprise) share: each flat easy run's HR moved to the athlete's
-    reference pace (one Theil–Sen slope over the cool runs of 12 months; the
-    pace is their median speed, to 5 s/km), and each day's normal, the median
-    of the cool runs of the 28 days before (3 at least, H). None under 6
-    cool runs (H). {runs, cool (by start), value: {id: bpm}, pace: s/km,
-    centre: day → bpm | None}."""
-    runs, cool = _easy_sample(sessions, today, peak)
+    """The one easy-pace model Activités (A3) and Santé (the « FC à allure comparable » card) share: each flat easy
+    run's HR (its steady flat splits when the athlete's runs have them: _easy_sample) moved to the athlete's
+    reference pace (one Theil–Sen slope over the cool runs of 12 months; the pace is their median speed, to 5 s/km),
+    and each day's normal, the median of the cool runs of the 28 days before (3 at least, H). None under 6 cool
+    runs (H). {runs, cool (by start), value: {id: bpm}, pace: s/km, centre: day → bpm | None, steady: splits read}."""
+    runs, cool, points, steady = _easy_sample(sessions, today, peak)
     if len(cool) < MIN_FIT_RUNS:
         return None
-    _, b = theil_sen([s.speed for s in cool], [s.hr for s in cool])
-    pace = round(1000 / statistics.median(s.speed for s in cool) / 5) * 5
+    _, b = theil_sen([points[s.id][1] for s in cool], [points[s.id][0] for s in cool])
+    pace = round(1000 / statistics.median(points[s.id][1] for s in cool) / 5) * 5
     ref = 1000 / pace
-    value = {s.id: s.hr - b * (s.speed - ref) for s in runs}
+    value = {s.id: points[s.id][0] - b * (points[s.id][1] - ref) for s in runs}
     cdays = [s.day for s in cool]
 
     def centre(d: date) -> float | None:
         prior = [value[s.id] for s in cool[bisect_left(cdays, d - timedelta(days=EASY_WINDOW)):bisect_left(cdays, d)]]
         return statistics.median(prior) if len(prior) >= EASY_MIN else None
 
-    return {"runs": runs, "cool": cool, "value": value, "pace": pace, "centre": centre}
+    return {"runs": runs, "cool": cool, "value": value, "pace": pace, "centre": centre,
+            "steady": steady}
 
 
 def easy_deltas(model: dict | None) -> list[tuple[date, float]]:
@@ -576,7 +670,7 @@ def easy_watch(model: dict | None, today: date) -> dict | None:
             "flag": len(deltas) == 2 and all(v >= EASY_BPM for _, v in deltas)}
 
 
-# ── big efforts: the recovery windows Santé reads (v4.2) ────────────────────
+# ── big efforts: the windows Santé reads (v4.2; a reason of the daily state since 2026-10-14) ────────────
 # Santé judges recovery from past activities only (owner, 2026-10-08): a planned race is never read. Each
 # activity is sized by its own time, stops included (elapsed), whatever it was. No official body gives a number of
 # days (Kellmann 2018: « a clear categorization based on specific time frames cannot be provided »; Schwellnus 2016;
@@ -589,29 +683,26 @@ EFFORT_DPLUS = 1500  # (H) m on foot: « long » whatever its time (1 264 m of d
 STOPPED_WATCH = 2  # (H) elapsed over twice the moving time: a watch left running, the moving time counts
 CHAIN_GAP = timedelta(minutes=30)  # (H) an activity starting this soon after the last one ended: the same effort
 DAWN = time(6)  # (H) an effort ending before 06:00 ended in the night: that morning is the first one after it
-# class → ((last day of an interval, its starting cap), …) (H). Interpolate from
-# each interval's starting day to the next starting cap, then to 100 just outside
-# the window. These are precaution anchors, not measured recovery percentages.
-# A window caps the score, it is no component
-# of its mean (2026-10-08, owner: « Fais comme WHOOP »; « Un effort récent, il faut le prendre en compte et afficher
-# la fatigue quand même »: the cap stays). The day it ends (D+0, once it is uploaded) already reads D+1's cap: a big
-# outing done today is never « pas de grosse sortie ». A day without a new usable
-# nightly measurement has no score; a short night can read under the effort cap.
-EFFORT_RULES = {"ultra": ((3, 35), (10, 65)),  # (H) 400 m 26 % slower at D+3, 12 % at D+5 (Hoffman 2017a)
-                "very_long": ((2, 45), (5, 65)),  # (H) fatigue and soreness back by D+5 (Fazackerley 2019)
-                "long": ((3, 65),)}  # (H) power still −18 % at D+2 after a marathon (Petersen 2007)
-KINDS = ("ultra", "very_long", "long")  # the bigger effort first: two windows with one cap, the bigger one names it
-LONG_RACE_LAST = 5  # (H) a Longue run like a race: precaution through D+5 (Bernat-Adell 2021)
+# owner, 2026-10-14: scientific basis — the window is a reason of the daily state, no cap any more (the 35/45/65
+# caps and their interpolation had no basis): orange through D+n, the lengths read from the studies (« fenêtres
+# indicatives », H): a Longue D+1, run like a race D+2 (power still −18 % at D+2 after a marathon: Petersen 2007), a
+# Très longue D+3, an Ultra D+5 (fatigue and soreness back by D+5: Fazackerley 2019; 400 m still 12 % slower at D+5:
+# Hoffman 2017), ≥ 24 h D+7; red only on D+0 and D+1 after an Ultra (26 % slower at D+3: Hoffman 2017). The day it
+# ends (D+0, once uploaded) is already in it: a big outing done today is never « pas de grosse sortie ».
+EFFORT_WINDOWS = {"ultra": 5, "very_long": 3, "long": 1}  # (H) the last day of the window, D+n
+ULTRA_RED_LAST = 1  # (H) red on D+0 and D+1 after an Ultra
+KINDS = ("ultra", "very_long", "long")  # the bigger effort first: two windows open, the bigger one names it
+LONG_RACE_LAST = 2  # (H) a Longue run like a race: through D+2 (Petersen 2007; owner, 2026-10-14: scientific basis)
 # v4.4 (R3): run like a race, whoever measured it: marked so on Strava, or rated 8/10 or more there (session RPE:
 # Foster 2001; Haddad 2017), or its average HR ≥ 80 % of the heart-rate reserve as of its day (nights.VIGOROUS_HRR,
 # the « vigorous » test: harder efforts bring more damage, Martínez-Navarro 2021b; Bernat-Adell 2021)
 INTENSE_RPE = 8  # (H)
-ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 13  # (H) ultra ≥ 24 h or through the night: precaution through D+13
+ULTRA_LONG_MIN, ULTRA_LONG_LAST = 24 * 60, 7  # (H) an Ultra of 24 h or more: through D+7 (owner, 2026-10-14)
 NIGHT_SPAN = (time(1), time(5))  # (H) an effort running from 01:00 to 05:00 local covered a night (no main sleep)
 RACE_TYPES = (1, 11)  # Strava's workout_type of a race (a run's, a ride's): part of the activity, never a plan
 # v4.3 (owner: « je ne comprends pas »): no unusual-climb modifier (M1) and no back-to-back days (M3) any more. Each
 # activity, or chain of activities less than 30 min apart, is its own effort; overlapping windows already extend
-# the recovery (effort_window keeps the lowest cap of the windows open)
+# the recovery (effort_window keeps the strongest of the windows open)
 LOWER = {"ultra": "very_long", "very_long": "long", "long": None}  # M4: a low-impact sport one class lower (H)
 # the nights after an effort, by its duration whatever the sport (M4): D+1 → D+n never fire the illness alert
 # (they count in the bands like any night, owner 2026-10-08) (H): a Longue night D+1 (« après une sortie
@@ -627,8 +718,8 @@ class Effort:
     """An activity (or activities chained without a real stop) big enough to open a recovery window or to keep
     its nights from firing the illness alert. D is `day`: the day before the first morning after it — the local
     day it ended, or the day before when it ended in the night (before 06:00, H; nights.anchor_efforts moves D
-    there too when the athlete slept after it and woke the same day). Its window is D+0 (once uploaded) → its
-    last cap's day (`caps`, the modifiers applied); its nights by `nights` (NIGHT_TAGS)."""
+    there too when the athlete slept after it and woke the same day). Its window is D+0 (once uploaded) → D+`last`
+    (EFFORT_WINDOWS, the modifiers applied); its nights by `nights` (NIGHT_TAGS)."""
     session_id: int
     kind: str | None  # the class: ultra | very_long | long; None (M4: a low-impact 3–6 h) opens no window
     minutes: float  # its own time, stops included (first start → last end when chained)
@@ -637,7 +728,7 @@ class Effort:
     name: str = ""
     start_day: date | None = None  # the local day it started (its day on Activités)
     nights: str | None = None  # the class its nights follow: by its duration whatever the sport (M4)
-    caps: tuple = ()  # ((interval's last day, starting cap), …); interpolated, with modifiers applied (H)
+    last: int | None = None  # the last day of its window, D+n (EFFORT_WINDOWS, with its modifiers); None: none
     ids: frozenset = frozenset()  # the activities it is made of (a past day knew the chain whole, or a part of it)
 
     @property
@@ -655,8 +746,9 @@ def effort_minutes(s: Session) -> float:
 
 
 def local_start(s: Session) -> datetime:
-    """The session's start on its own local clock (naive)."""
-    return (_utc(s.start) + timedelta(seconds=s.offset or 0)).replace(tzinfo=None)
+    """The session's start on its own local clock (naive): its UTC offset, else the athlete's zone's."""
+    offset = s.offset if s.offset is not None else getattr(s, "zone_offset", 0.0)
+    return (_utc(s.start) + timedelta(seconds=offset or 0)).replace(tzinfo=None)
 
 
 def local_end(s: Session) -> datetime:
@@ -765,19 +857,17 @@ def hr_bounds(sessions: list[Session], rest_of):
     return bounds
 
 
-def _rules(kind: str | None, minutes: float, race: bool, night: bool) -> tuple:
-    """The class's window with its modifiers (H): a Longue run like a race → 65 until D+5; an Ultra ≥ 24 h or
-    run through a night → 65 until D+13 (function back only at D+16 after 37 h: Millet 2011; jump height down to
-    day 18 after 90 km: Chambers 1998). No D+ scaling (CK does not follow the descent: Lecina 2024; duration, not
-    elevation, shapes fatigue: Giandolini 2016b)."""
+def window_last(kind: str | None, minutes: float, race: bool) -> int | None:
+    """The last day of the class's window, D+n, with its modifiers (H): a Longue run like a race D+2; an Ultra of
+    24 h or more D+7 (function back only at D+16 after 37 h: Millet 2011). No D+ scaling (CK does not follow the
+    descent: Lecina 2024; duration, not elevation, shapes fatigue: Giandolini 2016b). None: no window."""
     if kind is None:
-        return ()
-    *head, (last, cap) = EFFORT_RULES[kind]
+        return None
     if kind == "long" and race:
-        last = LONG_RACE_LAST
-    if kind == "ultra" and (minutes >= ULTRA_LONG_MIN or night):
-        last = ULTRA_LONG_LAST
-    return (*head, (last, cap))
+        return LONG_RACE_LAST
+    if kind == "ultra" and minutes >= ULTRA_LONG_MIN:
+        return ULTRA_LONG_LAST
+    return EFFORT_WINDOWS[kind]
 
 
 def _effort(u: _Unit, bounds=None) -> Effort | None:
@@ -790,9 +880,9 @@ def _effort(u: _Unit, bounds=None) -> Effort | None:
     if nights is None:
         return None
     kind = nights if u.foot else LOWER[nights]
-    caps = _rules(kind, minutes, kind == "long" and u.raced(bounds), through_night(u.start, u.end))
+    last = window_last(kind, minutes, kind == "long" and u.raced(bounds))
     return Effort(u.first.id, kind, minutes, u.end, effort_day(u.end), u.first.name, u.first.day, nights,
-                  caps, frozenset(s.id for s in u.sessions))
+                  last, frozenset(s.id for s in u.sessions))
 
 
 def effort_of(s: Session) -> Effort | None:
@@ -825,9 +915,9 @@ def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
     activities without a real stop (< 30 min apart, H), is its own effort,
     sized from its first start to its last end (stops included), named and
     linked after its first activity; a Longue run like a race (_Unit.raced)
-    and a night run through set its window (_rules); a low-impact effort is one
+    and an Ultra of 24 h or more set its window (window_last); a low-impact effort is one
     class lower (M4) but its nights follow its time. Two efforts close
-    together keep their own windows: the lowest cap of those open holds each
+    together keep their own windows: the strongest of those open holds each
     day (effort_window). `rest_of(day)`: the athlete's resting HR as of a day
     (nights.rest_hr on the nights) for a Longue's heart-rate test; None: no
     such test (the night tags and Activités read only the classes)."""
@@ -840,33 +930,22 @@ def efforts(sessions: list[Session], rest_of=None) -> list[Effort]:
 
 
 def effort_window(efs: list[Effort], d: date) -> dict | None:
-    """The recovery window that holds day `d` (D+0 → its last cap's day (H);
-    D+0 reads D+1's cap), the one with the lowest cap on that day, then the
-    bigger effort (its class), then the latest: {effort, days (d − D), ago
-    (d − the day it started: what the page says, as Activités dates it), cap,
-    until}; None outside any. An effort without a class (M4, 3–6 h) opens
-    none."""
+    """The window that holds day `d` (D+0 → D+last) (H), a reason of the daily state (C7; owner, 2026-10-14:
+    scientific basis — it was a cap on the score): red (`tone` danger) on D+0 and D+1 after an Ultra, orange
+    (warn) else; the strongest of those open: red first, then the bigger effort (its class), then the latest.
+    {effort, days (d − D), ago (d − the day it started: as Activités dates it), tone, last, until, text}; None
+    outside any. An effort without a class (M4, 3–6 h) opens none."""
     best = None
     for e in efs:
         k = (d - e.day).days
-        if k < 0 or e.kind is None:
+        if k < 0 or e.kind is None or e.last is None or k > e.last:
             continue
-        if not e.caps or k > e.caps[-1][0]:
-            continue
-        # Product heuristic: retain each effort's initial precaution and
-        # observation window, but release it continuously to 100 on the first
-        # day outside that window. No multi-day plateau or recovery deadline.
-        anchors = [(1, e.caps[0][1])]
-        anchors += [(e.caps[i - 1][0] + 1, cap) for i, (_, cap) in enumerate(e.caps) if i]
-        anchors.append((e.caps[-1][0] + 1, 100))
-        for (a, start), (b, end) in zip(anchors, anchors[1:]):
-            if max(k, 1) <= b:
-                cap = start + (end - start) * (max(k, 1) - a) / (b - a)
-                break
-        key = (cap, KINDS.index(e.kind), k)
+        tone = "danger" if e.kind == "ultra" and k <= ULTRA_RED_LAST else "warn"
+        key = (tone != "danger", KINDS.index(e.kind), k)
         if best is None or key < best[0]:
-            best = (key, {"effort": e, "days": k, "ago": (d - (e.start_day or e.day)).days, "cap": cap,
-                          "until": e.day + timedelta(days=e.caps[-1][0])})
+            best = (key, {"effort": e, "days": k, "ago": (d - (e.start_day or e.day)).days, "tone": tone,
+                          "last": e.last, "until": e.day + timedelta(days=e.last),
+                          "text": f"fenêtre indicative jusqu'à J+{e.last}"})
     return best[1] if best else None
 
 

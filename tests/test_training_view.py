@@ -149,6 +149,24 @@ async def test_a_week_reads_the_same_in_a1_and_in_its_list_heading(client: Async
     assert heading.replace(" ", " ") == f"{week('distance')} · {week('dplus')} · {week('duree')}"
 
 
+async def test_the_weeks_run_monday_to_sunday_on_the_athletes_clock(db_session: AsyncSession, test_user: User):
+    """« Semaines » counts the weeks as the list's headings do (2026-10-14: it counted UTC Mondays): a run at 00:30
+    on Monday in Paris (22:30 UTC on Sunday) is that Monday's week; for an athlete in New York the same moment is
+    Sunday evening, the week before."""
+    now = datetime(2026, 10, 14, 12, tzinfo=timezone.utc)  # a Wednesday
+    monday = date(2026, 10, 12)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=991_000, sport_type="Run", name="Minuit",
+                            start_date=datetime(2026, 10, 11, 22, 30, tzinfo=timezone.utc), distance=10_000,
+                            moving_time=3000, elapsed_time=3000, raw_data={"utc_offset": 7200}))
+    await db_session.flush()
+    weeks, first = await tv.week_totals(db_session, test_user.id, None, now)
+    assert (weeks[-1]["monday"], weeks[-1]["count"], weeks[-2]["count"], first) == (monday, 1, 0, monday)
+    test_user.timezone = "America/New_York"
+    await db_session.flush()
+    weeks, first = await tv.week_totals(db_session, test_user.id, None, now)
+    assert (weeks[-1]["count"], weeks[-2]["count"], first) == (0, 1, monday - timedelta(days=7))
+
+
 async def test_the_races_are_read_without_their_course(db_session: AsyncSession, test_user: User):
     """R1: Activités, Santé and the race page list the races without loading
     the course, plan or weather JSON (≈ 1 MB a 100-mile course)."""
