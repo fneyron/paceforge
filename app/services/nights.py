@@ -161,6 +161,7 @@ HRV_SD_PRIOR = 0.10  # (H) σ0 in ln units (nocturnal RMSSD CV 9.5–12.4 %: Mis
 HR_SD_PRIOR = 0.04  # (H) σ0 as a share of the median (nocturnal HR CV ≈ 4.1 %: Mishica 2022)
 SLEEP_BAND_MIN = 30  # (H) the race page's 24-h sleep band
 ALERT_SD, ALERT_MIN_BPM = 2, 5  # (H)
+ALERT_END_BPM = 3  # (H) an alert episode ends on a night at or under the median + 3 bpm (the old ± 3 bpm band's top)
 # the breathing rate's usual line (owner, 2026-10-09: « utilise la respiration aussi si tu l'as »; research_ind_
 # sleep_resp.md B3): its night-to-night SD is small (0.51 ± 0.20 /min: Miller 2020, 25,000 WHOOP members), so the
 # line is the median + the larger of 1 /min and 2 SD, the SD shrunk towards 0.5 /min (H); one-sided, never a lower one
@@ -914,7 +915,7 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
         mean = statistics.fmean(vals)
         sd = shrunk_sd(statistics.stdev(vals) if len(vals) > 1 else 0.0, len(vals), HR_SD_PRIOR * mean)
         out.update(center=mean, sd=sd, lo=mean - SWC * sd, hi=mean + SWC * sd, median=med, robust_sd=robust,
-                   alert=med + max(ALERT_SD * robust, ALERT_MIN_BPM))
+                   alert=med + max(ALERT_SD * robust, ALERT_MIN_BPM), end=med + ALERT_END_BPM)
     elif metric == "tst24":
         out.update(center=med, sd=sd, lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
     else:  # resp: no band drawn, one upper line (RESP_UP_MIN, RESP_UP_SD)
@@ -1240,8 +1241,8 @@ def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | N
     """The two nights in a row (yesterday's and today's) each ≥ the HR alert line — the median + max(2 σ̂, 5 bpm)
     of the FULL baseline (14 nights, never a provisional one) from day −67 to day −8 of the series that measured
     both (one baseline per series: a new watch has none for 3 weeks, so no alert): {days, values, threshold, hi
-    (the baseline's band top: the episode's end), resp_up, source}; None otherwise (no baseline, a night missing
-    or tagged, two series)."""
+    (the trend band's top), end (the median + 3 bpm: the episode's end, alert_episodes), resp_up, source}; None
+    otherwise (no baseline, a night missing or tagged, two series)."""
     d2, d1 = today, today - timedelta(days=1)
     if not all(alert_night(nights, races, d) for d in (d1, d2)):
         return None
@@ -1259,14 +1260,15 @@ def _illness_alert(nights: dict[date, Night], today: date, races=()) -> dict | N
           if resp_source and nights[d1].resp_source == resp_source else None)
     resp = [nights[d].resp for d in (d1, d2)]
     resp_up = (all(r is not None for r in resp) and statistics.fmean(resp) >= rb["up"]) if rb else None
-    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "hi": b["hi"], "resp_up": resp_up,
-            "source": src}
+    return {"days": [d1, d2], "values": vals, "threshold": b["alert"], "hi": b["hi"], "end": b["end"],
+            "resp_up": resp_up, "source": src}
 
 
 def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int = BAND_DAYS + 7) -> set[date]:
-    """The nights of the alert episodes of the last `days` days (H): from the
-    first of the 2 nights, while the measured nights stay above the band of the alert's baseline (14 days at
-    most)."""
+    """The nights of the alert episodes of the last `days` days (H): from the first of the 2 nights, while the
+    measured nights stay above the median + 3 bpm of the alert's baseline (ALERT_END_BPM; 14 days at most). Not
+    the trend band's top (mean + 0.5 σ̂, often within a beat of the mean): the « FC de nuit haute » tag then ran
+    its 14 days on nights already back to usual (review, 2026-10-14)."""
     out: set[date] = set()
     d = today - timedelta(days=days)
     while d <= today:
@@ -1275,7 +1277,7 @@ def alert_episodes(nights: dict[date, Night], today: date, races=(), days: int =
             k = a["days"][0]
             while k <= min(today, a["days"][0] + timedelta(days=ILL_MAX)):
                 n = nights.get(k)
-                if n and n.hr is not None and n.hr <= a["hi"] and k > a["days"][1]:
+                if n and n.hr is not None and n.hr <= a["end"] and k > a["days"][1]:
                     break
                 out.add(k)
                 k += timedelta(days=1)

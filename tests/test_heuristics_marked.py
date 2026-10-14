@@ -82,6 +82,12 @@ HEURISTICS = [
     # correlation of 0.3 between nights (the second statistics review, 2026-10-14)
     ("app/services/nights.py", "BASELINE_LAG", 7),
     ("app/services/nights.py", "TREND_RHO", 0.3),
+    # the night-HR illness alert's line, and the line its episode (« FC de nuit haute ») ends on (the review of
+    # 2026-10-14: the median + 3 bpm again, not the trend band's top)
+    ("app/services/nights.py", "ALERT_SD", 2),
+    ("app/services/nights.py", "ALERT_MIN_BPM", 5),
+    ("app/services/nights.py", "ALERT_END_BPM", 3),
+    ("app/services/nights.py", "ILL_MAX", 14),
     # the bands' SDs shrunk towards a prior (Kellmann 2018's Bayesian individualisation; Mishica 2022)
     ("app/services/nights.py", "PRIOR_NIGHTS", 7),
     ("app/services/nights.py", "HRV_SD_PRIOR", 0.10),
@@ -103,7 +109,8 @@ HEURISTICS = [
     ("app/services/sante_sleep.py", "DEFICIT_Z", 1.28),  # the sleep owed over its own noise only
     ("app/services/sante_sleep.py", "TST_SD_PRIOR", 45.0),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week (one load pipeline since 2026-10-14:
-    # sante_load), « comme d'habitude » between its 25th and 75th percentiles (USUAL_SPREAD's ± 20 % is gone)
+    # sante_load), « comme d'habitude » from the lightest to the heaviest of its active weeks (the statistics
+    # review, 2026-10-14; USUAL_SPREAD's ± 20 %, then the 25th–75th percentiles, are gone)
     ("app/services/sante_load.py", "USUAL_WEEKS", 11),
     ("app/services/sante_load.py", "USUAL_MIN_WEEKS", 4),
     ("app/services/sante_load.py", "ACUTE_TAU", 7),

@@ -327,6 +327,20 @@ def test_illness_alert():
     assert nt.illness_alert(few, D) is None  # no band, no alert
 
 
+def test_an_alert_episode_ends_at_the_median_plus_3_bpm():
+    """An episode runs from its first night while the nights stay above the median + 3 bpm of the alert's baseline
+    (ALERT_END_BPM, H), 14 days at most. Not the trend band's top (mean + 0.5 σ̂, within a beat of the mean): nights
+    back to 1–2 bpm over the usual kept « FC de nuit haute » for 14 days (review, 2026-10-14)."""
+    base = night_rows(range(22, 90), hr=lambda k: 44 + k % 3)  # median 45: the alert line 50, the end 48
+    rows = {m: {**base[m], **night_rows([20, 19], hr=56.0)[m], **night_rows(range(6, 19), hr=47.0)[m]} for m in base}
+    nights = nt.build_nights(rows, D)
+    a = nt.illness_alert(nights, D - timedelta(days=19))
+    assert a["threshold"] == 50 and a["end"] == 48 and a["hi"] < 46  # 47 is over the band's top, under the end
+    assert sorted(nt.alert_episodes(nights, D)) == [D - timedelta(days=20), D - timedelta(days=19)]  # was 15 nights
+    rows["hr_night"].update(night_rows(range(15, 19), hr=49.0)["hr_night"])  # still over the end: still on
+    assert len(nt.alert_episodes(nt.build_nights(rows, D), D)) == 6  # nights −20 to −15, then 47 at −14
+
+
 def test_timing_rounding_and_resettled_wakes():
     rows = night_rows(range(0, 10), start=(23, 7), end=(6, 38))
     rows["nap"][D] = (60, {"windows": [["2026-10-07T07:30", "2026-10-07T08:30"]]}, "Garmin")

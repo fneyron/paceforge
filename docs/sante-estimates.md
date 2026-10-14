@@ -66,7 +66,9 @@ Code : `app/services/nights.py` (C2–C4), `sante_sleep.py` (C5), `sante_trainin
 - **Alerte FC de nuit (rouge).** Deux nuits de suite sur la série, sans contexte connu (effort,
   décalage horaire, altitude…), chacune ≥ médiane + max(2 σ̂ ; 5 bpm) d'une référence complète
   **(H)**. Alavi 2022 rapporte + 4 bpm sur 2 nuits avant des symptômes. L'alerte est spécifique,
-  pas sensible : un graphique calme ne prouve pas la bonne santé.
+  pas sensible : un graphique calme ne prouve pas la bonne santé. L'épisode (le mot « FC de nuit
+  haute » sur les nuits) dure tant que les nuits restent au-dessus de la médiane + 3 bpm, 14 jours
+  au plus **(H)**.
 - **Respiration (orange).** Moyenne des deux dernières nuits ≥ médiane + max(1 /min ; 2 σ̂) d'une
   référence complète **(H)**. Miller 2020 rapporte un écart nocturne typique de 0,5 /min.
 
