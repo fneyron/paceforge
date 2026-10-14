@@ -62,9 +62,10 @@ async def test_calculate_training_load_with_activities(
 
     assert result.volume_7d_km == 15.0  # 3 * 5km
     assert result.count_7d == 3
-    # owner, 2026-10-14: scientific basis — the headline km are the running's: a ride's 30 km are never added to a
-    # run's (it read 45); each sport's km apart, the hours of every sport
-    assert result.volume_28d_km == 15.0
+    # the headline km are every sport's, as Activités says them (« 28 j : 45 km »: a cyclist's are a ride's; review,
+    # 2026-10-14); each sport's km apart, the running's alone, the hours of every sport
+    assert result.volume_28d_km == 45.0  # 15 + 30km
+    assert result.run_km_28d == 15.0 and result.run_km_7d == 15.0
     assert result.sport_breakdown_28d == {"Run": 15.0, "Ride": 30.0}
     assert result.volume_28d_hours == 2.25 and result.volume_7d_hours == 1.25
     assert result.count_28d == 4
@@ -97,3 +98,19 @@ async def test_training_load_excludes_future_activities(
     # Calculate load as of 3 days ago — should not include the recent activity
     result = await calculate_training_load(db_session, test_user.id, before)
     assert result.count_7d == 0
+
+
+@pytest.mark.asyncio
+async def test_a_cyclist_s_kilometres_are_counted(db_session: AsyncSession, test_user: User):
+    """Activités' « 7 j : X km · 28 j : Y km » and the analyses' training_load_*_km are every sport's kilometres: a
+    cyclist read 0 km once they were the running's alone (review, 2026-10-14). The running's stay apart."""
+    now = datetime.now(timezone.utc)
+    for i in range(2):
+        db_session.add(Activity(strava_activity_id=400000 + i, user_id=test_user.id, sport_type="Ride",
+                                name=f"Ride {i}", start_date=now - timedelta(days=2 * i + 1), distance=42000.0,
+                                moving_time=5400, elapsed_time=5600, total_elevation_gain=300.0,
+                                raw_data={"id": 400000 + i}))
+    await db_session.flush()
+    result = await calculate_training_load(db_session, test_user.id, now)
+    assert result.volume_7d_km == 84.0 and result.volume_28d_km == 84.0
+    assert result.run_km_7d == 0.0 and result.sport_breakdown_7d == {"Ride": 84.0}

@@ -121,8 +121,10 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   chargée des semaines actives parmi ces 11 (une semaine vide n'est pas un minimum) **(H)**.
   Avant : ± 20 %, puis les 25e et 75e centiles, qui disaient « plus » ou « moins » pour 57 % des
   semaines ordinaires ; désormais environ 16 %.
-- **Activités 7 j / 28 j.** Les mêmes séances et la même charge D. Les kilomètres sont donnés par
-  sport ; ceux affichés en tête sont ceux de la course à pied.
+- **Activités 7 j / 28 j.** Les mêmes séances (doublons écartés) et la même charge D, sur les jours
+  locaux. Les kilomètres affichés en tête sont ceux de tous les sports, comme le dit la ligne
+  « 7 j : X km · 28 j : Y km » (ceux d'un cycliste sont ceux de ses sorties) ; ils sont aussi
+  donnés par sport, et ceux de la course à pied à part.
 - **Récupération.** Aucune limite liée à la charge. L'Entraînement % s'affiche comme contexte.
 
 ## C7 — Fenêtres après un gros effort

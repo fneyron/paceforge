@@ -177,11 +177,12 @@ def week_ratio(sessions, load: dict, until: date) -> dict | None:
 
 def totals(sessions, load: dict, today: date, days: int) -> dict:
     """Activités' last `days` local days up to `today` (the sessions that ended in them): their count, hours,
-    kilometres per sport (never a ride's added to a run's: `run_km` is the running's) and the summed daily load."""
+    kilometres (`km` every sport's, as Activités says them; per sport; `run_km` the running's alone) and the summed
+    daily load."""
     window = [s for s in valid(sessions) if today - timedelta(days=days - 1) <= s.end_day <= today]
     km = defaultdict(float)
     for s in window:
         km[s.sport] += s.km
-    return {"count": len(window), "hours": sum(s.minutes for s in window) / 60, "km_by_sport": dict(km),
-            "run_km": sum(s.km for s in window if s.sport in st.RUN_TYPES),
+    return {"count": len(window), "hours": sum(s.minutes for s in window) / 60, "km": sum(km.values()),
+            "km_by_sport": dict(km), "run_km": sum(s.km for s in window if s.sport in st.RUN_TYPES),
             "load": sum(load[s.id][0] for s in window if s.id in load)}
