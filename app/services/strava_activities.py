@@ -12,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.activity import Activity
 from app.models.user import User
 from app.services.activity_sources import adopt_watch_twin
-from app.services.timezones import DEFAULT_ZONE, zone_from_strava
+from app.services.timezones import zone_from_strava
 
 # what only the detail answer (GET /activities/{id}) carries: the first import reads it after the list
 DETAIL_FIELDS = ("splits_metric", "best_efforts", "laps", "max_watts", "weighted_average_watts", "suffer_score",
                  "calories")
 PER_PAGE = 30
-ZONE_SAMPLE = 30  # the athlete's zone: the most frequent among their last activities (a trip abroad does not move it)
+# the athlete's zone: held by at least ZONE_MAJORITY of their last ZONE_SAMPLE activities that carry one
+ZONE_SAMPLE, ZONE_MAJORITY = 30, 20
 
 
 def parse_date(value):
@@ -88,16 +89,18 @@ async def import_recent(db: AsyncSession, user: User, strava, max_pages: int) ->
 
 
 async def adopt_zone(db: AsyncSession, user: User) -> None:
-    """The athlete's zone from their Strava activities (« (GMT+01:00) Europe/Paris »), while none was chosen (empty,
-    or still the default): the most frequent among their last ZONE_SAMPLE ones."""
-    if user.timezone and user.timezone != DEFAULT_ZONE:
-        return
+    """users.timezone follows the athlete's Strava activities (« (GMT+01:00) Europe/Paris »), read again at each
+    sync, but only on a clear majority: a zone held by at least ZONE_MAJORITY of their last ZONE_SAMPLE activities
+    that carry one. A trip or a training camp never moves it, a move does (after 20 activities there); whatever set
+    it before (none yet, the default, the phone) gives way to that majority only."""
     labels = (await db.execute(
         select(Activity.raw_data["timezone"].as_string())
-        .where(Activity.user_id == user.id, Activity.strava_activity_id.is_not(None))
-        .order_by(Activity.start_date.desc()).limit(ZONE_SAMPLE))).scalars().all()
-    zones = Counter(z for z in map(zone_from_strava, labels) if z)
-    if zones:
-        zone = zones.most_common(1)[0][0]
-        if zone != user.timezone:
-            user.timezone = zone
+        .where(Activity.user_id == user.id, Activity.strava_activity_id.is_not(None),
+               Activity.raw_data["timezone"].as_string().is_not(None))
+        .order_by(Activity.start_date.desc()).limit(2 * ZONE_SAMPLE))).scalars().all()
+    zones = [z for z in map(zone_from_strava, labels) if z][:ZONE_SAMPLE]
+    if not zones:
+        return
+    zone, held = Counter(zones).most_common(1)[0]
+    if held >= ZONE_MAJORITY and zone != user.timezone:
+        user.timezone = zone

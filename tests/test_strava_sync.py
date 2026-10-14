@@ -331,28 +331,37 @@ def _run(user, sid, start, name="Footing") -> Activity:
                     distance=8000, moving_time=2400, elapsed_time=2500, total_elevation_gain=50, raw_data={})
 
 
-async def test_the_athletes_zone_comes_from_their_strava_activities(db_session, test_user):
-    """users.timezone, while none was chosen (empty, or still the default): the most frequent zone of the last
-    activities (« (GMT-05:00) America/New_York »), a trip abroad not moving it; a zone set otherwise is kept."""
+async def test_the_athletes_zone_follows_a_clear_majority_of_their_activities(db_session, test_user):
+    """users.timezone from the activities' Strava zone (« (GMT+01:00) Europe/Paris »), read again at each sync but
+    switched only by a clear majority: 20 of the last 30 activities with a zone. Review D3: a zone learnt during a
+    trip stuck for good (a non-default zone was never read again)."""
     from app.services.strava_activities import adopt_zone
 
-    start = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+    t, sid = datetime(2026, 1, 1, 7, tzinfo=timezone.utc), [790_000]
 
-    def act(sid, label, days):
-        a = _run(test_user, sid, start + timedelta(days=days))
-        a.raw_data = {"timezone": label}
-        return a
-    db_session.add_all([act(790_000 + d, "(GMT-05:00) America/New_York", d) for d in range(6)]
-                       + [act(790_100 + d, "(GMT+09:00) Asia/Seoul", 10 + d) for d in range(3)])  # the newest
-    await db_session.flush()
-    assert test_user.timezone is None
+    async def runs(label, n, every=timedelta(days=1)):
+        nonlocal t
+        for _ in range(n):
+            a = _run(test_user, sid[0], t)
+            a.raw_data = {"timezone": label} if label else {}
+            db_session.add(a)
+            sid[0] += 1
+            t += every
+        await db_session.flush()
+        await adopt_zone(db_session, test_user)
+        return test_user.timezone
+    paris, canary, ny = "(GMT+01:00) Europe/Paris", "(GMT+00:00) Atlantic/Canary", "(GMT-05:00) America/New_York"
+    assert await runs(ny, 12) is None  # too few to tell: left as it is (the default zone applies)
+    assert await runs(paris, 30) == "Europe/Paris"
+    assert await runs(canary, 16, timedelta(hours=12)) == "Europe/Paris"  # a 2-week camp, twice a day: 16 of 30
+    assert await runs(paris, 60) == "Europe/Paris"  # back home
+    assert await runs(None, 40) == "Europe/Paris"  # activities without a zone count for nothing
+    assert await runs(ny, 19) == "Europe/Paris" and await runs(ny, 1) == "America/New_York"  # a move: 20 of 30
+    test_user.timezone = "Asia/Tokyo"  # set by the phone meanwhile
     await adopt_zone(db_session, test_user)
-    assert test_user.timezone == "America/New_York"
-    test_user.timezone = "Europe/Paris"  # still the default: learnt again
-    await adopt_zone(db_session, test_user)
-    assert test_user.timezone == "America/New_York"
-    test_user.timezone = "Asia/Tokyo"  # chosen otherwise: kept
-    await adopt_zone(db_session, test_user)
+    assert test_user.timezone == "America/New_York"  # the majority is the only override
+    test_user.timezone = "Asia/Tokyo"
+    await runs(paris, 15)  # no clear majority any more (15 Paris, 15 New York): kept
     assert test_user.timezone == "Asia/Tokyo"
 
 
