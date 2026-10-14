@@ -460,13 +460,51 @@ async def test_the_weather_endpoint_asks_open_meteo_once_per_place_and_day(as_us
         return {"temperature_c": 12.0, "heat_factor": 1.0, "date": date, "hourly": {"temps": [12.0] * 48}}
 
     monkeypatch.setattr(weather, "get_weather_forecast", fake)
-    for lat in (45.9211, 45.9213):  # the same place to ~1 km
+    for lat in (45.9211, 45.9213):  # the same place to 100 m
         r = await as_user.post("/api/simulator/weather", data={"lat": lat, "lon": 6.869, "date": "2026-10-20"})
         assert r.status_code == 200 and r.json()["temperature_c"] == 12.0
     assert len(calls) == 1
     r = await as_user.post("/api/simulator/weather", data={"lat": 45.92, "lon": 6.869, "date": "2026-10-21"})
     assert len(calls) == 2  # another day
     assert (await as_user.post("/api/simulator/weather", data={"lat": 145.0, "lon": 6.8, "date": "2026-10-21"})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_the_forecast_cache_keeps_what_was_fetched_not_what_was_sent(monkeypatch):
+    """A 1 MB points list costs nothing kept: the key is the start and the first 23 distinct places (what one
+    Open-Meteo call fetches; the former key held every point sent: 115 MB for 20 such lists); expired entries
+    go at every insert."""
+    import tracemalloc
+
+    from app.services import weather
+
+    weather._FORECAST_CACHE.clear()
+    calls = []
+
+    async def fake(lat, lon, date, points=None):
+        calls.append(len(points or []))
+        return {"temperature_c": 1.0, "date": date, "hourly": {"temps": [1.0] * 48}}
+
+    monkeypatch.setattr(weather, "get_weather_forecast", fake)
+    big = [[45 + i * 1e-5, 6.8, i * 0.01] for i in range(40000)]
+    assert len(json.dumps(big)) > 1_000_000
+    tracemalloc.start()
+    try:
+        before, _ = tracemalloc.get_traced_memory()
+        for k in range(20):
+            await weather.cached_forecast(45.0 + k, 6.8, "2026-10-20", points=big)
+        after, _ = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert len(weather._FORECAST_CACHE) == 20 and after - before < 2_000_000
+    assert max(calls) == weather.FORECAST_MAX_LOCS - 1  # the places fetched, not the 40 000 sent
+    await weather.cached_forecast(45.0, 6.8, "2026-10-20", points=big[:30000])  # differs beyond them: the same key
+    assert len(calls) == 20
+    for k, (at, value) in list(weather._FORECAST_CACHE.items()):  # all expired
+        weather._FORECAST_CACHE[k] = (at - weather.FORECAST_TTL_S - 1, value)
+    await weather.cached_forecast(10.0, 10.0, "2026-10-20")
+    assert len(weather._FORECAST_CACHE) == 1
+    weather._FORECAST_CACHE.clear()
 
 
 @pytest.mark.asyncio

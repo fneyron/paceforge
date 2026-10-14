@@ -38,25 +38,38 @@ async def get_weather_forecast(lat: float, lon: float, date: str, points: list |
         return None
 
 
-# One upstream call per place (rounded to ~1 km), race day and points for a while: a plan page asks again
-# at every visit and a forecast changes by the hour. Per worker, bounded; a failure is never cached.
+# One upstream call per place, race day and points for a while: a plan page asks again at every visit and a
+# forecast changes by the hour. Per worker, bounded (about 0.2 MB a 24-point forecast); expired entries go at
+# every insert; a failure is never cached.
 FORECAST_TTL_S = 30 * 60
-FORECAST_CACHE_SIZE = 256
+FORECAST_CACHE_SIZE = 128
+FORECAST_MAX_LOCS = 24  # the start and the first 23 distinct points: what one Open-Meteo call asks for
 _FORECAST_CACHE: dict[tuple, tuple[float, dict]] = {}
 
 
-def _forecast_key(lat: float, lon: float, date: str, points: list | None) -> tuple:
-    pts = []
+def _forecast_locs(lat: float, lon: float, points: list | None) -> list[list[float]]:
+    """[[lat, lon, km]] the forecast is fetched at: the start, then each point more than ~200 m from the ones
+    kept, the first FORECAST_MAX_LOCS only."""
+    locs = [[float(lat), float(lon), 0.0]]
     for pt in points or []:
+        if len(locs) >= FORECAST_MAX_LOCS:
+            break
         try:
-            pts.append((round(float(pt[0]), 2), round(float(pt[1]), 2), round(float(pt[2]), 1)))
+            plat, plon, pkm = float(pt[0]), float(pt[1]), float(pt[2])
         except (TypeError, ValueError, IndexError):
             continue
-    return round(float(lat), 2), round(float(lon), 2), str(date)[:10], tuple(pts)
+        if all(abs(plat - l[0]) > 0.002 or abs(plon - l[1]) > 0.002 for l in locs):
+            locs.append([plat, plon, pkm])
+    return locs
+
+
+def _forecast_key(lat: float, lon: float, date: str, points: list | None) -> tuple:
+    """The day and the places actually fetched (never the whole points list a client sent)."""
+    return str(date)[:10], tuple((round(a, 3), round(b, 3), round(k, 1)) for a, b, k in _forecast_locs(lat, lon, points))
 
 
 async def cached_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
-    """get_weather_forecast through the per-worker cache (rounded place, date, points; FORECAST_TTL_S)."""
+    """get_weather_forecast through the per-worker cache (the places fetched, the date; FORECAST_TTL_S)."""
     import copy
 
     key = _forecast_key(lat, lon, date, points)
@@ -64,8 +77,11 @@ async def cached_forecast(lat: float, lon: float, date: str, points: list | None
     hit = _FORECAST_CACHE.get(key)
     if hit and now - hit[0] < FORECAST_TTL_S:
         return copy.deepcopy(hit[1])
-    result = await get_weather_forecast(lat, lon, date, points=points)
+    locs = _forecast_locs(lat, lon, points)
+    result = await get_weather_forecast(lat, lon, date, points=locs[1:])
     if result:
+        for k in [k for k, (at, _) in _FORECAST_CACHE.items() if now - at >= FORECAST_TTL_S]:
+            del _FORECAST_CACHE[k]
         if len(_FORECAST_CACHE) >= FORECAST_CACHE_SIZE:
             _FORECAST_CACHE.pop(min(_FORECAST_CACHE, key=lambda k: _FORECAST_CACHE[k][0]))
         _FORECAST_CACHE[key] = (now, copy.deepcopy(result))
@@ -112,15 +128,7 @@ def _hourly_arrays(data: dict, fallback: dict | None = None) -> dict | None:
 
 async def _fetch_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
     """Real forecast for dates within 15 days, at the start and at each point."""
-    locs = [[float(lat), float(lon), 0.0]]
-    for pt in points or []:
-        try:
-            plat, plon, pkm = float(pt[0]), float(pt[1]), float(pt[2])
-        except (TypeError, ValueError, IndexError):
-            continue
-        if all(abs(plat - l[0]) > 0.002 or abs(plon - l[1]) > 0.002 for l in locs):
-            locs.append([plat, plon, pkm])
-    locs = locs[:24]
+    locs = _forecast_locs(lat, lon, points)
     end_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(FORECAST_URL, params={
