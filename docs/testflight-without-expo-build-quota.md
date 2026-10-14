@@ -27,6 +27,7 @@ Prérequis unique côté GitHub si les accès Apple sont déjà configurés dans
    choisir **Run workflow**, puis **main**. Ou pousser un tag `testflight-…` sur un
    commit de `main` (`git tag testflight-2026-10-14 origin/main && git push origin
    testflight-2026-10-14`) : le workflow démarre seul et refuse un tag hors de `main`.
+   Ou pousser sur `main` un commit dont le message contient `[testflight]`.
 
 La vérification initiale s'arrête si ce secret manque. La signature utilise les
 certificats et profils déjà gérés par EAS ; ils ne sont pas archivés dans les artefacts
