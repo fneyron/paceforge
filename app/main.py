@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,7 +48,10 @@ def check_secrets() -> None:
     from app.crypto import check_keys
 
     if not settings.DEBUG and (not settings.SECRET_KEY.strip() or settings.SECRET_KEY in DEFAULT_SECRET_KEYS):
-        raise RuntimeError("SECRET_KEY is empty or a known default: set a long random value.")
+        raise RuntimeError(
+            "SECRET_KEY is empty or a known default: set a long random value. If tokens were stored under the "
+            "old one, first append legacy_key(old SECRET_KEY) to ENCRYPTION_KEYS (app.crypto), or they become "
+            "unreadable.")
     try:
         check_keys()
     except ValueError as e:
@@ -56,9 +60,31 @@ def check_secrets() -> None:
         logger.warning("ENCRYPTION_KEYS is not set: stored tokens are encrypted with a key derived from SECRET_KEY")
 
 
+async def check_stored_secrets(engine=None) -> None:
+    """No start when stored tokens no configured key decrypts (a key dropped from ENCRYPTION_KEYS, SECRET_KEY
+    changed without its legacy key appended): started, the syncs would mark every such link « to reconnect »
+    for good. A database that does not answer never blocks the start (warned, unchecked)."""
+    from app.crypto import unreadable_secrets
+
+    if engine is None:
+        from app.database import engine
+    try:
+        async with asyncio.timeout(10), engine.connect() as conn:
+            unreadable = await unreadable_secrets(conn)
+    except Exception:
+        logger.warning("Stored secrets not checked at start: the database did not answer", exc_info=True)
+        return
+    if unreadable:
+        raise RuntimeError(
+            f"Stored secrets that no configured key decrypts: {', '.join(unreadable)}. Put back the key that "
+            "encrypted them in ENCRYPTION_KEYS (any order after the first; a former SECRET_KEY as "
+            "legacy_key(old SECRET_KEY)), then start again: running now would ask those athletes to reconnect.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     check_secrets()
+    await check_stored_secrets()
     logger.info("PaceForge starting up")
     yield
     logger.info("PaceForge shutting down")

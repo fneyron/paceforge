@@ -55,6 +55,38 @@ def decrypt_secret(ciphertext: bytes, ttl: int | None = None) -> str:
     return _get_fernet().decrypt(ciphertext, ttl=ttl).decode()
 
 
+# The stored secrets, one kind per line: (name, table, column, the column ordering its rows by last write,
+# whether values stored in clear before may remain: Strava tokens until their next refresh).
+_STORED = (
+    ("COROS", "coros_connections", "access_token_encrypted", "expires_at", False),
+    ("Garmin", "garmin_connections", "access_token_encrypted", "expires_at", False),
+    ("Strava app keys", "users", "strava_client_secret_encrypted", "updated_at", False),
+    ("Strava", "users", "strava_refresh_token", "updated_at", True),
+)
+
+
+async def unreadable_secrets(conn) -> list[str]:
+    """The kinds of stored secrets no configured key decrypts, judged on two raw values of each (the last and
+    the first written: a key added lately then dropped, an old one dropped), so a missing key is caught before
+    anything is flagged. Two small queries per kind."""
+    from sqlalchemy import text
+
+    out = []
+    for name, table, column, written, in_clear in _STORED:
+        sealed = f" AND {column} LIKE '{FERNET_PREFIX}%'" if in_clear else ""
+        for order in (f"{written} DESC NULLS LAST", f"{written} ASC NULLS FIRST"):
+            value = (await conn.execute(text(
+                f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL{sealed} ORDER BY {order} LIMIT 1"))).scalar()
+            if value is None:
+                break  # none stored
+            try:
+                _get_fernet().decrypt(value.encode() if isinstance(value, str) else bytes(value))
+            except InvalidToken:
+                out.append(name)
+                break
+    return out
+
+
 class EncryptedString(TypeDecorator):
     """Text stored Fernet-encrypted, read back in clear. A value written in clear
     before the column was encrypted is read as is (it is encrypted when it next

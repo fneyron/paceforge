@@ -123,3 +123,111 @@ async def test_a_strava_attempt_no_key_reads_is_an_expired_link(client, db_sessi
     assert exchange.await_count == 0
 
 
+
+
+# ── no start when stored secrets no configured key opens ────────────────────
+
+@pytest.fixture
+async def stored(tmp_path):
+    """A database of its own (as the app's at startup), and a session on it."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.database import Base
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/start.db")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as db:
+        yield engine, db
+    await engine.dispose()
+
+
+def _coros_link(user_id):
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.coros import CorosConnection
+
+    return CorosConnection(user_id=user_id, issuer="https://coros", client_id="cid", resource_url="https://coros/mcp",
+                           token_endpoint="https://coros/token", access_token_encrypted=encrypt_secret("at-1"),
+                           refresh_token_encrypted=encrypt_secret("rt-1"),
+                           expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+
+
+async def test_no_start_when_the_key_that_encrypted_the_links_is_missing(stored, monkeypatch, caplog):
+    """The owner set ENCRYPTION_KEYS, the tokens were refreshed under it, then one deploy went without it: the
+    app used to start and its first sync round flagged every link « to reconnect » for good."""
+    from app.main import check_stored_secrets
+    from app.models.user import User
+
+    engine, db = stored
+    monkeypatch.setattr(settings, "SECRET_KEY", "a-long-random-production-secret-key")
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
+    user = User(email="a@x.fr")
+    db.add(user)
+    await db.flush()
+    db.add(_coros_link(user.id))
+    await db.commit()
+    await check_stored_secrets(engine)  # the key is there: starts
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")  # the deploy without it
+    with pytest.raises(RuntimeError, match="COROS") as refused:
+        await check_stored_secrets(engine)
+    assert "ENCRYPTION_KEYS" in str(refused.value)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
+    await check_stored_secrets(engine)
+
+
+async def test_each_kind_of_stored_secret_is_checked_on_its_first_and_last_written_value(stored, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    from app.crypto import unreadable_secrets
+    from app.models.garmin import GarminConnection
+    from app.models.user import User
+
+    engine, db = stored
+    old = User(email="old@x.fr")
+    db.add(old)
+    await db.flush()
+    raw = text("UPDATE users SET strava_refresh_token = :t, updated_at = :at WHERE id = :id")  # no column type
+    await db.execute(raw, {"t": "b" * 40, "at": "2026-01-01 00:00:00", "id": old.id})  # stored in clear: skipped
+    await db.commit()
+    async with engine.connect() as conn:
+        assert await unreadable_secrets(conn) == []  # nothing encrypted yet, the clear token ignored
+    new = User(email="new@x.fr", strava_refresh_token="c" * 40, strava_client_id="4242",
+               strava_client_secret_encrypted=encrypt_secret("s3cret"))
+    db.add_all([new, GarminConnection(user_id=old.id, di_client_id="d", access_token_encrypted=_foreign("g").encode(),
+                                      expires_at=datetime.now(timezone.utc) + timedelta(hours=1))])
+    await db.commit()
+    async with engine.connect() as conn:
+        assert await unreadable_secrets(conn) == ["Garmin"]
+    # the first written value under a key now gone, the last one fine: still caught
+    await db.execute(raw, {"t": _foreign("b" * 40), "at": "2026-01-02 00:00:00", "id": old.id})
+    await db.execute(update(User).where(User.id == new.id).values(updated_at=datetime.now(timezone.utc)))
+    await db.commit()
+    async with engine.connect() as conn:
+        assert await unreadable_secrets(conn) == ["Garmin", "Strava"]
+
+
+async def test_a_database_that_does_not_answer_never_blocks_the_start(tmp_path, caplog):
+    import logging
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.main import check_stored_secrets
+
+    caplog.set_level(logging.WARNING)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/missing/dir/x.db")  # cannot open
+    await check_stored_secrets(engine)
+    assert "not checked at start" in caplog.text
+    await engine.dispose()
+
+
+def test_the_secret_key_refusal_says_how_to_keep_the_tokens(monkeypatch):
+    from app.main import check_secrets
+
+    monkeypatch.setattr(settings, "SECRET_KEY", "")
+    monkeypatch.setattr(settings, "DEBUG", False)
+    with pytest.raises(RuntimeError, match=r"first append legacy_key\(old SECRET_KEY\) to ENCRYPTION_KEYS"):
+        check_secrets()
