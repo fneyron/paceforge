@@ -81,14 +81,16 @@ export async function collect(progress: (s: string) => void, daysBack = 30, budg
   const refused = (Object.keys(records) as Metric[]).filter(m => !allowed.has(records[m]));
   if (refused.length) notices.push(`Non autorisé : ${refused.map(m => labels[m]).join(', ')}.`);
   if (!days.length) notices.push('Aucune mesure lisible. Vérifie que tes applications alimentent Health Connect.');
-  return { days, notices, complete: errors.size === 0, ...(quota ? { quota } : {}) };
+  // Categories not read in full keep their change token (background.ts reads them again).
+  const unread = quota ? wanted : wanted.filter(m => errors.has(labels[m]));
+  return { days, notices, complete: errors.size === 0, unread, ...(quota ? { quota } : {}) };
 }
 export async function collectSleep(_progress: (s: string) => void, _daysBack = 60, _budget?: ReadBudget): Promise<SleepResult> {
   return { nights: [], notices: [], complete: true };
 }
 
-/** Which categories changed since the stored change tokens (one per record type).
- * A first token reads the last 3 days; an expired one (unused for 30 days) a week. */
+/** Which categories changed since the stored change tokens (one per category, keyed by
+ * metric). A first token reads the last 3 days; an expired one (unused for 30 days) a week. */
 export async function changedMetrics(tokens: Record<string, string>, budget: ReadBudget = {}): Promise<ChangePlan> {
   const read = healthReader(budget.total ?? 4000, budget.perRead ?? 3000);
   const next = { ...tokens }, changed = new Set<Metric>();
@@ -99,9 +101,9 @@ export async function changedMetrics(tokens: Record<string, string>, budget: Rea
     for (const metric of Object.keys(records) as Metric[]) {
       const recordType = records[metric];
       if (!allowed.has(recordType)) continue;
-      let token = tokens[recordType];
+      let token = tokens[metric];
       if (!token) {
-        next[recordType] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
+        next[metric] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
         changed.add(metric);
         continue;
       }
@@ -109,11 +111,11 @@ export async function changedMetrics(tokens: Record<string, string>, budget: Rea
         const r = await read(() => getChanges({ changesToken: token }));
         if (r.changesTokenExpired) {
           daysBack = 7; changed.add(metric);
-          next[recordType] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
+          next[metric] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
           break;
         }
         if (r.upsertionChanges.length || r.deletionChanges.length) changed.add(metric);
-        token = next[recordType] = r.nextChangesToken;
+        token = next[metric] = r.nextChangesToken;
         if (!r.hasMore) break;
       }
     }

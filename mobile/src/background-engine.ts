@@ -166,14 +166,14 @@ export function createEngine(deps: EngineDeps) {
 
     const hashes = { ...state.hashes };
     let credentials: Credentials = { token: pair.token, prev_token: pair.prev_token };
-    let refused: unknown = null, quota = false, dailyDone = false, sent = 0;
+    let refused: unknown = null, quota = false, dailyDone = false, sent = 0, daily: HealthResult | null = null;
     const report = await syncHealth({
       userId: pair.user_id, full: false, previous, trigger: 'background', deadline, clock: deps.now,
       now: () => new Date(deps.now()).toISOString(),
       daily: async () => {
-        const result = await deps.readDaily(plan.daysBack, within(DAILY), plan.metrics);
-        quota = !!result.quota;
-        return result;
+        daily = await deps.readDaily(plan.daysBack, within(DAILY), plan.metrics);
+        quota = !!daily.quota;
+        return daily;
       },
       sleep: () => deps.readNights(NIGHTS, within(SLEEP)),
       send: (path, body, meta) => authorized(credentials,
@@ -214,8 +214,15 @@ export function createEngine(deps: EngineDeps) {
     }
     const retryAt = refused instanceof ApiError && refused.status === 429 ? now + (refused.retryAfter || 900) * 1000
       : quota ? now + 3600000 : 0;
-    // Health Connect tokens move on once the days they announced are on the server.
-    await deps.saveState({ ...state, hashes: recent(hashes, now), tokens: dailyDone ? plan.tokens : state.tokens, retryAt });
+    // Health Connect tokens move on only for the categories read in full and on the
+    // server: one cut by a quota refusal or a time limit is announced again next run.
+    const read = daily as HealthResult | null; // assigned in the callback above
+    const unread = new Set<string>(!read || quota ? Object.keys(plan.tokens)
+      : read.unread ?? (read.complete ? [] : Object.keys(plan.tokens)));
+    const tokens = dailyDone
+      ? { ...state.tokens, ...Object.fromEntries(Object.entries(plan.tokens).filter(([metric]) => !unread.has(metric))) }
+      : state.tokens;
+    await deps.saveState({ ...state, hashes: recent(hashes, now), tokens, retryAt });
     return !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
   }
 

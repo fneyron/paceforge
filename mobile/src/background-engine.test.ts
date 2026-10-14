@@ -4,7 +4,7 @@ import { ApiError } from './api';
 import { createEngine, emptyState, EngineDeps, readState, RUN_MS } from './background-engine';
 import { isLockedError, KeychainLocked } from './secure-core';
 import type { SyncReport } from './sync';
-import type { Daily, Pair } from './types';
+import type { Daily, HealthResult, Metric, Pair } from './types';
 import type { AppleNight } from './night-samples';
 
 const start = Date.parse('2026-10-14T08:00:00Z');
@@ -213,22 +213,41 @@ test('too many requests waits for the server; off, blocked and unpaired phones n
 });
 
 test('Health Connect change tokens: no change reads nothing, a quota refusal stops, tokens move once sent', async () => {
-  const quiet = fixture({ changes: async () => ({ daysBack: 0, tokens: { Weight: 'w2' } }) });
+  const quiet = fixture({ changes: async () => ({ daysBack: 0, tokens: { weight: 'w2' } }) });
   assert.equal(await createEngine(quiet.deps).request('task'), 'unchanged');
   assert.deepEqual(quiet.calls, []);
-  assert.deepEqual(quiet.stored.state.tokens, { Weight: 'w2' });
+  assert.deepEqual(quiet.stored.state.tokens, { weight: 'w2' });
   const refused = fixture({ changes: async tokens => ({ daysBack: 0, tokens, quota: true }) });
   assert.equal(await createEngine(refused.deps).request('task'), 'deferred');
   assert.equal(refused.stored.state.retryAt, start + 3600000);
-  const failing = fixture({ changes: async () => ({ daysBack: 7, metrics: ['weight'], tokens: { Weight: 'w3' } }),
+  const failing = fixture({ changes: async () => ({ daysBack: 7, metrics: ['weight'], tokens: { weight: 'w3' } }),
     send: async () => { throw new Error('offline'); } });
-  failing.stored.state = { ...failing.stored.state, tokens: { Weight: 'w1' } };
+  failing.stored.state = { ...failing.stored.state, tokens: { weight: 'w1' } };
   assert.equal(await createEngine(failing.deps).request('task'), 'partial');
   assert.equal(failing.calls[0], 'daily 7 8000/3000');
-  assert.deepEqual(failing.stored.state.tokens, { Weight: 'w1' }, 'unsent changes are announced again');
+  assert.deepEqual(failing.stored.state.tokens, { weight: 'w1' }, 'unsent changes are announced again');
   const quota = fixture({ readDaily: async () => ({ days: [], notices: [], complete: false, quota: true }) });
   await createEngine(quota.deps).request('task');
   assert.equal(quota.stored.state.retryAt, start + 3600000);
+});
+
+test('Health Connect tokens move on only for categories read in full', async () => {
+  const changed = { daysBack: 3, metrics: ['weight', 'steps'] as Metric[], tokens: { weight: 'w2', steps: 's2', hr_day: 'h2' } };
+  const run = async (daily: Partial<HealthResult>) => {
+    const f = fixture({ changes: async () => changed,
+      readDaily: async () => ({ days: [steps], notices: [], complete: true, ...daily }) });
+    f.stored.state = { ...f.stored.state, tokens: { weight: 'w1', steps: 's1', hr_day: 'h1' } };
+    await createEngine(f.deps).request('task');
+    return f.stored.state.tokens;
+  };
+  // A quota refusal cut the read: every change is announced again.
+  assert.deepEqual(await run({ complete: false, quota: true, days: [] }), { weight: 'w1', steps: 's1', hr_day: 'h1' });
+  // The weigh-ins timed out while steps were read: only weight keeps its old token.
+  assert.deepEqual(await run({ complete: false, unread: ['weight'] }), { weight: 'w1', steps: 's2', hr_day: 'h2' });
+  // An incomplete read that does not say which categories: nothing moves.
+  assert.deepEqual(await run({ complete: false }), { weight: 'w1', steps: 's1', hr_day: 'h1' });
+  // Read in full and sent: every token moves.
+  assert.deepEqual(await run({}), { weight: 'w2', steps: 's2', hr_day: 'h2' });
 });
 
 test('stored background state is read defensively', () => {
