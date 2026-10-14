@@ -251,7 +251,9 @@ async def forgot_password(
         token = generate_token()
         user.password_reset_token = token
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-        await db.flush()
+        # saved before the email goes (get_db commits only after the response and its background work): the
+        # link is never dead on arrival, and no row lock is held through SMTP
+        await db.commit()
         # sent once the answer is out: how long it takes never tells whether the email has an account
         email_task = BackgroundTask(send_password_reset_email, email, token)
 

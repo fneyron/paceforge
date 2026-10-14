@@ -348,3 +348,21 @@ async def test_a_login_that_works_is_not_charged_to_the_address(client, db_sessi
         for i in range(3):
             assert (await _login(c, f"x{i}@x.fr")).status_code == 200
         assert (await _login(c, "x9@x.fr")).status_code == 429
+
+
+async def test_the_reset_token_is_committed_before_the_email_goes(committing_session, committing_client, monkeypatch):
+    """The email must never carry a link whose token is not saved yet, nor hold the row's lock during SMTP."""
+    db = committing_session
+    user = User(email="reset-order@x.fr", password_hash=hash_password("pw-12345678"), email_verified=True)
+    db.add(user)
+    await db.commit()
+    order = []
+    real_commit = db.commit
+
+    async def commit():
+        order.append("commit")
+        await real_commit()
+    monkeypatch.setattr(db, "commit", commit)
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda to, token: order.append("email"))
+    assert (await committing_client.post("/auth/forgot-password", data={"email": user.email})).status_code == 200
+    assert "email" in order and order.index("commit") < order.index("email")
