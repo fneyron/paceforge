@@ -785,6 +785,33 @@ async def test_a_sync_that_only_failed_reloads_the_page_once(as_user: AsyncClien
     assert await routes.data_version(db_session, test_user.id) != errored
 
 
+async def test_a_coros_link_no_key_decrypts_is_one_to_reconnect_and_never_synced(
+        as_user: AsyncClient, db_session: AsyncSession, test_user: User, monkeypatch):
+    """A COROS link whose tokens no configured key decrypts is one to reconnect on Santé too, as on Réglages
+    (coros.coros_status: tokens_readable, computed when read, never stored): its issue line, no opening sync, the
+    phone's refresh says it, and the page's version moves with it (review, 2026-10-14 — Santé read the raw columns:
+    no line, and a background sync scheduled on every open)."""
+    from app.routers import sante as routes
+    from app.services import coros as coros_service
+
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc) - timedelta(hours=5))
+    started = []
+    monkeypatch.setattr(coros_service, "schedule_sync", lambda uid: started.append(uid) or True)
+    readable = await routes.data_version(db_session, test_user.id)
+    conn.access_token_encrypted = conn.refresh_token_encrypted = b"not-a-fernet-token"
+    await db_session.flush()
+    assert not coros_service.tokens_readable(conn) and not conn.needs_reauth and conn.last_error is None
+    assert await routes.data_version(db_session, test_user.id) != readable
+    page = (await as_user.get("/sante")).text
+    assert started == [] and 'data-sync-issue="Reconnecte COROS dans Réglages."' in page
+    link = (await routes.link_state(db_session, test_user.id))[0]
+    assert link["needs_reauth"] and link["last_error"] == coros_service.EXPIRED
+    r = await as_user.post("/sante/sync", headers={"accept": "application/json", "x-paceforge-refresh": "1"})
+    assert r.json()["watches"] == [] and r.json()["errors"] == ["Reconnecte COROS dans Réglages."]
+    r = await as_user.get("/sante/sync-status", params={"watches": "COROS"}, headers={"accept": "application/json"})
+    assert r.json() == {"pending": [], "errors": ["Reconnecte COROS dans Réglages."]}
+
+
 async def test_a_non_finite_activity_value_breaks_neither_the_version_nor_the_sessions(db_session: AsyncSession,
                                                                                       test_user: User):
     """An activity's NaN or ±∞ (a broken file's average) counts as 0 in the integer sums of Santé's version and of

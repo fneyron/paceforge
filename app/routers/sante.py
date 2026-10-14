@@ -79,6 +79,17 @@ async def _health_context(db: AsyncSession, user: User, r: str | None = None) ->
             "sync_v": await data_version(db, user.id) if auto_sync else None, "sync_n": 0}
 
 
+def _flags(conn, service) -> tuple[bool, str | None]:
+    """(needs_reauth, last_error) of a watch link as its service says them: a COROS link whose tokens no configured
+    key decrypts must be reconnected (coros.tokens_readable: « La connexion à COROS a expiré », computed when read,
+    never stored), its stored error in today's wording (coros._said) — coros_status's own rule, without its
+    measurement counts."""
+    if service is coros:
+        readable = coros.tokens_readable(conn)
+        return conn.needs_reauth or not readable, coros._said(conn.last_error) if readable else coros.EXPIRED
+    return conn.needs_reauth, conn.last_error
+
+
 def _link(conn, service, retryable=()) -> dict:
     """What Santé reads of a watch link (the page's sync issue line, the opening sync): connected, needs_reauth,
     last_sync_at, syncing (claimed within the service's CLAIM_TTL), last_error, retryable_partial (a transient
@@ -86,10 +97,11 @@ def _link(conn, service, retryable=()) -> dict:
     if conn is None:
         return {"connected": False}
     claimed = conn.sync_claimed_at
-    return {"connected": True, "needs_reauth": conn.needs_reauth, "last_sync_at": conn.last_sync_at,
+    needs_reauth, error = _flags(conn, service)
+    return {"connected": True, "needs_reauth": needs_reauth, "last_sync_at": conn.last_sync_at,
             "syncing": bool(claimed and datetime.now(timezone.utc) - _utc(claimed) < service.CLAIM_TTL),
-            "last_error": conn.last_error,
-            "retryable_partial": conn.last_error in retryable and conn.last_sync_at is not None}
+            "last_error": error,
+            "retryable_partial": error in retryable and conn.last_sync_at is not None}
 
 
 async def link_state(db: AsyncSession, user_id: int) -> tuple[dict, dict]:
@@ -141,8 +153,6 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     from sqlalchemy import func
 
     from app.models.activity import Activity
-    from app.models.coros import CorosConnection
-    from app.models.garmin import GarminConnection
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
     from app.services.sante_training import int_sum as whole  # a NaN or ±∞ (PostgreSQL cannot cast it) counts as 0
@@ -159,10 +169,13 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
                                       whole(Activity.max_heartrate), whole(Activity.total_elevation_gain),
                                       whole(Activity.elapsed_time)).where(Activity.user_id == user_id))).one()
     version += "-" + "-".join(str(int(v or 0)) for v in counts)
-    for model in (CorosConnection, GarminConnection):
-        link = (await db.execute(select(model.needs_reauth, model.last_error.is_not(None)).where(
-            model.user_id == user_id))).one_or_none()
-        version += "-" + ("none" if link is None else f"{int(bool(link[0]))}{int(bool(link[1]))}")
+    for _, service in _WATCHES:
+        conn = await service.connection_for(db, user_id)
+        if conn is None:
+            version += "-none"
+            continue
+        needs_reauth, error = _flags(conn, service)
+        version += f"-{int(bool(needs_reauth))}{int(error is not None)}"
     return sha256(version.encode()).hexdigest()
 
 
@@ -284,11 +297,12 @@ async def sante_sync_status(
             conn = await service.connection_for(db, user.id)
             if conn is None:
                 continue
-            if conn.needs_reauth:
+            needs_reauth, error = _flags(conn, service)
+            if needs_reauth:
                 errors.append(f"Reconnecte {name} dans Réglages.")
             elif _claimed(conn, service):
                 pending.append(name)
-            elif conn.last_error:
+            elif error:
                 errors.append(f"{name} : synchronisation incomplète. Vérifie Réglages.")
             elif since and (conn.last_sync_at is None or _utc(conn.last_sync_at) < _utc(since)):
                 pending.append(name)  # queued but not yet claimed/completed
@@ -324,7 +338,7 @@ async def sante_sync(
             conn = await service.connection_for(db, user.id)
             if conn is None:
                 continue
-            if conn.needs_reauth:
+            if _flags(conn, service)[0]:
                 errors.append(f"Reconnecte {name} dans Réglages.")
             elif _claimed(conn, service):
                 started.append(name)
