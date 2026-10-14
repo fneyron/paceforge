@@ -268,9 +268,11 @@ futures. Sommeil et gros efforts peuvent influencer plusieurs jours.
 - Les séances ordinaires ne changent pas l’état du jour : leur effet se lit dans
   la VFC et la FC de nuit. La précaution `cumulative-1` (12 octobre) est retirée.
 - La charge hebdomadaire est une comparaison à la semaine habituelle des onze
-  semaines précédentes, avec au moins quatre semaines actives (« comme
-  d’habitude » de la plus légère à la plus chargée de ses semaines actives). Elle ne mesure pas la
-  récupération musculaire ni une probabilité de blessure.
+  semaines précédentes, avec au moins huit semaines actives (« comme
+  d’habitude » de la plus légère à la plus chargée de ses semaines actives : une
+  semaine ordinaire en sort avec une probabilité 2/(n_a + 1), 22 % à huit
+  semaines actives). Elle ne mesure pas la récupération musculaire ni une
+  probabilité de blessure.
 
 **La version de départ examinée** fusionnait la navigation dans Santé, nomme le bilan du jour,
 actualisait l’aide et les références. Elle ne remplaçait pas les poids par une autre

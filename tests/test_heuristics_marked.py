@@ -116,6 +116,8 @@ HEURISTICS = [
     # review, 2026-10-14; USUAL_SPREAD's ± 20 %, then the 25th–75th percentiles, are gone)
     ("app/services/sante_load.py", "USUAL_WEEKS", 11),
     ("app/services/sante_load.py", "USUAL_MIN_WEEKS", 4),
+    # the percentage and its word from 8 active weeks: 2/(n_a + 1) of ordinary weeks fall outside the range of n_a
+    ("app/services/sante_load.py", "USUAL_LABEL_WEEKS", 8),
     ("app/services/sante_load.py", "ACUTE_TAU", 7),
     ("app/services/sante_load.py", "CHRONIC_TAU", 42),
     ("app/services/sante_load.py", "INIT_DAYS", 28),

@@ -121,6 +121,21 @@ def test_comme_d_habitude_is_the_range_of_the_active_usual_weeks():
                                                 500 * w["usual"] / statistics.fmean(usual)))
 
 
+def test_the_word_needs_8_active_usual_weeks():
+    """A week like the n_a active ones before it falls outside their range 2/(n_a + 1) of the time: the word (and
+    the percentage) only from 8 active weeks of the 11 (H: 22 %; 40 % at 4; the second statistics review,
+    2026-10-14); under them the dial says the 7 days' time, as without a usual week."""
+    eight = [300] * 8 + [0] * 3
+    t = sante.training(_weeks(eight, 300), D)
+    assert (t["dial"]["value"], t["dial"]["sub"]) == ("100", "comme d'habitude")
+    seven = [300] * 7 + [0] * 4
+    t = sante.training(_weeks(seven, 300), D)
+    assert (t["dial"]["value"], t["dial"]["sub"], t["usual"], t["word"], t["ratio"]) == (
+        "5h00", "7 derniers jours", None, sante.NO_USUAL, None)
+    assert sante.training_context({**t, "chart": None})["word"] == "5h00 sur 7 jours"  # no « Charge 7 j : x % »
+    assert sante_load.USUAL_LABEL_WEEKS == 8
+
+
 def test_the_entrainement_dial_against_the_usual_week():
     """The last 7 days' heart-rate load against the usual week's, the mean of the 11 weeks just before them (H;
     never the 7 days themselves: owner, 2026-10-09), as a percentage (100 % as usual), the arc full at
@@ -149,8 +164,13 @@ def test_the_entrainement_dial_against_the_usual_week():
     assert (none["dial"]["value"], none["dial"]["sub"], none["week"], none["intensity"]) == (
         "0", "moins que d'habitude", "0 min", None)
     assert sante.training(_weeks(usual, 401), D)["intensity"] == "comme d'habitude"  # the same minutes' weight
-    # the usual week to 5 min: 4 weeks of 47, 48, 52 and 53 min → 50 min
-    assert sante.training(_weeks([47, 48, 52, 53], 50), D)["usual"] == "ta semaine habituelle : 50 min"
+    # the usual week to 5 min: 8 weeks of 47, 48, 52 and 53 min → 50 min; with these 4 weeks alone, under the 8
+    # active weeks the word needs, the dial says the 7 days' time, as without a usual week (it read « 50 min »: at 4
+    # active weeks the word came with 40 % of ordinary weeks; the second statistics review, 2026-10-14)
+    assert sante.training(_weeks([47, 48, 52, 53] * 2, 50), D)["usual"] == "ta semaine habituelle : 50 min"
+    four = sante.training(_weeks([47, 48, 52, 53], 50), D)
+    assert (four["usual"], four["word"], four["ratio"], four["dial"]["value"], four["dial"]["sub"]) == (
+        None, sante.NO_USUAL, None, "50 min", "7 derniers jours")
 
 
 def test_the_7_days_never_count_in_the_usual_week():

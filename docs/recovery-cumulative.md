@@ -46,10 +46,12 @@ jour qui dit « fenêtre indicative jusqu'à J+n ».
   28 premiers jours, 180 jours de chauffe avant les 90 jours tracés. La courbe habituelle apparaît
   après 28 jours d'historique et 4 semaines actives.
 - **Entraînement %.** Σ D des 7 jours ÷ moyenne hebdomadaire de Σ D des 11 semaines précédentes,
-  avec au moins 4 semaines actives. La semaine en cours reste hors de sa référence (ratio
+  avec au moins 8 semaines actives **(H)**. La semaine en cours reste hors de sa référence (ratio
   découplé). « Comme d'habitude » de la plus légère à la plus chargée des semaines actives
-  parmi ces 11 **(H)**, « plus » ou « moins que d'habitude » au-delà. Une référence où tout pèse
-  zéro (toutes les séances à la FC de repos) se lit en minutes.
+  parmi ces 11 **(H)**, « plus » ou « moins que d'habitude » au-delà. Une semaine ordinaire sort
+  de la plage de n_a semaines actives avec une probabilité 2/(n_a + 1) : 40 % à 4 semaines, 22 %
+  à 8 ; en dessous de 8, le cadran donne la durée des 7 jours. Une référence où tout pèse zéro
+  (toutes les séances à la FC de repos) se lit en minutes.
 - **Activités 7 j / 28 j.** Les mêmes séances, la même charge D, les mêmes jours locaux ;
   kilomètres par sport, jamais ceux d'un vélo ajoutés à une course.
 

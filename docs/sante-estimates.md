@@ -120,12 +120,15 @@ Détails et raisons du retrait de `cumulative-1` : [recovery-cumulative.md](reco
   jours, avec 180 jours de chauffe avant les 90 jours tracés. Démarrée à 0, la courbe
   « habituelle » lisait 24 % trop bas au 56e jour. Ce sont des constantes de lissage, pas des
   délais de récupération (Imbach 2022).
-- **Entraînement %.** Σ D des 7 jours ÷ Σ D moyenne par semaine des 11 semaines précédentes, avec
-  au moins 4 semaines actives. Le ratio est découplé : la semaine en cours reste hors de sa
-  référence (Lolli 2019 ; Impellizzeri 2020). « Comme d'habitude » de la plus légère à la plus
-  chargée des semaines actives parmi ces 11 (une semaine vide n'est pas un minimum) **(H)**.
-  Avant : ± 20 %, puis les 25e et 75e centiles, qui disaient « plus » ou « moins » pour 57 % des
-  semaines ordinaires ; désormais environ 16 %.
+- **Entraînement %.** Σ D des 7 jours ÷ Σ D moyenne par semaine des 11 semaines précédentes. Le
+  ratio est découplé : la semaine en cours reste hors de sa référence (Lolli 2019 ; Impellizzeri
+  2020). « Comme d'habitude » de la plus légère à la plus chargée des semaines actives parmi ces 11
+  (une semaine vide n'est pas un minimum) **(H)**. Une semaine ordinaire, semblable aux n_a semaines
+  actives qui la précèdent, sort de leur plage avec une probabilité 2/(n_a + 1) : 40 % à 4 semaines
+  actives, 22 % à 8, 17 % à 11. Le pourcentage et son mot ne s'affichent donc qu'à partir de
+  8 semaines actives **(H)** ; avant, le cadran donne la durée des 7 jours, comme sans semaine
+  habituelle. Avant : ± 20 %, puis les 25e et 75e centiles, qui disaient « plus » ou « moins » pour
+  57 % des semaines ordinaires ; désormais environ 16 % sur un plan stable aux 11 semaines actives.
 - **Activités 7 j / 28 j.** Les mêmes séances (doublons écartés) et la même charge D, sur les jours
   locaux. Les kilomètres affichés en tête sont ceux de tous les sports, comme le dit la ligne
   « 7 j : X km · 28 j : Y km » (ceux d'un cycliste sont ceux de ses sorties) ; ils sont aussi

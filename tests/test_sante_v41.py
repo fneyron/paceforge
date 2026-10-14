@@ -208,8 +208,10 @@ async def test_every_mark_on_sante_has_words(as_user: AsyncClient, db_session: A
     # baseline: inside T (0.74 for these 6 nights, 1.28 standard errors of a week's mean: it was orange under the
     # 0.5 of max(0.5, 1.28/√n7)), green; (0.95 + 1)/2 → 97
     assert dials[0] == "92 % Sommeil suffisant" and dials[1] == "97 % Récupération bonne", dials
-    # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 100 %
-    assert dials[2] == "100 % 100 % Entraînement comme d'habitude 7 jours"
+    # a run every 3 days: 2 in the 7 days, 8 in the 4 weeks before them (their first run's week on): 4 active weeks,
+    # under the 8 the word needs, so the dial says the 7 days' time, as without a usual week (it read « 100 % comme
+    # d'habitude »: at 4 active weeks the word came with 40 % of ordinary weeks; the second statistics review)
+    assert dials[2] == "1h40 Entraînement 7 derniers jours"
     # Recovery and nightly graphs stay visible; secondary explanations stay in their own disclosures.
     card = main.split('<section id="recuperation"')[1].split('</section>')[0]
     assert 'data-viz-key="recuperation"' in card

@@ -8,8 +8,9 @@ the recovery's cumulative cap and Activités' 7 / 28 days).
   sessions' peaks over 12 months, else 190); a session without a readable HR, and strength, at the athlete's median
   load per minute of its sport family (« estimée »).
 - D, the daily load: Σ L of the deduplicated sessions on the local day each ended.
-- The views: Entraînement % (week_ratio): Σ D of the 7 days ÷ the mean weekly Σ D of the 11 weeks before them (4
-  active weeks at least; « comme d'habitude » within the range of those active weeks); Charge accumulée (history,
+- The views: Entraînement % (week_ratio): Σ D of the 7 days ÷ the mean weekly Σ D of the 11 weeks before them (8
+  active weeks at least; « comme d'habitude » within the range of those active weeks, which an ordinary week leaves
+  2/(n_a + 1) of the time); Charge accumulée (history,
   card): A and C, exponential averages of τ = 7 and 42 days, each day x ← x + α·(D − x) with α = 1 − e^(−1/τ)
   (the decay of the fitness-fatigue model: Morton, Fitz-Clarke & Banister 1990; Busso 2003 — Williams 2017's
   EWMA uses λ = 2/(N + 1), slightly faster), both started at the mean D of their first 28 days (started at 0,
@@ -34,6 +35,10 @@ WARMUP_DAYS = 180  # read before them: e^(−180/42) ≈ 1 % of the start remain
 READY_DAYS, READY_WEEKS = 28, 4  # (H) the usual curve once 28 days of history and 4 active weeks exist
 USUAL_WEEKS, USUAL_MIN_WEEKS = 11, 4  # (H) the usual week: the 11 weeks before the 7 days, 4 active at least; its
 # range, from the lightest to the heaviest active week, is « comme d'habitude » (H)
+# the Entraînement % and its word from 8 active weeks only (H): a week like the n_a active ones before it falls outside
+# their range 2/(n_a + 1) of the time, so the word « plus » or « moins » would come with 40 % of ordinary weeks at 4
+# active weeks, 22 % at 8, 17 % at 11 (the second statistics review, 2026-10-14)
+USUAL_LABEL_WEEKS = 8  # (H)
 
 
 def valid(sessions) -> list:
@@ -153,10 +158,12 @@ def week_ratio(sessions, load: dict, until: date) -> dict | None:
     """The Entraînement %: Σ D of the 7 days ending `until` ÷ the mean weekly Σ D of the 11 weeks before them;
     « comme d'habitude » while it lies between the lightest and the heaviest of those weeks that hold an activity
     (owner, 2026-10-14: scientific basis — it was ± 20 %, then the 25th–75th percentiles, which call half of an
-    athlete's ordinary weeks « plus » or « moins »: a week like the 11 before it falls outside their range about
-    one time in six, 2/12). A usual week that weighs nothing (sessions at the resting HR) reads the minutes instead
-    (`by`). {load7, usual (the mean week), lo, hi (the range of the active weeks), ratio, side (more, same, less),
-    weeks, by}; None without a usual week (4 active weeks)."""
+    athlete's ordinary weeks « plus » or « moins »: a week like the n_a active ones before it falls outside their
+    range 2/(n_a + 1) of the time, 17 % at 11). A usual week that weighs nothing (sessions at the resting HR) reads
+    the minutes instead (`by`). {load7, usual (the mean week), lo, hi (the range of the active weeks), ratio, side
+    (more, same, less), weeks, by}; None without a usual week (4 active weeks) and under 8 active weeks
+    (USUAL_LABEL_WEEKS: at 4 the word came with 40 % of ordinary weeks; the second statistics review, 2026-10-14):
+    the dial then says the 7 days' time, as without a usual week."""
     since = until - timedelta(days=6)
     sessions = valid(sessions)
     days7 = [s for s in sessions if since <= s.end_day <= until]
@@ -169,6 +176,8 @@ def week_ratio(sessions, load: dict, until: date) -> dict | None:
         weekly, load7, by = usual_weeks(sessions, since), sum(s.minutes for s in days7), "minutes"
     usual = statistics.fmean(weekly)
     active = [w for w in weekly if w > 0]  # a week without an activity is no lower bound
+    if len(active) < USUAL_LABEL_WEEKS:
+        return None
     lo, hi = min(active), max(active)
     side = "more" if load7 > hi else "less" if load7 < lo else "same"
     return {"load7": load7, "usual": usual, "lo": lo, "hi": hi, "ratio": load7 / usual, "side": side,
