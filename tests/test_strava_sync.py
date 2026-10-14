@@ -1101,6 +1101,40 @@ async def test_synchroniser_asks_strava_once_a_minute(as_user, db_session, test_
     assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 1, "errors": []}
 
 
+async def test_synchroniser_says_what_it_saved_and_when_one_is_running(as_user, db_session, test_user, monkeypatch):
+    """Review D10: (a) a sync that saved page 1 then failed on page 2 answered « Déjà à jour » (the rows were saved;
+    the base said « 30 nouvelle(s) activité(s) importée(s). » and reloaded); (b) a click while another sync of the
+    athlete runs (another tab) answered « aucune nouvelle activité ». Now (a) counts what was saved, (b) says
+    « Synchro déjà en cours. » (the pull-to-refresh, which only reads errors, gets none)."""
+    from sqlalchemy import func
+
+    await _own_app(db_session, test_user)
+    now = datetime.now(timezone.utc)
+
+    async def fetch(self, user, per_page=30, page=1):
+        if page == 1:
+            return [_data(970_000 + i, now - timedelta(days=i + 1)) for i in range(30)]
+        raise httpx.ConnectError("Strava down")
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch)
+    r = await as_user.post("/api/sync")
+    saved = (await db_session.execute(select(func.count(Activity.id)).where(
+        Activity.user_id == test_user.id))).scalar()
+    assert "30 nouvelle(s) activité(s) importée(s)." in r.text and "location.reload" in r.text and saved == 30
+    assert strava_state.read(f"manual:{test_user.id}") is None  # failed: may be tried again at once
+
+    fetch_mock = AsyncMock(return_value=[])
+    monkeypatch.setattr(StravaService, "get_recent_activities", fetch_mock)
+    assert strava_state.claim(f"manual:{test_user.id}:running", 60)  # another tab's sync, still running
+    r = await as_user.post("/api/sync")
+    assert r.text == "<span>Synchro déjà en cours.</span>"
+    headers = {"accept": "application/json", "x-paceforge-refresh": "1"}
+    assert (await as_user.post("/api/sync", headers=headers)).json() == {"received": 0, "errors": []}
+    assert fetch_mock.await_count == 0
+    strava_state.release(f"manual:{test_user.id}:running")  # it ended
+    assert "Déjà à jour" in (await as_user.post("/api/sync")).text and fetch_mock.await_count == 1
+    assert strava_state.read(f"manual:{test_user.id}:running") is None
+
+
 D = date(2026, 10, 8)
 
 

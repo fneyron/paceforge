@@ -73,21 +73,22 @@ async def save_new(db: AsyncSession, user: User, data: dict) -> Activity | None:
     return await adopt_watch_twin(db, activity_from_strava(data, user.id))
 
 
-async def import_recent(db: AsyncSession, user: User, strava, max_pages: int) -> int:
+async def import_recent(db: AsyncSession, user: User, strava, max_pages: int, progress: dict | None = None) -> int:
     """The athlete's newest activities (Strava lists them by start, newest first), page after page until one is all
     known, `max_pages` at most: whatever its start, an activity uploaded late is among them. Returns how many were
-    saved."""
-    saved = 0
+    saved; `progress["saved"]` counts them as they are, for a caller to tell what a later page's failure left."""
+    progress = {"saved": 0} if progress is None else progress
+    progress.setdefault("saved", 0)
     for page in range(1, max_pages + 1):
         batch = await strava.get_recent_activities(user, per_page=PER_PAGE, page=page)
         new = 0
         for data in batch:
             if await save_new(db, user, data) is not None:
                 new += 1
-        saved += new
+                progress["saved"] += 1
         if not new or len(batch) < PER_PAGE:
             break
-    return saved
+    return progress["saved"]
 
 
 async def complete_details(db: AsyncSession, user: User, strava, limit: int = DETAIL_BACKLOG) -> int:

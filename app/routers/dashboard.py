@@ -38,6 +38,7 @@ HOME = "/sante"  # Santé is the main dashboard
 WEEKS_PER_PAGE = 6
 SYNC_PAGES = 5  # « Synchroniser »: 150 activities at most
 SYNC_COOLDOWN_S = 60  # « Synchroniser » asks Strava once a minute per athlete at most (a click more: nothing new)
+SYNC_RUNNING_S = 120  # « Synchroniser » running (a request lost meanwhile frees it after this)
 FILTERS = [(None, "Tout"), ("run", "Course"), ("trail", "Trail"), ("bike", "Vélo"), ("other", "Autre")]
 _FILTER_KEYS = {"run", "trail", "bike", "other"}
 _MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
@@ -169,13 +170,19 @@ async def manual_sync(
             else:
                 try:
                     received = await _sync_recent_activities(user, db, strict=True)
+                except SyncRunning:
+                    pass  # another tab's sync brings them: nothing to report
                 except Exception:
                     await db.rollback()
                     errors.append("Strava : synchronisation incomplète. Réessaie dans un instant.")
         return JSONResponse({"received": received, "errors": errors}, headers={"Cache-Control": "no-store"})
     new_count = 0  # sessions Strava brought, a watch's row taken over included
+    running = False
     if user.has_strava_linked and user.has_strava_app and user.strava_credentials_valid:
-        new_count = await _sync_recent_activities(user, db)
+        try:
+            new_count = await _sync_recent_activities(user, db)
+        except SyncRunning:
+            running = True
 
     if new_count > 0:
         # Show the result, then refresh so the new rows land in their week.
@@ -187,6 +194,8 @@ async def manual_sync(
         msg = "Strava non connecté : connecte-le dans les Réglages."
     elif not user.has_strava_app or not user.strava_credentials_valid:
         msg = "Reconnecte Strava dans les Réglages pour activer la sync."
+    elif running:
+        msg = "Synchro déjà en cours."
     else:
         msg = "Déjà à jour — aucune nouvelle activité."
     return HTMLResponse(f"<span>{msg}</span>")
@@ -361,29 +370,39 @@ async def _week_groups(
     return weeks, has_more, spikes
 
 
+class SyncRunning(Exception):
+    """Another « Synchroniser » of this athlete is running (another tab, a double tap)."""
+
+
 async def _sync_recent_activities(user: User, db: AsyncSession, *, strict: bool = False) -> int:
     """« Synchroniser »: the athlete's newest Strava activities until a page is all known (strava_activities).
-    Once a minute per athlete at most: a click within it asks nothing and reads as nothing new (a failed one may be
-    tried again at once). Returns how many Strava sessions were saved."""
-    cooldown = f"manual:{user.id}"
-    if not strava_state.claim(cooldown, SYNC_COOLDOWN_S):
-        return 0
-    total_synced = 0
+    Once a minute per athlete at most, from the end of the last one: a click within it asks nothing and reads as
+    nothing new; one while a sync of theirs runs raises SyncRunning; a failed one may be tried again at once.
+    Returns how many Strava sessions were saved, those saved before a failure included."""
+    running = f"manual:{user.id}:running"
+    if not strava_state.claim(running, SYNC_RUNNING_S):
+        raise SyncRunning()
     try:
-        strava = StravaService.for_user(db, user)
-        total_synced = await import_recent(db, user, strava, SYNC_PAGES)
-        await db.flush()
-        await adopt_zone(db, user)
-        user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
-        strava_state.polled(user.id)  # as good as the round's poll
-        if total_synced:
-            logger.info(
-                "Synced %d new activities from Strava for user %d",
-                total_synced, user.id,
-            )
-    except Exception:
-        strava_state.release(cooldown)
-        logger.exception("Failed to sync activities from Strava")
-        if strict:
-            raise
-    return total_synced
+        if strava_state.read(f"manual:{user.id}") is not None:
+            return 0
+        progress = {"saved": 0}
+        try:
+            strava = StravaService.for_user(db, user)
+            await import_recent(db, user, strava, SYNC_PAGES, progress)
+            await db.flush()
+            await adopt_zone(db, user)
+            user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
+            strava_state.polled(user.id)  # as good as the round's poll
+            strava_state.mark(f"manual:{user.id}", SYNC_COOLDOWN_S)
+            if progress["saved"]:
+                logger.info(
+                    "Synced %d new activities from Strava for user %d",
+                    progress["saved"], user.id,
+                )
+        except Exception:
+            logger.exception("Failed to sync activities from Strava")
+            if strict:
+                raise
+        return progress["saved"]
+    finally:
+        strava_state.release(running)
