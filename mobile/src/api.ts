@@ -67,8 +67,9 @@ export function rotationDue(rotatedAt: string | undefined, now = Date.now()): bo
   const at = Date.parse(rotatedAt || '');
   return !Number.isFinite(at) || at > now + 300000 || now - at >= ROTATE_EVERY;
 }
-/** Foreground only. The server keeps the asking token valid for 7 days, until the
- * new one is used: failing to store the new token never unpairs the phone. */
+/** Foreground only. The server keeps the asking token valid while it is still used
+ * (7 days after its last use), until the new one is first used: failing to store the
+ * new token never unpairs the phone. */
 export async function rotateToken<P extends Credentials & { user_id: number }>(pair: P,
   store: (next: P & { rotated_at: string }) => Promise<void>, send: typeof api = api, now = () => new Date().toISOString()) {
   const r = await send('/api/mobile/token', 'POST', undefined, pair.token, { timeout: 15000 }) as { token?: unknown; user_id?: unknown } | null;

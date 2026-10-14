@@ -298,8 +298,9 @@ L'utilisateur se connecte au site dans l'application puis confirme le compte.
 Code aléatoire valable 2 minutes, échange unique avec preuve SHA-256 d'un secret
 conservé côté natif (PKCE), jeton limité aux imports, à sa révocation et à son
 renouvellement, valable 180 jours après sa dernière utilisation. Au premier plan,
-l’application le renouvelle tous les 30 jours ; l’ancien reste valable 7 jours,
-jusqu’à la première utilisation du nouveau. Seuls les condensats sont conservés
+l’application le renouvelle tous les 30 jours ; l’ancien reste valable tant qu’il
+sert encore (7 jours après sa dernière utilisation), jusqu’à la première
+utilisation du nouveau. Seuls les condensats sont conservés
 en base ; le jeton natif est dans SecureStore. Avant chaque lecture/envoi au
 premier plan, une page du compte signe implicitement son identité via la session
 HTTPS ; le pont vérifie URL exacte et nonce et refuse un compte différent. En

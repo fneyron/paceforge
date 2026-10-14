@@ -43,7 +43,7 @@ TOKEN_LIFETIME = timedelta(days=180)
 # Renewed on use once fewer days remain: at most one write a month per phone.
 RENEW_BELOW = timedelta(days=150)
 SEEN_EVERY = timedelta(hours=1)
-# A rotated token keeps working this long, until the new one is first used.
+# A rotated token keeps working this long after its last use, until the new one is first used.
 PREVIOUS_TOKEN_GRACE = timedelta(days=7)
 # 160 daily rows are ~35 kB. A night at its validation maxima is ~1.8 MB.
 MAX_DAILY_BYTES = 64 * 1024
@@ -246,6 +246,7 @@ async def device(authorization: str = Header(default=""), db: AsyncSession = Dep
     used = bearer(authorization)
     now = datetime.now(timezone.utc)
     row = await db.scalar(select(MobileDevice).where(MobileDevice.token_hash == used))
+    previous = False
     if row is not None and row.prev_token_hash is not None and utc(row.expires_at) > now:
         # The phone has stored its rotated token: the previous one stops working.
         row.prev_token_hash = row.prev_expires_at = None
@@ -253,12 +254,19 @@ async def device(authorization: str = Header(default=""), db: AsyncSession = Dep
         row = await db.scalar(select(MobileDevice).where(MobileDevice.prev_token_hash == used))
         if row is not None and (row.prev_expires_at is None or utc(row.prev_expires_at) <= now):
             row = None
+        previous = row is not None
     if row is None or utc(row.expires_at) <= now:
         raise HTTPException(401, "Associe à nouveau ce téléphone.")
     # Sliding expiry: a phone that keeps syncing, including in the background,
     # is never logged out; an unused one still expires 180 days after its last use.
     if utc(row.expires_at) - now < RENEW_BELOW:
         row.expires_at = now + TOKEN_LIFETIME
+    if previous:
+        # Still in use while the new token is unused (an answer lost on the way, a
+        # runtime that kept the old token): its grace slides, within the phone's expiry.
+        grace = min(now + PREVIOUS_TOKEN_GRACE, utc(row.expires_at))
+        if grace - utc(row.prev_expires_at) >= SEEN_EVERY:
+            row.prev_expires_at = grace
     if row.last_seen_at is None or now - utc(row.last_seen_at) >= SEEN_EVERY:
         row.last_seen_at = now
     return row
@@ -274,8 +282,9 @@ async def rotate(authorization: str = Header(default=""), phone: MobileDevice = 
                  db: AsyncSession = Depends(get_db)):
     """A new token for this phone (asked in the foreground only).
 
-    The token that asked stays valid for 7 days, until the new one is first used:
-    a response lost on the way, or a phone killed before storing it, keeps working.
+    The token that asked stays valid while it is still used (7 days after its last
+    use), until the new one is first used: a response lost on the way, or a phone
+    killed before storing it, keeps working.
     """
     now = datetime.now(timezone.utc)
     token = secrets.token_urlsafe(48)

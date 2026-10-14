@@ -223,7 +223,14 @@ async def test_rotation_keeps_the_previous_token_until_the_new_one_is_used(clien
     phone = await db_session.scalar(select(MobileDevice).where(MobileDevice.user_id == test_user.id))
     assert (phone.token_hash, phone.prev_token_hash) == (digest(second), digest(first))
     # The response was lost: the phone keeps its token, and rotates again with it.
+    # While it is still used, its grace slides (7 days after its last use).
+    phone.prev_expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+    await db_session.flush()
     assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 200
+    assert phone.prev_expires_at >= datetime.now(timezone.utc) + timedelta(days=6, hours=23)
+    slid = phone.prev_expires_at
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 200
+    assert phone.prev_expires_at == slid, 'written at most once an hour'
     third = (await client.post('/api/mobile/token', headers=bearer(first))).json()['token']
     assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(second))).status_code == 401
     # The first use of the new token retires the previous one.

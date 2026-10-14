@@ -251,7 +251,8 @@ function Companion() {
         refresh = result.received > 0 || refreshSources.current;
         setHealthIssue(syncIssue(result, Platform.OS === 'ios' ? 'Apple Santé' : 'Health Connect'));
         if (!result.reconnect && !rotationRefused.current && rotationDue(credentials.rotated_at)) {
-          // Foreground only. The server keeps the old token valid 7 days, until the new one is used.
+          // Foreground only. The old token stays valid while still used (7 days after its last use),
+          // until the new one is first used.
           await rotateToken(credentials, async next => { await secure.rewrite(KEYS.pair, JSON.stringify(next)); setPair(next); })
             .catch(e => { if (e instanceof ApiError && [404, 405].includes(e.status)) rotationRefused.current = true; });
         }
