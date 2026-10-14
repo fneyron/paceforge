@@ -4,7 +4,7 @@ import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.templating import Jinja2Templates
 
@@ -32,12 +32,24 @@ async def simulator_page(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Saved routes (bike / triathlon ones stay out while cycling is off)
-    query = select(Route).where(Route.user_id == user.id)
+    # Saved routes (bike / triathlon ones stay out while cycling is off), without their course: a 100-mile
+    # course is ~0.7 MB of trace, the card draws 80 points of its elevation profile (read alone, below)
+    from sqlalchemy.orm import defer
+
+    query = select(Route).options(defer(Route.course_json)).where(Route.user_id == user.id)
     if hidden_sports():
         query = query.where(Route.sport_type.notin_(hidden_sports()))
     result = await db.execute(query.order_by(Route.created_at.desc()).limit(40))
     saved_routes = list(result.scalars().all())
+    light = {}
+    if saved_routes:
+        light = dict((await db.execute(
+            select(Route.id, Route.course_json["elevation_points"]).where(Route.id.in_([rt.id for rt in saved_routes]))
+        )).all())
+    for rt in saved_routes:
+        pts = light.get(rt.id)
+        rt.profile_points = pts if isinstance(pts, list) else []
+        rt.has_course = bool(rt.profile_points)  # every course has its elevation points (a triathlon has none)
     # upcoming races first (soonest), then past ones (most recent first), then undated
     from datetime import date as _date
 
@@ -59,7 +71,7 @@ async def simulator_page(
     from app.services.race_simulator import build_athlete_gradient_profile
 
     profile = None
-    todo = [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.course_json][:10]
+    todo = [rt for rt in saved_routes if rt.days_to is not None and rt.days_to <= 0 and not rt.result_json and rt.has_course][:10]
     if todo:
         now, offset = _dt.now(_tz.utc), await athlete_offset(db, user.id, todo[0])
         for rt in todo:
@@ -67,6 +79,7 @@ async def simulator_page(
                 act = await find_race_activity(db, user.id, rt, now=now, offset=offset)
                 if act is None:
                     continue
+                await db.refresh(rt, attribute_names=["course_json"])  # the match measures the tilt on the course
                 if profile is None and act.splits_metric:
                     profile = await build_athlete_gradient_profile(db, user.id)
                 await link_result(db, rt, act, user.id, profile=profile)
@@ -146,7 +159,11 @@ async def _races_vs_plan(routes: list[Route], db: AsyncSession, user: User, prof
     out = {}
     for rt in routes:
         plan = rt.target_time_s
-        if rt.id in pinned and rt.course_json and rt.sport_type != "bike":
+        if rt.id in pinned and getattr(rt, "has_course", True) and rt.sport_type != "bike":
+            if "course_json" in inspect(rt).unloaded:  # « Mes courses » reads the routes without their course
+                await db.refresh(rt, attribute_names=["course_json"])
+            if not rt.course_json:
+                continue
             if profile is None:
                 profile = await build_athlete_gradient_profile(db, user.id)
             plan = _plan_finish_s(await _plan_bundle(rt, db, user, profile=profile))
@@ -182,8 +199,10 @@ def _route_card(rt: Route, real_s: int | None = None, plan_s: int | None = None)
             out["diff"] = ("−" if diff < 0 else "+") + (f"{abs(diff)} min" if abs(diff) < 60 else _hm(abs(diff) * 60))
             # neutral when the débrief calls it « proche du plan » (its gap is neutral there too)
             out["good"] = None if close_to_plan(diff * 60, plan_s) else diff < 0
-    # mini profile: 80 points, 400 × 70 viewBox
-    pts = (rt.course_json or {}).get("elevation_points") or []
+    # mini profile: 80 points, 400 × 70 viewBox (the course's elevation points, read alone on « Mes courses »)
+    pts = getattr(rt, "profile_points", None)
+    if pts is None:
+        pts = (rt.course_json or {}).get("elevation_points") or []
     if len(pts) > 2:
         step = max(1, len(pts) // 80)
         sample = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
@@ -613,7 +632,9 @@ async def save_route(
             route = _visible(result.scalar_one_or_none())
             if route is None:
                 return JSONResponse({"error": "Parcours introuvable"}, status_code=404)
-        total = course_data["total_distance_km"] if course_data else (route.total_distance_km if route else 0)
+        if route is None and not course_data:  # a new route needs its course before its points are checked
+            return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+        total = course_data["total_distance_km"] if course_data else route.total_distance_km
         if any(cp["distance_km"] > total + 0.1 for cp in cps):
             return JSONResponse({"error": "Un passage dépasse la distance du parcours"}, status_code=422)
         async with db.begin_nested():
@@ -639,9 +660,7 @@ async def save_route(
                     delete(RouteCheckpoint).where(RouteCheckpoint.route_id == route.id)
                 )
             else:
-                # Create new
-                if not course_data:
-                    return JSONResponse({"error": "Parcours manquant"}, status_code=400)
+                # Create new (its course checked above)
                 route = Route(
                     user_id=user.id,
                     name=name or course_data.get("name", "Parcours"),
@@ -1665,9 +1684,14 @@ async def get_weather(
     lon: float = Form(...),
     date: str = Form(...),
     points_json: str = Form(default=""),
+    user: User = Depends(get_current_user),
 ):
-    from app.services.weather import get_weather_forecast
+    """The race-day forecast (or climate normals) for a signed-in athlete: never an open proxy to Open-Meteo,
+    and one upstream call per place, day and points for a while (weather.cached_forecast)."""
+    from app.services.weather import cached_forecast
 
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return JSONResponse({"error": "position invalide"}, status_code=422)
     points = None
     if points_json:
         try:
@@ -1675,7 +1699,7 @@ async def get_weather(
         except (ValueError, TypeError):
             points = None
     try:
-        weather = await get_weather_forecast(lat, lon, date, points=points)
+        weather = await cached_forecast(lat, lon, date, points=points)
     except Exception:  # the service already logs; the page shows a retry chip either way
         weather = None
     if not weather:

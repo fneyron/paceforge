@@ -38,6 +38,40 @@ async def get_weather_forecast(lat: float, lon: float, date: str, points: list |
         return None
 
 
+# One upstream call per place (rounded to ~1 km), race day and points for a while: a plan page asks again
+# at every visit and a forecast changes by the hour. Per worker, bounded; a failure is never cached.
+FORECAST_TTL_S = 30 * 60
+FORECAST_CACHE_SIZE = 256
+_FORECAST_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _forecast_key(lat: float, lon: float, date: str, points: list | None) -> tuple:
+    pts = []
+    for pt in points or []:
+        try:
+            pts.append((round(float(pt[0]), 2), round(float(pt[1]), 2), round(float(pt[2]), 1)))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return round(float(lat), 2), round(float(lon), 2), str(date)[:10], tuple(pts)
+
+
+async def cached_forecast(lat: float, lon: float, date: str, points: list | None = None) -> dict | None:
+    """get_weather_forecast through the per-worker cache (rounded place, date, points; FORECAST_TTL_S)."""
+    import copy
+
+    key = _forecast_key(lat, lon, date, points)
+    now = time.monotonic()
+    hit = _FORECAST_CACHE.get(key)
+    if hit and now - hit[0] < FORECAST_TTL_S:
+        return copy.deepcopy(hit[1])
+    result = await get_weather_forecast(lat, lon, date, points=points)
+    if result:
+        if len(_FORECAST_CACHE) >= FORECAST_CACHE_SIZE:
+            _FORECAST_CACHE.pop(min(_FORECAST_CACHE, key=lambda k: _FORECAST_CACHE[k][0]))
+        _FORECAST_CACHE[key] = (now, copy.deepcopy(result))
+    return result
+
+
 HOURS = 48  # two days of hourly data: the race may cross midnight
 
 

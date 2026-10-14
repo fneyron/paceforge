@@ -409,3 +409,70 @@ async def test_race_week_reads_the_weight_by_the_one_rule(db_session: AsyncSessi
     assert "pour tes 70 kg" in prep["food"]["load"]  # the weigh-in of 2 days ago, not the value typed 60 days ago
 
 
+# ── 8. back end ──
+
+@pytest.fixture
+async def as_user(client: AsyncClient, test_user: User, db_session, monkeypatch):
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
+    return client
+
+
+@pytest.mark.asyncio
+async def test_the_weather_endpoint_needs_a_session(client: AsyncClient):
+    r = await client.post("/api/simulator/weather", data={"lat": 45.9, "lon": 6.9, "date": "2026-10-20"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/auth/login"
+
+
+@pytest.mark.asyncio
+async def test_the_weather_endpoint_asks_open_meteo_once_per_place_and_day(as_user: AsyncClient, monkeypatch):
+    from app.services import weather
+
+    weather._FORECAST_CACHE.clear()
+    calls = []
+
+    async def fake(lat, lon, date, points=None):
+        calls.append((lat, lon, date))
+        return {"temperature_c": 12.0, "heat_factor": 1.0, "date": date, "hourly": {"temps": [12.0] * 48}}
+
+    monkeypatch.setattr(weather, "get_weather_forecast", fake)
+    for lat in (45.9211, 45.9213):  # the same place to ~1 km
+        r = await as_user.post("/api/simulator/weather", data={"lat": lat, "lon": 6.869, "date": "2026-10-20"})
+        assert r.status_code == 200 and r.json()["temperature_c"] == 12.0
+    assert len(calls) == 1
+    r = await as_user.post("/api/simulator/weather", data={"lat": 45.92, "lon": 6.869, "date": "2026-10-21"})
+    assert len(calls) == 2  # another day
+    assert (await as_user.post("/api/simulator/weather", data={"lat": 145.0, "lon": 6.8, "date": "2026-10-21"})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_new_route_without_its_course_is_refused_before_its_points(as_user: AsyncClient):
+    r = await as_user.post("/api/simulator/routes", data={
+        "checkpoints_json": json.dumps([{"name": "CP", "distance_km": 12.0}]), "name": "Sans parcours"})
+    assert r.status_code == 400 and r.json()["error"] == "Parcours manquant"
+
+
+@pytest.mark.asyncio
+async def test_mes_courses_reads_the_courses_without_their_trace(as_user: AsyncClient, db_session: AsyncSession, test_user: User):
+    from sqlalchemy import select
+
+    from app.models.route import Route, RouteCheckpoint
+
+    course = _course()
+    ids = []
+    soon = (date.today() + timedelta(days=20)).isoformat()
+    for k, day in enumerate(("2026-10-02", soon)):  # a race run, the next one (its card draws the profile)
+        r = await as_user.post("/api/simulator/routes", data={
+            "course_json": course.model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": f"Course {k}",
+            "target_time_s": 5 * 3600, "race_date": day, "start_hour": 21, "start_minute": 0})
+        ids.append(r.json()["id"])
+    route = await db_session.get(Route, ids[0])
+    route.result_json = {"activity_id": None, "total_actual_s": 5 * 3600, "total_elapsed_s": 5 * 3600 + 900, "actual": []}
+    cp = (await db_session.execute(select(RouteCheckpoint).where(RouteCheckpoint.route_id == ids[0]))).scalars().first()
+    cp.target_s = 3600
+    await db_session.flush()
+    db_session.expunge_all()  # what a fresh request reads: the routes come with their course deferred
+    page = await as_user.get("/simulator")
+    assert page.status_code == 200
+    assert 'class="pfp-line"' in page.text and 'd="M0.0 ' in page.text  # the next race's profile, from its elevation points
+    assert " vs plan<" in page.text  # the pinned race run still gets its plan (its course loaded for it alone)
