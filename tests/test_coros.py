@@ -1464,21 +1464,48 @@ async def test_a_rotated_refresh_token_survives_a_later_rollback(committing_sess
     assert decrypt_secret(conn.refresh_token_encrypted) == "rt-2" and decrypt_secret(conn.access_token_encrypted) == "at-2"
 
 
-async def test_tokens_no_key_reads_ask_to_reconnect_and_still_disconnect(as_user: AsyncClient,
-                                                                         db_session: AsyncSession,
-                                                                         test_user: User, fake):
-    """Tokens no configured key decrypts (app.crypto): « reconnecte-toi », never « la synchro a échoué »."""
+async def test_a_missing_key_pauses_the_link_without_damage_and_putting_it_back_recovers_it(
+        as_user: AsyncClient, db_session: AsyncSession, test_user: User, fake, monkeypatch, queued, caplog):
+    """Tokens no configured key decrypts (a key dropped from ENCRYPTION_KEYS): nothing is written about it (no
+    « to reconnect » flag, no error stored, tokens kept); the link is skipped with an ERROR in the logs and shows
+    « reconnecte-toi » meanwhile, computed when read. The key back, it syncs at once: no reconnecting."""
+    import logging
+
+    from cryptography.fernet import Fernet
+
+    from app.config import settings
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)
+    conn = await _link(db_session, test_user)  # tokens written under that key
+    stored = (conn.access_token_encrypted, conn.refresh_token_encrypted)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", "")  # a deploy without it
+    caplog.set_level(logging.ERROR)
+    assert await coros.run_sync(db_session, conn) is None  # the hourly round: skipped
+    assert "no configured key decrypts" in caplog.text and not fake.tool_calls and not fake.token_calls
+    assert not await coros.queue_sync(db_session, conn) and not queued  # never queued meanwhile
+    await db_session.refresh(conn)
+    assert (conn.needs_reauth, conn.last_error, conn.sync_claimed_at) == (False, None, None)  # nothing persisted
+    assert (conn.access_token_encrypted, conn.refresh_token_encrypted) == stored
+    status = await coros.coros_status(db_session, test_user.id)
+    assert status["needs_reauth"] and status["last_error"] == coros.EXPIRED  # computed when read
+    page = (await as_user.get("/settings")).text
+    assert "À reconnecter" in page and "Reconnecter" in page and "coros-sync-btn" not in page
+    assert (await as_user.post("/settings/coros/sync")).headers.get("HX-Refresh") == "true"
+    monkeypatch.setattr(settings, "ENCRYPTION_KEYS", key)  # the key back
+    assert not (await coros.coros_status(db_session, test_user.id))["needs_reauth"]
+    assert (await coros.run_sync(db_session, conn))["ok"] and fake.tool_calls
+    assert conn.last_sync_at is not None and not conn.needs_reauth
+
+
+async def test_a_link_no_key_reads_can_still_be_disconnected(as_user: AsyncClient, db_session: AsyncSession,
+                                                             test_user: User, fake):
     from cryptography.fernet import Fernet
 
     conn = await _link(db_session, test_user)
     other = Fernet(Fernet.generate_key())
     conn.access_token_encrypted, conn.refresh_token_encrypted = other.encrypt(b"at-1"), other.encrypt(b"rt-1")
     await db_session.flush()
-    outcome = await coros.run_sync(db_session, conn)
-    assert outcome["ok"] is False and conn.needs_reauth and conn.last_error == coros.EXPIRED
-    assert not fake.tool_calls and not fake.token_calls
-    page = (await as_user.get("/settings")).text
-    assert "À reconnecter" in page and "Reconnecter" in page
     r = await as_user.post("/settings/coros/disconnect")
     assert r.status_code == 303 and not fake.revoked  # nothing to revoke with: just forgotten
     assert (await db_session.get(CorosConnection, conn.id)) is None

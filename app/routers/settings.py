@@ -145,7 +145,7 @@ async def watch_sync(
         return HTMLResponse("", status_code=404)
     service, status_of = _WATCHES[watch]
     conn = await service.connection_for(db, user.id)
-    if conn is None or conn.needs_reauth:
+    if conn is None or conn.needs_reauth or (watch == "coros" and not coros_service.tokens_readable(conn)):
         return HTMLResponse("", headers={"HX-Refresh": "true"})
     queued = await service.queue_sync(db, conn)
     w = await status_of(db, user.id)

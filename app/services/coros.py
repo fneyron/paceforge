@@ -153,6 +153,11 @@ class McpUnavailable(CorosError):
     """A 5xx: COROS is down or overloaded for that request."""
 
 
+class CorosKeyError(CorosError):
+    """A stored token no configured key decrypts (app.crypto: a key missing from ENCRYPTION_KEYS). Nothing is
+    written about it: the link is only skipped, so putting the key back recovers it with no reconnecting."""
+
+
 # ── OAuth: discovery, client registration, PKCE ─────────────────────────────
 
 def redirect_uri() -> str:
@@ -376,11 +381,28 @@ EXPIRED = "La connexion à COROS a expiré : reconnecte-toi."
 
 
 async def _stored(db: AsyncSession, conn: CorosConnection, encrypted: bytes) -> str:
-    """A stored token; one no configured key decrypts any more (app.crypto) is a link to make again."""
+    """A stored token; one no configured key decrypts raises CorosKeyError, and nothing is written about it."""
     try:
         return decrypt_secret(encrypted)
     except InvalidToken:
-        raise await _mark_reauth(db, conn, EXPIRED) from None
+        raise CorosKeyError(EXPIRED) from None
+
+
+def tokens_readable(conn: CorosConnection) -> bool:
+    """Whether the configured keys decrypt this link's tokens. Not, its link is paused, untouched: it shows
+    « reconnecte-toi » (coros_status, computed when read) until the key is back, and is never synced meanwhile."""
+    for encrypted in (conn.access_token_encrypted, conn.refresh_token_encrypted):
+        if encrypted:
+            try:
+                decrypt_secret(encrypted)
+            except InvalidToken:
+                return False
+    return True
+
+
+def _key_missing(conn: CorosConnection) -> None:
+    logger.error("COROS tokens of user %d: no configured key decrypts them; the link is skipped, nothing is "
+                 "changed. Put back the key that encrypted them in ENCRYPTION_KEYS.", conn.user_id)
 
 
 async def access_token(db: AsyncSession, conn: CorosConnection, client: httpx.AsyncClient,
@@ -1733,8 +1755,14 @@ async def claim(db: AsyncSession, conn: CorosConnection) -> bool:
 
 
 async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str | None = None) -> dict | None:
-    """Claim, sync, record how it went. None when a sync is already running."""
+    """Claim, sync, record how it went. None when a sync is already running, or when the link is paused (to
+    reconnect, or its tokens unreadable until a key is put back: nothing written then)."""
     if conn.needs_reauth:
+        return None
+    if not tokens_readable(conn):
+        _key_missing(conn)
+        if claimed_at is not None:  # a job queued before: its reservation goes, nothing else
+            await release_reservation(db, conn.id, claimed_at)
         return None
     if claimed_at is None:
         if not await claim(db, conn):
@@ -1761,6 +1789,10 @@ async def run_sync(db: AsyncSession, conn: CorosConnection, *, claimed_at: str |
                            PHASES_PARTIAL if result.get("phases_incomplete") else None)
         outcome = {"ok": True, "result": result}
     except CorosAuthError as e:
+        outcome = {"ok": False, "error": str(e)}
+    except CorosKeyError as e:  # unreadable mid-way: nothing about it is written (no error stored either)
+        _key_missing(conn)
+        await db.rollback()  # lets go of the row lock taken to refresh
         outcome = {"ok": False, "error": str(e)}
     except (CorosError, httpx.HTTPError) as e:
         logger.warning("COROS sync failed for user %d: %r", conn.user_id, e)
@@ -1819,7 +1851,7 @@ async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
     link must be reconnected) or could not be queued (reservation released)."""
     from app.tasks.coros_sync import sync_coros_user
 
-    if conn.needs_reauth or not await claim(db, conn):
+    if conn.needs_reauth or not tokens_readable(conn) or not await claim(db, conn):
         return False
     stamp = _as_utc(conn.sync_claimed_at).isoformat()
     try:
@@ -1880,13 +1912,14 @@ async def coros_status(db: AsyncSession, user_id: int) -> dict:
         return {"connected": False}
     counts, latest = await _synced_measurements(db, user_id, SOURCE)
     sleep, hrv = latest.get("sleep"), latest.get("hrv")
-    error = _said(conn.last_error)
+    readable = tokens_readable(conn)  # unreadable: « reconnecte-toi », computed here, never stored
+    error = _said(conn.last_error) if readable else EXPIRED
     hrv_note = f"Dernière VFC reçue : {hrv.strftime('%d/%m/%Y')}." if hrv else None
     if sleep and (hrv is None or hrv < sleep):
         hrv_note = f"VFC de la nuit du {sleep.strftime('%d/%m')} pas encore reçue." + (f" {hrv_note}" if hrv_note else "")
     return {
         "connected": True,
-        "needs_reauth": conn.needs_reauth,
+        "needs_reauth": conn.needs_reauth or not readable,
         "last_sync_at": conn.last_sync_at,
         "last_sync_ago": _ago(conn.last_sync_at),
         "syncing": bool((claimed := _as_utc(conn.sync_claimed_at))
