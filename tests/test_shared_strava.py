@@ -99,7 +99,8 @@ async def test_exact_app_binding_and_personal_app_priority(test_user, db_session
     unsubscribe.assert_not_awaited()
 
 
-async def test_shared_refresh_sends_the_bound_app_credentials(test_user, db_session, shared, monkeypatch):
+async def test_shared_refresh_sends_the_bound_app_credentials(test_user, db_session, shared, monkeypatch,
+                                                              no_commit):  # the new pair is committed at once
     test_user.strava_client_id = '90001'
     test_user.strava_token_expires_at = 0
     await db_session.flush()

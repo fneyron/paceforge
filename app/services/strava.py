@@ -143,7 +143,10 @@ class StravaService:
             user.strava_access_token = data["access_token"]
             user.strava_refresh_token = data["refresh_token"]
             user.strava_token_expires_at = data["expires_at"]
-            await self.db.flush()
+            # committed at once (which also ends the row lock): Strava has already invalidated the refresh token
+            # sent, so the new pair must outlive whatever the caller does next — a rollback after a failed sync,
+            # an early return without a commit; lost, the next refresh would be refused and the link forgotten
+            await self.db.commit()
             logger.info("Token refreshed for user %d", user.id)
             return user
 

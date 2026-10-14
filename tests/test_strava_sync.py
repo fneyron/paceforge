@@ -176,6 +176,87 @@ async def test_the_background_syncs_back_off_near_the_apps_quota(db_session, tes
     await strava.get_recent_activities(test_user)  # a malformed header never fails the request
 
 
+# ── the token refresh ────────────────────────────────────────────────────────
+
+def _rotating_token_endpoint(monkeypatch, first="rt1") -> set:
+    """Strava's /oauth/token: each refresh returns a new pair and the refresh token sent dies at once."""
+    valid = {first}
+
+    async def post(self, url, data=None, **kw):
+        request = httpx.Request("POST", url)
+        sent = data["refresh_token"]
+        if sent not in valid:
+            return httpx.Response(400, json={"message": "Bad Request"}, request=request)
+        new = f"rt{int(sent[2:]) + 1}"
+        valid.clear()
+        valid.add(new)
+        return httpx.Response(200, request=request, json={"access_token": f"at{new[2:]}", "refresh_token": new,
+                                                          "expires_at": int(time.time()) + 6 * 3600})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    return valid
+
+
+async def _expiring_athlete(task_db) -> int:
+    async with task_db() as db:
+        user = await _own_app(db, await _athlete(db, 12345678))
+        user.strava_refresh_token, user.strava_token_expires_at = "rt1", int(time.time()) + 60  # refreshed first
+        await db.commit()
+        return user.id
+
+
+async def _stored_refresh_token(task_db, uid) -> str | None:
+    async with task_db() as db:
+        return (await db.get(User, uid)).strava_refresh_token
+
+
+async def test_a_rotated_refresh_token_outlives_a_failed_poll(task_db, monkeypatch):
+    """Review D1: the poll rolled back on a 503 and took the refresh it had just made with it; Strava had already
+    invalidated the old refresh token, so the next refresh was refused (400) and the athlete disconnected."""
+    from app.tasks.poll_activities import _poll_user
+
+    uid = await _expiring_athlete(task_db)
+    valid = _rotating_token_endpoint(monkeypatch)
+    status = {"code": 503}
+
+    async def request(self, method, path, **kw):
+        return httpx.Response(status["code"], json=[], request=httpx.Request(method, "https://www.strava.com" + path))
+    monkeypatch.setattr(httpx.AsyncClient, "request", request)
+    with pytest.raises(StravaAPIError):
+        await _poll_user(uid)
+    assert await _stored_refresh_token(task_db, uid) == "rt2" and valid == {"rt2"}
+    async with task_db() as db:  # an hour later, the access token has expired too
+        user = await db.get(User, uid)
+        user.strava_token_expires_at = int(time.time()) - 10
+        await db.commit()
+    status["code"] = 200
+    assert (await _poll_user(uid)) == {"user_id": uid, "new_activities": 0}
+    assert await _stored_refresh_token(task_db, uid) == "rt3"  # still linked
+
+
+@pytest.mark.parametrize("case", ["gone", "not_his", "still_authorized"])
+async def test_a_rotated_refresh_token_outlives_an_early_return(task_db, monkeypatch, case):
+    """Review D1: the webhook tasks' early returns (gone, not his, still authorized) closed the session without a
+    commit, losing a refresh made on the way (a forged « not_his » event could disconnect an athlete)."""
+    from app.tasks import webhook_sync
+
+    uid = await _expiring_athlete(task_db)
+    _rotating_token_endpoint(monkeypatch)
+
+    async def request(self, method, path, **kw):
+        req = httpx.Request(method, "https://www.strava.com" + path)
+        if case == "gone":
+            return httpx.Response(404, json={"message": "Record Not Found"}, request=req)
+        if case == "not_his":
+            return httpx.Response(200, json=_data(1, datetime.now(timezone.utc), athlete_id=999), request=req)
+        return httpx.Response(200, json={"id": 12345678}, request=req)
+    monkeypatch.setattr(httpx.AsyncClient, "request", request)
+    if case == "still_authorized":
+        result = await webhook_sync._run_deauthorized(12345678)
+    else:
+        result = await webhook_sync._run_webhook_sync(1, 12345678)
+    assert result["status"] == case and await _stored_refresh_token(task_db, uid) == "rt2"
+
+
 # ── the first import, one builder, the athlete's zone ────────────────────────
 
 async def test_the_first_imports_details_stop_at_the_quota(db_session, test_user, task_session, monkeypatch):
