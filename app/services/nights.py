@@ -83,7 +83,7 @@ heuristic, never shown as a finding):
   watch, method), the nights from day −67 to day −8 (60 days; the 7 nights a
   trend judges are never in its own baseline: a design choice, H, so a week is
   not compared to a mean that holds it), every measured night whatever its
-  tags; full from 14 nights, « provisoire » from 7 (drawn dashed, never read
+  tags; full from 14 nights, « provisoire » from 7 (drawn dashed, read and said so
   by the daily state). Centre: the mean of ln RMSSD (HRV), the mean (night HR:
   the trend compares a mean; its illness alert keeps the median), the median
   (breathing). Spread σ̂ = √((n·s² + 7·σ0²)/(n + 7)) (an individual range drawn
@@ -143,7 +143,7 @@ BAND_DAYS = 60  # (H)
 # a design choice, not a published rule
 BASELINE_LAG = 7  # (H)
 MIN_BAND_NIGHTS = 14  # (H) a full normal
-MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14: drawn, never read
+MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14: dashed, said so
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 WEEK_DAYS = 7
 # owner, 2026-10-14: scientific basis — the 0.5 SD band of HRV-guided training (Vesterinen 2016; Javaloyes 2019),
@@ -956,7 +956,8 @@ def drawn_band(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     """The usual values day `d`'s card draws: its baseline (normal: the nights from d − 67 to d − 8), else, while
     that window holds too few nights (a watch newer than a fortnight: the owner's COROS, 2026-10-14, drew no band
     at all where the cards drew a dashed one before the lag), a provisional one from the 60 nights up to and
-    including last night, dashed, never read by the state (which reads normal, full, alone); `lagged` False then."""
+    including last night, dashed, read by the trend and the state as « provisoire » (owner, 2026-10-14: a score
+    shows while the repères build, as before the audit); `lagged` False then."""
     b = normal(nights, metric, d)
     if b is not None:
         return b
@@ -1050,8 +1051,8 @@ def trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
 def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     """Day `d`'s 7-day trend of `metric` (hrv, hr) on its series against its baseline (C3, the module
     docstring): {source, n (nights in the 7 days), last (last night measured on the series), value (the 7-night
-    mean, geometric for HRV), baseline (normal: None, provisional or full), z, T, status (in, below, above; None
-    without a baseline or under 3 nights)}; None when the metric was never measured."""
+    mean, geometric for HRV), baseline (drawn_band: None, provisional or full), z, T, status (in, below, above;
+    None without a baseline or under 3 nights)}; None when the metric was never measured."""
     source = mean_source(nights, metric, d)
     if source is None:
         return None
@@ -1059,7 +1060,9 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     vals = [night_value(nights, x, metric) for x in days]
     n = nights.get(d)
     last = n is not None and n.source_of(metric) == source and n.value(metric) is not None
-    b = normal(nights, metric, d)
+    # the lagged baseline, else (a series younger than its window) the provisional one the card draws: the state
+    # reads it too, flagged « provisoire » (owner, 2026-10-14: a score shows while the repères build, as before)
+    b = drawn_band(nights, metric, d)
     out = {"metric": metric, "source": source, "n": len(vals), "last": last, "baseline": b, "value": None,
            "z": None, "T": None, "status": None,
            "baseline_n": b["n"] if b else baseline_count(nights, metric, d, source)}

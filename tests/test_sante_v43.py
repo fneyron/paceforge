@@ -270,14 +270,15 @@ async def test_a_coros_only_user(as_user: AsyncClient, db_session: AsyncSession,
 
 
 async def test_a_garmin_only_user(as_user: AsyncClient, db_session: AsyncSession, test_user: User, on_day):
-    """Garmin nights through its own parser, no activity. Owner, 2026-10-14: scientific basis — a baseline holds
-    the nights from day −67 to −8, « provisoire » from 7 (drawn dashed, H), read by the state from 14: with 18
-    nights, 10 are in it: the cards' readouts say « (provisoire) », no state yet, the line says why."""
+    """Garmin nights through its own parser, no activity. A baseline holds the nights from day −67 to −8,
+    « provisoire » from 7 (drawn dashed, H), read by the state and said so (owner, 2026-10-14: « il y a bien un
+    score »): with 18 nights, 10 are in it: the cards' readouts say « (provisoire) », a score, « Repères
+    provisoires »."""
     await test_garmin._link(db_session, test_user)
     await _seed(db_session, test_user, garmin_rows(D, range(0, 18)))
     page = await sante.health_page(db_session, test_user.id, today=D)
-    assert page["score"]["value"] is None and page["score"]["building"] == ["hrv", "hr"]
-    assert page["line"] == "Pas de score ce matin : repères en construction (10/14)."
+    assert page["score"]["value"] is not None and page["score"]["building"] == [] and page["line"] is None
+    assert page["quality"]["provisional"] and page["quality"]["label"] == "Repères provisoires"
     assert page["vfc"]["read"][3].endswith("(provisoire)") and page["fc"]["read"][3].endswith("(provisoire)")
     assert page["vfc"]["reference"]["provisional"] and page["vfc"]["band_prov"]
     main = _coherent((await as_user.get("/sante")).text)

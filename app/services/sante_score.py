@@ -133,10 +133,11 @@ def is_sdnn(trend: dict | None) -> bool:
 
 
 def usable(metric: str, trend: dict | None) -> bool:
-    """A heart series the state reads: last night measured on it, its full baseline (14 nights), 3 nights in the
-    7 days, never Apple's SDNN (descriptive only, no RMSSD rule applies to it)."""
+    """A heart series the state reads: last night measured on it, a baseline (full from 14 nights; « provisoire »
+    from 7, read all the same and said so: owner, 2026-10-14, the score shows while the repères build, as it did
+    before the audit), 3 nights in the 7 days, never Apple's SDNN (descriptive only, no RMSSD rule applies to it)."""
     return bool(trend and trend["last"] and trend["z"] is not None and trend["baseline"]
-                and not trend["baseline"]["provisional"] and not (metric == "hrv" and is_sdnn(trend)))
+                and not (metric == "hrv" and is_sdnn(trend)))
 
 
 def sub(metric: str, z: float) -> float:
@@ -181,7 +182,7 @@ def missing_reason(day: dict) -> dict:
             return {"key": "elsewhere", "label": ELSEWHERE[kind], "kind": kind}
         return {"key": "no_heart", "label": "pas de bilan"}
     t = trends[measured[0]]
-    if not t["baseline"] or t["baseline"]["provisional"]:
+    if not t["baseline"]:
         n = t.get("baseline_n", 0)
         return {"key": "building", "label": f"repères en construction ({n}/{MIN_BAND_NIGHTS})", "n": n,
                 "required": MIN_BAND_NIGHTS, "metric": measured[0]}
@@ -196,8 +197,7 @@ def score_of(day: dict) -> dict:
     trends = day.get("trends") or {}
     used = [m for m in HEART if usable(m, trends.get(m))]
     absent = [m for m in HEART if m not in used]
-    building = [m for m in HEART if (t := trends.get(m)) and not (m == "hrv" and is_sdnn(t))
-                and (not t["baseline"] or t["baseline"]["provisional"])]
+    building = [m for m in HEART if (t := trends.get(m)) and not (m == "hrv" and is_sdnn(t)) and not t["baseline"]]
     out = {"value": None, "tone": None, "primary": None, "parts": [], "reasons": [], "reason": None,
            "missing": None, "measured": False, "caps": [], "absent": absent, "building": building}
     if not day.get("night_measured") or not used:
@@ -266,7 +266,7 @@ def quality(day: dict) -> dict:
             state = "Absente pour cette nuit"
         elif key == "hrv" and is_sdnn(t):
             state = "Mesurée, hors bilan (SDNN)"
-        elif not t["baseline"] or t["baseline"]["provisional"]:
+        elif not t["baseline"]:
             state = f"Repères en construction ({t.get('baseline_n', 0)}/{MIN_BAND_NIGHTS})"
         else:
             state = f"Pas assez de nuits cette semaine ({t['n']}/{MIN_MEAN_NIGHTS})"
@@ -278,8 +278,10 @@ def quality(day: dict) -> dict:
                      f"Repères en construction ({resp['n']}/{MIN_BAND_NIGHTS})"})
     seen = [k for k in HEART if trends.get(k) and not (k == "hrv" and is_sdnn(trends[k]))]
     partial = bool(score["parts"]) and len(score["parts"]) < len(seen)
-    return {"label": "Bilan partiel" if partial else "Données du bilan", "partial": partial, "provisional": False,
-            "rows": rows}
+    # a state read against a provisional baseline (7–13 nights, or a series younger than its lagged window) says so
+    provisional = any(trends[k]["baseline"]["provisional"] for k in used if trends.get(k) and trends[k]["baseline"])
+    label = "Bilan partiel" if partial else "Repères provisoires" if provisional else "Données du bilan"
+    return {"label": label, "partial": partial, "provisional": provisional, "rows": rows}
 
 
 # ── what the page draws ─────────────────────────────────────────────────────

@@ -178,7 +178,7 @@ def cycle_day(nights, today: date, clock: datetime | None) -> date:
 def _night_stat(nights, metric: str, d: date, trend: dict | None) -> dict:
     """The 7-night mean of every measured night (3 at least, Plews 2014; Lau 2022) and the usual values it is read
     against (nights.normal: the nights from d − 67 to d − 8 on its series, one baseline per series: Dial 2025;
-    « provisoire » from 7 to 13 nights, H, never read by the state); the status from its trend (nights.trend: the
+    « provisoire » from 7 to 13 nights, H, read and said so); the status from its trend (nights.trend: the
     band widened to 1.28 standard errors of a 7-night mean, nights.threshold). `seen`: the metric measured in
     those 60 days."""
     t = trend or {}
@@ -551,7 +551,7 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     from that day − 67 to − 8, on the series the mean reads: one baseline for
     the card, its status line and the state, drawn ± T·σ̂: _drawn; a series
     younger than that window draws its provisional band from the 60 nights
-    before the day, dashed, never read: nights.drawn_band), its status
+    before the day, dashed, flagged provisoire: nights.drawn_band), its status
     line opens the card (card_status). Every measured
     night is a filled dot (each one counts: owner, 2026-10-08), a night
     without a measure draws nothing; the provisional band is dashed; the
@@ -596,12 +596,11 @@ def _night_card(nights, metric: str, today: date, day: dict) -> dict | None:
     provisional = bool(reference and reference["provisional"])
     source = nt.mean_source(nights, metric, today)
     required = nt.reference_min_nights(metric, source)
-    count = nt.baseline_count(nights, metric, today, source)
+    # the nights the reference holds (a young series' provisional one: the nights up to last night), else those
+    # of the lagged window so far
+    count = reference["n"] if reference else nt.baseline_count(nights, metric, today, source)
     label = f"Référence · {count} nuits" if reference else f"Référence · {count}/{required} nuits"
     reference_detail = f"Référence provisoire : {count} nuits mesurées." if provisional else None
-    if reference is None and (drawn := nt.drawn_band(nights, metric, today)) is not None:
-        # a young series: the dashed band comes from the nights before today, the lagged count waits
-        reference_detail = f"Référence provisoire : {drawn['n']} nuits mesurées."
     c["reference"] = {"n": count, "required": required, "provisional": provisional, "ready": bool(reference),
                       "label": label, "detail": reference_detail, "source": viz.source_label(source),
                       "remaining": 0 if reference else nights_to_normal(nights, metric, today)}

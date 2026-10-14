@@ -540,22 +540,25 @@ async def test_a_young_watch_draws_its_provisional_band_before_the_lag_fills(db_
                                                                             test_user: User):
     """Production, 2026-10-14 (the owner, COROS since 29/09): the cards' usual values come from the nights a week
     before the day read, so a watch newer than a fortnight drew no band at all where it drew a dashed provisional
-    one before. The card draws that band from the 60 nights before the day itself while the lagged window holds
-    under 7 nights (nights.drawn_band); the status says « en construction » and the state still waits for 14
-    lagged nights. Under 7 nights up to last night, nothing is drawn."""
+    one before, and no score where it showed a provisional one (owner, 2026-10-14: « il y a bien un score »). The
+    card draws that band from the 60 nights up to last night while the lagged window holds under 7 nights
+    (nights.drawn_band), the state reads it and says « Repères provisoires ». Under 7 nights up to last night,
+    nothing is drawn and there is no score."""
     from tests.test_nights import night_rows
 
     today = date(2026, 10, 14)
     await _seed_rows(db_session, test_user, night_rows(range(0, 12), source="Garmin", today=today,
                                                        hr=lambda k: 44 + k % 3, hrv=lambda k: 60 + k % 7))
     page = await sante.health_page(db_session, test_user.id, today=today)
-    assert page["state"] is None and page["line"] == "Pas de score ce matin : repères en construction (4/14)."
+    assert page["state"] is not None and page["score"]["value"] is not None and page["line"] is None
+    assert page["quality"]["provisional"] and page["quality"]["label"] == "Repères provisoires"
+    assert page["score"]["building"] == [] and page["score"]["missing"] is None
     for key in ("vfc", "fc"):
         c = page[key]
         assert c["band_prov"] and not c["band"], key  # dashed, from the 12 nights up to last night
-        assert c["reference"]["label"] == "Référence · 4/7 nuits" and not c["reference"]["ready"]  # lagged nights, 7 for a provisional one
+        assert c["reference"]["label"] == "Référence · 12 nuits" and c["reference"]["provisional"]
         assert c["reference"]["detail"] == "Référence provisoire : 12 nuits mesurées."
-        assert c["status"]["key"] == "none" and c["status"]["word"] == "en construction"
+        assert c["status"]["key"] in ("in", "above", "below") and c["read"][3].endswith("(provisoire)")
         assert ("is-band-prov", "repère provisoire") in c["legend"]
     nights = nt.build_nights(night_rows(range(0, 6), source="Garmin", today=today), today)
     assert nt.drawn_band(nights, "hrv", today) is None and nt.drawn_band(nights, "hr", today) is None
