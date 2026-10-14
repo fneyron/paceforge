@@ -114,8 +114,15 @@ async def save_settings(
     return templates.TemplateResponse(request, "settings.html", context=ctx)
 
 
-# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08)
+# « Synchroniser maintenant », per linked watch (Santé shows no sync status: owner, 2026-10-08). The request only
+# queues the sync for the Celery worker; the state then refreshes itself while it runs (watch_sync_state.html).
 _WATCHES = {"coros": (coros_service, coros_status), "garmin": (garmin_service, garmin_status)}
+_RUNNING = "Synchronisation en cours…"
+
+
+def _coros_msg(w: dict) -> str | None:
+    """While a COROS sync runs, under « Dernière synchro … » (a first sync says it on that line already)."""
+    return _RUNNING if w.get("syncing") and w.get("last_sync_at") else None
 
 
 @router.post("/settings/{watch}/sync", response_class=HTMLResponse)
@@ -125,43 +132,38 @@ async def watch_sync(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Sync one linked watch now; the answer is the new content of its
-    #{watch}-sync-state (partials/watch_sync_state.html): the last sync and how
-    it went. A link that is gone or must be reconnected reloads the page (its
-    block then shows how to reconnect)."""
+    """Queue a sync of one linked watch now; the answer is the new content of
+    its #{watch}-sync-state (partials/watch_sync_state.html): the last sync, how
+    it went, and while the worker runs it, a state polling itself (GET below).
+    A link that is gone or must be reconnected reloads the page (its block then
+    shows how to reconnect)."""
     if watch not in _WATCHES:
         return HTMLResponse("", status_code=404)
     service, status_of = _WATCHES[watch]
     conn = await service.connection_for(db, user.id)
     if conn is None or conn.needs_reauth:
         return HTMLResponse("", headers={"HX-Refresh": "true"})
-    if watch == "garmin":
-        await garmin_service.queue_sync(db, conn)
-        return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-            "request": request, "w": await garmin_status(db, user.id), "key": watch})
-    outcome = await service.run_sync(db, conn)
-    if conn.needs_reauth:  # refused while syncing: reconnect
-        return HTMLResponse("", headers={"HX-Refresh": "true"})
-    if outcome is None:
-        msg = "Une synchro est déjà en cours : réessaie dans une minute."
-    elif outcome.get("ok"):
-        res = outcome.get("result") or {}
-        msg = ("Synchro faite : tes nouvelles données sont dans Santé." if res.get("inserted") or res.get("updated")
-               else "Synchro faite : rien de nouveau.")
-    else:
-        msg = None  # « Dernière synchro échouée : … » says it
+    queued = await service.queue_sync(db, conn)
+    w = await status_of(db, user.id)
+    msg = None
+    if watch == "coros":
+        msg = (_coros_msg(w) if queued else "Une synchro est déjà en cours : réessaie dans une minute."
+               if w["syncing"] else "La synchro n'a pas pu démarrer. Réessaie dans un instant.")
     return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-        "request": request, "w": await status_of(db, user.id), "key": watch, "msg": msg})
+        "request": request, "w": w, "key": watch, "msg": msg})
 
 
-@router.get("/settings/garmin/sync", response_class=HTMLResponse)
-async def garmin_sync_state(request: Request, user: User = Depends(get_current_user),
-                            db: AsyncSession = Depends(get_db)):
-    status = await garmin_status(db, user.id)
+@router.get("/settings/{watch}/sync", response_class=HTMLResponse)
+async def watch_sync_state(watch: str, request: Request, user: User = Depends(get_current_user),
+                           db: AsyncSession = Depends(get_db)):
+    """The state a queued sync's block polls (every 3 s) until the worker is done."""
+    if watch not in _WATCHES:
+        return HTMLResponse("", status_code=404)
+    status = await _WATCHES[watch][1](db, user.id)
     if not status["connected"] or status["needs_reauth"]:
         return HTMLResponse("", headers={"HX-Refresh": "true"})
     return templates.TemplateResponse(request, "partials/watch_sync_state.html", context={
-        "request": request, "w": status, "key": "garmin"})
+        "request": request, "w": status, "key": watch, "msg": _coros_msg(status) if watch == "coros" else None})
 
 
 def _to_float(raw: str) -> float | None:

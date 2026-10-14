@@ -10,6 +10,27 @@ from app.models.coros import CorosConnection
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name="paceforge.sync_coros_user", ignore_result=True)  # nothing reads it: no backend call
+def sync_coros_user(conn_id: int, claimed_at: str) -> dict | None:
+    """One athlete's sync, queued with its reservation by services.coros.queue_sync
+    (a press of « Synchroniser maintenant », a new link, Santé opening): the web
+    request only queues it. A duplicate or late delivery finds the reservation
+    taken or replaced and does nothing."""
+    return asyncio.run(_run_one(conn_id, claimed_at))
+
+
+async def _run_one(conn_id: int, claimed_at: str) -> dict | None:
+    from app.database import get_task_session
+    from app.services.coros import run_sync
+
+    async with get_task_session() as db:
+        conn = await db.get(CorosConnection, conn_id)
+        if conn is None:
+            return None
+        outcome = await run_sync(db, conn, claimed_at=claimed_at)
+        return None if outcome is None else {"ok": bool(outcome.get("ok"))}
+
+
 @celery_app.task(name="paceforge.sync_coros")
 def sync_coros() -> dict:
     """Hourly (beat): sync every COROS link not synced for 2 hours, so the

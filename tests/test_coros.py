@@ -9,8 +9,10 @@ import importlib.util
 import json
 import pathlib
 import re
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -485,6 +487,27 @@ async def as_user(client: AsyncClient, test_user: User, no_commit):
     client._transport.app.dependency_overrides[get_current_user] = lambda: test_user  # type: ignore[attr-defined]
     async with AsyncClient(transport=client._transport, base_url="https://test") as c:  # Secure session cookie
         yield c
+
+
+@pytest.fixture
+def queued(monkeypatch) -> list:
+    """The syncs queued for the worker (app.tasks.coros_sync), instead of a broker."""
+    from app.tasks.coros_sync import sync_coros_user
+
+    jobs: list = []
+    monkeypatch.setattr(sync_coros_user, "apply_async", lambda *, args, retry: jobs.append(args))
+    return jobs
+
+
+async def _work(db: AsyncSession, job: list):
+    """What the worker does with a queued job, on the test's session."""
+    from app.tasks import coros_sync
+
+    @asynccontextmanager
+    async def session():
+        yield db
+    with patch("app.database.get_task_session", session):
+        return await coros_sync._run_one(*job)
 
 
 async def _link(db: AsyncSession, user: User, access="at-1", refresh="rt-1", expires_in=timedelta(days=30),
@@ -1079,7 +1102,7 @@ async def test_routes_require_login(client: AsyncClient):
 
 
 async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, db_session: AsyncSession,
-                                                         test_user: User, fake):
+                                                         test_user: User, fake, queued):
     page = (await as_user.get("/settings")).text
     assert "Tes nuits et tes activités arrivent automatiquement depuis ta montre COROS." in page
     assert 'href="/sante"' in page
@@ -1098,11 +1121,17 @@ async def test_settings_block_manual_sync_and_disconnect(as_user: AsyncClient, d
             'hx-swap="innerHTML"') in block and "hx-indicator" not in block and "hx-disabled-elt" not in block
     assert block.index("coros-sync-state") < block.index("coros-sync-btn") and "Synchroniser maintenant" in block
     r = await as_user.post("/settings/coros/sync")
-    assert r.status_code == 200 and "HX-Refresh" not in r.headers
-    assert "Dernière synchro <b class=\"text-gray-700\">à l&#39;instant</b>" in r.text
-    assert "Synchro faite : tes nouvelles données sont dans Santé." in r.text and "<button" not in r.text
+    assert r.status_code == 200 and "HX-Refresh" not in r.headers and "<button" not in r.text
+    # the request only queues it (the worker syncs) and the state follows it until it is done
+    assert len(queued) == 1 and not fake.tool_calls
+    assert 'hx-get="/settings/coros/sync" hx-trigger="every 3s"' in r.text and "Première synchro en cours…" in r.text
+    assert (await _work(db_session, queued.pop()))["ok"]
+    r = await as_user.get("/settings/coros/sync")
+    assert "Dernière synchro <b class=\"text-gray-700\">à l&#39;instant</b>" in r.text and "every 3s" not in r.text
     r = await as_user.post("/settings/coros/sync")
-    assert "Synchro faite : rien de nouveau." in r.text
+    assert "Synchronisation en cours…" in r.text and 'hx-trigger="every 3s"' in r.text
+    assert (await _work(db_session, queued.pop()))["ok"]
+    assert "Synchronisation en cours…" not in (await as_user.get("/settings/coros/sync")).text
     settings_page = (await as_user.get("/settings")).text
     assert "Dernière synchro" in settings_page and settings_page.count("Synchroniser maintenant") == 1
     # a Santé page left open since v4 still posts /sante/sync: harmless, it reloads (without the button)
@@ -1385,17 +1414,19 @@ async def test_nights_written_before_the_stages_are_read_again_once(db_session: 
 
 
 async def test_reglages_sync_says_what_went_wrong(as_user: AsyncClient, db_session: AsyncSession, test_user: User,
-                                                  fake):
+                                                  fake, queued):
     conn = await _link(db_session, test_user)
     fake.mcp_status = 503
     r = await as_user.post("/settings/coros/sync")
     assert "HX-Refresh" not in r.headers
+    assert (await _work(db_session, queued.pop()))["ok"] is False
+    r = await as_user.get("/settings/coros/sync")
     assert "Dernière synchro échouée : COROS ne répond pas pour l&#39;instant (erreur 503)." in r.text
     fake.mcp_status = None
     conn.sync_claimed_at = datetime.now(timezone.utc)  # another worker is on it
     await db_session.flush()
     r = await as_user.post("/settings/coros/sync")
-    assert "Une synchro est déjà en cours : réessaie dans une minute." in r.text
+    assert "Une synchro est déjà en cours : réessaie dans une minute." in r.text and not queued
     conn.sync_claimed_at = None
     conn.needs_reauth = True  # to reconnect: the whole block changes (its reconnect button), the page reloads
     await db_session.flush()
@@ -1443,3 +1474,50 @@ async def test_tokens_no_key_reads_ask_to_reconnect_and_still_disconnect(as_user
     r = await as_user.post("/settings/coros/disconnect")
     assert r.status_code == 303 and not fake.revoked  # nothing to revoke with: just forgotten
     assert (await db_session.get(CorosConnection, conn.id)) is None
+
+
+# ── syncs run by the worker, never by a web request ─────────────────────────
+
+async def test_a_queued_sync_runs_once_in_the_worker(db_session: AsyncSession, test_user: User, fake, no_commit,
+                                                     queued):
+    conn = await _link(db_session, test_user)
+    assert await coros.queue_sync(db_session, conn)
+    assert len(queued) == 1 and queued[0][0] == conn.id and not fake.tool_calls
+    assert (await coros.coros_status(db_session, test_user.id))["syncing"]  # polling sees this attempt at once
+    assert not await coros.queue_sync(db_session, conn) and len(queued) == 1  # reserved: not queued twice
+    job = queued.pop()
+    assert (await _work(db_session, job))["ok"] and fake.tool_calls
+    assert conn.sync_claimed_at is None and conn.last_sync_at is not None
+    calls = len(fake.tool_calls)
+    assert await _work(db_session, job) is None and len(fake.tool_calls) == calls  # a redelivery does nothing
+
+
+async def test_a_sync_that_cannot_be_queued_lets_go_and_says_so(as_user: AsyncClient, db_session: AsyncSession,
+                                                                test_user: User, fake, monkeypatch):
+    from app.tasks.coros_sync import sync_coros_user
+
+    def unavailable(**kwargs):
+        raise ConnectionError("broker unavailable")
+    monkeypatch.setattr(sync_coros_user, "apply_async", unavailable)
+    conn = await _link(db_session, test_user, last_sync_at=datetime.now(timezone.utc), last_error=coros.PARTIAL)
+    r = await as_user.post("/settings/coros/sync")
+    assert "La synchro n&#39;a pas pu démarrer. Réessaie dans un instant." in r.text and "every 3s" not in r.text
+    assert conn.sync_claimed_at is None and conn.last_error == coros.PARTIAL and not fake.tool_calls
+
+
+async def test_connecting_or_opening_sante_queues_the_sync_for_the_worker(db_session: AsyncSession, test_user: User,
+                                                                         fake, no_commit, queued, monkeypatch):
+    import asyncio
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "COROS_SYNC", True)
+    conn = await _link(db_session, test_user)
+
+    @asynccontextmanager
+    async def session():
+        yield db_session
+    monkeypatch.setattr("app.database.async_session_factory", session)
+    assert coros.schedule_sync(test_user.id)
+    await asyncio.gather(*list(coros._pending))
+    assert len(queued) == 1 and conn.sync_claimed_at is not None and not fake.tool_calls

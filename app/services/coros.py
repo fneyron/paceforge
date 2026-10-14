@@ -31,7 +31,8 @@ OAuth 2.1. PaceForge is a plain server-side client of it, no AI involved:
   that same answer's auto laps (time, average HR) are kept as Strava's laps
   (Santé's Entraînement dial weighs them).
   60 days the first time, then the last 7 days, at most every 2 hours (Celery
-  beat, app.tasks.coros_sync), right after connecting and on demand (Réglages);
+  beat, app.tasks.coros_sync), right after connecting and on demand (Réglages),
+  always in the Celery worker (a web request only queues it: queue_sync);
   the 60 days once more when the stored nights predate a format change. The
   nightly rows of the days a sync's parsers read that it no longer yields are
   deleted (covered_days: what was read, never what was asked for; a few at
@@ -1775,33 +1776,39 @@ async def _release(db: AsyncSession, conn, user_id: int) -> None:
 _pending: set[asyncio.Task] = set()
 
 
-async def _sync_in_background(user_id: int, claimed_at: str | None = None) -> None:
+async def _sync_in_background(user_id: int) -> None:
     from app.database import async_session_factory
 
     async with async_session_factory() as db:
         conn = await connection_for(db, user_id)
         if conn:
-            await run_sync(db, conn, **({"claimed_at": claimed_at} if claimed_at else {}))
+            await queue_sync(db, conn)
 
 
 async def queue_sync(db: AsyncSession, conn: CorosConnection) -> bool:
-    """Reserve before acknowledging a manual refresh, so polling sees this attempt."""
+    """Reserve, then hand the sync to the worker (app.tasks.coros_sync) with the
+    reservation: a web request never runs it (a minute of calls and parsing on
+    the web workers' loop, lost at a deploy). Reserving first lets polling see
+    this attempt. False when it is not reserved (another sync holds it, or the
+    link must be reconnected) or could not be queued (reservation released)."""
+    from app.tasks.coros_sync import sync_coros_user
+
     if conn.needs_reauth or not await claim(db, conn):
         return False
-    stamp = conn.sync_claimed_at.isoformat()
+    stamp = _as_utc(conn.sync_claimed_at).isoformat()
     try:
-        task = asyncio.get_running_loop().create_task(_sync_in_background(conn.user_id, stamp))
-        _pending.add(task)
-        task.add_done_callback(_pending.discard)
-    except RuntimeError:
-        await _release(db, conn, conn.user_id)
+        await asyncio.to_thread(sync_coros_user.apply_async, args=[conn.id, stamp], retry=False)
+    except Exception:
+        logger.exception("COROS sync could not be queued for user %d", conn.user_id)
+        conn.sync_claimed_at = None
+        await db.commit()
         return False
     return True
 
 
 def schedule_sync(user_id: int) -> bool:
-    """Start a sync in this process without waiting for it (after connecting,
-    on opening Santé). False when syncs are off here."""
+    """Queue a sync without waiting for it (after connecting, on opening
+    Santé). False when syncs are off here."""
     if not settings.COROS_SYNC:
         return False
     try:
