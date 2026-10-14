@@ -547,8 +547,11 @@ def queued(monkeypatch):
     from app.tasks import webhook_sync
 
     calls = []
-    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay", lambda *a: calls.append(a))
-    monkeypatch.setattr(webhook_sync.strava_deauthorized, "delay", lambda *a: calls.append(("deauth", *a)))
+    # a message as sent: its positional arguments, then its keyword arguments if any
+    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay",
+                        lambda *a, **k: calls.append((*a, k) if k else a))
+    monkeypatch.setattr(webhook_sync.strava_deauthorized, "delay",
+                        lambda *a, **k: calls.append(("deauth", *a, k) if k else ("deauth", *a)))
     return calls
 
 
@@ -562,7 +565,7 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
         assert r.status_code == 200 and r.json()["status"] == "ignored"
     assert queued == []
     assert (await client.post("/webhook/strava", json=_event(test_user, sub=55, obj=7))).json()["status"] == "ok"
-    assert queued == [(7, test_user.strava_athlete_id, "create")]
+    assert queued == [(7, test_user.strava_athlete_id)]  # a create as the previous worker takes it
 
     # the shared app: its subscription (STRAVA_SUBSCRIPTION_ID), for its athletes only
     monkeypatch.setattr(settings, "STRAVA_SHARED_APP_ENABLED", True)
@@ -574,14 +577,14 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ignored"
     assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ignored"
     assert (await client.post("/webhook/strava", json=_event(shared, sub=777, obj=8))).json()["status"] == "ok"
-    assert queued == [(8, 5001, "create")]
+    assert queued == [(8, 5001)]
     # the owner's own app became the shared one: its stored subscription is the shared app's
     monkeypatch.delenv("STRAVA_SUBSCRIPTION_ID")
     owner = await _athlete(db_session, 5002)
     await _own_app(db_session, owner, client_id="90001", sub=4321)
     queued.clear()
     assert (await client.post("/webhook/strava", json=_event(shared, sub=4321, obj=9))).json()["status"] == "ok"
-    assert queued == [(9, 5001, "create")]
+    assert queued == [(9, 5001)]
     # unknown athletes, unhandled objects, bad payloads: a 200 all the same (Strava retries anything else)
     stranger = User(strava_athlete_id=6000)
     for body in (_event(stranger, sub=55), {**_event(test_user), "object_type": "club"}, {"bad": 1}):
@@ -593,12 +596,18 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
 
 async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncClient, db_session, test_user,
                                                                    queued):
-    """Base code: only « create » was queued; edits, deletions and revocations were dropped."""
+    """Base code: only « create » was queued; edits, deletions and revocations were dropped. A create keeps the
+    message the previous worker takes (review D8: a deploy starts the new web while the old worker still runs)."""
+    import inspect
+
+    def previous_worker(activity_id, owner_id):  # the task's arguments before this branch (self aside)
+        pass
     await _own_app(db_session, test_user, sub=55)
-    for kind in ("update", "delete", "deauth"):
+    for kind in ("create", "update", "delete", "deauth"):
         assert (await client.post("/webhook/strava", json=_event(test_user, kind, obj=3))).json()["status"] == "ok"
     athlete = test_user.strava_athlete_id
-    assert queued == [(3, athlete, "update"), (3, athlete, "delete"), ("deauth", athlete)]
+    assert queued == [(3, athlete), (3, athlete, "update"), (3, athlete, "delete"), ("deauth", athlete)]
+    inspect.signature(previous_worker).bind(*queued[0])
     queued.clear()
     athlete_update = {**_event(test_user, "deauth"), "updates": {"authorized": "true"}}
     assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ignored"

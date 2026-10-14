@@ -110,6 +110,8 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
 
         if kind == "deauthorize":
             strava_deauthorized.delay(event.owner_id)
+        elif kind == "create":  # the previous worker's message (a deploy starts the new web first)
+            sync_activity_from_webhook.delay(event.object_id, event.owner_id)
         else:
             sync_activity_from_webhook.delay(event.object_id, event.owner_id, kind)
     except Exception:
