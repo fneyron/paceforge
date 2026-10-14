@@ -39,7 +39,13 @@ HOME = "/sante"  # Santé is the main dashboard
 
 
 def _client_ip(request: Request) -> str:
-    """The client's address (behind the proxy, uvicorn's --proxy-headers sets it from X-Forwarded-For)."""
+    """The client's address for the attempt limits. Deployed behind exactly one proxy (Traefik), which appends
+    the address it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
+    --forwarded-allow-ips='*' takes the first hop instead, which the client writes itself. Another proxy in
+    front (a CDN) would make its own address the last hop: then trust its header instead."""
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        return hops[-1]
     return request.client.host if request.client else ""
 
 

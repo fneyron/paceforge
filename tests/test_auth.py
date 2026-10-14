@@ -366,3 +366,29 @@ async def test_the_reset_token_is_committed_before_the_email_goes(committing_ses
     monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda to, token: order.append("email"))
     assert (await committing_client.post("/auth/forgot-password", data={"email": user.email})).status_code == 200
     assert "email" in order and order.index("commit") < order.index("email")
+
+
+async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit, monkeypatch):
+    """As deployed (uvicorn --proxy-headers --forwarded-allow-ips='*' behind one proxy, Traefik, which appends the
+    address it saw last): a client-chosen first X-Forwarded-For hop never gives a fresh count."""
+    from httpx import ASGITransport
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from app.dependencies import get_db
+    from app.main import create_app
+
+    app = create_app()
+
+    async def same_db():
+        yield db_session
+    app.dependency_overrides[get_db] = same_db
+    monkeypatch.setitem(auth_service.LIMITS, "login", (2, 50, 900))
+    user = await _member(db_session)
+    transport = ASGITransport(app=ProxyHeadersMiddleware(app, trusted_hosts="*"))
+    async with AsyncClient(transport=transport, base_url="https://test") as c:
+        async def attempt(forwarded):
+            return (await c.post("/auth/login", data={"email": user.email, "password": "wrong-password"},
+                                 headers={"X-Forwarded-For": forwarded})).status_code
+        assert [await attempt(f"10.0.0.{i}, 203.0.113.7") for i in range(2)] == [200, 200]
+        assert await attempt("10.9.9.9, 203.0.113.7") == 429  # the same client behind a forged first hop
+        assert await attempt("203.0.113.8") == 200  # another client: its own count
