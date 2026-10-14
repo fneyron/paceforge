@@ -473,9 +473,21 @@ async def test_the_starts_time_zone_comes_with_the_weather_never_from_a_page(db_
         raise weather.LookupUnavailable("HTTP 503")
 
     monkeypatch.setattr(weather, "zone_name", down)
-    for _ in range(2):  # a failure: none, the outage marker set, kept a day as none
+    for _ in range(2):  # a failure: none for now, the outage marker set, asked again within 15 min, not a day
         assert (await weather.get_weather_forecast(45.92, 6.87, far))["tz"] is None
     assert calls == [(32.86, -16.9), (45.92, 6.87)] and await weather.lookups_paused()
+    import time as _time
+    left = {k: until - _time.monotonic() for k, (until, _) in weather._ZONES.items()}
+    assert left[(45.92, 6.87)] <= weather.ZONE_RETRY_S and left[(32.86, -16.9)] > 23 * 3600
+
+    async def nowhere(lat, lon):  # an answer without a zone: kept a day
+        calls.append((lat, lon))
+        return None
+
+    monkeypatch.setattr(weather, "zone_name", nowhere)
+    monkeypatch.setattr(weather, "_outage", weather.MemoryMarker())
+    assert (await weather.get_weather_forecast(0.0, -160.0, far))["tz"] is None
+    assert weather._ZONES[(0.0, -160.0)][0] - _time.monotonic() > 23 * 3600
 
     # the page's race clock reads the saved weather: no lookup, nothing written
     async def never(lat, lon):
