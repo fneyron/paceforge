@@ -14,8 +14,9 @@ const night = { date: '2026-10-14', source_id: 'a'.repeat(64), source_name: 'App
   sleep: [{ start: '2026-10-13T21:00:00Z', end: '2026-10-14T05:00:00Z', stage: 'core' }], naps: [], hr: [], hrv_sdnn: [], resp: [] } as AppleNight;
 
 function fixture(overrides: Partial<EngineDeps> = {}) {
-  // waitTick: fake time spent by each failed lock attempt (a foreground sync holding it).
-  let clock = start, held = false, active = 0, peak = 0, waitTick = 0;
+  // waitTick: fake time spent by each failed lock attempt (a foreground sync holding it
+  // until freeAt).
+  let clock = start, held = false, active = 0, peak = 0, waitTick = 0, freeAt = Infinity;
   const calls: string[] = [];
   const sent: { path: string; body: unknown; token: string; timeout: number; readAt: string }[] = [];
   const stored = { pair: { token: 'token-2', user_id: 1, name: 'Florent' } as Pair, automatic: true,
@@ -27,7 +28,8 @@ function fixture(overrides: Partial<EngineDeps> = {}) {
     saveState: async state => { stored.state = state; },
     saveReceipt: async report => { stored.receipt = report; },
     savePair: async pair => { stored.pair = pair; },
-    lock: { acquire: async () => { if (held) { clock += waitTick; return false; } held = true; return true; }, release: async () => { held = false; } },
+    lock: { acquire: async () => { if (held && clock < freeAt) { clock += waitTick; return false; } held = true; return true; },
+      release: async () => { held = false; } },
     protectedData: async () => true,
     changes: async tokens => ({ daysBack: 3, tokens }),
     readDaily: async (daysBack, budget) => {
@@ -47,7 +49,7 @@ function fixture(overrides: Partial<EngineDeps> = {}) {
     ...overrides,
   };
   return { deps, stored, data, calls, sent, peak: () => peak, advance: (ms: number) => { clock += ms; },
-    hold: (tick = 1000) => { held = true; waitTick = tick; }, free: () => { held = false; } };
+    hold: (tick = 1000, until = Infinity) => { held = true; waitTick = tick; freeAt = until; }, free: () => { held = false; } };
 }
 
 test('changes reported together (weight and body fat, per type) make one bounded background run', async () => {
@@ -121,6 +123,16 @@ test('a wake while the foreground sync holds the lock waits for it, or runs once
   later.resumeMissed(); // nothing kept any more
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(slow.calls.filter(c => c.startsWith('daily')).length, 1);
+});
+
+test('a wake whose lock is freed too late to send is resumed at once in full, not run short', async () => {
+  const f = fixture(), engine = createEngine(f.deps);
+  f.hold(1000, start + 12000); // the foreground sync ends 12 s after the wake: 2 s of it left
+  assert.equal(await engine.request('healthkit'), 'busy');
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.deepEqual(f.calls, ['daily 3 8000/3000', 'nights 3 10000/3000'], 'one run, with its full read times');
+  assert.equal(f.sent.length, 2);
+  assert.equal(engine.pending(), false);
 });
 
 test('the deadline stops before sending: nothing half-sent, the next opening syncs at once', async () => {

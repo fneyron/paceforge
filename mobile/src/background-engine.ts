@@ -130,9 +130,19 @@ export function createEngine(deps: EngineDeps) {
     // Android may run the task in another JavaScript runtime than the screen: the lock is
     // a file. The foreground sync holds it while it runs: wait within this wake's time,
     // otherwise keep the wake for when that sync finishes (resumeMissed).
+    let waited = false;
     while (!await deps.lock.acquire(owner, deps.now() + LOCK_MS)) {
       if (deps.now() + retry >= deadline) { pendingHere = true; missed = true; return 'busy'; }
+      waited = true;
       await new Promise(resolve => setTimeout(resolve, retry));
+    }
+    if (waited && deadline - deps.now() < MIN_RUN_MS) {
+      // Freed too late in this wake's time to send anything: resumed at once instead,
+      // like a wake that sync kept waiting (the drain loop runs it next, in full).
+      await deps.lock.release(owner).catch(() => {});
+      pendingHere = true;
+      void request('resume');
+      return 'busy';
     }
     try { return await run(deadline); } finally { await deps.lock.release(owner).catch(() => {}); }
   }
