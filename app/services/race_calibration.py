@@ -199,11 +199,14 @@ def fit_effort_model(points: list[dict]) -> dict | None:
     k = (sxy / s2 + K_PRIOR / t2) / (sxx / s2 + 1 / t2)
     k = max(1 / (1 - DECAY_MIN), min(1 / (1 - DECAY_MAX), k))
     c = my - k * mx  # the level passes through the weighted mean of the races
+    # the scenarios' spread counts real races only (Kish, with their weights): long training efforts
+    # read without a race say no more than no race at all
+    rw = [w for p, w in zip(pts, ws, strict=True) if p.get("is_race") and not_a_race_reason(p.get("name")) is None]
     return {
         "a": math.exp(-c / k), "b": 1 - 1 / k, "k": k, "c": c, "n": len(pts),
         "fitted": sxx >= 1e-6,
-        # for the scenarios' spread: mean ln E of the races, the weighted count (Kish), Sxx
-        "log_ekm_mean": mx, "n_eff": sw * sw / sum(w * w for w in ws), "sxx": sxx,
+        # for the scenarios' spread: mean ln E of the races, the weighted count of real races (Kish), Sxx
+        "log_ekm_mean": mx, "n_eff": sum(rw) ** 2 / sum(w * w for w in rw) if rw else 0.0, "sxx": sxx,
     }
 
 
@@ -275,12 +278,14 @@ def race_point(name: str, km: float, dplus: float, hours: float, is_race: bool,
 
 def model_from_points(points: list[dict], today: date | None = None) -> dict | None:
     """Selection + fit on prepared points (see race_point): the tagged races
-    when two or more of them are real races (not a triathlon or relay leg, an
-    abandon, a hike…), else the long untagged efforts help. Every race kept
-    weighs its tag (race 1, long effort 0.5) × its recency."""
+    as soon as one of them is a real race (not a triathlon or relay leg, an
+    abandon, a hike…); the long untagged efforts only without one (a race
+    alone beats training runs: long runs read 10-40 % slower than the race
+    pulled its level 5-40 % slow, and could set the race itself aside).
+    Every race kept weighs its tag (race 1, long effort 0.5) × its recency."""
     races = [p for p in points if p.get("is_race")]
     real = [p for p in races if not_a_race_reason(p.get("name")) is None]
-    pts = races if len(real) >= 2 else points
+    pts = races if real else points
     if not pts:
         return None
     pts = [{**p, "weight": p.get("weight", 1.0) * recency_weight(p.get("day"), today)} for p in pts]
@@ -405,7 +410,7 @@ OUTLIER_LOG = math.log(1.35)
 def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
     """The races the level is read on: everything tagged « race » that
     measures a standalone running race (no triathlon run leg, relay leg or
-    abandon; a hike, a recce, a day pacing a friend only when too little is
+    abandon; a hike, a recce, a day pacing a friend only when nothing else is
     left), then, from three races on, what sits far off the curve of the
     others (either way) is set aside."""
     kept, ignored, soft = [], [], []
@@ -417,9 +422,9 @@ def select_races(points: list[dict]) -> tuple[list[dict], list[dict]]:
                 soft.append(p)
         else:
             kept.append(p)
-    if len(kept) < 2 and soft:
-        # too little left: a hike or a recce still beats nothing, but a
-        # triathlon leg, a relay leg or an abandon never comes back
+    if not kept and soft:
+        # nothing left: a hike or a recce still beats nothing (never a real race's company: it would read
+        # him slow), but a triathlon leg, a relay leg or an abandon never comes back
         kept = kept + soft
         ignored = [p for p in ignored if p["why"] != "pas une course"]
     # one at a time, the farthest first (a very fast race must not make the others look slow), while
@@ -517,7 +522,7 @@ Z80 = 0.8416  # standard normal 80th percentile
 def finish_spread(model: dict | None, course_ekm: float | None, known_course: bool = False) -> float:
     """σ of ln(finish time) for this athlete on this course (see above)."""
     var = SPREAD_DAY ** 2 + SPREAD_EDITION ** 2 + (SPREAD_KNOWN_COURSE if known_course else SPREAD_COURSE) ** 2
-    n_eff = (model or {}).get("n_eff") or (model or {}).get("n") or 0
+    n_eff = (model or {}).get("n_eff", (model or {}).get("n")) or 0  # 0: no real race, training efforts only
     if n_eff > 0:
         var += RACE_LOG_SD ** 2 / n_eff
         mx = (model or {}).get("log_ekm_mean")

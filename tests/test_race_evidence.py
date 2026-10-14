@@ -64,6 +64,32 @@ def test_the_level_is_the_mean_of_the_races_not_the_best():
     assert {p["name"] for p in m["races"]} == {"A", "B"} and m["n_eff"] == pytest.approx(2)
 
 
+@pytest.mark.parametrize("slower", [0.10, 0.20, 0.30, 0.40])
+def test_one_race_beats_long_training_runs(slower):
+    """One tagged race and long untagged runs 10-40 % slower than its curve: the level is the race's alone (the
+    runs pulled it 5-40 % slow, and from 40 % slower set the race itself aside)."""
+    today = date(2026, 10, 14)
+    race = rc.race_point("Trail des Cimes", 60, 3000, 8.0, True, day=today - timedelta(days=60))
+    runs = [rc.race_point(f"Sortie longue {i}", km, dp, 8.0 * ((km + dp / 100) / 90) ** 1.28 * (1 + slower), False,
+                          day=today - timedelta(days=15 * i + 10))
+            for i, (km, dp) in enumerate(((42, 1200), (45, 1500), (48, 1800), (50, 2000)))]
+    alone = rc.model_from_points([race], today=today)
+    m = rc.model_from_points([race, *runs], today=today)
+    E = rc.effort_km(100, 6000)
+    assert rc.predict_total_s(m, E) == rc.predict_total_s(alone, E)
+    assert [p["name"] for p in m["races"]] == ["Trail des Cimes"] and m["n_eff"] == 1
+
+
+def test_training_runs_alone_count_as_no_race_in_the_spread():
+    today = date(2026, 10, 14)
+    runs = [rc.race_point(f"Sortie longue {i}", 42 + 2 * i, 1500, 6.5 + 0.3 * i, False, day=today - timedelta(days=20 * i + 10))
+            for i in range(4)]
+    m = rc.model_from_points(runs, today=today)
+    assert m and m["n_used"] == 4 and m["n_eff"] == 0  # the level read on them, its spread as without a race
+    E = rc.effort_km(100, 6000)
+    assert rc.scenario_pcts(m, E) == rc.scenario_pcts(None, E)
+
+
 def test_a_hot_race_is_read_without_its_heat():
     cool = rc.model_from_points([_pt("Cool", 100, 11.0)])
     hot = rc.model_from_points([_pt("Hot", 100, 11.0, heat=1.10)])  # run at ~30 °C: 10 % of its time was heat

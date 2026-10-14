@@ -220,8 +220,12 @@ def test_triathlon_legs_and_relays_never_come_back():
         {"name": "Reco CCC", "hours": 8.0, "ekm_h": 8.0},
     ]
     used, ignored = rc.select_races(pts)
-    # one race left: the recce still helps, the tri leg and the relay don't
-    assert {p["name"] for p in used} == {"UTMB", "Reco CCC"}
+    # one real race left: it alone (a recce beside it would read him slow); the tri leg and the relay never come back
+    assert {p["name"] for p in used} == {"UTMB"}
+    assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais", "pas une course"}
+    # no real race at all: the recce still beats nothing, never the tri leg or the relay
+    used, ignored = rc.select_races(pts[1:])
+    assert {p["name"] for p in used} == {"Reco CCC"}
     assert {p["why"] for p in ignored} == {"course d'un triathlon", "relais"}
 
 
@@ -237,10 +241,10 @@ def test_long_efforts_help_when_the_tagged_races_are_all_excluded():
     assert model and model["n_used"] >= 2
     assert {p["name"] for p in model["races"]} <= {p["name"] for p in long_runs}
     assert {p["name"] for p in model["ignored"]} >= {"SaintéLyon relais", "Ironman 70.3 Nice"}
-    # one real race left: still with the long efforts
+    # one real race left: the level is read on it alone (long runs beside it read him slow)
     one = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), legs[0]]
     model = rc.model_from_points(one + long_runs, today=date(2026, 10, 1))
-    assert model["n_used"] >= 2 and "Trail X" in {p["name"] for p in model["races"]}
+    assert model["n_used"] == 1 and {p["name"] for p in model["races"]} == {"Trail X"} and model["n_eff"] == 1
     # two real races: the tagged races alone
     two = [rc.race_point("Trail X", 50, 3000, 7, True, day=d), rc.race_point("Ultra Y", 100, 6000, 17, True, day=d)]
     model = rc.model_from_points(two + long_runs, today=date(2026, 10, 1))
