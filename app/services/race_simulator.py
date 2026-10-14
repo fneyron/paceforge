@@ -1110,9 +1110,13 @@ def compute_passage_times(
 
 
 # A pinned passage time may ask for a leg down to this share of the model's own
-# time for it (heat included), not faster: nobody runs a leg in half the time
-# his races say. Past it the pin is moved later and flagged.
-MIN_PIN_RATIO = 0.5
+# time for it (heat included), not faster: past it the pin is moved later and
+# flagged. Held-out finishers (UTMB Live, 152 702 legs of 10 min or more):
+# leg time / plan at the runner's own finish 0.70 at the 1st percentile, 0.79
+# at the 5th; below 0.70: 0.9 % of the legs (3 % against the plan of the
+# runner's level group). The former 0.5 (3 legs in 10 000) let a pin twice
+# too fast pass as « feasible ».
+MIN_PIN_RATIO = 0.7
 
 
 def has_objective(target_time_s: int | None, predicted_total_s: int | None) -> bool:

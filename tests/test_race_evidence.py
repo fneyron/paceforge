@@ -294,3 +294,16 @@ def test_the_profiles_night_bands_follow_the_sun():
     assert len(bands) == 1 and 5 < bands[0]["start_km"] < 15 and bands[0]["end_km"] == 40.0  # dark from ~17:45
 
 
+# ── 5b. the pin floor ──
+
+def test_a_pin_may_not_ask_a_leg_faster_than_70_percent_of_the_model():
+    assert rs.MIN_PIN_RATIO == 0.7
+    cps = [dict(cp) for cp in CPS]
+    plain = rs.compute_passage_times(_course(), cps, None, 1.0, 6, 0, None)
+    eau = next(s for s in plain if s["end_name"] == "Eau 1")
+    cps[0]["target_s"] = int(eau["predicted_time_s"] * 0.6)  # 60 % of the model's time to Eau 1
+    pinned = rs.compute_passage_times(_course(), cps, None, 1.0, 6, 0, None)
+    first = next(s for s in pinned if s["end_name"] == "Eau 1")
+    assert first["pin_clamped"] and first["adjusted_time_s"] >= 0.7 * eau["predicted_time_s"] - 1
+
+
