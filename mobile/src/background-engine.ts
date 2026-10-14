@@ -1,0 +1,215 @@
+// Background sync without React, the WebView or the account check: wired to the
+// natives by background.ts, tested here with fakes. Health values are never logged.
+import { ApiError, authorized, Credentials } from './api';
+import { syncHealth, SyncReport } from './sync';
+import type { AppleNight } from './night-samples';
+import type { ChangePlan, Daily, HealthResult, Metric, Pair, ReadBudget, SleepResult } from './types';
+
+export const TASK_NAME = 'paceforge-health-sync';
+export const TASK_INTERVAL_MINUTES = 60;
+export const DEBOUNCE_MS = 1500;
+// HealthKit keeps the app awake ~25 s after its callback (a fixed native window).
+export const WAKE_MS = 20000;
+export const RUN_MS = 18000;
+export const LOCK_MS = 60000;
+const NIGHTS = 3;
+const DAILY: Required<ReadBudget> = { total: 8000, perRead: 3000 };
+const SLEEP: Required<ReadBudget> = { total: 10000, perRead: 3000 };
+const CHANGES: Required<ReadBudget> = { total: 4000, perRead: 3000 };
+const SEND_MS = 8000;
+// Hashes only skip identical re-sends: forgotten daily, so a loss on the server heals.
+const HASHES_MS = 24 * 3600000, HASH_DAYS = 10;
+
+export type Wake = 'healthkit' | 'task';
+export type Outcome = 'off' | 'locked' | 'busy' | 'deferred' | 'unchanged' | 'sent' | 'partial' | 'reconnect' | 'failed';
+// logout / mismatch: the web session left the paired account; off until it is confirmed again.
+export type Block = '' | 'logout' | 'mismatch';
+export type BackgroundState = {
+  userId: number | null; enabled: boolean; blocked: Block;
+  hashes: Record<string, string>; hashedAt: number;
+  tokens: Record<string, string>; retryAt: number;
+};
+export const emptyState = (userId: number | null = null): BackgroundState =>
+  ({ userId, enabled: false, blocked: '', hashes: {}, hashedAt: 0, tokens: {}, retryAt: 0 });
+const strings = (v: unknown): Record<string, string> => v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string')) : {};
+const time = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : 0;
+export function readState(raw: string | null): BackgroundState {
+  let v: Record<string, unknown> | null = null;
+  try { v = raw ? JSON.parse(raw) : null; } catch { /* unreadable: start over */ }
+  if (!v || typeof v !== 'object') return emptyState();
+  return { userId: Number.isSafeInteger(v.userId) ? v.userId as number : null, enabled: v.enabled === true,
+    blocked: v.blocked === 'logout' || v.blocked === 'mismatch' ? v.blocked : '',
+    hashes: strings(v.hashes), hashedAt: time(v.hashedAt), tokens: strings(v.tokens), retryAt: time(v.retryAt) };
+}
+export function readPair(raw: string | null): Pair | null {
+  try {
+    const p = raw ? JSON.parse(raw) : null;
+    return p && typeof p.token === 'string' && Number.isSafeInteger(p.user_id) ? p as Pair : null;
+  } catch { return null; }
+}
+export function readReceipt(raw: string | null): SyncReport | null {
+  try {
+    const r = raw ? JSON.parse(raw) : null;
+    return r && Number.isSafeInteger(r.userId) ? r as SyncReport : null;
+  } catch { return null; }
+}
+
+export type Stored = { pair: Pair | null; automatic: boolean; receipt: SyncReport | null; state: BackgroundState };
+export type EngineDeps = {
+  id: string; now: () => number;
+  load: () => Promise<Stored>;
+  saveState: (state: BackgroundState) => Promise<void>;
+  saveReceipt: (report: SyncReport) => Promise<void>;
+  savePair: (pair: Pair) => Promise<void>;
+  lock: { acquire: (owner: string, until: number) => Promise<boolean>; release: (owner: string) => Promise<void> };
+  protectedData: () => Promise<boolean>;
+  changes: (tokens: Record<string, string>, budget: ReadBudget) => Promise<ChangePlan>;
+  readDaily: (daysBack: number, budget: ReadBudget, metrics?: Metric[]) => Promise<HealthResult>;
+  readNights: (daysBack: number, budget: ReadBudget) => Promise<SleepResult>;
+  send: (path: string, body: unknown, token: string, timeout: number, readAt: string) => Promise<unknown>;
+  digest: (value: string) => Promise<string>;
+  disable: () => Promise<void>;
+  notify: (report: SyncReport) => void;
+  locked: (error: unknown) => boolean;
+  debounceMs?: number;
+};
+
+const dailyKey = (d: Daily) => `d|${d.date}|${d.metric}`;
+const nightKey = (n: AppleNight) => `n|${n.date}|${n.source_id}`;
+const dailyValue = (d: Daily) => JSON.stringify([d.value, d.unit, d.measured_at ?? null, d.sources]);
+function recent(hashes: Record<string, string>, now: number) {
+  const oldest = new Date(now - HASH_DAYS * 86400000).toISOString().slice(0, 10);
+  return Object.fromEntries(Object.entries(hashes).filter(([key]) => (key.split('|')[1] || '') >= oldest));
+}
+
+export function createEngine(deps: EngineDeps) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running: Promise<void> | null = null;
+  let queue: { wake: Wake; resolve: (outcome: Outcome) => void }[] = [];
+  let wakeEnd = 0, runs = 0, pendingHere = false;
+
+  /** Coalesces wakes (HealthKit calls once per changed type) into one run at a time. */
+  function request(wake: Wake): Promise<Outcome> {
+    if (wake === 'healthkit') wakeEnd = Math.max(wakeEnd, deps.now() + WAKE_MS);
+    return new Promise(resolve => {
+      queue.push({ wake, resolve });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; void drain(); }, wake === 'task' ? 0 : deps.debounceMs ?? DEBOUNCE_MS);
+    });
+  }
+  async function drain() {
+    if (running) return; // the current loop takes the new wakes when it finishes
+    running = (async () => {
+      while (queue.length) {
+        const batch = queue;
+        queue = [];
+        let outcome: Outcome;
+        try { outcome = await once(batch.some(b => b.wake === 'task') ? 'task' : 'healthkit'); } catch { outcome = 'failed'; }
+        batch.forEach(b => b.resolve(outcome));
+      }
+    })();
+    try { await running; } finally { running = null; }
+  }
+
+  async function once(wake: Wake): Promise<Outcome> {
+    const start = deps.now();
+    // A late timer (the app was suspended) gets a full run: JavaScript only runs again
+    // when iOS wakes or opens the app.
+    const deadline = wake === 'healthkit' && wakeEnd > start + 2000 ? Math.min(start + RUN_MS, wakeEnd) : start + RUN_MS;
+    const owner = `${deps.id}:${++runs}`;
+    // Android may run the task in another JavaScript runtime than the screen: the lock is a file.
+    if (!await deps.lock.acquire(owner, start + LOCK_MS)) return 'busy';
+    try { return await run(deadline); } finally { await deps.lock.release(owner).catch(() => {}); }
+  }
+
+  async function run(deadline: number): Promise<Outcome> {
+    let stored: Stored;
+    try { stored = await deps.load(); } catch (e) {
+      if (deps.locked(e)) { pendingHere = true; return 'locked'; }
+      throw e;
+    }
+    const { pair, automatic, receipt } = stored;
+    if (!pair || !automatic || (receipt?.userId === pair.user_id && receipt.reconnect)) return 'off';
+    let state: BackgroundState = stored.state.userId === pair.user_id ? stored.state
+      : { ...emptyState(pair.user_id), enabled: stored.state.enabled };
+    if (state.blocked) return 'off';
+    const now = deps.now();
+    if (state.retryAt > now) return 'deferred';
+    const previous = receipt?.userId === pair.user_id ? receipt : null;
+    if (!await deps.protectedData()) {
+      // Locked phone: the HealthKit store is encrypted. The next opening syncs at once.
+      pendingHere = true;
+      if (previous && !previous.pending) await deps.saveReceipt({ ...previous, pending: true }).catch(() => {});
+      return 'locked';
+    }
+    if (now - state.hashedAt > HASHES_MS) state = { ...state, hashes: {}, hashedAt: now };
+    const remaining = () => Math.max(0, deadline - deps.now());
+    const within = (b: Required<ReadBudget>) => ({ total: Math.min(b.total, remaining()), perRead: b.perRead });
+    const plan = await deps.changes(state.tokens, within(CHANGES));
+    if (plan.quota) { await deps.saveState({ ...state, retryAt: now + 3600000 }); return 'deferred'; }
+    if (plan.daysBack === 0) { await deps.saveState({ ...state, tokens: plan.tokens }); return 'unchanged'; }
+
+    const hashes = { ...state.hashes };
+    let credentials: Credentials = { token: pair.token, prev_token: pair.prev_token };
+    let refused: unknown = null, quota = false, dailyDone = false, sent = 0;
+    const report = await syncHealth({
+      userId: pair.user_id, full: false, previous, trigger: 'background', deadline, clock: deps.now,
+      now: () => new Date(deps.now()).toISOString(),
+      daily: async () => {
+        const result = await deps.readDaily(plan.daysBack, within(DAILY), plan.metrics);
+        quota = !!result.quota;
+        return result;
+      },
+      sleep: () => deps.readNights(NIGHTS, within(SLEEP)),
+      send: (path, body, meta) => authorized(credentials,
+        token => deps.send(path, body, token, Math.max(1000, Math.min(SEND_MS, remaining())), meta.readAt)
+          .catch(e => { refused = e; throw e; }),
+        async next => { credentials = next; await deps.savePair({ ...pair, token: next.token, prev_token: next.prev_token }); }),
+      unsent: async (path, body) => {
+        if (path === '/api/mobile/daily') {
+          const days: Daily[] = [];
+          for (const day of (body as { days: Daily[] }).days) {
+            if (hashes[dailyKey(day)] !== await deps.digest(dailyValue(day))) days.push(day);
+          }
+          if (!days.length) dailyDone = true;
+          return days.length ? { days } : null;
+        }
+        const night = body as AppleNight;
+        return hashes[nightKey(night)] === await deps.digest(JSON.stringify(night)) ? null : night;
+      },
+      sent: async (path, body) => {
+        sent++;
+        if (path === '/api/mobile/daily') {
+          dailyDone = true;
+          for (const day of (body as { days: Daily[] }).days) hashes[dailyKey(day)] = await deps.digest(dailyValue(day));
+        } else {
+          const night = body as AppleNight;
+          hashes[nightKey(night)] = await deps.digest(JSON.stringify(night));
+        }
+      },
+      save: async r => { await deps.saveReceipt(r); deps.notify(r); },
+      progress: () => {},
+    });
+    pendingHere = !!report.pending;
+    if (report.reconnect) {
+      // The token is refused: stop waking the app; Réglages asks to reconnect.
+      await deps.disable().catch(() => {});
+      await deps.saveState({ ...state, hashes: recent(hashes, now), enabled: false });
+      return 'reconnect';
+    }
+    const retryAt = refused instanceof ApiError && refused.status === 429 ? now + (refused.retryAfter || 900) * 1000
+      : quota ? now + 3600000 : 0;
+    // Health Connect tokens move on once the days they announced are on the server.
+    await deps.saveState({ ...state, hashes: recent(hashes, now), tokens: dailyDone ? plan.tokens : state.tokens, retryAt });
+    return !report.complete ? 'partial' : sent ? 'sent' : 'unchanged';
+  }
+
+  return {
+    request,
+    /** A locked phone or a time limit left work for the next opening. */
+    pending: () => pendingHere,
+    clearPending: () => { pendingHere = false; },
+  };
+}
+export type Engine = ReturnType<typeof createEngine>;

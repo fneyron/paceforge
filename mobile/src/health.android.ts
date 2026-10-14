@@ -1,22 +1,40 @@
-import { initialize, requestPermission, getGrantedPermissions, aggregateRecord, readRecords } from 'react-native-health-connect';
+import { initialize, requestPermission, getGrantedPermissions, aggregateRecord, readRecords, getChanges } from 'react-native-health-connect';
 import type { Permission, RecordType } from 'react-native-health-connect';
-import { Daily, HealthResult, SleepResult, Metric, labels, latestWeighIn, valid, windows } from './types';
+import { ChangePlan, Daily, HealthResult, ReadBudget, SleepResult, Metric, labels, latestWeighIn, valid, windows } from './types';
 import { healthReader } from './health-read';
 const records: Record<Metric, RecordType> = { weight: 'Weight', body_fat: 'BodyFat', steps: 'Steps', hr_day: 'HeartRate', resp_day: 'RespiratoryRate' };
-export async function authorize(): Promise<void> {
-  if (!await initialize()) throw new Error('Installe ou mets à jour Health Connect sur ce téléphone.');
-  await requestPermission(Object.values(records).map(recordType => ({ accessType: 'read', recordType } as Permission)));
-}
-export async function collect(progress: (s: string) => void, daysBack = 30): Promise<HealthResult> {
-  const read = healthReader(60000);
-  if (!await read(() => initialize())) throw new Error('Health Connect n’est pas disponible.');
+export const backgroundTypes: readonly string[] = Object.values(records);
+// Background reads have a smaller Health Connect quota: once refused, stop until the next run.
+const quotaError = (e: unknown) => /quota|rate.?limit/i.test(e instanceof Error ? e.message : '');
+type Read = ReturnType<typeof healthReader>;
+async function readable(read: Read) {
   const granted = await read(() => getGrantedPermissions());
-  const allowed = new Set(granted.flatMap(p => 'recordType' in p && p.accessType === 'read' ? [p.recordType] : []));
+  return new Set(granted.flatMap(p => 'recordType' in p && p.accessType === 'read' ? [p.recordType as string] : []));
+}
+/** `background` also asks READ_HEALTH_DATA_IN_BACKGROUND (automatic updates). */
+export async function authorize(background = false): Promise<void> {
+  if (!await initialize()) throw new Error('Installe ou mets à jour Health Connect sur ce téléphone.');
+  const permissions = Object.values(records).map(recordType => ({ accessType: 'read', recordType } as Permission));
+  await requestPermission(background ? [...permissions, { accessType: 'read', recordType: 'BackgroundAccessPermission' }] : permissions);
+}
+/** No feature check in this library version: the grant itself is the answer. */
+export async function hasBackgroundAccess(): Promise<boolean> {
+  try {
+    if (!await initialize()) return false;
+    return (await readable(healthReader(10000))).has('BackgroundAccessPermission');
+  } catch { return false; }
+}
+export async function collect(progress: (s: string) => void, daysBack = 30, budget: ReadBudget = {}, metrics?: Metric[]): Promise<HealthResult> {
+  const read = healthReader(budget.total ?? 60000, budget.perRead);
+  if (!await read(() => initialize())) throw new Error('Health Connect n’est pas disponible.');
+  const allowed = await readable(read);
+  const wanted = metrics?.length ? metrics : Object.keys(records) as Metric[];
   const days: Daily[] = [], errors = new Set<string>();
+  let quota = false;
   for (const w of windows(new Date(), daysBack)) {
     progress(`Lecture de Health Connect · ${w.date}`);
     const timeRangeFilter = { operator: 'between' as const, startTime: w.start.toISOString(), endTime: w.end.toISOString() };
-    for (const metric of Object.keys(records) as Metric[]) {
+    for (const metric of wanted) {
       if (!allowed.has(records[metric]) || errors.has(labels[metric])) continue;
       try {
         let value: number | undefined, measured_at: string | undefined, sources: string[] = [];
@@ -52,15 +70,62 @@ export async function collect(progress: (s: string) => void, daysBack = 30): Pro
         }
         const day: Daily = { date: w.date, metric, value: value as number, unit: { weight: 'kg', body_fat: '%', steps: 'count', hr_day: 'bpm', resp_day: 'rpm' }[metric], sources: [...new Set(sources)].slice(0, 20), measured_at };
         if (valid(day)) days.push(day);
-      } catch { errors.add(labels[metric]); }
+      } catch (e) {
+        errors.add(labels[metric]);
+        if (quotaError(e)) { quota = true; break; }
+      }
     }
+    if (quota) break;
   }
   const notices = errors.size ? [`Lecture incomplète : ${[...errors].join(', ')}. Réessaie après avoir vérifié Health Connect.`] : [];
   const refused = (Object.keys(records) as Metric[]).filter(m => !allowed.has(records[m]));
   if (refused.length) notices.push(`Non autorisé : ${refused.map(m => labels[m]).join(', ')}.`);
   if (!days.length) notices.push('Aucune mesure lisible. Vérifie que tes applications alimentent Health Connect.');
-  return { days, notices, complete: errors.size === 0 };
+  return { days, notices, complete: errors.size === 0, ...(quota ? { quota } : {}) };
 }
-export async function collectSleep(_progress: (s: string) => void, _daysBack = 60): Promise<SleepResult> {
+export async function collectSleep(_progress: (s: string) => void, _daysBack = 60, _budget?: ReadBudget): Promise<SleepResult> {
   return { nights: [], notices: [], complete: true };
 }
+
+/** Which categories changed since the stored change tokens (one per record type).
+ * A first token reads the last 3 days; an expired one (unused for 30 days) a week. */
+export async function changedMetrics(tokens: Record<string, string>, budget: ReadBudget = {}): Promise<ChangePlan> {
+  const read = healthReader(budget.total ?? 4000, budget.perRead ?? 3000);
+  const next = { ...tokens }, changed = new Set<Metric>();
+  let daysBack = 3;
+  try {
+    if (!await read(() => initialize())) return { daysBack: 0, tokens };
+    const allowed = await readable(read);
+    for (const metric of Object.keys(records) as Metric[]) {
+      const recordType = records[metric];
+      if (!allowed.has(recordType)) continue;
+      let token = tokens[recordType];
+      if (!token) {
+        next[recordType] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
+        changed.add(metric);
+        continue;
+      }
+      for (let page = 0; page < 20; page++) {
+        const r = await read(() => getChanges({ changesToken: token }));
+        if (r.changesTokenExpired) {
+          daysBack = 7; changed.add(metric);
+          next[recordType] = (await read(() => getChanges({ recordTypes: [recordType] }))).nextChangesToken;
+          break;
+        }
+        if (r.upsertionChanges.length || r.deletionChanges.length) changed.add(metric);
+        token = next[recordType] = r.nextChangesToken;
+        if (!r.hasMore) break;
+      }
+    }
+  } catch (e) {
+    if (quotaError(e)) return { daysBack: 0, tokens, quota: true };
+    // Unknown state: read the short window of every category, keep the old tokens.
+    return { daysBack: 3, tokens };
+  }
+  return { daysBack: changed.size ? daysBack : 0, metrics: [...changed], tokens: next };
+}
+export async function protectedDataAvailable(): Promise<boolean> { return true; }
+// WorkManager (expo-background-task) runs the periodic read; there is no observer.
+export async function enableHealthBackground(): Promise<void> {}
+export async function disableHealthBackground(): Promise<void> {}
+export function watchHealthChanges(_onChange: () => void): () => void { return () => {}; }
