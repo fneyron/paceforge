@@ -128,11 +128,12 @@ Garmin:
 - Every (H) threshold is a choice.
 - The 400-day COROS history backfill is not built: the first sync still reads 60 days.
 
-## 7. « Récupération » (Santé v4): nothing stored
+## 8. « Récupération »: nothing stored (revised 2026-10-14)
 
-- The score is never persisted: /sante recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night) and the activities only (`sante._assess`, then `sante_score.score_of`): no Route, no check-in. No table, no migration, and a night synced late corrects its own day.
-- Each past day is computed with what that day knew (`sante._history`): its own normals, alert episodes and effort windows, from the nights and activities up to that day, nothing dated after it.
-- The check-in rows (`feel`) are still accepted by `POST /sante/feel` and kept; Santé no longer reads them.
-- Efforts come from the activities' own time, stops included (`sante_training.effort_of`, H): ≥ 10 h ultra, 6–10 h very long, ≥ 3 h (or ≥ 1 500 m D+ on foot) long. The three nights after a ≥ 6 h effort (and a sleep started after it ended, the same day) are tagged `big`: they never fire the illness alert, and count in the normals like every measured night (2026-10-08).
-- Normals are every measured night of 60 days on one watch, whatever its tags (`nights.band`; Santé reads the 60 days up to and including last night, `nights.normal`): « provisoire » from 7 nights, full from 14; the illness alert and its episodes read a full band only (`full=True`), of the 60 days before their 2 nights.
-- Cost on the seeded Postgres (400 nights, 730 days of activities): the whole one-page /sante, rings to folds, 82–90 ms median, against 87–117 ms for main's Aujourd'hui alone.
+- The state is never persisted: /sante recomputes today's and the 13 days before from the rows above (sleep, nap, hrv, hr_night, resp_night) and the activities only (`sante._assess`, then `sante_score.score_of`): no Route, no check-in. No table, no migration, and a night synced late corrects its own day.
+- Each past day is computed with what that day knew (`sante._history`): its own baselines, alert episodes and effort windows, from the nights and activities up to that day, nothing dated after it.
+- The check-in rows (`feel`) are still accepted by `POST /sante/feel` (deprecated, kept for a grace period) and kept; Santé no longer reads them.
+- Efforts come from the activities' own time, stops included (`sante_training.effort_of`, H): ≥ 10 h ultra, 6–10 h very long, ≥ 3 h (or ≥ 1 500 m D+ on foot) long. Their windows are reasons of the state, not caps: long D+1 (D+2 run like a race), very long D+3, ultra D+5 (red D+0/D+1), D+7 from 24 h. The nights after a ≥ 6 h effort are tagged `big`/`ultra`: they never fire the illness alert, and count in the baselines like every measured night (2026-10-08).
+- Baselines (`nights.normal`): every measured night from day −67 to day −8 on one series, whatever its tags — the week the trend reads is never in its own baseline. « provisoire » from 7 nights (drawn dashed, never read by the state), full from 14; σ̂ shrunk towards a prior (`nights.shrunk_sd`). The illness alert and the breathing flag read a full baseline only.
+- Trends (`nights.trend`): the mean of the nights measured in the last 7 days (3 at least, last night included), z against the baseline, outside from |z| ≥ max(0.5, 1.28/√n7). The series read is the device with the most nights in 28 days among those worn in the last 7.
+- The page's reads come first (rows bounded to what it draws: 30 days for the daily cards, the latest row per metric, never Garmin's raw `readings`); its pure computation runs in a worker thread. On a 500-activity / 400-night SQLite fixture: about 3.1 s → 0.2 s per page (CPU 3.1 s → 0.19 s), 13 SQL statements either way (`tests/test_sante_performance.py` holds the budget).

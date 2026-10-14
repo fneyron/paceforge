@@ -1,125 +1,100 @@
-# Récupération : effet cumulé des entraînements
+# La charge d'entraînement : un seul calcul, en contexte de la récupération
 
-Révision du 12 octobre 2026, modèle `cumulative-1`.
+Révision du 14 octobre 2026. Elle remplace le modèle `cumulative-1` du 12 octobre, qui limitait
+le score de récupération d'après l'accumulation des séances ordinaires.
 
-## Problème corrigé et priorités
+## Ce qui change et pourquoi
 
-Les séances ordinaires alimentaient Entraînement, mais pas directement la
-précaution de récupération. À signaux nocturnes identiques, quatre séances
-rapprochées pouvaient donc produire le même bilan qu'une période légère.
+`cumulative-1` ajoutait au score nocturne une limite tirée de quatre expositions (charge
+cardiaque, durée totale, course, musculation), avec des décroissances de 2 et 3 jours, un troisième
+quartile de référence et une limite `100 − A × (1 − exp(−excès))`. Il est retiré pour trois raisons.
 
-1. Intégrer leur accumulation et leur diminution sur plusieurs jours.
-2. Comparer les efforts au propre historique de l'athlète ; séparer la course
-   et la musculation du seul coût cardiaque.
-3. Empêcher les doublons, données futures et changements de couverture FC de
-   créer artificiellement une baisse de récupération.
-4. Conserver les trois cadrans de même taille. Un seul résumé « Effort
-   accumulé » apparaît dans le détail Récupération ; les limites restent dans
-   « Mesures utilisées » et l'aide.
+1. **Aucune base validée.** Rien ne relie une charge accumulée à une limite de récupération. Les
+   constantes des modèles forme-fatigue sont des constantes de lissage, pas des délais individuels
+   (Imbach 2022). Les ratios de charge ont des écueils de construction connus (Lolli 2019 ;
+   Impellizzeri 2020).
+2. **Deux fois la même séance.** La lecture validée de la récupération est la réponse à
+   l'entraînement, pas la dose : la tendance nocturne de la VFC et de la FC (Plews 2013b ;
+   Vesterinen 2016 ; Javaloyes 2019 ; Nuuttila 2022). Une séance qui fatigue se lit déjà dans la
+   nuit. L'ajouter comme limite la comptait deux fois.
+3. **Quatre calculs qui ne s'accordaient pas.** Le cadran Entraînement, la Charge accumulée, la
+   limite cumulative et les 7 / 28 jours d'Activités lisaient la charge de quatre façons : bornes
+   cardiaques, décroissances et doublons différents.
 
-## Appui scientifique et portée
+La récupération ne lit donc plus la charge. Le pourcentage du cadran Entraînement s'affiche à côté,
+comme contexte. Les gros efforts gardent leurs fenêtres (estimations, C7), une raison de l'état du
+jour qui dit « fenêtre indicative jusqu'à J+n ».
 
-La [revue narrative de Rebelo et al., 2026](https://doi.org/10.1007/s40279-026-02417-4)
-distingue charge imposée, état de l'athlète et réponse à l'entraînement.
-Elle soutient les références individuelles et la lecture de plusieurs domaines,
-sans fournir une formule validée de récupération universelle.
+## Le calcul unique (`app/services/sante_load.py`)
 
-L'[étude de récupération après musculation, 2019](https://doi.org/10.3390/sports7100225)
-ne permet pas d'assimiler l'évolution de la VFC à celle de la fonction
-neuromusculaire. La [revue trail de 2026](https://doi.org/10.3390/muscles5010009)
-décrit notamment les contraintes excentriques des descentes. La durée de course
-ou de musculation fournit un contexte d'exposition, pas la mesure de ces dommages.
-Le D+ reçu ne devient donc pas un D− inventé ; les kilos soulevés, répétitions,
-courbatures et pertes de force ne sont pas déduits du pouls.
+- **Charge d'une séance L.** Minutes pondérées par x·0,64·e^(1,92·x), x étant la part de la réserve
+  cardiaque, tour par tour, sinon par kilomètre (Morton, Fitz-Clarke et Banister 1990). C'est une
+  charge interne (Impellizzeri 2019) : une sortie à vélo et une course à la même FC pèsent autant.
+- **Bornes.** Les mêmes pour toutes les séances de toutes les vues, celles du jour : FC de repos
+  = médiane des FC de nuit sur 60 jours (sinon 50) ; FC max = 98e centile des pics sur 12 mois
+  (sinon 190).
+- **Séance estimée.** Sans FC lisible, et toujours pour la musculation, la séance compte sa durée
+  × la charge par minute médiane de sa famille (course, vélo, ou son sport) sur 12 mois, 5 séances
+  lues au moins ; sinon de toutes les séances lues ; sinon 1,2 **(H)**. Ajouter un capteur ne
+  fait donc pas croire à plus d'entraînement dès que 5 séances sont lues : les semaines d'avant
+  empruntent leur médiane.
+- **Charge du jour D.** Σ L des séances dédoublonnées (un même identifiant une seule fois, une
+  durée invalide écartée), sur le jour local où chacune s'est terminée. Aucune séance future.
+- **Charge accumulée.** A et C, moyennes exponentielles de τ = 7 et 42 jours, initialisées à la
+  moyenne de D sur les 28 premiers jours (Busso 2003 ; Williams 2017), 180 jours de chauffe avant
+  les 90 jours tracés. La courbe habituelle apparaît après 28 jours d'historique et 4 semaines
+  actives.
+- **Entraînement %.** Σ D des 7 jours ÷ moyenne hebdomadaire de Σ D des 11 semaines précédentes,
+  avec au moins 4 semaines actives. La semaine en cours reste hors de sa référence (ratio
+  découplé). « Comme d'habitude » entre le 25e et le 75e centile de ces semaines, « plus » ou
+  « moins que d'habitude » au-delà. Une référence où tout pèse zéro (toutes les séances à la FC
+  de repos) se lit en minutes.
+- **Activités 7 j / 28 j.** Les mêmes séances, la même charge D, les mêmes jours locaux ;
+  kilomètres par sport, jamais ceux d'un vélo ajoutés à une course.
 
-Les [limites des modèles forme-fatigue](https://doi.org/10.1186/s40798-022-00426-x)
-interdisent de présenter leurs constantes comme des délais individuels établis.
-Ici, décroissance, seuils de disponibilité et conversion en limite du score sont
-des hypothèses explicites de produit. Aucune de ces publications ne valide leurs
-valeurs numériques ni le score PaceForge.
+## Simulations (données synthétiques)
 
-## Calcul livré
+Plan stable de 6 séances par semaine sur 220 jours, 10 % des séances sautées, durées ± 20 %,
+20 tirages ; lecture des jours 150 à 219. « Avant » désigne le commit `0f276af`.
 
-Le bilan lit les activités terminées avant le réveil sélectionné. Sans horaire
-de réveil, il s'arrête à minuit. Quand le fuseau nocturne est connu, les fins
-d'activités sont comparées en UTC ; les anciennes données sans fuseau utilisent
-leur heure locale. Une activité toujours en cours ou terminée ensuite ne
-modifie pas rétroactivement ce matin. La précaution existante pour un effort
-exceptionnel reçu dans la journée est conservée.
+- **Récupération.** `cumulative-1` abaissait la limite sur 28 % des matins d'un plan stable (sous
+  90 sur 5 %, minimum 81) et sur 45 % des matins autour d'une semaine à + 30 %. Désormais jamais.
+- **Entraînement %.** Quartiles inchangés : 89, 103 et 113 %. La règle des centiles 25–75 dit
+  « plus » ou « moins que d'habitude » 57 % des jours d'un plan stable, contre 26 % avec ± 20 %.
+  C'est attendu : une semaine ordinaire tombe hors de l'intervalle interquartile de ses
+  11 semaines une fois sur deux. Le dernier jour d'une semaine à + 30 %, le cadran dit « plus que
+  d'habitude » 80 % du temps (médiane 137 %).
+- **Charge accumulée.** Rapport récente/habituelle : quartiles 0,92 ; 1,00 ; 1,07. La courbe
+  habituelle lisait 24 % trop bas au 56e jour quand elle partait de 0 ; elle est à 2 % près
+  désormais.
+- **Cohérence.** La charge des 7 jours d'Activités égale celle du cadran 100 % des jours.
 
-Quatre expositions restent séparées dans le calcul : charge cardiaque d'endurance,
-durée totale, durée de course, durée de musculation. Les copies d'activités
-sont éliminées par le chargeur commun ; un même identifiant ne compte qu'une fois.
-Les sports sont classés d'après le type réellement reçu, pas le nom de l'activité.
+## Limites
 
-Chaque contribution décroît exponentiellement depuis la fin de l'activité.
-Constantes : 2 jours pour la charge cardiaque et la durée totale, 3 jours pour
-les volumes course/musculation. La queue, négligeable, est progressivement
-retirée entre 27 et 28 jours. Ce ne sont pas des promesses de récupération
-en 2 ou 3 jours. Aucune bonne nuit ne remet ce cumul à zéro.
+L'absence d'activité importée ne prouve pas un repos. Un volume habituel ne prouve pas qu'il est
+bien toléré. La charge ne mesure ni les dommages musculaires des descentes, ni les kilos soulevés,
+ni les courbatures : une FC basse en musculation ne signifie pas un faible effort musculaire. Le
+modèle ne diagnostique ni fatigue, ni surentraînement, ni risque de blessure.
 
-La référence comprend les 42 jours précédant les sept derniers jours, avec
-14 jours d'amorçage. Elle exige au moins 28 jours exploitables, huit activités
-et quatre semaines actives, pour chaque domaine. Un domaine insuffisamment
-documenté n'applique aucune limite ; « Repères en cours » reste visible.
-Les repères cardiaques sont ceux disponibles avant les sept derniers jours,
-appliqués aux deux périodes pour conserver les mêmes unités.
+## Validation à mener
 
-La comparaison utilise le troisième quartile des expositions de référence.
-L'excès est divisé par le maximum entre ce quartile et la dose médiane d'une
-activité, ce qui évite un dénominateur presque nul dans les historiques peu actifs.
-La limite vaut `100 − A × (1 − exp(−excès))`. `A=40` pour la charge cardiaque,
-`A=20` pour les durées seules. Les diminutions inférieures à un demi-point ne
-créent pas de précaution. Le signal de charge ne peut donc pas créer seul un
-état rouge. Ces bornes limitent l'influence d'une estimation incertaine ; elles
-ne signifient pas qu'une fatigue sévère serait impossible après l'entraînement.
+La validation physiologique exige un suivi prospectif distinct : figer la version et le bilan
+avant les efforts, recueillir un résultat indépendant (performance sous-maximale standardisée,
+fonction neuromusculaire ou ressenti facultatif), fixer les critères avant l'analyse, puis tester
+sur une période ultérieure et sur d'autres athlètes et appareils. Les tests et les simulations
+livrés ici ne remplacent pas ce suivi.
 
-La FC doit couvrir au moins 80 % des minutes de référence des sports où elle
-est exploitable. Sinon, seuls les volumes interviennent. Pour la période
-récente, la charge cardiaque réellement enregistrée reste une borne basse :
-ajouter un entraînement sans FC ne doit jamais effacer une précaution existante.
-Sous 80 % de couverture récente, l'intensité est indiquée partielle. La
-musculation reste hors de cette comparaison cardiaque. Une nouvelle ceinture,
-une FC interrompue ou la musculation à faible pouls ne sont ainsi pas confondus
-avec un changement mesuré de charge cardiaque. La durée seule reste une
-approximation : deux séances de musculation aussi longues peuvent être très
-différentes.
+## Sources
 
-Le score nocturne garde ses composantes et ses limites existantes. La limite
-cumulative peut le réduire même lorsque les signaux nocturnes sont habituels.
-Les limites ne sont pas additionnées : le minimum s'applique, pour éviter
-d'empiler plusieurs pénalités corrélées. Sans nouvelle composante nocturne
-exploitable, aucun score n'est créé à partir des activités seules.
-
-L'absence d'activité importée ne prouve jamais un repos. Un volume habituel ne
-prouve pas non plus qu'il est bien toléré. Le modèle ne diagnostique ni fatigue
-musculaire, ni surentraînement, ni risque de blessure. Le poids et le lactate
-n'y entrent pas.
-
-## Vérification et validation
-
-Les scénarios logiciels couvrent : séances ordinaires rapprochées avec les
-mêmes nuits, diminution après arrêt, absence de nuit, historique court,
-FC manquante ou nouvellement enregistrée, musculation, vélo, doublons,
-franchissement de minuit, fuseaux, activités futures et cumul des précautions.
-L'ordre « plusieurs efforts > un seul » et la diminution restent vérifiés
-avec des constantes de 1,5 à 4 jours ; cela ne valide pas la valeur des scores.
-
-Contrôles de cette livraison : 962 tests serveur passent, dont 18 scénarios
-spécifiques au cumul. Les parcours de rafraîchissement, défilement, sélection,
-pagination et erreurs passent dans Chromium (320/393 px) et WebKit (393 px).
-Les trois cadrans et l'absence de débordement sont vérifiés à 320/393/1024 px.
-Ces vérifications utilisent des données synthétiques ; aucun test sur l'iPhone
-physique ni aucune mesure de fatigue réelle n'est revendiqué.
-
-L'historique est recalculé avec les données actuellement enregistrées et le
-modèle actuel, sans événement daté après le bilan. Un import tardif peut le
-modifier : il ne s'agit pas de prédictions conservées à l'époque.
-
-La validation physiologique exige un suivi prospectif distinct : figer version
-et bilan avant les efforts, recueillir un résultat indépendant (performance
-sous-maximale standardisée, fonction neuromusculaire ou ressenti facultatif),
-prévoir les critères avant analyse, puis tester sur une période ultérieure et
-sur d'autres athlètes/appareils. Comparer ce modèle au modèle nocturne seul,
-publier les erreurs et les faux signaux, et analyser les données manquantes.
-Les tests et les exemples synthétiques livrés ici ne remplacent pas ce suivi.
+- Morton, Fitz-Clarke et Banister 1990 — [Modeling human performance in running](https://pubmed.ncbi.nlm.nih.gov/2246166/), J Appl Physiol.
+- Busso 2003 — [Variable dose-response relationship between exercise training and performance](https://doi.org/10.1249/01.MSS.0000074465.13621.37), MSSE.
+- Williams 2017 — [Better way to determine the acute:chronic workload ratio?](https://doi.org/10.1136/bjsports-2016-096589), BJSM.
+- Imbach 2022 — [The use of fitness-fatigue models for sport performance modelling](https://doi.org/10.1186/s40798-022-00426-x), Sports Med Open.
+- Lolli 2019 — [Mathematical coupling causes spurious correlation within the ACWR](https://doi.org/10.1136/bjsports-2017-098110), BJSM.
+- Impellizzeri 2019 — [Internal and external training load: 15 years on](https://doi.org/10.1123/ijspp.2018-0935), IJSPP.
+- Impellizzeri 2020 — [Acute:chronic workload ratio: conceptual issues and fundamental pitfalls](https://doi.org/10.1123/ijspp.2019-0864), IJSPP 15:907–913.
+- Plews 2013b — [Training adaptation and heart rate variability in elite endurance athletes](https://doi.org/10.1007/s40279-013-0071-8), Sports Med.
+- Vesterinen 2016 — [Individual endurance training prescription with HRV](https://doi.org/10.1249/MSS.0000000000000910), MSSE.
+- Javaloyes 2019 — [Training prescription guided by HRV in cycling](https://doi.org/10.1123/ijspp.2018-0122), IJSPP.
+- Nuuttila 2022 — [Individualized endurance training based on recovery and training status](https://pmc.ncbi.nlm.nih.gov/articles/PMC9473708/), MSSE.
+- Rebelo 2026 — [Monitoring training effects in athletes: a multidimensional framework](https://doi.org/10.1007/s40279-026-02417-4), Sports Med : charge, état et réponse se lisent séparément.
