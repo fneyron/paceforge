@@ -80,26 +80,34 @@ heuristic, never shown as a finding):
   « Sleep HR » line (docs/sante-v3-data-notes.md: consistent with the main
   sleep only).
 - Baselines (owner, 2026-10-14: scientific basis): one series per (metric,
-  watch, method), the nights from day −67 to day −8 (60 days, the 7 nights
-  a trend judges never in its own baseline: a period is not compared to a
-  mean that holds it — the « uncoupled » reading of Plews 2013 and Buchheit
-  2014), every measured night whatever its tags; full from 14 nights,
-  « provisoire » from 7 (drawn dashed, never read by the daily state).
-  Centre: the mean of ln RMSSD (HRV), the median (night HR, breathing).
-  Spread σ̂ = √((n·s² + 7·σ0²)/(n + 7)) (an individual range drawn towards a
-  prior: Hecksteden 2017; Kellmann 2018), s the SD (HRV) or 1.4826·MAD
-  (HR, breathing), σ0 = 0.10 ln units (HRV; Buchheit 2014's ≈ 12 % CV),
-  4 % of the median (HR; Mishica 2022), 0.5 /min (breathing; Miller 2020).
-  24-h sleep (the race page only): median ± 30 min.
-- Trends (Plews 2013; Vesterinen 2016; Javaloyes 2019; Nuuttila 2022): the
-  mean of the nights measured in the last 7 days on the series (ln for
-  HRV), last night measured and 3 nights at least; z = (mean − centre)/σ̂;
-  « outside » from |z| ≥ T = max(0.5, 1.28/√n7): the smallest worthwhile
-  change of 0.5 σ̂ (Plews 2013; Buchheit 2014), widened when the week holds few
-  nights so that a thin week does not cross it by chance (one-sided 90 %).
-- Which series: the device with the most measured nights in the 28 days, among
-  those measured in the last 7 (its latest method: a method upgrade switches at
-  once); two devices taking turns no longer swap the series night after night.
+  watch, method), the nights from day −67 to day −8 (60 days; the 7 nights a
+  trend judges are never in its own baseline: a design choice, H, so a week is
+  not compared to a mean that holds it), every measured night whatever its
+  tags; full from 14 nights, « provisoire » from 7 (drawn dashed, never read
+  by the daily state). Centre: the mean of ln RMSSD (HRV), the mean (night HR:
+  the trend compares a mean; its illness alert keeps the median), the median
+  (breathing). Spread σ̂ = √((n·s² + 7·σ0²)/(n + 7)) (an individual range drawn
+  towards a prior: Hecksteden 2017; Kellmann 2018), s the SD (HRV, night HR)
+  or 1.4826·MAD (the HR alert's, breathing), σ0 = 0.10 ln units (HRV; nocturnal
+  RMSSD CV 9.5–12.4 %: Mishica 2022), 4 % of the centre (HR; Mishica 2022),
+  0.5 /min (breathing; Miller 2020). 24-h sleep (the race page only):
+  median ± 30 min.
+- Trends (Vesterinen 2016; Javaloyes 2019; Nuuttila 2022): the mean of the
+  nights measured in the last 7 days on the series (ln for HRV), last night
+  measured and 3 nights at least; z = (mean − centre)/σ̂; « outside » from
+  |z| ≥ T = max(0.5, 1.28·√(Σᵢⱼ ρ^|tᵢ−tⱼ|/n7² + (1+ρ)/((1−ρ)·n_b))), ρ = 0.3
+  (H): the 0.5 SD band of HRV-guided training (Vesterinen 2016; Javaloyes
+  2019: daily values against a 4-week reference — Buchheit 2014 notes that no
+  fraction of the CV is proven meaningful), widened to 1.28 standard errors of
+  the week's mean against the baseline's for nights correlated from one to
+  the next: T ≈ 0.67 for 7 nights in a row, 0.84 for 3; a stable athlete reads
+  « outside » on about 10–11 % of mornings at ρ = 0.3 (≈ 5 % at 0, 15 % at 0.5).
+- Which series (_series_source): among the devices measured in the last 7 days,
+  the one with the most nights in the 28; within it, among its series measured
+  in the last 7 days, the one with the most nights in the 28; ties: the larger
+  baseline, the series of the day before, a fixed order — never the latest
+  night. Two devices taking turns keep one series; one night of another
+  calculation is no upgrade.
 - 7-night means (the charts): every measured night of the last 7, 3 at least
   (Plews 2014; Lau 2022).
 - Illness alert (C4, H): 2 nights in a row, both on the series, neither
@@ -131,17 +139,21 @@ from app.services.night_measurements import measurement_note, series_source
 
 BAND_DAYS = 60  # (H)
 # owner, 2026-10-14: scientific basis — the baseline stops 7 days before the day read: the 7 nights its trend
-# judges are never in it (it was the 60 days up to and including last night: a week compared to a mean holding it)
-BASELINE_LAG = 7
+# judges are never in it (it was the 60 days up to and including last night: a week compared to a mean holding it);
+# a design choice, not a published rule
+BASELINE_LAG = 7  # (H)
 MIN_BAND_NIGHTS = 14  # (H) a full normal
 MIN_PROVISIONAL_NIGHTS = 7  # (H) a « provisoire » normal (owner decision 2026-10-07), until 14: drawn, never read
 MIN_MEAN_NIGHTS = 3  # of the last 7 (Plews 2014; Lau 2022)
 WEEK_DAYS = 7
-# owner, 2026-10-14: scientific basis — the smallest worthwhile change, 0.5 SD (Plews 2013; Buchheit 2014), for
-# night HR too (it was ± 3 bpm, a fixed width with no basis), widened for a thin week: T = max(0.5, 1.28/√n7)
+# owner, 2026-10-14: scientific basis — the 0.5 SD band of HRV-guided training (Vesterinen 2016; Javaloyes 2019),
+# for night HR too (it was ± 3 bpm, a fixed width with no basis), widened to SWC_Z standard errors (threshold)
 SWC = 0.5
-SWC_Z = 1.28  # one-sided 90 %: the 7-night mean's own error (SD/√n) never crosses the line by chance
+SWC_Z = 1.28  # the standard errors the trend's threshold spans (threshold: ≈ 10 % false « outside » at ρ = 0.3)
 SERIES_DAYS, SERIES_ACTIVE_DAYS = 28, 7  # (H) owner, 2026-10-14: scientific basis — the most measured device
+SERIES_LOOKBACK = 400  # days a tie between series reads back for the one used the day before (the history read)
+DEVICE_ORDER = ("COROS", "Garmin")  # (H) the last tie: these watches first, then the others by name
+TREND_RHO = 0.3  # (H) the lag-1 correlation of a stable athlete's nights the trend's threshold assumes
 # the band's SD is shrunk towards a prior, √((n·s² + k·σ0²)/(n + k)): the Bayesian individualisation of reference
 # ranges (Kellmann 2018), which matters most at 7–13 nights (an SD from 7 nights is 0.64–2.20 × the true one)
 PRIOR_NIGHTS = 7  # (H) k: the prior weighs as much as 7 nights
@@ -714,25 +726,92 @@ def _latest_source(nights: dict[date, Night], metric: str, until: date) -> str |
 
 def _series_source(nights: dict[date, Night], metric: str, until: date) -> str | None:
     """The series `metric` reads as of `until` (owner, 2026-10-14: scientific basis — it was the latest night's,
-    so two devices taking turns swapped the series, its baseline and its trend, night after night): among the
-    devices that measured it in the last 7 days, the one with the most measured nights in the 28 days (ties: the
-    latest), its latest series (a method upgrade, e.g. Garmin's awake filtering, switches at once: never mixed
-    with the older calculation); no night in 7 days: the latest series ever, as before."""
-    counts: dict[str, int] = defaultdict(int)
-    latest: dict[str, tuple[date, str]] = {}
+    then the most measured device with ties broken by the latest night: two devices taking turns swapped the
+    series, its baseline and its trend, night after night, and one Garmin night without stages switched to an
+    empty « Garmin (nuit sans phases) » baseline). Among the devices that measured it in the last 7 days (else in
+    the 28), the one with the most measured nights in the 28 days; within it, among its series measured in the
+    last 7 days, the one with the most nights in the 28 (a one-off night of another calculation is no upgrade; a
+    real upgrade takes over a week after the old calculation stops). Ties: the larger baseline (nights from day
+    −67 to −8 on the series), then the series used the day before (read back to the last day the counts decide,
+    so every day of a tie keeps one series), then a fixed order (DEVICE_ORDER, then by name) — never the latest
+    night. No night in the 28 days: the latest series."""
+    kept = _kept(nights)
+    chain: list[tuple[date, list[str]]] = []  # days whose tie the day before breaks, the latest first
+    d, prev = until, None
+    for _ in range(SERIES_LOOKBACK + 1):
+        key = ("series", metric, d)
+        if kept is not None and key in kept:
+            prev = kept[key]
+            break
+        tied = _series_tied(nights, metric, d)
+        if len(tied) <= 1:
+            prev = tied[0] if tied else None
+            if kept is not None:
+                kept[key] = prev
+            break
+        chain.append((d, tied))
+        d -= timedelta(days=1)
+    else:  # a tie on every day read back: the earliest one by the fixed order
+        d, tied = chain.pop()
+        prev = min(tied, key=_fixed_order)
+        if kept is not None:
+            kept[("series", metric, d)] = prev
+    for d, tied in reversed(chain):
+        same = [x for x in tied if prev is not None and device(x) == device(prev)]
+        prev = prev if prev in tied else min(same or tied, key=_fixed_order)
+        if kept is not None:
+            kept[("series", metric, d)] = prev
+    return prev
+
+
+def _fixed_order(series: str) -> tuple:
+    dev = device(series) or ""
+    return (DEVICE_ORDER.index(dev) if dev in DEVICE_ORDER else len(DEVICE_ORDER), dev, series or "")
+
+
+def _series_tied(nights: dict[date, Night], metric: str, until: date) -> list[str]:
+    """The series `metric` could read as of `until` before the day-before and fixed-order ties (_series_source):
+    one series when the counts decide, the tied ones else, none when it was never measured."""
+    n28: dict[str, int] = defaultdict(int)
+    seen: dict[str, date] = {}
     for k in range(SERIES_DAYS):
         x = until - timedelta(days=k)
         if night_value(nights, x, metric) is None:
             continue
         series = nights[x].source_of(metric)
-        dev = device(series)
-        counts[dev] += 1
-        latest.setdefault(dev, (x, series))
-    active = [dev for dev, (x, _) in latest.items() if (until - x).days < SERIES_ACTIVE_DAYS]
-    if active:
-        return latest[max(active, key=lambda dev: (counts[dev], latest[dev][0]))][1]
-    last = max((d for d in nights if d <= until and night_value(nights, d, metric) is not None), default=None)
-    return nights[last].source_of(metric) if last is not None else None
+        n28[series] += 1
+        seen.setdefault(series, x)
+    if not n28:
+        last = max((x for x in nights if x <= until and night_value(nights, x, metric) is not None), default=None)
+        return [nights[last].source_of(metric)] if last is not None else []
+    active = [x for x, day in seen.items() if (until - day).days < SERIES_ACTIVE_DAYS] or list(n28)
+    base: dict[str, int] = {}
+
+    def baseline_n(series: str) -> int:
+        if series not in base:
+            base[series] = baseline_count(nights, metric, until, series)
+        return base[series]
+
+    by_device: dict[str | None, list[str]] = defaultdict(list)
+    for series in active:
+        by_device[device(series)].append(series)
+    dev_n28 = defaultdict(int)
+    for series, count in n28.items():
+        dev_n28[device(series)] += count
+    tops = {}  # device → (its key, its tied top series)
+    for dev, own in by_device.items():
+        best = max(n28[x] for x in own)
+        top = [x for x in own if n28[x] == best]
+        if len(top) > 1:
+            most = max(baseline_n(x) for x in top)
+            top = [x for x in top if baseline_n(x) == most]
+        tops[dev] = (dev_n28[dev], top)
+    most = max(count for count, _ in tops.values())
+    devices = [dev for dev, (count, _) in tops.items() if count == most]
+    if len(devices) > 1:
+        largest = max(baseline_n(tops[dev][1][0]) for dev in devices)
+        devices = [dev for dev in devices if baseline_n(tops[dev][1][0]) == largest]
+    return sorted((x for dev in devices for x in tops[dev][1]), key=_fixed_order)
 
 
 # ── a memo for nights that no longer change (the score's 14-day history) ────
@@ -826,11 +905,16 @@ def _band(nights: dict[date, Night], metric: str, until: date, source: str | Non
         return out
     med = statistics.median(vals)
     sd = 1.4826 * statistics.median(abs(v - med) for v in vals)  # robust
-    if metric == "hr":  # shrunk towards 4 % of the median (H)
-        sd = shrunk_sd(sd, len(vals), HR_SD_PRIOR * med)
-        # owner, 2026-10-14: scientific basis — the band is ± 0.5 σ̂ (it was ± 3 bpm)
-        out.update(center=med, sd=sd, lo=med - SWC * sd, hi=med + SWC * sd,
-                   alert=med + max(ALERT_SD * sd, ALERT_MIN_BPM))
+    if metric == "hr":
+        # owner, 2026-10-14: scientific basis — the trend compares a 7-night MEAN, so its centre is the baseline's
+        # mean and its spread the SD, shrunk towards 4 % of the centre (H): against the median of a right-skewed
+        # HR (a few hot nights) the week read « above » on 26–32 % of ordinary mornings. The illness alert keeps
+        # the median + max(2 robust σ̂, 5 bpm) (it was ± 3 bpm around the median before that)
+        robust = shrunk_sd(sd, len(vals), HR_SD_PRIOR * med)
+        mean = statistics.fmean(vals)
+        sd = shrunk_sd(statistics.stdev(vals) if len(vals) > 1 else 0.0, len(vals), HR_SD_PRIOR * mean)
+        out.update(center=mean, sd=sd, lo=mean - SWC * sd, hi=mean + SWC * sd, median=med, robust_sd=robust,
+                   alert=med + max(ALERT_SD * robust, ALERT_MIN_BPM))
     elif metric == "tst24":
         out.update(center=med, sd=sd, lo=med - SLEEP_BAND_MIN, hi=med + SLEEP_BAND_MIN)
     else:  # resp: no band drawn, one upper line (RESP_UP_MIN, RESP_UP_SD)
@@ -868,15 +952,20 @@ def mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
     return kept[key]
 
 
-def _week(nights: dict[date, Night], metric: str, today: date, source: str | None) -> list:
-    """The values of the last 7 days (today included) on `source`."""
+def _week_days(nights: dict[date, Night], metric: str, today: date, source: str | None) -> list[date]:
+    """The days of the last 7 (today included) measured on `source`, the latest first."""
     out = []
     for k in range(WEEK_DAYS):
         x = today - timedelta(days=k)
         n = nights.get(x)
-        if n is not None and n.source_of(metric) == source and (v := night_value(nights, x, metric)) is not None:
-            out.append(v)
+        if n is not None and n.source_of(metric) == source and night_value(nights, x, metric) is not None:
+            out.append(x)
     return out
+
+
+def _week(nights: dict[date, Night], metric: str, today: date, source: str | None) -> list:
+    """The values of the last 7 days (today included) on `source`."""
+    return [night_value(nights, x, metric) for x in _week_days(nights, metric, today, source)]
 
 
 def _mean7(nights: dict[date, Night], metric: str, today: date) -> dict | None:
@@ -902,11 +991,20 @@ def baseline_count(nights: dict[date, Night], metric: str, d: date, source: str 
     return count
 
 
-def threshold(n7: int) -> float:
-    """T = max(0.5, 1.28/√n7) (owner, 2026-10-14: scientific basis): the smallest worthwhile change of 0.5 σ̂
-    (Plews 2013; Buchheit 2014), widened for a week of few nights — the error of a mean of n nights is σ/√n, so 1.28/√n keeps
-    a week of 3 nights from crossing the line by chance more than 10 % of the time."""
-    return max(SWC, SWC_Z / math.sqrt(n7))
+def threshold(offsets, nb: int) -> float:
+    """T = max(0.5, 1.28·√(Σᵢⱼ ρ^|tᵢ − tⱼ| / n7² + (1 + ρ)/((1 − ρ)·n_b))), ρ = 0.3 (H): 1.28 standard errors of
+    the difference between the week's mean and the baseline's, for nights correlated from one to the next (an
+    AR(1) of lag-1 correlation ρ), the week's n7 nights at their own days `offsets` (tᵢ, in days) and the
+    baseline's `nb` nights (owner, 2026-10-14: scientific basis — it was max(0.5, 1.28/√n7), which ignored both
+    the correlation and the baseline's own error: 17 % of a stable athlete's mornings read « below »). T ≈ 0.67
+    for 7 nights in a row against 60, never under the 0.5 SD band of Vesterinen 2016 and Javaloyes 2019. Under
+    ρ = 0.3 a stable athlete reads « outside » on about 10–11 % of mornings; more if their nights are more
+    correlated (≈ 15 % at ρ = 0.5), fewer if less (≈ 5 % at 0)."""
+    days = list(offsets)
+    n = len(days)
+    var = sum(TREND_RHO ** abs(i - j) for i in days for j in days) / (n * n)
+    var += (1 + TREND_RHO) / ((1 - TREND_RHO) * max(nb, 1))
+    return max(SWC, SWC_Z * math.sqrt(var))
 
 
 def trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
@@ -927,7 +1025,8 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     source = mean_source(nights, metric, d)
     if source is None:
         return None
-    vals = _week(nights, metric, d, source)
+    days = _week_days(nights, metric, d, source)
+    vals = [night_value(nights, x, metric) for x in days]
     n = nights.get(d)
     last = n is not None and n.source_of(metric) == source and n.value(metric) is not None
     b = normal(nights, metric, d)
@@ -941,7 +1040,7 @@ def _trend(nights: dict[date, Night], metric: str, d: date) -> dict | None:
     if b is None or not b.get("sd"):
         return out
     z = (mean - (b["mean"] if metric == "hrv" else b["center"])) / b["sd"]
-    t = threshold(len(vals))
+    t = threshold([(x - d).days for x in days], b["n"])
     out.update(z=z, T=t, status="below" if z <= -t else "above" if z >= t else "in")
     return out
 

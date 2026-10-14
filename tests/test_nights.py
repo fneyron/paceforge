@@ -100,13 +100,16 @@ def night_rows(days, hr=45.0, hrv=60.0, source="Garmin", today=D, asleep=440, st
 def test_bands_count_every_measured_night_on_one_watch():
     """Every measured night of the 60 days on the watch counts, whatever its tags (owner, 2026-10-08: « Tous les
     relevés VFC doivent compter en fait, pareil pour la FC »): full from 14, « provisoire » from 7 (H). The HR band
-    is the median ± 0.5 σ̂ (owner, 2026-10-14: scientific basis — it was ± 3 bpm): σ̂ the robust SD (1.4826 × MAD)
-    shrunk towards 4 % of the median."""
+    is the mean ± 0.5 σ̂ (owner, 2026-10-14: scientific basis — it was the median ± 3 bpm, then the median ± 0.5
+    robust σ̂: the trend compares a mean), σ̂ the SD shrunk towards 4 % of the mean; the illness alert keeps the
+    median + max(2 robust σ̂, 5 bpm), the robust σ̂ (1.4826 × MAD) shrunk towards 4 % of the median."""
     rows = night_rows(range(1, 30, 2), hr=lambda k: 44 + k % 3, hrv=lambda k: 55 + k % 10)  # 15 nights
     nights = nt.build_nights(rows, D)
     b = nt.band(nights, "hr", D)
-    sd = math.sqrt((15 * 1.4826 ** 2 + 7 * (0.04 * 45) ** 2) / 22)  # MAD 1 bpm, prior 1,8 bpm: 1,59
-    assert b["n"] == 15 and b["center"] == 45 and b["sd"] == pytest.approx(sd)
+    sd = math.sqrt((15 * (10 / 14) + 7 * (0.04 * 45) ** 2) / 22)  # 5 × 44, 45, 46: SD 0,85, prior 1,8 bpm: 1,23
+    robust = math.sqrt((15 * 1.4826 ** 2 + 7 * (0.04 * 45) ** 2) / 22)  # MAD 1 bpm: 1,59
+    assert b["n"] == 15 and b["center"] == b["median"] == 45 and b["sd"] == pytest.approx(sd)
+    assert b["robust_sd"] == pytest.approx(robust)
     assert (b["lo"], b["hi"]) == pytest.approx((45 - 0.5 * sd, 45 + 0.5 * sd))  # was (42, 48)
     assert b["alert"] == 50  # max(2 robust SD, 5 bpm) above the median
     h = nt.band(nights, "hrv", D)
@@ -168,19 +171,27 @@ def test_a_coros_nap_day_counts_but_never_fires_the_alert():
 
 
 def test_mean7_and_status():
-    """The 7-night mean and its place against the usual values (nights.trend: z = (mean − median) / σ̂, outside from
-    |z| ≥ T = max(0.5, 1.28/√n7); owner, 2026-10-14: scientific basis — it was the band's ± 3 bpm)."""
+    """The 7-night mean and its place against the usual values (nights.trend: z = (mean − the baseline's mean) / σ̂,
+    outside from |z| ≥ T, 1.28 standard errors of the week's mean against the baseline's for nights correlated at
+    ρ = 0.3 (nights.threshold); owner, 2026-10-14: scientific basis — it was the band's ± 3 bpm, then
+    max(0.5, 1.28/√n7))."""
     nights = nt.build_nights(night_rows(range(0, 40), hr=lambda k: 49 if k < 7 else 45), D)
     m = nt.mean7(nights, "hr", D)
     assert m == {"value": 49, "n": 7}
     t = nt.trend(nights, "hr", D)
-    sd = math.sqrt(7 * 1.8 ** 2 / (32 + 7))  # 32 nights at 45 in the baseline (days −39 → −8): MAD 0, the prior
-    assert t["baseline"]["n"] == 32 and t["z"] == pytest.approx(4 / sd) and (t["T"], t["status"]) == (0.5, "above")
+    sd = math.sqrt(7 * 1.8 ** 2 / (32 + 7))  # 32 nights at 45 in the baseline (days −39 → −8): SD 0, the prior
+    # 7 nights in a row against 32: T = 1,28·√(Σ 0,3^|i−j| / 49 + 1,3/(0,7·32)) = 0,70 (was 0,5)
+    t7 = 1.28 * math.sqrt(sum(0.3 ** abs(i - j) for i in range(7) for j in range(7)) / 49 + 1.3 / 0.7 / 32)
+    assert t["baseline"]["n"] == 32 and t["z"] == pytest.approx(4 / sd) and t["status"] == "above"
+    assert t["T"] == pytest.approx(t7) and round(t7, 2) == 0.70
     near = nt.build_nights(night_rows(range(0, 40), hr=lambda k: 45.3 if k < 7 else 45), D)
-    assert nt.trend(near, "hr", D)["status"] == "in"  # + 0,3 bpm: z 0,39 < 0,5
+    assert nt.trend(near, "hr", D)["status"] == "in"  # + 0,3 bpm: z 0,39 < 0,70
     thin = nt.build_nights(night_rows([0, 2, 5] + list(range(8, 40)), hr=lambda k: 45.6 if k < 7 else 45), D)
-    t3 = nt.trend(thin, "hr", D)  # 3 nights: T = 1,28/√3 = 0,74, z = 0,6/0,76 = 0,79: just outside
-    assert t3["n"] == 3 and t3["T"] == pytest.approx(1.28 / math.sqrt(3)) and t3["status"] == "above"
+    t3 = nt.trend(thin, "hr", D)  # 3 nights (days 0, −2, −5): T 0,83 (was 1,28/√3 = 0,74), z = 0,6/0,76 = 0,79
+    assert t3["n"] == 3 and t3["T"] == pytest.approx(nt.threshold([0, -2, -5], 32)) and round(t3["T"], 2) == 0.83
+    assert t3["status"] == "in"  # just inside now (it was just outside)
+    thin7 = nt.build_nights(night_rows([0, 2, 5] + list(range(8, 40)), hr=lambda k: 45.7 if k < 7 else 45), D)
+    assert nt.trend(thin7, "hr", D)["status"] == "above"  # + 0,7 bpm: z 0,92 ≥ 0,83
     sparse = nt.build_nights(night_rows([0, 3]), D)
     assert nt.mean7(sparse, "hr", D) is None  # 2 nights of 7: no mean
     assert nt.trend(sparse, "hr", D)["status"] is None
@@ -433,7 +444,7 @@ def test_a_new_watch_is_never_read_against_the_old_watchs_band():
 def test_two_watches_taking_turns_keep_one_series():
     """Two devices alternating (owner, 2026-10-14: scientific basis — the latest night's series switched every
     morning, and with it the baseline and the trend): the one with the most nights in the 28 days holds, whatever
-    measured last night; a method upgrade of the same watch switches at once (never mixed)."""
+    measured last night (never mixed)."""
     rows = night_rows(range(0, 40), hr=45.0, source="Apple Santé:watch")
     other = night_rows([0, 4, 9, 13], hr=60.0, source="Apple Santé:ring")  # a few nights, last night among them
     nights = nt.build_nights({m: {**rows[m], **other[m]} for m in rows}, D)
@@ -441,6 +452,44 @@ def test_two_watches_taking_turns_keep_one_series():
     assert nt.mean_source(nights, "hr", D).startswith("Apple Santé:watch")
     assert nt.mean_source(nights, "hr", D - timedelta(days=1)).startswith("Apple Santé:watch")
     assert nt.device("Garmin (sommeil)") == "Garmin" and nt.device("Apple Santé:x (sommeil)") == "Apple Santé:x"
+
+
+def test_a_tie_between_watches_never_follows_the_latest_night():
+    """COROS and Garmin worn strictly in turn hold as many nights each: the tie was broken by the latest night, so
+    the series switched every morning (59 times in 59 days). Ties now read the larger baseline, then the series of
+    the day before, then a fixed order (COROS, Garmin): one series for the whole stretch."""
+    coros = night_rows(range(0, 120, 2), source="COROS", hr_method="coros_sleep_summary")
+    garmin = night_rows(range(1, 120, 2), source="Garmin")
+    nights = nt.build_nights({m: {**coros[m], **garmin[m]} for m in coros}, D)
+    seq = [nt.device(nt.mean_source(nights, "hrv", D - timedelta(days=k))) for k in range(60)]
+    assert len(set(seq)) == 1
+    with nt.memo():  # the same choice inside the page's memo
+        nt.freeze(nights)
+        assert [nt.device(nt.mean_source(nights, "hrv", D - timedelta(days=k))) for k in range(60)] == seq
+
+
+def test_one_night_of_another_calculation_is_no_upgrade():
+    """99 Garmin nights with timed stages, then one without (« nuit sans phases »): the series stays the staged one
+    (most nights in the 28 days among the watch's series measured in the 7), so its 92-night baseline holds; last
+    night is not on it, so no state that morning, and the page says why. A real upgrade takes over once the old
+    calculation has not been measured for 7 days."""
+    staged = night_rows(range(1, 100), source="Garmin")
+    for metric in ("hrv", "hr_night"):
+        for d, (v, det, src) in list(staged[metric].items()):
+            staged[metric][d] = (v, {**det, "scope": "sleep_stages_v1"}, src)
+    window = night_rows([0], source="Garmin")
+    for metric in ("hrv", "hr_night"):
+        v, det, src = window[metric][D]
+        window[metric][D] = (v, {**det, "scope": "main_window_v1"}, src)
+    nights = nt.build_nights({m: {**staged[m], **window[m]} for m in staged}, D)
+    assert nights[D].hrv_source != nights[D - timedelta(days=1)].hrv_source
+    series = nt.mean_source(nights, "hrv", D)
+    assert series == nights[D - timedelta(days=1)].hrv_source and nt.baseline_count(nights, "hrv", D) == 60
+    t = nt.trend(nights, "hrv", D)
+    assert t["source"] == series and not t["last"]
+    upgraded = nt.build_nights({m: {**staged[m], **night_rows(range(0, 8), source="Garmin")[m]} for m in staged},
+                               D)  # 8 nights of the other calculation: the staged one not measured for 8 days
+    assert nt.mean_source(upgraded, "hrv", D) == upgraded[D].hrv_source
 
 
 def test_a_clock_change_at_home_is_no_time_zone_change():

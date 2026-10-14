@@ -73,9 +73,15 @@ HEURISTICS = [
     ("app/services/sante_score.py", "Z_FLOOR", 2.5),
     ("app/services/sante_score.py", "Z_SPAN", 2.0),
     ("app/services/sante_score.py", "HOLD", {"ok": (70, 100), "warn": (0, 69), "danger": (0, 39)}),
-    # the baseline series: the device with the most nights in 28 days among those worn in the last 7
+    # the baseline series: the device with the most nights in 28 days among those worn in the last 7; ties by the
+    # larger baseline, the day before's series, then this order
     ("app/services/nights.py", "SERIES_DAYS", 28),
     ("app/services/nights.py", "SERIES_ACTIVE_DAYS", 7),
+    ("app/services/nights.py", "DEVICE_ORDER", ("COROS", "Garmin")),
+    # the baseline stops a week before the day it reads (a design choice), the trend's threshold assumes a lag-1
+    # correlation of 0.3 between nights (the second statistics review, 2026-10-14)
+    ("app/services/nights.py", "BASELINE_LAG", 7),
+    ("app/services/nights.py", "TREND_RHO", 0.3),
     # the bands' SDs shrunk towards a prior (Kellmann 2018's Bayesian individualisation; Mishica 2022)
     ("app/services/nights.py", "PRIOR_NIGHTS", 7),
     ("app/services/nights.py", "HRV_SD_PRIOR", 0.10),
@@ -94,6 +100,8 @@ HEURISTICS = [
     ("app/services/sante_sleep.py", "NEED_DEFAULT", 480),
     ("app/services/sante_sleep.py", "DEFICIT_DAYS", 7),
     ("app/services/sante_sleep.py", "DEFICIT_MIN_NIGHTS", 4),
+    ("app/services/sante_sleep.py", "DEFICIT_Z", 1.28),  # the sleep owed over its own noise only
+    ("app/services/sante_sleep.py", "TST_SD_PRIOR", 45.0),
     # 2026-10-08 (« Fais comme WHOOP »): the Entraînement dial's usual week (one load pipeline since 2026-10-14:
     # sante_load), « comme d'habitude » between its 25th and 75th percentiles (USUAL_SPREAD's ± 20 % is gone)
     ("app/services/sante_load.py", "USUAL_WEEKS", 11),
