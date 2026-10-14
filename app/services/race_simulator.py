@@ -232,17 +232,19 @@ async def _race_model(db: AsyncSession, user_id: int) -> dict | None:
 async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
     """Personal fresh→fade tilt, calibrated when a matched race result exists.
 
-    The tilt is computed once at match time (see save_route_result) and stored
-    in Route.result_json; here the median of the most recent ones (up to
-    PERSONAL_TILT_RACES, by race date): one race reads a bad day or a good one,
-    a few say how the athlete fades. Clamped hard. Only tilts measured against
-    the hours-on-course fatigue count (``fatigue_model``): older ones measured
-    the gap to the distance-scaled curve, which the fitted one already corrects.
-    Tilts fitted on every checkpoint (``fatigue_tilt_cps``) replace the ones
-    read on the first checkpoint alone as soon as one exists: matching a race
-    again re-measures it.
+    Each matched race stores its own tilt (Route.result_json, see
+    race_calibration.measure_fatigue_tilt and raw_tilt); here the mean of the
+    most recent ones (up to PERSONAL_TILT_RACES, by race date), shrunk toward
+    the neutral tilt by m / (m + 2), m = those races: one race moves it a third
+    of the way, three races 60 % (race_calibration.tilt_weight). Clamped. Only
+    tilts measured against the hours-on-course fatigue count
+    (``fatigue_model``): older ones measured the gap to the distance-scaled
+    curve, which the fitted one already corrects. Tilts fitted on every
+    checkpoint (``fatigue_tilt_cps``) replace the ones read on the first
+    checkpoint alone as soon as one exists: matching a race again re-measures it.
     """
     from app.models.route import Route
+    from app.services.race_calibration import TILT_MAX, TILT_MIN, raw_tilt, tilt_weight
 
     try:
         result = await db.execute(
@@ -255,20 +257,23 @@ async def _personal_fatigue_tilt(db: AsyncSession, user_id: int) -> float:
         seen: set = set()  # a race saved twice links the same activity: it counts once
         for route_id, rj in result.all():
             rj = rj or {}
-            tilt = rj.get("fatigue_tilt")
-            if tilt is None or rj.get("fatigue_model") != FATIGUE_MODEL or rj.get("activity_id") in seen:
+            raw = raw_tilt(rj)
+            aid = rj.get("activity_id")
+            if raw is None or rj.get("fatigue_model") != FATIGUE_MODEL or (aid is not None and aid in seen):
                 continue
-            seen.add(rj.get("activity_id"))
+            if aid is not None:  # results stored without an activity id are different races
+                seen.add(aid)
             try:
                 day = datetime.strptime(rj.get("activity_date") or "", "%d/%m/%Y")
             except ValueError:
                 day = datetime.min
-            measured.append((day, route_id, float(tilt), rj.get("fatigue_tilt_cps") is not None))
+            measured.append((day, route_id, raw, rj.get("fatigue_tilt_cps") is not None))
         measured = [m for m in measured if m[3]] or measured
         if measured:
             measured.sort(reverse=True)  # most recent race first (then most recent match)
-            tilt = statistics.median(m[2] for m in measured[:PERSONAL_TILT_RACES])
-            return max(0.05, min(tilt, 0.40))
+            used = [m[2] for m in measured[:PERSONAL_TILT_RACES]]
+            tilt = DEFAULT_FATIGUE_TILT + tilt_weight(len(used)) * (statistics.fmean(used) - DEFAULT_FATIGUE_TILT)
+            return round(max(TILT_MIN, min(tilt, TILT_MAX)), 3)
     except Exception:
         logger.exception("personal fatigue tilt lookup failed")
     return DEFAULT_FATIGUE_TILT

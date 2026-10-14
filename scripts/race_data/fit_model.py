@@ -280,6 +280,7 @@ class Problem:
         self.clock = np.ones(P, dtype=bool)  # False: no start clock (LiveTrail), night not applied
         self.nrun = np.zeros(P)
         self.km = np.zeros(P)
+        self.prog = np.zeros((P, S))  # share of the distance at each segment's end (the personal tilt reads it)
         self.lat = np.zeros((P, S))
         self.lon = np.zeros((P, S))
         self.t0 = np.zeros(P)
@@ -289,6 +290,7 @@ class Problem:
         for p, (ri, lo, hi, mem) in enumerate(pairs):
             r = races[ri]
             ns = len(r["hist"])
+            self.prog[p, :ns] = np.asarray(r["prep"]["end"]) / r["prep"]["total"]
             pos = r.get("seg_pos")
             if pos and r.get("start_utc") and len(pos) == ns:
                 import datetime as _dt
@@ -345,8 +347,9 @@ class Problem:
         seg = (self.H @ th.reshape(NG * NC, -1)) * self.alt[:, None]  # Nseg x L
         return np.einsum("psl,pl->ps", seg[self.IDX], self.w)
 
-    def predict(self, x=None, mode="fit"):
-        """Moving time at each checkpoint (P x C) from the group's level."""
+    def predict(self, x=None, mode="fit", tilt=None):
+        """Moving time at each checkpoint (P x C) from the group's level. ``tilt``: the personal
+        fatigue tilt (race_simulator._fatigue_factor; scalar or one per pair), neutral when None."""
         if mode == "fit":
             base = self.base(x)
             c, q, rr, pp, fresh = x[I_C], x[I_Q], x[I_R], x[I_P], x[I_FRESH]
@@ -372,7 +375,11 @@ class Problem:
             for s in range(S):
                 if hours_fat:
                     h = np.minimum(t / 3600, 200.0)
-                    fat = np.clip(1 + scale * (h / th) ** rr - fresh * np.maximum(0.0, 1 - h / 3), 0.5, 5.0)
+                    fat = 1 + scale * (h / th) ** rr - fresh * np.maximum(0.0, 1 - h / 3)
+                    if tilt is not None:  # as the app: + (tilt - neutral) (progress - 0.45), on the curve's 1.5 h level
+                        ref = 1 + scale * (rs.FATIGUE_REF_H / th) ** rr - fresh * max(0.0, 1 - rs.FATIGUE_REF_H / 3)
+                        fat = fat + (np.asarray(tilt) - rs.DEFAULT_FATIGUE_TILT) * (self.prog[:, s] - 0.45) * ref
+                    fat = np.clip(fat, 0.5, 5.0)
                 else:
                     fat = self.fat_prod[:, s]
                 hr = (self.sh + t / 3600) % 24

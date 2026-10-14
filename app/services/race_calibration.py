@@ -521,21 +521,52 @@ def scenario_pcts(model: dict | None, course_ekm: float | None, known_course: bo
 # race_simulator._fatigue_factor): above the neutral 0.22 the athlete starts
 # faster and fades more, below he fades less. Measured on ALL the matched
 # checkpoints: the tilt whose plan, run on the athlete's own finish time,
-# best reproduces his cumulative passage times. Shrunk toward the neutral
-# value with few checkpoints (one race adjusts, never dominates), clamped.
-# Checked in-sample only (the 2026 Transjeju's own 11 checkpoints fit better,
-# by construction); whether a tilt read on one race predicts the checkpoints of
-# the next one better than the neutral value is not measured yet.
+# best reproduces his cumulative passage times (« raw », stored with the race).
+# The plan uses the mean raw tilt of his latest races shrunk toward the
+# neutral value by m / (m + 2), m = the races (race_simulator._personal_fatigue_tilt):
+# one race moves it a third of the way. A race's 10 checkpoints say how he
+# ran THAT day (split-half reliability within one race 0.97); what carries to
+# the next race is much less: on 91 finishers linked across two races of the
+# corpus (same sex, birth year and UTMB index, no names), the raw tilts
+# correlate 0.14 (a lower bound: some links are wrong), and the next race's
+# checkpoints came out 0.18 min closer than with the neutral tilt with m / (m + 2),
+# 0.12 min further with the former n / (n + 4) on the checkpoints.
 TILT_MIN, TILT_MAX = 0.05, 0.40
 TILT_GRID_STEP = 0.01
-TILT_PRIOR_CPS = 4        # weight of the measured tilt = n / (n + 4) checkpoints
+TILT_PRIOR_RACES = 2      # weight of the measured tilts = m / (m + 2), m matched races
+TILT_PRIOR_CPS = 4        # the former weight n / (n + 4) checkpoints: undoes the shrinkage of stored tilts
 TILT_MAX_PROGRESS = 0.97  # a checkpoint at the finish says nothing (pinned there)
 
 
+def tilt_weight(m: int) -> float:
+    """How much m matched races move the tilt away from the neutral value."""
+    return m / (m + TILT_PRIOR_RACES) if m > 0 else 0.0
+
+
+def raw_tilt(result: dict) -> float | None:
+    """A matched race's own tilt (before any shrinkage): stored as fatigue_tilt_raw; on races matched
+    before, the stored tilt with the former n / (n + 4) shrinkage undone (n = fatigue_tilt_cps), or the
+    tilt itself when it was read on the first checkpoint alone."""
+    from app.services.race_simulator import DEFAULT_FATIGUE_TILT
+
+    if result.get("fatigue_tilt_raw") is not None:
+        return float(result["fatigue_tilt_raw"])
+    tilt = result.get("fatigue_tilt")
+    if tilt is None:
+        return None
+    n = result.get("fatigue_tilt_cps")
+    if n:
+        raw = DEFAULT_FATIGUE_TILT + (float(tilt) - DEFAULT_FATIGUE_TILT) * (n + TILT_PRIOR_CPS) / n
+        return max(TILT_MIN, min(TILT_MAX, raw))
+    return float(tilt)
+
+
 def measure_fatigue_tilt(course_json: dict, profile, checkpoints: list[dict], actual: list[dict],
-                         total_actual_s: float, start_hour: int = 6, start_minute: int = 0) -> dict | None:
-    """{"tilt", "raw", "n"}: the tilt to store, the best fit before shrinkage,
-    the checkpoints used; None without a usable checkpoint.
+                         total_actual_s: float, start_hour: int = 6, start_minute: int = 0,
+                         race_date=None, utc_offset_s: int | None = None) -> dict | None:
+    """{"tilt", "raw", "n"}: the tilt one race alone gives, the best fit before
+    shrinkage (stored: the plan combines races on it), the checkpoints used;
+    None without a usable checkpoint.
 
     ``actual`` is [{km, time_s}] (cumulative moving time at each checkpoint,
     see race_simulator.actual_passage_times)."""
@@ -569,7 +600,8 @@ def measure_fatigue_tilt(course_json: dict, profile, checkpoints: list[dict], ac
         prof = base_profile.model_copy(update={"fatigue_tilt": tilt})
         course = base.model_copy(update={"segments": [s.model_copy() for s in base.segments]})
         course = predict_course(course, prof, start_hour=start_hour, start_minute=start_minute,
-                                plan_moving_s=total_actual_s, fine_terrain=fine)
+                                plan_moving_s=total_actual_s, fine_terrain=fine,
+                                race_date=race_date, utc_offset_s=utc_offset_s)  # the plan's own night
         secs = compute_passage_times(course, checkpoints, int(total_actual_s), 1.0, start_hour, start_minute, None)
         # by km, not name: a loop course repeats names
         pred = {round(float(s["end_km"]), 1): s["adjusted_cumulative_time_s"] for s in secs[:-1]}
@@ -585,8 +617,8 @@ def measure_fatigue_tilt(course_json: dict, profile, checkpoints: list[dict], ac
         sse = sum(x * x for x in g)
         if best_sse is None or sse < best_sse - 1e-9:
             best, best_sse, n = tilt, sse, len(g)
-    w = n / (n + TILT_PRIOR_CPS)
-    tilt = DEFAULT_FATIGUE_TILT + w * (best - DEFAULT_FATIGUE_TILT)
+    # alone (one race), the tilt the plan would take: a third of the way from the neutral value
+    tilt = DEFAULT_FATIGUE_TILT + tilt_weight(1) * (best - DEFAULT_FATIGUE_TILT)
     return {"tilt": round(max(TILT_MIN, min(tilt, TILT_MAX)), 3), "raw": best, "n": n}
 
 

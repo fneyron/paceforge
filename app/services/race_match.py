@@ -187,9 +187,11 @@ async def link_result(db: AsyncSession, route: Route, activity: Activity, user_i
             if profile is None:
                 profile = await build_athlete_gradient_profile(db, user_id)
             sh = route.start_hour if route.start_hour is not None else 6
-            measured = measure_fatigue_tilt(route.course_json, profile, cps, actual, total_actual_s, sh, route.start_minute or 0)
+            measured = measure_fatigue_tilt(route.course_json, profile, cps, actual, total_actual_s, sh, route.start_minute or 0,
+                                            **await race_clock(db, user_id, route))
             if measured:
-                fatigue = {"fatigue_tilt": measured["tilt"], "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": measured["n"]}
+                fatigue = {"fatigue_tilt": measured["tilt"], "fatigue_tilt_raw": measured["raw"],
+                           "fatigue_model": FATIGUE_MODEL, "fatigue_tilt_cps": measured["n"]}
         except Exception:
             logger.exception("fatigue tilt calibration failed")
 

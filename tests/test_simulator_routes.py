@@ -138,6 +138,9 @@ async def test_no_reference_finisher_and_the_debrief(as_user: AsyncClient, db_se
     rj = (await db_session.get(Route, route_id)).result_json
     assert 0.05 <= rj["fatigue_tilt"] <= 0.40 and rj["fatigue_model"] == "hours"
     assert rj["fatigue_tilt_cps"] >= 1  # fitted on every matched checkpoint, not the first only
+    # the race's own tilt is stored: the plan combines the races on it (m / (m + 2)); one race alone is a third of the way
+    assert 0.05 <= rj["fatigue_tilt_raw"] <= 0.40
+    assert rj["fatigue_tilt"] == pytest.approx(0.22 + (rj["fatigue_tilt_raw"] - 0.22) / 3, abs=1e-3)
 
 
 @pytest.mark.asyncio

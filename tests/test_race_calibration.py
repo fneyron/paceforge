@@ -4,7 +4,9 @@
 - D+ measured with one algorithm for the course and for the past races
 - what counts as a race (no triathlon run leg, relay leg, abandon)
 - recency weighting of the races
-- the fatigue tilt fitted on every matched checkpoint, combined over races
+- the level: ln T = c + k ln E, k shrunk toward the population 1.28, c the weighted mean
+- the races' heat taken out, the athlete's own stops
+- the fatigue tilt fitted on every matched checkpoint, combined over races (m / (m + 2))
 """
 
 import math
@@ -375,8 +377,8 @@ def test_tilt_fitted_on_all_checkpoints_recovers_the_runner_shape():
     actual = _passages(cj, cps, 0.32, total)  # a runner who fades more than the field
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, actual, total, 6, 0)
     assert res["raw"] == pytest.approx(0.32, abs=0.011) and res["n"] == 5
-    # 5 checkpoints: 5/9 of the way from the neutral tilt
-    assert res["tilt"] == pytest.approx(rs.DEFAULT_FATIGUE_TILT + 5 / 9 * (res["raw"] - rs.DEFAULT_FATIGUE_TILT), abs=1e-3)
+    # one race alone: a third of the way from the neutral tilt (m / (m + 2), m = 1), whatever its checkpoints
+    assert res["tilt"] == pytest.approx(rs.DEFAULT_FATIGUE_TILT + 1 / 3 * (res["raw"] - rs.DEFAULT_FATIGUE_TILT), abs=1e-3)
     # one who fades less
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, _passages(cj, cps, 0.12, total), total, 6, 0)
     assert res["raw"] == pytest.approx(0.12, abs=0.011) and res["tilt"] < rs.DEFAULT_FATIGUE_TILT
@@ -387,7 +389,7 @@ def test_tilt_with_one_checkpoint_moves_little_and_none_without():
     cps = [{"name": "CP", "distance_km": 30.0}]
     total = 8 * 3600
     res = rc.measure_fatigue_tilt(cj, _prof(), cps, _passages(cj, cps, 0.40, total), total, 6, 0)
-    assert res["n"] == 1 and abs(res["tilt"] - rs.DEFAULT_FATIGUE_TILT) <= 0.2 * (0.40 - rs.DEFAULT_FATIGUE_TILT) + 1e-3
+    assert res["n"] == 1 and abs(res["tilt"] - rs.DEFAULT_FATIGUE_TILT) <= (0.40 - rs.DEFAULT_FATIGUE_TILT) / 3 + 1e-3
     assert rc.measure_fatigue_tilt(cj, _prof(), cps, [], total, 6, 0) is None
     # a checkpoint at the finish says nothing: the plan is pinned there
     assert rc.measure_fatigue_tilt(cj, _prof(), [{"name": "F", "distance_km": 59.5}],
@@ -419,7 +421,7 @@ def test_tilt_is_clamped():
 
 
 @pytest.mark.asyncio
-async def test_personal_tilt_is_the_median_of_the_three_latest_races(db_session, test_user):
+async def test_personal_tilt_is_the_shrunk_mean_of_the_three_latest_races(db_session, test_user):
     def route(name, tilt, day, model=rs.FATIGUE_MODEL):
         return Route(user_id=test_user.id, name=name, total_distance_km=100,
                      result_json={"fatigue_tilt": tilt, "fatigue_model": model, "activity_date": day})
@@ -432,7 +434,8 @@ async def test_personal_tilt_is_the_median_of_the_three_latest_races(db_session,
         route("2025a", 0.20, "05/12/2025"),
     ])
     await db_session.flush()
-    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.20)
+    # the three latest (0.10, 0.20, 0.30): their mean 0.20, 3/5 of the way from the neutral 0.22
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.22 + 0.6 * (0.20 - 0.22))
 
 
 @pytest.mark.asyncio
@@ -448,7 +451,9 @@ async def test_personal_tilt_prefers_the_tilts_fitted_on_every_checkpoint(db_ses
         route("all CPs 2025a", 0.12, "05/12/2025", cps=9),
     ])
     await db_session.flush()
-    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.12)
+    # stored with the former n / (n + 4) shrinkage: its raw tilt 0.22 − 0.10 × 13/9, then a third of the way (one race)
+    raw = 0.22 + (0.12 - 0.22) * 13 / 9
+    assert await rs._personal_fatigue_tilt(db_session, test_user.id) == pytest.approx(0.22 + (raw - 0.22) / 3, abs=1e-3)
 
 
 @pytest.mark.asyncio

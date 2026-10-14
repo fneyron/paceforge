@@ -307,3 +307,13 @@ def test_a_pin_may_not_ask_a_leg_faster_than_70_percent_of_the_model():
     assert first["pin_clamped"] and first["adjusted_time_s"] >= 0.7 * eau["predicted_time_s"] - 1
 
 
+# ── 5c. the tilt over races ──
+
+def test_the_tilt_stored_per_race_and_its_weight():
+    assert [rc.tilt_weight(m) for m in (0, 1, 2, 3)] == [0.0, pytest.approx(1 / 3), 0.5, pytest.approx(0.6)]
+    assert rc.raw_tilt({"fatigue_tilt": 0.30, "fatigue_tilt_raw": 0.38}) == 0.38
+    # stored with the former n / (n + 4): undone (10 checkpoints: 0.22 + 0.08 × 14/10)
+    assert rc.raw_tilt({"fatigue_tilt": 0.30, "fatigue_tilt_cps": 10}) == pytest.approx(0.22 + 0.08 * 1.4)
+    assert rc.raw_tilt({"fatigue_tilt": 0.30}) == 0.30 and rc.raw_tilt({}) is None
+
+
