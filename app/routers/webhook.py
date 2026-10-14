@@ -1,5 +1,4 @@
 import logging
-import os
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -10,6 +9,7 @@ from app.config import settings
 from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.strava import StravaWebhookEvent
+from app.services.strava import shared_subscription_check
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +54,6 @@ async def strava_webhook_validation(
     return {"hub.challenge": challenge}
 
 
-def shared_subscription_id() -> int | None:
-    """The shared app's webhook subscription (STRAVA_SUBSCRIPTION_ID, the id Strava gave when it was created). An
-    environment variable: app.config does not declare it yet, so a .env line would be refused by its settings."""
-    raw = str(getattr(settings, "STRAVA_SUBSCRIPTION_ID", None) or os.getenv("STRAVA_SUBSCRIPTION_ID", "")).strip()
-    return int(raw) if raw.isdigit() else None
-
-
 def _kind(event: StravaWebhookEvent) -> str | None:
     if event.object_type == "activity" and event.aspect_type in ("create", "update", "delete"):
         return event.aspect_type
@@ -69,19 +62,23 @@ def _kind(event: StravaWebhookEvent) -> str | None:
     return None
 
 
-async def _athlete_of(db: AsyncSession, event: StravaWebhookEvent) -> User | None:
+async def _athlete_of(db: AsyncSession, event: StravaWebhookEvent) -> tuple[User | None, bool]:
     """The PaceForge user of the event's athlete, when the event comes through a subscription PaceForge knows for
-    that athlete's app: the athlete's own app's (users.strava_webhook_subscription_id, also the shared app's when
-    it was an athlete's own app first), or the shared app's (STRAVA_SUBSCRIPTION_ID). None otherwise."""
+    that athlete's app, and whether it is known yet: the athlete's own app's (users.strava_webhook_subscription_id,
+    also the shared app's when it was an athlete's own app first), or the shared app's (STRAVA_SUBSCRIPTION_ID, else
+    as Strava last gave it). A shared app's id not known yet, or another one: (user, False), its task asks Strava
+    first (strava.shared_subscription_matches). (None, False) otherwise."""
     user = (await db.execute(select(User).where(User.strava_athlete_id == event.owner_id))).scalar_one_or_none()
     if user is None or not user.strava_client_id:
-        return None
-    shared = shared_subscription_id()
-    if shared is not None and event.subscription_id == shared and user.strava_client_id == settings.STRAVA_CLIENT_ID:
-        return user
+        return None, False
     known = await db.scalar(select(func.count(User.id)).where(
         User.strava_client_id == user.strava_client_id, User.strava_webhook_subscription_id == event.subscription_id))
-    return user if known else None
+    if known:
+        return user, True
+    if not (settings.strava_shared_ready and user.strava_client_id == settings.STRAVA_CLIENT_ID):
+        return None, False
+    check = shared_subscription_check(event.subscription_id)
+    return (user, bool(check)) if check is not False else (None, False)
 
 
 @router.post("/webhook/strava")
@@ -96,24 +93,26 @@ async def strava_webhook_event(request: Request, db: AsyncSession = Depends(get_
         return JSONResponse(status_code=200, content={"status": "ignored"})
 
     kind = _kind(event)
-    user = await _athlete_of(db, event) if kind else None
+    user, verified = await _athlete_of(db, event) if kind else (None, False)
     if user is None:
         logger.info("Strava webhook: %s %s of athlete %d ignored (subscription %d)", event.object_type,
                     event.aspect_type, event.owner_id, event.subscription_id)
         return JSONResponse(status_code=200, content={"status": "ignored"})
 
     logger.info("Strava webhook: %s %d for user %d, enqueuing", kind, event.object_id, user.id)
+    # the shared app's subscription not known yet: the task checks it with Strava before anything else
+    check = {} if verified else {"subscription_id": event.subscription_id}
     # Enqueue async, but never let a broker hiccup break the webhook ACK —
     # Strava expects a fast 200 or it retries/disables the subscription.
     try:
         from app.tasks.webhook_sync import strava_deauthorized, sync_activity_from_webhook
 
         if kind == "deauthorize":
-            strava_deauthorized.delay(event.owner_id)
+            strava_deauthorized.delay(event.owner_id, **check)
         elif kind == "create":  # the previous worker's message (a deploy starts the new web first)
-            sync_activity_from_webhook.delay(event.object_id, event.owner_id)
+            sync_activity_from_webhook.delay(event.object_id, event.owner_id, **check)
         else:
-            sync_activity_from_webhook.delay(event.object_id, event.owner_id, kind)
+            sync_activity_from_webhook.delay(event.object_id, event.owner_id, kind, **check)
     except Exception:
         logger.exception("Failed to enqueue webhook sync (broker unavailable?)")
 

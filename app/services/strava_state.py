@@ -80,6 +80,20 @@ def backoff_until(client_id: str | None) -> float | None:
         return None
 
 
+# ── the shared app's webhook subscription ───────────────────────────────────
+
+def shared_subscription() -> tuple[bool, int | None]:
+    """What Strava last said the shared app's subscription is: (known, its id; None when the app has none)."""
+    raw = read("shared_sub")
+    if raw is None:
+        return False, None
+    return True, int(raw) if raw.isdigit() else None
+
+
+def remember_shared_subscription(sub_id: int | None, ttl: float) -> None:
+    mark("shared_sub", ttl, str(sub_id) if sub_id else "none")
+
+
 # ── the webhook ─────────────────────────────────────────────────────────────
 
 def webhook_reached(user_id: int) -> None:

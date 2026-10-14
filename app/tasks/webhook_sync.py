@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, select
 
 from app.celery_app import celery_app
+from app.config import settings
 from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
 from app.models.activity import Activity
 from app.models.user import User
@@ -23,23 +24,55 @@ logger = logging.getLogger(__name__)
     acks_late=True,
     name="paceforge.sync_activity_from_webhook",
 )
-def sync_activity_from_webhook(self, activity_id: int, owner_id: int, aspect_type: str = "create") -> dict:
-    """An activity event of Strava's webhook (create, update, delete). When it cannot be done after its retries, the
-    athlete is polled again by the next round (it would not be for 24 h after a webhook event)."""
+def sync_activity_from_webhook(self, activity_id: int, owner_id: int, aspect_type: str = "create",
+                               subscription_id: int | None = None) -> dict:
+    """An activity event of Strava's webhook (create, update, delete); `subscription_id` when the web could not
+    tell yet whether it is the shared app's (checked first). When it cannot be done after its retries, the athlete
+    is polled again by the next round (not for an event of a subscription never confirmed)."""
     logger.info("Webhook sync: %s of activity %d for athlete %d", aspect_type, activity_id, owner_id)
     try:
-        return asyncio.run(_run_webhook_sync(activity_id, owner_id, aspect_type))
+        return asyncio.run(_run_webhook_sync(activity_id, owner_id, aspect_type, subscription_id))
     except Exception as exc:
         if self.request.retries < self.max_retries:
             logger.warning("Webhook sync failed for activity %d (attempt %d/%d)", activity_id,
                            self.request.retries + 1, self.max_retries + 1, exc_info=True)
-            countdown = self.default_retry_delay
-            if isinstance(exc, StravaRateLimitError):
-                countdown = 15 * 60  # Strava's short window turns within a quarter hour
-            raise self.retry(exc=exc, countdown=countdown)
+            raise self.retry(exc=exc, countdown=_retry_in(exc, self.default_retry_delay))
         logger.exception("Webhook sync gave up on activity %d of athlete %d", activity_id, owner_id)
-        _poll_again(owner_id)
+        if subscription_id is None:
+            _poll_again(owner_id)
         return {"status": "failed"}
+
+
+class SubscriptionUnknown(StravaAPIError):
+    """Strava could not say (now) which subscription the shared app has."""
+
+    def __init__(self) -> None:
+        super().__init__("The shared app's webhook subscription could not be read", status_code=503)
+
+
+def _retry_in(exc: Exception, default: int) -> int:
+    if isinstance(exc, StravaRateLimitError):
+        return 15 * 60  # Strava's short window turns within a quarter hour
+    if isinstance(exc, SubscriptionUnknown):
+        from app.services.strava import SHARED_SUB_RETRY_S
+
+        return SHARED_SUB_RETRY_S  # a failed lookup is not tried again before
+    return default
+
+
+async def _confirmed(subscription_id: int | None) -> bool:
+    """An event queued before its subscription was known: the shared app's, as Strava says? (An app-level
+    request at most, before any athlete's; raises SubscriptionUnknown when Strava cannot say now.)"""
+    if subscription_id is None:
+        return True
+    from app.services.strava import shared_subscription_matches
+
+    ok = await shared_subscription_matches(subscription_id)
+    if ok is None:
+        raise SubscriptionUnknown()
+    if not ok:
+        logger.warning("Webhook: subscription %d is not the shared app's, event ignored", subscription_id)
+    return ok
 
 
 def _poll_again(owner_id: int) -> None:
@@ -72,17 +105,22 @@ def _owner_of(data: dict) -> int | None:
     return (data.get("athlete") or {}).get("id")
 
 
-async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = "create") -> dict:
+async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = "create",
+                            subscription_id: int | None = None) -> dict:
     from app.database import get_task_session
     from app.services.activity_env import enrich
     from app.services.strava import StravaService, link_intact
     from app.services.strava_activities import adopt_zone, save_new
 
+    if not await _confirmed(subscription_id):
+        return {"status": "unknown_subscription"}
     async with get_task_session() as db:
         user = await _linked_user(db, owner_id)
         if not user:
             logger.warning("Webhook: no user found for athlete %d", owner_id)
             return {"status": "no_user"}
+        if subscription_id is not None and user.strava_client_id != settings.STRAVA_CLIENT_ID:
+            return {"status": "unknown_subscription"}  # confirmed for the shared app: not this athlete's app
         strava = StravaService.for_user(db, user)
         row = (await db.execute(select(Activity).where(Activity.strava_activity_id == activity_id))).scalar()
         if row is not None and row.user_id != user.id:
@@ -164,28 +202,32 @@ async def _deleted(db, user: User, strava, row: Activity | None, activity_id: in
     acks_late=True,
     name="paceforge.strava_deauthorized",
 )
-def strava_deauthorized(self, owner_id: int) -> dict:
+def strava_deauthorized(self, owner_id: int, subscription_id: int | None = None) -> dict:
     """The athlete revoked PaceForge on Strava (webhook « authorized: false »)."""
     try:
-        return asyncio.run(_run_deauthorized(owner_id))
+        return asyncio.run(_run_deauthorized(owner_id, subscription_id))
     except Exception as exc:
         if self.request.retries < self.max_retries:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_in(exc, self.default_retry_delay))
         logger.exception("Strava revocation of athlete %d not applied", owner_id)
         return {"status": "failed"}
 
 
-async def _run_deauthorized(owner_id: int) -> dict:
+async def _run_deauthorized(owner_id: int, subscription_id: int | None = None) -> dict:
     """Once Strava confirms it (it refuses the athlete's access), the link is forgotten: the tokens and the athlete
     id, so the Strava account can be linked again, here or to another account. The activities already received stay,
     as when the athlete disconnects from Réglages (privacy policy: deleting the account deletes them)."""
     from app.database import get_task_session
     from app.services.strava import StravaService, _forget_link, link_intact
 
+    if not await _confirmed(subscription_id):
+        return {"status": "unknown_subscription"}
     async with get_task_session() as db:
         user = (await db.execute(select(User).where(User.strava_athlete_id == owner_id))).scalar_one_or_none()
         if user is None:
             return {"status": "no_user"}
+        if subscription_id is not None and user.strava_client_id != settings.STRAVA_CLIENT_ID:
+            return {"status": "unknown_subscription"}
         if user.strava_refresh_token and user.has_strava_app:
             try:
                 await StravaService.for_user(db, user).get_athlete(user)

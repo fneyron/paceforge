@@ -1,4 +1,5 @@
 import logging
+import os
 import secrets
 import time
 from datetime import datetime, timezone
@@ -17,12 +18,81 @@ STRAVA_BASE_URL = "https://www.strava.com"
 STRAVA_API_URL = f"{STRAVA_BASE_URL}/api/v3"
 STRAVA_OAUTH_URL = f"{STRAVA_BASE_URL}/oauth"
 QUOTA_SHARE = 0.8  # of a Strava rate-limit window, the background syncs' share
+SHARED_SUB_KEEP_S = 12 * 3600  # the shared app's subscription id, as Strava gave it, is remembered this long
+SHARED_SUB_RETRY_S = 5 * 60  # a failed lookup is not tried again before this
+SHARED_SUB_RECHECK_S = 10 * 60  # an event of another subscription asks Strava again at most this often
 
 
 def backing_off(client_id: str | None) -> bool:
     """The background syncs of this app wait for its quota window to turn (strava_state)."""
     until = strava_state.backoff_until(client_id)
     return until is not None and until > time.time()
+
+
+# ── the shared app's webhook subscription ───────────────────────────────────
+
+def configured_shared_subscription() -> int | None:
+    """STRAVA_SUBSCRIPTION_ID when set: the shared app's subscription, Strava not asked (optional)."""
+    raw = str(getattr(settings, "STRAVA_SUBSCRIPTION_ID", None) or os.getenv("STRAVA_SUBSCRIPTION_ID", "")).strip()
+    return int(raw) if raw.isdigit() else None
+
+
+def shared_subscription_check(subscription_id: int) -> bool | None:
+    """Whether an event's subscription is the shared app's, without asking Strava (the webhook answers within 2 s):
+    True, False, or None when Strava is to be asked — not known yet, or another id while the last lookup is over
+    SHARED_SUB_RECHECK_S old (the subscription may have been made again)."""
+    configured = configured_shared_subscription()
+    if configured is not None:
+        return subscription_id == configured
+    known, cached = strava_state.shared_subscription()
+    if known and cached == subscription_id:
+        return True
+    if known and strava_state.read("shared_sub:recheck") is not None:
+        return False
+    return None
+
+
+async def lookup_shared_subscription() -> tuple[bool, int | None]:
+    """The shared app's push subscription (one per app), from Strava's GET /push_subscriptions with the app's keys:
+    remembered SHARED_SUB_KEEP_S, a failure SHARED_SUB_RETRY_S (Strava not asked meanwhile). Returns (known, id),
+    id None when the app has none. An app-level request: no athlete's token, no athlete's quota."""
+    if not settings.strava_shared_ready:
+        return False, None
+    if strava_state.read("shared_sub:failed") is not None:
+        return strava_state.shared_subscription()
+    strava_state.mark("shared_sub:recheck", SHARED_SUB_RECHECK_S)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:  # the keys in the query: httpx logs no URL (WARNING)
+            response = await client.get(f"{STRAVA_API_URL}/push_subscriptions", params={
+                "client_id": settings.STRAVA_CLIENT_ID, "client_secret": settings.STRAVA_CLIENT_SECRET})
+        if response.status_code != 200:
+            raise StravaAPIError(f"push_subscriptions: {response.status_code}", status_code=response.status_code)
+        sub_id = next((s["id"] for s in response.json() if isinstance(s, dict) and isinstance(s.get("id"), int)),
+                      None)
+    except Exception:
+        logger.warning("Strava: the shared app's webhook subscription could not be read", exc_info=True)
+        strava_state.mark("shared_sub:failed", SHARED_SUB_RETRY_S)
+        return strava_state.shared_subscription()
+    strava_state.remember_shared_subscription(sub_id, SHARED_SUB_KEEP_S)
+    logger.info("Strava: the shared app's webhook subscription is %s", sub_id)
+    return True, sub_id
+
+
+async def shared_subscription_matches(subscription_id: int) -> bool | None:
+    """shared_subscription_check, asking Strava when it cannot tell (an event's task: never the webhook's answer).
+    None: Strava could not say."""
+    check = shared_subscription_check(subscription_id)
+    if check is not None:
+        return check
+    known, cached = await lookup_shared_subscription()
+    return cached == subscription_id if known else None
+
+
+async def refresh_shared_subscription() -> None:
+    """The hourly round keeps the shared app's subscription id at hand (looked up again once forgotten)."""
+    if (settings.strava_shared_ready and configured_shared_subscription() is None
+            and not strava_state.shared_subscription()[0]):
+        await lookup_shared_subscription()
 
 
 class StravaService:

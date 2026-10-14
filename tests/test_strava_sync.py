@@ -594,6 +594,99 @@ async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClie
     assert r.status_code == 200 and r.json()["status"] == "ignored"
 
 
+@pytest.fixture
+def shared_app(monkeypatch):
+    monkeypatch.setattr(settings, "STRAVA_SHARED_APP_ENABLED", True)
+    monkeypatch.setattr(settings, "STRAVA_CLIENT_ID", "90001")
+    monkeypatch.setattr(settings, "STRAVA_CLIENT_SECRET", "shared-secret")
+    monkeypatch.delenv("STRAVA_SUBSCRIPTION_ID", raising=False)
+
+
+def _push_subscriptions(monkeypatch, answer):
+    """Strava's GET /push_subscriptions for the shared app (an app-level request); `answer`: its subscriptions,
+    or an HTTP status for a failure."""
+    calls = []
+
+    async def get(self, url, params=None, **kw):
+        calls.append(params)
+        request = httpx.Request("GET", url)
+        if isinstance(answer, int):
+            return httpx.Response(answer, text="busy", request=request)
+        return httpx.Response(200, json=answer, request=request)
+    monkeypatch.setattr(httpx.AsyncClient, "get", get)
+    return calls
+
+
+async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncClient, db_session, task_session,
+                                                                 shared_app, queued, monkeypatch):
+    """Review D2: without STRAVA_SUBSCRIPTION_ID every shared-app event was dropped (the poll then brought the
+    activity from the list, without its splits). Now the shared app's subscription is read from Strava (GET
+    /push_subscriptions, remembered 12 h), never during the webhook's 2-s answer: an event of an id not known yet
+    is queued with it, and its task confirms it with Strava before anything else. A forged event costs that
+    app-level lookup at most, never a request with the athlete's token."""
+    from app.tasks import poll_activities
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    athlete = await _athlete(db_session, 5001, strava_client_id="90001", initial_sync_done=True)
+    lookups = _push_subscriptions(monkeypatch, [{"id": 123456, "callback_url": "https://paceforge.fr/webhook/strava"}])
+    detail = AsyncMock(return_value=_data(777, datetime.now(timezone.utc), athlete_id=5001,
+                                          splits_metric=[{"split": 1}], laps=[{"lap_index": 1}]))
+    monkeypatch.setattr(StravaService, "get_activity", detail)
+
+    r = await client.post("/webhook/strava", json=_event(athlete, sub=123456, obj=777))
+    assert r.json()["status"] == "ok" and queued == [(777, 5001, {"subscription_id": 123456})] and lookups == []
+    assert (await _run_webhook_sync(777, 5001, "create", 123456))["status"] == "saved"
+    row = await _row(db_session, 777)
+    assert row.splits_metric == [{"split": 1}] and row.laps == [{"lap_index": 1}]
+    assert lookups == [{"client_id": "90001", "client_secret": "shared-secret"}]
+
+    # now known: the webhook checks the shared app's events itself
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456, obj=778))).json()["status"] == "ok"
+    assert queued == [(778, 5001)]
+    # another id right after a lookup: ignored at once; a forged event never gets to the athlete's token
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=779))).json()["status"] == "ignored"
+    detail.reset_mock()
+    assert (await _run_webhook_sync(780, 5001, "create", 999))["status"] == "unknown_subscription"
+    assert detail.await_count == 0 and len(lookups) == 1
+    # 10 min later, another id asks Strava once more (the subscription may have been made again), queued to check
+    strava_state.release("shared_sub:recheck")
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=781))).json()["status"] == "ok"
+    assert queued == [(781, 5001, {"subscription_id": 999})]
+    assert (await _run_webhook_sync(781, 5001, "create", 999))["status"] == "unknown_subscription"
+    assert detail.await_count == 0 and len(lookups) == 2
+    # STRAVA_SUBSCRIPTION_ID, when set, decides without asking Strava
+    monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "999")
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=999, obj=782))).json()["status"] == "ok"
+    assert (await client.post("/webhook/strava", json=_event(athlete, sub=123456))).json()["status"] == "ignored"
+    assert queued == [(782, 5001)] and len(lookups) == 2
+
+    # forgotten after 12 h: the hourly round reads it again (a failure: not before 5 min)
+    monkeypatch.delenv("STRAVA_SUBSCRIPTION_ID")
+    strava_state.release("shared_sub")
+    lookups = _push_subscriptions(monkeypatch, 503)
+    monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda uid: None)
+    await poll_activities._run_poll()
+    await poll_activities._run_poll()
+    assert len(lookups) == 1 and strava_state.shared_subscription() == (False, None)
+    with pytest.raises(StravaAPIError):  # Strava cannot say: Celery asks again, the athlete untouched
+        await _run_webhook_sync(783, 5001, "create", 123456)
+    assert detail.await_count == 0 and len(lookups) == 1
+    # given up on at last: an event never confirmed does not make the round poll the athlete either
+    from app.tasks.webhook_sync import sync_activity_from_webhook
+
+    strava_state.webhook_reached(athlete.id)
+    result = await asyncio.to_thread(sync_activity_from_webhook.apply, args=(783, 5001, "create", 123456))
+    assert result.get() == {"status": "failed"} and strava_state.webhook_recent(athlete.id)
+    assert detail.await_count == 0 and len(lookups) == 1
+    strava_state.release("shared_sub:failed")
+    lookups = _push_subscriptions(monkeypatch, [{"id": 123456}])
+    await poll_activities._run_poll()
+    assert len(lookups) == 1 and strava_state.shared_subscription() == (True, 123456)
+
+
 async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncClient, db_session, test_user,
                                                                    queued):
     """Base code: only « create » was queued; edits, deletions and revocations were dropped. A create keeps the

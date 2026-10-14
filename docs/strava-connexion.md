@@ -44,14 +44,17 @@ Ces états vivent dans Redis (aucune colonne).
 
 Configurer une seule souscription pour l’app commune vers
 `https://paceforge.fr/webhook/strava`, avec `STRAVA_WEBHOOK_VERIFY_TOKEN` défini
-comme secret aléatoire côté serveur, puis renseigner `STRAVA_SUBSCRIPTION_ID`
-(l’`id` que Strava renvoie à sa création, ou `GET /push_subscriptions`) pour le
-serveur web : un événement n’est traité que s’il vient d’une souscription connue
-pour l’app de l’athlète (la sienne pour une app personnelle, celle-ci pour l’app
-commune), et chaque événement est vérifié auprès de Strava avant toute
-modification (création, modification, suppression, révocation). Sans cette
-variable, les événements de l’app commune sont ignorés et seul le polling horaire
-les rattrape. Une révocation sur Strava oublie le lien (jetons, identifiant
+comme secret aléatoire côté serveur. Un événement n’est traité que s’il vient
+d’une souscription connue pour l’app de l’athlète (la sienne pour une app
+personnelle, celle de l’app commune sinon), et chaque événement est vérifié auprès
+de Strava avant toute modification (création, modification, suppression,
+révocation). L’identifiant de la souscription de l’app commune est lu chez Strava
+(`GET /push_subscriptions` avec les clés de l’app, gardé 12 h, relu par la tournée
+horaire ; un échec n’est pas retenté avant 5 min) ; un événement arrivé avant
+qu’il soit connu est mis en file et sa tâche le vérifie d’abord, sans jamais
+utiliser les accès de l’athlète pour un identifiant inconnu (relu au plus toutes
+les 10 min). `STRAVA_SUBSCRIPTION_ID` est facultatif : renseigné, il remplace
+cette lecture. Une révocation sur Strava oublie le lien (jetons, identifiant
 athlète) ; les activités déjà reçues restent, comme pour une déconnexion depuis
 Réglages. La connexion et la déconnexion d’un athlète
 ne doivent pas créer ou supprimer ce webhook partagé. Les apps personnelles

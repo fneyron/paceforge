@@ -35,9 +35,13 @@ async def _run_poll() -> dict:
     """Linked athletes only (a disconnected link has no refresh token). The app's quota first: past 80 % of a
     Strava window, nobody of that app is polled until it turns (StravaService._note_quota)."""
     from app.database import get_task_session
-    from app.services.strava import backing_off
+    from app.services.strava import backing_off, refresh_shared_subscription
     from app.tasks.initial_sync import initial_sync
 
+    try:  # the shared app's webhook subscription id, for the webhook to check its events at once
+        await refresh_shared_subscription()
+    except Exception:
+        logger.warning("Strava: the shared app's subscription was not refreshed", exc_info=True)
     async with get_task_session() as db:
         users = (await db.execute(select(User).where(
             User.strava_credentials_valid.is_(True),
