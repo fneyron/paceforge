@@ -2,6 +2,9 @@ name: Publish iPhone to TestFlight
 
 on:
   workflow_dispatch:
+  # or a tag on a commit of main: git tag testflight-YYYY-MM-DD <sha> && git push origin testflight-YYYY-MM-DD
+  push:
+    tags: ['testflight-*']
 
 permissions:
   contents: read
@@ -18,22 +21,31 @@ jobs:
       run:
         working-directory: mobile
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       - name: Check release branch and Expo access configuration
         working-directory: .
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
-            echo '::error::Run this release workflow from main only.'
-            exit 1
-          fi
+          case "$GITHUB_REF" in
+            refs/heads/main) ;;
+            refs/tags/testflight-*)
+              # a release tag must name a commit of main
+              if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                echo '::error::This release tag does not point at a commit of main.'
+                exit 1
+              fi ;;
+            *)
+              echo '::error::Run this release workflow from main, or tag a commit of main with testflight-*.'
+              exit 1 ;;
+          esac
           if [ -z "${EXPO_TOKEN:-}" ]; then
             echo '::error::EXPO_TOKEN is missing from GitHub Actions secrets. Configure the existing Expo account token before publishing. No macOS build has started.'
             exit 1
           fi
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

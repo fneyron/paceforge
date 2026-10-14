@@ -24,7 +24,9 @@ Prérequis unique côté GitHub si les accès Apple sont déjà configurés dans
    [secrets GitHub Actions de PaceForge](https://github.com/fneyron/paceforge/settings/secrets/actions).
    Ne pas le publier dans le dépôt, les journaux, une issue ou un chat.
 3. Ouvrir [le workflow TestFlight](https://github.com/fneyron/paceforge/actions/workflows/ios-testflight.yml),
-   choisir **Run workflow**, puis **main**.
+   choisir **Run workflow**, puis **main**. Ou pousser un tag `testflight-…` sur un
+   commit de `main` (`git tag testflight-2026-10-14 origin/main && git push origin
+   testflight-2026-10-14`) : le workflow démarre seul et refuse un tag hors de `main`.
 
 La vérification initiale s'arrête si ce secret manque. La signature utilise les
 certificats et profils déjà gérés par EAS ; ils ne sont pas archivés dans les artefacts
