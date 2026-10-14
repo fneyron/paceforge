@@ -311,14 +311,20 @@ async def test_a_token_endpoint_failure_is_tried_again_never_taken_for_a_refusal
         await db.commit()
     assert api.await_count == 0
 
-    # as Celery runs the webhook task: retried, then the round is asked to poll the athlete
-    strava_state.webhook_reached(uid)
-    result = await asyncio.to_thread(webhook_sync.sync_activity_from_webhook.apply, args=(1, 12345678))
-    assert result.get() == {"status": "failed"} and not strava_state.webhook_recent(uid)
+    # as Celery runs the webhook and revocation tasks: retried, then the round is asked to poll the athlete (for a
+    # revocation, re-review N6: the next token refresh settles it)
     queued = []
     monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda u: queued.append(u))
-    await poll_activities._run_poll()
-    assert queued == [uid]
+    for task, args in ((webhook_sync.sync_activity_from_webhook, (1, 12345678)),
+                       (webhook_sync.strava_deauthorized, (12345678,))):
+        strava_state.webhook_reached(uid)
+        strava_state.polled(uid)
+        assert (await asyncio.to_thread(task.apply, args=args)).get() == {"status": "failed"}
+        assert not strava_state.webhook_recent(uid) and not strava_state.polled_recently(uid)
+        queued.clear()
+        await poll_activities._run_poll()
+        strava_state.release(f"poll:{uid}")
+        assert queued == [uid], task.name
 
 
 # ── the first import, one builder, the athlete's zone ────────────────────────

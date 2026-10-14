@@ -206,13 +206,16 @@ async def _deleted(db, user: User, strava, row: Activity | None, activity_id: in
     name="paceforge.strava_deauthorized",
 )
 def strava_deauthorized(self, owner_id: int, subscription_id: int | None = None) -> dict:
-    """The athlete revoked PaceForge on Strava (webhook « authorized: false »)."""
+    """The athlete revoked PaceForge on Strava (webhook « authorized: false »). Not settled after its retries
+    (Strava's token endpoint failing): the round polls the athlete, whose next token refresh settles it (Strava
+    refuses a revoked link)."""
     try:
         return asyncio.run(_run_deauthorized(owner_id, subscription_id))
     except Exception as exc:
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=_retry_in(exc, self.default_retry_delay))
         logger.exception("Strava revocation of athlete %d not applied", owner_id)
+        _poll_again(owner_id)
         return {"status": "failed"}
 
 
