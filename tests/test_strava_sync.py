@@ -891,8 +891,17 @@ async def test_the_web_start_reads_the_shared_subscription_without_waiting(share
     """Re-review N5: on the first deploy the shared app's id is not known yet, so its first creates went out with
     subscription_id=, which the previous worker (still running while the new web starts) refuses. The web's start
     now reads it from Strava in the background: never waited for, failing silently."""
+    import app.main as main
+    from app.config import settings
     from app.main import create_app
 
+    # the real start: a production-like key (the start refuses the default one), and no stored-secrets scan
+    monkeypatch.setattr(settings, "SECRET_KEY", "a-long-random-secret-key-for-this-test")
+
+    async def no_scan():
+        return None
+
+    monkeypatch.setattr(main, "_scan_once_per_deploy", no_scan)
     app = create_app()
     strava_answers = asyncio.Event()
     lookups = []
