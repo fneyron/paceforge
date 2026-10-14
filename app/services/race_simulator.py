@@ -646,13 +646,32 @@ def sun_clock(course: CourseProfile, race_date, start_hour: int, start_minute: i
     return SunClock(local - timedelta(seconds=int(utc_offset_s)), pos, [seg.start_km for seg in course.segments])
 
 
-def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None) -> int | None:
-    """The UTC offset of the race's clock: the forecast's (Open-Meteo, the
-    start's own time zone), else the athlete's zone on the race date when it
-    fits the course's longitude (within 3 h of lon / 15), else lon / 15 to the
-    hour. None without a date or a place."""
+def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=None, start_zone: str | None = None,
+                      start_hour: int | None = None, start_minute: int = 0) -> int | None:
+    """The UTC offset of the race's clock at its start: the start point's own
+    time zone when known (``start_zone``, its IANA name: daylight saving read
+    on the race date, at the start's local time), else the forecast's (the
+    same zone, read on the forecast's day), else the athlete's zone when the
+    course lies in its band (its standard offset within 1 h of lon / 15),
+    else lon / 15 to the hour. None without a date or a place."""
     if race_date is None or lon is None:
         return None
+    from datetime import date as _date
+
+    try:
+        d = _date.fromisoformat(str(race_date)[:10])
+    except (ValueError, TypeError):
+        return None
+    local = datetime(d.year, d.month, d.day, int(start_hour) if start_hour is not None else 12, int(start_minute or 0))
+    if start_zone:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            off = local.replace(tzinfo=ZoneInfo(start_zone)).utcoffset()
+            if off is not None:
+                return int(off.total_seconds())
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
     if weather_offset_s is not None:
         try:
             return int(weather_offset_s)
@@ -660,15 +679,10 @@ def race_utc_offset_s(race_date, lon: float | None, weather_offset_s=None, zone=
             pass
     solar_h = float(lon) / 15
     if zone is not None:
-        from datetime import date as _date
-
-        try:
-            d = _date.fromisoformat(str(race_date)[:10])
-            off = datetime(d.year, d.month, d.day, 12, tzinfo=zone).utcoffset()
-            if off is not None and abs(off.total_seconds() / 3600 - solar_h) <= 3:
-                return int(off.total_seconds())
-        except (ValueError, TypeError):
-            pass
+        at = local.replace(tzinfo=zone)
+        off, dst = at.utcoffset(), at.dst()
+        if off is not None and abs((off - (dst or timedelta(0))).total_seconds() / 3600 - solar_h) <= 1:
+            return int(off.total_seconds())
     return int(round(solar_h)) * 3600
 
 

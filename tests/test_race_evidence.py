@@ -333,6 +333,42 @@ def test_the_races_clock():
     # a race abroad: his zone 8 h off the course's longitude, the longitude decides (Jeju, 126.5° E → +8 h)
     assert rs.race_utc_offset_s("2026-10-02", 126.5, zone=ZoneInfo("Europe/Paris")) == 8 * 3600
     assert rs.race_utc_offset_s(None, 6.9) is None and rs.race_utc_offset_s("2026-10-02", None) is None
+    # the start's own zone wins, daylight saving read on the race date at the start's local time
+    paris = ZoneInfo("Europe/Paris")
+    assert rs.race_utc_offset_s("2026-04-25", -16.9, None, paris, start_zone="Atlantic/Madeira") == 3600  # not lon / 15
+    assert rs.race_utc_offset_s("2027-02-13", 176.2, None, paris, start_zone="Pacific/Auckland") == 13 * 3600
+    assert rs.race_utc_offset_s("2026-10-25", 2.35, None, paris, start_zone="Europe/Paris", start_hour=1) == 7200
+    assert rs.race_utc_offset_s("2026-10-25", 2.35, None, paris, start_zone="Europe/Paris", start_hour=8) == 3600
+    # without it, his zone only when the course lies in its band (standard offset within 1 h of lon / 15)
+    assert rs.race_utc_offset_s("2026-10-15", 55.45, None, paris) == 4 * 3600  # Réunion: not Paris's +2
+
+
+@pytest.mark.asyncio
+async def test_the_starts_time_zone_is_looked_up_once_per_route(db_session, test_user, monkeypatch):
+    from app.config import settings
+    from app.models.route import Route
+    from app.services import race_match, weather
+
+    calls = []
+
+    async def zone(lat, lon):
+        calls.append((lat, lon))
+        return "Atlantic/Madeira"
+
+    monkeypatch.setattr(weather, "zone_name", zone)
+    route = Route(user_id=test_user.id, name="MIUT", total_distance_km=115, total_elevation_gain=7000, race_date="2026-04-25",
+                  start_hour=0, start_minute=0, course_json={"route_coords": [[32.86, -16.90], [32.70, -16.95]]})
+    db_session.add(route)
+    await db_session.flush()
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", False)  # off (tests, CI): no lookup, the fallback
+    assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == -3600 and not calls
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
+    for _ in range(2):
+        assert (await race_match.race_clock(db_session, test_user.id, route))["utc_offset_s"] == 3600
+    assert calls == [(32.86, -16.9)] and route.params_json["start_tz"] == {"lat": 32.86, "lon": -16.9, "tz": "Atlantic/Madeira"}
+    route.course_json = {"route_coords": [[45.92, 6.87], [45.9, 6.9]]}  # another start: looked up again
+    await race_match.race_clock(db_session, test_user.id, route)
+    assert len(calls) == 2
 
 
 def _flat(km=40):

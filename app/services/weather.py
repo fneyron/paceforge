@@ -477,6 +477,21 @@ async def _shared(call):
             pass
 
 
+async def zone_name(lat: float, lon: float) -> str | None:
+    """The IANA time zone of a place (« Europe/Paris »), from Open-Meteo's forecast (timezone=auto, one day).
+    None for an answer without one. Raises LookupUnavailable."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    data = await _get(FORECAST_URL, {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}", "timezone": "auto",
+                                     "forecast_days": 1, "hourly": "temperature_2m"})
+    name = data.get("timezone") if isinstance(data, dict) else None
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return None
+    return name
+
+
 async def lookups_paused() -> bool:
     """True while a background lookup failed in the last OUTAGE_S, on any worker."""
     return bool(await _shared(lambda r: r.exists(OUTAGE_KEY)))
