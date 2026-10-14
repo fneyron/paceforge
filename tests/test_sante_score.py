@@ -400,6 +400,32 @@ def test_the_history_is_the_score_each_day_had():
         assert (state or {}).get("key") == (then["state"] or {}).get("key"), d
 
 
+def test_the_history_reads_the_series_as_far_back_as_the_live_page():
+    """Garmin alone, then COROS and Garmin in strict turns for 190 days, longer than the 160 days of nights the
+    history copies: each past day reads the series the live page read that day — the tie decided back to the last
+    day the counts decided (Garmin), never the fixed order at the edge of the copy (COROS). On a COROS night the
+    Garmin series has no last night: no state, the other watch's line (the second statistics review, 2026-10-14:
+    the history read COROS on every day where the live page read Garmin)."""
+    def watch(k):
+        return "Garmin" if k >= 190 or k % 2 else "COROS"
+    rows = {"sleep": {}, "hrv": {}, "hr_night": {}, "nap": {}}
+    for k in range(330):
+        one = _night_rows([k], source=watch(k), hr=48.0 if watch(k) == "Garmin" else 53.0,
+                          hrv=60 * math.exp(0.08 * (k % 5 - 2)) if watch(k) == "Garmin" else 42.0)
+        for metric in rows:
+            rows[metric].update(one[metric])
+    hist = {d: (score["value"], (state or {}).get("key"), (score.get("missing") or {}).get("key"))
+            for d, state, score in _history(rows)}
+    assert len(hist) == 13
+    for d, past in hist.items():
+        then = _then(rows, [], d)
+        live = (then["score"]["value"], (then["state"] or {}).get("key"),
+                (then["score"].get("missing") or {}).get("key"))
+        assert past == live, d
+        assert nt.device(then["trends"]["hrv"]["source"]) == "Garmin", d
+    assert {v[2] for v in hist.values()} == {None, "elsewhere"}  # Garmin nights read, COROS nights « elsewhere »
+
+
 def test_a_low_week_is_read_against_the_weeks_before_it():
     """The usual values stop a week before the day (owner, 2026-10-14: scientific basis — they held the week they
     judge, owner, 2026-10-08: its own 7 nights at 50 ms lowered the centre to 67,6 ms and widened the SD to 0,15,

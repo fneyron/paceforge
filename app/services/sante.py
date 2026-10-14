@@ -258,8 +258,10 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
     night reads the day before)."""
     recent = {x: n for x, n in nights.items() if x > today - timedelta(days=sc.HISTORY_NIGHTS)}
     base = {x: nt.retagged(n) for x, n in recent.items()}
-    nt.tag_activities(base, sessions, efforts, nt.rest_hr(base, today), st.hr_max(sessions, today), day_alt)
+    nt.tag_activities(base, sessions, efforts, nt.rest_hr(nights, today), st.hr_max(sessions, today), day_alt)
     nt.freeze(base)
+    # the series each day read, decided as far back as the live page's (nights: the full nights, its SERIES_LOOKBACK)
+    nt.share_series(base, nights, today, sc.HISTORY_NIGHTS)
     by_day = defaultdict(list)
     for s in sessions:
         by_day[s.day].append(s)
@@ -285,6 +287,7 @@ def _history(nights, sessions, efforts, today: date, rest_of=None, day_alt=None)
             nd = {x: nt.retagged(n) for x, n in recent.items() if x <= d}
             nt.tag_activities(nd, ss, efs, rest, peak, day_alt)
             nt.freeze(nd)
+            nt.share_series(nd, nights, d, sc.HISTORY_NIGHTS)
         past = _assess(nd, ss, efs, d)
         out.append((d, past["state"], past["score"]))
     return out

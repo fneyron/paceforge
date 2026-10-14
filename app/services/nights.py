@@ -765,6 +765,22 @@ def _series_source(nights: dict[date, Night], metric: str, until: date) -> str |
     return prev
 
 
+def share_series(target: dict[date, Night], source: dict[date, Night], until: date, days: int) -> None:
+    """Inside memo(): `target`, a copy of `source`'s nights cut short (the 14-day history's, HISTORY_NIGHTS days),
+    reads `source`'s series choice for the `days` days up to `until`. A day's series reads the nights up to it
+    only, so `source`'s answer is the one that day had, however long a tie between series ran before the copy's
+    first night (the tie reads back SERIES_LOOKBACK days; the second statistics review, 2026-10-14: after 200 days
+    of two watches in turn, the history read COROS where the live page read Garmin). Both stay unchanged: frozen."""
+    kept = _kept(target)
+    if kept is None:
+        return
+    freeze(source)
+    for metric in _SOURCE:
+        for k in range(days):
+            x = until - timedelta(days=k)
+            kept[("series", metric, x)] = _series_source(source, metric, x)
+
+
 def _fixed_order(series: str) -> tuple:
     dev = device(series) or ""
     return (DEVICE_ORDER.index(dev) if dev in DEVICE_ORDER else len(DEVICE_ORDER), dev, series or "")
