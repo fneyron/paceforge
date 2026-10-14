@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -38,6 +39,20 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 HOME = "/sante"  # Santé is the main dashboard
 
 
+def _same_site(request: Request) -> None:
+    """Login CSRF: an auth form (login, sign-up, password reset) posted from another site is refused, so no page
+    elsewhere can sign this browser into an account of its choosing. Its own pages (the iPhone app's WebView
+    loads them from paceforge.fr too) send Sec-Fetch-Site same-origin and their own Origin; a browser or a
+    script sending neither header goes through."""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403)
+    origin = request.headers.get("origin")
+    if origin is not None:
+        ours = {host for host in (urlsplit(settings.BASE_URL).netloc, request.headers.get("host")) if host}
+        if urlsplit(origin).netloc not in ours:  # another site's, or « null » (a sandboxed frame)
+            raise HTTPException(status_code=403)
+
+
 def _client_ip(request: Request) -> str:
     """The client's address for the attempt limits. Deployed behind exactly one proxy (Traefik), which appends
     the address it saw as the last X-Forwarded-For hop: that hop is used. uvicorn's --proxy-headers with
@@ -58,7 +73,7 @@ async def register_page(request: Request):
     return templates.TemplateResponse(request, "auth/register.html", context={})
 
 
-@router.post("/auth/register")
+@router.post("/auth/register", dependencies=[Depends(_same_site)])
 async def register(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -179,7 +194,7 @@ async def login_page(request: Request, next: str = ""):
     return templates.TemplateResponse(request, "auth/login.html", context={"next": next if next in ("coros", "garmin", "strava") else ""})
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=[Depends(_same_site)])
 async def login(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -238,7 +253,7 @@ async def forgot_password_page(request: Request):
     return templates.TemplateResponse(request, "auth/forgot_password.html", context={})
 
 
-@router.post("/auth/forgot-password")
+@router.post("/auth/forgot-password", dependencies=[Depends(_same_site)])
 async def forgot_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -278,7 +293,7 @@ async def reset_password_page(request: Request, token: str):
     )
 
 
-@router.post("/auth/reset-password")
+@router.post("/auth/reset-password", dependencies=[Depends(_same_site)])
 async def reset_password(
     request: Request,
     db: AsyncSession = Depends(get_db),

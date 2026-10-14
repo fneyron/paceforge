@@ -392,3 +392,42 @@ async def test_the_limits_count_the_address_the_proxy_saw(db_session, no_commit,
         assert [await attempt(f"10.0.0.{i}, 203.0.113.7") for i in range(2)] == [200, 200]
         assert await attempt("10.9.9.9, 203.0.113.7") == 429  # the same client behind a forged first hop
         assert await attempt("203.0.113.8") == 200  # another client: its own count
+
+
+# ── auth forms posted from another site are refused (login CSRF) ────────────
+
+CROSS_SITE = [{"Sec-Fetch-Site": "cross-site"}, {"Origin": "https://evil.example"}, {"Origin": "null"},
+              {"Sec-Fetch-Site": "same-site", "Origin": "https://evil.example"}]
+OWN_SITE = [{}, {"Sec-Fetch-Site": "same-origin", "Origin": "https://test"}, {"Sec-Fetch-Site": "none"},
+            {"Sec-Fetch-Site": "same-site"}, {"Origin": "http://localhost:8000"}]  # BASE_URL in the tests
+
+
+@pytest.mark.parametrize("headers", CROSS_SITE)
+async def test_an_auth_form_posted_from_another_site_is_refused(client, db_session, no_commit, monkeypatch, headers):
+    from datetime import datetime, timedelta, timezone
+
+    sent = []
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *a: sent.append(a) or True)
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda *a: sent.append(a))
+    user = await _member(db_session)
+    user.password_reset_token, user.password_reset_expires_at = "reset-1", datetime.now(timezone.utc) + timedelta(hours=1)
+    await db_session.flush()
+    async with AsyncClient(transport=client._transport, base_url="https://test", headers=headers) as c:
+        for path, form in (("/auth/login", {"email": user.email, "password": "pw-12345678"}),
+                           ("/auth/reset-password", {"token": "reset-1", "password": "pw-attacker-1"}),
+                           ("/auth/register", {"email": "new@x.fr", "password": "pw-12345678"}),
+                           ("/auth/forgot-password", {"email": user.email})):
+            assert (await c.post(path, data=form)).status_code == 403, path
+        assert (await c.get("/settings")).headers["location"] == "/auth/login"  # not signed in
+    assert user.password_reset_token == "reset-1" and auth_service.verify_password("pw-12345678", user.password_hash)
+    assert not sent and (await db_session.execute(select(User).where(User.email == "new@x.fr"))).first() is None
+
+
+@pytest.mark.parametrize("headers", OWN_SITE)
+async def test_an_auth_form_from_paceforge_itself_goes_through(client, db_session, no_commit, headers):
+    """Its own pages (the iPhone app's WebView loads them from paceforge.fr too), and browsers or scripts that
+    send neither header."""
+    user = await _member(db_session)
+    async with AsyncClient(transport=client._transport, base_url="https://test", headers=headers) as c:
+        assert (await _login(c, user.email, "pw-12345678")).status_code == 302
+        assert (await c.get("/settings")).status_code == 200
