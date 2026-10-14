@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -99,7 +100,9 @@ async def save_settings(
     if weight_kg.strip() and (weight is None or not math.isfinite(weight) or not 30 <= weight <= 200):
         ctx = await _settings_context(request, user, db, weight_bad=True)
         return templates.TemplateResponse(request, "settings.html", context=ctx, status_code=422)
-    user.weight_kg = weight
+    if weight != user.weight_kg:  # typed now: dated, so the most recent of it and the weigh-ins wins (athlete_weight)
+        user.weight_kg = weight
+        user.weight_set_at = datetime.now(timezone.utc) if weight is not None else None
     if health_source is not None:
         user.health_source = None if health_source == "auto" else health_source
     ftp_bad = False
