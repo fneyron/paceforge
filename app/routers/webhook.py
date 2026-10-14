@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -10,11 +12,34 @@ from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.strava import StravaWebhookEvent
 from app.services import strava_state
-from app.services.strava import shared_subscription_check
+from app.services.strava import refresh_shared_subscription, shared_subscription_check
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["webhook"])
+_starting: set[asyncio.Task] = set()  # the start's lookup, held until done
+
+
+@asynccontextmanager
+async def _warm_up(app):  # noqa: ARG001
+    """The web's start (this router's lifespan, merged into the app's): the shared app's subscription id read from
+    Strava in the background, never waited for and failing silently, so the first events after a deploy are
+    checked at once and a create queued as the previous worker takes it."""
+    task = asyncio.create_task(_read_shared_subscription())
+    _starting.add(task)
+    task.add_done_callback(_starting.discard)
+    yield
+    task.cancel()
+
+
+async def _read_shared_subscription() -> None:
+    try:
+        if strava_state.claim("shared_sub:starting", 60):  # one of the web's processes asks
+            await refresh_shared_subscription()
+    except Exception:
+        logger.debug("Strava: the shared app's subscription not read at start", exc_info=True)
+
+
+router = APIRouter(tags=["webhook"], lifespan=_warm_up)
 
 
 def _is_valid_verify_token(token: str) -> bool:

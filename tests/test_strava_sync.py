@@ -887,6 +887,40 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     assert detail.await_count == 0 and len(lookups) == 1
 
 
+async def test_the_web_start_reads_the_shared_subscription_without_waiting(shared_app, monkeypatch):
+    """Re-review N5: on the first deploy the shared app's id is not known yet, so its first creates went out with
+    subscription_id=, which the previous worker (still running while the new web starts) refuses. The web's start
+    now reads it from Strava in the background: never waited for, failing silently."""
+    from app.main import create_app
+
+    app = create_app()
+    strava_answers = asyncio.Event()
+    lookups = []
+
+    async def get(self, url, params=None, **kw):
+        lookups.append(url)
+        await strava_answers.wait()  # Strava slow to answer
+        return httpx.Response(200, json=[{"id": 123456}], request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx.AsyncClient, "get", get)
+    async with app.router.lifespan_context(app):  # started without waiting for Strava
+        assert strava_state.shared_subscription() == (False, None)
+        strava_answers.set()
+        for _ in range(200):
+            if strava_state.shared_subscription()[0]:
+                break
+            await asyncio.sleep(0.01)
+        assert strava_state.shared_subscription() == (True, 123456) and len(lookups) == 1
+    for key in ("shared_sub", "shared_sub:fresh", "shared_sub:starting", "shared_sub:recheck"):
+        strava_state.release(key)
+
+    async def unreachable(self, url, params=None, **kw):
+        raise httpx.ConnectError("Strava unreachable")
+    monkeypatch.setattr(httpx.AsyncClient, "get", unreachable)
+    async with app.router.lifespan_context(app):  # Strava unreachable: the start goes on, silently
+        await asyncio.sleep(0.05)
+    assert strava_state.shared_subscription() == (False, None)
+
+
 async def test_a_shared_event_given_up_on_asks_the_round_to_poll(task_db, shared_app, monkeypatch):
     """Re-review N3, N4: a shared-app event given up on was dropped without the round's poll when its subscription
     was passed, whether Strava could not say which subscription the app has, or confirmed it and then kept failing
