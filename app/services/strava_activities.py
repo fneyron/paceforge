@@ -54,10 +54,12 @@ def activity_from_strava(data: dict, user_id: int) -> Activity:
 
 
 def apply_detail(activity: Activity, detail: dict) -> None:
-    """A row saved from the list, completed by the activity's detail."""
+    """A row saved from the list, completed by the activity's detail. PaceForge's own entries in raw_data
+    (« paceforge_… »: the lookups, the races' D+) are kept: asked again, they would cost requests again."""
     for field in DETAIL_FIELDS:
         setattr(activity, field, detail.get(field))
-    activity.raw_data = detail
+    ours = {k: v for k, v in (activity.raw_data or {}).items() if k.startswith("paceforge")}
+    activity.raw_data = {**detail, **ours}
 
 
 async def is_known(db: AsyncSession, strava_id: int) -> bool:

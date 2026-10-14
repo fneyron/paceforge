@@ -401,6 +401,8 @@ async def test_the_details_a_list_lacks_are_fetched_later_a_few_per_poll(db_sess
     strava_state.back_off("4242", time.time() + 3600)  # the app's day is past 80 % (other athletes)
     result = await _run_initial_sync(test_user.id)
     assert result["synced"] == 12 and result["enriched"] == 0 and asked == []
+    race = await _row(db_session, 960_009)
+    race.raw_data = {**race.raw_data, "paceforge_dplus": {"v": 1, "gain": 812.0}}  # its D+, read from its stream
     monkeypatch.setattr(StravaService, "get_recent_activities", AsyncMock(return_value=listed[:5]))
     assert (await _poll_user(test_user.id))["status"] == "backoff" and asked == []
     strava_state.release("backoff:4242")  # the next day
@@ -414,6 +416,8 @@ async def test_the_details_a_list_lacks_are_fetched_later_a_few_per_poll(db_sess
     rows = (await db_session.execute(select(Activity).where(Activity.user_id == test_user.id))).scalars().all()
     assert all(r.splits_metric and r.laps for r in rows if r.strava_activity_id != 960_011)
     assert (await _row(db_session, 960_011)).raw_data[DETAIL_ASKED]
+    race = await _row(db_session, 960_009)
+    assert race.raw_data["resource_state"] == 3 and race.raw_data["paceforge_dplus"]["gain"] == 812.0  # kept
 
 
 async def test_the_athletes_zone_follows_a_clear_majority_of_their_activities(db_session, test_user):
