@@ -450,6 +450,43 @@ class LookupUnavailable(Exception):
     """Open-Meteo did not answer (a timeout, a 5xx, a 429): ask again at a later sync."""
 
 
+# Open-Meteo down: one marker shared by every worker (Redis), set by a failed background lookup (a past race's
+# heat, a start point's time zone) for OUTAGE_S; while it is there, none of them asks. Redis down: nothing is
+# shared and each lookup goes as before.
+OUTAGE_KEY = "paceforge:openmeteo:down"
+OUTAGE_S = 15 * 60
+
+
+async def _shared(call):
+    try:
+        import redis.asyncio as aioredis
+
+        from app.config import settings
+
+        client = aioredis.Redis.from_url(settings.REDIS_URL, socket_timeout=0.5, socket_connect_timeout=0.5)
+    except Exception:
+        return None
+    try:
+        return await call(client)
+    except Exception:
+        return None
+    finally:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+async def lookups_paused() -> bool:
+    """True while a background lookup failed in the last OUTAGE_S, on any worker."""
+    return bool(await _shared(lambda r: r.exists(OUTAGE_KEY)))
+
+
+async def pause_lookups() -> None:
+    """After a failed background lookup: none for OUTAGE_S, on every worker."""
+    await _shared(lambda r: r.set(OUTAGE_KEY, "1", ex=OUTAGE_S))
+
+
 async def _get(url: str, params: dict) -> dict | list | None:
     """The JSON answer; None for an answer that will not change (a 4xx, unreadable).
     LookupUnavailable when Open-Meteo is down, slow or rate-limiting."""

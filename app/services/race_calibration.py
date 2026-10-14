@@ -733,6 +733,8 @@ async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) 
     from app.services import weather
     from app.services.activity_env import start_point
 
+    if await weather.lookups_paused():  # Open-Meteo failed lately, for some worker: not now
+        return 0
     wt = Activity.raw_data["workout_type"].as_integer()
     cached_v = Activity.raw_data[(HEAT_CACHE_KEY, "v")].as_integer()
     q = candidate_query(user_id).with_only_columns(Activity.id, Activity.distance, wt, cached_v)
@@ -754,6 +756,7 @@ async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) 
                 series = await weather.temperature_humidity(place[0], place[1], start.date(), last.date(), now.date())
             except weather.LookupUnavailable as e:
                 logger.info("race heat backfill: Open-Meteo unavailable for user %d: %s", user_id, e)
+                await weather.pause_lookups()  # every worker stops asking for a while
                 break
             got = mean_heat(series, start, hours)
             if got:

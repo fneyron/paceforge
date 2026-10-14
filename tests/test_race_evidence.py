@@ -145,6 +145,41 @@ async def test_the_races_heat_is_looked_up_once_and_read_by_the_model(db_session
     assert await rc.backfill_race_heat(db_session, test_user.id) == 0
 
 
+@pytest.mark.asyncio
+async def test_an_open_meteo_outage_stops_the_heat_lookups_for_every_worker(db_session, test_user, monkeypatch):
+    from app.config import settings
+    from app.services import weather
+
+    assert await weather.lookups_paused() is False  # Redis unreachable here: nothing shared, nothing paused
+    await weather.pause_lookups()  # and never an error
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
+    marker = {}
+
+    async def paused():
+        return bool(marker)
+
+    async def pause():
+        marker["down"] = True
+
+    monkeypatch.setattr(weather, "lookups_paused", paused)
+    monkeypatch.setattr(weather, "pause_lookups", pause)
+    calls = []
+
+    async def down(lat, lon, first, last, today):
+        calls.append(lat)
+        raise weather.LookupUnavailable("HTTP 503")
+
+    monkeypatch.setattr(weather, "temperature_humidity", down)
+    now = datetime.now(timezone.utc)
+    db_session.add(Activity(strava_activity_id=93001, user_id=test_user.id, sport_type="TrailRun", name="Ultra",
+                            start_date=now - timedelta(days=30), distance=60000.0, moving_time=8 * 3600,
+                            elapsed_time=8 * 3600, total_elevation_gain=2000.0,
+                            raw_data={"workout_type": 1, "start_latlng": [43.3, 5.4]}))
+    await db_session.flush()
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1 and marker  # failed: shared
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # every worker waits
+
+
 def test_the_stops_are_the_stop_models_for_everyone():
     """No personal stop factor: his Strava races' elapsed − moving is not what was checked (stations timed in and
     out), and one race with a forgotten pause pushed it to its cap."""
