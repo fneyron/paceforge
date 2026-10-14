@@ -247,3 +247,13 @@ async def test_api_404s_are_json_pages_stay_html(client, test_user):
     assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")  # opened as a page
     r = await client.get("/nothing-here")
     assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")
+
+
+async def test_sending_the_emails_never_logs_the_address(client, db_session, no_commit, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:  # SMTP unset in tests
+        await c.post("/auth/register", data={"email": "private@x.fr", "password": "password-123"})
+        await c.post("/auth/forgot-password", data={"email": "private@x.fr"})
+    assert "SMTP" in caplog.text and "private@x.fr" not in caplog.text

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def send_email(to: str, subject: str, html_body: str) -> bool:
     """Send an email via SMTP. Returns True on success."""
     if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        logger.warning("SMTP not configured, skipping email to %s", to)
+        logger.warning("SMTP not configured, email not sent: %s", subject)  # never the address
         return False
 
     try:
@@ -26,10 +26,10 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_FROM, to, msg.as_string())
 
-        logger.info("Email sent to %s: %s", to, subject)
+        logger.info("Email sent: %s", subject)
         return True
-    except Exception:
-        logger.exception("Failed to send email to %s", to)
+    except Exception as e:  # its type only: a refused recipient's error message holds the address
+        logger.warning("Failed to send email: %s (%s)", subject, type(e).__name__)
         return False
 
 
