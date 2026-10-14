@@ -846,43 +846,60 @@ async def test_without_an_objective_the_page_print_phone_exports_and_debrief_fin
 async def test_no_phantom_objective_once_the_date_and_its_weather_are_saved(as_user: AsyncClient, db_session, test_user):
     """Review repro: the page used to save its estimate in the objective field; once the race date and its season
     normals were saved the estimate moved and the old one read as an objective he never set (« Modifier
-    l'objectif », 251 min). The page now saves only a time he set; an estimate an older page saved (within a
-    minute of the course's import estimate, no TARGET_VERSION) reads as none; one he typed stays his."""
+    l'objectif »). The page now saves only a time he set, marked (target_v); an unmarked time within 2 % of what
+    the older page showed (the moving time at his level from the route's start, read today) reads as none, one
+    further off as his; a marked time is his whatever the estimate says, and a later save keeps it."""
     from app.models.route import Route
+    from app.routers import simulator as sim
 
-    imported = _course().predicted_total_time_s  # 251 min: what the older page showed and saved
     weather = {"source": "moyennes climatiques", "date": "2026-11-20", "heat_factor": 1.0,
                "hourly": {"temps": [8.0] * 24, "humidity": [80] * 24}}
+    profile = await rs.build_athlete_gradient_profile(db_session, test_user.id)
+    old_page = rs.predict_course(_course(), profile, start_hour=21).predicted_total_time_s  # what an older tab showed
+    shown = int((old_page + 30) // 60 * 60)
 
     async def page(rid):
         return (await as_user.get(f"/simulator/routes/{rid}")).text
 
-    for label, first, later in (
-        ("this page: nothing saved", {"target_v": "2"}, {"target_v": "2"}),
-        ("an older tab: its estimate saved", {"target_time_s": (imported + 30) // 60 * 60},
-         {"target_time_s": (imported + 30) // 60 * 60}),
-    ):
+    async def route(label, first, later):
         r = await as_user.post("/api/simulator/routes", data={
             "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": label,
-            "start_hour": 6, "start_minute": 0, **first})
+            "start_hour": 21, "start_minute": 0, **first})
         rid = r.json()["id"]
         await as_user.post("/api/simulator/routes", data={
             "route_id": rid, "checkpoints_json": json.dumps(CPS), "race_date": "2026-11-20",
             "weather_json": json.dumps(weather), **later})
-        html = await page(rid)
+        return rid
+
+    sim._LEGACY.clear()
+    for label, first, later in (
+        ("this page: nothing saved", {"target_v": "2"}, {"target_v": "2"}),
+        ("an older tab: its estimate saved", {"target_time_s": shown}, {"target_time_s": shown}),
+        ("an older tab: its estimate, his races read since (+1.5 %)", {"target_time_s": int(shown * 1.015)},
+         {"target_time_s": int(shown * 1.015)}),
+    ):
+        html = await page(await route(label, first, later))
         assert "Modifier l'objectif" not in html and ">Estimation<" in html, label
-    # an objective he typed: his, before and after the weather
-    r = await as_user.post("/api/simulator/routes", data={
-        "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": "Objectif",
-        "start_hour": 6, "start_minute": 0, "target_time_s": 5 * 3600, "target_v": "2"})
-    rid = r.json()["id"]
+    # an older tab's objective (8 % off its estimate): his
+    rid = await route("an older objective", {"target_time_s": int(shown * 0.92)}, {"target_time_s": int(shown * 0.92)})
     assert "Modifier l'objectif" in await page(rid)
-    await as_user.post("/api/simulator/routes", data={
-        "route_id": rid, "checkpoints_json": json.dumps(CPS), "race_date": "2026-11-20",
-        "weather_json": json.dumps(weather), "target_time_s": 5 * 3600, "target_v": "2"})
+    # a time he typed (marked): his, before and after the weather, even a minute from the estimate
+    rid = await route("Objectif", {"target_time_s": 5 * 3600, "target_v": "2"}, {"target_time_s": 5 * 3600, "target_v": "2"})
     html = await page(rid)
-    assert "Modifier l'objectif" in html and ">Objectif<" in html
-    assert (await db_session.get(Route, rid)).target_time_s == 5 * 3600
+    assert "Modifier l'objectif" in html and ">Objectif<" in html and "var objectiveSet = true;" in html
+    rt = await db_session.get(Route, rid)
+    ctx = await sim._build_route_context(rt, db_session, test_user.id)
+    rt.target_time_s = ctx["estimate_s"] + 30  # 30 s from the estimate: still his
+    await db_session.flush()
+    assert (await sim._build_route_context(rt, db_session, test_user.id))["objective_s"] == ctx["estimate_s"] + 30
+    # an older tab re-saving it as it is keeps it his; « Revenir à l'estimation » (no time sent) clears it
+    await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": json.dumps(CPS),
+                                                      "target_time_s": ctx["estimate_s"] + 30})
+    await db_session.refresh(rt)
+    assert rt.params_json.get("target_v") == 2 and sim._objective_s(rt) == ctx["estimate_s"] + 30
+    await as_user.post("/api/simulator/routes", data={"route_id": rid, "checkpoints_json": json.dumps(CPS), "target_v": "2"})
+    await db_session.refresh(rt)
+    assert rt.target_time_s is None
 
 
 def test_the_pacing_guide_plans_the_moving_time_of_its_target():
@@ -944,3 +961,22 @@ async def test_after_an_edit_the_page_arrives_with_the_saved_plan(as_user: Async
             assert estimate(table) == finish(table), label
         assert estimate(table) != loaded, label  # the page's hero and field move with it
         loaded = estimate(table)
+
+
+@pytest.mark.asyncio
+async def test_mes_courses_reads_the_objective_by_the_same_rule(as_user: AsyncClient, db_session, test_user):
+    """« Mes courses » shows an objective only when it is his: an older page's estimate (unmarked, within 2 % of
+    the moving time at his level from the route's start) is none there either."""
+    from app.routers import simulator as sim
+
+    profile = await rs.build_athlete_gradient_profile(db_session, test_user.id)
+    shown = int((rs.predict_course(_course(), profile, start_hour=6).predicted_total_time_s + 30) // 60 * 60)
+    soon = (date.today() + timedelta(days=30)).isoformat()
+    sim._LEGACY.clear()
+    for name, target in (("Estimée", shown), ("Visée", 5 * 3600)):
+        await as_user.post("/api/simulator/routes", data={
+            "course_json": _course().model_dump_json(), "checkpoints_json": json.dumps(CPS), "name": name,
+            "target_time_s": target, "race_date": soon, "start_hour": 6, "start_minute": 0})
+    db_session.expunge_all()
+    html = (await as_user.get("/simulator")).text
+    assert "5h00" in html and f"{shown // 3600}h{shown % 3600 // 60:02d}" not in html
