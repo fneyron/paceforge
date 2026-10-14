@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 def sync_activity_from_webhook(self, activity_id: int, owner_id: int, aspect_type: str = "create",
                                subscription_id: int | None = None) -> dict:
     """An activity event of Strava's webhook (create, update, delete); `subscription_id` when the web could not
-    tell yet whether it is the shared app's (checked first). When it cannot be done after its retries, the athlete
-    is polled again by the next round (not for an event of a subscription never confirmed)."""
+    tell yet whether it is the shared app's (checked first). When it cannot be done after its retries (Strava
+    failing, or unable to say which subscription the shared app has), the athlete is polled by the next round; an
+    event Strava says is another subscription's is dropped before (it never gets here)."""
     logger.info("Webhook sync: %s of activity %d for athlete %d", aspect_type, activity_id, owner_id)
     try:
         return asyncio.run(_run_webhook_sync(activity_id, owner_id, aspect_type, subscription_id))
@@ -38,8 +39,7 @@ def sync_activity_from_webhook(self, activity_id: int, owner_id: int, aspect_typ
                            self.request.retries + 1, self.max_retries + 1, exc_info=True)
             raise self.retry(exc=exc, countdown=_retry_in(exc, self.default_retry_delay))
         logger.exception("Webhook sync gave up on activity %d of athlete %d", activity_id, owner_id)
-        if subscription_id is None:
-            _poll_again(owner_id)
+        _poll_again(owner_id)
         return {"status": "failed"}
 
 

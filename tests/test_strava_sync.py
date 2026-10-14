@@ -881,6 +881,44 @@ async def test_the_shared_apps_subscription_is_learnt_from_strava(client: AsyncC
     assert detail.await_count == 0 and len(lookups) == 1
 
 
+async def test_a_shared_event_given_up_on_asks_the_round_to_poll(task_db, shared_app, monkeypatch):
+    """Re-review N3, N4: a shared-app event given up on was dropped without the round's poll when its subscription
+    was passed, whether Strava could not say which subscription the app has, or confirmed it and then kept failing
+    on the activity. The round now polls the athlete in both cases; an event Strava says is another
+    subscription's is still dropped, without a poll."""
+    from app.tasks import poll_activities
+    from app.tasks.webhook_sync import sync_activity_from_webhook
+
+    async with task_db() as db:
+        uid = (await _athlete(db, 5001, strava_client_id="90001", initial_sync_done=True)).id
+        await db.commit()
+    strava_state.app_webhook_reached("90001")  # the app's webhook works: a daily poll only
+
+    async def event(sub, obj=777):  # as Celery runs it, retries included
+        strava_state.webhook_reached(uid)
+        strava_state.polled(uid)  # polled this morning
+        return (await asyncio.to_thread(sync_activity_from_webhook.apply, args=(obj, 5001),
+                                        kwargs={"subscription_id": sub})).get()
+
+    async def polled_next() -> bool:
+        queued = []
+        monkeypatch.setattr(poll_activities.poll_strava_user, "delay", lambda u: queued.append(u))
+        await poll_activities._run_poll()
+        for u in queued:
+            strava_state.release(f"poll:{u}")
+        return queued == [uid]
+
+    _push_subscriptions(monkeypatch, 503)  # never known, and Strava cannot say
+    assert await event(123456) == {"status": "failed"} and await polled_next()
+    strava_state.release("shared_sub:failed")
+    _push_subscriptions(monkeypatch, [{"id": 123456}])  # confirmed, then the activity's request keeps failing
+    monkeypatch.setattr(httpx.AsyncClient, "request", AsyncMock(return_value=httpx.Response(
+        503, text="busy", request=httpx.Request("GET", "https://www.strava.com/api/v3/activities/777"))))
+    assert await event(123456) == {"status": "failed"} and strava_state.shared_subscription() == (True, 123456)
+    assert await polled_next()
+    assert await event(999, obj=778) == {"status": "unknown_subscription"} and not await polled_next()
+
+
 async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncClient, db_session, test_user,
                                                                    queued):
     """Base code: only « create » was queued; edits, deletions and revocations were dropped. A create keeps the
