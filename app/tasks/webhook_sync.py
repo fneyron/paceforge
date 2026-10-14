@@ -1,10 +1,17 @@
+"""What Strava's webhook says, checked with Strava before anything changes (anyone can post to the webhook): a new
+or edited activity is read with the athlete's token and must be theirs, a deletion must be one (Strava no longer
+has it), a revocation must be one (Strava refuses the athlete's access)."""
 import asyncio
 import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import delete, select
+
 from app.celery_app import celery_app
+from app.exceptions import StravaAPIError, StravaRateLimitError, StravaTokenError
 from app.models.activity import Activity
 from app.models.user import User
-from app.services.activity_sources import adopt_watch_twin
-from sqlalchemy import select, func
+from app.services import strava_state as state
 
 logger = logging.getLogger(__name__)
 
@@ -16,95 +23,182 @@ logger = logging.getLogger(__name__)
     acks_late=True,
     name="paceforge.sync_activity_from_webhook",
 )
-def sync_activity_from_webhook(self, activity_id: int, owner_id: int) -> dict:
-    """Fetch and save a single activity triggered by Strava webhook."""
-    logger.info("Webhook sync: activity %d for athlete %d", activity_id, owner_id)
+def sync_activity_from_webhook(self, activity_id: int, owner_id: int, aspect_type: str = "create") -> dict:
+    """An activity event of Strava's webhook (create, update, delete). When it cannot be done after its retries, the
+    athlete is polled again by the next round (it would not be for 24 h after a webhook event)."""
+    logger.info("Webhook sync: %s of activity %d for athlete %d", aspect_type, activity_id, owner_id)
     try:
-        result = asyncio.run(_run_webhook_sync(activity_id, owner_id))
-        return result
+        return asyncio.run(_run_webhook_sync(activity_id, owner_id, aspect_type))
     except Exception as exc:
-        logger.exception(
-            "Webhook sync failed for activity %d (attempt %d/%d)",
-            activity_id,
-            self.request.retries + 1,
-            self.max_retries + 1,
+        if self.request.retries < self.max_retries:
+            logger.warning("Webhook sync failed for activity %d (attempt %d/%d)", activity_id,
+                           self.request.retries + 1, self.max_retries + 1, exc_info=True)
+            countdown = self.default_retry_delay
+            if isinstance(exc, StravaRateLimitError):
+                countdown = 15 * 60  # Strava's short window turns within a quarter hour
+            raise self.retry(exc=exc, countdown=countdown)
+        logger.exception("Webhook sync gave up on activity %d of athlete %d", activity_id, owner_id)
+        _poll_again(owner_id)
+        return {"status": "failed"}
+
+
+def _poll_again(owner_id: int) -> None:
+    async def forget():
+        from app.database import get_task_session
+
+        async with get_task_session() as db:
+            user_id = (await db.execute(select(User.id).where(User.strava_athlete_id == owner_id))).scalar()
+        if user_id:
+            state.webhook_forget(user_id)
+    try:
+        asyncio.run(forget())
+    except Exception:
+        logger.warning("Could not ask the round to poll athlete %d again", owner_id, exc_info=True)
+
+
+async def _linked_user(db, owner_id: int) -> User | None:
+    user = (await db.execute(
+        select(User).where(
+            User.strava_athlete_id == owner_id,
+            User.strava_credentials_valid.is_(True),
+            User.strava_client_id.isnot(None),
+            User.strava_refresh_token.isnot(None),  # disconnected links have none
         )
-        raise self.retry(exc=exc)
+    )).scalar_one_or_none()
+    return user if user and user.has_strava_app else None
 
 
-async def _run_webhook_sync(activity_id: int, owner_id: int) -> dict:
-    from datetime import datetime
+def _owner_of(data: dict) -> int | None:
+    return (data.get("athlete") or {}).get("id")
+
+
+async def _run_webhook_sync(activity_id: int, owner_id: int, aspect_type: str = "create") -> dict:
     from app.database import get_task_session
+    from app.services.activity_env import enrich
     from app.services.strava import StravaService
+    from app.services.strava_activities import adopt_zone, save_new
 
     async with get_task_session() as db:
-        # Find user by Strava athlete ID
-        result = await db.execute(
-            select(User).where(
-                User.strava_athlete_id == owner_id,
-                User.strava_credentials_valid.is_(True),
-                User.strava_client_id.isnot(None),
-                User.strava_refresh_token.isnot(None),  # disconnected links have none
-            )
-        )
-        user = result.scalar_one_or_none()
-        if not user or not user.has_strava_app:
-            logger.warning(
-                "Webhook: no user found for athlete %d", owner_id
-            )
+        user = await _linked_user(db, owner_id)
+        if not user:
+            logger.warning("Webhook: no user found for athlete %d", owner_id)
             return {"status": "no_user"}
-
-        # Check if already in DB
-        exists = await db.execute(
-            select(func.count(Activity.id)).where(
-                Activity.strava_activity_id == activity_id
-            )
-        )
-        if exists.scalar() > 0:
-            logger.info("Webhook: activity %d already in DB", activity_id)
-            return {"status": "already_exists"}
-
-        # Fetch from Strava API
         strava = StravaService.for_user(db, user)
-        data = await strava.get_activity(user, activity_id)
-        if not data:
-            logger.warning("Webhook: could not fetch activity %d from Strava", activity_id)
-            return {"status": "fetch_failed"}
+        row = (await db.execute(select(Activity).where(Activity.strava_activity_id == activity_id))).scalar()
+        if row is not None and row.user_id != user.id:
+            logger.warning("Webhook: activity %d belongs to another user", activity_id)
+            return {"status": "not_his"}
+        try:
+            if aspect_type == "delete":
+                result = await _deleted(db, user, strava, row, activity_id)
+            elif aspect_type == "create" and row is not None:
+                logger.info("Webhook: activity %d already in DB", activity_id)
+                result = {"status": "already_exists"}
+            else:
+                try:
+                    data = await strava.get_activity(user, activity_id)
+                except StravaAPIError as exc:
+                    if exc.status_code not in (403, 404):
+                        raise
+                    logger.info("Webhook: activity %d not on Strava (%d)", activity_id, exc.status_code)
+                    return {"status": "gone"}  # deleted meanwhile, or not visible: nothing to try again
+                if not data:
+                    logger.warning("Webhook: could not fetch activity %d from Strava", activity_id)
+                    return {"status": "fetch_failed"}
+                owner = _owner_of(data)
+                if owner is not None and owner != user.strava_athlete_id:
+                    # an event naming someone else's (public) activity: not this athlete's
+                    logger.warning("Webhook: activity %d is athlete %s's, not %d's", activity_id, owner, owner_id)
+                    return {"status": "not_his"}
+                if row is not None:  # edited on Strava: its name and sport
+                    row.name = data.get("name") or row.name
+                    row.sport_type = data.get("sport_type") or data.get("type") or row.sport_type
+                    result = {"status": "updated", "name": row.name}
+                else:  # new (an edit of one never received is saved too)
+                    activity = await save_new(db, user, data)
+                    if activity is None:
+                        return {"status": "already_exists"}
+                    await db.flush()
+                    await enrich(db, user.id)  # its altitude and weather (Open-Meteo; never fails the sync)
+                    await adopt_zone(db, user)
+                    result = {"status": "saved", "name": activity.name}
+            user.last_activity_poll_at = datetime.now(timezone.utc)  # Réglages' « Dernière synchro »
+            await db.commit()
+        except StravaTokenError:
+            await db.commit()  # what the refresh found (revoked: forgotten; keys refused: flagged) is kept
+            return {"status": "reconnect"}
+        except Exception:
+            await db.rollback()
+            raise
+    state.webhook_reached(user.id)
+    logger.info("Webhook sync: activity %d %s for user %d", activity_id, result["status"], user.id)
+    return result
 
-        # Parse start_date
-        start_val = data.get("start_date")
-        if isinstance(start_val, str):
-            start_val = datetime.fromisoformat(start_val.replace("Z", "+00:00"))
 
-        activity = Activity(
-            strava_activity_id=activity_id,
-            user_id=user.id,
-            sport_type=data.get("sport_type", data.get("type", "Unknown")),
-            name=data.get("name", "Untitled"),
-            start_date=start_val,
-            distance=data.get("distance", 0),
-            moving_time=data.get("moving_time", 0),
-            elapsed_time=data.get("elapsed_time", 0),
-            total_elevation_gain=data.get("total_elevation_gain", 0),
-            average_speed=data.get("average_speed"),
-            max_speed=data.get("max_speed"),
-            average_heartrate=data.get("average_heartrate"),
-            max_heartrate=data.get("max_heartrate"),
-            average_cadence=data.get("average_cadence"),
-            average_watts=data.get("average_watts"),
-            splits_metric=data.get("splits_metric"),
-            laps=data.get("laps"),  # the detail has them: Santé's Entraînement dial weighs them (else the splits)
-            raw_data=data,
-        )
-        activity = await adopt_watch_twin(db, activity)  # a watch may have brought it first
-        await db.flush()
-        from app.services.activity_env import enrich
+async def _deleted(db, user: User, strava, row: Activity | None, activity_id: int) -> dict:
+    """Deleted on Strava (it answers 404 for it): a Strava-only row goes; a watch's row of the outing stays, without
+    its Strava id."""
+    if row is None:
+        return {"status": "unknown"}
+    try:
+        await strava.get_activity(user, activity_id)
+        logger.warning("Webhook: activity %d is still on Strava, not deleted", activity_id)
+        return {"status": "still_on_strava"}
+    except StravaAPIError as exc:
+        if exc.status_code != 404:
+            raise
+    if row.garmin_activity_id or row.coros_activity_id:
+        row.strava_activity_id = None
+        return {"status": "unlinked"}
+    await db.execute(delete(Activity).where(Activity.id == row.id))  # its analysis goes with it (ON DELETE CASCADE)
+    return {"status": "deleted"}
 
-        await enrich(db, user.id)  # its altitude and weather, saved with it (Open-Meteo; never fails the sync)
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    acks_late=True,
+    name="paceforge.strava_deauthorized",
+)
+def strava_deauthorized(self, owner_id: int) -> dict:
+    """The athlete revoked PaceForge on Strava (webhook « authorized: false »)."""
+    try:
+        return asyncio.run(_run_deauthorized(owner_id))
+    except Exception as exc:
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        logger.exception("Strava revocation of athlete %d not applied", owner_id)
+        return {"status": "failed"}
+
+
+async def _run_deauthorized(owner_id: int) -> dict:
+    """Once Strava confirms it (it refuses the athlete's access), the link is forgotten: the tokens and the athlete
+    id, so the Strava account can be linked again, here or to another account. The activities already received stay,
+    as when the athlete disconnects from Réglages (privacy policy: deleting the account deletes them)."""
+    from app.database import get_task_session
+    from app.services.strava import StravaService, _forget_link
+
+    async with get_task_session() as db:
+        user = (await db.execute(select(User).where(User.strava_athlete_id == owner_id))).scalar_one_or_none()
+        if user is None:
+            return {"status": "no_user"}
+        if user.strava_refresh_token and user.has_strava_app:
+            try:
+                await StravaService.for_user(db, user).get_athlete(user)
+                logger.warning("Webhook: athlete %d still authorizes PaceForge, revocation ignored", owner_id)
+                return {"status": "still_authorized"}
+            except StravaTokenError:
+                if user.strava_refresh_token:  # the app's keys refused (flagged), not a revocation
+                    await db.commit()
+                    return {"status": "unverified"}
+            except StravaAPIError as exc:
+                if exc.status_code != 401:
+                    raise
+        _forget_link(user)
+        user.strava_athlete_id = None
         await db.commit()
-
-        logger.info(
-            "Webhook sync: saved activity %d (%s) for user %d",
-            activity_id, activity.name, user.id,
-        )
-        return {"status": "saved", "name": activity.name}
+        user_id = user.id
+    state.webhook_forget(user_id)
+    logger.info("Strava revoked by athlete %d: link forgotten for user %d", owner_id, user_id)
+    return {"status": "forgotten"}

@@ -406,3 +406,194 @@ def test_long_syncs_have_their_queue_and_are_never_redelivered_while_running():
     assert sorted(queues.consume_from) == ["celery", "long"]  # a worker without -Q (as deployed) takes both
     # one binding each: two queues on one routing key would both receive every message
     assert len({(q.exchange.name, q.routing_key) for q in queues.values()}) == len(queues)
+
+
+# ── the webhook: known subscriptions only, every event checked with Strava ───
+
+def _event(user, kind="create", sub=55, obj=1, **updates) -> dict:
+    return {"object_type": "athlete" if kind == "deauth" else "activity", "object_id": obj,
+            "aspect_type": "update" if kind == "deauth" else kind, "owner_id": user.strava_athlete_id,
+            "subscription_id": sub, "event_time": 1_760_000_000,
+            "updates": {"authorized": "false"} if kind == "deauth" else updates}
+
+
+@pytest.fixture
+def queued(monkeypatch):
+    from app.tasks import webhook_sync
+
+    calls = []
+    monkeypatch.setattr(webhook_sync.sync_activity_from_webhook, "delay", lambda *a: calls.append(a))
+    monkeypatch.setattr(webhook_sync.strava_deauthorized, "delay", lambda *a: calls.append(("deauth", *a)))
+    return calls
+
+
+async def test_the_webhook_acts_only_on_subscriptions_it_knows(client: AsyncClient, db_session, test_user,
+                                                                queued, monkeypatch):
+    """Base code: any POST was queued, whatever its subscription (anyone knowing an athlete id could make PaceForge
+    call Strava with that athlete's token)."""
+    await _own_app(db_session, test_user, sub=55)
+    for sub in (999, 56):
+        r = await client.post("/webhook/strava", json=_event(test_user, sub=sub))
+        assert r.status_code == 200 and r.json()["status"] == "ignored"
+    assert queued == []
+    assert (await client.post("/webhook/strava", json=_event(test_user, sub=55, obj=7))).json()["status"] == "ok"
+    assert queued == [(7, test_user.strava_athlete_id, "create")]
+
+    # the shared app: its subscription (STRAVA_SUBSCRIPTION_ID), for its athletes only
+    monkeypatch.setattr(settings, "STRAVA_SHARED_APP_ENABLED", True)
+    monkeypatch.setattr(settings, "STRAVA_CLIENT_ID", "90001")
+    monkeypatch.setattr(settings, "STRAVA_CLIENT_SECRET", "shared-secret")
+    monkeypatch.setenv("STRAVA_SUBSCRIPTION_ID", "777")
+    shared = await _athlete(db_session, 5001, strava_client_id="90001", initial_sync_done=True)
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(shared, sub=55))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(test_user, sub=777))).json()["status"] == "ignored"
+    assert (await client.post("/webhook/strava", json=_event(shared, sub=777, obj=8))).json()["status"] == "ok"
+    assert queued == [(8, 5001, "create")]
+    # the owner's own app became the shared one: its stored subscription is the shared app's
+    monkeypatch.delenv("STRAVA_SUBSCRIPTION_ID")
+    owner = await _athlete(db_session, 5002)
+    await _own_app(db_session, owner, client_id="90001", sub=4321)
+    queued.clear()
+    assert (await client.post("/webhook/strava", json=_event(shared, sub=4321, obj=9))).json()["status"] == "ok"
+    assert queued == [(9, 5001, "create")]
+    # unknown athletes, unhandled objects, bad payloads: a 200 all the same (Strava retries anything else)
+    stranger = User(strava_athlete_id=6000)
+    for body in (_event(stranger, sub=55), {**_event(test_user), "object_type": "club"}, {"bad": 1}):
+        r = await client.post("/webhook/strava", json=body)
+        assert r.status_code == 200 and r.json()["status"] == "ignored"
+    r = await client.post("/webhook/strava", content=b"not json", headers={"content-type": "application/json"})
+    assert r.status_code == 200 and r.json()["status"] == "ignored"
+
+
+async def test_the_webhook_queues_edits_deletions_and_revocations(client: AsyncClient, db_session, test_user,
+                                                                   queued):
+    """Base code: only « create » was queued; edits, deletions and revocations were dropped."""
+    await _own_app(db_session, test_user, sub=55)
+    for kind in ("update", "delete", "deauth"):
+        assert (await client.post("/webhook/strava", json=_event(test_user, kind, obj=3))).json()["status"] == "ok"
+    athlete = test_user.strava_athlete_id
+    assert queued == [(3, athlete, "update"), (3, athlete, "delete"), ("deauth", athlete)]
+    queued.clear()
+    athlete_update = {**_event(test_user, "deauth"), "updates": {"authorized": "true"}}
+    assert (await client.post("/webhook/strava", json=athlete_update)).json()["status"] == "ignored"
+    assert queued == []
+
+
+async def test_the_webhook_never_saves_another_athletes_activity(db_session, test_user, task_session, monkeypatch):
+    """Base code: the fetched activity was saved whoever it belonged to (a forged event could name another
+    athlete's public activity)."""
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    await _own_app(db_session, test_user, sub=55)
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(StravaService, "get_activity",
+                        AsyncMock(return_value=_data(720_001, now, athlete_id=424242)))
+    assert (await _run_webhook_sync(720_001, test_user.strava_athlete_id))["status"] == "not_his"
+    assert await _row(db_session, 720_001) is None and not strava_state.webhook_recent(test_user.id)
+
+    detail = _data(720_002, now, calories=640.0, laps=[{"lap_index": 1}], timezone="(GMT+09:00) Asia/Seoul")
+    monkeypatch.setattr(StravaService, "get_activity", AsyncMock(return_value=detail))
+    assert (await _run_webhook_sync(720_002, test_user.strava_athlete_id))["status"] == "saved"
+    row = await _row(db_session, 720_002)
+    assert row.calories == 640.0 and row.laps == [{"lap_index": 1}]  # the one builder: what the detail has
+    assert strava_state.webhook_recent(test_user.id)  # the round leaves this athlete to the webhook for 24 h
+    assert test_user.last_activity_poll_at is not None
+
+
+async def test_an_edit_on_strava_renames_the_activity(db_session, test_user, task_session, monkeypatch):
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    await _own_app(db_session, test_user, sub=55)
+    now = datetime.now(timezone.utc)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=730_001, sport_type="Run", name="Morning Run",
+                            start_date=now, distance=10_000, moving_time=3600, elapsed_time=3700, raw_data={}))
+    await db_session.flush()
+    fetch = AsyncMock(return_value=_data(730_001, now, name="Tour du Lac", sport_type="TrailRun"))
+    monkeypatch.setattr(StravaService, "get_activity", fetch)
+    # what the event says is not trusted: the name and sport are Strava's own, read with the athlete's token
+    result = await _run_webhook_sync(730_001, test_user.strava_athlete_id, "update")
+    row = await _row(db_session, 730_001)
+    assert result == {"status": "updated", "name": "Tour du Lac"} and row.sport_type == "TrailRun"
+    # an edit of an activity never received brings it
+    fetch.return_value = _data(730_002, now, name="Rattrapée")
+    assert (await _run_webhook_sync(730_002, test_user.strava_athlete_id, "update"))["status"] == "saved"
+    # gone from Strava meanwhile, or not visible: final, not tried again
+    for status in (403, 404):
+        fetch.side_effect = _api_error(status)
+        assert (await _run_webhook_sync(730_003, test_user.strava_athlete_id, "create"))["status"] == "gone"
+
+
+async def test_a_deletion_on_strava_is_checked_then_applied(db_session, test_user, task_session, monkeypatch):
+    from app.tasks.webhook_sync import _run_webhook_sync
+
+    await _own_app(db_session, test_user, sub=55)
+    now = datetime.now(timezone.utc)
+
+    def act(sid, **ids):
+        return Activity(user_id=test_user.id, strava_activity_id=sid, sport_type="Run", name="Footing",
+                        start_date=now, distance=8000, moving_time=2400, elapsed_time=2500, raw_data={}, **ids)
+    strava_only, watched = act(740_001), act(740_002, garmin_activity_id=99_001)
+    db_session.add_all([strava_only, watched])
+    await db_session.flush()
+    athlete = test_user.strava_athlete_id
+    # still on Strava: a forged (or stale) deletion changes nothing
+    monkeypatch.setattr(StravaService, "get_activity", AsyncMock(return_value=_data(740_001, now)))
+    assert (await _run_webhook_sync(740_001, athlete, "delete"))["status"] == "still_on_strava"
+    assert await _row(db_session, 740_001) is not None
+    monkeypatch.setattr(StravaService, "get_activity", AsyncMock(side_effect=_api_error(404)))
+    assert (await _run_webhook_sync(740_001, athlete, "delete"))["status"] == "deleted"
+    assert await _row(db_session, 740_001) is None
+    assert (await _run_webhook_sync(740_002, athlete, "delete"))["status"] == "unlinked"
+    await db_session.refresh(watched)
+    assert watched.strava_activity_id is None and watched.garmin_activity_id == 99_001  # the watch's outing stays
+    assert (await _run_webhook_sync(740_003, athlete, "delete"))["status"] == "unknown"
+    # another error is not a deletion: Celery tries again
+    db_session.add(act(740_004))
+    await db_session.flush()
+    monkeypatch.setattr(StravaService, "get_activity", AsyncMock(side_effect=_api_error(500)))
+    with pytest.raises(StravaAPIError):
+        await _run_webhook_sync(740_004, athlete, "delete")
+
+
+async def test_a_revocation_on_strava_forgets_the_link_once_strava_confirms_it(db_session, test_user, task_session,
+                                                                               monkeypatch):
+    """Base code: « authorized: false » was dropped, the athlete's tokens kept. Now, once Strava refuses the access,
+    the tokens and the athlete id go; the activities stay (privacy policy: deleting the account deletes them)."""
+    from app.tasks.webhook_sync import _run_deauthorized
+
+    await _own_app(db_session, test_user, sub=55)
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=750_001, sport_type="Run", name="Footing",
+                            start_date=datetime.now(timezone.utc), distance=8000, moving_time=2400,
+                            elapsed_time=2500, raw_data={}))
+    await db_session.flush()
+    athlete = test_user.strava_athlete_id
+    monkeypatch.setattr(StravaService, "get_athlete", AsyncMock(return_value={"id": athlete}))
+    assert (await _run_deauthorized(athlete))["status"] == "still_authorized"  # a forged event
+    assert test_user.strava_access_token == "test_access_token" and test_user.strava_athlete_id == athlete
+
+    monkeypatch.setattr(StravaService, "get_athlete", AsyncMock(side_effect=_api_error(401)))
+    assert (await _run_deauthorized(athlete))["status"] == "forgotten"
+    assert test_user.strava_access_token is None and test_user.strava_refresh_token is None
+    assert test_user.strava_athlete_id is None and test_user.initial_sync_done is False
+    assert test_user.strava_client_id == "4242" and test_user.strava_webhook_subscription_id == 55  # the app's
+    assert await _row(db_session, 750_001) is not None
+    assert not strava_status(test_user)["connected"]
+
+
+def test_the_verify_tokens_are_never_logged(caplog):
+    from app.routers import webhook
+
+    with caplog.at_level(logging.INFO, logger="app.routers.webhook"):
+        assert webhook._is_valid_verify_token(settings.STRAVA_WEBHOOK_VERIFY_TOKEN)
+    secret = "paceforge-1234567890abcdef-secret"
+
+    async def call():
+        await webhook.strava_webhook_validation(mode="subscribe", challenge="c", verify_token=secret)
+        await webhook.strava_webhook_validation(mode="subscribe", challenge="c",
+                                                verify_token=settings.STRAVA_WEBHOOK_VERIFY_TOKEN)
+    with caplog.at_level(logging.INFO, logger="app.routers.webhook"):
+        asyncio.run(call())
+    text = caplog.text
+    assert "Invalid webhook validation" in text and "Strava webhook validated" in text
+    assert secret[:12] not in text and settings.STRAVA_WEBHOOK_VERIFY_TOKEN not in text
