@@ -16,13 +16,6 @@ from app.services.strava import StravaService, strava_status
 from tests.test_settings_links import _callback, _logged_in
 
 
-def decrypt_secret_or_none(value: str):
-    try:
-        return decrypt_secret(value.encode())
-    except Exception:
-        return None
-
-
 def _foreign(value: str) -> str:
     """A Fernet value written with a key PaceForge no longer has."""
     return Fernet(Fernet.generate_key()).encrypt(value.encode()).decode()
@@ -277,8 +270,9 @@ async def test_tokens_left_in_clear_are_encrypted_by_the_hourly_upkeep(db_sessio
     db_session.add(other)
     await db_session.flush()
     other_id = other.id
-    await db_session.execute(text("UPDATE users SET strava_refresh_token = :r WHERE id = :id"),
-                             {"r": _foreign("lost" * 10), "id": other_id})  # unreadable: left alone
+    lost = _foreign("lost" * 10)
+    await db_session.execute(text("UPDATE users SET strava_access_token = :a, strava_refresh_token = :r WHERE id = :id"),
+                             {"a": "9" * 40, "r": lost, "id": other_id})  # in clear, and unreadable: left alone
     db_session.expire_all()
     await db_session.refresh(test_user)
 
@@ -294,13 +288,13 @@ async def test_tokens_left_in_clear_are_encrypted_by_the_hourly_upkeep(db_sessio
     async def session():
         yield db_session
     monkeypatch.setattr("app.database.get_task_session", session)
-    assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 1
+    assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 2
     for column in ("strava_access_token", "strava_refresh_token"):
         assert (await _raw(db_session, test_user.id, column)).startswith("gAAAAA")
     db_session.expire_all()
     await db_session.refresh(test_user)
     assert (test_user.strava_access_token, test_user.strava_refresh_token) == ("c" * 40, "f" * 40)
-    stored = await _raw(db_session, other_id, "strava_refresh_token")
-    assert stored.startswith("gAAAAA") and decrypt_secret_or_none(stored) is None  # left as it was
+    assert await _raw(db_session, other_id, "strava_refresh_token") == lost  # unreadable: left exactly as it was
+    assert decrypt_secret((await _raw(db_session, other_id, "strava_access_token")).encode()) == "9" * 40
     assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 0  # once done, nothing more
     await oauth_cleanup._run()  # the hourly task runs it (and purges the expired attempts)

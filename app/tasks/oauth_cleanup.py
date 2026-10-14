@@ -32,7 +32,9 @@ async def _run() -> int:
 
 async def encrypt_clear_strava_tokens(db) -> int:
     """Rewrite, encrypted, the Strava tokens still stored in clear; how many athletes (0 once done). Their rows
-    are locked and read again first, so a refresh running at the same moment is never undone."""
+    are read again under FOR NO KEY UPDATE SKIP LOCKED: an athlete a refresh holds is skipped (never undone; the
+    next hour takes it), and a sync's KEY SHARE locks are never waited for. A token no key decrypts is left as
+    it is."""
     from sqlalchemy import String, or_, select, type_coerce
     from sqlalchemy.orm.attributes import flag_modified
 
@@ -48,7 +50,7 @@ async def encrypt_clear_strava_tokens(db) -> int:
                             .limit(CLEAR_BATCH))).scalars().all()
     if not ids:
         return 0
-    users = (await db.execute(select(User).where(User.id.in_(ids)).with_for_update()
+    users = (await db.execute(select(User).where(User.id.in_(ids)).with_for_update(key_share=True, skip_locked=True)
                               .execution_options(populate_existing=True))).scalars().all()
     for user in users:
         for token in tokens:
