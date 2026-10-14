@@ -477,6 +477,33 @@ def test_the_night_is_read_on_the_clock_with_the_planned_stops():
     assert rs._stops_before(course, {10.0: 3600, 20.0: 600}) == expect  # a station delays every segment after it
 
 
+@pytest.mark.asyncio
+async def test_the_pages_estimate_reads_the_night_with_its_stops(db_session, test_user):
+    """The page sends its estimate back as the table's objective until he moves it: the estimate reads the night on
+    the clock with its planned stops, as the table does, so it never reads as an objective he chose (the table would
+    then anchor a pinned plan at it)."""
+    from app.models.route import Route, RouteCheckpoint
+    from app.routers import simulator as sim
+    from app.schemas.simulator import CourseProfile
+    from app.services.checkpoints import normalize_checkpoint
+
+    route = Route(user_id=test_user.id, name="Nocturne", total_distance_km=40.0, total_elevation_gain=0.0, start_hour=17,
+                  start_minute=0, course_json=json.loads(_flat().model_dump_json()), sport_type="trail")
+    db_session.add(route)
+    await db_session.flush()
+    db_session.add(RouteCheckpoint(route_id=route.id, name="Base", distance_km=10.0, kind="base", stop_s=3600))
+    await db_session.flush()
+    est = (await sim._build_route_context(route, db_session, test_user.id))["course"].predicted_total_time_s
+    cps = [normalize_checkpoint({"name": "Base", "distance_km": 10.0, "kind": "base", "stop_s": 3600})]
+    target = int((est + 30) // 60) * 60
+    table = await sim._passage_table_context(db_session, test_user.id, CourseProfile(**route.course_json), cps, target,
+                                             1.0, 17, 0, None, route, None, None, None)
+    prof = await rs.build_athlete_gradient_profile(db_session, test_user.id)
+    plain = rs.predict_course(_flat(), prof, start_hour=17).predicted_total_time_s  # the night on the moving clock
+    assert table["predicted_total"] - plain > 60  # the hour's stop moves enough of it into the night to matter
+    assert abs(table["predicted_total"] - est) <= 30 and not rs.has_objective(target, table["predicted_total"])
+
+
 # ── 5b. the pin floor ──
 
 def test_a_pin_may_not_ask_a_leg_faster_than_70_percent_of_the_model():

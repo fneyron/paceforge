@@ -797,23 +797,24 @@ def debrief_mode(race_date: str | None, has_result: bool, today=None) -> str | N
 async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> dict:
     """Shared context for the route detail page and its partial."""
     from app.schemas.simulator import CourseProfile
-    from app.services.race_simulator import build_athlete_gradient_profile, predict_course
+    from app.services.checkpoints import normalize_checkpoint
+    from app.services.race_simulator import build_athlete_gradient_profile
 
     course = CourseProfile(**route.course_json)
     profile = await build_athlete_gradient_profile(db, user_id)
-    course = predict_course(
-        course, profile,
-        start_hour=route.start_hour if route.start_hour is not None else 6,
-        start_minute=route.start_minute or 0, own_weather=bool(route.weather_json),
-        **await _race_clock(db, user_id, route, course),
-    )
-
     cp_result = await db.execute(
         select(RouteCheckpoint)
         .where(RouteCheckpoint.route_id == route.id)
         .order_by(RouteCheckpoint.distance_km)
     )
     cps = [cp.as_dict() for cp in cp_result.scalars().all()]
+    # the estimate reads the night on the clock with its own planned stops, as its table and the printed plan do
+    # (else the estimate the page sends back could read as an objective: race_simulator.has_objective)
+    course, _, _ = _predict_with_stops(
+        course, profile, route.start_hour if route.start_hour is not None else 6, route.start_minute or 0,
+        await _race_clock(db, user_id, route, course), [normalize_checkpoint(c) for c in cps], route.stop_minutes,
+        course.total_distance_km, bool(route.weather_json),
+    )
 
     coords = course.route_coords or []
     geojson = {
@@ -828,8 +829,6 @@ async def _build_route_context(route: Route, db: AsyncSession, user_id: int) -> 
     # The table itself, rendered now: no blank band and no round trip before the plan shows.
     initial_table_html = None
     try:
-        from app.services.checkpoints import normalize_checkpoint
-
         w = route.weather_json or {}
         live = route.live_json or {}
         # No objective: the plan runs on the estimate, to the minute, exactly as the page's own recalculations
