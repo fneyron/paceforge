@@ -136,6 +136,15 @@ def _offset(strava: float | None, local: str | None, gmt: str | None) -> float |
     return delta if abs(delta) <= 14 * 3600 else None
 
 
+def int_sum(col, scale=1):
+    """SUM(round(col × scale)) as an integer, what a cache key or a version hash adds up: PostgreSQL's float sums may
+    differ in their last digits from one run to the next. A missing, non-finite (NaN, ±∞: PostgreSQL cannot cast them
+    to an integer, and the whole read would fail) or absurd value (|col × scale| ≥ 1e9, past what an INTEGER holds
+    once rounded) counts as 0."""
+    x = col * scale if scale != 1 else col
+    return func.sum(cast(func.round(case((func.abs(x) < 1e9, x), else_=0)), Integer))
+
+
 async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int = HISTORY_DAYS) -> list[Session]:
     """The sessions of the last `days` days, duplicates and false starts left
     out exactly as on Activités. Kept per worker until a session is added (the
@@ -156,8 +165,7 @@ async def load_sessions(db: AsyncSession, user_id: int, today: date, days: int =
     pg = db.get_bind().dialect.name == "postgresql"
     stored = func.pg_column_size if pg else func.length
 
-    def whole(col, scale=1):  # an integer sum: PostgreSQL's float sums may differ in their last digits run to run
-        return func.sum(cast(func.round(func.coalesce(col, 0) * scale), Integer))
+    whole = int_sum
     key = (today, days, str(zone), *(await db.execute(  # what a sync can add or rewrite in place
         select(func.count(Activity.id), func.max(Activity.id), func.max(Activity.created_at),
                func.sum(env.raw_size(db)), func.sum(stored(Activity.laps)), func.sum(stored(Activity.splits_metric)),

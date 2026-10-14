@@ -785,6 +785,33 @@ async def test_a_sync_that_only_failed_reloads_the_page_once(as_user: AsyncClien
     assert await routes.data_version(db_session, test_user.id) != errored
 
 
+async def test_a_non_finite_activity_value_breaks_neither_the_version_nor_the_sessions(db_session: AsyncSession,
+                                                                                      test_user: User):
+    """An activity's NaN or ±∞ (a broken file's average) counts as 0 in the integer sums of Santé's version and of
+    the sessions' cache key: PostgreSQL cannot cast them to an integer, and the page failed whole (review,
+    2026-10-14). The other activities still count."""
+    from app.routers import sante as routes
+    from app.services import sante_training as st
+
+    now = datetime.now(timezone.utc)
+    nan, inf = float("nan"), float("inf")  # SQLite keeps a NaN as NULL, PostgreSQL as NaN
+    for i, (hr, dplus) in enumerate(((nan, 10.0), (140.0, inf), (inf, -inf))):
+        db_session.add(Activity(user_id=test_user.id, strava_activity_id=880_000 + i, sport_type="Run", name="r",
+                                start_date=now - timedelta(days=i + 1), distance=10000, moving_time=3600,
+                                elapsed_time=3600, total_elevation_gain=dplus, average_speed=2.8,
+                                average_heartrate=hr, max_heartrate=170, raw_data={}))
+    await db_session.flush()
+    version = await routes.data_version(db_session, test_user.id)
+    assert len(await st.load_sessions(db_session, test_user.id, now.date())) == 3
+    db_session.add(Activity(user_id=test_user.id, strava_activity_id=880_009, sport_type="Run", name="r",
+                            start_date=now - timedelta(days=5), distance=8000, moving_time=2400, elapsed_time=2400,
+                            total_elevation_gain=12, average_speed=3.3, average_heartrate=141, max_heartrate=166,
+                            raw_data={}))
+    await db_session.flush()
+    assert await routes.data_version(db_session, test_user.id) != version
+    assert len(await st.load_sessions(db_session, test_user.id, now.date())) == 4
+
+
 async def test_a_crashing_sync_never_stays_en_cours(db_session: AsyncSession, test_user: User, monkeypatch):
     from app.services import coros as coros_service
 

@@ -138,16 +138,14 @@ async def data_version(db: AsyncSession, user_id: int) -> str:
     so; never its last sync time: a sync that brought nothing changes nothing)."""
     from hashlib import sha256
 
-    from sqlalchemy import Integer, cast, func
+    from sqlalchemy import func
 
     from app.models.activity import Activity
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
     from app.models.health import HealthMetric
     from app.models.mobile import MobileDaily
-
-    def whole(column, scale=1):
-        return func.sum(cast(func.round(func.coalesce(column, 0) * scale), Integer))
+    from app.services.sante_training import int_sum as whole  # a NaN or ±∞ (PostgreSQL cannot cast it) counts as 0
 
     n, last = (await db.execute(select(func.count(HealthMetric.id), func.max(HealthMetric.updated_at)).where(
         HealthMetric.user_id == user_id))).one()
