@@ -344,7 +344,15 @@ def recency_weight(day: str | date | None, today: date | None = None) -> float:
     return 0.5 ** (max(0, age) / RECENCY_HALF_LIFE_DAYS)
 
 
-_NOT_A_RACE = ("hik", "rando", "randon", "marche", "walk", "trek", "balade", "recon", "reco ", "pacer", "accompagn", "dnf", "abandon")
+# Not a race whatever the tag: a hike, a walk, a recce, a day pacing a friend.
+# Whole words only: « Shikoku Trail 100 », « Walker Ridge 50K », « Treklanders
+# 60K » or « Trail des Marches de Bretagne » are races (a substring test read
+# them as a hike, a walk, a trek, a « marche »).
+_NOT_A_RACE = re.compile(
+    r"\b(hik(e|es|ed|ing)|rando\w*|marche|walk(s|ing)?|trek(s|king)?|balade|reco(n|nnaissance)?|recce|pacer"
+    r"|accompagn\w*)\b",
+    re.IGNORECASE,
+)
 # Not a standalone running race of that distance, whatever the Strava tag: the
 # run leg of a triathlon (run on legs tired by the swim and the bike), one leg
 # of a relay, a race not finished. Word-bounded so that « Cap Corse Trail »,
@@ -369,8 +377,7 @@ def not_a_race_reason(name: str | None) -> str | None:
     for pattern, why in _NOT_STANDALONE:
         if pattern.search(name or ""):
             return why
-    low = (name or "").lower()
-    if any(k in low for k in _NOT_A_RACE):
+    if _NOT_A_RACE.search(name or ""):
         return "pas une course"
     return None
 

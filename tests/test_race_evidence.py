@@ -128,6 +128,19 @@ def test_the_athletes_own_stops():
     assert rc.stop_factor([{"hours": 10.0, "elapsed_h": 20.0}]) == rc.STOP_FACTOR_RANGE[1]  # bounded
 
 
+@pytest.mark.parametrize("name", ["Shikoku Trail 100", "Walker Ridge 50K", "Treklanders 60K",
+                                  "Trail des Marches de Bretagne", "Recoleta Trail", "Hikers Peak Ultra"])
+def test_names_are_read_as_whole_words(name):
+    assert rc.not_a_race_reason(name) is None
+
+
+@pytest.mark.parametrize("name", ["Hike to the lake", "Randonnée du Vercors", "Marche nordique", "Nordic walking",
+                                  "Trekking Annapurna", "Balade en famille", "Reco CCC", "Reconnaissance TDS",
+                                  "Recce UTMB", "Pacer for Anna", "Accompagnement d'un ami"])
+def test_hikes_walks_and_recces_are_not_races(name):
+    assert rc.not_a_race_reason(name) == "pas une course"
+
+
 # ── 2. Optimiste / Sécurité: the 20th / 80th percentiles of the finish time ──
 
 def test_the_finish_time_spread():

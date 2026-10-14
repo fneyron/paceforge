@@ -2,7 +2,7 @@
 (effort-km/h model) and his matched races shape it (fatigue tilt).
 
 - D+ measured with one algorithm for the course and for the past races
-- what counts as a race (no triathlon run leg, relay leg, abandon)
+- what counts as a race (no triathlon run leg, relay leg, abandon, hike; whole words)
 - recency weighting of the races
 - the level: ln T = c + k ln E, k shrunk toward the population 1.28, c the weighted mean
 - the races' heat taken out, the athlete's own stops
