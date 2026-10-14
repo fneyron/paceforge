@@ -963,6 +963,33 @@ async def test_after_an_edit_the_page_arrives_with_the_saved_plan(as_user: Async
         loaded = estimate(table)
 
 
+def test_the_pacing_guide_runs_the_plans_own_legs_on_a_hot_day():
+    """The guide spread the plan's moving time by terrain alone, the plan by terrain times each leg's heat: on a
+    hot afternoon the guide's paces were not the plan's. It now spreads each leg's own planned time."""
+    from app.services.pacing_guide import build_pacing_guide
+
+    course = rs.predict_course(_course(), AthleteGradientProfile(flat_pace_s_per_km=360, gradient_factors=dict(
+        rs._DEFAULT_GRADIENT_FACTORS), data_points=0, sport_types_used=[]), start_hour=9)
+    hot = {"temps": [12.0 + 20 * (h % 24 >= 11) for h in range(48)], "humidity": [40] * 48}  # 32 °C from 11:00
+    secs = rs.compute_passage_times(course, CPS, 5 * 3600, 1.0, 9, 0, hot, aid_stops={6.0: 120, 10.0: 300, 20.0: 900})
+    assert max(s["heat_factor"] for s in secs) > 1.1
+    guide = build_pacing_guide(course, 5 * 3600, plan_sections=secs)
+    # each leg's own planned time over its km by their effort basis: the plan's weights, its heat in them
+    per_km = {}
+    for s in secs:
+        segs = [g for g in course.segments if g.start_km >= s["start_km"] - 1e-6 and g.end_km <= s["end_km"] + 1e-6]
+        base = sum(g.base_time_s for g in segs)
+        per_km.update({g.start_km: s["adjusted_time_s"] * g.base_time_s / base for g in segs})
+    moving = sum(s["adjusted_time_s"] for s in secs)
+    terrain_only = {g.start_km: moving * g.base_time_s / sum(x.base_time_s for x in course.segments) for g in course.segments}
+    off = 0.0
+    for b in guide["blocks"]:
+        kms = [k for k in per_km if b["start_km"] - 1e-6 <= k < b["end_km"] - 1e-6]
+        assert b["time_s"] == pytest.approx(sum(per_km[k] for k in kms), abs=2), (b["start_km"], b["end_km"])
+        off = max(off, abs(sum(terrain_only[k] for k in kms) / b["time_s"] - 1))
+    assert off > 0.03  # terrain alone, as before: a block 3 % or more off the plan's own time on this hot day
+
+
 @pytest.mark.asyncio
 async def test_mes_courses_reads_the_objective_by_the_same_rule(as_user: AsyncClient, db_session, test_user):
     """« Mes courses » shows an objective only when it is his: an older page's estimate (unmarked, within 2 % of
