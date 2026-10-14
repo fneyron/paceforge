@@ -192,6 +192,31 @@ async def test_an_open_meteo_outage_stops_the_heat_lookups_for_every_worker(db_s
     assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and len(calls) == 1  # every worker waits
 
 
+@pytest.mark.asyncio
+async def test_no_race_to_read_no_marker_asked(db_session, test_user, monkeypatch):
+    """The heat pass runs for every athlete at every poll: with no race left to read it does not ask the shared
+    marker (one Redis connection per athlete and poll)."""
+    from app.config import settings
+    from app.services import weather
+
+    monkeypatch.setattr(settings, "ACTIVITY_ENV_FETCH", True)
+    asked = []
+
+    async def paused():
+        asked.append(1)
+        return False
+
+    monkeypatch.setattr(weather, "lookups_paused", paused)
+    assert await rc.backfill_race_heat(db_session, test_user.id) == 0 and not asked
+    now = datetime.now(timezone.utc)
+    db_session.add(Activity(strava_activity_id=93002, user_id=test_user.id, sport_type="TrailRun", name="Ultra",
+                            start_date=now - timedelta(days=30), distance=60000.0, moving_time=8 * 3600,
+                            elapsed_time=8 * 3600, total_elevation_gain=2000.0, raw_data={"workout_type": 1}))
+    await db_session.flush()
+    await rc.backfill_race_heat(db_session, test_user.id)
+    assert asked  # a race to read: the marker first
+
+
 def test_the_stops_are_the_stop_models_for_everyone():
     """No personal stop factor: his Strava races' elapsed − moving is not what was checked (stations timed in and
     out), and one race with a forgotten pause pushed it to its cap."""

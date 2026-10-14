@@ -756,15 +756,13 @@ async def _heat_pass(db: AsyncSession, user_id: int, limit: int, now: datetime) 
     from app.services.activity_env import start_point
     from app.services.race_simulator import _LAPSE_RATE_C_PER_M
 
-    if await weather.lookups_paused():  # Open-Meteo failed lately, for some worker: not now
-        return 0
     wt = Activity.raw_data["workout_type"].as_integer()
     cached_v = Activity.raw_data[(HEAT_CACHE_KEY, "v")].as_integer()
     q = candidate_query(user_id).with_only_columns(Activity.id, Activity.distance, wt, cached_v)
     rows = (await db.execute(q.order_by(Activity.start_date.desc()))).all()
     ids = [r[0] for r in rows
            if r[3] != HEAT_CACHE_VERSION and (r[2] == 1 or (r[1] or 0) >= LONG_EFFORT_KM * 1000)][:limit]
-    if not ids:
+    if not ids or await weather.lookups_paused():  # nothing to read, or Open-Meteo failed lately: not now
         return 0
     done = 0
     for a in (await db.execute(select(Activity).where(Activity.id.in_(ids)))).scalars().all():
