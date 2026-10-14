@@ -70,7 +70,7 @@ async def test_watch_refresh_does_not_include_other_users_or_reauthorize_silentl
 
 async def test_strava_refresh_does_not_report_success_after_transport_failure(client, db_session, test_user, monkeypatch):
     login(client, test_user)
-    test_user.strava_client_id = 123
+    test_user.strava_client_id = '123'  # a VARCHAR column: PostgreSQL refuses an int
     test_user.strava_client_secret_encrypted = b'test'
     test_user.strava_credentials_valid = True
     await db_session.flush()

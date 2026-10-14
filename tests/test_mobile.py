@@ -14,6 +14,7 @@ from app.config import settings
 from app.models.health import HealthMetric
 from app.models.mobile import MobileDaily, MobileDevice
 from app.models.user import User
+from app.routers import mobile
 from app.routers.mobile import digest
 from app.services.sante_daily import daily_card, daily_context
 
@@ -65,11 +66,13 @@ async def test_pair_ingest_idempotent_and_watch_is_preserved(client, db_session,
     await db_session.flush()
     headers = {"Authorization": 'Bearer ' + account['token']}
     payload = {"days": [day(), day(metric='hr_day', value=78, unit='bpm', measured_at=None)]}
-    for _ in range(2):
-        response = await client.post('/api/mobile/daily', json=payload, headers=headers)
-        assert response.status_code == 200 and response.json()['received'] == 2
+    response = await client.post('/api/mobile/daily', json=payload, headers=headers)
+    assert response.status_code == 200 and response.json()['received'] == 2
+    # An identical re-send (each background run) is accepted but changes nothing.
+    response = await client.post('/api/mobile/daily', json=payload, headers=headers)
+    assert response.status_code == 200 and (response.json()['received'], response.json()['skipped']) == (0, 2)
     rows = (await db_session.scalars(select(MobileDaily).where(MobileDaily.user_id == test_user.id))).all()
-    assert len(rows) == 2
+    assert len(rows) == 2 and {r.device_id for r in rows} == {phone.id}
     payload['days'][0]['value'] = 63.9
     await client.post('/api/mobile/daily', json=payload, headers=headers)
     older = {"days": [day(value=61, measured_at=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat())]}
@@ -186,6 +189,330 @@ def test_daily_gaps_and_no_trend_across_a_watch_change():
     assert 'par rapport' not in c['trend']
     assert len(c['chart']['dots']) == 14
     assert 'jours' in c['chart']['title']
+
+
+def bearer(token):
+    return {"Authorization": "Bearer " + token}
+
+
+async def test_token_expiry_slides_with_use_and_last_seen_is_written_at_most_hourly(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    phone = await db_session.scalar(select(MobileDevice).where(MobileDevice.user_id == test_user.id))
+    now = datetime.now(timezone.utc)
+    phone.expires_at, phone.last_seen_at = now + timedelta(days=170), now - timedelta(minutes=30)
+    await db_session.flush()
+    kept = (phone.expires_at, phone.last_seen_at)
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    assert (phone.expires_at, phone.last_seen_at) == kept  # no write on every background run
+    phone.expires_at, phone.last_seen_at = now + timedelta(days=100), now - timedelta(hours=2)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    assert phone.expires_at >= now + timedelta(days=179) and phone.last_seen_at >= now
+    phone.expires_at = now - timedelta(minutes=1)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 401
+
+
+async def test_rotation_keeps_the_previous_token_until_the_new_one_is_used(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    first = account['token']
+    rotated = await client.post('/api/mobile/token', headers=bearer(first))
+    assert rotated.status_code == 200 and rotated.headers['cache-control'] == 'no-store'
+    second = rotated.json()['token']
+    assert second != first and rotated.json()['user_id'] == test_user.id
+    phone = await db_session.scalar(select(MobileDevice).where(MobileDevice.user_id == test_user.id))
+    assert (phone.token_hash, phone.prev_token_hash) == (digest(second), digest(first))
+    # The response was lost: the phone keeps its token, and rotates again with it.
+    # While it is still used, its grace slides (7 days after its last use).
+    phone.prev_expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 200
+    assert phone.prev_expires_at >= datetime.now(timezone.utc) + timedelta(days=6, hours=23)
+    slid = phone.prev_expires_at
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 200
+    assert phone.prev_expires_at == slid, 'written at most once an hour'
+    third = (await client.post('/api/mobile/token', headers=bearer(first))).json()['token']
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(second))).status_code == 401
+    # The first use of the new token retires the previous one.
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(third))).status_code == 200
+    assert phone.prev_token_hash is None and phone.prev_expires_at is None
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(first))).status_code == 401
+    # The grace period is bounded, and rotating needs a valid token.
+    fourth = (await client.post('/api/mobile/token', headers=bearer(third))).json()['token']
+    phone.prev_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.flush()
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(third))).status_code == 401
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(fourth))).status_code == 200
+    assert (await client.post('/api/mobile/token')).status_code == 401
+    assert (await client.post('/api/mobile/token', headers=bearer('unknown'))).status_code == 401
+
+
+async def test_identical_resends_change_nothing_and_latest_is_one_row_per_metric(client, db_session, test_user):
+    from app.routers.sante import data_version
+    account, _ = await paired(client, test_user)
+    now = datetime.now(timezone.utc)
+    days = [day(date=(now - timedelta(days=i)).date().isoformat(), value=70 + i,
+                measured_at=(now - timedelta(days=i)).isoformat()) for i in range(3)]
+    days += [day(date=(now - timedelta(days=i)).date().isoformat(), metric='steps', value=1000 * i, unit='count',
+                 measured_at=None, sources=['iPhone']) for i in range(3)]
+    first = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert first.json()['received'] == 6
+    assert set(first.json()['latest']) == {'weight', 'steps'}
+    assert (first.json()['latest']['weight']['value'], first.json()['latest']['steps']['value']) == (70, 0)
+    version = await data_version(db_session, test_user.id)
+    stamps = {r.id: r.updated_at for r in await db_session.scalars(select(MobileDaily))}
+    again = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert again.json()['received'] == 0 and again.json()['latest'] == first.json()['latest']
+    assert await data_version(db_session, test_user.id) == version
+    assert {r.id: r.updated_at for r in await db_session.scalars(select(MobileDaily))} == stamps
+    days[3]['value'] = 1234
+    changed = await client.post('/api/mobile/daily', json={'days': days}, headers=bearer(account['token']))
+    assert changed.json()['received'] == 1 and changed.json()['latest']['steps']['value'] == 1234
+    assert await data_version(db_session, test_user.id) != version
+
+
+def test_the_no_op_upsert_compares_sources_as_jsonb_on_postgresql():
+    # The production column is `json` (migration d4a5b6c7d8e9): PostgreSQL has no
+    # json = json operator, so a plain IS DISTINCT FROM failed every daily upload.
+    from sqlalchemy.dialects import postgresql, sqlite
+    now = datetime.now(timezone.utc)
+    phone = MobileDevice(id=1, user_id=2, platform='ios')
+    for payload in (day(), day(metric='steps', value=1000, unit='count', measured_at=None, sources=['iPhone'])):
+        row = mobile.Daily.model_validate(payload)
+        pg = str(mobile.daily_upsert('postgresql', row, phone, now, now).compile(dialect=postgresql.dialect()))
+        assert 'CAST(mobile_daily.sources AS JSONB) IS DISTINCT FROM CAST(excluded.sources AS JSONB)' in pg
+        assert 'mobile_daily.sources IS DISTINCT FROM excluded.sources' not in pg
+        lite = str(mobile.daily_upsert('sqlite', row, phone, None, now).compile(dialect=sqlite.dialect()))
+        assert 'CAST' not in lite and 'mobile_daily.sources IS NOT excluded.sources' in lite
+
+
+async def test_a_phone_corrects_its_own_day_but_an_older_snapshot_never_wins(client, db_session, test_user):
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    at = datetime.now(timezone.utc) - timedelta(hours=3)
+    later, earlier = day(measured_at=at.isoformat(), value=71), day(measured_at=(at - timedelta(hours=1)).isoformat(), value=70)
+    assert (await client.post('/api/mobile/daily', json={'days': [later]}, headers=bearer(account['token']))).json()['received'] == 1
+    # Without a read time (older apps), or read before that row was stored (a
+    # delayed request), the earlier weigh-in never replaces the later one.
+    stale = {**bearer(account['token']), 'X-PaceForge-Read-At': (at - timedelta(minutes=5)).isoformat()}
+    for headers in (bearer(account['token']), stale):
+        response = await client.post('/api/mobile/daily', json={'days': [earlier]}, headers=headers)
+        assert response.json()['received'] == 0 and response.json()['latest']['weight']['value'] == 71
+    # Another phone, even when it read Santé just now, cannot replace it either.
+    now_read = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    response = await client.post('/api/mobile/daily', json={'days': [earlier]},
+                                 headers={**bearer(other['token']), 'X-PaceForge-Read-At': now_read})
+    assert response.json()['received'] == 0
+    # The same phone read Santé after the later weigh-in was deleted there.
+    response = await client.post('/api/mobile/daily', json={'days': [earlier]},
+                                 headers={**bearer(account['token']), 'X-PaceForge-Read-At': now_read})
+    assert response.json()['received'] == 1 and response.json()['latest']['weight']['value'] == 70
+    for implausible in ('2020-01-01T00:00:00Z', 'yesterday', (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()):
+        assert mobile.read_at(implausible, datetime.now(timezone.utc)) is None
+
+
+async def test_each_phone_has_a_request_budget(client, test_user, monkeypatch):
+    from tests.test_apple_nights import packet
+    budget = mobile.PhoneLimiter(limit=2, window=600)
+    budget.redis_down_until = float('inf')  # this worker's count
+    monkeypatch.setattr(mobile, 'limiter', budget)
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    for _ in range(2):
+        assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))).status_code == 200
+    refused = await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(account['token']))
+    assert refused.status_code == 429 and 0 < int(refused.headers['retry-after']) <= 600
+    assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 429
+    assert (await client.post('/api/mobile/token', headers=bearer(account['token']))).status_code == 429
+    assert (await client.post('/api/mobile/daily', json={'days': []}, headers=bearer(other['token']))).status_code == 200
+    assert (await client.delete('/api/mobile/device', headers=bearer(account['token']))).status_code == 200
+
+
+async def test_the_budget_is_shared_through_redis_and_survives_its_absence(monkeypatch):
+    class Pipeline:
+        def __init__(self, counts):
+            self.counts, self.keys = counts, []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def incr(self, key):
+            self.keys.append(key)
+            return self
+
+        def expire(self, key, seconds):
+            return self
+
+        async def execute(self):
+            key = self.keys[0]
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return [self.counts[key], True]
+
+    class Redis:
+        counts: dict = {}
+
+        def pipeline(self, transaction=True):
+            return Pipeline(self.counts)
+
+    budget = mobile.PhoneLimiter(limit=1, window=600)
+    budget.redis = Redis()
+    await budget.check(7)
+    with pytest.raises(mobile.HTTPException) as refused:
+        await budget.check(7)
+    assert refused.value.status_code == 429 and list(Redis.counts.values()) == [2]
+    budget.redis = object()  # a broken connection: count in this worker, without failing the request
+    await budget.check(8)
+    assert budget.redis is None and budget.local[8][1] == 1
+
+
+async def test_bodies_are_capped_before_parsing_and_errors_keep_their_shape(client, test_user):
+    account, _ = await paired(client, test_user)
+    headers = {**bearer(account['token']), 'Content-Type': 'application/json'}
+    big = b'{"days": [' + b' ' * mobile.MAX_DAILY_BYTES + b']}'
+    assert (await client.post('/api/mobile/daily', content=big, headers=headers)).status_code == 413
+
+    async def streamed():
+        yield b'{"date": "'
+        for _ in range(33):
+            yield b'x' * 65536
+
+    assert (await client.post('/api/mobile/nights', content=streamed(), headers=headers)).status_code == 413
+    response = await client.post('/api/mobile/daily', json={'days': [day(value=0)]}, headers=bearer(account['token']))
+    assert response.status_code == 422 and response.json()['detail'][0]['loc'][:3] == ['body', 'days', 0]
+    assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 422
+
+
+async def test_a_body_is_parsed_after_the_token_check_with_no_connection_held(client, db_session, test_user, monkeypatch):
+    # A slow 2 MB upload or a night's parse must not hold a database connection: the
+    # token is checked in a session of its own, released before the body is parsed.
+    from app.dependencies import get_db
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    order, made = [], []
+
+    class Session:
+        """The test session, as a request's own session or as its token check's."""
+
+        def __init__(self, role):
+            self.role = role
+
+        def __getattr__(self, name):
+            if order[-1:] != [self.role]:
+                order.append(self.role)
+            return getattr(db_session, name)
+
+        async def commit(self):
+            order.append(self.role + ' commit')
+            await db_session.flush()  # the test's transaction is rolled back at its end
+
+    async def database():
+        # Each request solves its own session first, then the token check's.
+        made.append(('request', 'auth')[len(made) % 2])
+        yield Session(made[-1])
+
+    read, check, reduce = mobile.capped_body, mobile.validated, mobile.apple_nights.reduce_night
+
+    async def body(request, limit):
+        order.append('body')
+        return await read(request, limit)
+
+    def validated(model, raw):
+        order.append('parse')
+        return check(model, raw)
+
+    def reduced(night):
+        order.append('reduce')
+        return reduce(night)
+
+    client._transport.app.dependency_overrides[get_db] = database
+    monkeypatch.setattr(mobile, 'capped_body', body)
+    monkeypatch.setattr(mobile, 'validated', validated)
+    monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
+    assert (await client.post('/api/mobile/daily', json={'days': [day()]}, headers=bearer(account['token']))).status_code == 200
+    assert order[:5] == ['body', 'auth', 'auth commit', 'parse', 'request'] and 'request commit' not in order
+    order.clear()
+    assert (await client.post('/api/mobile/nights', json=packet(), headers=bearer(account['token']))).status_code == 200
+    assert order[:6] == ['body', 'auth', 'auth commit', 'parse', 'reduce', 'request']
+    assert made == ['request', 'auth'] * 2
+
+
+async def test_a_body_is_parsed_only_for_a_known_phone(client, db_session, test_user, monkeypatch):
+    # Without a valid token, a night is never parsed (seconds of CPU at the validation
+    # maxima, outside any phone's budget), and a revoked phone always learns it is revoked.
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    other, _ = await paired(client, test_user)
+    night = packet()
+    start = datetime.fromisoformat(night['sleep'][0]['start'])
+    night['hr'] = [{'at': (start + timedelta(seconds=5 * i)).isoformat(), 'value': 50} for i in range(5000)]
+    calls = []
+    read, check, reduce = mobile.capped_body, mobile.validated, mobile.apple_nights.reduce_night
+
+    async def body(request, limit):
+        calls.append('read')
+        return await read(request, limit)
+
+    def validated(model, raw):
+        calls.append('parse')
+        return check(model, raw)
+
+    def reduced(packet):
+        calls.append('reduce')
+        return reduce(packet)
+
+    monkeypatch.setattr(mobile, 'capped_body', body)
+    monkeypatch.setattr(mobile, 'validated', validated)
+    monkeypatch.setattr(mobile.apple_nights, 'reduce_night', reduced)
+    uploads = (('/api/mobile/nights', night), ('/api/mobile/daily', {'days': [day()]}),
+               ('/api/mobile/daily', {'days': [day(value=0)]}), ('/api/mobile/nights', {'date': 'no night'}))
+    for headers in ({}, {'Authorization': 'Basic ' + account['token']}, {'Authorization': 'Bearer '},
+                    {'Authorization': 'Bearer ' + 'x' * 200}):
+        for path, payload in uploads:
+            assert (await client.post(path, json=payload, headers=headers)).status_code == 401
+    assert calls == []  # not even read
+    for path, payload in uploads:
+        assert (await client.post(path, json=payload, headers=bearer('unknown'))).status_code == 401
+    assert calls == ['read'] * 4  # read and capped, never parsed
+    calls.clear()
+    assert (await client.delete('/api/mobile/device', headers=bearer(account['token']))).status_code == 200
+    for path, payload in uploads:
+        assert (await client.post(path, json=payload, headers=bearer(account['token']))).status_code == 401
+    headers = {**bearer(account['token']), 'Content-Type': 'application/json'}
+    assert (await client.post('/api/mobile/daily', content=b'{', headers=headers)).status_code == 401
+    assert calls == ['read'] * 5
+    # The same night, from a known phone, is valid.
+    assert (await client.post('/api/mobile/nights', json=night, headers=bearer(other['token']))).status_code == 200
+    assert calls[5:] == ['read', 'parse', 'reduce']
+
+
+async def test_a_night_sets_the_athlete_zone_once_and_never_from_a_fixed_offset(client, test_user):
+    from tests.test_apple_nights import packet
+    account, _ = await paired(client, test_user)
+    # A zone already set (Strava, a previous night) is never written over.
+    test_user.timezone = 'America/Montreal'
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Europe/Paris'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'America/Montreal'
+    test_user.timezone = None
+    for zone in ('UTC', 'Etc/GMT-2'):
+        assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': zone},
+                                  headers=bearer(account['token']))).status_code == 200
+        assert test_user.timezone is None
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Europe/Paris'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'Europe/Paris'
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'America/New_York'},
+                              headers=bearer(account['token']))).status_code == 200
+    assert test_user.timezone == 'Europe/Paris'
+    # Validation and reduction run off the event loop; their refusals stay 422.
+    p = packet()
+    p['naps'] = [p['sleep']]
+    assert (await client.post('/api/mobile/nights', json=p, headers=bearer(account['token']))).status_code == 422
+    assert (await client.post('/api/mobile/nights', json=packet() | {'timezone': 'Nowhere/City'},
+                              headers=bearer(account['token']))).status_code == 422
 
 
 def test_mobile_migration_roundtrip():

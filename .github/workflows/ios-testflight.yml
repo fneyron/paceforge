@@ -48,6 +48,11 @@ jobs:
       - run: npx expo prebuild --no-install
       - name: Check generated iOS HealthKit purpose strings
         run: python3 scripts/check-ios-health-privacy.py ios/PaceForge/Info.plist
+      - name: Check generated background health sync configuration
+        run: >-
+          python3 scripts/check-background-sync.py
+          --entitlements ios/PaceForge/PaceForge.entitlements
+          --info-plist ios/PaceForge/Info.plist
       - run: npx expo export --platform ios --platform android
 
   publish:
