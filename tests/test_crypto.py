@@ -11,8 +11,16 @@ from app.config import settings
 from app.crypto import decrypt_secret, encrypt_secret, legacy_key
 from app.main import create_app, lifespan
 from app.models.oauth_attempt import OAuthAttempt
+from app.models.user import User
 from app.services.strava import StravaService, strava_status
 from tests.test_settings_links import _callback, _logged_in
+
+
+def decrypt_secret_or_none(value: str):
+    try:
+        return decrypt_secret(value.encode())
+    except Exception:
+        return None
 
 
 def _foreign(value: str) -> str:
@@ -231,3 +239,51 @@ def test_the_secret_key_refusal_says_how_to_keep_the_tokens(monkeypatch):
     monkeypatch.setattr(settings, "DEBUG", False)
     with pytest.raises(RuntimeError, match=r"first append legacy_key\(old SECRET_KEY\) to ENCRYPTION_KEYS"):
         check_secrets()
+
+
+# ── Strava tokens stored in clear are encrypted once, by the hourly upkeep ──
+
+async def test_tokens_left_in_clear_are_encrypted_by_the_hourly_upkeep(db_session, test_user, monkeypatch):
+    """A refresh token Strava hands back unchanged is never rewritten by the refresh, so it stayed in clear for
+    good; the hourly task now rewrites every token still in clear, once."""
+    from contextlib import asynccontextmanager
+
+    import httpx
+
+    from app.tasks import oauth_cleanup
+
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    clear = text("UPDATE users SET strava_access_token = :t, strava_refresh_token = :r, strava_token_expires_at = 1, "
+                 "strava_client_id = '4242' WHERE id = :id")
+    await db_session.execute(clear, {"t": "a" * 40, "r": "f" * 40, "id": test_user.id})
+    other = User(email="other@x.fr")
+    db_session.add(other)
+    await db_session.flush()
+    other_id = other.id
+    await db_session.execute(text("UPDATE users SET strava_refresh_token = :r WHERE id = :id"),
+                             {"r": _foreign("lost" * 10), "id": other_id})  # unreadable: left alone
+    db_session.expire_all()
+    await db_session.refresh(test_user)
+
+    async def post(self, url, **kwargs):  # Strava's /oauth/token: a new access token, the same refresh token
+        return httpx.Response(200, json={"access_token": "c" * 40, "refresh_token": "f" * 40, "expires_at": 9999999999},
+                              request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    await StravaService(db_session, client_id="4242", client_secret="s3cret").refresh_token_if_needed(test_user)
+    await db_session.flush()
+    assert (await _raw(db_session, test_user.id, "strava_refresh_token")) == "f" * 40  # still in clear
+
+    @asynccontextmanager
+    async def session():
+        yield db_session
+    monkeypatch.setattr("app.database.get_task_session", session)
+    assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 1
+    for column in ("strava_access_token", "strava_refresh_token"):
+        assert (await _raw(db_session, test_user.id, column)).startswith("gAAAAA")
+    db_session.expire_all()
+    await db_session.refresh(test_user)
+    assert (test_user.strava_access_token, test_user.strava_refresh_token) == ("c" * 40, "f" * 40)
+    stored = await _raw(db_session, other_id, "strava_refresh_token")
+    assert stored.startswith("gAAAAA") and decrypt_secret_or_none(stored) is None  # left as it was
+    assert await oauth_cleanup.encrypt_clear_strava_tokens(db_session) == 0  # once done, nothing more
+    await oauth_cleanup._run()  # the hourly task runs it (and purges the expired attempts)
