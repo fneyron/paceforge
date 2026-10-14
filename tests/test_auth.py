@@ -51,3 +51,23 @@ async def test_logout(client: AsyncClient):
 async def test_dashboard_requires_auth(client: AsyncClient):
     response = await client.get("/dashboard", follow_redirects=False)
     assert response.status_code == 303
+
+
+async def test_register_and_login_log_the_account_id_never_the_email(client, db_session, monkeypatch, caplog):
+    import logging
+
+    from sqlalchemy import select
+
+    from app.models.user import User
+
+    monkeypatch.setattr(db_session, "commit", db_session.flush)
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda *args: True)
+    caplog.set_level(logging.INFO)
+    async with AsyncClient(transport=client._transport, base_url="https://test") as c:
+        await c.post("/auth/register", data={"email": "private@x.fr", "password": "password-123"})
+        user = (await db_session.execute(select(User).where(User.email == "private@x.fr"))).scalar_one()
+        user.email_verified = True
+        await db_session.flush()
+        assert (await c.post("/auth/login", data={"email": "private@x.fr", "password": "password-123"})).status_code == 302
+    assert f"User {user.id} registered" in caplog.text and f"User {user.id} logged in" in caplog.text
+    assert "private@x.fr" not in caplog.text

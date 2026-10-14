@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 
@@ -190,6 +191,37 @@ async def strava_disconnect(
     return RedirectResponse(url="/connections/strava" if next == "devices" else "/settings#strava", status_code=303)
 
 
+REVOKE_TIMEOUT_S = 8  # per provider: a deletion never waits long on one that does not answer
+
+
+async def _revoke_links(db: AsyncSession, user: User) -> None:
+    """Before an account's rows go, best effort and time-bounded: PaceForge's
+    access revoked at Strava (deauthorize, and the athlete's own app's webhook
+    deleted) and at COROS, the Garmin link forgotten (Garmin has no
+    revocation). A provider that fails or does not answer in time never stops
+    the deletion: the session is then rolled back to a clean state (nothing is
+    deleted yet), the explicit deletions follow."""
+    user_id = user.id
+    steps = []
+    if user.has_strava_linked or user.strava_webhook_subscription_id:
+        steps.append(("Strava", lambda: strava_disconnect_link(db, user)))
+    coros_conn = await coros_service.connection_for(db, user_id)
+    if coros_conn is not None:
+        steps.append(("COROS", lambda: coros_service.disconnect(db, coros_conn)))
+    garmin_conn = await garmin_service.connection_for(db, user_id)
+    if garmin_conn is not None:
+        steps.append(("Garmin", lambda: garmin_service.disconnect(db, garmin_conn)))
+    clean = True
+    for name, step in steps:
+        try:
+            await asyncio.wait_for(step(), REVOKE_TIMEOUT_S)
+        except Exception:  # a timeout included
+            clean = False
+            logger.warning("Account deletion of user %d: %s link not revoked", user_id, name, exc_info=True)
+    if not clean:
+        await db.rollback()
+
+
 @router.post("/settings/delete-account")
 async def delete_account(
     request: Request,
@@ -205,18 +237,21 @@ async def delete_account(
         return templates.TemplateResponse(request, "settings.html", context=ctx)
 
     user_id = user.id
-    logger.warning("User %d (%s) requested account deletion", user_id, user.email)
+    logger.warning("User %d requested account deletion", user_id)
+    await _revoke_links(db, user)
 
-    # Delete all user data (cascades handle most, but be explicit)
+    # Delete all user data, explicitly: the database's cascades are not relied on (SQLite has none by default)
     from app.models.analysis import Analysis
     from app.models.chat_message import ChatMessage
     from app.models.coros import CorosConnection
     from app.models.garmin import GarminConnection
     from app.models.generated_plan import GeneratedPlan
     from app.models.health import HealthMetric, HealthSample
+    from app.models.lactate import LactateTest
+    from app.models.mobile import MobileDaily, MobileDevice
     from app.models.nutrition import NutritionProduct
     from app.models.oauth_attempt import OAuthAttempt
-    from app.models.route import Route
+    from app.models.route import Route, RouteCheckpoint, Simulation
     from app.models.weekly_digest import WeeklyDigest
 
     # Delete in order (foreign key constraints)
@@ -228,6 +263,9 @@ async def delete_account(
     await db.execute(delete(Activity).where(Activity.user_id == user_id))
     await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user_id))
     await db.execute(delete(GeneratedPlan).where(GeneratedPlan.user_id == user_id))
+    routes = select(Route.id).where(Route.user_id == user_id)
+    await db.execute(delete(RouteCheckpoint).where(RouteCheckpoint.route_id.in_(routes)))
+    await db.execute(delete(Simulation).where((Simulation.user_id == user_id) | Simulation.route_id.in_(routes)))
     await db.execute(delete(Route).where(Route.user_id == user_id))
     await db.execute(delete(WeeklyDigest).where(WeeklyDigest.user_id == user_id))
     await db.execute(delete(HealthSample).where(HealthSample.user_id == user_id))
@@ -236,6 +274,9 @@ async def delete_account(
     await db.execute(delete(GarminConnection).where(GarminConnection.user_id == user_id))
     await db.execute(delete(NutritionProduct).where(NutritionProduct.user_id == user_id))
     await db.execute(delete(OAuthAttempt).where(OAuthAttempt.user_id == user_id))
+    await db.execute(delete(MobileDaily).where(MobileDaily.user_id == user_id))
+    await db.execute(delete(MobileDevice).where(MobileDevice.user_id == user_id))
+    await db.execute(delete(LactateTest).where(LactateTest.user_id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
 

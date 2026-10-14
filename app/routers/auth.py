@@ -91,7 +91,7 @@ async def register(
     request.session.clear()
     request.session["pending_user_id"] = user.id
     request.session["verification_failed"] = not sent
-    logger.info("User %d registered: %s", user.id, email)
+    logger.info("User %d registered", user.id)
 
     return RedirectResponse(url="/auth/check-email", status_code=302)
 
@@ -182,7 +182,7 @@ async def login(
         request.session["pending_user_id"] = user.id
         return RedirectResponse("/auth/check-email", status_code=302)
     request.session["user_id"] = user.id
-    logger.info("User %d logged in: %s", user.id, email)
+    logger.info("User %d logged in", user.id)
 
     return RedirectResponse(url=f"/connections/{next}" if next else HOME, status_code=302)
 
